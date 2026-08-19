@@ -59,8 +59,84 @@ test('legacy Task保持absent，不扫描或自动backfill Parent Plan', (t) => 
   const inspected = current.runtime.inspectParentCoordination(current.root, 'legacy-task');
   assert.equal(inspected.mode, 'legacy');
   assert.equal(inspected.parentPlan, null);
+  assert.equal(inspected.startup.status, 'not-applicable');
   assert.equal(inspected.diagnostic.code, 'parent_plan_absent');
   assert.equal(current.runtime.inspectTaskRecord(current.root, 'legacy-task').recordDigest, before);
+});
+
+test('Parent Plan record/reconcile公开closed schema与最小example', () => {
+  const schemaRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'record', '--schema', '--json'], { encoding: 'utf8' });
+  assert.equal(schemaRun.status, 0, schemaRun.stderr);
+  const schema = JSON.parse(schemaRun.stdout);
+  assert.equal(schema.schemaVersion, 'buildr.parent-plan-input-schema/v1');
+  assert.equal(schema.inputSchema.additionalProperties, false);
+  assert.deepEqual(schema.inputSchema.required, ['outcome', 'architectureInvariants', 'contributions', 'finalAcceptance']);
+  assert.equal(schema.inputSchema.properties.contributions.maxItems, 128);
+  assert.deepEqual(schema.inputSchema.properties.contributions.items.required, ['id', 'summary']);
+  assert.equal(schema.inputSchema.properties.dependencies.items.properties.dependsOn.pattern, '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$');
+
+  const exampleRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile', '--example', '--json'], { encoding: 'utf8' });
+  assert.equal(exampleRun.status, 0, exampleRun.stderr);
+  const example = JSON.parse(exampleRun.stdout);
+  assert.equal(example.schemaVersion, 'buildr.parent-plan-input-example/v1');
+  assert.equal(example.parentPlan.contributions.length, 1);
+  assert.equal('plannedChildTaskId' in example.parentPlan.contributions[0], false);
+});
+
+test('Parent startup按真实安全顺序推进Review、gate refresh与首个eligible Contribution', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const startupPlan = { ...parentPlan(), contributions: parentPlan().contributions.map((item) => ({ ...item, plannedChildTaskId: null })) };
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: startupPlan });
+
+  let startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
+  assert.equal(startup.schemaVersion, 'buildr.parent-startup-readiness/v1');
+  assert.equal(startup.status, 'blocked');
+  assert.equal(startup.next.action, 'planning-review');
+
+  current.runtime.recordTaskReview(current.root, 'parent-task', {
+    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self',
+    reviewed: ['Parent outcome', 'Architecture invariants', 'Contribution Map', 'Dependencies', 'Final acceptance'],
+    uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Parent Plan is ready.' },
+  });
+  startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
+  assert.equal(startup.next.action, 'refresh-parent-planning');
+
+  const refreshed = current.runtime.refreshParentPlanning(current.root, 'parent-task');
+  assert.equal(refreshed.status, 'refreshed');
+  assert.equal(refreshed.startup.status, 'ready');
+  assert.equal(refreshed.startup.next.action, 'start-child-contribution');
+  assert.deepEqual(refreshed.startup.eligibleContributions, ['child-delivery']);
+  assert.equal(refreshed.startup.blockers.length, 0);
+  assert.deepEqual(refreshed.startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
+});
+
+test('Parent planning refresh不接受缺失、stale或changes-required Review', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
+  assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
+  current.runtime.recordTaskReview(current.root, 'parent-task', {
+    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
+    conclusion: { outcome: 'changes-required', summary: 'Plan must change.' },
+  });
+  assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
+});
+
+test('Parent startup只在没有eligible Contribution时暴露依赖阻塞', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
+  current.runtime.recordTaskReview(current.root, 'parent-task', {
+    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
+    conclusion: { outcome: 'ready', summary: 'Ready.' },
+  });
+  current.runtime.refreshParentPlanning(current.root, 'parent-task');
+  const startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
+  assert.equal(startup.status, 'blocked');
+  assert.equal(startup.next.action, 'wait-contribution-dependencies');
+  assert.deepEqual(startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
+  assert.deepEqual(startup.blockers, [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete', contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
 });
 
 test('Parent Plan、Child binding与派生进度不复制Child状态，completed Child也不完成Parent', (t) => {

@@ -64,7 +64,7 @@ test('入口同时报告环境与研发缺口且不短路', (t) => {
   assert.ok(error.details.gaps.development.length >= 1);
 });
 
-test('仅交付 remote 缺口时不误标为研发', (t) => {
+test('无贡献 repository 不解析 remote 且入口保持就绪', (t) => {
   const root = makeGitRoot(t, { remotes: false });
   const handoff = handoffFixture();
   const runtime = {
@@ -83,15 +83,19 @@ test('仅交付 remote 缺口时不误标为研发', (t) => {
     }),
   };
   const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task' });
-  assert.equal(observed.ready, false);
+  assert.equal(observed.ready, true);
   assert.equal(observed.nextWorkflow, null);
   assert.deepEqual(observed.gaps.development, []);
   assert.deepEqual(observed.gaps.environment, []);
-  assert.ok(observed.gaps.delivery.some((item) => item.code === 'task_finish.remote_unavailable'));
+  assert.deepEqual(observed.gaps.delivery, []);
+  assert.equal(observed.identityParts.repositories[0].disposition, 'not-applicable');
+  assert.equal(observed.identityParts.repositories[0].remote, null);
+  assert.equal(observed.identityParts.remote, null);
 });
 
 test('全部入口就绪时返回 identityParts', (t) => {
   const root = makeGitRoot(t, { remotes: true });
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'Task contribution.\n');
   const handoff = handoffFixture();
   const runtime = {
     resolveTaskEnvironmentExecution: () => ({
@@ -112,11 +116,44 @@ test('全部入口就绪时返回 identityParts', (t) => {
   assert.equal(observed.ready, true);
   assert.equal(observed.identityParts.remote, 'origin');
   assert.equal(observed.identityParts.targetBranch, 'dev');
+  assert.equal(observed.identityParts.agent, 'codex');
   assert.equal(observed.identityParts.handoffIdentity, 'sha256-handoff');
   assert.equal(observed.identityParts.deliveryCommitIdentity, observed.deliveryCommit.identity);
+  assert.equal(observed.identityParts.repositories[0].disposition, 'applicable');
   assert.match(observed.deliveryCommit.message, /Buildr-Task: demo-task$/);
 
   const missing = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', requireCommitMessage: true });
   assert.equal(missing.ready, false);
   assert.ok(missing.gaps.delivery.some((item) => item.code === 'task_finish.commit_message_required'));
+});
+
+test('Finish --agent 与 Environment adapter 不一致时不创建 identity', (t) => {
+  const root = makeGitRoot(t, { remotes: true });
+  const handoff = handoffFixture();
+  const runtime = {
+    resolveTaskEnvironmentExecution: () => ({
+      ready: true,
+      workspaceRoot: root,
+      validationRoot: root,
+      controller: { adapter: 'codex' },
+      repositories: [{ selector: 'workspace', remote: 'origin' }],
+    }),
+    inspectTaskDevelopment: () => ({
+      development: {
+        receipt: { candidate: handoff.candidate, gates: handoff.gates, decision: handoff.decision, handoffs: [handoff] },
+        applicability: { handoff: 'current' },
+      },
+    }),
+  };
+  const observed = observeTaskFinishEntryReadiness({
+    runtime,
+    root,
+    task: 'demo-task',
+    requestedAgent: 'cursor',
+    requestedCommitMessage: 'fix(task-finish): freeze delivery message',
+    requireCommitMessage: true,
+  });
+  assert.equal(observed.ready, false);
+  assert.equal(observed.identityParts, null);
+  assert.ok(observed.gaps.environment.some((item) => item.code === 'task_finish.environment_mismatch'));
 });

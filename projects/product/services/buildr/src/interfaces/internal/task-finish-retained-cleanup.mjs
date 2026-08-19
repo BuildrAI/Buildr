@@ -5,10 +5,12 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { createRuntime } from '../../application/compose-runtime.mjs';
 import {
+  createGitNoContributionProof,
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
 } from '../../application/task-finish/git-task-contribution.mjs';
 import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
+import { taskFinishCarrierSetIdentity, taskFinishDeliverySetIdentity } from '../../application/task-finish/task-finish-repository-set.mjs';
 
 function cleanupError(code, message, details = null) {
   const error = new Error(message);
@@ -36,41 +38,78 @@ function parseArgs(args) {
   return { runId: values.get('--run'), targetRoot: path.resolve(values.get('--target')) };
 }
 
-function completedDelivery(root, run) {
-  const carrierRef = run.deliveryCarrier?.head;
-  const delivery = run.delivery;
+function completedRepositoryDelivery(root, run, plan, state) {
+  const carrierRef = state.deliveryCarrier?.head;
+  const delivery = state.delivery;
   if (delivery?.status !== 'delivered' || delivery.carrierRef !== carrierRef
     || !delivery.remoteAfterRef || delivery.finalRemoteRef !== delivery.remoteAfterRef) return false;
   const disposition = delivery.targetDisposition || 'carrier';
   if (disposition === 'carrier') return delivery.remoteAfterRef === carrierRef;
   if (disposition !== 'already-contained') return false;
-  const inspectContainment = delivery.containment?.proof === 'agent-reviewed-zero-delta' || run.deliveryCarrier?.zeroDelta === true
+  const inspectContainment = delivery.containment?.proof === 'agent-reviewed-zero-delta' || state.deliveryCarrier?.zeroDelta === true
     ? inspectAgentReviewedZeroDeltaContainment
     : inspectGitCarrierContainment;
   const observed = inspectContainment({
-    repositoryRoot: root,
+    repositoryRoot: plan.retainedRoot,
+    workspaceRoot: root,
     targetRef: delivery.finalRemoteRef,
-    carrier: run.deliveryCarrier,
+    carrier: state.deliveryCarrier,
     runId: run.runId,
+    repositorySelector: plan.selector || null,
   });
   return observed.status === 'contained'
     && isDeepStrictEqual(delivery.containment, observed);
 }
 
+function completedDelivery(root, run) {
+  const plans = run.identity.repositories || [];
+  if (plans.length === 0) {
+    return completedRepositoryDelivery(root, run, {
+      selector: null, retainedRoot: root,
+    }, { deliveryCarrier: run.deliveryCarrier, delivery: run.delivery });
+  }
+  return plans.filter((plan) => plan.disposition === 'applicable').every((plan) => {
+    const state = run.repositories.find((repository) => repository.selector === plan.selector);
+    return state && completedRepositoryDelivery(root, run, plan, state);
+  });
+}
+
 function assertPreparedCompletion(root, run, runtime) {
   const completion = readFinishCompletion({ root, runId: run.runId, runtime });
   if (!completion) throw cleanupError('task-finish.retained-cleanup-completion-missing', 'Durable prepared Finish completion is missing from Workspace SQLite.');
-  const matches = completion.schemaVersion === 'buildr.task-finish-completion/v1'
+  const repositorySet = run.identity.repositories || [];
+  const repositoryCompletionMatches = repositorySet.length > 0
+    && completion.schemaVersion === 'buildr.task-finish-completion/v2'
+    && completion.repositorySetIdentity === run.identity.repositorySetIdentity
+    && completion.carrierSetIdentity === taskFinishCarrierSetIdentity(run.repositories)
+    && completion.deliverySetIdentity === taskFinishDeliverySetIdentity(run.repositories)
+    && Array.isArray(completion.repositories)
+    && completion.repositories.length === repositorySet.length
+    && repositorySet.every((plan) => {
+      const state = run.repositories.find((repository) => repository.selector === plan.selector);
+      const item = completion.repositories.find((repository) => repository.selector === plan.selector);
+      return state && item
+        && item.disposition === plan.disposition
+        && item.taskContributionIdentity === state.taskContribution.identity
+        && item.carrierIdentity === (state.deliveryCarrier?.identity || null)
+        && item.carrierRef === (state.deliveryCarrier?.head || null)
+        && (plan.disposition === 'applicable'
+          ? item.finalRemoteRef === state.delivery?.finalRemoteRef
+          : typeof item.finalRemoteRef === 'string' && item.finalRemoteRef.length > 0);
+    });
+  const singletonMatches = repositorySet.length === 0
+    && completion.schemaVersion === 'buildr.task-finish-completion/v1'
+    && completion.carrierIdentity === run.deliveryCarrier?.identity
+    && completion.carrierRef === run.deliveryCarrier?.head
+    && completion.finalRemoteRef === run.delivery?.finalRemoteRef
+    && completion.targetBranch === run.identity.targetBranch;
+  const matches = (repositoryCompletionMatches || singletonMatches)
     && completion.status === 'prepared'
     && completion.runId === run.runId
     && completion.task === run.identity.task
     && completion.handoffIdentity === run.identity.handoffIdentity
     && completion.candidateIdentity === run.identity.candidateIdentity
-    && completion.contentTargetIdentity === run.identity.contentTargetIdentity
-    && completion.carrierIdentity === run.deliveryCarrier?.identity
-    && completion.carrierRef === run.deliveryCarrier?.head
-    && completion.finalRemoteRef === run.delivery?.finalRemoteRef
-    && completion.targetBranch === run.identity.targetBranch;
+    && completion.contentTargetIdentity === run.identity.contentTargetIdentity;
   if (!matches) throw cleanupError('task-finish.retained-cleanup-completion-mismatch', 'Durable prepared Finish completion does not match the current run.');
   return completion;
 }
@@ -93,10 +132,32 @@ export async function executeRetainedTaskFinishCleanup({ targetRoot, runId, runt
   if (!context?.ready || resolvedPath(context.workspaceRoot) !== root || resolvedPath(context.environmentRoot) !== resolvedPath(run.identity.environmentRoot)) {
     throw cleanupError('task-finish.retained-cleanup-environment-mismatch', 'Current Task Environment does not match the Finish run.', context?.blocked || null);
   }
-  const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [
-    repository.selector,
-    repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint,
-  ]));
+  const plans = run.identity.repositories || [];
+  if (plans.length > 0) {
+    const deliveries = {};
+    const integratedContributions = {};
+    for (const plan of plans) {
+      const state = run.repositories.find((repository) => repository.selector === plan.selector);
+      if (plan.disposition === 'applicable') {
+        deliveries[plan.selector] = state.delivery.finalRemoteRef;
+        integratedContributions[plan.selector] = state.deliveryCarrier;
+        continue;
+      }
+      const noContribution = createGitNoContributionProof({ taskRoot: plan.taskRoot, targetRef: plan.targetBranch, taskContribution: state.taskContribution });
+      if (noContribution.status !== 'equivalent') throw cleanupError(noContribution.code || 'task-finish.retained-cleanup-no-contribution-unprovable', `No-contribution cleanup proof is unavailable: ${plan.selector}.`, noContribution);
+      deliveries[plan.selector] = noContribution.proof.target.head;
+      integratedContributions[plan.selector] = noContribution.proof;
+    }
+    return runtime.cleanupTaskEnvironment(root, run.identity.task, {
+      type: 'finish',
+      deliveries,
+      candidateRef: plans.filter((plan) => plan.disposition === 'applicable').length === 1
+        ? run.repositories.find((repository) => repository.disposition === 'applicable')?.deliveryCarrier?.head
+        : taskFinishDeliverySetIdentity(run.repositories),
+      integratedContributions,
+    });
+  }
+  const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
   return runtime.cleanupTaskEnvironment(root, run.identity.task, {
     type: 'finish',
     deliveries,

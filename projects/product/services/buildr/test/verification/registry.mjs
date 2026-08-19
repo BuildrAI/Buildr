@@ -47,6 +47,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
+  'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-execution-records': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task and Verification execution records preserve metadata, body-store, recovery, and retention boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem, 'integration'),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Task Development, Review, and Verification lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle, 'integration'),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish core bootstrap, run, diagnostics, entry, and SQLite behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli, 'integration'),
@@ -214,8 +215,8 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/interfaces/local-app/runtime/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
-  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
-  'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-repository-set.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish-cli': Object.freeze(['src/application/task-finish/task-finish-result-projection.mjs', 'src/application/task-finish/task-finish-self-bootstrap-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/application/task-environment/**', 'src/domain/task-environment/**', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
 
@@ -316,8 +317,12 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/infrastructure/product-resources/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-data-store', [
+    'test/integration/workspace-management-fence.test.mjs',
     'test/integration/workspace-sqlite.test.mjs',
   ], [
+    'src/application/workspace/**',
+    'src/infrastructure/filesystem/workspace-management-fence.mjs',
+    'src/infrastructure/filesystem/workspace-registry-repository.mjs',
     'src/infrastructure/sqlite/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-environment', [
@@ -355,12 +360,22 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/parent-coordination/**',
     'src/application/publication/**',
   ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  integrationSlice('integration-project-daily-progress', [
+    'test/integration/project-daily-progress-application.test.mjs',
+  ], [
+    'src/application/project-daily-progress/**',
+    'src/domain/project-daily-progress/**',
+    'src/infrastructure/filesystem/project-daily-progress-store.mjs',
+    'src/interfaces/cli/project-daily-progress.mjs',
+  ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-execution-records', [
     'test/integration/task-execution-record-application.test.mjs',
     'test/integration/task-execution-record-body-store.test.mjs',
+    'test/integration/task-finish-execution-record-recovery.test.mjs',
     'test/integration/verification-execution-record-application.test.mjs',
   ], [
     'src/application/task-execution-record/**',
+    'src/application/task-finish/execution-record-recovery.mjs',
     'src/application/verification/execution-record*.mjs',
     'src/domain/task-execution-record/**',
     'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
@@ -399,7 +414,9 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-occupancy-release.mjs',
     'src/application/task-finish/task-finish-delivery-commit.mjs',
     'src/application/task-finish/task-finish-entry-readiness.mjs',
+    'src/application/task-finish/task-finish-repository-set.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
+    'src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
     'src/application/task-finish/task-finish-run.mjs',
   ], { schedulingCostMs: 11000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish-delivery', [
@@ -477,6 +494,7 @@ export const verificationSteps = Object.freeze([
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
+      'integration-project-daily-progress': 'Project daily progress integration slice',
       'integration-task-execution-records': 'Task execution-record integration slice',
       'integration-task-development': 'Task Development lifecycle integration',
       'integration-task-finish': 'Task Finish core integration slice',
@@ -667,6 +685,7 @@ export const verificationSteps = Object.freeze([
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/compose-runtime.mjs', 'src/application/json-contracts.mjs',
     'src/application/task-finish/task-finish-result-projection.mjs',
+    'src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
     'src/infrastructure/product-layout.mjs',
     'test/verification/cli/package-parity.mjs', 'package.json', 'package-lock.json',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
@@ -738,6 +757,7 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'integration-self-bootstrap',
     'integration-task-read-models',
     'integration-task-coordination',
+    'integration-project-daily-progress',
     'integration-task-execution-records',
     'integration-task-finish',
     'integration-task-finish-delivery',

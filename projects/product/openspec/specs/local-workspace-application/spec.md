@@ -435,8 +435,8 @@ Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为�
 
 #### Scenario: 反映真实导航层级
 - **WHEN** 用户在工作空间内浏览目录或详情
-- **THEN** 应用 shell MUST 显示可理解的工作空间、资源与当前资源层级
-- **AND** 侧边栏当前工作空间 MUST 只展示名称和截断路径，并提供返回工作空间目录的明确入口
+- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前资源导航高亮
+- **AND** 工作空间切换器 MUST 展示当前名称，并提供返回工作空间目录的明确入口
 
 ### Requirement: 工作空间目录与资源视图必须在窄屏保持可用
 Buildr 本机应用 MUST 在桌面、约 1024px 和 390px 宽度保持可读且主要操作可用，不让页面主容器发生横向溢出。
@@ -451,8 +451,13 @@ Buildr 本机应用 MUST 在桌面、约 1024px 和 390px 宽度保持可读且�
 - **THEN** 资源目录、详情、稳定 metadata 表单与“交给 Agent”操作 MUST 可见并可操作
 - **AND** 必要的表格横向滚动 MUST 限定在表格容器内
 
+#### Scenario: 窄屏仍能使用主导航
+- **WHEN** viewport 宽度为 390px 且用户位于选定 Workspace
+- **THEN** “任务”“项目”“服务”“文章”导航 MUST 仍可打开（直接显示或经明确菜单）
+- **AND** MUST NOT 把主导航藏进没有入口的侧栏
+
 ### Requirement: 资源详情与修改必须使用独立操作
-Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读，并以统一的标签和值展示资源身份、稳定 metadata 与来源事实；技术信息 MUST 在折叠区内沿用相同的标签和值形式。修改稳定 metadata MUST 通过明确、独立的编辑操作和 URL 进入。Project 与 Service 详情 MUST NOT 内嵌所属关联资源的目录、卡片或跳转入口；关联资源跳转 MUST 由相应资源目录行的操作列提供。
+Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读，并以统一的标签和值展示资源身份、稳定 metadata 与来源事实；技术信息 MUST 在折叠区内沿用相同的标签和值形式。Project 编辑 MUST 从详情右上角的明确操作进入弹框，且 MUST NOT 改变当前详情 URL；Service 编辑仍可通过目录操作进入独立编辑 URL。Project 与 Service 详情 MUST NOT 内嵌所属关联资源的目录、卡片或跳转入口。Project 列表行 MUST 只展示标题与说明；Service 关联资源跳转 MUST 由服务目录行的操作列提供。
 
 #### Scenario: 查看只读资源详情
 - **WHEN** 用户打开 Project 或 Service 详情
@@ -461,21 +466,28 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 - **AND** 页面 MUST NOT 直接展示可编辑 input、textarea、保存按钮或关联资源跳转入口
 
 #### Scenario: 从资源目录开始修改
-- **WHEN** 用户在 Project 或 Service 目录中选择“编辑”操作
+- **WHEN** 用户在 Service 目录中选择“编辑”操作
 - **THEN** 页面 MUST 导航到对应资源的独立编辑 URL
 - **AND** 编辑页面 MUST 保持现有 metadata 白名单、revision CAS、迁移只读与反馈语义
 
+#### Scenario: 从项目详情开始修改
+- **WHEN** 用户打开项目详情
+- **THEN** 详情右上角 MUST 提供“编辑项目”操作
+- **AND** 该操作 MUST 打开编辑弹框且不离开当前详情 URL
+- **AND** 项目列表 MUST NOT 再提供编辑入口
+
 #### Scenario: 从资源目录访问关联资源
 - **WHEN** 用户查看任一 Project 行
-- **THEN** 操作列 MUST 仅提供该项目的服务目录入口
+- **THEN** 该行 MUST 只展示项目标题与说明
+- **AND** 进入详情 MUST 通过选择该行完成
 - **WHEN** 用户查看任一 Service 行
 - **THEN** 操作列 MUST 提供所属 Project 详情入口
 - **AND** Project 与 Service 详情 MUST NOT 重复提供这些关联资源跳转
 
 #### Scenario: 侧边栏指示当前资源
 - **WHEN** 用户打开项目、服务目录或其详情/编辑页
-- **THEN** 相应侧边栏资源项 MUST 显示明显的当前状态
-- **AND** 资源分组状态 MUST NOT 取代当前资源项的高亮
+- **THEN** 相应顶栏导航项 MUST 显示明显的当前状态
+- **AND** 其他导航项的样式 MUST NOT 取代当前资源项的高亮
 
 ### Requirement: 本机应用必须管理多个已登记 Workspace
 Buildr MUST 在现有 Workspace 产品能力中维护本机登记 root 列表，并 MUST 以各 root 的 `.buildr/workspace.yml` 作为 Workspace 信息的事实来源。
@@ -523,7 +535,7 @@ Buildr MUST 让 Workspace 内页面和 API 使用已登记 `workspaceId` 作为�
 - **AND** MUST NOT 回退到当前目录或其他 Workspace
 
 ### Requirement: 全局应用必须提供 Workspace 级应用外壳与路由
-Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供“开始”、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将 Workspace、Project、Service 作为核心路径，并将 Change 与后续资产能力放入次级区域。
+Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将任务、项目、服务、文章作为顶栏核心路径，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
 
 #### Scenario: 打开全局首页
 - **WHEN** 用户打开根路由
@@ -534,13 +546,16 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 进入 Workspace
 - **WHEN** 用户选择一个可用 Workspace
-- **THEN** 页面 MUST 导航到 `/workspaces/:workspaceId/` 下的 Workspace“开始”页
+- **THEN** 页面 MUST 导航到 `/workspaces/:workspaceId/tasks`
 - **AND** Workspace 内导航 MUST 保持该 `workspaceId` 上下文
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 将“开始”“项目”“服务”展示为核心区域
-- **AND** Service 视图 MUST 显示当前所属 Project，breadcrumb MUST 表达 Workspace、Project 与 Service 层级
+- **THEN** App Shell MUST 在顶栏将“任务”“项目”“服务”“文章”展示为核心导航
+- **AND** MUST NOT 将“开始”作为常驻主导航项
+- **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的任务列表
+- **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 重定向到任务列表
+- **AND** Service 视图 MUST 显示当前所属 Project，breadcrumb 或页头 MUST 表达 Workspace、Project 与 Service 层级
 - **AND** Change 与未来 Rules、Skills 等能力 MUST 进入次级区域但保持既有路由可访问
 
 #### Scenario: 保持既有深链接
@@ -555,7 +570,7 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 恢复最近使用项
 - **WHEN** 全局实例启动且最近使用的 Workspace 仍可用
-- **THEN** Buildr MUST 允许启动入口直接打开该 Workspace 的“开始”页
+- **THEN** Buildr MUST 允许启动入口直接打开该 Workspace 的任务列表
 - **AND** 最近使用状态 MUST NOT 写入 Workspace 源资产
 
 ### Requirement: 全局 Workspace 登记必须使用最小本机安全边界
@@ -784,29 +799,36 @@ Buildr Web Runtime MUST 只绑定 loopback、按需启动并复用现有随机�
 - **AND** Web/React 层 MUST NOT 直连 SQLite、复制 validator 或建立第二份业务状态
 
 ### Requirement: Buildr Web 必须以单实例本机 Web 服务运行
-Buildr MUST 启动或复用一个只监听 loopback 的全局本机 Web 服务，并 MUST 在服务就绪后打开默认浏览器。
+Buildr MUST为npm/released与development各启动或复用一个只监听loopback的channel-scoped本机Web服务，并 MUST在服务就绪后按调用选项打开默认浏览器。同一channel内 MUST保持单实例；不同channel MUST拥有独立Data Root、instance、启动锁和Workspace registry，且 MUST允许同时运行。
 
 #### Scenario: 首次启动 App
-- **WHEN** 当前用户没有健康的 Buildr Web 实例
-- **THEN** `buildr web` MUST 启动一个全局实例、记录可验证的 runtime state 并打开默认浏览器
+- **WHEN** 当前用户在目标channel没有健康的Buildr Web实例
+- **THEN** `buildr web` MUST在该channel Root启动一个实例、记录可验证runtime state并打开默认浏览器
+- **AND** MUST NOT复用或清理另一channel实例
 
 #### Scenario: 重复启动 App
-- **WHEN** 当前用户已经存在通过 Buildr health handshake 的实例
-- **THEN** 启动入口 MUST 复用已有实例并重新打开浏览器
-- **AND** MUST NOT 再启动一个 server
+- **WHEN** 当前channel已经存在通过Buildr health handshake且profile匹配的实例
+- **THEN** 启动入口 MUST复用已有实例并重新打开浏览器
+- **AND** MUST NOT再启动同channel的第二个server
+
+#### Scenario: 另一channel已有健康实例
+- **WHEN** released与development中的另一channel已有协议兼容的健康实例
+- **THEN** 当前channel MUST忽略该实例并在自己的Root启动或复用实例
+- **AND** MUST返回不同PID和loopback URL
 
 #### Scenario: 恢复陈旧实例状态
-- **WHEN** runtime state 指向不存在或无法通过带实例 secret 的 health handshake 的进程
-- **THEN** Buildr MUST 安全替换陈旧状态并启动新实例
-- **AND** MUST 保留持久 Workspace 登记列表
+- **WHEN** 当前channel runtime state指向不存在、无法通过带实例secret的health handshake或profile不匹配的进程
+- **THEN** Buildr MUST只在ownership可证明时安全替换当前channel陈旧状态并启动新实例
+- **AND** MUST保留当前channel Workspace登记列表及另一channel全部状态
 
 #### Scenario: 开发环境不打开浏览器
-- **WHEN** 调用方使用 `buildr web --no-open`
-- **THEN** Buildr MUST 启动或复用实例但 MUST NOT 打开浏览器
+- **WHEN** 调用方使用`buildr web --no-open`
+- **THEN** Buildr MUST启动或复用matching channel实例但 MUST NOT打开浏览器
 
 #### Scenario: 兼容指定 Workspace 启动
-- **WHEN** 调用方使用 `buildr web --target <workspace>`
-- **THEN** Buildr MUST 验证并登记该 Workspace、启动或复用全局实例，并打开其 Workspace route
+- **WHEN** 调用方使用`buildr web --target <workspace>`
+- **THEN** Buildr MUST先通过channel management fence验证并登记该Workspace，再启动或复用matching channel实例并打开其Workspace route
+- **AND** 冲突时 MUST在任何Workspace SQLite打开或migration之前失败
 
 ### Requirement: Buildr Web 首次启动必须引导建立 Workspace 上下文
 Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运行页面，解释 Workspace → Project → Service 最小模型，并 MUST 复用全局 Web 应用而不是在 installer 中维护第二套 Workspace 流程。
@@ -1172,17 +1194,17 @@ Buildr MUST 让 Launcher status 展示 channel、Buildr version、Host Node vers
 - **AND** MUST NOT 静默启动未知安装或暴露敏感参数
 
 ### Requirement: development 与 npm Launcher 必须安全独立更新
-Development launcher MUST 继续以 checkout-backed `Buildr Web Dev` 独立存在，并 MUST 与 npm-owned `Buildr Web` 使用不同名称、binding schema、target 与 ownership identity。两者都 MUST 是无 Node/源码复制的薄投射。
+Development launcher MUST继续以checkout-backed `Buildr Web Dev`独立存在，并 MUST与npm-owned `Buildr Web`使用不同名称、binding schema、target、ownership identity和默认Web Data Root。两者都 MUST是无Node/源码复制的薄投射，且 Launcher安装、更新、停止与重启 MUST只作用于matching channel实例。
 
 #### Scenario: 重建 development launcher
-- **WHEN** 当前 checkout identity 改变并执行 canonical development launcher 更新
-- **THEN** Buildr MUST 在 staging 验证 checkout、development Host Node、entry 与 Web readiness 后原子替换 `Buildr Web Dev`
-- **AND** MUST NOT 修改 npm-owned Launcher
+- **WHEN** 当前checkout identity改变并执行canonical development launcher更新
+- **THEN** Buildr MUST在staging验证checkout、development Host Node、entry、development profile与Web readiness后原子替换`Buildr Web Dev`
+- **AND** MUST NOT修改npm-owned Launcher、released instance或released Workspace registry
 
 #### Scenario: npm Launcher 更新
-- **WHEN** npm package update 刷新已存在 Launcher
-- **THEN** Buildr MUST 只刷新同 ownership npm binding
-- **AND** MUST NOT 修改 development checkout、runtime 或 `Buildr Web Dev`
+- **WHEN** npm package update刷新已存在Launcher
+- **THEN** Buildr MUST只刷新同ownership npm binding并继续使用released默认Root
+- **AND** MUST NOT修改development checkout、runtime、`Buildr Web Dev`或development instance
 
 ### Requirement: npm Launcher 卸载必须保留用户工作资产
 Launcher uninstall MUST 只移除 Launcher target、binding、owned shortcut metadata 与 Launcher 自身日志索引，并 MUST 保留 npm installation 与全部 Workspace/Agent/user data。
@@ -1253,3 +1275,16 @@ Buildr Web Runtime MUST 提供不依赖 Workspace 的全局只读 Release Awaren
 - **WHEN** 客户端尝试通过 Release Awareness API提交 npm 更新
 - **THEN** Buildr Web Runtime MUST不登记对应写路由
 - **AND** 用户只能复制命令或把选择交给 Agent
+
+### Requirement: 本机 HTTP 必须提供只读每日演进 API
+Buildr Web Runtime MUST 提供 Project-scoped 与 Task-scoped 只读每日演进 API，在解析已登记 Workspace 后读取 `.buildr/daily-progress/` 中已保存 YAML，并解析本机 Task Record 摘要。API MUST 复用既有同源、session 与未知字段拒绝边界，MUST NOT 接受文件系统路径、MUST NOT 写入或删除演进文件，MUST NOT 创建 Task，也 MUST NOT 在 GET 时扫描 Git 或读取 `git config user.email`。
+
+#### Scenario: 读取某 Project 某日演进
+- **WHEN** 已认证请求读取已登记 Project 的存在日期
+- **THEN** HTTP interface MUST 调用 Daily Progress Application inspect
+- **AND** 响应 MUST 包含日摘要、提交、变更文件与可导航 Task 摘要
+
+#### Scenario: 按 Task 反查
+- **WHEN** 已认证请求读取某 Task 关联的每日演进
+- **THEN** API MUST 只返回本机文件中引用该 Task ID 的提交或摘要条目
+- **AND** MUST NOT 扫描 Git 或合成不存在的日期文件

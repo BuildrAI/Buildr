@@ -491,11 +491,46 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: declaration-intake
-  - id: ui-visual-redesign
-    path: ui-visual-redesign
-    description: 用户要求 Local App 或产品 Web UI 重构、换肤、视觉方向调整、杂志感/产品感改版，或引入/更换前端组件库（如 Ant Design）时使用；在编码前强制审美闸门，并在引入组件库时执行 CSP、依赖与 Environment re-prepare 硬清单。
-    assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:ui-visual-redesign
-    sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:ui-visual-redesign
+  - id: ui-preview
+    assetIdentity: buildr:skill:ui-preview
+    sourceIdentity: package:skills/buildr/ui-preview
+    source: buildr
+    path: buildr/ui-preview
+    description: 用户已明确确认需要在正式前端开发前查看本次提案实施后的完整页面预演时使用；调查现有真实界面，生成并在浏览器验证一个或多个自包含 HTML。未明确确认时不得使用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: ui-preview
+  - id: project-daily-progress
+    assetIdentity: buildr:skill:project-daily-progress
+    sourceIdentity: package:skills/buildr/project-daily-progress
+    source: buildr
+    path: buildr/project-daily-progress
+    description: 用户要求展示、生成或重跑某 Project 的每日演进，或询问能否每天自动执行时使用；先同步最新代码，再收集当日 Git 提交与更改文件，由 Agent 总结四问后通过 CLI 写入本机文件。读取路径不扫描 Git、不写 Task Record、不提供产品 cron。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: project-daily-progress
+    requires:
+      - capability: buildr.git-operations
+        version: 1
+        mode: optional
 contracts:
   - id: buildr.terminology-governance
     version: 1

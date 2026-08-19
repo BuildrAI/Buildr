@@ -170,7 +170,7 @@ test('formal npm entry fails closed before enrollment when receipt and payload i
     const result = spawnSync(process.execPath, [path.join(packageRoot, 'bin/buildr.mjs'), '--help'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, PATH: '', BUILDR_APP_DATA_DIR: appData },
+      env: { ...process.env, PATH: '', BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: appData },
     });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Formal npm Buildr entry has no application-payload-bound installation origin/);
@@ -196,6 +196,7 @@ test('npm global postinstall enrolls identity-bound update authority for two pre
           ...process.env,
           PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
           BUILDR_APP_DATA_DIR: appData,
+          BUILDR_PRODUCT_DATA_DIR: appData,
           npm_config_cache: npmCache,
           npm_config_update_notifier: 'false',
         },
@@ -220,7 +221,7 @@ test('npm global postinstall enrolls identity-bound update authority for two pre
       const help = spawnSync(process.execPath, [entry, '--help'], {
         cwd: root,
         encoding: 'utf8',
-        env: { ...process.env, PATH: '', BUILDR_APP_DATA_DIR: appData },
+        env: { ...process.env, PATH: '', BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_DIR: appData },
       });
       assert.equal(help.status, 0, help.stderr);
     }
@@ -255,6 +256,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
       ...process.env,
       PATH: process.platform === 'win32' ? process.env.SystemRoot : '/usr/bin:/bin',
       BUILDR_APP_DATA_DIR: appData,
+      BUILDR_PRODUCT_DATA_DIR: appData,
     };
     const run = (args) => spawnSync(process.execPath, [cli, ...args], { cwd: root, env: runtimeEnv, encoding: 'utf8' });
     const help = run(['--help']);

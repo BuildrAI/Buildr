@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+
+import { readCurrentProductIdentity } from '../product-identity/current-product-identity.mjs';
+import { productDataRoot, resolveWebProfile } from '../product-identity/web-profile.mjs';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
@@ -12,9 +14,7 @@ function registryRevision(content) {
 
 export function localAppDataRoot({ respectOverride = true } = {}) {
   if (respectOverride && process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'Buildr');
-  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Buildr');
-  return path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'buildr');
+  return productDataRoot({ respectOverride: false });
 }
 
 function emptyRegistry() {
@@ -38,22 +38,39 @@ function canonicalRegistry(value, label) {
   return { schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots, lastOpenedRoot };
 }
 
-export function registerWorkspaceRegistryRepository(runtime) {
+export function readWorkspaceRegistryFile(file) {
+  const resolved = path.resolve(file);
+  if (!fs.existsSync(resolved)) return { file: resolved, status: 'absent', registry: emptyRegistry(), reason: null };
+  let value;
+  try { value = JSON.parse(fs.readFileSync(resolved, 'utf8')); } catch (error) {
+    return { file: resolved, status: 'invalid', registry: null, reason: `workspace-registry.json is invalid JSON: ${error.message}` };
+  }
+  try {
+    return { file: resolved, status: 'ready', registry: canonicalRegistry(value, 'workspace-registry.json'), reason: null };
+  } catch (error) {
+    return { file: resolved, status: 'invalid', registry: null, reason: error.message };
+  }
+}
+
+export function registerWorkspaceRegistryRepository(runtime, options = {}) {
+  const productIdentity = options.productIdentity || readCurrentProductIdentity();
+  const webProfile = options.webProfile || resolveWebProfile(productIdentity, options);
+
   function workspaceRegistryPath() {
-    return path.join(localAppDataRoot(), 'workspace-registry.json');
+    return path.join(webProfile.dataRoot, 'workspace-registry.json');
   }
 
   function readWorkspaceRegistryPersistence() {
     const file = workspaceRegistryPath();
-    if (!fs.existsSync(file)) {
+    const observed = readWorkspaceRegistryFile(file);
+    if (observed.status === 'absent') {
       const registry = emptyRegistry();
       const content = `${JSON.stringify(registry, null, 2)}\n`;
       return { file, content, revision: registryRevision(content), registry };
     }
+    if (observed.status === 'invalid') throw new Error(observed.reason);
     const content = fs.readFileSync(file, 'utf8');
-    let value;
-    try { value = JSON.parse(content); } catch (error) { throw new Error(`workspace-registry.json is invalid JSON: ${error.message}`); }
-    return { file, content, revision: registryRevision(content), registry: canonicalRegistry(value, 'workspace-registry.json') };
+    return { file, content, revision: registryRevision(content), registry: observed.registry };
   }
 
   function writeWorkspaceRegistry(file, registry) {
@@ -92,6 +109,9 @@ export function registerWorkspaceRegistryRepository(runtime) {
   }
 
   Object.assign(runtime, {
+    currentWebProfile: () => webProfile,
+    currentProductIdentity: () => productIdentity,
+    readWorkspaceRegistryFile,
     workspaceRegistryPath,
     readWorkspaceRegistryPersistence,
     writeWorkspaceRegistry,

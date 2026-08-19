@@ -18,6 +18,7 @@ const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const windowsRuntimeSource = process.platform === 'win32' ? path.dirname(fs.realpathSync(process.execPath)) : null;
 const runtimeEnv = {
   BUILDR_APP_DATA_DIR: appData,
+  BUILDR_PRODUCT_DATA_DIR: appData,
   npm_config_cache: npmCache,
   npm_config_update_notifier: 'false',
 };

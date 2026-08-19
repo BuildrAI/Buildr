@@ -20,6 +20,12 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
+### UI Preview 选择
+
+若当前 Task、提案或预期实现可能产生用户可见的前端 UI 变化，向用户询问：“本次是否需要先生成界面预演稿（UI Preview）？”询问只负责取得选择，不生成文件，也不改变语义治理或执行形态判断。
+
+只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载独立 `ui-preview` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Preview 不替代 OpenSpec Change、Planning Review 或正式实现。
+
 ## 2. 两轴决策
 
 ### 语义治理
@@ -62,11 +68,13 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ### 从 Parent 规划项启动独立 Child Task
 
-当用户选择 active Parent Task 中的某个Contribution作为独立 Child Task 实施时，先调用`task parent inspect`读取current Parent Plan、Contribution、依赖与适用Planning Review，从中提取该 Child 的稳定 intent、实际Project/Service scope、边界和验收目标。Parent导引只作为Child启动输入；Parent/Child关系不表达Git继承、Change共享或专业状态传播。legacy Parent不得被自动转换或从旧Change/checkbox推断Contribution。
+当用户准备把active Parent推进到首个Child前，先调用`buildr task next <parent-task-id>`，并严格消费它返回的单一next：缺Environment就准备Parent Environment，缺Development就begin，缺Plan就record，Planning Review未current就审查，Review尚未被Development采用就调用公开的`task parent refresh-planning`。只有next为`start-child-contribution`时，才从`eligibleContributions`选择一个Contribution进入Child创建；不要把其他依赖尚未满足的Contribution当成整体阻塞，也不要为未来Child提前准备Environment。
+
+当用户选择eligible Contribution作为独立 Child Task 实施时，再调用`task parent inspect`读取current Parent Plan、Contribution、依赖与适用Planning Review，从中提取该 Child 的稳定 intent、实际Project/Service scope、边界和验收目标。Parent导引只作为Child启动输入；Parent/Child关系不表达Git继承、Change共享或专业状态传播。legacy Parent不得被自动转换或从旧Change/checkbox推断Contribution。
 
 Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初始不引用Parent Change；`0..N` Change允许此时保持空列表。取得Child自己的matching ready Environment并调用selected `buildr.task-development/v2` provider建立研发事实后，用`task parent bind-child`绑定planned Contributions，才在Child execution root中创建该独立目标自己的窄Change，通过Task Record update添加引用，并刷新Development planning snapshot与适用Planning Review。不得把Parent Change、Parent worktree、branch、Environment Receipt或Development事实复制或继承为Child authority。
 
-如果Child真实依赖Parent尚未交付的代码，必须在Parent active时先建立Parent/Child关系，但延后Child Environment prepare；Parent完成正式Finish且贡献进入最新`dev`后，再从收敛后的canonical `dev`准备Child Environment。不得通过从Parent worktree派生Child checkout或提前共享未归档Change绕过该顺序。
+如果Child真实依赖Parent尚未交付的代码、文档或其他authority，先在Parent Plan中表达依赖并完成前置Contribution；可以先保留Child意向，但必须延后Child Environment prepare。前置贡献完成正式Finish且进入最新`dev`等canonical baseline后，再从收敛后的baseline准备Child Environment。不得通过从Parent worktree派生Child checkout、复制Parent Environment Receipt或提前共享未归档Change绕过该顺序。
 
 ### 新正式 Task 创建前收敛统一 dev 基线
 

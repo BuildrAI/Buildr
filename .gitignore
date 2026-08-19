@@ -23,6 +23,10 @@ CLAUDE.local.md
 /.buildr/tasks/*/environment.json
 # Workspace local structured data
 /.buildr/local/
+# Producer-owned machine-local transient evidence
+/.buildr/transient/
 # Task machine-local state
 /.buildr/tasks/
 # Retired Task asset review data remains untracked
+# Project daily progress machine-local state
+/.buildr/daily-progress/

@@ -249,26 +249,29 @@ Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coo
 - **AND** MUST保持原Task read model兼容
 
 ### Requirement: Task Finish run 必须提供 portable execution record operation summary
-`buildr task finish run|inspect --json` MUST按`--detail compact|full`返回不同且稳定的公开JSON投影。缺省或显式`--detail compact` MUST返回closed `buildr.task-finish-compact-result/v1`；显式`--detail full` MUST继续输出既有`buildr.task-finish-result/v2`。compact MUST保留Task/run/status、current phase、Development handoff、Candidate/generation、Content Target、主失败、唯一next workflow/action、matching resume、关键carrier/target/remote refs、delivery/completion disposition、阶段与总体timing，以及run调用可用的portable`executionRecord` summary；MUST NOT透传完整checks、operations、observations、stdout/stderr、diagnostics正文、本机locator或未登记字段。full payload的字段与语义 MUST保持兼容。
+`buildr task finish run|inspect --json` MUST按`--detail compact|full`返回不同且稳定的公开JSON投影。缺省或显式`--detail compact` MUST继续返回closed `buildr.task-finish-compact-result/v1`；显式`--detail full` MUST返回canonical `buildr.task-finish-result/v3`。v3 MUST以排序的Environment repository set及repository-scoped contribution、carrier、equivalence、delivery与cleanup state作为多仓库authority，并提供repository set、carrier set与delivery set identity；顶层单值carrier、target与delivery只能投影当前failure repository、适用Workspace repository或唯一有贡献repository，MUST NOT伪装跨repository聚合事实。compact MUST保持既有closed字段集合和语义，不新增repository数组、absolute path、lease或恢复token之外的内部owner事实。
 
-`executionRecord` summary MUST表达`not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、diagnostics transient cleanup、diagnostic与next action。compact与full均 MUST NOT暴露SQLite/database、body或transient locator、本机持久路径、Carrier绝对路径、remote credential、lease或resource token，也 MUST NOT把execution record解释为Finish current、delivery、Task terminal或Result adoption authority。`task finish inspect --json` MUST保持pure Finish read model且不添加record列表或正文。
-
-当`buildr task finish run --json`在创建run之前因入口聚合缺口失败时，CLI MUST输出`buildr.cli-error/v1`，且`error.code` MUST为`task_finish.entry_gaps`；`error.details.gaps` MUST包含`development`、`environment`、`delivery`三个数组（可空），每项至少含既有`code`与`message`；若`development`非空，`suggestions`或等价next指示 MUST指向`task-development`。该失败路径 MUST NOT返回伪Finish run result或`executionRecord`。
-
-#### Scenario: 缺省 compact 输出
-- **WHEN** Agent执行`task finish run|inspect --json`且没有显式`--detail`
-- **THEN** CLI MUST返回`buildr.task-finish-compact-result/v1`与`detail: compact`
-- **AND** payload MUST只包含closed compact字段，不得与full payload逐字相同
+旧`buildr.task-finish-result/v2` MUST继续支持有界读取和compact投影，但新run MUST只写v3。compact与full均 MUST NOT把Execution Record、repository set identity或兼容单值投影视为新的Finish current、delivery、Task terminal或Result adoption authority。
 
 #### Scenario: 显式 full 输出
-- **WHEN** Agent执行`task finish run|inspect --detail full --json`
-- **THEN** CLI MUST返回兼容的`buildr.task-finish-result/v2`
-- **AND** 现有完整phase、delivery、completion与diagnostic facts MUST保持可用
+- **WHEN** Agent执行`task finish run|inspect --detail full --json`读取新repository-set run
+- **THEN** CLI MUST返回`buildr.task-finish-result/v3`及排序的repository-scoped states和set identities
+- **AND** 多个有贡献repository时 MUST不以顶层单值carrier或delivery伪装完整集合
+
+#### Scenario: 缺省 compact 输出
+- **WHEN** 同一v3 Result以缺省或显式`--detail compact`读取
+- **THEN** CLI MUST继续返回closed `buildr.task-finish-compact-result/v1`与`detail: compact`
+- **AND** MUST不暴露repository数组、本机locator或SQLite/lease内部事实
+
+#### Scenario: 旧 v2 Result 有界读取
+- **WHEN** inspect读取合法的旧`buildr.task-finish-result/v2`
+- **THEN** Product MUST保持既有full事实可读并可生成兼容compact投影
+- **AND** MUST不把旧singleton事实猜测扩展为多repository delivery
 
 #### Scenario: Finish invocation retained
 - **WHEN** 一次实际执行的Finish invocation已terminal seal且record retained
 - **THEN** run compact JSON MUST返回portable record ID、outcome、lifecycle、body digest/size/truncated与diagnostics cleanup disposition
-- **AND** 顶层Finish status、failure、resume与delivery facts MUST继续由`task_finish_current`决定
+- **AND** 顶层Finish status、failure、resume与repository delivery facts MUST继续由`task_finish_current`决定
 
 #### Scenario: record open backpressure
 - **WHEN** record quota reservation在任何Finish execution side effect前被拒绝
@@ -476,3 +479,76 @@ Public JSON registry、command registry、help、schema guard与checkout/npm par
 - **WHEN** unknown outcome 授权成功终结原 record
 - **THEN** JSON MUST返回 `status: attention`、`mode: authorized-unknown` 与 `outcome: unknown`
 - **AND** MUST明确该 record 不是 Verification Result且后续普通 invocation 可重新执行
+
+### Requirement: Parent启动就绪与refresh结果必须登记公开JSON identity
+Buildr MUST为Parent启动就绪投影和planning refresh operation登记closed public JSON shape，并在Application、CLI、schema registry、contract guard与checkout/npm parity中保持一致；payload MUST不暴露Review正文、完整Development Receipt、SQLite locator或本机绝对路径。
+
+#### Scenario: Parent启动就绪JSON parity
+- **WHEN** checkout与npm package读取同一Parent启动事实
+- **THEN** 两者 MUST返回相同schema identity、status、checks、blockers、eligible Contributions与next语义
+- **AND** effects MUST为空
+
+#### Scenario: Parent refresh JSON parity
+- **WHEN** checkout与npm package对满足条件的Parent执行planning refresh
+- **THEN** 两者 MUST返回相同operation status、Plan/Review applicability、Development effect摘要与后续启动就绪语义
+- **AND** 任一surface缺少registry或关键字段guard时package verification MUST失败
+
+### Requirement: Task Finish 必须提供稳定的自举输入公开投影
+`buildr task finish run|inspect --detail self-bootstrap --json` MUST 返回 `buildr.task-finish-self-bootstrap-input/v1`。该投影 MUST 由 Product 从当前及有界支持的旧 canonical Task Finish Result 归一化生成，且 MUST 使用稳定字段表达 Task/run/Workspace/target identity、Finish status/mode、self-bootstrap applicability、Workspace repository、排序的 repository carrier 集合、run-owned carrier container、activation paths、delivery refs、resume、Delivery Adaptation 与 cleanup facts；MUST NOT 要求消费者识别内部 `buildr.task-finish-result/v<major>` 结构。
+
+#### Scenario: 当前多仓库 Result 形成稳定投影
+- **WHEN** Agent 对 `buildr.task-finish-result/v3` current run 执行 `task finish inspect --detail self-bootstrap --json`
+- **THEN** CLI MUST 返回 `buildr.task-finish-self-bootstrap-input/v1`
+- **AND** payload MUST 唯一标识 Workspace repository、全部实际 repository carriers 及其共同 run container
+
+#### Scenario: 旧单仓库 Result 形成相同契约
+- **WHEN** Product 读取仍在有界兼容范围内的 `buildr.task-finish-result/v2`
+- **THEN** projector MUST 把单 carrier 与 activation facts 归一化为同一个 self-bootstrap v1 模型
+- **AND** runner 所需字段的名称、类型与语义 MUST 与 v3 投影一致
+
+#### Scenario: resume 继续使用稳定投影
+- **WHEN** Agent 以 matching resume token 执行 `task finish run --detail self-bootstrap --json`
+- **THEN** 成功、blocked、target-race 或 Delivery Adaptation Result MUST 继续返回 self-bootstrap v1
+- **AND** 调用方 MUST NOT切换到 full Result 才能决定下一动作
+
+### Requirement: 自举输入版本必须独立于内部 Finish Result 演进
+`buildr.task-finish-self-bootstrap-input/v1` 同 major 内 MUST 只做 additive 扩展，消费者 MUST 忽略未知字段并严格验证已知必需字段。内部 Task Finish Result 升级但 self-bootstrap 语义未变时 MUST 只扩展 Product projector；不兼容的 self-bootstrap 字段或语义变化 MUST 发布新的投影 major。未知投影 major 或无法完整归一化的内部 Result MUST 在任何 consumer effect 前 fail closed。
+
+#### Scenario: 内部 Result 升级但自举语义不变
+- **WHEN** Product 支持新的内部 Task Finish Result major，且所需 self-bootstrap 语义仍可无损映射到 v1
+- **THEN** CLI MUST 继续输出 `buildr.task-finish-self-bootstrap-input/v1`
+- **AND** bundled runner MUST 无需识别新的内部 Result identity
+
+#### Scenario: 同 major 出现新增字段
+- **WHEN** runner 读取包含未知 additive 字段的 self-bootstrap v1 payload
+- **THEN** runner MUST 忽略未知字段并继续严格校验所有已知必需语义
+
+#### Scenario: 自举语义发生不兼容变化
+- **WHEN** Product 无法把内部 Result 无损投影为 self-bootstrap v1，或 runner 收到未知投影 major
+- **THEN** CLI 或 runner MUST 返回稳定 diagnostic 并保持零 effect
+- **AND** MUST NOT回退为解析 raw Task Finish Result
+
+### Requirement: self-bootstrap detail 必须纳入公开 JSON coverage
+Public JSON schema registry、CLI command registry、help、schema validation 与 checkout/npm parity MUST 同时登记 `task finish run|inspect --detail self-bootstrap`。既有缺省/显式 `compact` 与 `full` MUST 保持现有 schema identity、字段与退出语义。
+
+#### Scenario: registry 遗漏 self-bootstrap detail
+- **WHEN** CLI 已接受 `--detail self-bootstrap`，但 schema registry、关键字段 guard 或 checkout/npm parity 缺少任一 run/inspect 路径
+- **THEN** Product verification MUST 失败并报告缺失 coverage
+
+#### Scenario: 既有 detail 不受影响
+- **WHEN** Agent 请求缺省或显式 `compact`，或显式 `full`
+- **THEN** CLI MUST 分别保持 `buildr.task-finish-compact-result/v1` 与 canonical Task Finish Result identity
+- **AND** MUST NOT把 self-bootstrap 专用字段加入既有 closed compact payload
+
+### Requirement: 每日演进 JSON 必须声明稳定 schema identity
+Buildr 每日演进 CLI 与本机 HTTP 的 `--json` / JSON 响应 MUST 在顶层声明非空 `schemaVersion`，并为 record、inspect、list 与 Web 读取使用稳定 `buildr.<payload>/v<major>` identity。同一 major 内 MUST 只做兼容扩展。payload MUST 包含 Project、日期、日摘要四问、提交（作者、`authorship`、可选 Task 关联）、变更文件与未解析 Task 引用；MUST NOT 暴露本机绝对路径、SQLite 路径或 Git working tree path。Task 关联计数 MAY 为 0。
+
+#### Scenario: Agent 读取 record JSON
+- **WHEN** Agent 成功执行每日演进 `record --json`
+- **THEN** 输出 MUST 是单一 JSON 对象并包含匹配的 `schemaVersion`
+- **AND** MUST 报告 Project、日期、提交计数和 Task 关联计数
+
+#### Scenario: inspect 包含未解析 Task
+- **WHEN** 已保存文件引用的 Task 在读取时已不存在
+- **THEN** JSON MUST 将该引用标为未解析
+- **AND** MUST NOT 删除文件中的 Task ID

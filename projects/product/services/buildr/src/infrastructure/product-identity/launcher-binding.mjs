@@ -7,16 +7,21 @@ import { inspectProductUpdateAuthority, validateProductInstallationRegistryEntry
 import { validateFormalInstallationOriginPayloadBinding, validateInstallationOrigin } from './installation-origin.mjs';
 import { readApplicationPayloadManifest } from '../product-resources/index.mjs';
 
-export const NPM_LAUNCHER_BINDING_SCHEMA = 'buildr.npm-launcher-binding/v1';
+export const NPM_LAUNCHER_BINDING_SCHEMA = 'buildr.npm-launcher-binding/v2';
+export const DEFAULT_NPM_LAUNCHER_WEB_PORT = 4457;
+
+const LEGACY_NPM_LAUNCHER_BINDING_SCHEMA = 'buildr.npm-launcher-binding/v1';
 
 const BINDING_FIELDS = new Set([
   'schemaVersion', 'channel', 'platform', 'target', 'bindingPath', 'package', 'version',
   'protocolIdentity', 'applicationPayloadDigest', 'sourceCommit', 'installationOwnershipIdentity',
   'installationSlotIdentity', 'launcherOwnershipIdentity', 'packageRoot', 'prefix', 'originEnvelope',
-  'hostNode', 'packageEntry', 'bindingIdentity',
+  'hostNode', 'packageEntry', 'webPort', 'bindingIdentity',
 ]);
+const LEGACY_BINDING_FIELDS = new Set([...BINDING_FIELDS].filter((field) => field !== 'webPort'));
 const FILE_IDENTITY_FIELDS = new Set(['path', 'version', 'sha256']);
 const ENTRY_IDENTITY_FIELDS = new Set(['path', 'sha256']);
+const WEB_PORT_FIELDS = new Set(['preferred', 'fallback']);
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -42,9 +47,19 @@ function sha256(value, label) {
   return value;
 }
 
+export function normalizeNpmLauncherWebPort(value = DEFAULT_NPM_LAUNCHER_WEB_PORT) {
+  const policy = typeof value === 'number' ? { preferred: value, fallback: 'random' } : value;
+  closed(policy, WEB_PORT_FIELDS, 'npm launcher web port policy');
+  if (!Number.isInteger(policy.preferred) || policy.preferred < 0 || policy.preferred > 65535) {
+    throw new Error(`Invalid npm Launcher port: ${policy.preferred}.`);
+  }
+  if (policy.fallback !== 'random') throw new Error(`Unsupported npm Launcher port fallback: ${policy.fallback}.`);
+  return Object.freeze({ preferred: policy.preferred, fallback: 'random' });
+}
+
 function bindingMaterial(value) {
-  return {
-    schemaVersion: NPM_LAUNCHER_BINDING_SCHEMA,
+  const material = {
+    schemaVersion: value.schemaVersion,
     channel: value.channel,
     platform: value.platform,
     target: path.resolve(value.target),
@@ -70,6 +85,8 @@ function bindingMaterial(value) {
       sha256: value.packageEntry.sha256,
     },
   };
+  if (value.schemaVersion === NPM_LAUNCHER_BINDING_SCHEMA) material.webPort = normalizeNpmLauncherWebPort(value.webPort);
+  return material;
 }
 
 export function npmLauncherInstallationSlotIdentity(value) {
@@ -83,18 +100,21 @@ export function npmLauncherInstallationSlotIdentity(value) {
 
 export function npmLauncherOwnershipIdentity(value) {
   return digest(JSON.stringify({
-    schemaVersion: NPM_LAUNCHER_BINDING_SCHEMA,
+    schemaVersion: value.schemaVersion,
     platform: value.platform,
     target: path.resolve(value.target),
     installationSlotIdentity: value.installationSlotIdentity,
   }));
 }
 
-export function validateNpmLauncherBinding(value) {
-  closed(value, BINDING_FIELDS, 'npm launcher binding');
+export function validateNpmLauncherBinding(value, options = {}) {
+  const legacy = value?.schemaVersion === LEGACY_NPM_LAUNCHER_BINDING_SCHEMA;
+  if (legacy && !options.allowLegacy) throw new Error(`Unsupported npm launcher binding schema: ${value.schemaVersion}.`);
+  if (!legacy && value?.schemaVersion !== NPM_LAUNCHER_BINDING_SCHEMA) throw new Error(`Unsupported npm launcher binding schema: ${value?.schemaVersion || '<missing>'}.`);
+  closed(value, legacy ? LEGACY_BINDING_FIELDS : BINDING_FIELDS, 'npm launcher binding');
   closed(value.hostNode, FILE_IDENTITY_FIELDS, 'npm launcher Host Node identity');
   closed(value.packageEntry, ENTRY_IDENTITY_FIELDS, 'npm launcher package entry identity');
-  if (value.schemaVersion !== NPM_LAUNCHER_BINDING_SCHEMA) throw new Error(`Unsupported npm launcher binding schema: ${value.schemaVersion || '<missing>'}.`);
+  if (!legacy) normalizeNpmLauncherWebPort(value.webPort);
   if (value.channel !== 'npm') throw new Error('npm launcher binding channel must be npm.');
   if (!['darwin', 'win32'].includes(value.platform)) throw new Error(`Unsupported npm launcher platform: ${value.platform}.`);
   for (const field of ['package', 'version', 'protocolIdentity', 'sourceCommit']) {
@@ -118,7 +138,7 @@ export function validateNpmLauncherBinding(value) {
   return Object.freeze({ ...material, bindingIdentity: expectedBinding });
 }
 
-export function createNpmLauncherBinding({ registration, platform, target, bindingPath }) {
+export function createNpmLauncherBinding({ registration, platform, target, bindingPath, webPort = DEFAULT_NPM_LAUNCHER_WEB_PORT }) {
   if (registration?.status !== 'installed' || !registration.entry) throw new Error('npm launcher requires an installed, registry-proven npm installation.');
   const entry = validateProductInstallationRegistryEntry(registration.entry);
   if (entry.origin.channel !== 'npm') throw new Error(`npm launcher cannot bind installation channel ${entry.origin.channel}.`);
@@ -164,6 +184,7 @@ export function createNpmLauncherBinding({ registration, platform, target, bindi
       path: entry.entryPath,
       sha256: fileDigest(entry.entryPath),
     },
+    webPort: normalizeNpmLauncherWebPort(webPort),
   };
   material.launcherOwnershipIdentity = npmLauncherOwnershipIdentity(material);
   return validateNpmLauncherBinding({ ...material, bindingIdentity: digest(JSON.stringify(bindingMaterial(material))) });
@@ -175,7 +196,7 @@ function drift(code, message, binding) {
 
 export function inspectNpmLauncherBinding(value, options = {}) {
   let binding;
-  try { binding = validateNpmLauncherBinding(value); } catch (error) {
+  try { binding = validateNpmLauncherBinding(value, { allowLegacy: true }); } catch (error) {
     return { status: 'invalid', code: 'launcher.binding_invalid', message: error.message, binding: null };
   }
   if (options.target && !sameFilesystemPath(binding.target, options.target)) return drift('launcher.target_drift', 'Launcher target differs from its binding.', binding);
@@ -207,6 +228,9 @@ export function inspectNpmLauncherBinding(value, options = {}) {
   if (mismatch) return drift('launcher.installation_identity_drift', `Launcher ${mismatch[0]} identity differs from the npm installation.`, binding);
   if (!fs.statSync(binding.packageRoot, { throwIfNoEntry: false })?.isDirectory()) return drift('launcher.package_root_drift', `Buildr package root is unavailable: ${binding.packageRoot}.`, binding);
   if (!fs.statSync(binding.prefix, { throwIfNoEntry: false })?.isDirectory()) return drift('launcher.prefix_drift', `npm prefix is unavailable: ${binding.prefix}.`, binding);
+  if (binding.schemaVersion === LEGACY_NPM_LAUNCHER_BINDING_SCHEMA) {
+    return drift('launcher.binding_legacy', 'npm Launcher binding uses legacy schema v1; run repair to migrate it.', binding);
+  }
   return { status: 'ready', code: null, message: null, binding };
 }
 

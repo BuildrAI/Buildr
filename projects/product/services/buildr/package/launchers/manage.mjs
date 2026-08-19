@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildLauncher } from './build.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
 
 const PRODUCT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -61,12 +62,10 @@ function namedTargetPath(platform, name, installRoot = defaultInstallRoot(platfo
 }
 function targetPath(platform, channel, installRoot = defaultInstallRoot(platform)) { return namedTargetPath(platform, appName(channel), installRoot); }
 function legacyTargetPath(platform, channel, installRoot = defaultInstallRoot(platform)) { return namedTargetPath(platform, legacyAppName(channel), installRoot); }
-function appDataRoot() {
-  if (process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'Buildr');
-  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Buildr');
+function appDataRoot(platform = process.platform) {
+  return resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { platform }).dataRoot;
 }
-function runningInstance() { try { return JSON.parse(fs.readFileSync(path.join(appDataRoot(), 'instance.json'), 'utf8')); } catch { return null; } }
+function runningInstance(platform = process.platform) { try { return JSON.parse(fs.readFileSync(path.join(appDataRoot(platform), 'instance.json'), 'utf8')); } catch { return null; } }
 function identityPath(target, platform) { return platform === 'darwin' ? path.join(target, 'Contents', 'Resources', 'launcher-identity.json') : path.join(target, 'launcher-identity.json'); }
 function readIdentity(target, platform) { try { return JSON.parse(fs.readFileSync(identityPath(target, platform), 'utf8')); } catch { return null; } }
 function ownedLauncher(target, platform, channel) {
@@ -91,7 +90,7 @@ function ownedLauncher(target, platform, channel) {
 function buildIdentity(platform, channel) {
   assertDevelopmentChannel(channel);
   const checkout = checkoutIdentity();
-  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, platform, builtAt: new Date().toISOString(), checkout };
+  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, runtimeRole: 'development', source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, protocolIdentity: 'buildr.web-protocol/v1', platform, builtAt: new Date().toISOString(), checkout };
   const runtime = developmentRuntime(process.execPath);
   return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, developmentRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source, identity: runtime.identity } };
 }
@@ -192,7 +191,7 @@ export function launcherStatus({ platform = process.platform, channel = 'develop
   assertDevelopmentChannel(channel);
   const target = targetPath(platform, channel, installRoot);
   const legacyTarget = legacyTargetPath(platform, channel, installRoot);
-  const instance = runningInstance();
+  const instance = runningInstance(platform);
   const current = ownedLauncher(target, platform, channel);
   const legacy = ownedLauncher(legacyTarget, platform, channel);
   const diagnostics = [current.diagnostic, legacy.diagnostic, ...launcherDiagnostics(current.identity)].filter(Boolean);
@@ -200,6 +199,7 @@ export function launcherStatus({ platform = process.platform, channel = 'develop
     schemaVersion: 'buildr.launcher-status/v1',
     platform,
     channel,
+    dataRoot: appDataRoot(platform),
     target,
     present: current.present,
     installed: current.owned,

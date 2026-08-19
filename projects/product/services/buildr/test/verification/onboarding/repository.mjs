@@ -98,6 +98,7 @@ try {
     BUILDR_CLI_INSTALL_DIR: installBin,
     BUILDR_LAUNCHER_INSTALL_DIR: launcherRoot,
     BUILDR_APP_DATA_DIR: appDataRoot,
+    BUILDR_PRODUCT_DATA_DIR: appDataRoot,
     PATH: `${installBin}${path.delimiter}${process.env.PATH || ''}`,
   };
   fs.mkdirSync(installBin, { recursive: true });

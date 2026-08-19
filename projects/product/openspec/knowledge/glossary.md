@@ -34,14 +34,14 @@
 
 - 定义：Workspace中以文件和目录承载的portable或writer-owned事实，包括manifests、Rules、Skills、Specs及专业Task records。
 - 适用范围：需要文件发现、审阅、Git版本化或独立writer ownership的工作资产与记录。
-- 避免混用：不是Workspace内所有文件的统称，也不包含local-only SQLite structured data。
+- 避免混用：不是Workspace内所有文件的统称，也不包含local-only SQLite structured data，以及被 Git 忽略的本机每日演进 YAML。
 - 来源：[技术架构](architecture/technical.md)
 
 ## Workspace Structured Store
 
 - 定义：Buildr Local为每个canonical Workspace维护的独立SQLite，用于索引、关系、聚合和事务特征明显的结构化数据。
 - 适用范围：`.buildr/local/workspace.sqlite`及其版本化SQL migration lifecycle；Task Record是首个consumer。
-- 避免混用：不是同步数据库、portable asset或组织协作authority；不得把SQLite文件上传或复制为Buildr Server/Cloud协议。
+- 避免混用：不是同步数据库、portable asset或组织协作authority；不得把SQLite文件上传或复制为Buildr Server/Cloud协议。项目每日演进不进入该库。
 - 来源：[技术架构](architecture/technical.md)
 
 ## 工作资产（Work Asset）
@@ -93,6 +93,13 @@
 - 适用范围：用户可见界面、CLI 产品表面、文档、Launcher 与诊断建议。
 - 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
 - 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
+
+### 界面预演稿（UI Preview）
+
+- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个自包含 HTML 呈现本次提案实施后的完整页面参考。
+- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的视觉与交互参考；Buildr Web 只读发现并隔离展示带 `buildr:ui-preview` 标记的页面。
+- 避免混用：不是正式设计稿、生产原型、像素级验收标准、Planning Identity、规范或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。
+- 来源：canonical `openspec/specs/ui-preview/spec.md`（本 Change convergence 时建立）。
 
 ### Buildr Web Frontend Service
 
@@ -191,6 +198,20 @@
 - 适用范围：Workspace Structured Store 中的 closed v2 Task、Parent/Children、复盘来源/后续关系，以及 create、inspect、update、activate、complete、abandon。
 - 避免混用：Parent/Child 只表达协调层级；复盘来源只表达信源。Task Record 不保存 Environment、Development、复盘正文、action item 或其他专业事实。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 项目每日演进（Project Daily Progress）
+
+- 定义：按已登记 Project 保存的本机日历日工作摘要，权威是 canonical Workspace 根下被 Git 忽略的 YAML 文件 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`。输入是当日 Git 提交与更改文件；日摘要回答新增、更新、删除与弊端。
+- 适用范围：Agent 通过 agent-machine CLI `record` 覆盖写入当天 v2 文件；CLI、本机 HTTP 与 Buildr Web 只读 inspect/list；自己的提交可与本机已有 Task ID 做 0..N 关联。
+- 避免混用：不是 Task Record、当前认知、Verification 或 Retrospective；不进 Task SQLite、Git、Content Target 或跨机器共享。产品读取路径不生成摘要、不扫描 Git、不读取 `user.email`、不内置 cron。
+- 来源：canonical `openspec/specs/project-daily-progress/spec.md`（本 Change convergence 时更新）。
+
+## 每日演进提交（Daily Progress Commit）
+
+- 定义：写入每日演进文件的一条 Git 提交投影，包含 sha、subject、作者、`authorship`（self/other）以及可选 Task ID。
+- 适用范围：v2 文件中的 0..N 条提交；自己的提交可关联多个 Task，同一 Task 可出现在多条自己的提交中。他人提交必须展示且 `taskIds` 必须为空。
+- 避免混用：不是 Task、当前认知条目、Person registry、Agent identity、登录账号或权限主体。作者对比由 Agent 对照本机 `git config user.email` 完成，产品读取路径不执行该比较。
+- 来源：canonical `openspec/specs/project-daily-progress/spec.md`（本 Change convergence 时更新）。
 
 ## 待办任务（Todo Task）
 
@@ -455,6 +476,13 @@
 - 避免混用：不是OpenSpec delta Change、Child状态/Result副本、实现清单、Markdown checkbox进度或lifecycle authority；普通Child状态变化不改变其bytes或identity。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
+## Parent 启动就绪（Parent Startup Readiness）
+
+- 定义：Parent Coordination基于current Task、matching Environment、Development、Parent Plan、Planning Review/gate及Contribution依赖派生的response-only启动投影。
+- 适用范围：Parent-aware `task next`在首个Child创建前返回planning-review、refresh-parent-planning、eligible Contribution或依赖等待动作。
+- 避免混用：不是新的Parent lifecycle状态、Receipt字段、自动planner或跨authority事务；它不自动Review、刷新gate、创建Child或准备Child Environment。
+- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+
 ## Contribution Handoff
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
@@ -494,7 +522,7 @@
 
 - 定义：Development完成内容修改、测试开发、current knowledge和Change最终处置后，对ready Environment全部Task scopes的原Task source snapshot形成的稳定deliverable内容聚合identity；不读取retained最新Delivery Baseline。
 - 适用范围：formal Task Verification 的 target，以及 Task Candidate 的内容输入和交付载体（Delivery Carrier）等价核验。
-- 避免混用：不等于Git HEAD、commit、branch、worktree、Delivery Baseline、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体和纯基线前进不改变相同任务贡献的Content Target。
+- 避免混用：不等于Git HEAD、commit、branch、worktree、Delivery Baseline、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体和纯基线前进不改变相同任务贡献的Content Target。Workspace 根 `.buildr/daily-progress/` 是本机忽略数据，不进入 Content Target。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 任务候选（Task Candidate）

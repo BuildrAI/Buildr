@@ -123,6 +123,39 @@ test('already-bridged main/dev history is an idempotent no-op', (t) => {
   assert.equal(git(data.work, 'rev-parse', 'HEAD'), head);
 });
 
+test('explicit recovery Task provenance permits the same tree-gated history bridge', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const evidence = closeoutEvidence(data, {
+    taskId: 'show-buildr-web-development-badge',
+    filename: 'recovery-self-bootstrap.json',
+  });
+  const result = bridgeMainToDev(bridgeOptions(data, {
+    ...evidence,
+    selfBootstrapTask: 'show-buildr-web-development-badge',
+  }));
+  assert.equal(result.action, 'bridged');
+  assert.equal(result.selfBootstrap.taskId, 'show-buildr-web-development-badge');
+  assert.equal(result.releaseTaskId, 'release-0.1.0-rc.5');
+  assert.equal(result.selfBootstrapProvenance, 'explicit-recovery-task');
+  assert.equal(git(data.work, 'rev-parse', 'HEAD^{tree}'), data.candidateTree);
+});
+
+test('foreign recovery evidence is rejected unless its Task is explicitly bound', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const evidence = closeoutEvidence(data, {
+    taskId: 'show-buildr-web-development-badge',
+    filename: 'unbound-recovery-self-bootstrap.json',
+  });
+  const head = git(data.work, 'rev-parse', 'HEAD');
+  assert.throws(
+    () => bridgeMainToDev(bridgeOptions(data, evidence)),
+    /identity does not match/,
+  );
+  assert.equal(git(data.work, 'rev-parse', 'HEAD'), head);
+});
+
 test('tree mismatch fails closed before creating a history bridge', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));

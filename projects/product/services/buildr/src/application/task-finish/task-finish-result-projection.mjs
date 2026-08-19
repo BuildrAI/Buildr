@@ -1,6 +1,7 @@
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { selfBootstrapTaskFinishResult } from './task-finish-self-bootstrap-projection.mjs';
 
-const DETAILS = new Set(['compact', 'full']);
+const DETAILS = new Set(['compact', 'full', 'self-bootstrap']);
 const PHASES = new Set(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 const PATH_KEYS = new Set(['path', 'file', 'relativePath']);
 const PATH_LIST_KEYS = new Set(['paths', 'conflictPaths', 'unrelatedPaths']);
@@ -178,9 +179,31 @@ function executionRecord(value) {
   };
 }
 
+function deliveryAdaptation(value) {
+  if (!value) return null;
+  const hints = value.preparationHints || {};
+  return {
+    expectedCommitMessage: typeof value.expectedCommitMessage === 'string' ? value.expectedCommitMessage : null,
+    preparationHints: {
+      schemaVersion: hints.schemaVersion || null,
+      steps: (hints.steps || []).map((step) => ({
+        id: step.id || null,
+        scope: step.scope || null,
+        recipe: step.recipe || null,
+        cwd: portablePath(step.cwd),
+        executable: portablePath(step.executable),
+        args: Array.isArray(step.args) ? step.args.filter((arg) => typeof arg === 'string') : [],
+        timeoutMs: Number.isInteger(step.timeoutMs) ? step.timeoutMs : null,
+        outputs: (step.outputs || []).map((output) => ({ path: portablePath(output.path), kind: output.kind || null })).filter((output) => output.path),
+      })).filter((step) => step.cwd && step.executable),
+      unavailable: (hints.unavailable || []).map((item) => ({ id: item.id || null, reason: item.reason || null })),
+    },
+  };
+}
+
 export function compactTaskFinishResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw compactProjectionError('Task Finish compact projection requires a canonical Result.');
-  if (result.schemaVersion !== PUBLIC_JSON_SCHEMAS.taskFinishResult) throw compactProjectionError('Task Finish compact projection requires the canonical v2 Result.', { schemaVersion: result.schemaVersion || null });
+  if (![PUBLIC_JSON_SCHEMAS.taskFinishResult, 'buildr.task-finish-result/v2'].includes(result.schemaVersion)) throw compactProjectionError('Task Finish compact projection requires a supported canonical Result.', { schemaVersion: result.schemaVersion || null });
   const compactIdentity = identity(result);
   if (!compactIdentity.taskId || !compactIdentity.handoffIdentity || !compactIdentity.candidate.identity || !compactIdentity.candidate.generation || !compactIdentity.candidate.contentTargetIdentity || !result.status) {
     throw compactProjectionError('Task Finish canonical Result is missing required compact identity or status facts.', { runId: result.runId || null });
@@ -201,6 +224,7 @@ export function compactTaskFinishResult(result) {
     nextWorkflow: result.nextWorkflow || null,
     nextAction: result.nextAction || null,
     reuseMode: result.reuseMode || null,
+    deliveryAdaptation: deliveryAdaptation(result.deliveryAdaptation),
     refs: refs(result),
     delivery: delivery(result.delivery),
     completion: completion(result.completion),
@@ -244,5 +268,6 @@ export function compactTaskFinishResult(result) {
 
 export function projectTaskFinishResult(result, detail = 'compact') {
   if (!DETAILS.has(detail)) throw compactProjectionError(`Unsupported Task Finish detail: ${detail}`);
-  return detail === 'full' ? result : compactTaskFinishResult(result);
+  if (detail === 'full') return result;
+  return detail === 'self-bootstrap' ? selfBootstrapTaskFinishResult(result) : compactTaskFinishResult(result);
 }

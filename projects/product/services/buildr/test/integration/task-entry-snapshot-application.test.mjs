@@ -80,11 +80,12 @@ function route(capability, version, overrides = {}) {
 function fixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-entry-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const calls = { task: 0, environment: 0, development: 0, capabilities: [] };
+  const calls = { task: 0, environment: 0, development: 0, parent: 0, capabilities: [] };
   const runtime = {
     inspectTaskRecord: () => { calls.task += 1; return options.task || task(); },
     resolveTaskEnvironmentExecution: () => { calls.environment += 1; return options.execution || execution(root); },
     inspectTaskDevelopmentCurrent: () => { calls.development += 1; return options.development || { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'missing', taskId, development: null, next: { mode: 'required', owner: 'task-development', action: 'begin', capability: { id: 'buildr.task-development', version: 2 }, summary: 'Begin Development.' }, diagnostic: null, effects: [], nextActions: ['Begin Development.'] }; },
+    inspectParentStartupReadiness: () => { calls.parent += 1; return options.parentStartup; },
     resolveTaskEntryCapabilityRoute: (_root, _projects, capability, version) => { calls.capabilities.push(`${capability}@${version}`); return options.route || route(capability, version); },
   };
   registerTaskEntrySnapshotApplication(runtime);
@@ -99,7 +100,7 @@ test('无Environment时短路到required Environment且零Development读取', (t
   assert.equal(result.next.mode, 'required');
   assert.equal(result.next.owner, 'task-environment');
   assert.deepEqual(result.effects, []);
-  assert.deepEqual(calls, { task: 1, environment: 1, development: 0, capabilities: ['buildr.task-environment@1'] });
+  assert.deepEqual(calls, { task: 1, environment: 1, development: 0, parent: 0, capabilities: ['buildr.task-environment@1'] });
 });
 
 test('ready Environment直接给出execution root、retained controller与Development begin', (t) => {
@@ -123,6 +124,49 @@ test('Development compact只返回current facts并按next加载一个后续capab
   assert.equal('receipt' in result.development, false);
   assert.equal(result.next.command.invocation.command, '/retained/node');
   assert.equal(result.next.command.argv.includes('/candidate/buildr.mjs'), false);
+});
+
+test('Parent Task Entry覆盖普通Development next并公开安全的Child前动作', (t) => {
+  const parentPlanIdentity = `sha256-${'8'.repeat(64)}`;
+  const parentStartup = {
+    schemaVersion: 'buildr.parent-startup-readiness/v1', operation: 'inspect-startup', status: 'blocked', taskId, mode: 'parent-plan',
+    checks: { task: 'ready', environment: 'ready', development: 'ready', parentPlan: 'ready', planningReview: 'ready', planningGate: 'missing' },
+    blockers: [{ axis: 'planning-gate', code: 'parent_startup_review_not_consumed' }], eligibleContributions: [],
+    next: { mode: 'recommended', owner: 'task-development', action: 'refresh-parent-planning', summary: 'Refresh Parent planning.' }, effects: [],
+  };
+  const ordinary = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' };
+  const current = fixture(t, { development: development(ordinary, { receipt: { parentPlan: { identity: parentPlanIdentity } } }), parentStartup });
+  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+  assert.equal(result.next.action, 'refresh-parent-planning');
+  assert.equal(result.next.capability.id, 'buildr.task-development');
+  assert.deepEqual(result.next.command.argv.slice(-7), ['task', 'parent', 'refresh-planning', taskId, '--target', current.root, '--json']);
+  assert.equal(result.parent.status, 'blocked');
+  assert.equal(result.development.identities.parentPlan, parentPlanIdentity);
+  assert.equal(current.calls.parent, 1);
+});
+
+test('Parent Task Entry覆盖Planning Review、eligible Child与dependency wait且不预读后续owner', (t) => {
+  const parentPlan = { identity: `sha256-${'8'.repeat(64)}` };
+  const cases = [
+    [{ status: 'blocked', checks: {}, blockers: [{ axis: 'planning-review', code: 'parent_startup_review_not_current' }], eligibleContributions: [], next: { mode: 'recommended', owner: 'task-review', action: 'planning-review', summary: 'Review.' } }, 'planning-review', 'buildr.task-review@1'],
+    [{ status: 'ready', checks: {}, blockers: [], eligibleContributions: ['first-child'], next: { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: ['first-child'], summary: 'Start Child.' } }, 'start-child-contribution', null],
+    [{ status: 'blocked', checks: {}, blockers: [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete' }], eligibleContributions: [], next: { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: 'Wait.' } }, 'wait-contribution-dependencies', null],
+  ];
+  for (const [projection, action, capability] of cases) {
+    const parentStartup = { schemaVersion: 'buildr.parent-startup-readiness/v1', operation: 'inspect-startup', taskId, mode: 'parent-plan', effects: [], ...projection };
+    const current = fixture(t, { development: development({ mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' }, { receipt: { parentPlan } }), parentStartup });
+    const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+    assert.equal(result.next.action, action);
+    assert.deepEqual(current.calls.capabilities, capability ? [capability] : []);
+    assert.equal(current.calls.parent, 1);
+  }
+});
+
+test('ordinary Task不读取Parent Coordination', (t) => {
+  const current = fixture(t, { development: development({ mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' }) });
+  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+  assert.equal(result.parent, null);
+  assert.equal(current.calls.parent, 0);
 });
 
 test('Task与Environment identity stale均fail closed并给出精确owner', (t) => {

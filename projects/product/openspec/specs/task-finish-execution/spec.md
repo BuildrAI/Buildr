@@ -80,7 +80,7 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 - **AND** MUST保持零push且保留既有run evidence
 
 ### Requirement: Deliver 必须只交付冻结候选
-`deliver` MUST在短target lease/fencing边界内重新核对Delivery Carrier绑定的expected target ref，只允许已通过Development handoff current与Task Contribution equivalence的carrier fast-forward、普通push、retained Workspace convergence与受影响入口安装。Product adapter MUST在创建Git-backed run时从retained checkout当前符号分支解析默认target branch；显式target branch MUST与该当前分支一致。Task Environment checkout `startPoint` MUST只作为环境来源证据，不得直接充当交付分支identity。Product adapter MUST为每个Git-backed Finish run绑定retained checkout中真实配置的delivery remote；当Environment repository因`source.type: workspace`没有声明remote时，MUST从target branch upstream或唯一配置的remote确定性解析，无法解析或存在歧义时 MUST在创建run和delivery mutation前fail closed。普通push成功后 MUST重新读取远端target ref；只有真实回读值等于carrier ref时才能记录`remoteAfterRef`、报告`delivered`并进入cleanup。Force push、merge commit、远端任务分支push/delete、丢弃改动、原Task worktree rebase和语义冲突resolution MUST保持未授权。
+`deliver` MUST在短target lease/fencing边界内重新核对Delivery Carrier绑定的expected target ref，只允许已通过Development handoff current与Task Contribution equivalence的carrier fast-forward、普通push、retained Workspace convergence与受影响入口安装。Product adapter MUST在创建Git-backed run时从retained checkout当前符号分支解析默认target branch；显式target branch MUST与该当前分支一致。Task Environment checkout `startPoint` MUST只作为环境来源证据，不得直接充当交付分支identity。Product adapter MUST为每个Git-backed Finish run绑定retained checkout中真实配置的delivery remote；当Environment repository因`source.type: workspace`没有声明remote时，MUST从target branch upstream或唯一配置的remote确定性解析，无法解析或存在歧义时 MUST在创建run和delivery mutation前fail closed。普通push成功后 MUST以固定小次数重新读取远端target ref；每次非零观察 MUST记录独立operation evidence，且不得重复push。只有真实回读值等于carrier ref时才能记录`remoteAfterRef`、报告`delivered`并进入cleanup。任一次成功回读但ref不一致 MUST立即进入既有target-race/containment判断，不得以重试等待ref变成期望值；全部观察持续失败 MUST保留同一run/carrier恢复事实。Force push、merge commit、远端任务分支push/delete、丢弃改动、原Task worktree rebase和语义冲突resolution MUST保持未授权。
 
 #### Scenario: Workspace startPoint 不是交付分支
 - **WHEN** Task Environment repository以`startPoint: HEAD`或其他checkout表达式记录候选来源，retained checkout当前符号分支为`dev`
@@ -108,14 +108,19 @@ Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`�
 - **AND** MUST NOT报告`remoteAfterRef`、远端交付完成或cleanup eligibility
 
 #### Scenario: Push 后远端回读成功
-- **WHEN** 普通push返回成功且push后的远端target ref回读值等于carrier ref
+- **WHEN** 普通push返回成功且第一次远端target ref回读值等于carrier ref
 - **THEN** deliver MUST以该真实回读值记录`remoteAfterRef`并继续retained convergence
 - **AND** `delivered` MUST只在后续适用动作也成功后成立
 
+#### Scenario: Push 后远端回读暂态失败后成功
+- **WHEN** 普通push成功，前序有限次数`ls-remote`非零，但后续允许次数回读值等于carrier ref
+- **THEN** deliver MUST保留全部观察evidence并继续，不得再次push
+- **AND** MUST把最后真实回读值作为`remoteAfterRef`
+
 #### Scenario: Push 后远端回读失败或不一致
-- **WHEN** 普通push后无法读取远端target ref，或真实回读值不等于carrier ref
+- **WHEN** 普通push后全部有限观察均无法读取远端target ref，或任一次成功回读值不等于carrier ref
 - **THEN** deliver MUST停止且不得形成远端完成证据或进入cleanup
-- **AND** 暂时无法读取 MAY保留同一carrier的deliver恢复点；回读不一致且无法证明Task Contribution仍等价 MUST返回Task Development
+- **AND** 持续不可读 MUST保留同一carrier的deliver恢复点；回读不一致 MUST进入既有target-race/containment判断而不得重复readback等待
 
 #### Scenario: 目标 ref 外部前进
 - **WHEN** push前observed target ref不再等于Delivery Carrier的Delivery Baseline ref
@@ -424,20 +429,25 @@ Git-backed Task Finish MUST把任务贡献（Task Contribution）定义为原任
 - **AND** 只有新的formal Verification、Completion Review、handoff与freeze才可增加generation
 
 ### Requirement: 当前 Task Finish 必须保持单一窄交付 adapter
-Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git adapter，并 MUST把通用 Task Finish 边界限制为current Development Handoff、Delivery Carrier preparation、carrier equivalence、delivery effects、cleanup eligibility与run/resume facts。Git remote、branch、fast-forward与push MUST留在Git delivery实现，Buildr sync/Doctor/CLI/Buildr Web install MUST留在Product retained activation，Task-owned resource/provider cleanup MUST只由Task Environment Application执行。Buildr MUST NOT在第二种真实adapter、明确selection authority和独立E2E fixture出现前创建公共adapter registry、插件协议、第二capability graph或通用transaction/state-machine框架。
+Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git adapter，并 MUST把通用 Task Finish 边界限制为current Development Handoff、Environment repository set、Delivery Carrier preparation、carrier equivalence、delivery effects、cleanup eligibility与run/resume facts。Git remote、branch、fast-forward与push MUST留在Git delivery实现，Buildr sync/Doctor/CLI/Buildr Web install MUST留在Product retained activation，Task-owned resource/provider cleanup MUST只由Task Environment Application执行。Buildr MUST NOT因当前Git adapter支持多个repository而创建公共adapter registry、插件协议、第二capability graph或通用跨remote transaction/state-machine框架。
 
 #### Scenario: 当前只有 Git direct-to-target adapter
 - **WHEN** package与runtime只登记当前Buildr Product的Git direct-to-target delivery
-- **THEN** Task Finish MUST直接选择该确定性Product adapter并执行固定五阶段
-- **AND** MUST NOT要求调用方选择adapter kind、provider id、execution plan或未来delivery type
+- **THEN** Task Finish MUST直接选择该确定性Product adapter并以固定五阶段处理Environment中一个或多个独立Git repository
+- **AND** MUST NOT要求调用方选择adapter kind、provider id、repository execution plan或未来delivery type
 
 #### Scenario: Product retained activation适用
-- **WHEN** Delivery Carrier改变runtime、默认CLI或Buildr Web正式影响路径
+- **WHEN** Workspace repository的Delivery Carrier改变runtime、默认CLI或Buildr Web正式影响路径
 - **THEN** 当前Product adapter MUST在deliver内执行适用的retained sync/Doctor/install并记录not-applicable或真实结果
-- **AND** 通用Development handoff、Candidate或Task Environment schema MUST NOT获得Buildr/Git/Node/npm常量
+- **AND** 非Workspace repository与通用Development handoff、Candidate或Task Environment schema MUST NOT获得Buildr/Git/Node/npm产品常量
+
+#### Scenario: multi-repo具备完整当前语义
+- **WHEN** Git-backed multi-repo路径具备Environment repository authority、逐repository equivalence、target authorization、部分成功恢复、cleanup eligibility与独立E2E fixture
+- **THEN** 当前Product/Git adapter MUST直接支持该路径并如实保存repository-scoped事实
+- **AND** MUST NOT把它实现为第二adapter、caller编排或跨remote原子事务
 
 #### Scenario: 没有满足条件的新交付路径
-- **WHEN** non-Git、multi-repo、task-branch、PR、release或deploy没有同时具备真实consumer、持久目标、equivalence、authorization、cleanup eligibility与独立E2E fixture
+- **WHEN** non-Git、task-branch、PR、release或deploy没有同时具备真实consumer、持久目标、equivalence、authorization、cleanup eligibility与独立E2E fixture
 - **THEN** 当前Change MUST保持这些路径未实现
 - **AND** MUST NOT为Roadmap完整性预建selection、registry、receipt或兼容层
 
@@ -626,7 +636,7 @@ Task Finish MUST先按既有owner规则持久化每个阶段、delivery、cleanu
 ### Requirement: Task Finish 必须冻结有语义的交付提交信息
 首次创建 Git-backed Task Finish run 时，Buildr MUST 要求 Agent 提供符合当前 Workspace、Project、Service 与 repository 约定的完整交付提交信息，并 MUST 在任何 Finish current、Delivery Carrier 或 target 副作用前完成规范化与校验。产品 MUST NOT 根据 Task ID、Change ID、diff、文件路径或内部 lifecycle facts自动推断 `type`、`scope` 或主题，也 MUST NOT继续为新run生成“交付 + Task ID”的占位主题。
 
-规范化后的提交信息 MUST 包含非空 subject，MUST 将当前 Task ID 保存为 `Buildr-Task` trailer，并 MUST以稳定identity绑定到同一逻辑run。完整message只能由Task Finish owner作为恢复事实持有并写入实际Git commit；Task Record、Development Receipt、Environment Receipt与其他authority MUST NOT复制正文。公开Finish Result MUST只返回subject与message identity。
+规范化后的提交信息 MUST 包含非空 subject，MUST 将当前 Task ID 保存为 `Buildr-Task` trailer，并 MUST以稳定identity绑定到同一逻辑run。完整message只能由Task Finish owner作为恢复事实持有并写入实际Git commit；Task Record、Development Receipt、Environment Receipt与其他authority MUST NOT复制正文。公开Finish Result通常 MUST只返回subject与message identity；唯一例外是current run精确处于Delivery Adaptation required恢复窗口时，compact/full Result MUST通过blocked-only `deliveryAdaptation.expectedCommitMessage`返回同一完整message，且状态解除后 MUST停止投影。
 
 #### Scenario: 首次运行冻结 Agent 提供的语义提交信息
 - **WHEN** Agent 对current handoff首次执行`buildr task finish run`并提供符合仓库约定的subject与可选body
@@ -644,9 +654,14 @@ Task Finish MUST先按既有owner规则持久化每个阶段、delivery、cleanu
 - **AND** 产品 MUST NOT把Task ID、Change ID或“交付”操作词替换为subject
 
 #### Scenario: 公开结果不复制正文
-- **WHEN** Finish run已冻结包含subject与body的完整message
+- **WHEN** Finish run已冻结包含subject与body的完整message且不处于Delivery Adaptation required恢复窗口
 - **THEN** Task Finish current run MAY保存恢复所需的完整规范化message
 - **AND**公开Result与Execution Record MUST只投影subject和message identity，不得复制完整body或建立第二writer
+
+#### Scenario: Delivery Adaptation 恢复窗口按需投影正文
+- **WHEN** current run精确因`task-finish.delivery-adaptation-required` blocked并持有matching carrier与resume token
+- **THEN** compact/full Result MUST在blocked-only guidance中投影run-owned exact message
+- **AND** Execution Record及其他authority MUST仍只保留subject/identity或摘要，terminal Result MUST不保留正文
 
 ### Requirement: Task Finish 恢复必须复用同一提交信息
 Task Finish MUST把规范化交付提交信息作为run-owned immutable恢复事实。`prepare`重试、target-race、Delivery Adaptation与`--run/--resume`恢复 MUST复用同一message identity，不得要求Agent重新生成、不得接受调用方覆盖，也不得因Delivery Baseline变化重新推断message。
@@ -776,17 +791,22 @@ verify已采用零差异Delivery Adaptation且远端target仍等于冻结Deliver
 - **AND** MUST不把该delivery解释为Agent-reviewed zero-delta
 
 ### Requirement: Task Finish CLI detail 投影必须与执行 authority 分离
-Task Finish Application MUST从同一个canonical `buildr.task-finish-result/v2`确定性生成CLI detail投影。`full` MUST原样保留canonical Result；`compact` MUST通过closed字段白名单生成`buildr.task-finish-compact-result/v1`，且 MUST不写SQLite、不改变run/result、不查询第二authority、不创建新的恢复或diagnostics store。detail选择 MUST只影响CLI JSON序列化，不得改变五阶段执行、resume、Delivery Carrier、Execution Record、Task terminal或Environment cleanup。
+Task Finish Application MUST从同一个canonical `buildr.task-finish-result/v3`确定性生成CLI detail投影。`full` MUST原样保留repository-set Result；`compact` MUST通过closed字段白名单生成`buildr.task-finish-compact-result/v1`，且 MUST不写SQLite、不改变run/result、不查询第二authority、不创建新的恢复或diagnostics store。`self-bootstrap` MUST通过稳定投影保留唯一Workspace repository的冻结`leaseTargetIdentity`，不得从`remote + targetBranch`或本机路径重新计算repository identity。detail选择 MUST只影响CLI JSON序列化，不得改变五阶段执行、逐repository resume、Delivery Carrier、Execution Record、Task terminal或Environment cleanup。旧v2 Result只允许有界读取与兼容compact/self-bootstrap投影，新写入 MUST使用v3。
 
 #### Scenario: complete Result 的两种投影
-- **WHEN** 同一complete terminal Result分别以compact与full读取
-- **THEN** 两者 MUST表达相同run、Task、handoff、Candidate、Content Target、status、delivery与completion结论
-- **AND** compact MUST省略full diagnostics并使用独立schema identity
+- **WHEN** 同一complete v3 Result分别以compact与full读取
+- **THEN** 两者 MUST表达相同run、Task、handoff、Candidate、Content Target、status与completion结论
+- **AND** full MUST保留repository-scoped delivery authority，compact MUST保持既有closed字段并省略repository数组和full diagnostics
+
+#### Scenario: Self-bootstrap 投影保留 Workspace lease identity
+- **WHEN** v3 Result的唯一Workspace repository适用且冻结了repository-scoped `leaseTargetIdentity`
+- **THEN** self-bootstrap detail MUST在该Workspace repository上原样投影同一identity
+- **AND** MUST不以同名branch、remote或其他repository的lease identity替代
 
 #### Scenario: blocked Result 可恢复
-- **WHEN** current run因Delivery Adaptation、target race、retained Doctor或cleanup暂态条件blocked
-- **THEN** compact MUST保留current phase、primary failure、唯一next action或workflow、matching resume与恢复所需关键refs
-- **AND** Agent MUST不需要读取full Result才能识别并恢复同一run
+- **WHEN** current run因某个repository的Delivery Adaptation、target race、containment或cleanup暂态条件blocked
+- **THEN** full MUST标识该repository的真实状态，compact MUST保留primary failure、唯一next action与matching resume
+- **AND** detail投影 MUST不重复交付已完成repository或改写repository checkpoints
 
 #### Scenario: compact 投影失败
 - **WHEN** canonical Result缺少compact契约要求的run、identity、status或恢复事实
@@ -933,3 +953,256 @@ Task Finish MUST 提供现有 `task finish run` 的显式 `--release-occupancy` 
 - **WHEN** carrier 路径缺失、为 symlink、越界，或与 run 登记 identity 不一致
 - **THEN** Finish MUST fail closed 并保留现场
 - **AND** MUST NOT 扩大删除到 Workspace 根、其他 Task 或其他 run
+
+### Requirement: Preflight 必须观察 retained 与目标远端对齐
+`preflight` MUST在创建 Delivery Carrier 或任何 delivery mutation 之前，观察 retained canonical Workspace 当前符号分支与本次 run 绑定的目标远端 ref。观察 MUST复用交付模块既有 Git identity 事实，不得另造检查器，也不得执行 `fetch`、rebase、merge 或 working tree 写入。retained 落后、分叉、detached、脏工作区导致无法证明可快进对齐，或远端 ref 无法观察时，preflight MUST fail closed；prepare、verify、deliver 与 cleanup MUST保持未执行。该失败 MUST NOT登记为新的 `task_finish.entry_gaps` 缺口码。`deliver` 现有 `retained-workspace-not-ready` 检查 MUST继续作为第二道防线。
+
+#### Scenario: retained 已与目标远端对齐
+- **WHEN** retained 当前符号分支等于 run 的 target branch，工作区可证明 clean，且 HEAD 等于已观察的远端 target ref
+- **THEN** preflight MUST将该对齐观察记为通过
+- **AND** MUST继续后续阶段，不得因该观察创建 Git mutation
+
+#### Scenario: retained 落后目标远端
+- **WHEN** retained 当前分支可快进到已观察远端 target ref，但 HEAD 不等于该 ref
+- **THEN** preflight MUST blocked，code 标识 retained 未对齐
+- **AND** MUST零 carrier、lease、push 与 retained activation
+- **AND** MUST NOT把该失败写成 `task_finish.entry_gaps`
+
+#### Scenario: retained 与目标远端分叉
+- **WHEN** retained HEAD 与远端 target ref 不在可快进祖先关系中
+- **THEN** preflight MUST fail closed 并报告 diverged
+- **AND** MUST NOT rebase、merge 或改写共享历史
+
+#### Scenario: 远端 target ref 无法观察
+- **WHEN** preflight 无法只读观察目标远端当前 ref
+- **THEN** preflight MUST fail closed
+- **AND** MUST NOT把超时或不可达伪装成已对齐
+- **AND** MUST NOT执行 fetch、rebase 或 working tree 写入
+
+### Requirement: Finish run agent 必须来自 Environment adapter
+创建 Finish run 时绑定的 Doctor agent MUST等于 matching ready Task Environment Receipt 的 controller adapter。调用方省略 `--agent` 时，产品 MUST使用该 Environment adapter，MUST NOT猜测当前聊天宿主或默认为 Codex。调用方传入 `--agent` 且与 Environment adapter 不一致时，产品 MUST在入口聚合的 `environment` 分类返回既有 mismatch 缺口，MUST NOT创建 run。deliver 执行 retained Doctor 时 MUST使用该冻结 run agent。
+
+#### Scenario: 省略 Finish --agent
+- **WHEN** Environment adapter 为 `codex`，调用方运行 `task finish run` 且未提供 `--agent`
+- **THEN** 产品 MUST把 run agent 记为 `codex`
+- **AND** retained Doctor MUST以 `--agent codex` 执行
+
+#### Scenario: Finish --agent 与 Environment 一致
+- **WHEN** Environment adapter 为 `cursor`，调用方传入 `--agent cursor`
+- **THEN** 产品 MUST接受该值并冻结为 run agent
+- **AND** MUST NOT改写为另一个宿主
+
+#### Scenario: Finish --agent 与 Environment 不一致
+- **WHEN** Environment adapter 为 `codex`，调用方传入 `--agent cursor`
+- **THEN** 产品 MUST返回 `environment` 入口缺口且不创建 run
+- **AND** MUST NOT用聊天宿主执行 Doctor
+
+### Requirement: Delivery Carrier 准备不得被共享 target 占用全局串行化
+Task Finish MUST只在`deliver`的共享target mutation临界区获取target lease。`preflight`、`prepare`、`verify`、run-owned carrier创建与Delivery Adaptation MUST不因另一个Task持有相同`remote + targetBranch`的lease而停止；它们 MUST继续保持各自Task/handoff/Candidate/Content Target与carrier ownership隔离。只有当前run进入`deliver`且lease仍由另一owner持有时，Product才 MUST返回同run可恢复的target occupied诊断。
+
+#### Scenario: 另一个 Task 正在交付同一 target
+- **WHEN** Task A 已持有`origin:dev` target lease，而Task B的current handoff可独立建立Delivery Carrier
+- **THEN** Task B MUST仍可完成carrier preparation与equivalence verify
+- **AND** Task B MUST只在进入deliver时等待target lease，不得要求Task A先完成self-bootstrap、Doctor或cleanup才创建carrier
+
+#### Scenario: 不同 target 并行交付
+- **WHEN** 两个Task绑定不同的`remote + targetBranch` identity
+- **THEN** 两个run的deliver lease MUST互不阻塞
+- **AND** Product MUST不建立Workspace全局Finish锁或carrier队列
+
+### Requirement: Delivery Adaptation 必须返回可直接执行的 blocked-only guidance
+当current run精确因`task-finish.delivery-adaptation-required`停止时，canonical full Result与compact投影 MUST返回同一`deliveryAdaptation` guidance。guidance MUST包含run-owned完整规范化`expectedCommitMessage`以及从current Task Environment Preparation Plan派生的required `preparationHints`。每个hint MUST只含scope/recipe/step identity、相对Environment root的cwd和适用executable、声明args、timeout及预期outputs；MUST NOT包含环境变量、secret、命令输出或Task worktree绝对路径。Agent MUST把相对路径映射到matching run-owned carrier，完成语义适配和依赖准备后以exact message形成carrier HEAD。
+
+该guidance MUST只在当前Delivery Adaptation恢复窗口出现。failure解除、其他blocked状态、terminal Result、Execution Record、Task Record、Development Receipt与Environment Receipt MUST不复制完整message；完整message的持久authority仍为Task Finish current run。
+
+#### Scenario: Git conflict 首次返回适配指导
+- **WHEN** prepare机械应用冲突并形成matching run-owned baseline carrier与resume token
+- **THEN** compact和full Result MUST同时返回包含`Buildr-Task: <task-id>` trailer的exact expected commit message
+- **AND** MUST返回可在carrier root重放的required Preparation hints，使Agent无需先做一次错误commit或读取第二authority
+
+#### Scenario: Preparation hint 不能安全移植
+- **WHEN** current Preparation step的cwd、executable、args或output无法约束为受控相对路径/声明值
+- **THEN** Product MUST省略该不安全step并在guidance中报告bounded unavailable reason
+- **AND** MUST NOT投影原Task worktree绝对路径、process env或猜测替代命令
+
+#### Scenario: 适配窗口结束
+- **WHEN** same run已通过prepare或进入complete/cleanup_pending/其他blocked状态
+- **THEN** 公开Result与Execution Record MUST恢复为只投影commit subject和message identity
+- **AND** MUST不把先前完整message或Preparation hints保留为terminal常驻事实
+
+### Requirement: Git Task Finish 必须按 Environment repository set 交付
+Git-backed Task Finish MUST以 matching Task Environment 提供的完整 repository set 为输入，按稳定 selector 为每个独立 Git repository 形成 repository-scoped contribution、target、baseline、carrier、equivalence、delivery、readback与cleanup facts。Task Finish MUST保持顶层固定五阶段，并 MUST NOT把 repository 暴露为公共workflow step、caller selection或第二adapter。
+
+#### Scenario: 只有 Service repository 有贡献
+- **WHEN** Environment 同时包含 Workspace 根与独立 Service repository，Workspace 根 Task Contribution 为空而 Service repository 有贡献
+- **THEN** Task Finish MUST把 Workspace repository 标记为`not-applicable/no-contribution`，只为 Service repository执行prepare、verify和deliver
+- **AND** MUST NOT为 Workspace repository创建carrier、校验baseline HEAD提交消息、取得target lease、push或远端回读
+
+#### Scenario: 多个 repository 都有贡献
+- **WHEN** Environment 中两个或以上独立 repository 都有非空 Task Contribution
+- **THEN** prepare与verify MUST在任何push前为全部有贡献repository形成current等价carrier
+- **AND** deliver MUST按冻结selector顺序逐repository取得隔离target lease并执行交付
+
+#### Scenario: repository target 来自 retained checkout
+- **WHEN** Environment repository 的`startPoint`是`HEAD`、remote ref或其他checkout表达式
+- **THEN** Task Finish MUST从该repository的retained checkout当前符号分支解析target branch
+- **AND** MUST NOT把`startPoint`直接当作任一repository的交付分支identity
+
+#### Scenario: 多仓库使用单值 target override
+- **WHEN** 两个或以上有贡献repository的run请求携带单值`--target-branch`或`--remote`
+- **THEN** entry MUST在创建run和任何delivery mutation前以歧义诊断fail closed
+- **AND** MUST NOT把该值猜测应用到全部repository
+
+### Requirement: 无贡献 repository 必须跳过 Delivery Carrier
+当 repository 的冻结Task source tree等于其original baseline tree时，Task Finish MUST把该repository的交付处置记录为`not-applicable/no-contribution`。该repository MUST NOT创建Delivery Carrier或空commit，MUST NOT执行commit-message校验、remote target alignment、fast-forward、push或remote readback；Task Finish仍 MUST保存可由Task Environment cleanup独立复算的no-contribution proof。
+
+#### Scenario: baseline HEAD消息与冻结消息不同
+- **WHEN** repository没有Task Contribution，且retained baseline HEAD的提交消息不同于本次冻结Task Finish消息
+- **THEN** prepare MUST保持该repository为not-applicable并继续处理其他有贡献repository
+- **AND** MUST NOT返回`task-finish.commit-message-mismatch`
+
+#### Scenario: carrier apply产生非空tree delta
+- **WHEN** 有贡献repository在Delivery Baseline上机械应用后产生新tree并由本次Finish创建carrier commit
+- **THEN** Task Finish MUST校验该carrier commit的规范化subject、body与trailer identity
+- **AND** baseline HEAD或其他未由本次carrier拥有的commit MUST NOT充当该校验对象
+
+#### Scenario: 显式零差异适配
+- **WHEN** adaptation-required repository由Agent按既有exact token确认最新baseline已满足冻结语义并接受zero-delta adaptation
+- **THEN** Task Finish MUST继续按agent-reviewed Delivery Adaptation规则核验run-owned carrier
+- **AND** MUST NOT把该路径重新分类为普通no-contribution或省略其适配证据
+
+### Requirement: 多仓库 delivery 必须保存部分成功事实并可恢复
+Task Finish MUST在固定deliver阶段内于每个repository完成普通push和remote readback后立即持久化repository-scoped delivery checkpoint。后续repository blocked、failed或进程恢复时，产品 MUST保留已交付repository的真实事实，MUST NOT报告跨remote原子回滚，也 MUST NOT重复push已证明contained的repository。
+
+#### Scenario: 第二个 repository target race
+- **WHEN** 第一个repository已完成push/readback，而第二个repository在lease内发现target已前进
+- **THEN** run MUST保存第一个repository为delivered，并为第二个repository返回current exact resume token
+- **AND** 恢复 MUST只重建或交付尚未完成的repository
+
+#### Scenario: 已交付 repository 在恢复时仍 contained
+- **WHEN** resume重新观察到已交付repository的remote target等于或可精确证明包含其carrier
+- **THEN** Task Finish MUST复用保存的delivery facts并跳过重复transition和push
+- **AND** MUST继续处理最早未完成repository
+
+#### Scenario: 已交付 repository 无法再证明 contained
+- **WHEN** resume无法证明已交付repository的carrier仍被remote target包含
+- **THEN** run MUST保持blocked并报告该repository的target/containment诊断
+- **AND** MUST NOTforce push、回滚其他remote或把事实改写为未交付
+
+### Requirement: 多仓库 cleanup 必须覆盖全部 Environment repository
+Finish cleanup MUST向 retained Task Environment manager提交每个Environment repository的integrated ref与cleanup proof。有贡献repository MUST使用carrier contribution proof；无贡献repository MUST使用独立no-contribution proof。Task Environment MUST在全部proof可复算后按既有ownership规则一并清理所有Task worktree、任务分支和provider evidence。
+
+#### Scenario: 无贡献 Workspace 根与已交付 Service 一并清理
+- **WHEN** Workspace根没有贡献、Service carrier已交付且Finish completion facts durable
+- **THEN** Environment cleanup MUST分别复算Workspace no-contribution与Service carrier contribution
+- **AND** MUST在同一次Environment cleanup中移除两个repository的Task worktree和任务分支
+
+#### Scenario: 无贡献 checkout 含空提交
+- **WHEN** 无贡献repository的Task branch HEAD不是target祖先，但其deliverable source tree仍精确等于冻结original baseline tree
+- **THEN** Git worktree provider MUST接受可复算的no-contribution proof作为cleanup eligibility
+- **AND** MUST NOT要求创建空carrier commit、改写Task branch或把空提交push到target
+
+#### Scenario: 任一 cleanup proof 漂移
+- **WHEN** 任一repository的source tree、carrier、target ref或ownership无法匹配其保存proof
+- **THEN** Environment cleanup MUST保持resumable blocked并保留尚未安全处置的全部现场
+- **AND** Finish MUST NOT重跑已完成remote delivery或直接删除Environment worktree
+
+### Requirement: 历史无副作用提交消息误失败必须可安全替换
+新runtime读取到旧单仓库run因`task-finish.commit-message-mismatch`在carrier ownership形成前terminal failed时，只有能证明该run没有carrier、lease、resume、delivery、retained、prepared completion或cleanup facts，且verify、deliver、cleanup从未开始，才 MUST允许同一首次`task finish run`命令退休旧current并创建新的repository-set run。其他旧run MUST保持原冻结identity与fail-closed恢复语义。
+
+#### Scenario: 重跑同一首次命令
+- **WHEN** 旧run精确满足无副作用误失败条件，current Development handoff未变，调用方再次提供同一规范化commit message
+- **THEN** 产品 MUST保留旧Execution Record、以类型化superseded事实退休旧current并创建新run
+- **AND** MUST NOT要求旧run resume token、重新形成Development handoff或修改Task Environment
+
+#### Scenario: 旧run存在不确定副作用
+- **WHEN** 旧run有carrier、lease、resume、后续phase attempt、delivery/retained/cleanup fact或无法证明failure形态
+- **THEN** 产品 MUST返回current-run identity conflict或原run的合法恢复动作
+- **AND** MUST NOT仅因carrier字段为空就自动替换run
+
+### Requirement: Buildr 自举必须只消费 Product-owned 稳定 Finish 投影
+`buildr-self-bootstrap-sync` MUST 对 current inspect、foreign inspect 和所有 resume 调用请求 `--detail self-bootstrap`，并 MUST 只消费 `buildr.task-finish-self-bootstrap-input/v1`。runner MUST NOT解析、兼容或推断 raw `buildr.task-finish-result/v2|v3|v4|...`；未知投影 major、缺失必需 identity 或枚举不合法 MUST 在 sync、install、retained Doctor、Finish resume 与 cleanup effect 前 fail closed。
+
+#### Scenario: 当前 Result major 改变
+- **WHEN** Product 内部 Task Finish Result 从一个受支持 major 升级到另一个受支持 major，但输出相同 self-bootstrap v1 语义
+- **THEN** runner MUST 按相同路径完成 current/foreign carrier 校验和自举决策
+- **AND** MUST 不包含按内部 Result major 分支的兼容代码
+
+#### Scenario: 未知稳定投影 major
+- **WHEN** runner 收到不是 `buildr.task-finish-self-bootstrap-input/v1` 的 payload
+- **THEN** runner MUST 返回 schema-invalid diagnostic 且全部 effect 计数为零
+- **AND** MUST NOT尝试把 payload 当作 raw Result 读取
+
+### Requirement: 多仓库自举必须以唯一 Workspace repository 为动作来源
+stable projection 中 MUST 唯一标识 Workspace repository；runner MUST 只使用其 frozen activation paths 决定 Buildr sync、Buildr Web install 与 retained Doctor。Service repository 的 contribution、carrier 或 activation-like path MUST NOT触发 Workspace 自举。Workspace repository 为 `not-applicable/no-contribution` 时，self-bootstrap MUST 返回 not-applicable，不执行激活；Task Environment 仍按 Finish cleanup authority 一并清理所有 repository 环境。
+
+#### Scenario: 只有 Workspace repository 有自举影响
+- **WHEN** 多仓库 run 同时包含 Workspace 与 Service contributions
+- **THEN** runner MUST 只从 Workspace repository 读取 activation paths
+- **AND** MUST 对全部 projected carrier 保持 ownership 校验
+
+#### Scenario: 只有 Service repository 有贡献
+- **WHEN** Workspace repository disposition 为 `not-applicable/no-contribution`，但一个或多个 Service repository 有 carrier
+- **THEN** runner MUST 报告 self-bootstrap not-applicable 且不执行 sync、install 或 retained Doctor
+- **AND** MUST NOT把 Service repository path 提升为 Workspace activation path
+
+#### Scenario: Workspace repository 不唯一
+- **WHEN** 投影缺少 Workspace repository 或存在多个 Workspace repository
+- **THEN** runner MUST 在任何 effect 前 fail closed
+
+### Requirement: runner 必须验证 run container 与全部 repository carrier
+Product 投影 MUST 区分 run-owned `carrierContainerRoot` 与 repository carrier roots。runner MUST 对 current 与 foreign run 验证 canonical Workspace 下的预期 run container、realpath、非 symlink、carrier containment、唯一性、run identity 及 resume carrier identity；v2 归一化允许 repository carrier 等于 container，v3 多仓库归一化允许 carrier 为其受控后代。任何越界、重复、缺失或不一致 MUST 保持零 effect 并返回具体 diagnostic。
+
+#### Scenario: v3 repository carriers 位于 run container 下
+- **WHEN** stable projection 提供多个位于 `.buildr/transient/task-finish/carriers/<run-id>/` 下的 repository carrier
+- **THEN** runner MUST 在证明全部 carrier 真实、唯一且受 container 包含后接受该 run
+- **AND** current run ignore MUST 绑定已证明的完整 run container，而不是任一 repository 子目录
+
+#### Scenario: v2 carrier 与 container 相同
+- **WHEN** legacy Result 被归一化为单一 repository carrier 且 carrier root 等于 run container
+- **THEN** runner MUST 按相同 stable projection 规则接受该 ownership 形态
+
+#### Scenario: carrier 路径越界或 identity 不一致
+- **WHEN** 任一 projected carrier 经 realpath 后逃逸 container、使用 symlink、重复另一个 carrier或不匹配 resume carrier identity
+- **THEN** runner MUST 在 foreign cleanup、sync、install、Doctor 与 resume 前 fail closed
+
+### Requirement: 自举恢复必须持续使用同一稳定输入
+runner 在 target-race、Delivery Adaptation、retained 或 cleanup 恢复期间 MUST 只依据每次 Product 返回的 current self-bootstrap v1 投影决定下一动作。runner MAY 修改 matching run-owned adaptation carrier，但 MUST 不修改其他 run、raw Result、Task Environment 或 Structured Store；Product 投影表明 terminal、not-applicable 或 recovery identity 漂移时 MUST停止。
+
+#### Scenario: Delivery Adaptation 后恢复
+- **WHEN** runner 完成 matching run-owned carrier 的受控 adaptation 并携 matching token 恢复
+- **THEN** 后续 `task finish run` MUST再次返回 self-bootstrap v1
+- **AND** runner MUST以新投影重新证明 carrier、phase 与下一动作，不读取先前 raw Result
+
+#### Scenario: foreign run 与 current run 并存
+- **WHEN** runner 观察到其他 run 的 projected carrier container
+- **THEN** runner MUST只按 stable projection 证明并隔离 foreign ownership
+- **AND** MUST不resume、cleanup或修改 foreign terminal/current run
+
+### Requirement: 历史逻辑 target lease identity 必须唯一解析到冻结 repository
+Retained Task Finish target lease authority MUST以matching canonical Workspace、Task、run与current或terminal complete row作为owner边界。repository-set run请求精确冻结`leaseTargetIdentity`时 MUST原样使用；旧consumer请求`remote:targetBranch`逻辑identity时，只有冻结repository set中恰有一个applicable repository同时匹配remote与target branch，authority才 MUST把它解析为该repository的精确identity。该兼容 MUST不把逻辑identity重新作为canonical lease key。
+
+#### Scenario: 旧 runner 唯一命中 Workspace repository
+- **WHEN** matching terminal complete run中只有一个applicable repository命中旧runner请求的`origin:dev`
+- **THEN** authority MUST以该repository冻结的`leaseTargetIdentity`取得、刷新和释放lease
+- **AND** driver Result MUST同时报告requested logical identity与resolved exact identity，使旧consumer可迁移而新consumer可校验
+
+#### Scenario: 两个 repository 共享同一 logical target
+- **WHEN** matching run中两个或以上applicable repository都使用相同remote与target branch
+- **THEN** 旧logical identity请求 MUST以ambiguous diagnostic fail closed
+- **AND** MUST不按selector、数组顺序、Workspace优先级或retained路径猜测repository
+
+#### Scenario: logical target 没有匹配 repository
+- **WHEN** requested remote或target branch不匹配matching run中的任何applicable repository
+- **THEN** authority MUST返回target identity mismatch且lease effects为空
+- **AND** MUST不回退到Task顶层remote/branch或其他run的repository facts
+
+#### Scenario: Workspace、Task或 run 不匹配
+- **WHEN** 请求指向另一个canonical Workspace、另一个Task、另一个run或不合格current/terminal row
+- **THEN** authority MUST在lease acquisition、refresh与release前fail closed
+- **AND** MUST不跨Workspace扫描或借用其他owner的repository identity
+
+#### Scenario: release 保持 owner 与 token fencing
+- **WHEN** 旧consumer以logical identity释放已解析为exact identity的activation lease
+- **THEN** authority MUST重新验证matching Task/run、唯一解析结果、实际lease identity与token后才释放
+- **AND** 错误run、错误repository identity或错误token MUST不释放当前owner

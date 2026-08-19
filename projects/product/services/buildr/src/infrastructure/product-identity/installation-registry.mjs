@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { atomicWriteJson, withExclusiveFileLock } from '../filesystem/index.mjs';
-import { localAppDataRoot } from '../filesystem/workspace-registry-repository.mjs';
+import { productDataRoot } from './web-profile.mjs';
 import { sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
 import {
   runtimeIdentityForOrigin,
@@ -164,7 +164,7 @@ export function validateProductInstallationRegistry(value) {
 }
 
 export function productInstallationRegistryPath(options = {}) {
-  return path.resolve(options.file || path.join(options.dataRoot || localAppDataRoot(), 'product-installations.json'));
+  return path.resolve(options.file || path.join(options.dataRoot || productDataRoot(), 'product-installations.json'));
 }
 
 export function productInstallationRegistryLockPath(options = {}) {

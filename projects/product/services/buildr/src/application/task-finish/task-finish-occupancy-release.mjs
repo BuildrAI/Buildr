@@ -20,7 +20,45 @@ export function hasSuccessfulFinishDelivery(run) {
   return delivery?.status === 'delivered'
     || Boolean(delivery?.remoteAfterRef)
     || Boolean(delivery?.finalRemoteRef)
-    || Boolean(completion?.finalRemoteRef);
+    || Boolean(completion?.finalRemoteRef)
+    || Boolean(run?.repositories?.some((repository) => repository.delivery?.status === 'delivered'
+      || repository.delivery?.remoteAfterRef
+      || repository.delivery?.finalRemoteRef));
+}
+
+function repositoryCarriers(run) {
+  const plans = new Map((run?.identity?.repositories || []).map((repository) => [repository.selector, repository]));
+  return (run?.repositories || [])
+    .filter((repository) => repository.deliveryCarrier?.root)
+    .map((repository) => ({ state: repository, plan: plans.get(repository.selector) }))
+    .filter((entry) => entry.plan?.retainedRoot);
+}
+
+function removeRunCarriers(run) {
+  const carriers = repositoryCarriers(run);
+  if (carriers.length === 0) {
+    const legacy = removeIsolatedGitCarrier({
+      repositoryRoot: run.identity.workspaceRoot,
+      workspaceRoot: run.identity.workspaceRoot,
+      runId: run.runId,
+      expectedRoot: run.deliveryCarrier?.root || run.occupancy?.cleanup?.root || null,
+    });
+    return { status: legacy.status, root: legacy.root || null, repositories: [], diagnostic: legacy };
+  }
+  const repositories = carriers.map(({ state, plan }) => {
+    const cleanup = removeIsolatedGitCarrier({
+      repositoryRoot: plan.retainedRoot,
+      workspaceRoot: run.identity.workspaceRoot,
+      runId: run.runId,
+      repositorySelector: plan.selector,
+      expectedRoot: state.deliveryCarrier.root,
+    });
+    return { selector: plan.selector, carrierIdentity: state.deliveryCarrier.identity || null, ...cleanup };
+  });
+  const blocked = repositories.find((repository) => !['removed', 'not-applicable'].includes(repository.status));
+  return blocked
+    ? { status: 'blocked', root: null, repositories, diagnostic: blocked }
+    : { status: repositories.some((repository) => repository.status === 'removed') ? 'removed' : 'not-applicable', root: null, repositories, diagnostic: null };
 }
 
 function currentTaskStatus(runtime, root, taskId) {
@@ -78,12 +116,7 @@ export function releaseFinishOccupancy({ root, run, taskId, runtime, clock = Dat
 
 function persistOccupancyRelease({ root, run, runtime, clock }) {
   if (run.occupancy?.status === 'released') {
-    const leftover = removeIsolatedGitCarrier({
-      repositoryRoot: run.identity.workspaceRoot,
-      workspaceRoot: run.identity.workspaceRoot,
-      runId: run.runId,
-      expectedRoot: run.occupancy.cleanup?.root || null,
-    });
+    const leftover = removeRunCarriers(run);
     if (!['removed', 'not-applicable'].includes(leftover.status)) {
       throw occupancyError(
         leftover.code || 'task-finish.carrier-cleanup-failed',
@@ -95,12 +128,7 @@ function persistOccupancyRelease({ root, run, runtime, clock }) {
   }
 
   const expectedRoot = run.deliveryCarrier?.root || null;
-  const carrierCleanup = removeIsolatedGitCarrier({
-    repositoryRoot: run.identity.workspaceRoot,
-    workspaceRoot: run.identity.workspaceRoot,
-    runId: run.runId,
-    expectedRoot,
-  });
+  const carrierCleanup = removeRunCarriers(run);
   if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) {
     throw occupancyError(
       carrierCleanup.code || 'task-finish.carrier-cleanup-failed',
@@ -118,9 +146,12 @@ function persistOccupancyRelease({ root, run, runtime, clock }) {
     cleanup: {
       status: carrierCleanup.status,
       root: carrierCleanup.root || expectedRoot,
+      repositories: carrierCleanup.repositories,
     },
   };
   next.deliveryCarrier = null;
+  next.equivalence = null;
+  next.repositories = (next.repositories || []).map((repository) => ({ ...repository, deliveryCarrier: null, equivalence: null, delivery: null }));
   next.resume = null;
   next.updatedAt = releasedAt;
   runtime.writeTaskFinishRunPersistence(root, next);

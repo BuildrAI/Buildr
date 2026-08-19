@@ -24,5 +24,8 @@ CODEBUDDY.md
 # Task machine-local state
 /.buildr/tasks/
 
+# Project daily progress machine-local state
+/.buildr/daily-progress/
+
 # Task worktrees
 /.worktrees/

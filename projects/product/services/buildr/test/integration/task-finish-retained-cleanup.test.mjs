@@ -8,14 +8,22 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import {
+  createIsolatedGitCarrier,
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
+  observeGitTaskContribution,
 } from '../../src/application/task-finish/git-task-contribution.mjs';
 import { gitTaskContributionIdentity } from '../../src/infrastructure/git/git-task-contribution.mjs';
 import {
   createFinishRun,
   writeFinishCompletion,
 } from '../../src/application/task-finish/task-finish-run.mjs';
+import {
+  normalizeTaskFinishRepositorySet,
+  taskFinishCarrierSetIdentity,
+  taskFinishDeliverySetIdentity,
+  taskFinishRepositorySetIdentity,
+} from '../../src/application/task-finish/task-finish-repository-set.mjs';
 import { executeRetainedTaskFinishCleanup } from '../../src/interfaces/internal/task-finish-retained-cleanup.mjs';
 
 function git(root, args) {
@@ -233,6 +241,7 @@ async function realZeroDeltaCleanupRun(t) {
     changes: [],
   });
   const preparedEnvironment = runtime.prepareTaskEnvironment(root, 'zero-delta-subprocess', {
+    adapter: 'codex',
     useGit: false,
     plan: {
       schemaVersion: 'buildr.task-environment-plan/v1',
@@ -495,6 +504,125 @@ test('retained cleanup still requires finalRemoteRef for an activation-aware run
     executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime }),
     (error) => error.code === 'task-finish.retained-cleanup-run-not-ready',
   );
+});
+
+test('retained cleanup 从 repository-set run 重建贡献与 no-contribution 授权', async (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-cleanup-multi-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const root = path.join(fixture, 'workspace');
+  const service = path.join(fixture, 'service');
+  for (const repository of [root, service]) {
+    fs.mkdirSync(repository);
+    git(repository, ['init', '-b', 'dev']);
+    git(repository, ['config', 'user.name', 'Buildr Retained Cleanup']);
+    git(repository, ['config', 'user.email', 'retained-cleanup@example.com']);
+    fs.writeFileSync(path.join(repository, '.gitignore'), '/.buildr/\n/.worktrees/\n');
+    fs.writeFileSync(path.join(repository, 'shared.txt'), `${path.basename(repository)} baseline\n`);
+    git(repository, ['add', '-A']);
+    git(repository, ['commit', '-m', 'baseline']);
+  }
+  fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Retained cleanup multi test\n');
+  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 123e4567-e89b-42d3-a456-426614174005\nname: Retained cleanup multi\ndescription: Retained cleanup multi\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
+  git(root, ['add', 'AGENTS.md', 'projects/manifest.yml']);
+  git(root, ['commit', '-m', 'workspace authority']);
+
+  const task = 'finish-multi-cleanup';
+  const workspaceTaskRoot = path.join(root, '.worktrees', task);
+  const serviceTaskRoot = path.join(fixture, 'service-task');
+  git(root, ['worktree', 'add', '-b', `codex/${task}`, workspaceTaskRoot, 'dev']);
+  git(service, ['worktree', 'add', '-b', `codex/${task}`, serviceTaskRoot, 'dev']);
+  fs.writeFileSync(path.join(serviceTaskRoot, 'feature.txt'), 'service contribution\n');
+  git(serviceTaskRoot, ['add', 'feature.txt']);
+  git(serviceTaskRoot, ['commit', '-m', 'service contribution']);
+  const workspaceTarget = git(root, ['rev-parse', 'dev']);
+  const serviceTarget = git(service, ['rev-parse', 'dev']);
+  const workspaceContribution = observeGitTaskContribution({ root: workspaceTaskRoot, deliveryBaselineHead: workspaceTarget });
+  const serviceContribution = observeGitTaskContribution({ root: serviceTaskRoot, deliveryBaselineHead: serviceTarget });
+  const isolated = createIsolatedGitCarrier({
+    repositoryRoot: serviceTaskRoot,
+    workspaceRoot: root,
+    runId: 'retained-cleanup-multi-run',
+    repositorySelector: 'service:example',
+    deliveryBaselineHead: serviceTarget,
+    taskContribution: serviceContribution,
+    message: 'delivery carrier',
+  });
+  const carrier = {
+    ...isolated,
+    identity: 'sha256-service-carrier',
+    kind: 'git-isolated-commit',
+    repositorySelector: 'service:example',
+    expectedTargetRef: serviceTarget,
+    reuseMode: 'deterministic-reuse',
+  };
+  git(service, ['merge', '--ff-only', carrier.head]);
+  const plans = normalizeTaskFinishRepositorySet([
+    {
+      selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot: workspaceTaskRoot,
+      environmentBranch: `codex/${task}`, targetBranch: 'dev', remote: null,
+      disposition: 'not-applicable', reason: 'no-contribution', taskContribution: workspaceContribution,
+    },
+    {
+      selector: 'service:example', sourcePath: 'projects/example', retainedRoot: service, taskRoot: serviceTaskRoot,
+      environmentBranch: `codex/${task}`, targetBranch: 'dev', remote: 'origin',
+      disposition: 'applicable', reason: null, taskContribution: serviceContribution,
+    },
+  ]);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: task, title: 'Multi retained cleanup', intent: 'Reconstruct repository authorization.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({
+    root,
+    runId: 'retained-cleanup-multi-run',
+    identity: {
+      task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1,
+      contentTargetIdentity: 'sha256-content', agent: 'codex', repositories: plans,
+      repositorySetIdentity: taskFinishRepositorySetIdentity(plans), environmentRoot: workspaceTaskRoot, workspaceRoot: root,
+    },
+    runtime,
+  });
+  const serviceState = run.repositories.find((repository) => repository.selector === 'service:example');
+  serviceState.deliveryCarrier = carrier;
+  serviceState.delivery = { status: 'delivered', targetDisposition: 'carrier', carrierRef: carrier.head, remoteAfterRef: carrier.head, finalRemoteRef: carrier.head };
+  run.phases.find((phase) => phase.id === 'deliver').status = 'passed';
+  run.phases.find((phase) => phase.id === 'cleanup').status = 'running';
+  runtime.writeTaskFinishRunPersistence(root, run);
+  writeFinishCompletion({
+    root,
+    runId: run.runId,
+    completion: {
+      schemaVersion: 'buildr.task-finish-completion/v2', runId: run.runId, task,
+      handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity,
+      candidateGeneration: 1, contentTargetIdentity: run.identity.contentTargetIdentity,
+      repositorySetIdentity: run.identity.repositorySetIdentity,
+      carrierSetIdentity: taskFinishCarrierSetIdentity(run.repositories),
+      deliverySetIdentity: taskFinishDeliverySetIdentity(run.repositories),
+      repositories: [
+        { selector: 'service:example', disposition: 'applicable', carrierIdentity: carrier.identity, carrierRef: carrier.head, finalRemoteRef: carrier.head, taskContributionIdentity: serviceContribution.identity },
+        { selector: 'workspace', disposition: 'not-applicable', carrierIdentity: null, carrierRef: null, finalRemoteRef: workspaceTarget, taskContributionIdentity: workspaceContribution.identity },
+      ],
+      status: 'prepared', preparedAt: new Date().toISOString(),
+    },
+    runtime,
+  });
+  let authorization = null;
+  Object.assign(runtime, {
+    resolveTaskEnvironmentExecution: () => ({ ready: true, workspaceRoot: root, environmentRoot: workspaceTaskRoot, repositories: plans.map((plan) => ({ selector: plan.selector, startPoint: 'dev' })) }),
+    cleanupTaskEnvironment: async (_root, _task, value) => {
+      authorization = value;
+      return { status: 'cleaned', effects: [], diagnostic: null };
+    },
+  });
+
+  const result = await executeRetainedTaskFinishCleanup({ targetRoot: root, runId: run.runId, runtime });
+  assert.equal(result.status, 'cleaned');
+  assert.equal(authorization.type, 'finish');
+  assert.equal(authorization.integratedContributions.workspace.kind, 'no-contribution');
+  assert.equal(authorization.integratedContributions['service:example'].identity, carrier.identity);
+  assert.equal(authorization.deliveries.workspace, workspaceTarget);
+  assert.equal(authorization.deliveries['service:example'], carrier.head);
 });
 
 test('retained cleanup bootstrap rejects an unprepared Finish run', async (t) => {

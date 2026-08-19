@@ -1386,7 +1386,7 @@ Buildr guidance MUST把Snapshot `required`解释为不可安全绕过的authorit
 
 ### Requirement: 正式收尾前必须轻量确认贡献与主工作区对齐
 
-Task Finish Skill MUST 在调用产品 `task finish run` 之前，向用户或当前事实确认两件事：任务分支上的任务贡献已经提交；本机主工作区（retained Workspace）已经对齐本次交付的目标远端。该提醒 MUST NOT 替代产品入口一次聚合 Environment / Development / 交付缺口；Skill MUST 仍直接启动 canonical `task finish run`，并在返回 `task_finish.entry_gaps` 时按三个模块完整转述。
+Task Finish Skill MUST 在调用产品 `task finish run` 之前，向用户或当前事实确认三件事：任务分支上的任务贡献已经提交；本机主工作区（retained Workspace）已经对齐本次交付的目标远端；Finish `--agent` 省略或精确等于 Environment 已绑定 adapter。该提醒 MUST NOT 替代产品入口一次聚合 Environment / Development / 交付缺口，也 MUST NOT 替代产品 preflight 的 retained/远端对齐观察。Skill MUST 仍直接启动 canonical `task finish run`，并在返回 `task_finish.entry_gaps` 时按三个模块完整转述。
 
 #### Scenario: 收尾前发现贡献未提交或主工作区落后
 
@@ -1399,6 +1399,12 @@ Task Finish Skill MUST 在调用产品 `task finish run` 之前，向用户或�
 - **WHEN** 贡献已提交且主工作区已对齐目标远端，用户要求正式收尾
 - **THEN** Skill MUST 直接调用 canonical `task finish run`
 - **AND** MUST NOT 在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast
+
+#### Scenario: Finish --agent 跟随 Environment
+
+- **WHEN** Environment Receipt 的 adapter 为 `codex`，当前聊天宿主为 Cursor
+- **THEN** Skill 调用 `task finish run` 时 MUST省略 `--agent` 或显式传入 `--agent codex`
+- **AND** MUST NOT传入 `--agent cursor`
 
 ### Requirement: OpenSpec 变更必须按可绑定顺序接入任务
 
@@ -1503,3 +1509,49 @@ Buildr Agent workflow MUST 将已检出 canonical Workspace 因远端协作者�
 - **WHEN** Buildr Skill 为协作者更新执行 workspace sync
 - **THEN** sync MUST 只收敛 workspace destination 与当前 Agent runtime 并返回最终 Doctor
 - **AND** sync MUST NOT 创建 Task、Environment、Verification、Candidate、Finish Result 或 self-bootstrap evidence
+
+### Requirement: 准备 Environment 时必须写出当前宿主
+`task-environment` Skill与正式执行入口在调用`buildr task environment prepare`时 MUST提供当前宿主的`--agent <adapter>`。Agent MUST把该值写成正在执行本次prepare的runtime id，例如Cursor会话写`cursor`、Codex会话写`codex`。Skill示例、帮助摘录与停止条件 MUST NOT展示可省略`--agent`的prepare命令，也 MUST NOT指示省略后默认为Codex。Buildr MUST NOT要求Agent探测宿主；写错宿主时仍按Task Environment既有mismatch失败。
+
+#### Scenario: Cursor Agent 准备环境
+- **WHEN** 当前会话宿主为Cursor，且Agent为active Task运行prepare
+- **THEN** 调用 MUST包含`--agent cursor`
+- **AND** MUST NOT省略`--agent`或改写为`codex`
+
+#### Scenario: Codex Agent 准备环境
+- **WHEN** 当前会话宿主为Codex，且Agent为active Task运行prepare
+- **THEN** 调用 MUST包含`--agent codex`
+
+#### Scenario: Skill 示例要求 --agent
+- **WHEN** Agent阅读`task-environment` Skill的prepare用法
+- **THEN** 示例 MUST包含必填`--agent <adapter>`
+- **AND** MUST NOT给出省略`--agent`即可成功的prepare命令
+
+### Requirement: Task Finish 不得用会话宿主覆盖 Environment adapter
+Task Finish Skill 的 `--agent` 只表达 Environment 已登记宿主，不表达当前对话 runtime。Skill 示例与停止条件 MUST允许省略 Finish `--agent`，并说明产品将使用 Environment adapter。Skill MUST NOT要求 Agent 探测宿主，也 MUST NOT把 prepare 的必填 `--agent` 规则复制到 Finish。
+
+#### Scenario: Skill 示例允许省略 Finish --agent
+- **WHEN** Agent 阅读 `task-finish` Skill 的 `task finish run` 用法
+- **THEN** 示例 MUST展示可省略 `--agent` 的命令，或明确传入 Environment adapter
+- **AND** MUST NOT把当前聊天宿主写成 Finish `--agent` 的默认值
+
+### Requirement: Agent必须按标准Parent启动流程推进到Child之前
+Buildr内置Task workflow Skills MUST将新Parent从Git基线推进到Child前的顺序固定为：激活前Git门禁、Parent activate、matching Environment、Development begin、Parent Plan record、Planning Review、Parent planning refresh与启动就绪回读；MUST在启动就绪后停止Parent普通实现推进，等待用户选择eligible Contribution。
+
+#### Scenario: coordination-only Parent启动
+- **WHEN** Parent只承担协调且当前不修改、构建或测试交付内容
+- **THEN** Agent MUST仍准备matching shared Environment，并可对完整Project/Service scope提交有理由的Preparation `not-applicable`
+- **AND** MUST不因此创建独立worktree、执行不需要的依赖安装或跳过Environment authority
+
+#### Scenario: Parent到达Child前停止点
+- **WHEN** Parent Plan、Planning Review和Development planning gate current且启动投影返回eligible Contribution
+- **THEN** Agent MUST报告Parent已可启动Child并停止`observe`、Verification、Candidate和Finish
+- **AND** 后续Child必须由用户选择Contribution后按独立Task流程启动
+
+### Requirement: Agent必须在一对多Child拆分前reconcile Contribution
+一个current Contribution MUST最多绑定一个Child；当真实能力范围需要多个Child独立交付时，Agent MUST先以current Parent Plan identity显式reconcile为多个窄Contribution，再分别创建和绑定Child。
+
+#### Scenario: 宽Contribution需要多个Child
+- **WHEN** 能力盘点证明一个未分配Contribution需要两个或以上独立Environment、Change或Finish handoff
+- **THEN** Agent MUST在创建第二个Child前reconcile Parent Plan并重新完成Planning Review与refresh
+- **AND** MUST不把同一Contribution同时绑定多个Child或只记录非阻塞聊天约束

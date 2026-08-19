@@ -2,6 +2,8 @@
 
 应用 change 前先向用户说明正在使用 OpenSpec、`apply` action、change id 及其选择或推断来源。OpenSpec status 解析上下文后，在编辑前报告实际 `changeRoot`；正式实现任务同时报告 Task ID 与 Task Environment 的实际工作根。
 
+若 current proposal、design 或 delta specs 表明会产生用户可见前端 UI 变化，确认用户是否需要界面预演稿（UI Preview）。只有当前任务已有明确确认，才在正式前端实现编辑前加载独立 `ui-preview` Skill完成真实 UI 调查、完整页面生成和浏览器验证；用户拒绝、未确认或要求继续时不生成并直接继续 apply。UI Preview 不构成 Planning Review、Implementation、Verification、Convergence 或 Finish gate。
+
 任何实现编辑前，确认 apply-required artifacts 已完成并运行上游 `openspec validate <change> --strict`，再从matching Environment Receipt取得`execution.workdir`并运行`buildr openspec convergence preflight <change> --project <project> --target <task-execution-root> --json`。Preflight `blocked`时在Planning Review前停止，由Agent按active Change conflict、Scenario omission、rename/identity conflict、projected validation或其他semantic diagnostic处理依赖、修订artifact或请求用户决定，再重跑strict与preflight；不得自动补回Scenario、选择rename、修改canonical或把blocker写入Review Result代替处理。
 
 只有preflight返回current `ready`后，正式Task才使用Environment声明的Node与Buildr Service execution root调用`task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>`，用`resolved`结果的`target.identity`与`planningNodes`更新Development planning，并持有该target的current Planning Review。任一门禁未通过时停止并报告诊断；preflight或resolver `blocked`时不得用raw digest、路径、mtime、checklist progress、Git ref或旧Review target回退。Planning Review不拥有、复制或解释preflight逻辑。delta Requirement identity 后续改变时必须重新执行strict validation、preflight与resolver，并使Planning Review重新判断current。Preflight ready只绑定当前delta、canonical、active Changes与executable，不是写入授权；最终converge始终按最新事实重新规划验证。不得把该门禁放回早于Change创建的task triage，也不得创建、刷新、读取或采用旧baseline/阶段sidecar。

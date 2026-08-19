@@ -6,7 +6,7 @@ import process from 'node:process';
 
 import { localAppDataRoot } from '../../../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
-import { healthyLocalAppInstance, openDefaultBrowser } from './instance-manager.mjs';
+import { INSTANCE_SCHEMA, healthyLocalAppInstance, openDefaultBrowser } from './instance-manager.mjs';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -118,7 +118,7 @@ export function readPreviewOwner(name, dataRoot) {
 
 function readPreviewInstance(name, dataRoot) {
   const value = readJson(previewInstancePath(name, dataRoot));
-  if (!value || value.schemaVersion !== 'buildr.local-app-instance/v1' || typeof value.url !== 'string' || typeof value.secret !== 'string' || !Number.isInteger(value.pid)) return null;
+  if (!value || ![INSTANCE_SCHEMA, 'buildr.local-app-instance/v1'].includes(value.schemaVersion) || typeof value.url !== 'string' || typeof value.secret !== 'string' || !Number.isInteger(value.pid)) return null;
   return value;
 }
 
@@ -261,17 +261,27 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
   writeOwner(runtime, owner, dataRoot);
-  const child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(port), '--no-open'], {
-    cwd: targetRoot,
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(owner) },
-  });
+  const logFile = path.join(root, 'preview.log');
+  const logDescriptor = fs.openSync(logFile, 'a');
+  let child;
+  try {
+    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(port), '--no-open'], {
+      cwd: targetRoot,
+      detached: true,
+      stdio: ['ignore', logDescriptor, logDescriptor],
+      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(owner) },
+    });
+  } finally {
+    fs.closeSync(logDescriptor);
+  }
   child.unref();
   const started = await waitForPreview(instance, dataRoot);
   if (!started) {
-    const error = new Error(`预览实例 ${instance} 未在预期时间内就绪。`);
+    let diagnostic = null;
+    try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
+    const error = new Error(`预览实例 ${instance} 未在预期时间内就绪。${diagnostic ? `\n${diagnostic}` : ''}`);
     error.code = 'preview_start_timeout';
+    error.details = { instance, logFile, diagnostic };
     throw error;
   }
   const managedOwner = {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Input, Select, Table } from 'antd';
+import { Button, Input, Modal, Select } from 'antd';
 import { api, type ApiError } from '../api';
 import { useAppShell } from '../app/AppShellContext';
+import { MarkdownHost } from '../components/MarkdownHost';
 import { confirmModal } from '../lib/confirm';
+import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../lib/taskDocumentLinks';
 import { ChangeBriefPanel } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
@@ -12,6 +14,11 @@ import { EnvironmentTab } from './task-detail/EnvironmentTab';
 import { EvidenceTab } from './task-detail/EvidenceTab';
 import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
+import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
+import { DailyProgressLinksPanel } from './task-detail/DailyProgressLinksPanel';
+import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
+import type { ParentCoordinationResult } from './task-detail/parentCoordination';
+import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
 import {
   diff,
   Fact,
@@ -31,6 +38,7 @@ type BriefState =
 
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
+  { id: 'preview', label: '预演' },
   { id: 'development', label: '研发' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
@@ -45,13 +53,16 @@ export function TaskDetailPage() {
   const [data, setData] = useState<TaskDetailData | null>(null);
   const [overviewData, setOverviewData] = useState<any>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [coordinationData, setCoordinationData] = useState<any>(null);
+  const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ message: string; error: boolean } | null>(null);
   const [editState, setEditState] = useState('可以修改');
   const [activeTab, setActiveTab] = useState<TaskTab>('overview');
   const [briefs, setBriefs] = useState<BriefState[]>([]);
+  const [previewData, setPreviewData] = useState<UiPreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [intent, setIntent] = useState('');
@@ -65,6 +76,8 @@ export function TaskDetailPage() {
   const [completeSummary, setCompleteSummary] = useState('');
   const [completeNoChange, setCompleteNoChange] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
+  const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
+  const [documentReference, setDocumentReference] = useState<TaskDocumentReference | null>(null);
 
   const [developmentData, setDevelopmentData] = useState<any>(null);
   const [developmentLoading, setDevelopmentLoading] = useState(false);
@@ -92,6 +105,7 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
+  const previewRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
@@ -101,6 +115,7 @@ export function TaskDetailPage() {
   const executionRecordViewRef = useRef<ExecutionRecordView>('all');
   const retrospectiveRequestRef = useRef(0);
   const retrospectiveMutationRef = useRef(0);
+  const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
 
   const applyRecord = useCallback((next: TaskDetailData, workspaceName?: string) => {
     setData(next);
@@ -177,7 +192,7 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setCoordinationLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`);
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`) as ParentCoordinationResult;
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
@@ -208,6 +223,24 @@ export function TaskDetailPage() {
       }
     } finally {
       if (developmentRequestRef.current === requestId) setDevelopmentLoading(false);
+    }
+  }, [taskId]);
+
+  const refreshPreview = useCallback(async () => {
+    const requestId = ++previewRequestRef.current;
+    const currentTaskId = taskId;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`) as UiPreviewData;
+      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPreviewData(next);
+    } catch (err) {
+      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setPreviewError(`${(err as ApiError).code || 'task_ui_preview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
+        setPreviewData(null);
+      }
+    } finally {
+      if (previewRequestRef.current === requestId) setPreviewLoading(false);
     }
   }, [taskId]);
 
@@ -359,6 +392,7 @@ export function TaskDetailPage() {
       void refreshCoordination();
     }
     if (tab === 'development') void refreshDevelopment();
+    if (tab === 'preview') void refreshPreview();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
@@ -366,15 +400,18 @@ export function TaskDetailPage() {
       void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPreview, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
     setAlert(null);
+    setData(null);
     setActiveTab('overview');
     setOverviewData(null);
     setCoordinationData(null);
     setDevelopmentData(null);
+    setPreviewData(null);
+    setPreviewError(null);
     setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
@@ -387,8 +424,12 @@ export function TaskDetailPage() {
     setCompleteSummary('');
     setCompleteNoChange('');
     setAbandonReason('');
+    setActionModal(null);
+    setDocumentReference(null);
+    projectRegistryRef.current = null;
     setEditState('可以修改');
     developmentRequestRef.current += 1;
+    previewRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
     environmentRequestRef.current += 1;
@@ -398,6 +439,7 @@ export function TaskDetailPage() {
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
+    setPreviewLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
     setEnvironmentLoading(false);
@@ -486,6 +528,29 @@ export function TaskDetailPage() {
     setEditState(error.code === 'task_record_conflict' ? '记录已变化' : '保存失败');
   };
 
+  const openIntentDocument = async (linkHref: string) => {
+    const current = dataRef.current;
+    if (!current) return;
+    try {
+      if (!projectRegistryRef.current) {
+        const registry = await api('/api/v1/projects') as { projects?: RegisteredProject[] };
+        projectRegistryRef.current = registry.projects || [];
+      }
+      const reference = resolveTaskDocumentReference(linkHref, current.record.scope, projectRegistryRef.current);
+      if (!reference) {
+        setAlert({
+          message: `无法打开“${linkHref}”：仅支持当前任务范围内已登记项目的 Markdown 文档。`,
+          error: true,
+        });
+        return;
+      }
+      setAlert(null);
+      setDocumentReference(reference);
+    } catch (error) {
+      setAlert({ message: error instanceof Error ? error.message : '读取项目文档入口失败。', error: true });
+    }
+  };
+
   const onSave = async (event: FormEvent) => {
     event.preventDefault();
     if (!data) return;
@@ -517,6 +582,7 @@ export function TaskDetailPage() {
       void loadBriefs(updated.record.changes);
       setEditState(updated.effects.length ? '保存成功' : '内容一致');
       setAlert(null);
+      setActionModal(null);
     } catch (err) {
       showMutationError(err as ApiError);
     } finally {
@@ -542,6 +608,7 @@ export function TaskDetailPage() {
           noChange: completeNoChange === 'true',
         }),
       });
+      setActionModal(null);
       await refresh();
       selectTab('overview');
     } catch (err) {
@@ -567,6 +634,7 @@ export function TaskDetailPage() {
           reason: abandonReason,
         }),
       });
+      setActionModal(null);
       await refresh();
       selectTab('overview');
     } catch (err) {
@@ -578,11 +646,9 @@ export function TaskDetailPage() {
     return (
       <>
         <section className="page-header">
-          <p className="eyebrow">任务</p>
           <h1>任务不可用</h1>
           <p className="page-copy">{pageError}</p>
         </section>
-        <Link to={href('/tasks')}><Button>返回任务列表</Button></Link>
       </>
     );
   }
@@ -590,11 +656,10 @@ export function TaskDetailPage() {
   if (!data) {
     return (
       <section className="detail-page-header">
-        <Link className="back-link" to={href('/tasks')}>← 返回任务列表</Link>
         <div className="detail-title-row">
-          <div>
-            <p className="eyebrow">任务</p>
+          <div className="detail-title-copy">
             <h1 id="task-detail-title">正在读取…</h1>
+            <p id="task-detail-id" className="task-detail-id" />
             <p id="task-detail-intent" className="page-copy" />
           </div>
           <span id="task-detail-status" className="lifecycle-badge">—</span>
@@ -612,12 +677,16 @@ export function TaskDetailPage() {
   return (
     <>
       <section className="detail-page-header">
-        <Link className="back-link" to={href('/tasks')}>← 返回任务列表</Link>
         <div className="detail-title-row">
-          <div>
-            <p className="eyebrow">任务</p>
+          <div className="detail-title-copy">
             <h1 id="task-detail-title">{record.title}</h1>
-            <p id="task-detail-intent" className="page-copy">{record.intent}</p>
+            <p id="task-detail-id" className="task-detail-id">{record.taskId}</p>
+            <div id="task-detail-intent" className="page-copy task-intent-markdown">
+              <MarkdownHost
+                markdown={record.intent}
+                options={{ allowRelativeLinks: true, onRelativeLinkClick: (linkHref) => { void openIntentDocument(linkHref); } }}
+              />
+            </div>
           </div>
           <span id="task-detail-status" className={`lifecycle-badge ${record.status}`}>{taskStatusLabel(record.status)}</span>
         </div>
@@ -626,18 +695,31 @@ export function TaskDetailPage() {
         {alert?.message || ''}
       </div>
       <nav className="detail-tabs" aria-label="任务详情">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.id}
-            className={`detail-tab${activeTab === tab.id ? ' active' : ''}`}
-            type="text"
-            data-task-tab={tab.id}
-            aria-selected={activeTab === tab.id}
-            onClick={() => selectTab(tab.id)}
-          >
-            {tab.label}
+        <div className="detail-tabs-list">
+          {TABS.map((tab) => (
+            <Button
+              key={tab.id}
+              className={`detail-tab${activeTab === tab.id ? ' active' : ''}`}
+              type="text"
+              data-task-tab={tab.id}
+              aria-selected={activeTab === tab.id}
+              onClick={() => selectTab(tab.id)}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </div>
+        <div id="task-active-actions" className={`detail-tab-actions${terminal ? ' hidden' : ''}`}>
+          <Button id="task-edit-action" size="small" onClick={() => setActionModal('edit')}>
+            {record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}
           </Button>
-        ))}
+          <Button id="task-complete-action" size="small" onClick={() => setActionModal('complete')}>
+            结束任务
+          </Button>
+          <Button id="task-abandon-action" size="small" danger onClick={() => setActionModal('abandon')}>
+            放弃任务
+          </Button>
+        </div>
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
@@ -660,58 +742,8 @@ export function TaskDetailPage() {
             </dl>
           )}
         </section>
-        <section className="panel" id="task-parent-coordination" aria-live="polite">
-          <div className="panel-heading">
-            <div>
-              <h2>父子任务协调</h2>
-              <p className="section-copy">直接展示 Parent Coordination Application 的派生 read model；不在 Parent Task Record 复制 Child 状态或交付结果。</p>
-            </div>
-            <Button onClick={() => { void refreshCoordination(); }} disabled={coordinationLoading}>{coordinationLoading ? '读取中…' : '刷新协调事实'}</Button>
-          </div>
-          {coordinationData?.mode === 'parent-plan' ? (
-            <>
-              <dl className="read-facts detail-facts">
-                <Fact label="Parent outcome" value={coordinationData.parentPlan?.outcome || '—'} />
-                <Fact label="Plan identity" value={coordinationData.parentPlan?.identity || '—'} />
-                <Fact label="前置条件" value={coordinationData.prerequisitesSatisfied ? '已满足，仍需显式最终集成验收' : `未满足（${coordinationData.blockers?.length || 0} 项）`} />
-                <Fact label="最终集成验收" value={coordinationData.parentAcceptance ? `${coordinationData.parentAcceptance.summary} · ${formatDateTime(coordinationData.parentAcceptance.acceptedAt)}` : '尚未记录'} />
-                <Fact label="Planning Review" value={coordinationData.planningReview?.present ? `${coordinationData.planningReview.outcome} · ${coordinationData.planningReview.gateMatch}` : '尚未记录'} />
-              </dl>
-              <Table
-                size="small"
-                pagination={false}
-                rowKey="id"
-                dataSource={coordinationData.contributions || []}
-                columns={[
-                  {
-                    title: 'Contribution',
-                    render: (_value: unknown, contribution: { id: string }) => <strong>{contribution.id}</strong>,
-                  },
-                  { title: '计划结果', dataIndex: 'summary' },
-                  { title: '派生状态', dataIndex: 'disposition' },
-                  {
-                    title: '承担 / 交付',
-                    render: (_value: unknown, contribution: any) => (
-                      contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'
-                    ),
-                  },
-                ]}
-              />
-              <h3>直接 Child Tasks</h3>
-              {coordinationData.children?.length ? (
-                <dl className="read-facts detail-facts">
-                  {coordinationData.children.map((child: any) => (
-                    <Fact key={child.taskId} label={child.taskId} value={`${taskStatusLabel(child.status)} · planned: ${child.plannedContributions.join('、') || '无'} · handoff: ${child.deliveryProven ? '已证明' : '未证明'}`} />
-                  ))}
-                </dl>
-              ) : <p className="empty-copy">尚无直接 Child Task。</p>}
-            </>
-          ) : (
-            <p className={coordinationData?.diagnostic?.code && coordinationData.diagnostic.code !== 'parent_plan_absent' ? 'alert error' : 'section-copy'}>
-              {coordinationData?.diagnostic?.message || '该 Task 没有 Parent Plan；历史 Task 保持可读且不会自动 backfill。'}
-            </p>
-          )}
-        </section>
+        <DailyProgressLinksPanel taskId={taskId} workspaceId={workspaceId} />
+        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {
@@ -818,97 +850,115 @@ export function TaskDetailPage() {
             </dl>
           </aside>
         </section>
-        <section id="task-active-actions" className={`task-actions${terminal ? ' hidden' : ''}`}>
-          <article className="panel">
-            <div className="panel-heading">
-              <div>
-                <h2>{record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}</h2>
-                <p className="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p>
-              </div>
-              <span id="task-edit-state" className="state">{editState}</span>
-            </div>
-            <form id="task-edit-form" className="prompt-grid" onSubmit={(event) => void onSave(event)}>
-              <label>
-                标题
-                <Input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
-              </label>
-              <label>
-                Parent Task
-                <Select
-                  id="task-edit-parent"
-                  style={{ width: '100%' }}
-                  value={parentTaskId}
-                  loading={parentOptionsLoading}
-                  onDropdownVisibleChange={(open) => { if (open) void loadParentOptions(); }}
-                  onChange={(value) => setParentTaskId(value ?? '')}
-                  options={parentOptions}
-                />
-              </label>
-              <label className="full">
-                意图
-                <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
-              </label>
-              <label>
-                项目范围
-                <Input.TextArea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
-              </label>
-              <label>
-                服务范围（project/service）
-                <Input.TextArea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
-              </label>
-              <div className="actions full">
-                <Button id="task-edit-button" type="primary" htmlType="submit" loading={saving}>保存任务记录</Button>
-              </div>
-            </form>
-          </article>
-          <article className="panel terminal-panel">
-            <div className="panel-heading">
-              <div>
-                <h2>结束任务</h2>
-                <p className="section-copy">只更新顶层状态；不会执行任务收尾（Task Finish）、Git、任务验证、任务环境清理或其他专业动作。</p>
-              </div>
-            </div>
-            <div className="terminal-action-grid">
-              <form id="task-complete-form" onSubmit={(event) => void onComplete(event)}>
-                <h3>完成</h3>
-                <label>
-                  完成摘要
-                  <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
-                </label>
-                <label>
-                  是否无需交付变更
-                  <Select
-                    id="task-complete-no-change"
-                    style={{ width: '100%' }}
-                    placeholder="请选择"
-                    value={completeNoChange || undefined}
-                    onChange={(value) => setCompleteNoChange(value || '')}
-                    options={record.status === 'todo'
-                      ? [{ value: 'true', label: '确认无需变更' }]
-                      : [
-                          { value: 'false', label: '有交付变更' },
-                          { value: 'true', label: '确认无需变更' },
-                        ]}
-                  />
-                </label>
-                <Button type="default" htmlType="submit">确认完成</Button>
-              </form>
-              <form id="task-abandon-form" onSubmit={(event) => void onAbandon(event)}>
-                <h3>放弃</h3>
-                <label>
-                  放弃原因
-                  <Input.TextArea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
-                </label>
-                <Button danger htmlType="submit">确认放弃</Button>
-              </form>
-            </div>
-          </article>
-        </section>
         <section id="task-terminal-note" className={`empty-state${terminal ? '' : ' hidden'}`}>
           <h2>这是终态任务记录</h2>
           <p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p>
         </section>
       </div>
+
+      <Modal
+        title={record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}
+        open={actionModal === 'edit'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={720}
+        className="task-action-modal"
+      >
+        <p className="section-copy">保存时只提交明确的设置与增删操作；Change 由 Agent 在任务过程中维护，页面只读展示。修改 Parent 不会自动处置任何关联 Task。</p>
+        <span id="task-edit-state" className="state">{editState}</span>
+        <form id="task-edit-form" className="prompt-grid" onSubmit={(event) => void onSave(event)}>
+          <label>
+            标题
+            <Input id="task-edit-title" required value={title} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <label>
+            Parent Task
+            <Select
+              id="task-edit-parent"
+              style={{ width: '100%' }}
+              value={parentTaskId}
+              loading={parentOptionsLoading}
+              onDropdownVisibleChange={(open) => { if (open) void loadParentOptions(); }}
+              onChange={(value) => setParentTaskId(value ?? '')}
+              options={parentOptions}
+            />
+          </label>
+          <label className="full">
+            意图
+            <Input.TextArea id="task-edit-intent" rows={3} required value={intent} onChange={(event) => setIntent(event.target.value)} />
+            <small className="context-help">支持 Markdown 链接；Workspace 内文档请使用相对路径，例如 projects/product/docs/example.md。</small>
+          </label>
+          <label>
+            项目范围
+            <Input.TextArea id="task-edit-projects" rows={3} value={projectsText} onChange={(event) => setProjectsText(event.target.value)} />
+          </label>
+          <label>
+            服务范围（project/service）
+            <Input.TextArea id="task-edit-services" rows={3} value={servicesText} onChange={(event) => setServicesText(event.target.value)} />
+          </label>
+          <div className="actions full">
+            <Button id="task-edit-button" type="primary" htmlType="submit" loading={saving}>保存任务记录</Button>
+          </div>
+        </form>
+      </Modal>
+      <TaskDocumentPreviewModal reference={documentReference} onClose={() => setDocumentReference(null)} />
+      <Modal
+        title="结束任务"
+        open={actionModal === 'complete'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={520}
+        className="task-action-modal"
+      >
+        <p className="section-copy">只更新顶层状态；不会执行任务收尾（Task Finish）、Git、任务验证、任务环境清理或其他专业动作。</p>
+        <form id="task-complete-form" onSubmit={(event) => void onComplete(event)}>
+          <label>
+            完成摘要
+            <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
+          </label>
+          <label>
+            是否无需交付变更
+            <Select
+              id="task-complete-no-change"
+              style={{ width: '100%' }}
+              placeholder="请选择"
+              value={completeNoChange || undefined}
+              onChange={(value) => setCompleteNoChange(value || '')}
+              options={record.status === 'todo'
+                ? [{ value: 'true', label: '确认无需变更' }]
+                : [
+                    { value: 'false', label: '有交付变更' },
+                    { value: 'true', label: '确认无需变更' },
+                  ]}
+            />
+          </label>
+          <div className="actions">
+            <Button type="default" htmlType="submit">确认完成</Button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        title="放弃任务"
+        open={actionModal === 'abandon'}
+        onCancel={() => setActionModal(null)}
+        footer={null}
+        destroyOnClose
+        width={520}
+        className="task-action-modal"
+      >
+        <p className="section-copy">只更新顶层状态；不会清理任务环境、执行 Git 或其他专业动作。</p>
+        <form id="task-abandon-form" onSubmit={(event) => void onAbandon(event)}>
+          <label>
+            放弃原因
+            <Input.TextArea id="task-abandon-reason" rows={3} required value={abandonReason} onChange={(event) => setAbandonReason(event.target.value)} />
+          </label>
+          <div className="actions">
+            <Button danger htmlType="submit">确认放弃</Button>
+          </div>
+        </form>
+      </Modal>
 
       <DevelopmentTab
         taskId={taskId}
@@ -918,6 +968,14 @@ export function TaskDetailPage() {
         onRefresh={() => { void refreshDevelopment(); }}
         onSelectEvidence={() => selectTab('evidence')}
         onSelectFinishExecutionRecords={() => selectExecutionRecordView('finish')}
+      />
+      <PreviewTab
+        active={activeTab === 'preview'}
+        workspaceId={workspaceId}
+        data={previewData}
+        loading={previewLoading}
+        error={previewError}
+        onRefresh={() => { void refreshPreview(); }}
       />
       <EvidenceTab
         active={activeTab === 'evidence'}

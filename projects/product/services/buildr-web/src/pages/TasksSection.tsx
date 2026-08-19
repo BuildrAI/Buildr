@@ -1,35 +1,47 @@
-import { useEffect, useState } from 'react';
 import { useOutlet } from 'react-router-dom';
 import { useAppShell } from '../app/AppShellContext';
+import { useResizableListWidth } from '../lib/useResizableListWidth';
 import { TasksPage } from './TasksPage';
 
+const STORAGE_KEY = 'buildr.web.tasks-list-width';
+
 /**
- * 任务区段布局：列表始终按需挂载并在进入详情时保持实例，
- * 详情走嵌套 Outlet；侧栏「任务」通过 resetToken 强制重建列表。
+ * 任务工作台：宽屏左列表右详情；窄屏打开详情时列表让出主表面。
+ * 顶栏「任务」通过 resetToken 强制重建列表筛选。
  */
 export function TasksSection() {
   const outlet = useOutlet();
   const { taskListResetToken } = useAppShell();
   const showingChild = outlet != null;
-  const [listReady, setListReady] = useState(() => !showingChild);
-
-  useEffect(() => {
-    if (!showingChild) setListReady(true);
-  }, [showingChild]);
+  const { cockpitRef, listWidth, resizing, listMin, listMax, resizerHandlers } = useResizableListWidth(STORAGE_KEY);
 
   return (
-    <>
-      {listReady ? (
-        <div
-          className={showingChild ? 'tasks-list-host is-covered' : 'tasks-list-host'}
-          hidden={showingChild}
-          aria-hidden={showingChild}
-          inert={showingChild || undefined}
-        >
-          <TasksPage key={taskListResetToken} />
-        </div>
-      ) : null}
-      {outlet}
-    </>
+    <div
+      ref={cockpitRef}
+      className={`resource-cockpit${showingChild ? ' has-detail' : ''}${resizing ? ' is-resizing' : ''}`}
+      style={{ ['--resource-list-width' as string]: `${listWidth}px` }}
+    >
+      <div className="resource-list-host">
+        <TasksPage key={taskListResetToken} />
+        <button
+          type="button"
+          id="tasks-list-resizer"
+          className="resource-list-resizer"
+          aria-label="调整任务列表宽度"
+          aria-orientation="vertical"
+          aria-valuemin={listMin}
+          aria-valuemax={listMax}
+          aria-valuenow={listWidth}
+          {...resizerHandlers}
+        />
+      </div>
+      <div className="resource-detail-host">
+        {outlet || (
+          <div className="resource-detail-empty">
+            <p>选择左侧任务查看详情</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

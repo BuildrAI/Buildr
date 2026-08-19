@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Alert, Button, Empty, Form, Input, Select, Table, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Alert, Button, Empty, Form, Input, Popover, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { FilterOutlined } from '@ant-design/icons';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
-import { formatShortDateTime, taskStatusLabel } from '../lib/taskLabels';
+import { taskStatusLabel } from '../lib/taskLabels';
 
 type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 
@@ -38,12 +39,6 @@ type TasksResponse = {
 type ProjectInfo = { code: string; name: string };
 type ServiceInfo = { code: string; name: string; projectCode: string };
 
-function scopeText(record: TaskListItem['record']): string {
-  const projects = record.scope.projects.join('、') || '无项目';
-  const services = record.scope.services.map((item) => `${item.project}/${item.service}`).join('、');
-  return services ? `${projects}；${services}` : projects;
-}
-
 function projectOptionLabel(code: string, names: Record<string, string>): string {
   return names[code] || code;
 }
@@ -58,11 +53,45 @@ const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody id="task-table-body" {...props} />
 );
 
+function taskStatusRank(status: string): number {
+  if (status === 'todo') return 0;
+  if (status === 'active') return 1;
+  return 2;
+}
+
+function sortTaskList(tasks: TaskListItem[]): TaskListItem[] {
+  return [...tasks].sort((left, right) => {
+    const byStatus = taskStatusRank(left.record.status) - taskStatusRank(right.record.status);
+    if (byStatus !== 0) return byStatus;
+    return right.record.updatedAt.localeCompare(left.record.updatedAt);
+  });
+}
+
+function matchesTaskQuery(item: TaskListItem, raw: string): boolean {
+  const text = raw.trim().replace(/^#/, '');
+  if (!text) return true;
+  const lowered = text.toLowerCase();
+  const tokens = [...new Set(lowered.split(/[^0-9a-z\u0080-\uffff]+/).filter(Boolean))];
+  const needles = tokens.length ? tokens : [lowered];
+  const compactId = item.record.taskId.toLowerCase().replace(/[-_.]/g, '');
+  const fields = [
+    item.record.title,
+    item.record.intent,
+    item.record.taskId,
+    compactId,
+  ].map((value) => value.toLowerCase());
+  return needles.every((needle) => {
+    const compact = needle.replace(/[-_.]/g, '');
+    return fields.some((field) => field.includes(needle) || (compact.length > 0 && field.includes(compact)));
+  });
+}
+
 export function TasksPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
+  const { taskId: selectedTaskId } = useParams();
+  const navigate = useNavigate();
   const href = (path: string) => workspaceHref(workspaceId, path);
 
-  const [state, setState] = useState('正在读取');
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [diagnostics, setDiagnostics] = useState<Array<{ message: string }>>([]);
   const [totalTaskCount, setTotalTaskCount] = useState(0);
@@ -75,37 +104,65 @@ export function TasksPage() {
   const catalogsLoaded = useRef(false);
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('open');
+  const [status, setStatus] = useState('all');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState('all');
   const [retrospectiveState, setRetrospectiveState] = useState('all');
-  const [reloadToken, setReloadToken] = useState(0);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState('all');
+  const [draftProject, setDraftProject] = useState('');
+  const [draftService, setDraftService] = useState('');
+  const [draftHasChildren, setDraftHasChildren] = useState('all');
+  const [draftRetrospectiveState, setDraftRetrospectiveState] = useState('all');
 
   const workspaceLoaded = useRef(false);
   const requestGeneration = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const qRef = useRef(q);
-  qRef.current = q;
 
-  const serviceOptions = project
-    ? filterServices.filter((item) => item.startsWith(`${project}/`))
+  const draftServiceOptions = draftProject
+    ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
     : filterServices;
 
-  const load = useCallback(async (queryOverride?: string) => {
+  const filtersActive = status !== 'all' || Boolean(project) || Boolean(service)
+    || hasChildren !== 'all' || retrospectiveState !== 'all';
+
+  const syncFilterDraft = () => {
+    setDraftStatus(status);
+    setDraftProject(project);
+    setDraftService(service);
+    setDraftHasChildren(hasChildren);
+    setDraftRetrospectiveState(retrospectiveState);
+  };
+
+  const resetFilterDraft = () => {
+    setDraftStatus('all');
+    setDraftProject('');
+    setDraftService('');
+    setDraftHasChildren('all');
+    setDraftRetrospectiveState('all');
+  };
+
+  const applyFilterDraft = () => {
+    setStatus(draftStatus);
+    setProject(draftProject);
+    setService(draftService);
+    setHasChildren(draftHasChildren);
+    setRetrospectiveState(draftRetrospectiveState);
+    setFilterOpen(false);
+  };
+
+  const load = useCallback(async () => {
     if (!workspaceId) return;
     const generation = ++requestGeneration.current;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
-    setState('正在读取…');
     setErrorMessage(null);
 
     const query = new URLSearchParams();
     const values = {
-      q: (queryOverride ?? qRef.current).trim(),
       project,
       service,
       status,
@@ -165,15 +222,13 @@ export function TasksPage() {
           catalogsLoaded.current = true;
         }
       }
-      setTasks(data.tasks);
+      setTasks(sortTaskList(data.tasks));
       setDiagnostics(data.diagnostics);
       setTotalTaskCount(data.totalTaskCount);
       setFilterProjects(data.filterOptions.projects);
       setFilterServices(data.filterOptions.services);
-      setState(`${data.tasks.length} 个任务`);
     } catch (err) {
       if ((err as Error).name === 'AbortError' || generation !== requestGeneration.current) return;
-      setState('读取失败');
       setTasks([]);
       setDiagnostics([]);
       setErrorMessage(err instanceof Error ? err.message : '读取失败');
@@ -182,75 +237,156 @@ export function TasksPage() {
     }
   }, [workspaceId, project, service, status, hasChildren, retrospectiveState, setWorkspace, setBreadcrumbParts]);
 
+  const visibleTasks = useMemo(
+    () => tasks.filter((item) => matchesTaskQuery(item, q)),
+    [tasks, q],
+  );
+
   useEffect(() => {
     setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
     void load();
     return () => {
       abortRef.current?.abort();
-      if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [load, reloadToken, setBreadcrumbParts]);
+  }, [load, setBreadcrumbParts]);
 
-  const clearFilters = () => {
-    setQ('');
-    setProject('');
-    setService('');
-    setStatus('open');
-    setHasChildren('all');
-    setRetrospectiveState('all');
-    setReloadToken((value) => value + 1);
-  };
+  useEffect(() => {
+    if (selectedTaskId || loading || errorMessage || visibleTasks.length === 0) return;
+    if (window.matchMedia('(max-width: 899px)').matches) return;
+    navigate(href(`/tasks/${encodeURIComponent(visibleTasks[0].record.taskId)}`), { replace: true });
+  }, [selectedTaskId, loading, errorMessage, visibleTasks, href, navigate]);
 
-  const showTable = tasks.length > 0 && !errorMessage;
-  const showEmpty = Boolean(errorMessage) || (tasks.length === 0 && diagnostics.length === 0);
+  const filterPopup = (
+    <div id="task-filter-popover" className="task-filter-popover">
+      <Form
+        id="task-filter-form"
+        className={`task-filter-grid${loading ? ' is-loading' : ''}`}
+        layout="vertical"
+        onSubmitCapture={(event: FormEvent) => event.preventDefault()}
+      >
+        <Form.Item label="状态">
+          <Select
+            id="task-filter-status"
+            popupMatchSelectWidth
+            getPopupContainer={() => document.getElementById('task-filter-popover') || document.body}
+            value={draftStatus}
+            onChange={(next) => {
+              setDraftStatus(next);
+              if (['open', 'todo', 'active'].includes(next) && ['pending', 'handled', 'no-action'].includes(draftRetrospectiveState)) {
+                setDraftRetrospectiveState('all');
+              }
+            }}
+            options={[
+              { value: 'open', label: '未结束（待办 + 进行中）' },
+              { value: 'todo', label: '待办' },
+              { value: 'active', label: '进行中' },
+              { value: 'completed', label: '已完成' },
+              { value: 'abandoned', label: '已放弃' },
+              { value: 'all', label: '全部' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="项目">
+          <Select
+            id="task-filter-project"
+            popupMatchSelectWidth
+            getPopupContainer={() => document.getElementById('task-filter-popover') || document.body}
+            value={draftProject || 'all'}
+            onChange={(next) => {
+              setDraftProject(next === 'all' ? '' : next);
+              setDraftService('');
+            }}
+            options={[
+              { value: 'all', label: '全部项目' },
+              ...filterProjects.map((item) => ({
+                value: item,
+                label: projectOptionLabel(item, projectNames),
+              })),
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="服务">
+          <Select
+            id="task-filter-service"
+            popupMatchSelectWidth
+            getPopupContainer={() => document.getElementById('task-filter-popover') || document.body}
+            value={draftService || 'all'}
+            onChange={(next) => setDraftService(next === 'all' ? '' : next)}
+            options={[
+              { value: 'all', label: '全部服务' },
+              ...draftServiceOptions.map((item) => ({
+                value: item,
+                label: serviceOptionLabel(item, serviceNames),
+              })),
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="子任务">
+          <Select
+            id="task-filter-children"
+            popupMatchSelectWidth
+            getPopupContainer={() => document.getElementById('task-filter-popover') || document.body}
+            value={draftHasChildren}
+            onChange={setDraftHasChildren}
+            options={[
+              { value: 'all', label: '不限' },
+              { value: 'yes', label: '有直接 Child' },
+              { value: 'no', label: '无直接 Child' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item className="task-filter-span" label="复盘处置">
+          <Select
+            id="task-filter-retrospective"
+            popupMatchSelectWidth
+            getPopupContainer={() => document.getElementById('task-filter-popover') || document.body}
+            value={draftRetrospectiveState}
+            onChange={(next) => {
+              setDraftRetrospectiveState(next);
+              if (['pending', 'handled', 'no-action'].includes(next) && ['open', 'todo', 'active'].includes(draftStatus)) {
+                setDraftStatus('all');
+              }
+            }}
+            options={[
+              { value: 'all', label: '不限' },
+              { value: 'missing', label: '未复盘' },
+              { value: 'pending', label: '未处理' },
+              { value: 'handled', label: '已处理' },
+              { value: 'no-action', label: '无需处理' },
+            ]}
+          />
+        </Form.Item>
+      </Form>
+      <div className="task-filter-popover-actions">
+        <Button id="task-filter-clear" onClick={resetFilterDraft}>
+          重置
+        </Button>
+        <Button id="task-filter-apply" type="primary" onClick={applyFilterDraft}>
+          确认
+        </Button>
+      </div>
+    </div>
+  );
+
+  const showTable = visibleTasks.length > 0 && !errorMessage;
+  const showEmpty = !loading && (Boolean(errorMessage) || (visibleTasks.length === 0 && diagnostics.length === 0));
 
   const columns: ColumnsType<TaskListItem> = [
     {
       title: '任务',
-      width: 220,
       ellipsis: true,
       render: (_value, item) => (
-        <>
+        <Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(item.record.taskId)}`)}>
           <strong>{item.record.title}</strong>
-          <small>{item.record.taskId}</small>
-        </>
+          <small className="task-row-id">{item.record.taskId}</small>
+        </Link>
       ),
     },
-    { title: '意图', ellipsis: true, render: (_value, item) => item.record.intent },
-    {
-      title: '层级',
-      width: 160,
-      render: (_value, item) => (
-        <>
-          <div>{item.taskRelations.parent ? `Parent：${item.taskRelations.parent.taskId}` : 'Parent：无'}</div>
-          <small>{`直接 Child：${item.childTaskCount}`}</small>
-        </>
-      ),
-    },
-    { title: '范围', ellipsis: true, render: (_value, item) => scopeText(item.record) },
     {
       title: '状态',
-      width: 96,
+      width: 88,
       render: (_value, item) => (
         <span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span>
-      ),
-    },
-    {
-      title: '更新时间',
-      width: 168,
-      render: (_value, item) => formatShortDateTime(item.record.updatedAt),
-    },
-    {
-      title: '操作',
-      width: 88,
-      fixed: 'right',
-      className: 'operation-column',
-      render: (_value, item) => (
-        <div className="table-operations">
-          <Link className="table-action" to={href(`/tasks/${encodeURIComponent(item.record.taskId)}`)}>
-            详情
-          </Link>
-        </div>
       ),
     },
   ];
@@ -258,130 +394,49 @@ export function TasksPage() {
   return (
     <>
       <section className="resource-toolbar">
-        <div>
-          <Typography.Title level={2} style={{ margin: 0 }}>任务记录</Typography.Title>
+        <div className="task-toolbar-main">
+          <Typography.Title level={2} style={{ margin: 0 }}>任务</Typography.Title>
           <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Buildr Web 不提供创建入口。</p>
         </div>
-        <span id="tasks-state" className="count-label">{state}</span>
-      </section>
-      <section className="panel task-filter-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">筛选</p>
+        <div className="task-toolbar-meta">
+          <span id="tasks-state" className="count-label">
+            {loading ? '正在读取…' : (errorMessage ? '读取失败' : `${visibleTasks.length} 个任务`)}
+          </span>
+          <div className="task-list-tools">
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              arrow={false}
+              destroyOnHidden
+              overlayClassName="task-filter-overlay"
+              open={filterOpen}
+              onOpenChange={(open) => {
+                if (open) syncFilterDraft();
+                setFilterOpen(open);
+              }}
+              content={filterPopup}
+            >
+              <Button
+                id="task-filter-panel-toggle"
+                type="text"
+                aria-label="筛选任务"
+                aria-expanded={filterOpen}
+                className={filterOpen || filtersActive ? 'is-active' : ''}
+                icon={<FilterOutlined />}
+              />
+            </Popover>
           </div>
-          <Button id="task-filter-clear" onClick={clearFilters}>
-            清除筛选
-          </Button>
         </div>
-        <Form
-          id="task-filter-form"
-          className={`task-filter-grid${loading ? ' is-loading' : ''}`}
-          layout="vertical"
-          onSubmitCapture={(event: FormEvent) => event.preventDefault()}
-        >
-          <Form.Item className="task-filter-query" label="标题或意图">
-            <Input
-              id="task-filter-q"
-              type="search"
-              allowClear
-              autoComplete="off"
-              placeholder="输入关键词"
-              style={{ width: 280 }}
-              value={q}
-              onChange={(event) => {
-                const value = event.target.value;
-                setQ(value);
-                if (searchTimer.current) clearTimeout(searchTimer.current);
-                searchTimer.current = setTimeout(() => {
-                  void load(value);
-                }, 200);
-              }}
-            />
-          </Form.Item>
-          <Form.Item label="状态">
-            <Select
-              id="task-filter-status"
-              style={{ width: '100%' }}
-              value={status}
-              onChange={(next) => {
-                setStatus(next);
-                if (['open', 'todo', 'active'].includes(next) && ['pending', 'handled', 'no-action'].includes(retrospectiveState)) setRetrospectiveState('all');
-              }}
-              options={[
-                { value: 'open', label: '未结束（待办 + 进行中）' },
-                { value: 'todo', label: '待办' },
-                { value: 'active', label: '进行中' },
-                { value: 'completed', label: '已完成' },
-                { value: 'abandoned', label: '已放弃' },
-                { value: 'all', label: '全部' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item label="项目">
-            <Select
-              id="task-filter-project"
-              style={{ width: '100%' }}
-              value={project || 'all'}
-              onChange={(next) => {
-                setProject(next === 'all' ? '' : next);
-                setService('');
-              }}
-              options={[
-                { value: 'all', label: '全部项目' },
-                ...filterProjects.map((item) => ({
-                  value: item,
-                  label: projectOptionLabel(item, projectNames),
-                })),
-              ]}
-            />
-          </Form.Item>
-          <Form.Item label="服务">
-            <Select
-              id="task-filter-service"
-              style={{ width: '100%' }}
-              value={service || 'all'}
-              onChange={(next) => setService(next === 'all' ? '' : next)}
-              options={[
-                { value: 'all', label: '全部服务' },
-                ...serviceOptions.map((item) => ({
-                  value: item,
-                  label: serviceOptionLabel(item, serviceNames),
-                })),
-              ]}
-            />
-          </Form.Item>
-          <Form.Item label="Child Task">
-            <Select
-              id="task-filter-children"
-              style={{ width: '100%' }}
-              value={hasChildren}
-              onChange={setHasChildren}
-              options={[
-                { value: 'all', label: '不限' },
-                { value: 'yes', label: '有直接 Child' },
-                { value: 'no', label: '无直接 Child' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item label="复盘处置">
-            <Select
-              id="task-filter-retrospective"
-              style={{ width: '100%' }}
-              value={retrospectiveState}
-              onChange={(next) => {
-                setRetrospectiveState(next);
-                if (['pending', 'handled', 'no-action'].includes(next) && ['open', 'todo', 'active'].includes(status)) setStatus('all');
-              }}
-              options={[
-                { value: 'all', label: '不限' },
-                { value: 'missing', label: '未复盘' },
-                { value: 'pending', label: '未处理' },
-                { value: 'handled', label: '已处理' },
-                { value: 'no-action', label: '无需处理' },
-              ]}
-            />
-          </Form.Item>
-        </Form>
+        <Input
+          id="task-filter-q"
+          className="task-search-slot"
+          type="search"
+          allowClear
+          autoComplete="off"
+          placeholder="搜索标题、意图或编号"
+          value={q}
+          onChange={(event) => setQ(event.target.value)}
+        />
       </section>
       <section className="resource-list-section">
         <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">
@@ -398,10 +453,14 @@ export function TasksPage() {
           <Table
             rowKey={(item) => item.record.taskId}
             pagination={false}
+            showHeader={false}
             tableLayout="fixed"
-            scroll={{ x: 980 }}
-            dataSource={tasks}
+            dataSource={visibleTasks}
             columns={columns}
+            rowClassName={(item) => (item.record.taskId === selectedTaskId ? 'task-row-active' : '')}
+            onRow={(item) => ({
+              onClick: () => navigate(href(`/tasks/${encodeURIComponent(item.record.taskId)}`)),
+            })}
             components={{ body: { wrapper: TableBody } }}
           />
         </div>

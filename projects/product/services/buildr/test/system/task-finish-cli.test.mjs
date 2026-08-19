@@ -36,15 +36,16 @@ function create(root, runId = 'current-inspect') {
   return run;
 }
 
-test('task finish inspect 默认compact、显式full且文本保持稳定', (t) => {
+test('task finish inspect 默认compact、显式full/self-bootstrap且文本保持稳定', (t) => {
   const root = fixture(t, true);
   create(root);
   const inspect = (...args) => spawnSync(process.execPath, [cli, 'task', 'finish', 'inspect', '--run', 'current-inspect', '--target', root, ...args], { encoding: 'utf8' });
   const implicit = inspect('--json');
   const explicit = inspect('--json', '--detail', 'compact');
   const full = inspect('--json', '--detail', 'full');
+  const selfBootstrap = inspect('--json', '--detail', 'self-bootstrap');
   const text = inspect();
-  for (const result of [implicit, explicit, full, text]) assert.equal(result.status, 0, result.stderr);
+  for (const result of [implicit, explicit, full, selfBootstrap, text]) assert.equal(result.status, 0, result.stderr);
 
   const compact = JSON.parse(implicit.stdout);
   const explicitCompact = JSON.parse(explicit.stdout);
@@ -56,12 +57,18 @@ test('task finish inspect 默认compact、显式full且文本保持稳定', (t) 
   for (const forbidden of ['resolvedContext', 'carrier', 'equivalence', 'checks', 'operations', 'observations']) assert.equal(forbidden in compact, false, forbidden);
 
   const fullResult = JSON.parse(full.stdout);
-  assert.equal(fullResult.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.equal(fullResult.schemaVersion, 'buildr.task-finish-result/v3');
   assert.deepEqual(fullResult.resolvedContext.capability, { id: 'buildr.task-finish', version: 1 });
   assert.equal(fullResult.metrics.agentProviderCompletions, 0);
   assert.equal(fullResult.metrics.manualRecoveryManifests, 0);
   assert.notEqual(implicit.stdout, full.stdout);
   assert.ok(implicit.stdout.length < full.stdout.length);
+  const selfBootstrapInput = JSON.parse(selfBootstrap.stdout);
+  assert.equal(selfBootstrapInput.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(selfBootstrapInput.detail, 'self-bootstrap');
+  assert.equal(selfBootstrapInput.identity.taskId, 'current-inspect');
+  assert.equal(selfBootstrapInput.mode, 'ineligible');
+  assert.equal('resolvedContext' in selfBootstrapInput, false);
   assert.equal(text.stdout, 'Task Finish run current-inspect: active\nNext: none\n');
 });
 
@@ -141,12 +148,15 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
   assert.match(helpText, /--accept-zero-delta-adaptation/);
   assert.match(helpText, /--release-occupancy/);
+  assert.match(helpText, /compact\|full\|self-bootstrap/);
   assert.match(helpText, /占用释放/);
   assert.match(helpText, /不创建commit、不替代resume token/);
   assert.match(helpText, /Buildr-Task trailer/);
   assert.match(helpText, /current formal Development handoff/);
   assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
-  assert.match(helpText, /Environment startPoint 不提供交付分支 authority/);
+  assert.match(helpText, /省略时使用 Task Environment 已绑定 adapter/);
+  assert.match(helpText, /不得猜测当前聊天宿主或默认为 Codex/);
+  assert.match(helpText, /deliver使用Environment adapter冻结的run agent/);
   assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
   assert.doesNotMatch(helpText, /target branch 默认来自 Git carrier provider start point/);
   assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);

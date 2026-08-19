@@ -18,6 +18,11 @@ import {
   createAuthorizedUnknownExecutionRecordFiles,
   loadVerificationExecutionRecordRecovery,
 } from '../verification/execution-record-recovery.mjs';
+import { cleanupTaskFinishDiagnosticsEvidence } from '../task-finish/diagnostics-evidence.mjs';
+import {
+  loadRetainedTaskFinishExecutionRecordRecovery,
+  loadTaskFinishExecutionRecordRecovery,
+} from '../task-finish/execution-record-recovery.mjs';
 
 const PUBLIC_VIEWS = Object.freeze({
   all: null,
@@ -134,6 +139,41 @@ function recoveryResult(status, mode, persisted, { cleanup = null, diagnostic = 
 }
 
 export function registerTaskExecutionRecordApplication(runtime) {
+  function loadTaskFinishAssociation(targetRoot, runId) {
+    try {
+      const current = runtime.readTaskFinishRunPersistence(targetRoot, { runId }, { optional: true });
+      if (current?.run) {
+        return {
+          source: 'current',
+          runId: current.run.runId,
+          taskId: current.run.identity?.task || null,
+          targetIdentity: current.run.identity?.contentTargetIdentity || null,
+          invocationCount: current.run.invocations,
+        };
+      }
+      const terminal = runtime.readTaskFinishCompletionPersistence(targetRoot, { runId }, { optional: true });
+      if (!terminal?.completion) return null;
+      const completion = terminal.completion;
+      const terminalInvocationCount = completion.result?.metrics?.canonicalCliInvocations;
+      return {
+        source: terminal.status === 'complete' ? 'terminal-completion' : 'prepared-completion',
+        runId: completion.runId || terminal.runId,
+        taskId: completion.task || completion.result?.identity?.task || null,
+        targetIdentity: completion.contentTargetIdentity || completion.result?.candidate?.contentTargetIdentity || null,
+        invocationCount: Number.isInteger(terminalInvocationCount) ? terminalInvocationCount : null,
+      };
+    } catch (error) {
+      if (error?.taskExecutionRecordBusiness) throw error;
+      throw taskExecutionRecordError(
+        'task_execution_record_recovery_finish_authority_unavailable',
+        'Task Finish current/terminal authority当前不可验证；未修改Execution Record或Finish state。',
+        409,
+        { finishRunId: runId, cause: error?.code || null },
+        '保留open record与diagnostics，恢复matching retained controller后重试。',
+      );
+    }
+  }
+
   function openTaskExecutionRecord(targetRoot, taskId, input) {
     assertInput(input, new Set(['owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer', 'allowDuplicateInvocation']), 'Task Execution Record open');
     const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
@@ -297,12 +337,47 @@ export function registerTaskExecutionRecordApplication(runtime) {
     let persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
     sameTask(persisted.record, taskId);
     const record = persisted.record;
-    if (record.owner !== 'task-verification' || record.kind !== 'verification-execution') throw taskExecutionRecordError('task_execution_record_recovery_owner_unsupported', 'recover只支持Verification Execution Record。', 409, { owner: record.owner, kind: record.kind });
+    const verificationOwner = record.owner === 'task-verification' && record.kind === 'verification-execution';
+    const finishOwner = record.owner === 'task-finish' && record.kind === 'finish-diagnostics';
+    if (!verificationOwner && !finishOwner) throw taskExecutionRecordError('task_execution_record_recovery_owner_unsupported', 'recover不支持该Execution Record owner/kind。', 409, { owner: record.owner, kind: record.kind });
 
     if (input.summaryPath) {
-      const recovery = loadVerificationExecutionRecordRecovery(input.summaryPath, record);
+      if (verificationOwner) {
+        const recovery = loadVerificationExecutionRecordRecovery(input.summaryPath, record);
+        const sealed = sealTaskExecutionRecordOperation(persisted.root, recordId, { outcome: recovery.outcome, files: recovery.files });
+        const cleanup = cleanupVerificationEvidence(recovery.summary, { removePath: runtime.removePath });
+        return recoveryResult('recovered', 'terminal-evidence', sealed, {
+          cleanup,
+          effects: [
+            { type: sealed.status === 'reused' ? 'reused' : 'sealed', recordId },
+            { type: cleanup.ok ? 'transient-cleaned' : 'transient-retained', recordId },
+          ],
+          diagnostic: cleanup.ok ? null : { code: cleanup.code, message: cleanup.message },
+          nextActions: cleanup.ok ? [] : ['Execution Record已恢复；检查transient cleanup diagnostic后只清理该owned evidence。'],
+        });
+      }
+      const recoveryOptions = {
+        workspaceRoot: persisted.root,
+        loadFinishAssociation: (runId) => loadTaskFinishAssociation(persisted.root, runId),
+        verifyBody: runtime.verifyTaskExecutionRecordBody,
+      };
+      const retained = loadRetainedTaskFinishExecutionRecordRecovery(input.summaryPath, persisted, recoveryOptions);
+      if (retained) {
+        const cleanup = cleanupTaskFinishDiagnosticsEvidence(retained.summary, { removePath: runtime.removePath });
+        return recoveryResult('recovered', 'terminal-evidence', persisted, {
+          cleanup,
+          effects: [
+            { type: 'reused', recordId },
+            { type: cleanup.ok ? 'transient-cleaned' : 'transient-retained', recordId },
+          ],
+          diagnostic: cleanup.ok ? null : { code: cleanup.code, message: cleanup.message },
+          nextActions: cleanup.ok ? [] : ['Execution Record已恢复；检查Task Finish diagnostics cleanup diagnostic后重试同一summary。'],
+        });
+      }
+      const recovery = loadTaskFinishExecutionRecordRecovery(input.summaryPath, record, recoveryOptions);
       const sealed = sealTaskExecutionRecordOperation(persisted.root, recordId, { outcome: recovery.outcome, files: recovery.files });
-      const cleanup = cleanupVerificationEvidence(recovery.summary, { removePath: runtime.removePath });
+      runtime.verifyTaskExecutionRecordBody(persisted.root, sealed.record);
+      const cleanup = cleanupTaskFinishDiagnosticsEvidence(recovery.summary, { removePath: runtime.removePath });
       return recoveryResult('recovered', 'terminal-evidence', sealed, {
         cleanup,
         effects: [
@@ -310,8 +385,20 @@ export function registerTaskExecutionRecordApplication(runtime) {
           { type: cleanup.ok ? 'transient-cleaned' : 'transient-retained', recordId },
         ],
         diagnostic: cleanup.ok ? null : { code: cleanup.code, message: cleanup.message },
-        nextActions: cleanup.ok ? [] : ['Execution Record已恢复；检查transient cleanup diagnostic后只清理该owned evidence。'],
+        nextActions: cleanup.ok ? [] : ['Execution Record已恢复；检查Task Finish diagnostics cleanup diagnostic后重试同一summary。'],
       });
+    }
+
+    if (finishOwner) {
+      throw taskExecutionRecordError(
+        input.authorizeUnknownOutcome ? 'task_execution_record_recovery_authorization_unsupported' : 'task_execution_record_recovery_summary_required',
+        input.authorizeUnknownOutcome
+          ? 'Task Finish recovery不接受unknown outcome授权；必须由matching diagnostics证明terminal outcome。'
+          : 'Task Finish recovery必须提供该record的matching diagnostics summary。',
+        409,
+        { owner: record.owner, kind: record.kind },
+        '传入该invocation精确diagnostics目录中的summary.json；无可证明terminal evidence时保留open record。',
+      );
     }
 
     if (!input.authorizeUnknownOutcome) {

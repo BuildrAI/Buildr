@@ -24,7 +24,7 @@ Agent 可用的工作事实覆盖得越广，能做的就越多；经过验证�
 npm install --global @buildr-ai/buildr@next
 ```
 
-当前仓库候选版本为 `0.1.0-rc.18`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
+当前仓库候选版本为 `0.1.0-rc.19`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
 
 如需 Buildr Web 本机入口：
 

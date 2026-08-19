@@ -256,6 +256,14 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
 
   function openWorkspaceStructuredStore(targetRoot, { writable = false, allowPendingRead = false } = {}) {
     const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
+    let candidateValidation = false;
+    if (writable) {
+      try { candidateValidation = isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, observeCheckout(root)); } catch { /* management fence remains authoritative when checkout identity is unavailable */ }
+    }
+    if (!candidateValidation) {
+      if (writable) runtime.ensureWorkspaceManagementClaim?.(root);
+      else runtime.assertWorkspaceManagementAccess?.(root);
+    }
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
     if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };

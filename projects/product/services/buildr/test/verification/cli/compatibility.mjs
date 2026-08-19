@@ -173,6 +173,14 @@ assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
 assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task inspect']);
 assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
 
+const omitPrepareAgent = run(['task', 'environment', 'prepare', 'demo', '--json']);
+assert.equal(omitPrepareAgent.status, 2);
+assert.equal(omitPrepareAgent.stderr, '');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).schemaVersion, 'buildr.cli-error/v1');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).error.code, 'task_environment_cli.syntax');
+assert.match(JSON.parse(omitPrepareAgent.stdout).error.message, /--agent is required/);
+assert.match(JSON.parse(omitPrepareAgent.stdout).help, /--agent <adapter>/);
+
 const invalidInspect = run(['worktree', 'inspect', 'demo', '--agent', 'codex']);
 assert.notEqual(invalidInspect.status, 0);
 assert.match(`${invalidInspect.stdout}${invalidInspect.stderr}`, /Unknown argument: --agent/);

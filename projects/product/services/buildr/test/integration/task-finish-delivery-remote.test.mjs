@@ -118,6 +118,53 @@ test('dirty retained Workspace preflight exposes structured unrelated paths', as
   assert.deepEqual(retainedFinding.unrelatedPaths, ['local-note.txt']);
 });
 
+test('preflight 在 retained 已与远端对齐时通过且不 fetch', async (t) => {
+  const data = deliveryFixture(t, null);
+  const beforeHead = command(data.retained, 'git', ['rev-parse', 'HEAD']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'passed', JSON.stringify(result.failure, null, 2));
+  assert.ok(result.checks.some((item) => item.check === 'retained-remote-alignment' && item.code === 'task-finish.retained-remote-aligned'));
+  assert.equal(command(data.retained, 'git', ['rev-parse', 'HEAD']), beforeHead);
+  assert.equal(command(data.retained, 'git', ['symbolic-ref', '--short', 'HEAD']), 'dev');
+});
+
+test('preflight 在 retained 落后远端时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  const seed = path.join(data.fixture, 'seed');
+  fs.writeFileSync(path.join(seed, 'ahead.txt'), 'remote advanced\n');
+  command(seed, 'git', ['add', 'ahead.txt']);
+  command(seed, 'git', ['commit', '-m', 'advance remote']);
+  command(seed, 'git', ['push', 'origin', 'dev']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-workspace-behind');
+  assert.ok(result.checks.every((item) => item.check !== 'prepare-isolated-carrier'));
+});
+
+test('preflight 在 retained 与远端分叉时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  fs.writeFileSync(path.join(data.retained, 'local.txt'), 'retained only\n');
+  command(data.retained, 'git', ['add', 'local.txt']);
+  command(data.retained, 'git', ['commit', '-m', 'retained divergence']);
+  const seed = path.join(data.fixture, 'seed');
+  fs.writeFileSync(path.join(seed, 'remote-only.txt'), 'remote only\n');
+  command(seed, 'git', ['add', 'remote-only.txt']);
+  command(seed, 'git', ['commit', '-m', 'remote divergence']);
+  command(seed, 'git', ['push', 'origin', 'dev']);
+  command(data.retained, 'git', ['fetch', 'origin']);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.retained-workspace-diverged');
+});
+
+test('preflight 在远端不可观察时 blocked', async (t) => {
+  const data = deliveryFixture(t, null);
+  command(data.retained, 'git', ['remote', 'set-url', 'origin', path.join(data.fixture, 'missing.git')]);
+  const result = await data.handlers.preflight({ run: data.run });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.failure.code, 'task-finish.target-observation-failed');
+});
+
 test('workspace source 缺少 Environment remote 时解析 retained branch upstream', (t) => {
   const { retained, remote } = repositoryFixture(t);
   assert.deepEqual(resolveTaskFinishTargetBranch({ root: retained }), { targetBranch: 'dev', source: 'retained-current' });
@@ -197,7 +244,47 @@ test('push 后远端无法回读时只保留可恢复 deliver 阻塞', async (t)
   assert.equal(result.status, 'blocked');
   assert.equal(result.failure.code, 'task-finish.remote-readback-failed', JSON.stringify(result, null, 2));
   assert.equal(result.output, undefined);
-  assert.equal(result.operations.at(-1).id, 'deliver-target-readback');
+  assert.deepEqual(result.operations.filter((operation) => operation.id.startsWith('deliver-target-readback')).map((operation) => operation.id), [
+    'deliver-target-readback',
+    'deliver-target-readback-2',
+    'deliver-target-readback-3',
+  ]);
+});
+
+test('push 后远端回读暂态失败时有限重试且不重复push', async (t) => {
+  const data = deliveryFixture(t);
+  const realGit = process.env.PATH
+    .split(path.delimiter)
+    .map((entry) => path.join(entry, 'git'))
+    .find((candidate) => fs.existsSync(candidate));
+  assert.ok(realGit, 'git executable must be resolvable before installing the test wrapper');
+  const wrapperRoot = path.join(data.fixture, 'git-wrapper');
+  const counter = path.join(wrapperRoot, 'ls-remote-count');
+  writeExecutable(path.join(wrapperRoot, 'git'), `#!/bin/sh
+if [ "$1" = "ls-remote" ]; then
+  count=0
+  if [ -f "${counter}" ]; then count=$(tr -d '\\n' < "${counter}"); fi
+  count=$((count + 1))
+  echo "$count" > "${counter}"
+  if [ "$count" -eq 2 ]; then exit 1; fi
+fi
+exec "${realGit}" "$@"
+`);
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${wrapperRoot}${path.delimiter}${previousPath}`;
+  let result;
+  try {
+    result = await data.handlers.deliver({ run: data.run });
+  } finally {
+    process.env.PATH = previousPath;
+  }
+  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
+  assert.equal(result.operations.filter((operation) => operation.id === 'deliver-push').length, 1);
+  const readbacks = result.operations.filter((operation) => operation.id.startsWith('deliver-target-readback'));
+  assert.equal(readbacks.length, 2, JSON.stringify(readbacks));
+  assert.notEqual(readbacks[0].status, 0);
+  assert.equal(readbacks.at(-1).status, 0);
+  assert.equal(result.output.delivery.remoteAfterRef, data.carrierRef);
 });
 
 test('远端 target 已精确包含 carrier 时不重复 merge/push 并继续 Doctor', async (t) => {

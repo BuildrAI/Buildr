@@ -96,11 +96,11 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.equal(workspaceManifest.skills.find((item) => item.id === 'git-operations').state, 'uninstalled');
   const readyDoctor = await doctor(root);
   assert.equal(consumer(readyDoctor, '.', 'task-finish').readiness, 'ready');
+  assert.equal(consumer(readyDoctor, '.', 'task-finish').dependencies.some((item) => item.capability === 'buildr.task-verification'), false);
   assert.doesNotMatch(JSON.stringify(readyDoctor.capabilities), /sourceFile|absolutePath|skillContributions/);
   const humanDoctor = await run(['doctor', '--target', root, '--scope', '.']);
   assert.match(humanDoctor.stdout, /Capability readiness（ready 只表示结构可路由）：/);
   assert.match(humanDoctor.stdout, /task-finish[\s\S]*buildr\.git-operations@1/);
-  assert.doesNotMatch(humanDoctor.stdout, /task-finish[\s\S]*buildr\.task-verification@3/);
 
   await run(['builtin', 'restore', 'git-operations', '--target', root]);
   assert.equal(manifest(root).skills.find((item) => item.id === 'git-operations').state, 'installed');

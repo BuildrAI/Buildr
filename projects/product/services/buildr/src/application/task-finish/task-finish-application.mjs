@@ -52,11 +52,15 @@ function replaceablePrepareFailure(run) {
   const later = (run?.phases || []).filter((phase) => ['verify', 'deliver', 'cleanup'].includes(phase.id));
   const phaseFailure = prepare?.failure;
   const primaryFailure = run?.primaryFailure;
+  const recognizedLegacyMismatch = (failure) => Boolean(run?.schemaVersion === 'buildr.task-finish-run/v2'
+    && failure.phase === 'prepare'
+    && failure.operation === 'carrier-preparation'
+    && failure.code === 'task-finish.commit-message-mismatch');
   const recognized = (failure) => Boolean(failure
     && failure.phase === 'prepare'
     && failure.operation === 'carrier-preparation'
-    && failure.code === 'task-finish.carrier-prepare-failed'
-    && failure.diagnostic == null);
+    && ((failure.code === 'task-finish.carrier-prepare-failed' && failure.diagnostic == null)
+      || recognizedLegacyMismatch(failure)));
   return Boolean(run?.status === 'failed'
     && preflight?.status === 'passed'
     && preflight.attempts > 0
@@ -67,6 +71,12 @@ function replaceablePrepareFailure(run) {
     && recognized(primaryFailure)
     && later.length === 3
     && later.every(untouchedPhase));
+}
+
+function replaceableLegacyCommitMismatch(run) {
+  return Boolean(run?.schemaVersion === 'buildr.task-finish-run/v2'
+    && replaceablePrepareFailure(run)
+    && run.primaryFailure?.code === 'task-finish.commit-message-mismatch');
 }
 
 function finishRunSideEffectFacts(persistence) {
@@ -140,20 +150,23 @@ function supersededRunError(run, current) {
   );
 }
 
-function markRunSuperseded(run) {
+function markRunSuperseded(run, reason = 'development-handoff') {
   const updatedAt = new Date().toISOString();
   const next = JSON.parse(JSON.stringify(run));
   const stoppedPhase = next.phases.find((phase) => ['blocked', 'failed'].includes(phase.status));
   const phaseId = ['preflight', 'prepare'].includes(stoppedPhase?.id) ? stoppedPhase.id : 'preflight';
+  const legacyReplacement = reason === 'legacy-commit-message-mismatch';
   const failure = {
     phase: phaseId,
-    operation: 'development-handoff',
-    check: 'development-handoff',
-    failureClass: 'upstream-candidate-defect',
-    code: 'task-finish.development-handoff-superseded',
+    operation: legacyReplacement ? 'carrier-preparation' : 'development-handoff',
+    check: legacyReplacement ? 'carrier-preparation' : 'development-handoff',
+    failureClass: legacyReplacement ? 'product-execution-failure' : 'upstream-candidate-defect',
+    code: legacyReplacement ? 'task-finish.legacy-commit-message-mismatch-superseded' : 'task-finish.development-handoff-superseded',
     status: 'failed',
     exitCode: null,
-    message: 'A newer current Development handoff superseded this no-side-effect run.',
+    message: legacyReplacement
+      ? 'A no-side-effect legacy commit-message mismatch run was superseded by the repository-set Finish path.'
+      : 'A newer current Development handoff superseded this no-side-effect run.',
     findings: [],
     diagnostic: null,
   };
@@ -182,8 +195,8 @@ function assertArgs(action, args) {
     if (option === '--json' || option === '--accept-zero-delta-adaptation' || option === '--bootstrap-recovery' || option === '--release-occupancy') continue;
     const value = args[index + 1];
     if (!value || value.startsWith('--')) throw inputError('task_finish.missing_parameter', `Missing value for ${option}`, action);
-    if (option === '--detail' && !['compact', 'full'].includes(value)) {
-      throw inputError('task_finish.detail_invalid', '--detail must be compact or full.', action, { detail: value });
+    if (option === '--detail' && !['compact', 'full', 'self-bootstrap'].includes(value)) {
+      throw inputError('task_finish.detail_invalid', '--detail must be compact, full, or self-bootstrap.', action, { detail: value });
     }
     index += 1;
   }
@@ -200,7 +213,7 @@ function withExecutionRecord(result, executionRecord) {
 
 function executionGateResult(identity, executionRecord, diagnostic) {
   return {
-    schemaVersion: 'buildr.task-finish-result/v2',
+    schemaVersion: 'buildr.task-finish-result/v3',
     runId: null,
     status: 'blocked',
     identity: { ...identity, environmentRoot: null, workspaceRoot: null },
@@ -337,6 +350,7 @@ export function registerTaskFinishApplication(runtime) {
             || currentRun.identity?.candidateIdentity !== handoff.candidate.identity
             || currentRun.identity?.candidateGeneration !== handoff.candidate.generation
             || currentRun.identity?.contentTargetIdentity !== handoff.candidate.contentTargetIdentity);
+          const legacyMismatchReplacement = currentRun && !handoffChanged && replaceableLegacyCommitMismatch(currentRun);
           if (currentRun && handoffChanged && cleanupResumeAllowed(current)) {
             finishRun = currentRun;
           } else if (currentRun && handoffChanged) {
@@ -362,6 +376,13 @@ export function registerTaskFinishApplication(runtime) {
             identity.deliveryCommitIdentity = entry.deliveryCommit.identity;
             return { identity, deliveryCommit: entry.deliveryCommit, developmentHandoff: handoff, replaceableStaleRun: currentRun, finishRun: null };
           }
+          if (legacyMismatchReplacement && requestedCommitMessage != null) {
+            if (!entry.deliveryCommit || entry.deliveryCommit.identity !== currentRun.identity?.deliveryCommitIdentity) {
+              throw inputError('task_finish.commit_message_override', 'Legacy mismatch recovery must reuse the frozen Task Finish commit message.', 'run');
+            }
+            identity.deliveryCommitIdentity = entry.deliveryCommit.identity;
+            return { identity, deliveryCommit: entry.deliveryCommit, developmentHandoff: handoff, replaceableStaleRun: currentRun, replacementReason: 'legacy-commit-message-mismatch', finishRun: null };
+          }
           if (finishRun && currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
           if (!finishRun) {
             if (currentRun && requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
@@ -374,7 +395,7 @@ export function registerTaskFinishApplication(runtime) {
         if (acceptZeroDeltaAdaptation && (finishRun?.status !== 'blocked' || finishRun.deliveryCarrier?.reuseMode !== 'adaptation-required')) {
           throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
         }
-        return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null };
+        return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null, replacementReason: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
     if (prepared.completed) {
@@ -435,7 +456,7 @@ export function registerTaskFinishApplication(runtime) {
       return print(executionGateResult(identity, executionRecord, error), command.args);
     }
     if (prepared.replaceableStaleRun) {
-      const oldRun = markRunSuperseded(prepared.replaceableStaleRun);
+      const oldRun = markRunSuperseded(prepared.replaceableStaleRun, prepared.replacementReason);
       runtime.writeTaskFinishRunPersistence(root, oldRun);
       runtime.discardFailedTaskFinishRunPersistence?.(root, { taskId: identity.task, runId: oldRun.runId });
       finishRun = resolveFinishRun({ root, resumeToken, runtime, identity, deliveryCommit: prepared.deliveryCommit, developmentHandoff: prepared.developmentHandoff });

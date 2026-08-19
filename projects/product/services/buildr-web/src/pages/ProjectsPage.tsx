@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
-import { ProjectEditModal } from '../components/ProjectEditModal';
-import { projectListSourceLabel, workspaceHref } from '../lib/labels';
+import { workspaceHref } from '../lib/labels';
 
 type Project = {
   code: string;
@@ -25,13 +24,14 @@ const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
 
 export function ProjectsPage() {
   const { workspaceId, setWorkspace, openAgentAction, setBreadcrumbParts } = useAppShell();
+  const { projectCode: selectedProjectCode } = useParams();
+  const navigate = useNavigate();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [counts, setCounts] = useState<Record<string, string>>({});
   const [state, setState] = useState('正在读取');
   const [migrationMessage, setMigrationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [editCode, setEditCode] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,73 +51,34 @@ export function ProjectsPage() {
         setProjects(data.projects);
         setState(`${data.projects.length} 个项目`);
         setMigrationMessage(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
-        const serviceCounts = await Promise.all(data.projects.map(async (project) => {
-          try {
-            const services = await api(`/api/v1/projects/${encodeURIComponent(project.code)}/services`) as { services: unknown[] };
-            return [project.code, String(services.services.length)] as const;
-          } catch {
-            return [project.code, '读取失败'] as const;
-          }
-        }));
-        if (cancelled) return;
-        setCounts(Object.fromEntries(serviceCounts));
       } catch (err) {
         if (!cancelled) {
           setState('读取失败');
           setError(err instanceof Error ? err.message : '读取失败');
           setProjects([]);
         }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [setWorkspace, setBreadcrumbParts]);
 
+  useEffect(() => {
+    if (selectedProjectCode || loading || error || projects.length === 0) return;
+    if (window.matchMedia('(max-width: 899px)').matches) return;
+    navigate(href(`/projects/${encodeURIComponent(projects[0].code)}`), { replace: true });
+  }, [selectedProjectCode, loading, error, projects, href, navigate]);
+
   const columns: ColumnsType<Project> = [
     {
-      title: '名称',
-      dataIndex: 'name',
+      title: '项目',
+      ellipsis: true,
       render: (_value, project) => (
-        <>
+        <Link className="task-row-main project-row-main" to={href(`/projects/${encodeURIComponent(project.code)}`)}>
           <strong>{project.name}</strong>
-          <small>{project.description}</small>
-        </>
-      ),
-    },
-    {
-      title: '代码',
-      dataIndex: 'code',
-      className: 'code-cell',
-    },
-    {
-      title: '来源',
-      render: (_value, project) => (
-        <>
-          <span>{projectListSourceLabel(project.source.type)}</span>
-          <small>{project.source.path}</small>
-        </>
-      ),
-    },
-    {
-      title: '服务数',
-      render: (_value, project) => counts[project.code] || '0',
-    },
-    {
-      title: '操作',
-      className: 'operation-column',
-      render: (_value, project) => (
-        <div className="table-operations">
-          <Link className="table-action" to={href(`/projects/${encodeURIComponent(project.code)}`)}>详情</Link>
-          <button
-            type="button"
-            className="table-action"
-            id={`project-edit-action-${project.code}`}
-            onClick={() => setEditCode(project.code)}
-          >
-            编辑
-          </button>
-          <Link className="table-action" to={href(`/services?project=${encodeURIComponent(project.code)}`)}>服务</Link>
-          <Link className="table-action" to={href(`/changes?project=${encodeURIComponent(project.code)}`)}>变更</Link>
-        </div>
+          {project.description ? <small>{project.description}</small> : null}
+        </Link>
       ),
     },
   ];
@@ -125,9 +86,13 @@ export function ProjectsPage() {
   return (
     <>
       <section className="resource-toolbar">
-        <div className="toolbar-actions">
+        <div className="task-toolbar-main">
+          <Typography.Title level={2} style={{ margin: 0 }}>项目</Typography.Title>
+          <p className="page-copy">选择左侧项目查看文档与关联服务；编辑在详情右上角完成。</p>
+        </div>
+        <div className="task-toolbar-meta">
           <span id="projects-state" className="count-label">{state}</span>
-          <Button id="create-project-button" type="primary" onClick={() => openAgentAction('project')}>
+          <Button id="create-project-button" className="project-create-action" type="primary" size="small" onClick={() => openAgentAction('project')}>
             让 Agent 创建项目
           </Button>
         </div>
@@ -135,19 +100,19 @@ export function ProjectsPage() {
       <div id="projects-migration-alert" className={migrationMessage ? '' : 'hidden'} role="status">
         {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
       </div>
-      <section className="resource-list-section">
-        <div className="section-heading">
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>全部项目</Typography.Title>
-            <p className="section-copy">选择详情可查看文档与关联服务；编辑在弹框中完成。</p>
-          </div>
-        </div>
+      <section className="resource-list-section project-list-section">
         <div id="project-table-wrap" className={`management-table-wrap${projects.length === 0 ? ' hidden' : ''}`}>
           <Table
             rowKey="code"
             pagination={false}
+            showHeader={false}
+            tableLayout="fixed"
             dataSource={projects}
             columns={columns}
+            rowClassName={(project) => (project.code === selectedProjectCode ? 'project-row-active' : '')}
+            onRow={(project) => ({
+              onClick: () => navigate(href(`/projects/${encodeURIComponent(project.code)}`)),
+            })}
             components={{ body: { wrapper: TableBody } }}
           />
         </div>
@@ -157,18 +122,6 @@ export function ProjectsPage() {
           ) : null}
         </div>
       </section>
-      <ProjectEditModal
-        open={Boolean(editCode)}
-        projectCode={editCode}
-        onClose={() => setEditCode(null)}
-        onSaved={(saved) => {
-          setProjects((items) => items.map((item) => (
-            item.code === saved.code
-              ? { ...item, name: saved.name, description: saved.description }
-              : item
-          )));
-        }}
-      />
     </>
   );
 }

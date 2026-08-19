@@ -14,7 +14,7 @@ Buildr workspace 的通用硬约束。按 root → Project → Service 读取当
 - 已初始化 workspace 的 Git tree 改变后必须执行 workspace transition check；Buildr 安装、源资产或 Agent runtime 改变后必须运行当前 Agent 的 doctor。未清除需立即处理的 error，不得视为完成。
 - 面向用户使用直接、简练的中文。专业术语使用中文或“中文（English Term）”；无稳定译名时使用“中文释义（English Term）”。命令、标识、路径、错误原文和产品名可保留英文。
 - 没有更具体的 Project、Service 或仓库约定时，Git 提交信息的主题和正文默认使用中文；代码标识、路径、scope 和专有名词可保留原文。
-- 新建或重写文本文件时，文件末尾必须恰好保留一个换行符；不得在 EOF 前生成额外空白行。内容内部为表达段落所需的空行不受此约束。
+- 新建或重写文本文件时，最后一个非空字符后必须且只能保留一个换行符。文件末尾不得存在空白行。正确：`...\n`；错误：`...\n\n`。该限制只针对文件末尾，不限制正文内部的合理空行。
 - Agent 是默认操作入口；取得必要授权后直接执行。仅在用户选择手动方式或 Agent 受工具、权限、登录态、外部环境阻塞时提供手动步骤。
 - 没有与最终候选一致的验证证据，不得声称完整验证或完成；完成说明必须报告验证范围、结果、耗时和缺口。
 - `rules/manifest.yml` 是 root/Organization Rule 的登记与启停用 authority；维护流程由 Skill 承载。

@@ -6,7 +6,7 @@ import process from 'node:process';
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { verifyDeliveredGitTaskContribution } from '../task-finish/git-task-contribution.mjs';
+import { verifyDeliveredGitTaskContribution, verifyGitNoContributionProof } from '../task-finish/git-task-contribution.mjs';
 import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
@@ -371,7 +371,9 @@ export function registerGitWorktreeProvider(runtime) {
         const integratedRef = integratedRefs[record.selector] || null;
         const contributionProof = integratedContributions[record.selector] || null;
         const contribution = !allowDirty && integratedRef && contributionProof && checkoutExists
-          ? verifyDeliveredGitTaskContribution({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
+          ? contributionProof.kind === 'no-contribution'
+            ? verifyGitNoContributionProof({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
+            : verifyDeliveredGitTaskContribution({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
           : null;
         if (contribution?.status === 'equivalent') contributionEquivalent.add(path.resolve(record.checkoutPath));
         if (!allowDirty && identity && !identity.clean) {

@@ -39,17 +39,28 @@ function build(platform) {
   return output;
 }
 
-test('Buildr Web Dev固定4317端口且不复制Node、Buildr payload或正式安装代码', () => {
+async function waitForJson(file, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${file}.`);
+}
+
+test('Buildr Web Dev使用随机端口、独立日志且不复制Node、Buildr payload或正式安装代码', () => {
   if (process.platform === 'darwin') {
     const mac = build('darwin');
     const command = fs.readFileSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
-    assert.match(command, /web --port 4317/);
+    assert.match(command, /web --port 0/);
+    assert.match(command, /Library\/Logs\/Buildr Dev/);
     assert.doesNotMatch(command, /Resources\/buildr|MacOS\/node/);
     assert.equal(fs.existsSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'node')), false);
   }
   const windows = build('win32');
   const command = fs.readFileSync(path.join(windows, 'Buildr Web Dev', 'Launch-Buildr.cmd'), 'utf8');
-  assert.match(command, /web --port 4317/);
+  assert.match(command, /web --port 0/);
+  assert.match(command, /Buildr Dev\\Logs/);
   assert.doesNotMatch(command, /runtime\\node\.exe|app\\bin\\buildr\.mjs/);
   assert.equal(fs.existsSync(path.join(windows, 'Buildr Web Dev', 'runtime')), false);
   assert.equal(fs.existsSync(path.join(windows, 'Buildr Web Dev', 'app')), false);
@@ -64,8 +75,8 @@ test('development launcher支持带空格checkout并绑定独立development host
   buildLauncher({
     platform: 'darwin', output,
     identity: {
-      schemaVersion: 'buildr.launcher-identity/v1', version: '0.0.0', channel: 'development', source: 'checkout',
-      buildId: 'space-test', buildNumber: '1', protocolVersion: 1, platform: 'darwin', builtAt: new Date().toISOString(),
+      schemaVersion: 'buildr.launcher-identity/v1', version: '0.0.0', channel: 'development', runtimeRole: 'development', source: 'checkout',
+      buildId: 'space-test', buildNumber: '1', protocolVersion: 1, protocolIdentity: 'buildr.web-protocol/v1', platform: 'darwin', builtAt: new Date().toISOString(),
       sourceRoot,
       developmentRuntime: { executable: process.execPath, version: process.versions.node, identity: `development-host:${process.execPath}` },
     },
@@ -75,6 +86,46 @@ test('development launcher支持带空格checkout并绑定独立development host
   assert.match(launcher, new RegExp(`SOURCE_ROOT='${escaped}'`));
   assert.match(launcher.replaceAll('\\', '/'), /bin\/buildr\.mjs/);
   assert.doesNotMatch(launcher, /Workspace Node/u);
+});
+
+test('macOS真实Development Launcher wrapper只启动临时Buildr Dev实例', { skip: process.platform !== 'darwin' }, async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-wrapper-smoke-'));
+  const home = path.join(base, 'home');
+  const output = path.join(base, 'launcher');
+  const releasedRoot = path.join(home, 'Library', 'Application Support', 'Buildr');
+  const developmentRoot = path.join(home, 'Library', 'Application Support', 'Buildr Dev');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  const releasedSentinel = path.join(releasedRoot, 'released-sentinel');
+  fs.writeFileSync(releasedSentinel, 'keep\n');
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  buildLauncher({
+    platform: 'darwin', output,
+    identity: {
+      schemaVersion: 'buildr.launcher-identity/v1', version: '0.0.0', channel: 'development', runtimeRole: 'development', source: 'checkout',
+      buildId: 'wrapper-smoke', buildNumber: '1', protocolVersion: 1, protocolIdentity: 'buildr.web-protocol/v1', platform: 'darwin', builtAt: new Date().toISOString(),
+      sourceRoot: PRODUCT_ROOT,
+      developmentRuntime: { executable: process.execPath, version: process.versions.node, identity: `development-host:${process.execPath}:${process.versions.node}` },
+    },
+  });
+  const wrapper = path.join(output, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr');
+  const env = { ...process.env, HOME: home };
+  delete env.BUILDR_APP_DATA_DIR;
+  delete env.BUILDR_PRODUCT_DATA_DIR;
+  const started = spawnSync(wrapper, [], { env, encoding: 'utf8' });
+  assert.equal(started.status, 0, started.stderr);
+  const instanceFile = path.join(developmentRoot, 'instance.json');
+  const instance = await waitForJson(instanceFile);
+  t.after(() => { try { process.kill(instance.pid, 'SIGKILL'); } catch {} });
+  assert.equal(instance.webProfile.profile, 'development');
+  assert.equal(instance.webProfile.dataRoot, developmentRoot);
+  assert.equal(fs.readFileSync(releasedSentinel, 'utf8'), 'keep\n');
+  assert.equal(fs.existsSync(path.join(releasedRoot, 'instance.json')), false);
+  const stopped = await fetch(`${instance.url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instance.secret } });
+  assert.equal(stopped.status, 202);
+  const deadline = Date.now() + 10_000;
+  while (fs.existsSync(instanceFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(fs.existsSync(instanceFile), false);
+  assert.equal(fs.readFileSync(releasedSentinel, 'utf8'), 'keep\n');
 });
 
 test('旧release development-builder入口fail closed并引导到正式npm Launcher命令', async () => {
@@ -123,10 +174,14 @@ test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t) => {
   assert.equal(fs.readFileSync(path.join(output, 'running-bundle'), 'utf8'), 'preserve');
 });
 
-test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分根', () => {
+test('macOS Buildr Web Dev默认安装到系统Applications且与正式产品分根', { skip: process.platform !== 'darwin' }, () => {
+  const override = process.env.BUILDR_APP_DATA_DIR;
+  delete process.env.BUILDR_APP_DATA_DIR;
   const status = launcherStatus({ platform: 'darwin', channel: 'development' });
+  process.env.BUILDR_APP_DATA_DIR = override;
   assert.equal(status.target, '/Applications/Buildr Web Dev.app');
   assert.notEqual(status.target, '/Applications/Buildr Web.app');
+  assert.match(status.dataRoot, /Application Support\/Buildr Dev$/u);
 });
 
 test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的development入口', async (t) => {

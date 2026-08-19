@@ -15,13 +15,19 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
 
+Task 可能产生用户可见前端 UI 变化、且 triage 尚未询问时，先询问用户是否需要界面预演稿（UI Preview）。只有当前任务已有明确确认，才在正式前端实现前加载独立 `ui-preview` Skill；用户拒绝、未确认或要求继续时不生成并继续本流程。UI Preview 与是否完成 planning、形成 Content Target、进入 Verification 或 Finish 无关，不保存为 Development node、gate、Result、Receipt 或 blocker。
+
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 
 日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入，并以同源`formalVerificationReadiness`说明正式验证交接是否尚未到达、存在明确blocker或需要current knowledge即时确认。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
 
 ## Parent Plan 与 Child Contribution
 
-新建Parent可以显式采用Parent Plan。先用`task parent inspect`确认`legacy|parent-plan`模式；首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
+新建Parent可以显式采用Parent Plan。正常启动顺序是：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → `task next`返回首个依赖已满足的Contribution。任何一步blocked都只恢复该步的owner事实；不要先创建Child、手工拼Development写入或把非阻塞建议升级成gate。
+
+Parent Environment只服务Parent本身。纯协调且在Child前不修改交付内容的Parent可以显式采用coordination-only共享执行根；Parent会直接修改代码、文档或其他生产内容时，必须从一开始使用隔离checkout。Child Environment按Child自己的Task scope另行准备，既不继承Parent Receipt，也不因Parent Plan刚建立而提前prepare。若Child依赖Parent尚未进入canonical baseline的真实交付，Parent Plan必须表达该依赖，并等前置Contribution正式交付后再准备Child Environment。
+
+先用`task parent inspect`确认`legacy|parent-plan`模式；`task parent record|reconcile --schema|--example`是Parent Plan输入的公开发现入口。首次`record`只保存outcome、architecture invariants、Contribution Map、dependencies与final acceptance。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有这五类协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
 
 Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
 
@@ -55,7 +61,9 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
 
-内容固定后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
+创建或重写文本文件时直接遵守required Core的EOF不变量。内容固定后、调用`observe`形成Content Target之前，检查Task本次新增的全部文本文件；Git-backed scope必须同时覆盖tracked-added与未忽略的untracked文件，非Git scope按Task实际新增文件inventory检查。发现末尾空白行时先修正再`observe`；不得为了清理未触达的存量EOF问题扩大当前Task范围。修正改变delivery bytes时，后续Content Target与验证证据必须基于修正后内容，不得复用旧bytes的evidence。
+
+检查通过后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
 Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
 

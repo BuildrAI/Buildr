@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -79,13 +80,15 @@ test('Review Result只在SQLite持久化且数据库保持Git ignore', (t) => {
 });
 
 test('Buildr Web 只读查看双槽位，并只生成 Task Review Agent prompt', async (t) => {
-  const { base, root } = fixture(t);
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-review-product-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => {
     if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousAppData;
   });
+  const { root } = fixture(t, { base });
   const runtime = createRuntime();
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));

@@ -22,6 +22,13 @@ test('Core 不再把 Project 描述为 Skill source', () => {
   assert.doesNotMatch(core, /项目（Project） \|[^\n]*技能（Skills）/);
 });
 
+test('Core 精确区分结尾换行符、末尾空白行与正文空行', () => {
+  assert.match(core, /最后一个非空字符后必须且只能保留一个换行符/);
+  assert.ok(core.includes('正确：`...\\n`；错误：`...\\n\\n`'));
+  assert.match(core, /该限制只针对文件末尾，不限制正文内部的合理空行/);
+  assert.doesNotMatch(core, /文档默认不要写两个空白行/);
+});
+
 test('package static 不把 Product Rule 文案当作专业流程契约', () => {
   assert.doesNotMatch(staticValidation, /Product AGENTS\.md must include/);
   assert.doesNotMatch(staticValidation, /Buildr Core must include/);

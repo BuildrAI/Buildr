@@ -957,6 +957,7 @@ export function createPackageStaticValidator(deps) {
         for (const requiredText of [
           '本 Skill 是 `buildr.task-environment/v1` 的默认 provider',
           'buildr task environment prepare <task-id>',
+          '--agent <adapter>',
           'buildr task environment inspect <task-id>',
           'buildr task environment cleanup <task-id>',
           '`prepare` 同时承担首次准备和幂等恢复',

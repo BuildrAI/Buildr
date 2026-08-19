@@ -189,3 +189,93 @@ test('Task-scoped Change 对失效路径和无法证明的 Project scope 保持 
   assert.equal(resolveWith({ ...scope, sourcePath: 'projects/renamed-product' }).availability, 'unavailable');
   assert.equal(resolveWith({ ...scope, validationRoot: path.join(root, 'different-task-root') }).availability, 'unavailable');
 });
+
+test('Task UI Preview 从候选 working Change 发现带标记完整 HTML 并报告安全跳过', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const validationRoot = path.join(root, 'task-root');
+  const candidateProjectRoot = path.join(validationRoot, 'projects', 'product');
+  writeChange(projectRoot, 'previewed', {
+    'preview.html': '<!doctype html><html><head><title>Retained Preview</title></head><body><!-- buildr:ui-preview --></body></html>',
+  });
+  const candidateChangeRoot = writeChange(candidateProjectRoot, 'previewed', {
+    'screens/task.html': '<!doctype html><html><head><title>Candidate Task Preview</title><style>body{color:#123}</style></head><body><!-- buildr:ui-preview --><button>切换</button></body></html>',
+    'screens/unmarked.html': '<!doctype html><html><head><title>Ignored</title></head><body>not a preview</body></html>',
+    'screens/incomplete.html': '<!-- buildr:ui-preview --><title>Incomplete</title>',
+    'screens/large.html': `<!doctype html><html><head><title>Large</title></head><body><!-- buildr:ui-preview -->${'x'.repeat((2 * 1024 * 1024) + 1)}</body></html>`,
+  });
+  const outside = path.join(root, 'outside.html');
+  fs.writeFileSync(outside, '<!doctype html><html><head><title>Outside</title></head><body><!-- buildr:ui-preview --></body></html>');
+  fs.symlinkSync(outside, path.join(candidateChangeRoot, 'screens', 'linked.html'));
+
+  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'preview-task' } });
+  runtime.inspectTaskRecord = () => ({ record: { taskId: 'preview-task', changes: [{ project: 'product', change: 'previewed' }] } });
+  runtime.readTaskEnvironmentCurrent = () => ({
+    status: 'ready',
+    environment: {
+      scopes: [{
+        selector: 'project:product',
+        kind: 'project',
+        project: 'product',
+        sourcePath: 'projects/product',
+        executionRoot: candidateProjectRoot,
+        validationRoot,
+      }],
+    },
+  });
+
+  const result = runtime.taskUiPreviews(root, 'preview-task');
+  assert.equal(result.taskId, 'preview-task');
+  assert.equal(result.previews.length, 1);
+  assert.deepEqual({
+    id: result.previews[0].id,
+    title: result.previews[0].title,
+    path: result.previews[0].path,
+    lifecycle: result.previews[0].lifecycle,
+    provenance: result.previews[0].provenance,
+  }, {
+    id: result.previews[0].id,
+    title: 'Candidate Task Preview',
+    path: 'screens/task.html',
+    lifecycle: 'active',
+    provenance: 'task-environment-candidate',
+  });
+  assert.match(result.previews[0].id, /^[a-f0-9]{32}$/);
+  assert.equal(Object.hasOwn(result.previews[0], 'html'), false);
+  const page = runtime.taskUiPreview(root, 'preview-task', result.previews[0].id);
+  assert.equal(page.html.includes('Candidate Task Preview'), true);
+  assert.equal(page.html.includes('Retained Preview'), false);
+  assert.equal(page.html.includes('not a preview'), false);
+  assert.throws(() => runtime.taskUiPreview(root, 'preview-task', 'not-an-id'), (error) => error.code === 'ui_preview_reference_invalid');
+  assert.throws(() => runtime.taskUiPreview(root, 'preview-task', '0'.repeat(32)), (error) => error.code === 'ui_preview_not_found');
+  assert.deepEqual(new Set(result.diagnostics.map(({ code }) => code)), new Set([
+    'ui_preview_document_incomplete',
+    'ui_preview_file_too_large',
+    'ui_preview_symlink_ignored',
+  ]));
+  assert.equal(JSON.stringify(result).includes(root), false);
+});
+
+test('Task UI Preview 从 archived retained Change 继续读取且无 Change 时返回空态', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeChange(projectRoot, 'archive/2026-08-18-previewed', {
+    'anywhere/archived.html': '<!doctype html><html><head><title>Archived Preview</title></head><body><!-- buildr:ui-preview --></body></html>',
+  });
+  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'archived-task' } });
+  runtime.readTaskEnvironmentCurrent = () => ({ status: 'unavailable', environment: null });
+  runtime.inspectTaskRecord = (_targetRoot, taskId) => ({
+    record: {
+      taskId,
+      changes: taskId === 'empty-task' ? [] : [{ project: 'product', change: 'previewed' }],
+    },
+  });
+
+  const archived = runtime.taskUiPreviews(root, 'archived-task');
+  assert.equal(archived.previews.length, 1);
+  assert.equal(archived.previews[0].lifecycle, 'archived');
+  assert.equal(archived.previews[0].provenance, 'retained-archive');
+  assert.equal(archived.previews[0].path, 'anywhere/archived.html');
+  assert.equal(runtime.taskUiPreview(root, 'archived-task', archived.previews[0].id).html.includes('Archived Preview'), true);
+  assert.deepEqual(runtime.taskUiPreviews(root, 'empty-task'), { taskId: 'empty-task', previews: [], diagnostics: [] });
+});

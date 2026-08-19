@@ -35,10 +35,15 @@ function isolateLocalAppData(t, appData) {
 }
 
 function runBuildr(args, options = {}) {
-  const transientAppData = options.env || process.env.BUILDR_APP_DATA_DIR
+  const targetIndex = args.indexOf('--target');
+  const targetRoot = targetIndex >= 0 ? args[targetIndex + 1] : null;
+  const scopedAppData = options.env || process.env.BUILDR_APP_DATA_DIR
     ? null
-    : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
-  const env = options.env || { ...process.env, ...(transientAppData ? { BUILDR_APP_DATA_DIR: transientAppData } : {}) };
+    : targetRoot
+      ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
+      : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
+  const transientAppData = scopedAppData && !targetRoot ? scopedAppData : null;
+  const env = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
   try {
     return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
   } finally {
@@ -153,6 +158,26 @@ suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 pa
   lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
   assert.equal(lines.filter((line) => line === entry).length, 1);
   assert.equal(lines.includes('custom-user-entry'), true);
+});
+
+suiteTest('manifest-registry', '项目每日演进目录在 package、init 与 sync 中整体忽略', (t) => {
+  const entry = '/.buildr/daily-progress/';
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
+  assert.equal(packageGitignore.includes('/.buildr/'), false);
+
+  const root = initWorkspaceViaCli(t);
+  const gitignore = path.join(root, '.gitignore');
+  let lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === entry).length, 1);
+
+  fs.writeFileSync(gitignore, `${lines.filter((line) => line !== entry).join('\n').replace(/\n*$/u, '')}\ncustom-user-entry\n`);
+  const result = runBuildr(['sync', 'codex', '--target', root]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
+  assert.equal(lines.filter((line) => line === entry).length, 1);
+  assert.equal(lines.includes('custom-user-entry'), true);
+  assert.equal(lines.includes('/.buildr/'), false);
 });
 
 suiteTest('runtime-recovery', 'legacy runtime.node 不影响健康，sync 移除声明且不删除已有本机文件', (t) => {

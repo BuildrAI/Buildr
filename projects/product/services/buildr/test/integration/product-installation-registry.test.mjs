@@ -512,3 +512,57 @@ test('installation readiness uses the receipt secret and proves ready, unhealthy
   assert.equal(JSON.stringify(unreachable).includes(receipt.secret), false);
   assert.equal(fs.readFileSync(file, 'utf8'), before, 'readiness inspection must not rewrite instance state');
 });
+
+test('Doctor inventory分别投影双Web Root、双实例、空development registry与旧shared-root冲突', (t) => {
+  const root = temporary(t);
+  const currentProduct = path.join(root, 'current-product');
+  fs.mkdirSync(currentProduct);
+  fs.writeFileSync(path.join(currentProduct, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
+  const releasedRoot = path.join(root, 'released');
+  const developmentRoot = path.join(root, 'development');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  const legacyDevelopment = {
+    schemaVersion: 'buildr.local-app-instance/v1', url: 'http://127.0.0.1:4317', secret: 'legacy', pid: 4242,
+    launcherIdentity: { channel: 'development', version: '1.2.3', protocolVersion: 1 },
+    productIdentity: { channel: 'development', version: '1.2.3', protocolIdentity: 'buildr.web-protocol/v1', runtime: { role: 'development' } },
+  };
+  fs.writeFileSync(path.join(releasedRoot, 'instance.json'), `${JSON.stringify(legacyDevelopment, null, 2)}\n`);
+  const result = buildInstallationInventory(currentProduct, {
+    installationRegistryFile: path.join(root, 'product-installations.json'),
+    developmentLauncherRoot: path.join(root, 'no-launcher'),
+    instanceDataRoots: { released: releasedRoot, development: developmentRoot },
+    pidProbe: () => {},
+  });
+  assert.equal(result.instances.released.dataRoot, releasedRoot);
+  assert.equal(result.instances.released.status, 'profile-conflict');
+  assert.equal(result.instances.released.identity.channel, 'development');
+  assert.match(result.instances.released.reason, /公开退出动作/u);
+  assert.equal(result.instances.development.dataRoot, developmentRoot);
+  assert.equal(result.instances.development.status, 'absent');
+  assert.equal(result.workspaceManagement.registries.released.status, 'absent');
+  assert.equal(result.workspaceManagement.registries.development.status, 'absent');
+});
+
+test('Doctor inventory不打开SQLite即可报告双registry的real root或UUID冲突', (t) => {
+  const root = temporary(t);
+  const currentProduct = path.join(root, 'current-product');
+  const workspace = path.join(root, 'workspace');
+  const releasedRoot = path.join(root, 'released');
+  const developmentRoot = path.join(root, 'development');
+  fs.mkdirSync(currentProduct);
+  fs.writeFileSync(path.join(currentProduct, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
+  fs.mkdirSync(path.join(workspace, '.buildr'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, '.buildr', 'workspace.yml'), 'schemaVersion: buildr.workspace/v1\nid: 123e4567-e89b-42d3-a456-426614174000\nname: Conflict\ndescription: Conflict\n');
+  for (const dataRoot of [releasedRoot, developmentRoot]) {
+    fs.mkdirSync(dataRoot, { recursive: true });
+    fs.writeFileSync(path.join(dataRoot, 'workspace-registry.json'), `${JSON.stringify({ schemaVersion: 'buildr.local-workspace-registry/v1', roots: [workspace], lastOpenedRoot: workspace }, null, 2)}\n`);
+  }
+  const result = buildInstallationInventory(currentProduct, {
+    installationRegistryFile: path.join(root, 'product-installations.json'),
+    developmentLauncherRoot: path.join(root, 'no-launcher'),
+    instanceDataRoots: { released: releasedRoot, development: developmentRoot },
+  });
+  assert.deepEqual(result.workspaceManagement.conflicts.map((conflict) => conflict.type), ['cross-channel-registration']);
+  assert.equal(result.workspaceManagement.conflicts[0].workspaceId, '123e4567-e89b-42d3-a456-426614174000');
+  assert.equal(fs.existsSync(path.join(workspace, '.buildr', 'local', 'workspace.sqlite')), false);
+});

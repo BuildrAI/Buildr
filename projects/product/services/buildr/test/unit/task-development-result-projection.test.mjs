@@ -53,7 +53,7 @@ test('compact projection只保留同次Development result的current与guidance',
     status: 'handoff-current',
     axes: { taskContext: 'current', planning: 'current', contentTarget: 'current', policy: 'current', candidate: 'current', handoff: 'current' },
     identities: {
-      taskContext: 'sha256-context', planning: 'sha256-planning', planningTarget: 'sha256-plan-target', contentTarget: 'sha256-content',
+      taskContext: 'sha256-context', planning: 'sha256-planning', planningTarget: 'sha256-plan-target', parentPlan: null, contentTarget: 'sha256-content',
       policy: 'sha256-policy', candidate: 'sha256-candidate', handoff: 'sha256-handoff',
     },
     candidateGeneration: 2,

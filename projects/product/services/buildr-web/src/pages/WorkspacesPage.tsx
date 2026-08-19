@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
 import { api } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { confirmModal } from '../lib/confirm';
+import { workspaceHomePath } from '../lib/labels';
 
 type WorkspaceEntry = {
   status: string;
@@ -28,6 +29,8 @@ function healthLabel(status: string): string {
 
 export function WorkspacesPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const stayOnCatalog = searchParams.get('catalog') === '1';
   const { openAgentAction, setBreadcrumbParts } = useAppShell();
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -44,8 +47,18 @@ export function WorkspacesPage() {
   }, []);
 
   useEffect(() => {
-    void load().catch((error: Error) => setMessage(error.message));
-  }, [load]);
+    void load()
+      .then((next) => {
+        if (stayOnCatalog) return;
+        const ready = (next.workspaces || []).filter(
+          (entry) => entry.status === 'ready' && entry.workspace?.id,
+        );
+        if (ready.length === 1 && ready[0].workspace?.id) {
+          navigate(workspaceHomePath(ready[0].workspace.id), { replace: true });
+        }
+      })
+      .catch((error: Error) => setMessage(error.message));
+  }, [load, navigate, stayOnCatalog]);
 
   const removeWorkspace = async (entry: WorkspaceEntry, revision: string) => {
     const ok = await confirmModal({
@@ -80,7 +93,7 @@ export function WorkspacesPage() {
         setRegistry(result.registry);
         await load();
         if (result.registry.lastOpenedWorkspaceId) {
-          navigate(`/workspaces/${result.registry.lastOpenedWorkspaceId}/`);
+          navigate(workspaceHomePath(result.registry.lastOpenedWorkspaceId));
         }
       } else if (!result.canceled) {
         setMessage(result.message || '该目录暂时不能登记。');
@@ -99,9 +112,8 @@ export function WorkspacesPage() {
     <>
       <section className="resource-toolbar">
         <div>
-          <p className="eyebrow">从这里建立工作范围</p>
           <Typography.Title level={2} style={{ margin: 0 }}>工作空间</Typography.Title>
-          <p className="page-copy">工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
+          <p className="page-copy">从这里建立工作范围。工作空间是你和 Agent 共同工作的顶层目录；项目表示长期工作单元，服务按需登记代码仓、应用或模块。</p>
         </div>
         <div className="toolbar-actions">
           <Button id="add-workspace" type="primary" loading={adding} onClick={() => void pickWorkspace()}>
@@ -139,7 +151,7 @@ export function WorkspacesPage() {
           return (
             <article className="workspace-card" key={entry.rootPath}>
               {ready && entry.workspace?.id ? (
-                <Link className="workspace-card-main" to={`/workspaces/${entry.workspace.id}/`}>
+                <Link className="workspace-card-main" to={workspaceHomePath(entry.workspace.id)}>
                   {main}
                 </Link>
               ) : (

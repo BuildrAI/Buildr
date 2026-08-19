@@ -6,9 +6,11 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
 import { atomicWriteJson } from '../filesystem/index.mjs';
-import { localAppDataRoot } from '../filesystem/workspace-registry-repository.mjs';
+import { sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
+import { productDataRoot } from '../product-identity/web-profile.mjs';
 import {
   createNpmLauncherBinding,
+  DEFAULT_NPM_LAUNCHER_WEB_PORT,
   inspectNpmLauncherBinding,
   readAndInspectNpmLauncherBinding,
   validateNpmLauncherBinding,
@@ -36,16 +38,18 @@ export function defaultNpmLauncherTarget(platform = process.platform, options = 
 export function npmLauncherBindingPath(platform = process.platform, target = defaultNpmLauncherTarget(platform)) {
   return platform === 'darwin'
     ? path.join(path.resolve(target), 'Contents', 'Resources', 'launcher-binding.json')
-    : path.join(localAppDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
+    : path.join(productDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
 }
 
 function macLauncherScript(binding) {
+  const jobPrefix = `ai.buildr.web.npm-launcher.runner.${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 16)}`;
   return `#!/bin/sh
 NODE=${quoteShell(binding.hostNode.path)}
 NODE_SHA=${quoteShell(binding.hostNode.sha256.slice('sha256-'.length))}
 ENTRY=${quoteShell(binding.packageEntry.path)}
 ENTRY_SHA=${quoteShell(binding.packageEntry.sha256.slice('sha256-'.length))}
 BINDING=${quoteShell(binding.bindingPath)}
+JOB_PREFIX=${quoteShell(jobPrefix)}
 LOG_DIR="\${HOME}/Library/Logs/Buildr"
 LOG_FILE="\${LOG_DIR}/launcher.log"
 mkdir -p "\${LOG_DIR}"
@@ -58,11 +62,41 @@ fail() {
 [ -f "\${ENTRY}" ] || fail "Buildr entry unavailable: \${ENTRY}"
 [ "$(/usr/bin/shasum -a 256 "\${NODE}" | /usr/bin/awk '{print $1}')" = "\${NODE_SHA}" ] || fail "Host Node digest drifted: \${NODE}"
 [ "$(/usr/bin/shasum -a 256 "\${ENTRY}" | /usr/bin/awk '{print $1}')" = "\${ENTRY_SHA}" ] || fail "Buildr entry digest drifted: \${ENTRY}"
+LABEL="\${JOB_PREFIX}.$$"
+APP_DATA="\${BUILDR_APP_DATA_DIR-}"
+PRODUCT_DATA="\${BUILDR_PRODUCT_DATA_DIR-}"
+NO_OPEN="\${BUILDR_LAUNCHER_NO_OPEN-}"
+/bin/launchctl submit -l "\${LABEL}" -- /bin/sh -c '
+LABEL="$1"
+NODE="$2"
+ENTRY="$3"
+BINDING="$4"
+LOG_FILE="$5"
+APP_DATA="$6"
+PRODUCT_DATA="$7"
+NO_OPEN="$8"
+cleanup() {
+  /bin/launchctl remove "\${LABEL}" >/dev/null 2>&1 || true
+}
+trap cleanup 0
+[ -n "\${APP_DATA}" ] && export BUILDR_APP_DATA_DIR="\${APP_DATA}" || unset BUILDR_APP_DATA_DIR
+[ -n "\${PRODUCT_DATA}" ] && export BUILDR_PRODUCT_DATA_DIR="\${PRODUCT_DATA}" || unset BUILDR_PRODUCT_DATA_DIR
+[ -n "\${NO_OPEN}" ] && export BUILDR_LAUNCHER_NO_OPEN="\${NO_OPEN}" || unset BUILDR_LAUNCHER_NO_OPEN
 "\${NODE}" "\${ENTRY}" web --launcher-binding "\${BINDING}" >>"\${LOG_FILE}" 2>&1
 STATUS=$?
-[ "\${STATUS}" -eq 0 ] || fail "Buildr Web exited with status \${STATUS}"
+if [ "\${STATUS}" -ne 0 ]; then
+  printf "%s\\n" "Buildr Web exited with status \${STATUS}" >>"\${LOG_FILE}"
+  /usr/bin/osascript -e "display alert \\"Buildr Web 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
+fi
+' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}"
+STATUS=$?
+[ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr Web background runner: status \${STATUS}"
 exit 0
 `;
+}
+
+function macBundleIdentifier(binding) {
+  return `ai.buildr.web.npm-launcher.slot${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 24)}`;
 }
 
 function macInfoPlist(binding) {
@@ -71,7 +105,7 @@ function macInfoPlist(binding) {
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Buildr Web</string>
 <key>CFBundleDisplayName</key><string>Buildr Web</string>
-<key>CFBundleIdentifier</key><string>ai.buildr.web.npm-launcher</string>
+<key>CFBundleIdentifier</key><string>${macBundleIdentifier(binding)}</string>
 <key>CFBundleShortVersionString</key><string>${binding.version}</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundlePackageType</key><string>APPL</string>
@@ -213,7 +247,15 @@ function readBindingForTarget(platform, target) {
 }
 
 function ownershipMatches(observed, expected) {
-  return observed.binding?.launcherOwnershipIdentity === expected.launcherOwnershipIdentity;
+  const binding = observed.binding;
+  if (!binding) return false;
+  if (binding.launcherOwnershipIdentity === expected.launcherOwnershipIdentity) return true;
+  return binding.channel === expected.channel
+    && binding.platform === expected.platform
+    && binding.package === expected.package
+    && binding.installationOwnershipIdentity === expected.installationOwnershipIdentity
+    && binding.installationSlotIdentity === expected.installationSlotIdentity
+    && sameFilesystemPath(binding.target, expected.target);
 }
 
 export function npmLauncherStatus({ platform = process.platform, target, readShortcut } = {}) {
@@ -241,11 +283,20 @@ export function npmLauncherStatus({ platform = process.platform, target, readSho
   };
 }
 
-export function installNpmLauncher({ registration, platform = process.platform, target, repair = false, writeShortcut, readShortcut } = {}) {
+export function installNpmLauncher({ registration, platform = process.platform, target, port, repair = false, writeShortcut, readShortcut } = {}) {
   const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
-  const expected = createNpmLauncherBinding({ registration, platform, target: resolvedTarget, bindingPath });
   const existing = readBindingForTarget(platform, resolvedTarget);
+  const preservedPort = repair && existing.binding?.schemaVersion === 'buildr.npm-launcher-binding/v2'
+    ? existing.binding.webPort
+    : DEFAULT_NPM_LAUNCHER_WEB_PORT;
+  const expected = createNpmLauncherBinding({
+    registration,
+    platform,
+    target: resolvedTarget,
+    bindingPath,
+    webPort: port === undefined ? preservedPort : port,
+  });
   const existingStructure = fs.existsSync(resolvedTarget) ? launcherStructure(platform, resolvedTarget, existing, { readShortcut }) : existing;
   if (fs.existsSync(resolvedTarget) && (!ownershipMatches(existing, expected) || (existingStructure.code === 'launcher.shortcut_foreign' && !repair))) {
     throw new Error(`Refusing to replace foreign Launcher target: ${resolvedTarget}.`);
@@ -304,7 +355,15 @@ export function refreshInstalledNpmLauncher({ registration, platform = process.p
   const expected = createNpmLauncherBinding({ registration, platform, target: resolvedTarget, bindingPath });
   const existing = readAndInspectNpmLauncherBinding(bindingPath, { target: resolvedTarget });
   if (!ownershipMatches(existing, expected)) return { action: 'blocked', reason: 'Existing Launcher ownership does not match this npm installation slot' };
-  return installNpmLauncher({ registration, platform, target: resolvedTarget, repair: false, writeShortcut, readShortcut });
+  return installNpmLauncher({
+    registration,
+    platform,
+    target: resolvedTarget,
+    port: existing.binding?.schemaVersion === 'buildr.npm-launcher-binding/v2' ? existing.binding.webPort.preferred : DEFAULT_NPM_LAUNCHER_WEB_PORT,
+    repair: false,
+    writeShortcut,
+    readShortcut,
+  });
 }
 
 export function assertCurrentNpmLauncherBinding(file, productIdentity) {

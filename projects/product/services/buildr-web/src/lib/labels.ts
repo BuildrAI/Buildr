@@ -5,6 +5,10 @@ export function workspaceHref(workspaceId: string | null, path: string): string 
   return `/workspaces/${workspaceId}${suffix}`;
 }
 
+export function workspaceHomePath(workspaceId: string): string {
+  return `/workspaces/${workspaceId}/tasks`;
+}
+
 export function sourceTypeLabel(type: string): string {
   if (type === 'git') return 'Git 仓库';
   if (type === 'workspace') return '当前工作空间';

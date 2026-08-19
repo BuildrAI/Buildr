@@ -99,10 +99,10 @@ function safeInitialBoundary(run, persistence = null) {
       ? preflight?.status === 'passed' && ['blocked', 'failed'].includes(prepare?.status) && later.every(untouched)
       : false;
   const sideEffects = {
-    carrier: Boolean(run?.deliveryCarrier),
+    carrier: Boolean(run?.deliveryCarrier || run?.repositories?.some((repository) => repository.deliveryCarrier)),
     lease: Boolean(persistence?.lease),
-    equivalence: Boolean(run?.equivalence),
-    delivery: Boolean(run?.delivery),
+    equivalence: Boolean(run?.equivalence || run?.repositories?.some((repository) => repository.equivalence)),
+    delivery: Boolean(run?.delivery || run?.repositories?.some((repository) => repository.delivery)),
     preparedCompletion: Boolean(persistence?.preparedCompletion),
     completion: Boolean(run?.completion),
   };

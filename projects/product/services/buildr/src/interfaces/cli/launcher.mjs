@@ -45,10 +45,15 @@ function printLauncherResult(result) {
 
 export function registerLauncherInterface(runtime) {
   function manageLocalAppLauncher(action, args) {
-    runtime.assertNoUnknownOptions(args, new Set(['--target', '--platform', '--json']), new Set(['--json']));
+    const supportsPort = ['install', 'repair'].includes(action);
+    runtime.assertNoUnknownOptions(args, new Set(['--target', '--platform', '--json', ...(supportsPort ? ['--port'] : [])]), new Set(['--json']));
+    const rawPort = supportsPort ? runtime.optionValue(args, '--port', undefined) : undefined;
+    const port = rawPort === undefined ? undefined : Number(rawPort);
+    if (rawPort !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) throw new Error(`Invalid npm Launcher port: ${rawPort}.`);
     const options = {
       target: runtime.optionValue(args, '--target', undefined),
       platform: runtime.optionValue(args, '--platform', process.platform),
+      port,
     };
     let result;
     if (action === 'status') result = npmLauncherStatus(options);

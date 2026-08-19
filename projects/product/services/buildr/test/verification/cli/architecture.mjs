@@ -286,6 +286,24 @@ if (fs.existsSync(taskEnvironmentInterface)) {
   }
 }
 
+const dailyProgressApplication = path.join(sourceRoot, 'application', 'project-daily-progress', 'project-daily-progress-application.mjs');
+const dailyProgressInterface = path.join(sourceRoot, 'interfaces', 'cli', 'project-daily-progress.mjs');
+if (fs.existsSync(dailyProgressApplication)) {
+  const source = fs.readFileSync(dailyProgressApplication, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
+    problems.push('Daily Progress Application must not own CLI parsing, output, or process exit state');
+  }
+  if (!source.includes('runtime.writeDailyProgressDocument') || !source.includes('runtime.inspectTaskRecord')) {
+    problems.push('Daily Progress Application must write files through the store and only inspect Task Record');
+  }
+}
+if (fs.existsSync(dailyProgressInterface)) {
+  const source = fs.readFileSync(dailyProgressInterface, 'utf8');
+  if (!source.includes('export function projectDailyProgressCommand') || !source.includes('runtime.recordProjectDailyProgress')) {
+    problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
+  }
+}
+
 const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
 const gitWorktreeInterface = path.join(sourceRoot, 'interfaces', 'cli', 'git-worktree.mjs');
 if (fs.existsSync(gitWorktreeProvider)) {

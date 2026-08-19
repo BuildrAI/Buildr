@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compactTaskFinishResult, projectTaskFinishResult } from '../../src/application/task-finish/task-finish-result-projection.mjs';
+import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';
 
 function canonical(overrides = {}) {
   return {
-    schemaVersion: 'buildr.task-finish-result/v2',
+    schemaVersion: 'buildr.task-finish-result/v3',
     runId: 'finish-run',
     status: 'blocked',
     identity: {
@@ -68,7 +69,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'refs', 'delivery', 'completion', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -106,14 +107,223 @@ test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 
       message: 'Adaptation required.',
       diagnostic: { code: 'task-finish.contribution-apply-conflict', conflictPaths: ['shared.txt'] },
     },
+    deliveryAdaptation: {
+      expectedCommitMessage: 'fix(task-finish): resolve conflict\n\nprivate body\n\nBuildr-Task: finish-task',
+      preparationHints: {
+        schemaVersion: 'buildr.task-finish-preparation-hints/v1',
+        steps: [{ id: 'npm-ci', scope: 'service:product/buildr', recipe: 'buildr.npm-ci', cwd: 'projects/product/services/buildr', executable: 'projects/product/services/buildr/scripts/run-development-npm', args: ['ci'], timeoutMs: 300000, outputs: [{ path: 'projects/product/services/buildr/node_modules', kind: 'directory' }] }],
+        unavailable: [],
+      },
+    },
   }));
   assert.deepEqual(adaptation.primaryFailure.conflictPaths, ['shared.txt']);
+  assert.match(adaptation.deliveryAdaptation.expectedCommitMessage, /Buildr-Task: finish-task/);
+  assert.equal(adaptation.deliveryAdaptation.preparationHints.steps[0].args[0], 'ci');
+  assert.doesNotMatch(JSON.stringify(adaptation.deliveryAdaptation.preparationHints), /\/private\//);
 });
 
 test('full Task Finish Result 保持canonical对象不变', () => {
   const full = canonical();
   assert.equal(projectTaskFinishResult(full, 'full'), full);
-  assert.equal(full.schemaVersion, 'buildr.task-finish-result/v2');
+  assert.equal(full.schemaVersion, 'buildr.task-finish-result/v3');
+});
+
+test('v2与v3 Result归一化为同一稳定self-bootstrap契约', () => {
+  const legacyRoot = '/private/workspace/.buildr/transient/task-finish/carriers/finish-run';
+  const legacy = selfBootstrapTaskFinishResult({
+    ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+    carrier: { identity: 'sha256-workspace-carrier', root: legacyRoot, activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+    delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    completion: { status: 'complete', finalRemoteRef: 'final-ref' },
+    primaryFailure: null,
+    resume: null,
+    status: 'complete',
+  });
+  const workspaceCarrierRoot = `${legacyRoot}/workspace-123`;
+  const serviceCarrierRoot = `${legacyRoot}/service-456`;
+  const multi = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [
+        { selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin', leaseTargetIdentity: 'sha256-workspace-target' },
+        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin', leaseTargetIdentity: 'sha256-service-target' },
+      ],
+      repositorySetIdentity: 'sha256-repository-set',
+    },
+    repositorySetIdentity: 'sha256-repository-set',
+    repositories: [
+      {
+        selector: 'service:product/example', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-service-carrier', root: serviceCarrierRoot, activationPaths: ['service.txt'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      },
+      {
+        selector: 'workspace', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-workspace-carrier', root: workspaceCarrierRoot, activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+      },
+    ],
+    completion: {
+      status: 'complete',
+      repositories: [
+        { selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-workspace-carrier', carrierRef: 'workspace-ref', finalRemoteRef: 'final-ref' },
+        { selector: 'service:product/example', disposition: 'applicable', carrierIdentity: 'sha256-service-carrier', carrierRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      ],
+    },
+  }));
+
+  assert.equal(legacy.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(multi.schemaVersion, legacy.schemaVersion);
+  assert.deepEqual(Object.keys(multi), Object.keys(legacy));
+  assert.equal(projectTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+  }), 'self-bootstrap').schemaVersion, legacy.schemaVersion);
+  assert.equal(multi.workspaceRepository.selector, 'workspace');
+  assert.equal(multi.workspaceRepository.leaseTargetIdentity, 'sha256-workspace-target');
+  assert.equal(multi.repositories[0].leaseTargetIdentity, 'sha256-service-target');
+  assert.equal(legacy.workspaceRepository.leaseTargetIdentity, 'origin:dev');
+  assert.equal(multi.workspaceRepository.carrier.root, workspaceCarrierRoot);
+  assert.deepEqual(multi.carriers.map((carrier) => carrier.selector), ['service:product/example', 'workspace']);
+  assert.equal(multi.carrierContainerRoot, legacyRoot);
+  assert.equal(multi.selfBootstrap.baseRef, 'final-ref');
+  assert.equal(multi.projectionIdentity.startsWith('sha256-'), true);
+  assert.equal(JSON.stringify(multi).includes('task-finish-result/v3'), false);
+});
+
+test('v3空repositories且仅有legacy singleton carrier时投影唯一Workspace repository', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+    repositories: [],
+    repositorySetIdentity: null,
+    carrier: {
+      identity: 'sha256-980797bee339d60c6820f414eef2b4295150c19d26cc26cd4dfe84eed88e88a2',
+      head: '4e220b287c746020a9ff95486935200e2fe1eb32',
+      changedPaths: [
+        'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+        'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+      ],
+    },
+    delivery: { status: 'delivered', remoteAfterRef: '4e220b287c746020a9ff95486935200e2fe1eb32', finalRemoteRef: '4e220b287c746020a9ff95486935200e2fe1eb32' },
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'cleaned' },
+      finalRemoteRef: '4e220b287c746020a9ff95486935200e2fe1eb32',
+    },
+  }));
+
+  assert.equal(result.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(result.mode, 'complete');
+  assert.equal(result.workspaceRepository.selector, 'workspace');
+  assert.equal(result.workspaceRepository.disposition, 'applicable');
+  assert.equal(result.workspaceRepository.carrier.identity, 'sha256-980797bee339d60c6820f414eef2b4295150c19d26cc26cd4dfe84eed88e88a2');
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+  assert.deepEqual(result.selfBootstrap.activationPaths, [
+    'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+    'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
+  ]);
+  assert.equal(result.selfBootstrap.applicability, 'applicable');
+  assert.equal(result.selfBootstrap.baseRef, '4e220b287c746020a9ff95486935200e2fe1eb32');
+  assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['workspace']);
+});
+
+test('v3空repositories且没有legacy carrier时保持workspace unavailable', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    identity: { ...canonical().identity, repositories: [] },
+    repositories: [],
+    carrier: null,
+  }));
+  assert.equal(result.schemaVersion, 'buildr.task-finish-self-bootstrap-input/v1');
+  assert.equal(result.workspaceRepository, null);
+  assert.equal(result.selfBootstrap.applicability, 'unavailable');
+  assert.equal(result.selfBootstrap.reason, 'Workspace repository facts are unavailable.');
+  assert.deepEqual(result.repositories, []);
+});
+
+test('无Workspace贡献投影为not-applicable且Service carrier不提升为自举输入', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [
+        { selector: 'workspace', disposition: 'not-applicable', reason: 'no-contribution', targetBranch: 'dev', remote: 'origin' },
+        { selector: 'service:product/example', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' },
+      ],
+    },
+    repositories: [
+      { selector: 'workspace', disposition: 'not-applicable', reason: 'no-contribution', deliveryCarrier: null, delivery: null },
+      {
+        selector: 'service:product/example', disposition: 'applicable',
+        deliveryCarrier: { identity: 'sha256-service', root: '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/service', activationPaths: ['projects/product/services/buildr/src/looks-like-workspace.mjs'] },
+        delivery: { status: 'delivered', remoteAfterRef: 'service-ref', finalRemoteRef: 'service-ref' },
+      },
+    ],
+  }));
+  assert.equal(result.selfBootstrap.applicability, 'not-applicable');
+  assert.deepEqual(result.selfBootstrap.activationPaths, []);
+  assert.equal(result.workspaceRepository.carrier, null);
+  assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['service:product/example']);
+});
+
+test('complete cleanup后carrier root可清理但冻结自举事实保持可投影', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-cleaned-carrier', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'cleaned' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-cleaned-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.mode, 'complete');
+  assert.equal(result.workspaceRepository.carrier.identity, 'sha256-cleaned-carrier');
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+  assert.deepEqual(result.selfBootstrap.activationPaths, ['projects/product/services/buildr/src/example.mjs']);
+  assert.equal(result.selfBootstrap.baseRef, 'final-ref');
+});
+
+test('self-bootstrap projector对未知内部major与不完整carrier fail closed', () => {
+  assert.throws(
+    () => selfBootstrapTaskFinishResult(canonical({ schemaVersion: 'buildr.task-finish-result/v4', futureField: true })),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
+  assert.throws(
+    () => selfBootstrapTaskFinishResult({
+      ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+      carrier: { identity: 'sha256-carrier', activationPaths: [] },
+    }),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
+  assert.throws(
+    () => selfBootstrapTaskFinishResult({
+      ...canonical({ schemaVersion: 'buildr.task-finish-result/v2' }),
+      status: 'complete',
+      carrier: { identity: 'sha256-carrier', activationPaths: [] },
+    }),
+    (error) => error.code === 'task_finish.self_bootstrap_projection_invalid',
+  );
 });
 
 test('compact bootstrap provenance不暴露capsule路径', () => {

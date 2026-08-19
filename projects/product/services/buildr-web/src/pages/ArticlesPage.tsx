@@ -69,12 +69,6 @@ export function ArticlesPage() {
         </div>
       </section>
       <section className="resource-list-section">
-        <div className="section-heading">
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>文章目录</Typography.Title>
-            <p className="section-copy">正文与配图来自 Product Project 的 docs/publications/。</p>
-          </div>
-        </div>
         <div id="publications-list" className="publication-list">
           <List
             dataSource={publications}

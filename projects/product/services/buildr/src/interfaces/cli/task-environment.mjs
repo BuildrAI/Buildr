@@ -4,7 +4,7 @@ import process from 'node:process';
 
 function syntax(operation, message) {
   const usage = operation === 'prepare'
-    ? 'buildr task environment prepare <task-id> [--plan <json-file>] [--agent <adapter>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]'
+    ? 'buildr task environment prepare <task-id> --agent <adapter> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]'
     : operation === 'plan-record'
       ? 'buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]'
       : operation === 'plan-inspect'
@@ -43,6 +43,7 @@ function parse(operation, args) {
     }
   }
   if (positions.length !== 1) throw syntax(operation, `task environment ${operation} requires exactly one <task-id>.`);
+  if (operation === 'prepare' && !values.has('--agent')) throw syntax(operation, '--agent is required.');
   if (operation === 'plan-record' && !values.has('--input')) throw syntax(operation, '--input is required.');
   const readJson = (flag) => {
     if (!values.has(flag)) return null;
@@ -53,7 +54,7 @@ function parse(operation, args) {
     taskId: positions[0],
     targetRoot: path.resolve(values.get('--target') || process.cwd()),
     json: values.get('--json') === true,
-    adapter: values.get('--agent') || 'codex',
+    adapter: values.get('--agent') || null,
     branch: values.get('--branch') || null,
     startPoint: values.get('--start-point') || null,
     shared: values.get('--shared') === true,

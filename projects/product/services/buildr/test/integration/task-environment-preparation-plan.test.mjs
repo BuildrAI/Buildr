@@ -127,7 +127,7 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
 
 test('prepare首次执行两个Service Step，幂等恢复不重复执行且不准备无关Service', (t) => {
   const current = fixture(t);
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan });
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
   assert.deepEqual(current.installRoots().sort(), [current.serviceRoot('buildr'), current.serviceRoot('buildr-web')].sort());
@@ -138,7 +138,7 @@ test('prepare首次执行两个Service Step，幂等恢复不重复执行且不�
   ]);
   assert.equal(prepared.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 2);
 
-  const restored = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const restored = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.equal(restored.status, 'ready', JSON.stringify(restored, null, 2));
   assert.equal(restored.effects.some((effect) => effect.type === 'preparation-step-executed'), false);
   assert.equal(current.installRoots().length, 2);
@@ -147,7 +147,7 @@ test('prepare首次执行两个Service Step，幂等恢复不重复执行且不�
 
 test('inspect对部分缺失和input漂移只读，prepare只恢复对应Service', (t) => {
   const current = fixture(t);
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan }).status, 'ready');
   const writesBeforeInspect = current.writes();
   fs.rmSync(path.join(current.serviceRoot('buildr-web'), 'node_modules'), { recursive: true });
   const missing = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
@@ -155,20 +155,20 @@ test('inspect对部分缺失和input漂移只读，prepare只恢复对应Service
   assert.equal(missing.environment.preparationSteps.find((step) => step.scope.endsWith('/buildr-web')).status, 'missing');
   assert.equal(fs.existsSync(path.join(current.serviceRoot('buildr-web'), 'node_modules')), false);
   assert.equal(current.writes(), writesBeforeInspect);
-  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.deepEqual(recovered.effects.filter((effect) => effect.type === 'preparation-step-executed').map((effect) => effect.scope), ['service:product/buildr-web']);
 
   fs.appendFileSync(path.join(current.serviceRoot('buildr-web'), 'package-lock.json'), ' ');
   const drifted = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
   assert.equal(drifted.status, 'blocked');
   assert.equal(drifted.environment.preparationSteps.find((step) => step.scope.endsWith('/buildr-web')).status, 'drifted');
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false }).status, 'ready');
 });
 
 test('单个Service Step失败时Environment整体blocked并保留具体诊断', (t) => {
   const current = fixture(t);
   current.fail('buildr-web');
-  const failed = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan });
+  const failed = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan });
   assert.equal(failed.status, 'blocked');
   const web = failed.environment.preparationSteps.find((step) => step.scope.endsWith('/buildr-web'));
   assert.equal(web.status, 'failed');
@@ -176,19 +176,19 @@ test('单个Service Step失败时Environment整体blocked并保留具体诊断',
   assert.match(failed.diagnostic.message, /service:product\/buildr-web/);
   assert.equal(failed.environment.preparationSteps.find((step) => step.scope.endsWith('/buildr')).status, 'ready');
   current.fail();
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false }).status, 'ready');
 });
 
 test('没有Plan时prepare形成受控执行根但明确blocked，plan record不执行Step', (t) => {
   const current = fixture(t);
-  const missing = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const missing = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.equal(missing.status, 'blocked');
   assert.equal(missing.diagnostic.code, 'task_environment_plan_missing');
   assert.equal(current.installRoots().length, 0);
   const recorded = current.runtime.recordTaskEnvironmentPlan(current.root, TASK_ID, current.plan);
   assert.equal(recorded.status, 'ready');
   assert.equal(current.installRoots().length, 0);
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false }).status, 'ready');
 });
 
 test('非npm Service executable同样按input/executable/output identity准备和恢复', (t) => {
@@ -206,20 +206,26 @@ test('非npm Service executable同样按input/executable/output identity准备�
       steps: [{ id: 'custom', cwd: '.', executable: { kind: 'service', path: executableName }, args: [], inputs: ['input.txt'], outputs: [{ path: 'prepared.txt', kind: 'file' }], required: true, timeoutMs: 10_000 }],
     }],
   };
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan });
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(current.installRoots().length, 0);
   assert.equal(fs.readFileSync(path.join(root, 'prepared.txt'), 'utf8'), 'prepared');
   fs.appendFileSync(executable, '# executable identity drift\n');
   assert.equal(current.runtime.inspectTaskEnvironment(current.root, TASK_ID).environment.preparationSteps[0].status, 'drifted');
-  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false });
+  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.equal(recovered.status, 'ready');
   assert.equal(recovered.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 1);
+  const hints = current.runtime.resolveTaskEnvironmentExecution(current.root, TASK_ID).preparationHints;
+  assert.equal(hints.schemaVersion, 'buildr.task-finish-preparation-hints/v1');
+  assert.deepEqual(hints.unavailable, []);
+  assert.equal(hints.steps[0].cwd, 'projects/product/services/buildr');
+  assert.equal(hints.steps[0].executable, `projects/product/services/buildr/${executableName}`);
+  assert.equal(hints.steps[0].outputs[0].path, 'projects/product/services/buildr/prepared.txt');
 });
 
 test('Plan替换原子使旧准备事实blocked且record本身不执行Step', (t) => {
   const current = fixture(t);
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: current.plan }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan }).status, 'ready');
   const installs = current.installRoots().length;
   const replacement = structuredClone(current.plan);
   replacement.services[0].steps[0].timeoutMs = 179_000;
@@ -230,14 +236,14 @@ test('Plan替换原子使旧准备事实blocked且record本身不执行Step', (t
   assert.equal(saved.status, 'ready');
   assert.equal(saved.plan.identity, recorded.plan.identity);
   assert.equal(current.runtime.readTaskEnvironmentCurrent(current.root, TASK_ID).status, 'blocked');
-  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false }).status, 'ready');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false }).status, 'ready');
 });
 
 test('Project Declaration按Task多Service scope选择Recipe，漂移只读blocked并由显式Plan Request恢复', (t) => {
   const current = fixture(t);
   current.writeDeclaration();
   const request = declarationRequest(['buildr', 'buildr-web']);
-  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: request });
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: request });
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.preparationDeclarations[0].status, 'ready');
   assert.deepEqual(prepared.environment.preparationRecipes.map((recipe) => recipe.recipe), ['buildr.npm-ci', 'buildr-web.npm-ci']);
@@ -252,7 +258,7 @@ test('Project Declaration按Task多Service scope选择Recipe，漂移只读block
   assert.match(stale.nextActions[0], /declaration-intake Skill/);
   assert.equal(current.writes(), writesBeforeInspect);
 
-  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: request });
+  const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: request });
   assert.equal(recovered.status, 'ready', JSON.stringify(recovered, null, 2));
   assert.notEqual(recovered.environment.preparationPlan.identity, prepared.environment.preparationPlan.identity);
   assert.equal(recovered.environment.preparationSteps.every((step) => step.executed), true);
@@ -263,7 +269,7 @@ test('Preparation Declaration缺失时Environment blocked并只返回Intake恢�
   const current = fixture(t);
   const declarationPath = path.join(current.root, 'projects', 'product', 'preparation.yml');
   assert.equal(fs.existsSync(declarationPath), false);
-  const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { useGit: false, plan: declarationRequest(['buildr', 'buildr-web']) });
+  const result = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: declarationRequest(['buildr', 'buildr-web']) });
   assert.equal(result.status, 'blocked');
   assert.equal(result.diagnostic.code, 'project_environment_preparation_missing');
   assert.match(result.nextActions[0], /declaration-intake Skill/);

@@ -1,0 +1,911 @@
+<!doctype html>
+<!-- buildr:ui-preview -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目每日演进 · 界面预演</title>
+  <style>
+    :root {
+      --soft-bg: #f3f6f6;
+      --soft-surface: #ffffff;
+      --soft-ink: #1e2a2a;
+      --soft-muted: #5c6b6a;
+      --soft-line: #d5e0de;
+      --soft-line-2: #e4eceb;
+      --soft-primary: #4f8f8a;
+      --soft-sidebar: #f7faf9;
+      --page-gutter: 32px;
+      --shadow: 0 1px 2px rgba(30, 42, 42, 0.04), 0 6px 16px rgba(30, 42, 42, 0.05);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      color: var(--soft-ink);
+      background: var(--soft-bg);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", system-ui, sans-serif;
+    }
+    a { color: inherit; }
+    button, input, select { font: inherit; }
+    .hidden { display: none !important; }
+
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--soft-bg);
+    }
+    .brand-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      color: var(--soft-ink);
+      text-decoration: none;
+    }
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--soft-primary);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .brand-link strong { font-size: 14px; font-weight: 650; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      min-height: 56px;
+      padding: 0 var(--page-gutter);
+      border-bottom: 1px solid var(--soft-line);
+      background: var(--soft-surface);
+    }
+    .top-nav {
+      display: flex;
+      align-items: stretch;
+      gap: 2px;
+      min-width: 0;
+      height: 56px;
+    }
+    .top-nav a, .topbar a[data-nav="settings"] {
+      display: flex;
+      align-items: center;
+      height: 56px;
+      padding: 0 12px;
+      border-bottom: 2px solid transparent;
+      color: var(--soft-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .top-nav a:hover, .topbar a[data-nav="settings"]:hover { color: var(--soft-ink); }
+    .top-nav a.active, .topbar a[data-nav="settings"].active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-ink);
+      font-weight: 650;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    .workspace-switcher {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 220px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--soft-line-2);
+      border-radius: 8px;
+      background: var(--soft-bg);
+      color: inherit;
+    }
+    .workspace-switcher .context-label { color: var(--soft-muted); font-size: 11px; }
+    .workspace-switcher strong { font-size: 12px; font-weight: 600; }
+    .caret { color: var(--soft-muted); font-size: 9px; }
+    .nav-quit {
+      height: 32px;
+      padding: 0 8px;
+      border: 0;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-surface);
+      color: var(--soft-ink);
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(30, 42, 42, 0.03);
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: #b7cdc9; }
+    .btn-primary {
+      border-color: var(--soft-primary);
+      background: var(--soft-primary);
+      color: #fff;
+      box-shadow: 0 1px 2px rgba(79, 143, 138, 0.18);
+    }
+    .btn-primary:hover { filter: brightness(1.04); }
+    .btn-text {
+      height: auto;
+      padding: 10px 16px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: var(--soft-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .btn-text:hover { color: var(--soft-ink); }
+    .btn-text.active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-primary);
+    }
+    .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+    #app-view {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .resource-cockpit {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      flex: 1;
+      min-height: 0;
+    }
+    .resource-list-host {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+      padding: 16px 14px 0;
+      border-right: 1px solid var(--soft-line);
+      background: var(--soft-surface);
+    }
+    .resource-detail-host {
+      min-width: 0;
+      overflow: auto;
+      padding: 20px 24px 48px;
+    }
+    .resource-toolbar { margin-bottom: 10px; }
+    .resource-toolbar h2 { margin: 0; font-size: 16px; font-weight: 600; }
+    .page-copy, .section-copy { margin: 4px 0 0; color: var(--soft-muted); font-size: 12px; line-height: 1.45; }
+    .task-toolbar-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .count-label { color: var(--soft-muted); font-size: 13px; }
+    .resource-list-section { flex: 1; overflow: auto; padding-bottom: 24px; }
+    .list-row {
+      display: block;
+      width: 100%;
+      margin: 0 0 4px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .list-row:hover, .list-row.active { background: rgba(79, 143, 138, 0.1); }
+    .list-row strong, .list-row small {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .list-row small { margin-top: 2px; color: var(--soft-muted); font-size: 12px; font-weight: 400; }
+
+    .detail-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .detail-title-row h1, .detail-page-header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .task-detail-id {
+      margin: 0 0 8px;
+      color: var(--soft-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .panel {
+      margin-bottom: 16px;
+      padding: 16px;
+      border: 1px solid var(--soft-line);
+      border-radius: 12px;
+      background: var(--soft-surface);
+    }
+    .panel-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .panel-heading h2 { margin: 0; font-size: 18px; }
+    .read-facts { display: grid; gap: 10px; margin: 0; }
+    .read-facts > div { display: grid; gap: 2px; }
+    .read-facts dt { color: var(--soft-muted); font-size: 12px; }
+    .read-facts dd { margin: 0; word-break: break-word; }
+    .ant-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--soft-line);
+    }
+    .ant-tabs button {
+      margin-bottom: -1px;
+      height: auto;
+      padding: 8px 12px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+    }
+    .ant-tabs button:hover { color: var(--soft-ink); }
+    .ant-tabs button.active {
+      border-bottom-color: var(--soft-primary);
+      color: var(--soft-ink);
+      font-weight: 650;
+    }
+    .markdown-body { color: var(--soft-ink); line-height: 1.7; }
+    .markdown-body h2 { margin: 0 0 8px; font-size: 18px; }
+    .markdown-body p { margin: 0 0 10px; color: var(--soft-muted); }
+    .detail-tabs {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 8px 12px;
+      margin: 18px 0 20px;
+      border-bottom: 1px solid var(--soft-line);
+    }
+    .detail-tabs-list { display: flex; gap: 4px; }
+    .detail-tab-actions { display: flex; gap: 8px; margin: 0 0 8px auto; }
+    .lifecycle-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(79, 143, 138, 0.1);
+      color: var(--soft-primary);
+      font-size: 12px;
+    }
+    .lifecycle-badge.todo { background: rgba(110, 102, 155, 0.12); color: #62588f; }
+
+    .progress-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .date-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-bg);
+    }
+    .date-field span { color: var(--soft-muted); font-size: 12px; }
+    .date-field input {
+      border: 0;
+      background: transparent;
+      color: var(--soft-ink);
+    }
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-bg);
+    }
+    .segmented button {
+      height: 28px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--soft-muted);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .segmented button.active {
+      background: var(--soft-surface);
+      color: var(--soft-ink);
+      font-weight: 650;
+      box-shadow: var(--shadow);
+    }
+    .progress-meta {
+      margin-left: auto;
+      color: var(--soft-muted);
+      font-size: 12px;
+    }
+    .progress-hint {
+      margin: 0 0 14px;
+      color: var(--soft-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .progress-group { margin-bottom: 18px; }
+    .progress-group h3 {
+      margin: 0 0 8px;
+      color: var(--soft-ink);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .progress-group-meta {
+      margin: 0 0 10px;
+      color: var(--soft-muted);
+      font-size: 12px;
+    }
+    .progress-item {
+      margin-bottom: 8px;
+      padding: 12px 14px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: #fbfcfc;
+    }
+    .progress-item p { margin: 0 0 8px; line-height: 1.55; }
+    .progress-item-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .author-chip, .task-chip, .unresolved-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .author-chip { background: rgba(79, 143, 138, 0.08); color: var(--soft-muted); }
+    .task-chip {
+      border: 0;
+      background: rgba(91, 143, 168, 0.12);
+      color: #3d6a80;
+      cursor: pointer;
+    }
+    .task-chip:hover { text-decoration: underline; }
+    .unresolved-chip {
+      background: rgba(196, 163, 90, 0.16);
+      color: #8a6e2f;
+      cursor: default;
+    }
+    .empty-state {
+      padding: 36px 16px 28px;
+      text-align: center;
+      color: var(--soft-muted);
+    }
+    .empty-state h2 { margin: 0 0 8px; color: var(--soft-ink); font-size: 16px; }
+    .empty-state p { margin: 0 auto 14px; max-width: 420px; line-height: 1.55; }
+    .local-note {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #f4f7f5;
+      color: var(--soft-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .progress-link {
+      display: grid;
+      gap: 2px;
+      width: fit-content;
+      margin: 0 0 10px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .progress-link:hover strong { color: var(--soft-primary); text-decoration: underline; }
+    .progress-link small { color: var(--soft-muted); font-size: 12px; }
+    .facts-panel .eyebrow {
+      margin: 0 0 4px;
+      color: var(--soft-muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .detail-layout {
+      display: grid;
+      gap: 16px;
+    }
+    @media (min-width: 960px) {
+      .detail-layout { grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); }
+    }
+
+    .drawer-backdrop {
+      position: fixed;
+      z-index: 20;
+      inset: 0;
+      background: rgba(8, 22, 16, 0.32);
+    }
+    .drawer {
+      position: fixed;
+      z-index: 21;
+      top: 0;
+      right: 0;
+      width: min(440px, 100%);
+      height: 100vh;
+      overflow: auto;
+      padding: 24px;
+      border-left: 1px solid var(--soft-line);
+      background: #fff;
+      box-shadow: -14px 0 36px rgba(9, 35, 23, 0.14);
+    }
+    .drawer-kicker { margin: 0; color: var(--soft-muted); font-size: 12px; }
+    .drawer h2 { margin: 4px 0 12px; font-size: 20px; }
+    .drawer-prompt {
+      padding: 12px;
+      border: 1px solid var(--soft-line);
+      border-radius: 10px;
+      background: var(--soft-bg);
+      color: var(--soft-ink);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand-link" href="#project" data-nav-root>
+        <span class="brand-mark">B</span>
+        <strong>Buildr Web</strong>
+      </a>
+      <nav class="top-nav" aria-label="Buildr Web 主导航">
+        <a href="#task" data-nav="tasks">任务</a>
+        <a href="#project" data-nav="projects" class="active">项目</a>
+        <a href="#project" data-nav="services">服务</a>
+        <a href="#project" data-nav="articles">文章</a>
+      </nav>
+      <div class="topbar-actions">
+        <div class="workspace-switcher" aria-label="切换工作空间">
+          <span class="context-label">工作空间</span>
+          <strong id="shell-workspace-name">Buildr</strong>
+          <span class="caret">▼</span>
+        </div>
+        <a data-nav="settings" href="#project">设置</a>
+        <button class="nav-quit" type="button">退出</button>
+        <button class="btn btn-primary" type="button" id="open-agent-action">交给 Agent</button>
+      </div>
+    </header>
+
+    <main id="app-view">
+      <div id="view-project" class="resource-cockpit has-detail">
+        <div class="resource-list-host">
+          <section class="resource-toolbar">
+            <h2>项目</h2>
+            <p class="page-copy">选择左侧项目查看文档与关联服务；编辑在详情右上角完成。</p>
+            <div class="task-toolbar-meta">
+              <span class="count-label">2 个项目</span>
+              <button class="btn btn-primary btn-sm" type="button" style="margin-left:auto">让 Agent 创建项目</button>
+            </div>
+          </section>
+          <section class="resource-list-section">
+            <button class="list-row active" type="button">
+              <strong>Buildr 产品</strong>
+              <small>本机应用、CLI 与工作治理产品</small>
+            </button>
+            <button class="list-row" type="button">
+              <strong>组织知识库</strong>
+              <small>跨项目共享的说明与流程</small>
+            </button>
+          </section>
+        </div>
+        <div class="resource-detail-host">
+          <section class="detail-title-row project-detail-header">
+            <h1 id="project-detail-name">Buildr 产品</h1>
+            <button class="btn btn-primary" type="button" id="project-edit-button">编辑项目</button>
+          </section>
+          <section class="panel" aria-label="项目基本信息">
+            <dl class="read-facts">
+              <div>
+                <dt>项目说明</dt>
+                <dd id="project-detail-description">Buildr 用来开发 Buildr 自身的产品项目，覆盖本机应用、CLI 与工作治理。</dd>
+              </div>
+              <div>
+                <dt>服务登记</dt>
+                <dd id="project-service-summary">2 个已登记服务</dd>
+              </div>
+            </dl>
+          </section>
+          <section class="panel" id="project-document-tabs" aria-label="项目文档与每日演进">
+            <div class="ant-tabs" role="tablist">
+              <button type="button" role="tab" data-project-tab="readme">README.md</button>
+              <button type="button" role="tab" data-project-tab="agents">AGENTS.md</button>
+              <button type="button" role="tab" data-project-tab="progress" class="active" aria-selected="true">每日演进</button>
+            </div>
+
+            <div id="tab-readme" class="hidden">
+              <div class="markdown-body">
+                <h2>Buildr 产品</h2>
+                <p>当前认知仍解释产品现在长什么样。每日演进不替代这份 README，也不改写项目文档。</p>
+              </div>
+            </div>
+            <div id="tab-agents" class="hidden">
+              <div class="markdown-body">
+                <h2>Agent 入口</h2>
+                <p>开发阶段使用本产品 CLI 入口。生成每日演进时交给 Agent，页面只读展示。</p>
+              </div>
+            </div>
+
+            <div id="tab-progress">
+              <div class="progress-toolbar">
+                <label class="date-field">
+                  <span>日期</span>
+                  <input id="progress-date" type="date" value="2026-08-18" />
+                </label>
+                <div class="segmented" role="group" aria-label="分组方式">
+                  <button type="button" data-group="day" class="active">按日</button>
+                  <button type="button" data-group="person">按人</button>
+                  <button type="button" data-group="task">按任务</button>
+                </div>
+                <span class="progress-meta" id="progress-meta">本机 · 3 条推进项 · 关联 2 个 Task</span>
+              </div>
+              <p class="progress-hint">只读展示当天已保存的摘要。生成或重跑请用右上角「交给 Agent」，页面不提供写入或编辑。</p>
+              <div id="progress-body"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="view-task" class="resource-cockpit has-detail hidden">
+        <div class="resource-list-host">
+          <section class="resource-toolbar">
+            <h2>任务</h2>
+            <p class="page-copy">选择左侧任务查看详情。每日演进不会改变任务状态。</p>
+            <div class="task-toolbar-meta">
+              <span class="count-label">2 个任务</span>
+            </div>
+          </section>
+          <section class="resource-list-section">
+            <button class="list-row active" type="button" data-open-task="project-daily-progress">
+              <strong>引入项目每日演进</strong>
+              <small>project-daily-progress</small>
+            </button>
+            <button class="list-row" type="button" data-open-task="local-app-soft-ui">
+              <strong>Local App 柔和产品感</strong>
+              <small>local-app-soft-ui</small>
+            </button>
+          </section>
+        </div>
+        <div class="resource-detail-host" id="task-detail-root"></div>
+      </div>
+    </main>
+  </div>
+
+  <div id="agent-action-backdrop" class="drawer-backdrop hidden"></div>
+  <aside id="agent-action-drawer" class="drawer hidden" aria-label="交给 Agent">
+    <p class="drawer-kicker">AGENT ACTION</p>
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <h2>交给 Agent</h2>
+      <button class="btn btn-sm" type="button" id="close-agent-action">关闭</button>
+    </div>
+    <p class="section-copy" style="margin-bottom:12px">页面不直接写每日演进。把生成或重跑交给 Agent，由 Agent 先同步最新代码再提交当天文件。</p>
+    <div class="drawer-prompt" id="agent-prompt"></div>
+  </aside>
+
+  <script>
+    const TODAY = "2026-08-18";
+    const TASKS = {
+      "project-daily-progress": { id: "project-daily-progress", title: "引入项目每日演进", status: "进行中", intent: "按 Project 保存本机每日演进，并与已有 Task 做 n:n 关联。" },
+      "local-app-soft-ui": { id: "local-app-soft-ui", title: "Local App 柔和产品感", status: "已完成", intent: "把 Local App 视觉调整为柔和产品感。" }
+    };
+    const FILES = {
+      "2026-08-18": [
+        {
+          id: "item-proposal",
+          summary: "收敛项目每日演进提案：本机 YAML、一天一份可覆盖，推进项必须挂已有 Task。",
+          author: "王志宏",
+          taskIds: ["project-daily-progress"]
+        },
+        {
+          id: "item-preview",
+          summary: "把只读展示挂进项目详情，确认不新增顶栏导航，并预演按日 / 按人 / 按任务。",
+          author: "王志宏",
+          taskIds: ["project-daily-progress", "local-app-soft-ui"]
+        },
+        {
+          id: "item-env",
+          summary: "核对 Environment 与 OpenSpec planning target，准备后续实现。",
+          author: "",
+          taskIds: ["project-daily-progress"]
+        },
+        {
+          id: "item-unresolved",
+          summary: "补齐每日演进目录的 ignore 规则，避免误提交本机文件。",
+          author: "王志宏",
+          taskIds: ["gitignore-daily-progress"]
+        }
+      ]
+    };
+
+    const state = {
+      screen: "project",
+      projectTab: "progress",
+      date: TODAY,
+      group: "day",
+      taskId: "project-daily-progress"
+    };
+
+    function taskChip(taskId) {
+      const task = TASKS[taskId];
+      if (!task) {
+        return `<span class="unresolved-chip" title="本机已无此 Task">${taskId} · 未解析</span>`;
+      }
+      return `<button class="task-chip" type="button" data-open-task="${task.id}">${task.title}</button>`;
+    }
+
+    function itemCard(item) {
+      const author = item.author
+        ? `<span class="author-chip">${item.author}</span>`
+        : `<span class="author-chip">未署名</span>`;
+      return `<article class="progress-item" data-progress-item="${item.id}">
+        <p>${item.summary}</p>
+        <div class="progress-item-meta">${author}${item.taskIds.map(taskChip).join("")}</div>
+      </article>`;
+    }
+
+    function renderProgress() {
+      const body = document.getElementById("progress-body");
+      const meta = document.getElementById("progress-meta");
+      const items = FILES[state.date] || [];
+      const resolvedCount = new Set(items.flatMap((item) => item.taskIds.filter((id) => TASKS[id]))).size;
+      if (!items.length) {
+        meta.textContent = "本机 · 当天尚无文件";
+        body.innerHTML = `<div class="empty-state" id="daily-progress-empty">
+          <h2>这一天还没有每日演进</h2>
+          <p>需要 Agent 先同步最新代码，再总结推进项并关联已有 Task。页面不会根据 Git 提交或任务列表自动填充。</p>
+          <button class="btn btn-primary" type="button" id="empty-agent-action">交给 Agent</button>
+        </div>`;
+        return;
+      }
+      meta.textContent = `本机 · ${items.length} 条推进项 · 关联 ${resolvedCount} 个 Task`;
+      if (state.group === "person") {
+        const groups = new Map();
+        items.forEach((item) => {
+          const key = item.author || "未署名";
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(item);
+        });
+        body.innerHTML = Array.from(groups.entries()).map(([name, groupItems]) => `
+          <section class="progress-group">
+            <h3>${name}</h3>
+            ${groupItems.map(itemCard).join("")}
+          </section>`).join("");
+        return;
+      }
+      if (state.group === "task") {
+        const groups = new Map();
+        items.forEach((item) => {
+          item.taskIds.forEach((taskId) => {
+            const key = TASKS[taskId] ? TASKS[taskId].title : `${taskId}（未解析）`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(item);
+          });
+        });
+        body.innerHTML = `<p class="progress-hint">同一 Task 可以出现在多条推进项中；推进项不是任务进度。</p>` +
+          Array.from(groups.entries()).map(([name, groupItems]) => `
+          <section class="progress-group">
+            <h3>${name}</h3>
+            ${groupItems.map(itemCard).join("")}
+          </section>`).join("");
+        return;
+      }
+      body.innerHTML = `<section class="progress-group">${items.map(itemCard).join("")}</section>
+        <p class="local-note">文件保存在本机 .buildr/daily-progress/product/${state.date}.yml，不进 Git，也不作为跨机器协作权威。</p>`;
+    }
+
+    function relatedItems(taskId) {
+      return Object.entries(FILES).flatMap(([date, items]) =>
+        items.filter((item) => item.taskIds.includes(taskId)).map((item) => ({ ...item, date, project: "Buildr 产品" }))
+      );
+    }
+
+    function renderTask() {
+      const task = TASKS[state.taskId];
+      const related = relatedItems(state.taskId);
+      document.getElementById("task-detail-root").innerHTML = `
+        <section class="detail-page-header">
+          <div class="detail-title-row">
+            <div>
+              <h1>${task.title}</h1>
+              <p class="task-detail-id">${task.id}</p>
+              <p class="page-copy">${task.intent}</p>
+            </div>
+            <span class="lifecycle-badge ${task.status === "进行中" ? "" : "todo"}">${task.status}</span>
+          </div>
+        </section>
+        <nav class="detail-tabs" aria-label="任务详情">
+          <div class="detail-tabs-list">
+            <button class="btn-text active" type="button">概览</button>
+            <button class="btn-text" type="button">预演</button>
+            <button class="btn-text" type="button">研发</button>
+            <button class="btn-text" type="button">证据</button>
+            <button class="btn-text" type="button">复盘</button>
+            <button class="btn-text" type="button">环境</button>
+          </div>
+          <div class="detail-tab-actions">
+            <button class="btn btn-sm" type="button">编辑进行中的任务</button>
+            <button class="btn btn-sm" type="button">结束任务</button>
+          </div>
+        </nav>
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>专业进展摘要</h2>
+              <p class="section-copy">一次只读查询组合各专业最近保存事实；顶层状态仍由 Task Record 管理。</p>
+            </div>
+            <button class="btn btn-sm" type="button">刷新摘要</button>
+          </div>
+          <dl class="read-facts">
+            <div><dt>研发</dt><dd>active · 2026-08-18 16:32</dd></div>
+            <div><dt>规划审查</dt><dd>ready · matched</dd></div>
+            <div><dt>正式验证</dt><dd>尚未记录</dd></div>
+          </dl>
+        </section>
+        <section class="panel" id="task-daily-progress" aria-label="本机每日演进">
+          <div class="panel-heading">
+            <div>
+              <h2>本机每日演进</h2>
+              <p class="section-copy">这些是引用本任务的推进项，不是任务状态、进度或验证结果。</p>
+            </div>
+          </div>
+          ${related.length ? related.map((item) => `
+            <button class="progress-link" type="button" data-back-date="${item.date}">
+              <strong>${item.summary}</strong>
+              <small>${item.date} · ${item.project}${item.author ? " · " + item.author : " · 未署名"}</small>
+            </button>`).join("") : `<div class="empty-state"><h2>还没有推进项引用此任务</h2><p>每日演进由 Agent 写入项目文件后才会出现在这里。</p></div>`}
+        </section>
+        <section class="detail-layout">
+          <article class="panel">
+            <div class="panel-heading"><h2>任务记录（Task Record）</h2></div>
+            <dl class="read-facts">
+              <div><dt>任务 ID</dt><dd>${task.id}</dd></div>
+              <div><dt>项目范围</dt><dd>product</dd></div>
+            </dl>
+          </article>
+          <aside class="panel facts-panel">
+            <p class="eyebrow">技术事实</p>
+            <h2>读取证据</h2>
+            <dl class="read-facts">
+              <div><dt>数据格式</dt><dd>buildr.task-record/v2</dd></div>
+              <div><dt>存储范围</dt><dd>Workspace 本地数据</dd></div>
+            </dl>
+          </aside>
+        </section>`;
+    }
+
+    function setScreen(screen) {
+      state.screen = screen;
+      document.getElementById("view-project").classList.toggle("hidden", screen !== "project");
+      document.getElementById("view-task").classList.toggle("hidden", screen !== "task");
+      document.querySelectorAll(".top-nav a").forEach((link) => {
+        link.classList.toggle("active", link.dataset.nav === (screen === "task" ? "tasks" : "projects"));
+      });
+    }
+
+    function setProjectTab(tab) {
+      state.projectTab = tab;
+      document.querySelectorAll("[data-project-tab]").forEach((button) => {
+        const selected = button.dataset.projectTab === tab;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-selected", selected ? "true" : "false");
+      });
+      ["readme", "agents", "progress"].forEach((id) => {
+        document.getElementById("tab-" + id).classList.toggle("hidden", id !== tab);
+      });
+    }
+
+    function openAgent(date) {
+      const target = date || state.date;
+      document.getElementById("agent-prompt").textContent =
+        `请为当前项目 product 生成本机 ${target} 的每日演进。先按「更新 workspace」同步最新代码；成功后再总结推进项，每条必须关联 1 个或多个已有 Task，然后提交 record 覆盖当天文件。不要扫描 Git 推断作者，也不要在页面上直接写入。`;
+      document.getElementById("agent-action-backdrop").classList.remove("hidden");
+      document.getElementById("agent-action-drawer").classList.remove("hidden");
+    }
+
+    function closeAgent() {
+      document.getElementById("agent-action-backdrop").classList.add("hidden");
+      document.getElementById("agent-action-drawer").classList.add("hidden");
+    }
+
+    document.body.addEventListener("click", (event) => {
+      const openTask = event.target.closest("[data-open-task]");
+      if (openTask) {
+        state.taskId = openTask.dataset.openTask;
+        if (!TASKS[state.taskId]) return;
+        setScreen("task");
+        renderTask();
+        return;
+      }
+      const back = event.target.closest("[data-back-date]");
+      if (back) {
+        state.date = back.dataset.backDate;
+        document.getElementById("progress-date").value = state.date;
+        setScreen("project");
+        setProjectTab("progress");
+        renderProgress();
+      }
+    });
+
+    document.querySelectorAll("[data-project-tab]").forEach((button) => {
+      button.addEventListener("click", () => setProjectTab(button.dataset.projectTab));
+    });
+    document.querySelectorAll("[data-group]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.group = button.dataset.group;
+        document.querySelectorAll("[data-group]").forEach((item) => item.classList.toggle("active", item === button));
+        renderProgress();
+      });
+    });
+    document.getElementById("progress-date").addEventListener("change", (event) => {
+      state.date = event.target.value;
+      renderProgress();
+    });
+    document.getElementById("open-agent-action").addEventListener("click", () => openAgent());
+    document.getElementById("close-agent-action").addEventListener("click", closeAgent);
+    document.getElementById("agent-action-backdrop").addEventListener("click", closeAgent);
+    document.querySelectorAll(".top-nav a").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (link.dataset.nav === "tasks") {
+          setScreen("task");
+          renderTask();
+        } else if (link.dataset.nav === "projects") {
+          setScreen("project");
+        }
+      });
+    });
+    document.body.addEventListener("click", (event) => {
+      if (event.target.id === "empty-agent-action") openAgent(state.date);
+    });
+
+    renderProgress();
+  </script>
+</body>
+</html>

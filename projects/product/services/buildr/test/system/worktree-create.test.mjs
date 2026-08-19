@@ -207,7 +207,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.equal(inspected.source, 'current-machine');
   assert.ok(inspected.observedAt);
 
-  const blocked = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--target', root, '--json'], 1);
+  const blocked = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--agent', 'codex', '--target', root, '--json'], 1);
   assert.equal(blocked.status, 'blocked');
   assert.equal(blocked.diagnostic.code, 'task_environment_shared_occupancy_conflict');
   assert.equal(blocked.diagnostic.details.occupied.taskId, ownerTask);
@@ -221,7 +221,7 @@ test('共享 Task Environment 以正式 Task 为门禁并串联占用、恢复�
   assert.match(cleaned.environment.latest.cleanup.summary, /共享执行根已保留/);
   assert.equal(buildr(['task', 'inspect', ownerTask, '--target', root, '--json']).record.status, 'abandoned');
 
-  const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--target', root, '--json']);
+  const resumed = buildr(['task', 'environment', 'prepare', waiterTask, '--plan', noServicePlan(waiterTask), '--shared', '--agent', 'codex', '--target', root, '--json']);
   assert.equal(resumed.status, 'ready');
   abandonTask(root, waiterTask, 'fixture complete');
   buildr(['task', 'environment', 'cleanup', waiterTask, '--target', root, '--json']);
@@ -254,3 +254,46 @@ test('Git-backed Task Environment 组合 provider 并把 Git evidence 保持为�
   opened.database.close();
   assert.equal(current.status, 'cleaned');
 });
+
+test('prepare 省略 --agent 以 syntax 失败且零写入', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'omit-agent';
+  createTask(root, taskId);
+  const result = command(productRoot, process.execPath, [cli, 'task', 'environment', 'prepare', taskId, '--plan', noServicePlan(taskId), '--target', root, '--json'], 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.schemaVersion, 'buildr.cli-error/v1');
+  assert.equal(payload.error.code, 'task_environment_cli.syntax');
+  assert.match(payload.error.message, /--agent is required/);
+  assert.match(payload.help, /--agent <adapter>/);
+  assert.equal(fs.existsSync(path.join(root, '.worktrees', taskId)), false);
+  const opened = taskRuntime.openWorkspaceStructuredStore(root, { writable: false });
+  const current = opened.database.prepare('SELECT task_id FROM task_environment_current WHERE task_id = ?').get(taskId);
+  opened.database.close();
+  assert.equal(current, undefined);
+});
+
+test('prepare 未给 --branch 时默认任务分支跟随实际 adapter', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'cursor-default-branch';
+  createTask(root, taskId);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', noServicePlan(taskId), '--agent', 'cursor', '--start-point', 'main', '--target', root, '--json']);
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  assert.equal(prepared.environment.controller.adapter, 'cursor');
+  const evidence = JSON.parse(fs.readFileSync(prepared.environment.scopes[0].provider.evidence, 'utf8'));
+  assert.equal(evidence.branch, `cursor/${taskId}`);
+  abandonTask(root, taskId, 'adapter default branch fixture complete');
+  buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
+});
+
+test('prepare 显式 --branch 优先于 adapter 默认前缀', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'explicit-branch';
+  createTask(root, taskId);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', noServicePlan(taskId), '--agent', 'cursor', '--branch', `tasks/${taskId}`, '--start-point', 'main', '--target', root, '--json']);
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  const evidence = JSON.parse(fs.readFileSync(prepared.environment.scopes[0].provider.evidence, 'utf8'));
+  assert.equal(evidence.branch, `tasks/${taskId}`);
+  abandonTask(root, taskId, 'explicit branch fixture complete');
+  buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
+});
+

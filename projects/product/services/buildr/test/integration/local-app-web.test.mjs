@@ -14,10 +14,14 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app = read('../buildr-web/src/App.tsx');
   assert.match(app, /path="\/workspaces\/:workspaceId"/);
   assert.match(app, /path="tasks" element=\{<TasksSection \/>\}/);
+  assert.match(app, /<Route index element=\{<Navigate to="tasks" replace \/>\} \/>/);
+  assert.match(app, /path="overview" element=\{<Navigate to="\.\.\/tasks" replace \/>\} \/>/);
+  assert.doesNotMatch(app, /OverviewPage/);
   assert.match(app, /path=":taskId"/);
   assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
-  assert.match(app, /path="projects"/);
-  assert.match(app, /path="projects\/:projectCode"/);
+  assert.match(app, /path="projects" element=\{<ProjectsSection \/>\}/);
+  assert.match(app, /path=":projectCode"/);
+  assert.match(app, /path=":projectCode\/edit"/);
   assert.match(app, /path="services"/);
   assert.match(app, /path="articles"/);
   assert.match(app, /path="articles\/:publicationId"/);
@@ -80,7 +84,8 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const server = read('src/interfaces/local-app/http/server.mjs');
   const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
   const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
-  assert.match(layout, /data-nav="articles"[^>]*>[\s\S]*文章/);
+  assert.match(layout, /data-nav=\{item\.nav\}/);
+  assert.match(layout, /nav: 'articles', label: '文章'/);
   assert.match(app, /path="articles"/);
   assert.match(app, /path="articles\/:publicationId"/);
   assert.match(app, /ArticleDetailPage/);
@@ -98,23 +103,37 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
-test('任务详情使用概览、研发、证据、复盘、环境五个一级视图', () => {
+test('任务详情使用概览、预演、研发、证据、复盘、环境六个一级视图', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
+  const coordinationModel = read('../buildr-web/src/pages/task-detail/parentCoordination.ts');
+  const coordinationStyles = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.css');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   const retrospective = read('../buildr-web/src/pages/task-detail/RetrospectiveTab.tsx');
   const styles = read('../buildr-web/src/styles.css');
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
+  assert.match(source, /id: 'preview', label: '预演'/);
   assert.match(source, /id: 'development', label: '研发'/);
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
-  assert.match(source, /id="task-parent-coordination"/);
+  assert.match(source, /ParentCoordinationPanel/);
   assert.match(source, /\/coordination`\)/);
-  assert.match(source, /Parent Coordination Application 的派生 read model/);
-  assert.match(source, /parent_plan_absent/);
-  assert.match(source, /prerequisitesSatisfied[\s\S]*显式最终集成验收/);
+  assert.match(coordination, /id="task-parent-coordination"/);
+  assert.match(coordination, /Parent Coordination Application 的派生 read model/);
+  assert.match(coordination, /parent_plan_absent/);
+  assert.match(coordination, /id="parent-current-status"[\s\S]*可以推进/);
+  assert.match(coordination, /id="parent-eligible-contributions"[\s\S]*建议先启动[\s\S]*其他可启动/);
+  assert.match(coordination, /ContributionIdentity[\s\S]*summary[\s\S]*contribution\.id/);
+  assert.match(coordination, /prerequisitesSatisfied[\s\S]*显式最终集成验收/);
+  assert.match(coordination, /planningReview\.result\?\.conclusion\?\.outcome/);
+  assert.match(coordination, /planningReview\.result\?\.completedAt/);
+  assert.doesNotMatch(coordination, /planningReview\?\.outcome|planningReview\?\.gateMatch/);
+  assert.match(coordinationModel, /dependencyBlockers\?: ParentDependencyBlocker\[\]/);
+  assert.match(coordinationStyles, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
+  assert.match(source, /data-task-panel="preview"|PreviewTab/);
   assert.match(evidence, /data-task-panel="evidence"/);
   assert.match(retrospective, /data-task-panel="retrospective"/);
   assert.match(retrospective, /尚未复盘/);
@@ -136,6 +155,33 @@ test('任务详情使用概览、研发、证据、复盘、环境五个一级�
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.match(styles, /\.review-slot-grid \{[^}]*grid-template-columns: repeat\(2/);
   assert.match(styles, /\.review-slot-grid \{ display: grid; grid-template-columns: repeat\(2/);
+});
+
+test('任务 UI Preview 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
+  const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const preview = read('../buildr-web/src/pages/task-detail/PreviewTab.tsx');
+  const server = read('src/interfaces/local-app/http/server.mjs');
+  const styles = read('../buildr-web/src/styles.css');
+  assert.match(source, /if \(tab === 'preview'\) void refreshPreview\(\)/);
+  assert.match(source, /\/ui-previews`\)/);
+  assert.match(preview, /界面预演稿（UI Preview）/);
+  assert.match(preview, /不是正式设计稿、生产原型或像素级验收标准/);
+  assert.match(preview, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(preview, /allow-same-origin/);
+  assert.match(preview, /src=\{previewSource\}/);
+  assert.doesNotMatch(preview, /srcDoc=/);
+  assert.doesNotMatch(preview, /dangerouslySetInnerHTML/);
+  assert.match(server, /\/ui-previews\$`\)/);
+  assert.match(server, /request\.method === 'GET'.*taskUiPreviews/s);
+  assert.equal((server.match(/runtime\.taskUiPreviews\(/g) || []).length, 1);
+  assert.match(server, /ui-previews\/\(\[a-f0-9\]\{32\}\)/);
+  assert.equal((server.match(/runtime\.taskUiPreview\(/g) || []).length, 1);
+  assert.match(server, /sandbox allow-scripts/);
+  assert.match(server, /connect-src 'none'/);
+  assert.match(server, /form-action 'none'/);
+  assert.match(server, /frame-ancestors 'self'/);
+  assert.match(styles, /\.ui-preview-layout/);
+  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-preview-frame/);
 });
 
 test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
@@ -198,7 +244,7 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(evidence, />Completion Review</);
   assert.doesNotMatch(evidence, />Verification Result</);
   assert.match(tasks, /正式任务由 Agent 创建/);
-  assert.match(tasks, /标题或意图/);
+  assert.match(tasks, /搜索标题、意图或编号/);
   assert.match(tasks, /全部项目/);
   assert.match(tasks, /全部服务/);
   assert.doesNotMatch(tasks, />新建正式 Task</);
@@ -222,18 +268,34 @@ test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
   assert.doesNotMatch(app, /path=["'][^"']*review-change/);
 });
 
+test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
+  const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const preview = read('../buildr-web/src/pages/task-detail/TaskDocumentPreviewModal.tsx');
+  const resolver = read('../buildr-web/src/lib/taskDocumentLinks.ts');
+  assert.match(detail, /id="task-detail-intent"[\s\S]*MarkdownHost/);
+  assert.match(detail, /resolveTaskDocumentReference/);
+  assert.match(detail, /api\('\/api\/v1\/projects'\)/);
+  assert.match(detail, /TaskDocumentPreviewModal/);
+  assert.match(preview, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
+  assert.match(preview, /resolveProjectMarkdownHref/);
+  assert.match(preview, /相关资料/);
+  assert.match(resolver, /allowedProjects\.has\(project\.code\)/);
+  assert.match(resolver, /\.endsWith\('\.md'\)/);
+  assert.doesNotMatch(detail, /taskAttachment|attachmentId|\/attachments/);
+});
+
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(tasks, /new AbortController\(\)/);
-  assert.match(tasks, /setTimeout\([\s\S]*200/);
+  assert.match(tasks, /matchesTaskQuery/);
   assert.match(tasks, /hasChildren/);
   assert.match(tasks, /retrospectiveState/);
   assert.match(tasks, /value: 'pending', label: '未处理'/);
   assert.match(tasks, /value: 'handled', label: '已处理'/);
   assert.match(tasks, /value: 'no-action', label: '无需处理'/);
-  assert.match(tasks, /useState\('open'\)/);
+  assert.match(tasks, /useState\('all'\)/);
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
   assert.match(tasks, /childTaskCount/);

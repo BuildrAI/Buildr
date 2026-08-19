@@ -20,12 +20,43 @@ Buildr Web Environment Tab MUST从Task Environment saved-current read model展�
 - **AND** MUST提供由Agent初始化Project声明的next action提示而不直接写文件
 
 ### Requirement: Task 详情必须展示协调计划与派生 Child 交付
-Buildr Web MUST在Task详情展示Parent Plan五类内容、Child identity/status、planned/delivered/extra/residual/superseded facts与final acceptance prerequisites；历史Task MUST显示不采用新模型的清晰空态。
+Buildr Web MUST 在 Task 详情展示 Parent Coordination Application 派生的当前推进状态、推荐下一步、可启动 Contribution、真实启动阻塞、最终验收进度、Parent Plan 治理事实、Child identity/status、planned/delivered/extra/residual/superseded facts 与 final acceptance prerequisites；历史 Task MUST 显示不采用新模型的清晰空态。可启动 Contribution MUST 以 Parent Plan 已保存的 `summary` 作为用户可读名称或计划结果，并同时展示稳定 `id`；Web MUST NOT 维护已知 Contribution 的平行名称字典。页面 MUST 将 `startup` readiness 与 `prerequisitesSatisfied` final acceptance readiness 分开表达，并 MUST 按公开 Planning Review read model 形状展示 outcome、applicability、摘要与时间，不得向用户显示 `undefined`。
+
+#### Scenario: Parent 当前可推进
+- **WHEN** read model 返回 `startup.status=ready`、推荐 next action 和一个或多个 eligible Contribution
+- **THEN** UI MUST 优先展示“当前可推进”、推荐下一步及推荐 Contribution
+- **AND** 每个可启动 Contribution MUST 同时显示其 `summary` 与 `id`
+- **AND** 其他 eligible Contribution MUST 与推荐项明确区分
+
+#### Scenario: Parent 当前被治理条件阻塞
+- **WHEN** read model 返回 `startup.status=blocked` 和 startup blockers
+- **THEN** UI MUST 把这些 blocker 展示为当前推进阻塞
+- **AND** MUST NOT 把尚未交付的全部 Contribution 数量冒充为当前启动阻塞
+
+#### Scenario: Contribution 等待依赖但仍有其他可启动项
+- **WHEN** read model 同时返回 eligible Contribution 和 response-only dependency blockers
+- **THEN** UI MUST 允许用户识别可立即启动项与等待依赖项
+- **AND** MUST NOT 在浏览器重算 dependency readiness
 
 #### Scenario: Child completed 但交付未证明
-- **WHEN** read model返回completed Child和unproven Contribution
-- **THEN** UI MUST分别显示Task已完成与Contribution未证明
-- **AND** MUST NOT用完成图标暗示全部planned范围已交付
+- **WHEN** read model 返回 completed Child 和 unproven Contribution
+- **THEN** UI MUST 分别显示 Task 已完成与 Contribution 未证明
+- **AND** MUST NOT 用完成图标暗示全部 planned 范围已交付
+
+#### Scenario: 最终验收条件尚未满足
+- **WHEN** `prerequisitesSatisfied=false` 但 `startup.status=ready`
+- **THEN** UI MUST 显示 Parent 当前仍可启动 eligible Contribution
+- **AND** MUST 将未完成项表达为最终验收进度而非“前置条件未满足”
+
+#### Scenario: Planning Review 已存在
+- **WHEN** read model 返回 Planning Review result 与 applicability
+- **THEN** UI MUST 展示 conclusion outcome、applicability、摘要与 result completedAt
+- **AND** 任一可选字段缺失时 MUST 使用明确空态而不是显示 `undefined`
+
+#### Scenario: 历史 Task 没有 Parent Plan
+- **WHEN** Parent Coordination read model 返回 legacy mode 或 `parent_plan_absent`
+- **THEN** UI MUST 显示该 Task 尚未显式采用 Parent Plan 的清晰空态
+- **AND** MUST NOT 自动 backfill、创建或改写任何 Task 或 Plan
 
 ### Requirement: Buildr Web 必须提供可扩展的 React Web 客户端并保持行为等价
 Buildr Web 客户端 MUST 以 React 实现，源码 MUST 位于 `product/buildr-web` Service 的前端工程根，并 MUST 通过构建产物由本机 Buildr Web HTTP interface（归属 `product/buildr`）同源托管。用户可观察的**已挂载路由 path 与功能交互** MUST 保持等价，包括工作空间列表、开始/设置、任务列表与详情页签、Task-scoped Change、项目、服务、文章、Agent Action 抽屉、退出应用与 preview 身份条；视觉呈现、布局密度与动效 MAY 在经确认的 UI 重设计范围内变化，且 MUST NOT 被解释为对路由或功能交互等价的破坏。客户端 MUST NOT 直连 SQLite、manifest 或文件系统 path，MUST NOT create Task，也 MUST NOT 在页面内执行专业任务。
@@ -173,3 +204,147 @@ Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并�
 #### Scenario: 无更新或查询失败
 - **WHEN** 两个轨道都没有更高版本或 Release Awareness 暂不可用
 - **THEN** 客户端 MUST不阻断主导航与页面内容
+
+### Requirement: Buildr Web 壳层必须采用上下结构
+Buildr Web App Shell MUST 使用顶栏承载品牌、主导航、工作空间切换、设置与（进入 Workspace 后的）交给 Agent，并将页面内容放在顶栏下方。壳层 MUST NOT 使用常驻左侧栏作为主导航。服务与文章的列表与详情 MUST 在同一顶栏下整页切换。任务页与项目页在宽屏 MUST 并排展示左侧列表与右侧详情（或空态），且 MUST 保持既有 `/tasks`、`/tasks/:taskId`、`/projects` 与 `/projects/:projectCode` 路由。项目详情右上角 MUST 提供编辑入口。视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有重设计约束。
+
+#### Scenario: 顶栏承载主导航
+- **WHEN** 用户在选定 Workspace 中打开 Buildr Web
+- **THEN** 顶栏 MUST 展示任务、项目、服务、文章导航
+- **AND** 工作空间切换器与设置 MUST 位于顶栏
+- **AND** 页面主体 MUST 通栏展示当前路由内容
+
+#### Scenario: 进入 Workspace 直接打开任务列表
+- **WHEN** 用户查看顶栏主导航
+- **THEN** MUST NOT 出现常驻“开始”导航项
+- **AND** 进入可用 Workspace、点击品牌或切换当前工作空间 MUST 打开该 Workspace 的任务列表
+- **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 重定向到任务列表
+
+#### Scenario: 详情保持通栏
+- **WHEN** 用户从服务或文章列表进入详情
+- **THEN** 详情 MUST 替换通栏内容区
+- **AND** MUST NOT 在壳层内同时并排显示该资源的列表与详情
+
+#### Scenario: 任务页宽屏并排列表与详情
+- **WHEN** 用户在宽屏打开任务列表或某条任务详情
+- **THEN** 左侧 MUST 继续展示任务列表
+- **AND** 右侧 MUST 展示对应详情，或在未选任务时展示空态
+- **AND** `/tasks` 与 `/tasks/:taskId` 路由 MUST 保持不变
+
+#### Scenario: 任务页窄屏避免横向溢出
+- **WHEN** viewport 宽度为 390px 且用户打开任务详情
+- **THEN** 详情 MUST 可见并可操作
+- **AND** 页面主容器 MUST NOT 横向溢出
+- **AND** 任务列表 MAY 暂时不与详情并排
+
+#### Scenario: 项目页宽屏并排列表与详情
+- **WHEN** 用户在宽屏打开项目列表或某个项目详情
+- **THEN** 左侧 MUST 继续展示项目列表
+- **AND** 右侧 MUST 展示对应详情，或在未选项目时展示空态
+- **AND** 项目详情右上角 MUST 提供“编辑项目”操作
+- **AND** `/projects` 与 `/projects/:projectCode` 路由 MUST 保持不变
+
+#### Scenario: 项目页窄屏避免横向溢出
+- **WHEN** viewport 宽度为 390px 且用户打开项目详情
+- **THEN** 详情 MUST 可见并可操作
+- **AND** 页面主容器 MUST NOT 横向溢出
+- **AND** 项目列表 MAY 暂时不与详情并排
+
+#### Scenario: 列表筛选保持一行
+- **WHEN** 用户打开任务列表
+- **THEN** 搜索与筛选控件 MUST 出现在标题下方的同一工具行
+- **AND** MUST NOT 使用独立竖排筛选表单卡作为默认布局
+
+### Requirement: Buildr Web Task 详情必须提供 UI Preview 视图
+Buildr Web Task 详情 MUST 提供独立“预演”一级视图，按需读取当前 Task 关联 Change 中可发现的 UI Preview 页面，并 MUST 允许用户在多个页面之间选择和操作当前页面。页面 MUST 同时说明 UI Preview 是方案参考而非正式设计、生产原型或像素级验收标准。当当前页面可在舞台中展示时，预演舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
+
+#### Scenario: Task 存在多个预演页面
+- **WHEN** 只读 API 返回两个或以上 UI Preview 页面
+- **THEN** 预演视图 MUST 展示每个页面的标题、关联 Change 与 portable 相对路径
+- **AND** 用户选择页面后 MUST 在同一 Task 详情中看到完整可交互页面
+
+#### Scenario: Task 没有可发现预演稿
+- **WHEN** Task 没有关联 Change、Change 暂不可用或关联 Change 中没有带标记 HTML
+- **THEN** 预演视图 MUST 展示明确空态或诊断
+- **AND** MUST NOT 改变 Task 状态或隐藏其他详情视图
+
+#### Scenario: 用新窗口打开当前预演页面
+- **WHEN** 预演舞台正在展示当前选中页面
+- **THEN** 舞台 MUST 提供「新窗口打开」控件，且 MUST NOT 再展示「隔离预览」状态文案
+- **AND** 激活后 MUST 用新窗口打开 iframe 正在使用的同一 Task-scoped 内容 URL
+- **AND** MUST NOT 把预演 HTML 注入 Buildr Web 父页面 DOM
+
+### Requirement: UI Preview API 必须保持 Task-scoped 只读边界
+本机 HTTP interface MUST 提供只读 Task-scoped UI Preview API，从 Task Record 的 Change 引用和 saved Environment current 解析 working Change。列表响应 MUST 只返回带 UI Preview 标记页面的不透明 ID、标题、lifecycle 与 portable 相对路径；具体 HTML MUST 只通过同一 Task 与已发现页面 ID 的专用响应读取。API MUST 忽略符号链接、未标记或超出安全读取边界的文件，MUST NOT 接受 filesystem path、写入 Task/Change 或提供任意文件 HTML 路由。
+
+#### Scenario: 读取候选工作副本
+- **WHEN** active Task 的 saved Environment current 指向可用候选 Change
+- **THEN** API MUST 优先返回候选 working copy 中的带标记预演文件
+- **AND** MUST NOT 用 retained baseline 覆盖候选内容
+
+#### Scenario: Change 含有其他 HTML
+- **WHEN** Task 关联 Change 同时含有未标记 HTML、符号链接或超限文件
+- **THEN** API MUST 不返回这些文件内容
+- **AND** 适用的跳过原因 MUST 以不泄露绝对路径的诊断表达
+
+### Requirement: Buildr Web 必须隔离 UI Preview 可执行内容
+Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行 UI Preview，仅允许页面自身 JavaScript 交互。页面内容响应 MUST 以 HTTP CSP 同时施加 `sandbox allow-scripts` 与离线资源策略，禁止网络连接、外部脚本/样式/字体、父页面访问与 Buildr session/API 权限；直接打开内容响应时 MUST 继续处于 opaque origin。客户端 MUST NOT 使用 `dangerouslySetInnerHTML` 或继承主页面脚本限制的 `srcdoc` 把预演内容注入 Buildr Web DOM。
+
+#### Scenario: 预演稿包含交互脚本
+- **WHEN** UI Preview HTML 使用内联 JavaScript 切换关键状态
+- **THEN** iframe MUST 允许该页面内部交互正常运行
+- **AND** 脚本 MUST 处于 opaque origin，不能读取父页面 DOM 或 Buildr session
+
+#### Scenario: 预演稿引用远程资源
+- **WHEN** HTML 尝试加载远程脚本、样式、字体、图像或发起网络请求
+- **THEN** preview document CSP MUST 阻止该请求
+- **AND** Buildr Web 主页面 MUST 保持可用
+
+#### Scenario: 新窗口直接打开当前预演页面
+- **WHEN** 用户从预演舞台用新窗口打开当前页面的内容 URL
+- **THEN** 新窗口 MUST 加载同一 Task-scoped 内容响应
+- **AND** 该文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
+
+### Requirement: Task Intent 必须支持可点击的 Project 文档引用
+Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。
+
+#### Scenario: 查看任务引用的架构文档
+- **WHEN** Task Intent 包含一个带用户可读名称、且路径位于 Task scope 内已登记 Project 的 Markdown 链接
+- **THEN** 页面 MUST 将名称显示为可点击链接
+- **AND** 点击后 MUST 展示文档正文、文档名称和 Project 相对路径
+
+#### Scenario: 文档引用不可用
+- **WHEN** Intent 链接不是 `.md`、不属于 Task scope 内已登记 Project、文件缺失或路径越界
+- **THEN** 页面 MUST 显示明确的不可用提示
+- **AND** MUST NOT 扫描 Workspace、改写 Intent 或尝试读取其他路径
+
+#### Scenario: 继续浏览同一 Project 内的 Markdown 文档
+- **WHEN** 用户在 Task 文档预览中点击当前文档的相对 `.md` 链接
+- **THEN** 页面 MUST 使用同一 Project Document API 打开解析后的 Project 内文档
+- **AND** 越出 Project 或非 Markdown 的链接 MUST 被拒绝
+
+#### Scenario: Intent 仍由 Task Record 管理
+- **WHEN** 用户编辑或读取含 Markdown 文档引用的 Intent
+- **THEN** Task Record MUST 继续只保存原有 intent 字符串并保持既有 optimistic concurrency 与搜索语义
+- **AND** 系统 MUST NOT 新增附件状态、Planning gate 或第二 Task writer
+
+### Requirement: 项目详情必须提供每日演进视图
+Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机今天的文件，并 MUST 支持按日、按人、按任务切换。视图 MUST 列出日摘要四问与提交列表，MUST NOT 列出变更文件；自己的已关联提交 MUST 提供可导航 Task，自己的未关联提交与他人提交 MUST 展示且无 Task 芯片。页面 MUST NOT 提供写入或编辑控件，生成或重跑 MUST 交给 Agent。日期控件 MUST 使用 DatePicker（`#progress-date`），MUST NOT 在 `#progress-body` 内放置 `input`/`textarea`。
+
+#### Scenario: 打开有当天文件的项目
+- **WHEN** 用户打开某 Project 的每日演进视图且当天 v2 文件存在
+- **THEN** 页面 MUST 展示四问摘要与提交
+- **AND** 页面 MUST NOT 展示变更文件列表或「变更文件」标题
+- **AND** 切换按人/按任务 MUST 只改变分组，不修改文件、不扫描 Git
+
+#### Scenario: 打开没有当天文件的项目
+- **WHEN** 当天文件不存在
+- **THEN** 页面 MUST 展示空态并说明由 Agent 生成
+- **AND** MUST NOT 根据 Git 提交或任务列表自动填充
+
+### Requirement: Task 详情必须展示每日演进反向关联
+Buildr Web Task 详情 MUST 展示引用该 Task 的本机每日演进条目，至少包括日期、所属 Project 与摘要。缺失文件或没有引用时 MUST 展示空态，MUST NOT 把每日演进当作 Task 状态、进度或 Verification 结果，MUST NOT 列出未引用该 Task 的他人提交。
+
+#### Scenario: Task 被当天推进项引用
+- **WHEN** 只读 API 返回该 Task 的一条或多条每日演进条目
+- **THEN** Task 详情 MUST 展示这些条目并可导航到所属 Project 日期视图

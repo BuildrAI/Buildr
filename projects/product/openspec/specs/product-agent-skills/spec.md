@@ -509,3 +509,42 @@ Task Finish Skill MUST只在retained Finish Result或Execution Record证明exist
 - **WHEN** 结构化 Release Awareness 返回 unavailable 或 blocked
 - **THEN** Agent MUST说明版本检查暂不可用
 - **AND** MUST NOT把该结果解释为 Workspace Doctor 失败
+
+### Requirement: Package 必须投射独立 UI Preview Skill
+Buildr package MUST 提供 id 为 `ui-preview` 的 optional workspace Skill，并 MUST 将其作为普通 `skills/buildr/*` 资产同步和投射到支持的 Agent runtime。第一版 MUST NOT 为该 Skill 建立 capability contract、provider binding 或与编码式原型合并的入口。
+
+#### Scenario: Workspace 同步 UI Preview Skill
+- **WHEN** Buildr 将 package 资产同步到支持的 workspace runtime
+- **THEN** `ui-preview` MUST 作为 optional builtin Skill 可被发现
+- **AND** 用户卸载 optional Skill 时 MUST 遵守现有 builtin 卸载与投射语义
+
+#### Scenario: 审查能力边界
+- **WHEN** 维护者检查 `ui-preview` 的 package manifest 与 Skill 正文
+- **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
+- **AND** MUST 明确区别于正式设计、视觉重构和真实前端工程中的编码式原型
+
+### Requirement: UI 相关研发流程必须执行非阻塞 Preview 询问
+Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply contributions MUST 在当前任务可能改变前端 UI 时询问用户是否需要 UI Preview，并 MUST 只在明确确认后路由到 `ui-preview`。询问与产物 MUST NOT 成为 Planning Review、Development、Verification、Finish 或 Task 状态的 gate。
+
+#### Scenario: OpenSpec 方案包含 UI 变化
+- **WHEN** proposal、design 或 delta spec 表明本次 Change 会产生用户可见 UI 变化
+- **THEN** Agent MUST 确认用户是否需要 UI Preview
+- **AND** 明确需要时 MUST 在正式实现前完成现有 UI 调查、预演生成与浏览器验证
+
+#### Scenario: 用户跳过 UI Preview
+- **WHEN** 用户不需要预演或没有明确确认
+- **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
+- **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker
+
+### Requirement: 产品内置 Skill 必须能发现并执行项目每日演进
+Buildr package MUST 提供可投射的产品 Skill，使 Agent 能发现「展示或生成项目每日演进」意图，并 MUST 引导 Agent：先同步最新代码，再收集目标日期的全部 Git 提交与更改文件，用本机 `git config user.email` 对比作者，总结四问日摘要并判断自己的提交是否关联已有 Task，最后通过 Daily Progress Application/CLI 写入 `.buildr/daily-progress/<project-code>/` 当天文件。该 Skill MUST NOT 让 Buildr 产品在读取路径扫描 Git 或自动撰写摘要，MUST NOT 把每日演进写入 Task Record，MUST NOT 为他人提交挂 Task，也 MUST NOT 要求产品 cron。
+
+#### Scenario: 用户要求生成今天的项目每日演进
+- **WHEN** 用户要求展示、生成或重跑某 Project 的每日演进
+- **THEN** Skill MUST 先执行写入前代码同步门禁
+- **AND** 成功后 MUST 收集当日 Git 提交与更改文件，再调用 Daily Progress record，而不是手写 YAML、写入 SQLite 或让页面现场合成
+
+#### Scenario: 用户问能否每天自动跑
+- **WHEN** 用户询问每日演进是否自动执行
+- **THEN** Skill MUST 说明这取决于 Agent 宿主定时器
+- **AND** MUST NOT 引导实现 Buildr 产品 cron

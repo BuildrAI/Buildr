@@ -1,0 +1,28 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-formal-buildr-web-launcher
+operation: reconcile
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: openspec/changes/fix-formal-buildr-web-launcher/brief.md
+    reason: 正式 Change 需要面向人类的范围、兼容性和验收摘要。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-formal-buildr-web-launcher/proposal.md
+      - openspec/changes/fix-formal-buildr-web-launcher/design.md
+      - openspec/changes/fix-formal-buildr-web-launcher/specs/buildr-web-channel-isolation/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前文档声明 released 与 development 都使用随机端口，需要在实现完成后对齐正式 Launcher 的首选端口和回退策略。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/buildr-web-channel-isolation/spec.md
+      - openspec/changes/fix-formal-buildr-web-launcher/specs/buildr-web-channel-isolation/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Launcher/runtime 说明需要对齐 binding 端口策略和 macOS 短生命周期入口。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/buildr-web-channel-isolation/spec.md
+      - openspec/changes/fix-formal-buildr-web-launcher/specs/buildr-web-channel-isolation/spec.md
+unresolvedItems: []

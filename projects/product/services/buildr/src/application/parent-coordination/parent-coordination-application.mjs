@@ -41,9 +41,55 @@ export function registerParentCoordinationApplication(runtime) {
     return { contributions, prerequisitesSatisfied, blockers: contributions.filter((item) => !['delivered', 'superseded'].includes(item.disposition)).map((item) => ({ contributionId: item.id, disposition: item.disposition })) };
   }
 
-  function inspectParentCoordination(targetRoot, taskId) {
-    const task = runtime.inspectTaskRecord(targetRoot, taskId);
-    const development = runtime.inspectTaskDevelopment(targetRoot, taskId);
+  function startupReadiness(task, execution, development, plan, planningReview, progress) {
+    const receipt = development.development?.receipt || null;
+    const planningGate = development.development?.applicability?.gates?.planning || null;
+    const completed = new Set(progress.contributions.filter((item) => ['delivered', 'superseded'].includes(item.disposition)).map((item) => item.id));
+    const dependencyBlockers = [];
+    const eligibleContributions = [];
+    if (plan) {
+      for (const contribution of progress.contributions) {
+        if (contribution.disposition !== 'unassigned') continue;
+        const missing = plan.dependencies.filter((item) => item.contributionId === contribution.id && !completed.has(item.dependsOn)).map((item) => item.dependsOn).sort();
+        if (missing.length) dependencyBlockers.push({ contributionId: contribution.id, dependsOn: missing });
+        else eligibleContributions.push(contribution.id);
+      }
+    }
+    const reviewCurrent = planningReview?.present && planningReview.applicability === 'current';
+    const reviewReady = reviewCurrent && planningReview.result?.conclusion?.outcome === 'ready';
+    const gateCurrent = Boolean(reviewReady && planningGate?.applicability === 'current' && planningGate.targetIdentity === plan?.identity && planningGate.resultDigest === planningReview.resultDigest && planningGate.outcome === 'ready');
+    const checks = {
+      task: task.record.status === 'active' ? 'ready' : 'blocked',
+      environment: execution?.ready ? 'ready' : 'blocked',
+      development: receipt ? 'ready' : 'blocked',
+      parentPlan: plan ? 'ready' : 'blocked',
+      planningReview: reviewReady ? 'ready' : reviewCurrent ? 'changes-required' : planningReview?.present ? 'stale' : 'missing',
+      planningGate: gateCurrent ? 'ready' : 'missing',
+    };
+    const blockers = [];
+    if (checks.task !== 'ready') blockers.push({ axis: 'task', code: 'parent_startup_task_not_active' });
+    else if (checks.environment !== 'ready') blockers.push({ axis: 'environment', code: 'parent_startup_environment_not_ready' });
+    else if (checks.development !== 'ready') blockers.push({ axis: 'development', code: 'parent_startup_development_missing' });
+    else if (checks.parentPlan !== 'ready') blockers.push({ axis: 'parent-plan', code: 'parent_startup_plan_missing' });
+    else if (checks.planningReview !== 'ready') blockers.push({ axis: 'planning-review', code: checks.planningReview === 'changes-required' ? 'parent_startup_review_changes_required' : 'parent_startup_review_not_current' });
+    else if (checks.planningGate !== 'ready') blockers.push({ axis: 'planning-gate', code: 'parent_startup_review_not_consumed' });
+    if (gateCurrent && !eligibleContributions.length) blockers.push(...dependencyBlockers.map((item) => ({ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete', ...item })));
+    let next = null;
+    if (checks.task !== 'ready') next = { mode: 'required', owner: 'task-manager', action: 'inspect', summary: 'Parent Task必须保持active。' };
+    else if (checks.environment !== 'ready') next = { mode: 'required', owner: 'task-environment', action: 'prepare', summary: '准备或恢复matching Parent Environment。' };
+    else if (checks.development !== 'ready') next = { mode: 'required', owner: 'task-development', action: 'begin', summary: '建立Parent Development Receipt。' };
+    else if (checks.parentPlan !== 'ready') next = { mode: 'recommended', owner: 'task-development', action: 'record-parent-plan', summary: '记录Parent Plan。' };
+    else if (checks.planningReview !== 'ready') next = { mode: 'recommended', owner: 'task-review', action: 'planning-review', summary: '对current Parent Plan完成Planning Review。' };
+    else if (checks.planningGate !== 'ready') next = { mode: 'recommended', owner: 'task-development', action: 'refresh-parent-planning', summary: '消费current Parent Planning Review并刷新Development planning gate。' };
+    else if (eligibleContributions.length) next = { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: eligibleContributions, summary: '选择一个依赖已满足的Contribution并启动独立Child Task。' };
+    else if (progress.prerequisitesSatisfied) next = { mode: 'recommended', owner: 'task-development', action: 'accept-parent', summary: '全部Contribution已有明确处置；执行Parent最终集成验收。' };
+    else next = { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: '当前没有可启动Contribution；等待既有Child handoff或显式reconcile。' };
+    return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, dependencyBlockers, eligibleContributions, next };
+  }
+
+  function inspectParentCoordination(targetRoot, taskId, options = {}) {
+    const task = options.task || runtime.inspectTaskRecord(targetRoot, taskId);
+    const development = options.development || runtime.inspectTaskDevelopment(targetRoot, taskId);
     const receipt = development.development?.receipt || null;
     const plan = receipt?.parentPlan || null;
     const children = task.taskRelations.children.map((relation) => childReadModel(targetRoot, relation, taskId));
@@ -52,9 +98,35 @@ export function registerParentCoordinationApplication(runtime) {
       : null;
     const parentDelivery = parentContributionHandoff ? { taskId, title: task.record.title, status: task.record.status, plannedContributions: parentContributionHandoff.planned, deliveryProven: true, contributionHandoff: parentContributionHandoff, diagnostic: null } : null;
     const progress = plan ? aggregate(plan, parentDelivery ? [...children, parentDelivery] : children) : { contributions: [], prerequisitesSatisfied: false, blockers: [] };
+    const planningReview = runtime.inspectTaskReview(targetRoot, taskId, plan ? { planningTargetIdentity: plan.identity } : {}).slots.planning;
+    let execution = options.execution || null;
+    if (plan) {
+      try { execution ||= runtime.resolveTaskEnvironmentExecution(targetRoot, taskId); }
+      catch (error) { execution = { ready: false, blocked: { code: error.code || 'task_environment_not_ready', message: error.message } }; }
+    }
+    const startup = plan
+      ? startupReadiness(task, execution, development, plan, planningReview, progress)
+      : { status: 'not-applicable', checks: {}, blockers: [], dependencyBlockers: [], eligibleContributions: [], next: null };
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, {
-      operation: 'inspect', status: 'inspected', taskId, mode: plan ? 'parent-plan' : 'legacy', parentStatus: task.record.status, parentPlan: plan, parentAcceptance: receipt?.parentAcceptance || null, parentDelivery, planningReview: runtime.inspectTaskReview(targetRoot, taskId, plan ? { planningTargetIdentity: plan.identity } : {}).slots.planning, children, ...progress, finalAcceptanceReady: Boolean(plan && progress.prerequisitesSatisfied), effects: [], diagnostic: plan ? null : { code: 'parent_plan_absent', message: '该Task尚未显式采用Parent Plan；历史Task继续使用既有模型。' }, nextActions: plan ? [] : ['仅在明确采用新模型时record Parent Plan；不要自动backfill。']
+      operation: 'inspect', status: 'inspected', taskId, mode: plan ? 'parent-plan' : 'legacy', parentStatus: task.record.status, parentPlan: plan, parentAcceptance: receipt?.parentAcceptance || null, parentDelivery, planningReview, startup, children, ...progress, finalAcceptanceReady: Boolean(plan && progress.prerequisitesSatisfied), effects: [], diagnostic: plan ? null : { code: 'parent_plan_absent', message: '该Task尚未显式采用Parent Plan；历史Task继续使用既有模型。' }, nextActions: plan ? (startup.next ? [startup.next.summary] : []) : ['仅在明确采用新模型时record Parent Plan；不要自动backfill。']
     });
+  }
+
+  function inspectParentStartupReadiness(targetRoot, taskId, options = {}) {
+    const inspected = inspectParentCoordination(targetRoot, taskId, options);
+    return { schemaVersion: PUBLIC_JSON_SCHEMAS.parentStartupReadiness, operation: 'inspect-startup', status: inspected.startup.status, taskId, mode: inspected.mode, ...inspected.startup, effects: [] };
+  }
+
+  function refreshParentPlanning(targetRoot, taskId) {
+    const current = inspectParentCoordination(targetRoot, taskId);
+    if (!current.parentPlan) throw parentCoordinationError('parent_plan_missing', 'Parent planning refresh需要current Parent Plan。', 409, null, '先记录Parent Plan。');
+    if (!current.planningReview.present || current.planningReview.applicability !== 'current' || current.planningReview.result?.conclusion?.outcome !== 'ready') throw parentCoordinationError('parent_planning_review_not_ready', 'Parent planning refresh需要绑定current Plan identity且outcome为ready的Planning Review。', 409, { planIdentity: current.parentPlan.identity, reviewApplicability: current.planningReview.applicability, reviewOutcome: current.planningReview.result?.conclusion?.outcome || null }, '先完成current Parent Planning Review。');
+    const development = runtime.inspectTaskDevelopment(targetRoot, taskId);
+    const receipt = development.development?.receipt;
+    if (!receipt || receipt.planning.targetIdentity !== current.parentPlan.identity) throw parentCoordinationError('parent_planning_snapshot_stale', 'Development planning snapshot与current Parent Plan不一致。', 409, { planIdentity: current.parentPlan.identity, planningTargetIdentity: receipt?.planning?.targetIdentity || null }, '重新inspect Parent coordination并恢复current planning facts。');
+    const result = runtime.recordTaskDevelopmentPlanning(targetRoot, taskId, { changeDispositions: receipt.taskContext.changes, planning: { targetIdentity: receipt.planning.targetIdentity, nodes: receipt.planning.nodes } });
+    const inspected = inspectParentCoordination(targetRoot, taskId);
+    return { ...inspected, operation: 'refresh-planning', status: 'refreshed', effects: result.effects };
   }
 
   function recordParentPlan(targetRoot, taskId, input) {
@@ -103,6 +175,6 @@ export function registerParentCoordinationApplication(runtime) {
     return { ...inspected, operation: 'accept', status: result.status, effects: result.effects };
   }
 
-  Object.assign(runtime, { inspectParentCoordination, recordParentPlan, reconcileParentPlan, bindChildContributions, acceptParentCoordination });
+  Object.assign(runtime, { inspectParentCoordination, inspectParentStartupReadiness, refreshParentPlanning, recordParentPlan, reconcileParentPlan, bindChildContributions, acceptParentCoordination });
   return runtime;
 }

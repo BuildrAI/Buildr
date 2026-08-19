@@ -34,6 +34,71 @@ test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确�
   assert.equal((await missing.json()).error.code, 'task_record_not_found');
 });
 
+test('Buildr Web Runtime HTTP 只读每日演进，不接受路径也不写入', async (t) => {
+  const { base, root } = fixture(t, 'local-app-http-daily-progress');
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'http-progress', title: 'HTTP 每日演进', intent: '验证只读 API', projects: ['demo'], services: [], changes: [] });
+  runtime.recordProjectDailyProgress(root, {
+    project: 'demo',
+    date: '2026-08-18',
+    payload: {
+      daySummary: {
+        added: '新增只读 HTTP 投影。',
+        updated: '更新 Task 关联为可选。',
+        deleted: '删除必填推进项。',
+        drawbacks: 'GET 仍不扫描 Git。',
+      },
+      commits: [{
+        sha: 'c3a91f2',
+        subject: 'HTTP 只读提交。',
+        authorName: '王志宏',
+        authorEmail: 'wangzhihong@example.com',
+        authorship: 'self',
+        taskIds: ['http-progress'],
+      }],
+      files: [{ path: 'README.md', kind: 'modified' }],
+    },
+  });
+  const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
+  const { url, initialWorkspaceId, sessionToken } = await instance.ready;
+
+  const inspected = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo/daily-progress/2026-08-18?group=person`);
+  assert.equal(inspected.status, 200);
+  const body = await inspected.json();
+  assert.equal(body.schemaVersion, 'buildr.project-daily-progress-inspect-result/v1');
+  assert.equal(body.status, 'inspected');
+  assert.equal(body.groups[0].label, '王志宏 · wangzhihong@example.com');
+  assert.equal(body.daySummary.added, '新增只读 HTTP 投影。');
+  assert.equal(body.commits[0].sha, 'c3a91f2');
+  assert.equal(Object.hasOwn(body, 'file'), false);
+  assert.doesNotMatch(JSON.stringify(body), /workspace\.sqlite/);
+
+  const empty = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo/daily-progress/2026-08-01`);
+  assert.equal(empty.status, 200);
+  assert.equal((await empty.json()).status, 'not-found');
+
+  const reverse = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-progress/daily-progress`);
+  assert.equal(reverse.status, 200);
+  assert.equal((await reverse.json()).itemCount, 1);
+
+  const pathRejected = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo/daily-progress/2026-08-18?target=${encodeURIComponent(root)}`);
+  assert.equal(pathRejected.status, 400);
+  assert.equal((await pathRejected.json()).error.code, 'target_forbidden');
+
+  const queryRejected = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo/daily-progress/2026-08-18?path=/tmp`);
+  assert.equal(queryRejected.status, 400);
+
+  const writeRejected = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo/daily-progress/2026-08-18`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-buildr-session': sessionToken, origin: url },
+    body: JSON.stringify({ daySummary: {}, commits: [], files: [] }),
+  });
+  assert.equal(writeRejected.status, 404);
+});
+
 test('Buildr Web Runtime HTTP owner 传播 read executor 错误并保持写请求保护', async (t) => {
   const { base, root } = fixture(t, 'local-app-http-errors');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');

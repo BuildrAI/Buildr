@@ -117,30 +117,34 @@ export function registerWorkspaceApplication(runtime) {
     }
     if (typeof input.rootPath !== 'string' || !input.rootPath.trim()) throw workspaceError('workspace_registry_root_required', '请选择 Workspace 目录。');
     const root = runtime.path.resolve(input.rootPath);
+    try { runtime.canonicalWorkspaceManagementIdentity(root); }
+    catch (error) { throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, error.details); }
     let candidate;
     try { candidate = readWorkspaceRecord(root); } catch (error) {
       throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, { rootPath: root });
     }
     if (!candidate.workspace.id) throw workspaceError('workspace_registry_migration_required', '该 Workspace 需要先完成 canonical metadata 迁移。', 409, { rootPath: root });
-    runtime.withWorkspaceRegistryMutation(input.revision, (current) => {
-      const roots = current.roots;
-      if (!roots.includes(root)) {
-        for (const existingRoot of roots) {
-          const existing = workspaceRegistryEntry(existingRoot);
-          if (existing.workspace?.id === candidate.workspace.id) {
-            throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 已登记在另一个目录。', 409, {
-              workspaceId: candidate.workspace.id,
-              existingRoot,
-              candidateRoot: root,
-            });
+    runtime.withWorkspaceManagementClaim(root, () => {
+      runtime.withWorkspaceRegistryMutation(input.revision, (current) => {
+        const roots = current.roots;
+        if (!roots.includes(root)) {
+          for (const existingRoot of roots) {
+            const existing = workspaceRegistryEntry(existingRoot);
+            if (existing.workspace?.id === candidate.workspace.id) {
+              throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 已登记在另一个目录。', 409, {
+                workspaceId: candidate.workspace.id,
+                existingRoot,
+                candidateRoot: root,
+              });
+            }
           }
         }
-      }
-      return {
-        ...current,
-        roots: roots.includes(root) ? roots : [...roots, root],
-        lastOpenedRoot: input.open === false ? current.lastOpenedRoot : root,
-      };
+        return {
+          ...current,
+          roots: roots.includes(root) ? roots : [...roots, root],
+          lastOpenedRoot: input.open === false ? current.lastOpenedRoot : root,
+        };
+      });
     });
     return listRegisteredWorkspaces();
   }
@@ -153,16 +157,22 @@ export function registerWorkspaceApplication(runtime) {
     if (input.workspaceId === undefined && input.rootPath === undefined) throw workspaceError('workspace_registry_identity_invalid', 'Workspace 移除请求必须指定 workspaceId 或已登记 rootPath。');
     if (input.workspaceId !== undefined && !isWorkspaceId(input.workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const requestedRoot = input.rootPath === undefined ? null : runtime.path.resolve(input.rootPath);
+    let removed = null;
     runtime.withWorkspaceRegistryMutation(input.revision, (current) => {
       const matches = current.roots.filter((root) => requestedRoot ? root === requestedRoot : workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
       if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记。', 404);
       if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个目录，请按已登记 rootPath 移除。', 409);
+      const entry = workspaceRegistryEntry(matches[0]);
+      removed = { rootPath: matches[0], workspaceId: entry.workspace?.id || input.workspaceId || null };
       return {
         ...current,
         roots: current.roots.filter((root) => root !== matches[0]),
         lastOpenedRoot: current.lastOpenedRoot === matches[0] ? null : current.lastOpenedRoot,
       };
     });
+    if (removed?.workspaceId) {
+      try { runtime.releaseWorkspaceManagementClaim(removed.rootPath, removed.workspaceId); } catch { /* registry removal remains safe; uncertain claim is retained fail-closed */ }
+    }
     return listRegisteredWorkspaces();
   }
 

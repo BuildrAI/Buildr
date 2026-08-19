@@ -468,12 +468,13 @@ Buildr MUST 不再注册、执行或发布 `buildr skills migrate-project-assets
 - **AND** MUST NOT 推荐当前版本不存在的 migration command 或执行自动修复
 
 ### Requirement: Task Environment 必须提供 Plan 与 Environment 薄公共 CLI actions
-Buildr CLI MUST公开`task environment plan record|inspect`以及`task environment prepare|inspect|cleanup`。Plan record MUST只接收`--input <json-file>`中的closed Plan；prepare MUST支持可选`--plan <json-file>`并在省略时复用current Plan。所有CLI MUST只负责参数解析、Application调用、JSON/文本输出和退出码；Buildr Web MUST使用saved-current reader。
+Buildr CLI MUST公开`task environment plan record|inspect`以及`task environment prepare|inspect|cleanup`。Plan record MUST只接收`--input <json-file>`中的closed Plan；prepare MUST支持可选`--plan <json-file>`并在省略时复用current Plan。prepare MUST要求`--agent <adapter>`；省略时 MUST以CLI syntax失败并以非零状态退出，且 MUST NOT默认为`codex`或任何其他adapter。所有CLI MUST只负责参数解析、Application调用、JSON/文本输出和退出码；Buildr Web MUST使用saved-current reader。
 
 #### Scenario: 查看 Task Environment 帮助
 - **WHEN** 用户运行`buildr help task environment`或action help
 - **THEN** 帮助 MUST展示Plan登记/读取以及prepare/inspect/cleanup
 - **AND** MUST说明Plan由Agent形成、prepare执行、inspect零写入且Receipt不属于Task Record
+- **AND** prepare usage MUST把`--agent <adapter>`写成必填，不得写成可选或暗示可省略
 
 #### Scenario: 登记 Plan
 - **WHEN** Agent运行`task environment plan record <task-id> --input <file>`
@@ -481,9 +482,16 @@ Buildr CLI MUST公开`task environment plan record|inspect`以及`task environme
 - **AND** MUST不执行Plan Steps或接受完整Receipt/next state
 
 #### Scenario: 准备或恢复 Environment
-- **WHEN** Agent运行prepare并可选传入Plan
+- **WHEN** Agent运行prepare并传入`--agent`且可选传入Plan
 - **THEN** CLI MUST返回ready/blocked、execution roots、Plan及逐Service/Step facts和effects
 - **AND** MUST不选择技术栈、扫描manifest或直接调用Git provider形成总结果
+- **AND** MUST把解析后的adapter原样交给Application，不得改写为另一个默认宿主
+
+#### Scenario: 省略 prepare --agent
+- **WHEN** 调用方运行`buildr task environment prepare <task-id>`且未提供`--agent`
+- **THEN** CLI MUST在调用Application前以syntax失败并以非零状态退出
+- **AND** MUST零写入Task Environment Receipt、Git worktree与Preparation Steps
+- **AND** diagnostic MUST要求提供`--agent <adapter>`，不得继续并默认为`codex`
 
 #### Scenario: 只读检查 Environment
 - **WHEN** 调用方运行inspect
@@ -757,3 +765,45 @@ CLI MAY 为现有 `task finish run` 增加 `--release-occupancy`，但 MUST NOT 
 - **WHEN** 同一调用同时包含 `--release-occupancy` 与 `--resume`、`--bootstrap-recovery` 或 `--accept-zero-delta-adaptation`
 - **THEN** CLI MUST 作为无效组合拒绝
 - **AND** MUST NOT 启动五阶段或删除 carrier
+
+### Requirement: Task Finish run 的 --agent 必须匹配 Environment adapter
+`task finish run` 的 `--agent` MUST保持可选。省略时 CLI MUST不补写 Codex 或其他默认宿主，并把缺省交给 Application 使用 Environment adapter。传入值与 Environment adapter 不一致时 MUST在创建 run 前失败。帮助 MUST说明 `--agent` 跟随 Task Environment，不得写成当前聊天宿主。
+
+#### Scenario: 查询 Finish run 帮助中的 --agent
+- **WHEN** 用户运行 `buildr help task finish run`
+- **THEN** 帮助 MUST把 `--agent` 写成可选，并说明省略时使用 Environment adapter
+- **AND** MUST NOT声称 Finish `--agent` 必填或默认为 Codex
+
+#### Scenario: 省略 Finish --agent 进入 Application
+- **WHEN** 调用方运行 `task finish run --task <id>` 且未提供 `--agent`
+- **THEN** CLI MUST把未指定 agent 交给 Application
+- **AND** MUST NOT在 CLI 层改写为 `codex` 或当前进程猜测的宿主
+
+### Requirement: Parent Coordination CLI必须公开planning refresh
+Buildr CLI MUST公开`task parent refresh-planning <task-id>`，并只接收Task identity、canonical target与输出模式；该命令MUST不接收planning JSON、Review digest、gate正文或Child状态。
+
+#### Scenario: 查看refresh帮助
+- **WHEN** 用户运行Parent Coordination topic help或`task parent refresh-planning --help`
+- **THEN** help MUST展示命令用途、必需Task ID和canonical target
+- **AND** MUST明确该动作消费saved Parent Plan与current Planning Review
+
+#### Scenario: candidate CLI尝试写canonical Workspace
+- **WHEN** refresh由Task worktree candidate CLI指向retained canonical Workspace
+- **THEN** writer provenance guard MUST保持零写入并返回retained controller route
+- **AND** CLI MUST不绕过Development writer authority
+
+### Requirement: Parent Plan CLI必须提供输入discoverability
+Parent Plan record/reconcile CLI MUST为closed输入提供机器可读schema与example发现方式，并与实际Application validation保持同步。
+
+#### Scenario: Agent发现Parent Plan输入
+- **WHEN** Agent请求Parent Plan record或reconcile的schema/example
+- **THEN** CLI MUST返回outcome、architectureInvariants、contributions、dependencies与finalAcceptance的closed shape及最小合法样例
+- **AND** Agent MUST不需要读取产品源码、测试或SQLite来构造输入
+
+### Requirement: CLI 必须登记每日演进 Agent-machine 命令
+Buildr CLI MUST 将 Project 每日演进的 `record`、`inspect` 与 `list` 登记为 `agent-machine` 产品表面，并 MUST 要求显式 Project。`record` MUST 接受 closed payload 或等价结构化输入，覆盖日摘要、提交列表、变更文件与可选 Task 关联；他人提交带 Task 时 MUST 失败。`inspect`/`list` MUST 只读。这些命令 MUST NOT 被描述为 primary 人类主路径，也 MUST NOT 提供定时调度或现场 Git 扫描。
+
+#### Scenario: 根帮助列出每日演进
+- **WHEN** 用户或 Agent 查看 CLI 帮助中的 Agent-machine 命令
+- **THEN** 帮助 MUST 能发现每日演进 record/inspect/list
+- **AND** MUST 说明它们写本机文件、可选关联本机 Task，不进入 Git 或 Task SQLite

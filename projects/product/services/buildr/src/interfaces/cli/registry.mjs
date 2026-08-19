@@ -12,6 +12,7 @@ import { taskVerificationCommand } from './task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
 import { gitWorktreeCommand } from './git-worktree.mjs';
 import { parentCoordinationCommand } from './parent-coordination.mjs';
+import { projectDailyProgressCommand } from './project-daily-progress.mjs';
 import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './task-execution-record.mjs';
 import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
 
@@ -36,9 +37,10 @@ const COMMAND_ROUTES = [
     surface: "primary",
     summary: "从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Web Launcher。",
     help: [
-      "Usage: buildr web launcher install [--target <path>] [--json]",
+      "Usage: buildr web launcher install [--target <path>] [--port <0..65535>] [--json]",
       "",
       "macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。",
+      "默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。",
       "普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
@@ -61,9 +63,10 @@ const COMMAND_ROUTES = [
     surface: "primary",
     summary: "从同一已登记 npm installation 原子重建当前 owned Launcher binding。",
     help: [
-      "Usage: buildr web launcher repair [--target <path>] [--json]",
+      "Usage: buildr web launcher repair [--target <path>] [--port <0..65535>] [--json]",
       "",
-      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。"
+      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。",
+      "省略 --port 时保留 v2 binding 的现有策略；从 v1 迁移时采用默认首选端口 4457。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
     run: (r, c) => r.manageLocalAppLauncher('repair', c.argv.slice(5)),
@@ -187,6 +190,46 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action }) => domain === 'project' && action === 'create',
     run: (r, c) => r.createProject(c.argv.slice(4)),
+  },
+  {
+    key: "project daily-progress record",
+    surface: "agent-machine",
+    summary: "把 Agent 已构造的 Git 提交日摘要写入本机每日演进文件；Task 关联可选，不进入 Git 或 Task SQLite。",
+    help: [
+      "Usage: buildr project daily-progress record --project <code> [--date <YYYY-MM-DD>] --input <payload.json> [--target <canonical-workspace>] [--json]",
+      "       buildr project daily-progress record --schema|--example [--json]",
+      "",
+      "把 Agent 已构造的四问摘要、提交与变更文件写入 .buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml。",
+      "一天一份，校验通过后原子覆盖；他人提交不得挂 Task，存在的 Task ID 必须本机已有，否则整次失败且不写文件。",
+      "该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
+    run: (r, c) => projectDailyProgressCommand(r, 'record', c.argv.slice(5)),
+  },
+  {
+    key: "project daily-progress inspect",
+    surface: "agent-machine",
+    summary: "只读查看某 Project 某日已保存的每日演进，并按日、人、任务投影；不创建文件。",
+    help: [
+      "Usage: buildr project daily-progress inspect --project <code> [--date <YYYY-MM-DD>] [--group day|person|task] [--target <canonical-workspace>] [--json]",
+      "",
+      "只读查看已保存的本机每日演进文件并解析仍存在的 Task 摘要。",
+      "文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
+    run: (r, c) => projectDailyProgressCommand(r, 'inspect', c.argv.slice(5)),
+  },
+  {
+    key: "project daily-progress list",
+    surface: "agent-machine",
+    summary: "只读列出某 Project 已保存的每日演进日期；不扫描 Git，不写文件。",
+    help: [
+      "Usage: buildr project daily-progress list --project <code> [--target <canonical-workspace>] [--json]",
+      "",
+      "只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
+    run: (r, c) => projectDailyProgressCommand(r, 'list', c.argv.slice(5)),
   },
   {
     key: "service create",
@@ -314,12 +357,13 @@ const COMMAND_ROUTES = [
   {
     key: "task execution-record recover",
     surface: "agent-machine",
-    summary: "补seal有完整终态证据的Verification record；证据不可用时只在明确授权后保留unknown终态。",
+    summary: "按registered producer的完整终态证据补seal Verification或Task Finish Execution Record。",
     help: [
       "Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]",
       "",
-      "--summary只接受matching Buildr-owned Verification transient summary，并补seal原record而不重跑。",
-      "没有summary时先返回authorization-required；--authorize-unknown-outcome不证明原结果，会终结原record并可能使仍存活producer的后续seal失败。",
+      "--summary只接受matching Buildr-owned Verification transient summary，或该Finish invocation精确diagnostics summary；补seal原record而不重跑。",
+      "Task Finish recovery只读核对matching current/terminal Finish authority，不改写Finish current、delivery、Environment或Task terminal，并只清理该invocation evidence。",
+      "--authorize-unknown-outcome仅适用于Verification：它不证明原结果，会终结原record并可能使仍存活producer的后续seal失败；Task Finish必须有terminal evidence。",
       "不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
@@ -337,7 +381,7 @@ const COMMAND_ROUTES = [
     key: "task parent record",
     surface: "agent-machine",
     summary: "为active Parent首次记录closed Parent Plan。",
-    help: ["Usage: buildr task parent record <task-id> --input <parent-plan.json> [--target <canonical-workspace>] [--json]"],
+    help: ["Usage: buildr task parent record <task-id> --input <parent-plan.json> [--target <canonical-workspace>] [--json]", "       buildr task parent record --schema|--example [--json]"],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'record',
     run: (r, c) => parentCoordinationCommand(r, 'record', c.argv.slice(5)),
   },
@@ -345,9 +389,17 @@ const COMMAND_ROUTES = [
     key: "task parent reconcile",
     surface: "agent-machine",
     summary: "以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。",
-    help: ["Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]"],
+    help: ["Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]", "       buildr task parent reconcile --schema|--example [--json]"],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'reconcile',
     run: (r, c) => parentCoordinationCommand(r, 'reconcile', c.argv.slice(5)),
+  },
+  {
+    key: "task parent refresh-planning",
+    surface: "agent-machine",
+    summary: "复用saved Parent Plan与current ready Planning Review，安全刷新Development planning gate。",
+    help: ["Usage: buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]"],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'refresh-planning',
+    run: (r, c) => parentCoordinationCommand(r, 'refresh', c.argv.slice(5)),
   },
   {
     key: "task parent bind-child",
@@ -512,7 +564,7 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "按Project Preparation Declaration与Agent选择的Task Plan幂等准备Project/Service执行环境。",
     help: [
-      "Usage: buildr task environment prepare <task-id> [--plan <json-file>] [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task environment prepare <task-id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
       "",
       "Plan Request必须恰好覆盖Task Record中的全部Project/Service scope，可引用Project preparation.yml的Recipe或显式task-inline Recipe。",
       "默认使用Git worktree；inspect严格只读，不执行Step或回写current。"
@@ -574,12 +626,12 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "必需参数：--run。",
     help: [
-      "Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
+      "Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
       "",
       "必需参数：--run。",
       "互斥参数：无。",
       "Execution surface：canonical Workspace 中的 durable finish run，只读。",
-      "安全副作用：无；JSON默认返回closed compact投影，显式--detail full返回完整诊断Result；两者均保留恢复所需identity、primaryFailure与resume token。",
+      "安全副作用：无；JSON默认返回closed compact投影，显式--detail full返回完整诊断Result；--detail self-bootstrap返回Product-owned稳定自举输入。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
@@ -590,12 +642,13 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。",
     help: [
-      "Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
-      "Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--target <canonical-workspace>] [--detail <compact|full>] [--json]",
-      "Bootstrap recovery: buildr task finish run --run <id> [--resume <token>] --bootstrap-recovery --target <canonical-workspace> [--detail <compact|full>] [--json]",
-      "Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full>] [--json]",
+      "Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
+      "Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
+      "Bootstrap recovery: buildr task finish run --run <id> [--resume <token>] --bootstrap-recovery --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]",
+      "Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]",
       "",
       "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。",
+      "可选 --agent：省略时使用 Task Environment 已绑定 adapter，不得猜测当前聊天宿主或默认为 Codex；传入值必须与 Environment adapter 一致。",
       "互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。",
       "零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。",
       "受控自修复：--bootstrap-recovery只用于已有run在无交付副作用的preflight/prepare Product provider缺陷；必须另行明确授权。retained Application仍是writer，只从冻结clean Task Environment HEAD派生并加载run-owned provider capsule；不接受source/module/tarball/manifest输入。",
@@ -603,9 +656,9 @@ const COMMAND_ROUTES = [
       "Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。",
       "安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。",
       "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
-      "deliver使用首次run绑定的指定Agent Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
+      "deliver使用Environment adapter冻结的run agent执行retained Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
       "每次真正执行的run/resume先预留独立finish-diagnostics execution record容量；retained后只清理invocation diagnostics transient。record attention不改变已成立的Finish delivery、cleanup或Task终态，Carrier与恢复资源继续由Finish owner管理。",
-      "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full。",
+      "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full；跨模块自举只消费--detail self-bootstrap稳定投影。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run',
@@ -1017,6 +1070,17 @@ const COMMAND_ROUTES = [
 ];
 
 const COMMAND_GROUPS = [
+  {
+    key: "project daily-progress",
+    surface: "agent-machine",
+    summary: "记录、查看或列出 Project 本机每日演进；写本机文件，Task 关联可选，不进入 Git 或 Task SQLite。",
+    help: [
+      "Usage: buildr project daily-progress <record|inspect|list> --project <code> ...",
+      "",
+      "记录、查看或列出 Project 本机每日演进。这些命令写本机 YAML 并可关联本机 Task Record，不进入 Git 或 Task SQLite，不扫描 Git，也不是 primary 人类主路径，不提供定时调度。"
+    ],
+    executable: false,
+  },
   {
     key: "task delivery",
     surface: "agent-machine",
