@@ -6,6 +6,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 CLI、Works
 
 ## 接口与入口
 
+- Release history bridge 默认只接受 `release-<version>` 的 matching self-bootstrap evidence；原 release Task 已 terminal 且后续正式修复 Task 已交付到最新 `dev` 时，维护者明确授权的恢复必须显式传入 recovery Task ID，仍需通过同一 run 的 evidence、live `dev` ref 与 candidate tree gate，禁止恢复或改写旧 release Task/evidence。
 - CLI：`projects/product/buildr`是Buildr checkout唯一开发入口；PATH默认`buildr`只代表npm installation。两者身份和更新责任隔离。`buildr project daily-progress record|inspect|list` 是 agent-machine 本机每日演进入口：`record` 校验 closed v2 payload 后原子覆盖 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`；Task 关联可选，他人提交禁止挂 Task，存在的 Task ID 仍须本机已有。`inspect`/`list` 只读。JSON 使用 `buildr.project-daily-progress-*-result/v1`。Application 不扫描 Git、不写 Task SQLite、不提供 cron；收集 Git 由产品 Skill 在写入前完成。
 - Release Awareness Application一次读取npm的`latest`与`next`，分别投影GA正式版和RC候选版。`buildr update check [--json]`同时展示两个版本；`buildr update --track stable|candidate`只在用户显式选择后更新精确版本，不自动切轨或降级。
 - Buildr Web：loopback HTTP 与浏览器界面。Task 列表默认 `open` (todo + active)，可分别过滤 todo、active 和终态；Task 详情展示复盘来源，复盘 Tab 展示后续 Task 与当前状态。正式 Task 只由 Agent/Task Manager 创建或激活，Buildr Web 只编辑/结束已有 Task 并维护复盘处置。六个 Task 一级视图包含独立“预演”Tab；Change Application 只在 Task 已有关联 Change 内有界发现带 `buildr:ui-preview` 标记的自包含 HTML，列表 JSON 只返回 portable metadata，具体内容只由 Task 与不透明页面 ID 的专用只读响应返回并强制 opaque-origin CSP sandbox。Runtime 不接受文件路径、不提供任意 HTML route、不扫描无关联 Workspace 路径，也不取得 UI Preview writer；Task-scoped Change route、其他专业只读边界、复盘处置 PATCH 与文章入口语义保持不变。

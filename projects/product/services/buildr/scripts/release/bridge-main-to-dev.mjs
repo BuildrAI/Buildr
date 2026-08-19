@@ -38,11 +38,15 @@ function parseArgs(argv) {
   if (!options.version) fail('Missing required --version');
   if (!options['self-bootstrap-run']) fail('Missing required --self-bootstrap-run');
   if (!options['self-bootstrap-evidence']) fail('Missing required --self-bootstrap-evidence');
+  if (options['self-bootstrap-task'] !== undefined && !options['self-bootstrap-task']) {
+    fail('Invalid --self-bootstrap-task');
+  }
   return {
     ...options,
     candidateTree: options['candidate-tree'],
     selfBootstrapRun: options['self-bootstrap-run'],
     selfBootstrapEvidence: options['self-bootstrap-evidence'],
+    selfBootstrapTask: options['self-bootstrap-task'],
   };
 }
 
@@ -198,15 +202,20 @@ export function validateSelfBootstrapEvidence(evidence, { runId, taskId, remote,
 export function bridgeMainToDev(options) {
   const {
     repo, remote = 'origin', main = 'main', dev = 'dev', candidateTree, version,
-    selfBootstrapRun, selfBootstrapEvidence, beforeRemoteRecheck,
+    selfBootstrapRun, selfBootstrapEvidence, selfBootstrapTask, beforeRemoteRecheck,
   } = options;
   const root = rev(repo, '--show-toplevel');
   const status = git(root, ['status', '--porcelain']).stdout.trim();
   if (status) fail('Release history bridge requires a clean worktree', { status });
 
+  const releaseTaskId = `release-${version}`;
+  const expectedSelfBootstrapTask = selfBootstrapTask || releaseTaskId;
+  if (typeof expectedSelfBootstrapTask !== 'string' || !expectedSelfBootstrapTask.trim()) {
+    fail('Self-bootstrap provenance task must be a non-empty string');
+  }
   const closeout = validateSelfBootstrapEvidence(readSelfBootstrapEvidence(selfBootstrapEvidence), {
     runId: selfBootstrapRun,
-    taskId: `release-${version}`,
+    taskId: expectedSelfBootstrapTask,
     remote,
     dev,
   });
@@ -238,6 +247,8 @@ export function bridgeMainToDev(options) {
       action: 'already-bridged',
       candidateTree,
       selfBootstrap: closeout,
+      releaseTaskId,
+      selfBootstrapProvenance: expectedSelfBootstrapTask === releaseTaskId ? 'release-task' : 'explicit-recovery-task',
       refs: fetched,
     };
   }
@@ -277,6 +288,8 @@ export function bridgeMainToDev(options) {
     action: 'bridged',
     candidateTree,
     selfBootstrap: closeout,
+    releaseTaskId,
+    selfBootstrapProvenance: expectedSelfBootstrapTask === releaseTaskId ? 'release-task' : 'explicit-recovery-task',
     commit: head,
     refs: remoteAfterPush,
   };
