@@ -223,12 +223,12 @@ Runner MUST在每个潜在副作用阶段前刷新有界activation lease，并�
 - **AND** MUST不获得terminal activation lease、self-bootstrap runner或新增post-Finish阶段
 
 ### Requirement: Runner 必须在 activation 副作用前有界收敛 latest target
-每次适用self-bootstrap invocation MUST在持有target lease后读取并fetch latest target。只有retained checkout clean、当前HEAD可fast-forward、Finish frozen ref为ancestor、后继无merge且每个commit具有Buildr Task或self-bootstrap provenance时，runner才 MUST把retained branch前进到latest ref并重算activation base；该行为 MUST不依赖foreign carrier清除后的特殊retry参数。
+每次适用self-bootstrap invocation MUST在持有target lease后读取并fetch latest target。只有retained checkout clean、Finish frozen ref是latest remote target的ancestor、后继无merge，且当前HEAD等于latest target或可fast-forward到该精确remote/branch并重新验证local/remote一致时，runner才 MUST把retained branch前进到latest ref并重算activation base；普通descendant的作者、工具与`Buildr-Task`或closeout trailer MUST NOT成为该行为的前置条件，且该行为 MUST不依赖foreign carrier清除后的特殊retry参数。
 
 当retained Doctor blocked Result的latest target已越过Result绑定的delivery ref时，runner MUST在sync、安装或重启前先使用current exact token恢复一次同一Product Finish run。若返回matching `task-finish.target-race`，runner MUST最多再使用新token恢复一次，并在每次Product调用后重新获取/刷新target lease。Product返回matching Delivery Adaptation时，runner MUST返回carrier、resume与`deliveryAdaptation` guidance；除为读取latest target已完成的可证明fast-forward外，sync、commit/push、安装、重启、入口验证与Doctor effects MUST为空。返回新的doctor-blocked或complete Result时，runner MUST从该Result重新生成plan后继续。第二次仍target-race、其他blocked/failed或identity不匹配时 MUST停止，不得第三次resume或自动重跑runner。
 
 #### Scenario: Latest target 已包含其他 Buildr 交付
-- **WHEN** 当前Result的frozen ref之后存在已push的Buildr-owned first-parent descendant，retained tree clean且可fast-forward
+- **WHEN** 当前Result的frozen ref之后存在已push、无merge的first-parent descendant，retained tree clean且可fast-forward到精确remote/branch
 - **THEN** runner MUST在sync、安装和重启前fast-forward并以latest ref作为activation base
 - **AND** MUST在lease内重算当前Result的frozen action plan，不得把foreign carrier目录顺序当作target顺序
 
