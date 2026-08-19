@@ -90,7 +90,10 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   const wrapper = fs.readFileSync(path.join(target, 'Contents', 'MacOS', 'Buildr Web'), 'utf8');
   assert.match(wrapper, /\/bin\/launchctl submit -l/);
   assert.match(wrapper, /trap cleanup 0/);
-  assert.match(wrapper, /buildr-web-launcher "\$\{LABEL\}" "\$\{NODE\}"/);
+  assert.match(wrapper, /NODE_BIN=\$\(\/usr\/bin\/dirname "\$\{NODE\}"\)/);
+  assert.match(wrapper, /export PATH="\$\{NODE_BIN\}\$\{PATH:\+:\$\{PATH\}\}"/);
+  assert.match(wrapper, /Node identity: executable=\$\{NODE_EXECUTABLE\} version=\$\{NODE_VERSION\} pathHead=\$\{NODE_BIN\}/);
+  assert.match(wrapper, /buildr-web-launcher "\$\{LABEL\}" "\$\{NODE\}" "\$\{NODE_BIN\}"/);
   assert.doesNotMatch(wrapper, /\/usr\/bin\/nohup/);
   const plist = fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8');
   assert.match(plist, /<key>CFBundleIdentifier<\/key><string>ai\.buildr\.web\.npm-launcher\.slot[a-f0-9]{24}<\/string>/);
