@@ -85,18 +85,15 @@ export function registerTaskEnvironmentApplication(runtime) {
 
   function currentEnvironmentManager(workspaceRoot, adapter) {
     const sourceRoot = fs.realpathSync(path.resolve(runtime.productRoot()));
-    let cliSource = path.join(sourceRoot, 'bin', 'buildr.mjs');
-    if (!fs.statSync(cliSource, { throwIfNoEntry: false })?.isFile()) {
-      const invocation = productInvocation({ kind: 'stable-controller' });
-      const invocationEntry = invocation.argsPrefix?.length === 1 ? invocation.argsPrefix[0] : null;
-      if (typeof invocationEntry !== 'string' || !path.isAbsolute(invocationEntry) || !fs.statSync(invocationEntry, { throwIfNoEntry: false })?.isFile()) {
-        throw taskEnvironmentError('task_environment_manager_invocation_invalid', '当前 Buildr 调用入口不可作为 Environment Manager CLI。', 409, {
-          command: invocation.command || null,
-          argsPrefix: invocation.argsPrefix || null,
-        }, '从可信 retained Buildr CLI 重试。');
-      }
-      cliSource = invocationEntry;
+    const invocation = productInvocation({ kind: 'stable-controller' });
+    const invocationEntry = invocation.argsPrefix?.length === 1 ? invocation.argsPrefix[0] : null;
+    if (typeof invocationEntry !== 'string' || !path.isAbsolute(invocationEntry) || !fs.statSync(invocationEntry, { throwIfNoEntry: false })?.isFile()) {
+      throw taskEnvironmentError('task_environment_manager_invocation_invalid', '当前 Buildr 调用入口不可作为 Environment Manager CLI。', 409, {
+        command: invocation.command || null,
+        argsPrefix: invocation.argsPrefix || null,
+      }, '从可信 retained Buildr CLI 重试。');
     }
+    const cliSource = fs.realpathSync(invocationEntry);
     const sourceCheckout = observeGitCheckoutIdentity(sourceRoot);
     const workspaceCheckout = observeGitCheckoutIdentity(workspaceRoot);
     if (candidateController(sourceCheckout, workspaceCheckout)) {
@@ -104,7 +101,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     }
     return {
       sourceRoot,
-      cliSource: fs.realpathSync(cliSource),
+      cliSource,
       identity: digestFiles(sourceRoot),
       adapter,
       sourceCheckout,

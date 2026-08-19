@@ -64,14 +64,16 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preparation-plan-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'workspace');
-  const controllerRoot = path.join(base, 'controller');
+  const controllerPackageRoot = path.join(base, 'controller');
+  const controllerRoot = path.join(controllerPackageRoot, 'payload', 'product');
+  const controllerCli = path.join(controllerPackageRoot, 'bin', 'buildr.mjs');
   const projectRoot = path.join(root, 'projects', 'product');
   fs.mkdirSync(projectRoot, { recursive: true });
   writePackage(controllerRoot, 'stable-controller');
-  fs.mkdirSync(path.join(controllerRoot, 'bin'), { recursive: true });
+  fs.mkdirSync(path.dirname(controllerCli), { recursive: true });
   fs.mkdirSync(path.join(controllerRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(controllerRoot, 'package'), { recursive: true });
-  fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), "if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({version:'fixture'}) + '\\n'); else process.exitCode = 1;\n");
+  fs.writeFileSync(controllerCli, "if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({version:'fixture'}) + '\\n'); else process.exitCode = 1;\n");
   const installLog = path.join(base, 'installs.log');
   const failMarker = path.join(base, 'fail-root');
   for (const service of services) {
@@ -88,6 +90,7 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
   }]));
   const runtime = {
     productRoot: () => controllerRoot,
+    currentProductInvocation: (options = {}) => ({ command: process.execPath, argsPrefix: [options.cliPath || controllerCli], kind: options.kind || 'host-node' }),
     assertCanonicalTaskWorkspace: () => root,
     taskEnvironmentPath: (_target, taskId) => `workspace-sqlite:task-environment/${taskId}`,
     readTaskRecordPersistence: () => ({ root, record: { taskId: TASK_ID, status: 'active', scope: { projects: ['product'], services: scoped.map((service) => ({ project: 'product', service })) }, changes: [] } }),

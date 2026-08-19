@@ -220,9 +220,11 @@ test('npm manager uses the installed CLI entry outside the product payload root'
   const cliSource = path.join(envelopeRoot, 'bin', 'buildr.mjs');
   fs.mkdirSync(path.join(productRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(productRoot, 'package'), { recursive: true });
+  fs.mkdirSync(path.join(productRoot, 'bin'), { recursive: true });
   fs.mkdirSync(path.dirname(cliSource), { recursive: true });
   fs.writeFileSync(path.join(productRoot, 'src', 'manager.mjs'), 'export const manager = true;\n');
   fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n');
+  fs.writeFileSync(path.join(productRoot, 'bin', 'buildr.mjs'), 'throw new Error("payload fallback must not run");\n');
   fs.writeFileSync(cliSource, `#!/usr/bin/env node
 if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
 else process.exitCode = 1;
@@ -235,7 +237,7 @@ else process.exitCode = 1;
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.controller.sourceRoot, productRoot);
   assert.equal(current.receipt().controller.cliSource, cliSource);
-  assert.equal(fs.existsSync(path.join(productRoot, 'bin', 'buildr.mjs')), false);
+  assert.equal(fs.existsSync(path.join(productRoot, 'bin', 'buildr.mjs')), true);
 });
 
 test('retained controller uses candidate CLI to sync and verify a candidate-owned runtime projection', (t) => {
