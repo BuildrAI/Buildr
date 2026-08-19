@@ -655,6 +655,7 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
     const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
+    if (launcherBindingPath && args.includes('--port')) throw new Error('--port cannot be combined with --launcher-binding; the npm Launcher binding owns its port policy.');
     const noOpen = args.includes('--no-open') || (launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
     const productIdentity = options.readProductIdentity ? options.readProductIdentity() : readCliIdentity();
     const npmLauncherBinding = launcherBindingPath ? assertCurrentNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
@@ -713,25 +714,43 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
     const secret = crypto.randomBytes(32).toString('hex');
     let state = null;
     let instance = null;
+    let fallbackPort = null;
     try {
-      instance = createLocalWorkspaceServer(runtime, {
-        port,
-        instanceSecret: secret,
-        launcherIdentity,
-        productIdentity,
-        webProfile,
-        previewIdentity,
-        onShutdown: () => {
-          if (state) clearLocalAppInstance(state, webProfile);
-          if (previewIdentity) process.exit(0);
-        },
-      });
-      const ready = await instance.ready;
+      const preferredPort = npmLauncherBinding ? npmLauncherBinding.webPort.preferred : port;
+      const attempts = npmLauncherBinding && preferredPort > 0 ? [preferredPort, 0] : [preferredPort];
+      let ready = null;
+      for (const [attemptIndex, attemptPort] of attempts.entries()) {
+        try {
+          instance = createLocalWorkspaceServer(runtime, {
+            port: attemptPort,
+            instanceSecret: secret,
+            launcherIdentity,
+            productIdentity,
+            webProfile,
+            previewIdentity,
+            onShutdown: () => {
+              if (state) clearLocalAppInstance(state, webProfile);
+              if (previewIdentity) process.exit(0);
+            },
+          });
+          ready = await instance.ready;
+          break;
+        } catch (error) {
+          instance?.server.close();
+          instance = null;
+          const canFallback = attemptIndex === 0 && attempts.length === 2 && error.code === 'EADDRINUSE';
+          if (!canFallback) throw error;
+          fallbackPort = preferredPort;
+          console.warn(`Buildr Web Launcher 首选端口 ${preferredPort} 已被占用，回退到随机 loopback 端口。`);
+        }
+      }
+      if (!ready || !instance) throw new Error('Buildr Web server did not become ready.');
       state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity, webProfile };
       writeLocalAppInstance(runtime, state);
       releaseLocalAppStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${ready.url}/workspaces/${initialWorkspaceId}/` : ready.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
+      if (fallbackPort !== null) console.log(`Buildr Web Launcher 已从端口 ${fallbackPort} 回退，实际地址：${ready.url}`);
       console.log(`Buildr Web：${pageUrl}`);
       console.log('仅限本机访问；关闭浏览器不会退出服务，请在页面中选择“退出 Buildr”。');
       const cleanup = () => { clearLocalAppInstance(state, webProfile); };

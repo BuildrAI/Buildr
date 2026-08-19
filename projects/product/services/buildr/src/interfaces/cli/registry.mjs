@@ -37,9 +37,10 @@ const COMMAND_ROUTES = [
     surface: "primary",
     summary: "从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Web Launcher。",
     help: [
-      "Usage: buildr web launcher install [--target <path>] [--json]",
+      "Usage: buildr web launcher install [--target <path>] [--port <0..65535>] [--json]",
       "",
       "macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。",
+      "默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。",
       "普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
@@ -62,9 +63,10 @@ const COMMAND_ROUTES = [
     surface: "primary",
     summary: "从同一已登记 npm installation 原子重建当前 owned Launcher binding。",
     help: [
-      "Usage: buildr web launcher repair [--target <path>] [--json]",
+      "Usage: buildr web launcher repair [--target <path>] [--port <0..65535>] [--json]",
       "",
-      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。"
+      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。",
+      "省略 --port 时保留 v2 binding 的现有策略；从 v1 迁移时采用默认首选端口 4457。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
     run: (r, c) => r.manageLocalAppLauncher('repair', c.argv.slice(5)),
