@@ -669,9 +669,18 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.ui-preview-page').count(), 2);
     await page.locator('.ui-preview-page').filter({ hasText: '预演任务总览' }).click();
     assert.match(await page.locator('#task-preview-source').innerText(), /demo\/browser-flow[\s\S]*preview-fixtures/);
+    assert.equal(await page.locator('#task-preview-open-window').innerText(), '新窗口打开');
+    assert.equal(await page.locator('.ui-preview-stage-heading').getByText('隔离预览').count(), 0);
     assert.equal(await page.locator('#task-preview-frame').getAttribute('sandbox'), 'allow-scripts');
     const previewSource = await page.locator('#task-preview-frame').getAttribute('src');
     assert.ok(previewSource);
+    const [previewWindow] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.locator('#task-preview-open-window').click(),
+    ]);
+    await previewWindow.waitForURL((opened) => new URL(opened).pathname === new URL(previewSource, url).pathname);
+    assert.equal(new URL(previewWindow.url()).pathname, new URL(previewSource, url).pathname);
+    await previewWindow.close();
     const previewResponse = await page.request.get(new URL(previewSource, url).href);
     assert.equal(previewResponse.status(), 200);
     assert.match(previewResponse.headers()['content-security-policy'] || '', /sandbox allow-scripts[\s\S]*connect-src 'none'[\s\S]*form-action 'none'[\s\S]*frame-ancestors 'self'/);

@@ -113,7 +113,14 @@ export function PreviewTab({ active, workspaceId, data, loading, error, onRefres
                 <h2 id="task-preview-title">{selected.title}</h2>
                 <p id="task-preview-source" className="section-copy">{`${sourceLabel(selected)} · ${selected.path}`}</p>
               </div>
-              <span className="state">隔离预览</span>
+              <Button
+                id="task-preview-open-window"
+                onClick={() => {
+                  if (previewSource) window.open(previewSource, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                新窗口打开
+              </Button>
             </div>
             <div className="ui-preview-frame-shell">
               <iframe

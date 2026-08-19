@@ -256,7 +256,7 @@ Buildr Web App Shell MUST 使用顶栏承载品牌、主导航、工作空间切
 - **AND** MUST NOT 使用独立竖排筛选表单卡作为默认布局
 
 ### Requirement: Buildr Web Task 详情必须提供 UI Preview 视图
-Buildr Web Task 详情 MUST 提供独立“预演”一级视图，按需读取当前 Task 关联 Change 中可发现的 UI Preview 页面，并 MUST 允许用户在多个页面之间选择和操作当前页面。页面 MUST 同时说明 UI Preview 是方案参考而非正式设计、生产原型或像素级验收标准。
+Buildr Web Task 详情 MUST 提供独立“预演”一级视图，按需读取当前 Task 关联 Change 中可发现的 UI Preview 页面，并 MUST 允许用户在多个页面之间选择和操作当前页面。页面 MUST 同时说明 UI Preview 是方案参考而非正式设计、生产原型或像素级验收标准。当当前页面可在舞台中展示时，预演舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
 
 #### Scenario: Task 存在多个预演页面
 - **WHEN** 只读 API 返回两个或以上 UI Preview 页面
@@ -267,6 +267,12 @@ Buildr Web Task 详情 MUST 提供独立“预演”一级视图，按需读取�
 - **WHEN** Task 没有关联 Change、Change 暂不可用或关联 Change 中没有带标记 HTML
 - **THEN** 预演视图 MUST 展示明确空态或诊断
 - **AND** MUST NOT 改变 Task 状态或隐藏其他详情视图
+
+#### Scenario: 用新窗口打开当前预演页面
+- **WHEN** 预演舞台正在展示当前选中页面
+- **THEN** 舞台 MUST 提供「新窗口打开」控件，且 MUST NOT 再展示「隔离预览」状态文案
+- **AND** 激活后 MUST 用新窗口打开 iframe 正在使用的同一 Task-scoped 内容 URL
+- **AND** MUST NOT 把预演 HTML 注入 Buildr Web 父页面 DOM
 
 ### Requirement: UI Preview API 必须保持 Task-scoped 只读边界
 本机 HTTP interface MUST 提供只读 Task-scoped UI Preview API，从 Task Record 的 Change 引用和 saved Environment current 解析 working Change。列表响应 MUST 只返回带 UI Preview 标记页面的不透明 ID、标题、lifecycle 与 portable 相对路径；具体 HTML MUST 只通过同一 Task 与已发现页面 ID 的专用响应读取。API MUST 忽略符号链接、未标记或超出安全读取边界的文件，MUST NOT 接受 filesystem path、写入 Task/Change 或提供任意文件 HTML 路由。
@@ -293,6 +299,11 @@ Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行 UI Pr
 - **WHEN** HTML 尝试加载远程脚本、样式、字体、图像或发起网络请求
 - **THEN** preview document CSP MUST 阻止该请求
 - **AND** Buildr Web 主页面 MUST 保持可用
+
+#### Scenario: 新窗口直接打开当前预演页面
+- **WHEN** 用户从预演舞台用新窗口打开当前页面的内容 URL
+- **THEN** 新窗口 MUST 加载同一 Task-scoped 内容响应
+- **AND** 该文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
 
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
 Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。

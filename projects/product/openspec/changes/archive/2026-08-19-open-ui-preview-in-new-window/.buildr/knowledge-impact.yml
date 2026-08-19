@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: open-ui-preview-in-new-window
+operation: inspect
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/open-ui-preview-in-new-window/brief.md
+    reason: 正式 Change 需要说明新窗口打开当前预演页面的目标与非目标
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/open-ui-preview-in-new-window/proposal.md
+      - openspec/changes/open-ui-preview-in-new-window/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 预演 Tab 从静态隔离文案改为可打开当前内容 URL 的控件
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/open-ui-preview-in-new-window/specs/local-app-web-client/spec.md
+      - projects/product/services/buildr-web/src/pages/task-detail/PreviewTab.tsx
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Runtime 仍只提供 Task-scoped 内容响应与 CSP，不新增 writer 或任意 HTML 路由
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/open-ui-preview-in-new-window/design.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 界面预演稿术语与隔离边界不变
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []
