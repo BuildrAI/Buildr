@@ -25,7 +25,6 @@ const PRODUCT_ROOT = 'projects/product';
 const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
 const FINISH_CARRIER_ROOT = '.buildr/transient/task-finish/carriers';
-const TASK_TRAILER = 'Buildr-Task';
 const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
@@ -864,7 +863,7 @@ function commitTrailers(message) {
   return trailers;
 }
 
-function inspectBuildrDescendantChain(execute, workspaceRoot, baseRef, targetRef, phaseResult) {
+function inspectPublishedLinearDescendant(execute, workspaceRoot, baseRef, targetRef, phaseResult) {
   const ancestor = git(execute, workspaceRoot, ['merge-base', '--is-ancestor', baseRef, targetRef], 'descendant-ancestor', phaseResult);
   if (ancestor.status !== 0) {
     throw closeoutError(
@@ -875,37 +874,14 @@ function inspectBuildrDescendantChain(execute, workspaceRoot, baseRef, targetRef
   }
   const merges = gitText(execute, workspaceRoot, ['rev-list', '--merges', `${baseRef}..${targetRef}`], 'descendant-merges', phaseResult, 'self-bootstrap-closeout.descendant-history-unreadable');
   if (merges) {
-    throw closeoutError('self-bootstrap-closeout.descendant-merge-unprovable', 'Finish final ref之后的Buildr后继链包含merge commit。', {
+    throw closeoutError('self-bootstrap-closeout.descendant-merge-unprovable', 'Finish final ref之后的published后继链包含merge commit。', {
       baseRef,
       targetRef,
       merges: merges.split('\n').filter(Boolean),
     });
   }
-  const commits = gitText(execute, workspaceRoot, ['rev-list', '--reverse', '--first-parent', `${baseRef}..${targetRef}`], 'descendant-commits', phaseResult, 'self-bootstrap-closeout.descendant-history-unreadable')
+  return gitText(execute, workspaceRoot, ['rev-list', '--reverse', '--first-parent', `${baseRef}..${targetRef}`], 'descendant-commits', phaseResult, 'self-bootstrap-closeout.descendant-history-unreadable')
     .split('\n').filter(Boolean);
-  const provenance = [];
-  for (const commit of commits) {
-    const message = gitText(execute, workspaceRoot, ['show', '-s', '--format=%B', commit], `descendant-message-${commit.slice(0, 12)}`, phaseResult, 'self-bootstrap-closeout.descendant-message-unreadable');
-    const trailers = commitTrailers(message);
-    const taskOwned = Boolean(trailers[TASK_TRAILER]);
-    const closeoutOwned = Boolean(trailers[FINISH_RUN_TRAILER] && trailers[PLAN_TRAILER]);
-    if (!taskOwned && !closeoutOwned) {
-      throw closeoutError('self-bootstrap-closeout.successor-identity-unprovable', 'Finish final ref之后存在无法证明由Buildr拥有的commit。', {
-        baseRef,
-        targetRef,
-        commit,
-        trailers,
-      });
-    }
-    provenance.push({
-      commit,
-      owner: taskOwned ? 'task-finish' : 'self-bootstrap-closeout',
-      taskId: trailers[TASK_TRAILER] || null,
-      finishRunId: trailers[FINISH_RUN_TRAILER] || null,
-      closeoutPlanIdentity: trailers[PLAN_TRAILER] || null,
-    });
-  }
-  return provenance;
 }
 
 function markNotApplicable(stage, reason) {
@@ -1005,7 +981,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     holdTargetLease('acquire-target-lease');
     let head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head', active, 'self-bootstrap-closeout.head-unavailable');
     let remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-before');
-    let prevalidatedProvenance = null;
+    let prevalidatedDescendantCommits = null;
     if (remote !== head) {
       requirePassed(
         git(execute, root, ['fetch', '--no-tags', '--no-write-fetch-head', plan.remote, `refs/heads/${plan.targetBranch}`], 'latest-target-fetch', active),
@@ -1023,7 +999,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       }
       const fastForwardable = git(execute, root, ['merge-base', '--is-ancestor', head, remote], 'latest-target-fast-forwardable', active);
       if (fastForwardable.status === 0) {
-        prevalidatedProvenance = inspectBuildrDescendantChain(execute, root, plan.baseRef, remote, active);
+        prevalidatedDescendantCommits = inspectPublishedLinearDescendant(execute, root, plan.baseRef, remote, active);
         requirePassed(
           git(execute, root, ['merge', '--ff-only', remote], 'latest-target-fast-forward', active),
           'self-bootstrap-closeout.latest-dev-fast-forward-failed',
@@ -1090,14 +1066,14 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       head = gitText(execute, root, ['rev-parse', 'HEAD^{commit}'], 'head-after-early-finish', active, 'self-bootstrap-closeout.head-unavailable');
       remote = remoteRef(execute, root, plan.remote, plan.targetBranch, active, 'remote-after-early-finish');
       if (head !== remote) throw closeoutError('self-bootstrap-closeout.early-finish-target-mismatch', 'Activation前Finish收敛后retained HEAD与remote不一致。', { head, remote });
-      prevalidatedProvenance = null;
+      prevalidatedDescendantCommits = null;
     }
     let recovery = 'fresh';
     let activationBaseRef = plan.baseRef;
     if (head === plan.baseRef) {
       if (remote !== plan.baseRef) throw closeoutError('self-bootstrap-closeout.remote-drift', 'Remote已偏离Finish final ref。', { expected: plan.baseRef, actual: remote });
     } else {
-      const provenance = prevalidatedProvenance || inspectBuildrDescendantChain(execute, root, plan.baseRef, head, active);
+      const descendantCommits = prevalidatedDescendantCommits || inspectPublishedLinearDescendant(execute, root, plan.baseRef, head, active);
       const parent = gitText(execute, root, ['rev-parse', 'HEAD^'], 'successor-parent', active, 'self-bootstrap-closeout.successor-parent-unavailable');
       const message = gitText(execute, root, ['show', '-s', '--format=%B', 'HEAD'], 'successor-message', active, 'self-bootstrap-closeout.successor-message-unavailable');
       const trailers = commitTrailers(message);
@@ -1111,7 +1087,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         activationBaseRef = head;
         recovery = 'fresh-descendant';
       }
-      active.effects.push({ type: 'buildr-descendant-chain', baseRef: plan.baseRef, head, provenance });
+      active.effects.push({ type: 'published-linear-descendant', baseRef: plan.baseRef, head, commits: descendantCommits });
     }
     markPassed(active, currentFinishResult.projectionIdentity, head, [{
       type: 'activation-base-selected',

@@ -9,6 +9,7 @@ Buildr workspace 的通用硬约束。按 root → Project → Service 读取当
 - Skill description 发现用户意图，Skill body 承担流程，capability binding 选择 provider，Project declaration 声明能力、适用性和证明范围，Skill/Application 维护状态与 Result；Rule 不得成为第二权威。
 - Rule description 只索引语义相关性，不路由路径、角色或 Service。required installed Rule 必须读取；optional installed Rule 语义相关时读取；disabled 或 uninstalled Rule 不生效。
 - Agent runtime adapter 只按目录发现和投射 Rule；不替 Agent 判断语义相关性。runtime 是可重建结果，不是源资产。
+- Buildr 采用宽而薄的治理：只有继续推进会造成越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报时才关闭式失败。其他可恢复的不确定性必须如实报告事实、风险和下一步，并保留 Agent 的安全判断与推进空间；不得把辅助证明、工具偏好或推荐工作方式固化为不必要的硬门禁。
 - 创建、修改、替换或卸载 Skill 前必须判断跨 Skill 依赖，并检查相关 `provides`、`requires`、capability binding、入口 routing evidence 和 consumers；不得绕过已知依赖直接激活。
 - Agent 组合 Buildr 管理的 Skills 时必须遵守已安装的 capability binding；不得调用已卸载 provider，也不得自行猜测存在歧义的 provider。
 - 已初始化 workspace 的 Git tree 改变后必须执行 workspace transition check；Buildr 安装、源资产或 Agent runtime 改变后必须运行当前 Agent 的 doctor。未清除需立即处理的 error，不得视为完成。
