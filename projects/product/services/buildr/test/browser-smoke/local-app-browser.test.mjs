@@ -410,7 +410,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   };
   let registry = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
-  const instance = createLocalWorkspaceServer(runtime, { targetRoot: workspaceRoot });
+  const instance = createLocalWorkspaceServer(runtime, {
+    targetRoot: workspaceRoot,
+    webProfile: { profile: 'development' },
+  });
   server = instance.server;
   const { url, initialWorkspaceId } = await instance.ready;
   const previewInstance = createLocalWorkspaceServer(runtime, {
@@ -433,6 +436,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
+    await page.locator('#development-environment-badge').waitFor({ state: 'visible' });
+    assert.equal((await page.locator('#development-environment-badge').innerText()).trim(), '开发版');
+    assert.equal(await page.title(), 'browser-smoke-core · Buildr Web Dev');
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.locator('#task-table-body tr.ant-table-row').first().click();
@@ -446,6 +452,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(url);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
+    assert.equal(await page.title(), 'Buildr Web Dev');
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     await page.goto(previewUrl);
     await page.locator('#preview-identity').waitFor({ state: 'attached' });
@@ -460,6 +467,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(/\/workspaces\/[^/]+\/tasks(?:\/[^/]+)?$/);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-smoke');
+    assert.equal(await page.title(), 'browser-smoke · Buildr Web Dev');
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
     const expectedProjectCount = selected('articles') ? 3 : 2;
     await page.locator('#open-agent-action').click();

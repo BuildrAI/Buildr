@@ -88,6 +88,14 @@ test('released与development普通HTTP Server并行运行且独立退出', async
   assert.notEqual(releasedState.url, developmentState.url);
   assert.equal(releasedState.webProfile.profile, 'released');
   assert.equal(developmentState.webProfile.profile, 'development');
+  const [releasedPage, developmentPage] = await Promise.all([
+    fetch(releasedState.url),
+    fetch(developmentState.url),
+  ]);
+  assert.equal(releasedPage.status, 200);
+  assert.equal(developmentPage.status, 200);
+  assert.match(await releasedPage.text(), /<meta name="buildr-web-profile" content="released" \/>/);
+  assert.match(await developmentPage.text(), /<meta name="buildr-web-profile" content="development" \/>/);
   for (const state of [releasedState, developmentState]) {
     const response = await fetch(`${state.url}/api/v1/health`, { headers: { 'x-buildr-instance': state.secret } });
     assert.equal(response.status, 200);

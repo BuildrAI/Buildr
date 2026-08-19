@@ -226,7 +226,7 @@ function contentTypeFor(filePath) {
   return STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
 }
 
-function injectedIndexHtml(sessionToken, previewIdentity) {
+function injectedIndexHtml(sessionToken, previewIdentity, webProfile) {
   const indexPath = path.join(STATIC_ROOT, 'index.html');
   if (!fs.existsSync(indexPath)) {
     const error = new Error('Buildr Web dist 缺失，请先运行 npm run build:web。');
@@ -234,9 +234,11 @@ function injectedIndexHtml(sessionToken, previewIdentity) {
     error.status = 503;
     throw error;
   }
+  const profile = ['released', 'development'].includes(webProfile?.profile) ? webProfile.profile : '';
   return fs.readFileSync(indexPath, 'utf8')
     .replace('__BUILDR_SESSION_TOKEN__', sessionToken)
-    .replace('__BUILDR_PREVIEW_IDENTITY__', previewIdentity ? encodeURIComponent(JSON.stringify(previewIdentity)) : '');
+    .replace('__BUILDR_PREVIEW_IDENTITY__', previewIdentity ? encodeURIComponent(JSON.stringify(previewIdentity)) : '')
+    .replace('__BUILDR_WEB_PROFILE__', profile);
 }
 
 function serveDistAsset(response, pathname) {
@@ -307,7 +309,7 @@ export function createLocalWorkspaceServer(runtime, {
         return;
       }
       if (request.method === 'GET' && (pathname === '/' || WORKSPACE_APP_ROUTE.test(pathname))) {
-        textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity), 'text/html; charset=utf-8');
+        textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile), 'text/html; charset=utf-8');
         return;
       }
       if (request.method === 'GET' && serveDistAsset(response, pathname)) {

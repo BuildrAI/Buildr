@@ -15,6 +15,8 @@ type PreviewIdentity = {
   worktree?: string;
 };
 
+type WebProfile = 'released' | 'development';
+
 type ReleaseTrack = {
   track: 'stable' | 'candidate';
   label: string;
@@ -45,6 +47,15 @@ function readPreviewIdentity(): PreviewIdentity | null {
   } catch {
     return null;
   }
+}
+
+function readWebProfile(): WebProfile | null {
+  const profile = document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content');
+  return profile === 'released' || profile === 'development' ? profile : null;
+}
+
+function productTitle(webProfile: WebProfile | null): string {
+  return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
 function navClass({ isActive }: { isActive: boolean }): string {
@@ -107,15 +118,16 @@ export function AppLayout() {
   const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
+  const webProfile = useMemo(() => readWebProfile(), []);
 
   useEffect(() => {
     document.body.classList.toggle('global-context', isGlobal);
     if (isGlobal) {
       setWorkspaceState(null);
-      document.title = 'Buildr Web';
+      document.title = productTitle(webProfile);
       setBreadcrumbParts(['工作空间']);
     }
-  }, [isGlobal]);
+  }, [isGlobal, webProfile]);
 
   const workspaceHref = (suffix: string) => (
     workspaceId ? `/workspaces/${workspaceId}${suffix}` : '/'
@@ -123,8 +135,8 @@ export function AppLayout() {
 
   const setWorkspace = useCallback((data: { workspace: { name: string }; rootPath: string }) => {
     setWorkspaceState({ name: data.workspace.name, rootPath: data.rootPath });
-    document.title = `${data.workspace.name} · Buildr Web`;
-  }, []);
+    document.title = `${data.workspace.name} · ${productTitle(webProfile)}`;
+  }, [webProfile]);
 
   const openAgentAction = useCallback((action?: string, context: Record<string, unknown> = {}) => {
     setDrawerAction(action);
@@ -283,6 +295,15 @@ export function AppLayout() {
             <span className="brand-mark">B</span>
             <strong>Buildr Web</strong>
           </Link>
+          {webProfile === 'development' ? (
+            <span
+              id="development-environment-badge"
+              className="development-environment-badge"
+              title="当前运行的是 Buildr Web 开发版"
+            >
+              开发版
+            </span>
+          ) : null}
           {primaryNav}
           <div className="topbar-actions">
             <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>

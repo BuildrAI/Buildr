@@ -29,3 +29,21 @@ test('Buildr Web 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白�
   assert.doesNotMatch(server, /STATIC_ASSETS/);
   assert.ok(fs.existsSync(path.join(productRoot, '../buildr-web/package.json')));
 });
+
+test('Buildr Web 应用壳只为 Runtime 注入的 development profile 显示开发版标识和标题', () => {
+  const index = read('../buildr-web/index.html');
+  const layout = read('../buildr-web/src/app/AppLayout.tsx');
+  const styles = read('../buildr-web/src/styles.css');
+  const server = read('src/interfaces/local-app/http/server.mjs');
+  assert.match(index, /meta name="buildr-web-profile" content="__BUILDR_WEB_PROFILE__"/);
+  assert.match(server, /\['released', 'development'\]\.includes\(webProfile\?\.profile\)/);
+  assert.match(server, /replace\('__BUILDR_WEB_PROFILE__', profile\)/);
+  assert.match(layout, /meta\[name="buildr-web-profile"\]/);
+  assert.match(layout, /profile === 'released' \|\| profile === 'development'/);
+  assert.match(layout, /webProfile === 'development'[\s\S]*id="development-environment-badge"[\s\S]*开发版/);
+  assert.match(layout, /webProfile === 'development' \? 'Buildr Web Dev' : 'Buildr Web'/);
+  assert.match(layout, /document\.title = productTitle\(webProfile\)/);
+  assert.match(layout, /document\.title = `\$\{data\.workspace\.name\} · \$\{productTitle\(webProfile\)\}`/);
+  assert.doesNotMatch(layout, /location\.(?:port|hostname|href)|document\.URL/);
+  assert.match(styles, /\.development-environment-badge/);
+});
