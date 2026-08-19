@@ -270,6 +270,9 @@ test('release tarball smoke isolates npm cache writes without a Workspace runtim
   assert.match(releaseSmoke, /npm_config_cache: npmCache/);
   assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME/);
   assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
+  assert.match(releaseSmoke, /RELEASE_LAUNCHER_READINESS_TIMEOUT_MS = 15_000/);
+  assert.match(releaseSmoke, /'--env', `PATH=\$\{runtimeEnv\.PATH\}`/);
+  assert.match(releaseSmoke, /preserveLauncherFailureEvidence/);
 });
 
 test('Host Node compatibility runs offline without a Workspace Node distribution', () => {
@@ -281,6 +284,8 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   const hostJob = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
   assert.deepEqual(packageManifest.bundleDependencies, ['yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
+  const executePlanCall = hostNode.slice(hostNode.indexOf('await executePlan('), hostNode.indexOf('results = execution.results'));
+  assert.match(executePlanCall, /expectedNodeVersion: null/);
   assert.match(policy, /npm_config_offline = 'true'/);
   assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
   assert.match(cliSmoke, /\['install', '--offline', '--global'/);

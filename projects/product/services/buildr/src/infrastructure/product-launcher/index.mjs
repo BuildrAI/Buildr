@@ -45,6 +45,7 @@ function macLauncherScript(binding) {
   const jobPrefix = `ai.buildr.web.npm-launcher.runner.${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 16)}`;
   return `#!/bin/sh
 NODE=${quoteShell(binding.hostNode.path)}
+NODE_BIN=$(/usr/bin/dirname "\${NODE}")
 NODE_SHA=${quoteShell(binding.hostNode.sha256.slice('sha256-'.length))}
 ENTRY=${quoteShell(binding.packageEntry.path)}
 ENTRY_SHA=${quoteShell(binding.packageEntry.sha256.slice('sha256-'.length))}
@@ -69,12 +70,13 @@ NO_OPEN="\${BUILDR_LAUNCHER_NO_OPEN-}"
 /bin/launchctl submit -l "\${LABEL}" -- /bin/sh -c '
 LABEL="$1"
 NODE="$2"
-ENTRY="$3"
-BINDING="$4"
-LOG_FILE="$5"
-APP_DATA="$6"
-PRODUCT_DATA="$7"
-NO_OPEN="$8"
+NODE_BIN="$3"
+ENTRY="$4"
+BINDING="$5"
+LOG_FILE="$6"
+APP_DATA="$7"
+PRODUCT_DATA="$8"
+NO_OPEN="$9"
 cleanup() {
   /bin/launchctl remove "\${LABEL}" >/dev/null 2>&1 || true
 }
@@ -82,13 +84,17 @@ trap cleanup 0
 [ -n "\${APP_DATA}" ] && export BUILDR_APP_DATA_DIR="\${APP_DATA}" || unset BUILDR_APP_DATA_DIR
 [ -n "\${PRODUCT_DATA}" ] && export BUILDR_PRODUCT_DATA_DIR="\${PRODUCT_DATA}" || unset BUILDR_PRODUCT_DATA_DIR
 [ -n "\${NO_OPEN}" ] && export BUILDR_LAUNCHER_NO_OPEN="\${NO_OPEN}" || unset BUILDR_LAUNCHER_NO_OPEN
+export PATH="\${NODE_BIN}\${PATH:+:\${PATH}}"
+NODE_VERSION="$("\${NODE}" -p "process.versions.node")"
+NODE_EXECUTABLE="$("\${NODE}" -p "process.execPath")"
+printf "%s\n" "Node identity: executable=\${NODE_EXECUTABLE} version=\${NODE_VERSION} pathHead=\${NODE_BIN}" >>"\${LOG_FILE}"
 "\${NODE}" "\${ENTRY}" web --launcher-binding "\${BINDING}" >>"\${LOG_FILE}" 2>&1
 STATUS=$?
 if [ "\${STATUS}" -ne 0 ]; then
   printf "%s\\n" "Buildr Web exited with status \${STATUS}" >>"\${LOG_FILE}"
   /usr/bin/osascript -e "display alert \\"Buildr Web 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
 fi
-' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}"
+' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}"
 STATUS=$?
 [ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr Web background runner: status \${STATUS}"
 exit 0

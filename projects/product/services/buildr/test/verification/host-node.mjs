@@ -56,6 +56,7 @@ try {
     prefix: 'verify-host-node',
     concurrency: executionProfile.limits,
     executionProfile,
+    expectedNodeVersion: null,
   });
   results = execution.results;
   passed = execution.passed;

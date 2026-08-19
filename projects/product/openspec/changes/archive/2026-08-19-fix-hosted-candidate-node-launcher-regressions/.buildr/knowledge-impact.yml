@@ -1,0 +1,34 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-hosted-candidate-node-launcher-regressions
+operation: reconcile
+treeIdentity: git:e949e4a30b29118417a898f9ba7fb42ef8ebdc39+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/fix-hosted-candidate-node-launcher-regressions/brief.md
+    reason: 正式 Change 需要提供 Host Node matrix authority、Launcher readiness 与失败 evidence 的人类入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/proposal.md
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/design.md
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/brief.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Host Node matrix 与正式 npm Launcher 运行约束将变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/specs/product-verification-quality/spec.md
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/specs/open-source-release-governance/spec.md
+      - services/buildr/src/infrastructure/product-launcher/index.mjs
+      - services/buildr/test/verification/release/release-smoke.mjs
+      - openspec/knowledge/services/buildr.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Candidate exact Node authority、LaunchServices PATH 与 diagnostics ownership需要在技术架构收敛
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/design.md
+      - openspec/changes/fix-hosted-candidate-node-launcher-regressions/specs/open-source-release-governance/spec.md
+      - services/buildr/test/verification/host-node.mjs
+      - services/buildr/test/verification/release/release-smoke.mjs
+      - openspec/knowledge/architecture/technical.md
+unresolvedItems: []

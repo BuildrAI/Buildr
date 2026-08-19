@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -22,6 +23,8 @@ const exactRegistryPackagePattern = /^@buildr-ai\/buildr@(\d+\.\d+\.\d+(?:-[0-9A
 
 export const RELEASE_ARTIFACT_MANIFEST_ENV = 'BUILDR_RELEASE_ARTIFACT_MANIFEST';
 export const RELEASE_PACKAGE_SPEC_ENV = 'BUILDR_RELEASE_PACKAGE_SPEC';
+export const RELEASE_LAUNCHER_READINESS_TIMEOUT_MS = 15_000;
+export const RELEASE_READINESS_POLL_INTERVAL_MS = 50;
 
 export function resolveReleaseSmokeSource(env = process.env) {
   const candidateRequested = Boolean(env.BUILDR_CANDIDATE_TARBALL || env.BUILDR_CANDIDATE_PACK_METADATA);
@@ -83,11 +86,112 @@ function parseJson(label, output, schemaVersion) {
   return payload;
 }
 
-export async function waitForWebReadiness({ appData, child = null, stderr = () => '', fetchHealth = fetch }) {
+function observeProcess(pid, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const kill = options.kill ?? process.kill;
+  const runProcess = options.runProcess ?? spawnSync;
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return { pid: null, processGroupId: null, alive: false, observation: 'pid-unavailable' };
+  let alive = false;
+  try {
+    kill(numericPid, 0);
+    alive = true;
+  } catch (error) {
+    if (error.code !== 'ESRCH') return { pid: numericPid, processGroupId: null, alive: false, observation: `pid-probe-failed:${error.code ?? error.message}` };
+  }
+  if (!alive || platform === 'win32') return { pid: numericPid, processGroupId: null, alive, observation: alive ? 'pid-alive' : 'pid-exited' };
+  const sampled = runProcess('/bin/ps', ['-p', String(numericPid), '-o', 'pid=,ppid=,pgid=,etime='], { encoding: 'utf8' });
+  if (sampled.status !== 0 || !sampled.stdout.trim()) {
+    return { pid: numericPid, processGroupId: null, alive, observation: `ps-unavailable:${sampled.status}` };
+  }
+  const [observedPid, parentPid, processGroupId, elapsed] = sampled.stdout.trim().split(/\s+/u);
+  return {
+    pid: Number(observedPid),
+    parentPid: Number(parentPid),
+    processGroupId: Number(processGroupId),
+    elapsed,
+    alive,
+    observation: 'ps-sampled',
+  };
+}
+
+function readJsonIfPresent(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+function sanitizeInstance(instance) {
+  if (!instance || typeof instance !== 'object') return null;
+  const { secret, ...portable } = instance;
+  return { ...portable, secretPresent: typeof secret === 'string' && secret.length > 0 };
+}
+
+function launcherFailureEvidenceBase(env = process.env) {
+  const phaseOutput = env.BUILDR_VERIFICATION_PHASE_OUTPUT;
+  if (phaseOutput) return path.resolve(phaseOutput).replace(/\.phases\.jsonl$/u, '');
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-launcher-failure-')), 'release-tarball-smoke');
+}
+
+export function preserveLauncherFailureEvidence(options) {
+  const base = launcherFailureEvidenceBase(options.env);
+  const evidencePath = `${base}.launcher-failure.json`;
+  const retainedLogPath = `${base}.launcher.log`;
+  const instancePath = path.join(options.appData, 'instance.json');
+  const instance = readJsonIfPresent(instancePath);
+  const processObservation = options.error?.readiness?.process ?? observeProcess(instance?.pid);
+  const launcherLogPath = options.launcherHome
+    ? path.join(options.launcherHome, 'Library', 'Logs', 'Buildr', 'launcher.log')
+    : null;
+  let launcherLog = null;
+  if (launcherLogPath && fs.statSync(launcherLogPath, { throwIfNoEntry: false })?.isFile()) {
+    fs.mkdirSync(path.dirname(retainedLogPath), { recursive: true });
+    fs.copyFileSync(launcherLogPath, retainedLogPath);
+    launcherLog = {
+      sourcePath: launcherLogPath,
+      retainedPath: retainedLogPath,
+      sha256: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(retainedLogPath)).digest('hex')}`,
+    };
+  }
+  const readiness = options.error?.readiness ?? {};
+  const evidence = {
+    schemaVersion: 'buildr.release-launcher-failure-evidence/v1',
+    status: 'failed',
+    startup: options.startup,
+    elapsedMs: readiness.elapsedMs ?? Math.max(0, Date.now() - options.startedAt),
+    budgetMs: readiness.budgetMs ?? RELEASE_LAUNCHER_READINESS_TIMEOUT_MS,
+    launcherTarget: options.launcherTarget,
+    instancePath,
+    instance: sanitizeInstance(instance),
+    process: processObservation,
+    node: options.nodeAudit,
+    launcherLog,
+    error: options.error?.message ?? 'Launcher readiness failed.',
+  };
+  fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  return { evidencePath, retainedLogPath: launcherLog?.retainedPath ?? null, evidence };
+}
+
+export async function waitForWebReadiness({
+  appData,
+  child = null,
+  stderr = () => '',
+  fetchHealth = fetch,
+  timeoutMs = RELEASE_LAUNCHER_READINESS_TIMEOUT_MS,
+  pollIntervalMs = RELEASE_READINESS_POLL_INTERVAL_MS,
+  now = Date.now,
+  wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Buildr Web readiness timeout must be a positive number.');
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) throw new Error('Buildr Web readiness poll interval must be a positive number.');
+  const startedAt = now();
   let lastConnectionError = null;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  let attempts = 0;
+  let lastInstance = null;
+  while (now() - startedAt < timeoutMs) {
+    attempts += 1;
     let instance = null;
     try { instance = JSON.parse(fs.readFileSync(path.join(appData, 'instance.json'), 'utf8')); } catch {}
+    lastInstance = instance ?? lastInstance;
     if (instance) {
       let response = null;
       try {
@@ -97,7 +201,7 @@ export async function waitForWebReadiness({ appData, child = null, stderr = () =
       }
       if (!response) {
         if (child?.exitCode !== null && child) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await wait(Math.min(pollIntervalMs, Math.max(1, timeoutMs - (now() - startedAt))));
         continue;
       }
       assert.equal(response.status, 200);
@@ -108,9 +212,20 @@ export async function waitForWebReadiness({ appData, child = null, stderr = () =
       return { ...health, url: instance.url };
     }
     if (child?.exitCode !== null && child) break;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await wait(Math.min(pollIntervalMs, Math.max(1, timeoutMs - (now() - startedAt))));
   }
-  throw new Error(`Buildr Web did not become ready: ${stderr()}${lastConnectionError ? ` (${lastConnectionError.cause?.code ?? lastConnectionError.message})` : ''}`);
+  const elapsedMs = Math.max(0, now() - startedAt);
+  const processObservation = observeProcess(lastInstance?.pid ?? child?.pid);
+  const error = new Error(`Buildr Web did not become ready within ${timeoutMs}ms: elapsed=${elapsedMs}ms instance=${path.join(appData, 'instance.json')} pid=${processObservation.pid ?? 'n/a'} pgid=${processObservation.processGroupId ?? 'n/a'} ${stderr()}${lastConnectionError ? ` (${lastConnectionError.cause?.code ?? lastConnectionError.message})` : ''}`.trim());
+  error.readiness = {
+    elapsedMs,
+    budgetMs: timeoutMs,
+    attempts,
+    instancePath: path.join(appData, 'instance.json'),
+    process: processObservation,
+    lastConnectionError: lastConnectionError ? lastConnectionError.cause?.code ?? lastConnectionError.message : null,
+  };
+  throw error;
 }
 
 async function waitForProcessExit(pid, timeoutMs = 5_000) {
@@ -189,12 +304,22 @@ export async function runReleaseSmoke(env = process.env) {
   let installedMetadata = null;
   let buildrScript = null;
   let launcherTarget = null;
+  let launcherHome = null;
 
   function runBuildr(buildrScript, args) {
     return run(nodeExecutable, [buildrScript, ...args], {
       cwd: workspace,
       env: runtimeEnv,
     });
+  }
+
+  function assertExactRuntimeIdentity(health, label) {
+    assert.equal(health.productIdentity?.runtime?.version, exactNode.audit.version, `${label} Node version`);
+    assert.equal(
+      sameFilesystemPath(health.productIdentity?.runtime?.executable, exactNode.audit.executable),
+      true,
+      `${label} Node executable: ${JSON.stringify({ actual: health.productIdentity?.runtime, expected: exactNode.audit })}`,
+    );
   }
 
   try {
@@ -260,6 +385,7 @@ export async function runReleaseSmoke(env = process.env) {
     web.stderr.on('data', (chunk) => { webStderr += chunk; });
     const health = await waitForWebReadiness({ appData, child: web, stderr: () => webStderr });
     assert.equal(health.productIdentity.channel, 'npm');
+    assertExactRuntimeIdentity(health, 'direct Web');
     await stopChildProcess(web);
     web = null;
 
@@ -274,10 +400,12 @@ export async function runReleaseSmoke(env = process.env) {
 
       const launchGraphical = () => {
         if (process.platform === 'darwin') {
-          const launcherHome = path.join(root, 'launcher-home');
+          launcherHome = path.join(root, 'launcher-home');
           fs.mkdirSync(launcherHome, { recursive: true });
           const opened = spawnSync('/usr/bin/open', [
             '--env', `HOME=${launcherHome}`,
+            '--env', `PATH=${runtimeEnv.PATH}`,
+            '--env', `BUILDR_NODE_EXECUTABLE=${nodeExecutable}`,
             '--env', `BUILDR_APP_DATA_DIR=${appData}`,
             '--env', `BUILDR_PRODUCT_DATA_DIR=${appData}`,
             '--env', 'BUILDR_LAUNCHER_NO_OPEN=1',
@@ -300,10 +428,31 @@ export async function runReleaseSmoke(env = process.env) {
         await stopChildProcess(launcherProcess);
         launcherProcess = null;
       };
+      const waitForLauncherReadiness = async (startup) => {
+        const startedAt = Date.now();
+        try {
+          const launcherHealth = await waitForWebReadiness({ appData });
+          assertExactRuntimeIdentity(launcherHealth, `${startup} Launcher`);
+          return launcherHealth;
+        } catch (error) {
+          const retained = preserveLauncherFailureEvidence({
+            appData,
+            launcherHome,
+            launcherTarget,
+            nodeAudit: exactNode.audit,
+            startup,
+            startedAt,
+            error,
+            env: process.env,
+          });
+          error.message = `${error.message}\nLauncher failure evidence: ${retained.evidencePath}${retained.retainedLogPath ? `\nLauncher log: ${retained.retainedLogPath}` : ''}`;
+          throw error;
+        }
+      };
 
       const defaultPortAvailable = await canBindLoopbackPort(4457);
       launchGraphical();
-      const launcherHealth = await waitForWebReadiness({ appData });
+      const launcherHealth = await waitForLauncherReadiness('default-port');
       assert.equal(launcherHealth.productIdentity.installationIdentity, health.productIdentity.installationIdentity);
       assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
       assert.equal(Number(new URL(launcherHealth.url).port) === 4457, defaultPortAvailable, 'default Launcher uses 4457 exactly when it is available');
@@ -316,7 +465,7 @@ export async function runReleaseSmoke(env = process.env) {
           if (!/Buildr Web 已运行：/.test(launcherLog)) await new Promise((resolve) => setTimeout(resolve, 50));
         }
         assert.match(launcherLog, /Buildr Web 已运行：/, 'repeated macOS open executes the CLI reuse path');
-        const repeated = await waitForWebReadiness({ appData });
+        const repeated = await waitForLauncherReadiness('repeated-open');
         assert.equal(repeated.pid, launcherHealth.pid, 'repeated macOS open reuses the released instance');
       }
       await stopLauncherServer(launcherHealth);
@@ -331,7 +480,7 @@ export async function runReleaseSmoke(env = process.env) {
         const occupiedPolicy = parseJson('launcher repair occupied port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', String(occupiedPort), '--json']), 'buildr.launcher-status/v1');
         assert.deepEqual(occupiedPolicy.binding.webPort, { preferred: occupiedPort, fallback: 'random' });
         launchGraphical();
-        const fallbackHealth = await waitForWebReadiness({ appData });
+        const fallbackHealth = await waitForLauncherReadiness('occupied-port-fallback');
         assert.notEqual(Number(new URL(fallbackHealth.url).port), occupiedPort);
         assert.equal(fallbackHealth.launcherIdentity.bindingIdentity, occupiedPolicy.binding.bindingIdentity);
         await stopLauncherServer(fallbackHealth);
@@ -342,7 +491,7 @@ export async function runReleaseSmoke(env = process.env) {
       const randomPolicy = parseJson('launcher repair random port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', '0', '--json']), 'buildr.launcher-status/v1');
       assert.deepEqual(randomPolicy.binding.webPort, { preferred: 0, fallback: 'random' });
       launchGraphical();
-      const randomHealth = await waitForWebReadiness({ appData });
+      const randomHealth = await waitForLauncherReadiness('random-port');
       assert.ok(Number(new URL(randomHealth.url).port) > 0);
       assert.equal(randomHealth.launcherIdentity.bindingIdentity, randomPolicy.binding.bindingIdentity);
       await stopLauncherServer(randomHealth);

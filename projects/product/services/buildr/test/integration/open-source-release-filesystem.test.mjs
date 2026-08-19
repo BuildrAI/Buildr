@@ -14,7 +14,12 @@ import {
   CANDIDATE_TARBALL_ENV,
   readSharedCandidatePackage,
 } from '../../test/verification/release/candidate-package.mjs';
-import { resolveReleaseSmokeSource, waitForWebReadiness } from '../../test/verification/release/release-smoke.mjs';
+import {
+  preserveLauncherFailureEvidence,
+  RELEASE_LAUNCHER_READINESS_TIMEOUT_MS,
+  resolveReleaseSmokeSource,
+  waitForWebReadiness,
+} from '../../test/verification/release/release-smoke.mjs';
 import { createVerificationExecutor } from '../../test/verification/executor.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -39,6 +44,105 @@ test('release smoke readiness retries a stale instance connection while startup 
 
   assert.equal(attempts, 2);
   assert.equal(health.status, 'ready');
+});
+
+test('release smoke readiness fails on an independent wall-clock budget with process diagnostics', async (t) => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-readiness-timeout-'));
+  t.after(() => fs.rmSync(appData, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(appData, 'instance.json'), JSON.stringify({ url: 'http://127.0.0.1:64219', secret: 'must-not-leak', pid: process.pid }));
+  let clock = 0;
+
+  await assert.rejects(
+    () => waitForWebReadiness({
+      appData,
+      timeoutMs: 120,
+      pollIntervalMs: 50,
+      now: () => clock,
+      wait: async (delayMs) => { clock += delayMs; },
+      async fetchHealth() { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }); },
+    }),
+    (error) => {
+      assert.match(error.message, /within 120ms: elapsed=120ms/);
+      assert.doesNotMatch(error.message, /must-not-leak/);
+      assert.equal(error.readiness.budgetMs, 120);
+      assert.equal(error.readiness.elapsedMs, 120);
+      assert.equal(error.readiness.process.pid, process.pid);
+      assert.equal(error.readiness.process.alive, true);
+      assert.equal(error.readiness.lastConnectionError, 'ECONNREFUSED');
+      return true;
+    },
+  );
+  assert.equal(RELEASE_LAUNCHER_READINESS_TIMEOUT_MS, 15_000);
+});
+
+test('release smoke preserves redacted Launcher evidence beside phase diagnostics before cleanup', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-launcher-evidence-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const diagnostics = path.join(root, 'diagnostics');
+  const phaseOutput = path.join(diagnostics, 'release-tarball-smoke.phases.jsonl');
+  const appData = path.join(root, 'app-data');
+  const launcherHome = path.join(root, 'launcher-home');
+  const launcherLog = path.join(launcherHome, 'Library', 'Logs', 'Buildr', 'launcher.log');
+  fs.mkdirSync(path.dirname(launcherLog), { recursive: true });
+  fs.mkdirSync(diagnostics, { recursive: true });
+  fs.mkdirSync(appData, { recursive: true });
+  fs.writeFileSync(phaseOutput, 'phase-evidence\n');
+  fs.writeFileSync(launcherLog, 'Node identity: executable=/exact/node version=24.19.0 pathHead=/exact\nlauncher failed\n');
+  fs.writeFileSync(path.join(appData, 'instance.json'), JSON.stringify({
+    schemaVersion: 'buildr.local-app-instance/v1',
+    url: 'http://127.0.0.1:4457',
+    secret: 'must-not-persist',
+    pid: 4321,
+  }));
+  const error = new Error('not ready');
+  error.readiness = {
+    elapsedMs: 15_000,
+    budgetMs: 15_000,
+    process: { pid: 4321, parentPid: 4000, processGroupId: 4321, alive: false, observation: 'pid-exited' },
+  };
+
+  const retained = preserveLauncherFailureEvidence({
+    appData,
+    launcherHome,
+    launcherTarget: path.join(root, 'Applications', 'Buildr Web.app'),
+    nodeAudit: { schemaVersion: 'buildr.exact-node-execution-environment/v1', executable: '/exact/node', version: '24.19.0', bin: '/exact', pathHead: '/exact', identity: `sha256-${'a'.repeat(64)}` },
+    startup: 'default-port',
+    startedAt: Date.now() - 15_000,
+    error,
+    env: { BUILDR_VERIFICATION_PHASE_OUTPUT: phaseOutput },
+  });
+
+  assert.equal(retained.evidencePath, path.join(diagnostics, 'release-tarball-smoke.launcher-failure.json'));
+  assert.equal(retained.retainedLogPath, path.join(diagnostics, 'release-tarball-smoke.launcher.log'));
+  const serialized = fs.readFileSync(retained.evidencePath, 'utf8');
+  assert.doesNotMatch(serialized, /must-not-persist/);
+  const evidence = JSON.parse(serialized);
+  assert.equal(evidence.schemaVersion, 'buildr.release-launcher-failure-evidence/v1');
+  assert.equal(evidence.instance.secretPresent, true);
+  assert.equal(evidence.process.processGroupId, 4321);
+  assert.equal(evidence.elapsedMs, 15_000);
+  assert.match(evidence.launcherLog.sha256, /^sha256-[a-f0-9]{64}$/u);
+  assert.match(fs.readFileSync(retained.retainedLogPath, 'utf8'), /Node identity/);
+  assert.equal(fs.readFileSync(phaseOutput, 'utf8'), 'phase-evidence\n', 'phase evidence must remain intact');
+});
+
+test('Host Node executor can bind the matrix runtime without reading development .node-version', (t) => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-host-node-matrix-'));
+  t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(projectRoot, '.node-version'), '0.0.0\n');
+  assert.doesNotThrow(() => createVerificationExecutor({
+    productRoot: serviceRoot,
+    projectRoot,
+    diagnosticsDirectory: path.join(projectRoot, 'diagnostics'),
+    artifactDirectory: path.join(projectRoot, 'artifact'),
+    expectedNodeVersion: null,
+  }));
+  assert.throws(() => createVerificationExecutor({
+    productRoot: serviceRoot,
+    projectRoot,
+    diagnosticsDirectory: path.join(projectRoot, 'diagnostics'),
+    artifactDirectory: path.join(projectRoot, 'artifact'),
+  }), /does not match required 0\.0\.0/u);
 });
 
 test('open-source candidate ignores tracked paths deleted from the frozen worktree', () => {
