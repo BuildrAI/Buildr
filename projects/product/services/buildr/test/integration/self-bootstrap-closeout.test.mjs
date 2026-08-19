@@ -661,6 +661,37 @@ test('较早Result在已push的Buildr Task descendant上选择当前activation b
     activationBaseRef: descendant,
     recovery: 'fresh-descendant',
   });
+  assert.deepEqual(phase(result, 'preflight').effects.find((item) => item.type === 'published-linear-descendant'), {
+    type: 'published-linear-descendant',
+    baseRef,
+    head: descendant,
+    commits: [descendant],
+  });
+});
+
+test('无Buildr trailer且tree改变的已发布协作者successor可作为activation base但不复用旧研发证据', (t) => {
+  const { root, remote, baseRef, environment } = fixture(t);
+  const successor = commitRemoteTask(remote, 'human-successor', { buildrOwned: false });
+  const result = runSelfBootstrapCloseout({
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']),
+    workspaceRoot: root,
+    nodeExecutable: process.execPath,
+    execute: executor(root),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(git(root, 'rev-parse', 'HEAD'), successor);
+  assert.notEqual(git(root, 'rev-parse', `${baseRef}^{tree}`), git(root, 'rev-parse', `${successor}^{tree}`));
+  assert.equal(git(root, 'show', '-s', '--format=%B', successor).includes('Buildr-Task:'), false);
+  assert.deepEqual(phase(result, 'preflight').effects.find((item) => item.type === 'published-linear-descendant'), {
+    type: 'published-linear-descendant',
+    baseRef,
+    head: successor,
+    commits: [successor],
+  });
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+  assert.equal(phase(result, 'finalize').status, 'passed');
 });
 
 test('descendant sync successor以当前activation base为parent并可被下一Result顺序消费', (t) => {
@@ -697,7 +728,7 @@ test('descendant sync successor以当前activation base为parent并可被下一R
   assert.equal(phase(second, 'verify-development-entry').status, 'passed');
 });
 
-test('Buildr descendant chain仍拒绝merge provenance', (t) => {
+test('published linear descendant仍拒绝merge history', (t) => {
   const { root, baseRef, environment } = fixture(t);
   git(root, 'checkout', '-b', 'side');
   fs.writeFileSync(path.join(root, 'side.txt'), 'side\n');
@@ -720,7 +751,7 @@ test('Buildr descendant chain仍拒绝merge provenance', (t) => {
   assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.descendant-merge-unprovable');
 });
 
-test('Buildr-owned descendant尚未push时拒绝选择activation base', (t) => {
+test('普通descendant尚未push时拒绝选择activation base', (t) => {
   const { root, baseRef, environment } = fixture(t);
   fs.writeFileSync(path.join(root, 'local-only.txt'), 'local only\n');
   git(root, 'add', '--', 'local-only.txt');
@@ -834,7 +865,7 @@ test('self-bootstrap push后remote readback有界重试且不重复push', async 
   }
 });
 
-test('无匹配动作not-applicable且身份漂移fail closed', (t) => {
+test('无匹配动作not-applicable且未push successor fail closed', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const none = runSelfBootstrapCloseout({ finishResult: finishResult(root, baseRef, ['README.md']), workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(none.status, 'not-applicable');
@@ -845,7 +876,7 @@ test('无匹配动作not-applicable且身份漂移fail closed', (t) => {
   git(root, 'commit', '-m', 'unknown successor');
   const drift = runSelfBootstrapCloseout({ finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']), workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(drift.status, 'blocked');
-  assert.equal(drift.diagnostic.code, 'self-bootstrap-closeout.successor-identity-unprovable');
+  assert.equal(drift.diagnostic.code, 'self-bootstrap-closeout.remote-drift');
   assert.equal(phase(drift, 'verify-development-entry').status, 'not-applicable');
 });
 
@@ -1643,10 +1674,10 @@ test('multi-run preflight让proven foreign carrier共存并保留owner建议', (
   assert.ok(invocations.some((item) => item.args[0]?.endsWith('task-finish-target-lease-driver.mjs')));
 });
 
-test('foreign-clear retry拒绝无法证明的latest dev且不移动retained branch', (t) => {
+test('兼容retry参数允许无trailer的latest published dev并完成activation', (t) => {
   const { root, remote, baseRef, environment } = fixture(t);
   const current = finishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
-  commitRemoteTask(remote, 'unknown-after-foreign', { buildrOwned: false });
+  const successor = commitRemoteTask(remote, 'human-after-foreign', { buildrOwned: false });
 
   const result = runSelfBootstrapCloseoutCommand({
     args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath, '--retry-after-foreign-clear', 'true'],
@@ -1655,11 +1686,11 @@ test('foreign-clear retry拒绝无法证明的latest dev且不移动retained bra
     environment,
   });
 
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.successor-identity-unprovable');
-  assert.equal(git(root, 'rev-parse', 'HEAD'), baseRef);
-  assert.deepEqual(result.effects, []);
-  assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(git(root, 'rev-parse', 'HEAD'), successor);
+  assert.ok(result.effects.some((effect) => effect.type === 'retained-target-fast-forward' && effect.before === baseRef && effect.after === successor));
+  assert.equal(phase(result, 'verify-development-entry').status, 'passed');
+  assert.equal(phase(result, 'finalize').status, 'passed');
 });
 
 test('本地与remote分叉时报告remote drift并保留本地分支', (t) => {

@@ -119,6 +119,7 @@ else process.exitCode = 1;
 
   const timestamp = new Date().toISOString();
   let productRoot = controllerRoot;
+  let managerCliSource = path.join(controllerRoot, 'bin', 'buildr.mjs');
   let persistence = withReceipt ? {
     root,
     directory: path.join(root, '.buildr', 'tasks', TASK_ID),
@@ -133,6 +134,11 @@ else process.exitCode = 1;
   };
   const runtime = {
     productRoot: () => productRoot,
+    currentProductInvocation: (options = {}) => ({
+      command: process.execPath,
+      argsPrefix: [options.cliPath || managerCliSource],
+      kind: options.kind || 'host-node',
+    }),
     assertCanonicalTaskWorkspace: () => root,
     taskEnvironmentPath: (_target, taskId) => `workspace-sqlite:task-environment/${taskId}`,
     readTaskRecordPersistence: () => ({ record: { taskId: TASK_ID, status: 'active', scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] }, changes: [] } }),
@@ -195,6 +201,7 @@ else process.exitCode = 1;
     calls,
     receipt: () => persistence?.receipt || null,
     setProductRoot: (value) => { productRoot = value; },
+    setManagerCliSource: (value) => { managerCliSource = value; },
     setRetainedProjectionReady: (value) => { retainedProjectionReady = value; },
     advanceManager() {
       fs.appendFileSync(path.join(controllerRoot, 'src', 'controller.mjs'), "export const manager = 'm2';\n");
@@ -204,6 +211,34 @@ else process.exitCode = 1;
     },
   };
 }
+
+test('npm manager uses the installed CLI entry outside the product payload root', (t) => {
+  const current = fixture(t, { withReceipt: false, isolated: false });
+  const envelopeRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-installed-manager-')));
+  t.after(() => fs.rmSync(envelopeRoot, { recursive: true, force: true }));
+  const productRoot = path.join(envelopeRoot, 'payload', 'product');
+  const cliSource = path.join(envelopeRoot, 'bin', 'buildr.mjs');
+  fs.mkdirSync(path.join(productRoot, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(productRoot, 'package'), { recursive: true });
+  fs.mkdirSync(path.join(productRoot, 'bin'), { recursive: true });
+  fs.mkdirSync(path.dirname(cliSource), { recursive: true });
+  fs.writeFileSync(path.join(productRoot, 'src', 'manager.mjs'), 'export const manager = true;\n');
+  fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"fixture","version":"1.0.0"}\n');
+  fs.writeFileSync(path.join(productRoot, 'bin', 'buildr.mjs'), 'throw new Error("payload fallback must not run");\n');
+  fs.writeFileSync(cliSource, `#!/usr/bin/env node
+if (process.argv[2] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
+else process.exitCode = 1;
+`);
+  current.setProductRoot(productRoot);
+  current.setManagerCliSource(cliSource);
+
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan });
+
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  assert.equal(prepared.environment.controller.sourceRoot, productRoot);
+  assert.equal(current.receipt().controller.cliSource, cliSource);
+  assert.equal(fs.existsSync(path.join(productRoot, 'bin', 'buildr.mjs')), true);
+});
 
 test('retained controller uses candidate CLI to sync and verify a candidate-owned runtime projection', (t) => {
   const current = fixture(t);

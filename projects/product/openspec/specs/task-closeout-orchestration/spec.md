@@ -43,10 +43,10 @@ Runner MUST把sync、commit、push、Buildr Web install、development entry veri
 - **AND** runner MUST NOT回退到PATH默认`buildr`或进入最终Doctor/Finish resume
 
 ### Requirement: Runner 必须可从可重算事实幂等恢复
-Runner MUST只根据同一Finish Result、retained Git/ref/remote、Buildr正式交付或self-bootstrap commit provenance、带current run与plan identity的successor commit、当前sync输出、installer和Doctor事实判断fresh、fresh-descendant、resume或already-complete；MUST NOT创建持久化runner state。`plan.baseRef` MUST继续绑定Finish frozen ref；动态`activationBaseRef`只有在当前HEAD等于baseRef，或baseRef到当前HEAD为无merge、每个commit均带`Buildr-Task` trailer或成对`Buildr-Finish-Run`/`Buildr-Closeout-Plan` trailer、working tree clean且remote精确等于HEAD时才能前进。当前HEAD若是本run/plan的精确successor，其parent MUST作为activation base，remote只可等于parent或HEAD。无法证明时 MUST fail closed并保留现场。
+Runner MUST只根据同一Finish Result、retained Git/ref/remote、当前run/plan successor identity、当前sync输出、installer和Doctor事实判断fresh、fresh-descendant、resume或already-complete；MUST NOT创建持久化runner state。`plan.baseRef` MUST继续绑定Finish frozen ref；动态`activationBaseRef`只有在当前HEAD等于baseRef，或baseRef是当前HEAD的祖先、baseRef到当前HEAD无merge、working tree clean且HEAD与Finish绑定的精确remote/branch一致时才能前进。普通descendant commit的作者、工具与`Buildr-Task` trailer MUST NOT成为activation前置条件；runner MUST记录frozen ref、实际activation base与published linear descendant commits，并 MUST NOT据此声明descendant拥有Task、Verification、Review或Candidate身份。当前HEAD若是本run/plan trailer精确匹配的successor，其parent MUST作为activation base，remote只可等于parent或HEAD。无法证明上述Git、target或current-run identity时 MUST fail closed并保留现场。
 
 #### Scenario: 重跑复用未push的successor commit
-- **WHEN** retained HEAD是当前run/plan绑定的精确successor，其parent位于Finish frozen ref的可证明Buildr-owned descendant chain上、sync重算后tree clean且remote仍为parent
+- **WHEN** retained HEAD是当前run/plan绑定的精确successor，其parent位于Finish frozen ref的已发布无merge线性descendant chain上、sync重算后tree clean且remote仍为parent
 - **THEN** runner MUST复用已有commit并从push阶段继续
 - **AND** MUST NOT重复commit、amend或重新stage无关内容
 
@@ -56,19 +56,25 @@ Runner MUST只根据同一Finish Result、retained Git/ref/remote、Buildr正式
 - **AND** MUST NOT再次push或创建第二个successor commit
 
 #### Scenario: 多个已完成Finish等待激活
-- **WHEN** 当前Result的frozen ref之后存在一个或多个已push的Buildr Formal Finish commit或其他self-bootstrap successor，全部形成无merge、provenance完整的first-parent chain，retained HEAD与remote精确一致且tree clean
+- **WHEN** 当前Result的frozen ref之后存在一个或多个已push的人工、IDE、其他Agent或Buildr提交，全部形成无mergefirst-parent chain，retained HEAD与精确remote/branch一致且tree clean
 - **THEN** runner MUST选择当前HEAD作为activation base，并按当前Result的frozen Task Contribution paths重算和执行自身去重plan
-- **AND** 若sync产生delta，新successor MUST直接以该activation base为parent；后续Result MUST能把它作为可证明descendant继续顺序收敛
+- **AND** MUST NOT要求这些commit携带`Buildr-Task`或closeout trailer，也不得为其补Task、空提交或伪造trailer
+- **AND** 若sync产生delta，新successor MUST直接以该activation base为parent；后续Result MUST能把它作为可证明published descendant继续顺序收敛
 
 #### Scenario: Buildr-owned descendant无需sync commit
-- **WHEN** runner在可证明descendant上执行当前Result且sync不适用或重算后没有delta
-- **THEN** runner MUST不创建空successor commit，并继续适用安装、默认CLI identity与finalize
-- **AND** MUST在结果中保留frozen ref与实际activation base evidence
+- **WHEN** runner在可证明published descendant上执行当前Result且sync不适用或重算后没有delta
+- **THEN** runner MUST不创建空successor commit，并继续适用安装、development entry identity与finalize
+- **AND** MUST在结果中保留frozen ref、实际activation base与descendant commit evidence
+
+#### Scenario: Successor tree 改变不复用旧研发证据
+- **WHEN** actual activation base晚于Finish frozen ref且successor tree可能改变了任务内容
+- **THEN** runner MUST只报告其在actual activation base执行的activation、development entry与Doctor事实
+- **AND** MUST NOT把Finish frozen ref的Verification、Completion Review或Candidate宣称为successor的研发证据，也不得创建第二套adoption lifecycle
 
 #### Scenario: 恢复身份无法证明
-- **WHEN** descendant含merge、缺少或冲突的Buildr provenance trailer、HEAD不是baseRef的ancestor后继、working tree含无法归属内容、local与remote不一致，或current run successor的run/plan trailer不匹配
-- **THEN** runner MUST在Git、安装与finalize副作用前blocked并返回实际identity与唯一人工核对入口
-- **AND** MUST NOT stash、reset、rebase、merge、force push、扩大owned scope或接受任意clean descendant
+- **WHEN** descendant含merge、HEAD不是baseRef的ancestor后继、working tree含无法归属内容、local含未push descendant、local与remote不一致、remote再次漂移，或current run successor的run/plan trailer不匹配
+- **THEN** runner MUST在sync、安装与finalize副作用前blocked并返回实际identity与唯一恢复入口
+- **AND** MUST NOT stash、reset、rebase、创建merge、force push、扩大owned scope或接受任意未发布HEAD
 
 ### Requirement: Task Finish 调用必须使用有界长等待至终态
 Task Finish Skill MUST在启动canonical `buildr task finish run`后，使用宿主支持的有界长等待读取同一进程/session，直到进程完成、失败、需要输入或等待窗口到期。等待窗口 MUST只控制Agent何时恢复控制，不得作为Finish业务timeout或固定完成时限；返回仍为running时 MAY继续长等待同一session，但 MUST NOT启动第二个Finish或对普通输出进行高频轮询。
@@ -217,12 +223,12 @@ Runner MUST在每个潜在副作用阶段前刷新有界activation lease，并�
 - **AND** MUST不获得terminal activation lease、self-bootstrap runner或新增post-Finish阶段
 
 ### Requirement: Runner 必须在 activation 副作用前有界收敛 latest target
-每次适用self-bootstrap invocation MUST在持有target lease后读取并fetch latest target。只有retained checkout clean、当前HEAD可fast-forward、Finish frozen ref为ancestor、后继无merge且每个commit具有Buildr Task或self-bootstrap provenance时，runner才 MUST把retained branch前进到latest ref并重算activation base；该行为 MUST不依赖foreign carrier清除后的特殊retry参数。
+每次适用self-bootstrap invocation MUST在持有target lease后读取并fetch latest target。只有retained checkout clean、Finish frozen ref是latest remote target的ancestor、后继无merge，且当前HEAD等于latest target或可fast-forward到该精确remote/branch并重新验证local/remote一致时，runner才 MUST把retained branch前进到latest ref并重算activation base；普通descendant的作者、工具与`Buildr-Task`或closeout trailer MUST NOT成为该行为的前置条件，且该行为 MUST不依赖foreign carrier清除后的特殊retry参数。
 
 当retained Doctor blocked Result的latest target已越过Result绑定的delivery ref时，runner MUST在sync、安装或重启前先使用current exact token恢复一次同一Product Finish run。若返回matching `task-finish.target-race`，runner MUST最多再使用新token恢复一次，并在每次Product调用后重新获取/刷新target lease。Product返回matching Delivery Adaptation时，runner MUST返回carrier、resume与`deliveryAdaptation` guidance；除为读取latest target已完成的可证明fast-forward外，sync、commit/push、安装、重启、入口验证与Doctor effects MUST为空。返回新的doctor-blocked或complete Result时，runner MUST从该Result重新生成plan后继续。第二次仍target-race、其他blocked/failed或identity不匹配时 MUST停止，不得第三次resume或自动重跑runner。
 
 #### Scenario: Latest target 已包含其他 Buildr 交付
-- **WHEN** 当前Result的frozen ref之后存在已push的Buildr-owned first-parent descendant，retained tree clean且可fast-forward
+- **WHEN** 当前Result的frozen ref之后存在已push、无merge的first-parent descendant，retained tree clean且可fast-forward到精确remote/branch
 - **THEN** runner MUST在sync、安装和重启前fast-forward并以latest ref作为activation base
 - **AND** MUST在lease内重算当前Result的frozen action plan，不得把foreign carrier目录顺序当作target顺序
 

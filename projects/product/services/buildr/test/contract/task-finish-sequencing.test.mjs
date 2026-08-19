@@ -15,7 +15,9 @@ const developmentContract = read('package/targets/workspace/skills/contracts/bui
 const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
+const coreRule = read('package/targets/workspace/rules/buildr/core.md');
 const packageManifest = read('package/manifest.yml');
+const productRule = fs.readFileSync(path.join(productRoot, 'AGENTS.md'), 'utf8');
 
 test('Task Finish 保留五阶段 shell，但只消费 Development handoff 与 carrier equivalence', () => {
   assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
@@ -107,6 +109,28 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.match(runner, /\['merge', '--ff-only', remote\]/, 'latest dev integration must remain fast-forward only');
   assert.equal(runner.match(/'merge'/g)?.length, 1, 'runner must expose exactly one bounded fast-forward merge invocation');
   for (const forbidden of ["'reset'", "'rebase'", "'stash'", "'push', '--force'"]) assert.equal(runner.includes(forbidden), false, forbidden);
+});
+
+test('宽而薄治理只移除普通descendant trailer门禁并保留结果边界', () => {
+  const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+  const runner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
+  const projector = read('src/application/task-finish/task-finish-self-bootstrap-projection.mjs');
+
+  assert.match(coreRule, /Buildr 采用宽而薄的治理/);
+  assert.match(coreRule, /越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报/);
+  assert.match(productRule, /新增或收紧硬门禁.*保护的 authority 或结果不变量.*具体伤害/s);
+  assert.match(productRule, /辅助 provenance、推荐流程、工具偏好或自动化信心/);
+
+  for (const phrase of ['base是HEAD的祖先', 'base到HEAD无merge', '精确remote/branch', '普通descendant commit', '`Buildr-Task` trailer不是activation前置条件', '不补Task、不伪造trailer', '未push普通descendant']) {
+    assert.ok(skill.includes(phrase), phrase);
+  }
+  assert.match(runner, /inspectPublishedLinearDescendant/);
+  assert.match(runner, /published-linear-descendant/);
+  assert.doesNotMatch(runner, /Buildr-Task|successor-identity-unprovable/);
+  assert.match(runner, /Buildr-Finish-Run/);
+  assert.match(runner, /Buildr-Closeout-Plan/);
+  assert.match(projector, /PUBLIC_JSON_SCHEMAS\.taskFinishSelfBootstrapInput/);
+  for (const forbidden of ['External Successor Adoption', 'Candidate Re-freeze', 'adoption store']) assert.equal(skill.includes(forbidden), false, forbidden);
 });
 
 test('Task Finish使用resolved capability binding和同一session有界长等待', () => {

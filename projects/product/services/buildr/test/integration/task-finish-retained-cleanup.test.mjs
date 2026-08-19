@@ -232,6 +232,12 @@ async function realZeroDeltaCleanupRun(t) {
     import(executorUrl),
   ]);
   const runtime = createRetainedRuntime();
+  const retainedCli = path.join(targetServiceRoot, 'bin', 'buildr.mjs');
+  const currentProductInvocation = runtime.currentProductInvocation;
+  runtime.currentProductInvocation = (options = {}) => currentProductInvocation({
+    ...options,
+    cliPath: options.cliPath || retainedCli,
+  });
   runtime.createTaskRecord(root, {
     taskId: 'zero-delta-subprocess',
     title: 'Zero Delta Subprocess',

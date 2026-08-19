@@ -30,6 +30,7 @@ Agent 在 `product` Project 中的最小运行规则。
 - Buildr 的主要用户是 Agent；人是一等参与者，主要通过 Agent 表达目标、提供业务判断并确认重要决策。产品能力必须优先从 Agent 如何发现、理解和使用组织工作资产的视角设计，同时保证人可以低门槛参与，不能只提供面向人的操作入口与说明。
 - 产品交互优先支持 Agent 理解用户意图、自主推理下一步并引导用户使用 Buildr；能够由 Agent 判断、解释和推进的工作，不应要求人类用户先掌握 Buildr 的内部模型或命令细节。
 - Buildr 不成为另一个 Agent，也不复制 Agent 的通用理解、推理、规划、对话和专业任务执行能力。新增产品能力必须说明其长期治理、跨 Agent 复用、确定性约束或可验证诊断价值；不具备这些价值时应将工作保留给 Agent，需要复用和治理的专业动作优先沉淀为 Skill 或其他工作方法资产，不得在 Buildr 产品核心中另建推理或任务执行主体。
+- 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
 - Task-scoped OpenSpec Change 是产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更的规范 authority；不得用实现、普通文档或 Rule 替代该 Change。
 - `services/buildr/package/manifest.yml` 声明发布边界；`services/buildr/package/targets/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/package/targets/runtime/` 只放直接安装到 Agent runtime 的源。

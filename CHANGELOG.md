@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+## 0.1.0-rc.20 - 2026-08-19
+
+- 放宽 Buildr 自举 Workspace 的后继激活门禁：Formal Finish 冻结提交之后，只要最新 `origin/dev` 已发布、线性包含该提交、没有 merge、Workspace 干净且本地与精确远端一致，self-bootstrap runner 即可在最新提交上继续激活，不再要求协作者提交携带 `Buildr-Task` 或 closeout trailer。
+- 将“宽而薄”固化为 Core 与 Product 的治理原则：硬门禁继续保护 authority、目标、副作用与完成证据，但不再把辅助 provenance、推荐工具或可恢复不确定性当成独立阻塞；target lease、foreign carrier、same-run resume、remote drift、development entry、Node `24.15.0` 与最终 Doctor 约束保持不变。
+
 ## 0.1.0-rc.19 - 2026-08-19
 
 - 增加 Project 每日演进能力：通过 `buildr project daily-progress` 记录 Git 驱动的当日推进，并在 Buildr Web 的 Project 与 Task 详情中展示关联演进。
