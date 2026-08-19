@@ -1832,22 +1832,3 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   color: #8a6a2b;
   background: #fff6e5;
 }
-.progress-task-links {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.progress-task-links li {
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--soft-line);
-  border-radius: 10px;
-  background: #fff;
-}
-.progress-task-links a {
-  font-weight: 650;
-  text-decoration: none;
-}
