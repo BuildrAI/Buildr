@@ -262,6 +262,11 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     const help = run(['--help']);
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /Usage: buildr/);
+    const developmentSchema = run(['__internal', 'task-development', 'planning', '--schema']);
+    assert.equal(developmentSchema.status, 0, developmentSchema.stderr);
+    const parsedDevelopmentSchema = JSON.parse(developmentSchema.stdout);
+    assert.equal(parsedDevelopmentSchema.schemaVersion, 'buildr.task-development-driver-schema/v1');
+    assert.equal(parsedDevelopmentSchema.action, 'planning');
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     const installationRegistryFile = path.join(appData, 'product-installations.json');
     const firstRegistryBytes = fs.readFileSync(installationRegistryFile, 'utf8');

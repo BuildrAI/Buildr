@@ -89,6 +89,7 @@ function fixture(t, taskId) {
     workspaceRoot: root,
     environmentRoot: root,
     validationRoot: root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
     scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
   });
   pinImmutableTaskRecord(runtime, root, taskId);
@@ -123,6 +124,7 @@ function changeFixture(t, taskId, initial = { availability: 'available', lifecyc
     workspaceRoot: root,
     environmentRoot: root,
     validationRoot: root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
     scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
   });
   pinImmutableTaskRecord(runtime, root, taskId);
@@ -392,7 +394,7 @@ test('handoff-current后working copy不可用时inspect与task next不推荐Fini
 
   const snapshot = current.runtime.inspectTaskEntrySnapshot(current.root, current.taskId);
   assert.equal(snapshot.status, 'blocked');
-  assert.equal(snapshot.next.action, 'planning');
+  assert.equal(snapshot.next.action, 'planning', snapshot.diagnostic?.message);
   assert.notEqual(snapshot.next.action, 'finish');
   assert.deepEqual(snapshot.effects, []);
 });

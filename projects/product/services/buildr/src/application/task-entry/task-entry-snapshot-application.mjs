@@ -3,6 +3,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 import { taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
+import { TASK_DEVELOPMENT_ACTIONS } from '../task-development/task-development-operation-contracts.mjs';
 import { compactTaskDevelopmentOperationResult } from '../task-development/task-development-result-projection.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { resolveCapabilityRoute } from '../../infrastructure/runtime/skills/capabilities.mjs';
@@ -64,10 +65,14 @@ function commandRoute(next, execution, taskId) {
     verify: ['task', 'verification', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
     finish: ['task', 'finish', 'run', '--task', taskId, '--target', execution.workspaceRoot, '--json'],
   }[next.action] || null;
+  const internalArgs = next.owner === 'task-development' && TASK_DEVELOPMENT_ACTIONS.includes(next.action)
+    ? ['__internal', 'task-development', next.action, '--task', taskId, '--target', execution.workspaceRoot]
+    : null;
+  const args = publicArgs || internalArgs;
   return {
     writer: next.owner === 'agent' ? 'agent' : 'retained-controller',
     invocation: controller,
-    argv: publicArgs ? [...controller.argsPrefix, ...publicArgs] : null,
+    argv: args ? [...controller.argsPrefix, ...args] : null,
   };
 }
 

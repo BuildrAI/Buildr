@@ -7,8 +7,14 @@ function writeInternalDownload(file, bytes) {
 }
 
 async function runInternalProductAction(argv) {
-  if (argv[2] !== '__internal' || process.env.BUILDR_INTERNAL_PRODUCT_REENTRY !== '1') return false;
+  if (argv[2] !== '__internal') return false;
   const action = argv[3];
+  if (action === 'task-development') {
+    const { runTaskDevelopmentDriver } = await import('../internal/task-development-driver-runner.mjs');
+    process.exitCode = await runTaskDevelopmentDriver(argv.slice(4));
+    return true;
+  }
+  if (process.env.BUILDR_INTERNAL_PRODUCT_REENTRY !== '1') return false;
   if (action === 'download-file') {
     const [url, output] = argv.slice(4);
     if (!url || !output) throw new Error('Internal download-file requires URL and output path.');

@@ -404,6 +404,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-review/**',
     'src/application/task-verification/**',
     'src/interfaces/internal/task-development-driver.mjs',
+    'src/interfaces/internal/task-development-driver-runner.mjs',
   ], { schedulingCostMs: 15000, resources: ['workspace-saturating', 'task-lifecycle-heavy'], args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish', [
     'test/integration/task-finish-bootstrap-application.test.mjs',
