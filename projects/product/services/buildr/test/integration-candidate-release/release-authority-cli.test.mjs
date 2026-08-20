@@ -74,7 +74,7 @@ function releaseContext() {
     schemaVersion: 'buildr.release-environment-binding/v1',
     taskId: 'release-0-1-0-rc-15',
     environmentStatus: 'cleaned',
-    sourceCommit: candidateBase,
+    sourceCommit: fixtureCommit,
     service: 'product/buildr',
     serviceRoot: 'projects/product/services/buildr',
     planIdentity: `sha256-${'1'.repeat(64)}`,
@@ -180,7 +180,7 @@ test('release transaction runner dispatches and follows exactly one frozen workf
     if (key === 'git rev-parse origin/main') return { status: 0, stdout: `${fixtureCommit}\n` };
     if (key === `git rev-parse ${fixtureCommit}^{tree}`) return { status: 0, stdout: `${candidateTree}\n` };
     if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package.json`) return { status: 0, stdout: JSON.stringify({ version }) };
-    if (key === `git show ${candidateBase}:projects/product/.node-version`) return { status: 0, stdout: `${process.versions.node}\n` };
+    if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: `${process.versions.node}\n` };
     if (key === `git show ${fixtureCommit}:.github/workflows/publish.yml`) return { status: 0, stdout: workflow };
     if (key.startsWith('gh workflow run publish.yml ')) return { status: 0, stdout: '' };
     if (key.startsWith('gh run list ')) return { status: 0, stdout: JSON.stringify([{ databaseId: runId, displayTitle: `Release ${version} (fixture-release-id)`, headSha: fixtureCommit, status: 'queued', conclusion: null, url: currentRun.html_url }]) };
@@ -198,6 +198,75 @@ test('release transaction runner dispatches and follows exactly one frozen workf
   }
   assert.equal(calls.some((item) => item.startsWith('git tag ') || item.startsWith('git push ')), false);
   assert.equal(calls.some((item) => item.startsWith('npm ')), false);
+});
+
+test('release transaction runner binds preparation inputs to the final frozen source commit', async (t) => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-source-binding-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const service = path.join(repo, 'projects', 'product', 'services', 'buildr');
+  fs.mkdirSync(service, { recursive: true });
+  const sourceFiles = new Map([
+    ['projects/product/services/buildr/package.json', `${JSON.stringify({ name: '@buildr-ai/buildr', version })}\n`],
+    ['projects/product/services/buildr/package-lock.json', `${JSON.stringify({ name: '@buildr-ai/buildr', version, lockfileVersion: 3 })}\n`],
+    ['projects/product/.node-version', `${process.versions.node}\n`],
+  ]);
+  for (const [file, contents] of sourceFiles) {
+    const target = path.join(repo, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, contents);
+  }
+  const inputs = [...sourceFiles]
+    .filter(([file]) => file.includes('/services/buildr/'))
+    .map(([file, contents]) => ({ path: path.join(repo, file), identity: `sha256-${sha256(contents)}`, preparedIdentity: `sha256-${sha256(contents)}` }));
+  const environmentResult = {
+    status: 'cleaned',
+    environment: {
+      scopes: [{ selector: 'service:product/buildr', sourcePath: 'projects/product/services/buildr', executionRoot: service }],
+      preparationPlan: { identity: `sha256-${'1'.repeat(64)}` },
+      preparationScopes: [{ selector: 'service:product/buildr', status: 'ready', recipeIds: ['service:product/buildr/buildr.npm-ci'] }],
+      preparationRecipes: [{ id: 'service:product/buildr/buildr.npm-ci', status: 'ready', identity: `sha256-${'2'.repeat(64)}` }],
+      preparationSteps: [{ id: 'service:product/buildr/buildr.npm-ci/npm-ci', status: 'ready', cwd: service, inputs }],
+      preparationDeclarations: [{ project: 'product', preparedIdentity: `sha256-${'3'.repeat(64)}` }],
+    },
+  };
+  const releaseTask = { taskId: 'release-fixture', title: 'Release fixture', status: 'completed' };
+  const runtime = {
+    inspectTaskRecord: () => ({ record: releaseTask, retrospectiveRelations: { sources: [] } }),
+    inspectTaskEnvironment: () => environmentResult,
+  };
+  const currentRun = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
+  const candidateRun = { repository: { full_name: 'BuildrAI/Buildr' }, event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1, html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/654' };
+  const devCommit = 'd'.repeat(40);
+  const oldPackage = `${JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-rc.14' })}\n`;
+  const calls = [];
+  const execute = (command, args) => {
+    const key = [command, ...args].join(' ');
+    calls.push(key);
+    if (key === 'git rev-parse origin/main') return { status: 0, stdout: `${fixtureCommit}\n` };
+    if (key === `git rev-parse ${fixtureCommit}^{tree}` || key === `git rev-parse ${candidateSourceCommit}^{tree}` || key === `git rev-parse ${devCommit}^{tree}`) return { status: 0, stdout: `${candidateTree}\n` };
+    if (key === 'git rev-parse origin/dev') return { status: 0, stdout: `${devCommit}\n` };
+    if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package.json`) return { status: 0, stdout: sourceFiles.get('projects/product/services/buildr/package.json') };
+    if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package-lock.json`) return { status: 0, stdout: sourceFiles.get('projects/product/services/buildr/package-lock.json') };
+    if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: sourceFiles.get('projects/product/.node-version') };
+    if (key === `git show ${candidateBase}:projects/product/.node-version`) return { status: 0, stdout: '0.0.0\n' };
+    if (key === `git show ${candidateBase}:projects/product/services/buildr/package.json`) return { status: 0, stdout: oldPackage };
+    if (key === `git show ${fixtureCommit}:.github/workflows/publish.yml`) return { status: 0, stdout: workflow };
+    if (key === 'gh api repos/BuildrAI/Buildr/actions/runs/654') return { status: 0, stdout: JSON.stringify(candidateRun) };
+    if (key.startsWith('gh workflow run publish.yml ')) return { status: 0, stdout: '' };
+    if (key.startsWith('gh run list ')) return { status: 0, stdout: JSON.stringify([{ databaseId: runId, displayTitle: 'Release 0.1.0-rc.15 (fixture-release-id)', headSha: fixtureCommit, status: 'queued', conclusion: null, url: currentRun.html_url }]) };
+    if (key.startsWith(`gh run watch ${runId} `)) return { status: 0, stdout: '' };
+    if (key === `gh api repos/BuildrAI/Buildr/actions/runs/${runId}`) return { status: 0, stdout: JSON.stringify(currentRun) };
+    return { status: 1, stderr: `unexpected command: ${key}` };
+  };
+
+  const result = await runHostedReleaseTransaction({ repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {}, runtime });
+
+  assert.equal(result.status, 'passed');
+  assert.equal(result.context.environment.sourceCommit, fixtureCommit);
+  assert.equal(result.context.environment.inputs['package.json'], `sha256-${sha256(sourceFiles.get('projects/product/services/buildr/package.json'))}`);
+  assert.equal(calls.includes(`git show ${candidateBase}:projects/product/services/buildr/package.json`), false);
+  assert.equal(calls.includes(`git show ${candidateBase}:projects/product/.node-version`), false);
+  assert.equal(calls.filter((item) => item.startsWith('gh workflow run publish.yml ')).length, 1);
 });
 
 test('release environment binding consumes the completed Task Environment Service receipt', (t) => {
