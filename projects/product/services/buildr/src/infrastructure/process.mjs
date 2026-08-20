@@ -65,6 +65,29 @@ function realExecutable(value, label) {
   }
 }
 
+export function createExactNodePathEnvironment(sourceEnv, bin, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  const inheritedEnv = { ...sourceEnv };
+  const matchingKeys = Object.keys(inheritedEnv).filter((key) => key.toLowerCase() === 'path');
+  const sourceKey = platform === 'win32'
+    ? matchingKeys.find((key) => key === 'PATH') ?? matchingKeys[0]
+    : 'PATH';
+  const inheritedPath = String(inheritedEnv[sourceKey] ?? '');
+  if (platform === 'win32') for (const key of matchingKeys) delete inheritedEnv[key];
+  const normalizedBin = pathApi.resolve(bin);
+  const pathEntries = [
+    bin,
+    ...inheritedPath.split(pathApi.delimiter).filter(Boolean).filter((entry) => {
+      const normalizedEntry = pathApi.resolve(entry);
+      return platform === 'win32'
+        ? normalizedEntry.toLowerCase() !== normalizedBin.toLowerCase()
+        : normalizedEntry !== normalizedBin;
+    }),
+  ];
+  return { env: { ...inheritedEnv, PATH: pathEntries.join(pathApi.delimiter) }, pathEntries };
+}
+
 export function createExactNodeExecutionEnvironment(options = {}) {
   const inheritedEnv = { ...(options.env ?? process.env) };
   const nodeExecutable = realExecutable(options.nodeExecutable ?? process.execPath, 'Node executable');
@@ -79,8 +102,7 @@ export function createExactNodeExecutionEnvironment(options = {}) {
   if (options.requireNpm && !fs.statSync(npmExecutable, { throwIfNoEntry: false })?.isFile()) {
     throw new Error(`Exact Node bin does not contain ${npmName}: ${bin}`);
   }
-  const pathEntries = [bin, ...(inheritedEnv.PATH || '').split(path.delimiter).filter(Boolean).filter((entry) => path.resolve(entry) !== path.resolve(bin))];
-  const env = { ...inheritedEnv, PATH: pathEntries.join(path.delimiter) };
+  const { env, pathEntries } = createExactNodePathEnvironment(inheritedEnv, bin);
   let version = options.expectedVersion ?? (nodeExecutable === fs.realpathSync(process.execPath) ? process.versions.node : null);
   let reportedExecutable = nodeExecutable;
   if (options.verify !== false) {

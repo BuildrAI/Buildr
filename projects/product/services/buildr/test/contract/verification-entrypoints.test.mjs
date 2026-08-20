@@ -327,6 +327,8 @@ test('distributed Candidate creates one artifact and fans out independent consum
     assert.equal(owner.timeoutMs, 360_000, id);
   }
   assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
+  const runtimeWindowsStep = document.jobs['candidate-runtime-windows'].steps.find((step) => step.name === 'Run Windows runtime shard');
+  assert.equal(runtimeWindowsStep.shell, 'pwsh', 'Windows runtime Candidate must preserve native PowerShell environment semantics');
   assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');
   assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, [
