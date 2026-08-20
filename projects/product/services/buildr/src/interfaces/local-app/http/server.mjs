@@ -8,10 +8,14 @@ import {
   clearLocalAppInstance,
   acquireLocalAppStartLock,
   healthyLocalAppInstance,
+  matchesNpmLauncherBinding,
+  npmLauncherInstanceDisposition,
   openDefaultBrowser,
   readLocalAppInstance,
+  requestLocalAppInstanceShutdown,
   releaseLocalAppStartLock,
   waitForLocalAppInstance,
+  waitForLocalAppInstanceExit,
   writeLocalAppInstance,
   readLauncherIdentityFromEnvironment,
 } from '../runtime/instance-manager.mjs';
@@ -667,9 +671,7 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
     assertLauncherWebProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
     let initialWorkspaceId = null;
     if (targetRoot) initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
-    const recorded = readLocalAppInstance(webProfile);
-    const healthy = await healthyLocalAppInstance(recorded);
-    if (healthy) {
+    const assertCompatibleInstance = (healthy) => {
       let observedProfile = healthy.webProfile;
       if (!observedProfile && healthy.productIdentity) {
         try { observedProfile = resolveWebProfile(healthy.productIdentity, { dataRoot: webProfile.dataRoot }); } catch { observedProfile = null; }
@@ -691,10 +693,29 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
       if (launcherProtocol && healthyLauncherProtocol && launcherProtocol !== healthyLauncherProtocol) {
         throw new Error(`已运行 Buildr Web protocol ${healthyLauncherProtocol} 与当前 Launcher ${launcherProtocol} 不兼容，请先退出旧实例。`);
       }
+      return healthy;
+    };
+    const reuseInstance = (healthy, startLock = null) => {
+      releaseLocalAppStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${healthy.url}/workspaces/${initialWorkspaceId}/` : healthy.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
       console.log(`Buildr Web 已运行：${pageUrl}`);
       return { reused: true, url: pageUrl };
+    };
+    const launcherConflict = (disposition, healthy) => {
+      const error = new Error('已运行 Buildr Web 无法证明由当前 npm Launcher 安全接管；请先通过现有实例的公开退出动作停止，再重试 Launcher。');
+      error.code = disposition.code || 'launcher_handoff_ownership_conflict';
+      error.status = 409;
+      error.details = { pid: healthy.pid, disposition: disposition.disposition };
+      return error;
+    };
+    const recorded = readLocalAppInstance(webProfile);
+    const healthy = await healthyLocalAppInstance(recorded);
+    if (healthy) {
+      assertCompatibleInstance(healthy);
+      if (!npmLauncherBinding) return reuseInstance(healthy);
+      const disposition = npmLauncherInstanceDisposition(healthy, npmLauncherBinding);
+      if (disposition.disposition === 'reuse') return reuseInstance(healthy);
     }
     if (recorded?.webProfile && !sameWebProfile(recorded.webProfile, webProfile)) {
       const error = new Error('当前Data Root中的Buildr Web receipt属于另一产品身份，已保留现场；请先确认并退出旧实例。');
@@ -703,21 +724,56 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
       error.details = { expected: webProfile, actual: recorded.webProfile };
       throw error;
     }
-    if (recorded) clearLocalAppInstance(recorded, webProfile);
     const startLock = acquireLocalAppStartLock(webProfile);
     if (!startLock.owner) {
-      const started = await waitForLocalAppInstance({ profile: webProfile });
-      if (!started) throw new Error('另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。');
-      const pageUrl = initialWorkspaceId ? `${started.url}/workspaces/${initialWorkspaceId}/` : started.url;
-      if (!noOpen) openDefaultBrowser(pageUrl);
-      console.log(`Buildr Web 已运行：${pageUrl}`);
-      return { reused: true, url: pageUrl };
+      const started = await waitForLocalAppInstance({
+        profile: webProfile,
+        match: npmLauncherBinding ? (instanceValue) => matchesNpmLauncherBinding(instanceValue, npmLauncherBinding) : null,
+      });
+      if (!started) {
+        const error = new Error(npmLauncherBinding
+          ? '并发 Launcher 没有在预期时间内启动当前 binding 的健康 Buildr Web；未把旧实例视为托管成功。'
+          : '另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。');
+        error.code = npmLauncherBinding ? 'launcher_handoff_concurrent_wait_timeout' : 'web_start_wait_timeout';
+        throw error;
+      }
+      assertCompatibleInstance(started);
+      return reuseInstance(started);
     }
     const secret = crypto.randomBytes(32).toString('hex');
     let state = null;
     let instance = null;
     let fallbackPort = null;
     try {
+      const currentRecorded = readLocalAppInstance(webProfile);
+      const currentHealthy = await healthyLocalAppInstance(currentRecorded);
+      if (currentHealthy) {
+        assertCompatibleInstance(currentHealthy);
+        if (!npmLauncherBinding) return reuseInstance(currentHealthy, startLock);
+        const disposition = npmLauncherInstanceDisposition(currentHealthy, npmLauncherBinding);
+        if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
+        if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) {
+          throw launcherConflict(disposition, currentHealthy);
+        }
+        await requestLocalAppInstanceShutdown(currentHealthy);
+        const exit = await waitForLocalAppInstanceExit(currentHealthy, { profile: webProfile });
+        if (exit.status !== 'exited') {
+          const error = new Error(exit.status === 'replaced'
+            ? 'Launcher 交接期间实例 receipt 被另一实例替换，已保留现场并停止启动。'
+            : '旧 Buildr Web 未在预期时间内完成认证退出，已保留现场并停止启动。');
+          error.code = exit.status === 'replaced' ? 'launcher_handoff_receipt_replaced' : 'launcher_handoff_shutdown_timeout';
+          error.details = { pid: currentHealthy.pid, status: exit.status };
+          throw error;
+        }
+      } else if (currentRecorded?.webProfile && !sameWebProfile(currentRecorded.webProfile, webProfile)) {
+        const error = new Error('当前Data Root中的Buildr Web receipt属于另一产品身份，已保留现场；请先确认并退出旧实例。');
+        error.code = 'web_instance_profile_conflict';
+        error.status = 409;
+        error.details = { expected: webProfile, actual: currentRecorded.webProfile };
+        throw error;
+      } else if (currentRecorded) {
+        clearLocalAppInstance(currentRecorded, webProfile);
+      }
       const preferredPort = npmLauncherBinding ? npmLauncherBinding.webPort.preferred : port;
       const attempts = npmLauncherBinding && preferredPort > 0 ? [preferredPort, 0] : [preferredPort];
       let ready = null;
@@ -749,22 +805,44 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
       if (!ready || !instance) throw new Error('Buildr Web server did not become ready.');
       state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity, webProfile };
       writeLocalAppInstance(runtime, state);
+      if (npmLauncherBinding) {
+        const verified = await healthyLocalAppInstance(state);
+        if (!verified || !matchesNpmLauncherBinding(verified, npmLauncherBinding)) {
+          const error = new Error('新 Buildr Web health 未返回当前 Launcher binding identity，已停止启动。');
+          error.code = 'launcher_handoff_readiness_identity_mismatch';
+          throw error;
+        }
+      }
+      const cleanupReceipt = () => { clearLocalAppInstance(state, webProfile); };
+      const closeForSignal = () => {
+        cleanupReceipt();
+        instance.server.close(() => process.exit(0));
+      };
+      const signalNames = process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
+      const detachLifecycleListeners = () => {
+        cleanupReceipt();
+        process.removeListener('exit', cleanupReceipt);
+        for (const signal of signalNames) process.removeListener(signal, closeForSignal);
+      };
+      process.once('exit', cleanupReceipt);
+      for (const signal of signalNames) process.once(signal, closeForSignal);
+      instance.server.once('close', detachLifecycleListeners);
       releaseLocalAppStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${ready.url}/workspaces/${initialWorkspaceId}/` : ready.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
       if (fallbackPort !== null) console.log(`Buildr Web Launcher 已从端口 ${fallbackPort} 回退，实际地址：${ready.url}`);
       console.log(`Buildr Web：${pageUrl}`);
       console.log('仅限本机访问；关闭浏览器不会退出服务，请在页面中选择“退出 Buildr”。');
-      const cleanup = () => { clearLocalAppInstance(state, webProfile); };
-      process.once('exit', cleanup);
-      process.once('SIGINT', () => instance.server.close(() => process.exit(0)));
-      process.once('SIGTERM', () => instance.server.close(() => process.exit(0)));
       return { ...instance, reused: false, url: pageUrl };
     } catch (error) {
       releaseLocalAppStartLock(startLock);
-      clearLocalAppInstance(state, webProfile);
+      if (state) clearLocalAppInstance(state, webProfile);
       instance?.server.close();
-      throw new Error(`Buildr Web 启动失败：${error.message}`);
+      const wrapped = new Error(`Buildr Web 启动失败：${error.message}`, { cause: error });
+      wrapped.code = error.code || 'web_start_failed';
+      wrapped.status = error.status;
+      wrapped.details = error.details;
+      throw wrapped;
     }
   }
 

@@ -4,6 +4,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 
 import { readCurrentProductIdentity } from '../../../infrastructure/product-identity/current-product-identity.mjs';
+import { validateNpmLauncherBinding } from '../../../infrastructure/product-identity/launcher-binding.mjs';
 import { resolveWebProfile } from '../../../infrastructure/product-identity/web-profile.mjs';
 
 export const INSTANCE_SCHEMA = 'buildr.local-app-instance/v2';
@@ -116,10 +117,89 @@ export async function healthyLocalAppInstance(instance = readLocalAppInstance())
   }
 }
 
-export async function waitForLocalAppInstance({ attempts = 40, intervalMs = 50, profile = null } = {}) {
+function npmProductMatchesBinding(productIdentity, binding) {
+  return productIdentity?.package === binding.package
+    && productIdentity?.version === binding.version
+    && productIdentity?.protocolIdentity === binding.protocolIdentity
+    && productIdentity?.applicationPayloadDigest === binding.applicationPayloadDigest
+    && productIdentity?.sourceCommit === binding.sourceCommit
+    && productIdentity?.installationIdentity === binding.installationOwnershipIdentity
+    && productIdentity?.channel === 'npm'
+    && productIdentity?.runtime?.role === 'host';
+}
+
+export function npmLauncherInstanceDisposition(instance, currentBinding) {
+  if (!instance || !currentBinding) return { disposition: 'conflict', code: 'launcher_handoff_identity_incomplete' };
+  if (!instance.launcherIdentity) {
+    return npmProductMatchesBinding(instance.productIdentity, currentBinding)
+      ? { disposition: 'handoff-cli', code: null }
+      : { disposition: 'conflict', code: 'launcher_handoff_cli_ownership_conflict' };
+  }
+  let observedBinding;
+  try {
+    observedBinding = validateNpmLauncherBinding(instance.launcherIdentity);
+  } catch {
+    return { disposition: 'conflict', code: 'launcher_handoff_binding_invalid' };
+  }
+  if (!npmProductMatchesBinding(instance.productIdentity, observedBinding)) {
+    return { disposition: 'conflict', code: 'launcher_handoff_binding_product_conflict' };
+  }
+  if (observedBinding.bindingIdentity === currentBinding.bindingIdentity) {
+    return { disposition: 'reuse', code: null };
+  }
+  if (observedBinding.installationSlotIdentity === currentBinding.installationSlotIdentity
+    && observedBinding.launcherOwnershipIdentity === currentBinding.launcherOwnershipIdentity) {
+    return { disposition: 'handoff-launcher', code: null };
+  }
+  return { disposition: 'conflict', code: 'launcher_handoff_binding_ownership_conflict' };
+}
+
+export function matchesNpmLauncherBinding(instance, binding) {
+  return npmLauncherInstanceDisposition(instance, binding).disposition === 'reuse';
+}
+
+export async function requestLocalAppInstanceShutdown(instance, { fetchImpl = fetch, timeoutMs = 1000 } = {}) {
+  let response;
+  try {
+    response = await fetchImpl(new URL('/api/v1/app/quit-instance', instance.url), {
+      method: 'POST',
+      headers: { 'x-buildr-instance': instance.secret },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (cause) {
+    const error = new Error('Buildr Web 实例未接受 Launcher 的认证退出请求。', { cause });
+    error.code = 'launcher_handoff_shutdown_request_failed';
+    throw error;
+  }
+  if (response.status !== 202) {
+    const error = new Error(`Buildr Web 实例拒绝 Launcher 的认证退出请求（HTTP ${response.status}）。`);
+    error.code = 'launcher_handoff_shutdown_rejected';
+    throw error;
+  }
+  return { status: 'accepted', pid: instance.pid };
+}
+
+export async function waitForLocalAppInstanceExit(instance, {
+  attempts = 40,
+  intervalMs = 50,
+  profile = instance?.webProfile || null,
+  readInstance = readLocalAppInstance,
+} = {}) {
+  for (let index = 0; index < attempts; index += 1) {
+    const current = readInstance(profile);
+    if (!current) return { status: 'exited', pid: instance.pid };
+    if (current.secret !== instance.secret || current.url !== instance.url) {
+      return { status: 'replaced', pid: instance.pid, replacementPid: current.pid };
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return { status: 'timeout', pid: instance.pid };
+}
+
+export async function waitForLocalAppInstance({ attempts = 40, intervalMs = 50, profile = null, match = null } = {}) {
   for (let index = 0; index < attempts; index += 1) {
     const healthy = await healthyLocalAppInstance(readLocalAppInstance(profile));
-    if (healthy) return healthy;
+    if (healthy && (!match || match(healthy))) return healthy;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   return null;
