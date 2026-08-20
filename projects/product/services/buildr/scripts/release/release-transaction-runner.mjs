@@ -110,7 +110,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
   const workflowSource = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256 = sha256(workflowSource);
   const title = `Release ${version} (${releaseId})`;
-  const environmentNodeVersion = invoke(execute, 'git', ['show', `${candidateBase}:projects/product/.node-version`], repo).trim();
+  const environmentNodeVersion = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
   if (exactNode.audit.version !== environmentNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Task Environment project Node ${environmentNodeVersion}.`);
   let context;
   if (options.releaseContext) context = validateReleaseTransactionContext(options.releaseContext);
@@ -127,7 +127,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       task: releaseTask,
       environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
       repo,
-      sourceCommit: candidateBase,
+      sourceCommit,
       nodeAudit: exactNode.audit,
       readSourceFile: (commit, file) => invoke(execute, 'git', ['show', `${commit}:${file}`], repo),
     });

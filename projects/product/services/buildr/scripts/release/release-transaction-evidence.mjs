@@ -68,7 +68,7 @@ export function createReleaseTransactionContext(input) {
   if (convergence.sourceCommit !== convergence.mainCommit) throw new Error('Publish source commit must match mainCommit.');
   if (input.environment?.schemaVersion !== releaseEnvironmentBindingSchema || !DIGEST.test(input.environment.identity || '')) throw new Error('Release environment binding is invalid.');
   validateReleaseEnvironmentBinding(input.environment);
-  if (input.environment.taskId !== releaseTask.taskId || input.environment.sourceCommit !== convergence.candidateBase) throw new Error('Release environment binding does not match release Task/candidate source.');
+  if (input.environment.taskId !== releaseTask.taskId || input.environment.sourceCommit !== convergence.sourceCommit) throw new Error('Release environment binding does not match release Task/final source.');
   const value = {
     schemaVersion: releaseTransactionContextSchema,
     releaseTask,

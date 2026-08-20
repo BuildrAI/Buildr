@@ -9,7 +9,7 @@
 - 收敛正式工作流运行时闭环：canonical Workspace 写入来源绑定真实 retained controller，npm artifact 自包含 Task Development、Task Retrospective 与 Task Planning Identity 内部路由，并由 package validation、Doctor 与安装产物测试共同检查；Verification 公共 JSON 改为有界摘要，完整输出继续保存在 Execution Record。
 - 加固 Candidate 执行与证据：capability 运行时即时报告完成、周期心跳、独立墙钟超时、TERM→KILL 进程组回收和原子增量 checkpoint；macOS core 与 Windows lifecycle 按语义拆分并行 shard，稳定 `Candidate gate` 仍只接受同一 source、唯一 artifact 和全部 terminal shard 的 closed evidence。
 - 修复 hosted Host Node 与 Launcher readiness：最低/current Host Node tuple 使用各自实际 Node 作为父进程与子进程 PATH authority；macOS Launcher 使用独立 15 秒 readiness budget，并在失败清理前保留脱敏 instance、process、log、elapsed 与 Node audit。
-- 扩展发布 transaction 关联证据：正式 runner 绑定 completed release/support Tasks、Task Environment Plan/Receipt、权威 Service preparation recipe、Candidate run、main/dev、tag、npm/GitHub Release 与 Registry smoke，并支持按 publish run 校验、回读和清理 portable evidence。
+- 扩展发布 transaction 关联证据：正式 runner 绑定 completed release/support Tasks、Task Environment Plan/Receipt、权威 Service preparation recipe、Candidate run、main/dev、tag、npm/GitHub Release 与 Registry smoke；preparation input identities 始终按最终冻结 source commit 校验，并支持按 publish run 校验、回读和清理 portable evidence。
 - Buildr Web 的 Task 概览不再展示本机每日演进反向关联，Project 详情中的“每日演进”入口保持不变。
 
 ## 0.1.0-rc.20 - 2026-08-19
