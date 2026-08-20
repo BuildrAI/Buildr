@@ -856,15 +856,19 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
   ], { requiresArtifact: true }),
   candidateShard('workspace-lifecycle-windows', 'windows', 'verification', [
     'system-workspace-lifecycle',
+    'workspace-lifecycle',
+  ]),
+  candidateShard('task-worktree-recovery-windows', 'windows', 'verification', [
     'system-task-lifecycle',
     'system-worktree-lifecycle',
     'openspec-convergence-recovery',
-    'workspace-lifecycle',
   ]),
-  candidateShard('task-workflow-windows', 'windows', 'verification', [
-    'integration-task-development',
+  candidateShard('task-finish-windows', 'windows', 'verification', [
     'system-task-finish',
     'system-task-finish-cli',
+  ]),
+  candidateShard('task-development-windows', 'windows', 'verification', [
+    'integration-task-development',
     'concurrent-task-acceptance',
   ]),
   candidateShard('fresh-build-windows', 'windows', 'verification', [

@@ -329,7 +329,13 @@ test('distributed Candidate creates one artifact and fans out independent consum
   assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');
-  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, ['workspace-lifecycle-windows', 'task-workflow-windows', 'fresh-build-windows']);
+  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, [
+    'workspace-lifecycle-windows',
+    'task-worktree-recovery-windows',
+    'task-finish-windows',
+    'task-development-windows',
+    'fresh-build-windows',
+  ]);
   const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
   assert.match(windowsJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
   assert.match(windowsJob, /if: matrix\.shard == 'fresh-build-windows'[\s\S]*npm ci --ignore-scripts/);

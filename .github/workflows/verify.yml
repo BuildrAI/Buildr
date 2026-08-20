@@ -300,7 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [workspace-lifecycle-windows, task-workflow-windows, fresh-build-windows]
+        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-finish-windows, task-development-windows, fresh-build-windows]
     defaults:
       run:
         working-directory: projects/product/services/buildr
