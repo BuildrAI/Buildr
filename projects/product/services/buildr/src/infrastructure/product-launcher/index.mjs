@@ -54,9 +54,14 @@ JOB_PREFIX=${quoteShell(jobPrefix)}
 LOG_DIR="\${HOME}/Library/Logs/Buildr"
 LOG_FILE="\${LOG_DIR}/launcher.log"
 mkdir -p "\${LOG_DIR}"
+NO_NOTIFY="\${BUILDR_LAUNCHER_NO_NOTIFY-}"
+notify() {
+  [ "\${NO_NOTIFY}" = "1" ] && return 0
+  /usr/bin/osascript -e "$1" >/dev/null 2>&1 || true
+}
 fail() {
   printf '%s\n' "$1" >>"\${LOG_FILE}"
-  /usr/bin/osascript -e 'display alert "Buildr Web 无法启动" message "npm installation 或 Launcher binding 已漂移。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。" as critical' >/dev/null 2>&1 || true
+  notify 'display alert "Buildr Web 无法启动" message "npm installation 或 Launcher binding 已漂移。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。" as critical'
   exit 1
 }
 [ -x "\${NODE}" ] || fail "Host Node unavailable: \${NODE}"
@@ -67,6 +72,7 @@ LABEL="\${JOB_PREFIX}.$$"
 APP_DATA="\${BUILDR_APP_DATA_DIR-}"
 PRODUCT_DATA="\${BUILDR_PRODUCT_DATA_DIR-}"
 NO_OPEN="\${BUILDR_LAUNCHER_NO_OPEN-}"
+NO_NOTIFY="\${BUILDR_LAUNCHER_NO_NOTIFY-}"
 /bin/launchctl submit -l "\${LABEL}" -- /bin/sh -c '
 LABEL="$1"
 NODE="$2"
@@ -77,6 +83,7 @@ LOG_FILE="$6"
 APP_DATA="$7"
 PRODUCT_DATA="$8"
 NO_OPEN="$9"
+NO_NOTIFY="\${10}"
 cleanup() {
   /bin/launchctl remove "\${LABEL}" >/dev/null 2>&1 || true
 }
@@ -84,6 +91,7 @@ trap cleanup 0
 [ -n "\${APP_DATA}" ] && export BUILDR_APP_DATA_DIR="\${APP_DATA}" || unset BUILDR_APP_DATA_DIR
 [ -n "\${PRODUCT_DATA}" ] && export BUILDR_PRODUCT_DATA_DIR="\${PRODUCT_DATA}" || unset BUILDR_PRODUCT_DATA_DIR
 [ -n "\${NO_OPEN}" ] && export BUILDR_LAUNCHER_NO_OPEN="\${NO_OPEN}" || unset BUILDR_LAUNCHER_NO_OPEN
+[ -n "\${NO_NOTIFY}" ] && export BUILDR_LAUNCHER_NO_NOTIFY="\${NO_NOTIFY}" || unset BUILDR_LAUNCHER_NO_NOTIFY
 export PATH="\${NODE_BIN}\${PATH:+:\${PATH}}"
 NODE_VERSION="$("\${NODE}" -p "process.versions.node")"
 NODE_EXECUTABLE="$("\${NODE}" -p "process.execPath")"
@@ -92,9 +100,11 @@ printf "%s\n" "Node identity: executable=\${NODE_EXECUTABLE} version=\${NODE_VER
 STATUS=$?
 if [ "\${STATUS}" -ne 0 ]; then
   printf "%s\\n" "Buildr Web exited with status \${STATUS}" >>"\${LOG_FILE}"
-  /usr/bin/osascript -e "display alert \\"Buildr Web 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
+  if [ "\${NO_NOTIFY}" != "1" ]; then
+    /usr/bin/osascript -e "display alert \\"Buildr Web 无法启动\\" message \\"正式 Launcher 启动失败。请在终端运行 buildr web launcher status，然后执行 buildr web launcher repair。\\" as critical" >/dev/null 2>&1 || true
+  fi
 fi
-' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}"
+' buildr-web-launcher "\${LABEL}" "\${NODE}" "\${NODE_BIN}" "\${ENTRY}" "\${BINDING}" "\${LOG_FILE}" "\${APP_DATA}" "\${PRODUCT_DATA}" "\${NO_OPEN}" "\${NO_NOTIFY}"
 STATUS=$?
 [ "\${STATUS}" -eq 0 ] || fail "Could not submit Buildr Web background runner: status \${STATUS}"
 exit 0

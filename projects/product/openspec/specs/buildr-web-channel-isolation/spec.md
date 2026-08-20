@@ -25,7 +25,7 @@ Buildr MUST 只使用 formal product installation channel 与 runtime role 解�
 - **AND** product identity与Workspace管理channel MUST仍为development
 
 ### Requirement: released 与 development 普通 Web 实例必须隔离并存
-每个 ordinary Web profile MUST独占自己的 `instance.json`、`instance-start.lock`、Workspace registry、instance secret与shutdown lifecycle。健康检查与协议相同 MUST NOT允许跨profile复用；同一profile内仍 MUST保持单实例。development profile、Preview与不带npm Launcher binding的普通CLI MUST保持现有显式端口或随机loopback端口语义；released profile通过正式npm Launcher启动时 MUST使用binding中的closed端口策略，默认首选`4457`，并在非零首选端口因`EADDRINUSE`不可绑定时只回退一次随机端口。
+每个 ordinary Web profile MUST独占自己的 `instance.json`、`instance-start.lock`、Workspace registry、instance secret与shutdown lifecycle。健康检查与协议相同 MUST NOT允许跨profile复用；同一profile内仍 MUST保持单实例。Development Launcher MUST使用固定默认端口`4458`且不得随机回退；Preview与不带Launcher identity的普通CLI MUST保持显式端口或随机loopback端口语义。released profile通过正式npm Launcher启动时 MUST使用binding中的closed端口策略，默认首选`4457`，并在非零首选端口因`EADDRINUSE`不可绑定时只回退一次随机端口。
 
 #### Scenario: 两个Server同时启动
 - **WHEN** released普通Web健康运行后启动development普通Web
@@ -35,7 +35,17 @@ Buildr MUST 只使用 formal product installation channel 与 runtime role 解�
 #### Scenario: 正式Launcher使用默认首选端口
 - **WHEN** 新安装或从旧binding修复的正式npm Launcher启动released普通Web且`127.0.0.1:4457`可绑定
 - **THEN** released实例 MUST监听`127.0.0.1:4457`并把实际URL写入matching instance receipt
-- **AND** development profile与普通CLI的端口默认值 MUST保持不变
+- **AND** Development Launcher 的固定端口`4458`、Preview与普通CLI的端口语义 MUST保持不变
+
+#### Scenario: Development Launcher使用固定端口
+- **WHEN** 新安装或更新后的`Buildr Web Dev` Launcher启动development普通Web且`127.0.0.1:4458`可绑定
+- **THEN** development实例 MUST监听`127.0.0.1:4458`并把实际URL写入development instance receipt
+- **AND** Launcher MUST在同profile健康实例已存在时复用该实例，不得启动第二实例或切换到随机端口
+
+#### Scenario: Development Launcher固定端口被占用
+- **WHEN** `127.0.0.1:4458`被无法证明属于matching development profile的进程占用
+- **THEN** Development Launcher MUST明确失败并保留占用者
+- **AND** MUST NOT随机回退、扫描其他端口、强杀进程或把foreign服务登记为Buildr Web Dev
 
 #### Scenario: 正式Launcher首选端口被占用
 - **WHEN** 正式npm Launcher binding声明非零首选端口且真实listen返回`EADDRINUSE`

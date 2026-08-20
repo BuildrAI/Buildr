@@ -28,6 +28,7 @@ const FINISH_CARRIER_ROOT = '.buildr/transient/task-finish/carriers';
 const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
 const TARGET_LEASE_DRIVER = `${SERVICE_ROOT}/src/interfaces/internal/task-finish-target-lease-driver.mjs`;
 const TARGET_LEASE_DURATION_MS = 15 * 60_000;
 
@@ -608,9 +609,10 @@ function validateDevelopmentLauncherResult(payload, root, nodeExecutable, succes
     || identity.source !== 'checkout'
     || !sameFilesystemPath(identity.sourceRoot, expectedSourceRoot)
     || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)
-    || identity.checkout?.head !== successor) {
+    || identity.checkout?.head !== successor
+    || identity.webPort !== DEFAULT_DEVELOPMENT_WEB_PORT) {
     throw closeoutError('self-bootstrap-closeout.local-app-identity-mismatch', 'Development Launcher没有绑定当前retained checkout与retained Node。', {
-      expected: { sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor },
+      expected: { sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor, webPort: DEFAULT_DEVELOPMENT_WEB_PORT },
       actual: identity || null,
     });
   }
@@ -666,7 +668,8 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     script,
     'restart',
     '--project-bridge', projectBridge,
-    '--port', String(previous.port),
+    '--port', String(DEFAULT_DEVELOPMENT_WEB_PORT),
+    '--previous-port', String(previous.port),
     '--launcher-identity', developmentLauncherIdentityPath(launcher),
     '--expected-source-root', expectedSourceRoot,
     '--expected-head', successor,
@@ -676,10 +679,12 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
   const restarted = command(execute, nodeExecutable, args, root, 'restart-development-web-continuity', phaseResult, {
     kind: 'development-web-continuity',
     script,
+    args: args.slice(1),
     action: 'restart',
-    port: previous.port,
+    previousPort: previous.port,
+    currentPort: DEFAULT_DEVELOPMENT_WEB_PORT,
   }, environment);
-  requirePassed(restarted, 'self-bootstrap-closeout.development-web-restart-failed', 'Development Web未能在原端口恢复。');
+  requirePassed(restarted, 'self-bootstrap-closeout.development-web-restart-failed', `Development Web未能迁移到固定端口 ${DEFAULT_DEVELOPMENT_WEB_PORT}。`);
   const payload = parseJson(restarted, 'self-bootstrap-closeout.development-web-restart-invalid', 'Development Web恢复结果不是合法JSON。');
   const identity = payload?.launcherIdentity;
   if (payload?.schemaVersion !== 'buildr.development-web-continuity/v1'
@@ -687,7 +692,7 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     || payload.status !== 'passed'
     || payload.previous?.pid !== previous.pid
     || payload.previous?.port !== previous.port
-    || payload.instance?.port !== previous.port
+    || payload.instance?.port !== DEFAULT_DEVELOPMENT_WEB_PORT
     || !Number.isInteger(payload.instance?.pid)
     || payload.instance.pid <= 0
     || payload.instance.pid === previous.pid
@@ -695,8 +700,8 @@ function recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, succes
     || !sameFilesystemPath(identity.sourceRoot, expectedSourceRoot)
     || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)
     || identity.checkout?.head !== successor) {
-    throw closeoutError('self-bootstrap-closeout.development-web-restart-identity-mismatch', '恢复后的Development Web没有保持原端口或绑定retained successor identity。', {
-      expected: { port: previous.port, previousPid: previous.pid, sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor },
+    throw closeoutError('self-bootstrap-closeout.development-web-restart-identity-mismatch', '恢复后的Development Web没有迁移到固定端口或绑定retained successor identity。', {
+      expected: { previousPort: previous.port, currentPort: DEFAULT_DEVELOPMENT_WEB_PORT, previousPid: previous.pid, sourceRoot: expectedSourceRoot, nodeExecutable, checkoutHead: successor },
       actual: payload || null,
     });
   }
@@ -1182,7 +1187,8 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
           reason: continuityAfter.reason || null,
           previousPid: continuityBefore.instance?.pid || null,
           currentPid: continuityAfter.instance?.pid || null,
-          port: continuityBefore.instance?.port || null,
+          previousPort: continuityBefore.instance?.port || null,
+          currentPort: continuityAfter.instance?.port || null,
         },
       ]);
     } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');

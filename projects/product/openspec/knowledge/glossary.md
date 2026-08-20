@@ -122,6 +122,27 @@
 - 避免混用：它不是 Buildr App，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
 - 来源：canonical `openspec/specs/local-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
 
+### 平台启动入口集成（Platform Launcher Integration）
+
+- 定义：通过macOS `.app` / LaunchServices或Windows shortcut验证已安装Launcher能被操作系统入口唤起的显式专项测试。
+- 适用范围：对应操作系统runner或维护者显式调用；使用隔离Root、no-open与no-notify。
+- 避免混用：不是浏览器使用测试（Browser Use Test），不进入默认affected/full/Candidate，不验证页面DOM交互。
+- 来源：[Buildr Service](services/buildr.md)。
+
+### 浏览器使用测试（Browser Use Test）
+
+- 定义：通过受控浏览器验证Buildr Web页面、DOM交互与用户路径的测试。
+- 适用范围：Browser smoke与changed selector选中的前端验证；可在无界面模式（Headless Mode）中运行。
+- 避免混用：不是平台启动入口集成（Platform Launcher Integration），不以打开默认浏览器或真实用户标签页作为验证手段。
+- 来源：[Buildr Service](services/buildr.md)。
+
+### 无界面模式（Headless Mode）
+
+- 定义：自动化运行不显示默认浏览器、平台GUI或系统通知的执行模式。
+- 适用范围：普通affected/full/Candidate、release smoke与可无头执行的Browser smoke。
+- 避免混用：不表示没有HTTP server、loopback端口或owned子进程；仍必须使用隔离Root并精确清理owned资源。
+- 来源：[Buildr Service](services/buildr.md)。
+
 ### Buildr App
 
 - 定义：为未来真正的 Buildr 桌面应用保留的产品术语；当前尚未实现。

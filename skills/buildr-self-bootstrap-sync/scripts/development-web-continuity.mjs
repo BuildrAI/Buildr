@@ -8,11 +8,13 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export const DEVELOPMENT_WEB_CONTINUITY_SCHEMA = 'buildr.development-web-continuity/v1';
+export const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
 
-function appDataRoot(environment = process.env) {
+export function developmentWebDataRoot(environment = process.env, platform = process.platform, home = os.homedir()) {
   if (environment.BUILDR_APP_DATA_DIR) return path.resolve(environment.BUILDR_APP_DATA_DIR);
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'Buildr');
-  return path.join(environment.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Buildr');
+  if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Buildr Dev');
+  if (platform === 'win32') return path.join(environment.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Buildr Dev');
+  return path.join(environment.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'buildr-dev');
 }
 
 function instanceFile(dataRoot) {
@@ -48,7 +50,7 @@ function publicInstance(state, port) {
 }
 
 export async function inspectDevelopmentInstance({
-  dataRoot = appDataRoot(),
+  dataRoot = developmentWebDataRoot(),
   fetchImpl = fetch,
   timeoutMs = 1000,
 } = {}) {
@@ -114,13 +116,14 @@ async function waitForRestart({ dataRoot, expected, previousPid, fetchImpl, time
 
 export async function restartDevelopmentInstance({
   projectBridge,
-  port,
+  port = DEFAULT_DEVELOPMENT_WEB_PORT,
+  previousPort = port,
   launcherIdentityPath,
   expectedSourceRoot,
   expectedHead,
   nodeExecutable,
   previousPid,
-  dataRoot = appDataRoot(),
+  dataRoot = developmentWebDataRoot(),
   environment = process.env,
   timeoutMs = 10000,
   fetchImpl = fetch,
@@ -131,7 +134,8 @@ export async function restartDevelopmentInstance({
   const identity = readJson(launcherIdentityPath);
   const expected = { sourceRoot: expectedSourceRoot, head: expectedHead, nodeExecutable, port };
   assertRestartIdentity(identity, expected);
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid Development Web continuity port: ${port}`);
+  if (port !== DEFAULT_DEVELOPMENT_WEB_PORT) throw new Error(`Development Web continuity port must be ${DEFAULT_DEVELOPMENT_WEB_PORT}: ${port}`);
+  if (!Number.isInteger(previousPort) || previousPort <= 0 || previousPort > 65535) throw new Error(`Invalid previous Development Web port: ${previousPort}`);
   if (!Number.isInteger(previousPid) || previousPid <= 0) throw new Error(`Invalid previous Development Web PID: ${previousPid}`);
   fs.mkdirSync(dataRoot, { recursive: true });
   const logRoot = path.join(dataRoot, 'logs');
@@ -159,7 +163,7 @@ export async function restartDevelopmentInstance({
       schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA,
       action: 'restart',
       status: 'passed',
-      previous: { pid: previousPid, port },
+      previous: { pid: previousPid, port: previousPort },
       instance,
       launcherIdentity: identity,
       cleanup: null,
@@ -193,7 +197,8 @@ async function main(args = process.argv.slice(2)) {
   if (action !== 'restart') throw new Error('Usage: development-web-continuity.mjs inspect|restart');
   return restartDevelopmentInstance({
     projectBridge: option(args, '--project-bridge'),
-    port: Number(option(args, '--port')),
+    port: Number(option(args, '--port', String(DEFAULT_DEVELOPMENT_WEB_PORT))),
+    previousPort: Number(option(args, '--previous-port', option(args, '--port', String(DEFAULT_DEVELOPMENT_WEB_PORT)))),
     launcherIdentityPath: option(args, '--launcher-identity'),
     expectedSourceRoot: option(args, '--expected-source-root'),
     expectedHead: option(args, '--expected-head'),

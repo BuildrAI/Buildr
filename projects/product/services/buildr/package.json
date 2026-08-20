@@ -74,6 +74,7 @@
     "test:candidate:host": "node test/verification/candidate-ci.mjs host",
     "test:candidate:aggregate": "node test/verification/candidate-ci.mjs aggregate",
     "test:release": "node test/verification/release/release-smoke.mjs",
+    "test:launcher-platform": "node test/verification/release/release-smoke.mjs --platform-launcher",
     "install:development": "./scripts/install-buildr-development",
     "pack:check": "npm pack --dry-run"
   },

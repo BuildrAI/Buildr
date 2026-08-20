@@ -20,6 +20,7 @@ import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageName = '@buildr-ai/buildr';
 const exactRegistryPackagePattern = /^@buildr-ai\/buildr@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
+const platformLauncherIntegration = process.argv.includes('--platform-launcher');
 
 export const RELEASE_ARTIFACT_MANIFEST_ENV = 'BUILDR_RELEASE_ARTIFACT_MANIFEST';
 export const RELEASE_PACKAGE_SPEC_ENV = 'BUILDR_RELEASE_PACKAGE_SPEC';
@@ -398,27 +399,35 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
       assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
 
-      const launchGraphical = () => {
-        if (process.platform === 'darwin') {
-          launcherHome = path.join(root, 'launcher-home');
-          fs.mkdirSync(launcherHome, { recursive: true });
-          const opened = spawnSync('/usr/bin/open', [
-            '--env', `HOME=${launcherHome}`,
-            '--env', `PATH=${runtimeEnv.PATH}`,
-            '--env', `BUILDR_NODE_EXECUTABLE=${nodeExecutable}`,
-            '--env', `BUILDR_APP_DATA_DIR=${appData}`,
-            '--env', `BUILDR_PRODUCT_DATA_DIR=${appData}`,
-            '--env', 'BUILDR_LAUNCHER_NO_OPEN=1',
-            launcherTarget,
-          ], { cwd: workspace, env: { ...process.env, ...runtimeEnv }, encoding: 'utf8' });
-          if (opened.status !== 0) throw new Error(`/usr/bin/open exited ${opened.status}:\n${opened.stdout}\n${opened.stderr}`);
-          const output = `${opened.stdout || ''}\n${opened.stderr || ''}`;
-          assert.doesNotMatch(output, /already running/i, 'macOS open must execute the short-lived Launcher entry');
+      const launchLauncher = async () => {
+        launcherHome = path.join(root, 'launcher-home');
+        fs.mkdirSync(launcherHome, { recursive: true });
+        const launcherEnvironment = {
+          ...process.env,
+          ...runtimeEnv,
+          HOME: launcherHome,
+          BUILDR_NODE_EXECUTABLE: nodeExecutable,
+          BUILDR_APP_DATA_DIR: appData,
+          BUILDR_PRODUCT_DATA_DIR: appData,
+          BUILDR_LAUNCHER_NO_OPEN: '1',
+          BUILDR_LAUNCHER_NO_NOTIFY: '1',
+        };
+        if (platformLauncherIntegration) {
+          const { launchPlatformLauncher } = await import('./platform-launcher-invocation.mjs');
+          const launched = launchPlatformLauncher({ target: launcherTarget, workspace, environment: launcherEnvironment });
+          launcherProcess = launched.process;
+          assert.doesNotMatch(launched.output, /already running/i, 'platform Launcher must execute the short-lived entry');
           return;
         }
-        launcherProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:BUILDR_LAUNCHER_SHORTCUT -Wait'], {
+        if (process.platform === 'darwin') {
+          const executable = path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web');
+          const launched = spawnSync(executable, [], { cwd: workspace, env: launcherEnvironment, encoding: 'utf8' });
+          if (launched.status !== 0) throw new Error(`${executable} exited ${launched.status}:\n${launched.stdout}\n${launched.stderr}`);
+          return;
+        }
+        launcherProcess = spawn(nodeExecutable, [buildrScript, 'web', '--launcher-binding', installedLauncher.bindingPath], {
           cwd: workspace,
-          env: { ...process.env, ...runtimeEnv, BUILDR_LAUNCHER_NO_OPEN: '1', BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
+          env: launcherEnvironment,
           stdio: ['ignore', 'ignore', 'pipe'],
         });
       };
@@ -451,14 +460,14 @@ export async function runReleaseSmoke(env = process.env) {
       };
 
       const defaultPortAvailable = await canBindLoopbackPort(4457);
-      launchGraphical();
+      await launchLauncher();
       const launcherHealth = await waitForLauncherReadiness('default-port');
       assert.equal(launcherHealth.productIdentity.installationIdentity, health.productIdentity.installationIdentity);
       assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
       assert.equal(Number(new URL(launcherHealth.url).port) === 4457, defaultPortAvailable, 'default Launcher uses 4457 exactly when it is available');
       if (process.platform === 'darwin') {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
-        launchGraphical();
+        await launchLauncher();
         let launcherLog = '';
         for (let attempt = 0; attempt < 40 && !/Buildr Web 已运行：/.test(launcherLog); attempt += 1) {
           try { launcherLog = fs.readFileSync(path.join(root, 'launcher-home', 'Library', 'Logs', 'Buildr', 'launcher.log'), 'utf8'); } catch {}
@@ -479,7 +488,7 @@ export async function runReleaseSmoke(env = process.env) {
         const occupiedPort = occupied.address().port;
         const occupiedPolicy = parseJson('launcher repair occupied port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', String(occupiedPort), '--json']), 'buildr.launcher-status/v1');
         assert.deepEqual(occupiedPolicy.binding.webPort, { preferred: occupiedPort, fallback: 'random' });
-        launchGraphical();
+        await launchLauncher();
         const fallbackHealth = await waitForLauncherReadiness('occupied-port-fallback');
         assert.notEqual(Number(new URL(fallbackHealth.url).port), occupiedPort);
         assert.equal(fallbackHealth.launcherIdentity.bindingIdentity, occupiedPolicy.binding.bindingIdentity);
@@ -490,7 +499,7 @@ export async function runReleaseSmoke(env = process.env) {
 
       const randomPolicy = parseJson('launcher repair random port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', '0', '--json']), 'buildr.launcher-status/v1');
       assert.deepEqual(randomPolicy.binding.webPort, { preferred: 0, fallback: 'random' });
-      launchGraphical();
+      await launchLauncher();
       const randomHealth = await waitForLauncherReadiness('random-port');
       assert.ok(Number(new URL(randomHealth.url).port) > 0);
       assert.equal(randomHealth.launcherIdentity.bindingIdentity, randomPolicy.binding.bindingIdentity);
@@ -533,7 +542,7 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'openspec-explore')), false);
     });
 
-    console.log(`Buildr release smoke passed from ${source.kind} on ${process.platform} with Node ${process.versions.node}.`);
+    console.log(`Buildr release smoke passed (${platformLauncherIntegration ? 'platform-launcher' : 'headless-launcher'}) from ${source.kind} on ${process.platform} with Node ${process.versions.node}.`);
     return { source: source.kind, version: installedMetadata.version };
   } finally {
     let cleanupFailure = null;

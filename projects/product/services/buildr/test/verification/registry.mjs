@@ -712,7 +712,7 @@ export const verificationSteps = Object.freeze([
     'src/interfaces/cli/main.mjs', 'scripts/release/application-payload-entry.mjs',
     'src/application/domains/skills.mjs', 'test/verification/network/**',
   ], concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', name: 'release tarball smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
+  step({ id: 'release-tarball-smoke', name: 'release tarball headless smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/interfaces/cli/**',
     'src/application/cli-update.mjs', 'src/application/compose-runtime.mjs',
     'src/application/package-maintenance/**', 'src/application/package-maintenance.mjs',

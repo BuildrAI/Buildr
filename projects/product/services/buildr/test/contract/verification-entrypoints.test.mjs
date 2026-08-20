@@ -39,6 +39,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.mjs host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.mjs aggregate');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.mjs');
+  assert.equal(scripts['test:launcher-platform'], 'node test/verification/release/release-smoke.mjs --platform-launcher');
   assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 
@@ -50,6 +51,27 @@ test('product verification exposes three gates, direct layers, and one focus ent
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
   }
+});
+
+test('普通发布测试无GUI副作用，真实平台Launcher仅由显式入口调用', () => {
+  const releaseSmoke = read('test/verification/release/release-smoke.mjs');
+  const platformLauncher = read('test/verification/release/platform-launcher-invocation.mjs');
+  const registry = read('test/verification/registry.mjs');
+  assert.doesNotMatch(releaseSmoke, /spawnSync\('\/usr\/bin\/open'|Start-Process -FilePath/u);
+  assert.match(releaseSmoke, /BUILDR_LAUNCHER_NO_OPEN/);
+  assert.match(releaseSmoke, /BUILDR_LAUNCHER_NO_NOTIFY/);
+  assert.match(releaseSmoke, /platformLauncherIntegration/);
+  assert.match(platformLauncher, /spawnSync\('\/usr\/bin\/open'/u);
+  assert.match(platformLauncher, /Start-Process -FilePath/u);
+  assert.match(platformLauncher, /BUILDR_LAUNCHER_NO_OPEN=1/u);
+  assert.match(platformLauncher, /BUILDR_LAUNCHER_NO_NOTIFY=1/u);
+  assert.doesNotMatch(registry, /--platform-launcher/u);
+});
+
+test('Development Launcher固定端口不改变Task Preview的随机端口与无浏览器子进程边界', () => {
+  const previewManager = read('src/interfaces/local-app/runtime/preview-manager.mjs');
+  assert.match(previewManager, /optionValue\(args, '--port', '0'\)/u);
+  assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
 test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付能力', () => {
@@ -223,7 +245,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'capability CLI integration',
     'Service branch contract',
     'remote Skill timeout contract',
-    'release tarball smoke',
+    'release tarball headless smoke',
     'managed data integrity',
     'OpenSpec contract fixtures',
     'documentation quality',
@@ -267,11 +289,14 @@ test('candidate verification retains necessary Candidate facts without Browser a
 
 test('release tarball smoke isolates npm cache writes without a Workspace runtime', () => {
   const releaseSmoke = read('test/verification/release/release-smoke.mjs');
+  const platformLauncher = read('test/verification/release/platform-launcher-invocation.mjs');
   assert.match(releaseSmoke, /npm_config_cache: npmCache/);
   assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME/);
   assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
   assert.match(releaseSmoke, /RELEASE_LAUNCHER_READINESS_TIMEOUT_MS = 15_000/);
-  assert.match(releaseSmoke, /'--env', `PATH=\$\{runtimeEnv\.PATH\}`/);
+  assert.match(releaseSmoke, /const launcherEnvironment = \{/);
+  assert.match(releaseSmoke, /\.\.\.runtimeEnv/);
+  assert.match(platformLauncher, /`PATH=\$\{environment\.PATH\}`/);
   assert.match(releaseSmoke, /preserveLauncherFailureEvidence/);
 });
 

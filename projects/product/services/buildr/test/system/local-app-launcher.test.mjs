@@ -39,27 +39,26 @@ function build(platform) {
   return output;
 }
 
-async function waitForJson(file, timeoutMs = 10_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`Timed out waiting for ${file}.`);
-}
-
-test('Buildr Web Dev使用随机端口、独立日志且不复制Node、Buildr payload或正式安装代码', () => {
+test('Buildr Web Dev使用固定端口、支持显式无浏览器且不复制产品字节', () => {
   if (process.platform === 'darwin') {
     const mac = build('darwin');
     const command = fs.readFileSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr'), 'utf8');
-    assert.match(command, /web --port 0/);
+    assert.match(command, /web --port 4458/);
+    assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
+    assert.match(command, /NO_OPEN_ARG="--no-open"/);
+    assert.doesNotMatch(command, /web --port 0/);
     assert.match(command, /Library\/Logs\/Buildr Dev/);
     assert.doesNotMatch(command, /Resources\/buildr|MacOS\/node/);
     assert.equal(fs.existsSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'node')), false);
+    const identity = JSON.parse(fs.readFileSync(path.join(mac, 'Buildr Web Dev.app', 'Contents', 'Resources', 'launcher-identity.json'), 'utf8'));
+    assert.equal(identity.webPort, 4458);
   }
   const windows = build('win32');
   const command = fs.readFileSync(path.join(windows, 'Buildr Web Dev', 'Launch-Buildr.cmd'), 'utf8');
-  assert.match(command, /web --port 0/);
+  assert.match(command, /web --port 4458/);
+  assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
+  assert.match(command, /NO_OPEN_ARG=--no-open/);
+  assert.doesNotMatch(command, /web --port 0/);
   assert.match(command, /Buildr Dev\\Logs/);
   assert.doesNotMatch(command, /runtime\\node\.exe|app\\bin\\buildr\.mjs/);
   assert.equal(fs.existsSync(path.join(windows, 'Buildr Web Dev', 'runtime')), false);
@@ -88,15 +87,9 @@ test('development launcher支持带空格checkout并绑定独立development host
   assert.doesNotMatch(launcher, /Workspace Node/u);
 });
 
-test('macOS真实Development Launcher wrapper只启动临时Buildr Dev实例', { skip: process.platform !== 'darwin' }, async (t) => {
+test('Development Launcher生成不在普通测试中执行真实平台入口', { skip: process.platform !== 'darwin' }, (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-wrapper-smoke-'));
-  const home = path.join(base, 'home');
   const output = path.join(base, 'launcher');
-  const releasedRoot = path.join(home, 'Library', 'Application Support', 'Buildr');
-  const developmentRoot = path.join(home, 'Library', 'Application Support', 'Buildr Dev');
-  fs.mkdirSync(releasedRoot, { recursive: true });
-  const releasedSentinel = path.join(releasedRoot, 'released-sentinel');
-  fs.writeFileSync(releasedSentinel, 'keep\n');
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   buildLauncher({
     platform: 'darwin', output,
@@ -108,24 +101,10 @@ test('macOS真实Development Launcher wrapper只启动临时Buildr Dev实例', {
     },
   });
   const wrapper = path.join(output, 'Buildr Web Dev.app', 'Contents', 'MacOS', 'Buildr');
-  const env = { ...process.env, HOME: home };
-  delete env.BUILDR_APP_DATA_DIR;
-  delete env.BUILDR_PRODUCT_DATA_DIR;
-  const started = spawnSync(wrapper, [], { env, encoding: 'utf8' });
-  assert.equal(started.status, 0, started.stderr);
-  const instanceFile = path.join(developmentRoot, 'instance.json');
-  const instance = await waitForJson(instanceFile);
-  t.after(() => { try { process.kill(instance.pid, 'SIGKILL'); } catch {} });
-  assert.equal(instance.webProfile.profile, 'development');
-  assert.equal(instance.webProfile.dataRoot, developmentRoot);
-  assert.equal(fs.readFileSync(releasedSentinel, 'utf8'), 'keep\n');
-  assert.equal(fs.existsSync(path.join(releasedRoot, 'instance.json')), false);
-  const stopped = await fetch(`${instance.url}/api/v1/app/quit-instance`, { method: 'POST', headers: { 'x-buildr-instance': instance.secret } });
-  assert.equal(stopped.status, 202);
-  const deadline = Date.now() + 10_000;
-  while (fs.existsSync(instanceFile) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.equal(fs.existsSync(instanceFile), false);
-  assert.equal(fs.readFileSync(releasedSentinel, 'utf8'), 'keep\n');
+  const command = fs.readFileSync(wrapper, 'utf8');
+  assert.match(command, /web --port 4458/);
+  assert.match(command, /BUILDR_LAUNCHER_NO_OPEN/);
+  assert.doesNotMatch(command, /\/usr\/bin\/open|osascript/);
 });
 
 test('旧release development-builder入口fail closed并引导到正式npm Launcher命令', async () => {
@@ -198,6 +177,7 @@ test('Buildr Web Dev使用staging安全切换并只清理可证明所有权的de
   const first = await installLauncher({ platform: 'darwin', channel: 'development', installRoot: root, runtime: process.execPath, stopInstance: false });
   assert.equal(first.installed, true);
   assert.equal(first.identity.source, 'checkout');
+  assert.equal(first.identity.webPort, 4458);
   assert.equal(first.identity.sourceRoot, PRODUCT_ROOT);
   assert.ok(first.identity.developmentRuntime?.executable);
   assert.equal(fs.existsSync(path.join(first.target, 'Contents', 'MacOS', 'node')), false);

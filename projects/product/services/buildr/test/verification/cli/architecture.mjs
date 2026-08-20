@@ -196,6 +196,8 @@ if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidate
 }
 if (packageJson.scripts?.['test:focus'] !== 'node test/verification/focus.mjs') problems.push('package.json must expose the unified focus selector');
 if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/release-smoke.mjs') problems.push('package.json must retain the cross-platform release smoke entry');
+if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/release/release-smoke.mjs --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
+if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.mjs'))) problems.push('platform Launcher integration module is missing');
 if (packageJson.exports) problems.push('internal Product modules must not be declared through package exports');
 
 const registry = path.join(sourceRoot, 'interfaces', 'cli', 'registry.mjs');

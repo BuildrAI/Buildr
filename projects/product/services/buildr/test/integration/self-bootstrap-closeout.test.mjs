@@ -13,6 +13,8 @@ import {
   runSelfBootstrapCloseoutCommand,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import {
+  DEFAULT_DEVELOPMENT_WEB_PORT,
+  developmentWebDataRoot,
   inspectDevelopmentInstance,
   restartDevelopmentInstance,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
@@ -462,6 +464,7 @@ function executor(root, options = {}) {
           identity: {
             schemaVersion: 'buildr.launcher-identity/v1',
             channel: 'development',
+            webPort: DEFAULT_DEVELOPMENT_WEB_PORT,
             source: 'checkout',
             sourceRoot: options.observedLauncherSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
             developmentRuntime: { executable: options.observedLauncherNode || process.execPath },
@@ -494,19 +497,23 @@ function executor(root, options = {}) {
         };
       }
       if (args[1] === 'restart') {
+        if (options.occupiedDevelopmentPort) {
+          return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'EADDRINUSE', message: `listen EADDRINUSE: 127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}` }) };
+        }
         if (options.failDevelopmentRestart) {
           return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'development-web-continuity.start-timeout', details: { cleanup: { pid: 72200, status: 'requested' } } }) };
         }
         const value = (name) => args[args.indexOf(name) + 1];
         const previousPid = Number(value('--previous-pid'));
         const port = Number(value('--port'));
+        const previousPort = Number(value('--previous-port'));
         return {
           status: 0,
           stdout: JSON.stringify({
             schemaVersion: 'buildr.development-web-continuity/v1',
             action: 'restart',
             status: 'passed',
-            previous: { pid: previousPid, port },
+            previous: { pid: previousPid, port: previousPort },
             instance: {
               url: `http://127.0.0.1:${port}`,
               port,
@@ -956,7 +963,7 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
   }
 });
 
-test('Development Web连续性只恢复安装前健康实例并保持同端口新identity', (t) => {
+test('Development Web连续性只恢复安装前健康实例并迁移到固定端口', (t) => {
   const current = fixture(t);
   const result = runSelfBootstrapCloseout({
     finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
@@ -973,31 +980,41 @@ test('Development Web连续性只恢复安装前健康实例并保持同端口�
     'install-development-local-app',
     'restart-development-web-continuity',
   ]);
+  const restart = install.operations.find((item) => item.id === 'restart-development-web-continuity');
+  assert.equal(restart.args[restart.args.indexOf('--port') + 1], String(DEFAULT_DEVELOPMENT_WEB_PORT));
+  assert.equal(restart.args[restart.args.indexOf('--previous-port') + 1], '4317');
   const effect = install.effects.find((item) => item.type === 'development-web-continuity');
-  assert.deepEqual(effect, { type: 'development-web-continuity', status: 'passed', reason: null, previousPid: 71173, currentPid: 71174, port: 4317 });
+  assert.deepEqual(effect, {
+    type: 'development-web-continuity', status: 'passed', reason: null,
+    previousPid: 71173, currentPid: 71174, previousPort: 4317, currentPort: DEFAULT_DEVELOPMENT_WEB_PORT,
+  });
 });
 
-test('Development Web安装前未运行时保持按需启动', (t) => {
-  const current = fixture(t);
-  const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
-    workspaceRoot: current.root,
-    nodeExecutable: process.execPath,
-    execute: executor(current.root),
-    environment: current.environment,
-  });
+test('Development Web安装前未运行、记录过期或owner不同时保持按需启动', (t) => {
+  for (const continuityStatus of ['not-running', 'stale', 'different-owner']) {
+    const current = fixture(t);
+    const result = runSelfBootstrapCloseout({
+      finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+      workspaceRoot: current.root,
+      nodeExecutable: process.execPath,
+      execute: executor(current.root, { continuityStatus }),
+      environment: current.environment,
+    });
 
-  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  const install = phase(result, 'install-local-app');
-  assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
-  assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
-    type: 'development-web-continuity', status: 'not-applicable', reason: 'not-running', previousPid: null, currentPid: null, port: null,
-  });
+    assert.equal(result.status, 'passed', `${continuityStatus}: ${JSON.stringify(result.diagnostic)}`);
+    const install = phase(result, 'install-local-app');
+    assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
+    assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
+      type: 'development-web-continuity', status: 'not-applicable', reason: continuityStatus,
+      previousPid: null, currentPid: null, previousPort: null, currentPort: null,
+    });
+  }
 });
 
 test('Development Web恢复失败或identity漂移时阻断后续activation', async (t) => {
   for (const scenario of [
     { name: 'start-timeout', options: { runningDevelopmentInstance: true, failDevelopmentRestart: true }, code: 'self-bootstrap-closeout.development-web-restart-failed' },
+    { name: 'occupied-port', options: { runningDevelopmentInstance: true, occupiedDevelopmentPort: true }, code: 'self-bootstrap-closeout.development-web-restart-failed' },
     { name: 'identity-drift', options: { runningDevelopmentInstance: true, observedRestartHead: 'f'.repeat(40) }, code: 'self-bootstrap-closeout.development-web-restart-identity-mismatch' },
   ]) {
     await t.test(scenario.name, (t) => {
@@ -1014,6 +1031,7 @@ test('Development Web恢复失败或identity漂移时阻断后续activation', as
       assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
       assert.equal(phase(result, 'finalize').status, 'not-applicable');
       if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-local-app').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /"status":"requested"/u);
+      if (scenario.name === 'occupied-port') assert.match(phase(result, 'install-local-app').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /EADDRINUSE.*4458/u);
     });
   }
 });
@@ -1053,7 +1071,8 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
   let spawnOptions;
   const restarted = await restartDevelopmentInstance({
     projectBridge,
-    port: 4317,
+    port: DEFAULT_DEVELOPMENT_WEB_PORT,
+    previousPort: 4317,
     launcherIdentityPath: identityPath,
     expectedSourceRoot: sourceRoot,
     expectedHead: 'a'.repeat(40),
@@ -1064,12 +1083,14 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
     spawnImpl: (_command, _args, options) => {
       spawnOptions = options;
       fs.writeFileSync(path.join(dataRoot, 'instance.json'), JSON.stringify({
-        url: 'http://127.0.0.1:4317', secret: 'secret', pid: 71174, launcherIdentity,
+        url: `http://127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}`, secret: 'secret', pid: 71174, launcherIdentity,
       }));
       return { pid: 71174, exitCode: null, unref() {} };
     },
   });
   assert.equal(restarted.status, 'passed');
+  assert.deepEqual(restarted.previous, { pid: 71173, port: 4317 });
+  assert.equal(restarted.instance.port, DEFAULT_DEVELOPMENT_WEB_PORT);
   assert.equal(restarted.instance.pid, 71174);
   assert.equal(spawnOptions.env.BUILDR_NODE, process.execPath);
   assert.equal(spawnOptions.env.BUILDR_LAUNCHER_IDENTITY, identityPath);
@@ -1077,7 +1098,8 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
   const killed = [];
   await assert.rejects(() => restartDevelopmentInstance({
     projectBridge,
-    port: 4317,
+    port: DEFAULT_DEVELOPMENT_WEB_PORT,
+    previousPort: 4317,
     launcherIdentityPath: identityPath,
     expectedSourceRoot: sourceRoot,
     expectedHead: 'a'.repeat(40),
@@ -1094,7 +1116,35 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
     return true;
   });
   assert.deepEqual(killed, [{ pid: 72200, signal: 'SIGTERM' }]);
+  await assert.rejects(() => restartDevelopmentInstance({
+    projectBridge,
+    port: 4317,
+    previousPort: 4317,
+    launcherIdentityPath: identityPath,
+    expectedSourceRoot: sourceRoot,
+    expectedHead: 'a'.repeat(40),
+    nodeExecutable: process.execPath,
+    previousPid: 71173,
+    dataRoot,
+    fetchImpl: healthyFetch,
+  }), /continuity port must be 4458/u);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+});
+
+test('continuity helper默认只读Development数据根且不复用正式产品根', () => {
+  assert.equal(
+    developmentWebDataRoot({}, 'darwin', '/test-home'),
+    '/test-home/Library/Application Support/Buildr Dev',
+  );
+  assert.equal(
+    developmentWebDataRoot({ LOCALAPPDATA: 'C:\\TestHome\\AppData\\Local' }, 'win32', 'C:\\TestHome'),
+    path.join('C:\\TestHome\\AppData\\Local', 'Buildr Dev'),
+  );
+  assert.equal(
+    developmentWebDataRoot({ XDG_STATE_HOME: '/tmp/state' }, 'linux', '/home/tester'),
+    '/tmp/state/buildr-dev',
+  );
+  assert.equal(developmentWebDataRoot({ BUILDR_APP_DATA_DIR: '/tmp/isolated' }, 'darwin', '/test-home'), '/tmp/isolated');
 });
 
 test('development entry identity evidence覆盖完整入口链且complete只经Project bridge Doctor', (t) => {
