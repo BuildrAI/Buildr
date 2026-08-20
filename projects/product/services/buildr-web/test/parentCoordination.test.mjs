@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildContributionProgressGroups,
+  buildContributionProgressSummary,
   contributionDispositionLabel,
   startupBlockerLabel,
 } from '../src/pages/task-detail/parentCoordination.ts';
@@ -74,6 +75,53 @@ test('只有保存的贡献交接才形成交付证明', () => {
   }]);
 
   assert.equal(groups[0].items[0].deliveryProven, true);
+});
+
+test('四项迁移摘要只按真实子任务与匹配贡献交接计算', () => {
+  const contributions = [
+    contribution('delivered', 'not-eligible', 'delivered'),
+    { ...contribution('residual', 'not-eligible', 'residual'), residual: { taskId: 'child-handoff', summary: '继续补齐浏览器验收。' } },
+    { ...contribution('superseded', 'not-eligible', 'superseded'), superseded: { taskId: 'child-handoff', deliveredByContributionId: 'delivered', reason: '由 delivered 覆盖。' } },
+    contribution('active', 'not-eligible', 'active'),
+    contribution('completed-without-handoff', 'not-eligible', 'unproven'),
+  ];
+  const children = [{
+    taskId: 'child-handoff',
+    title: '有交接的子任务',
+    status: 'completed',
+    boundContributions: ['delivered', 'residual', 'superseded'],
+    deliveryProven: true,
+    delivery: {
+      handoffIdentity: 'sha256-handoff',
+      delivered: ['delivered'],
+      extra: [],
+      residual: ['residual'],
+      superseded: [{ contributionId: 'superseded', deliveredByContributionId: 'delivered' }],
+      affected: [],
+      nextAction: '继续父任务集成。',
+    },
+  }, {
+    taskId: 'child-active',
+    title: '进行中的子任务',
+    status: 'active',
+    boundContributions: ['active'],
+    deliveryProven: false,
+    delivery: null,
+  }, {
+    taskId: 'child-completed',
+    title: '仅完成的子任务',
+    status: 'completed',
+    boundContributions: ['completed-without-handoff'],
+    deliveryProven: false,
+    delivery: null,
+  }];
+
+  assert.deepEqual(buildContributionProgressSummary(contributions, children), {
+    delivered: 1,
+    residual: 1,
+    superseded: 1,
+    active: 1,
+  });
 });
 
 test('未知状态与阻塞码不向界面泄漏英文枚举', () => {

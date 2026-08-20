@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from 'antd';
+import { Button, Drawer } from 'antd';
 import { applicabilityLabel, formatDateTime, gateOutcomeLabel, taskStatusLabel } from '../../lib/taskLabels';
 import { Fact } from './shared';
 import {
   buildContributionProgressGroups,
-  completedContributionCount,
+  buildContributionProgressSummary,
   contributionDispositionLabel,
   contributionEligibilityLabel,
   startupBlockerLabel,
@@ -48,72 +48,99 @@ function contributionStatus(contribution: ParentContribution) {
   };
 }
 
-function ContributionDeliverySummary({ item }: { item: ParentContributionProgressItem }) {
+type DeliveryFact = { label: string; value: string; tone: string };
+
+function contributionDeliveryFacts(item: ParentContributionProgressItem): DeliveryFact[] {
   const { contribution } = item;
   const matchingDeliveries = item.children
     .filter((child) => child.deliveryProven && child.delivery)
     .map((child) => child.delivery!);
   const delivered = matchingDeliveries.some((delivery) => delivery.delivered.includes(contribution.id));
   const nextActions = [...new Set(matchingDeliveries.map((delivery) => delivery.nextAction).filter(Boolean))];
-  const facts = [
+  return [
     delivered ? { label: '已交付', value: contribution.title, tone: 'positive' } : null,
     contribution.residual ? { label: '剩余工作', value: contribution.residual.summary, tone: 'warning' } : null,
     contribution.superseded ? { label: '已取代', value: contribution.superseded.reason, tone: 'neutral' } : null,
     ...nextActions.map((value) => ({ label: '下一步行动', value, tone: 'neutral' })),
   ].filter((fact): fact is { label: string; value: string; tone: string } => Boolean(fact));
-
-  if (!facts.length) return null;
-  return <dl className="parent-delivery-summary">{facts.map((fact, index) => (
-    <div className={fact.tone} key={`${fact.label}-${index}-${fact.value}`}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>
-  ))}</dl>;
 }
 
-function ContributionProgressCard({ item, byId, taskHref }: {
+function ContributionDeliverySummary({ item }: { item: ParentContributionProgressItem }) {
+  const facts = contributionDeliveryFacts(item);
+  if (!facts.length) return null;
+  return <div className="parent-delivery-facts">{facts.map((fact, index) => (
+    <span className={fact.tone} key={`${fact.label}-${index}-${fact.value}`}><b>{fact.label}</b>{fact.value}</span>
+  ))}</div>;
+}
+
+function stopRowNavigation(event: MouseEvent<HTMLElement>) {
+  event.stopPropagation();
+}
+
+function ContributionProgressRow({ item, taskHref, onOpen }: {
+  item: ParentContributionProgressItem;
+  taskHref: Props['taskHref'];
+  onOpen: (item: ParentContributionProgressItem) => void;
+}) {
+  const { contribution } = item;
+  const state = contributionStatus(contribution);
+  const openFromKeyboard = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onOpen(item);
+    }
+  };
+  return (
+    <article className="parent-progress-row" role="button" tabIndex={0} onClick={() => onOpen(item)} onKeyDown={openFromKeyboard} data-contribution-id={contribution.id} data-contribution-group={item.groupId} data-contribution-disposition={contribution.actual.status}>
+      <div className="parent-progress-contribution" data-progress-region="contribution">
+        <div><span className="parent-priority">{contribution.priority}</span><span className={`parent-progress-state ${state.tone}`}>{state.label}</span></div>
+        <h4>{contribution.title}</h4>
+        <code>{contribution.id}</code>
+      </div>
+
+      <div className="parent-progress-children" data-progress-region="child">
+        <span className="parent-progress-column-label">实际子任务</span>
+        {item.children.length ? item.children.map((child) => <div className="parent-progress-child" key={child.taskId} data-child-task-id={child.taskId}>
+          <div className="parent-progress-child-heading"><Link to={taskHref(child.taskId)} onClick={stopRowNavigation}>{child.title}</Link><Link className="parent-child-link" to={taskHref(child.taskId)} onClick={stopRowNavigation}>进入子任务 ›</Link></div>
+          <div><span>{childStatusLabel(child.status)}</span><span className={child.deliveryProven ? 'delivery-proven' : 'delivery-unproven'}>{child.deliveryProven ? '交付已证明' : '交付未证明'}</span></div>
+          <code>{child.taskId}</code>
+        </div>) : <div className="parent-progress-unbound"><strong>尚未绑定</strong><span>{contribution.expectation.status === 'expected' ? `预期：${contribution.expectation.child}` : '未指定预期子任务'}</span></div>}
+      </div>
+
+      <div className="parent-progress-handoff" data-progress-region="handoff">
+        <span className="parent-progress-column-label">{contribution.eligibility.blockers.length ? '依赖与阻塞' : '贡献交接'}</span>
+        <ContributionDeliverySummary item={item} />
+        {contribution.eligibility.blockers.length ? <div className="parent-inline-blockers">
+          <strong>阻塞原因：等待依赖形成已证明交付</strong>
+          {contribution.eligibility.blockers.map((blocker) => <span key={blocker.contributionId}>{blocker.title}<code>{blocker.contributionId}</code></span>)}
+        </div> : null}
+        {!contribution.eligibility.blockers.length && !contributionDeliveryFacts(item).length ? <span className="parent-progress-no-handoff">{item.children.length ? '尚无贡献交接' : '依赖已满足，可启动子任务'}</span> : null}
+      </div>
+
+      <button className="parent-progress-open" type="button" aria-label={`查看贡献项：${contribution.title}`} onClick={(event) => { event.stopPropagation(); onOpen(item); }} data-progress-region="detail">›</button>
+    </article>
+  );
+}
+
+function ContributionDetail({ item, byId, taskHref }: {
   item: ParentContributionProgressItem;
   byId: Map<string, ParentContribution>;
   taskHref: Props['taskHref'];
 }) {
   const { contribution } = item;
   const state = contributionStatus(contribution);
-  return (
-    <article className="parent-progress-card" data-contribution-id={contribution.id} data-contribution-group={item.groupId} data-contribution-disposition={contribution.actual.status}>
-      <header className="parent-progress-card-heading">
-        <div className="parent-progress-title"><span className="parent-priority">{contribution.priority}</span><h4>{contribution.title}</h4><code>{contribution.id}</code></div>
-        <span className={`parent-rail-state ${state.tone}`}>{state.label}</span>
-      </header>
-      <p className="parent-objective">{contribution.objective}</p>
-
-      {item.children.length ? <div className="parent-actual-children">
-        <h5>实际子任务</h5>
-        {item.children.map((child) => <article key={child.taskId} data-child-task-id={child.taskId}>
-          <div><Link to={taskHref(child.taskId)}>{child.title}</Link><code>{child.taskId}</code></div>
-          <span>{childStatusLabel(child.status)}</span>
-          <span className={child.deliveryProven ? 'delivery-proven' : 'delivery-unproven'}>{child.deliveryProven ? '交付已证明' : '交付未证明'}</span>
-          <Link className="parent-child-link" to={taskHref(child.taskId)}>查看子任务</Link>
-        </article>)}
-      </div> : null}
-
-      <ContributionDeliverySummary item={item} />
-
-      {contribution.eligibility.blockers.length ? <div className="parent-wait-reason">
-        <strong>阻塞原因：需等待以下依赖形成已证明交付。</strong>
-        <div>{contribution.eligibility.blockers.map((blocker) => <span key={blocker.contributionId}><b>{blocker.title}</b><code>{blocker.contributionId}</code></span>)}</div>
-      </div> : null}
-
-      <details className="parent-progress-detail">
-        <summary>查看计划方向与边界</summary>
-        <div className="parent-detail-columns">
-          <section><h5>实现方向</h5>{list(contribution.directions, '未补充实现方向。')}</section>
-          <section><h5>边界</h5>{list(contribution.boundaries, '未补充边界。')}</section>
-        </div>
-        <section className="parent-dependency-summary">
-          <h5>计划依赖</h5>
-          {contribution.dependencies.length ? contribution.dependencies.map((id) => <span key={id}><strong>{byId.get(id)?.title || '未知贡献项'}</strong><code>{id}</code></span>) : <span>无前置依赖</span>}
-        </section>
-        <p className="parent-expected-child"><span>预期子任务：</span><strong>{contribution.expectation.status === 'expected' ? contribution.expectation.child : '无'}</strong></p>
-      </details>
-    </article>
-  );
+  return <div className="parent-contribution-detail" data-contribution-detail={contribution.id}>
+    <header><div><span className="parent-priority">{contribution.priority}</span><h3>{contribution.title}</h3><code>{contribution.id}</code></div><div className="parent-axis-badges"><span className={state.tone}>{state.label}</span></div></header>
+    <section className="parent-detail-section"><h4>目标</h4><p className="parent-objective">{contribution.objective}</p></section>
+    <div className="parent-detail-columns">
+      <section><h4>实现方向</h4>{list(contribution.directions, '未补充实现方向。')}</section>
+      <section><h4>边界</h4>{list(contribution.boundaries, '未补充边界。')}</section>
+    </div>
+    <section className="parent-dependency-summary"><h4>计划依赖</h4>{contribution.dependencies.length ? contribution.dependencies.map((id) => <span key={id}><strong>{byId.get(id)?.title || '未知贡献项'}</strong><code>{id}</code></span>) : <span>无前置依赖</span>}</section>
+    <section className="parent-detail-section"><h4>预期子任务</h4><p>{contribution.expectation.status === 'expected' ? contribution.expectation.child : '无'}</p></section>
+    <section className="parent-detail-section"><h4>实际子任务与贡献交接</h4>{item.children.length ? item.children.map((child) => <div className="parent-detail-child" key={child.taskId}><Link to={taskHref(child.taskId)}>{child.title}</Link><span>{childStatusLabel(child.status)} · {child.deliveryProven ? '交付已证明' : '交付未证明'}</span><code>{child.taskId}</code></div>) : <p className="empty-copy">尚未绑定实际子任务。</p>}<ContributionDeliverySummary item={item} /></section>
+  </div>;
 }
 
 function DecisionList({ items }: { items: string[] }) {
@@ -125,9 +152,12 @@ function AcceptanceList({ items }: { items: string[] }) {
 }
 
 export function ParentCoordinationPanel({ data, loading, onRefresh, taskHref }: Props) {
+  const [selectedContributionId, setSelectedContributionId] = useState<string | null>(null);
   const contributions = data?.contributions || [];
   const byId = useMemo(() => new Map(contributions.map((item) => [item.id, item])), [contributions]);
   const progressGroups = useMemo(() => buildContributionProgressGroups(contributions, data?.children || []), [contributions, data?.children]);
+  const progressSummary = useMemo(() => buildContributionProgressSummary(contributions, data?.children || []), [contributions, data?.children]);
+  const selectedItem = useMemo(() => progressGroups.flatMap((group) => group.items).find((item) => item.contribution.id === selectedContributionId) || null, [progressGroups, selectedContributionId]);
 
   if (!data && !loading) return null;
   if (data?.mode === 'ordinary' || data?.mode === 'legacy') return null;
@@ -148,7 +178,6 @@ export function ParentCoordinationPanel({ data, loading, onRefresh, taskHref }: 
   if (data?.diagnostic?.code && data.mode !== 'parent-plan') return <section className="panel"><p className="alert error">{data.diagnostic.message}</p></section>;
   if (data?.mode !== 'parent-plan') return null;
 
-  const completed = completedContributionCount(contributions);
   const review = data.planningReview;
   return (
     <section className="parent-coordination-panel" id="task-parent-coordination" aria-live="polite">
@@ -160,10 +189,12 @@ export function ParentCoordinationPanel({ data, loading, onRefresh, taskHref }: 
         <aside className="panel parent-action-card">
           <div className="parent-action-copy"><div><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div><Button onClick={onRefresh} disabled={loading}>{loading ? '刷新中…' : '刷新'}</Button></div>
           <div className="parent-summary-strip">
-            <div><span>可启动</span><strong>{data.startup?.eligibleContributions?.length || 0}</strong></div>
-            <div><span>已明确处置</span><strong>{completed} / {contributions.length}</strong></div>
-            <div><span>最终验收</span><strong>{data.parentAcceptance ? '已记录' : data.prerequisitesSatisfied ? '待记录' : '未就绪'}</strong></div>
+            <div data-summary-kind="delivered"><span>已交付</span><strong>{progressSummary.delivered}</strong></div>
+            <div data-summary-kind="residual"><span>剩余工作</span><strong>{progressSummary.residual}</strong></div>
+            <div data-summary-kind="superseded"><span>已取代</span><strong>{progressSummary.superseded}</strong></div>
+            <div data-summary-kind="active"><span>进行中</span><strong>{progressSummary.active}</strong></div>
           </div>
+          <p className="parent-progress-source">父任务计划 + 直接子任务 + 贡献交接动态生成 · 不写回父任务计划</p>
         </aside>
       </div>
 
@@ -174,10 +205,14 @@ export function ParentCoordinationPanel({ data, loading, onRefresh, taskHref }: 
         <div className="parent-plan-workbench" data-progress-group-count={progressGroups.length}>
           {progressGroups.map((group) => <section className={`parent-progress-group ${group.id}`} data-progress-group={group.id} key={group.id}>
             <header><div><h4>{group.label}</h4><p>{group.id === 'active-delivered' ? '已有实际子任务承担，或已有明确交付处置。' : group.id === 'startable' ? '依赖已满足，可以创建并绑定子任务。' : '仍需等待依赖或其他启动条件。'}</p></div><strong>{group.items.length} 项</strong></header>
-            {group.items.length ? <div className="parent-progress-items">{group.items.map((item) => <ContributionProgressCard key={item.contribution.id} item={item} byId={byId} taskHref={taskHref} />)}</div> : <p className="parent-progress-empty">当前没有此类贡献项。</p>}
+            {group.items.length ? <div className="parent-progress-items">{group.items.map((item) => <ContributionProgressRow key={item.contribution.id} item={item} taskHref={taskHref} onOpen={(selected) => setSelectedContributionId(selected.contribution.id)} />)}</div> : <p className="parent-progress-empty">当前没有此类贡献项。</p>}
           </section>)}
         </div>
       </section>
+
+      <Drawer className="parent-contribution-drawer" title="贡献项详情" width={520} open={Boolean(selectedItem)} onClose={() => setSelectedContributionId(null)} destroyOnHidden>
+        {selectedItem ? <ContributionDetail item={selectedItem} byId={byId} taskHref={taskHref} /> : null}
+      </Drawer>
 
       {(data.plan?.architectureDecisions?.length || 0) > 0 ? <section className="panel parent-plan-section parent-plan-architecture">
         <div className="parent-section-heading"><div><p className="eyebrow">架构决定</p><h3>推进过程中保持不变的约束</h3><p className="section-copy">这些是父任务的稳定边界；子任务不能自行改变。</p></div><span>{data.plan?.architectureDecisions.length} 项</span></div>

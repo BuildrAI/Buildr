@@ -113,6 +113,13 @@ export type ParentContributionProgressGroup = {
   items: ParentContributionProgressItem[];
 };
 
+export type ParentContributionProgressSummary = {
+  delivered: number;
+  residual: number;
+  superseded: number;
+  active: number;
+};
+
 const progressGroupLabels: Record<ParentContributionProgressGroupId, string> = {
   'active-delivered': '进行中 / 已交付',
   startable: '可启动',
@@ -143,6 +150,35 @@ export function buildContributionProgressGroups(
     label: progressGroupLabels[id],
     items: items.filter((item) => item.groupId === id),
   }));
+}
+
+function matchingDeliveries(contributionId: string, children: ParentCoordinationChild[]) {
+  return children
+    .filter((child) => child.boundContributions.includes(contributionId) && child.deliveryProven && child.delivery)
+    .map((child) => child.delivery!);
+}
+
+export function buildContributionProgressSummary(
+  contributions: ParentContribution[],
+  children: ParentCoordinationChild[],
+): ParentContributionProgressSummary {
+  return contributions.reduce((summary, contribution) => {
+    const deliveries = matchingDeliveries(contribution.id, children);
+    const delivered = deliveries.some((delivery) => delivery.delivered.includes(contribution.id));
+    const residual = Boolean(contribution.residual)
+      || deliveries.some((delivery) => delivery.residual.includes(contribution.id));
+    const superseded = Boolean(contribution.superseded)
+      || deliveries.some((delivery) => delivery.superseded.some((item) => item.contributionId === contribution.id));
+    const active = !delivered && !superseded && children.some((child) => (
+      child.boundContributions.includes(contribution.id)
+      && !['completed', 'abandoned'].includes(child.status)
+    ));
+    if (delivered) summary.delivered += 1;
+    if (residual) summary.residual += 1;
+    if (superseded) summary.superseded += 1;
+    if (active) summary.active += 1;
+    return summary;
+  }, { delivered: 0, residual: 0, superseded: 0, active: 0 });
 }
 
 export function contributionMap(contributions: ParentContribution[]) {
