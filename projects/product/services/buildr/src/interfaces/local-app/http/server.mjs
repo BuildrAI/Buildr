@@ -89,7 +89,7 @@ function binaryResponse(response, status, content, contentType) {
   response.end(content);
 }
 
-function uiPreviewHtmlResponse(response, content) {
+function uiPrototypeHtmlResponse(response, content) {
   response.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
@@ -543,14 +543,14 @@ export function createLocalWorkspaceServer(runtime, {
           runtime.inspectTaskRecord(root, taskChangeMatch[1]);
           return jsonResponse(response, 200, runtime.taskScopedChangeDetail(root, taskChangeMatch[1], taskChangeMatch[2], taskChangeMatch[3]));
         }
-        const taskUiPreviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-previews$`));
-        if (request.method === 'GET' && taskUiPreviewsMatch) {
-          return jsonResponse(response, 200, runtime.taskUiPreviews(root, taskUiPreviewsMatch[1]));
+        const taskUiPrototypesMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-prototypes$`));
+        if (request.method === 'GET' && taskUiPrototypesMatch) {
+          return jsonResponse(response, 200, runtime.taskUiPrototypes(root, taskUiPrototypesMatch[1]));
         }
-        const taskUiPreviewMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-previews/([a-f0-9]{32})$`));
-        if (request.method === 'GET' && taskUiPreviewMatch) {
-          const preview = runtime.taskUiPreview(root, taskUiPreviewMatch[1], taskUiPreviewMatch[2]);
-          return uiPreviewHtmlResponse(response, preview.html);
+        const taskUiPrototypeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-prototypes/([a-f0-9]{32})$`));
+        if (request.method === 'GET' && taskUiPrototypeMatch) {
+          const prototype = runtime.taskUiPrototype(root, taskUiPrototypeMatch[1], taskUiPrototypeMatch[2]);
+          return uiPrototypeHtmlResponse(response, prototype.html);
         }
         const taskCompleteMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/complete$`));
         if (request.method === 'POST' && taskCompleteMatch) {

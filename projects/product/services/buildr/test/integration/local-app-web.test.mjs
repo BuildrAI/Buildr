@@ -144,7 +144,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
-test('任务详情使用概览、预演、研发、证据、复盘、环境六个一级视图', () => {
+test('任务详情使用概览、原型、研发、证据、复盘、环境六个一级视图', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
   const coordinationModel = read('../buildr-web/src/pages/task-detail/parentCoordination.ts');
@@ -154,7 +154,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   const styles = read('../buildr-web/src/styles.css');
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
-  assert.match(source, /id: 'preview', label: '预演'/);
+  assert.match(source, /id: 'prototype', label: '原型'/);
   assert.match(source, /id: 'development', label: '研发'/);
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
@@ -199,7 +199,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.doesNotMatch(coordinationStyles, /max-height: clamp\(560px, 68vh, 760px\)/);
   assert.doesNotMatch(coordinationStyles, /overscroll-behavior: contain/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
-  assert.match(source, /data-task-panel="preview"|PreviewTab/);
+  assert.match(source, /data-task-panel="prototype"|PrototypeTab/);
   assert.match(evidence, /data-task-panel="evidence"/);
   assert.match(retrospective, /data-task-panel="retrospective"/);
   assert.match(retrospective, /尚未复盘/);
@@ -223,31 +223,34 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(styles, /\.review-slot-grid \{ display: grid; grid-template-columns: repeat\(2/);
 });
 
-test('任务 UI Preview 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
+test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
-  const preview = read('../buildr-web/src/pages/task-detail/PreviewTab.tsx');
+  const prototype = read('../buildr-web/src/pages/task-detail/PrototypeTab.tsx');
   const server = read('src/interfaces/local-app/http/server.mjs');
   const styles = read('../buildr-web/src/styles.css');
-  assert.match(source, /if \(tab === 'preview'\) void refreshPreview\(\)/);
-  assert.match(source, /\/ui-previews`, \{ signal \}\)/);
-  assert.match(preview, /界面预演稿（UI Preview）/);
-  assert.match(preview, /不是正式设计稿、生产原型或像素级验收标准/);
-  assert.match(preview, /sandbox="allow-scripts"/);
-  assert.doesNotMatch(preview, /allow-same-origin/);
-  assert.match(preview, /src=\{previewSource\}/);
-  assert.doesNotMatch(preview, /srcDoc=/);
-  assert.doesNotMatch(preview, /dangerouslySetInnerHTML/);
-  assert.match(server, /\/ui-previews\$`\)/);
-  assert.match(server, /request\.method === 'GET'.*taskUiPreviews/s);
-  assert.equal((server.match(/runtime\.taskUiPreviews\(/g) || []).length, 1);
-  assert.match(server, /ui-previews\/\(\[a-f0-9\]\{32\}\)/);
-  assert.equal((server.match(/runtime\.taskUiPreview\(/g) || []).length, 1);
+  assert.match(source, /if \(tab === 'prototype'\) void refreshPrototype\(\)/);
+  assert.match(source, /\/ui-prototypes`, \{ signal \}\)/);
+  assert.match(prototype, /界面原型/);
+  assert.match(prototype, /用于约束后续页面和交互开发/);
+  assert.match(prototype, /原型页面列表/);
+  assert.match(prototype, /prototypes\.map/);
+  assert.match(prototype, /sandbox="allow-scripts"/);
+  assert.doesNotMatch(prototype, /allow-same-origin/);
+  assert.match(prototype, /src=\{prototypeSource\}/);
+  assert.doesNotMatch(prototype, /srcDoc=/);
+  assert.doesNotMatch(prototype, /dangerouslySetInnerHTML/);
+  assert.match(server, /\/ui-prototypes\$`\)/);
+  assert.match(server, /request\.method === 'GET'.*taskUiPrototypes/s);
+  assert.equal((server.match(/runtime\.taskUiPrototypes\(/g) || []).length, 1);
+  assert.match(server, /ui-prototypes\/\(\[a-f0-9\]\{32\}\)/);
+  assert.equal((server.match(/runtime\.taskUiPrototype\(/g) || []).length, 1);
+  assert.doesNotMatch(server, /\/ui-previews/);
   assert.match(server, /sandbox allow-scripts/);
   assert.match(server, /connect-src 'none'/);
   assert.match(server, /form-action 'none'/);
   assert.match(server, /frame-ancestors 'self'/);
-  assert.match(styles, /\.ui-preview-layout/);
-  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-preview-frame/);
+  assert.match(styles, /\.ui-prototype-layout/);
+  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-prototype-frame/);
 });
 
 test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
@@ -336,15 +339,15 @@ test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
 
 test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
-  const preview = read('../buildr-web/src/pages/task-detail/TaskDocumentPreviewModal.tsx');
+  const prototype = read('../buildr-web/src/pages/task-detail/TaskDocumentPreviewModal.tsx');
   const resolver = read('../buildr-web/src/lib/taskDocumentLinks.ts');
   assert.match(detail, /id="task-detail-intent"[\s\S]*MarkdownHost/);
   assert.match(detail, /resolveTaskDocumentReference/);
   assert.match(detail, /api\('\/api\/v1\/projects'\)/);
   assert.match(detail, /TaskDocumentPreviewModal/);
-  assert.match(preview, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
-  assert.match(preview, /resolveProjectMarkdownHref/);
-  assert.match(preview, /相关资料/);
+  assert.match(prototype, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
+  assert.match(prototype, /resolveProjectMarkdownHref/);
+  assert.match(prototype, /相关资料/);
   assert.match(resolver, /allowedProjects\.has\(project\.code\)/);
   assert.match(resolver, /\.endsWith\('\.md'\)/);
   assert.doesNotMatch(detail, /taskAttachment|attachmentId|\/attachments/);

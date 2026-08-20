@@ -491,24 +491,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: declaration-intake
-  - id: ui-preview
-    assetIdentity: buildr:skill:ui-preview
-    sourceIdentity: package:skills/buildr/ui-preview
-    source: buildr
-    path: buildr/ui-preview
-    description: 用户已明确确认需要在正式前端开发前查看本次提案实施后的完整页面预演时使用；调查现有真实界面，生成并在浏览器验证一个或多个自包含 HTML。未明确确认时不得使用。
-    enabled: true
-    required: false
-    state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
-    runtimePath: ui-preview
   - id: project-daily-progress
     assetIdentity: buildr:skill:project-daily-progress
     sourceIdentity: package:skills/buildr/project-daily-progress
@@ -531,6 +513,24 @@ skills:
       - capability: buildr.git-operations
         version: 1
         mode: optional
+  - id: ui-prototype
+    assetIdentity: buildr:skill:ui-prototype
+    sourceIdentity: package:skills/buildr/ui-prototype
+    source: buildr
+    path: buildr/ui-prototype
+    description: 用户明确需要界面原型时使用；调查现有真实界面，生成并逐页验证一个或多个使用模拟数据与交互的自包含 HTML。已有原型且用户未明确忽略时，后续 Agent 默认按原型开发页面与交互。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: ui-prototype
 contracts:
   - id: buildr.terminology-governance
     version: 1

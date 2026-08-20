@@ -17,7 +17,7 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 首次修改 proposal、Skill、代码、测试或当前知识前，复用 triage 建立的一次有界 authority source map；若尚未形成，则从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立。该 map 保留在 Agent 工作上下文，不写入 Receipt 或其他产品 store；只有 scope、authority 或相关事实变化时才增量刷新。
 
-Task 可能产生用户可见前端 UI 变化、且 triage 尚未询问时，先询问用户是否需要界面预演稿（UI Preview）。只有当前任务已有明确确认，才在正式前端实现前加载独立 `ui-preview` Skill；用户拒绝、未确认或要求继续时不生成并继续本流程。UI Preview 与是否完成 planning、形成 Content Target、进入 Verification 或 Finish 无关，不保存为 Development node、gate、Result、Receipt 或 blocker。
+Task 可能产生用户可见前端 UI 变化、且 triage 尚未询问时，先询问用户是否需要界面原型（UI Prototype）。只有当前任务已有明确确认，才在正式前端实现前加载 selected `ui-prototype` Skill；用户拒绝、未确认或要求继续时不生成并继续本流程。当前 Task 已生成一个或多个原型且用户未明确要求忽略时，正式前端编辑前必须读取全部相关原型，并按其信息架构、布局和交互开发；需要成为正式行为的选择继续写入 design、delta specs、Brief 与 tasks。UI Prototype 与忽略选择都不保存为 Development node、gate、Result、Receipt 或 blocker。
 
 proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到 handoff 耗时与 verification wall-clock 只作为 `task-retrospective` 跟踪、评估和优化的参考。它们不进入专业 Result、Development gate、Task status、Candidate identity或自动 skip/advance 决策，也不构成 pass/fail threshold。
 

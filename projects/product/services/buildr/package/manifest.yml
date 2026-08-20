@@ -264,10 +264,10 @@ builtins:
       description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 capability contract 及跨 Skill 协作边界时使用。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: ui-preview
-      path: package/targets/workspace/skills/buildr/ui-preview
-      target: skills/buildr/ui-preview
-      description: 用户已明确确认需要在正式前端开发前查看本次提案实施后的完整页面预演时使用；调查现有真实界面，生成并在浏览器验证一个或多个自包含 HTML。未明确确认时不得使用。
+    - id: ui-prototype
+      path: package/targets/workspace/skills/buildr/ui-prototype
+      target: skills/buildr/ui-prototype
+      description: 用户明确需要界面原型时使用；调查现有真实界面，生成并逐页验证一个或多个使用模拟数据与交互的自包含 HTML。已有原型且用户未明确忽略时，后续 Agent 默认按原型开发页面与交互。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-daily-progress
@@ -509,7 +509,7 @@ workspaceFiles:
   - package/targets/workspace/skills/buildr/task-review/agents/openai.yaml => skills/buildr/task-review/agents/openai.yaml copy
   - package/targets/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - package/targets/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
-  - package/targets/workspace/skills/buildr/ui-preview/SKILL.md => skills/buildr/ui-preview/SKILL.md copy
+  - package/targets/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy
   - package/targets/workspace/skills/buildr/project-daily-progress/SKILL.md => skills/buildr/project-daily-progress/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
   - package/targets/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy

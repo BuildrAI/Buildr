@@ -2,7 +2,7 @@
 
 创建 change 前先向用户说明正在使用 OpenSpec、`propose` action 和预定 change id，不得静默创建。OpenSpec status 解析上下文后，在写 artifacts 前报告实际 `changeRoot`，不得猜测路径。
 
-若用户目标或本次 planning artifacts 可能产生用户可见前端 UI 变化，确认用户是否需要界面预演稿（UI Preview）。只有当前任务已有明确确认，才在 proposal/design/spec 已提供足够上下文后、正式前端实现前加载独立 `ui-preview` Skill；用户拒绝、未确认或要求继续时不生成并继续 OpenSpec 流程。不得把预演稿变成 planning node、Review gate、waiver、Result 或 blocker。
+若用户目标或本次 planning artifacts 可能产生用户可见前端 UI 变化，确认用户是否需要界面原型（UI Prototype）。只有当前任务已有明确确认，才在 proposal/design/spec 已提供足够上下文后、正式前端实现前加载 selected `ui-prototype` Skill；用户拒绝、未确认或要求继续时不生成并继续 OpenSpec 流程。当前 Task 已有原型且用户未明确要求忽略时，后续 apply 必须读取全部相关原型并按其信息架构、布局和交互开发，同时把正式行为写入对应 artifacts。不得把原型变成 planning node、Review gate、waiver、Result 或 blocker。
 
 在执行 `openspec new change` 或写入任何 change artifacts 前，先取得正式 Task Record，并判断任务执行形态：
 

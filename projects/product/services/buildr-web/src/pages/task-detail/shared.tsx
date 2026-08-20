@@ -85,4 +85,4 @@ export type TaskDetailData = {
   };
 };
 
-export type TaskTab = 'overview' | 'preview' | 'development' | 'evidence' | 'retrospective' | 'environment';
+export type TaskTab = 'overview' | 'prototype' | 'development' | 'evidence' | 'retrospective' | 'environment';

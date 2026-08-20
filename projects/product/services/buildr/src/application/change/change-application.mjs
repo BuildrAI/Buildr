@@ -7,11 +7,11 @@ const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
 const ARCHIVED_PREFIX = 'archived~';
 const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'brief.md', 'proposal.md', 'design.md', 'tasks.md'];
-const UI_PREVIEW_MARKER = '<!-- buildr:ui-preview -->';
-const UI_PREVIEW_MAX_DEPTH = 8;
-const UI_PREVIEW_MAX_CANDIDATES = 200;
-const UI_PREVIEW_MAX_PAGES = 20;
-const UI_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+const UI_PROTOTYPE_MARKER = '<!-- buildr:ui-prototype -->';
+const UI_PROTOTYPE_MAX_DEPTH = 8;
+const UI_PROTOTYPE_MAX_CANDIDATES = 200;
+const UI_PROTOTYPE_MAX_PAGES = 20;
+const UI_PROTOTYPE_MAX_BYTES = 2 * 1024 * 1024;
 
 function inside(parent, child) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
@@ -97,18 +97,18 @@ function changeName(code, proposalFile) {
   return heading || code;
 }
 
-function uiPreviewTitle(content, relative) {
+function uiPrototypeTitle(content, relative) {
   const raw = content.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
   const title = raw.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   return title || path.basename(relative, path.extname(relative));
 }
 
-function uiPreviewId(project, change, relative) {
+function uiPrototypeId(project, change, relative) {
   return crypto.createHash('sha256').update(`${project}\0${change}\0${relative}`).digest('hex').slice(0, 32);
 }
 
-function discoverUiPreviews(changeRoot) {
-  const previews = [];
+function discoverUiPrototypes(changeRoot) {
+  const prototypes = [];
   const diagnostics = [];
   let candidates = 0;
   let stopped = false;
@@ -119,15 +119,15 @@ function discoverUiPreviews(changeRoot) {
 
   function visit(directory, depth) {
     if (stopped) return;
-    if (depth > UI_PREVIEW_MAX_DEPTH) {
-      diagnostic('ui_preview_depth_limit', `UI Preview 扫描深度超过 ${UI_PREVIEW_MAX_DEPTH} 层，已跳过更深目录。`, relativePath(changeRoot, directory));
+    if (depth > UI_PROTOTYPE_MAX_DEPTH) {
+      diagnostic('ui_prototype_depth_limit', `UI Prototype 扫描深度超过 ${UI_PROTOTYPE_MAX_DEPTH} 层，已跳过更深目录。`, relativePath(changeRoot, directory));
       return;
     }
     let entries;
     try {
       entries = fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name));
     } catch {
-      diagnostic('ui_preview_directory_unreadable', 'UI Preview 目录当前不可读取。', relativePath(changeRoot, directory));
+      diagnostic('ui_prototype_directory_unreadable', 'UI Prototype 目录当前不可读取。', relativePath(changeRoot, directory));
       return;
     }
     for (const entry of entries) {
@@ -135,7 +135,7 @@ function discoverUiPreviews(changeRoot) {
       const file = path.join(directory, entry.name);
       const relative = relativePath(changeRoot, file);
       if (entry.isSymbolicLink()) {
-        if (entry.name.toLowerCase().endsWith('.html')) diagnostic('ui_preview_symlink_ignored', 'UI Preview 只读取 Change 内的普通 HTML 文件，符号链接已忽略。', relative);
+        if (entry.name.toLowerCase().endsWith('.html')) diagnostic('ui_prototype_symlink_ignored', 'UI Prototype 只读取 Change 内的普通 HTML 文件，符号链接已忽略。', relative);
         continue;
       }
       if (entry.isDirectory()) {
@@ -144,8 +144,8 @@ function discoverUiPreviews(changeRoot) {
       }
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.html')) continue;
       candidates += 1;
-      if (candidates > UI_PREVIEW_MAX_CANDIDATES) {
-        diagnostic('ui_preview_candidate_limit', `Change 中的 HTML 候选超过 ${UI_PREVIEW_MAX_CANDIDATES} 个，已停止扫描。`);
+      if (candidates > UI_PROTOTYPE_MAX_CANDIDATES) {
+        diagnostic('ui_prototype_candidate_limit', `Change 中的 HTML 候选超过 ${UI_PROTOTYPE_MAX_CANDIDATES} 个，已停止扫描。`);
         stopped = true;
         return;
       }
@@ -153,33 +153,33 @@ function discoverUiPreviews(changeRoot) {
       try {
         stat = fs.statSync(file);
       } catch {
-        diagnostic('ui_preview_file_unreadable', 'UI Preview HTML 当前不可读取。', relative);
+        diagnostic('ui_prototype_file_unreadable', 'UI Prototype HTML 当前不可读取。', relative);
         continue;
       }
-      if (stat.size > UI_PREVIEW_MAX_BYTES) {
-        diagnostic('ui_preview_file_too_large', `UI Preview HTML 超过 ${UI_PREVIEW_MAX_BYTES} bytes，已跳过。`, relative);
+      if (stat.size > UI_PROTOTYPE_MAX_BYTES) {
+        diagnostic('ui_prototype_file_too_large', `UI Prototype HTML 超过 ${UI_PROTOTYPE_MAX_BYTES} bytes，已跳过。`, relative);
         continue;
       }
       let content;
       try {
         content = fs.readFileSync(file, 'utf8');
       } catch {
-        diagnostic('ui_preview_file_unreadable', 'UI Preview HTML 当前不可读取。', relative);
+        diagnostic('ui_prototype_file_unreadable', 'UI Prototype HTML 当前不可读取。', relative);
         continue;
       }
-      if (!content.includes(UI_PREVIEW_MARKER)) continue;
+      if (!content.includes(UI_PROTOTYPE_MARKER)) continue;
       if (!/<head\b[^>]*>/i.test(content) || !/<body\b[^>]*>/i.test(content)) {
-        diagnostic('ui_preview_document_incomplete', '带标记的 UI Preview 必须是包含 head 与 body 的完整 HTML。', relative);
+        diagnostic('ui_prototype_document_incomplete', '带标记的 UI Prototype 必须是包含 head 与 body 的完整 HTML。', relative);
         continue;
       }
-      if (previews.length >= UI_PREVIEW_MAX_PAGES) {
-        diagnostic('ui_preview_page_limit', `可展示的 UI Preview 页面超过 ${UI_PREVIEW_MAX_PAGES} 个，其余页面已跳过。`);
+      if (prototypes.length >= UI_PROTOTYPE_MAX_PAGES) {
+        diagnostic('ui_prototype_page_limit', `可展示的 UI Prototype 页面超过 ${UI_PROTOTYPE_MAX_PAGES} 个，其余页面已跳过。`);
         stopped = true;
         return;
       }
-      previews.push({
+      prototypes.push({
         path: relative,
-        title: uiPreviewTitle(content, relative),
+        title: uiPrototypeTitle(content, relative),
         html: content,
         sizeBytes: stat.size,
         updatedAt: stat.mtime.toISOString(),
@@ -188,7 +188,7 @@ function discoverUiPreviews(changeRoot) {
   }
 
   visit(changeRoot, 0);
-  return { previews, diagnostics };
+  return { prototypes, diagnostics };
 }
 
 function projectContext(runtime, targetRoot, projectCode) {
@@ -321,9 +321,9 @@ export function registerChangeApplication(runtime) {
     return { resolution };
   }
 
-  function taskUiPreviewEntries(targetRoot, taskId) {
+  function taskUiPrototypeEntries(targetRoot, taskId) {
     const task = runtime.inspectTaskRecord(targetRoot, taskId);
-    const previews = [];
+    const prototypes = [];
     const diagnostics = [];
     for (const reference of task.record.changes) {
       const resolution = resolveTaskScopedChange(targetRoot, taskId, reference);
@@ -342,21 +342,21 @@ export function registerChangeApplication(runtime) {
       const changeRoot = path.resolve(base, change.artifacts.root);
       if (!inside(working.root, changeRoot) || !isDirectory(changeRoot)) {
         diagnostics.push({
-          code: 'ui_preview_change_root_unavailable',
-          message: `OpenSpec Change 的 UI Preview 根当前不可证明：${reference.project}/${reference.change}。`,
+          code: 'ui_prototype_change_root_unavailable',
+          message: `OpenSpec Change 的 UI Prototype 根当前不可证明：${reference.project}/${reference.change}。`,
           project: reference.project,
           change: reference.change,
         });
         continue;
       }
-      const discovered = discoverUiPreviews(changeRoot);
-      previews.push(...discovered.previews.map((preview) => ({
-        id: uiPreviewId(reference.project, reference.change, preview.path),
+      const discovered = discoverUiPrototypes(changeRoot);
+      prototypes.push(...discovered.prototypes.map((prototype) => ({
+        id: uiPrototypeId(reference.project, reference.change, prototype.path),
         project: reference.project,
         change: reference.change,
         lifecycle: change.lifecycle,
         provenance: working.provenance,
-        ...preview,
+        ...prototype,
       })));
       diagnostics.push(...discovered.diagnostics.map((diagnosticItem) => ({
         ...diagnosticItem,
@@ -366,27 +366,27 @@ export function registerChangeApplication(runtime) {
     }
     return {
       taskId,
-      previews: previews.sort((left, right) => left.id.localeCompare(right.id)),
+      prototypes: prototypes.sort((left, right) => left.id.localeCompare(right.id)),
       diagnostics,
     };
   }
 
-  function taskUiPreviews(targetRoot, taskId) {
-    const result = taskUiPreviewEntries(targetRoot, taskId);
+  function taskUiPrototypes(targetRoot, taskId) {
+    const result = taskUiPrototypeEntries(targetRoot, taskId);
     return {
       ...result,
-      previews: result.previews.map(({ html, ...preview }) => preview),
+      prototypes: result.prototypes.map(({ html, ...prototype }) => prototype),
     };
   }
 
-  function taskUiPreview(targetRoot, taskId, previewId) {
-    if (typeof previewId !== 'string' || !/^[a-f0-9]{32}$/.test(previewId)) {
-      throw changeError('ui_preview_reference_invalid', 'UI Preview reference 不合法。', 400);
+  function taskUiPrototype(targetRoot, taskId, prototypeId) {
+    if (typeof prototypeId !== 'string' || !/^[a-f0-9]{32}$/.test(prototypeId)) {
+      throw changeError('ui_prototype_reference_invalid', 'UI Prototype reference 不合法。', 400);
     }
-    const result = taskUiPreviewEntries(targetRoot, taskId);
-    const preview = result.previews.find((item) => item.id === previewId);
-    if (!preview) throw changeError('ui_preview_not_found', 'UI Preview 页面不存在或当前不可用。', 404);
-    return preview;
+    const result = taskUiPrototypeEntries(targetRoot, taskId);
+    const prototype = result.prototypes.find((item) => item.id === prototypeId);
+    if (!prototype) throw changeError('ui_prototype_not_found', 'UI Prototype 页面不存在或当前不可用。', 404);
+    return prototype;
   }
 
   function listProjectChanges(targetRoot, projectCode) {
@@ -478,8 +478,8 @@ export function registerChangeApplication(runtime) {
     generateChangeActionPrompt,
     resolveTaskScopedChange,
     taskScopedChangeDetail,
-    taskUiPreviews,
-    taskUiPreview,
+    taskUiPrototypes,
+    taskUiPrototype,
   });
   return runtime;
 }

@@ -94,12 +94,12 @@
 - 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
 - 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
 
-### 界面预演稿（UI Preview）
+### 界面原型（UI Prototype）
 
-- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个自包含 HTML 呈现本次提案实施后的完整页面参考。
-- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的视觉与交互参考；Buildr Web 只读发现并隔离展示带 `buildr:ui-preview` 标记的页面。
-- 避免混用：不是正式设计稿、生产原型、像素级验收标准、Planning Identity、规范或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。
-- 来源：canonical `openspec/specs/ui-preview/spec.md`（本 Change convergence 时建立）。
+- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个使用模拟数据与本地交互的自包含 HTML 呈现本次提案实施后的完整页面；用户未明确要求忽略时，后续 Agent 默认按原型的信息架构、布局和交互开发。
+- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的实施输入；Buildr Web 只读发现、列出并隔离展示带 `buildr:ui-prototype` 标记的多个页面。
+- 避免混用：不是正式设计稿、canonical spec、像素级验收标准、Planning Identity 或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。需要成为正式行为的选择仍进入 design、delta specs、Brief 与 tasks。
+- 来源：canonical `openspec/specs/ui-prototype/spec.md`。
 
 ### Buildr Web Frontend Service
 

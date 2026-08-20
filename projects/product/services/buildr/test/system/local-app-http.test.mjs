@@ -29,6 +29,11 @@ test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确�
   const overview = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/overview`);
   assert.equal(overview.status, 200);
   assert.equal((await overview.json()).schemaVersion, 'buildr.task-overview/v1');
+  const prototypes = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-prototypes`);
+  assert.equal(prototypes.status, 200);
+  assert.deepEqual(await prototypes.json(), { taskId: 'http-read', prototypes: [], diagnostics: [] });
+  const legacyPreviews = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-previews`);
+  assert.equal(legacyPreviews.status, 404);
   const missing = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/missing/development`);
   assert.equal(missing.status, 404);
   assert.equal((await missing.json()).error.code, 'task_record_not_found');

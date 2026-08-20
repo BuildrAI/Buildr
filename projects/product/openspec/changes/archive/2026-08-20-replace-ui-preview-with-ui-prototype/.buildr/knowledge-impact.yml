@@ -1,0 +1,32 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: replace-ui-preview-with-ui-prototype
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/replace-ui-preview-with-ui-prototype/brief.md
+    reason: 正式 Change 需要面向人的范围、流程、兼容性和验收入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/replace-ui-preview-with-ui-prototype/proposal.md
+      - openspec/changes/replace-ui-preview-with-ui-prototype/design.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: UI Preview 非兼容重命名并重定义为 UI Prototype。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/replace-ui-preview-with-ui-prototype/specs/ui-prototype/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task-scoped 发现标记、API 和工作流规则变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/replace-ui-preview-with-ui-prototype/specs/local-app-web-client/spec.md
+      - openspec/changes/replace-ui-preview-with-ui-prototype/specs/product-agent-skills/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Task 详情原型 Tab 与多页面查看行为变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/replace-ui-preview-with-ui-prototype/specs/local-app-web-client/spec.md
+unresolvedItems: []

@@ -73,22 +73,22 @@ function writeChange(projectRoot, relative, title) {
   fs.writeFileSync(path.join(changeRoot, 'specs', 'demo-capability', 'spec.md'), '# Demo Capability Specification\n\n## Purpose\n\nFixture.\n\n## Requirements\n');
 }
 
-function writeUiPreviewFixtures(projectRoot, relative) {
-  const previewRoot = path.join(projectRoot, 'openspec', 'changes', relative, 'preview-fixtures');
-  fs.mkdirSync(previewRoot, { recursive: true });
-  fs.writeFileSync(path.join(previewRoot, 'overview.html'), `<!doctype html>
-<!-- buildr:ui-preview -->
-<html lang="zh-CN"><head><meta charset="utf-8"><title>预演任务总览</title><style>
+function writeUiPrototypeFixtures(projectRoot, relative) {
+  const prototypeRoot = path.join(projectRoot, 'openspec', 'changes', relative, 'prototype-fixtures');
+  fs.mkdirSync(prototypeRoot, { recursive: true });
+  fs.writeFileSync(path.join(prototypeRoot, 'overview.html'), `<!doctype html>
+<!-- buildr:ui-prototype -->
+<html lang="zh-CN"><head><meta charset="utf-8"><title>原型任务总览</title><style>
 body{margin:0;font-family:system-ui;background:#f4f5f1;color:#283126}.shell{min-height:100vh}.nav{padding:18px 28px;background:#23372d;color:white}.page{padding:28px}.card{max-width:720px;padding:24px;border-radius:18px;background:white;box-shadow:0 12px 32px #23372d18}button{padding:9px 15px;border:0;border-radius:999px;background:#c9572c;color:white}
-</style></head><body data-parent-access="pending"><div class="shell"><nav class="nav">Buildr · 任务</nav><main class="page"><section class="card"><p>完整任务页面</p><h1>预演任务总览</h1><button id="preview-action">切换关键状态</button><strong id="preview-state">待确认</strong></section></main></div><script>
+</style></head><body data-parent-access="pending"><div class="shell"><nav class="nav">Buildr · 任务</nav><main class="page"><section class="card"><p>完整任务页面</p><h1>原型任务总览</h1><button id="prototype-action">切换关键状态</button><strong id="prototype-state">待确认</strong></section></main></div><script>
 try { parent.document.querySelector('#task-detail-title'); document.body.dataset.parentAccess = 'unexpected'; } catch { document.body.dataset.parentAccess = 'blocked'; }
-document.querySelector('#preview-action').addEventListener('click', () => { document.querySelector('#preview-state').textContent = '已确认'; });
+document.querySelector('#prototype-action').addEventListener('click', () => { document.querySelector('#prototype-state').textContent = '已确认'; });
 </script></body></html>`);
-  fs.writeFileSync(path.join(previewRoot, 'details.html'), `<!doctype html>
-<!-- buildr:ui-preview -->
-<html lang="zh-CN"><head><meta charset="utf-8"><title>预演任务详情</title><style>
+  fs.writeFileSync(path.join(prototypeRoot, 'details.html'), `<!doctype html>
+<!-- buildr:ui-prototype -->
+<html lang="zh-CN"><head><meta charset="utf-8"><title>原型任务详情</title><style>
 body{margin:0;font-family:system-ui;background:#f4f5f1;color:#283126}.nav{padding:18px 28px;background:#23372d;color:white}.page{padding:28px}.grid{display:grid;grid-template-columns:220px 1fr;gap:18px}.panel{padding:22px;border-radius:18px;background:white}
-</style></head><body><nav class="nav">Buildr · 任务</nav><main class="page"><div class="grid"><aside class="panel">任务导航</aside><section class="panel"><p>完整任务详情页面</p><h1 id="preview-detail-heading">预演任务详情</h1></section></div></main></body></html>`);
+</style></head><body><nav class="nav">Buildr · 任务</nav><main class="page"><div class="grid"><aside class="panel">任务导航</aside><section class="panel"><p>完整任务详情页面</p><h1 id="prototype-detail-heading">原型任务详情</h1></section></div></main></body></html>`);
 }
 
 function createCoreFixture(root) {
@@ -190,7 +190,7 @@ capabilities:
     requiredForDelivery: true
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
-  writeUiPreviewFixtures(projectRoot, 'browser-flow');
+  writeUiPrototypeFixtures(projectRoot, 'browser-flow');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
@@ -670,38 +670,38 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
     await page.goto(`${workspaceUrl}/tasks/browser-parent`);
-    await page.getByRole('button', { name: '预演', exact: true }).click();
-    await page.locator('#task-preview-empty').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-preview-empty').innerText(), /还没有可查看的界面预演稿[\s\S]*不会阻塞任务推进/);
+    await page.getByRole('button', { name: '原型', exact: true }).click();
+    await page.locator('#task-prototype-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-prototype-empty').innerText(), /还没有可查看的界面原型[\s\S]*不会阻塞任务推进/);
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
-    await page.getByRole('button', { name: '预演', exact: true }).click();
-    await page.waitForFunction(() => document.querySelectorAll('.ui-preview-page').length === 2);
-    assert.equal(await page.locator('.ui-preview-page').count(), 2);
-    await page.locator('.ui-preview-page').filter({ hasText: '预演任务总览' }).click();
-    assert.match(await page.locator('#task-preview-source').innerText(), /demo\/browser-flow[\s\S]*preview-fixtures/);
-    assert.equal(await page.locator('#task-preview-open-window').innerText(), '新窗口打开');
-    assert.equal(await page.locator('.ui-preview-stage-heading').getByText('隔离预览').count(), 0);
-    assert.equal(await page.locator('#task-preview-frame').getAttribute('sandbox'), 'allow-scripts');
-    const previewSource = await page.locator('#task-preview-frame').getAttribute('src');
-    assert.ok(previewSource);
-    const [previewWindow] = await Promise.all([
+    await page.getByRole('button', { name: '原型', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.ui-prototype-page').length === 2);
+    assert.equal(await page.locator('.ui-prototype-page').count(), 2);
+    await page.locator('.ui-prototype-page').filter({ hasText: '原型任务总览' }).click();
+    assert.match(await page.locator('#task-prototype-source').innerText(), /demo\/browser-flow[\s\S]*prototype-fixtures/);
+    assert.equal(await page.locator('#task-prototype-open-window').innerText(), '新窗口打开');
+    assert.equal(await page.locator('.ui-prototype-stage-heading').getByText('隔离预览').count(), 0);
+    assert.equal(await page.locator('#task-prototype-frame').getAttribute('sandbox'), 'allow-scripts');
+    const prototypeSource = await page.locator('#task-prototype-frame').getAttribute('src');
+    assert.ok(prototypeSource);
+    const [prototypeWindow] = await Promise.all([
       page.waitForEvent('popup'),
-      page.locator('#task-preview-open-window').click(),
+      page.locator('#task-prototype-open-window').click(),
     ]);
-    await previewWindow.waitForURL((opened) => new URL(opened).pathname === new URL(previewSource, url).pathname);
-    assert.equal(new URL(previewWindow.url()).pathname, new URL(previewSource, url).pathname);
-    await previewWindow.close();
-    const previewResponse = await page.request.get(new URL(previewSource, url).href);
-    assert.equal(previewResponse.status(), 200);
-    assert.match(previewResponse.headers()['content-security-policy'] || '', /sandbox allow-scripts[\s\S]*connect-src 'none'[\s\S]*form-action 'none'[\s\S]*frame-ancestors 'self'/);
-    const previewFrame = page.frameLocator('#task-preview-frame');
-    await previewFrame.locator('#preview-action').waitFor({ state: 'visible' });
-    assert.equal(await previewFrame.locator('body').getAttribute('data-parent-access'), 'blocked');
-    await previewFrame.locator('#preview-action').click();
-    assert.equal(await previewFrame.locator('#preview-state').innerText(), '已确认');
-    await page.locator('.ui-preview-page').filter({ hasText: '预演任务详情' }).click();
-    await page.frameLocator('#task-preview-frame').locator('#preview-detail-heading').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-preview-title').innerText(), '预演任务详情');
+    await prototypeWindow.waitForURL((opened) => new URL(opened).pathname === new URL(prototypeSource, url).pathname);
+    assert.equal(new URL(prototypeWindow.url()).pathname, new URL(prototypeSource, url).pathname);
+    await prototypeWindow.close();
+    const prototypeResponse = await page.request.get(new URL(prototypeSource, url).href);
+    assert.equal(prototypeResponse.status(), 200);
+    assert.match(prototypeResponse.headers()['content-security-policy'] || '', /sandbox allow-scripts[\s\S]*connect-src 'none'[\s\S]*form-action 'none'[\s\S]*frame-ancestors 'self'/);
+    const prototypeFrame = page.frameLocator('#task-prototype-frame');
+    await prototypeFrame.locator('#prototype-action').waitFor({ state: 'visible' });
+    assert.equal(await prototypeFrame.locator('body').getAttribute('data-parent-access'), 'blocked');
+    await prototypeFrame.locator('#prototype-action').click();
+    assert.equal(await prototypeFrame.locator('#prototype-state').innerText(), '已确认');
+    await page.locator('.ui-prototype-page').filter({ hasText: '原型任务详情' }).click();
+    await page.frameLocator('#task-prototype-frame').locator('#prototype-detail-heading').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#task-prototype-title').innerText(), '原型任务详情');
     runtime.beginTaskDevelopment(workspaceRoot, 'browser-parent', {
       changeDispositions: [],
       planning: { targetIdentity: null, nodes: [] },
@@ -853,7 +853,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
     assert.equal(await page.locator('[data-task-tab]').count(), 6);
-    await unique(page.getByRole('button', { name: '预演', exact: true }), '任务预演页签');
+    await unique(page.getByRole('button', { name: '原型', exact: true }), '任务原型页签');
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');
     await unique(page.getByRole('button', { name: '复盘', exact: true }), '任务复盘页签');

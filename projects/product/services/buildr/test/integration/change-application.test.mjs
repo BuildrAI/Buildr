@@ -190,26 +190,28 @@ test('Task-scoped Change 对失效路径和无法证明的 Project scope 保持 
   assert.equal(resolveWith({ ...scope, validationRoot: path.join(root, 'different-task-root') }).availability, 'unavailable');
 });
 
-test('Task UI Preview 从候选 working Change 发现带标记完整 HTML 并报告安全跳过', (t) => {
+test('Task UI Prototype 从候选 working Change 发现带标记完整 HTML 并报告安全跳过', (t) => {
   const { root, runtime, projectRoot } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const validationRoot = path.join(root, 'task-root');
   const candidateProjectRoot = path.join(validationRoot, 'projects', 'product');
   writeChange(projectRoot, 'previewed', {
-    'preview.html': '<!doctype html><html><head><title>Retained Preview</title></head><body><!-- buildr:ui-preview --></body></html>',
+    'prototype.html': '<!doctype html><html><head><title>Retained Prototype</title></head><body><!-- buildr:ui-prototype --></body></html>',
   });
   const candidateChangeRoot = writeChange(candidateProjectRoot, 'previewed', {
-    'screens/task.html': '<!doctype html><html><head><title>Candidate Task Preview</title><style>body{color:#123}</style></head><body><!-- buildr:ui-preview --><button>切换</button></body></html>',
-    'screens/unmarked.html': '<!doctype html><html><head><title>Ignored</title></head><body>not a preview</body></html>',
-    'screens/incomplete.html': '<!-- buildr:ui-preview --><title>Incomplete</title>',
-    'screens/large.html': `<!doctype html><html><head><title>Large</title></head><body><!-- buildr:ui-preview -->${'x'.repeat((2 * 1024 * 1024) + 1)}</body></html>`,
+    'screens/task.html': '<!doctype html><html><head><title>Candidate Task Prototype</title><style>body{color:#123}</style></head><body><!-- buildr:ui-prototype --><button>切换</button></body></html>',
+    'screens/detail.html': '<!doctype html><html><head><title>Candidate Detail Prototype</title></head><body><!-- buildr:ui-prototype --><a href="task.html">返回</a></body></html>',
+    'screens/legacy.html': '<!doctype html><html><head><title>Legacy Preview</title></head><body><!-- buildr:ui-preview --></body></html>',
+    'screens/unmarked.html': '<!doctype html><html><head><title>Ignored</title></head><body>not a prototype</body></html>',
+    'screens/incomplete.html': '<!-- buildr:ui-prototype --><title>Incomplete</title>',
+    'screens/large.html': `<!doctype html><html><head><title>Large</title></head><body><!-- buildr:ui-prototype -->${'x'.repeat((2 * 1024 * 1024) + 1)}</body></html>`,
   });
   const outside = path.join(root, 'outside.html');
-  fs.writeFileSync(outside, '<!doctype html><html><head><title>Outside</title></head><body><!-- buildr:ui-preview --></body></html>');
+  fs.writeFileSync(outside, '<!doctype html><html><head><title>Outside</title></head><body><!-- buildr:ui-prototype --></body></html>');
   fs.symlinkSync(outside, path.join(candidateChangeRoot, 'screens', 'linked.html'));
 
-  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'preview-task' } });
-  runtime.inspectTaskRecord = () => ({ record: { taskId: 'preview-task', changes: [{ project: 'product', change: 'previewed' }] } });
+  runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'prototype-task' } });
+  runtime.inspectTaskRecord = () => ({ record: { taskId: 'prototype-task', changes: [{ project: 'product', change: 'previewed' }] } });
   runtime.readTaskEnvironmentCurrent = () => ({
     status: 'ready',
     environment: {
@@ -224,43 +226,47 @@ test('Task UI Preview 从候选 working Change 发现带标记完整 HTML 并报
     },
   });
 
-  const result = runtime.taskUiPreviews(root, 'preview-task');
-  assert.equal(result.taskId, 'preview-task');
-  assert.equal(result.previews.length, 1);
+  const result = runtime.taskUiPrototypes(root, 'prototype-task');
+  assert.equal(result.taskId, 'prototype-task');
+  assert.equal(result.prototypes.length, 2);
+  const taskPrototype = result.prototypes.find((item) => item.path === 'screens/task.html');
+  assert.ok(taskPrototype);
   assert.deepEqual({
-    id: result.previews[0].id,
-    title: result.previews[0].title,
-    path: result.previews[0].path,
-    lifecycle: result.previews[0].lifecycle,
-    provenance: result.previews[0].provenance,
+    id: taskPrototype.id,
+    title: taskPrototype.title,
+    path: taskPrototype.path,
+    lifecycle: taskPrototype.lifecycle,
+    provenance: taskPrototype.provenance,
   }, {
-    id: result.previews[0].id,
-    title: 'Candidate Task Preview',
+    id: taskPrototype.id,
+    title: 'Candidate Task Prototype',
     path: 'screens/task.html',
     lifecycle: 'active',
     provenance: 'task-environment-candidate',
   });
-  assert.match(result.previews[0].id, /^[a-f0-9]{32}$/);
-  assert.equal(Object.hasOwn(result.previews[0], 'html'), false);
-  const page = runtime.taskUiPreview(root, 'preview-task', result.previews[0].id);
-  assert.equal(page.html.includes('Candidate Task Preview'), true);
-  assert.equal(page.html.includes('Retained Preview'), false);
-  assert.equal(page.html.includes('not a preview'), false);
-  assert.throws(() => runtime.taskUiPreview(root, 'preview-task', 'not-an-id'), (error) => error.code === 'ui_preview_reference_invalid');
-  assert.throws(() => runtime.taskUiPreview(root, 'preview-task', '0'.repeat(32)), (error) => error.code === 'ui_preview_not_found');
+  assert.match(taskPrototype.id, /^[a-f0-9]{32}$/);
+  assert.equal(Object.hasOwn(taskPrototype, 'html'), false);
+  const page = runtime.taskUiPrototype(root, 'prototype-task', taskPrototype.id);
+  assert.equal(page.html.includes('Candidate Task Prototype'), true);
+  assert.equal(page.html.includes('Retained Prototype'), false);
+  assert.equal(page.html.includes('not a prototype'), false);
+  assert.equal(result.prototypes.some((item) => item.title === 'Candidate Detail Prototype'), true);
+  assert.equal(result.prototypes.some((item) => item.title === 'Legacy Preview'), false);
+  assert.throws(() => runtime.taskUiPrototype(root, 'prototype-task', 'not-an-id'), (error) => error.code === 'ui_prototype_reference_invalid');
+  assert.throws(() => runtime.taskUiPrototype(root, 'prototype-task', '0'.repeat(32)), (error) => error.code === 'ui_prototype_not_found');
   assert.deepEqual(new Set(result.diagnostics.map(({ code }) => code)), new Set([
-    'ui_preview_document_incomplete',
-    'ui_preview_file_too_large',
-    'ui_preview_symlink_ignored',
+    'ui_prototype_document_incomplete',
+    'ui_prototype_file_too_large',
+    'ui_prototype_symlink_ignored',
   ]));
   assert.equal(JSON.stringify(result).includes(root), false);
 });
 
-test('Task UI Preview 从 archived retained Change 继续读取且无 Change 时返回空态', (t) => {
+test('Task UI Prototype 从 archived retained Change 继续读取且无 Change 时返回空态', (t) => {
   const { root, runtime, projectRoot } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   writeChange(projectRoot, 'archive/2026-08-18-previewed', {
-    'anywhere/archived.html': '<!doctype html><html><head><title>Archived Preview</title></head><body><!-- buildr:ui-preview --></body></html>',
+    'anywhere/archived.html': '<!doctype html><html><head><title>Archived Prototype</title></head><body><!-- buildr:ui-prototype --></body></html>',
   });
   runtime.readTaskRecordPersistence = () => ({ record: { taskId: 'archived-task' } });
   runtime.readTaskEnvironmentCurrent = () => ({ status: 'unavailable', environment: null });
@@ -271,11 +277,11 @@ test('Task UI Preview 从 archived retained Change 继续读取且无 Change 时
     },
   });
 
-  const archived = runtime.taskUiPreviews(root, 'archived-task');
-  assert.equal(archived.previews.length, 1);
-  assert.equal(archived.previews[0].lifecycle, 'archived');
-  assert.equal(archived.previews[0].provenance, 'retained-archive');
-  assert.equal(archived.previews[0].path, 'anywhere/archived.html');
-  assert.equal(runtime.taskUiPreview(root, 'archived-task', archived.previews[0].id).html.includes('Archived Preview'), true);
-  assert.deepEqual(runtime.taskUiPreviews(root, 'empty-task'), { taskId: 'empty-task', previews: [], diagnostics: [] });
+  const archived = runtime.taskUiPrototypes(root, 'archived-task');
+  assert.equal(archived.prototypes.length, 1);
+  assert.equal(archived.prototypes[0].lifecycle, 'archived');
+  assert.equal(archived.prototypes[0].provenance, 'retained-archive');
+  assert.equal(archived.prototypes[0].path, 'anywhere/archived.html');
+  assert.equal(runtime.taskUiPrototype(root, 'archived-task', archived.prototypes[0].id).html.includes('Archived Prototype'), true);
+  assert.deepEqual(runtime.taskUiPrototypes(root, 'empty-task'), { taskId: 'empty-task', prototypes: [], diagnostics: [] });
 });

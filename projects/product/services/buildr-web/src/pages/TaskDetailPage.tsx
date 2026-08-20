@@ -18,7 +18,7 @@ import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
-import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
+import { PrototypeTab, type UiPrototypeData } from './task-detail/PrototypeTab';
 import {
   diff,
   Fact,
@@ -38,7 +38,7 @@ type BriefState =
 
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
-  { id: 'preview', label: '预演' },
+  { id: 'prototype', label: '原型' },
   { id: 'development', label: '研发' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
@@ -60,9 +60,9 @@ export function TaskDetailPage() {
   const [editState, setEditState] = useState('可以修改');
   const [activeTab, setActiveTab] = useState<TaskTab>('overview');
   const [briefs, setBriefs] = useState<BriefState[]>([]);
-  const [previewData, setPreviewData] = useState<UiPreviewData | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [prototypeData, setPrototypeData] = useState<UiPrototypeData | null>(null);
+  const [prototypeLoading, setPrototypeLoading] = useState(false);
+  const [prototypeError, setPrototypeError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [intent, setIntent] = useState('');
@@ -105,7 +105,7 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
-  const previewRequestRef = useRef(0);
+  const prototypeRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
@@ -236,23 +236,23 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
-  const refreshPreview = useCallback(async () => {
-    const requestId = ++previewRequestRef.current;
+  const refreshPrototype = useCallback(async () => {
+    const requestId = ++prototypeRequestRef.current;
     const currentTaskId = taskId;
-    setPreviewLoading(true);
-    setPreviewError(null);
+    setPrototypeLoading(true);
+    setPrototypeError(null);
     try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'ui-previews', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`, { signal })
-      )) as UiPreviewData;
-      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPreviewData(next);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'ui-prototypes', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-prototypes`, { signal })
+      )) as UiPrototypeData;
+      if (prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPrototypeData(next);
     } catch (err) {
-      if (!isTaskReadCancelled(err) && previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setPreviewError(`${(err as ApiError).code || 'task_ui_preview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
-        setPreviewData(null);
+      if (!isTaskReadCancelled(err) && prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setPrototypeError(`${(err as ApiError).code || 'task_ui_prototype_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
+        setPrototypeData(null);
       }
     } finally {
-      if (previewRequestRef.current === requestId) setPreviewLoading(false);
+      if (prototypeRequestRef.current === requestId) setPrototypeLoading(false);
     }
   }, [taskId]);
 
@@ -414,7 +414,7 @@ export function TaskDetailPage() {
       void refreshCoordination();
     }
     if (tab === 'development') void refreshDevelopment();
-    if (tab === 'preview') void refreshPreview();
+    if (tab === 'prototype') void refreshPrototype();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
@@ -422,7 +422,7 @@ export function TaskDetailPage() {
       void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPreview, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -432,8 +432,8 @@ export function TaskDetailPage() {
     setOverviewData(null);
     setCoordinationData(null);
     setDevelopmentData(null);
-    setPreviewData(null);
-    setPreviewError(null);
+    setPrototypeData(null);
+    setPrototypeError(null);
     setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
@@ -451,7 +451,7 @@ export function TaskDetailPage() {
     projectRegistryRef.current = null;
     setEditState('可以修改');
     developmentRequestRef.current += 1;
-    previewRequestRef.current += 1;
+    prototypeRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
     environmentRequestRef.current += 1;
@@ -461,7 +461,7 @@ export function TaskDetailPage() {
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
-    setPreviewLoading(false);
+    setPrototypeLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
     setEnvironmentLoading(false);
@@ -1001,13 +1001,13 @@ export function TaskDetailPage() {
         onSelectEvidence={() => selectTab('evidence')}
         onSelectFinishExecutionRecords={() => selectExecutionRecordView('finish')}
       />
-      <PreviewTab
-        active={activeTab === 'preview'}
+      <PrototypeTab
+        active={activeTab === 'prototype'}
         workspaceId={workspaceId}
-        data={previewData}
-        loading={previewLoading}
-        error={previewError}
-        onRefresh={() => { void refreshPreview(); }}
+        data={prototypeData}
+        loading={prototypeLoading}
+        error={prototypeError}
+        onRefresh={() => { void refreshPrototype(); }}
       />
       <EvidenceTab
         active={activeTab === 'evidence'}
