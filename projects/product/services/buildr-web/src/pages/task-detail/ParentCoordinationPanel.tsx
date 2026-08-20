@@ -103,8 +103,12 @@ function ContributionDetail({ contribution, byId }: { contribution: ParentContri
   );
 }
 
-function OrderedPlanList({ items }: { items: string[] }) {
-  return <ol className="parent-ordered-plan-list">{items.map((item, index) => <li key={`${index}-${item}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{item}</p></li>)}</ol>;
+function DecisionList({ items }: { items: string[] }) {
+  return <ol className="parent-decision-grid">{items.map((item, index) => <li key={`${index}-${item}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{item}</p></li>)}</ol>;
+}
+
+function AcceptanceList({ items }: { items: string[] }) {
+  return <ol className="parent-acceptance-list">{items.map((item, index) => <li key={`${index}-${item}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{item}</p></li>)}</ol>;
 }
 
 export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
@@ -135,38 +139,47 @@ export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
   const completed = completedContributionCount(contributions);
   const review = data.planningReview;
   return (
-    <section className="panel parent-coordination-panel" id="task-parent-coordination" aria-live="polite">
-      <div className="panel-heading parent-plan-heading">
-        <div><p className="eyebrow">Parent Overview</p><h2>{data.plan?.outcome}</h2><p className="section-copy">以完整 Parent Plan 为核心，协调工作范围、依赖、实际交付与最终集成验收。</p></div>
-        <Button onClick={onRefresh} disabled={loading}>{loading ? '读取中…' : '刷新协调事实'}</Button>
-      </div>
-
-      <div className="parent-summary-strip">
-        <div className="parent-next-action"><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div>
-        <div><span>可启动</span><strong>{data.startup?.eligibleContributions?.length || 0}</strong></div>
-        <div><span>明确处置</span><strong>{completed} / {contributions.length}</strong></div>
-        <div><span>最终验收</span><strong>{data.parentAcceptance ? '已记录' : data.prerequisitesSatisfied ? '待记录' : '未就绪'}</strong></div>
+    <section className="parent-coordination-panel" id="task-parent-coordination" aria-live="polite">
+      <div className="parent-overview-hero">
+        <article className="panel parent-outcome-card">
+          <p className="eyebrow">Parent Outcome</p>
+          <h2>{data.plan?.outcome}</h2>
+          <p className="section-copy">以完整 Parent Plan 为核心，协调工作范围、依赖、实际交付与最终集成验收。</p>
+        </article>
+        <aside className="panel parent-action-card">
+          <div className="parent-action-copy">
+            <div><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div>
+            <Button onClick={onRefresh} disabled={loading}>{loading ? '刷新中…' : '刷新'}</Button>
+          </div>
+          <div className="parent-summary-strip">
+            <div><span>可启动</span><strong>{data.startup?.eligibleContributions?.length || 0}</strong></div>
+            <div><span>明确处置</span><strong>{completed} / {contributions.length}</strong></div>
+            <div><span>最终验收</span><strong>{data.parentAcceptance ? '已记录' : data.prerequisitesSatisfied ? '待记录' : '未就绪'}</strong></div>
+          </div>
+        </aside>
       </div>
 
       {data.startup?.blockers?.length ? <div className="parent-blocker-banner">{data.startup.blockers.map((item) => <span key={`${item.code}-${item.contributionId || ''}`}>{startupBlockerLabel(item)}</span>)}</div> : null}
 
-      <div className="parent-section-heading"><div><p className="eyebrow">工作项</p><h3>Contribution Map</h3></div><span>选择左侧工作项查看完整方向与边界</span></div>
-      <div className="parent-plan-workbench">
-        <nav aria-label="Contribution Map"><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
-        {selected ? <ContributionDetail contribution={selected} byId={byId} /> : <p className="empty-copy">尚无 Contribution。</p>}
-      </div>
+      <section className="panel parent-work-section">
+        <div className="parent-section-heading"><div><p className="eyebrow">工作项</p><h3>Contribution Map</h3><p className="section-copy">按优先级浏览工作范围；选择工作项查看完整方向、依赖和边界。</p></div><span>{contributions.length} 项</span></div>
+        <div className="parent-plan-workbench">
+          <nav aria-label="Contribution Map"><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
+          {selected ? <ContributionDetail contribution={selected} byId={byId} /> : <p className="empty-copy">尚无 Contribution。</p>}
+        </div>
+      </section>
 
-      {(data.plan?.architectureDecisions?.length || 0) > 0 ? <section className="parent-plan-section parent-plan-architecture">
-        <div className="parent-section-heading"><div><p className="eyebrow">架构决定</p><h3>推进过程中保持不变的约束</h3></div><span>{data.plan?.architectureDecisions.length} 项</span></div>
-        <OrderedPlanList items={data.plan?.architectureDecisions || []} />
+      {(data.plan?.architectureDecisions?.length || 0) > 0 ? <section className="panel parent-plan-section parent-plan-architecture">
+        <div className="parent-section-heading"><div><p className="eyebrow">架构决定</p><h3>推进过程中保持不变的约束</h3><p className="section-copy">这些是 Parent 的稳定边界；Child 不能自行改变。</p></div><span>{data.plan?.architectureDecisions.length} 项</span></div>
+        <DecisionList items={data.plan?.architectureDecisions || []} />
       </section> : null}
 
-      {(data.plan?.finalAcceptance?.length || 0) > 0 ? <section className="parent-plan-section parent-plan-acceptance">
-        <div className="parent-section-heading"><div><p className="eyebrow">最终验收</p><h3>Parent 完成前必须共同满足</h3></div><span>{data.plan?.finalAcceptance.length} 项</span></div>
-        <OrderedPlanList items={data.plan?.finalAcceptance || []} />
+      {(data.plan?.finalAcceptance?.length || 0) > 0 ? <section className="panel parent-plan-section parent-plan-acceptance">
+        <div className="parent-section-heading"><div><p className="eyebrow">最终验收</p><h3>Parent 完成前必须共同满足</h3><p className="section-copy">这些是最终集成结果，不是当前启动 blocker。</p></div><span>{data.plan?.finalAcceptance.length} 项</span></div>
+        <AcceptanceList items={data.plan?.finalAcceptance || []} />
       </section> : null}
 
-      <details className="technical-details parent-governance-details">
+      <details className="panel technical-details parent-governance-details">
         <summary>技术治理事实</summary>
         <dl className="read-facts detail-facts">
           <Fact label="Plan schema" value={data.plan?.sourceSchemaVersion || '—'} />

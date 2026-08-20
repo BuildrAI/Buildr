@@ -162,9 +162,9 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(source, /ParentCoordinationPanel/);
   assert.match(source, /\/coordination`, \{ signal \}\)/);
   assert.match(coordination, /id="task-parent-coordination"/);
-  assert.match(coordination, /Parent Overview/);
+  assert.match(coordination, /Parent Outcome/);
   assert.match(coordination, /mode === 'ordinary'[\s\S]*mode === 'legacy'[\s\S]*return null/);
-  assert.match(coordination, /parent-summary-strip[\s\S]*当前动作[\s\S]*可启动[\s\S]*最终验收/);
+  assert.match(coordination, /parent-overview-hero[\s\S]*Parent Outcome[\s\S]*当前动作[\s\S]*parent-summary-strip[\s\S]*可启动[\s\S]*最终验收/);
   assert.match(coordination, /function ContributionRail/);
   assert.match(coordination, /parent-priority-group/);
   assert.match(coordination, /item\.priority/);
@@ -179,10 +179,15 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.ok(coordination.indexOf('parent-plan-acceptance') < coordination.indexOf('parent-governance-details'));
   assert.match(coordination, /parent-plan-architecture[\s\S]*架构决定/);
   assert.match(coordination, /parent-plan-acceptance[\s\S]*最终验收/);
+  assert.match(coordination, /function DecisionList[\s\S]*parent-decision-grid/);
+  assert.match(coordination, /function AcceptanceList[\s\S]*parent-acceptance-list/);
   assert.match(coordination, /parent-governance-details[\s\S]*技术治理事实/);
   assert.match(coordination, /byId\.get\(id\)\?\.title[\s\S]*<code>\{id\}<\/code>/);
   assert.match(coordinationModel, /dependencyBlockers\?: ParentDependencyBlocker\[\]/);
   assert.match(coordinationStyles, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(coordinationStyles, /parent-plan-workbench[\s\S]*max-height: clamp\(560px, 68vh, 760px\)/);
+  assert.match(coordinationStyles, /parent-plan-workbench > nav,[\s\S]*parent-contribution-detail[\s\S]*overflow: auto/);
+  assert.match(coordinationStyles, /@media \(max-width: 900px\)[\s\S]*parent-plan-workbench \{ max-height: none; \}/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
   assert.match(source, /data-task-panel="preview"|PreviewTab/);
   assert.match(evidence, /data-task-panel="evidence"/);
