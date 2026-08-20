@@ -74,6 +74,36 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   assert.ok(verificationSteps.filter((item) => item.profiles.includes('candidate')).every((item) => Number.isInteger(item.timeoutMs) && item.timeoutMs > 0 && item.timeoutMs <= 360_000));
 });
 
+test('Windows lifecycle owners are partitioned into bounded semantic shards', () => {
+  const shardIds = [
+    'workspace-lifecycle-windows',
+    'task-worktree-recovery-windows',
+    'task-finish-windows',
+    'task-development-windows',
+  ];
+  const shards = CANDIDATE_CI_SHARDS.filter((shard) => shardIds.includes(shard.id));
+  assert.deepEqual(shards.map((shard) => ({ id: shard.id, stepIds: shard.stepIds })), [
+    {
+      id: 'workspace-lifecycle-windows',
+      stepIds: ['system-workspace-lifecycle', 'workspace-lifecycle'],
+    },
+    {
+      id: 'task-worktree-recovery-windows',
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'openspec-convergence-recovery'],
+    },
+    {
+      id: 'task-finish-windows',
+      stepIds: ['system-task-finish', 'system-task-finish-cli'],
+    },
+    {
+      id: 'task-development-windows',
+      stepIds: ['integration-task-development', 'concurrent-task-acceptance'],
+    },
+  ]);
+  const owners = shards.flatMap((shard) => shard.stepIds);
+  assert.equal(new Set(owners).size, owners.length);
+});
+
 test('Candidate CI coverage fails closed for unowned and duplicated steps', () => {
   const withoutUnit = CANDIDATE_CI_SHARDS.map((item) => item.id === 'preflight-macos' ? { ...item, stepIds: item.stepIds.filter((id) => id !== 'unit') } : item);
   assert.ok(validateCandidateCiCoverage(verificationSteps, withoutUnit).findings.some((item) => item.step === 'unit' && item.code === 'candidate_step_unowned'));
