@@ -49,7 +49,7 @@ test('Formal Finish 通过 Task Record Application 幂等完成 active Task，�
   const completed = runtime.completeTaskRecordFromFinish(root, 'finish-task');
   assert.equal(completed.operation, 'complete');
   assert.equal(completed.status, 'completed');
-  assert.deepEqual(completed.record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
+  assert.deepEqual(completed.record.result, { summary: '任务贡献已验证交付。', noChange: false });
   assert.deepEqual(completed.effects, [{ type: 'updated', taskId: 'finish-task' }]);
   assert.match(completed.nextActions[0], /任务复盘/);
 

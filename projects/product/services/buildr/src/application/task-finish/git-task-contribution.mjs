@@ -115,6 +115,84 @@ export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrie
   return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
 }
 
+export function inspectGitTaskContributionContainment({ repositoryRoot, targetRef, taskContribution }) {
+  const beforeTree = taskContribution?.originalBaseline?.tree || null;
+  const sourceTree = taskContribution?.source?.tree || null;
+  if (!targetRef || taskContribution?.schemaVersion !== 'buildr.git-task-contribution/v1'
+    || !taskContribution?.identity || !beforeTree || !sourceTree) {
+    return { status: 'unprovable', code: 'task-finish.task-contribution-containment-input-invalid', targetRef };
+  }
+  try {
+    const observedIdentity = deltaIdentity(repositoryRoot, beforeTree, sourceTree);
+    if (observedIdentity !== taskContribution.identity) {
+      return {
+        status: 'unprovable',
+        code: 'task-finish.task-contribution-identity-mismatch',
+        targetRef,
+        expectedIdentity: taskContribution.identity,
+        observedIdentity,
+      };
+    }
+    const resolvedTargetRef = gitText(repositoryRoot, ['rev-parse', `${targetRef}^{commit}`]);
+    if (!resolvedTargetRef) return { status: 'unprovable', code: 'task-finish.task-contribution-target-unreadable', targetRef };
+    const changes = rawChanges(repositoryRoot, beforeTree, sourceTree);
+    if (changes.length === 0) {
+      return { status: 'not-contained', code: 'task-finish.task-contribution-empty', targetRef: resolvedTargetRef, changedPaths: [] };
+    }
+    const checkedPaths = [];
+    for (const change of changes) {
+      const observed = git(repositoryRoot, ['ls-tree', '-z', '--full-tree', resolvedTargetRef, '--', change.path]);
+      if (observed.status !== 0) {
+        return {
+          status: 'unprovable',
+          code: 'task-finish.task-contribution-target-path-unreadable',
+          targetRef: resolvedTargetRef,
+          path: change.path,
+          diagnostic: String(observed.stderr || observed.stdout).trim(),
+        };
+      }
+      const entry = String(observed.stdout).split('\0').filter(Boolean)[0] || null;
+      const matched = entry ? /^(\d+) (\S+) ([0-9a-f]+)\t(.*)$/.exec(entry) : null;
+      const deleted = change.afterMode === '000000' || /^0+$/.test(change.afterBlob);
+      const exact = deleted
+        ? entry === null
+        : Boolean(matched && matched[1] === change.afterMode && matched[3] === change.afterBlob && matched[4] === change.path);
+      const evidence = {
+        path: change.path,
+        expected: deleted ? { state: 'absent' } : { state: 'present', mode: change.afterMode, object: change.afterBlob },
+        observed: entry === null
+          ? { state: 'absent' }
+          : matched
+          ? { state: 'present', mode: matched[1], type: matched[2], object: matched[3], path: matched[4] }
+          : { state: 'unparseable' },
+        exact,
+      };
+      checkedPaths.push(evidence);
+      if (!exact) {
+        return {
+          status: 'not-contained',
+          code: 'task-finish.task-contribution-path-not-contained',
+          targetRef: resolvedTargetRef,
+          changedPaths: changes.map((item) => item.path),
+          checkedPaths,
+        };
+      }
+    }
+    const proof = {
+      schemaVersion: 'buildr.task-delivery-containment-proof/v1',
+      taskContributionIdentity: taskContribution.identity,
+      originalBaselineTree: beforeTree,
+      sourceTree,
+      targetRef: resolvedTargetRef,
+      changedPaths: changes.map((item) => item.path),
+      checkedPaths,
+    };
+    return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
+  } catch (error) {
+    return { status: 'unprovable', code: 'task-finish.task-contribution-containment-failed', targetRef, diagnostic: error.message };
+  }
+}
+
 export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, workspaceRoot = repositoryRoot, targetRef, carrier, runId, repositorySelector = null }) {
   const carrierRef = carrier?.head || null;
   const baseline = carrier?.deliveryBaseline || null;
@@ -401,6 +479,38 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
     return { status: 'equivalent', identity: sourceIdentity, reuseMode: 'deterministic-reuse' };
   } catch (error) {
     return { status: 'stale', code: 'git_worktree_contribution_proof_failed', diagnostic: error.message };
+  }
+}
+
+export function verifyGitTaskContributionContainmentProof({ taskRoot, targetRef, proof }) {
+  try {
+    if (proof?.schemaVersion !== 'buildr.task-delivery-containment-proof/v1'
+      || proof?.taskContribution?.schemaVersion !== 'buildr.git-task-contribution/v1'
+      || !proof.identity) {
+      return { status: 'stale', code: 'git_worktree_containment_proof_invalid' };
+    }
+    const current = observeGitTaskContribution({
+      root: taskRoot,
+      deliveryBaselineHead: proof.taskContribution.originalBaseline.head,
+    });
+    if (current.identity !== proof.taskContribution.identity
+      || current.source.head !== proof.taskContribution.source.head
+      || current.source.tree !== proof.taskContribution.source.tree) {
+      return { status: 'stale', code: 'git_worktree_contribution_source_drift' };
+    }
+    const observed = inspectGitTaskContributionContainment({
+      repositoryRoot: taskRoot,
+      targetRef,
+      taskContribution: proof.taskContribution,
+    });
+    if (observed.status !== 'contained'
+      || observed.identity !== proof.identity
+      || observed.targetRef !== proof.targetRef) {
+      return { status: 'stale', code: observed.code || 'git_worktree_containment_proof_mismatch', observed };
+    }
+    return { status: 'equivalent', identity: current.identity, containmentIdentity: observed.identity, reuseMode: 'target-containment' };
+  } catch (error) {
+    return { status: 'stale', code: 'git_worktree_containment_proof_failed', diagnostic: error.message };
   }
 }
 

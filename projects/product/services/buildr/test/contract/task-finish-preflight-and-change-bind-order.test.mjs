@@ -9,26 +9,23 @@ const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SK
 const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
 const proposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
 
-test('Task Finish Skill 在调用产品前轻量确认贡献已提交且主工作区已对齐', () => {
+test('Task Finish Skill 在选择交付路径前轻量确认身份与安全边界', () => {
   assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);
-  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
+  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 110);
   for (const required of [
-    '任务分支贡献已提交',
-    '本机主工作区已对齐目标远端',
-    '不得做成新的入口缺口码',
-    '不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast',
-    '若返回 `task_finish.entry_gaps`',
-    '`development` / `environment` / `delivery` 完整转述',
-    '不得只报第一项',
-    'Environment adapter',
+    'Task ID、canonical Workspace、current Development handoff',
+    '实际 repository 集合',
+    'remote identity',
+    'Task Contribution',
+    '需要 force push、覆盖他人提交、改写共享历史',
+    '由 Agent 选择路径',
+    'Buildr 自动 Finish',
+    'Agent 直接交付',
   ]) assert.ok(finishSkill.includes(required), required);
-  assert.match(finishSkill, /`--agent`省略或等于 Environment adapter/);
+  const preflightIndex = finishSkill.indexOf('## 交付前');
+  const choiceIndex = finishSkill.indexOf('## 由 Agent 选择路径');
+  assert.ok(preflightIndex > 0 && choiceIndex > preflightIndex, 'identity and safety checks must precede path selection');
   assert.doesNotMatch(finishSkill, /--agent cursor|--agent codex/);
-  const preflightIndex = finishSkill.indexOf('任务分支贡献已提交');
-  const runIndex = finishSkill.indexOf('直接启动 canonical `buildr task finish run`');
-  assert.ok(preflightIndex > 0 && runIndex > preflightIndex, 'alignment reminder must precede task finish run');
-  assert.match(finishSkill, /不得做成新的入口缺口码[\s\S]*task_finish\.entry_gaps/s);
-  assert.doesNotMatch(finishSkill, /task_finish\.entry_gaps.*脏工作区|新增.*entry_gaps/s);
 });
 
 test('OpenSpec 侧栏固定脚手架、绑定、begin、文档顺序并禁止空列表 begin 后再绑定', () => {

@@ -60,7 +60,7 @@ skills:
     sourceIdentity: package:skills/buildr/git-operations
     source: buildr
     path: buildr/git-operations
-    description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+    description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
     enabled: true
     required: false
     state: installed
@@ -81,7 +81,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
+    description: 用户要求已有正式任务（formal Task）“收尾”或交付当前研发交接（Development handoff）时使用；由智能体（Agent）选择直接 Git/PR、Buildr 自动 Finish 或交付对账（delivery reconciliation），并独立处理激活、环境清理和诊断。
     enabled: true
     required: false
     state: installed

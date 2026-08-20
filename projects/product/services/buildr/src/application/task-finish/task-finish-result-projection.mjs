@@ -179,6 +179,16 @@ function executionRecord(value) {
   };
 }
 
+function maintenance(value) {
+  if (!value) return null;
+  return {
+    delivery: value.delivery || null,
+    activation: value.activation || null,
+    environmentCleanup: value.environmentCleanup || null,
+    diagnostics: value.diagnostics || null,
+  };
+}
+
 function deliveryAdaptation(value) {
   if (!value) return null;
   const hints = value.preparationHints || {};
@@ -228,6 +238,7 @@ export function compactTaskFinishResult(result) {
     refs: refs(result),
     delivery: delivery(result.delivery),
     completion: completion(result.completion),
+    maintenance: maintenance(result.maintenance || result.completion?.maintenance),
     occupancy: result.occupancy ? {
       status: result.occupancy.status || null,
       releasedAt: result.occupancy.releasedAt || null,

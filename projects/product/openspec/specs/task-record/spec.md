@@ -247,22 +247,22 @@ Buildr Web Task 详情 MUST 在用户操作 Parent 字段前避免读取完整 T
 - **AND** 当前 Parent 已终态时页面 MUST 仍保留其只读当前选项，后端 MUST 继续拒绝不合法的新关系或循环
 
 ### Requirement: Formal Finish 正常完成必须复用 Task Record Application
-Task Record Application MUST 提供一个仅供 Formal Task Finish 正常完成路径调用的内部终态动作。该动作 MUST 保持 Task Record Application 为顶层状态唯一 writer，在单个数据库事务中把 active Task 写为 `completed` 与 `result.noChange=false`；MUST 对既有 `completed/noChange=false` 返回零写入的幂等成功；MUST 拒绝覆盖 `completed/noChange=true`、`abandoned` 或损坏记录。该动作 MUST NOT 暴露为新的公共 CLI，也 MUST NOT触发 Finish、Environment cleanup、Parent/Child 状态传播或其他专业动作。
+Task Record Application MUST提供仅供经过验证的Task交付收敛调用的内部终态动作。该动作 MUST保持Task Record Application为顶层状态唯一writer，在单个数据库事务中把active Task写为`completed`与`result.noChange=false`；MUST对既有`completed/noChange=false`返回零写入的幂等成功；MUST拒绝覆盖`completed/noChange=true`、`abandoned`或损坏记录。该动作 MAY由自动Formal Finish或独立delivery reconciliation调用，但 MUST NOT公开为允许调用方声明交付成功的公共setter，也 MUST NOT触发Git交付、Environment cleanup、Parent/Child状态传播或其他专业动作。
 
 #### Scenario: Finish 通过唯一 Application 完成 active Task
-- **WHEN** Task Finish 在完整 cleanup 后提交 active Task 的正常交付终态
-- **THEN** Task Record Application MUST 原子写入 `status: completed`、确定性 summary 与 `noChange: false`
-- **AND** result MUST 返回当前 record、recordDigest 与精确 mutation effects
+- **WHEN** 全部applicable repositories的current Task Contribution已经由真实远端事实证明交付
+- **THEN** Task delivery reconciler MUST通过Task Record Application原子写入`status: completed`、确定性summary与`noChange: false`
+- **AND** result MUST返回当前record、recordDigest与精确mutation effects
 
 #### Scenario: 等价终态零写入
-- **WHEN** 同一 Finish 恢复提交一个已经 `completed/noChange=false` 的 Task
-- **THEN** Task Record Application MUST 返回当前终态与零 mutation effects
-- **AND** MUST NOT 改写 summary、updatedAt 或 Parent/Child 关系
+- **WHEN** 自动Finish或delivery reconciliation提交一个已经`completed/noChange=false`的Task
+- **THEN** Task Record Application MUST返回当前终态与零mutation effects
+- **AND** MUST NOT改写summary、updatedAt或Parent/Child关系
 
 #### Scenario: 冲突终态不可覆盖
-- **WHEN** Finish 提交目标 Task 已经 `completed/noChange=true` 或 `abandoned`
-- **THEN** Task Record Application MUST 返回类型化冲突且 effects 为空
-- **AND** 原 Task Record MUST 保持不变
+- **WHEN** 交付收敛目标Task已经`completed/noChange=true`或`abandoned`
+- **THEN** Task Record Application MUST返回类型化冲突且effects为空
+- **AND** 原Task Record MUST保持不变
 
 ### Requirement: Task Record 必须保持父子顶层状态独立
 Task Record Application MUST继续只保存单Parent关系与各Task自身顶层状态；Contribution、Parent Plan、Child Result/progress和专业handoff MUST NOT进入Task Record，且Child终态 MUST NOT传播Parent终态。
@@ -634,3 +634,11 @@ Task query projection MUST 支持关键词、Project、Service、`open|todo|acti
 - **WHEN** debounce 后的新查询在旧查询完成前发出
 - **THEN** 页面 MUST 显示明确 loading，并 MUST 防止旧响应覆盖新条件结果
 - **AND** 空结果 MUST 区分 Workspace 没有 Task 与当前筛选无结果
+
+### Requirement: Task 交付终态不得被后续维护 attention 撤销
+Task Record的`completed/noChange=false` MUST只表达已验证的任务交付结果。retained activation、Environment cleanup、Finish transient cleanup或diagnostics retention的pending/attention MUST由专业read model独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
+
+#### Scenario: completed Task仍有cleanup attention
+- **WHEN** Task已完成远端交付而Task Environment尚未安全清理
+- **THEN** Task Record MUST保持completed，Task详情 MUST展示独立cleanup attention
+- **AND** Agent MUST能继续处理清理且用户可以查看结果和进行任务复盘

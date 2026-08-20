@@ -29,16 +29,15 @@ test('协作者 tree transition 无 matching Finish 时排他路由普通 Worksp
   ]) assert.ok(triage.includes(required), `task-triage must include: ${required}`);
 });
 
-test('self-bootstrap 只接受 matching Finish Result 并在普通 Workspace update 前保持零副作用', () => {
-  assert.match(selfBootstrap, /description: 仅在当前会话持有matching Formal Task Finish Result/);
+test('self-bootstrap 只接受 matching Delivery Result 并在普通 Workspace update 前保持零副作用', () => {
+  assert.match(selfBootstrap, /description: Buildr自举Workspace取得matching Task delivery result/);
   for (const required of [
-    '启动runner前返回`not-applicable`',
-    '不得从commit author、协作者提交、Git tree前进、Doctor runtime drift或本地缺少对应Task反推Finish',
+    '返回`not-applicable`',
+    '不反推Task或Activation',
     '按普通Workspace update处理',
-    '`buildr sync <agent> --target <workspace-root>`',
-    'Result必须恰好属于一种模式',
-    '`complete`',
-    '`doctor-blocked`',
+    'matching `buildr.task-finish-self-bootstrap-input/v1`稳定投影',
+    'reconciliation形成的Delivery可以没有Delivery Carrier',
+    '历史遗留的`doctor-blocked` current run仍可兼容恢复',
   ]) assert.ok(selfBootstrap.includes(required), `self-bootstrap Skill must include: ${required}`);
 });
 

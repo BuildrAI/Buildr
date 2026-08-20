@@ -101,9 +101,9 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 只有 current Candidate、三个 current gates 和合法 proceed decision 同时成立时生成正式 handoff。Application append immutable snapshot；不得因后续 Result 刷新或新 generation 改写旧 snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
 
-## 交给 Finish
+## 交给任务收尾（Task Finish）
 
-handoff 完成后调用 `task-finish`。Finish 只能读取该 snapshot、准备或保留隔离Delivery Carrier、交付并清理；它每次核验都必须把run冻结的handoff、Candidate、generation与Content Target identity提交给Development Application，不能从历史handoffs自行选择。Finish不得收敛Change、同步Candidate内容、生成Candidate、发起正式Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告applicability stale时才回到本Skill；Finish机械冲突留在carrier适配路径。
+handoff完成后调用`task-finish`，由Agent选择自动Finish、直接Git、PR或其他已授权Delivery路径。所有路径都消费同一current snapshot；Buildr reconciliation必须把冻结handoff、Candidate、generation、Content Target与Task Contribution提交给Development Application并从真实remote target重建Delivery evidence。Task Finish不得收敛Change、生成Candidate、发起Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告真实applicability stale时才回到本Skill；远端前进、自动carrier冲突或Buildr内部登记失败不自动使Development stale。
 
 ## 完成证据
 

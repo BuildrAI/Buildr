@@ -113,7 +113,7 @@ test('当前客户端拒绝旧 action 与 caller-authored 协议参数', (t) => 
   }
 });
 
-test('canonical run 要求 receipt-bound task environment，帮助只列 run 与 inspect', (t) => {
+test('canonical run 要求 receipt-bound task environment，帮助区分自动run、reconcile与inspect', (t) => {
   const root = fixture(t);
   const initialized = spawnSync(process.execPath, [cli, 'init', '--target', root, '--name', 'finish-cli', '--description', 'Task Finish CLI fixture', '--profile', 'team'], { encoding: 'utf8' });
   assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
@@ -138,12 +138,16 @@ test('canonical run 要求 receipt-bound task environment，帮助只列 run 与
   assert.match(rejectedPayload.suggestions.join('\n'), /task-development/);
 
   const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
+  const reconcileHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'reconcile'], { encoding: 'utf8' });
   const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });
   assert.equal(runHelp.status, 0, runHelp.stderr);
+  assert.equal(reconcileHelp.status, 0, reconcileHelp.stderr);
   assert.equal(inspectHelp.status, 0, inspectHelp.stderr);
-  const helpText = `${runHelp.stdout}\n${inspectHelp.stdout}`;
+  const helpText = `${runHelp.stdout}\n${reconcileHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
+  assert.match(helpText, /task finish reconcile/);
   assert.match(helpText, /task finish inspect/);
+  assert.match(helpText, /不接受success、evidence、commit message、run token或手写proof/);
   assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
   assert.match(helpText, /--accept-zero-delta-adaptation/);

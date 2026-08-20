@@ -7,17 +7,21 @@
 ## Requirements
 
 ### Requirement: Buildr 自举收尾必须由单一确定性 runner 编排
-Buildr 自举 Workspace MUST由 `buildr-self-bootstrap-sync` Skill 自身携带的单一确定性 runner消费同一Formal Finish run的current或terminal Result，并按固定阶段完成适用的plan、target lease、workspace sync、精确successor commit、普通push、development Buildr Web安装、retained checkout显式开发入口验证与最终Doctor或same-run resume。Runner MUST通过Product只读入口取得Finish Result与`resolvedContext`，并只通过retained Product内部driver协调target lease，MUST NOT直接import Buildr npm package内部Application模块。Runner源码和入口 MUST NOT进入Buildr用户npm package、`package/targets/**`或普通Workspace Skill集合。Runner MUST NOT要求调用方提交frozen paths、动作分类、成功布尔值、recovery manifest或可编辑execution capsule，MUST NOT把这些动作加入Formal Finish五阶段或普通Workspace，也 MUST NOT安装、删除或验证PATH默认development CLI。
+Buildr自举Workspace MUST由`buildr-self-bootstrap-sync` Skill自身携带的单一确定性runner消费matching Task delivery result与冻结Task Contribution paths，并按固定内部阶段完成适用的plan、target lease、workspace sync、精确successor commit、普通push、development Buildr Web安装、retained checkout显式开发入口验证与最终Doctor。Runner MAY消费自动Finish run或独立delivery reconciliation形成的稳定投影；MUST通过Product只读入口取得delivery与resolved context，并只通过retained Product内部driver协调target lease，MUST NOT直接import Buildr npm package内部Application模块。Runner失败 MUST形成activation attention并保留已完成effects，MUST NOT撤销Task交付终态。
 
 #### Scenario: Complete Result进入自举收尾
-- **WHEN** Formal Finish Result为complete且冻结Task Contribution命中至少一个self-bootstrap动作
-- **THEN** Agent MUST启动Skill bundled runner入口并由runner形成去重plan、取得target lease、执行适用阶段和返回结构化结果
-- **AND** Agent MUST只调用一次runner；真实target occupied或Product返回的恢复边界由同一Task自动等待/恢复，不得用foreign carrier存在性形成额外人工调用流程
-- **AND** runner MUST从同一run的Finish Result读取frozen paths、Agent、target branch、remote与final ref
+- **WHEN** Task delivery result已证明Workspace repository交付且冻结Task Contribution命中至少一个self-bootstrap动作
+- **THEN** Agent MUST启动Skill bundled runner并由runner形成去重plan、取得target lease、执行适用阶段和返回结构化结果
+- **AND** Agent MUST只处理当前activation事实，不重复远端Task交付或修改Task terminal
+
+#### Scenario: 激活失败
+- **WHEN** sync、安装、development entry verification或Doctor任一步失败
+- **THEN** runner MUST保留已有effects并返回activation attention与Agent next action
+- **AND** Task delivery与completed终态 MUST保持不变
 
 #### Scenario: 普通Workspace或无匹配动作
 - **WHEN** canonical Workspace没有匹配的`buildr-self-bootstrap` Component，或frozen paths没有命中任何专属动作
-- **THEN** runner MUST返回`not-applicable`且不得获取activation lease或执行sync、Git、Buildr Web安装、开发入口验证、Doctor或Finish resume
+- **THEN** runner MUST返回`not-applicable`且不得获取activation lease或执行sync、Git、Buildr Web安装、开发入口验证或Doctor
 
 #### Scenario: Buildr用户包发布
 - **WHEN** Buildr npm package执行发布内容规划或dry-run

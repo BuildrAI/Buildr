@@ -1,6 +1,6 @@
 ---
 name: git-operations
-description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
 ---
 
 # Git Operations
@@ -19,7 +19,7 @@ description: 用户或上游 consumer 已明确选择 repository、Git Operation
 - 精确 owned paths/hunks 或已授权 commit scope；
 - 获准改变 working tree、local history 和 remote 的具体 effects。
 
-直接用户指令可以提供这些输入；无 active Task 的“收尾”由 Buildr 产品入口从当前 Workspace/Git facts 解析并选择直接交付顺序；Task Finish、其他产品入口继续决定各自动作、目标与顺序。不得沿用历史轮次的写入授权，也不得自行补选 repository、ref、remote 或策略。任何输入与当前事实不一致时，在零 Git 写入状态返回 `blocked`。
+直接用户指令、Task Finish Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序；Buildr自动Finish只是可选consumer，不是唯一授权来源。不得沿用历史轮次的写入授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
 
 ## 2. 保持 operation 单一
 
@@ -30,7 +30,7 @@ description: 用户或上游 consumer 已明确选择 repository、Git Operation
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
 - workspace update：只有 Buildr Skill 等 consumer 已明确 workspace、upstream、update operation 与授权时才执行；dirty、divergence、冲突、缺失 upstream 或策略不唯一时 `blocked`，不自动 rebase、merge 或继续 sync。
 
-无 active Task 的直接 Git 收尾是产品入口选择的复合意图，不是 provider 自行推断的 operation。默认顺序为读取当前事实、fetch 唯一目标 ref、必要时先精确 commit dirty scope、rebase 当前分支到目标 ref、普通 push 并回读远端；每一步都保持独立 Result。provider 不自动 stash；rebase 冲突、目标歧义、已共享历史或需要 force push 时停止。rebase 成功改变已检出 Buildr Workspace tree 后，consumer 触发当前 Agent Doctor；该路径不创建或修改任何 Task lifecycle evidence。
+直接Git收尾是Agent选择的复合意图，不是provider自行推断的operation。Agent可按当前事实选择fetch、精确commit、rebase、普通push与远端回读，每一步都保持独立Result。formal Task直接交付后，由Task Finish reconciliation从真实远端登记Delivery；Git Operations不写Task lifecycle evidence。provider不自动stash；rebase冲突、目标歧义、已共享历史或需要force push时停止。
 
 本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 

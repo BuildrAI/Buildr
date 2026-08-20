@@ -616,7 +616,7 @@ const COMMAND_ROUTES = [
       "Usage: buildr task environment cleanup <task-id> [--target <canonical-workspace>] [--json]",
       "",
       "按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。",
-      "公共 CLI 只允许已持久化的 abandoned Task；正常完成由 Task Finish 内部提交交付 identity。"
+      "公共CLI接受已持久化且可重新验证的Delivery evidence，或已明确abandon终态；不接受调用方声明交付成功。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'cleanup',
     run: (r, c) => taskEnvironmentCommand(r, 'cleanup', c.argv.slice(5)),
@@ -638,6 +638,20 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.taskFinish('inspect', c.argv.slice(5)),
   },
   {
+    key: "task finish reconcile",
+    surface: "agent-machine",
+    summary: "观察 current Task Contribution 与真实远端结果，收敛由 Agent、PR 或其他已授权路径完成的交付。",
+    help: [
+      "Usage: buildr task finish reconcile --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
+      "",
+      "从 current Development handoff 与 Task Environment repository set解析交付身份，读取并fetch真实远端ref，逐仓库验证Task Contribution包含关系。",
+      "不接受success、evidence、commit message、run token或手写proof；不会push、force push、改写共享历史或创建Delivery Carrier。",
+      "全部适用repository交付成立后提交Task交付终态；activation、Environment cleanup与diagnostics作为独立maintenance事实交给Agent继续处理。"
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'reconcile',
+    run: (r, c) => r.taskFinish('reconcile', c.argv.slice(5)),
+  },
+  {
     key: "task finish run",
     surface: "agent-machine",
     summary: "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。",
@@ -656,8 +670,8 @@ const COMMAND_ROUTES = [
       "Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。",
       "安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。",
       "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
-      "deliver使用Environment adapter冻结的run agent执行retained Doctor；Doctor未ready时保留已完成的remote readback、partial delivery与精确resume token，普通Workspace保持blocked并且不cleanup。",
-      "每次真正执行的run/resume先预留独立finish-diagnostics execution record容量；retained后只清理invocation diagnostics transient。record attention不改变已成立的Finish delivery、cleanup或Task终态，Carrier与恢复资源继续由Finish owner管理。",
+      "deliver使用Environment adapter冻结的run agent尝试retained Doctor；Doctor未ready时保留已完成remote readback并把Activation标记为attention，不撤销Delivery。",
+      "每次真正执行的run/resume尝试打开独立finish-diagnostics Execution Record；open、seal、capacity或transient cleanup失败只形成Diagnostics attention，不阻止安全Delivery。",
       "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full；跨模块自举只消费--detail self-bootstrap稳定投影。",
       "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
     ],
@@ -1159,18 +1173,18 @@ const COMMAND_GROUPS = [
       "Usage: buildr task environment <plan record|plan inspect|prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]",
       "",
       "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
-      "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受Task Finish handoff或已持久化的abandon终态。"
+      "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受可重新验证的Delivery evidence或已持久化的abandon终态。"
     ],
     executable: false,
   },
   {
     key: "task finish",
     surface: "agent-machine",
-    summary: "run 消费 current formal Development handoff 并执行 prepare → verify → deliver → cleanup；inspect 只读查看 durable finish run。",
+    summary: "run 提供可选自动交付；reconcile 收敛 Agent 或外部路径已形成的远端事实；inspect 只读查看 durable result。",
     help: [
-      "Usage: buildr task finish <run|inspect> ...",
+      "Usage: buildr task finish <run|reconcile|inspect> ...",
       "",
-      "run 消费 current formal Development handoff 并执行 prepare → verify → deliver → cleanup；inspect 只读查看 durable finish run。",
+      "run 消费 current formal Development handoff 并自动执行交付；reconcile独立观察远端交付结果；inspect只读查看durable result。",
       "该聚合入口不创建 Candidate、不执行 formal Verification/Review，也不收敛 OpenSpec Change。"
     ],
     executable: false,

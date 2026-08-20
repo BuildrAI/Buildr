@@ -261,11 +261,25 @@
 - 避免混用：Evidence不是独立存储类别，也不要求Consumer/Adoption表；authority仍属于被引用的专业事实或执行记录。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
-## Task Finish
+## 任务收尾（Task Finish）
 
-- 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。
-- 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、可恢复 blocked/cleanup-pending 状态，以及每次真正执行的首次run/resume在专业副作用前open并retained的独立Finish diagnostics Execution Record。
-- 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task_finish_current`不保存record identity/history或完整checks/operations/output，Delivery Carrier、target、lease、resume与恢复资源也不转交Execution Record owner。`task complete`只表示所有Finish gates通过后的Task Record terminal status；`.buildr/task-finish`是已退役的旧文件协议，不属于新runtime的输入。
+- 定义：消费current Development Handoff，提供可选五阶段自动交付、外部交付后的Delivery Reconciliation和交付结果投影的能力。
+- 适用范围：Agent选择自动Finish、直接Git或PR后，Buildr验证逐repository Delivery，并独立呈现Activation、Environment Cleanup与Diagnostics。
+- 避免混用：不是正式Task交付的唯一通道，不替Agent选择Git策略，也不因Buildr内部登记、Doctor、cleanup或diagnostics失败否定已确认Delivery。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 交付对账（Delivery Reconciliation）
+
+- 定义：Agent通过Git、PR或其他已授权路径完成交付后，Buildr从current handoff、冻结Task Contribution与真实remote target重建并登记逐repository Delivery evidence的只读核验动作。
+- 适用范围：外部交付、自动Finish内部证明缺失、多repository部分交付续跑与Task terminal登记恢复。
+- 避免混用：不接受claimed success、commit清单或调用方手写proof；不创建Delivery Carrier、不push，也不把路径不重叠当作语义安全。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 维护状态（Maintenance Status）
+
+- 定义：Delivery之后对Activation、Environment Cleanup与Diagnostics分别记录的`passed | attention | not-applicable`等正交状态。
+- 适用范围：Task已交付但自举、Doctor、worktree cleanup、Execution Record或Task登记仍需Agent处理时。
+- 避免混用：不是Delivery结论或第二套Task lifecycle；maintenance attention不得撤销已确认Delivery。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 ## 任务管理器（Task Manager）
 
@@ -541,9 +555,9 @@
 
 ## 交付载体（Delivery Carrier）
 
-- 定义：交付载体（Delivery Carrier）是Task Finish为实际交付承载Task Contribution的commit、branch、tarball、安装包或其他run-owned隔离载体；Git conflict时可先保留最新Delivery Baseline供Agent完成Delivery Adaptation。
-- 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter在run-owned detached Git worktree中形成commit。
-- 避免混用：不是Task Candidate或Development Content Target；Finish不得改写原Task worktree。`agent-reviewed-delivery-adaptation`只表示Agent在carrier完成语义处理并通过适用checks，不表示Buildr确定性证明语义等价。
+- 定义：交付载体（Delivery Carrier）是承载Task Contribution的commit、branch、PR、tarball、安装包或其他交付介质；Buildr自动Finish可创建run-owned隔离carrier，Agent也可选择其他已授权载体。
+- 适用范围：自动Finish prepare/deliver、Agent直接交付与Delivery Reconciliation。
+- 避免混用：不是Task Candidate或Development Content Target，也不是所有Task Delivery的强制前置条件。`agent-reviewed-delivery-adaptation`只表示Agent完成语义处理，不表示Buildr确定性证明语义等价。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 任务贡献（Task Contribution）
@@ -562,9 +576,9 @@
 
 ## 自举激活（Self-bootstrap Activation）
 
-- 定义：Buildr自举Workspace在Formal Task Finish成功后，由`buildr-self-bootstrap` Component只按该Result绑定的冻结Task Contribution paths选择并执行的本机产品收敛动作。
-- 适用范围：去重组合retained package sync、development Buildr Web安装、retained Project bridge identity gate与最终Doctor或same-run resume；只存在于显式安装该Component的Buildr自举Workspace。成功要求Environment retained Node显式验证delivered retained `projects/product/buildr`且最终Workspace Doctor ready；PATH默认`buildr`只属于npm installation。
-- 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；源码CLI可运行、`command -v`命中同名命令或`--help`可启动都不能替代默认入口identity证明，失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
+- 定义：Buildr自举Workspace取得matching Task delivery result后，由`buildr-self-bootstrap` Component按冻结Task Contribution activation paths执行的本机产品收敛动作。
+- 适用范围：自动Finish或Delivery Reconciliation之后，去重组合retained package sync、development Buildr Web、retained Project bridge identity gate与Doctor。
+- 避免混用：不是Task Delivery、Formal Finish强制阶段、Task Record完成状态或新workflow authority；失败只形成Activation attention，不改写Delivery或上游研发事实。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)与[Buildr package assets specification](../specs/buildr-package-assets/spec.md)
 
 ## 交付适配（Delivery Adaptation）

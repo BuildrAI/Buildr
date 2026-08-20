@@ -144,7 +144,7 @@ function taskDevelopmentFixture() {
     inspectTaskRecord: (_root, task) => ({ record: taskRecord || { taskId: task, status: 'active', result: null } }),
     completeTaskRecordFromFinish: (_root, task) => {
       if (!taskRecord) taskRecord = { taskId: task, status: 'active', result: null };
-      if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: [{ type: 'updated', taskId: task }] };
     },
     inspectTaskDevelopment: () => {
@@ -426,7 +426,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     prepareTaskRecordPersistence: () => ({ record: taskRecord }),
     completeTaskRecordFromFinish: () => {
       const changed = taskRecord.status === 'active';
-      if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: changed ? [{ type: 'updated', taskId: task }] : [] };
     },
     observeTaskVerificationDeclarations: () => workspaceOnly ? [] : [{
@@ -482,7 +482,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   return runtime;
 }
 
-test('retained Doctor阻塞后经自举后继commit恢复同一run并完成cleanup', async (t) => {
+test('Doctor与内部登记失败不否定交付，reconcile只修复Task终态', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -587,83 +587,22 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
     return completeTaskRecordFromFinish(...args);
   };
   const openTaskExecutionRecord = runtime.openTaskExecutionRecord;
-  const retainedHeadBeforeBackpressure = command(retained, 'git', ['rev-parse', 'HEAD']);
   runtime.openTaskExecutionRecord = () => { throw Object.assign(new Error('Injected execution record quota backpressure.'), { code: 'task_execution_record_quota_exceeded', nextAction: 'cleanup eligible execution records' }); };
-  const backpressure = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
-  assert.equal(backpressure.status, 'blocked');
-  assert.equal(backpressure.runId, null);
-  assert.equal(backpressure.executionRecord.status, 'blocked');
-  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }, { optional: true }), null);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), retainedHeadBeforeBackpressure);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers')), false);
-  assert.equal(fs.existsSync(environmentRoot), true);
+  const result = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
   runtime.openTaskExecutionRecord = openTaskExecutionRecord;
-  const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
-  assert.equal(doctorBlocked.status, 'blocked', JSON.stringify({
-    status: doctorBlocked.status,
-    primaryFailure: doctorBlocked.primaryFailure,
-    delivery: doctorBlocked.delivery,
-    deliverPhase: doctorBlocked.phases.find((phase) => phase.id === 'deliver'),
-  }, null, 2));
-  assert.equal(doctorBlocked.primaryFailure.operation, 'retained-doctor');
-  assert.equal(doctorBlocked.primaryFailure.code, 'task-finish.retained-doctor-failed');
-  assert.equal(doctorBlocked.delivery.status, 'activation-blocked');
-  assert.equal(doctorBlocked.delivery.remoteAfterRef, doctorBlocked.carrier.head);
-  assert.equal(doctorBlocked.delivery.retainedDoctor, 'blocked');
-  assert.deepEqual(doctorBlocked.phases.find((phase) => phase.id === 'deliver').operations, []);
-  assert.equal(doctorBlocked.executionRecord.status, 'retained');
-  const frozenBeforeOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--commit-message', 'fix(task-finish): override frozen message', '--target', retained]),
-    (error) => error.code === 'task_finish.commit_message_override',
-  );
-  const frozenAfterOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  assert.equal(frozenAfterOverride.identityDigest, frozenBeforeOverride.identityDigest);
-  assert.equal(frozenAfterOverride.deliveryCommit.identity, frozenBeforeOverride.deliveryCommit.identity);
-  assert.equal(frozenAfterOverride.resume.token, frozenBeforeOverride.resume.token);
-  assert.equal(doctorBlocked.executionRecord.outcome, 'blocked');
-  const firstRecords = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records;
-  assert.equal(firstRecords.length, 1);
-  const firstBodyRoot = path.join(retained, firstRecords[0].body.locator);
-  const firstSummary = JSON.parse(fs.readFileSync(path.join(firstBodyRoot, 'summary.json'), 'utf8'));
-  assert.deepEqual(firstSummary.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
-  const firstBodyText = ['summary.json', 'timeline.json', 'diagnostics.json', 'stdout.txt', 'stderr.txt'].map((name) => fs.readFileSync(path.join(firstBodyRoot, name), 'utf8')).join('\n');
-  assert.equal(firstBodyText.includes(retained), false);
-  assert.equal(firstBodyText.includes(environmentRoot), false);
-  assert.equal(firstBodyText.includes(doctorBlocked.resume.token), false);
-  assert.doesNotMatch(JSON.stringify(firstSummary), /"(?:command|args|cwd|workspaceRoot|environmentRoot|resumeToken)"\s*:/);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'diagnostics', firstRecords[0].runIdentity)), false);
-  assert.equal(fs.existsSync(environmentRoot), true);
-  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
-  await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', 'sha256-wrong-resume-token', '--target', retained]),
-    (error) => error.code === 'task_finish.resume_token_mismatch',
-  );
-  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 1);
-
-  fs.unlinkSync(path.join(retained, '.doctor-not-ready'));
-  command(retained, 'git', ['add', '.doctor-not-ready']);
-  command(retained, 'git', ['commit', '-m', 'activate self-bootstrap runtime']);
-  const activationHead = command(retained, 'git', ['rev-parse', 'HEAD']);
-  command(retained, 'git', ['push', 'origin', 'dev']);
-  const cleanupBlocked = await runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--target', retained]);
-  assert.equal(cleanupBlocked.status, 'cleanup_pending');
-  assert.equal(cleanupBlocked.primaryFailure.code, 'task_record_write_failed');
-  assert.equal(cleanupBlocked.delivery.targetDisposition, 'already-contained');
-  assert.equal(cleanupBlocked.delivery.carrierRef, doctorBlocked.carrier.head);
-  assert.equal(cleanupBlocked.delivery.finalRemoteRef, activationHead);
-  assert.equal(cleanupBlocked.executionRecord.status, 'retained');
-  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
-  const sealTaskExecutionRecord = runtime.sealTaskExecutionRecord;
-  runtime.sealTaskExecutionRecord = () => { throw Object.assign(new Error('Injected execution record seal failure.'), { code: 'task_execution_record_seal_injected' }); };
-  const result = await runtime.taskFinish('run', ['--task', task, '--run', cleanupBlocked.runId, '--resume', cleanupBlocked.resume.token, '--target', retained]);
-  runtime.sealTaskExecutionRecord = sealTaskExecutionRecord;
-
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
+  assert.equal(result.delivery.status, 'delivered');
+  assert.equal(result.delivery.activation.status, 'attention');
+  assert.equal(result.delivery.activation.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.delivery.retainedDoctor, 'attention');
+  assert.equal(result.executionRecord.status, 'attention');
+  assert.equal(result.completion.taskTerminal.status, 'attention');
+  assert.equal(result.completion.taskTerminal.code, 'task_record_write_failed');
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
-  assert.equal(result.metrics.canonicalCliInvocations, 3);
+  assert.equal(result.metrics.canonicalCliInvocations, 1);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
@@ -676,15 +615,15 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
-  assert.equal(result.delivery.targetDisposition, 'already-contained');
-  assert.equal(result.delivery.remoteAfterRef, activationHead);
-  assert.equal(result.delivery.finalRemoteRef, activationHead);
+  assert.equal(result.delivery.targetDisposition, 'carrier');
+  assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
+  assert.equal(result.delivery.finalRemoteRef, result.carrier.head);
   assert.equal(result.carrier.deliveryBaseline.head, advancedBaselineHead);
   assert.notEqual(result.carrier.head, candidateHead);
   assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations, []);
   assert.equal(fs.existsSync(environmentRoot), false);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), activationHead);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], activationHead);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:baseline-advance.txt`]), 'new delivery baseline');
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
@@ -694,23 +633,16 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
   assert.equal(completion.status, 'complete');
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
+  const reconciled = await runtime.taskFinish('reconcile', ['--task', task, '--target', retained]);
+  assert.equal(reconciled.status, 'complete');
+  assert.equal(reconciled.idempotent, true);
+  assert.equal(reconciled.taskCompletion.status, 'completed');
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
-  assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
-  assert.equal(result.executionRecord.status, 'attention');
-  assert.equal(result.executionRecord.lifecycleStatus, 'open');
-  const finishRecords = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records;
-  assert.equal(finishRecords.length, 3);
-  assert.equal(new Set(finishRecords.map((record) => record.runIdentity)).size, 3);
-  assert.equal(finishRecords.filter((record) => record.outcome === 'blocked').length, 2);
-  assert.equal(finishRecords.filter((record) => record.outcome === 'running').length, 1);
-  assert.ok(finishRecords.every((record) => record.runIdentity !== result.runId));
-  const openRecord = finishRecords.find((record) => record.lifecycleStatus === 'open');
-  assert.ok(openRecord);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'diagnostics', openRecord.runIdentity)), true);
+  assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: '任务贡献已验证交付。', noChange: false });
   const noOp = await runtime.taskFinish('run', ['--run', result.runId, '--target', retained]);
   assert.equal(noOp.status, 'complete');
   assert.equal(noOp.executionRecord.status, 'not-opened');
-  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 0);
 });
 
 test('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
@@ -1216,7 +1148,8 @@ test('多贡献 repository 在第二个 target advance 后保存部分交付并�
   const secondA = second.repositories.find((repository) => repository.selector === 'service:a');
   const secondB = second.repositories.find((repository) => repository.selector === 'service:b');
   assert.equal(secondA.delivery.status, 'delivered');
-  assert.equal(secondA.delivery.targetDisposition, 'already-contained');
+  assert.equal(secondA.delivery.targetDisposition, 'carrier');
+  assert.equal(secondA.delivery.containment, null);
   assert.equal(secondA.deliveryCarrier.identity, firstA.deliveryCarrier.identity);
   assert.equal(secondB.delivery.status, 'delivered');
   assert.equal(secondB.deliveryCarrier.expectedTargetRef, advancedServiceB);

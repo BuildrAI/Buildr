@@ -45,7 +45,7 @@ test('Git Operations 明确提供独立 fetch、selected rebase 与可见 abort 
   ]) assert.ok(gitOperations.includes(required), required);
 
   for (const required of [
-    '`fetch`、`rebase`、`commit` 与 `push` 保持独立 Result',
+    '`fetch`、`rebase`、`commit`与`push`保持独立Result',
     'fetch 不隐含 rebase',
     'rebase 不隐含 push',
     '`rebase --abort`',

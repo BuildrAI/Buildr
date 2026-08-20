@@ -167,19 +167,16 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
 });
 
-test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification authority', () => {
+test('Task Finish 保持可选五阶段 handoff consumer 且不接管 Verification authority', () => {
   assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);
-  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
+  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 110);
   for (const required of [
-    'buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup',
-    'current formal Development handoff', '隔离交付载体（Delivery Carrier）',
-    '任务贡献（Task Contribution）', '交付基线（Delivery Baseline）',
-    'formalVerificationExecutions` 必须为 `0`', '不发起 Task Verification',
+    'preflight → prepare → verify → deliver → cleanup',
+    'current Development handoff', '交付载体（Delivery Carrier）',
+    'Task Contribution', '不运行或记录 Task Verification',
   ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
-  assert.match(finishContract, /Development Application只读确认applicability/);
-  assert.match(finishContract, /formal Verification executions必须为`0`/);
-  assert.match(finishContract, /bounded compatibility checks/);
-  assert.match(finishContract, /不得record Verification Result/);
+  assert.match(finishContract, /只消费Development handoff/);
+  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review/);
   assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
   assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
   assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);

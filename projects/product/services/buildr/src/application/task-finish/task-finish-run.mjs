@@ -494,18 +494,15 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     try {
       runtime.finalizeTaskFinishPersistence(root, { run, result, completion: run.completion });
     } catch (error) {
-      run.status = 'cleanup_pending';
-      run.completedAt = null;
-      run.primaryFailure = normalizeFailure({
-        operation: 'finish-persistence',
-        failureClass: 'transient-external-condition',
-        code: error.code || 'task-finish.finalize-failed',
-        status: 'blocked',
-        message: error.message,
-        diagnostic: error.details || null,
-      }, 'cleanup');
-      run.resume = { phase: 'cleanup', token: resumeTokenFor(run, 'cleanup', run.primaryFailure), generatedAt: now(clock), carrierIdentity: resumeCarrierIdentity(run, run.primaryFailure) };
-      writeRun(root, run, clock, runtime);
+      run.status = 'complete';
+      run.primaryFailure = null;
+      run.resume = null;
+      run.completion = {
+        ...run.completion,
+        persistence: { status: 'attention', code: error.code || 'task-finish.finalize-failed', message: error.message, diagnostic: error.details || null },
+        maintenance: { ...run.completion?.maintenance, diagnostics: 'attention' },
+      };
+      try { writeRun(root, run, clock, runtime); } catch { /* return authoritative delivery even when internal persistence remains unavailable */ }
       observer?.finishStopped?.({ status: run.status, at: run.updatedAt });
       return finishResult(run, clock);
     }
@@ -597,6 +594,7 @@ export function finishResult(run, clock = Date.now) {
     equivalence: clone(projectedState?.equivalence || run.equivalence),
     delivery: clone(projectedState?.delivery || run.delivery),
     completion: clone(run.completion),
+    maintenance: clone(run.completion?.maintenance || run.maintenance || null),
     occupancy: run.occupancy ? clone(run.occupancy) : null,
     bootstrapRecovery: run.bootstrapRecovery ? clone(run.bootstrapRecovery) : null,
     metrics: {

@@ -19,8 +19,8 @@ test('“收尾”路由区分 Formal Task Finish 与无 Task 直接 Git 交付'
   const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
   const packagedGit = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
 
-  assert.match(packagedFinish.description, /active formal Task/);
-  assert.match(packagedGit.description, /没有 active Task.*“收尾”/);
+  assert.match(packagedFinish.description, /正式任务（formal Task）/);
+  assert.match(packagedGit.description, /无活跃任务（active Task）的直接 Git 收尾/);
   assert.match(runtimeBuildr, /没有 active Task.*“收尾”/);
   assert.match(runtimeBuildr, /fetch → 必要时精确 commit → rebase → push/);
   assert.match(runtimeBuildr, /不创建 Task、Environment、Verification、Candidate、Finish Result/);
@@ -28,11 +28,11 @@ test('“收尾”路由区分 Formal Task Finish 与无 Task 直接 Git 交付'
 
 test('直接 Git 收尾保留 operation、冲突和生命周期边界', () => {
   for (const required of [
-    '无 active Task 的直接 Git 收尾是产品入口选择的复合意图',
-    '必要时先精确 commit dirty scope',
-    'rebase 冲突',
+    '直接Git收尾是Agent选择的复合意图',
+    '精确commit',
+    'rebase冲突',
     '已共享历史',
-    '不创建或修改任何 Task lifecycle evidence',
+    'Git Operations不写Task lifecycle evidence',
   ]) assert.ok(gitSkill.includes(required), required);
 
   for (const required of [
@@ -44,6 +44,6 @@ test('直接 Git 收尾保留 operation、冲突和生命周期边界', () => {
   ]) assert.ok(directSpec.includes(required), required);
 
   assert.match(workflowDelta, /Agent 在无 active Task 时需要直接收尾/);
-  assert.match(finishSkill, /没有 active Task 时用户说“收尾”/);
-  assert.match(finishSkill, /不得创建临时 Task/);
+  assert.match(runtimeBuildr, /没有 active Task 时，用户说“收尾”/);
+  assert.match(runtimeBuildr, /不创建临时 Task/);
 });

@@ -6,19 +6,6 @@
 
 ## Requirements
 
-### Requirement: Task Finish 必须是固定五阶段执行器
-Buildr MUST继续以`preflight → prepare → verify → deliver → cleanup`五个固定阶段执行当前P0.5 Task Finish adapter，MUST NOT把普通动作暴露为需要Agent completion的可扩展step、action registry或通用provider DAG。`verify`阶段在P0.5只核验Development handoff与carrier内容等价，MUST NOT执行formal Verification或访问Verification Result。阶段状态MUST只表达`pending|running|passed|blocked|failed|not-applicable`。
-
-#### Scenario: 正常候选进入收尾
-- **WHEN** 调用方对Development Application提供的current finish handoff执行`buildr task finish run`
-- **THEN** 产品 MUST按五阶段顺序连续执行到完成或真实停止边界
-- **AND** 正常路径 MUST NOT请求调用方提交Candidate、step outcome、attempt、effect、evidence、fingerprint、execution plan或recovery manifest
-
-#### Scenario: 固定阶段内包含多个机械动作
-- **WHEN** prepare或deliver需要执行多个确定性carrier/delivery动作
-- **THEN** 产品 MUST将它们记录为阶段operations/observations
-- **AND** MUST NOT因新增一个机械动作而扩展公共workflow step数或取得Development authority
-
 ### Requirement: Preflight 必须一次聚合廉价门禁
 `preflight` MUST在任何delivery mutation前通过Task Development Application取得current handoff，并一次聚合Environment executable、handoff applicability、delivery target、retained root、carrier prerequisites与cleanup ownership findings。Finish MUST NOT在preflight解析Change/tasks/knowledge/OpenSpec、verification policy、Review或Verification stores；这些facts必须已由Development handoff闭合。Preflight有error时 MUST零delivery mutation。
 
@@ -477,18 +464,6 @@ Task Finish MUST 提供最窄的按 Task 只读查询，复用 `.buildr/task-fin
 - **THEN** 查询 MUST 返回不可安全核验诊断
 - **AND** MUST NOT 跳过关键损坏后推断 delivered
 
-### Requirement: delivered 必须由完整 Finish 事实 fail closed 派生
-terminal delivery projection MUST 至少验证 Task completed 且非 noChange、Finish status 与 completion complete、Task ID、handoff identity、Candidate identity/generation、Content Target identity、carrier equivalence、remote readback、retained activation/Doctor 与 Environment cleanup。任一关键事实缺失或不匹配时 MUST NOT 返回 delivered。
-
-#### Scenario: 完整匹配的成功交付
-- **WHEN** 全部 Task、handoff、Candidate、Content Target、carrier、remote 与 cleanup facts 完整匹配
-- **THEN** projection MUST 返回 delivered、final remote ref、完成时间与 cleanup 摘要
-
-#### Scenario: 任一关键 identity 不匹配
-- **WHEN** Finish taskId、handoff、Candidate identity/generation 或 Content Target identity 任一不匹配
-- **THEN** projection MUST fail closed 为 completed-unproven 或 unavailable
-- **AND** MUST NOT 显示 delivered
-
 ### Requirement: Deliver 必须识别已完整包含 Carrier 的前进 Target
 当 observed target ref在当前Delivery Carrier准备后前进时，Task Finish MUST在返回target-race前确定性检查最新target是否完整包含该carrier。包含证明 MUST同时要求carrier head是observed target的Git ancestor、carrier全部changed paths在observed target保持相同after mode/blob或删除状态，并且current Development carrier equivalence仍成立；不得只凭路径不重叠、commit message或调用方声明放行。
 
@@ -506,29 +481,6 @@ terminal delivery projection MUST 至少验证 Task completed 且非 noChange、
 - **WHEN** fetch失败、carrier不是observed target的ancestor，或target tree状态无法读取
 - **THEN** deliver MUST fail closed并返回当前target-race诊断
 - **AND** MUST NOT修改原Task worktree、Candidate、Verification Result或远端target
-
-### Requirement: Task Finish 必须在完整成功后提交顶层 Task 终态
-Formal Task Finish MUST 在远端交付、retained activation/Doctor、Task Environment cleanup 与 run-owned Delivery Carrier cleanup 全部成功后，通过 Task Record Application 将对应 active Task 提交为 `completed` 且 `result.noChange=false`。Task Finish MUST NOT 直接写 Workspace SQLite、复制 Task Record authority，或在任一 deliver/cleanup 动作 blocked、failed、未执行时提前改变 Task 顶层状态。只有 Task Record Application 提交成功或确认既有等价 completed 终态后，Finish completion 才可从 `prepared` 进入 `complete`。
-
-#### Scenario: 完整收尾后自动完成 Task
-- **WHEN** Formal Finish 的 delivery、Environment cleanup 与 Delivery Carrier cleanup 全部成功，且 Task Record 仍为 active
-- **THEN** Task Finish MUST 通过 Task Record Application 写入 `status: completed` 与 `result.noChange: false`
-- **AND** Finish Result MUST 在该提交成功后返回 complete
-
-#### Scenario: 收尾阻塞不改变 Task
-- **WHEN** delivery、Environment cleanup、Delivery Carrier cleanup 或 Task Record Application 提交任一步骤 blocked 或 failed
-- **THEN** Task Finish MUST NOT 把 active Task 冒充为 completed
-- **AND** run MUST 保留可恢复事实与具体 primary failure
-
-#### Scenario: 已完成 Task 的幂等恢复
-- **WHEN** Finish resume 观察到同一 Task 已是 `completed` 且 `result.noChange=false`
-- **THEN** Task Record Application MUST 返回幂等成功且不产生重复 mutation effect
-- **AND** Task Finish MAY 继续写入匹配的 complete completion
-
-#### Scenario: 冲突终态阻止 Finish 完成
-- **WHEN** Finish 提交终态时 Task 已是 `completed/noChange=true` 或 `abandoned`
-- **THEN** Task Record Application MUST 保留原终态并返回冲突
-- **AND** Task Finish MUST 保持 blocked 且不得写入 complete completion
 
 ### Requirement: Finish completion 必须写入采用的 gate 关联
 Task Finish 在完成 Task Record 交付终态时 MUST 投影其 current Development handoff 中冻结的 Planning、Verification 与 Completion gate 关联。Finish MUST 使用 handoff 中的最小 identity/digest，而不是读取后续变化的专业 Result；投影失败 MUST 保留可恢复诊断并阻止 success completion。
@@ -578,24 +530,6 @@ Task Finish deliver MUST使用run identity绑定的Agent执行retained Doctor。
 - **WHEN** 调用方使用matching run id与产品resume token恢复Doctor-blocked run
 - **THEN** Product MUST重新核对target containment、retained cleanliness和current handoff，并重新执行指定Agent Doctor
 - **AND** 只有最终Doctor ready时 MUST进入cleanup并形成Formal Finish complete
-
-### Requirement: Task Finish execution 必须由 record open gate 启动
-Task Finish Application MUST在调用前参数、Task、ready Environment、current Development handoff、target/remote、resume token与completed/no-op判断完成后，为需要真正执行的invocation先open `task-finish/finish-diagnostics` record。open成功前 MUST不创建、替换或失效Finish current，不得创建/删除Carrier、获取lease、启动执行期target mutation/observation、写diagnostics transient、丢弃旧run或改变任何恢复资源；调用前确定target/remote identity所需的只读校验不属于producer execution。
-
-#### Scenario: record capacity backpressure
-- **WHEN** 固定record reservation因Task/owner或Workspace quota被拒绝
-- **THEN** `task finish run` MUST返回blocked execution record operation summary且不得启动五阶段
-- **AND** 既有或缺失的`task_finish_current`、remote ref、Carrier、target lease、resume与恢复资源 MUST逐项保持不变
-
-#### Scenario: open成功后首次执行
-- **WHEN** invocation通过校验且record open成功
-- **THEN** Application MAY建立invocation diagnostics transient并创建或恢复Finish run，然后按固定五阶段执行
-- **AND** 旧failed run/Carrier的任何受控失效或清理 MUST作为本invocation operation发生在open之后
-
-#### Scenario: invalid resume token
-- **WHEN** caller对既有blocked或cleanup-pending run提供缺失、不匹配或过期token
-- **THEN** Application MUST在record open前拒绝调用并保持current与恢复资源不变
-- **AND** MUST返回`executionRecord.status: not-opened`且不得创建diagnostics transient
 
 ### Requirement: execution record 失败不得成为第二 Finish terminal authority
 Task Finish MUST先按既有owner规则持久化每个阶段、delivery、cleanup与Task terminal事实，再独立seal invocation execution record。record seal、metadata确认或diagnostics cleanup失败 MUST只影响additive execution record operation summary；MUST NOT回滚、重写或重放已成立的Finish current、remote、Environment、Carrier或Task terminal facts。
@@ -1206,3 +1140,42 @@ Retained Task Finish target lease authority MUST以matching canonical Workspace�
 - **WHEN** 旧consumer以logical identity释放已解析为exact identity的activation lease
 - **THEN** authority MUST重新验证matching Task/run、唯一解析结果、实际lease identity与token后才释放
 - **AND** 错误run、错误repository identity或错误token MUST不释放当前owner
+
+### Requirement: Task Finish 必须支持 Agent 主导的交付收敛
+Buildr MUST提供不依赖既有Finish run或Delivery Carrier的交付收敛入口。该入口 MUST从current Development handoff取得Task Contribution，并按Environment repository selector核对明确remote、target branch、真实远端ref与贡献包含关系；事实成立时 MUST保存与自动Finish相同的逐repository delivery evidence并通过Task Record Application提交交付终态。调用方声明、commit message、run token或“由Buildr执行” MUST NOT替代远端观察。
+
+#### Scenario: Agent 已通过其他合法路径交付
+- **WHEN** Agent使用Git Operations、PR或其他已授权路径把current Task Contribution交付到明确目标，并调用交付收敛
+- **THEN** Buildr MUST从远端重建每个repository的包含证明并登记delivered
+- **AND** MUST NOT要求重新执行固定五阶段、创建Delivery Carrier或重复push
+
+#### Scenario: 远端不包含任务贡献
+- **WHEN** 任一applicable repository的目标ref不包含current Task Contribution或目标identity有歧义
+- **THEN** Buildr MUST只拒绝该repository的交付登记和依赖它的Task终态
+- **AND** MUST返回可供Agent处理的实际refs、changed paths和唯一危险动作边界
+
+### Requirement: 交付、激活、清理和诊断必须正交表达
+Task Finish Result与terminal projection MUST分别表达代码交付、retained activation、Task Environment cleanup和diagnostics retention。全部applicable repositories交付成立后，Doctor、Environment cleanup、Finish transient cleanup或execution record attention MUST NOT撤销delivered事实或阻止Task交付终态、复盘及无关工作；各owner仍 MUST阻止自身无法安全执行的激活或删除动作。
+
+#### Scenario: 代码已交付但Doctor失败
+- **WHEN** 远端交付已证明而retained Doctor未ready
+- **THEN** Task MUST保持delivered/completed，activation MUST记录attention并交给Agent处理
+- **AND** Buildr MUST NOT把代码交付重新报告为blocked或要求重复push
+
+#### Scenario: 代码已交付但Environment cleanup阻塞
+- **WHEN** cleanup因未知dirty内容、资源仍运行或ownership无法证明而停止
+- **THEN** Environment cleanup MUST保持pending/attention并保留资源
+- **AND** Task交付终态、其他repository与任务复盘 MUST继续可用
+
+### Requirement: 多仓库续跑必须原子保存目标关系与证明
+每个已交付repository在续跑或reconciliation时 MUST根据真实远端ref保持或更新目标关系。远端ref等于carrier ref时 MUST保持`carrier`且不得要求containment proof；只有远端后继完整包含carrier及其changed-path after state时，MUST原子保存`already-contained`和完整proof。Buildr MUST NOT保存`already-contained`且proof缺失的状态。
+
+#### Scenario: 已交付仓库远端未变化
+- **WHEN** 多仓库run恢复时repository A的远端ref仍等于已保存carrier ref
+- **THEN** repository A MUST保持`carrier`关系并复用远端回读事实
+- **AND** 后续repository交付和cleanup MUST不因缺少不适用的containment proof而阻塞
+
+#### Scenario: 已交付仓库远端线性前进
+- **WHEN** repository A的远端ref已前进且完整保持carrier ancestry与changed paths
+- **THEN** Buildr MUST在一次checkpoint中保存`already-contained`、最新final ref和完整containment proof
+- **AND** cleanup MUST能从Git重新计算并验证同一proof

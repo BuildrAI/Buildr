@@ -3,7 +3,7 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
-const TASK_FINISH_COMPLETION_SUMMARY = 'Formal Task Finish 已完成交付与环境清理。';
+const TASK_FINISH_COMPLETION_SUMMARY = '任务贡献已验证交付。';
 
 function assertObject(input, label = 'Task Record action input') {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRecordError('task_record_input_invalid', `${label} 必须是对象。`);

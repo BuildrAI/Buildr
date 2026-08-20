@@ -8,6 +8,7 @@ function baseProjection(task, development, reviews, verification) {
     delivery: null,
     snapshot: development.development?.receipt || null,
     associations: { planning: null, completion: null, verification: null },
+    maintenance: null,
     diagnostics: [],
     development,
     reviews,
@@ -44,6 +45,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       delivery: null,
       snapshot: developmentReadModel?.development?.receipt || null,
       associations: { planning: null, completion: null, verification: null },
+      maintenance: null,
       diagnostics: [],
     };
     const finishReadModel = runtime.inspectTaskFinishReadModel?.({ root: targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
@@ -56,8 +58,8 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     }
     if (task.status === 'abandoned') return { ...base, status: 'abandoned' };
     if (task.result?.noChange === true) return { ...base, status: 'completed-no-change' };
-    const terminalResult = finishReadModel.state === 'terminal' ? finishReadModel.result : null;
-    const completion = finishReadModel.state === 'terminal' ? finishReadModel.completion : null;
+    const terminalResult = ['terminal', 'current'].includes(finishReadModel.state) ? finishReadModel.result : null;
+    const completion = ['terminal', 'current'].includes(finishReadModel.state) ? finishReadModel.completion : null;
     const association = completion?.association || null;
     const receipt = developmentReadModel?.development?.receipt;
     const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === association?.handoffIdentity) || null;
@@ -65,6 +67,15 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_finish_completion_association_missing_or_mismatched', message: 'Task 已完成，但SQLite Finish completion没有与Development handoff匹配的terminal association。' }] };
     }
     const cleanupSummary = completion.cleanup?.environment?.latest?.cleanup || completion.cleanup?.latest?.cleanup || completion.cleanup || {};
+    const cleanupStatus = completion.cleanup?.status || (finishReadModel.state === 'terminal' ? 'cleaned' : 'pending');
+    const maintenance = {
+      delivery: 'delivered',
+      activation: completion.maintenance?.activation
+        || (terminalResult.delivery?.activation?.status === 'passed' ? 'passed' : terminalResult.delivery?.activation?.status === 'attention' ? 'attention' : 'not-applicable'),
+      environmentCleanup: completion.maintenance?.environmentCleanup
+        || (cleanupStatus === 'cleaned' ? 'cleaned' : cleanupStatus === 'pending' ? 'pending' : 'attention'),
+      diagnostics: completion.maintenance?.diagnostics || terminalResult.executionRecord?.status || 'not-opened',
+    };
     return {
       ...base,
       status: 'delivered',
@@ -74,7 +85,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
         finalRemoteRef: completion.finalRemoteRef || terminalResult.delivery?.finalRemoteRef || null,
         targetBranch: completion.targetBranch || terminalResult.identity?.targetBranch || null,
         remote: terminalResult.identity?.remote || null,
-        cleanup: { status: completion.cleanup?.status || 'unknown', completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
+        cleanup: { status: cleanupStatus, completedAt: cleanupSummary.completedAt || null, summary: cleanupSummary.summary || null },
         reuseMode: terminalResult.reuseMode || terminalResult.equivalence?.reuseMode || null,
         semanticEquivalence: terminalResult.equivalence?.semanticEquivalence || null,
         runId: completion.runId || terminalResult.runId,
@@ -84,6 +95,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
         completion: association.gates?.completion || null,
         verification: association.gates?.verification || null,
       },
+      maintenance,
       snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, verificationPolicy: receipt.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
       diagnostics: finishReadModel.diagnostics || [],
     };

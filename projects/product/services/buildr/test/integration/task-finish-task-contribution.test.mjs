@@ -10,6 +10,7 @@ import {
   createGitNoContributionProof,
   createIsolatedGitCarrier,
   inspectGitCarrierContainment,
+  inspectGitTaskContributionContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
   verifyDeliveredGitTaskContribution,
@@ -178,6 +179,84 @@ test('新 target 保留 carrier 的逐路径结果时形成 exact containment ev
   assert.equal(rejected.status, 'not-contained');
   assert.equal(rejected.code, 'task-finish.carrier-path-not-contained');
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'contained', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('外部交付无需Delivery Carrier ancestry即可按Task Contribution重建proof', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'agent delivered meaning\n');
+  fs.rmSync(path.join(taskRoot, 'shared.txt'));
+  git(taskRoot, ['add', '-A']);
+  git(taskRoot, ['commit', '-m', 'task candidate']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: git(root, ['rev-parse', 'HEAD']) });
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'agent delivered meaning\n');
+  fs.rmSync(path.join(root, 'shared.txt'));
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'external PR merge with different commit identity']);
+
+  const contained = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: 'HEAD', taskContribution: contribution });
+  assert.equal(contained.status, 'contained', JSON.stringify(contained, null, 2));
+  assert.equal(contained.taskContributionIdentity, contribution.identity);
+  assert.equal(contained.checkedPaths.every((entry) => entry.exact), true);
+  assert.match(contained.identity, /^sha256-[0-9a-f]{64}$/);
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'later incompatible meaning\n');
+  git(root, ['add', 'feature.txt']);
+  git(root, ['commit', '-m', 'overwrite delivered contribution']);
+  const rejected = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: 'HEAD', taskContribution: contribution });
+  assert.equal(rejected.status, 'not-contained');
+  assert.equal(rejected.code, 'task-finish.task-contribution-path-not-contained');
+});
+
+test('Git provider以外部交付containment proof安全清理非ancestor Task worktree', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'externally delivered meaning\n');
+  git(taskRoot, ['add', 'feature.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  const taskHead = git(taskRoot, ['rev-parse', 'HEAD']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'externally delivered meaning\n');
+  git(root, ['add', 'feature.txt']);
+  git(root, ['commit', '-m', 'merge external delivery']);
+  const targetHead = git(root, ['rev-parse', 'HEAD']);
+  assert.notEqual(spawnSync('git', ['merge-base', '--is-ancestor', taskHead, targetHead], { cwd: root }).status, 0);
+  const containment = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: targetHead, taskContribution: contribution });
+  assert.equal(containment.status, 'contained');
+
+  const runtime = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (target, value) => {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
+    },
+    removePath: (target) => fs.rmSync(target, { force: true }),
+  });
+  runtime.writeGitWorktreeEvidence(root, {
+    schemaVersion: 'buildr.git-worktree-evidence/v1',
+    taskId: 'task',
+    workspaceRoot: root,
+    branch: 'codex/task',
+    planDigest: `sha256-${'2'.repeat(64)}`,
+    status: 'ready',
+    repositories: [{
+      selector: 'workspace', entityType: 'workspace', sourcePath: '.', sourceRepository: fs.realpathSync(root),
+      checkoutPath: fs.realpathSync(taskRoot), branch: 'codex/task', startPoint: 'dev', head: taskHead,
+      clean: true, registered: true, remote: null, remoteUrl: null, state: 'ready', diagnostic: null,
+    }],
+    effects: [],
+    updatedAt: new Date().toISOString(),
+  });
+  const result = runtime.cleanupGitWorktrees({
+    workspaceRoot: root,
+    taskId: 'task',
+    integratedRefs: { workspace: targetHead },
+    integratedContributions: { workspace: { ...containment, taskContribution: contribution } },
+  });
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.equal(fs.existsSync(taskRoot), false);
 });
 
 test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 Agent-reviewed adaptation', (t) => {

@@ -170,7 +170,7 @@ assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
 const finishStatus = run(['task', 'finish', 'status', '--json']);
 assert.equal(finishStatus.status, 2);
 assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
-assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task inspect']);
+assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task finish reconcile']);
 assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
 
 const omitPrepareAgent = run(['task', 'environment', 'prepare', 'demo', '--json']);

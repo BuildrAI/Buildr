@@ -83,6 +83,39 @@ export function registerTaskEnvironmentApplication(runtime) {
       && sameFilesystemPath(sourceCheckout.gitCommonDirectory, workspaceCheckout.gitCommonDirectory));
   }
 
+  function deliveredCleanupAuthorization(root, task) {
+    if (task.status !== 'completed' || task.result?.noChange !== false
+      || typeof runtime.readTaskFinishCompletionPersistence !== 'function') return null;
+    const completion = runtime.readTaskFinishCompletionPersistence(root, { taskId: task.taskId }, { optional: true });
+    const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task.taskId }, { optional: true });
+    const result = completion?.completion?.result || current?.run || null;
+    if (!result || result.identity?.task !== task.taskId) return null;
+    const plans = Array.isArray(result.identity?.repositories) ? result.identity.repositories : [];
+    const states = Array.isArray(result.repositories) ? result.repositories : [];
+    const singletonCarrier = result.deliveryCarrier || result.carrier || null;
+    if (plans.length === 0 && result.delivery?.finalRemoteRef && singletonCarrier) {
+      return {
+        type: 'finish',
+        deliveries: { workspace: result.delivery.finalRemoteRef },
+        integratedContributions: { workspace: singletonCarrier },
+        source: 'persisted-delivery-evidence',
+      };
+    }
+    const deliveries = {};
+    const integratedContributions = {};
+    for (const plan of plans) {
+      const state = states.find((repository) => repository.selector === plan.selector);
+      const targetRef = state?.delivery?.finalRemoteRef || state?.cleanupProof?.target?.head || null;
+      const proof = state?.delivery?.containment?.schemaVersion === 'buildr.task-delivery-containment-proof/v1'
+        ? { ...state.delivery.containment, taskContribution: state.taskContribution }
+        : state?.deliveryCarrier || state?.cleanupProof || null;
+      if (!targetRef || !proof) return null;
+      deliveries[plan.selector] = targetRef;
+      integratedContributions[plan.selector] = proof;
+    }
+    return plans.length > 0 ? { type: 'finish', deliveries, integratedContributions, source: 'persisted-delivery-evidence' } : null;
+  }
+
   function currentEnvironmentManager(workspaceRoot, adapter) {
     const sourceRoot = fs.realpathSync(path.resolve(runtime.productRoot()));
     const invocation = productInvocation({ kind: 'stable-controller' });
@@ -1176,9 +1209,11 @@ export function registerTaskEnvironmentApplication(runtime) {
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (!persistence) return environmentResult('cleanup', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有可清理的 Environment Receipt。' });
       if (persistence.receipt.status === 'cleaned') return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+      const persistedAuthorization = authorization === null ? deliveredCleanupAuthorization(root, task) : null;
+      authorization ||= persistedAuthorization;
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
       const finish = authorization?.type === 'finish' && authorization.deliveries && typeof authorization.deliveries === 'object';
-      if (!abandon && !finish) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要 Task Finish handoff 或已持久化的明确 abandon 终态。', 409, undefined, '先完成 Task Finish 交付，或明确 abandon Task。');
+      if (!abandon && !finish) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已持久化的交付证明或明确 abandon 终态。', 409, undefined, '先完成并对账交付，或明确 abandon Task。');
       cleanupAuthorized = true;
       assertEnvironmentManager(root, persistence.receipt);
       managerAuthorized = true;

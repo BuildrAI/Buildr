@@ -1,80 +1,68 @@
 ---
 name: task-finish
-description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
+description: 用户要求已有正式任务（formal Task）“收尾”或交付当前研发交接（Development handoff）时使用；由智能体（Agent）选择直接 Git/PR、Buildr 自动 Finish 或交付对账（delivery reconciliation），并独立处理激活、环境清理和诊断。
 ---
 
-# Task Finish
+# 任务收尾（Task Finish）
 
-本 Skill 只处理 active formal Task，提供 `buildr.task-finish/v1` 入口；不编排 Development/Review/Verification，不写 Receipt。没有 active Task 时用户说“收尾”，转由直接 Git 路径执行；不得创建临时 Task，也不把 Git Result 冒充 Formal Finish。
+本 Skill 是 `buildr.task-finish/v1` 的默认 provider。它帮助智能体（Agent）完成正式任务交付，不把 Buildr 自动 Finish 变成唯一通道。
 
-## 调用前
+> Buildr 约束 Agent 不要做错事，不要求 Agent 必须通过 Buildr 才能做事。
 
-1. 明确正式 Task ID 与 canonical Workspace。
-2. 用户排除 push、install 或 cleanup 而改变交付语义时停止。
-3. 轻量确认任务分支贡献已提交、本机主工作区已对齐目标远端；`--agent`省略或等于 Environment adapter。未提交或落后时先说明并等待处理或明确继续；不得做成新的入口缺口码。
-4. 不要在调用产品前自行链式做 Environment → handoff → target/remote 的 fail-fast；入口聚合与模块分类由产品一次完成。
-5. 根据最终交付内容与Workspace、Project、Service、repository约定形成完整commit message。subject必须描述内容，优先使用简洁Conventional Commits；Task ID由产品写入trailer，不得使用“交付 + Task ID”占位主题。调用前向用户展示subject，正文存在时一并展示。
-6. 直接启动 canonical `buildr task finish run`；若返回 `task_finish.entry_gaps`，按 `error.details.gaps` 的 `development` / `environment` / `delivery` 完整转述，不得只报第一项。
-7. 存在 `development` 缺口（或 `nextWorkflow: task-development`）时路由 `task-development`；Finish 不补齐 Change/Verification/Completion/handoff 事实。仅工作区Task也必须先有current Candidate、Completion Review、proceed decision与Development handoff；Finish只消费handoff，不解释workspace gap或重新接受风险。
-   - Child承担Parent Contribution时，handoff还必须包含与current Parent Plan和planned binding一致的Contribution Handoff。
-   - Parent采用Parent Plan时，必须已记录current plan identity的显式最终集成验收；Child全部完成本身不满足该条件。
+Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策略；Buildr 负责读取当前研发交接（Development handoff）、验证真实远端、登记交付，并在可证明安全时协助清理。Task Finish 不运行或记录 Task Verification、Task Review，不生成 Candidate，也不收敛 OpenSpec Change。
 
-## 执行
+## 交付前
 
-从 canonical retained Workspace 的可信 Environment Manager 调用：
+1. 确认 Task ID、canonical Workspace、current Development handoff 和实际 repository 集合。
+2. 核验每个 repository 的 source、target branch、remote identity、任务贡献（Task Contribution）和远端现状。
+3. 需要 force push、覆盖他人提交、改写共享历史，或 repository/ref/remote 有歧义时停止并请求决定。
+4. Development handoff 或 Candidate 真实 stale 时返回 `task-development`；远端前进、路径不重叠或 Buildr 内部记录缺失本身不使 handoff stale。
 
-```bash
-buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json
-```
+## 由 Agent 选择路径
 
-直接使用runtime投射到本Skill的精确`buildr.task-finish/v1` capability binding。启动后使用宿主支持的有界长等待消费同一进程/session，直到completed、failed、input-required或当前等待窗口到期；窗口只决定Agent何时恢复控制，不是Finish业务timeout。若仍为running，继续长等待同一session，不启动第二个Finish、不高频读取普通输出，也不承诺固定两次调用或写死45/60秒。
+### Buildr 自动 Finish
 
-产品在创建 run 前一次聚合 Environment / Development / 交付入口观察；通过后固定执行：
+目标明确且适合普通 fast-forward 交付时，可复用交付载体（Delivery Carrier）：
 
-```text
-preflight → prepare → verify → deliver → cleanup
-```
+`buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
 
-五阶段由产品连续执行，Agent不编排阶段、补evidence或设计recovery。
+`run` 按 `preflight → prepare → verify → deliver → cleanup` 尝试自动化；这些阶段不是 Agent 必须遵循的唯一工作方式。出现冲突或远端变化时，Agent 可继续同一 run、处理交付适配（Delivery Adaptation）、改走 PR 或直接 Git。不得手写 resume token、claimed success 或语义等价证明。
 
-完整message只在首次run冻结；resume不得覆盖。新handoff以新message创建新run。旧run仅在preflight且无交付副作用时失效，否则保留现场并返回identity conflict。
+### Agent 直接交付
 
-首次run或resume先预留独立`task-finish/finish-diagnostics` Execution Record；容量不足不启动五阶段。record只保留受控诊断，carrier、lease、resume与cleanup仍由Finish current管理。
+Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每个 repository 保留独立结果，部分成功不得伪装为原子事务，也不得重复推送已交付 repository。
 
-- `preflight`核对handoff、Environment、carrier、retained与远端对齐；各阶段/resume精确核对冻结handoff、Candidate、generation与Content Target。
-- `prepare`在隔离交付载体（Delivery Carrier）把任务贡献（Task Contribution）机械应用到最新交付基线（Delivery Baseline）。clean apply记录`deterministic-reuse`；Git conflict保留carrier并返回`delivery-adaptation-required`，不改原Task worktree。
-- Agent只在carrier完成交付适配（Delivery Adaptation）。非零适配HEAD必须保持冻结message；若baseline已满足任务且正确适配为零tree delta，保持clean carrier并在matching resume传入`--accept-zero-delta-adaptation`，不得创建空提交或无关差异。resume仍执行bounded compatibility checks，`formalVerificationExecutions` 必须为 `0`。
-- `verify` 对clean apply记录确定性Git identity；对适配记录`agent-reviewed-delivery-adaptation`，不得描述为Buildr已证明语义等价。Candidate identity/generation保持不变。
-- `deliver`只做fast-forward、push/回读、按冻结Task Contribution选择的runtime activation与Agent Doctor；Doctor失败保留现场并停止cleanup。通用executor不sync、不安装CLI/Buildr Web或接受任意命令。
-- render不得产生tracked/staged delta。普通交付的`remoteAfterRef`与`finalRemoteRef`都等于carrier；仅当最新target可证明完整包含carrier时，记录`targetDisposition: already-contained`、原carrier ref与最新后代final remote ref。
-- `cleanup` 把 delivery identity 交给 Task Environment；不直接删除 provider 状态或写第二份 Environment 结论。
+交付后运行：
 
-target前进时先证明carrier ancestry及changed paths；完整包含才跳过apply/push并继续Doctor与cleanup。恢复不增加 Candidate generation或重跑formal Verification/Completion Review；原Task source/handoff真实stale时才返回`nextWorkflow: task-development`。路径不重叠都不等于语义安全；不得手写token、recovery manifest或claimed semantic equivalence。
+`buildr task finish reconcile --task <task-id> --target <canonical-workspace> --detail compact --json`
 
-恢复命令：
+交付对账（Delivery Reconciliation）不接受调用方提交“已成功”、commit 列表或证明文件。它读取冻结的 Task Contribution 与真实 remote target，逐 repository 确认 carrier 已到达、已被后继包含，或目标 tree 精确包含任务贡献结果。无法证明时只报告对应 repository 的事实缺口。
 
-```bash
-buildr task finish run --task <task-id> --run <run-id> --resume <product-token> [--accept-zero-delta-adaptation] --target <canonical-workspace> --detail compact --json
-```
+## 四个独立结果
 
-只读查看：
+- 交付（Delivery）：Task Contribution 是否已在目标远端；
+- 激活（Activation）：运行时投射、Buildr 自举或 Doctor 是否需要关注；
+- 环境清理（Environment Cleanup）：Task worktree 和资源是否已安全清理；
+- 诊断（Diagnostics）：Execution Record 与诊断材料是否成功保留。
 
-```bash
-buildr task finish inspect --run <run-id> --target <canonical-workspace> --detail compact --json
-```
-abandon 后未交付隔离载体：对既有 run 加 `--release-occupancy`；不得 `git worktree remove` 或手删 `.buildr/transient/task-finish/carriers/`，也不作废已推送交付。
-## 禁止事项
+只有 Delivery 决定业务任务是否已交付。Doctor、Execution Record、Activation、Cleanup、Task 登记或 Buildr 内部派生证据失败只能形成 `attention`，不能撤销已确认交付。Task 顶层登记失败时重复 `task finish reconcile`，不得重新提交或推送业务代码。
 
-Finish不改变Candidate/generation、Development Receipt、Change或原Task worktree，不发起 Task Verification/Completion Review，也不决定风险。Finish不运行OpenSpec Converge。两种reuse mode都复用handoff；clean apply或resume不等于语义安全。仅当既有run在preflight/prepare发生已记录、无副作用的Product provider exception时，用户才可明确授权`--bootstrap-recovery`；它只让retained Application从current ready Environment和current Development handoff共同确认的clean committed checkout加载run-owned capsule provider。retained Application、SQLite、Execution Record及状态机仍是唯一writer；不得传source/module/manifest/tarball、运行candidate CLI、临时安装或新建run。入口、registry、Application、repository或migration损坏不适用。
+环境清理由 Agent 在适当时机独立执行：
 
-## 完成标准
+`buildr task environment cleanup <task-id> --target <canonical-workspace> --json`
 
-- 五阶段全部 passed/not-applicable；
-- Result引用Development handoff、Candidate/generation、Content Target、Task Contribution、Delivery Baseline和Delivery Carrier；
-- Result标记`deterministic-reuse`或`agent-reviewed-delivery-adaptation`，后者不声称Buildr证明语义等价；
-- carrier equivalence 为 current，target 仅 fast-forward，Environment cleanup 完成；
-- Git delivery完成remote回读；普通路径after/final ref等于carrier，`already-contained`保留适用的逐路径或零差异Agent review/baseline/ref/activation paths证明；
-- `agentProviderCompletions = 0`、`manualRecoveryManifests = 0`、`formalVerificationExecutions = 0`。
-- bootstrap recovery还须证明同一run/capsule、原failure、source commit/tree/provider digest及cleanup后的authority revocation；`bootstrapRecoveryExecutions = 1`。
+Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态。无法证明 worktree 内容已交付、ownership 不明或 source 已漂移时必须保留现场。
 
-`run`结果的additive `executionRecord`必须可解释：`retained`表示本invocation正文已保留；`attention`表示record或diagnostics cleanup需owner后续处理，但不得据此回滚、改写或重跑已经成立的Finish delivery/cleanup/Task终态；`blocked`表示容量门禁在五阶段前停止；invalid或complete no-op为`not-opened`。`task finish inspect`只读Finish current/terminal，不列举records。complete 后先报告终态，再询问是否进行“任务复盘”：当前关注 Agent 耗时、Token、重复尝试和人机协作，Token 不可得可缺失。仅用户同意后路由 `task-retrospective`；blocked/failed 不提示，且复盘不影响终态。
+## 应当阻断的边界
+
+- remote target 不包含 Task Contribution；
+- repository、branch、remote 或 Task identity 有歧义；
+- 需要 force push、覆盖他人提交或改写共享历史；
+- 无法证明 worktree、carrier 或资源属于当前 Task 并可安全删除；
+- 调用方试图伪造交付、语义等价或完成证据。
+
+Buildr 状态不一致、可重建证明缺失、重复观察已交付 repository、单个 Cleanup 或 Diagnostics 失败，不属于 Delivery 阻断条件。
+
+## 报告
+
+先报告每个 repository 的 Delivery，再分别报告 Activation、Environment Cleanup、Diagnostics 和需要 Agent 处理的 attention。只有未交付、身份不明或涉及破坏性风险时请求用户决策；交付后可询问是否复盘。

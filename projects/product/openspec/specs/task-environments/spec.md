@@ -146,22 +146,22 @@ Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只
 - **AND** MUST 只允许产品已登记 provider 的结构化 identity/handle
 
 ### Requirement: Task Environment 必须统一编排安全 cleanup
-Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时，它 MUST只在Task Finish提供每个工作范围的已交付identity与清理资格后停止资源、调用provider cleanup并解除占用；对于隔离Delivery Carrier，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求Finish改写原Task branch以制造ancestor关系。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective。
+Task Environment MUST独占Task级环境cleanup编排和结果。正常完成或交付后清理时，它 MUST只在上层提供每个工作范围的已验证delivery identity与清理资格后停止资源、调用provider cleanup并解除占用；delivery evidence MAY来自自动Finish或独立reconciliation。对于隔离或外部交付，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求特定Finish run、Delivery Carrier或原Task branch ancestry。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective，也 MUST NOT改变Task交付终态。
 
 #### Scenario: 正常完成后清理
-- **WHEN** Finish handoff证明全部工作范围已交付且可清理，资源与provider evidence均匹配
+- **WHEN** delivery evidence证明全部工作范围已交付且可清理，资源与provider evidence均匹配
 - **THEN** Task Environment MUST按资源依赖顺序停止动态资源，再调用各scope provider cleanup并解除共享根占用
 - **AND** Environment Receipt MUST保留removed/retained resources、provider results与最终cleanup status
 
 #### Scenario: 隔离carrier交付后清理原Task worktree
-- **WHEN** Finish提供可独立复算的Task Contribution proof，target ref等于carrier，且当前Task source snapshot未漂移
-- **THEN** Environment MUST允许Git provider以该等价proof确认integrated并清理原Task worktree/branch
-- **AND** MUST不要求原Task branch成为target祖先或修改Candidate generation
+- **WHEN** reconciliation提供可独立复算的Task Contribution proof，目标ref完整包含贡献且当前Task source snapshot未漂移
+- **THEN** Environment MUST允许Git provider确认integrated并清理原Task worktree/branch
+- **AND** MUST不要求交付由Finish Carrier产生或原Task branch成为target祖先
 
 #### Scenario: Finish 请求清理但资源仍阻塞
-- **WHEN** 任一Preview/process/container仍运行、provider identity不匹配、worktree source drift、integrated/contribution proof不成立或其他Task仍占用资源
-- **THEN** cleanup MUST返回`blocked`并保留所有仍用于恢复的环境与carrier内容
-- **AND** Finish MUST只恢复cleanup，不得重跑prepare、verify或deliver
+- **WHEN** 任一资源仍运行、provider identity不匹配、worktree source drift、integrated proof不成立或其他Task仍占用资源
+- **THEN** cleanup MUST返回`blocked`或`attention`并保留仍用于恢复的环境内容
+- **AND** MUST NOT改写Task Record completed或远端delivery evidence
 
 #### Scenario: 用户明确放弃独占 dirty worktree
 - **WHEN** 上层提供明确abandon authorization，关联Change/保留事实已处置，且provider evidence证明dirty worktree全部属于该Task
@@ -180,8 +180,8 @@ Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时
 
 #### Scenario: 清理成功后的最小留痕
 - **WHEN** 全部适用资源已删除或按明确决定安全保留
-- **THEN** Buildr MUST在 `task_environment_current` 保留Task/Workspace identity、完成时间、最终status与最小处置摘要
-- **AND** MUST NOT删除Task Record、Development/Review/Verification/Finish Result或Retrospective
+- **THEN** Buildr MUST在`task_environment_current`保留Task/Workspace identity、完成时间、最终status与最小处置摘要
+- **AND** MUST NOT删除Task Record、Development/Review/Verification/delivery Result或Retrospective
 
 ### Requirement: Task checkout/provider evidence 必须是 Environment 的源码版本基础
 Task Environment MUST以Receipt scopes、actual execution roots和provider evidence表达Task源码版本基础。retained Workspace后续前进 MUST不自动更新或重写Task checkout；`prepare/inspect` MUST按该checkout中的current Plan inputs、outputs、CLI、projection和资源事实判断ready。
@@ -243,27 +243,27 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **AND** candidate runtime MUST 只作为被测对象或 validation Workspace writer，不得成为 canonical writer
 
 ### Requirement: Task Finish SQLite completion 必须与 Environment cleanup 幂等交接
-Task Environment MUST继续独占Task级资源cleanup；Task Finish MUST在调用Environment cleanup前，将已交付scope identities、carrier/contribution proof与`cleanup_pending` checkpoint持久化到Workspace SQLite。Environment cleanup成功后，Finish MUST以Environment Receipt的current identity恢复并完成自身transient cleanup与terminal transaction，MUST NOT让Environment写Finish表或让Finish直接删除Environment-owned资源。
+Task Environment MUST继续独占Task级资源cleanup；delivery owner MUST在调用Environment cleanup前提供已验证scope identities与carrier/contribution proof。Environment cleanup成功后，自动Finish或Agent MAY继续清理各自owned transient，但Task交付终态不得依赖这些动作。Environment MUST NOT写Finish表，Finish/reconciliation MUST NOT直接删除Environment-owned资源。
 
 #### Scenario: cleanup 前进程退出
-- **WHEN** Finish已经持久化`cleanup_pending`但尚未调用Environment provider
-- **THEN** resume MUST复用同一delivery evidence并调用Task Environment cleanup
-- **AND** MUST NOT重跑prepare、verify、deliver或重新push
+- **WHEN** Task已保存逐scope delivery evidence但尚未调用Environment provider
+- **THEN** Agent MUST能使用同一delivery evidence启动或恢复Task Environment cleanup
+- **AND** MUST NOT重跑远端交付或要求创建Finish run
 
 #### Scenario: Environment cleanup blocked
 - **WHEN** Environment因资源运行、identity漂移、ownership不明或其他Task占用而返回blocked
-- **THEN** Finish MUST保留SQLite current run、精确Environment next action与恢复所需transient data
-- **AND** terminal completion与Task Record completed MUST均不得成立
+- **THEN** Environment MUST保留精确next action与恢复所需资源
+- **AND** Task Record completed与delivery evidence MUST保持不变
 
 #### Scenario: Environment 已 cleaned 后进程退出
-- **WHEN** Environment Receipt已证明同一Task/run cleanup成功，但Finish尚未清理自己的transient data或提交terminal Result
-- **THEN** resume MUST复用Environment结果并只继续Finish-owned剩余动作
+- **WHEN** Environment Receipt已证明同一Task cleanup成功，而Finish或Agent尚有自己的transient待处理
+- **THEN** 后续恢复 MUST只处理调用方owned剩余动作
 - **AND** Environment MUST NOT再次停止资源或调用provider cleanup
 
 #### Scenario: Finish terminal transaction 完成
-- **WHEN** Environment cleanup与Finish-owned transient cleanup均成功，且receipt/run identity匹配
-- **THEN** Finish MUST提交compact completion并完成Task Record terminal transition
-- **AND** Environment Receipt最小留痕 MUST继续存在，不得被Finish SQLite retention删除
+- **WHEN** Environment cleanup成功且identity匹配
+- **THEN** Environment MUST保存最小cleaned留痕并释放其owner资源
+- **AND** 该结果 MUST作为Task详情的独立maintenance fact，而不是Task交付终态前置条件
 
 ### Requirement: Environment Receipt 必须以 Plan 事实作为唯一环境 authority
 Buildr MUST在Workspace SQLite `task_environment_current`中按`task_id`唯一维护经过Domain校验的`buildr.task-environment-receipt/v4`。同一current row MUST独占Plan、逐Service/Step current与prepared facts、scope聚合、`ready / blocked`、执行位置、Runtime/CLI/projection、动态资源、恢复和cleanup；Git/provider evidence与Task Record MUST不竞争这些事实。旧Receipt v2/v3 MUST只兼容读取并在active状态要求显式Agent Plan升级。

@@ -31,7 +31,7 @@ test('Git Operations routing description 精确一致且不扩展完整命令集
   const packaged = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
   const frontmatter = skill.match(/^---\n[\s\S]*?^description:\s*(.+)$/m)?.[1];
   assert.equal(frontmatter, packaged.description);
-  assert.match(packaged.description, /已明确选择 repository、Git Operation 与相关 ref/);
+  assert.match(packaged.description, /明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）/);
   assert.match(packaged.description, /commit、push、commit\+push/);
   for (const broad of ['checkout', 'reset', 'cherry-pick', 'stash', '删除分支']) {
     assert.equal(packaged.description.includes(broad), false, broad);

@@ -69,7 +69,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -233,6 +233,40 @@ test('v3空repositories且仅有legacy singleton carrier时投影唯一Workspace
   assert.equal(result.selfBootstrap.applicability, 'applicable');
   assert.equal(result.selfBootstrap.baseRef, '4e220b287c746020a9ff95486935200e2fe1eb32');
   assert.deepEqual(result.carriers.map((carrier) => carrier.selector), ['workspace']);
+});
+
+test('外部交付reconciliation无需carrier也能投影Workspace activation paths', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete',
+    primaryFailure: null,
+    resume: null,
+    carrier: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin', leaseTargetIdentity: 'origin:dev' }],
+    },
+    repositories: [{
+      selector: 'workspace',
+      disposition: 'applicable',
+      deliveryCarrier: null,
+      delivery: {
+        status: 'delivered',
+        remoteAfterRef: 'external-ref',
+        finalRemoteRef: 'external-ref',
+        activationPaths: ['projects/product/services/buildr/src/example.mjs'],
+      },
+    }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'pending' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: null, carrierRef: null, finalRemoteRef: 'external-ref' }],
+    },
+  }));
+
+  assert.equal(result.mode, 'complete');
+  assert.equal(result.workspaceRepository.carrier, null);
+  assert.deepEqual(result.selfBootstrap.activationPaths, ['projects/product/services/buildr/src/example.mjs']);
+  assert.equal(result.selfBootstrap.baseRef, 'external-ref');
 });
 
 test('v3空repositories且没有legacy carrier时保持workspace unavailable', () => {

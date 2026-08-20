@@ -126,7 +126,7 @@ else process.exitCode = 1;
     file: `workspace-sqlite:task-environment/${TASK_ID}`,
     receipt: receipt({ root, controllerRoot, executionRoot: isolated ? taskRoot : root, isolated, timestamp }),
   } : null;
-  const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
+  const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, providerCleanupInput: null, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
   let retainedProjectionReady = true;
   const providerEvidence = {
     branch: `tasks/${TASK_ID}`,
@@ -176,8 +176,9 @@ else process.exitCode = 1;
       return { status: 'ready', repositories: providerEvidence.repositories, evidencePath: path.join(root, '.git', 'buildr', 'task-worktrees', `${TASK_ID}.json`), effects: [] };
     },
     inspectGitWorktrees: () => ({ status: 'ready', repositories: providerEvidence.repositories, diagnostic: null }),
-    cleanupGitWorktrees: () => {
+    cleanupGitWorktrees: (input) => {
       calls.providerCleanups += 1;
+      calls.providerCleanupInput = input;
       return { status: 'cleaned', effects: [] };
     },
     probeTaskEnvironmentResource: (resource) => {
@@ -437,4 +438,46 @@ test('cleanup keeps the existing unauthorized diagnostic persistence behavior', 
   assert.equal(result.diagnostic.code, 'task_environment_cleanup_unauthorized');
   assert.equal(current.calls.writes, 1);
   assert.equal(current.receipt().latest.cleanup.status, 'blocked');
+});
+
+test('completed Task可由持久化交付证据独立授权Environment cleanup', async (t) => {
+  const current = fixture(t);
+  const containment = {
+    schemaVersion: 'buildr.task-delivery-containment-proof/v1',
+    identity: `sha256-${'3'.repeat(64)}`,
+    taskContributionIdentity: `sha256-${'4'.repeat(64)}`,
+    targetRef: current.m1,
+    changedPaths: ['feature.txt'],
+    checkedPaths: [],
+  };
+  const taskContribution = {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: containment.taskContributionIdentity,
+    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
+    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
+  };
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '任务贡献已验证交付。', noChange: false },
+  } });
+  current.runtime.readTaskFinishCompletionPersistence = () => ({
+    status: 'complete',
+    completion: {
+      result: {
+        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
+        repositories: [{
+          selector: 'workspace',
+          taskContribution,
+          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment },
+        }],
+      },
+    },
+  });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.equal(current.calls.providerCleanupInput.integratedRefs.workspace, current.m1);
+  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, { ...containment, taskContribution });
 });

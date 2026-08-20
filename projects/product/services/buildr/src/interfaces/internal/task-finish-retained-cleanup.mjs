@@ -79,7 +79,7 @@ function assertPreparedCompletion(root, run, runtime) {
   if (!completion) throw cleanupError('task-finish.retained-cleanup-completion-missing', 'Durable prepared Finish completion is missing from Workspace SQLite.');
   const repositorySet = run.identity.repositories || [];
   const repositoryCompletionMatches = repositorySet.length > 0
-    && completion.schemaVersion === 'buildr.task-finish-completion/v2'
+    && ['buildr.task-finish-completion/v2', 'buildr.task-finish-completion/v3'].includes(completion.schemaVersion)
     && completion.repositorySetIdentity === run.identity.repositorySetIdentity
     && completion.carrierSetIdentity === taskFinishCarrierSetIdentity(run.repositories)
     && completion.deliverySetIdentity === taskFinishDeliverySetIdentity(run.repositories)
@@ -98,7 +98,7 @@ function assertPreparedCompletion(root, run, runtime) {
           : typeof item.finalRemoteRef === 'string' && item.finalRemoteRef.length > 0);
     });
   const singletonMatches = repositorySet.length === 0
-    && completion.schemaVersion === 'buildr.task-finish-completion/v1'
+    && ['buildr.task-finish-completion/v1', 'buildr.task-finish-completion/v3'].includes(completion.schemaVersion)
     && completion.carrierIdentity === run.deliveryCarrier?.identity
     && completion.carrierRef === run.deliveryCarrier?.head
     && completion.finalRemoteRef === run.delivery?.finalRemoteRef

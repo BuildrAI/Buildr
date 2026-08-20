@@ -112,33 +112,35 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
   assert.equal(result.output.delivery.finalRemoteRef, data.run.deliveryCarrier.head);
 });
 
-test('render tracked delta fails closed without staging or convergence commit', async (t) => {
+test('render tracked delta becomes activation attention without negating delivery', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'tracked-delta\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'task-finish.render-produced-tracked-delta');
-  assert.deepEqual(result.failure.findings.map((item) => item.path), ['README.md']);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.output.delivery.status, 'delivered');
+  assert.equal(result.output.delivery.activation.status, 'attention');
+  assert.equal(result.output.delivery.activation.code, 'task-finish.render-produced-tracked-delta');
+  assert.deepEqual(result.output.delivery.activation.diagnostic.map((item) => item.path), ['README.md']);
   assert.equal(command(data.retained, 'git', ['diff', '--cached', '--name-only']), '');
 });
 
-test('Doctor failure blocks cleanup without generic sync', async (t) => {
+test('Doctor failure becomes activation attention without negating delivery', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-failure\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.status, 'passed');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
-  assert.equal(result.output.delivery.status, 'activation-blocked');
+  assert.equal(result.output.delivery.status, 'delivered');
   assert.equal(result.output.delivery.remoteAfterRef, data.run.deliveryCarrier.head);
-  assert.equal(result.output.delivery.activation.doctorCode, 'task-finish.retained-doctor-failed');
-  assert.equal(result.output.delivery.retainedDoctor, 'blocked');
+  assert.equal(result.output.delivery.activation.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.output.delivery.retainedDoctor, 'attention');
 });
 
 test('Doctor compact输出超限保留独立失败分类', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-overflow\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'doctor.output_limit_exceeded');
-  assert.match(result.failure.message, /4194304 bytes/);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.output.delivery.activation.status, 'attention');
+  assert.equal(result.output.delivery.activation.code, 'doctor.output_limit_exceeded');
+  assert.match(result.output.delivery.activation.message, /4194304 bytes/);
 });
 
 test('Buildr package contribution is delivered without generic sync', async (t) => {

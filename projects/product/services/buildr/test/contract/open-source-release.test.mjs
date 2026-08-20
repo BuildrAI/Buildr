@@ -593,7 +593,8 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
   assert.equal(finish < selfBootstrap, true);
   assert.equal(selfBootstrap < preMain, true);
   assert.equal(preMain < evidenceBridge, true);
-  assert.match(selfBootstrapSkill, /descendant merge/);
+  assert.match(selfBootstrapSkill, /只允许fetch与fast-forward/);
+  assert.match(selfBootstrapSkill, /remote或history无法证明时/);
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
   assert.match(bridgeSource, /Missing required --self-bootstrap-run/);
   assert.match(bridgeSource, /Missing required --self-bootstrap-evidence/);

@@ -93,6 +93,27 @@ test('terminal composer does not gate new v2 delivery on deprecated product inst
   assert.equal(projection.delivered, true);
 });
 
+test('Task已交付但Environment cleanup pending时保持delivered并独立投影maintenance', () => {
+  const runtime = runtimeFor();
+  const terminal = runtime.inspectTaskFinishReadModel('/workspace', TASK);
+  runtime.inspectTaskFinishReadModel = () => ({
+    ...terminal,
+    state: 'current',
+    result: { ...terminal.result, status: 'cleanup_pending' },
+    completion: {
+      ...terminal.completion,
+      status: 'prepared',
+      cleanup: { status: 'pending', summary: 'cleanup remains independent' },
+      maintenance: { delivery: 'delivered', activation: 'attention', environmentCleanup: 'pending', diagnostics: 'attention' },
+    },
+  });
+  const projection = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
+  assert.equal(projection.status, 'delivered');
+  assert.equal(projection.delivered, true);
+  assert.equal(projection.delivery.cleanup.status, 'pending');
+  assert.deepEqual(projection.maintenance, { delivery: 'delivered', activation: 'attention', environmentCleanup: 'pending', diagnostics: 'attention' });
+});
+
 test('terminal composer covers active, no-change, abandoned, unproven and identity mismatch', () => {
   assert.equal(runtimeFor('active').inspectTaskTerminalDelivery('/workspace', TASK).status, 'active');
   const noChange = runtimeFor(); noChange.inspectTaskRecord = () => ({ record: { taskId: TASK, status: 'completed', result: { noChange: true } } });

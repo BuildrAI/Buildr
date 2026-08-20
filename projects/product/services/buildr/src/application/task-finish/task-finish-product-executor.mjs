@@ -12,6 +12,7 @@ import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.m
 import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLease, writeFinishCompletion } from './task-finish-run.mjs';
 import { TASK_FINISH_RAW_COMMAND_OUTPUT } from './execution-record.mjs';
 import { legacyTaskFinishDeliveryCommit, publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
 import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
 import { createExactNodeExecutionEnvironment } from '../../infrastructure/process.mjs';
 import {
@@ -614,23 +615,9 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         const expectedRemoteAfterRef = alreadyContained ? observedTargetRef : run.deliveryCarrier.head;
         if (remoteAfterRef !== expectedRemoteAfterRef) return { status: 'blocked', operations, failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Remote target ref changed after delivery evidence was established; delivery remains blocked without Candidate applicability claims.', findings: [{ expected: expectedRemoteAfterRef, observed: remoteAfterRef }] }, output: { delivery: { status: 'blocked', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head } } };
 
-        const context = taskEnvironment(run);
-        if (!context?.ready) return { status: 'blocked', operations, failure: { operation: 'retained-controller', failureClass: 'transient-external-condition', code: context?.blocked?.code || 'task-finish.retained-controller-unavailable', message: context?.blocked?.message || 'Retained Environment controller is unavailable.' } };
         const plan = run.deliveryCarrier.activationPlan || activationPlan(run, run.deliveryCarrier.activationPaths || run.deliveryCarrier.changedPaths || []);
-        const beforeActivation = activationGitDelta(retainedRoot);
-        if (beforeActivation === null) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-status-unavailable', message: 'Unable to observe retained Git status before activation.' } };
-        if (beforeActivation.length) return { status: 'blocked', operations, failure: { operation: 'retained-activation', failureClass: 'transient-external-condition', code: 'task-finish.activation-workspace-dirty', message: 'Retained Workspace has non-metadata changes before activation.', findings: beforeActivation } };
-        if (plan.mode === 'render-runtime') {
-          const rendered = runThroughRetainedController(context, 'deliver-retained-render', ['render', run.identity.agent, '--target', retainedRoot], retainedRoot);
-          if (!rendered) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' } };
-          operations.push(rendered.observation);
-          if (rendered.result.status !== 0) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'transient-external-condition', code: 'task-finish.retained-render-failed', exitCode: rendered.result.status, message: 'Retained Workspace runtime render failed.', diagnostic: rendered.observation.stderr } };
-          const renderDelta = activationGitDelta(retainedRoot);
-          const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
-          if (tracked.length) return { status: 'blocked', operations, failure: { operation: 'retained-render', failureClass: 'product-execution-failure', code: 'task-finish.render-produced-tracked-delta', message: 'Runtime render produced tracked Git changes.', findings: tracked } };
-        }
-        const blockedDelivery = (doctorCode = null) => ({
-          status: 'activation-blocked',
+        const delivered = (activation, retainedDoctor) => ({
+          status: 'delivered',
           targetDisposition: alreadyContained ? 'already-contained' : 'carrier',
           expectedTargetRef: run.deliveryCarrier.expectedTargetRef,
           observedTargetRef,
@@ -638,17 +625,38 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
           remoteAfterRef,
           finalRemoteRef: remoteAfterRef,
           containment,
-          activation: { status: 'blocked', plan, doctorCode },
-          retainedDoctor: 'blocked',
+          activation,
+          retainedDoctor,
           runtimeInstall: 'not-applicable',
           localAppDelivery: 'not-applicable',
         });
+        const passedWithAttention = (code, message, diagnostic = null) => ({
+          status: 'passed',
+          operations,
+          inputIdentity: run.deliveryCarrier.identity,
+          outputIdentity: remoteAfterRef,
+          output: { delivery: delivered({ status: 'attention', plan, code, message, diagnostic }, 'attention') },
+        });
+        const context = taskEnvironment(run);
+        if (!context?.ready) return passedWithAttention(
+          context?.blocked?.code || 'task-finish.retained-controller-unavailable',
+          context?.blocked?.message || 'Retained Environment controller is unavailable.',
+          context?.blocked || null,
+        );
+        const beforeActivation = activationGitDelta(retainedRoot);
+        if (beforeActivation === null) return passedWithAttention('task-finish.activation-status-unavailable', 'Unable to observe retained Git status before activation.');
+        if (beforeActivation.length) return passedWithAttention('task-finish.activation-workspace-dirty', 'Retained Workspace has non-metadata changes before activation.', beforeActivation);
+        if (plan.mode === 'render-runtime') {
+          const rendered = runThroughRetainedController(context, 'deliver-retained-render', ['render', run.identity.agent, '--target', retainedRoot], retainedRoot);
+          if (!rendered) return passedWithAttention('task-finish.retained-controller-unavailable', 'Retained Environment controller invocation is unavailable.');
+          operations.push(rendered.observation);
+          if (rendered.result.status !== 0) return passedWithAttention('task-finish.retained-render-failed', 'Retained Workspace runtime render failed.', rendered.observation.stderr);
+          const renderDelta = activationGitDelta(retainedRoot);
+          const tracked = (renderDelta || []).filter((entry) => entry.status !== '??');
+          if (tracked.length) return passedWithAttention('task-finish.render-produced-tracked-delta', 'Runtime render produced tracked Git changes.', tracked);
+        }
         const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', retainedRoot, '--json', '--detail', 'compact'], retainedRoot, { json: true });
-        if (!doctor) return {
-          status: 'blocked', operations,
-          failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller invocation is unavailable.' },
-          output: { delivery: blockedDelivery('task-finish.retained-controller-unavailable') },
-        };
+        if (!doctor) return passedWithAttention('task-finish.retained-controller-unavailable', 'Retained Environment controller invocation is unavailable.');
         operations.push(doctor.observation);
         const doctorProcess = classifyFinalDoctorResult(doctor.result);
         if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) {
@@ -657,14 +665,14 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
             : doctorProcess.code === 'doctor.passed'
               ? 'task-finish.retained-doctor-not-ready'
               : doctorProcess.code;
-          return {
-            status: 'blocked', operations,
-            failure: { operation: 'retained-doctor', failureClass: 'transient-external-condition', code: doctorCode, exitCode: doctor.result.status, message: doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr },
-            output: { delivery: blockedDelivery(doctorCode) },
-          };
+          return passedWithAttention(
+            doctorCode,
+            doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message,
+            doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr,
+          );
         }
         const activation = { status: 'passed', plan };
-        const delivery = { status: 'delivered', targetDisposition: alreadyContained ? 'already-contained' : 'carrier', expectedTargetRef: run.deliveryCarrier.expectedTargetRef, observedTargetRef, carrierRef: run.deliveryCarrier.head, remoteAfterRef, finalRemoteRef: remoteAfterRef, containment, activation, retainedDoctor: 'passed', runtimeInstall: 'not-applicable', localAppDelivery: 'not-applicable' };
+        const delivery = delivered(activation, 'passed');
         return { status: 'passed', operations, inputIdentity: run.deliveryCarrier.identity, outputIdentity: remoteAfterRef, output: { delivery } };
       } finally {
         releaseFinishTargetLease(lease, { root: retainedRoot, runtime });
@@ -686,7 +694,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         association = terminalAssociation(handoff, new Date().toISOString());
       }
       const prepared = {
-        schemaVersion: 'buildr.task-finish-completion/v1',
+        schemaVersion: 'buildr.task-finish-completion/v3',
         runId: run.runId,
         task: run.identity.task,
         handoffIdentity: run.identity.handoffIdentity,
@@ -701,14 +709,24 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         targetBranch: run.identity.targetBranch,
         status: 'prepared',
         preparedAt: new Date().toISOString(),
+        cleanup: { status: 'pending', summary: 'Task delivery is complete; Environment cleanup remains independent.' },
+        maintenance: { delivery: 'delivered', activation: run.delivery?.activation?.status || 'not-applicable', environmentCleanup: 'pending', diagnostics: 'not-opened' },
         association,
       };
       const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared, runtime });
+      let taskCompletion;
+      try {
+        taskCompletion = completeTaskDeliveryTerminal(runtime, run.identity.workspaceRoot, run.identity.task);
+      } catch (error) {
+        taskCompletion = { status: 'attention', code: error.code || 'task-finish.task-record-completion-failed', message: error.message, diagnostic: error.details || null };
+      }
+      operations.push({ operation: 'complete-task-record', status: taskCompletion.status, taskId: taskCompletion.taskId || run.identity.task, recordDigest: taskCompletion.recordDigest || null, effects: taskCompletion.effects || [], diagnostic: taskCompletion.status === 'attention' ? taskCompletion : null });
       let context = taskEnvironment(run);
       if (!context?.ready && typeof runtime.resolveTaskEnvironmentCleanupContext === 'function') {
         context = runtime.resolveTaskEnvironmentCleanupContext(run.identity.workspaceRoot, run.identity.task);
       }
-      const deliveries = Object.fromEntries((context.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
+      const deliveries = Object.fromEntries((context?.repositories || []).map((repository) => [repository.selector, repository.selector === 'workspace' ? run.identity.targetBranch : repository.startPoint]));
+      deliveries.workspace ||= finalRemoteRef;
       const integratedContributions = { workspace: run.deliveryCarrier };
       let cleanedEnvironment = previousCompletion?.cleanup?.status === 'cleaned' ? previousCompletion.cleanup : null;
       if (cleanedEnvironment) {
@@ -724,25 +742,30 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         };
       }
       operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
-      if (cleanedEnvironment.status !== 'cleaned') return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment } };
+      if (cleanedEnvironment.status !== 'cleaned') {
+        const complete = {
+          ...prepared,
+          status: 'complete',
+          completedAt: new Date().toISOString(),
+          cleanup: { ...cleanedEnvironment, status: 'attention' },
+          maintenance: { ...prepared.maintenance, environmentCleanup: 'attention' },
+          taskTerminal: taskCompletion,
+        };
+        writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
+        return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { ...complete, receipt: completionFile } } };
+      }
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: { ...prepared, status: 'prepared', cleanup: cleanedEnvironment, environmentCleanedAt: cleanedEnvironment.completedAt || new Date().toISOString() }, runtime });
       const carrierCleanup = removeIsolatedGitCarrier({ repositoryRoot: run.identity.workspaceRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, expectedRoot: run.deliveryCarrier.root });
       operations.push({ kind: 'product', id: 'cleanup-isolated-carrier', status: carrierCleanup.status, details: carrierCleanup });
-      if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-cleanup', failureClass: 'transient-external-condition', code: carrierCleanup.code || 'task-finish.carrier-cleanup-failed', message: 'Unable to clean the run-owned isolated Delivery Carrier.', diagnostic: carrierCleanup } };
-      let taskCompletion;
-      try {
-        if (typeof runtime.completeTaskRecordFromFinish !== 'function') throw Object.assign(new Error('Task Record Application Finish completion entry is unavailable.'), { code: 'task-finish.task-record-completion-unavailable' });
-        taskCompletion = runtime.completeTaskRecordFromFinish(run.identity.workspaceRoot, run.identity.task);
-      } catch (error) {
-        const diagnostic = { code: error.code || 'task-finish.task-record-completion-failed', message: error.message, details: error.details || null };
-        operations.push({ operation: 'complete-task-record', status: 'blocked', taskId: run.identity.task, effects: [], diagnostic });
-        return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: error.code === 'task_record_finish_terminal_conflict' ? 'semantic-review-required' : 'transient-external-condition', code: diagnostic.code, message: diagnostic.message, diagnostic } };
-      }
-      operations.push({ operation: 'complete-task-record', status: taskCompletion.status, taskId: taskCompletion.taskId, recordDigest: taskCompletion.recordDigest, effects: taskCompletion.effects });
-      if (taskCompletion.status !== 'completed' || taskCompletion.record?.status !== 'completed' || taskCompletion.record?.result?.noChange !== false) {
-        return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: 'product-execution-failure', code: 'task-finish.task-record-completion-invalid', message: 'Task Record Application did not confirm a delivered completed Task.', diagnostic: taskCompletion } };
-      }
-      const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
+      const carrierAttention = !['removed', 'not-applicable'].includes(carrierCleanup.status);
+      const complete = {
+        ...prepared,
+        status: 'complete',
+        completedAt: new Date().toISOString(),
+        cleanup: carrierAttention ? { ...cleanedEnvironment, carrier: { status: 'attention', diagnostic: carrierCleanup } } : cleanedEnvironment,
+        maintenance: carrierAttention ? { ...prepared.maintenance, environmentCleanup: 'attention' } : { ...prepared.maintenance, environmentCleanup: 'cleaned' },
+        taskTerminal: taskCompletion,
+      };
       writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
       return { status: 'passed', operations, inputIdentity: run.delivery.carrierRef, outputIdentity: digest(complete), output: { completion: { ...complete, receipt: completionFile, cleanup: cleanedEnvironment } } };
     },
@@ -929,7 +952,16 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
     operations.push(remote.observation);
     if (remote.result.status !== 0) return { status: 'blocked', failure: multiFailure('target-observation', 'task-finish.target-observation-failed', `Unable to observe remote target: ${plan.selector}.`, plan.selector, { exitCode: remote.result.status, diagnostic: remote.observation.stderr }) };
     const observedTargetRef = remote.result.stdout.trim().split(/\s+/)[0] || null;
-    if (state.delivery?.finalRemoteRef && observedTargetRef === state.delivery.finalRemoteRef) return { status: 'contained', observedTargetRef, containment: state.delivery.containment || null };
+    if (state.delivery?.finalRemoteRef && observedTargetRef === state.delivery.finalRemoteRef) {
+      if (observedTargetRef === state.deliveryCarrier?.head) {
+        return { status: 'contained', observedTargetRef, targetDisposition: 'carrier', containment: null };
+      }
+      if (state.delivery.targetDisposition === 'already-contained' && state.delivery.containment?.status === 'contained') {
+        return { status: 'contained', observedTargetRef, targetDisposition: 'already-contained', containment: state.delivery.containment };
+      }
+      // Historical resume states could persist already-contained without its proof.
+      // Fall through and reconstruct the complete relation/proof pair from Git.
+    }
     const fetched = git(plan.retainedRoot, `deliver-contained-target-fetch:${plan.selector}`, ['fetch', plan.remote, plan.targetBranch]);
     operations.push(fetched.observation);
     const fetchedTargetRef = fetched.result.status === 0 ? gitText(plan.retainedRoot, ['rev-parse', `${plan.remote}/${plan.targetBranch}^{commit}`]) : null;
@@ -937,7 +969,7 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
       ? inspectGitCarrierContainment({ repositoryRoot: plan.retainedRoot, targetRef: observedTargetRef, carrier: state.deliveryCarrier })
       : { status: 'unprovable', code: 'task-finish.containment-target-race', observedTargetRef, fetchedTargetRef };
     return containment.status === 'contained'
-      ? { status: 'contained', observedTargetRef, containment }
+      ? { status: 'contained', observedTargetRef, targetDisposition: 'already-contained', containment }
       : { status: 'blocked', failure: multiFailure('carrier-containment', 'task-finish.target-race', `Delivered repository is no longer provably contained: ${plan.selector}.`, plan.selector, { findings: [containment] }) };
   }
 
@@ -953,7 +985,14 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
       if (state.delivery?.status === 'delivered') {
         const contained = observeDeliveredRepository(plan, state, operations);
         if (contained.status !== 'contained') return { status: 'blocked', operations, failure: contained.failure, output: { repositories } };
-        state.delivery = { ...state.delivery, targetDisposition: 'already-contained', observedTargetRef: contained.observedTargetRef, finalRemoteRef: contained.observedTargetRef, remoteAfterRef: contained.observedTargetRef, containment: contained.containment };
+        state.delivery = {
+          ...state.delivery,
+          targetDisposition: contained.targetDisposition,
+          observedTargetRef: contained.observedTargetRef,
+          finalRemoteRef: contained.observedTargetRef,
+          remoteAfterRef: contained.observedTargetRef,
+          containment: contained.containment,
+        };
         checkpoint?.({ output: { repositories }, outputIdentity: taskFinishDeliverySetIdentity(repositories) });
         continue;
       }
@@ -1010,45 +1049,42 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
           const context = taskEnvironment(run);
           const activationPlan = state.deliveryCarrier.activationPlan || repositoryActivationPlan(run, plan, state.deliveryCarrier.activationPaths || state.deliveryCarrier.changedPaths || []);
           const beforeActivation = activationGitDelta(plan.retainedRoot);
-          if (beforeActivation === null || beforeActivation.length) return { status: 'blocked', operations, failure: multiFailure('retained-activation', 'task-finish.activation-workspace-dirty', 'Retained Workspace is not ready for activation.', plan.selector, { findings: beforeActivation || [] }), output: { repositories } };
-          if (activationPlan.mode === 'render-runtime') {
+          if (!context?.ready) {
+            activation = { status: 'attention', plan: activationPlan, code: context?.blocked?.code || 'task-finish.retained-controller-unavailable', message: context?.blocked?.message || 'Retained Environment controller is unavailable.', diagnostic: context?.blocked || null };
+            retainedDoctor = 'attention';
+          } else if (beforeActivation === null || beforeActivation.length) {
+            activation = { status: 'attention', plan: activationPlan, code: beforeActivation === null ? 'task-finish.activation-status-unavailable' : 'task-finish.activation-workspace-dirty', message: 'Retained Workspace is not ready for activation.', diagnostic: beforeActivation || null };
+            retainedDoctor = 'attention';
+          } else if (activationPlan.mode === 'render-runtime') {
             const rendered = runThroughRetainedController(context, 'deliver-retained-render', ['render', run.identity.agent, '--target', plan.retainedRoot], plan.retainedRoot);
-            if (!rendered || rendered.result.status !== 0) return { status: 'blocked', operations, failure: multiFailure('retained-render', 'task-finish.retained-render-failed', 'Retained Workspace runtime render failed.', plan.selector, { diagnostic: rendered?.observation?.stderr || null }), output: { repositories } };
-            operations.push(rendered.observation);
+            if (rendered) operations.push(rendered.observation);
+            if (!rendered || rendered.result.status !== 0) {
+              activation = { status: 'attention', plan: activationPlan, code: 'task-finish.retained-render-failed', message: 'Retained Workspace runtime render failed.', diagnostic: rendered?.observation?.stderr || null };
+              retainedDoctor = 'attention';
+            }
           }
-          const blockedDelivery = (doctorCode) => ({
-            status: 'activation-blocked',
-            selector: plan.selector,
-            targetDisposition: alreadyContained ? 'already-contained' : 'carrier',
-            expectedTargetRef: state.deliveryCarrier.expectedTargetRef,
-            observedTargetRef,
-            carrierRef: state.deliveryCarrier.head,
-            remoteAfterRef,
-            finalRemoteRef: remoteAfterRef,
-            containment,
-            activation: { status: 'blocked', plan: activationPlan, doctorCode },
-            retainedDoctor: 'blocked',
-            runtimeInstall: 'not-applicable',
-            localAppDelivery: 'not-applicable',
-          });
-          const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', plan.retainedRoot, '--json', '--detail', 'compact'], plan.retainedRoot, { json: true });
-          if (!doctor) {
-            state.delivery = blockedDelivery('task-finish.retained-controller-unavailable');
-            return { status: 'blocked', operations, failure: multiFailure('retained-doctor', 'task-finish.retained-controller-unavailable', 'Retained Environment controller is unavailable.', plan.selector), output: { repositories } };
+          if (activation.status !== 'attention') {
+            const doctor = runThroughRetainedController(context, 'deliver-retained-doctor', ['doctor', '--agent', run.identity.agent, '--target', plan.retainedRoot, '--json', '--detail', 'compact'], plan.retainedRoot, { json: true });
+            if (doctor) operations.push(doctor.observation);
+            if (!doctor) {
+              activation = { status: 'attention', plan: activationPlan, code: 'task-finish.retained-controller-unavailable', message: 'Retained Environment controller is unavailable.' };
+              retainedDoctor = 'attention';
+            } else {
+              const doctorProcess = classifyFinalDoctorResult(doctor.result);
+              if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) {
+                const doctorCode = doctorProcess.status === 'doctor-failed'
+                  ? 'task-finish.retained-doctor-failed'
+                  : doctorProcess.code === 'doctor.passed'
+                    ? 'task-finish.retained-doctor-not-ready'
+                    : doctorProcess.code;
+                activation = { status: 'attention', plan: activationPlan, code: doctorCode, message: doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr };
+                retainedDoctor = 'attention';
+              } else {
+                activation = { status: 'passed', plan: activationPlan };
+                retainedDoctor = 'passed';
+              }
+            }
           }
-          operations.push(doctor.observation);
-          const doctorProcess = classifyFinalDoctorResult(doctor.result);
-          if (doctorProcess.status !== 'passed' || doctor.payload?.health?.ready !== true) {
-            const doctorCode = doctorProcess.status === 'doctor-failed'
-              ? 'task-finish.retained-doctor-failed'
-              : doctorProcess.code === 'doctor.passed'
-                ? 'task-finish.retained-doctor-not-ready'
-                : doctorProcess.code;
-            state.delivery = blockedDelivery(doctorCode);
-            return { status: 'blocked', operations, failure: multiFailure('retained-doctor', doctorCode, doctorProcess.status === 'passed' ? 'Retained Workspace doctor is not ready.' : doctorProcess.message, plan.selector, { exitCode: doctor.result.status, diagnostic: doctor.payload?.findings || doctorProcess.diagnostic || doctor.observation.stderr }), output: { repositories } };
-          }
-          activation = { status: 'passed', plan: activationPlan };
-          retainedDoctor = 'passed';
         }
         state.delivery = {
           status: 'delivered',
@@ -1115,7 +1151,7 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
     const carrierSetIdentity = taskFinishCarrierSetIdentity(repositories);
     const deliverySetIdentity = taskFinishDeliverySetIdentity(repositories);
     const prepared = {
-      schemaVersion: 'buildr.task-finish-completion/v2',
+      schemaVersion: 'buildr.task-finish-completion/v3',
       runId: run.runId,
       task: run.identity.task,
       handoffIdentity: run.identity.handoffIdentity,
@@ -1136,9 +1172,27 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
       targetBranch: applicable.length === 1 ? applicable[0].targetBranch : null,
       status: 'prepared',
       preparedAt: new Date().toISOString(),
+      cleanup: { status: 'pending', summary: 'Task delivery is complete; Environment cleanup remains independent.' },
+      maintenance: {
+        delivery: 'delivered',
+        activation: repositories.some((repository) => repository.delivery?.activation?.status === 'attention')
+          ? 'attention'
+          : repositories.some((repository) => repository.delivery?.activation?.status === 'passed')
+            ? 'passed'
+            : 'not-applicable',
+        environmentCleanup: 'pending',
+        diagnostics: 'not-opened',
+      },
       association,
     };
     const completionFile = writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: prepared, runtime });
+      let taskCompletion;
+      try {
+        taskCompletion = completeTaskDeliveryTerminal(runtime, run.identity.workspaceRoot, run.identity.task);
+      } catch (error) {
+        taskCompletion = { status: 'attention', code: error.code || 'task-finish.task-record-completion-failed', message: error.message, diagnostic: error.details || null };
+      }
+    operations.push({ operation: 'complete-task-record', status: taskCompletion.status, taskId: taskCompletion.taskId || run.identity.task, recordDigest: taskCompletion.recordDigest || null, effects: taskCompletion.effects || [], diagnostic: taskCompletion.status === 'attention' ? taskCompletion : null });
     let context = taskEnvironment(run);
     if (!context?.ready && typeof runtime.resolveTaskEnvironmentCleanupContext === 'function') context = runtime.resolveTaskEnvironmentCleanupContext(run.identity.workspaceRoot, run.identity.task);
     let cleanedEnvironment = previousCompletion?.cleanup?.status === 'cleaned' ? previousCompletion.cleanup : null;
@@ -1148,22 +1202,34 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
       cleanedEnvironment = delegated.payload || { status: 'blocked', effects: [], diagnostic: { code: 'task-finish.retained-cleanup-unavailable', message: 'Retained Environment Manager cleanup entry is unavailable.' } };
     }
     operations.push({ operation: 'cleanup-task-environment', status: cleanedEnvironment.status, effects: cleanedEnvironment.effects, diagnostic: cleanedEnvironment.diagnostic });
-    if (cleanedEnvironment.status !== 'cleaned') return { status: 'blocked', operations, failure: { operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: cleanedEnvironment.diagnostic?.code || 'task-finish.environment-cleanup-failed', message: cleanedEnvironment.diagnostic?.message || 'Task Environment cleanup failed.', diagnostic: cleanedEnvironment }, output: { repositories } };
+    if (cleanedEnvironment.status !== 'cleaned') {
+      const complete = {
+        ...prepared,
+        status: 'complete',
+        completedAt: new Date().toISOString(),
+        cleanup: { ...cleanedEnvironment, status: 'attention' },
+        maintenance: { ...prepared.maintenance, environmentCleanup: 'attention' },
+        taskTerminal: taskCompletion,
+      };
+      writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
+      return { status: 'passed', operations, inputIdentity: deliverySetIdentity, outputIdentity: digest(complete), output: { repositories, completion: { ...complete, receipt: completionFile } } };
+    }
     writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: { ...prepared, cleanup: cleanedEnvironment, environmentCleanedAt: cleanedEnvironment.completedAt || new Date().toISOString() }, runtime });
+    const carrierAttention = [];
     for (const plan of applicable) {
       const state = repositories.find((repository) => repository.selector === plan.selector);
       const carrierCleanup = removeIsolatedGitCarrier({ repositoryRoot: plan.retainedRoot, workspaceRoot: run.identity.workspaceRoot, runId: run.runId, repositorySelector: plan.selector, expectedRoot: state.deliveryCarrier.root });
       operations.push({ kind: 'product', id: 'cleanup-isolated-carrier', selector: plan.selector, status: carrierCleanup.status, details: carrierCleanup });
-      if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-cleanup', failureClass: 'transient-external-condition', code: carrierCleanup.code || 'task-finish.carrier-cleanup-failed', message: `Unable to clean Delivery Carrier: ${plan.selector}.`, findings: [{ selector: plan.selector }], diagnostic: carrierCleanup }, output: { repositories } };
+      if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) carrierAttention.push({ selector: plan.selector, ...carrierCleanup });
     }
-    let taskCompletion;
-    try {
-      taskCompletion = runtime.completeTaskRecordFromFinish(run.identity.workspaceRoot, run.identity.task);
-    } catch (error) {
-      return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: 'transient-external-condition', code: error.code || 'task-finish.task-record-completion-failed', message: error.message, diagnostic: error.details || null }, output: { repositories } };
-    }
-    if (taskCompletion.status !== 'completed' || taskCompletion.record?.status !== 'completed' || taskCompletion.record?.result?.noChange !== false) return { status: 'blocked', operations, failure: { operation: 'task-record-completion', failureClass: 'product-execution-failure', code: 'task-finish.task-record-completion-invalid', message: 'Task Record Application did not confirm a delivered completed Task.', diagnostic: taskCompletion }, output: { repositories } };
-    const complete = { ...prepared, status: 'complete', completedAt: new Date().toISOString(), cleanup: cleanedEnvironment };
+    const complete = {
+      ...prepared,
+      status: 'complete',
+      completedAt: new Date().toISOString(),
+      cleanup: carrierAttention.length ? { ...cleanedEnvironment, carriers: { status: 'attention', diagnostics: carrierAttention } } : cleanedEnvironment,
+      maintenance: carrierAttention.length ? { ...prepared.maintenance, environmentCleanup: 'attention' } : { ...prepared.maintenance, environmentCleanup: 'cleaned' },
+      taskTerminal: taskCompletion,
+    };
     writeFinishCompletion({ root: run.identity.workspaceRoot, runId: run.runId, completion: complete, runtime });
     return { status: 'passed', operations, inputIdentity: deliverySetIdentity, outputIdentity: digest(complete), output: { repositories, completion: { ...complete, receipt: completionFile } } };
   }

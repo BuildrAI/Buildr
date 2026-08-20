@@ -29,7 +29,7 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 - Application保存的resolved `buildr.task-environment-plan/v2`与`buildr.task-environment-receipt/v5`是Plan和机器状态authority；原始Plan Request不进入SQLite。Environment cleanup只清理Receipt已登记资源与provider-owned执行位置，不扫描或删除调用方临时输入。
 - `prepare` 同时承担首次准备和幂等恢复；只重跑输出缺失或 executable/input identity 漂移的 Step，没有单独 `restore`。
 - `inspect`只读重新观察已保存Plan的executable、inputs和outputs；它不执行Step、不创建或修复输出、不回写Receipt。
-- `cleanup` 只在 Task 已明确 abandon，或由 Task Finish 提交 durable handoff 时成立。普通 Agent 不绕过授权。
+- `cleanup`只在Task已明确abandon，或Buildr已持久化并能重新验证Delivery evidence时成立。Delivery可来自自动Finish或Agent直接交付后的reconciliation；Agent不提交claimed success，也不绕过ownership和Task Contribution等价检查。
 
 ## 执行边界
 

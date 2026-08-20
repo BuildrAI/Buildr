@@ -8,6 +8,7 @@ import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFini
 import { releaseFinishOccupancy } from './task-finish-occupancy-release.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { reconcileTaskFinishDelivery } from './task-finish-delivery-reconciliation.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
   activateTaskFinishBootstrapRecovery,
@@ -185,10 +186,11 @@ function markRunSuperseded(run, reason = 'development-handoff') {
 function assertArgs(action, args) {
   const allowedByAction = {
     run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--release-occupancy', '--target', '--detail', '--json']),
+    reconcile: new Set(['--task', '--agent', '--target-branch', '--remote', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
-  if (!allowed) throw inputError('task_finish.unsupported_action', `Task Finish only supports run and inspect: ${action || '<missing>'}`, 'run');
+  if (!allowed) throw inputError('task_finish.unsupported_action', `Task Finish only supports run, reconcile, and inspect: ${action || '<missing>'}`, 'run');
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
@@ -426,6 +428,7 @@ export function registerTaskFinishApplication(runtime) {
     const identity = prepared.identity || finishRun?.identity;
     const invocationId = finishInvocationId(identity.task);
     let openedExecutionRecord;
+    let executionRecordAttention = null;
     try {
       openedExecutionRecord = runtime.openTaskExecutionRecord(root, identity.task, {
         owner: TASK_FINISH_EXECUTION_RECORD_OWNER,
@@ -435,25 +438,25 @@ export function registerTaskFinishApplication(runtime) {
         producer: TASK_FINISH_EXECUTION_RECORD_PRODUCER,
       });
     } catch (error) {
-      const executionRecord = publicTaskFinishExecutionRecord('blocked', {
-        outcome: 'blocked',
-        diagnostic: error,
-        nextActions: error.nextAction ? [error.nextAction] : ['处置或cleanup eligible execution records后重试Task Finish。'],
-      });
-      return print(executionGateResult(identity, executionRecord, error), command.args);
-    }
-    let evidence;
-    try {
-      evidence = createTaskFinishDiagnosticsEvidence(root, invocationId, { writeFile: runtime.atomicWriteFile });
-    } catch (error) {
-      const executionRecord = publicTaskFinishExecutionRecord('attention', {
-        record: openedExecutionRecord.record,
+      executionRecordAttention = publicTaskFinishExecutionRecord('attention', {
         outcome: null,
-        lifecycleStatus: 'open',
         diagnostic: error,
-        nextActions: ['保留open record；修复diagnostics transient writer后由owner recovery处理。'],
+        nextActions: error.nextAction ? [error.nextAction] : ['交付继续执行；由Agent另行处置diagnostics容量或持久化问题。'],
       });
-      return print(executionGateResult(identity, executionRecord, error), command.args);
+    }
+    let evidence = null;
+    if (openedExecutionRecord) {
+      try {
+        evidence = createTaskFinishDiagnosticsEvidence(root, invocationId, { writeFile: runtime.atomicWriteFile });
+      } catch (error) {
+        executionRecordAttention = publicTaskFinishExecutionRecord('attention', {
+          record: openedExecutionRecord.record,
+          outcome: null,
+          lifecycleStatus: 'open',
+          diagnostic: error,
+          nextActions: ['交付继续执行；保留open record并由diagnostics owner恢复或清理。'],
+        });
+      }
     }
     if (prepared.replaceableStaleRun) {
       const oldRun = markRunSuperseded(prepared.replaceableStaleRun, prepared.replacementReason);
@@ -487,10 +490,16 @@ export function registerTaskFinishApplication(runtime) {
       observer: evidence,
       bootstrapRecoveryFinalizer: finishRun.bootstrapRecovery ? finalizeTaskFinishBootstrapRecovery : null,
     });
-    const snapshot = evidence.snapshot();
     const outcome = taskFinishExecutionRecordOutcome(result);
     let executionRecord;
-    try {
+    if (!openedExecutionRecord || !evidence) {
+      executionRecord = executionRecordAttention || publicTaskFinishExecutionRecord('attention', {
+        outcome,
+        diagnostic: { code: 'task-finish.execution-record-unavailable', message: 'Finish diagnostics record is unavailable; delivery facts remain valid.' },
+        nextActions: ['由Agent独立处置diagnostics attention。'],
+      });
+    } else try {
+      const snapshot = evidence.snapshot();
       const sealed = runtime.sealTaskExecutionRecord(root, openedExecutionRecord.record.recordId, {
         outcome,
         files: createTaskFinishExecutionRecordFiles({
@@ -527,6 +536,54 @@ export function registerTaskFinishApplication(runtime) {
     return print(withExecutionRecord(result, executionRecord), command.args);
   }
 
+  function reconcile(command) {
+    const root = command.targetRoot;
+    const task = optionValue(command.args, '--task', null);
+    if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish reconcile requires --task <task-id>.', 'reconcile');
+    const terminal = runtime.readTaskFinishCompletionPersistence?.(root, { taskId: task }, { optional: true });
+    if (terminal?.status === 'complete' && terminal.completion?.result) {
+      let taskCompletion = null;
+      try { taskCompletion = runtime.completeTaskRecordFromFinish(root, task); } catch { /* existing delivery remains authoritative */ }
+      return print({ ...terminal.completion.result, completion: terminal.completion, taskCompletion, idempotent: true }, command.args);
+    }
+    const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
+    const requestedAgent = optionValue(command.args, '--agent', null);
+    const requestedTargetBranch = optionValue(command.args, '--target-branch', null);
+    const requestedRemote = optionValue(command.args, '--remote', null);
+    const currentIdentityMatchesRequest = current?.run?.identity?.task === task
+      && (!requestedAgent || current.run.identity.agent === requestedAgent)
+      && (!requestedTargetBranch || current.run.identity.targetBranch === requestedTargetBranch)
+      && (!requestedRemote || current.run.identity.remote === requestedRemote);
+    if (currentIdentityMatchesRequest
+      && current.run.status === 'complete'
+      && current.run.completion?.status === 'complete'
+      && current.run.developmentHandoff) {
+      const result = reconcileTaskFinishDelivery({
+        runtime,
+        root,
+        entry: { handoff: current.run.developmentHandoff, identityParts: current.run.identity },
+      });
+      return print({ ...result, persistenceRecovered: true }, command.args);
+    }
+    const entry = observeTaskFinishEntryReadiness({
+      runtime,
+      root,
+      task,
+      requestedAgent,
+      requestedTargetBranch,
+      requestedRemote,
+      requireCommitMessage: false,
+    });
+    if (!entry.ready) throw taskFinishEntryGapsError(entry, 'reconcile');
+    const result = reconcileTaskFinishDelivery({ runtime, root, entry });
+    if (result.schemaVersion === 'buildr.task-finish-reconciliation-result/v1') {
+      if (command.args.includes('--json')) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      else console.log(`Task Finish reconciliation ${task}: ${result.status}`);
+      return result;
+    }
+    return print(result, command.args);
+  }
+
   function inspect(command) {
     const runId = optionValue(command.args, '--run', null);
     if (!runId) throw inputError('task_finish.missing_parameter', 'Task Finish inspect requires --run.', 'inspect');
@@ -552,7 +609,7 @@ export function registerTaskFinishApplication(runtime) {
   function inspectTaskFinishReadModel({ root, taskId, clock = Date.now }) {
     try {
       const current = runtime.readTaskFinishRunPersistence?.(root, { taskId }, { optional: true });
-      if (current) return { taskId, state: 'current', result: inspectFinishRun({ root, runId: current.run.runId, clock, runtime }) };
+      if (current) return { taskId, state: 'current', result: inspectFinishRun({ root, runId: current.run.runId, clock, runtime }), completion: current.preparedCompletion || null };
       const terminal = readTaskFinishResults({ root, taskId, clock, runtime });
       if (terminal.results.length > 0) return { taskId, state: 'terminal', result: terminal.results[0].result, completion: terminal.results[0].completion, diagnostics: terminal.diagnostics };
       return { taskId, state: 'none', result: null, completion: null, diagnostics: terminal.diagnostics };
@@ -564,7 +621,9 @@ export function registerTaskFinishApplication(runtime) {
   async function taskFinish(action, args) {
     assertArgs(action, args);
     const command = withResolvedTarget(args);
-    return action === 'run' ? run(command) : inspect(command);
+    if (action === 'run') return run(command);
+    if (action === 'reconcile') return reconcile(command);
+    return inspect(command);
   }
 
   Object.assign(runtime, {

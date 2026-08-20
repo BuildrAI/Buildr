@@ -455,7 +455,8 @@ test('real retained cleanup subprocess closes zero-delta Environment and carrier
   const handlers = createTaskFinishProductHandlers({ runtime, root });
   const result = await handlers.cleanup({ run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
-  assert.equal(result.operations.find((item) => item.id === 'cleanup-retained-environment-manager')?.status, 0);
+  const retainedCleanup = result.operations.find((item) => item.id === 'cleanup-retained-environment-manager');
+  assert.equal(retainedCleanup?.status, 0, JSON.stringify(retainedCleanup, null, 2));
   assert.equal(runtime.inspectTaskEnvironment(root, run.identity.task).status, 'cleaned');
   assert.equal(fs.existsSync(carrierRoot), false);
   assert.equal(runtime.inspectTaskRecord(root, run.identity.task).record.status, 'completed');

@@ -84,6 +84,7 @@ function projectedDelivery(value) {
     status: optionalString(value.status),
     remoteAfterRef: optionalString(value.remoteAfterRef),
     finalRemoteRef: optionalString(value.finalRemoteRef),
+    activationPaths: activationPaths({ activationPaths: value.activationPaths || [] }),
   };
 }
 
@@ -306,7 +307,7 @@ export function selfBootstrapTaskFinishResult(result) {
         : repositoryApplicability === 'unavailable'
           ? 'Workspace repository facts are unavailable.'
           : null,
-      activationPaths: workspaceRepository?.carrier?.activationPaths || [],
+      activationPaths: workspaceRepository?.carrier?.activationPaths || workspaceRepository?.delivery?.activationPaths || [],
       baseRef: mode === 'complete'
         ? workspaceDelivery?.finalRemoteRef || workspaceFinal?.finalRemoteRef || optionalString(result.completion?.finalRemoteRef)
         : mode === 'doctor-blocked'
