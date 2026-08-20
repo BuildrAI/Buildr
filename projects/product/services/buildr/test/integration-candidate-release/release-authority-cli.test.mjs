@@ -229,9 +229,28 @@ test('release transaction runner binds preparation inputs to the final frozen so
       preparationDeclarations: [{ project: 'product', preparedIdentity: `sha256-${'3'.repeat(64)}` }],
     },
   };
-  const releaseTask = { taskId: 'release-fixture', title: 'Release fixture', status: 'completed' };
+  const completeTaskRecord = (taskId, title) => ({
+    schemaVersion: 'buildr.task-record/v2',
+    taskId,
+    title,
+    intent: `${title} intent`,
+    scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] },
+    changes: [],
+    parentTaskId: null,
+    childTaskIds: [],
+    retrospectiveSourceTaskIds: [],
+    status: 'completed',
+    result: { summary: `${title} completed`, noChange: false },
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:01:00.000Z',
+  });
+  const releaseTask = completeTaskRecord('release-fixture', 'Release fixture');
+  const supportTask = completeTaskRecord('support-fixture', 'Support fixture');
+  const retrospectiveTask = completeTaskRecord('retrospective-fixture', 'Retrospective fixture');
   const runtime = {
-    inspectTaskRecord: () => ({ record: releaseTask, retrospectiveRelations: { sources: [] } }),
+    inspectTaskRecord: (_repo, taskId) => taskId === releaseTask.taskId
+      ? { record: releaseTask, retrospectiveRelations: { sources: [retrospectiveTask] } }
+      : { record: taskId === supportTask.taskId ? supportTask : null, retrospectiveRelations: { sources: [] } },
     inspectTaskEnvironment: () => environmentResult,
   };
   const currentRun = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
@@ -259,9 +278,12 @@ test('release transaction runner binds preparation inputs to the final frozen so
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
 
-  const result = await runHostedReleaseTransaction({ repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {}, runtime });
+  const result = await runHostedReleaseTransaction({ repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {}, runtime });
 
   assert.equal(result.status, 'passed');
+  assert.deepEqual(result.context.releaseTask, { taskId: releaseTask.taskId, title: releaseTask.title, status: 'completed' });
+  assert.deepEqual(result.context.supportTasks, [{ taskId: supportTask.taskId, title: supportTask.title, status: 'completed' }]);
+  assert.deepEqual(result.context.retrospectiveSources, [{ taskId: retrospectiveTask.taskId, title: retrospectiveTask.title, status: 'completed' }]);
   assert.equal(result.context.environment.sourceCommit, fixtureCommit);
   assert.equal(result.context.environment.inputs['package.json'], `sha256-${sha256(sourceFiles.get('projects/product/services/buildr/package.json'))}`);
   assert.equal(calls.includes(`git show ${candidateBase}:projects/product/services/buildr/package.json`), false);
