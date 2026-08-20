@@ -707,9 +707,16 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       outcome: '完成父任务协调视图的集成验收。',
       architectureDecisions: ['Parent Coordination 只派生 read model。'],
       contributions: [
-        { id: 'task-record-reference-slice', priority: 'P0-1', title: 'Task Record 参考切片', objective: '完成 Task Record 纵向参考切片重构。', directions: ['保持单一 authority。'], boundaries: ['不复制 Child 状态。'], expectedChild: 'Task Record focused Child', dependencies: [] },
-        { id: 'engineering-root-layout', priority: 'P0-2', title: '工程根目录布局', objective: '收敛工程根目录职责与直接消费者。', directions: ['先识别直接消费者。'], boundaries: ['不扩大到无关服务。'], expectedChild: 'Layout focused Child', dependencies: [] },
-        { id: 'parent-integration', priority: 'P1-1', title: 'Parent 集成', objective: '执行父任务最终集成验收。', directions: ['只集成已证明交付。'], boundaries: ['不从 completed 推断交付。'], expectedChild: null, dependencies: ['task-record-reference-slice', 'engineering-root-layout'] },
+        { id: 'task-record-reference-slice', priority: 'P0-1 reference slice', title: 'Task Record 参考切片', objective: '完成 Task Record 纵向参考切片重构。', directions: ['保持单一 authority。'], boundaries: ['不复制 Child 状态。'], expectedChild: 'Task Record focused Child', dependencies: [] },
+        { id: 'engineering-root-layout', priority: 'P0-2 independent foundation', title: '工程根目录布局', objective: '收敛工程根目录职责与直接消费者。', directions: ['先识别直接消费者。'], boundaries: ['不扩大到无关服务。'], expectedChild: 'Layout focused Child', dependencies: [] },
+        { id: 'parent-integration', priority: 'P1-1 composition foundation', title: 'Parent 集成', objective: '执行父任务最终集成验收。', directions: ['只集成已证明交付。'], boundaries: ['不从 completed 推断交付。'], expectedChild: null, dependencies: ['task-record-reference-slice', 'engineering-root-layout'] },
+        { id: 'infrastructure-boundaries', priority: 'P1-2 technical mechanisms', title: '通用 Infrastructure 边界', objective: '收敛 SQLite、filesystem、Git、process、network、platform 和 clock 等通用技术机制。', directions: ['保持通用技术能力可独立验证。'], boundaries: ['不引入业务语义或第二 writer。'], expectedChild: 'Infrastructure focused Child', dependencies: ['parent-integration'] },
+        { id: 'task-capability-slices', priority: 'P1-3 task capability slices', title: 'Task 能力单元', objective: '按独立验证的能力单元迁移 Task 模块其余职责。', directions: ['保持 Task Record 与专业 owner 边界。'], boundaries: ['不复制专业 Result。'], expectedChild: 'Task capability Child', dependencies: ['parent-integration'] },
+        { id: 'workspace-capability-slices', priority: 'P1-4 workspace capability slices', title: 'Workspace 管理能力', objective: '迁移 Workspace、Project、Service、Component、Rules 与 Commands 能力单元。', directions: ['保持 workspace authority。'], boundaries: ['不改变公开契约。'], expectedChild: 'Workspace capability Child', dependencies: ['parent-integration'] },
+        { id: 'agent-asset-slices', priority: 'P1-5 agent asset slices', title: 'Agent Assets 能力单元', objective: '迁移 Rule、Skill、Command、Component 与 runtime adapter 能力单元。', directions: ['保持资产治理职责。'], boundaries: ['不改变 runtime authority。'], expectedChild: 'Agent assets Child', dependencies: ['parent-integration'] },
+        { id: 'web-runtime-capabilities', priority: 'P2-1 web runtime capabilities', title: 'Buildr Web Runtime 能力', objective: '迁移 Buildr Web Runtime、HTTP 公共宿主与 web-dist 托管职责。', directions: ['保持同源托管。'], boundaries: ['不接管 buildr-web 前端源码。'], expectedChild: 'Web runtime Child', dependencies: ['parent-integration'] },
+        { id: 'installation-doctor-capabilities', priority: 'P2-2 installation capabilities', title: 'Installation 与 Doctor 能力', objective: '收敛 installation、update、launcher 和 doctor 等 system 能力单元。', directions: ['保持安装和诊断语义。'], boundaries: ['必要时拆成多个 Child。'], expectedChild: 'Installation Child', dependencies: ['parent-integration'] },
+        { id: 'release-packaging-capabilities', priority: 'P2-3 release packaging', title: 'Release 与 Packaging 能力', objective: '收敛 npm package、payload、release artifacts 与正式发布验证入口。', directions: ['保持制品 identity。'], boundaries: ['不改变发布授权。'], expectedChild: 'Release packaging Child', dependencies: ['parent-integration'] },
       ],
       finalAcceptance: ['全部 Contribution 已交付或明确替代。'],
     } });
@@ -753,17 +760,37 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
     await page.locator('.parent-plan-workbench').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.parent-summary-strip').innerText(), /可启动[\s\S]*1[\s\S]*明确处置[\s\S]*0 \/ 3/);
+    assert.match(await page.locator('.parent-summary-strip').innerText(), /可启动[\s\S]*1[\s\S]*明确处置[\s\S]*0 \/ 10/);
     assert.match(await page.locator('.parent-contribution-rail').innerText(), /Task Record 参考切片[\s\S]*工程根目录布局[\s\S]*Parent 集成/);
+    assert.equal(await page.locator('.parent-contribution-detail').count(), 0, 'Contribution 详情默认不占用正文布局');
+    const parentLayout = await page.evaluate(() => {
+      const work = document.querySelector('.parent-work-section').getBoundingClientRect();
+      const architecture = document.querySelector('.parent-plan-architecture').getBoundingClientRect();
+      const priorities = [...document.querySelectorAll('.parent-priority-items .parent-priority')].slice(0, 3).map((item) => item.getBoundingClientRect());
+      return { workBottom: work.bottom, architectureTop: architecture.top, priorities: priorities.map((item) => ({ width: item.width, height: item.height })) };
+    });
+    assert.ok(parentLayout.workBottom <= parentLayout.architectureTop, 'Contribution Map 不得覆盖后续架构决定区块');
+    assert.ok(parentLayout.priorities.every((item) => item.width >= 150 && item.height < 40), '自由格式 priority 在桌面端保持可读宽度');
+    await page.locator('[data-contribution-id="engineering-root-layout"]').click();
+    await page.locator('.parent-contribution-drawer').waitFor({ state: 'visible' });
     assert.match(await page.locator('.parent-contribution-detail').innerText(), /P0-2[\s\S]*工程根目录布局[\s\S]*执行：可启动[\s\S]*实际：尚未分配/);
+    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
+    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
     await page.locator('[data-contribution-id="parent-integration"]').click();
     assert.match(await page.locator('.parent-contribution-detail').innerText(), /等待依赖[\s\S]*工程根目录布局[\s\S]*Task Record 参考切片/);
+    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
+    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
     await page.locator('.parent-governance-details summary').click();
     const governanceFacts = await page.locator('.parent-governance-details').innerText();
     assert.match(governanceFacts, /Planning Review[\s\S]*ready · current/);
     assert.doesNotMatch(governanceFacts, /undefined/);
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.locator('[data-contribution-id="task-record-reference-slice"]').click();
+    await page.locator('.parent-contribution-drawer').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.parent-contribution-drawer .ant-drawer-content-wrapper').evaluate((item) => item.getBoundingClientRect().width <= window.innerWidth), true);
+    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
+    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.locator('.task-technical-overview > summary').click();
     await page.locator('#task-detail-children a').filter({ hasText: '浏览器任务' }).click();

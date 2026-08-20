@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button } from 'antd';
+import { useMemo, useState } from 'react';
+import { Button, Drawer } from 'antd';
 import { formatDateTime, taskStatusLabel } from '../../lib/taskLabels';
 import { Fact } from './shared';
 import {
@@ -59,7 +59,7 @@ function ContributionRail({ contributions, selectedId, onSelect }: { contributio
               const summaryStatus = contributionSummaryStatus(item);
               return (
                 <li key={item.id}>
-                  <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => onSelect(item.id)} data-contribution-id={item.id} aria-pressed={item.id === selectedId}>
+                  <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => onSelect(item.id)} data-contribution-id={item.id} aria-expanded={item.id === selectedId}>
                     <span className="parent-priority">{item.priority}</span>
                     <span className="parent-rail-copy"><strong>{item.title}</strong><small>{item.objective}</small></span>
                     <span className={`parent-rail-state ${summaryStatus.tone}`}>{summaryStatus.label}</span>
@@ -114,10 +114,6 @@ function AcceptanceList({ items }: { items: string[] }) {
 export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
   const contributions = data?.contributions || [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const recommendedId = data?.startup?.next?.contributionIds?.[0] || data?.startup?.eligibleContributions?.[0] || contributions[0]?.id || null;
-  useEffect(() => {
-    if (!selectedId || !contributions.some((item) => item.id === selectedId)) setSelectedId(recommendedId);
-  }, [contributions, recommendedId, selectedId]);
   const byId = useMemo(() => new Map(contributions.map((item) => [item.id, item])), [contributions]);
   const selected = selectedId ? byId.get(selectedId) || null : null;
 
@@ -165,8 +161,17 @@ export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
         <div className="parent-section-heading"><div><p className="eyebrow">工作项</p><h3>Contribution Map</h3><p className="section-copy">按优先级浏览工作范围；选择工作项查看完整方向、依赖和边界。</p></div><span>{contributions.length} 项</span></div>
         <div className="parent-plan-workbench">
           <nav aria-label="Contribution Map"><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
-          {selected ? <ContributionDetail contribution={selected} byId={byId} /> : <p className="empty-copy">尚无 Contribution。</p>}
         </div>
+        <Drawer
+          title="Contribution 详情"
+          open={Boolean(selected)}
+          onClose={() => setSelectedId(null)}
+          width="min(600px, 100vw)"
+          destroyOnHidden
+          rootClassName="parent-contribution-drawer"
+        >
+          {selected ? <ContributionDetail contribution={selected} byId={byId} /> : null}
+        </Drawer>
       </section>
 
       {(data.plan?.architectureDecisions?.length || 0) > 0 ? <section className="panel parent-plan-section parent-plan-architecture">

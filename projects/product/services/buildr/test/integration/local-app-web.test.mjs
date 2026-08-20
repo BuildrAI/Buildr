@@ -166,6 +166,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(coordination, /mode === 'ordinary'[\s\S]*mode === 'legacy'[\s\S]*return null/);
   assert.match(coordination, /parent-overview-hero[\s\S]*Parent Outcome[\s\S]*当前动作[\s\S]*parent-summary-strip[\s\S]*可启动[\s\S]*最终验收/);
   assert.match(coordination, /function ContributionRail/);
+  assert.match(coordination, /Drawer/);
   assert.match(coordination, /parent-priority-group/);
   assert.match(coordination, /item\.priority/);
   assert.match(coordination, /item\.title/);
@@ -187,9 +188,9 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.doesNotMatch(coordinationModel, /plannedContributions/);
   assert.match(coordinationModel, /boundContributions: string\[\]/);
   assert.match(coordinationStyles, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
-  assert.match(coordinationStyles, /parent-plan-workbench[\s\S]*max-height: clamp\(560px, 68vh, 760px\)/);
-  assert.match(coordinationStyles, /parent-plan-workbench > nav,[\s\S]*parent-contribution-detail[\s\S]*overflow: auto/);
-  assert.match(coordinationStyles, /@media \(max-width: 900px\)[\s\S]*parent-plan-workbench \{ max-height: none; \}/);
+  assert.match(coordinationStyles, /grid-template-columns: minmax\(150px, 200px\) minmax\(0, 1fr\) auto/);
+  assert.doesNotMatch(coordinationStyles, /max-height: clamp\(560px, 68vh, 760px\)/);
+  assert.doesNotMatch(coordinationStyles, /overscroll-behavior: contain/);
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
   assert.match(source, /data-task-panel="preview"|PreviewTab/);
   assert.match(evidence, /data-task-panel="evidence"/);

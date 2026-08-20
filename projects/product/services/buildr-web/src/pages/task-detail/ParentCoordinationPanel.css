@@ -107,22 +107,11 @@
 }
 
 .parent-plan-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(350px, .55fr);
-  gap: 18px;
-  max-height: clamp(560px, 68vh, 760px);
   min-height: 0;
 }
-.parent-plan-workbench > nav,
+.parent-plan-workbench > nav { min-width: 0; }
 .parent-contribution-detail {
   min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-.parent-plan-workbench > nav { padding-right: 4px; }
-.parent-contribution-detail {
   border: 1px solid var(--soft-line);
   border-radius: 10px;
   background: var(--soft-sidebar);
@@ -148,7 +137,7 @@
 .parent-priority-items { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .parent-contribution-rail button {
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr) auto;
   align-items: start;
   gap: 12px;
   width: 100%;
@@ -163,7 +152,7 @@
 }
 .parent-contribution-rail button:hover { border-color: #bfd4d0; box-shadow: 0 4px 14px rgba(36, 55, 52, .05); }
 .parent-contribution-rail button.selected { border-color: #a9d0b8; background: #f2f9f5; box-shadow: 0 5px 16px rgba(65, 115, 92, .07); }
-.parent-priority { color: #36746d; font-size: 11px; font-weight: 800; letter-spacing: .03em; }
+.parent-priority { min-width: 0; color: #36746d; font-size: 11px; font-weight: 800; line-height: 1.45; letter-spacing: .03em; overflow-wrap: anywhere; }
 .parent-rail-copy { display: grid; gap: 4px; min-width: 0; }
 .parent-rail-copy strong { line-height: 1.4; }
 .parent-rail-copy small {
@@ -188,9 +177,6 @@
 
 .parent-contribution-detail { padding: 0 18px 18px; }
 .parent-contribution-detail > header {
-  position: sticky;
-  z-index: 1;
-  top: 0;
   display: grid;
   gap: 12px;
   margin: 0 -18px;
@@ -199,6 +185,8 @@
   background: rgba(255, 255, 255, .96);
   backdrop-filter: blur(8px);
 }
+.parent-contribution-drawer .ant-drawer-body { padding: 0; background: var(--soft-sidebar); }
+.parent-contribution-drawer .parent-contribution-detail { border: 0; border-radius: 0; }
 .parent-contribution-detail header h3 { display: inline; margin: 0 8px; font-size: 17px; }
 .parent-contribution-detail header code { display: block; margin-top: 7px; color: var(--soft-muted); font-size: 11px; }
 .parent-axis-badges { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -288,18 +276,11 @@
   .parent-overview-hero { grid-template-columns: minmax(0, 1.5fr) minmax(320px, .8fr); }
   .parent-action-copy { padding: 16px 18px 14px; }
   .parent-action-copy strong { font-size: 14px; }
-  .parent-plan-workbench { grid-template-columns: minmax(0, 1.25fr) minmax(340px, .75fr); }
   .parent-decision-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
-  .parent-overview-hero,
-  .parent-plan-workbench { grid-template-columns: minmax(0, 1fr); }
-  .parent-plan-workbench { max-height: none; }
-  .parent-plan-workbench > nav,
-  .parent-contribution-detail { max-height: none; overflow: visible; scrollbar-gutter: auto; }
-  .parent-plan-workbench > nav { padding-right: 0; }
-  .parent-contribution-detail > header { position: static; }
+  .parent-overview-hero { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 700px) {
@@ -309,8 +290,10 @@
   .parent-action-copy { display: grid; }
   .parent-action-copy button { justify-self: start; }
   .parent-section-heading { align-items: flex-start; }
-  .parent-contribution-rail button { grid-template-columns: 42px minmax(0, 1fr); }
-  .parent-rail-state { grid-column: 2; justify-self: start; }
+  .parent-contribution-rail button { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; }
+  .parent-contribution-rail .parent-priority { grid-column: 1; grid-row: 1; }
+  .parent-rail-copy { grid-column: 1 / -1; grid-row: 2; }
+  .parent-rail-state { grid-column: 2; grid-row: 1; }
   .parent-child-shape,
   .parent-decision-grid,
   .parent-acceptance-list { grid-template-columns: minmax(0, 1fr); }
