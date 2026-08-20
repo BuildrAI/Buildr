@@ -24,6 +24,10 @@ test('Core 不再把 Project 描述为 Skill source', () => {
 
 test('Core 只保留 Buildr 产品与 workspace 边界', () => {
   assert.match(core, /Buildr 应该约束智能体（Agent）不要做错事，而不是要求智能体必须通过 Buildr 才能做事/);
+  assert.match(core, /智能体是用户与 Buildr 专业机制之间的解释和执行层/);
+  assert.match(core, /不把 Buildr 内部术语和流程问题转交用户/);
+  assert.match(core, /发布版 Buildr 的用户不承担 Buildr 内部问题的诊断、修复或操作责任/);
+  assert.match(core, /只有涉及用户授权或业务判断时，才向用户请求决定/);
   assert.match(core, /内部登记、派生证据或自动化信心不足，不得否定可从权威来源验证的事实/);
   assert.doesNotMatch(core, /面向用户使用直接、简练的中文/);
   assert.doesNotMatch(core, /Git 提交信息的主题和正文/);
