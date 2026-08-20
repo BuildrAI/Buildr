@@ -12,6 +12,7 @@ import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/ta
 import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
 import { registerTaskOverviewRepository } from '../infrastructure/sqlite/task-overview-repository.mjs';
+import { registerParentCoordinationRepository } from '../infrastructure/sqlite/parent-coordination-repository.mjs';
 import { registerTaskFinishRepository } from '../infrastructure/sqlite/task-finish-repository.mjs';
 import { registerTaskExecutionRecordRepository } from '../infrastructure/sqlite/task-execution-record-repository.mjs';
 import { registerTaskExecutionRecordBodyStore } from '../infrastructure/filesystem/task-execution-record-body-store.mjs';
@@ -73,6 +74,7 @@ const REGISTRATIONS = [
   registerTaskVerificationRepository,
   registerTaskDevelopmentRepository,
   registerTaskOverviewRepository,
+  registerParentCoordinationRepository,
   registerTaskFinishRepository,
   registerTaskExecutionRecordRepository,
   registerTaskExecutionRecordBodyStore,

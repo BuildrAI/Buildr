@@ -36,6 +36,9 @@ function fixture(t) {
 function createTasks(current) {
   current.runtime.createTaskRecord(current.root, { taskId: 'parent-task', title: 'Parent', intent: 'Coordinate final outcome.', projects: [], services: [], changes: [] });
   current.runtime.createTaskRecord(current.root, { taskId: 'child-task', title: 'Child', intent: 'Deliver one Contribution.', parentTaskId: 'parent-task', projects: [], services: [], changes: [] });
+  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
+  opened.database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('parent-task', 'ready', '{}', '2026-08-08T00:00:00.000Z')").run();
+  opened.database.close();
   current.runtime.beginTaskDevelopment(current.root, 'parent-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Initial coordination planning is not yet recorded.', source: 'test fixture' } });
   current.runtime.beginTaskDevelopment(current.root, 'child-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Fixture child planning.', source: 'test fixture' } });
 }
@@ -275,10 +278,11 @@ test('saved Contribution Handoff派生delivered/extra/superseded，Parent仍需�
     superseded: [{ contributionId: 'future-child-scope', deliveredByContributionId: 'later-capability', reason: 'The later capability completely covers the future scope.' }],
     nextAction: 'Parent owner reconciles future Child creation and records final acceptance.',
   });
-  const originalTerminal = current.runtime.inspectTaskTerminalDelivery;
-  current.runtime.inspectTaskTerminalDelivery = (root, taskId) => taskId === 'child-task'
-    ? { delivered: true, snapshot: { handoff: { contributionHandoff } } }
-    : originalTerminal(root, taskId);
+  const originalProjection = current.runtime.projectParentCoordinationChild;
+  current.runtime.projectParentCoordinationChild = (row, parentTaskId) => {
+    const projected = originalProjection(row, parentTaskId);
+    return row.task_id === 'child-task' ? { ...projected, deliveryProven: true, contributionHandoff } : projected;
+  };
 
   let inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
   assert.deepEqual(inspected.contributions.map((item) => [item.id, item.actual.status]), [
@@ -305,9 +309,11 @@ test('partial delivery保持residual且不能被Parent final acceptance越过', 
     affected: [{ contributionId: 'parent-integration', summary: 'Integration remains blocked on the residual work.' }],
     nextAction: 'Update the Child intent and narrow Change to the residual scope only.',
   });
-  current.runtime.inspectTaskTerminalDelivery = (_root, taskId) => taskId === 'child-task'
-    ? { delivered: true, snapshot: { handoff: { contributionHandoff } } }
-    : { delivered: false, snapshot: null };
+  const originalProjection = current.runtime.projectParentCoordinationChild;
+  current.runtime.projectParentCoordinationChild = (row, parentTaskId) => {
+    const projected = originalProjection(row, parentTaskId);
+    return row.task_id === 'child-task' ? { ...projected, deliveryProven: true, contributionHandoff } : projected;
+  };
   const inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
   assert.equal(inspected.contributions.find((item) => item.id === 'child-delivery').actual.status, 'residual');
   assert.equal(inspected.prerequisitesSatisfied, false);

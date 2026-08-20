@@ -22,7 +22,7 @@ Buildr 的父子任务模型采用“Parent 协调结果，Child 独立交付变
 | Parent Planning Review | Task Review planning slot，target 为 Parent Plan identity | Child lifecycle、Verification或Change archive状态 |
 | Parent 最终集成验收 | Parent Task Development current Receipt 中的 `parentAcceptance` | Parent completed状态或自动Finish |
 | 当前规范契约 | canonical OpenSpec specs | active Parent/Child计划副本 |
-| Parent progress | Parent Coordination Application 动态 read model | 物化count、status array、lifecycle cache、progress表 |
+| Parent progress | Parent Coordination Application 基于固定只读projection派生的动态 read model | 物化count、status array、lifecycle cache、progress表 |
 
 所有长期事实仍写入已有 `task_development_current.record_json` 整值 authority。Receipt 写入版本为 `buildr.task-development-receipt/v3`；SQLite table shape和migration ledger不变，因此没有新表、数据迁移或历史 backfill。v1/v2 Receipt只读归一化为 `parentPlan: null`、`plannedContributions: []`、`parentAcceptance: null`。
 
@@ -110,14 +110,14 @@ Child顶层`completed`但没有与Finish completion association匹配的Contribu
 
 ## 6. 派生 read model
 
-`Parent Coordination Application`是唯一组合边界。它通过Task Record、Task Development、Task Review与Task Terminal Delivery Applications读取已保存事实，返回：
+`Parent Coordination Application`是唯一组合边界。它通过专用只读repository，在同一个read-only SQLite connection内以固定2条参数化查询读取当前Task、直接Parent/Children及Task Development、Task Review、Task Environment与Task Finish已保存事实，返回：
 
 - Parent Plan、Parent status、Planning Review与显式final acceptance；
 - 每个直接Child的identity、顶层状态、planned binding、matching handoff与diagnostic；
 - 每个Contribution同时返回预期轴`expected | none`、可执行轴`eligible | waiting-dependency | not-eligible`与实际轴`unassigned | bound | active | delivered | residual | superseded | unproven`；
 - `prerequisitesSatisfied`、blockers与`finalAcceptanceReady`。
 
-Application不直接查询SQLite，不在GET/inspect时扫描文件系统，不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
+Repository不建立表、view、cache或writer，查询次数不随Child数量增长；Application不在GET/inspect时调用live Environment provider、逐Child专业Application或扫描文件系统，也不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
 
 三个轴彼此独立：写了`expectedChild`不表示已创建或已绑定；依赖满足也不表示已交付；只有真实Task relation、Development binding和saved handoff改变实际轴。`prerequisitesSatisfied`只表示全部Contribution已由saved delivery或明确superseded处置。它不改变Parent Task Record。`task parent accept`记录显式最终集成验收后，Parent仍保持active，直到正常Formal Finish完成。
 

@@ -315,6 +315,10 @@ function decodeRow(row) {
   throw error('task_finish_current_payload_invalid', `Task Finish current payload kind不支持：${payload.kind || '<missing>'}。`, 500);
 }
 
+export function decodeTaskFinishCurrentRow(row) {
+  return decodeRow(row);
+}
+
 function leaseFromRow(row) {
   return row?.lease_target_identity ? { targetIdentity: row.lease_target_identity, token: row.lease_token, expiresAt: row.lease_expires_at } : null;
 }

@@ -365,9 +365,11 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], { schedulingCostMs: 4000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-coordination', [
     'test/integration/parent-coordination-application.test.mjs',
+    'test/integration/parent-coordination-repository.test.mjs',
     'test/integration/publication-application.test.mjs',
   ], [
     'src/application/parent-coordination/**',
+    'src/infrastructure/sqlite/parent-coordination-repository.mjs',
     'src/application/publication/**',
   ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-project-daily-progress', [
