@@ -23,7 +23,7 @@ description: 用户明确要求创建或查看待办/正式 Task Record、更新
 
 当前位于 task environment 时，只接受上游已确认的 canonical Workspace target；不读取 environment receipt，不扫描父目录，不从 worktree 推断 retained root，也不把 environment identity 写入 Task Record。Buildr Web 已创建或用户按 Task ID 继续时先 inspect，同一记录即为权威来源。
 
-当 Task intent 引用已登记 Project 内的 Markdown 文档时，使用具名的 Workspace 相对 Markdown 链接，例如 `[方案名称](projects/<project>/docs/<document>.md)`；不要只写裸路径、本机绝对路径或 `file:` URL。写入后确认 Buildr Web 将其呈现为可点击引用，并区分“链接可解析”与“正文当前可读取”：文档尚只存在于 Task Environment 时应如实说明暂不可预览，不得复制正文到 Task Record 或声称 canonical Project 已包含该文档。
+作为 Buildr Web 统一内部文档引用规则在 Task intent 的具体应用：引用已登记 Project 内的 Markdown 文档时，使用具名的 Workspace 相对 Markdown 链接，例如 `[方案名称](projects/<project>/docs/<document>.md)`；不要只写裸路径、本机绝对路径或 `file:` URL。写入后确认 Buildr Web 将其呈现为可点击引用，并区分“链接可解析”与“正文当前可读取”：文档尚只存在于 Task Environment 时应如实说明暂不可预览，不得复制正文到 Task Record 或声称 canonical Project 已包含该文档。
 
 ## 3. 执行动作
 
