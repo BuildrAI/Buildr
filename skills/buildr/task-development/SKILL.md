@@ -7,6 +7,8 @@ description: 正式Task从首个proposal、方案或直接实现等研发动作�
 
 本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Buildr Web surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
 
+所有Development内部action必须使用`buildr task next`返回的`environment.controllerInvocation.command + argsPrefix`，再追加`__internal task-development <action> ...`；不得使用Task Environment的candidate `cliInvocation`、resource payload root或checkout中的`src/interfaces/internal`路径写canonical Workspace。
+
 ## 阶段化上下文与效率边界
 
 进入或继续已有Formal Task时，先消费`buildr task next <task-id> --target <canonical-workspace> --json`的compact snapshot。它返回matching Environment execution roots、retained controller、保存的Development applicability和一个typed next；默认不复制完整Receipt。`required`只覆盖authority/identity恢复，`recommended`不构成gate，用户选择其他合法动作时仍交给实际owner contract判断。只有诊断恢复、审查或明确请求完整evidence时才读取详细Result。
@@ -47,10 +49,10 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。省略顶层`planning`时Application会在任何Receipt写入前失败关闭，Agent应根据专业authority重新形成完整snapshot，而不是猜测旧值。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
 
-正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用Task Environment声明的Node与Buildr Service execution root调用只读resolver：
+正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用`buildr task next`返回的matching retained `environment.controllerInvocation`调用bundled只读resolver：
 
 ```text
-node <buildr-service-root>/src/interfaces/internal/task-planning-identity-driver.mjs inspect --task <task-id> --target <canonical-workspace>
+<controller-command> <controller-args-prefix...> __internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>
 ```
 
 只有返回`resolved`时，才能把原样`target.identity`与全部`planningNodes`提交给`planning`并交给Planning Review。不得用artifact path、raw digest、mtime、checkbox progress、Git ref或旧Review target替代；返回`blocked`时停止推进并执行唯一`nextActions[0]`。归档后再次调用resolver：target相同则沿用current Planning Review，只更新Change disposition；target不同则先更新planning并重审。

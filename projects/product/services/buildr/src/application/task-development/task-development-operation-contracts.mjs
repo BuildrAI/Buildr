@@ -205,7 +205,7 @@ export function taskDevelopmentDriverHelp(action = null) {
     return {
       schemaVersion: 'buildr.task-development-driver-help/v1',
       action: null,
-      usage: 'node task-development-driver.mjs <action> --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]',
+      usage: '<controller> __internal task-development <action> --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]',
       discovery: ['--help', '<action> --help', '<action> --schema', '<action> --example'],
       actions: TASK_DEVELOPMENT_ACTIONS.map((name) => ({ action: name, summary: contracts[name].summary })),
     };
@@ -216,7 +216,7 @@ export function taskDevelopmentDriverHelp(action = null) {
     schemaVersion: 'buildr.task-development-driver-help/v1',
     action,
     summary: contract.summary,
-    usage: `node task-development-driver.mjs ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]`,
+    usage: `<controller> __internal task-development ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]`,
     discovery: [`${action} --schema`, `${action} --example`],
   };
 }

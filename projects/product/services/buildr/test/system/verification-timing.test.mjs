@@ -9,6 +9,7 @@ import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.mjs';
+import { executePlan } from '../../test/verification/plan-runner.mjs';
 import { candidateStepBudget } from '../../test/verification/timing/budgets.mjs';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder, parseVerificationPhaseTimings } from '../../test/verification/timing/phases.mjs';
 import {
@@ -591,6 +592,56 @@ test('verification runner 在direct child退出后回收仍持有stdio的detache
   assert.ok(result.processCleanup.descendants.terminated.includes(detachedPid));
 });
 
+test('verification runner 对永久不退出 capability 独立超时并回收完整后代', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX-only timeout process-group proof');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-timeout-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const result = await runVerificationStep({
+    id: 'never-exits',
+    name: 'never exits',
+    command: process.execPath,
+    args: ['-e', [
+      'const { spawn } = require("node:child_process");',
+      'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });',
+      'child.unref();',
+      'console.log(child.pid);',
+      'setInterval(() => {}, 1000);',
+    ].join(' ')],
+    timeoutMs: 250,
+    diagnosticsDirectory: root,
+  }, { terminationGraceMs: 100 });
+  assert.equal(result.status, 'timed-out');
+  assert.equal(result.exitCode, 124);
+  assert.equal(result.failureCode, 'capability-timeout');
+  assert.ok(result.durationMs < 2_000, `timeout took ${result.durationMs}ms`);
+  assert.match(result.stderr, /never-exits exceeded 250 ms/);
+  assert.ok(Number.isInteger(result.process.pid));
+  assert.equal(result.process.processGroupId, result.process.pid);
+  assert.match(result.diagnosticDigests.stdout, /^sha256-/);
+  assert.match(result.diagnosticDigests.stderr, /^sha256-/);
+  const detachedPid = Number(result.stdout.trim());
+  assert.ok(result.processCleanup.descendants.observed.includes(detachedPid));
+  assert.equal(result.processCleanup.status, 'clean');
+  assert.equal(result.processCleanup.escalation.confirmationMs, 1_000);
+  assert.equal([...result.processCleanup.escalation.forced.processGroup, ...result.processCleanup.escalation.forced.descendants].some((item) => item.error), false);
+  await assertProcessExited(detachedPid);
+});
+
+test('verification runner cancellation uses the same owned process-group cleanup boundary', async () => {
+  const controller = new AbortController();
+  const pending = runVerificationStep({
+    id: 'cancelled-capability', name: 'cancelled capability', command: process.execPath,
+    args: ['-e', 'setInterval(() => {}, 1000)'], timeoutMs: 10_000,
+  }, { signal: controller.signal, terminationGraceMs: 50 });
+  setTimeout(() => controller.abort(), 100);
+  const result = await pending;
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.exitCode, 130);
+  assert.equal(result.failureCode, 'capability-cancelled');
+  assert.equal(result.processCleanup.status, 'clean');
+  assert.match(result.stderr, /cancelled-capability was cancelled/u);
+});
+
 test('verification runner 对exit/close竞态只清理和settle一次', async () => {
   const child = new EventEmitter();
   child.pid = 4321;
@@ -610,6 +661,43 @@ test('verification runner 对exit/close竞态只清理和settle一次', async ()
   assert.equal(result.status, 'passed');
   assert.equal(result.stdout, 'complete\n');
   assert.equal(terminations, 1);
+});
+
+test('verification plan streams heartbeat, process identity, output and completion evidence immediately', async () => {
+  let stdout = '';
+  let stderr = '';
+  const plan = {
+    paths: [], delegated: [],
+    steps: [
+      { id: 'first', name: 'first capability', title: 'first', dependsOn: [], resources: [], concurrencyClass: 'default' },
+      { id: 'second', name: 'second capability', title: 'second', dependsOn: ['first'], resources: [], concurrencyClass: 'default' },
+    ],
+  };
+  const result = await executePlan(plan, {
+    productRoot,
+    stream: { write: (value) => { stdout += value; } },
+    errorStream: { write: (value) => { stderr += value; } },
+    heartbeatIntervalMs: 5,
+    concurrency: 1,
+    resourceCoordinator: { root: '/fixture-coordination' },
+    executorFactory: (options) => async (step) => {
+      options.onProcessStart(step, { pid: step.id === 'first' ? 7001 : 7002, processGroupId: step.id === 'first' ? 7001 : 7002 });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return {
+        status: 'passed', exitCode: 0, durationMs: 20,
+        process: { pid: step.id === 'first' ? 7001 : 7002, processGroupId: step.id === 'first' ? 7001 : 7002 },
+        stdout: `${step.id}-stdout\n`, stderr: `${step.id}-stderr\n`,
+        stdoutPath: `/evidence/${step.id}.stdout.log`, stderrPath: `/evidence/${step.id}.stderr.log`,
+        diagnosticDigests: { stdout: `sha256-${'1'.repeat(64)}`, stderr: `sha256-${'2'.repeat(64)}` },
+      };
+    },
+  });
+  assert.equal(result.passed, true);
+  assert.match(stdout, /heartbeat completed=0\/2 active=first:\d+ms:pid=7001:pgid=7001/u);
+  assert.match(stdout, /\[verify\] passed: first \(20 ms, pid=7001, pgid=7001\) evidence=\/evidence\/first\.stdout\.log,\/evidence\/first\.stderr\.log digest=sha256-/u);
+  assert.ok(stdout.indexOf('[verify] passed: first') < stdout.indexOf('[verify] second: second capability'));
+  assert.match(stdout, /first-stdout/u);
+  assert.match(stderr, /first-stderr/u);
 });
 
 test('verification runner 的process-close-timeout返回失败并仍可生成timing summary', async (t) => {

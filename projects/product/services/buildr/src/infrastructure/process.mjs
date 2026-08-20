@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -52,4 +53,61 @@ export function spawnCommandSync(executable, args, options = {}) {
     ...spawnOptions,
     shell: invocation.shell,
   });
+}
+
+function realExecutable(value, label) {
+  if (!path.isAbsolute(value || '')) throw new Error(`${label} must be an absolute executable path.`);
+  try {
+    fs.accessSync(value, fs.constants.X_OK);
+    return fs.realpathSync(value);
+  } catch (error) {
+    throw new Error(`${label} is not executable: ${value} (${error.code || error.message})`);
+  }
+}
+
+export function createExactNodeExecutionEnvironment(options = {}) {
+  const inheritedEnv = { ...(options.env ?? process.env) };
+  const nodeExecutable = realExecutable(options.nodeExecutable ?? process.execPath, 'Node executable');
+  const bin = path.dirname(nodeExecutable);
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
+  const npmName = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const pathNode = path.join(bin, nodeName);
+  const npmExecutable = path.join(bin, npmName);
+  if (!fs.statSync(pathNode, { throwIfNoEntry: false })?.isFile() && path.basename(nodeExecutable).toLowerCase() !== nodeName) {
+    throw new Error(`Node bin does not contain ${nodeName}: ${bin}`);
+  }
+  if (options.requireNpm && !fs.statSync(npmExecutable, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error(`Exact Node bin does not contain ${npmName}: ${bin}`);
+  }
+  const pathEntries = [bin, ...(inheritedEnv.PATH || '').split(path.delimiter).filter(Boolean).filter((entry) => path.resolve(entry) !== path.resolve(bin))];
+  const env = { ...inheritedEnv, PATH: pathEntries.join(path.delimiter) };
+  let version = options.expectedVersion ?? (nodeExecutable === fs.realpathSync(process.execPath) ? process.versions.node : null);
+  let reportedExecutable = nodeExecutable;
+  if (options.verify !== false) {
+    const probe = spawnSync(nodeExecutable, ['-p', 'JSON.stringify({version:process.versions.node,execPath:process.execPath})'], { encoding: 'utf8', env });
+    if (probe.status !== 0) throw new Error(`Exact Node identity probe failed: ${(probe.stderr || probe.stdout || '').trim()}`);
+    let identity;
+    try { identity = JSON.parse(probe.stdout); } catch { throw new Error('Exact Node identity probe returned invalid JSON.'); }
+    version = identity.version;
+    reportedExecutable = realExecutable(identity.execPath, 'Node reported executable');
+    const pathProbe = spawnSync('node', ['-p', 'JSON.stringify({version:process.versions.node,execPath:process.execPath})'], { encoding: 'utf8', env, shell: false });
+    if (pathProbe.status !== 0) throw new Error(`PATH Node identity probe failed: ${(pathProbe.stderr || pathProbe.stdout || '').trim()}`);
+    let pathIdentity;
+    try { pathIdentity = JSON.parse(pathProbe.stdout); } catch { throw new Error('PATH Node identity probe returned invalid JSON.'); }
+    const pathExecutable = realExecutable(pathIdentity.execPath, 'PATH Node reported executable');
+    if (pathExecutable !== reportedExecutable || pathIdentity.version !== version) {
+      throw new Error(`PATH Node identity does not match the exact executable: ${JSON.stringify({ exact: { executable: reportedExecutable, version }, path: { executable: pathExecutable, version: pathIdentity.version } })}`);
+    }
+  }
+  if (options.expectedVersion && version !== options.expectedVersion) throw new Error(`Exact Node version ${version} does not match required ${options.expectedVersion}.`);
+  const audit = {
+    schemaVersion: 'buildr.exact-node-execution-environment/v1',
+    executable: reportedExecutable,
+    version,
+    bin,
+    pathHead: pathEntries[0],
+    npmExecutable: fs.statSync(npmExecutable, { throwIfNoEntry: false })?.isFile() ? npmExecutable : null,
+  };
+  audit.identity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(audit)).digest('hex')}`;
+  return { nodeExecutable: reportedExecutable, npmExecutable: audit.npmExecutable, env, audit };
 }

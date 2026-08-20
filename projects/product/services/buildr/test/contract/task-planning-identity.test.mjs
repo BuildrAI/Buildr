@@ -9,7 +9,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 test('Task Planning Identity runtime保持独立只读入口且由compose注册', () => {
   const domain = read('src/domain/task-planning-identity/task-planning-identity.mjs');
   const application = read('src/application/task-planning-identity/task-planning-identity-application.mjs');
-  const driver = read('src/interfaces/internal/task-planning-identity-driver.mjs');
+  const driver = read('src/interfaces/internal/task-planning-identity-driver-runner.mjs');
+  const inventory = read('src/application/internal-workflow-route-inventory.mjs');
   const compose = read('src/application/compose-runtime.mjs');
   const cli = read('bin/buildr.mjs');
   assert.match(domain, /buildr\.task-planning-identity-result\/v1/);
@@ -17,6 +18,7 @@ test('Task Planning Identity runtime保持独立只读入口且由compose注册'
   assert.match(application, /resolveTaskScopedChange[\s\S]*includeContent: true/);
   assert.match(application, /effects: \[\]/);
   assert.match(driver, /inspect --task <task-id> --target <canonical-workspace>/);
+  assert.match(inventory, /id: 'task-planning-identity'[\s\S]*mode: 'read-only'/);
   assert.match(compose, /registerTaskPlanningIdentityApplication/);
   assert.doesNotMatch(cli, /task-planning-identity/);
 });
@@ -32,7 +34,7 @@ test('全部OpenSpec consumer消费resolver且拒绝手工target摘要', () => {
   ];
   for (const relative of consumers) {
     const content = read(relative);
-    assert.match(content, /task-planning-identity-driver\.mjs inspect/);
+    assert.match(content, /__internal task-planning-identity inspect/);
     assert.match(content, /blocked/);
     assert.doesNotMatch(content, /(?:shasum|sha256sum) proposal\.md/);
   }

@@ -40,7 +40,9 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   assert.equal(recorded.slot.applicability.status, 'current');
   assert.equal(recorded.slot.applicability.declarations.status, 'current');
   assert.doesNotMatch(stored(runtime, root), /resultDigest|applicability|revision|requiredAssurance|stdout|stderr/);
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.applicability.status, 'unknown');
+  const unknown = runtime.inspectTaskVerification(root, 'demo-task').slot.applicability;
+  assert.equal(unknown.status, 'unknown');
+  assert.deepEqual(unknown.reasons.map((reason) => reason.code), ['target-identity-not-provided', 'declaration-identities-not-provided']);
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:two' }).slot.applicability.status, 'stale');
 
   const changed = declaration();

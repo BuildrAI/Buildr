@@ -13,6 +13,7 @@ import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLeas
 import { TASK_FINISH_RAW_COMMAND_OUTPUT } from './execution-record.mjs';
 import { legacyTaskFinishDeliveryCommit, publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
+import { createExactNodeExecutionEnvironment } from '../../infrastructure/process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
   createGitNoContributionProof,
@@ -136,14 +137,14 @@ function commandObservation(id, command, args, cwd, result, startedAt, durationM
 function runCommand(id, command, args, cwd, options = {}) {
   const started = process.hrtime.bigint();
   const startedAt = new Date().toISOString();
-  const runtimePath = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`;
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, verify: false });
   let result;
   try {
     result = spawnSync(command, args, {
       cwd,
       encoding: 'utf8',
       maxBuffer: MAX_OUTPUT_BYTES,
-      env: options.env || { ...process.env, PATH: runtimePath },
+      env: options.env || exactNode.env,
     });
   } catch (error) {
     result = { status: null, signal: null, error, stdout: '', stderr: '' };

@@ -27,6 +27,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
   const diagnoseProjectEnvironmentPreparation = (...args) => runtime.diagnoseProjectEnvironmentPreparation(...args);
+  const diagnoseInternalWorkflowRoutes = (...args) => runtime.diagnoseInternalWorkflowRoutes(...args);
   const inspectTaskFinishPersistence = (...args) => runtime.inspectTaskFinishPersistence(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
@@ -313,6 +314,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
     diagnoseProjectEnvironmentPreparation(result, targetRoot, registry);
     diagnoseServices(result, targetRoot, scopes, registry);
     diagnoseSkillsManifestSchemas(result, targetRoot, scopes);
+    diagnoseInternalWorkflowRoutes(result);
     if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, requestedAgent);
     if (result.workspace?.initialized) {
       try {

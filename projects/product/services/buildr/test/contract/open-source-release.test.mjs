@@ -427,12 +427,13 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
   const document = parsed.toJS();
   for (const required of [
-    'workflow_dispatch:', 'release_id:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
+    'workflow_dispatch:', 'release_id:', 'release_context:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
     'id-token: write', 'contents: write', 'environment: npm-production',
     'release-authority-oidc-probe.mjs', 'release-convergence.mjs', '--stage pre-tag',
     'release-tag-ensure.mjs preflight', 'release-tag-ensure.mjs ensure',
     'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
     'release-artifact.mjs',
+    'release-transaction-evidence.mjs validate-context', 'release-transaction-evidence.mjs finalize', 'release-transaction-evidence.json',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
     'trusted-publish.mjs', 'github-release-ensure.mjs',
     'github-release-ensure.mjs preflight',
@@ -442,7 +443,7 @@ test('publish workflow uses one dispatch and one protected release transaction',
     'name: npm-candidate-v${{ inputs.version }}',
   ]) assert.equal(workflow.includes(required), true, required);
   assert.deepEqual(Object.keys(document.on), ['workflow_dispatch']);
-  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_tree', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
+  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_tree', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
   assert.equal(document.on.push, undefined);
   assert.equal(document.jobs['authority-probe'], undefined);
   const protectedJobs = Object.entries(document.jobs).filter(([, job]) => job.environment !== undefined);

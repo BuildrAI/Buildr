@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { buildCommandInvocation, findExecutableOnPath, quoteWindowsCommandArgument } from '../../src/infrastructure/process.mjs';
+import { buildCommandInvocation, createExactNodeExecutionEnvironment, findExecutableOnPath, quoteWindowsCommandArgument } from '../../src/infrastructure/process.mjs';
 
 test('共享进程基础层保留参数并只为 Windows command shim 启用 shell', () => {
   const args = ['--version'];
@@ -32,4 +34,30 @@ test('共享 PATH 解析器在 Windows 语义下解析 PATHEXT shim', (t) => {
     platform: 'win32',
     env: { PATH: root, PATHEXT: '.EXE;.CMD;.BAT' },
   }), executable);
+});
+
+test('exact Node environment同时冻结父进程 executable 与子进程 PATH identity', (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX fake PATH fixture');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-exact-node-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fakeNode = path.join(root, 'node');
+  fs.writeFileSync(fakeNode, '#!/bin/sh\necho fake-node >&2\nexit 97\n', { mode: 0o755 });
+  const exact = createExactNodeExecutionEnvironment({
+    nodeExecutable: process.execPath,
+    env: { ...process.env, PATH: `${root}${path.delimiter}${process.env.PATH || ''}` },
+    expectedVersion: process.versions.node,
+    requireNpm: true,
+  });
+  assert.equal(exact.audit.executable, fs.realpathSync(process.execPath));
+  assert.equal(exact.audit.pathHead, path.dirname(fs.realpathSync(process.execPath)));
+  assert.equal(exact.env.PATH.split(path.delimiter)[0], exact.audit.bin);
+  const child = spawnSync('node', ['-p', 'JSON.stringify({version:process.versions.node,execPath:process.execPath})'], { encoding: 'utf8', env: exact.env });
+  assert.equal(child.status, 0, child.stderr);
+  const identity = JSON.parse(child.stdout);
+  assert.equal(identity.version, process.versions.node);
+  assert.equal(fs.realpathSync(identity.execPath), exact.audit.executable);
+  assert.match(exact.audit.identity, /^sha256-[a-f0-9]{64}$/);
+  assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, expectedVersion: '0.0.0' }), /does not match required/);
+  assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: 'node' }), /absolute executable path/u);
+  assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: path.join(root, 'missing-node') }), /is not executable/u);
 });

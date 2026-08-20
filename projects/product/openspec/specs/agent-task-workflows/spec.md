@@ -1573,3 +1573,16 @@ Buildr required Core MUST 将“宽而薄”定义为通用治理原则：只有
 - **WHEN** Product Change 准备新增会阻断 Agent 工作流的硬门禁
 - **THEN** proposal、design 或 specification MUST明确该门禁保护的 authority/结果不变量和放行的具体伤害
 - **AND** 若只有自动化信心降低或工作方式不同、但存在可检查的安全继续路径，Product MUST选择 typed diagnostic、风险报告或 Agent guidance
+
+### Requirement: 受管正式工作流必须通过 retained controller 调用内部入口
+Buildr受管Skills与sidebars在调用Task Development、Task Retrospective或Task Planning Identity内部能力时 MUST使用matching Environment/Workspace解析出的retained controller invocation及其bundled `__internal` route。Consumer MUST NOT拼接当前checkout的`src/interfaces/internal/*.mjs`路径、用resource payload root代替controller identity或要求npm安装外存在development source root。
+
+#### Scenario: 正式 Task 在隔离 worktree 中研发
+- **WHEN** Agent在Task Environment candidate checkout中需要更新Development planning、读取Planning Identity或记录Retrospective
+- **THEN** consumer MUST通过retained controller invocation进入对应Application
+- **AND** candidate checkout中的source driver MUST NOT成为retained store writer authority
+
+#### Scenario: npm Workspace 没有 controller source tree
+- **WHEN** Workspace只安装正式npm artifact且Skill需要调用内部工作流能力
+- **THEN** bundled route MUST从安装产物内完成分派
+- **AND** consumer MUST NOT因`src/interfaces/internal`文件不存在而要求兼容调用或本地源码替代

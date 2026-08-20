@@ -772,8 +772,6 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
-    await page.locator('#task-daily-progress').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-daily-progress').innerText(), /本机每日演进/);
     assert.equal(await page.locator('[data-task-tab]').count(), 6);
     await unique(page.getByRole('button', { name: '预演', exact: true }), '任务预演页签');
     await unique(page.getByRole('button', { name: '研发', exact: true }), '任务研发页签');

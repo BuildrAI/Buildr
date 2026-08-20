@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createRuntime } from '../../src/application/compose-runtime.mjs';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 
+const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
+
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-sqlite-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -129,6 +131,37 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
   assert.equal(fs.existsSync(path.join(peerValidation, '.buildr', 'local', 'workspace.sqlite')), true);
   assert.equal(fs.existsSync(retainedStore), false);
+});
+
+test('候选 runtime 借 installed payload identity 仍不能写 retained canonical store', (t) => {
+  const retained = workspace(t);
+  const validation = workspace(t);
+  const installedPayload = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-installed-payload-'));
+  t.after(() => fs.rmSync(installedPayload, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(installedPayload, 'application-payload.json'), '{}\n');
+  fs.mkdirSync(path.join(installedPayload, 'payload', 'product'), { recursive: true });
+
+  const commonDirectory = path.join(retained, '.git');
+  const checkouts = new Map([
+    [path.resolve(SERVICE_ROOT), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+    [path.resolve(retained), { checkoutRoot: retained, gitDirectory: commonDirectory, gitCommonDirectory: commonDirectory, linkedWorktree: false }],
+    [path.resolve(validation), { checkoutRoot: validation, gitDirectory: path.join(commonDirectory, 'worktrees', 'candidate'), gitCommonDirectory: commonDirectory, linkedWorktree: true }],
+  ]);
+  const runtime = createRuntime();
+  const previousPayloadRoot = process.env.BUILDR_APPLICATION_PAYLOAD_ROOT;
+  process.env.BUILDR_APPLICATION_PAYLOAD_ROOT = installedPayload;
+  t.after(() => {
+    if (previousPayloadRoot === undefined) delete process.env.BUILDR_APPLICATION_PAYLOAD_ROOT;
+    else process.env.BUILDR_APPLICATION_PAYLOAD_ROOT = previousPayloadRoot;
+  });
+  registerWorkspaceSqlite(runtime, { observeCheckout: (root) => checkouts.get(path.resolve(root)) || null });
+  assert.equal(runtime.productRoot(), path.join(installedPayload, 'payload', 'product'));
+  assert.throws(
+    () => runtime.openWorkspaceStructuredStore(retained, { writable: true }),
+    (error) => error.code === 'workspace_store_writer_provenance_forbidden',
+  );
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'local')), false);
+  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'local', 'workspace.sqlite')), false);
 });
 
 test('候选 migration N+1 即使伪造 writerRole 也不能升级 canonical N', (t) => {

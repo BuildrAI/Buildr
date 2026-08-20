@@ -41,7 +41,7 @@ test('OpenSpec 侧栏固定脚手架、绑定、begin、文档顺序并禁止空
     '也不得对空变更列表`begin`后再绑定即将写入的变更',
     '无变更的code-only任务仍可在首个实现前`begin`空列表',
     '必须重新`begin`或`planning`',
-    'task-planning-identity-driver.mjs inspect',
+    '__internal task-planning-identity inspect',
   ]) assert.ok(proposeSidebar.includes(required), required);
   const scaffoldIndex = proposeSidebar.indexOf('openspec new change');
   const bindIndex = proposeSidebar.indexOf('task update --add-change');

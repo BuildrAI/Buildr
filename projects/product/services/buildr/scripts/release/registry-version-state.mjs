@@ -136,7 +136,7 @@ export async function waitForRegistryRelease(contract, options = {}) {
 }
 
 function parseArgs(argv) {
-  const options = { version: argv[0], manifest: null, npmTag: null, requirePublished: false, wait: false, snapshotTags: null, beforeTags: null };
+  const options = { version: argv[0], manifest: null, npmTag: null, requirePublished: false, wait: false, snapshotTags: null, beforeTags: null, output: null };
   for (let index = 1; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--manifest') options.manifest = argv[++index];
@@ -145,6 +145,7 @@ function parseArgs(argv) {
     else if (value === '--wait') options.wait = true;
     else if (value === '--snapshot-tags') options.snapshotTags = argv[++index];
     else if (value === '--before-tags') options.beforeTags = argv[++index];
+    else if (value === '--output') options.output = argv[++index];
     else throw new Error(`Unsupported registry check option: ${value}`);
   }
   if ((options.requirePublished || options.wait) && (!options.manifest || !options.npmTag || !options.beforeTags)) {
@@ -183,6 +184,7 @@ async function main() {
       throw new Error(`Official npm registry does not contain ${metadata.name}@${version}.`);
     }
   }
+  if (options.output) writeJson(path.resolve(options.output), state);
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `published=${state.published}\n`);
   process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
 }

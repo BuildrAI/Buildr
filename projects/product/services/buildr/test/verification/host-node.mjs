@@ -38,6 +38,7 @@ function writeSummary(status) {
     stream: process.stdout,
     errorStream: process.stderr,
     executionProfile,
+    expectedNodeVersion: null,
   });
 }
 
@@ -55,6 +56,7 @@ try {
     prefix: 'verify-host-node',
     concurrency: executionProfile.limits,
     executionProfile,
+    expectedNodeVersion: null,
   });
   results = execution.results;
   passed = execution.passed;

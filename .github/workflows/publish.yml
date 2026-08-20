@@ -29,6 +29,10 @@ on:
         description: SHA-256 of publish.yml at source_commit
         required: true
         type: string
+      release_context:
+        description: Closed release Task, Candidate, convergence and Environment correlation context
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -55,6 +59,16 @@ jobs:
         with:
           node-version: "24.15.0"
           package-manager-cache: false
+      - name: Validate the release transaction correlation context
+        env:
+          BUILDR_RELEASE_CONTEXT: ${{ inputs.release_context }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/contract-input"
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
+          node scripts/release/release-transaction-evidence.mjs validate-context \
+            --input "${RUNNER_TEMP}/contract-input/release-context.json" \
+            --output "${RUNNER_TEMP}/contract/release-transaction-context.json" \
+            --repo ../../../..
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
@@ -66,6 +80,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ inputs.source_commit }}"
           test "$(git rev-parse HEAD^{tree})" = "${{ inputs.candidate_tree }}"
           test "${{ steps.contract.outputs.version }}" = "${{ inputs.version }}"
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (context.convergence.sourceCommit !== process.argv[2] || context.convergence.candidateBase !== process.argv[3] || context.convergence.candidateTree !== process.argv[4]) throw new Error("release transaction context does not match dispatch identity");
+          ' "${RUNNER_TEMP}/contract/release-transaction-context.json" "${{ inputs.source_commit }}" "${{ inputs.candidate_base }}" "${{ inputs.candidate_tree }}"
       - name: Freeze release notes
         run: >-
           node scripts/release/release-notes.mjs
@@ -329,6 +348,7 @@ jobs:
           --before-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
           --require-published
           --wait
+          --output "${RUNNER_TEMP}/contract/registry-release.json"
       - name: Ensure GitHub Release notes without binary Assets
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -341,6 +361,24 @@ jobs:
         env:
           BUILDR_RELEASE_PACKAGE_SPEC: "@buildr-ai/buildr@${{ needs.contract.outputs.version }}"
         run: node test/verification/release/release-smoke.mjs
+      - name: Finalize correlated release evidence
+        if: always()
+        run: >-
+          node scripts/release/release-transaction-evidence.mjs finalize
+          --context "${RUNNER_TEMP}/contract/release-transaction-context.json"
+          --output "${RUNNER_TEMP}/contract/release-transaction-evidence.json"
+          --outcome "${{ job.status }}"
+          --repository "${{ github.repository }}"
+          --workflow ".github/workflows/publish.yml"
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          --head-sha "${{ inputs.source_commit }}"
+          --version "${{ needs.contract.outputs.version }}"
+          --npm-dist-tag "${{ needs.contract.outputs.npm_tag }}"
+          --github-release "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.contract.outputs.version }}"
+          --registry-state "${RUNNER_TEMP}/contract/registry-release.json"
+          --repo ../../../..
       - name: Upload temporary release evidence
         if: always()
         uses: actions/upload-artifact@v7

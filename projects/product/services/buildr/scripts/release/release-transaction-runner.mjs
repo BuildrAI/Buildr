@@ -8,11 +8,15 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 import {
   releasePublishAuthority,
   releaseWorkflowPath,
   sha256,
 } from './release-authority.mjs';
+import { createReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { createReleaseTransactionContext, createReleaseTransactionEvidence, validateReleaseTransactionContext } from './release-transaction-evidence.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
@@ -54,6 +58,10 @@ function parseOptions(argv) {
     version: requiredVersion(options.version),
     candidateBase: requiredHash(options['candidate-base'], '--candidate-base'),
     candidateTree: requiredHash(options['candidate-tree'], '--candidate-tree'),
+    releaseTask: options['release-task'],
+    supportTasks: String(options['support-tasks'] || '').split(',').map((item) => item.trim()).filter(Boolean),
+    candidateRunId: Number(options['candidate-run-id']),
+    devCommit: options['dev-commit'] || 'origin/dev',
     ghCommand: options.gh || 'gh',
     output: options.output ? path.resolve(options.output) : null,
     timeoutMs: Number(options['timeout-ms'] || 20 * 60 * 1000),
@@ -79,7 +87,9 @@ async function defaultWait(delayMs) {
 }
 
 export async function runHostedReleaseTransaction(options = {}, dependencies = {}) {
-  const execute = dependencies.execute ?? defaultExecute;
+  const rawExecute = dependencies.execute ?? defaultExecute;
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
+  const execute = (command, args, executeOptions = {}) => rawExecute(command, args, { ...executeOptions, env: executeOptions.env ?? exactNode.env });
   const wait = dependencies.wait ?? defaultWait;
   const onStatus = dependencies.onStatus ?? ((message) => process.stderr.write(`${message}\n`));
   const nowMs = dependencies.nowMs ?? (() => Date.now());
@@ -100,6 +110,70 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
   const workflowSource = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256 = sha256(workflowSource);
   const title = `Release ${version} (${releaseId})`;
+  const environmentNodeVersion = invoke(execute, 'git', ['show', `${candidateBase}:projects/product/.node-version`], repo).trim();
+  if (exactNode.audit.version !== environmentNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Task Environment project Node ${environmentNodeVersion}.`);
+  let context;
+  if (options.releaseContext) context = validateReleaseTransactionContext(options.releaseContext);
+  else {
+    if (!options.releaseTask) throw new Error('--release-task is required.');
+    const candidateRunId = Number(options.candidateRunId);
+    if (!Number.isSafeInteger(candidateRunId) || candidateRunId < 1) throw new Error('--candidate-run-id must be a positive GitHub run id.');
+    const runtime = dependencies.runtime ?? createRuntime();
+    const releaseTaskResult = runtime.inspectTaskRecord(repo, options.releaseTask);
+    const releaseTask = releaseTaskResult?.record;
+    const supportTasks = (options.supportTasks ?? []).map((taskId) => runtime.inspectTaskRecord(repo, taskId)?.record);
+    const retrospectiveSources = releaseTaskResult?.retrospectiveRelations?.sources ?? [];
+    const environment = createReleaseEnvironmentBinding({
+      task: releaseTask,
+      environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
+      repo,
+      sourceCommit: candidateBase,
+      nodeAudit: exactNode.audit,
+      readSourceFile: (commit, file) => invoke(execute, 'git', ['show', `${commit}:${file}`], repo),
+    });
+    const candidateRun = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');
+    const candidateActual = {
+      repository: candidateRun?.repository?.full_name ?? null,
+      event: candidateRun?.event ?? null,
+      status: candidateRun?.status ?? null,
+      conclusion: candidateRun?.conclusion ?? null,
+      workflowPath: typeof candidateRun?.path === 'string' ? candidateRun.path.split('@')[0] : null,
+    };
+    const candidateExpected = {
+      repository: releasePublishAuthority.repository,
+      status: 'completed',
+      conclusion: 'success',
+      workflowPath: '.github/workflows/verify.yml',
+    };
+    if (JSON.stringify({ ...candidateActual, event: undefined }) !== JSON.stringify({ ...candidateExpected, event: undefined }) || !['pull_request', 'workflow_dispatch'].includes(candidateActual.event)) throw new Error(`Candidate run readback mismatch: ${JSON.stringify({ expected: { ...candidateExpected, event: ['pull_request', 'workflow_dispatch'] }, actual: candidateActual })}`);
+    const candidateSourceCommit = requiredHash(candidateRun?.head_sha, 'Candidate run head SHA');
+    const candidateSourceTree = fullCommit(execute, repo, `${candidateSourceCommit}^{tree}`);
+    if (candidateSourceTree !== candidateTree) throw new Error(`Candidate run tree ${candidateSourceTree} does not match frozen candidate tree ${candidateTree}.`);
+    const devCommit = fullCommit(execute, repo, options.devCommit || 'origin/dev');
+    const devTree = fullCommit(execute, repo, `${devCommit}^{tree}`);
+    if (devTree !== candidateTree) throw new Error(`Dev bridge tree ${devTree} does not match Candidate tree ${candidateTree}.`);
+    context = createReleaseTransactionContext({
+      releaseTask,
+      retrospectiveSources,
+      supportTasks,
+      candidate: {
+        sourceCommit: candidateSourceCommit,
+        workflow: '.github/workflows/verify.yml',
+        runId: candidateRunId,
+        runAttempt: Number(candidateRun.run_attempt),
+        runUrl: candidateRun.html_url || `https://github.com/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`,
+      },
+      convergence: { candidateBase, candidateTree, sourceCommit, mainCommit: sourceCommit, devCommit },
+      environment,
+    });
+  }
+  const contextIdentity = context.convergence;
+  if (contextIdentity.candidateBase !== candidateBase || contextIdentity.candidateTree !== candidateTree || contextIdentity.sourceCommit !== sourceCommit || contextIdentity.mainCommit !== remoteMain) {
+    throw new Error(`Release transaction context does not match requested Candidate/main identity: ${JSON.stringify({ requested: { candidateBase, candidateTree, sourceCommit, remoteMain }, context: contextIdentity })}`);
+  }
+  if (context.environment.node.version !== exactNode.audit.version || context.environment.node.executionIdentity !== exactNode.audit.identity) {
+    throw new Error(`Release transaction context Node does not match the exact runner environment: ${JSON.stringify({ context: context.environment.node, runner: exactNode.audit })}`);
+  }
 
   invoke(execute, ghCommand, [
     'workflow', 'run', releasePublishAuthority.workflow,
@@ -111,6 +185,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     '-f', `candidate_base=${candidateBase}`,
     '-f', `candidate_tree=${candidateTree}`,
     '-f', `workflow_sha256=${workflowSha256}`,
+    '-f', `release_context=${JSON.stringify(context)}`,
   ], repo);
 
   const startedAt = nowMs();
@@ -154,8 +229,14 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     workflowPath: releaseWorkflowPath,
   };
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Release transaction readback mismatch: ${JSON.stringify({ expected, actual })}`);
+  const evidence = createReleaseTransactionEvidence({
+    context,
+    publish: { repository: releasePublishAuthority.repository, workflow: releaseWorkflowPath, runId, runAttempt: Number(currentRun.run_attempt), runUrl, headSha: sourceCommit },
+    outcome: 'passed',
+    publicFacts: { version, tagCommit: sourceCommit, npmDistTag: version.includes('-') ? 'next' : 'latest', registryPublished: true, githubRelease: `https://github.com/${releasePublishAuthority.repository}/releases/tag/v${version}`, registrySmoke: 'passed' },
+  });
   return {
-    schemaVersion: 'buildr.release-transaction-runner/v1',
+    schemaVersion: 'buildr.release-transaction-runner/v2',
     status: 'passed',
     releaseId,
     version,
@@ -165,6 +246,9 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     candidateTree,
     workflow: { path: releaseWorkflowPath, sha256: workflowSha256 },
     github: { repository: releasePublishAuthority.repository, runId, runAttempt: Number(currentRun.run_attempt), runUrl },
+    node: exactNode.audit,
+    context,
+    evidence,
     effects: [{ type: 'workflow-dispatched', runId, runUrl }],
     nextActions: [],
   };
@@ -178,7 +262,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
-    const result = { schemaVersion: 'buildr.release-transaction-runner/v1', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release transaction输入或GitHub run后重新dispatch；不得本机创建tag或publish。'] };
+    const result = { schemaVersion: 'buildr.release-transaction-runner/v2', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release transaction输入或GitHub run后重新dispatch；不得本机创建tag或publish。'] };
     if (options?.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stderr.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exitCode = 1;

@@ -714,11 +714,12 @@ Buildr Product 已登记为 Project Verification capability 的 changed selector
 - **AND** MUST NOT 将该情况报告为 Browser 页面或业务交互失败
 
 ### Requirement: CI 必须覆盖最低 Node、当前 Node 与 npm Launcher 平台行为
-CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装同一 npm tarball并验证 CLI、`buildr web --no-open`、health/readiness和Host Node identity；development checkout jobs MUST另外使用Product声明的精确Node并验证hostile PATH不产生漂移。macOS与Windows Launcher行为 MUST在对应OS runner验证本机wrapper/shortcut lifecycle，但 MUST NOT声称验证SEA、installer、签名或无需Node的平台产品。
+CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装同一 npm tarball并验证 CLI、`buildr web --no-open`、health/readiness和Host Node identity；每个 hosted Host Node tuple MUST以该 tuple 实际启动 verifier 的绝对 Node executable 作为 authority，同时冻结子进程 PATH，MUST NOT回退读取development checkout的精确Node版本。development checkout jobs MUST另外使用Product声明的精确Node并验证hostile PATH不产生漂移。macOS与Windows Launcher行为 MUST在对应OS runner验证本机wrapper/shortcut lifecycle，但 MUST NOT声称验证SEA、installer、签名或无需Node的平台产品。
 
 #### Scenario: 两个兼容 Host Node
 - **WHEN** Candidate 执行最低 Node 与当前 Node jobs
 - **THEN** 两者 MUST 消费同一tarball并分别通过普通CLI无HTTP、Web health/readiness与Host installation identity
+- **AND** 每个 tuple 的父进程 executable 与子进程 PATH MUST绑定该 runner 实际 Node并输出audit，不得要求等于development `.node-version`
 - **AND** tarball MUST NOT 为不同 Node 重新 pack
 
 #### Scenario: development hostile PATH
@@ -732,12 +733,19 @@ CI MUST 在 `engines.node` 最低支持 Node 与当前 Node 24 上分别安装�
 - **AND** MUST 证明普通 npm install 零桌面副作用且 wrapper/shortcut 不复制 Node 或 package
 
 ### Requirement: release smoke 必须验证 npm 安装与 Launcher 生命周期
-Release smoke MUST 从唯一冻结 npm tarball 安装 Buildr，并 MUST 验证 CLI、Buildr Web、npm update authority 和显式 Launcher install/status/repair/uninstall。它 MUST 验证 drift/foreign target fail closed 与 npm package/Workspace data 保留；不得用源码启动或平台 staging 目录替代。
+Release smoke MUST 从唯一冻结 npm tarball 安装 Buildr，并 MUST 验证 CLI、Buildr Web、npm update authority 和显式 Launcher install/status/repair/uninstall。它 MUST验证 drift/foreign target fail closed 与 npm package/Workspace data 保留；不得用源码启动或平台 staging 目录替代。Launcher startup MUST使用独立、可审计且明显早于 capability timeout 的wall-clock readiness budget；失败时 MUST在清理临时安装根前保留 launcher log、脱敏 instance、process ownership/存活状态、elapsed/budget和exact Node evidence。
 
 #### Scenario: npm tarball lifecycle
 - **WHEN** release smoke 将 tarball 安装到隔离 prefix
 - **THEN** `buildr --help`、代表性 CLI、`buildr web --no-open`、health/readiness 和 `launcher install/status/launch` MUST 使用该 prefix 的 Host Node/package entry
+- **AND** Launcher health runtime与启动日志 MUST证明子进程 executable、version和PATH首项匹配该Host Node
 - **AND** ordinary install/CLI MUST NOT 自动创建 Launcher 或启动 HTTP
+
+#### Scenario: Launcher 未在 readiness budget 内就绪
+- **WHEN** Launcher没有在专用wall-clock budget内产生匹配health，或进程提前退出
+- **THEN** release smoke MUST fail closed并报告startup label、elapsed、budget、instance path、PID/进程组或不可用原因
+- **AND** 已完成phase、launcher log、脱敏instance、process observation与exact Node audit MUST保存在Candidate diagnostics
+- **AND** owned process与临时安装根 MUST继续清理，且无需等待外层job timeout
 
 #### Scenario: repair 与 uninstall
 - **WHEN** verifier 使 binding 中一个 identity field 漂移后执行 status/launch/repair/uninstall
@@ -1119,3 +1127,59 @@ Buildr Product MUST 使用代表 changed-plan owner集合、registry调度成本
 - **THEN** 维护者 MUST保留唯一primary owner而不得创建重复准备或重复happy-path证据
 - **AND** 非阻断预算 MUST结合focused成功样本、full-load observation与合理波动余量独立校准
 - **AND** budget adjustment MUST NOT改变step status、Candidate覆盖或失败传播
+
+### Requirement: Candidate capability 必须有独立止损与实时可观测生命周期
+Buildr Candidate runner MUST 为每个 capability 使用与非阻断 timing budget 分离的显式墙钟 timeout，并 MUST 在 spawn、周期 heartbeat、terminal completion 与 cleanup 阶段输出可审计事实。timeout、取消或进程退出异常时，runner MUST 回收完整 owned process group 和已观测后代；无法证明回收完成 MUST fail closed。
+
+#### Scenario: capability 永久不退出
+- **WHEN** 确定性 fixture 启动 capability、派生后代进程并永久等待
+- **THEN** runner MUST 在 capability timeout 加有界 cleanup grace 内返回 `timed-out`
+- **AND** 日志 MUST 标识 capability、elapsed、PID/PGID、completed/total 与 cleanup outcome
+- **AND** 根进程和后代 MUST 全部退出，不等待外层 job timeout
+
+#### Scenario: capability 正常完成
+- **WHEN** capability 写入 stdout/stderr 后正常退出
+- **THEN** runner MUST 在其他 active capability 结束前立即输出 completion event
+- **AND** stdout/stderr、phase timing、diagnostic digest 与 terminal status MUST 保持完整一致
+
+### Requirement: Candidate shard 必须增量保留非聚合 checkpoint
+Candidate shard MUST 在每个 capability terminal completion 后原子保存绑定 source、registry、artifact、shard 和 expected step set 的 checkpoint。Checkpoint MUST 明确为非聚合中间态；aggregate gate MUST 继续只接受完整 terminal shard evidence，并 MUST 对缺失、部分、跨 source 或跨 artifact evidence fail closed。
+
+#### Scenario: 一个 capability 超时前已有 capability 完成
+- **WHEN** shard 中若干 capability 已完成，随后一个 capability 超时
+- **THEN** artifact MUST 保留已完成 capability 的 stdout/stderr、completion facts 与最新 checkpoint
+- **AND** shard MUST NOT生成可被 aggregate 接受的 passed terminal evidence
+
+#### Scenario: shard 全部通过
+- **WHEN** expected step set 中每个 capability 都 terminal passed且 cleanup clean
+- **THEN** shard MUST 写完整 terminal evidence
+- **AND** aggregate MUST继续核对全部权威 shard、source SHA、registry identity 与同一 Candidate artifact
+
+### Requirement: core macOS Candidate 必须按语义 owner 分片且保持完整覆盖
+Buildr MUST 从一个权威 core macOS registry 集合投影 3–4 个语义 shard，并 MUST 自动证明每个原 capability 有且只有一个 shard owner。重 Git/SQLite/CLI 生命周期 capability MUST 声明与测量一致的资源压力；workspace-saturating capacity 为 1 时 scheduler MUST NOT 让两个此类 capability 并发。
+
+#### Scenario: registry 或 workflow 发生变化
+- **WHEN** core capability、shard mapping、workflow job、artifact name、`needs` 或 aggregate input 被修改
+- **THEN** contract test MUST 比较权威集合、唯一 owner、workflow job 与 aggregate expected shard
+- **AND** 任一缺失、重复或漂移 MUST 在 Candidate capability 启动前失败
+
+#### Scenario: 两个 workspace-saturating capability 同时 ready
+- **WHEN** scheduler profile 对 `workspace-saturating` 声明 capacity 1
+- **THEN** scheduler MUST 只启动其中一个并让另一个保持 queued
+- **AND** timing summary MUST 记录资源分配和 queue duration
+
+### Requirement: process lineage 采样调整必须绑定可复核基准
+Buildr MUST 为 process lineage sampler 提供同 tree benchmark，记录采样周期、缓存窗口、tracker 数、样本次数与 wall/user/system timing。采样参数只能在基准显示成本下降且 timeout/后代回收正确性测试保持通过后改变；sampling MUST NOT被删除或被描述为已确认挂起根因。
+
+#### Scenario: 调整采样周期或缓存
+- **WHEN** 维护者提出减少 `ps` 调用或延长缓存窗口
+- **THEN** 变更 MUST 附带相同 harness 的前后多轮 timing 和中位数
+- **AND** 确定性后代进程 fixture MUST继续证明 lineage 观察与完整回收
+
+### Requirement: retained cleanup fixture 必须拒绝测试文件作为产品入口
+Task Finish retained cleanup 测试 MUST 显式证明 `currentProductInvocation` 解析到 delivered `bin/buildr.mjs`，并 MUST在任何调用前拒绝 Node test file、test runner argv 或非产品 CLI entry。fixture helper MUST NOT默认从 `process.argv[1]` 推断 Buildr CLI。
+
+#### Scenario: 测试进程入口指向当前 test file
+- **WHEN** retained cleanup fixture 在 Node test runner 中解析 product invocation
+- **THEN** helper MUST使用显式 delivered CLI path或返回确定性错误
+- **AND** MUST NOT再次执行 test file或形成递归测试进程

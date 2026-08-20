@@ -26,6 +26,7 @@ const protectedJobId = 'release';
 const expectedDispatchInputs = Object.freeze([
   'candidate_base',
   'candidate_tree',
+  'release_context',
   'release_id',
   'source_commit',
   'version',

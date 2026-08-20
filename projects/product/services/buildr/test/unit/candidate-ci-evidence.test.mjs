@@ -3,12 +3,15 @@ import test from 'node:test';
 import {
   aggregateCandidateCiEvidence,
   candidateCiRegistryIdentity,
+  createCandidateCiCheckpoint,
   createCandidateCiEvidence,
 } from '../verification/candidate-ci-evidence.mjs';
 import { createCandidateCiShardPlan, createVerificationPlan, validateCandidateCiCoverage } from '../verification/planner.mjs';
 import {
   CANDIDATE_CI_HOST_NODE_TUPLES,
   CANDIDATE_CI_SHARDS,
+  CORE_MACOS_SHARDS,
+  CORE_MACOS_STEP_IDS,
   verificationSteps,
 } from '../verification/registry.mjs';
 
@@ -61,16 +64,50 @@ test('Candidate CI coverage is a closed projection of the full local Candidate',
   const local = createVerificationPlan({ profiles: ['candidate'] }).steps.map((item) => item.id).sort();
   const distributed = [...new Set(CANDIDATE_CI_SHARDS.flatMap((item) => item.stepIds))].sort();
   assert.deepEqual(distributed, local);
-  const core = createCandidateCiShardPlan('core-macos', { externalArtifact: true });
-  assert.equal(core.steps.some((item) => item.id === 'candidate-tarball'), false);
-  assert.ok(core.steps.some((item) => item.id === 'release-tarball-smoke'));
-  assert.ok(core.steps.every((item) => !item.dependsOn.includes('candidate-tarball')));
+  const corePlans = CORE_MACOS_SHARDS.map((shard) => createCandidateCiShardPlan(shard.id, { externalArtifact: true }));
+  assert.ok(corePlans.every((plan) => !plan.steps.some((item) => item.id === 'candidate-tarball')));
+  assert.ok(corePlans.some((plan) => plan.steps.some((item) => item.id === 'release-tarball-smoke')));
+  assert.ok(corePlans.every((plan) => plan.steps.every((item) => !item.dependsOn.includes('candidate-tarball'))));
+  const coreOwners = CORE_MACOS_SHARDS.flatMap((shard) => shard.stepIds);
+  assert.deepEqual([...coreOwners].sort(), [...CORE_MACOS_STEP_IDS].sort());
+  assert.equal(new Set(coreOwners).size, coreOwners.length);
+  assert.ok(verificationSteps.filter((item) => item.profiles.includes('candidate')).every((item) => Number.isInteger(item.timeoutMs) && item.timeoutMs > 0 && item.timeoutMs <= 360_000));
+});
+
+test('Windows lifecycle owners are partitioned into bounded semantic shards', () => {
+  const shardIds = [
+    'workspace-lifecycle-windows',
+    'task-worktree-recovery-windows',
+    'task-finish-windows',
+    'task-development-windows',
+  ];
+  const shards = CANDIDATE_CI_SHARDS.filter((shard) => shardIds.includes(shard.id));
+  assert.deepEqual(shards.map((shard) => ({ id: shard.id, stepIds: shard.stepIds })), [
+    {
+      id: 'workspace-lifecycle-windows',
+      stepIds: ['system-workspace-lifecycle', 'workspace-lifecycle'],
+    },
+    {
+      id: 'task-worktree-recovery-windows',
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'openspec-convergence-recovery'],
+    },
+    {
+      id: 'task-finish-windows',
+      stepIds: ['system-task-finish', 'system-task-finish-cli'],
+    },
+    {
+      id: 'task-development-windows',
+      stepIds: ['integration-task-development', 'concurrent-task-acceptance'],
+    },
+  ]);
+  const owners = shards.flatMap((shard) => shard.stepIds);
+  assert.equal(new Set(owners).size, owners.length);
 });
 
 test('Candidate CI coverage fails closed for unowned and duplicated steps', () => {
   const withoutUnit = CANDIDATE_CI_SHARDS.map((item) => item.id === 'preflight-macos' ? { ...item, stepIds: item.stepIds.filter((id) => id !== 'unit') } : item);
   assert.ok(validateCandidateCiCoverage(verificationSteps, withoutUnit).findings.some((item) => item.step === 'unit' && item.code === 'candidate_step_unowned'));
-  const duplicated = CANDIDATE_CI_SHARDS.map((item) => item.id === 'core-macos' ? { ...item, stepIds: [...item.stepIds, 'unit'] } : item);
+  const duplicated = CANDIDATE_CI_SHARDS.map((item) => item.id === 'core-cli-contract-macos' ? { ...item, stepIds: [...item.stepIds, 'unit'] } : item);
   assert.ok(validateCandidateCiCoverage(verificationSteps, duplicated).findings.some((item) => item.step === 'unit' && item.code === 'candidate_step_duplicated'));
 });
 
@@ -102,6 +139,34 @@ test('Candidate shard evidence retains bounded failure diagnostics', () => {
     processCleanup: { status: 'failed', ownership: 'runner-observed-lineage' },
     diagnostics: { stdoutFile: 'release.stdout.log', stderrFile: 'release.stderr.log' },
   });
+});
+
+test('Candidate checkpoint retains completed evidence but is never aggregate eligible', () => {
+  const checkpoint = createCandidateCiCheckpoint({
+    id: 'core-task-lifecycle-macos',
+    sourceCommit,
+    registryIdentity: candidateCiRegistryIdentity(),
+    artifact,
+    expectedStepIds: ['integration', 'integration-task-finish-delivery'],
+    completedResults: [{
+      id: 'integration', status: 'passed', exitCode: 0, durationMs: 10,
+      process: { pid: 123, processGroupId: 123 },
+      stdoutPath: '/tmp/integration.stdout.log', stderrPath: '/tmp/integration.stderr.log',
+      diagnosticDigests: { stdout: `sha256-${'d'.repeat(64)}`, stderr: `sha256-${'e'.repeat(64)}` },
+    }],
+    startedAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: '2026-08-13T00:00:01.000Z',
+    status: 'running',
+  });
+  assert.equal(checkpoint.schemaVersion, 'buildr.candidate-ci-checkpoint/v1');
+  assert.equal(checkpoint.aggregateEligible, false);
+  assert.deepEqual(checkpoint.completedStepIds, ['integration']);
+  assert.deepEqual(checkpoint.completedResults[0].process, { pid: 123, processGroupId: 123 });
+  assert.equal(checkpoint.completedResults[0].diagnostics.stdoutDigest, `sha256-${'d'.repeat(64)}`);
+  const aggregate = aggregateCandidateCiEvidence([checkpoint], sourceCommit);
+  assert.equal(aggregate.status, 'failed');
+  assert.ok(aggregate.findings.some((item) => item.code === 'schema-invalid'));
+  assert.ok(aggregate.findings.some((item) => item.code === 'evidence-missing'));
 });
 
 test('Candidate aggregate rejects missing, duplicate, failed and stale evidence', () => {

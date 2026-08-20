@@ -132,6 +132,12 @@ export function registerTaskVerificationApplication(runtime) {
     const expected = new Map(result.declarations.map((item) => [item.project, item]));
     const actual = declarationsInput === undefined ? null : new Map(declarationsInput.map((item) => [item.project, item]));
     const reasons = [];
+    if (currentTargetIdentity === undefined) {
+      reasons.push({ axis: 'target', code: 'target-identity-not-provided', message: 'Caller 未提供 current target identity；未执行外部观察。' });
+    }
+    if (actual == null) {
+      reasons.push({ axis: 'declaration', code: 'declaration-identities-not-provided', message: 'Caller 未提供 current declaration identities；未执行外部观察。' });
+    }
     if (actual) {
       for (const [project, declaration] of expected) {
         const observed = actual.get(project);

@@ -101,10 +101,26 @@ export function validateApplicationPayloadManifest(value) {
 function sourceServiceRoot() {
   try {
     const moduleUrl = import.meta.url;
-    if (typeof moduleUrl === 'string' && moduleUrl.startsWith('file:')) return path.resolve(path.dirname(fileURLToPath(moduleUrl)), '../../..');
+    if (typeof moduleUrl === 'string' && moduleUrl.startsWith('file:')) {
+      const moduleFile = fileURLToPath(moduleUrl);
+      if (path.basename(moduleFile) === 'index.mjs' && path.basename(path.dirname(moduleFile)) === 'product-resources') {
+        return path.resolve(path.dirname(moduleFile), '../../..');
+      }
+      if (path.basename(moduleFile) === 'buildr.cjs' && path.basename(path.dirname(moduleFile)) === 'runtime') {
+        return path.resolve(path.dirname(moduleFile), '..');
+      }
+    }
   } catch {}
-  const invoked = path.resolve(process.argv[1] || '');
+  let invoked = path.resolve(process.argv[1] || '');
+  try { invoked = fs.realpathSync(invoked); } catch {}
   if (path.basename(invoked) === 'buildr.mjs' && path.basename(path.dirname(invoked)) === 'bin') return path.resolve(path.dirname(invoked), '..');
+  return null;
+}
+
+export function resolveControllerSourceRoot({ required = true } = {}) {
+  const root = sourceServiceRoot();
+  if (root) return root;
+  if (required) throw new Error('Buildr controller source root is unavailable; writer provenance cannot use application payload identity as a fallback.');
   return null;
 }
 
@@ -204,7 +220,7 @@ export function resolveProductRoot() {
     const layout = layoutForRoot(payloadRoot);
     return layout === 'installed' ? path.join(payloadRoot, 'payload', 'product') : path.join(payloadRoot, 'resources', 'product');
   }
-  const source = sourceServiceRoot();
+  const source = resolveControllerSourceRoot({ required: false });
   if (!source) throw new Error('Buildr product root is unavailable.');
   return source;
 }

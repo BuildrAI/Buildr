@@ -112,6 +112,23 @@ test('ready Environment直接给出execution root、retained controller与Develo
   assert.equal(result.next.action, 'begin');
   assert.equal(result.next.command.writer, 'retained-controller');
   assert.equal(result.next.command.invocation.command, '/retained/node');
+  assert.deepEqual(result.next.command.argv, [
+    '/retained/buildr.mjs', '__internal', 'task-development', 'begin',
+    '--task', taskId, '--target', root,
+  ]);
+});
+
+test('Task Development后续动作均通过retained controller内部driver调用', (t) => {
+  for (const action of ['planning', 'policy', 'freeze', 'decide', 'handoff']) {
+    const next = { mode: 'recommended', owner: 'task-development', action, capability: { id: 'buildr.task-development', version: 2 }, summary: action };
+    const { root, runtime } = fixture(t, { development: development(next) });
+    const result = runtime.inspectTaskEntrySnapshot(root, taskId);
+    assert.deepEqual(result.next.command.argv, [
+      '/retained/buildr.mjs', '__internal', 'task-development', action,
+      '--task', taskId, '--target', root,
+    ]);
+    assert.equal(result.next.command.argv.includes('/candidate/buildr.mjs'), false);
+  }
 });
 
 test('Development compact只返回current facts并按next加载一个后续capability', (t) => {

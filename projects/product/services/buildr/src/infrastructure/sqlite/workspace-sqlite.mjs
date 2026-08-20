@@ -4,7 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { observeGitCheckoutIdentity } from '../git/checkout-identity.mjs';
-import { resolveProductResource } from '../product-resources/index.mjs';
+import { resolveControllerSourceRoot, resolveProductResource } from '../product-resources/index.mjs';
 
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
 const MIGRATIONS_ROOT = resolveProductResource('product/src/infrastructure/sqlite/migrations');
@@ -128,10 +128,11 @@ function configure(database, { writable }) {
 
 export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitCheckoutIdentity, sourceRoot = null } = {}) {
   const operationScopes = [];
+  let writerSourceRoot = sourceRoot ? path.resolve(sourceRoot) : null;
 
   function runtimeSourceCheckout() {
-    const root = path.resolve(sourceRoot || runtime.productRoot());
-    return { root, checkout: observeCheckout(root) };
+    writerSourceRoot ||= path.resolve(resolveControllerSourceRoot());
+    return { root: writerSourceRoot, checkout: observeCheckout(writerSourceRoot) };
   }
 
   function isCandidateValidationWorkspace(source, target) {

@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-development-driver.mjs');
+const RUNNER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-development-driver-runner.mjs');
 
 function run(args, expectedStatus = 0) {
   const result = spawnSync(process.execPath, [DRIVER, ...args], { encoding: 'utf8' });
@@ -46,7 +47,7 @@ test('schema与example输出closed input contract', () => {
 });
 
 test('发现路径在runtime dynamic import前返回', () => {
-  const source = fs.readFileSync(DRIVER, 'utf8');
+  const source = fs.readFileSync(RUNNER, 'utf8');
   const discoveryExit = source.indexOf('if (discoveryFlags.length === 1)');
   const runtimeImport = source.indexOf("await import('../../application/compose-runtime.mjs')");
   assert.equal(discoveryExit >= 0, true);

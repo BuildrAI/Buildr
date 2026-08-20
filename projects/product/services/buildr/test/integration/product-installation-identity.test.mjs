@@ -149,4 +149,5 @@ test('product invocation always uses explicit Host or development Node without P
     argsPrefix: ['/npm/bin/buildr.mjs'],
     kind: 'host-node',
   });
+  assert.throws(() => currentProductInvocation({ env: {}, argv: ['node', '/repo/test/task-finish-retained-cleanup.test.mjs'] }), /cannot infer a Node test entry/);
 });

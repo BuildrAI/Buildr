@@ -149,7 +149,7 @@ function optionValues(args, option) {
   return values;
 }
 
-function sanitizeCheck(result) {
+function executionCheck(result) {
   return {
     id: result.id,
     title: result.title,
@@ -164,6 +164,34 @@ function sanitizeCheck(result) {
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     resourceCoordination: result.resourceCoordination || null,
+  };
+}
+
+function publicFailureSummary(check) {
+  if (check.status !== 'failed') return null;
+  const outcome = check.signal
+    ? `signal ${check.signal}`
+    : Number.isInteger(check.exitCode) ? `exit code ${check.exitCode}` : 'a non-passing process outcome';
+  return {
+    code: 'verification.capability_failed',
+    message: `Capability ${check.id} failed with ${outcome}.`,
+  };
+}
+
+function publicCheck(check) {
+  return {
+    id: check.id,
+    title: check.title,
+    status: check.status,
+    exitCode: check.exitCode,
+    signal: check.signal,
+    durationMs: check.durationMs,
+    queuedAt: check.queuedAt,
+    startedAt: check.startedAt,
+    finishedAt: check.finishedAt,
+    queueDurationMs: check.queueDurationMs,
+    resourceCoordination: check.resourceCoordination,
+    failureSummary: publicFailureSummary(check),
   };
 }
 
@@ -348,11 +376,12 @@ export function registerVerificationApplication(runtime) {
     const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
     const finishedAt = new Date().toISOString();
-    const checks = results.map(sanitizeCheck);
+    const executionChecks = results.map(executionCheck);
+    const checks = executionChecks.map(publicCheck);
     const targetStable = digest(before) === digest(after);
     const targetDrift = targetDriftSummary(before, after);
     const passed = targetStable && checks.every((check) => check.status === 'passed');
-    const executionRecordOutcome = verificationExecutionRecordOutcome({ passed, checks });
+    const executionRecordOutcome = verificationExecutionRecordOutcome({ passed, checks: executionChecks });
     const identityMaterial = verificationExecutionIdentityMaterial({
       project: projectCode,
       declaration: declarationIdentity,
@@ -414,7 +443,7 @@ export function registerVerificationApplication(runtime) {
             selectedCapabilities: selected,
             authorizedCapabilities,
             authorizedResources,
-            checks,
+            checks: executionChecks,
             outcome: executionRecordOutcome,
             durationMs,
             startedAt,
