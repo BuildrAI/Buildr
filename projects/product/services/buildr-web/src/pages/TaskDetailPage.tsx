@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
 import { api, type ApiError } from '../api';
+import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
 import { confirmModal } from '../lib/confirm';
@@ -115,6 +116,8 @@ export function TaskDetailPage() {
   const retrospectiveRequestRef = useRef(0);
   const retrospectiveMutationRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
+  const taskReadLifecycleRef = useRef(createTaskReadLifecycle());
+  const focusRefreshRef = useRef<() => void>(() => {});
 
   const applyRecord = useCallback((next: TaskDetailData, workspaceName?: string) => {
     setData(next);
@@ -146,7 +149,9 @@ export function TaskDetailPage() {
     const results = await Promise.all(references.map(async (reference) => {
       const key = `${reference.project}/${reference.change}`;
       try {
-        const detail = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`) as any;
+        const detail = await taskReadLifecycleRef.current.run(taskId, `change:${key}`, (signal) => (
+          api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`, { signal })
+        )) as any;
         return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change };
       } catch (err) {
         return {
@@ -160,10 +165,10 @@ export function TaskDetailPage() {
   }, [taskId]);
 
   const refresh = useCallback(async () => {
-    const [workspace, detail] = await Promise.all([
-      api('/api/v1/workspace') as Promise<WorkspacePayload>,
-      api(`/api/v1/tasks/${encodeURIComponent(taskId)}`) as Promise<TaskDetailData>,
-    ]);
+    const [workspace, detail] = await taskReadLifecycleRef.current.run(taskId, 'detail', (signal) => Promise.all([
+      api('/api/v1/workspace', { signal }) as Promise<WorkspacePayload>,
+      api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { signal }) as Promise<TaskDetailData>,
+    ]));
     if (taskIdRef.current !== taskId) return;
     setWorkspace(workspace);
     applyRecord(detail, workspace.workspace.name);
@@ -175,10 +180,12 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setOverviewLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/overview`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'overview', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/overview`, { signal })
+      ));
       if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setOverviewData(next);
     } catch (err) {
-      if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setOverviewData({ error: `${(err as ApiError).code || 'task_overview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}` });
       }
     } finally {
@@ -191,10 +198,12 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setCoordinationLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`) as ParentCoordinationResult;
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'coordination', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`, { signal })
+      )) as ParentCoordinationResult;
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
-      if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setCoordinationData({ diagnostic: { code: (err as ApiError).code || 'parent_coordination_read_failed', message: err instanceof Error ? err.message : '读取失败' } });
       }
     } finally {
@@ -207,12 +216,14 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setDevelopmentLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/development`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'development', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/development`, { signal })
+      ));
       if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setDevelopmentData(next);
       }
     } catch (err) {
-      if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setDevelopmentData({
           status: 'unavailable',
           development: null,
@@ -231,10 +242,12 @@ export function TaskDetailPage() {
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`) as UiPreviewData;
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'ui-previews', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`, { signal })
+      )) as UiPreviewData;
       if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPreviewData(next);
     } catch (err) {
-      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setPreviewError(`${(err as ApiError).code || 'task_ui_preview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
         setPreviewData(null);
       }
@@ -248,12 +261,14 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setEnvironmentLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/environment`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'environment', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/environment`, { signal })
+      ));
       if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setEnvironmentData(next);
       }
     } catch (err) {
-      if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setEnvironmentData({
           status: 'blocked',
           source: 'current-machine',
@@ -275,12 +290,14 @@ export function TaskDetailPage() {
     setReviewLoading(true);
     setReviewError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/reviews`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'reviews', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/reviews`, { signal })
+      ));
       if (reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setReviewData(next);
       }
     } catch (err) {
-      if (reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setReviewError(`${(err as ApiError).code || 'task_review_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
       }
     } finally {
@@ -294,12 +311,14 @@ export function TaskDetailPage() {
     setVerificationLoading(true);
     setVerificationError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/verification`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'verification', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/verification`, { signal })
+      ));
       if (verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setVerificationData(next);
       }
     } catch (err) {
-      if (verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setVerificationError(`${(err as ApiError).code || 'task_verification_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
       }
     } finally {
@@ -313,10 +332,12 @@ export function TaskDetailPage() {
     setExecutionRecordsLoading(true);
     setExecutionRecordsError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/execution-records?view=${encodeURIComponent(view)}`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, `execution-records:${view}`, (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/execution-records?view=${encodeURIComponent(view)}`, { signal })
+      ));
       if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId && executionRecordViewRef.current === view) setExecutionRecordsData(next);
     } catch (err) {
-      if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setExecutionRecordsError(`${(err as ApiError).code || 'task_execution_records_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
         setExecutionRecordsData(null);
       }
@@ -341,12 +362,14 @@ export function TaskDetailPage() {
     setRetrospectiveLoading(true);
     setRetrospectiveError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'retrospective', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`, { signal })
+      ));
       if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setRetrospectiveData(next);
       }
     } catch (err) {
-      if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setRetrospectiveError(`${(err as ApiError).code || 'task_retrospective_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
         setRetrospectiveData(null);
       }
@@ -460,28 +483,31 @@ export function TaskDetailPage() {
     })();
     return () => {
       cancelled = true;
+      taskReadLifecycleRef.current.abortTask(taskId);
     };
   }, [taskId, refresh, refreshOverview, refreshCoordination]);
 
+  focusRefreshRef.current = () => {
+    const tab = activeTabRef.current;
+    if (tab === 'overview') {
+      void refreshOverview();
+      void refreshCoordination();
+    }
+    if (tab === 'development') void refreshDevelopment();
+    if (tab === 'environment') void refreshEnvironment();
+    if (tab === 'evidence') {
+      void refreshReview();
+      void refreshVerification();
+      void refreshExecutionRecords();
+    }
+    if (tab === 'retrospective') void refreshRetrospective();
+  };
+
   useEffect(() => {
-    const onFocus = () => {
-      const tab = activeTabRef.current;
-      if (tab === 'overview') {
-        void refreshOverview();
-        void refreshCoordination();
-      }
-      if (tab === 'development') void refreshDevelopment();
-      if (tab === 'environment') void refreshEnvironment();
-      if (tab === 'evidence') {
-        void refreshReview();
-        void refreshVerification();
-        void refreshExecutionRecords();
-      }
-      if (tab === 'retrospective') void refreshRetrospective();
-    };
+    const onFocus = () => focusRefreshRef.current();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, []);
 
   const loadParentOptions = async () => {
     const current = dataRef.current;

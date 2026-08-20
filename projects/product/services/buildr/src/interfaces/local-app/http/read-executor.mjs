@@ -83,23 +83,34 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
     state.item = null;
     state.failed = false;
     worker.on('message', (message) => {
+      if (state.worker !== worker) return;
       const item = state.item;
-    state.item = null;
-      if (!item) return;
+      if (!item || message?.id !== item.id) return;
+      state.item = null;
+      item.workerState = null;
       if (message?.ok === true) settle(item, null, message.value);
       else settle(item, workerError(message?.error, 'local_app_read_application_failed'));
       pump();
     });
     worker.on('error', (error) => {
+      if (state.worker !== worker) return;
       state.failed = true;
       const item = state.item;
       state.item = null;
-      if (item) settle(item, workerError({ code: error.code, message: error.message }, 'local_app_read_worker_failed'));
+      if (item) {
+        item.workerState = null;
+        settle(item, workerError({ code: error.code, message: error.message }, 'local_app_read_worker_failed'));
+      }
     });
     worker.on('exit', (code) => {
+      if (state.worker !== worker) return;
       const item = state.item;
+      state.worker = null;
       state.item = null;
-      if (item) settle(item, readExecutorError('local_app_read_worker_failed', `Buildr Web read Worker exited unexpectedly (${code}).`, 500));
+      if (item) {
+        item.workerState = null;
+        settle(item, readExecutorError('local_app_read_worker_failed', `Buildr Web read Worker exited unexpectedly (${code}).`, 500));
+      }
       if (closed) return;
       try {
         spawn(state);
@@ -109,6 +120,28 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         state.worker = null;
         rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法补充 Worker：${error.message}`, 503));
       }
+    });
+  }
+
+  function recycle(state) {
+    const worker = state.worker;
+    if (!worker) return;
+    state.worker = null;
+    state.item = null;
+    state.failed = true;
+    void Promise.resolve(worker.terminate()).then(() => {
+      if (closed || state.worker) return;
+      try {
+        spawn(state);
+        pump();
+      } catch (error) {
+        state.failed = true;
+        rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法补充 Worker：${error.message}`, 503));
+      }
+    }, (error) => {
+      if (closed) return;
+      state.failed = true;
+      rejectQueued(readExecutorError('local_app_read_executor_unavailable', `Buildr Web read executor 无法回收 Worker：${error.message}`, 503));
     });
   }
 
@@ -129,6 +162,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
       }
       if (item.settled) continue;
       state.item = item;
+      item.workerState = state;
       item.state = 'running';
       try {
         state.worker.postMessage({
@@ -142,6 +176,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         });
       } catch (error) {
         state.item = null;
+        item.workerState = null;
         settle(item, workerError({ code: error.code, message: error.message }));
       }
     }
@@ -167,6 +202,7 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         filename: input.filename,
         state: 'queued',
         settled: false,
+        workerState: null,
         resolve,
         reject,
         cleanup: null,
@@ -176,6 +212,13 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
         item.state = 'cancelled';
         const index = queue.indexOf(item);
         if (index >= 0) queue.splice(index, 1);
+        const state = item.workerState;
+        if (state?.item === item) {
+          item.workerState = null;
+          settle(item, readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
+          recycle(state);
+          return;
+        }
         settle(item, readExecutorError('local_app_read_cancelled', 'Buildr Web read request 已取消。', 499));
       };
       if (input.signal) {
@@ -193,7 +236,10 @@ export function createBoundedLocalAppReadExecutor({ workerCount = DEFAULT_WORKER
     rejectQueued(readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
     const terminations = [];
     for (const state of workers) {
-      if (state.item) settle(state.item, readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
+      if (state.item) {
+        state.item.workerState = null;
+        settle(state.item, readExecutorError('local_app_read_executor_closed', 'Buildr Web read executor 已关闭。', 503));
+      }
       state.item = null;
       if (state.worker) terminations.push(Promise.resolve(state.worker.terminate()).catch(() => {}));
     }

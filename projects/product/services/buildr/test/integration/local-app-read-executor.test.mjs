@@ -9,13 +9,18 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }) {
   return () => {
     const worker = new EventEmitter();
     const workerId = ++created;
+    let timer = null;
+    let running = false;
     worker.postMessage = (message) => {
       metrics.calls += 1;
       metrics.started.push(message.id);
       metrics.messages?.push(message);
       metrics.active += 1;
+      running = true;
       metrics.maxActive = Math.max(metrics.maxActive, metrics.active);
-      setTimeout(() => {
+      timer = setTimeout(() => {
+        timer = null;
+        running = false;
         metrics.active -= 1;
         if (failFirst && workerId === 1) {
           worker.emit('error', Object.assign(new Error('worker crashed'), { code: 'worker_crashed' }));
@@ -23,9 +28,16 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }) {
           return;
         }
         worker.emit('message', { id: message.id, ok: true, value: { operation: message.operation, taskId: message.taskId } });
-      }, delayMs);
+      }, typeof delayMs === 'function' ? delayMs(workerId, message) : delayMs);
     };
-    worker.terminate = () => Promise.resolve();
+    worker.terminate = () => {
+      metrics.terminated = (metrics.terminated ?? 0) + 1;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (running) metrics.active -= 1;
+      running = false;
+      return Promise.resolve();
+    };
     return worker;
   };
 }
@@ -50,9 +62,9 @@ test('固定容量与 FIFO 队列限制并发且不重复派发', async () => {
   }
 });
 
-test('取消排队和运行中的读取都不重试且释放后续容量', async () => {
-  const metrics = { calls: 0, active: 0, maxActive: 0, started: [] };
-  const executor = createBoundedLocalAppReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ delayMs: 35, metrics }) });
+test('取消排队和运行中的读取都不重试，运行中取消会回收 Worker 并立即恢复容量', async () => {
+  const metrics = { calls: 0, active: 0, maxActive: 0, started: [], terminated: 0 };
+  const executor = createBoundedLocalAppReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ delayMs: (workerId) => workerId === 1 ? 1000 : 20, metrics }) });
   try {
     const runningController = new AbortController();
     const running = executor.run('development', input('task-running', runningController.signal));
@@ -66,6 +78,8 @@ test('取消排队和运行中的读取都不重试且释放后续容量', async
     await next;
     assert.equal(metrics.calls, 2);
     assert.deepEqual(metrics.started, [1, 3], '取消的 queued request 不得派发，后续请求使用新的 sequence id');
+    assert.equal(metrics.terminated, 1, '运行中的取消必须终止占用容量的 Worker');
+    assert.equal(metrics.maxActive, 1);
   } finally {
     await executor.close();
   }

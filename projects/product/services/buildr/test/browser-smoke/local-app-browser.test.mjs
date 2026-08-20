@@ -391,6 +391,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
   const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'application', 'compose-runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
+  controllerRuntime.currentProductInvocation = (options = {}) => ({
+    command: process.execPath,
+    argsPrefix: [options.cliPath || controller.cli],
+    kind: options.kind || 'stable-controller',
+  });
   const fixtureProfile = createSelectedFixture(workspaceRoot, controller.cli);
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot = path.join(base, 'other-workspace');
@@ -439,7 +444,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#development-environment-badge').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#development-environment-badge').innerText()).trim(), '开发版');
-    assert.equal(await page.title(), 'browser-smoke-core · Buildr Web Dev');
+    assert.equal(await page.title(), `${fixtureProfile === 'core' ? 'browser-smoke-core' : 'browser-smoke'} · Buildr Web Dev`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 0, '核心 smoke 必须存在可进入的 Task');
     await page.locator('#task-table-body tr.ant-table-row').first().click();

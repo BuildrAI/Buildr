@@ -4,11 +4,52 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { createTaskReadLifecycle } from '../../../buildr-web/src/api/taskReadLifecycle.ts';
+
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function read(relative) {
   return fs.readFileSync(path.join(productRoot, relative), 'utf8');
 }
+
+function deferredTaskRead(signal, calls) {
+  calls.count += 1;
+  let resolve;
+  const promise = new Promise((complete, reject) => {
+    resolve = complete;
+    signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true });
+  });
+  return { promise, resolve };
+}
+
+test('Task 读取生命周期去重同一 Task/operation，并在路由离开时只取消旧 Task', async () => {
+  const lifecycle = createTaskReadLifecycle();
+  const calls = { count: 0 };
+  let oldRead;
+  const first = lifecycle.run('parent-old', 'coordination', (signal) => {
+    oldRead = deferredTaskRead(signal, calls);
+    return oldRead.promise;
+  });
+  const duplicate = lifecycle.run('parent-old', 'coordination', () => {
+    throw new Error('duplicate request must reuse the in-flight Promise');
+  });
+  assert.equal(first, duplicate);
+  assert.equal(calls.count, 0, 'request starts in a microtask');
+  await Promise.resolve();
+  assert.equal(calls.count, 1);
+
+  let currentRead;
+  const current = lifecycle.run('parent-current', 'coordination', (signal) => {
+    currentRead = deferredTaskRead(signal, calls);
+    return currentRead.promise;
+  });
+  await Promise.resolve();
+  lifecycle.abortTask('parent-old');
+  await assert.rejects(first, (error) => error.name === 'AbortError');
+  currentRead.resolve({ taskId: 'parent-current' });
+  assert.deepEqual(await current, { taskId: 'parent-current' });
+  assert.equal(calls.count, 2);
+});
 
 test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app = read('../buildr-web/src/App.tsx');
@@ -119,7 +160,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
   assert.match(source, /ParentCoordinationPanel/);
-  assert.match(source, /\/coordination`\)/);
+  assert.match(source, /\/coordination`, \{ signal \}\)/);
   assert.match(coordination, /id="task-parent-coordination"/);
   assert.match(coordination, /Parent Coordination Application 的派生 read model/);
   assert.match(coordination, /mode === 'ordinary'[\s\S]*mode === 'legacy'[\s\S]*return null/);
@@ -137,7 +178,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(retrospective, /data-task-panel="retrospective"/);
   assert.match(retrospective, /尚未复盘/);
   assert.match(retrospective, /MarkdownHost[\s\S]*reportMarkdown|reportMarkdown[\s\S]*MarkdownHost/);
-  assert.match(source, /\/retrospective`\)/);
+  assert.match(source, /\/retrospective`, \{ signal \}\)/);
   assert.match(source, /method: 'PATCH'[\s\S]*expectedCurrentDigest/);
   assert.match(source, /task_retrospective_conflict[\s\S]*已刷新为最新状态/);
   assert.match(source, /retrospectiveMutationRef\.current === mutationId[\s\S]*taskIdRef\.current === currentTaskId/);
@@ -149,7 +190,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
   assert.match(evidence, /openAgentAction\('task-review', \{ taskId, reviewType \}\)/);
   assert.match(evidence, /current: '当前适用', stale: '目标已变化', unknown: '适用性未知'/);
-  assert.match(source, /api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(currentTaskId\)\}\/reviews`\)/);
+  assert.match(source, /api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(currentTaskId\)\}\/reviews`, \{ signal \}\)/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.match(styles, /\.review-slot-grid \{[^}]*grid-template-columns: repeat\(2/);
@@ -162,7 +203,7 @@ test('任务 UI Preview 只读按需加载并在离线 opaque-origin iframe 中�
   const server = read('src/interfaces/local-app/http/server.mjs');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /if \(tab === 'preview'\) void refreshPreview\(\)/);
-  assert.match(source, /\/ui-previews`\)/);
+  assert.match(source, /\/ui-previews`, \{ signal \}\)/);
   assert.match(preview, /界面预演稿（UI Preview）/);
   assert.match(preview, /不是正式设计稿、生产原型或像素级验收标准/);
   assert.match(preview, /sandbox="allow-scripts"/);
@@ -189,7 +230,7 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /任务研发（Task Development）/);
-  assert.match(detail, /\/development`\)/);
+  assert.match(detail, /\/development`, \{ signal \}\)/);
   assert.match(labels, /'handoff-current': '研发交接已就绪'/);
   assert.match(labels, /'candidate-current': '候选已就绪'/);
   assert.match(labels, /planning: '规划中'/);
@@ -220,7 +261,7 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
   assert.match(source, /验证结果（Verification Result）/);
   assert.match(source, /目标适用性/);
   assert.match(source, /声明适用性/);
-  assert.match(detail, /\/verification`\)/);
+  assert.match(detail, /\/verification`, \{ signal \}\)/);
   assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
   assert.match(actions, /\/api\/v1\/prompts\/task-verification/);
   assert.match(actions, /验证结果未被修改/);
@@ -285,6 +326,7 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
 
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
+  const taskReadLifecycle = read('../buildr-web/src/api/taskReadLifecycle.ts');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
   const server = read('src/interfaces/local-app/http/server.mjs');
   assert.match(tasks, /new AbortController\(\)/);
@@ -302,6 +344,10 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(detail, /api\('\/api\/v1\/tasks\?status=active'\)/);
   assert.match(detail, /addEventListener\('focus'|onFocus.*loadParentOptions/);
+  assert.match(detail, /taskReadLifecycleRef\.current\.abortTask\(taskId\)/);
+  assert.match(detail, /focusRefreshRef\.current/);
+  assert.match(taskReadLifecycle, /pending\.get\(key\)/);
+  assert.match(taskReadLifecycle, /entry\.controller\.abort\(\)/);
   assert.match(detail, /打开时检查当前状态/);
   assert.doesNotMatch(detail, /Promise\.all\(\[api\('\/api\/v1\/workspace'\), api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\), api\('\/api\/v1\/tasks'\)\]\)/);
   assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
