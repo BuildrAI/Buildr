@@ -11,7 +11,7 @@ import {
   taskDevelopmentDigest,
   taskDevelopmentError,
 } from '../../domain/task-development/task-development.mjs';
-import { createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizePlannedContributionBindings, parentCoordinationError, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
+import { PARENT_PLAN_SCHEMA, createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings, parentCoordinationError, projectParentPlan, validateContributionHandoffAgainstPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
 import { taskDevelopmentActionFields, taskDevelopmentActionRequiredFields } from './task-development-operation-contracts.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
 
@@ -648,7 +648,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       const parentPlan = parentReceipt?.parentPlan;
       if (!parentPlan) throw parentCoordinationError('parent_plan_missing', 'Contribution Handoff必须绑定current Parent Plan。', 409, { parentTaskId: contributionHandoff.parentTaskId });
       const expectedPlanned = (selfDelivery
-        ? parentPlan.contributions.filter((item) => item.plannedChildTaskId === taskId).map((item) => item.id)
+        ? persistence.receipt.plannedContributions.filter((item) => item.parentTaskId === taskId).map((item) => item.contributionId)
         : persistence.receipt.plannedContributions.filter((item) => item.parentTaskId === contributionHandoff.parentTaskId).map((item) => item.contributionId)
       ).sort();
       contributionHandoff = validateContributionHandoffAgainstPlan(contributionHandoff, parentPlan, expectedPlanned);
@@ -698,9 +698,10 @@ export function registerTaskDevelopmentApplication(runtime) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const currentIdentity = persistence.receipt.parentPlan?.identity ?? null;
     if (input.expectedPlanIdentity !== undefined && input.expectedPlanIdentity !== currentIdentity) throw parentCoordinationError('parent_plan_conflict', 'Parent Plan expected identity已陈旧。', 409, { expected: input.expectedPlanIdentity, current: currentIdentity }, '重新inspect Parent coordination后显式reconcile。');
-    const plan = input.plan?.identity ? input.plan : createParentPlan(input.plan);
+    const plan = input.plan?.identity ? normalizeParentPlan(input.plan) : createParentPlan(input.plan);
+    if (plan.schemaVersion !== PARENT_PLAN_SCHEMA) throw parentCoordinationError('parent_plan_writer_schema_unsupported', `Parent Plan writer只接受 ${PARENT_PLAN_SCHEMA}。`, 409, { schemaVersion: plan.schemaVersion });
     if (currentIdentity === null && input.expectedPlanIdentity !== undefined) throw parentCoordinationError('parent_plan_conflict', '首次record不得提交非空expected identity。', 409);
-    const planning = createTaskDevelopmentPlanning({ targetIdentity: plan.identity, nodes: [{ id: 'parent-plan', kind: 'parent-plan', authority: 'buildr.task-development/v3', reference: `workspace-sqlite:task-development/${taskId}#parent-plan`, identity: plan.identity, disposition: 'current', summary: 'Parent outcome、architecture invariants、Contribution Map、dependencies与final acceptance。', source: null }] });
+    const planning = createTaskDevelopmentPlanning({ targetIdentity: plan.identity, nodes: [{ id: 'parent-plan', kind: 'parent-plan', authority: 'buildr.task-development/v3', reference: `workspace-sqlite:task-development/${taskId}#parent-plan`, identity: plan.identity, disposition: 'current', summary: 'Parent outcome、architecture decisions、结构化Contribution Map、dependencies与final acceptance。', source: null }] });
     const changed = currentIdentity !== plan.identity;
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, parentPlan: plan, parentAcceptance: changed ? null : persistence.receipt.parentAcceptance, planning, candidate: changed ? null : persistence.receipt.candidate, gates: { planning: changed ? null : persistence.receipt.gates.planning, verification: changed ? null : persistence.receipt.gates.verification, completion: changed ? null : persistence.receipt.gates.completion }, decision: changed ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
@@ -712,17 +713,16 @@ export function registerTaskDevelopmentApplication(runtime) {
     const child = task(targetRoot, taskId, { active: true, mutation: true });
     if (child.record.parentTaskId !== input.parentTaskId) throw parentCoordinationError('parent_contribution_parent_mismatch', 'Child Task Record parent与binding不一致。', 409, { recordParent: child.record.parentTaskId, requestedParent: input.parentTaskId });
     const parent = runtime.inspectTaskDevelopment(targetRoot, input.parentTaskId);
-    const plan = parent.development?.receipt?.parentPlan;
-    if (!plan) throw parentCoordinationError('parent_plan_missing', 'Parent尚未采用Parent Plan。', 409, { parentTaskId: input.parentTaskId });
+    const storedPlan = parent.development?.receipt?.parentPlan;
+    if (!storedPlan) throw parentCoordinationError('parent_plan_missing', 'Parent尚未采用Parent Plan。', 409, { parentTaskId: input.parentTaskId });
+    const plan = projectParentPlan(storedPlan);
     const contributionIds = [...new Set(input.contributionIds || [])].sort();
     if (!contributionIds.length || contributionIds.some((id) => !plan.contributions.some((item) => item.id === id))) throw parentCoordinationError('parent_contribution_unknown', 'binding必须引用Parent Plan中的一个或多个Contribution。', 409, { contributionIds });
-    const conflictingOwner = plan.contributions.find((item) => contributionIds.includes(item.id) && item.plannedChildTaskId && item.plannedChildTaskId !== taskId);
-    if (conflictingOwner) throw parentCoordinationError('parent_contribution_owner_conflict', 'Contribution已由Parent Plan分配给其他Task；必须先显式reconcile。', 409, { contributionId: conflictingOwner.id, plannedChildTaskId: conflictingOwner.plannedChildTaskId, requestedChildTaskId: taskId });
     const parentRecord = runtime.inspectTaskRecord(targetRoot, input.parentTaskId).record;
     for (const siblingTaskId of parentRecord.childTaskIds.filter((id) => id !== taskId)) {
       const siblingBindings = runtime.inspectTaskDevelopment(targetRoot, siblingTaskId).development?.receipt?.plannedContributions || [];
       const duplicate = siblingBindings.find((item) => item.parentTaskId === input.parentTaskId && contributionIds.includes(item.contributionId));
-      if (duplicate) throw parentCoordinationError('parent_contribution_owner_conflict', 'Contribution已绑定其他Child；必须先显式reconcile并收敛旧Child scope。', 409, { contributionId: duplicate.contributionId, plannedChildTaskId: siblingTaskId, requestedChildTaskId: taskId });
+      if (duplicate) throw parentCoordinationError('parent_contribution_owner_conflict', 'Contribution已绑定其他Child；必须先显式reconcile并收敛旧Child scope。', 409, { contributionId: duplicate.contributionId, existingChildTaskId: siblingTaskId, requestedChildTaskId: taskId });
     }
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const bindings = normalizePlannedContributionBindings(contributionIds.map((contributionId) => ({ parentTaskId: input.parentTaskId, contributionId })));

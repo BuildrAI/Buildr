@@ -5,9 +5,17 @@ export type CoordinationDiagnostic = {
 
 export type ParentContribution = {
   id: string;
-  summary: string;
-  disposition: string;
-  plannedChildTaskId?: string | null;
+  priority: string;
+  title: string;
+  objective: string;
+  directions: string[];
+  boundaries: string[];
+  expectedChild?: string | null;
+  dependencies: string[];
+  expectation: { status: 'expected' | 'none'; child: string | null };
+  eligibility: { status: 'eligible' | 'waiting-dependency' | 'not-eligible'; blockers: Array<{ contributionId: string; title: string }> };
+  actual: { status: string };
+  actualChild: { taskId: string; title: string; status: string } | null;
   deliveredBy?: { taskId: string; kind?: string } | null;
   residual?: { taskId: string; summary: string } | null;
   superseded?: { taskId: string; deliveredByContributionId: string; reason: string } | null;
@@ -50,15 +58,31 @@ export type ParentCoordinationChild = {
   title: string;
   status: string;
   plannedContributions: string[];
+  boundContributions?: string[];
   deliveryProven: boolean;
   diagnostic?: CoordinationDiagnostic | null;
 };
 
 export type ParentCoordinationResult = {
-  mode?: 'parent-plan' | 'legacy';
+  mode?: 'parent-plan' | 'child' | 'ordinary' | 'legacy';
   parentPlan?: {
     identity: string;
     outcome: string;
+  } | null;
+  plan?: {
+    sourceSchemaVersion: string;
+    identity: string;
+    outcome: string;
+    architectureDecisions: string[];
+    contributions: ParentContribution[];
+    finalAcceptance: string[];
+  } | null;
+  parentSource?: {
+    taskId: string;
+    title?: string;
+    status?: string;
+    bindings?: string[];
+    contributions?: Array<{ id: string; priority: string; title: string; objective: string; directions: string[]; boundaries: string[]; bindingStatus: string }>;
   } | null;
   parentAcceptance?: {
     summary: string;
@@ -75,7 +99,7 @@ export type ParentCoordinationResult = {
   contributions?: ParentContribution[];
   children?: ParentCoordinationChild[];
   prerequisitesSatisfied?: boolean;
-  blockers?: Array<{ contributionId: string; disposition: string }>;
+  blockers?: Array<{ contributionId: string; actualStatus: string; eligibilityStatus: string }>;
   diagnostic?: CoordinationDiagnostic | null;
 };
 
@@ -84,18 +108,23 @@ export function contributionMap(contributions: ParentContribution[]) {
 }
 
 export function completedContributionCount(contributions: ParentContribution[]) {
-  return contributions.filter((contribution) => ['delivered', 'superseded'].includes(contribution.disposition)).length;
+  return contributions.filter((contribution) => ['delivered', 'superseded'].includes(contribution.actual.status)).length;
 }
 
 export function contributionDispositionLabel(disposition: string) {
   return ({
     unassigned: '尚未分配',
-    planned: '已规划',
+    bound: '已绑定',
+    active: '进行中',
     delivered: '已交付',
     residual: '仍有残留',
     superseded: '已替代',
     unproven: '交付未证明',
   } as Record<string, string>)[disposition] || disposition;
+}
+
+export function contributionEligibilityLabel(status: ParentContribution['eligibility']['status']) {
+  return ({ eligible: '可启动', 'waiting-dependency': '等待依赖', 'not-eligible': '已有实际承担' } as const)[status];
 }
 
 export function startupBlockerLabel(blocker: ParentStartupBlocker) {

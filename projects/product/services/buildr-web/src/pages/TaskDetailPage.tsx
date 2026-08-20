@@ -722,6 +722,9 @@ export function TaskDetailPage() {
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
+        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
+        <details className={`task-technical-overview${coordinationData?.mode === 'parent-plan' ? ' parent-mode' : ' ordinary-mode'}`} open={coordinationData?.mode !== 'parent-plan'}>
+          <summary>技术事实、Change 与 Task Record</summary>
         <section className="panel" id="task-professional-overview" aria-live="polite">
           <div className="panel-heading">
             <div>
@@ -741,11 +744,10 @@ export function TaskDetailPage() {
             </dl>
           )}
         </section>
-        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {
-              return <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
+              return coordinationData?.mode === 'parent-plan' ? null : <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
             }
             if (item.kind === 'missing') {
               return <section key={item.key} className="panel brief-missing">{item.message}</section>;
@@ -848,6 +850,7 @@ export function TaskDetailPage() {
             </dl>
           </aside>
         </section>
+        </details>
         <section id="task-terminal-note" className={`empty-state${terminal ? '' : ' hidden'}`}>
           <h2>这是终态任务记录</h2>
           <p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p>

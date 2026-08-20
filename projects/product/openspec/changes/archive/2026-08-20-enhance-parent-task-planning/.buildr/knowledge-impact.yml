@@ -1,0 +1,60 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: enhance-parent-task-planning
+operation: reconcile
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: openspec/changes/enhance-parent-task-planning/brief.md
+    reason: Parent Plan v2 的目标、流程、兼容和验收需要人类可读入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/enhance-parent-task-planning/proposal.md
+      - openspec/changes/enhance-parent-task-planning/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Parent Plan JSON authority、dual-read 与 role-aware read model 发生变化。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/parent-child-task-coordination/spec.md
+      - openspec/changes/enhance-parent-task-planning/specs/parent-child-task-coordination/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Parent Domain/Application/CLI 与 coordination API 行为变化。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/parent-child-task-coordination/spec.md
+      - openspec/specs/cli-product-surface/spec.md
+      - openspec/changes/enhance-parent-task-planning/specs/cli-product-surface/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Parent、Child、普通 Task 的 Task Overview 信息层级变化。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/local-app-web-client/spec.md
+      - openspec/changes/enhance-parent-task-planning/specs/local-app-web-client/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: expected Child 与 actual Child binding 必须形成稳定且互斥的术语边界。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/parent-child-task-coordination/spec.md
+      - openspec/changes/enhance-parent-task-planning/design.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Parent Plan
+    - Contribution
+    - expected Child
+    - actual Child
+    - eligibility
+  canonicalTerms:
+    - expected Child
+    - actual Child binding
+  changedAssets:
+    - openspec/knowledge/glossary.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/specs/parent-child-task-coordination/spec.md
+    - openspec/knowledge/glossary.md
+    - openspec/changes/enhance-parent-task-planning/design.md
+unresolvedItems: []

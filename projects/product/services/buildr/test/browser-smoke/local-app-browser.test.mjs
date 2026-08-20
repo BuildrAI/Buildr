@@ -232,11 +232,12 @@ function createSelectedFixture(root, controllerCli) {
   return selector;
 }
 
-function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
+function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contributionBinding = null) {
   runtime.beginTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
   });
+  if (contributionBinding) runtime.bindChildContributions(root, taskId, contributionBinding);
   let development = runtime.observeTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planningTargetIdentity: 'plan:browser-v1',
@@ -699,15 +700,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     });
     const parentCoordination = runtime.recordParentPlan(workspaceRoot, 'browser-parent', { plan: {
       outcome: '完成父任务协调视图的集成验收。',
-      architectureInvariants: ['Parent Coordination 只派生 read model。'],
+      architectureDecisions: ['Parent Coordination 只派生 read model。'],
       contributions: [
-        { id: 'task-record-reference-slice', summary: '完成 Task Record 纵向参考切片重构。', plannedChildTaskId: null },
-        { id: 'engineering-root-layout', summary: '收敛工程根目录职责与直接消费者。', plannedChildTaskId: null },
-        { id: 'parent-integration', summary: '执行父任务最终集成验收。', plannedChildTaskId: null },
-      ],
-      dependencies: [
-        { contributionId: 'parent-integration', dependsOn: 'task-record-reference-slice' },
-        { contributionId: 'parent-integration', dependsOn: 'engineering-root-layout' },
+        { id: 'task-record-reference-slice', priority: 'P0-1', title: 'Task Record 参考切片', objective: '完成 Task Record 纵向参考切片重构。', directions: ['保持单一 authority。'], boundaries: ['不复制 Child 状态。'], expectedChild: 'Task Record focused Child', dependencies: [] },
+        { id: 'engineering-root-layout', priority: 'P0-2', title: '工程根目录布局', objective: '收敛工程根目录职责与直接消费者。', directions: ['先识别直接消费者。'], boundaries: ['不扩大到无关服务。'], expectedChild: 'Layout focused Child', dependencies: [] },
+        { id: 'parent-integration', priority: 'P1-1', title: 'Parent 集成', objective: '执行父任务最终集成验收。', directions: ['只集成已证明交付。'], boundaries: ['不从 completed 推断交付。'], expectedChild: null, dependencies: ['task-record-reference-slice', 'engineering-root-layout'] },
       ],
       finalAcceptance: ['全部 Contribution 已交付或明确替代。'],
     } });
@@ -716,7 +713,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       reviewed: ['Parent Plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: '父任务计划可推进。' },
     });
     runtime.refreshParentPlanning(workspaceRoot, 'browser-parent');
-    prepareDevelopmentFixture(runtime, workspaceRoot);
+    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-task', { parentTaskId: 'browser-parent', contributionIds: ['task-record-reference-slice'] });
     runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
@@ -750,22 +747,23 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-children').innerText(), /页面查看任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
-    await page.locator('#parent-eligible-contributions').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#parent-current-status').innerText(), /可以推进/);
-    assert.match(await page.locator('#parent-eligible-contributions').innerText(), /建议先启动[\s\S]*收敛工程根目录职责与直接消费者[\s\S]*engineering-root-layout/);
-    assert.match(await page.locator('#parent-eligible-contributions').innerText(), /其他可启动[\s\S]*完成 Task Record 纵向参考切片重构[\s\S]*task-record-reference-slice/);
-    assert.match(await page.locator('#parent-dependency-waits').innerText(), /parent-integration[\s\S]*engineering-root-layout[\s\S]*task-record-reference-slice/);
-    assert.match(await page.locator('#parent-final-progress').innerText(), /0 \/ 3[\s\S]*尚有 3 项/);
+    await page.locator('.parent-plan-workbench').waitFor({ state: 'visible' });
+    assert.match(await page.locator('.parent-summary-strip').innerText(), /可启动[\s\S]*1[\s\S]*明确处置[\s\S]*0 \/ 3/);
+    assert.match(await page.locator('.parent-contribution-rail').innerText(), /Task Record 参考切片[\s\S]*工程根目录布局[\s\S]*Parent 集成/);
+    assert.match(await page.locator('.parent-contribution-detail').innerText(), /P0-2[\s\S]*工程根目录布局[\s\S]*执行：可启动[\s\S]*实际：尚未分配/);
+    await page.locator('[data-contribution-id="parent-integration"]').click();
+    assert.match(await page.locator('.parent-contribution-detail').innerText(), /等待依赖[\s\S]*工程根目录布局[\s\S]*Task Record 参考切片/);
     await page.locator('.parent-governance-details summary').click();
     const governanceFacts = await page.locator('.parent-governance-details').innerText();
-    assert.match(governanceFacts, /Planning Review outcome[\s\S]*ready/);
-    assert.match(governanceFacts, /Planning Review applicability[\s\S]*current/);
+    assert.match(governanceFacts, /Planning Review[\s\S]*ready · current/);
     assert.doesNotMatch(governanceFacts, /undefined/);
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 1280, height: 720 });
+    await page.locator('.task-technical-overview > summary').click();
     await page.locator('#task-detail-children a').filter({ hasText: '浏览器任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+    assert.match(await page.locator('.child-parent-source').innerText(), /PARENT 来源[\s\S]*浏览器协调任务[\s\S]*Task Record 参考切片[\s\S]*进行中/);
     await page.locator('#task-detail-children a').filter({ hasText: '页面查看任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');

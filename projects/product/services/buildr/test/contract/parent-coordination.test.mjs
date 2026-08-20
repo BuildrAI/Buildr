@@ -17,7 +17,7 @@ test('Parent Coordination只组合专业Applications且没有repository、filesy
 test('Parent Plan是closed计划值且Task Record不复制计划或Child状态', () => {
   const domain = read('src/domain/parent-coordination/parent-coordination.mjs');
   const taskRecord = read('src/domain/task-record/task-record.mjs');
-  for (const required of ['outcome', 'architectureInvariants', 'contributions', 'dependencies', 'finalAcceptance']) assert.ok(domain.includes(required), required);
+  for (const required of ['outcome', 'architectureDecisions', 'contributions', 'expectedChild', 'dependencies', 'finalAcceptance']) assert.ok(domain.includes(required), required);
   for (const forbidden of ['completedChildCount', 'completed_child_count', 'childStatuses', 'lifecycleCache']) {
     assert.equal(domain.includes(forbidden), false, forbidden);
     assert.equal(taskRecord.includes(forbidden), false, forbidden);
@@ -36,7 +36,7 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   for (const method of ['inspectParentCoordination', 'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || server.includes(method), method);
   for (const flag of ['--schema', '--example']) assert.ok(cli.includes(flag), flag);
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
-  assert.match(json, /buildr\.parent-coordination-result\/v1/);
+  assert.match(json, /buildr\.parent-coordination-result\/v2/);
   for (const phrase of ['Parent Plan', 'Contribution Handoff', 'task parent bind-child', '不自动完成Parent']) assert.ok(skill.includes(phrase), phrase);
   for (const phrase of [
     'Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入',

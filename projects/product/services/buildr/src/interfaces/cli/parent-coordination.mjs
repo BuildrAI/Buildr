@@ -41,13 +41,16 @@ function discovery(kind) {
   const id = { ...text, pattern: '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$' };
   const example = {
     outcome: 'Integrated Parent outcome.',
-    architectureInvariants: ['One fact has one authority.'],
-    contributions: [{ id: 'first-child', summary: 'Deliver the first bounded Contribution.' }],
-    dependencies: [],
+    architectureDecisions: ['One fact has one authority.'],
+    contributions: [{
+      id: 'first-contribution', priority: 'P0-1', title: 'First bounded contribution',
+      objective: 'Deliver the first bounded Contribution.', directions: ['Keep the authority boundary explicit.'],
+      boundaries: ['Do not change unrelated services.'], expectedChild: 'A focused implementation Child', dependencies: [],
+    }],
     finalAcceptance: ['All Contributions have explicit dispositions and integration is accepted.'],
   };
-  if (kind === 'example') return { schemaVersion: 'buildr.parent-plan-input-example/v1', operation: 'discover-example', status: 'ready', parentPlan: example, effects: [] };
-  return { schemaVersion: 'buildr.parent-plan-input-schema/v1', operation: 'discover-schema', status: 'ready', inputSchema: { type: 'object', additionalProperties: false, required: ['outcome', 'architectureInvariants', 'contributions', 'finalAcceptance'], properties: { outcome: text, architectureInvariants: { type: 'array', minItems: 1, maxItems: 128, items: text }, contributions: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'object', additionalProperties: false, required: ['id', 'summary'], properties: { id, summary: text, plannedChildTaskId: { ...id, type: ['string', 'null'] } } } }, dependencies: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: false, required: ['contributionId', 'dependsOn'], properties: { contributionId: id, dependsOn: id } } }, finalAcceptance: { type: 'array', minItems: 1, maxItems: 128, items: text } } }, effects: [] };
+  if (kind === 'example') return { schemaVersion: 'buildr.parent-plan-input-example/v2', operation: 'discover-example', status: 'ready', parentPlan: example, effects: [] };
+  return { schemaVersion: 'buildr.parent-plan-input-schema/v2', operation: 'discover-schema', status: 'ready', inputSchema: { type: 'object', additionalProperties: false, required: ['outcome', 'architectureDecisions', 'contributions', 'finalAcceptance'], properties: { outcome: text, architectureDecisions: { type: 'array', minItems: 1, maxItems: 128, items: text }, contributions: { type: 'array', minItems: 1, maxItems: 128, items: { type: 'object', additionalProperties: false, required: ['id', 'priority', 'title', 'objective', 'directions', 'boundaries', 'dependencies'], properties: { id, priority: text, title: text, objective: text, directions: { type: 'array', maxItems: 128, items: text }, boundaries: { type: 'array', maxItems: 128, items: text }, expectedChild: { type: ['string', 'null'], minLength: 1, maxLength: 4000 }, dependencies: { type: 'array', maxItems: 128, items: id } } } }, finalAcceptance: { type: 'array', minItems: 1, maxItems: 128, items: text } } }, effects: [] };
 }
 
 export function parentCoordinationCommand(runtime, operation, args) {
@@ -68,7 +71,7 @@ export function parentCoordinationCommand(runtime, operation, args) {
     return print(payload, parsed.json);
   } catch (error) {
     if (!error.parentCoordinationBusiness) throw error;
-    const payload = { schemaVersion: 'buildr.parent-coordination-result/v1', operation, status: 'blocked', taskId: parsed.taskId, mode: 'unknown', parentPlan: null, children: [], contributions: [], prerequisitesSatisfied: false, effects: [], diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, nextActions: [error.nextAction || '重新inspect Parent coordination后重试。'] };
+    const payload = { schemaVersion: 'buildr.parent-coordination-result/v2', operation, status: 'blocked', taskId: parsed.taskId, mode: 'unknown', parentPlan: null, plan: null, children: [], contributions: [], prerequisitesSatisfied: false, effects: [], diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, nextActions: [error.nextAction || '重新inspect Parent coordination后重试。'] };
     print(payload, parsed.json); process.exitCode = 1; return payload;
   }
 }

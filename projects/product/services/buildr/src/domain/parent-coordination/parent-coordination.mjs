@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
-export const PARENT_PLAN_SCHEMA = 'buildr.parent-plan/v1';
+export const LEGACY_PARENT_PLAN_SCHEMA = 'buildr.parent-plan/v1';
+export const PARENT_PLAN_SCHEMA = 'buildr.parent-plan/v2';
 export const CONTRIBUTION_HANDOFF_SCHEMA = 'buildr.contribution-handoff/v1';
 
 const ID = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -47,7 +48,7 @@ function list(value, field, normalize, key = (item) => item) {
 
 function strings(value, field) { return list(value, field, text); }
 
-function contribution(value, field) {
+function legacyContribution(value, field) {
   const item = object(value, field);
   closed(item, new Set(['id', 'summary', 'plannedChildTaskId']), field);
   return { id: id(item.id, `${field}.id`), summary: text(item.summary, `${field}.summary`), plannedChildTaskId: item.plannedChildTaskId == null ? null : id(item.plannedChildTaskId, `${field}.plannedChildTaskId`) };
@@ -75,25 +76,95 @@ function assertAcyclic(contributions, dependencies) {
   for (const node of graph.keys()) visit(node);
 }
 
-export function normalizeParentPlan(value) {
-  const plan = object(value, 'parentPlan');
+function contribution(value, field) {
+  const item = object(value, field);
+  closed(item, new Set(['id', 'priority', 'title', 'objective', 'directions', 'boundaries', 'expectedChild', 'dependencies']), field);
+  return {
+    id: id(item.id, `${field}.id`),
+    priority: text(item.priority, `${field}.priority`),
+    title: text(item.title, `${field}.title`),
+    objective: text(item.objective, `${field}.objective`),
+    directions: strings(item.directions, `${field}.directions`),
+    boundaries: strings(item.boundaries, `${field}.boundaries`),
+    expectedChild: item.expectedChild == null ? null : text(item.expectedChild, `${field}.expectedChild`),
+    dependencies: referenceList(item.dependencies, `${field}.dependencies`),
+  };
+}
+
+function dependencyEdges(contributions) {
+  return contributions.flatMap((item) => item.dependencies.map((dependsOn) => ({ contributionId: item.id, dependsOn })));
+}
+
+function normalizeLegacyParentPlan(plan) {
   closed(plan, new Set(['schemaVersion', 'identity', 'outcome', 'architectureInvariants', 'contributions', 'dependencies', 'finalAcceptance']), 'parentPlan');
-  if (plan.schemaVersion !== PARENT_PLAN_SCHEMA) throw parentCoordinationError('parent_plan_schema_unsupported', `parentPlan.schemaVersion 必须是 ${PARENT_PLAN_SCHEMA}。`, 409);
-  const contributions = list(plan.contributions, 'parentPlan.contributions', contribution, (item) => item.id);
+  const contributions = list(plan.contributions, 'parentPlan.contributions', legacyContribution, (item) => item.id);
   if (!contributions.length) throw parentCoordinationError('parent_plan_contributions_empty', 'Parent Plan至少需要一个Contribution。', 409);
   const dependencies = list(plan.dependencies, 'parentPlan.dependencies', dependency, (item) => `${item.contributionId}/${item.dependsOn}`);
   assertAcyclic(contributions, dependencies);
-  const payload = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: text(plan.outcome, 'parentPlan.outcome'), architectureInvariants: strings(plan.architectureInvariants, 'parentPlan.architectureInvariants'), contributions, dependencies, finalAcceptance: strings(plan.finalAcceptance, 'parentPlan.finalAcceptance') };
+  const payload = { schemaVersion: LEGACY_PARENT_PLAN_SCHEMA, outcome: text(plan.outcome, 'parentPlan.outcome'), architectureInvariants: strings(plan.architectureInvariants, 'parentPlan.architectureInvariants'), contributions, dependencies, finalAcceptance: strings(plan.finalAcceptance, 'parentPlan.finalAcceptance') };
   if (!payload.architectureInvariants.length || !payload.finalAcceptance.length) throw parentCoordinationError('parent_plan_sections_empty', 'Parent Plan architectureInvariants与finalAcceptance不能为空。', 409);
   const identity = parentCoordinationDigest(payload);
   if (plan.identity !== identity) throw parentCoordinationError('parent_plan_identity_mismatch', 'Parent Plan identity与内容不一致。', 409, { expected: identity, actual: plan.identity });
   return { identity, ...payload };
 }
 
+function normalizeCurrentParentPlan(plan) {
+  closed(plan, new Set(['schemaVersion', 'identity', 'outcome', 'architectureDecisions', 'contributions', 'finalAcceptance']), 'parentPlan');
+  const contributions = list(plan.contributions, 'parentPlan.contributions', contribution, (item) => item.id)
+    .sort((left, right) => `${left.priority}/${left.id}`.localeCompare(`${right.priority}/${right.id}`));
+  if (!contributions.length) throw parentCoordinationError('parent_plan_contributions_empty', 'Parent Plan至少需要一个Contribution。', 409);
+  assertAcyclic(contributions, dependencyEdges(contributions));
+  const payload = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: text(plan.outcome, 'parentPlan.outcome'), architectureDecisions: strings(plan.architectureDecisions, 'parentPlan.architectureDecisions'), contributions, finalAcceptance: strings(plan.finalAcceptance, 'parentPlan.finalAcceptance') };
+  if (!payload.architectureDecisions.length || !payload.finalAcceptance.length) throw parentCoordinationError('parent_plan_sections_empty', 'Parent Plan architectureDecisions与finalAcceptance不能为空。', 409);
+  const identity = parentCoordinationDigest(payload);
+  if (plan.identity !== identity) throw parentCoordinationError('parent_plan_identity_mismatch', 'Parent Plan identity与内容不一致。', 409, { expected: identity, actual: plan.identity });
+  return { identity, ...payload };
+}
+
+export function normalizeParentPlan(value) {
+  const plan = object(value, 'parentPlan');
+  if (plan.schemaVersion === LEGACY_PARENT_PLAN_SCHEMA) return normalizeLegacyParentPlan(plan);
+  if (plan.schemaVersion === PARENT_PLAN_SCHEMA) return normalizeCurrentParentPlan(plan);
+  throw parentCoordinationError('parent_plan_schema_unsupported', `parentPlan.schemaVersion 必须是 ${LEGACY_PARENT_PLAN_SCHEMA} 或 ${PARENT_PLAN_SCHEMA}。`, 409);
+}
+
 export function createParentPlan(input) {
-  const payload = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: input.outcome, architectureInvariants: input.architectureInvariants, contributions: input.contributions, dependencies: input.dependencies || [], finalAcceptance: input.finalAcceptance };
-  const normalizedForIdentity = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: text(payload.outcome, 'parentPlan.outcome'), architectureInvariants: strings(payload.architectureInvariants, 'parentPlan.architectureInvariants'), contributions: list(payload.contributions, 'parentPlan.contributions', contribution, (item) => item.id), dependencies: list(payload.dependencies, 'parentPlan.dependencies', dependency, (item) => `${item.contributionId}/${item.dependsOn}`), finalAcceptance: strings(payload.finalAcceptance, 'parentPlan.finalAcceptance') };
+  const source = object(input, 'parentPlanInput');
+  closed(source, new Set(['outcome', 'architectureDecisions', 'contributions', 'finalAcceptance']), 'parentPlanInput');
+  const payload = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: source.outcome, architectureDecisions: source.architectureDecisions, contributions: source.contributions, finalAcceptance: source.finalAcceptance };
+  const normalizedForIdentity = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: text(payload.outcome, 'parentPlan.outcome'), architectureDecisions: strings(payload.architectureDecisions, 'parentPlan.architectureDecisions'), contributions: list(payload.contributions, 'parentPlan.contributions', contribution, (item) => item.id).sort((left, right) => `${left.priority}/${left.id}`.localeCompare(`${right.priority}/${right.id}`)), finalAcceptance: strings(payload.finalAcceptance, 'parentPlan.finalAcceptance') };
   return normalizeParentPlan({ identity: parentCoordinationDigest(normalizedForIdentity), ...normalizedForIdentity });
+}
+
+export function projectParentPlan(value) {
+  const plan = normalizeParentPlan(value);
+  if (plan.schemaVersion === PARENT_PLAN_SCHEMA) return {
+    sourceSchemaVersion: plan.schemaVersion,
+    identity: plan.identity,
+    outcome: plan.outcome,
+    architectureDecisions: plan.architectureDecisions,
+    contributions: plan.contributions,
+    finalAcceptance: plan.finalAcceptance,
+  };
+  const dependencies = new Map(plan.contributions.map((item) => [item.id, []]));
+  for (const edge of plan.dependencies) dependencies.get(edge.contributionId).push(edge.dependsOn);
+  return {
+    sourceSchemaVersion: plan.schemaVersion,
+    identity: plan.identity,
+    outcome: plan.outcome,
+    architectureDecisions: plan.architectureInvariants,
+    contributions: plan.contributions.map((item) => ({
+      id: item.id,
+      priority: 'legacy',
+      title: item.summary,
+      objective: item.summary,
+      directions: [],
+      boundaries: [],
+      expectedChild: item.plannedChildTaskId,
+      dependencies: dependencies.get(item.id).sort(),
+    })),
+    finalAcceptance: plan.finalAcceptance,
+  };
 }
 
 export function normalizePlannedContributionBindings(value) {
@@ -131,7 +202,7 @@ export function createContributionHandoff(input) {
 
 export function validateContributionHandoffAgainstPlan(value, planValue, expectedPlannedValues) {
   const handoff = value.identity ? normalizeContributionHandoff(value) : createContributionHandoff(value);
-  const plan = normalizeParentPlan(planValue);
+  const plan = projectParentPlan(planValue);
   const expectedPlanned = referenceList(expectedPlannedValues, 'expectedPlanned');
   if (JSON.stringify(expectedPlanned) !== JSON.stringify(handoff.planned)) throw parentCoordinationError('contribution_handoff_planned_mismatch', 'Contribution Handoff planned必须精确匹配已保存的Contribution binding。', 409, { expected: expectedPlanned, actual: handoff.planned });
   const known = new Set(plan.contributions.map((item) => item.id));

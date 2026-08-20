@@ -1,169 +1,132 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from 'antd';
 import { formatDateTime, taskStatusLabel } from '../../lib/taskLabels';
 import { Fact } from './shared';
 import {
   completedContributionCount,
   contributionDispositionLabel,
-  contributionMap,
+  contributionEligibilityLabel,
   startupBlockerLabel,
   type ParentContribution,
   type ParentCoordinationResult,
 } from './parentCoordination';
 import './ParentCoordinationPanel.css';
 
-type Props = {
-  data: ParentCoordinationResult | null;
-  loading: boolean;
-  onRefresh: () => void;
-};
+type Props = { data: ParentCoordinationResult | null; loading: boolean; onRefresh: () => void };
 
-function ContributionIdentity({ contribution }: { contribution: ParentContribution }) {
+function list(items: string[], empty: string) {
+  return items.length ? <ul className="parent-plan-list">{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="empty-copy">{empty}</p>;
+}
+
+function statusTone(status: string) {
+  if (['delivered', 'superseded', 'eligible'].includes(status)) return 'positive';
+  if (['residual', 'unproven', 'waiting-dependency'].includes(status)) return 'warning';
+  return 'neutral';
+}
+
+function ContributionRail({ contributions, selectedId, onSelect }: { contributions: ParentContribution[]; selectedId: string | null; onSelect: (id: string) => void }) {
   return (
-    <div className="parent-contribution-identity">
-      <span>{contribution.summary}</span>
-      <code>{contribution.id}</code>
-    </div>
+    <ol className="parent-contribution-rail">
+      {contributions.map((item) => (
+        <li key={item.id}>
+          <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => onSelect(item.id)} data-contribution-id={item.id}>
+            <span className="parent-priority">{item.priority}</span>
+            <span className="parent-rail-copy"><strong>{item.title}</strong><small>{item.objective}</small></span>
+            <span className={`parent-status-dot ${statusTone(item.actual.status)}`} aria-label={contributionDispositionLabel(item.actual.status)} />
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ContributionDetail({ contribution, byId }: { contribution: ParentContribution; byId: Map<string, ParentContribution> }) {
+  return (
+    <article className="parent-contribution-detail" data-contribution-disposition={contribution.actual.status}>
+      <header>
+        <div><span className="parent-priority">{contribution.priority}</span><h3>{contribution.title}</h3><code>{contribution.id}</code></div>
+        <div className="parent-axis-badges">
+          <span className="neutral">预期：{contribution.expectation.status === 'expected' ? contribution.expectation.child : '无'}</span>
+          <span className={statusTone(contribution.eligibility.status)}>执行：{contributionEligibilityLabel(contribution.eligibility.status)}</span>
+          <span className={statusTone(contribution.actual.status)}>实际：{contributionDispositionLabel(contribution.actual.status)}</span>
+        </div>
+      </header>
+      <p className="parent-objective">{contribution.objective}</p>
+      <div className="parent-detail-columns">
+        <section><h4>实现方向</h4>{list(contribution.directions, '未补充实现方向。')}</section>
+        <section><h4>边界</h4>{list(contribution.boundaries, '未补充边界。')}</section>
+      </div>
+      <section className="parent-dependency-summary">
+        <h4>依赖</h4>
+        {contribution.dependencies.length ? contribution.dependencies.map((id) => <span key={id}>{byId.get(id)?.title || id}</span>) : <span>无前置依赖</span>}
+      </section>
+      {contribution.actualChild ? <p className="parent-actual-child">实际 Child：<strong>{contribution.actualChild.title}</strong> · <code>{contribution.actualChild.taskId}</code> · {taskStatusLabel(contribution.actualChild.status)}</p> : null}
+      {contribution.eligibility.blockers.length ? <p className="parent-wait-copy">等待：{contribution.eligibility.blockers.map((item) => item.title).join('、')}</p> : null}
+    </article>
   );
 }
 
 export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
   const contributions = data?.contributions || [];
-  const byId = contributionMap(contributions);
-  const startup = data?.startup;
-  const eligibleIds = startup?.eligibleContributions || [];
-  const nextIds = startup?.next?.contributionIds || [];
-  const recommendedId = nextIds.find((id) => eligibleIds.includes(id)) || eligibleIds[0] || null;
-  const otherEligibleIds = eligibleIds.filter((id) => id !== recommendedId);
-  const completedCount = completedContributionCount(contributions);
-  const finalRemaining = Math.max(0, contributions.length - completedCount);
-  const planningReview = data?.planningReview;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const recommendedId = data?.startup?.next?.contributionIds?.[0] || data?.startup?.eligibleContributions?.[0] || contributions[0]?.id || null;
+  useEffect(() => {
+    if (!selectedId || !contributions.some((item) => item.id === selectedId)) setSelectedId(recommendedId);
+  }, [contributions, recommendedId, selectedId]);
+  const byId = useMemo(() => new Map(contributions.map((item) => [item.id, item])), [contributions]);
+  const selected = selectedId ? byId.get(selectedId) || null : null;
 
+  if (!data && !loading) return null;
+  if (data?.mode === 'ordinary' || data?.mode === 'legacy') return null;
+  if (data?.mode === 'child') return (
+    <section className="panel child-parent-source" id="task-parent-coordination">
+      <div className="child-parent-heading"><p className="eyebrow">Parent 来源</p><h2>{data.parentSource?.title || data.parentSource?.taskId || 'Parent Task'}</h2><code>{data.parentSource?.taskId}</code></div>
+      <p>本任务是 Child；协调计划与最终集成验收由 Parent 管理。</p>
+      {data.parentSource?.contributions?.length ? <div className="child-binding-list">{data.parentSource.contributions.map((item) => <article key={item.id}>
+        <span className="parent-priority">{item.priority}</span><strong>{item.title}</strong><span>{contributionDispositionLabel(item.bindingStatus)}</span>
+        <p>{item.objective}</p>{list(item.directions, '未补充实施方向。')}
+      </article>)}</div> : <p className="empty-copy">尚未绑定 Parent Contribution。</p>}
+    </section>
+  );
+  if (data?.diagnostic?.code && data.mode !== 'parent-plan') return <section className="panel"><p className="alert error">{data.diagnostic.message}</p></section>;
+  if (data?.mode !== 'parent-plan') return null;
+
+  const completed = completedContributionCount(contributions);
+  const review = data.planningReview;
   return (
     <section className="panel parent-coordination-panel" id="task-parent-coordination" aria-live="polite">
-      <div className="panel-heading">
-        <div>
-          <h2>父子任务协调</h2>
-          <p className="section-copy">直接展示 Parent Coordination Application 的派生 read model；不在 Parent Task Record 复制 Child 状态或交付结果。</p>
-        </div>
+      <div className="panel-heading parent-plan-heading">
+        <div><p className="eyebrow">Parent Plan</p><h2>{data.plan?.outcome}</h2><p className="section-copy">直接消费 Parent Coordination Application 的派生 read model，以结构化 Contribution Map 协调范围、依赖与实际交付。</p></div>
         <Button onClick={onRefresh} disabled={loading}>{loading ? '读取中…' : '刷新协调事实'}</Button>
       </div>
 
-      {data?.mode === 'parent-plan' ? (
-        <>
-          <div className="parent-progress-grid">
-            <article id="parent-current-status" className={`parent-progress-card ${startup?.status === 'ready' ? 'ready' : 'blocked'}`}>
-              <span className="parent-progress-eyebrow">当前推进</span>
-              <strong>{startup?.status === 'ready' ? '可以推进' : '需要先处理'}</strong>
-              <p>{startup?.status === 'ready' ? '已有依赖满足的工作可启动。' : '当前治理条件或 Contribution 依赖尚未满足。'}</p>
-            </article>
-            <article id="parent-next-action" className="parent-progress-card">
-              <span className="parent-progress-eyebrow">下一步</span>
-              <strong>{startup?.next?.action || '尚无动作'}</strong>
-              <p>{startup?.next?.summary || '当前 read model 没有给出下一步。'}</p>
-            </article>
-            <article id="parent-final-progress" className="parent-progress-card">
-              <span className="parent-progress-eyebrow">最终验收进度</span>
-              <strong>{completedCount} / {contributions.length}</strong>
-              <p>{data.prerequisitesSatisfied ? '全部 Contribution 已有明确处置，仍需显式最终集成验收。' : `尚有 ${finalRemaining} 项未形成 delivered 或 superseded 处置。`}</p>
-            </article>
-          </div>
+      <div className="parent-summary-strip">
+        <div><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div>
+        <div><span>可启动</span><strong>{data.startup?.eligibleContributions?.length || 0}</strong></div>
+        <div><span>明确处置</span><strong>{completed} / {contributions.length}</strong></div>
+        <div><span>最终验收</span><strong>{data.parentAcceptance ? '已记录' : data.prerequisitesSatisfied ? '待记录' : '未就绪'}</strong></div>
+      </div>
 
-          <section id="parent-eligible-contributions" className="parent-coordination-section">
-            <h3>可启动 Contribution</h3>
-            {recommendedId ? (
-              <div className="parent-eligible-list">
-                {byId.get(recommendedId) ? (
-                  <article className="parent-eligible-card recommended" data-contribution-id={recommendedId}>
-                    <span className="parent-eligible-kind">建议先启动</span>
-                    <ContributionIdentity contribution={byId.get(recommendedId)!} />
-                  </article>
-                ) : null}
-                {otherEligibleIds.map((id) => byId.get(id) ? (
-                  <article key={id} className="parent-eligible-card" data-contribution-id={id}>
-                    <span className="parent-eligible-kind">其他可启动</span>
-                    <ContributionIdentity contribution={byId.get(id)!} />
-                  </article>
-                ) : null)}
-              </div>
-            ) : <p className="empty-copy">当前没有可启动 Contribution。</p>}
-          </section>
+      {data.startup?.blockers?.length ? <div className="parent-blocker-banner">{data.startup.blockers.map((item) => <span key={`${item.code}-${item.contributionId || ''}`}>{startupBlockerLabel(item)}</span>)}</div> : null}
 
-          <div className="parent-coordination-columns">
-            <section id="parent-startup-blockers" className="parent-coordination-section">
-              <h3>当前推进阻塞</h3>
-              {startup?.blockers?.length ? (
-                <ul className="parent-compact-list">
-                  {startup.blockers.map((blocker, index) => <li key={`${blocker.code}-${index}`}>{startupBlockerLabel(blocker)}</li>)}
-                </ul>
-              ) : <p className="empty-copy">无当前推进阻塞。</p>}
-            </section>
-            <section id="parent-dependency-waits" className="parent-coordination-section">
-              <h3>等待依赖</h3>
-              {startup?.dependencyBlockers?.length ? (
-                <ul className="parent-compact-list">
-                  {startup.dependencyBlockers.map((blocker) => (
-                    <li key={blocker.contributionId}>
-                      <code>{blocker.contributionId}</code>
-                      <span>等待 {blocker.dependsOn.join('、')}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="empty-copy">没有等待依赖的未分配项。</p>}
-            </section>
-          </div>
+      <div className="parent-plan-workbench">
+        <nav aria-label="Contribution Map"><h3>Contribution Map</h3><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
+        {selected ? <ContributionDetail contribution={selected} byId={byId} /> : <p className="empty-copy">尚无 Contribution。</p>}
+      </div>
 
-          <section className="parent-coordination-section">
-            <h3>全部 Contribution</h3>
-            <ul className="parent-contribution-list">
-              {contributions.map((contribution) => (
-                <li key={contribution.id} data-contribution-disposition={contribution.disposition}>
-                  <ContributionIdentity contribution={contribution} />
-                  <div className="parent-contribution-meta">
-                    <span className={`parent-disposition ${contribution.disposition}`}>{contributionDispositionLabel(contribution.disposition)}</span>
-                    <span>承担 / 交付：{contribution.deliveredBy?.taskId || contribution.plannedChildTaskId || '尚未分配'}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="parent-coordination-section">
-            <h3>直接 Child Tasks</h3>
-            {data.children?.length ? (
-              <ul className="parent-child-list">
-                {data.children.map((child) => (
-                  <li key={child.taskId}>
-                    <div className="parent-child-heading"><strong>{child.title}</strong><code>{child.taskId}</code></div>
-                    <p>{taskStatusLabel(child.status)} · handoff：{child.deliveryProven ? '已证明' : '未证明'}</p>
-                    <div className="parent-child-contributions">
-                      {child.plannedContributions.length ? child.plannedContributions.map((id) => (
-                        <span key={id}>{byId.get(id)?.summary || '未找到计划结果'} <code>{id}</code></span>
-                      )) : <span>未绑定 Contribution</span>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="empty-copy">尚无直接 Child Task。</p>}
-          </section>
-
-          <details className="technical-details parent-governance-details">
-            <summary>查看 Parent Plan 与审查事实</summary>
-            <dl className="read-facts detail-facts">
-              <Fact label="Parent outcome" value={data.parentPlan?.outcome || '—'} />
-              <Fact label="Plan identity" value={data.parentPlan?.identity || '—'} />
-              <Fact label="最终集成验收" value={data.parentAcceptance ? `${data.parentAcceptance.summary} · ${formatDateTime(data.parentAcceptance.acceptedAt)}` : '尚未记录'} />
-              <Fact label="Planning Review outcome" value={planningReview?.present ? planningReview.result?.conclusion?.outcome || '未提供 outcome' : '尚未记录'} />
-              <Fact label="Planning Review applicability" value={planningReview?.present ? planningReview.applicability || '适用性未知' : '尚未记录'} />
-              <Fact label="Planning Review 摘要" value={planningReview?.present ? planningReview.result?.conclusion?.summary || '未提供摘要' : '尚未记录'} />
-              <Fact label="Planning Review 时间" value={planningReview?.present && planningReview.result?.completedAt ? formatDateTime(planningReview.result.completedAt) : '未提供时间'} />
-            </dl>
-          </details>
-        </>
-      ) : (
-        <p className={data?.diagnostic?.code && data.diagnostic.code !== 'parent_plan_absent' ? 'alert error' : 'section-copy'}>
-          {data?.diagnostic?.message || '该 Task 没有 Parent Plan；历史 Task 保持可读且不会自动 backfill。'}
-        </p>
-      )}
+      <details className="technical-details parent-governance-details">
+        <summary>架构决定、最终验收与治理事实</summary>
+        <div className="parent-governance-grid">
+          <section><h3>架构决定</h3>{list(data.plan?.architectureDecisions || [], '尚未记录。')}</section>
+          <section><h3>最终验收条件</h3>{list(data.plan?.finalAcceptance || [], '尚未记录。')}</section>
+        </div>
+        <dl className="read-facts detail-facts">
+          <Fact label="Plan schema" value={data.plan?.sourceSchemaVersion || '—'} />
+          <Fact label="Plan identity" value={data.plan?.identity || '—'} />
+          <Fact label="最终集成验收" value={data.parentAcceptance ? `${data.parentAcceptance.summary} · ${formatDateTime(data.parentAcceptance.acceptedAt)}` : '尚未记录'} />
+          <Fact label="Planning Review" value={review?.present ? `${review.result?.conclusion?.outcome || '未知'} · ${review.applicability || '未知'}` : '尚未记录'} />
+        </dl>
+      </details>
     </section>
   );
 }

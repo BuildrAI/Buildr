@@ -471,9 +471,9 @@
 
 ## Parent Plan
 
-- 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划，只包含outcome、architecture invariants、Contribution Map、dependencies与final acceptance。
+- 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划；v2包含outcome、architecture decisions、结构化Contribution Map与final acceptance，每个Contribution包含priority、title、objective、directions、boundaries、可选expectedChild与dependencies。
 - 适用范围：Parent Planning Review target、Child Contribution binding、显式reconciliation与最终集成验收前置判断。
-- 避免混用：不是OpenSpec delta Change、Child状态/Result副本、实现清单、Markdown checkbox进度或lifecycle authority；普通Child状态变化不改变其bytes或identity。
+- 避免混用：`expectedChild`只是预期形态，不是Task ID、binding或已创建事实；Parent Plan也不是OpenSpec delta Change、Child状态/Result副本、Markdown checkbox进度或lifecycle authority。旧v1只读兼容且保持原identity，只能显式reconcile升级。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
 ## Parent 启动就绪（Parent Startup Readiness）
@@ -486,7 +486,7 @@
 ## Contribution Handoff
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
-- 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；Parent亲自承担的窄Contribution可由Parent current handoff证明。
+- 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；预期Child与Task completed都不能代替真实binding和handoff。
 - 避免混用：不是第二套Result、delivery registry、event/history/audit log，也不能由Task `completed`、代码或canonical specs推断。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 

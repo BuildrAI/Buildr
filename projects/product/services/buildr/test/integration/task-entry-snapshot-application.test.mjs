@@ -146,7 +146,7 @@ test('Development compact只返回current facts并按next加载一个后续capab
 test('Parent Task Entry覆盖普通Development next并公开安全的Child前动作', (t) => {
   const parentPlanIdentity = `sha256-${'8'.repeat(64)}`;
   const parentStartup = {
-    schemaVersion: 'buildr.parent-startup-readiness/v1', operation: 'inspect-startup', status: 'blocked', taskId, mode: 'parent-plan',
+    schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', status: 'blocked', taskId, mode: 'parent-plan',
     checks: { task: 'ready', environment: 'ready', development: 'ready', parentPlan: 'ready', planningReview: 'ready', planningGate: 'missing' },
     blockers: [{ axis: 'planning-gate', code: 'parent_startup_review_not_consumed' }], eligibleContributions: [],
     next: { mode: 'recommended', owner: 'task-development', action: 'refresh-parent-planning', summary: 'Refresh Parent planning.' }, effects: [],
@@ -170,7 +170,7 @@ test('Parent Task Entry覆盖Planning Review、eligible Child与dependency wait�
     [{ status: 'blocked', checks: {}, blockers: [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete' }], eligibleContributions: [], next: { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: 'Wait.' } }, 'wait-contribution-dependencies', null],
   ];
   for (const [projection, action, capability] of cases) {
-    const parentStartup = { schemaVersion: 'buildr.parent-startup-readiness/v1', operation: 'inspect-startup', taskId, mode: 'parent-plan', effects: [], ...projection };
+    const parentStartup = { schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', taskId, mode: 'parent-plan', effects: [], ...projection };
     const current = fixture(t, { development: development({ mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' }, { receipt: { parentPlan } }), parentStartup });
     const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
     assert.equal(result.next.action, action);
