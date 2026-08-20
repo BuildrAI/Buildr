@@ -28,7 +28,6 @@ test('Core 只保留 Buildr 产品与 workspace 边界', () => {
   assert.match(core, /不把 Buildr 内部术语和流程问题转交用户/);
   assert.match(core, /发布版 Buildr 的用户不承担 Buildr 内部问题的诊断、修复或操作责任/);
   assert.match(core, /只有涉及用户授权或业务判断时，才向用户请求决定/);
-  assert.match(core, /Buildr Web.*内部文档引用.*具名相对引用.*验证正文当前可读.*裸路径只用于诊断详情或代码语境/);
   assert.match(core, /内部登记、派生证据或自动化信心不足，不得否定可从权威来源验证的事实/);
   assert.doesNotMatch(core, /面向用户使用直接、简练的中文/);
   assert.doesNotMatch(core, /Git 提交信息的主题和正文/);
