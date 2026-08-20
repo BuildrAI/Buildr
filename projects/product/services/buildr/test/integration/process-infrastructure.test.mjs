@@ -6,7 +6,13 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { buildCommandInvocation, createExactNodeExecutionEnvironment, findExecutableOnPath, quoteWindowsCommandArgument } from '../../src/infrastructure/process.mjs';
+import {
+  buildCommandInvocation,
+  createExactNodeExecutionEnvironment,
+  createExactNodePathEnvironment,
+  findExecutableOnPath,
+  quoteWindowsCommandArgument,
+} from '../../src/infrastructure/process.mjs';
 
 test('共享进程基础层保留参数并只为 Windows command shim 启用 shell', () => {
   const args = ['--version'];
@@ -34,6 +40,24 @@ test('共享 PATH 解析器在 Windows 语义下解析 PATHEXT shim', (t) => {
     platform: 'win32',
     env: { PATH: root, PATHEXT: '.EXE;.CMD;.BAT' },
   }), executable);
+});
+
+test('exact Node environment按 Windows 大小写不敏感语义保留原生 Path', () => {
+  const exact = createExactNodePathEnvironment({
+    Path: 'C:\\Windows\\System32;C:\\Tools',
+    TEMP: 'C:\\Temp',
+  }, 'C:\\hostedtoolcache\\windows\\node\\24.15.0\\x64', { platform: 'win32' });
+  assert.equal(
+    exact.env.PATH,
+    'C:\\hostedtoolcache\\windows\\node\\24.15.0\\x64;C:\\Windows\\System32;C:\\Tools',
+  );
+  assert.equal(Object.hasOwn(exact.env, 'Path'), false);
+  assert.equal(exact.env.TEMP, 'C:\\Temp');
+  assert.deepEqual(exact.pathEntries, [
+    'C:\\hostedtoolcache\\windows\\node\\24.15.0\\x64',
+    'C:\\Windows\\System32',
+    'C:\\Tools',
+  ]);
 });
 
 test('exact Node environment同时冻结父进程 executable 与子进程 PATH identity', (t) => {

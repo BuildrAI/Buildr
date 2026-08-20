@@ -279,7 +279,7 @@ jobs:
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-runtime-windows.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-runtime-windows-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        shell: bash
+        shell: pwsh
         run: npm run test:candidate:ci -- runtime-windows
       - name: Upload Windows runtime evidence and diagnostics
         if: always()
