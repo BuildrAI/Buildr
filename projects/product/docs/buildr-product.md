@@ -28,6 +28,8 @@ Buildr 保存组织长期复用的工作资产，并通过可诊断、可按 Age
 
 Buildr 不是另一个 Agent，也不与 Agent 抢活。Buildr 负责治理和投射工作资产、提供确定性工具与诊断；Agent 负责理解目标、发现相关资产、形成任务上下文并推进任务；人负责目标、业务判断与必要授权。
 
+Buildr 的核心产品哲学是：**Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。** 产品能力和 Workspace 工作资产可以提供事实、指导、安全默认值与恢复建议，但只有放行会造成越权、错误对象写入、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报时才设置硬门禁。Buildr 自身的内部登记、推荐流程或自动化信心不足，不应成为 Agent 推进真实专业工作的通用阻塞点；完整原则以随包 [Buildr Core](../services/buildr/package/targets/workspace/rules/buildr/core.md) 为准。
+
 ## 要解决的问题
 
 真实组织长期使用 Agent 后，问题很快从“Agent 能不能完成一次任务”变成“组织如何让 Agent 持续按照共同的工作方式完成任务”：

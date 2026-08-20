@@ -1,10 +1,12 @@
 # Buildr 产品架构
 
+随包 [Buildr Core](../../../services/buildr/package/targets/workspace/rules/buildr/core.md) 是产品设计与用户 Workspace Agent 工作方式共同遵守的核心产品哲学和通用硬边界；本文只在该边界内解释当前产品架构，不建立第二套原则 authority。
+
 ## 用户与协作角色
 
 人通过自然语言表达目标、提供业务判断、授权和确认重要决策；Agent 消费组织工作资产，形成 Task Context 并推进专业工作；Buildr 不成为另一个 Agent，而是治理长期资产与确定性边界。
 
-Buildr 采用宽而薄的治理：硬门禁只保护 authority、目标对象、外部或不可逆副作用、证据真实性与完成结论等结果边界。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可检查、验证并诚实报告，则 Buildr 提供诊断与 Agent 指引，不规定 Agent 或协作者必须采用唯一工作方式，也不阻断无关工作的安全推进。
+Buildr 采用宽而薄的治理：Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。硬门禁只保护 authority、目标对象、外部或不可逆副作用、证据真实性与完成结论等结果边界。缺失的若只是辅助 provenance、推荐流程、工具偏好、Buildr 内部登记或自动化信心，而当前事实仍可从权威来源检查、验证并诚实报告，则 Buildr 提供诊断与 Agent 指引，不规定 Agent 或协作者必须采用唯一工作方式，也不阻断专业工作与其他无关工作的安全推进。
 
 ## 核心产品模型
 

@@ -91,7 +91,7 @@ currentFacts: <repository facts after success or failure>
 
 ## 7. Workspace tree transition
 
-普通 fetch、commit、push 不改变已检出 tree，返回 `treeChanged: false`。当前已选 operation 若成功改变 checkout，返回 `treeChanged: true`；consumer 随即遵守 required Core workspace-transition invariant，对所在 Buildr workspace 运行对应 Agent 的 Doctor。Git Operations 不复制 sync/Doctor 手册，也不判断 Review 或 Verification 是否仍有效。
+普通 fetch、commit、push 不改变已检出 tree，返回 `treeChanged: false`。当前已选 operation 若成功改变 checkout，返回 `treeChanged: true`；所在 Buildr workspace 的 consumer 随即遵守产品入口 Buildr Skill 的 workspace transition 约束。Git Operations 不复制 sync/Doctor 手册，也不判断 Review 或 Verification 是否仍有效。
 
 ## 8. 停止并交还决定
 

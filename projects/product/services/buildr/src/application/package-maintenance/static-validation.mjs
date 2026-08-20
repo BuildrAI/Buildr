@@ -1184,7 +1184,7 @@ export function createPackageStaticValidator(deps) {
           'local history 已改变、remote 未改变',
           '不创建 Git Operations Receipt',
           '不自动 stash、reset、rebase、merge、force push',
-          'required Core workspace-transition invariant',
+          '产品入口 Buildr Skill 的 workspace transition 约束',
           '不判断 Review 或 Verification 是否仍有效',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`git-operations Skill must include ${JSON.stringify(requiredText)}.`);

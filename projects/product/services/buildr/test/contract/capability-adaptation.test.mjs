@@ -43,10 +43,11 @@ test('Git Operations 实例区分 Agent capability 与产品 Task Finish executo
   assert.match(capabilityDocs, /它不决定 `task-finish\/v1` 产品执行器是否可运行/);
 });
 
-test('Core 要求 Skill 变更前检查跨 Skill 影响', () => {
-  assert.match(core, /创建、修改、替换或卸载 Skill 前必须判断跨 Skill 依赖/);
-  assert.match(core, /检查相关 `provides`、`requires`/);
-  assert.match(core, /不得绕过已知依赖直接激活/);
+test('capability-adaptation 拥有跨 Skill 影响检查，Core 不复制专项流程', () => {
+  assert.match(adaptation, /读取目标 Skill 源、`skills\/manifest\.yml`、相关 contracts、当前 bindings 和 doctor `capabilities` graph/);
+  assert.match(adaptation, /列出目标 Skill 提供的 capabilities、直接\/递归 consumers/);
+  assert.match(adaptation, /在新 binding ready 之前不卸载旧 provider/);
+  assert.doesNotMatch(core, /创建、修改、替换或卸载 Skill 前必须判断跨 Skill 依赖/);
 });
 
 test('capability-adaptation 作为 optional 管理 Skill 发布且不声明空洞 capability', () => {
