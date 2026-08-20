@@ -245,7 +245,7 @@ Task Verification Application MUST独占Result normalization、Task/Project reso
 - **AND** 页面/API MUST NOT暴露direct Result writer或触发declaration observation
 
 ### Requirement: Buildr Web 展示的 Applicability 必须由 target 与 declaration identities 派生
-Task Verification `record` MUST在正式action中观察并保存Content Target与Task有效Project集合内全部Project declaration identities，并返回该action时点的current applicability；仅工作区Task MUST观察并保存空declarations。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current。
+Task Verification `record` MUST在正式action中观察并保存Content Target与Task有效Project集合内全部Project declaration identities，并返回该action时点的current applicability；仅工作区Task MUST观察并保存空declarations。后续`inspect` MUST只读取保存的Result/查询字段，并只对调用方显式提供的target/declaration identity值做纯值比较；MUST NOT接受路径作为读取时观察authority，不得读取Project registry、`verification.yml`、Git、Content Target或Environment来刷新applicability。未提供某axis的current identity值时，该axis MUST为unknown或明确表达最近一次record action的历史观察，MUST NOT声称live current；每个unknown axis MUST返回稳定reason，至少区分`target-identity-not-provided`与`declaration-identities-not-provided`，且reason MUST只解释缺失输入而不触发外部观察。
 
 #### Scenario: record 时 target 与 declarations 已确认
 - **WHEN** Application在合法record action中观察的target与全部Project declarations被写入同一Result
@@ -259,8 +259,8 @@ Task Verification `record` MUST在正式action中观察并保存Content Target�
 
 #### Scenario: Buildr Web 没有当前 target identity
 - **WHEN** Buildr Web只读inspect但没有提供current target/declaration identity值
-- **THEN** Application MUST返回已有Result、record observedAt与unknown/last-observed语义
-- **AND** MUST NOT从HEAD、Candidate、dirty tree、Environment、Project文件或时间伪造live identity
+- **THEN** Application MUST返回已有Result、record observedAt、unknown/last-observed语义以及对应稳定reason
+- **AND** target与declarations axis MUST分别使用`target-identity-not-provided`与`declaration-identities-not-provided`，不得从HEAD、Candidate、dirty tree、Environment、Project文件或时间伪造live identity
 
 #### Scenario: policy 内容变化
 - **WHEN** caller显式提供的任一Project declaration identity与Result保存值不同

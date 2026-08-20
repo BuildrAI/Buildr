@@ -9,10 +9,10 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，或�
 
 ## 1. 恢复任务事实
 
-确认 canonical Workspace 和正式 Task ID，读取 Task Record；Task 必须是 `completed` 或 `abandoned`。先通过当前 Buildr controller source root 下的内部 driver 执行 `inspect`：
+确认 canonical Workspace 和正式 Task ID，读取 Task Record；Task 必须是 `completed` 或 `abandoned`。使用当前Workspace matching retained Buildr controller invocation执行bundled `inspect`；不得使用candidate `cliInvocation`、resource payload root或checkout内部driver：
 
 ```text
-node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs inspect --task <task-id> --target <canonical-workspace>
+<controller-command> <controller-args-prefix...> __internal task-retrospective inspect --task <task-id> --target <canonical-workspace>
 ```
 
 已有Result可以重做并完整替换；没有Result只是“尚未复盘”。同时读取 `disposition` 与 `currentDigest`；不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
@@ -36,7 +36,7 @@ node <buildr-controller-source>/src/interfaces/internal/task-retrospective-drive
 报告未完成或任务仍active时不写。完整报告形成后执行：
 
 ```text
-node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs record --task <task-id> --target <canonical-workspace> --report-markdown <markdown>
+<controller-command> <controller-args-prefix...> __internal task-retrospective record --task <task-id> --target <canonical-workspace> --report-markdown <markdown>
 ```
 
 Application会完整替换同一Task的current row；不创建历史、候选或draft。若命令行承载长Markdown存在转义风险，使用安全的进程参数调用方式，不借此新增临时持久化store。
@@ -46,7 +46,7 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 用户要求处理多份已有复盘时，先通过一次有界批量只读调用取得默认 `pending` 摘要：
 
 ```text
-node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--include-report]
+<controller-command> <controller-args-prefix...> __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--include-report]
 ```
 
 默认最多返回 100 份 pending 摘要且不包含报告正文；先用摘要收窄对象，只在确实需要批量读取原文时显式使用 `--include-report`，个别全文继续使用单 Task `inspect`。`list` 只减少重复 driver 调用，不自动分析、评分、生成方向、创建 Task 或修改 disposition，也不成为后续 mutation 的授权或门禁。
@@ -89,7 +89,7 @@ node <buildr-controller-source>/src/interfaces/internal/task-retrospective-drive
 - `pending`：重新打开，清空上次处置说明与时间。
 
 ```text
-node <buildr-controller-source>/src/interfaces/internal/task-retrospective-driver.mjs handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
+<controller-command> <controller-args-prefix...> __internal task-retrospective handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
 ```
 
 `handled|no-action` 必须提供非空完整处理意见；`pending` 不保留说明。任一Task创建或关系写入失败时不提交最终 `handle`，保持 current disposition并报告实际 effects 与恢复动作。若digest冲突，重新inspect并基于最新报告、关系与处置状态重新判断、展示方案并取得新授权。重新record会原子重置为pending。

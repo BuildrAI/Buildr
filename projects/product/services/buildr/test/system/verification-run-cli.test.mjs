@@ -79,6 +79,9 @@ test('verification run 并发执行显式 v2 capabilities 并只产生 transient
   });
   assert.equal(payload.checks.length, 2);
   const [first, second] = payload.checks;
+  assert.equal(Object.hasOwn(first, 'stdout'), false);
+  assert.equal(Object.hasOwn(first, 'stderr'), false);
+  assert.equal(first.failureSummary, null);
   assert.ok(Date.parse(first.startedAt) < Date.parse(second.finishedAt) && Date.parse(second.startedAt) < Date.parse(first.finishedAt));
   assert.equal(JSON.parse(fs.readFileSync(payload.evidenceReference, 'utf8')).executionIdentity, payload.executionIdentity);
   const cleanup = runBuildr(['verification', 'cleanup', '--summary', payload.evidenceReference, '--json']);
@@ -109,7 +112,30 @@ test('verification runner 直接执行声明中的 executable，不做 Workspace
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.status, 'failed');
   assert.equal(payload.checks[0].exitCode, 18);
+  assert.deepEqual(payload.checks[0].failureSummary, {
+    code: 'verification.capability_failed',
+    message: 'Capability demo.node failed with exit code 18.',
+  });
   assert.equal(Object.hasOwn(payload, 'workspaceNode'), false);
+});
+
+test('verification run公共JSON不回传capability原始输出', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  const marker = 'verification-public-output-must-not-leak';
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2', resources: [],
+    capabilities: [declaredCapability('demo.output', `process.stdout.write(${JSON.stringify(marker.repeat(4096))}); process.stderr.write(${JSON.stringify(marker)}); process.exit(7)`)],
+  }));
+  const result = runBuildr(runArgs(root, ['demo.output']));
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'failed');
+  assert.equal(Object.hasOwn(payload.checks[0], 'stdout'), false);
+  assert.equal(Object.hasOwn(payload.checks[0], 'stderr'), false);
+  assert.equal(JSON.stringify(payload).includes(marker), false);
+  assert.equal(payload.checks[0].failureSummary.code, 'verification.capability_failed');
+  assert.ok(result.stdout.length < 20_000);
 });
 
 test('verification run 对 explicit capability effects 要求精确授权', (t) => {

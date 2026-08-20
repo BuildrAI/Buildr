@@ -1238,17 +1238,17 @@ Buildr package bootstrap 契约 MUST 校验生成的产品入口 Skill包含宿�
 - **AND** MUST NOT 因投射 adapter 不同而生成不同的默认维护目标
 
 ### Requirement: Package 原子交付 Task Retrospective v2
-Buildr package MUST 原子交付 `buildr.task-retrospective/v2` contract、默认 provider、内部 driver、workspace binding、产品入口路由、Task Record v2 consumer binding 以及 Buildr Web 投影，并 MUST 不建立 lifecycle gate。
+Buildr package MUST 原子交付 `buildr.task-retrospective/v2` contract、默认 provider、bundled `__internal task-retrospective` route、checkout薄driver wrapper、workspace binding、Task Record v2 consumer binding以及Buildr Web投影，并 MUST不建立lifecycle gate。受管consumer MUST通过retained controller invocation调用该route，npm artifact MUST不依赖发布包外的controller source root或`src/interfaces/internal`文件。
 
 #### Scenario: Package 安装 Task Retrospective
 - **WHEN** Buildr 初始化或同步 workspace
 - **THEN** package MUST 安装 v2 contract 与完整 task-retrospective Skill
-- **AND** default binding 与 Task Record consumer MUST 指向兼容 provider
+- **AND** default binding、Task Record consumer与内部route MUST指向兼容provider/runner
 
 #### Scenario: Package 校验 v2 边界
-- **WHEN** Agent 运行 package check 或产品 affected verification
-- **THEN** verifier MUST 检查 contract、provider、binding、driver、SQLite repositories、Buildr Web route、Result schema 与 Task 来源关系
-- **AND** verifier MUST拒绝 history、自动采集、action item store、自动执行 Task 或 lifecycle gate
+- **WHEN** Agent 运行 package check、Doctor 或产品 affected verification
+- **THEN** verifier MUST 检查contract、provider、binding、bundled route、SQLite repositories、Buildr Web route、Result schema与Task来源关系
+- **AND** verifier MUST拒绝source-only consumer、history、自动采集、action item store、自动执行Task或lifecycle gate
 
 ### Requirement: Package 必须原子交付 todo Task 与复盘承接能力
 Buildr package MUST 原子交付升级后的 Task Record 与 Task Retrospective contracts/providers、SQLite migration、Application/repository、CLI/help/JSON、Buildr Web API/Web assets、capability bindings 和验证。任一版本、状态、来源关系、runtime projection 或客户端行为漂移时 package check 与 Doctor MUST fail closed。
@@ -1269,12 +1269,12 @@ Buildr package MUST 原子交付升级后的 Task Record 与 Task Retrospective 
 - **AND** 旧 runtime 读取更新后的 store MUST 按现有 migration version 边界 fail closed
 
 ### Requirement: Buildr package 必须交付 Task Planning Identity consumer闭环
-Buildr package MUST 原子交付Task Planning Identity Domain/Application、runtime composition、内部只读driver、相关contracts/specs与更新后的 `task-development`、`task-review`、OpenSpec propose/update/apply/contract-guard Skills。Package static validation与contract tests MUST证明consumer使用resolver结果且不再指引Agent手工摘要OpenSpec planning target。
+Buildr package MUST原子交付Task Planning Identity Domain/Application、runtime composition、bundled `__internal task-planning-identity`只读route、checkout薄driver wrapper、相关contracts/specs与更新后的`task-development`、`task-review`、OpenSpec propose/update/apply/contract-guard Skills。受管consumer MUST通过retained controller invocation调用resolver；Package static validation、Doctor与installed artifact contract tests MUST证明consumer使用resolver结果且不再指引Agent手工摘要OpenSpec planning target或直连source driver。
 
 #### Scenario: Package 与runtime projection完整
 - **WHEN** Buildr构建package并向Workspace投射Skills
-- **THEN** resolver内部入口、结果契约和全部相关consumer指引 MUST同时存在且相互一致
-- **AND** 任一缺失、旧手工摘要指引或版本接线漂移 MUST使package检查失败
+- **THEN** bundled resolver route、结果契约和全部相关consumer指引 MUST同时存在且相互一致
+- **AND** 任一缺失、source-only路径、旧手工摘要指引或版本接线漂移 MUST使package检查或Doctor失败
 
 ### Requirement: Package 必须原子交付 Buildr Web Task Manager 能力
 Buildr package MUST 原子交付 Task Record Domain/Application/repository、`buildr.task-record/v2` capability contract、默认 `task-manager` provider、workspace binding、Skill source、CLI/help/runtime 接线、Buildr Web Task routes/API/Web assets 和公开 JSON identity；任一 identity、path、version、binding 或 Application client 接线不一致时 package check 与 doctor MUST fail closed。
@@ -1539,3 +1539,16 @@ Buildr package assets MUST 在 required Core 中要求所有新建或重写的�
 - **WHEN** Agent 在任意 Buildr Task 中新建或重写文本文件
 - **THEN** Agent MUST 直接生成恰好一个结尾换行符且没有末尾空白行的结果
 - **AND** Agent MUST NOT 将该规则解释为禁止正文内部的合理空行
+
+### Requirement: Package 必须验证正式工作流内部路由闭环
+Buildr package MUST维护Task Development、Task Retrospective与Task Planning Identity的单一required internal workflow route inventory，并 MUST让CLI分派、受管consumer、package static validation、Doctor与npm installed-layout tests消费一致route identity。每个route MUST在实际npm artifact中可启动；Retrospective writer与Planning Identity reader MUST在安装布局fixture中完成真实Application调用。
+
+#### Scenario: npm artifact 内部路由完整
+- **WHEN** 产品验证安装本次生成的npm tarball并执行required internal workflow route tests
+- **THEN** 三个`__internal` route MUST由安装产物自身成功启动且返回各自closed contract
+- **AND** test MUST NOT借用development checkout的source driver、node_modules或payload identity完成执行
+
+#### Scenario: Doctor 发现 route closure 漂移
+- **WHEN** 当前runtime缺少required route、受管consumer引用未知route或route未绑定对应runner
+- **THEN** Doctor MUST返回稳定actionable finding并保持只读
+- **AND** MUST NOT通过下载source checkout、改写Skill或伪造route availability来自愈

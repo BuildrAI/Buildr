@@ -1,0 +1,42 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: harden-formal-workflow-runtime-closure
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/harden-formal-workflow-runtime-closure/brief.md
+    reason: 正式Change需要概括writer provenance、npm内部入口、Verification公共摘要和unknown reason的范围及验收边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-formal-workflow-runtime-closure/proposal.md
+      - openspec/changes/harden-formal-workflow-runtime-closure/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前架构需要明确retained内部route闭环、Verification公共JSON与Execution Record分层以及unknown applicability原因。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/agent-task-workflows/spec.md
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/public-json-contracts/spec.md
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/task-verification/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service知识需要记录实际controller writer identity、npm route inventory及installed artifact闭环。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/workspace-structured-data-store/spec.md
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/buildr-package-assets/spec.md
+      - openspec/changes/harden-formal-workflow-runtime-closure/specs/agent-task-workflows/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Application Payload
+    - Task Execution Record
+    - Task Verification
+  canonicalTerms: retained controller invocation, internal workflow route, Verification public summary
+  changedAssets:
+    - openspec/knowledge/architecture/technical.md
+    - openspec/knowledge/services/buildr.md
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/changes/harden-formal-workflow-runtime-closure/design.md
+unresolvedItems: []

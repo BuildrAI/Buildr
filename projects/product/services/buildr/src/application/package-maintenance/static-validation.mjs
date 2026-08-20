@@ -1,4 +1,5 @@
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
+import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../internal-workflow-route-inventory.mjs';
 
 export function createPackageStaticValidator(deps) {
   const {
@@ -417,7 +418,10 @@ export function createPackageStaticValidator(deps) {
     const sourceContracts = new Map([
       ['src/domain/task-planning-identity/task-planning-identity.mjs', ['createTaskPlanningIdentity', 'checklist-completion', 'change-lifecycle-provenance']],
       ['src/application/task-planning-identity/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
-      ['src/interfaces/internal/task-planning-identity-driver.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
+      ['src/interfaces/internal/task-planning-identity-driver.mjs', ['runTaskPlanningIdentityDriver']],
+      ['src/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
+      ['src/application/internal-workflow-route-inventory.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
+      ['src/interfaces/internal/formal-workflow-routes.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
       ['src/application/compose-runtime.mjs', ['registerTaskPlanningIdentityApplication']],
     ]);
     for (const [relative, requiredTexts] of sourceContracts) {
@@ -433,12 +437,12 @@ export function createPackageStaticValidator(deps) {
     }
 
     const consumers = new Map([
-      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['task-planning-identity-driver.mjs inspect', '`planningNodes`', 'raw digest']],
-      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity-driver.mjs inspect', 'checkbox progress', '不重复record']],
-      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', '`planningNodes`']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'target不变则不重复record Review']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', 'task-planning-identity-driver.mjs inspect', 'target与apply前相同则复用current Planning Review']],
+      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['__internal task-planning-identity inspect', '`planningNodes`', 'raw digest', 'environment.controllerInvocation']],
+      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['__internal task-planning-identity inspect', 'checkbox progress', '不重复record', 'environment.controllerInvocation']],
+      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver', 'environment.controllerInvocation']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', '`planningNodes`', 'environment.controllerInvocation']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target不变则不重复record Review', 'environment.controllerInvocation']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target与apply前相同则复用current Planning Review', 'environment.controllerInvocation']],
       ['package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
       ['package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
     ]);
@@ -455,6 +459,42 @@ export function createPackageStaticValidator(deps) {
       for (const forbidden of ['shasum proposal.md', 'sha256sum proposal.md']) {
         if (content.includes(forbidden)) problems.push(`Task Planning Identity consumer ${relative} must not instruct manual OpenSpec target hashing with ${JSON.stringify(forbidden)}.`);
       }
+      if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) problems.push(`Task Planning Identity consumer ${relative} must use the bundled retained-controller route, not a source driver path.`);
+    }
+  }
+
+  function validateInternalWorkflowRouteClosure(context) {
+    const { root, problems } = context;
+    const inventory = path.join(root, 'src/application/internal-workflow-route-inventory.mjs');
+    const cli = path.join(root, 'src/interfaces/cli/main.mjs');
+    if (!existsFile(inventory)) problems.push('Required internal workflow route inventory is missing.');
+    if (!existsFile(cli)) problems.push('Buildr CLI internal workflow route dispatcher is missing.');
+    else if (!fs.readFileSync(cli, 'utf8').includes('runRequiredInternalWorkflowRoute')) problems.push('Buildr CLI must dispatch the required internal workflow route inventory.');
+    for (const route of REQUIRED_INTERNAL_WORKFLOW_ROUTES) {
+      const runner = path.join(root, 'src/interfaces/internal', route.runner);
+      const wrapper = path.join(root, 'src/interfaces/internal', `${route.id}-driver.mjs`);
+      if (!existsFile(runner)) problems.push(`Required internal workflow runner is missing: ${route.runner}.`);
+      if (!existsFile(wrapper)) problems.push(`Required internal workflow checkout wrapper is missing: ${route.id}-driver.mjs.`);
+    }
+    const consumers = [
+      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['task-development', 'task-planning-identity']],
+      ['package/targets/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']],
+      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity']],
+      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity']],
+      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity']],
+    ];
+    for (const [relative, routes] of consumers) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) {
+        problems.push(`Required internal workflow consumer is missing: ${relative}.`);
+        continue;
+      }
+      const content = fs.readFileSync(file, 'utf8');
+      for (const route of routes) if (!content.includes(`__internal ${route}`)) problems.push(`Required internal workflow consumer ${relative} must use bundled route ${route}.`);
+      if (!content.includes('controllerInvocation') && relative !== 'package/targets/workspace/skills/buildr/task-retrospective/SKILL.md') problems.push(`Required internal workflow consumer ${relative} must use a retained controllerInvocation.`);
+      if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) problems.push(`Required internal workflow consumer ${relative} must not use a source driver path.`);
     }
   }
 
@@ -1212,9 +1252,10 @@ export function createPackageStaticValidator(deps) {
           '不可得时直接标记缺失',
           '隐藏推理、完整对话、完整工具日志或后台事件',
           '不读取、迁移或删除`.buildr/asset-review/`',
-          'task-retrospective-driver.mjs inspect',
-          'task-retrospective-driver.mjs record',
-          'task-retrospective-driver.mjs handle',
+          '__internal task-retrospective inspect',
+          '__internal task-retrospective record',
+          '__internal task-retrospective handle',
+          'matching retained Buildr controller invocation',
           'expected-current-digest',
           '`handled|no-action` 必须提供非空完整处理意见',
           '完整原始 `reportMarkdown`',
@@ -1416,6 +1457,7 @@ export function createPackageStaticValidator(deps) {
     validateTaskLifecycleRetirement(context);
     validateTaskReviewAuthority(context);
     validateTaskPlanningIdentityAuthority(context);
+    validateInternalWorkflowRouteClosure(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
     const skillSourceIds = validatePackageSkills(context);

@@ -34,7 +34,7 @@ function usageError(message, stderr) {
     schemaVersion: 'buildr.task-development-driver-error/v1',
     status: 'blocked',
     diagnostic: { code: 'task_development_driver_usage_invalid', message },
-    nextActions: ['运行 task-development-driver.mjs --help 查看受支持 action 与发现方式。'],
+    nextActions: ['通过matching retained controller运行 __internal task-development --help 查看受支持 action 与发现方式。'],
   }));
   return 2;
 }

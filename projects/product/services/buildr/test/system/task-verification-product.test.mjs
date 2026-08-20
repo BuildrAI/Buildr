@@ -90,12 +90,17 @@ test('Task Verification CLI 维护单一 current Result 并派生 target/declara
   assert.equal(response.slot.applicability.target.status, 'stale');
   response = runtime.inspectTaskVerification(root, 'verification-task');
   assert.equal(response.slot.applicability.status, 'unknown');
+  assert.deepEqual(response.slot.applicability.reasons.map((reason) => reason.code), [
+    'target-identity-not-provided',
+    'declaration-identities-not-provided',
+  ]);
 
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration('Changed policy fact')));
   response = runtime.inspectTaskVerification(root, 'verification-task', { targetIdentity: 'delivery:v1' });
   assert.equal(response.slot.applicability.target.status, 'current');
   assert.equal(response.slot.applicability.declarations.status, 'unknown');
   assert.equal(response.slot.applicability.status, 'unknown');
+  assert.deepEqual(response.slot.applicability.reasons.map((reason) => reason.code), ['declaration-identities-not-provided']);
 
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
   const payload = opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'verification-task'").get().result_json;

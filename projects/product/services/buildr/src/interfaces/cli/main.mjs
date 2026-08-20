@@ -9,9 +9,10 @@ function writeInternalDownload(file, bytes) {
 async function runInternalProductAction(argv) {
   if (argv[2] !== '__internal') return false;
   const action = argv[3];
-  if (action === 'task-development') {
-    const { runTaskDevelopmentDriver } = await import('../internal/task-development-driver-runner.mjs');
-    process.exitCode = await runTaskDevelopmentDriver(argv.slice(4));
+  const { runRequiredInternalWorkflowRoute } = await import('../internal/formal-workflow-routes.mjs');
+  const workflowExitCode = await runRequiredInternalWorkflowRoute(action, argv.slice(4));
+  if (workflowExitCode !== null) {
+    process.exitCode = workflowExitCode;
     return true;
   }
   if (process.env.BUILDR_INTERNAL_PRODUCT_REENTRY !== '1') return false;

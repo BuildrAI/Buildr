@@ -235,6 +235,9 @@ test('formal Verification 为passed/failed/retry/drift/cancelled保留独立exec
   for (const [id, script, outcome] of cases) {
     declare(current.projectRoot, [capability(id, script)]);
     const payload = await run(current, id);
+    assert.equal(Object.hasOwn(payload.checks[0], 'stdout'), false);
+    assert.equal(Object.hasOwn(payload.checks[0], 'stderr'), false);
+    assert.doesNotMatch(JSON.stringify(payload), /very-secret|\/private\/local\/path/);
     assert.equal(payload.executionRecord.status, 'retained');
     assert.equal(payload.executionRecord.outcome, outcome);
     assert.equal(payload.executionRecord.lifecycleStatus, 'retained');

@@ -28,8 +28,8 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /部分可得.*不代表完整 Task/);
   assert.match(skill, /不可得时直接标记缺失/);
   assert.match(skill, /不得为了补齐 Token 数字.*强制估算.*增加任务消耗/);
-  assert.match(skill, /task-retrospective-driver\.mjs handle/);
-  assert.match(skill, /task-retrospective-driver\.mjs list/);
+  assert.match(skill, /__internal task-retrospective handle/);
+  assert.match(skill, /__internal task-retrospective list/);
   assert.match(skill, /默认.*pending.*摘要/);
   assert.match(skill, /--include-report/);
   assert.match(skill, /`handled\|no-action` 必须提供非空完整处理意见/);

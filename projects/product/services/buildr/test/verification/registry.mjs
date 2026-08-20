@@ -240,8 +240,11 @@ const integrationSlice = (id, files, inputs, options = {}) => Object.freeze({
 export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-declarations', [
     'test/integration/core-diagnostics-and-package.test.mjs',
+    'test/integration/internal-workflow-route-diagnostics.test.mjs',
     'test/integration/project-verification.test.mjs',
   ], [
+    'src/application/internal-workflow-route-inventory.mjs',
+    'src/application/doctor/internal-workflow-route-diagnostics.mjs',
     'src/application/doctor/project-environment-preparation-diagnostics.mjs',
     'src/application/doctor/project-verification-diagnostics.mjs',
     'src/application/doctor.mjs',

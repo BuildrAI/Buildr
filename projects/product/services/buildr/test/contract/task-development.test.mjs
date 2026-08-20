@@ -64,7 +64,11 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(driverRunner, /args\.includes\('--compact'\)/);
   assert.match(driverRunner, /moduleLoadMs[\s\S]*compositionMs[\s\S]*applicationMs[\s\S]*serializationMs[\s\S]*totalMs/);
   const main = read('src/interfaces/cli/main.mjs');
-  assert.match(main, /__internal[\s\S]*task-development[\s\S]*runTaskDevelopmentDriver/);
+  const routes = read('src/interfaces/internal/formal-workflow-routes.mjs');
+  const inventory = read('src/application/internal-workflow-route-inventory.mjs');
+  assert.match(main, /__internal[\s\S]*runRequiredInternalWorkflowRoute/);
+  assert.match(routes, /task-development[\s\S]*runTaskDevelopmentDriver/);
+  assert.match(inventory, /id: 'task-development'/);
   const application = read('src/application/task-development/task-development-application.mjs');
   assert.match(application, /taskDevelopmentActionFields/);
   const operationContracts = read('src/application/task-development/task-development-operation-contracts.mjs');
