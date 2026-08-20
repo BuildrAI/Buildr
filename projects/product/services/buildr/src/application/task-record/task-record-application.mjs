@@ -361,7 +361,7 @@ export function registerTaskRecordApplication(runtime) {
     const current = runtime.readTaskRecordPersistence(targetRoot, taskId);
     if (current.record.status === 'todo' && input.noChange !== true) throw taskRecordError('task_record_todo_completion_requires_no_change', 'todo Task 只能以 noChange=true 完成；有交付变更时必须先激活。', 409, { taskId }, `先运行 buildr task activate ${taskId}。`);
     const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(targetRoot, taskId) : null;
-    if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.parentPlan.identity)) throw taskRecordError('parent_final_acceptance_required', '采用Parent Plan的Task必须先完成显式最终集成验收，不能只凭Child状态完成Parent。', 409, { planIdentity: coordination.parentPlan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
+    if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.plan.identity)) throw taskRecordError('parent_final_acceptance_required', '采用Parent Plan的Task必须先完成显式最终集成验收，不能只凭Child状态完成Parent。', 409, { planIdentity: coordination.plan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
     const summary = text(input.summary, 'summary');
     return mutate(targetRoot, taskId, 'complete', input, (current) => ({ ...current, status: 'completed', result: { summary, noChange: input.noChange } }));
   }
@@ -370,7 +370,7 @@ export function registerTaskRecordApplication(runtime) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
       const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(root, taskId) : null;
-      if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.parentPlan.identity)) throw taskRecordError('parent_final_acceptance_required', 'Formal Finish不能在缺少current Parent最终集成验收时完成Task。', 409, { planIdentity: coordination.parentPlan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
+      if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.plan.identity)) throw taskRecordError('parent_final_acceptance_required', 'Formal Finish不能在缺少current Parent最终集成验收时完成Task。', 409, { planIdentity: coordination.plan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
       let changed = false;
       const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
         validateScopeReferences(root, current.record);

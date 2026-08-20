@@ -10,7 +10,6 @@ export type ParentContribution = {
   objective: string;
   directions: string[];
   boundaries: string[];
-  expectedChild?: string | null;
   dependencies: string[];
   expectation: { status: 'expected' | 'none'; child: string | null };
   eligibility: { status: 'eligible' | 'waiting-dependency' | 'not-eligible'; blockers: Array<{ contributionId: string; title: string }> };
@@ -19,11 +18,6 @@ export type ParentContribution = {
   deliveredBy?: { taskId: string; kind?: string } | null;
   residual?: { taskId: string; summary: string } | null;
   superseded?: { taskId: string; deliveredByContributionId: string; reason: string } | null;
-};
-
-export type ParentDependencyBlocker = {
-  contributionId: string;
-  dependsOn: string[];
 };
 
 export type ParentStartupBlocker = {
@@ -44,44 +38,46 @@ export type ParentStartupNext = {
 export type ParentPlanningReview = {
   present: boolean;
   applicability?: string | null;
-  result?: {
-    conclusion?: {
-      outcome?: string | null;
-      summary?: string | null;
-    } | null;
-    completedAt?: string | null;
-  } | null;
+  resultDigest?: string | null;
+  outcome?: string | null;
+  summary?: string | null;
+  completedAt?: string | null;
+};
+
+export type ParentContributionDelivery = {
+  handoffIdentity: string;
+  delivered: string[];
+  extra: string[];
+  residual: string[];
+  superseded: Array<{ contributionId: string; deliveredByContributionId: string }>;
+  affected: string[];
+  nextAction: string;
 };
 
 export type ParentCoordinationChild = {
   taskId: string;
   title: string;
   status: string;
-  plannedContributions: string[];
-  boundContributions?: string[];
+  boundContributions: string[];
   deliveryProven: boolean;
+  delivery?: ParentContributionDelivery | null;
   diagnostic?: CoordinationDiagnostic | null;
 };
 
 export type ParentCoordinationResult = {
   mode?: 'parent-plan' | 'child' | 'ordinary' | 'legacy';
-  parentPlan?: {
-    identity: string;
-    outcome: string;
-  } | null;
   plan?: {
     sourceSchemaVersion: string;
     identity: string;
     outcome: string;
     architectureDecisions: string[];
-    contributions: ParentContribution[];
     finalAcceptance: string[];
   } | null;
   parentSource?: {
     taskId: string;
     title?: string;
     status?: string;
-    bindings?: string[];
+    boundContributions?: string[];
     contributions?: Array<{ id: string; priority: string; title: string; objective: string; directions: string[]; boundaries: string[]; bindingStatus: string }>;
   } | null;
   parentAcceptance?: {
@@ -92,7 +88,6 @@ export type ParentCoordinationResult = {
   startup?: {
     status: 'ready' | 'blocked' | 'not-applicable';
     blockers: ParentStartupBlocker[];
-    dependencyBlockers?: ParentDependencyBlocker[];
     eligibleContributions: string[];
     next: ParentStartupNext | null;
   } | null;

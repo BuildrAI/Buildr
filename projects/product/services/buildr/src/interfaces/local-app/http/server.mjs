@@ -112,6 +112,23 @@ function apiError(response, error) {
   });
 }
 
+function parentCoordinationBlocked(taskId, operation, error) {
+  const status = Number.isInteger(error.status) ? error.status : 500;
+  return {
+    status,
+    payload: withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, {
+      operation: operation || 'unknown', status: 'blocked', taskId, mode: 'unknown', plan: null,
+      children: [], contributions: [], prerequisitesSatisfied: false, effects: [],
+      diagnostic: {
+        code: error.code || 'internal_error',
+        message: status >= 500 ? 'Buildr Web 处理Parent coordination请求失败。' : error.message,
+        ...(error.details === undefined ? {} : { details: error.details }),
+        nextAction: error.nextAction || '重新inspect Parent coordination后重试。',
+      },
+    }),
+  };
+}
+
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -456,20 +473,26 @@ export function createLocalWorkspaceServer(runtime, {
         }
         if (request.method === 'PATCH' && taskCoordinationMatch) {
           assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination');
-          const operationFields = {
-            record: new Set(['operation', 'plan']),
-            reconcile: new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason']),
-            accept: new Set(['operation', 'expectedPlanIdentity', 'summary']),
-          }[input.operation];
-          if (operationFields) {
-            const forbidden = Object.keys(input).find((field) => !operationFields.has(field));
-            if (forbidden) { const error = new Error(`Parent coordination ${input.operation}.${forbidden} 不受支持。`); error.code = 'parent_coordination_field_forbidden'; error.status = 400; throw error; }
+          let input = null;
+          try {
+            input = await readAllowedJsonBody(request, new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination');
+            const operationFields = {
+              record: new Set(['operation', 'plan']),
+              reconcile: new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason']),
+              accept: new Set(['operation', 'expectedPlanIdentity', 'summary']),
+            }[input.operation];
+            if (operationFields) {
+              const forbidden = Object.keys(input).find((field) => !operationFields.has(field));
+              if (forbidden) { const error = new Error(`Parent coordination ${input.operation}.${forbidden} 不受支持。`); error.code = 'parent_coordination_field_forbidden'; error.status = 400; throw error; }
+            }
+            if (input.operation === 'record') return jsonResponse(response, 200, runtime.recordParentPlan(root, taskCoordinationMatch[1], { plan: input.plan }));
+            if (input.operation === 'reconcile') return jsonResponse(response, 200, runtime.reconcileParentPlan(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, plan: input.plan, reason: input.reason }));
+            if (input.operation === 'accept') return jsonResponse(response, 200, runtime.acceptParentCoordination(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, summary: input.summary }));
+            const error = new Error('Parent coordination operation必须是record、reconcile或accept。'); error.code = 'parent_coordination_operation_invalid'; error.status = 400; throw error;
+          } catch (error) {
+            const blocked = parentCoordinationBlocked(taskCoordinationMatch[1], input?.operation, error);
+            return jsonResponse(response, blocked.status, blocked.payload);
           }
-          if (input.operation === 'record') return jsonResponse(response, 200, runtime.recordParentPlan(root, taskCoordinationMatch[1], { plan: input.plan }));
-          if (input.operation === 'reconcile') return jsonResponse(response, 200, runtime.reconcileParentPlan(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, plan: input.plan, reason: input.reason }));
-          if (input.operation === 'accept') return jsonResponse(response, 200, runtime.acceptParentCoordination(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, summary: input.summary }));
-          const error = new Error('Parent coordination operation必须是record、reconcile或accept。'); error.code = 'parent_coordination_operation_invalid'; error.status = 400; throw error;
         }
         const taskEnvironmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/environment$`));
         if (request.method === 'GET' && taskEnvironmentMatch) {

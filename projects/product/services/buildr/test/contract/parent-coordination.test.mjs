@@ -40,7 +40,7 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   for (const method of ['inspectParentCoordination', 'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || server.includes(method), method);
   for (const flag of ['--schema', '--example']) assert.ok(cli.includes(flag), flag);
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
-  assert.match(json, /buildr\.parent-coordination-result\/v2/);
+  assert.match(json, /buildr\.parent-coordination-result\/v3/);
   for (const phrase of ['Parent Plan', 'Contribution Handoff', 'task parent bind-child', '不自动完成Parent']) assert.ok(skill.includes(phrase), phrase);
   for (const phrase of [
     'Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入',

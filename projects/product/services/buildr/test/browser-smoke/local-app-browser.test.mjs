@@ -714,7 +714,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       finalAcceptance: ['全部 Contribution 已交付或明确替代。'],
     } });
     runtime.recordTaskReview(workspaceRoot, 'browser-parent', {
-      reviewType: 'planning', targetIdentity: parentCoordination.parentPlan.identity, method: 'self',
+      reviewType: 'planning', targetIdentity: parentCoordination.plan.identity, method: 'self',
       reviewed: ['Parent Plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: '父任务计划可推进。' },
     });
     runtime.refreshParentPlanning(workspaceRoot, 'browser-parent');

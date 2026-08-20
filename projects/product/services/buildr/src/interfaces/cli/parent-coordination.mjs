@@ -71,7 +71,11 @@ export function parentCoordinationCommand(runtime, operation, args) {
     return print(payload, parsed.json);
   } catch (error) {
     if (!error.parentCoordinationBusiness) throw error;
-    const payload = { schemaVersion: 'buildr.parent-coordination-result/v2', operation, status: 'blocked', taskId: parsed.taskId, mode: 'unknown', parentPlan: null, plan: null, children: [], contributions: [], prerequisitesSatisfied: false, effects: [], diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, nextActions: [error.nextAction || '重新inspect Parent coordination后重试。'] };
+    const payload = {
+      schemaVersion: 'buildr.parent-coordination-result/v3', operation, status: 'blocked', taskId: parsed.taskId, mode: 'unknown', plan: null,
+      children: [], contributions: [], prerequisitesSatisfied: false, effects: [],
+      diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }), nextAction: error.nextAction || '重新inspect Parent coordination后重试。' },
+    };
     print(payload, parsed.json); process.exitCode = 1; return payload;
   }
 }

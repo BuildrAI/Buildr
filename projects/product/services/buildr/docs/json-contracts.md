@@ -32,7 +32,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
 | `task next` | `buildr.task-entry-snapshot/v1` |
-| `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v2` |
+| `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v3` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v2`（v1只读兼容）/ `buildr.contribution-handoff/v1` |
 | Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
@@ -62,7 +62,7 @@ Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决�
 
 `buildr.task-entry-snapshot/v1`是零写入Formal Task入口，只按Task → Environment → Development最早硬前置读取，返回最小identity/current facts、receipt证明的execution/writer route、直接blockers与唯一typed next。它不复制完整Receipt/Result或capability graph，不替代实际owner写前重验。`required`只表示当前authority/identity安全前置；`recommended`是可调整建议。显式`--profile`只增加本次wall-clock、owner read次数与失败/重复尝试事实，不持久化、不影响gate、Candidate或Task status。
 
-`buildr.parent-coordination-result/v2`覆盖Parent coordination actions。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、stored Plan与rich projection、Parent status/final acceptance/Planning Review、直接Children和matching Contribution Handoff。每个work item分别返回`expectation`、`eligibility`、`actual`与可空`actualChild`，不再用预测字段表示真实binding。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
+`buildr.parent-coordination-result/v3`覆盖Parent coordination actions，并直接替代v2。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、紧凑`plan`摘要、Parent status/final acceptance、紧凑Planning Review、直接Children摘要与唯一顶层`contributions`。每个work item只在顶层Contribution Map出现一次，`expectedChild`规范化为`expectation.child`；Child只返回`boundContributions`与协调所需delivery摘要，不返回完整Contribution Handoff。`startup.next`是唯一下一步，依赖阻塞继续由`blockers`和各Contribution eligibility表达；完整`dependencyBlockers`只属于独立`buildr.parent-startup-readiness/v2`。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
 
 Buildr Web stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
 

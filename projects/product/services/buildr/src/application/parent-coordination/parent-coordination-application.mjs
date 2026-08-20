@@ -65,6 +65,52 @@ function savedContributionHandoff(row, receipt) {
   return associationMatches(completion.association, handoff) ? handoff.contributionHandoff || null : null;
 }
 
+function planSummary(plan) {
+  return {
+    sourceSchemaVersion: plan.sourceSchemaVersion,
+    identity: plan.identity,
+    outcome: plan.outcome,
+    architectureDecisions: plan.architectureDecisions,
+    finalAcceptance: plan.finalAcceptance,
+  };
+}
+
+function planningReviewSummary(slot) {
+  return {
+    present: slot.present,
+    applicability: slot.applicability,
+    resultDigest: slot.resultDigest,
+    outcome: slot.result?.conclusion?.outcome ?? null,
+    summary: slot.result?.conclusion?.summary ?? null,
+    completedAt: slot.result?.completedAt ?? null,
+  };
+}
+
+function deliverySummary(handoff) {
+  if (!handoff) return null;
+  return {
+    handoffIdentity: handoff.identity,
+    delivered: [...handoff.delivered],
+    extra: handoff.extra.map((item) => item.contributionId),
+    residual: handoff.residual.map((item) => item.contributionId),
+    superseded: handoff.superseded.map((item) => ({ contributionId: item.contributionId, deliveredByContributionId: item.deliveredByContributionId })),
+    affected: handoff.affected.map((item) => item.contributionId),
+    nextAction: handoff.nextAction,
+  };
+}
+
+function childSummary(child) {
+  return {
+    taskId: child.taskId,
+    title: child.title,
+    status: child.status,
+    boundContributions: child.boundContributions,
+    deliveryProven: child.deliveryProven,
+    delivery: deliverySummary(child.contributionHandoff),
+    diagnostic: child.diagnostic,
+  };
+}
+
 function assertFields(value, fields, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw parentCoordinationError('parent_coordination_input_invalid', `${label} 必须是对象。`);
   for (const field of Object.keys(value)) if (!fields.has(field)) throw parentCoordinationError('parent_coordination_field_forbidden', `${label}.${field} 不受支持。`, 400, { field });
@@ -87,7 +133,7 @@ export function registerParentCoordinationApplication(runtime) {
     const contributionHandoff = savedContributionHandoff(row, receipt);
     return {
       taskId: row.task_id, title: row.title, status: row.status,
-      boundContributions, plannedContributions: boundContributions,
+      boundContributions,
       deliveryProven: Boolean(contributionHandoff), contributionHandoff,
       diagnostic: row.status === 'completed' && boundContributions.length && !contributionHandoff
         ? { code: 'parent_contribution_delivery_unproven', message: 'Child已completed，但没有matching saved Contribution Handoff。' }
@@ -106,9 +152,10 @@ export function registerParentCoordinationApplication(runtime) {
         : null;
       const residual = handoff?.residual.find((entry) => entry.contributionId === item.id) || null;
       const superseded = handoff?.superseded.find((entry) => entry.contributionId === item.id) || null;
+      const { expectedChild, ...canonicalItem } = item;
       return {
-        ...item,
-        expectation: item.expectedChild ? { status: 'expected', child: item.expectedChild } : { status: 'none', child: null },
+        ...canonicalItem,
+        expectation: expectedChild ? { status: 'expected', child: expectedChild } : { status: 'none', child: null },
         eligibility: { status: 'eligible', blockers: [] },
         actual: { status },
         actualChild: selected ? { taskId: selected.child.taskId, title: selected.child.title, status: selected.child.status } : null,
@@ -159,7 +206,7 @@ export function registerParentCoordinationApplication(runtime) {
     else if (eligibleContributions.length) next = { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: eligibleContributions, summary: '选择一个依赖已满足的Contribution并启动独立Child Task。' };
     else if (progress.prerequisitesSatisfied) next = { mode: 'recommended', owner: 'task-development', action: 'accept-parent', summary: '全部Contribution已有明确处置；执行Parent最终集成验收。' };
     else next = { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: '当前没有可启动Contribution；等待既有Child handoff或显式reconcile。' };
-    return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, dependencyBlockers, eligibleContributions, next };
+    return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, eligibleContributions, next };
   }
 
   function absentResult(task, children, receipt, parentDevelopment) {
@@ -167,26 +214,29 @@ export function registerParentCoordinationApplication(runtime) {
     let parentSource = null;
     if (mode === 'child') {
       const parentTaskId = task.record.parentTaskId;
-      const bindings = (receipt?.plannedContributions || []).filter((item) => item.parentTaskId === parentTaskId).map((item) => item.contributionId);
+      const boundContributions = (receipt?.plannedContributions || []).filter((item) => item.parentTaskId === parentTaskId).map((item) => item.contributionId);
       const parentStoredPlan = parentDevelopment.development?.receipt?.parentPlan || null;
       const parentPlan = parentStoredPlan ? projectParentPlan(parentStoredPlan) : null;
       parentSource = {
         taskId: task.taskRelations.parent?.taskId || parentTaskId,
         title: task.taskRelations.parent?.title || parentTaskId,
         status: task.taskRelations.parent?.status || 'unknown',
-        bindings,
-        contributions: parentPlan?.contributions.filter((item) => bindings.includes(item.id)).map((item) => ({
+        boundContributions,
+        contributions: parentPlan?.contributions.filter((item) => boundContributions.includes(item.id)).map((item) => ({
           id: item.id, priority: item.priority, title: item.title, objective: item.objective, directions: item.directions, boundaries: item.boundaries,
           bindingStatus: task.record.status === 'active' ? 'active' : 'bound',
         })) || [],
       };
     }
     return {
-      mode, parentPlan: null, plan: null, parentSource,
-      children, contributions: [], prerequisitesSatisfied: false, finalAcceptanceReady: false,
-      startup: { status: 'not-applicable', checks: {}, blockers: [], dependencyBlockers: [], eligibleContributions: [], next: null },
-      diagnostic: mode === 'legacy' ? { code: 'parent_plan_absent', message: '该Parent Task尚未显式采用Parent Plan；历史Task继续使用兼容读模型。' } : null,
-      nextActions: mode === 'legacy' ? ['仅在明确采用新模型时record Parent Plan；不要自动backfill。'] : [],
+      mode, plan: null, parentSource,
+      children, contributions: [], prerequisitesSatisfied: false,
+      startup: { status: 'not-applicable', checks: {}, blockers: [], eligibleContributions: [], next: null },
+      diagnostic: mode === 'legacy' ? {
+        code: 'parent_plan_absent',
+        message: '该Parent Task尚未显式采用Parent Plan；历史Task继续使用兼容读模型。',
+        nextAction: '仅在明确采用新模型时record Parent Plan；不要自动backfill。',
+      } : null,
     };
   }
 
@@ -203,36 +253,42 @@ export function registerParentCoordinationApplication(runtime) {
     const development = options.development || developmentReadModel(row);
     const receipt = development.development?.receipt || null;
     const storedPlan = receipt?.parentPlan || null;
-    const children = persistence.children.map((child) => runtime.projectParentCoordinationChild(child, taskId));
+    const contributors = persistence.children.map((child) => runtime.projectParentCoordinationChild(child, taskId));
+    const children = contributors.map(childSummary);
     const parentDevelopment = row.parent_development_json == null
       ? { development: null }
       : { development: { receipt: normalizeTaskDevelopmentReceipt(JSON.parse(row.parent_development_json), { expectedTaskId: row.parent_task_id }) } };
     if (!storedPlan) return withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, { operation: 'inspect', status: 'inspected', taskId, parentStatus: task.record.status, parentAcceptance: null, planningReview: null, blockers: [], effects: [], ...absentResult(task, children, receipt, parentDevelopment) });
     const plan = projectParentPlan(storedPlan);
     const handoff = development.development?.applicability?.handoff === 'current' ? [...(receipt.handoffs || [])].reverse().find((item) => item.contributionHandoff?.parentTaskId === taskId)?.contributionHandoff || null : null;
-    const parentDelivery = handoff ? { taskId, title: task.record.title, status: task.record.status, boundContributions: handoff.planned, plannedContributions: handoff.planned, deliveryProven: true, contributionHandoff: handoff, diagnostic: null } : null;
-    const progress = aggregate(plan, parentDelivery ? [...children, parentDelivery] : children);
+    const parentContributor = handoff ? { taskId, title: task.record.title, status: task.record.status, boundContributions: handoff.planned, deliveryProven: true, contributionHandoff: handoff, diagnostic: null } : null;
+    const progress = aggregate(plan, parentContributor ? [...contributors, parentContributor] : contributors);
     const planningReview = planningReviewSlot(row, plan.identity);
     const execution = options.execution || { ready: row.environment_status === 'ready' };
     const startup = startupReadiness(task, execution, development, plan, planningReview, progress);
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, {
-      operation: 'inspect', status: 'inspected', taskId, mode: 'parent-plan', parentStatus: task.record.status, parentPlan: storedPlan, plan,
-      parentAcceptance: receipt.parentAcceptance || null, parentDelivery, planningReview, startup, children, ...progress,
-      finalAcceptanceReady: progress.prerequisitesSatisfied, effects: [], diagnostic: null, nextActions: startup.next ? [startup.next.summary] : [],
+      operation: 'inspect', status: 'inspected', taskId, mode: 'parent-plan', parentStatus: task.record.status, plan: planSummary(plan),
+      parentAcceptance: receipt.parentAcceptance || null,
+      parentDelivery: parentContributor ? childSummary(parentContributor) : null,
+      planningReview: planningReviewSummary(planningReview), startup, children, ...progress,
+      effects: [], diagnostic: null,
     });
   }
 
   function inspectParentStartupReadiness(targetRoot, taskId, options = {}) {
     const inspected = inspectParentCoordination(targetRoot, taskId, options);
-    return { schemaVersion: PUBLIC_JSON_SCHEMAS.parentStartupReadiness, operation: 'inspect-startup', status: inspected.startup.status, taskId, mode: inspected.mode, ...inspected.startup, effects: [] };
+    const dependencyBlockers = inspected.contributions
+      .filter((item) => item.eligibility.status === 'waiting-dependency')
+      .map((item) => ({ contributionId: item.id, dependsOn: item.eligibility.blockers.map((blocker) => blocker.contributionId) }));
+    return { schemaVersion: PUBLIC_JSON_SCHEMAS.parentStartupReadiness, operation: 'inspect-startup', status: inspected.startup.status, taskId, mode: inspected.mode, ...inspected.startup, dependencyBlockers, effects: [] };
   }
 
   function refreshParentPlanning(targetRoot, taskId) {
     const current = inspectParentCoordination(targetRoot, taskId);
-    if (!current.parentPlan) throw parentCoordinationError('parent_plan_missing', 'Parent planning refresh需要current Parent Plan。', 409, null, '先记录Parent Plan。');
-    if (!current.planningReview.present || current.planningReview.applicability !== 'current' || current.planningReview.result?.conclusion?.outcome !== 'ready') throw parentCoordinationError('parent_planning_review_not_ready', 'Parent planning refresh需要绑定current Plan identity且outcome为ready的Planning Review。', 409);
+    if (!current.plan) throw parentCoordinationError('parent_plan_missing', 'Parent planning refresh需要current Parent Plan。', 409, null, '先记录Parent Plan。');
+    if (!current.planningReview.present || current.planningReview.applicability !== 'current' || current.planningReview.outcome !== 'ready') throw parentCoordinationError('parent_planning_review_not_ready', 'Parent planning refresh需要绑定current Plan identity且outcome为ready的Planning Review。', 409);
     const receipt = runtime.inspectTaskDevelopment(targetRoot, taskId).development?.receipt;
-    if (!receipt || receipt.planning.targetIdentity !== current.parentPlan.identity) throw parentCoordinationError('parent_planning_snapshot_stale', 'Development planning snapshot与current Parent Plan不一致。', 409);
+    if (!receipt || receipt.planning.targetIdentity !== current.plan.identity) throw parentCoordinationError('parent_planning_snapshot_stale', 'Development planning snapshot与current Parent Plan不一致。', 409);
     const result = runtime.recordTaskDevelopmentPlanning(targetRoot, taskId, { changeDispositions: receipt.taskContext.changes, planning: { targetIdentity: receipt.planning.targetIdentity, nodes: receipt.planning.nodes } });
     return { ...inspectParentCoordination(targetRoot, taskId), operation: 'refresh-planning', status: 'refreshed', effects: result.effects };
   }
@@ -240,7 +296,7 @@ export function registerParentCoordinationApplication(runtime) {
   function recordParentPlan(targetRoot, taskId, input) {
     assertFields(input, new Set(['plan']), 'Parent Plan record');
     const current = inspectParentCoordination(targetRoot, taskId);
-    if (current.parentPlan) throw parentCoordinationError('parent_plan_already_exists', 'Parent Plan已存在；使用reconcile并提供expected identity。', 409, { identity: current.parentPlan.identity });
+    if (current.plan) throw parentCoordinationError('parent_plan_already_exists', 'Parent Plan已存在；使用reconcile并提供expected identity。', 409, { identity: current.plan.identity });
     const result = runtime.recordTaskParentPlan(targetRoot, taskId, { plan: createParentPlan(input.plan) });
     return { ...inspectParentCoordination(targetRoot, taskId), operation: 'record', status: 'recorded', effects: result.effects };
   }
@@ -254,15 +310,14 @@ export function registerParentCoordinationApplication(runtime) {
     const referenced = new Set();
     for (const child of current.children) {
       for (const id of child.boundContributions) referenced.add(id);
-      const handoff = child.contributionHandoff;
-      if (!handoff) continue;
+      const delivery = child.delivery;
+      if (!delivery) continue;
       for (const id of [
-        ...handoff.planned,
-        ...handoff.delivered,
-        ...handoff.extra.map((item) => item.contributionId),
-        ...handoff.residual.map((item) => item.contributionId),
-        ...handoff.superseded.flatMap((item) => [item.contributionId, item.deliveredByContributionId]),
-        ...handoff.affected.map((item) => item.contributionId),
+        ...delivery.delivered,
+        ...delivery.extra,
+        ...delivery.residual,
+        ...delivery.superseded.flatMap((item) => [item.contributionId, item.deliveredByContributionId]),
+        ...delivery.affected,
       ]) referenced.add(id);
     }
     const removedReferences = [...referenced].filter((id) => !nextIds.has(id)).sort();
@@ -280,7 +335,7 @@ export function registerParentCoordinationApplication(runtime) {
   function acceptParentCoordination(targetRoot, taskId, input) {
     assertFields(input, new Set(['expectedPlanIdentity', 'summary']), 'Parent final acceptance');
     const current = inspectParentCoordination(targetRoot, taskId);
-    if (!current.parentPlan || current.parentPlan.identity !== input.expectedPlanIdentity) throw parentCoordinationError('parent_plan_conflict', 'Parent final acceptance expected identity已陈旧。', 409, { current: current.parentPlan?.identity ?? null, expected: input.expectedPlanIdentity });
+    if (!current.plan || current.plan.identity !== input.expectedPlanIdentity) throw parentCoordinationError('parent_plan_conflict', 'Parent final acceptance expected identity已陈旧。', 409, { current: current.plan?.identity ?? null, expected: input.expectedPlanIdentity });
     if (!current.prerequisitesSatisfied) throw parentCoordinationError('parent_acceptance_prerequisites_incomplete', 'Parent final acceptance前置条件尚未满足。', 409, { blockers: current.blockers });
     const result = runtime.recordTaskParentAcceptance(targetRoot, taskId, input);
     return { ...inspectParentCoordination(targetRoot, taskId), operation: 'accept', status: result.status, effects: result.effects };

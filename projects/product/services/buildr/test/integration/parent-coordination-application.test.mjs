@@ -55,13 +55,38 @@ function parentPlan() {
   };
 }
 
+function realisticParentPlan(label, contributionCount) {
+  return {
+    outcome: `${label}在单一交付边界内完成，并由Parent显式确认跨Contribution集成结果。`,
+    architectureDecisions: Array.from({ length: 12 }, (_, index) => `${label}架构决定${index + 1}：一个事实只有一个authority，运行时投影不得复制持久化业务状态。`),
+    contributions: Array.from({ length: contributionCount }, (_, index) => ({
+      id: `${label.toLowerCase()}-${index + 1}`,
+      priority: index < 4 ? `P0-${index + 1}` : `P1-${index - 3}`,
+      title: `${label} bounded contribution ${index + 1}`,
+      objective: `交付${label}第${index + 1}个有界能力，并保持Application、CLI、HTTP与Web消费者使用同一公开契约。`,
+      directions: [
+        '从权威持久化事实派生当前状态，避免建立第二份进度或生命周期authority。',
+        '使用聚焦测试覆盖正常、阻塞、历史兼容读取与显式最终验收路径。',
+      ],
+      boundaries: [
+        '不得把Child状态复制进Parent Plan，也不得用Child completed推断Parent完成。',
+        '不得扫描Workspace文件系统来补齐公开响应。',
+      ],
+      expectedChild: `负责${label}工作项${index + 1}的独立Child Task`,
+      dependencies: index === 0 ? [] : [`${label.toLowerCase()}-${index}`],
+    })),
+    finalAcceptance: Array.from({ length: 10 }, (_, index) => `${label}最终验收${index + 1}：所有相关Contribution都有明确交付、残留或替代处置。`),
+  };
+}
+
 test('ordinary Task保持absent，不扫描或自动backfill Parent Plan', (t) => {
   const current = fixture(t);
   current.runtime.createTaskRecord(current.root, { taskId: 'legacy-task', title: 'Legacy', intent: 'Remain readable.', projects: [], services: [], changes: [] });
   const before = current.runtime.inspectTaskRecord(current.root, 'legacy-task').recordDigest;
   const inspected = current.runtime.inspectParentCoordination(current.root, 'legacy-task');
   assert.equal(inspected.mode, 'ordinary');
-  assert.equal(inspected.parentPlan, null);
+  assert.equal(inspected.plan, null);
+  assert.equal('parentPlan' in inspected, false);
   assert.equal(inspected.startup.status, 'not-applicable');
   assert.equal(inspected.diagnostic, null);
   assert.equal(current.runtime.inspectTaskRecord(current.root, 'legacy-task').recordDigest, before);
@@ -86,16 +111,15 @@ test('已保存v1 Parent Plan保持原identity并经read model双读', (t) => {
   } finally { opened.database.close(); }
   const inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
   assert.equal(inspected.mode, 'parent-plan');
-  assert.equal(inspected.parentPlan.schemaVersion, 'buildr.parent-plan/v1');
-  assert.equal(inspected.parentPlan.identity, legacyPlan.identity);
+  assert.equal('parentPlan' in inspected, false);
+  assert.equal(inspected.plan.identity, legacyPlan.identity);
   assert.equal(inspected.plan.sourceSchemaVersion, 'buildr.parent-plan/v1');
   assert.equal(inspected.contributions[0].expectation.child, 'child-task');
   assert.equal(inspected.contributions[0].actual.status, 'unassigned');
   const upgraded = current.runtime.reconcileParentPlan(current.root, 'parent-task', {
     expectedPlanIdentity: legacyPlan.identity, plan: parentPlan(), reason: 'Explicitly upgrade the legacy coordination plan to v2.',
   });
-  assert.equal(upgraded.parentPlan.schemaVersion, 'buildr.parent-plan/v2');
-  assert.notEqual(upgraded.parentPlan.identity, legacyPlan.identity);
+  assert.notEqual(upgraded.plan.identity, legacyPlan.identity);
   assert.equal(upgraded.plan.sourceSchemaVersion, 'buildr.parent-plan/v2');
 });
 
@@ -130,7 +154,7 @@ test('Parent startup按真实安全顺序推进Review、gate refresh与首个eli
   assert.equal(startup.next.action, 'planning-review');
 
   current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self',
+    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self',
     reviewed: ['Parent outcome', 'Architecture invariants', 'Contribution Map', 'Dependencies', 'Final acceptance'],
     uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Parent Plan is ready.' },
   });
@@ -147,7 +171,7 @@ test('Parent startup按真实安全顺序推进Review、gate refresh与首个eli
   assert.equal(eligible.actual.status, 'unassigned');
   assert.equal(eligible.eligibility.status, 'eligible');
   assert.equal(refreshed.startup.blockers.length, 0);
-  assert.deepEqual(refreshed.startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
+  assert.equal('dependencyBlockers' in refreshed.startup, false);
 });
 
 test('Parent planning refresh不接受缺失、stale或changes-required Review', (t) => {
@@ -156,7 +180,7 @@ test('Parent planning refresh不接受缺失、stale或changes-required Review',
   const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
   assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
   current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
+    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
     conclusion: { outcome: 'changes-required', summary: 'Plan must change.' },
   });
   assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
@@ -167,7 +191,7 @@ test('Parent startup只在没有eligible Contribution时暴露依赖阻塞', (t)
   createTasks(current);
   const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
   current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
+    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
     conclusion: { outcome: 'ready', summary: 'Ready.' },
   });
   current.runtime.refreshParentPlanning(current.root, 'parent-task');
@@ -183,20 +207,21 @@ test('Parent Plan、Child binding与派生进度不复制Child状态，completed
   const current = fixture(t);
   createTasks(current);
   let result = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  const planIdentity = result.parentPlan.identity;
-  const planBytes = JSON.stringify(result.parentPlan);
+  const planIdentity = result.plan.identity;
+  const planBytes = JSON.stringify(result.plan);
   current.runtime.recordTaskReview(current.root, 'parent-task', {
     reviewType: 'planning', targetIdentity: planIdentity, method: 'self',
     reviewed: ['Parent outcome', 'Architecture invariants', 'Contribution Map', 'Dependencies', 'Final acceptance'],
     uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Coordination plan is ready.' },
   });
   result = current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  assert.deepEqual(result.children[0].plannedContributions, ['child-delivery']);
+  assert.deepEqual(result.children[0].boundContributions, ['child-delivery']);
+  assert.equal('plannedContributions' in result.children[0], false);
   assert.equal(result.parentStatus, 'active');
   const childMode = current.runtime.inspectParentCoordination(current.root, 'child-task');
   assert.equal(childMode.mode, 'child');
   assert.equal(childMode.parentSource.taskId, 'parent-task');
-  assert.deepEqual(childMode.parentSource.bindings, ['child-delivery']);
+  assert.deepEqual(childMode.parentSource.boundContributions, ['child-delivery']);
   assert.deepEqual(childMode.parentSource.contributions.map((item) => [item.title, item.bindingStatus]), [['Child delivery', 'active']]);
 
   current.runtime.completeTaskRecord(current.root, 'child-task', { summary: 'Top-level Child marked completed without a Finish handoff.', noChange: false });
@@ -205,7 +230,10 @@ test('Parent Plan、Child binding与派生进度不复制Child状态，completed
   assert.equal(result.children[0].status, 'completed');
   assert.equal(result.children[0].deliveryProven, false);
   assert.equal(result.contributions.find((item) => item.id === 'child-delivery').actual.status, 'unproven');
-  assert.equal(JSON.stringify(result.parentPlan), planBytes);
+  assert.equal(JSON.stringify(result.plan), planBytes);
+  assert.equal('contributions' in result.plan, false);
+  assert.equal('result' in result.planningReview, false);
+  assert.equal(result.planningReview.outcome, 'ready');
   assert.equal(result.planningReview.applicability, 'current');
   assert.throws(() => current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: planIdentity, summary: 'Accept.' }), (error) => error.code === 'parent_acceptance_prerequisites_incomplete');
   assert.throws(() => current.runtime.completeTaskRecord(current.root, 'parent-task', { summary: 'All Children look done.', noChange: false }), (error) => error.code === 'parent_final_acceptance_required');
@@ -213,9 +241,21 @@ test('Parent Plan、Child binding与派生进度不复制Child状态，completed
   const cli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'inspect', 'parent-task', '--target', current.root, '--json'], { encoding: 'utf8' });
   assert.equal(cli.status, 0, cli.stderr);
   const publicResult = JSON.parse(cli.stdout);
-  assert.equal(publicResult.schemaVersion, 'buildr.parent-coordination-result/v2');
+  assert.equal(publicResult.schemaVersion, 'buildr.parent-coordination-result/v3');
+  for (const field of ['parentPlan', 'finalAcceptanceReady', 'nextActions']) assert.equal(field in publicResult, false, field);
   assert.deepEqual(publicResult.contributions, result.contributions);
   assert.deepEqual(publicResult.children, result.children);
+
+  const inputFile = path.join(current.root, 'parent-plan-input.json');
+  fs.writeFileSync(inputFile, JSON.stringify(parentPlan()));
+  const blockedCli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'record', 'parent-task', '--target', current.root, '--input', inputFile, '--json'], { encoding: 'utf8' });
+  assert.equal(blockedCli.status, 1, blockedCli.stderr);
+  const blockedResult = JSON.parse(blockedCli.stdout);
+  assert.equal(blockedResult.schemaVersion, 'buildr.parent-coordination-result/v3');
+  assert.equal(blockedResult.status, 'blocked');
+  assert.equal(blockedResult.diagnostic.code, 'parent_plan_already_exists');
+  assert.equal(typeof blockedResult.diagnostic.nextAction, 'string');
+  assert.equal('nextActions' in blockedResult, false);
 });
 
 test('reconcile使用optimistic identity并且没有新增progress或lifecycle表', (t) => {
@@ -223,26 +263,26 @@ test('reconcile使用optimistic identity并且没有新增progress或lifecycle�
   createTasks(current);
   const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
   current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.parentPlan.identity, method: 'self', reviewed: ['Plan v2'], uncovered: [], findings: [],
+    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan v2'], uncovered: [], findings: [],
     conclusion: { outcome: 'ready', summary: 'Original plan is ready.' },
   });
   current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
   assert.throws(() => current.runtime.reconcileParentPlan(current.root, 'parent-task', { expectedPlanIdentity: 'sha256-0000000000000000000000000000000000000000000000000000000000000000', plan: parentPlan(), reason: 'Stale writer.' }), (error) => error.code === 'parent_plan_conflict');
   assert.throws(() => current.runtime.reconcileParentPlan(current.root, 'parent-task', {
-    expectedPlanIdentity: recorded.parentPlan.identity,
+    expectedPlanIdentity: recorded.plan.identity,
     reason: 'Invalidly erase active Child ownership.',
     plan: { ...parentPlan(), contributions: parentPlan().contributions.filter((item) => item.id !== 'child-delivery').map((item) => ({ ...item, dependencies: [] })) },
   }), (error) => error.code === 'parent_plan_referenced_contribution_removed');
   const reconciled = current.runtime.reconcileParentPlan(current.root, 'parent-task', {
-    expectedPlanIdentity: recorded.parentPlan.identity,
+    expectedPlanIdentity: recorded.plan.identity,
     reason: 'The integration Contribution now has a clearer expected implementation shape.',
     plan: { ...parentPlan(), contributions: parentPlan().contributions.map((item) => item.id === 'parent-integration' ? { ...item, expectedChild: 'A focused integration Child' } : item) },
   });
   assert.equal(reconciled.status, 'reconciled');
-  assert.notEqual(reconciled.parentPlan.identity, recorded.parentPlan.identity);
+  assert.notEqual(reconciled.plan.identity, recorded.plan.identity);
   assert.equal(reconciled.planningReview.applicability, 'stale');
   current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: reconciled.parentPlan.identity, method: 'self', reviewed: ['Updated Plan v2'], uncovered: [], findings: [],
+    reviewType: 'planning', targetIdentity: reconciled.plan.identity, method: 'self', reviewed: ['Updated Plan v2'], uncovered: [], findings: [],
     conclusion: { outcome: 'ready', summary: 'Updated plan is ready.' },
   });
   const refreshed = current.runtime.refreshParentPlanning(current.root, 'parent-task');
@@ -290,9 +330,9 @@ test('saved Contribution Handoff派生delivered/extra/superseded，Parent仍需�
   ]);
   assert.equal(inspected.prerequisitesSatisfied, true);
   assert.equal(inspected.parentStatus, 'active');
-  inspected = current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.parentPlan.identity, summary: 'Integrated behavior and all invariants are accepted.' });
+  inspected = current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.plan.identity, summary: 'Integrated behavior and all invariants are accepted.' });
   assert.equal(inspected.parentStatus, 'active');
-  assert.equal(inspected.parentAcceptance.planIdentity, recorded.parentPlan.identity);
+  assert.equal(inspected.parentAcceptance.planIdentity, recorded.plan.identity);
   current.runtime.completeTaskRecord(current.root, 'parent-task', { summary: 'Explicit Parent completion after final integration acceptance.', noChange: false });
   assert.equal(current.runtime.inspectTaskRecord(current.root, 'parent-task').record.status, 'completed');
 });
@@ -317,5 +357,29 @@ test('partial delivery保持residual且不能被Parent final acceptance越过', 
   const inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
   assert.equal(inspected.contributions.find((item) => item.id === 'child-delivery').actual.status, 'residual');
   assert.equal(inspected.prerequisitesSatisfied, false);
-  assert.throws(() => current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.parentPlan.identity, summary: 'Too early.' }), (error) => error.code === 'parent_acceptance_prerequisites_incomplete');
+  assert.throws(() => current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.plan.identity, summary: 'Too early.' }), (error) => error.code === 'parent_acceptance_prerequisites_incomplete');
+});
+
+test('Parent Coordination v3在两类真实规模计划上保持小于25 KiB且至少缩减50%', (t) => {
+  for (const [label, contributionCount] of [['release', 7], ['architecture', 10]]) {
+    const current = fixture(t);
+    createTasks(current);
+    const input = realisticParentPlan(label, contributionCount);
+    const inspected = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: input });
+    const legacyEquivalent = {
+      ...inspected,
+      schemaVersion: 'buildr.parent-coordination-result/v2',
+      parentPlan: { schemaVersion: 'buildr.parent-plan/v2', identity: inspected.plan.identity, ...input },
+      plan: { ...inspected.plan, contributions: input.contributions },
+      contributions: inspected.contributions.map((item) => ({ ...item, expectedChild: item.expectation.child })),
+      children: inspected.children.map((child) => ({ ...child, plannedContributions: child.boundContributions, contributionHandoff: null })),
+      finalAcceptanceReady: inspected.prerequisitesSatisfied,
+      nextActions: inspected.startup.next ? [inspected.startup.next.summary] : [],
+      startup: { ...inspected.startup, dependencyBlockers: [] },
+    };
+    const v3Bytes = Buffer.byteLength(JSON.stringify(inspected));
+    const v2Bytes = Buffer.byteLength(JSON.stringify(legacyEquivalent));
+    assert.ok(v3Bytes <= 25 * 1024, `${label}: ${v3Bytes} B exceeds 25 KiB`);
+    assert.ok(v3Bytes <= v2Bytes * 0.5, `${label}: ${v3Bytes} B is not at least 50% smaller than ${v2Bytes} B`);
+  }
 });

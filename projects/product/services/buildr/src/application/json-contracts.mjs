@@ -24,7 +24,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskTerminalDelivery: 'buildr.task-terminal-delivery/v1',
   taskRecordView: 'buildr.task-record-view/v2',
   taskRecordList: 'buildr.task-record-list/v4',
-  parentCoordinationResult: 'buildr.parent-coordination-result/v2',
+  parentCoordinationResult: 'buildr.parent-coordination-result/v3',
   parentStartupReadiness: 'buildr.parent-startup-readiness/v2',
   parentPlanInputSchema: 'buildr.parent-plan-input-schema/v2',
   parentPlanInputExample: 'buildr.parent-plan-input-example/v2',

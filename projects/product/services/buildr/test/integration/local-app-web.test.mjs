@@ -172,7 +172,7 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(coordination, /item\.objective/);
   assert.match(coordination, /预期：[\s\S]*执行：[\s\S]*实际：/);
   assert.match(coordination, /actualChild[\s\S]*taskId[\s\S]*taskStatusLabel/);
-  assert.match(coordination, /review\.result\?\.conclusion\?\.outcome/);
+  assert.match(coordination, /review\.outcome/);
   assert.match(coordination, /child-parent-source[\s\S]*parentSource\?\.contributions/);
   assert.ok(coordination.indexOf('parent-plan-workbench') < coordination.indexOf('parent-plan-architecture'));
   assert.ok(coordination.indexOf('parent-plan-architecture') < coordination.indexOf('parent-plan-acceptance'));
@@ -183,7 +183,9 @@ test('任务详情使用概览、预演、研发、证据、复盘、环境六�
   assert.match(coordination, /function AcceptanceList[\s\S]*parent-acceptance-list/);
   assert.match(coordination, /parent-governance-details[\s\S]*技术治理事实/);
   assert.match(coordination, /byId\.get\(id\)\?\.title[\s\S]*<code>\{id\}<\/code>/);
-  assert.match(coordinationModel, /dependencyBlockers\?: ParentDependencyBlocker\[\]/);
+  assert.doesNotMatch(coordinationModel, /dependencyBlockers/);
+  assert.doesNotMatch(coordinationModel, /plannedContributions/);
+  assert.match(coordinationModel, /boundContributions: string\[\]/);
   assert.match(coordinationStyles, /@media \(max-width: 700px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(coordinationStyles, /parent-plan-workbench[\s\S]*max-height: clamp\(560px, 68vh, 760px\)/);
   assert.match(coordinationStyles, /parent-plan-workbench > nav,[\s\S]*parent-contribution-detail[\s\S]*overflow: auto/);

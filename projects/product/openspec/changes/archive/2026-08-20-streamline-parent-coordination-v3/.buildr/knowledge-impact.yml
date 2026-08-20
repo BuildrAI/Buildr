@@ -1,0 +1,46 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: streamline-parent-coordination-v3
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/streamline-parent-coordination-v3/brief.md
+    reason: 公开协议、消费者、迁移与验收需要人类可读入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/streamline-parent-coordination-v3/proposal.md
+      - openspec/changes/streamline-parent-coordination-v3/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Parent Coordination公开read model与专业Result投影边界变化。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/parent-child-task-coordination/spec.md
+      - openspec/changes/streamline-parent-coordination-v3/specs/parent-child-task-coordination/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Application、CLI、HTTP和JSON identity升级到v3。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/public-json-contracts/spec.md
+      - openspec/changes/streamline-parent-coordination-v3/specs/public-json-contracts/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Buildr Web只消费Parent Coordination v3 canonical字段。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/local-app-web-client/spec.md
+      - openspec/changes/streamline-parent-coordination-v3/specs/local-app-web-client/spec.md
+terminology:
+  status: not-applicable
+  termsConsulted:
+    - Parent Coordination
+    - Parent Plan
+    - Contribution Handoff
+  canonicalTerms: []
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/specs/parent-child-task-coordination/spec.md
+    - openspec/knowledge/glossary.md
+unresolvedItems: []

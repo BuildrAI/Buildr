@@ -39,6 +39,8 @@ Child必须先通过Task Record绑定Parent，再建立自己的Development Rece
 
 Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明，`expectedChild`也不能替代真实Child relation与binding。
 
+Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：Plan identity与治理摘要取`plan`，工作项取唯一顶层`contributions`，预期Child取`expectation.child`，真实Child binding取`boundContributions`，下一步取`startup.next`。不得期待v2的raw `parentPlan`、`plan.contributions`、顶层`nextActions`、`finalAcceptanceReady`、Child `plannedContributions`或完整Review/Handoff Result；需要完整长期事实时回到对应专业authority，而不是要求Parent Coordination复制。
+
 Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
 
 所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。随后继续正常Candidate、Completion Review、decision、handoff与Formal Finish。

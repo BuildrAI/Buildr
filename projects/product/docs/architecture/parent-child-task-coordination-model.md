@@ -112,10 +112,12 @@ Child顶层`completed`但没有与Finish completion association匹配的Contribu
 
 `Parent Coordination Application`是唯一组合边界。它通过专用只读repository，在同一个read-only SQLite connection内以固定2条参数化查询读取当前Task、直接Parent/Children及Task Development、Task Review、Task Environment与Task Finish已保存事实，返回：
 
-- Parent Plan、Parent status、Planning Review与显式final acceptance；
-- 每个直接Child的identity、顶层状态、planned binding、matching handoff与diagnostic；
+- 紧凑Parent Plan摘要、Parent status、Planning Review摘要与显式final acceptance；
+- 每个直接Child的identity、顶层状态、唯一`boundContributions`、matching delivery摘要与diagnostic；
 - 每个Contribution同时返回预期轴`expected | none`、可执行轴`eligible | waiting-dependency | not-eligible`与实际轴`unassigned | bound | active | delivered | residual | superseded | unproven`；
-- `prerequisitesSatisfied`、blockers与`finalAcceptanceReady`。
+- 唯一顶层Contribution Map、`prerequisitesSatisfied`、blockers与`startup.next`。
+
+公开响应固定为`buildr.parent-coordination-result/v3`。它不再返回raw `parentPlan`、`plan.contributions`、`finalAcceptanceReady`、顶层`nextActions`、Child `plannedContributions`或完整`contributionHandoff`，也不重复work item的`expectedChild`。完整Parent Plan、Review Result与Contribution Handoff仍由各自既有authority保存；v3只投影UI、CLI与Agent协调当前动作所需字段。独立Parent startup reader继续用`buildr.parent-startup-readiness/v2`返回专用`dependencyBlockers`。
 
 Repository不建立表、view、cache或writer，查询次数不随Child数量增长；Application不在GET/inspect时调用live Environment provider、逐Child专业Application或扫描文件系统，也不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
 

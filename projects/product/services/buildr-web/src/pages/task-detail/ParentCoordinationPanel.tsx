@@ -185,7 +185,7 @@ export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
           <Fact label="Plan schema" value={data.plan?.sourceSchemaVersion || '—'} />
           <Fact label="Plan identity" value={data.plan?.identity || '—'} />
           <Fact label="最终集成验收" value={data.parentAcceptance ? `${data.parentAcceptance.summary} · ${formatDateTime(data.parentAcceptance.acceptedAt)}` : '尚未记录'} />
-          <Fact label="Planning Review" value={review?.present ? `${review.result?.conclusion?.outcome || '未知'} · ${review.applicability || '未知'}` : '尚未记录'} />
+          <Fact label="Planning Review" value={review?.present ? `${review.outcome || '未知'} · ${review.applicability || '未知'}` : '尚未记录'} />
         </dl>
       </details>
     </section>
