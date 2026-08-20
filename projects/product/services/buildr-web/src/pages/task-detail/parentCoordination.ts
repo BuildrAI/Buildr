@@ -98,6 +98,53 @@ export type ParentCoordinationResult = {
   diagnostic?: CoordinationDiagnostic | null;
 };
 
+export type ParentContributionProgressGroupId = 'active-delivered' | 'startable' | 'waiting';
+
+export type ParentContributionProgressItem = {
+  contribution: ParentContribution;
+  children: ParentCoordinationChild[];
+  groupId: ParentContributionProgressGroupId;
+  deliveryProven: boolean;
+};
+
+export type ParentContributionProgressGroup = {
+  id: ParentContributionProgressGroupId;
+  label: string;
+  items: ParentContributionProgressItem[];
+};
+
+const progressGroupLabels: Record<ParentContributionProgressGroupId, string> = {
+  'active-delivered': '进行中 / 已交付',
+  startable: '可启动',
+  waiting: '等待依赖',
+};
+
+export function buildContributionProgressGroups(
+  contributions: ParentContribution[],
+  children: ParentCoordinationChild[],
+): ParentContributionProgressGroup[] {
+  const items = contributions.map((contribution): ParentContributionProgressItem => {
+    const boundChildren = children.filter((child) => child.boundContributions.includes(contribution.id));
+    const hasActualWork = boundChildren.length > 0 || contribution.actual.status !== 'unassigned';
+    const groupId: ParentContributionProgressGroupId = hasActualWork
+      ? 'active-delivered'
+      : contribution.eligibility.status === 'eligible'
+        ? 'startable'
+        : 'waiting';
+    return {
+      contribution,
+      children: boundChildren,
+      groupId,
+      deliveryProven: boundChildren.some((child) => Boolean(child.deliveryProven && child.delivery)),
+    };
+  });
+  return (['active-delivered', 'startable', 'waiting'] as const).map((id) => ({
+    id,
+    label: progressGroupLabels[id],
+    items: items.filter((item) => item.groupId === id),
+  }));
+}
+
 export function contributionMap(contributions: ParentContribution[]) {
   return new Map(contributions.map((contribution) => [contribution.id, contribution]));
 }
@@ -115,7 +162,7 @@ export function contributionDispositionLabel(disposition: string) {
     residual: '仍有残留',
     superseded: '已替代',
     unproven: '交付未证明',
-  } as Record<string, string>)[disposition] || disposition;
+  } as Record<string, string>)[disposition] || '未知状态';
 }
 
 export function contributionEligibilityLabel(status: ParentContribution['eligibility']['status']) {
@@ -133,5 +180,5 @@ export function startupBlockerLabel(blocker: ParentStartupBlocker) {
     parent_startup_review_not_consumed: 'Development 尚未消费当前 Planning Review。',
     parent_startup_contribution_dependency_incomplete: '当前没有依赖已满足的 Contribution。',
   };
-  return labels[blocker.code] || blocker.code;
+  return labels[blocker.code] || '存在尚未解除的启动阻塞。';
 }

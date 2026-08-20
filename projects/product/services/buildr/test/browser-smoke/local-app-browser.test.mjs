@@ -200,14 +200,20 @@ capabilities:
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--project', 'demo', '--service', 'demo/api', '--target', root]);
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--parent', 'browser-task', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
-  for (const [taskId, title] of [['browser-delivered', '已交付浏览器任务'], ['browser-stale', '目标已变化浏览器任务']]) {
-    runBuildr(['task', 'create', taskId, '--title', title, '--intent', '验证 terminal delivery 与 live applicability 分离', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  for (const [taskId, title, parentTaskId] of [
+    ['browser-delivered', '已交付浏览器任务', null],
+    ['browser-stale', '目标已变化浏览器任务', null],
+    ['browser-contribution-delivered', '贡献交付子任务', 'browser-parent'],
+    ['browser-unproven', '交付未经证明子任务', 'browser-parent'],
+  ]) {
+    runBuildr(['task', 'create', taskId, '--title', title, '--intent', '验证 terminal delivery 与 live applicability 分离', ...(parentTaskId ? ['--parent', parentTaskId] : []), '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
     const planFile = path.join(path.dirname(root), `${taskId}-environment-plan.json`);
     fs.writeFileSync(planFile, `${JSON.stringify({ schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] })}\n`);
-    runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--agent', 'codex', '--target', root], controllerCli);
+    if (taskId !== 'browser-contribution-delivered') {
+      runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--agent', 'codex', '--target', root], controllerCli);
+    }
     runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   }
-  runBuildr(['task', 'create', 'browser-unproven', '--title', '交付未经证明任务', '--intent', '验证 completed 但缺少 matching Finish', '--target', root]);
   runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
@@ -232,7 +238,7 @@ function createSelectedFixture(root, controllerCli) {
   return selector;
 }
 
-function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contributionBinding = null) {
+function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contributionBinding = null, contributionHandoff = null) {
   runtime.beginTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
@@ -268,7 +274,7 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contr
     conclusion: { outcome: 'ready', summary: '候选可交付' },
   });
   runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
-  return runtime.createTaskDevelopmentHandoff(root, taskId).development.receipt;
+  return runtime.createTaskDevelopmentHandoff(root, taskId, contributionHandoff ? { contributionHandoff } : {}).development.receipt;
 }
 
 function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResult) {
@@ -663,8 +669,6 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
-    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
-    assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     await page.goto(`${workspaceUrl}/tasks/browser-parent`);
     await page.getByRole('button', { name: '预演', exact: true }).click();
     await page.locator('#task-preview-empty').waitFor({ state: 'visible' });
@@ -725,11 +729,36 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       reviewed: ['Parent Plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: '父任务计划可推进。' },
     });
     runtime.refreshParentPlanning(workspaceRoot, 'browser-parent');
+    const contributionEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-contribution-delivered', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
+    assert.equal(contributionEnvironment.status, 'ready', JSON.stringify(contributionEnvironment, null, 2));
+    const contributionDeliveredReceipt = prepareDevelopmentFixture(
+      runtime,
+      workspaceRoot,
+      'browser-contribution-delivered',
+      { parentTaskId: 'browser-parent', contributionIds: ['engineering-root-layout', 'parent-integration', 'infrastructure-boundaries'] },
+      {
+        parentTaskId: 'browser-parent',
+        planned: ['engineering-root-layout', 'parent-integration', 'infrastructure-boundaries'],
+        delivered: ['engineering-root-layout'],
+        extra: [],
+        residual: [{ contributionId: 'parent-integration', summary: '仍需完成父任务最终集成验收。' }],
+        superseded: [{ contributionId: 'infrastructure-boundaries', deliveredByContributionId: 'engineering-root-layout', reason: '工程根目录切片已经覆盖通用基础边界。' }],
+        affected: [],
+        nextAction: '继续验证父任务集成，并启动剩余能力子任务。',
+      },
+    );
+    runtime.completeTaskRecord(workspaceRoot, 'browser-contribution-delivered', { summary: '贡献交付子任务已完成', noChange: false });
+    const contributionDeliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-contribution-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
+    assert.equal(contributionDeliveredCleanup.status, 'cleaned', JSON.stringify(contributionDeliveredCleanup, null, 2));
+    writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-contribution-delivered', contributionDeliveredReceipt, contributionDeliveredCleanup);
+    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
+    assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
     prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-task', { parentTaskId: 'browser-parent', contributionIds: ['task-record-reference-slice'] });
+    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-unproven', { parentTaskId: 'browser-parent', contributionIds: ['task-capability-slices'] });
     runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 7, '默认目录显示全部任务；未完成排在前面');
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 8, '默认目录显示全部任务；未完成排在前面');
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);
@@ -760,42 +789,47 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
     await page.locator('.parent-plan-workbench').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.parent-summary-strip').innerText(), /可启动[\s\S]*1[\s\S]*明确处置[\s\S]*0 \/ 10/);
-    assert.match(await page.locator('.parent-contribution-rail').innerText(), /Task Record 参考切片[\s\S]*工程根目录布局[\s\S]*Parent 集成/);
-    assert.equal(await page.locator('.parent-contribution-detail').count(), 0, 'Contribution 详情默认不占用正文布局');
+    assert.match(await page.locator('.parent-summary-strip').innerText(), /可启动[\s\S]*0[\s\S]*已明确处置[\s\S]*2 \/ 10/);
+    assert.deepEqual(await page.locator('.parent-progress-group > header h4').allTextContents(), ['进行中 / 已交付', '可启动', '等待依赖']);
+    assert.equal(await page.locator('[data-progress-group="active-delivered"] .parent-progress-card').count(), 5);
+    assert.equal(await page.locator('[data-progress-group="startable"] .parent-progress-card').count(), 0);
+    assert.equal(await page.locator('[data-progress-group="waiting"] .parent-progress-card').count(), 5);
+    const deliveredContribution = page.locator('[data-contribution-id="engineering-root-layout"]');
+    assert.match(await deliveredContribution.innerText(), /工程根目录布局[\s\S]*贡献交付子任务[\s\S]*已完成[\s\S]*交付已证明[\s\S]*已交付[\s\S]*下一步行动/);
+    assert.match(await page.locator('[data-contribution-id="parent-integration"]').innerText(), /仍有残留[\s\S]*剩余工作[\s\S]*仍需完成父任务最终集成验收/);
+    assert.match(await page.locator('[data-contribution-id="infrastructure-boundaries"]').innerText(), /已替代[\s\S]*已取代[\s\S]*工程根目录切片已经覆盖通用基础边界/);
+    const unprovenContribution = page.locator('[data-contribution-id="task-capability-slices"]');
+    assert.match(await unprovenContribution.innerText(), /交付未经证明子任务[\s\S]*已完成[\s\S]*交付未证明/);
+    assert.equal(await unprovenContribution.locator('.parent-delivery-summary').count(), 0, 'completed 子任务没有交接时不得生成交付摘要');
+    const waitingContribution = page.locator('[data-contribution-id="workspace-capability-slices"]');
+    assert.match(await waitingContribution.innerText(), /等待依赖[\s\S]*阻塞原因[\s\S]*Parent 集成[\s\S]*parent-integration/);
     const parentLayout = await page.evaluate(() => {
       const work = document.querySelector('.parent-work-section').getBoundingClientRect();
       const architecture = document.querySelector('.parent-plan-architecture').getBoundingClientRect();
-      const priorities = [...document.querySelectorAll('.parent-priority-items .parent-priority')].slice(0, 3).map((item) => item.getBoundingClientRect());
+      const priorities = [...document.querySelectorAll('.parent-progress-card .parent-priority')].slice(0, 3).map((item) => item.getBoundingClientRect());
       return { workBottom: work.bottom, architectureTop: architecture.top, priorities: priorities.map((item) => ({ width: item.width, height: item.height })) };
     });
-    assert.ok(parentLayout.workBottom <= parentLayout.architectureTop, 'Contribution Map 不得覆盖后续架构决定区块');
-    assert.ok(parentLayout.priorities.every((item) => item.width >= 150 && item.height < 40), '自由格式 priority 在桌面端保持可读宽度');
-    await page.locator('[data-contribution-id="engineering-root-layout"]').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.parent-contribution-detail').innerText(), /P0-2[\s\S]*工程根目录布局[\s\S]*执行：可启动[\s\S]*实际：尚未分配/);
-    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
-    await page.locator('[data-contribution-id="parent-integration"]').click();
-    assert.match(await page.locator('.parent-contribution-detail').innerText(), /等待依赖[\s\S]*工程根目录布局[\s\S]*Task Record 参考切片/);
-    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
+    assert.ok(parentLayout.workBottom <= parentLayout.architectureTop, '迁移进度不得覆盖后续架构决定区块');
+    assert.ok(parentLayout.priorities.every((item) => item.width >= 130 && item.height < 40), '自由格式优先级在桌面端保持可读宽度');
+    await deliveredContribution.getByRole('link', { name: '贡献交付子任务', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-contribution-delivered`);
+    assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*工程根目录布局/);
+    await page.locator('.child-parent-source').getByRole('link', { name: '浏览器协调任务', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
     await page.locator('.parent-governance-details summary').click();
     const governanceFacts = await page.locator('.parent-governance-details').innerText();
-    assert.match(governanceFacts, /Planning Review[\s\S]*ready · current/);
+    assert.match(governanceFacts, /方案审查[\s\S]*已就绪 · 当前适用/);
     assert.doesNotMatch(governanceFacts, /undefined/);
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await page.locator('[data-contribution-id="task-record-reference-slice"]').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.parent-contribution-drawer .ant-drawer-content-wrapper').evaluate((item) => item.getBoundingClientRect().width <= window.innerWidth), true);
-    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.parent-progress-card').first().evaluate((item) => item.getBoundingClientRect().width <= window.innerWidth), true);
+    await page.locator('[data-contribution-id="task-record-reference-slice"] .parent-progress-detail summary').click();
+    assert.match(await page.locator('[data-contribution-id="task-record-reference-slice"] .parent-progress-detail').innerText(), /实现方向[\s\S]*边界[\s\S]*计划依赖/);
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.locator('.task-technical-overview > summary').click();
     await page.locator('#task-detail-children a').filter({ hasText: '浏览器任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
-    assert.match(await page.locator('.child-parent-source').innerText(), /PARENT 来源[\s\S]*浏览器协调任务[\s\S]*Task Record 参考切片[\s\S]*进行中/);
+    assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*Task Record 参考切片[\s\S]*进行中/);
     await page.locator('#task-detail-children a').filter({ hasText: '页面查看任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');

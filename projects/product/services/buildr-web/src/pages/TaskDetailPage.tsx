@@ -748,7 +748,12 @@ export function TaskDetailPage() {
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
-        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
+        <ParentCoordinationPanel
+          data={coordinationData}
+          loading={coordinationLoading}
+          onRefresh={() => { void refreshCoordination(); }}
+          taskHref={(childTaskId) => href(`/tasks/${encodeURIComponent(childTaskId)}`)}
+        />
         <details className={`task-technical-overview${coordinationData?.mode === 'parent-plan' ? ' parent-mode' : ' ordinary-mode'}`} open={coordinationData?.mode !== 'parent-plan'}>
           <summary>技术事实、Change 与 Task Record</summary>
         <section className="panel" id="task-professional-overview" aria-live="polite">
