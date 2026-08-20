@@ -24,19 +24,53 @@ function statusTone(status: string) {
   return 'neutral';
 }
 
+function priorityFamily(priority: string) {
+  return priority.split('-')[0] || priority;
+}
+
+function contributionSummaryStatus(contribution: ParentContribution) {
+  if (contribution.actual.status === 'unassigned') {
+    return {
+      label: contributionEligibilityLabel(contribution.eligibility.status),
+      tone: statusTone(contribution.eligibility.status),
+    };
+  }
+  return {
+    label: contributionDispositionLabel(contribution.actual.status),
+    tone: statusTone(contribution.actual.status),
+  };
+}
+
 function ContributionRail({ contributions, selectedId, onSelect }: { contributions: ParentContribution[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  const groups = contributions.reduce<Array<{ priority: string; items: ParentContribution[] }>>((result, contribution) => {
+    const priority = priorityFamily(contribution.priority);
+    const group = result.find((item) => item.priority === priority);
+    if (group) group.items.push(contribution);
+    else result.push({ priority, items: [contribution] });
+    return result;
+  }, []);
   return (
-    <ol className="parent-contribution-rail">
-      {contributions.map((item) => (
-        <li key={item.id}>
-          <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => onSelect(item.id)} data-contribution-id={item.id}>
-            <span className="parent-priority">{item.priority}</span>
-            <span className="parent-rail-copy"><strong>{item.title}</strong><small>{item.objective}</small></span>
-            <span className={`parent-status-dot ${statusTone(item.actual.status)}`} aria-label={contributionDispositionLabel(item.actual.status)} />
-          </button>
-        </li>
+    <div className="parent-contribution-rail parent-contribution-groups">
+      {groups.map((group) => (
+        <section className="parent-priority-group" key={group.priority}>
+          <header><span className={`parent-priority-family ${group.priority.toLowerCase()}`}>{group.priority}</span><strong>{group.items.length} 项工作</strong></header>
+          <ol className="parent-priority-items">
+            {group.items.map((item) => {
+              const summaryStatus = contributionSummaryStatus(item);
+              return (
+                <li key={item.id}>
+                  <button type="button" className={item.id === selectedId ? 'selected' : ''} onClick={() => onSelect(item.id)} data-contribution-id={item.id} aria-pressed={item.id === selectedId}>
+                    <span className="parent-priority">{item.priority}</span>
+                    <span className="parent-rail-copy"><strong>{item.title}</strong><small>{item.objective}</small></span>
+                    <span className={`parent-rail-state ${summaryStatus.tone}`}>{summaryStatus.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
       ))}
-    </ol>
+    </div>
   );
 }
 
@@ -58,12 +92,19 @@ function ContributionDetail({ contribution, byId }: { contribution: ParentContri
       </div>
       <section className="parent-dependency-summary">
         <h4>依赖</h4>
-        {contribution.dependencies.length ? contribution.dependencies.map((id) => <span key={id}>{byId.get(id)?.title || id}</span>) : <span>无前置依赖</span>}
+        {contribution.dependencies.length ? contribution.dependencies.map((id) => <span key={id}><strong>{byId.get(id)?.title || id}</strong><code>{id}</code></span>) : <span>无前置依赖</span>}
       </section>
-      {contribution.actualChild ? <p className="parent-actual-child">实际 Child：<strong>{contribution.actualChild.title}</strong> · <code>{contribution.actualChild.taskId}</code> · {taskStatusLabel(contribution.actualChild.status)}</p> : null}
-      {contribution.eligibility.blockers.length ? <p className="parent-wait-copy">等待：{contribution.eligibility.blockers.map((item) => item.title).join('、')}</p> : null}
+      <div className="parent-child-shape">
+        <section><span>预计 Child</span><strong>{contribution.expectation.status === 'expected' ? contribution.expectation.child : '无'}</strong></section>
+        <section><span>实际 Child</span>{contribution.actualChild ? <strong>{contribution.actualChild.title} · <code>{contribution.actualChild.taskId}</code> · {taskStatusLabel(contribution.actualChild.status)}</strong> : <strong>尚未绑定</strong>}</section>
+      </div>
+      {contribution.eligibility.blockers.length ? <p className="parent-wait-copy">等待：{contribution.eligibility.blockers.map((item) => <span key={item.contributionId}><strong>{item.title}</strong><code>{item.contributionId}</code></span>)}</p> : null}
     </article>
   );
+}
+
+function OrderedPlanList({ items }: { items: string[] }) {
+  return <ol className="parent-ordered-plan-list">{items.map((item, index) => <li key={`${index}-${item}`}><span>{String(index + 1).padStart(2, '0')}</span><p>{item}</p></li>)}</ol>;
 }
 
 export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
@@ -96,12 +137,12 @@ export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
   return (
     <section className="panel parent-coordination-panel" id="task-parent-coordination" aria-live="polite">
       <div className="panel-heading parent-plan-heading">
-        <div><p className="eyebrow">Parent Plan</p><h2>{data.plan?.outcome}</h2><p className="section-copy">直接消费 Parent Coordination Application 的派生 read model，以结构化 Contribution Map 协调范围、依赖与实际交付。</p></div>
+        <div><p className="eyebrow">Parent Overview</p><h2>{data.plan?.outcome}</h2><p className="section-copy">以完整 Parent Plan 为核心，协调工作范围、依赖、实际交付与最终集成验收。</p></div>
         <Button onClick={onRefresh} disabled={loading}>{loading ? '读取中…' : '刷新协调事实'}</Button>
       </div>
 
       <div className="parent-summary-strip">
-        <div><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div>
+        <div className="parent-next-action"><span>当前动作</span><strong>{data.startup?.next?.summary || '暂无下一步'}</strong></div>
         <div><span>可启动</span><strong>{data.startup?.eligibleContributions?.length || 0}</strong></div>
         <div><span>明确处置</span><strong>{completed} / {contributions.length}</strong></div>
         <div><span>最终验收</span><strong>{data.parentAcceptance ? '已记录' : data.prerequisitesSatisfied ? '待记录' : '未就绪'}</strong></div>
@@ -109,17 +150,24 @@ export function ParentCoordinationPanel({ data, loading, onRefresh }: Props) {
 
       {data.startup?.blockers?.length ? <div className="parent-blocker-banner">{data.startup.blockers.map((item) => <span key={`${item.code}-${item.contributionId || ''}`}>{startupBlockerLabel(item)}</span>)}</div> : null}
 
+      <div className="parent-section-heading"><div><p className="eyebrow">工作项</p><h3>Contribution Map</h3></div><span>选择左侧工作项查看完整方向与边界</span></div>
       <div className="parent-plan-workbench">
-        <nav aria-label="Contribution Map"><h3>Contribution Map</h3><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
+        <nav aria-label="Contribution Map"><ContributionRail contributions={contributions} selectedId={selectedId} onSelect={setSelectedId} /></nav>
         {selected ? <ContributionDetail contribution={selected} byId={byId} /> : <p className="empty-copy">尚无 Contribution。</p>}
       </div>
 
+      {(data.plan?.architectureDecisions?.length || 0) > 0 ? <section className="parent-plan-section parent-plan-architecture">
+        <div className="parent-section-heading"><div><p className="eyebrow">架构决定</p><h3>推进过程中保持不变的约束</h3></div><span>{data.plan?.architectureDecisions.length} 项</span></div>
+        <OrderedPlanList items={data.plan?.architectureDecisions || []} />
+      </section> : null}
+
+      {(data.plan?.finalAcceptance?.length || 0) > 0 ? <section className="parent-plan-section parent-plan-acceptance">
+        <div className="parent-section-heading"><div><p className="eyebrow">最终验收</p><h3>Parent 完成前必须共同满足</h3></div><span>{data.plan?.finalAcceptance.length} 项</span></div>
+        <OrderedPlanList items={data.plan?.finalAcceptance || []} />
+      </section> : null}
+
       <details className="technical-details parent-governance-details">
-        <summary>架构决定、最终验收与治理事实</summary>
-        <div className="parent-governance-grid">
-          <section><h3>架构决定</h3>{list(data.plan?.architectureDecisions || [], '尚未记录。')}</section>
-          <section><h3>最终验收条件</h3>{list(data.plan?.finalAcceptance || [], '尚未记录。')}</section>
-        </div>
+        <summary>技术治理事实</summary>
         <dl className="read-facts detail-facts">
           <Fact label="Plan schema" value={data.plan?.sourceSchemaVersion || '—'} />
           <Fact label="Plan identity" value={data.plan?.identity || '—'} />
