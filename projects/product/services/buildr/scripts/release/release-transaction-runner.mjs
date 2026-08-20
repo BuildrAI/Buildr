@@ -82,6 +82,11 @@ function packageVersionAt(execute, repo, commit) {
   return metadata?.version ?? null;
 }
 
+function taskContextProjection(record) {
+  if (!record) return record;
+  return { taskId: record.taskId, title: record.title, status: record.status };
+}
+
 async function defaultWait(delayMs) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
@@ -121,8 +126,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const runtime = dependencies.runtime ?? createRuntime();
     const releaseTaskResult = runtime.inspectTaskRecord(repo, options.releaseTask);
     const releaseTask = releaseTaskResult?.record;
-    const supportTasks = (options.supportTasks ?? []).map((taskId) => runtime.inspectTaskRecord(repo, taskId)?.record);
-    const retrospectiveSources = releaseTaskResult?.retrospectiveRelations?.sources ?? [];
+    const supportTasks = (options.supportTasks ?? []).map((taskId) => taskContextProjection(runtime.inspectTaskRecord(repo, taskId)?.record));
+    const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
     const environment = createReleaseEnvironmentBinding({
       task: releaseTask,
       environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
@@ -153,7 +158,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const devTree = fullCommit(execute, repo, `${devCommit}^{tree}`);
     if (devTree !== candidateTree) throw new Error(`Dev bridge tree ${devTree} does not match Candidate tree ${candidateTree}.`);
     context = createReleaseTransactionContext({
-      releaseTask,
+      releaseTask: taskContextProjection(releaseTask),
       retrospectiveSources,
       supportTasks,
       candidate: {
