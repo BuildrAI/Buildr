@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
-import { taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
+import { taskRecordEffectiveProjectCodes } from '../../task/domain/record/task-record.mjs';
 import { TASK_DEVELOPMENT_ACTIONS } from '../task-development/task-development-operation-contracts.mjs';
 import { compactTaskDevelopmentOperationResult } from '../task-development/task-development-result-projection.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';

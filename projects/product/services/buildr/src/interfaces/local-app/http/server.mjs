@@ -33,12 +33,12 @@ import { createLocalAppScheduledMaintenance } from '../runtime/scheduled-mainten
 import { readCliIdentity } from '../../cli/identity.mjs';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../../infrastructure/product-identity/web-profile.mjs';
 import { assertCurrentNpmLauncherBinding } from '../../../infrastructure/product-launcher/index.mjs';
+import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from '../../../task/interfaces/http/task-record-http.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = resolveProductResource('product/src/interfaces/local-app/web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
-const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
-const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'hasRetrospective', 'retrospectiveState']);
+const TASK_ID = TASK_RECORD_ID_SOURCE;
 const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],
@@ -204,25 +204,6 @@ async function readAllowedJsonBody(request, allowed, label) {
       error.details = { field };
       throw error;
     }
-  }
-  return input;
-}
-
-function taskQueryInput(searchParams) {
-  const input = {};
-  for (const field of new Set(searchParams.keys())) {
-    if (!TASK_QUERY_FIELDS.has(field)) {
-      const error = new Error(`Task list 不支持 query 参数：${field}。`);
-      error.code = 'task_api_query_forbidden'; error.status = 400; error.details = { field };
-      throw error;
-    }
-    const values = searchParams.getAll(field);
-    if (values.length !== 1) {
-      const error = new Error(`Task list query 参数不能重复：${field}。`);
-      error.code = 'task_api_query_invalid'; error.status = 400; error.details = { field };
-      throw error;
-    }
-    input[field] = values[0];
   }
   return input;
 }
@@ -452,17 +433,16 @@ export function createLocalWorkspaceServer(runtime, {
           error.status = 400;
           throw error;
         }
-        if (request.method === 'GET' && suffix === '/tasks') return jsonResponse(response, 200, runtime.queryTaskRecordViews(root, taskQueryInput(requestUrl.searchParams)));
-        const taskMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})$`));
-        if (request.method === 'GET' && taskMatch) return jsonResponse(response, 200, runtime.inspectTaskRecordView(root, taskMatch[1]));
-        if (request.method === 'PATCH' && taskMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addRetrospectiveSources', 'removeRetrospectiveSources']), 'Task update');
-          if (!Object.hasOwn(input, 'expectedRecordDigest')) {
-            const error = new Error('Task update 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error;
-          }
-          return jsonResponse(response, 200, runtime.updateTaskRecord(root, taskMatch[1], input));
-        }
+        const taskRecordResponse = await handleTaskRecordHttpRequest({
+          request,
+          suffix,
+          searchParams: requestUrl.searchParams,
+          root,
+          runtime,
+          authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
+          readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
+        });
+        if (taskRecordResponse) return jsonResponse(response, taskRecordResponse.status, taskRecordResponse.body);
         const taskOverviewMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/overview$`));
         if (request.method === 'GET' && taskOverviewMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'overview', root, taskOverviewMatch[1]));
@@ -551,20 +531,6 @@ export function createLocalWorkspaceServer(runtime, {
         if (request.method === 'GET' && taskUiPrototypeMatch) {
           const prototype = runtime.taskUiPrototype(root, taskUiPrototypeMatch[1], taskUiPrototypeMatch[2]);
           return uiPrototypeHtmlResponse(response, prototype.html);
-        }
-        const taskCompleteMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/complete$`));
-        if (request.method === 'POST' && taskCompleteMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
-          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task complete 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
-          return jsonResponse(response, 200, runtime.completeTaskRecord(root, taskCompleteMatch[1], input));
-        }
-        const taskAbandonMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/abandon$`));
-        if (request.method === 'POST' && taskAbandonMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
-          if (!Object.hasOwn(input, 'expectedRecordDigest')) { const error = new Error('Task abandon 必须包含 expectedRecordDigest。'); error.code = 'task_record_digest_required'; error.status = 400; throw error; }
-          return jsonResponse(response, 200, runtime.abandonTaskRecord(root, taskAbandonMatch[1], input));
         }
         const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
         if (request.method === 'GET' && taskDailyProgressMatch) return jsonResponse(response, 200, runtime.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));

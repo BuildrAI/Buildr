@@ -1,7 +1,9 @@
 export const TASK_RECORD_SCHEMA = 'buildr.task-record/v2';
 export const TASK_RECORD_STATUSES = Object.freeze(['todo', 'active', 'completed', 'abandoned']);
 
-const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+export const TASK_RECORD_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+
+const TASK_ID_PATTERN = new RegExp(`^${TASK_RECORD_ID_SOURCE}$`);
 const SCOPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function taskRecordError(code, message, status = 400, details = undefined, nextAction = undefined) {

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { isTaskRecordId } from '../task-record/task-record.mjs';
+import { isTaskRecordId } from '../../task/domain/record/task-record.mjs';
 
 export const TASK_EXECUTION_RECORD_SCHEMA = 'buildr.task-execution-record/v1';
 export const TASK_EXECUTION_RECORD_REDACTION_VERSION = 'buildr.task-execution-record-redaction/v1';

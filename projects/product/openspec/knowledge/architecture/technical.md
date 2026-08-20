@@ -7,6 +7,7 @@
 - Buildr Web Frontend Service root：`projects/product/services/buildr-web/`，与 `buildr` 同仓同级的 workspace Service，拥有 Buildr Web React/Vite 前端源码与正式构建；构建产物写入 `buildr` 的内部 `src/interfaces/local-app/web-dist/`。
 - 用户 Workspace 中由 Buildr 交付的 Rules/Skills/Components 是安装结果，只能由 Product checkout 的 update/sync 单向物化。
 - `.buildr/workspace.yml`、Workspace 根 Registry 与 Project 的 capabilities、commands、Service Registry 是用户 Workspace 持久化事实，不是产品包内容。npm package 只发布产品声明、Rule/Skill/Component/Command 内容与实现；`init`、Project create 和 `sync` 通过各领域 renderer/writer 生成缺失 Registry，再从 package 声明收敛 Builtins 与 Components，已有用户内容不由包内模板覆盖。
+- Buildr Service `src/` 正在从全局技术层渐进迁移为模块优先布局。Task Record 是首个已迁移纵向切片：Domain、Application、Persistence、CLI/HTTP Adapter 位于 `src/task/` 的对应内部技术层，`src/task/module.mjs` 是 repository 与 application 的单一运行时注册入口。SQLite 连接、全局有序 DDL migration、CLI registry 与 Buildr Web HTTP Host 继续属于跨模块平台或 composition；Task Environment、Development、Review、Verification、Retrospective、Finish 和 Parent Coordination 尚未迁移，不得因该切片被描述为整个 Task 模块已经完成。
 
 ## 运行结构
 

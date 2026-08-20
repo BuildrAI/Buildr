@@ -58,7 +58,7 @@ if (!entryContent.includes("from '../src/interfaces/cli/main.mjs'")) problems.pu
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
+  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
   'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
@@ -72,6 +72,9 @@ const requiredRuntime = [
   'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
   'infrastructure/sqlite/task-development-repository.mjs', 'infrastructure/sqlite/task-review-repository.mjs',
   'infrastructure/sqlite/task-verification-repository.mjs',
+  'task/module.mjs', 'task/domain/record/task-record.mjs',
+  'task/application/record/task-record-application.mjs', 'task/persistence/record/task-record-repository.mjs',
+  'task/interfaces/cli/task-record.mjs', 'task/interfaces/http/task-record-http.mjs',
   'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
   'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
   'application/domains/runtime.mjs', 'application/json-contracts.mjs',
@@ -94,12 +97,23 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 
 const sourceFiles = listFiles(sourceRoot, (file) => file.endsWith('.mjs'));
 const graph = new Map();
-const layerOf = (relative) => relative.split('/')[0];
+const layerOf = (relative) => {
+  const parts = relative.split('/');
+  if (parts[0] !== 'task') return parts[0];
+  if (parts.length === 2 && parts[1] === 'module.mjs') return 'module';
+  return {
+    domain: 'domain',
+    application: 'application',
+    persistence: 'infrastructure',
+    interfaces: 'interfaces',
+  }[parts[1]] || 'task';
+};
 const allowedTargets = {
   domain: new Set(['domain']),
-  application: new Set(['application', 'domain', 'infrastructure']),
+  application: new Set(['application', 'domain', 'infrastructure', 'module']),
   infrastructure: new Set(['infrastructure', 'domain']),
   interfaces: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
+  module: new Set(['application', 'domain', 'infrastructure']),
 };
 
 for (const file of sourceFiles) {
@@ -222,8 +236,19 @@ if (fs.existsSync(registry)) {
   if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');
 }
 
-const taskRecordApplication = path.join(sourceRoot, 'application', 'task-record', 'task-record-application.mjs');
-const taskRecordInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-record.mjs');
+const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'record', 'task-record-application.mjs');
+const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.mjs');
+const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.mjs');
+const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
+const composeRuntime = path.join(sourceRoot, 'application', 'compose-runtime.mjs');
+for (const relative of [
+  'domain/task-record/task-record.mjs',
+  'application/task-record/task-record-application.mjs',
+  'infrastructure/sqlite/task-record-repository.mjs',
+  'interfaces/cli/task-record.mjs',
+]) {
+  if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
+}
 if (fs.existsSync(taskRecordApplication)) {
   const source = fs.readFileSync(taskRecordApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskRecordCommand/.test(source)) {
@@ -235,6 +260,23 @@ if (fs.existsSync(taskRecordInterface)) {
   if (!source.includes('export function taskRecordCommand') || !source.includes('runtime.createTaskRecord')) {
     problems.push('Task Record CLI interface must adapt registry actions to the shared Application');
   }
+}
+if (fs.existsSync(taskRecordHttpInterface)) {
+  const source = fs.readFileSync(taskRecordHttpInterface, 'utf8');
+  for (const symbol of ['handleTaskRecordHttpRequest', 'runtime.queryTaskRecordViews', 'runtime.inspectTaskRecordView', 'runtime.updateTaskRecord', 'runtime.completeTaskRecord', 'runtime.abandonTaskRecord']) {
+    if (!source.includes(symbol)) problems.push(`Task Record HTTP interface must own ${symbol}`);
+  }
+}
+if (fs.existsSync(taskRecordModule)) {
+  const source = fs.readFileSync(taskRecordModule, 'utf8');
+  if (!source.includes('export function registerTaskRecordModule') || !source.includes('registerTaskRecordRepository(runtime)') || !source.includes('registerTaskRecordApplication(runtime)')) {
+    problems.push('Task Record module must register repository before application');
+  }
+}
+if (fs.existsSync(composeRuntime)) {
+  const source = fs.readFileSync(composeRuntime, 'utf8');
+  if (!source.includes("from '../task/module.mjs'") || !source.includes('registerTaskRecordModule')) problems.push('Product composition must consume the Task Record module entry');
+  if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Product composition must not register Task Record internals directly');
 }
 
 const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');

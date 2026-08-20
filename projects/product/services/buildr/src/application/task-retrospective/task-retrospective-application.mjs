@@ -1,5 +1,5 @@
 import { TASK_RETROSPECTIVE_FOCUS, TASK_RETROSPECTIVE_RESULT_SCHEMA, normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../../domain/task-retrospective/task-retrospective.mjs';
-import { isTaskRecordId } from '../../domain/task-record/task-record.mjs';
+import { isTaskRecordId } from '../../task/domain/record/task-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 const TASK_RETROSPECTIVE_LIST_STATUSES = Object.freeze(['pending', 'handled', 'no-action', 'all']);

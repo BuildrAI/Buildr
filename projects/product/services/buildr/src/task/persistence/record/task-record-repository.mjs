@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { isTaskRecordId, normalizeTaskRecord, taskRecordError } from '../../domain/task-record/task-record.mjs';
+import { isTaskRecordId, normalizeTaskRecord, taskRecordError } from '../../domain/record/task-record.mjs';
 
 function digestRecord(record) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex')}`;

@@ -1,6 +1,6 @@
-import { normalizeTaskRecord, taskRecordError } from '../../domain/task-record/task-record.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-prompt.mjs';
+import { normalizeTaskRecord, taskRecordError } from '../../domain/record/task-record.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { TASK_RETROSPECTIVE_PROMPT } from '../../../application/task-retrospective-prompt.mjs';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 const TASK_FINISH_COMPLETION_SUMMARY = '任务贡献已验证交付。';

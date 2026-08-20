@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { isTaskRecordId } from '../task-record/task-record.mjs';
+import { isTaskRecordId } from '../../task/domain/record/task-record.mjs';
 import { normalizeTaskEnvironmentPlan } from './task-environment-plan.mjs';
 
 export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v5';

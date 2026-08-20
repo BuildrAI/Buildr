@@ -15,23 +15,30 @@ Buildr Product MUST 使用 `bin/`、`src/`、`test/`、`scripts/` 和 `package/`
 - **AND** tracked source、test、package metadata、docs 和 active OpenSpec artifacts MUST NOT 引用旧 `tools/` 内部路径
 
 ### Requirement: Product 源码必须按职责和依赖方向分层
-Buildr `src/` MUST 将应用用例、基础设施 adapters 和外部接口分别组织到 `application/`、`infrastructure/` 和 `interfaces/`；真实的存储无关领域模型出现时 MUST 进入 `domain/`。Buildr MUST 保持接口调用应用用例、应用组合领域与基础设施能力、纯领域模型不依赖 adapters 的显式边界。
+Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，并在模块内部使用 `domain/`、`application/`、`persistence/` 和 `interfaces/` 表达技术职责；跨模块平台能力与尚未迁移的能力 MAY 在渐进迁移期间继续位于明确的全局技术层。Buildr MUST 保持接口调用应用用例、应用组合领域与持久化能力、纯领域模型不依赖 adapters 的显式边界，并 MUST NOT 为目录对称创建空层、重复实现或旧路径兼容 facade。
 
 #### Scenario: CLI 或本机应用调用 Workspace 用例
 - **WHEN** CLI、HTTP 或 Web adapter 读取或修改 Workspace
-- **THEN** interface MUST 调用 `application` 暴露的用例
-- **AND** domain MUST NOT 导入 CLI、HTTP、Web、filesystem、process、runtime 或测试模块
+- **THEN** interface MUST 调用所属模块或现有 `application` 暴露的用例
+- **AND** domain MUST NOT 导入 CLI、HTTP、Web、filesystem、process、runtime、persistence 或测试模块
 - **AND** application MUST NOT 依赖具体 interface implementation
 
 #### Scenario: 迁移带文件操作的旧领域 handler
 - **WHEN** 旧模块同时包含用例编排、filesystem 读取或 mutation
-- **THEN** 模块 MUST 进入 application owner，而不是仅因旧目录名进入 `domain/`
+- **THEN** 用例编排 MUST 进入所属模块的 application owner，而不是仅因旧目录名进入 `domain/`
+- **AND** filesystem 或数据库映射 MUST 进入所属模块的 persistence，或继续使用具有明确跨模块职责的 infrastructure adapter
 - **AND** Product MUST NOT 为目录对称创建没有真实模型职责的空 domain 层
 
 #### Scenario: 架构 verifier 扫描 imports
-- **WHEN** Product 验证检查 `src/` import graph
-- **THEN** verifier MUST 拒绝反向依赖、循环依赖和绕过 application composition 的跨领域隐式调用
-- **AND**诊断 MUST 标识违规 source 与 target module
+- **WHEN** Product 验证检查全局技术层与模块内部的 `src/` import graph
+- **THEN** verifier MUST 按文件的真实技术职责拒绝反向依赖、循环依赖和绕过 application composition 的跨模块隐式调用
+- **AND** 诊断 MUST 标识违规 source 与 target module
+
+#### Scenario: Task Record 作为首个纵向切片完成迁移
+- **WHEN** 架构 verifier 检查 Task Record 的 Domain、Application、Persistence、CLI/HTTP Adapter 和模块注册入口
+- **THEN** 这些实现 MUST 仅存在于 `src/task/` 的对应技术层，并由 `src/task/module.mjs` 提供单一运行时注册入口
+- **AND** 旧全局技术层 MUST NOT 保留 Task Record 实现、re-export 或兼容 facade
+- **AND** Task Record 公开 CLI/HTTP/JSON、SQLite schema、事务、错误映射和唯一 writer MUST 保持不变
 
 ### Requirement: 通用代码必须具有明确所有权
 Buildr Product MUST 将 filesystem、process、network、runtime、CLI output、应用 ports 和领域公共原语放入对应职责目录，并 MUST NOT 建立顶层或 `src/shared/` 作为无语义公共依赖目录。

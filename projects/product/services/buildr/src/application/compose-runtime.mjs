@@ -6,7 +6,6 @@ import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/w
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
 import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
-import { registerTaskRecordRepository } from '../infrastructure/sqlite/task-record-repository.mjs';
 import { registerTaskReviewRepository } from '../infrastructure/sqlite/task-review-repository.mjs';
 import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/task-retrospective-repository.mjs';
 import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
@@ -40,7 +39,7 @@ import { registerChangeApplication } from './change/change-application.mjs';
 import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
 import { registerTaskTerminalDeliveryApplication } from './task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { registerTaskRecordApplication } from './task-record/task-record-application.mjs';
+import { registerTaskRecordModule } from '../task/module.mjs';
 import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
 import { registerTaskRetrospectiveApplication } from './task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
@@ -68,7 +67,6 @@ const REGISTRATIONS = [
   registerProjectManifestRepository,
   registerServiceManifestRepository,
   registerWorkspaceSqlite,
-  registerTaskRecordRepository,
   registerTaskReviewRepository,
   registerTaskRetrospectiveRepository,
   registerTaskVerificationRepository,
@@ -101,7 +99,7 @@ const REGISTRATIONS = [
   registerApplicationRuntime,
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,
-  registerTaskRecordApplication,
+  registerTaskRecordModule,
   registerProjectDailyProgressApplication,
   registerTaskExecutionRecordApplication,
   registerTaskReviewApplication,

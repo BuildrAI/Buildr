@@ -1,5 +1,5 @@
 import { normalizeTaskDevelopmentReceipt, taskDevelopmentError, taskDevelopmentDigest } from '../../domain/task-development/task-development.mjs';
-import { taskRecordEffectiveProjectCodes } from '../../domain/task-record/task-record.mjs';
+import { taskRecordEffectiveProjectCodes } from '../../task/domain/record/task-record.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-development/${taskId}`; }
 

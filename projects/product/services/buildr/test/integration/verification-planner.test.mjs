@@ -136,7 +136,7 @@ test('验证选择基础路径由同一 changed plan 扩展为完整回归', () 
 });
 
 test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
-  const productionFiles = ['src/application', 'src/infrastructure'].flatMap((root) => {
+  const productionFiles = ['src/application', 'src/infrastructure', 'src/task/application', 'src/task/persistence'].flatMap((root) => {
     const pending = [path.join(productRoot, root)];
     const files = [];
     while (pending.length > 0) {
@@ -158,7 +158,10 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   ]);
   const unitAndComponentOnly = verificationSteps.filter((item) => ['unit', 'component', 'candidate-tarball', 'application-payload-release'].includes(item.id));
   assert.equal(auditProductionOwnerCoverage(['src/application/service/new-component-only.mjs'], unitAndComponentOnly).ok, false);
+  assert.equal(auditProductionOwnerCoverage(['src/task/application/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
+  assert.equal(auditProductionOwnerCoverage(['src/task/persistence/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.throws(() => createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] }), /Production source owner coverage gap/);
+  assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/record/new-task-record-use-case.mjs'] })).includes('system-task-lifecycle'));
 });
 
 test('Task Entry 与 Retrospective changed paths选择真实有界 Integration slice', () => {

@@ -5,7 +5,7 @@ import { isVersionRequest, printVersion } from './identity.mjs';
 import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
 import { registerLauncherInterface } from './launcher.mjs';
-import { taskRecordCommand } from './task-record.mjs';
+import { taskRecordCommand } from '../../task/interfaces/cli/task-record.mjs';
 import { taskEntrySnapshotCommand } from './task-entry-snapshot.mjs';
 import { taskReviewCommand } from './task-review.mjs';
 import { taskVerificationCommand } from './task-verification.mjs';
