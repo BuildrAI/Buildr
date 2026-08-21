@@ -238,6 +238,9 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     if (item.executor?.type === 'node-test' && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
       findings.push({ step: item.id, code: 'node_test_files_missing' });
     } else if (item.executor?.type === 'node-test') {
+      if (item.testing?.primaryEvidenceOwner !== item.id) {
+        findings.push({ step: item.id, code: 'node_test_primary_evidence_owner_mismatch', value: item.testing?.primaryEvidenceOwner });
+      }
       for (const file of item.executor.files) {
         try { normalizeProductPath(file); } catch { findings.push({ step: item.id, code: 'node_test_file_invalid', value: file }); }
       }

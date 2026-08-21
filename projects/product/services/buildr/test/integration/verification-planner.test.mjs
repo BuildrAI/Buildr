@@ -85,8 +85,9 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
   });
   assert.deepEqual(verificationSteps.find((step) => step.id === 'integration-candidate-release').profiles, []);
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);
-  assert.equal(verificationSteps.find((step) => step.id === 'integration-task-finish').testing.primaryEvidenceOwner, 'integration');
-  assert.equal(verificationSteps.find((step) => step.id === 'integration-task-development').testing.primaryEvidenceOwner, 'integration');
+  for (const slice of INTEGRATION_PRIMARY_SLICES) {
+    assert.equal(verificationSteps.find((step) => step.id === slice.id).testing.primaryEvidenceOwner, slice.id);
+  }
   assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system-task-finish');
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
 });
@@ -508,6 +509,20 @@ test('registry validation 拒绝非法 input exclusion 与 node-test files', () 
   assert.ok(result.findings.some((finding) => finding.code === 'node_test_files_missing'));
   assert.ok(result.findings.some((finding) => finding.code === 'node_test_file_invalid'));
   assert.ok(result.findings.some((finding) => finding.code === 'invalid_selection'));
+});
+
+test('执行真实Node测试文件的step必须自己持有primary evidence', () => {
+  const owner = verificationSteps.find((step) => step.id === 'integration-task-development');
+  const invalid = {
+    ...owner,
+    testing: { ...owner.testing, primaryEvidenceOwner: 'integration' },
+  };
+  const result = validateVerificationRegistry([invalid]);
+  assert.ok(result.findings.some((finding) => (
+    finding.step === invalid.id
+    && finding.code === 'node_test_primary_evidence_owner_mismatch'
+    && finding.value === 'integration'
+  )));
 });
 
 test('registry validation 拒绝缺少 producer 依赖的 artifact consumer', () => {
