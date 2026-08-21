@@ -1,6 +1,6 @@
 export const REQUIRED_INTERNAL_WORKFLOW_ROUTES = Object.freeze([
   Object.freeze({ id: 'task-development', runner: 'task-development-driver-runner.mjs', mode: 'read-write' }),
-  Object.freeze({ id: 'task-retrospective', runner: 'task-retrospective-driver-runner.mjs', mode: 'read-write' }),
+  Object.freeze({ id: 'task-retrospective', runner: 'task-retrospective-driver.mjs', source: 'src/task/interfaces/internal/task-retrospective-driver.mjs', mode: 'read-write' }),
   Object.freeze({ id: 'task-planning-identity', runner: 'task-planning-identity-driver-runner.mjs', mode: 'read-only' }),
 ]);
 

@@ -479,6 +479,10 @@ export function createPackageStaticValidator(deps) {
     if (!existsFile(cli)) problems.push('Buildr CLI internal workflow route dispatcher is missing.');
     else if (!fs.readFileSync(cli, 'utf8').includes('runRequiredInternalWorkflowRoute')) problems.push('Buildr CLI must dispatch the required internal workflow route inventory.');
     for (const route of REQUIRED_INTERNAL_WORKFLOW_ROUTES) {
+      if (route.source) {
+        if (!existsFile(path.join(root, route.source))) problems.push(`Required internal workflow driver is missing: ${route.source}.`);
+        continue;
+      }
       const runner = path.join(root, 'src/interfaces/internal', route.runner);
       const wrapper = path.join(root, 'src/interfaces/internal', `${route.id}-driver.mjs`);
       if (!existsFile(runner)) problems.push(`Required internal workflow runner is missing: ${route.runner}.`);

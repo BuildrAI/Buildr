@@ -30,7 +30,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/task/persistence/execution-record/task-execution-record-body-store.mjs',
     'src/task/persistence/finish/task-finish-repository.mjs',
     'src/task/persistence/overview/task-overview-repository.mjs',
-    'src/task/persistence/retrospective/task-retrospective-repository.mjs',
+    'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.mjs',
     'src/task/persistence/verification/task-verification-repository.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
@@ -44,9 +44,11 @@ test('Bootstrap 通过唯一 Infrastructure 与 Task Persistence 注册入口组
   assert.match(infrastructure, /registerWorkspaceSqlite/);
   assert.match(infrastructure, /registerInfrastructure/);
   assert.match(persistence, /registerTaskPersistence/);
-  assert.equal(new Set(persistence.match(/register[A-Za-z]+Repository/g) || []).size, 8);
+  assert.equal(new Set(persistence.match(/register[A-Za-z]+Repository/g) || []).size, 7);
   assert.doesNotMatch(persistence, /registerTaskReviewRepository/);
+  assert.doesNotMatch(persistence, /registerTaskRetrospectiveRepository/);
   assert.match(read('src/task/module.mjs'), /registerTaskReviewRepository/);
+  assert.match(read('src/task/module.mjs'), /registerTaskRetrospectiveRepository/);
   assert.match(bootstrap, /registerInfrastructure/);
   assert.match(bootstrap, /registerTaskPersistence/);
   assert.doesNotMatch(bootstrap, /infrastructure\/sqlite\/.*repository|infrastructure\/filesystem\/task-/u);

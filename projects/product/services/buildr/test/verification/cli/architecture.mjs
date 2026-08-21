@@ -178,7 +178,7 @@ const bootstrapRuntimeConsumers = new Set([
   'interfaces/internal/task-finish-retained-cleanup.mjs',
   'interfaces/internal/task-finish-target-lease-driver.mjs',
   'interfaces/internal/task-planning-identity-driver-runner.mjs',
-  'interfaces/internal/task-retrospective-driver-runner.mjs',
+  'task/interfaces/internal/task-retrospective-driver.mjs',
   'interfaces/local-app/http/read-worker.mjs',
 ]);
 for (const file of sourceFiles) {
@@ -378,7 +378,7 @@ const legacyTaskRecordConsumers = new Set([
   'application/task-finish/task-finish-application.mjs',
   'application/task-finish/task-finish-delivery-terminal.mjs',
   'application/task-planning-identity/task-planning-identity-application.mjs',
-  'application/task-retrospective/task-retrospective-application.mjs',
+  'task/application/task-retrospective-application.mjs',
   'application/task-terminal-delivery/task-terminal-delivery-application.mjs',
   'application/task-verification/task-verification-application.mjs',
   'application/worktree/git-worktree-provider.mjs',
@@ -388,7 +388,7 @@ const legacyTaskRecordConsumers = new Set([
   'task/persistence/execution-record/task-execution-record-repository.mjs',
   'task/persistence/finish/task-finish-repository.mjs',
   'task/persistence/overview/task-overview-repository.mjs',
-  'task/persistence/retrospective/task-retrospective-repository.mjs',
+  'task/persistence/task-retrospective-repository.mjs',
   'task/persistence/verification/task-verification-repository.mjs',
   'interfaces/local-app/http/server.mjs',
   'web/application/preview-lifecycle.mjs',

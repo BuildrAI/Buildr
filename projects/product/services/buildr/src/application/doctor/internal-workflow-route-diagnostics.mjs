@@ -38,7 +38,7 @@ export function createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, p
         if (!routeIds.has(route) || !content.includes(`__internal ${route}`)) failures.push(`${consumer.path}:${route}`);
       }
       if (consumer.retainedInvocation && !/retained[^\n]{0,80}(?:controller|Buildr)|controllerInvocation/u.test(content)) failures.push(`${consumer.path}:retained-controller`);
-      if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) failures.push(`${consumer.path}:source-driver`);
+      if (/src\/(?:interfaces\/internal\/task-(?:development|planning-identity)-driver|task\/interfaces\/internal\/task-retrospective-driver)\.mjs/u.test(content)) failures.push(`${consumer.path}:source-driver`);
     }
     if (failures.length) addDoctorFinding(result, 'error', 'product.internal_workflow_route_closure_invalid', 'Buildr受管Skill与bundled internal workflow routes不闭合。', {
       failures,

@@ -8,6 +8,9 @@ import {
   TASK_RECORD_APPLICATION,
   TASK_RECORD_COMPATIBILITY,
   TASK_RECORD_PERSISTENCE_READ,
+  TASK_RETROSPECTIVE_APPLICATION,
+  TASK_RETROSPECTIVE_COMPATIBILITY,
+  TASK_RETROSPECTIVE_PERSISTENCE_READ,
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_PERSISTENCE_READ,
@@ -37,7 +40,7 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.match(cliHost, /runtimeContributions\(runtime, 'cli'\)/);
 
   const httpHost = read('src/interfaces/local-app/http/server.mjs');
-  assert.doesNotMatch(httpHost, /task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/);
+  assert.doesNotMatch(httpHost, /task\/interfaces\/(?:cli|http)|task-(?:record|review|retrospective)-http|taskRetrospectiveMatch/);
   assert.match(httpHost, /for \(const contribution of httpContributions\)/);
   assert.match(httpHost, /contribution\.handle\(/);
 });
@@ -75,6 +78,16 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
     },
     lifecycle: 'none',
   }, {
+    id: 'task-retrospective',
+    requires: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store'],
+    provides: [TASK_RETROSPECTIVE_APPLICATION, TASK_RETROSPECTIVE_PERSISTENCE_READ, TASK_RETROSPECTIVE_COMPATIBILITY],
+    contributions: {
+      cli: [],
+      http: ['task-retrospective.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'web-instance-lifecycle',
     requires: [],
     provides: [WEB_INSTANCE_LIFECYCLE],
@@ -91,7 +104,7 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
     'task review inspect', 'task review record',
     'web preview start', 'web preview list', 'web preview stop', 'web',
   ]);
-  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['workspace-core.http', 'task-record.http', 'task-review.http']);
+  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['workspace-core.http', 'task-record.http', 'task-review.http', 'task-retrospective.http']);
 
   const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
   const project = runtimeProvide(runtime, PROJECT_APPLICATION);
@@ -143,5 +156,32 @@ test('Task Review 旧全局技术层路径已经退出', () => {
     'src/application/task-review/task-review-application.mjs',
     'src/interfaces/cli/task-review.mjs',
     'src/task/persistence/review/task-review-repository.mjs',
+  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
+});
+
+test('Task Retrospective module 只公开共享 Application、只读 Persistence 与有退出条件的兼容 Facade', () => {
+  const runtime = createRuntime();
+  const application = runtimeProvide(runtime, TASK_RETROSPECTIVE_APPLICATION);
+  assert.deepEqual(Object.keys(application), ['inspectTaskRetrospective', 'listTaskRetrospectives', 'recordTaskRetrospective', 'handleTaskRetrospective']);
+
+  const persistenceRead = runtimeProvide(runtime, TASK_RETROSPECTIVE_PERSISTENCE_READ);
+  assert.equal(typeof persistenceRead.readTaskRetrospectiveResultPersistence, 'function');
+  assert.equal(persistenceRead.writeTaskRetrospectiveResultPersistence, undefined);
+
+  const compatibility = runtimeProvide(runtime, TASK_RETROSPECTIVE_COMPATIBILITY);
+  assert.equal(compatibility.owner, 'task-retrospective-capability');
+  assert.match(compatibility.scope, /existing runtime consumers only/);
+  assert.match(compatibility.exit, /legacy-exit-and-conformance/);
+  assert.deepEqual(Object.keys(compatibility.testSupportProperties), ['taskRetrospectiveSerialize']);
+});
+
+test('Task Retrospective 旧全局技术层路径已经退出', () => {
+  for (const relative of [
+    'src/domain/task-retrospective/task-retrospective.mjs',
+    'src/application/task-retrospective/task-retrospective-application.mjs',
+    'src/application/task-retrospective-prompt.mjs',
+    'src/task/persistence/retrospective/task-retrospective-repository.mjs',
+    'src/interfaces/internal/task-retrospective-driver.mjs',
+    'src/interfaces/internal/task-retrospective-driver-runner.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });

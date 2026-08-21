@@ -425,18 +425,6 @@ export function createLocalWorkspaceServer(runtime, {
         if (request.method === 'GET' && taskReviewsMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1]));
         }
-        const taskRetrospectiveMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/retrospective$`));
-        if (request.method === 'GET' && taskRetrospectiveMatch) {
-          return jsonResponse(response, 200, runtime.inspectTaskRetrospective(root, taskRetrospectiveMatch[1]));
-        }
-        if (request.method === 'PATCH' && taskRetrospectiveMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['status', 'note', 'expectedCurrentDigest']), 'Task retrospective handle');
-          if (!Object.hasOwn(input, 'expectedCurrentDigest')) {
-            const error = new Error('Task retrospective handle 必须包含 expectedCurrentDigest。'); error.code = 'task_retrospective_digest_required'; error.status = 400; throw error;
-          }
-          return jsonResponse(response, 200, runtime.handleTaskRetrospective(root, taskRetrospectiveMatch[1], input));
-        }
         const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
         if (request.method === 'GET' && taskVerificationMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'verification', root, taskVerificationMatch[1]));

@@ -1,3 +1,7 @@
+#!/usr/bin/env node
+
+import process from 'node:process';
+
 function option(args, name, fallback = undefined) {
   const index = args.indexOf(name);
   if (index === -1) return fallback;
@@ -31,7 +35,7 @@ export async function runTaskRetrospectiveDriver(args, options = {}) {
   }
 
   try {
-    const { createRuntime } = await import('../../bootstrap/runtime.mjs');
+    const { createRuntime } = await import('../../../bootstrap/runtime.mjs');
     const runtime = createRuntime();
     const output = action === 'list'
       ? runtime.listTaskRetrospectives(targetRoot, {
@@ -60,4 +64,10 @@ export async function runTaskRetrospectiveDriver(args, options = {}) {
     }, null, 2));
     return 1;
   }
+}
+
+if (process.argv[1]?.replaceAll('\\', '/').endsWith('/src/task/interfaces/internal/task-retrospective-driver.mjs')) {
+  runTaskRetrospectiveDriver(process.argv.slice(2)).then((exitCode) => {
+    process.exitCode = exitCode;
+  });
 }

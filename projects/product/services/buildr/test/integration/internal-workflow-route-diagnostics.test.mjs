@@ -43,7 +43,7 @@ test('Doctor reports a managed consumer that drifts back to a source-only driver
     fs.copyFileSync(path.join(SERVICE_ROOT, relative), target);
   }
   const retrospective = path.join(root, 'resources/workspace/skills/buildr/task-retrospective/SKILL.md');
-  fs.writeFileSync(retrospective, fs.readFileSync(retrospective, 'utf8').replaceAll('__internal task-retrospective', 'src/interfaces/internal/task-retrospective-driver.mjs'));
+  fs.writeFileSync(retrospective, fs.readFileSync(retrospective, 'utf8').replaceAll('__internal task-retrospective', 'src/task/interfaces/internal/task-retrospective-driver.mjs'));
 
   const result = { findings: [] };
   diagnostics(root).diagnoseInternalWorkflowRoutes(result);

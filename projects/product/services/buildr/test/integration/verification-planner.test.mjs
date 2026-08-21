@@ -162,7 +162,6 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   assert.equal(audit.ok, true, JSON.stringify(audit.gaps, null, 2));
   assert.deepEqual(VERIFICATION_PRODUCTION_OWNER_ALLOWLIST.map((item) => item.path).sort(), [
     'src/application/declaration-intake/declaration-intake-trigger.mjs',
-    'src/application/task-retrospective-prompt.mjs',
     'src/infrastructure/product-resources/index.mjs',
   ]);
   const unitAndComponentOnly = verificationSteps.filter((item) => ['unit', 'component', 'candidate-tarball', 'application-payload-release'].includes(item.id));
@@ -179,7 +178,7 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
 test('Task Entry 与 Retrospective changed paths选择真实有界 Integration slice', () => {
   for (const source of [
     'src/application/task-entry/task-entry-snapshot-application.mjs',
-    'src/application/task-retrospective/task-retrospective-application.mjs',
+    'src/task/application/task-retrospective-application.mjs',
   ]) {
     const selected = ids(createVerificationPlan({ paths: [source] }));
     assert.ok(selected.includes('integration-task-read-models'), source);

@@ -386,7 +386,13 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-entry/**',
     'src/application/task-overview/**',
     'src/application/task-planning-identity/**',
+    'src/application/task-retrospective-prompt.mjs',
     'src/application/task-retrospective/**',
+    'src/task/application/task-retrospective-application.mjs',
+    'src/task/domain/task-retrospective.mjs',
+    'src/task/interfaces/http/task-retrospective-http.mjs',
+    'src/task/interfaces/internal/task-retrospective-driver.mjs',
+    'src/task/persistence/task-retrospective-repository.mjs',
   ], { schedulingCostMs: 4000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-coordination', [
     'test/integration/parent-coordination-application.test.mjs',
@@ -492,7 +498,6 @@ export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
 
 export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST = Object.freeze([
   Object.freeze({ path: 'src/application/declaration-intake/declaration-intake-trigger.mjs', owner: 'unit', reason: 'The trigger is pure declaration selection glue; declaration Application and CLI behavior have separate owners.' }),
-  Object.freeze({ path: 'src/application/task-retrospective-prompt.mjs', owner: 'unit', reason: 'Prompt rendering is pure formatting; Task Retrospective repository and Application behavior are owned by the read-model slice.' }),
   Object.freeze({ path: 'src/infrastructure/product-resources/index.mjs', owner: 'application-payload-release', reason: 'The resource resolver is exercised directly by the application payload release verifier.' }),
 ]);
 

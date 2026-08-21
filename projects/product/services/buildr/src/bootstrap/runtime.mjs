@@ -2,6 +2,8 @@ import * as platform from '../infrastructure/platform.mjs';
 import {
   TASK_RECORD_COMPATIBILITY,
   TASK_RECORD_MODULE,
+  TASK_RETROSPECTIVE_COMPATIBILITY,
+  TASK_RETROSPECTIVE_MODULE,
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_MODULE,
 } from '../task/module.mjs';
@@ -52,6 +54,21 @@ function installTaskReviewModule(runtime, registry) {
   return descriptor;
 }
 
+function installTaskRetrospectiveModule(runtime, registry) {
+  const descriptor = registry.install(TASK_RETROSPECTIVE_MODULE);
+  const compatibility = registry.provide(TASK_RETROSPECTIVE_COMPATIBILITY);
+  Object.assign(runtime, compatibility.methods);
+  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties)) {
+    Object.defineProperty(runtime, name, {
+      configurable: true,
+      enumerable: false,
+      get: bridge.get,
+      set: bridge.set,
+    });
+  }
+  return descriptor;
+}
+
 export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
@@ -59,6 +76,7 @@ export function createRuntime() {
     installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime)),
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
+    installTaskRetrospectiveModule: () => installTaskRetrospectiveModule(runtime, registry),
   });
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));

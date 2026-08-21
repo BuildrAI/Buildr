@@ -21,7 +21,6 @@ import { registerChangeApplication } from '../application/change/change-applicat
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from '../application/task-finish/task-finish-application.mjs';
 import { registerTaskTerminalDeliveryApplication } from '../application/task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { registerTaskRetrospectiveApplication } from '../application/task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from '../application/task-verification/task-verification-application.mjs';
 import { registerTaskDevelopmentApplication } from '../application/task-development/task-development-application.mjs';
 import { registerTaskEntrySnapshotApplication } from '../application/task-entry/task-entry-snapshot-application.mjs';
@@ -38,6 +37,7 @@ import { registerProductInstallationStatus } from '../application/product-instal
 const TASK_RECORD_MODULE_SLOT = Symbol('task-record-module');
 const TASK_REVIEW_MODULE_SLOT = Symbol('task-review-module');
 const WORKSPACE_MODULE_SLOT = Symbol('workspace-module');
+const TASK_RETROSPECTIVE_MODULE_SLOT = Symbol('task-retrospective-module');
 
 const REGISTRATIONS = [
   registerInfrastructure,
@@ -69,7 +69,7 @@ const REGISTRATIONS = [
   registerProjectDailyProgressApplication,
   registerTaskExecutionRecordApplication,
   TASK_REVIEW_MODULE_SLOT,
-  registerTaskRetrospectiveApplication,
+  TASK_RETROSPECTIVE_MODULE_SLOT,
   registerTaskVerificationApplication,
   registerTaskDevelopmentApplication,
   registerTaskEntrySnapshotApplication,
@@ -81,13 +81,15 @@ const REGISTRATIONS = [
   registerTaskTerminalDeliveryApplication,
 ];
 
-export function registerLegacyRuntime(runtime, { installTaskRecordModule, installTaskReviewModule, installWorkspaceModule }) {
+export function registerLegacyRuntime(runtime, { installTaskRecordModule, installTaskReviewModule, installTaskRetrospectiveModule, installWorkspaceModule }) {
   if (typeof installTaskRecordModule !== 'function') throw new Error('Bootstrap must provide the Task Record module installer.');
   if (typeof installTaskReviewModule !== 'function') throw new Error('Bootstrap must provide the Task Review module installer.');
+  if (typeof installTaskRetrospectiveModule !== 'function') throw new Error('Bootstrap must provide the Task Retrospective module installer.');
   if (typeof installWorkspaceModule !== 'function') throw new Error('Bootstrap must provide the Workspace module installer.');
   for (const register of REGISTRATIONS) {
     if (register === TASK_RECORD_MODULE_SLOT) installTaskRecordModule(runtime);
     else if (register === TASK_REVIEW_MODULE_SLOT) installTaskReviewModule(runtime);
+    else if (register === TASK_RETROSPECTIVE_MODULE_SLOT) installTaskRetrospectiveModule(runtime);
     else if (register === WORKSPACE_MODULE_SLOT) installWorkspaceModule(runtime);
     else register(runtime);
   }

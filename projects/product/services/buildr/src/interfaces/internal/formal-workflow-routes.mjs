@@ -9,7 +9,7 @@ export async function runRequiredInternalWorkflowRoute(route, args, options = {}
     return runTaskDevelopmentDriver(args, options);
   }
   if (route === 'task-retrospective') {
-    const { runTaskRetrospectiveDriver } = await import('./task-retrospective-driver-runner.mjs');
+    const { runTaskRetrospectiveDriver } = await import('../../task/module.mjs');
     return runTaskRetrospectiveDriver(args, options);
   }
   if (route === 'task-planning-identity') {

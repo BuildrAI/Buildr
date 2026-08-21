@@ -1,11 +1,19 @@
 import { registerTaskRecordApplication } from './application/record/task-record-application.mjs';
+import { registerTaskRetrospectiveApplication } from './application/task-retrospective-application.mjs';
 import { registerTaskReviewApplication } from './application/task-review-application.mjs';
 import { registerTaskRecordRepository } from './persistence/record/task-record-repository.mjs';
+import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from './interfaces/http/task-record-http.mjs';
+import { handleTaskRetrospectiveHttpRequest } from './interfaces/http/task-retrospective-http.mjs';
 import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.mjs';
+
+export async function runTaskRetrospectiveDriver(args, options) {
+  const driver = await import('./interfaces/internal/task-retrospective-driver.mjs');
+  return driver.runTaskRetrospectiveDriver(args, options);
+}
 
 export const TASK_RECORD_MODULE_ID = 'task-record';
 export const TASK_RECORD_APPLICATION = 'task-record.application';
@@ -15,6 +23,10 @@ export const TASK_REVIEW_MODULE_ID = 'task-review';
 export const TASK_REVIEW_APPLICATION = 'task-review.application';
 export const TASK_REVIEW_PERSISTENCE_READ = 'task-review.persistence-read';
 export const TASK_REVIEW_COMPATIBILITY = 'task-review.bootstrap-compatibility';
+export const TASK_RETROSPECTIVE_MODULE_ID = 'task-retrospective';
+export const TASK_RETROSPECTIVE_APPLICATION = 'task-retrospective.application';
+export const TASK_RETROSPECTIVE_PERSISTENCE_READ = 'task-retrospective.persistence-read';
+export const TASK_RETROSPECTIVE_COMPATIBILITY = 'task-retrospective.bootstrap-compatibility';
 
 const APPLICATION_METHODS = Object.freeze([
   'listTaskRecords', 'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
@@ -42,6 +54,19 @@ const TASK_REVIEW_PERSISTENCE_READ_METHODS = Object.freeze([
 
 const TASK_REVIEW_PERSISTENCE_COMPATIBILITY_METHODS = Object.freeze([
   ...TASK_REVIEW_PERSISTENCE_READ_METHODS, 'writeTaskReviewResultPersistence', 'renderTaskReviewResult',
+]);
+
+const TASK_RETROSPECTIVE_APPLICATION_METHODS = Object.freeze([
+  'inspectTaskRetrospective', 'listTaskRetrospectives', 'recordTaskRetrospective', 'handleTaskRetrospective',
+]);
+
+const TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS = Object.freeze([
+  'taskRetrospectiveResultPath', 'readTaskRetrospectiveResultPersistence',
+]);
+
+const TASK_RETROSPECTIVE_PERSISTENCE_COMPATIBILITY_METHODS = Object.freeze([
+  ...TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS,
+  'writeTaskRetrospectiveResultPersistence', 'writeTaskRetrospectiveDispositionPersistence', 'renderTaskRetrospectiveResult',
 ]);
 
 function pick(source, methods) {
@@ -231,4 +256,52 @@ export const TASK_REVIEW_MODULE = Object.freeze({
     'change.resolver',
   ]),
   create: createTaskReviewModule,
+});
+
+function createTaskRetrospectiveModule(requires) {
+  const privateComposition = {
+    ...requires[TASK_RECORD_APPLICATION],
+    ...requires[TASK_RECORD_PERSISTENCE_READ],
+    ...requires['workspace.structured-store'],
+  };
+  registerTaskRetrospectiveRepository(privateComposition);
+  registerTaskRetrospectiveApplication(privateComposition);
+
+  const application = pick(privateComposition, TASK_RETROSPECTIVE_APPLICATION_METHODS);
+  const persistenceRead = pick(privateComposition, TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS);
+  const compatibility = Object.freeze({
+    owner: 'task-retrospective-capability',
+    scope: 'existing runtime consumers only',
+    exit: 'remove per consumer as remaining Task lifecycle modules migrate; delete in legacy-exit-and-conformance',
+    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_RETROSPECTIVE_PERSISTENCE_COMPATIBILITY_METHODS) }),
+    testSupportProperties: Object.freeze({
+      taskRetrospectiveSerialize: Object.freeze({
+        get: () => privateComposition.taskRetrospectiveSerialize,
+        set: (value) => { privateComposition.taskRetrospectiveSerialize = value; },
+      }),
+    }),
+  });
+  return Object.freeze({
+    provides: {
+      [TASK_RETROSPECTIVE_APPLICATION]: application,
+      [TASK_RETROSPECTIVE_PERSISTENCE_READ]: persistenceRead,
+      [TASK_RETROSPECTIVE_COMPATIBILITY]: compatibility,
+    },
+    contributions: {
+      http: [Object.freeze({
+        id: 'task-retrospective.http',
+        handle: (input) => handleTaskRetrospectiveHttpRequest({ ...input, runtime: application }),
+      })],
+    },
+  });
+}
+
+export const TASK_RETROSPECTIVE_MODULE = Object.freeze({
+  id: TASK_RETROSPECTIVE_MODULE_ID,
+  requires: Object.freeze([
+    TASK_RECORD_APPLICATION,
+    TASK_RECORD_PERSISTENCE_READ,
+    'workspace.structured-store',
+  ]),
+  create: createTaskRetrospectiveModule,
 });

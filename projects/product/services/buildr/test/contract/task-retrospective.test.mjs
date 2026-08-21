@@ -83,5 +83,5 @@ test('Task Retrospective Application是唯一repository writer caller', () => {
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(callers, ['application/task-retrospective/task-retrospective-application.mjs']);
+  assert.deepEqual(callers, ['task/application/task-retrospective-application.mjs']);
 });

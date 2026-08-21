@@ -8,7 +8,7 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 
-const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-retrospective-driver.mjs');
+const DRIVER = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-retrospective-driver.mjs');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-'));
