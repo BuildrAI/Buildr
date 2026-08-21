@@ -282,6 +282,9 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 3);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['integration-task-finish-delivery'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.innerConcurrency['integration-task-finish-delivery'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['integration-task-finish-delivery'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
@@ -297,7 +300,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'integration-task-execution-records',
     'integration-self-bootstrap',
   ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
-    'integration-task-finish-delivery': 120_000,
+    'integration-task-finish-delivery': 75_000,
     'system-task-finish': 120_000,
     'integration-task-development': 60_000,
     'integration-task-execution-records': 50_000,

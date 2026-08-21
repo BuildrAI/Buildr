@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { workerBudgetEnvironment } from '../../test/verification/executor.mjs';
+import { nodeTestConcurrencyArguments, workerBudgetEnvironment } from '../../test/verification/executor.mjs';
 import { VERIFICATION_WORKER_BUDGET_ENV, resolveVerificationWorkerBudget } from '../../test/verification/worker-budget.mjs';
 
 test('验证内部 worker budget 使用默认值并受 suite 上限约束', () => {
@@ -21,4 +21,12 @@ test('verification executor 只从当前 execution profile 向匹配 step 注入
   assert.deepEqual(workerBudgetEnvironment({ id: 'system' }, profile), { [VERIFICATION_WORKER_BUDGET_ENV]: '8' });
   assert.deepEqual(workerBudgetEnvironment({ id: 'integration' }, profile), {});
   assert.throws(() => workerBudgetEnvironment({ id: 'system' }, { limits: { innerConcurrency: { system: 0 } } }), /Invalid inner concurrency budget/);
+});
+
+test('node test executor 从 execution profile 注入唯一内部并发参数', () => {
+  const step = { id: 'integration-task-finish-delivery', executor: { type: 'node-test', args: ['--test-reporter=dot'] } };
+  const profile = { limits: { innerConcurrency: { 'integration-task-finish-delivery': 2 } } };
+  assert.deepEqual(nodeTestConcurrencyArguments(step, profile), ['--test-concurrency=2']);
+  assert.deepEqual(nodeTestConcurrencyArguments(step, { limits: { innerConcurrency: {} } }), []);
+  assert.throws(() => nodeTestConcurrencyArguments({ ...step, executor: { ...step.executor, args: ['--test-concurrency=1'] } }, profile), /both static and profile inner concurrency/);
 });

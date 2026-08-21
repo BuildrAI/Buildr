@@ -12,11 +12,26 @@ import {
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 import { resolveNodeTestFiles } from './test-files.mjs';
 
-export function workerBudgetEnvironment(step, executionProfile) {
+function innerConcurrencyBudget(step, executionProfile) {
   const budget = executionProfile?.limits?.innerConcurrency?.[step.id];
-  if (budget == null) return {};
+  if (budget == null) return null;
   if (!Number.isInteger(budget) || budget < 1) throw new Error(`Invalid inner concurrency budget for ${step.id}`);
+  return budget;
+}
+
+export function workerBudgetEnvironment(step, executionProfile) {
+  const budget = innerConcurrencyBudget(step, executionProfile);
+  if (budget == null) return {};
   return { BUILDR_VERIFICATION_WORKER_BUDGET: String(budget) };
+}
+
+export function nodeTestConcurrencyArguments(step, executionProfile) {
+  const budget = innerConcurrencyBudget(step, executionProfile);
+  if (budget == null) return [];
+  if ((step.executor.args ?? []).some((argument) => argument.startsWith('--test-concurrency'))) {
+    throw new Error(`Node test step ${step.id} declares both static and profile inner concurrency`);
+  }
+  return [`--test-concurrency=${budget}`];
 }
 
 export function createVerificationExecutor(options) {
@@ -47,14 +62,14 @@ export function createVerificationExecutor(options) {
     return relative.startsWith('.') ? relative : `./${relative}`;
   };
 
-  const commandFor = (step) => {
+  const commandFor = (step, executionProfile) => {
     const executor = step.executor;
     if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
       const files = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
-        args: ['--test', ...(executor.args ?? []), ...files.map(nodeTestFile)],
+        args: ['--test', ...nodeTestConcurrencyArguments(step, executionProfile), ...(executor.args ?? []), ...files.map(nodeTestFile)],
       };
     }
     if (executor.type === 'npm') {
@@ -96,7 +111,7 @@ export function createVerificationExecutor(options) {
         ...diagnostics,
       };
     }
-    const resolved = commandFor(step);
+    const resolved = commandFor(step, executionContext.executionProfile);
     const artifactEnv = step.executor.consumesArtifact && artifacts.candidate ? {
       [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
       [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,

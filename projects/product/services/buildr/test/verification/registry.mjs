@@ -52,7 +52,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-execution-records': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task and Verification execution records preserve metadata, body-store, recovery, and retention boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Task Development, Review, and Verification lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish core bootstrap, run, diagnostics, entry, and SQLite behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-task-finish-delivery': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'Task Finish remote delivery, retained activation, cleanup, and contribution behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-task-finish-delivery': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Task Finish remote delivery, retained activation, cleanup, and contribution behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-local-app-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 60000, 'The complete Task Finish product delivery journey behaves correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -166,9 +166,9 @@ export const VERIFICATION_RESOURCE_CONTRACTS = Object.freeze({
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
+  local: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  ci: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-task-finish-delivery': 1, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
@@ -493,7 +493,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-delivery-terminal.mjs',
     'src/application/task-finish/task-finish-product-executor.mjs',
     'src/application/task-terminal-delivery/**',
-  ], { schedulingCostMs: 120000, args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
+  ], { schedulingCostMs: 75_000, timeoutMs: 360_000 }),
 ]);
 
 export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
