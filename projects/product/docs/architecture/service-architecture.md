@@ -137,33 +137,37 @@ misc/
 
 这里的 `task` 是领域或功能模块名称，不只是 `domain/` 层。与 Task 相关的领域模型、应用用例、持久化映射和接口入口都归入 `task/`，再在模块内部按技术职责分层。
 
-随着模块扩大，可以在每个技术层中继续按业务分类：
+模块内部默认在技术层中保持扁平，由文件名表达具体能力，不为 Domain、Application、Persistence 或 Interfaces 目录对称地创建能力子目录：
 
 ```text
 task/
   domain/
-    record/
-    environment/
-    development/
-    review/
-    verification/
-    retrospective/
-    finish/
-
+    task-record.mjs
+    task-review.mjs
+    task-retrospective.mjs
   application/
-    record/
-    environment/
-    development/
-    review/
-    verification/
-    retrospective/
-    finish/
-
+    task-record-application.mjs
+    task-review-application.mjs
+    task-retrospective-application.mjs
   persistence/
+    task-record-repository.mjs
+    task-review-repository.mjs
+    task-retrospective-repository.mjs
   interfaces/
+    cli/
+      task-record.mjs
+      task-review.mjs
+    http/
+      task-record-http.mjs
+      task-review-http.mjs
+    internal/
+      task-retrospective-driver.mjs
+  module.mjs
 ```
 
-具体分类根据真实职责逐步形成，不要求一次性建立完整目录。
+只有某项能力已经形成多个需要独立维护的文件、明确的私有协作边界，或者扁平层中的同类文件已明显妨碍查找和所有权判断时，才在对应技术层内为它建立子目录。例如 Task Finish 的 Application 实现包含多个独立交付步骤时，可以使用 `application/finish/`；其他技术层不因此被要求建立对称的 `domain/finish/` 或 `persistence/finish/`。`interfaces/cli/`、`interfaces/http/` 和 `interfaces/internal/` 继续按适配协议与调用方向分类，不属于业务能力子目录。
+
+具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
 ## `workspace` 模块
 
