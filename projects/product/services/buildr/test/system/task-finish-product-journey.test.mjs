@@ -168,7 +168,20 @@ function taskDevelopmentFixture() {
   };
 }
 
-test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢复或carrier事实拒绝换绑', async (t) => {
+const isolatedJourneys = [];
+const processEnvironmentJourneys = [];
+
+function isolatedJourney(name, run) {
+  assert.doesNotMatch(Function.prototype.toString.call(run), /process\.env/, `${name} mutates process.env and must use processEnvironmentJourney`);
+  isolatedJourneys.push({ name, run });
+}
+
+function processEnvironmentJourney(name, run) {
+  assert.match(Function.prototype.toString.call(run), /process\.env/, `${name} does not need the serialized process environment group`);
+  processEnvironmentJourneys.push({ name, run });
+}
+
+isolatedJourney('无副作用preflight/prepare陈旧run要求新commit message；prepare恢复或carrier事实拒绝换绑', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -311,7 +324,7 @@ test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
 });
 
-test('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全替换', async (t) => {
+isolatedJourney('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全替换', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-legacy-mismatch-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -482,7 +495,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   return runtime;
 }
 
-test('Doctor与内部登记失败不否定交付，reconcile只修复Task终态', async (t) => {
+processEnvironmentJourney('Doctor与内部登记失败不否定交付，reconcile只修复Task终态', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -645,7 +658,7 @@ test('Doctor与内部登记失败不否定交付，reconcile只修复Task终态'
   assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 0);
 });
 
-test('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
+isolatedJourney('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-adaptation-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -784,7 +797,7 @@ test('同路径基线冲突保留current Candidate并经显式零差异 Delivery
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
 });
 
-test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
+processEnvironmentJourney('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-code-only-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -888,7 +901,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(result.metrics.formalVerificationExecutions, 0);
 });
 
-test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspace', async (t) => {
+isolatedJourney('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspace', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-multi-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const workspaceSeed = path.join(fixture, 'workspace-seed');
@@ -1017,7 +1030,7 @@ test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspa
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', result.runId)), false);
 });
 
-test('多贡献 repository 在第二个 target advance 后保存部分交付并从最早未完成处恢复', async (t) => {
+isolatedJourney('多贡献 repository 在第二个 target advance 后保存部分交付并从最早未完成处恢复', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-partial-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const createRepository = (name, files) => {
@@ -1158,4 +1171,12 @@ test('多贡献 repository 在第二个 target advance 后保存部分交付并�
   assert.equal(fs.existsSync(serviceATaskRoot), false);
   assert.equal(fs.existsSync(serviceBTaskRoot), false);
   assert.equal(fs.existsSync(path.join(workspace.retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
+});
+
+test('修改进程环境的 Task Finish Journey 保持串行', async (t) => {
+  for (const { name, run } of processEnvironmentJourneys) await t.test(name, run);
+});
+
+test('使用独立临时根的 Task Finish Journey 保持资源隔离', async (t) => {
+  await Promise.all(isolatedJourneys.map(({ name, run }) => t.test(name, run)));
 });

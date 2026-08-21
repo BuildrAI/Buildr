@@ -70,7 +70,7 @@ Project `verification.yml` 使用 closed v2 declaration，只描述少量稳定�
 
 Verification resource claim 必须匹配 registry 资源契约要求的 footprint、`unique-temporary-root` 隔离和 lifecycle cleanup；只使用独立临时 Git/CLI fixture 的 owner 不占用 Workspace lifecycle 压力容量。`runtime-adapter-contract` 的所有投射归属一个 run-unique 临时根，并在进程退出时只清理该根。
 
-Product verification DAG 默认使用按近期成功样本校准的粗粒度成本调度；资源或 concurrency class 暂不可用时继续选择其他 ready step，不为高优先级 owner 空置全局容量。`critical-path` 模式使用自身成本与最长后续依赖链排序，同分时优先 fan-out producer、自身成本与 registry 声明顺序；它与`declaration`模式仅用于同一计划的受控对照。timing evidence 保留实际调度模式与每步估算优先级，不改变 owner、选择范围或证据要求。`system-fresh-build`在独立临时Workspace内复用prepared controller，使用`workspace-saturating`与`task-lifecycle-heavy`资源而非全局`exclusive`；其余长尾 owner的调度成本同样按多次成功样本中位数粗粒度校准，成本不替代target duration或超时。
+Product verification DAG 默认使用按近期成功样本校准的粗粒度成本调度；资源或 concurrency class 暂不可用时继续选择其他 ready step，不为高优先级 owner 空置全局容量。`critical-path` 模式使用自身成本与最长后续依赖链排序，同分时优先 fan-out producer、自身成本与 registry 声明顺序；它与`declaration`模式仅用于同一计划的受控对照。timing evidence 保留实际调度模式与每步估算优先级，不改变 owner、选择范围或证据要求。planner判定为`full`的计划在启动DAG前通过Git common-dir共享的`product-full-execution`容量一lease跨Task排队，affected与其他非full计划不占用该容量；等待期间每15秒输出心跳，最长等待30分钟，完成、失败或取消后按owner精确释放。`system-fresh-build`在独立临时Workspace内复用prepared controller，使用`workspace-saturating`与`task-lifecycle-heavy`资源而非全局`exclusive`；其余长尾 owner的调度成本同样按多次成功样本中位数粗粒度校准，成本不替代target duration或超时。
 
 Package metadata changed planning只在拥有Git base与current内容时豁免`package.json.version`、`package-lock.json.version`和lockfile根package version；依赖、scripts、engines、其他lockfile结构、解析失败或显式paths-only调用仍保守full。registry `node-test`和受管glob在启动前解析真实文件并拒绝空集合。Release专项保持独立诊断入口，不应与普通delivery自动叠加。
 
