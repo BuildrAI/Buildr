@@ -9,7 +9,7 @@ import {
   createProjectVerificationDiagnostics,
   parseProjectVerification,
   validateProjectVerification,
-} from '../../src/application/doctor/project-verification-diagnostics.mjs';
+} from '../../src/system/doctor/application/project-verification-diagnostics.mjs';
 
 function capability(overrides = {}) {
   return {

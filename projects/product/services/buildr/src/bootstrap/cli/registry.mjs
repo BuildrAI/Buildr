@@ -138,18 +138,6 @@ const COMMAND_ROUTES = [
   },
   TASK_MODULE_COMMAND_SLOT,
   {
-    key: "doctor",
-    surface: "primary",
-    summary: "诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。",
-    help: [
-      "Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]",
-      "",
-      "诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。JSON 默认输出 compact；完整 inventory 使用 --detail full。"
-    ],
-    match: ({ domain }) => domain === 'doctor',
-    run: (r, c) => r.doctor(c.argv.slice(3)),
-  },
-  {
     key: "mutation recover",
     surface: "agent-machine",
     summary: "从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。",

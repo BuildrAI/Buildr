@@ -59,14 +59,14 @@ if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)
 const requiredRuntime = [
   'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
-  'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs', 'bootstrap/legacy-runtime-module.mjs',
+  'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.mjs',
   'task/interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'interfaces/local-app/http/server.mjs', 'web/module.mjs',
+  'web/http/server.mjs', 'web/module.mjs',
   'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
   'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
-  'application/doctor.mjs', 'agent-assets/application/package-maintenance.mjs',
+  'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
   'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
   'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
   'workspace/application/project-daily-progress-application.mjs',
@@ -99,8 +99,8 @@ const requiredRuntime = [
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
   'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
-  'application/doctor/scope-diagnostics.mjs', 'application/doctor/service-diagnostics.mjs',
-  'application/doctor/runtime-diagnostics.mjs', 'agent-assets/application/package-maintenance/static-validation.mjs',
+  'system/doctor/application/scope-diagnostics.mjs', 'system/doctor/application/service-diagnostics.mjs',
+  'system/doctor/application/runtime-diagnostics.mjs', 'agent-assets/application/package-maintenance/static-validation.mjs',
   'agent-assets/application/package-maintenance/smoke-checks.mjs', 'agent-assets/application/package-maintenance/verification-registry.mjs',
   'agent-assets/application/package-maintenance/output.mjs',
 ];
@@ -117,8 +117,8 @@ const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file))
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
-  const moduleOffset = parts[0] === 'system' && parts[1] === 'installation' ? 2 : 1;
-  if (!['task', 'web', 'workspace', 'agent-assets'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  const moduleOffset = parts[0] === 'system' && ['installation', 'doctor'].includes(parts[1]) ? 2 : 1;
+  if (!['task', 'web', 'workspace', 'agent-assets', 'change', 'publication'].includes(parts[0]) && moduleOffset === 1) return parts[0];
   if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
@@ -141,6 +141,7 @@ const allowedCrossModulePorts = new Set([
   'agent-assets/module.mjs -> workspace/module.mjs',
   'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
   'web/module.mjs -> system/installation/module.mjs',
+  'web/module.mjs -> workspace/module.mjs',
 ]);
 
 for (const file of sourceFiles) {
@@ -195,19 +196,19 @@ const bootstrapRuntimeConsumers = new Set([
   'task/interfaces/internal/task-finish-target-lease-driver.mjs',
   'task/interfaces/internal/task-planning-identity-driver-runner.mjs',
   'task/interfaces/internal/task-retrospective-driver.mjs',
-  'interfaces/local-app/http/read-worker.mjs',
+  'web/http/read-worker.mjs',
 ]);
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
   if (/(?:from\s+|import\()['"][^'"]*bootstrap\/runtime\.mjs/.test(content) && !bootstrapRuntimeConsumers.has(relative)) {
-    problems.push(`new Bootstrap runtime consumer outside compatibility baseline: src/${relative}`);
+    problems.push(`new Bootstrap runtime consumer outside the explicit runtime-port baseline: src/${relative}`);
   }
 }
 
 const facadeLimits = new Map([
   ['src/agent-assets/infrastructure/runtime/render-claude-code.mjs', 100],
-  ['src/application/doctor.mjs', 250],
+  ['src/system/doctor/application/diagnostics.mjs', 250],
   ['src/agent-assets/application/package-maintenance.mjs', 550],
   ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],
@@ -324,7 +325,7 @@ if (fs.existsSync(taskRecordModule)) {
   const source = fs.readFileSync(taskRecordModule, 'utf8');
   const repositoryIndex = source.indexOf('registerTaskRecordRepository(privateComposition)');
   const applicationIndex = source.indexOf('registerTaskRecordApplication(privateComposition)');
-  for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_COMPATIBILITY']) {
+  for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_RUNTIME_PORT']) {
     if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
   }
   if (repositoryIndex === -1 || applicationIndex === -1 || repositoryIndex > applicationIndex) problems.push('Task Record module must privately compose repository before application');
@@ -332,14 +333,14 @@ if (fs.existsSync(taskRecordModule)) {
 if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
 if (fs.existsSync(bootstrapRuntime)) {
   const source = fs.readFileSync(bootstrapRuntime, 'utf8');
-  for (const required of ["from '../task/module.mjs'", 'createModuleRegistry', 'registerLegacyRuntime', 'installTaskRecordModule', '__bootstrapContributions']) {
+  for (const required of ["from '../task/module.mjs'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskRecordModule', '__bootstrapContributions']) {
     if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
   }
   if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
 }
-if (!fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module is missing');
+if (fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module must be removed');
 
-const localAppServer = path.join(sourceRoot, 'interfaces', 'local-app', 'http', 'server.mjs');
+const localAppServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
 if (fs.existsSync(localAppServer)) {
   const source = fs.readFileSync(localAppServer, 'utf8');
   if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
@@ -396,6 +397,8 @@ for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-
 
 const legacyTaskRecordConsumers = new Set([
   'application/change/change-application.mjs',
+  'change/module.mjs',
+  'change/interfaces/http/change-http.mjs',
   'workspace/application/project-daily-progress-application.mjs',
   'task/application/task-development-application.mjs',
   'task/application/task-entry-snapshot-application.mjs',
@@ -416,7 +419,7 @@ const legacyTaskRecordConsumers = new Set([
   'task/persistence/task-overview-repository.mjs',
   'task/persistence/task-retrospective-repository.mjs',
   'task/persistence/task-verification-repository.mjs',
-  'interfaces/local-app/http/server.mjs',
+  'web/http/server.mjs',
   'web/application/preview-lifecycle.mjs',
 ]);
 const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|completeTaskRecordFromFinish|abandonTaskRecord)\(/;
@@ -424,7 +427,7 @@ for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
   if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
-    problems.push(`new wide Runtime Task Record consumer outside compatibility baseline: src/${relative}`);
+    problems.push(`new wide Runtime Task Record consumer outside the explicit runtime-port baseline: src/${relative}`);
   }
 }
 

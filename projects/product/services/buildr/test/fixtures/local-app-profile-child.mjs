@@ -5,7 +5,8 @@ import { registerWorkspaceRegistryRepository } from '../../src/workspace/persist
 import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
 import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
-import { createLocalWorkspaceServer, ensureRegisteredTarget } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.mjs';
 
 const identity = JSON.parse(process.env.BUILDR_TEST_PRODUCT_IDENTITY);

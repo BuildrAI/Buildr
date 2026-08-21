@@ -8,7 +8,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');

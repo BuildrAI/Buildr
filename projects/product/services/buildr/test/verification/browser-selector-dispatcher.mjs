@@ -28,7 +28,7 @@ function isBrowserOwnedPath(value) {
   const relative = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
     || relative.startsWith('web-dist/')
-    || relative.startsWith('src/web/')
+    || (relative.startsWith('src/web/') && !relative.startsWith('src/web/http/'))
     || relative.startsWith('test/browser-smoke/')
     || relative === 'test/verification/browser-selector-dispatcher.mjs'
     || relative === 'test/verification/web-dist.mjs';
@@ -85,7 +85,7 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Browser verification selection mechanism changed; run the complete selector set.' });
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/http/')) {
+    if (value.startsWith('src/web/http/')) {
       plan.reasons.push({ path: originalValue, selector: null, reason: 'HTTP/API owner; verify through the Buildr Web Runtime/System owner without starting Chrome.' });
       continue;
     }

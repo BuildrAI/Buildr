@@ -30,8 +30,8 @@ test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON iden
   for (const method of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress']) {
     assert.ok(cli.includes(method) || http.includes(method), method);
   }
-  assert.equal(read('src/bootstrap/legacy-runtime-module.mjs').includes('ProjectDailyProgress'), false);
-  assert.equal(read('src/interfaces/local-app/http/server.mjs').includes('inspectProjectDailyProgress'), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
+  assert.equal(read('src/web/http/server.mjs').includes('inspectProjectDailyProgress'), false);
   for (const schema of [
     'buildr.project-daily-progress-record-result/v1',
     'buildr.project-daily-progress-inspect-result/v1',

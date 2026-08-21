@@ -3,11 +3,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
-import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
-import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
+import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
+import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
-import { ensureRegisteredTarget } from '../../../workspace/module.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = resolveProductResource('product/web-dist');
@@ -214,8 +212,6 @@ function workspaceApiMatch(pathname) {
   return pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})(/.*)?$`));
 }
 
-export { ensureRegisteredTarget };
-
 export function createLocalWorkspaceServer(runtime, {
   targetRoot = null,
   port = 0,
@@ -227,7 +223,9 @@ export function createLocalWorkspaceServer(runtime, {
   onShutdown = null,
   readExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
+  ensureRegisteredTarget = runtime.ensureRegisteredTarget,
 } = {}) {
+  if (typeof ensureRegisteredTarget !== 'function') throw new TypeError('Buildr Web Host requires the Workspace registration port.');
   const taskIdSources = [...new Set(httpContributions.map((contribution) => contribution.taskIdSource).filter(Boolean))];
   if (taskIdSources.length !== 1) {
     const error = new Error(`Buildr Web requires exactly one Task identity contribution; received ${taskIdSources.length}.`);
@@ -236,13 +234,20 @@ export function createLocalWorkspaceServer(runtime, {
   }
   const TASK_ID = taskIdSources[0];
   const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
-  const initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
+  const initialWorkspaceId = ensureRegisteredTarget(targetRoot);
   const ownsReadExecutor = !readExecutor;
   const taskReadExecutor = readExecutor || createBoundedLocalAppReadExecutor();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin = null;
   let closing = false;
+
+  function contributionRespond(response) {
+    return Object.freeze({
+      binary: (content, contentType) => binaryResponse(response, 200, content, contentType),
+      uiPrototypeHtml: (content) => uiPrototypeHtmlResponse(response, content),
+    });
+  }
 
   function submitTaskRead(request, response, operation, root, taskId, input = {}) {
     const controller = new AbortController();
@@ -286,15 +291,6 @@ export function createLocalWorkspaceServer(runtime, {
         });
         return;
       }
-      if (request.method === 'GET' && pathname === '/api/v1/release-awareness') {
-        const awareness = runtime.releaseAwareness({
-          allowDevelopmentQuery: false,
-          persistState: true,
-          notify: true,
-        });
-        jsonResponse(response, 200, withJsonSchema(PUBLIC_JSON_SCHEMAS.releaseAwareness, awareness));
-        return;
-      }
       for (const contribution of httpContributions) {
         if (typeof contribution.handleTopLevel !== 'function') continue;
         const contributedResponse = await contribution.handleTopLevel({
@@ -304,7 +300,9 @@ export function createLocalWorkspaceServer(runtime, {
           authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
           readJsonBody: () => readJsonBody(request),
           pickWorkspaceDirectory,
+          respond: contributionRespond(response),
         });
+        if (contributedResponse === true) return;
         if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
       }
       if (request.method === 'POST' && pathname === '/api/v1/app/quit') {
@@ -335,16 +333,9 @@ export function createLocalWorkspaceServer(runtime, {
         const workspaceId = apiMatch[1];
         const suffix = apiMatch[2] || '';
         const { rootPath: root } = runtime.resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
-        if (request.method === 'GET' && suffix === '/publications') return jsonResponse(response, 200, runtime.listPublications(root));
-        const publicationMatch = suffix.match(new RegExp(`^/publications/(${TASK_ID})$`));
-        if (request.method === 'GET' && publicationMatch) return jsonResponse(response, 200, runtime.publicationDetail(root, publicationMatch[1]));
-        const publicationAssetMatch = suffix.match(new RegExp(`^/publications/(${TASK_ID})/assets/(.+)$`));
-        if (request.method === 'GET' && publicationAssetMatch) {
-          const asset = runtime.readPublicationAsset(root, publicationAssetMatch[1], decodeURIComponent(publicationAssetMatch[2]));
-          return binaryResponse(response, 200, fs.readFileSync(asset.file), asset.contentType);
-        }
         const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
         for (const contribution of httpContributions) {
+          if (typeof contribution.handle !== 'function') continue;
           const contributedResponse = await contribution.handle({
             request,
             suffix,
@@ -354,37 +345,16 @@ export function createLocalWorkspaceServer(runtime, {
             readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
             readJsonBody: () => readJsonBody(request),
             submitTaskRead: (operation, taskId, input = {}) => submitTaskRead(request, response, operation, root, taskId, input),
+            respond: contributionRespond(response),
           });
+          if (contributedResponse === true) return;
           if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
-        }
-        const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
-        if (request.method === 'GET' && taskReviewsMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1]));
         }
         if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
           const error = new Error('Task API 不接受 query 参数。');
           error.code = 'task_api_query_forbidden';
           error.status = 400;
           throw error;
-        }
-        const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
-        if (request.method === 'GET' && taskChangeMatch) {
-          runtime.inspectTaskRecord(root, taskChangeMatch[1]);
-          return jsonResponse(response, 200, runtime.taskScopedChangeDetail(root, taskChangeMatch[1], taskChangeMatch[2], taskChangeMatch[3]));
-        }
-        const taskUiPrototypesMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-prototypes$`));
-        if (request.method === 'GET' && taskUiPrototypesMatch) {
-          return jsonResponse(response, 200, runtime.taskUiPrototypes(root, taskUiPrototypesMatch[1]));
-        }
-        const taskUiPrototypeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/ui-prototypes/([a-f0-9]{32})$`));
-        if (request.method === 'GET' && taskUiPrototypeMatch) {
-          const prototype = runtime.taskUiPrototype(root, taskUiPrototypeMatch[1], taskUiPrototypeMatch[2]);
-          return uiPrototypeHtmlResponse(response, prototype.html);
-        }
-        if (request.method === 'POST' && suffix === '/prompts/task-verification') {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');
-          return jsonResponse(response, 200, runtime.generateTaskVerificationPrompt(root, input));
         }
       }
       jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr Web 资源不存在。' } });

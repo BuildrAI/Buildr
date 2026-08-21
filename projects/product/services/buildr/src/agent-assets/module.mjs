@@ -32,7 +32,6 @@ import {
 export const AGENT_ASSETS_MODULE_ID = 'agent-assets';
 export const AGENT_ASSETS_APPLICATION = 'agent-assets.application';
 export const AGENT_ASSETS_RUNTIME = 'agent-assets.runtime';
-export const AGENT_ASSETS_COMPATIBILITY = 'agent-assets.bootstrap-compatibility';
 
 const APPLICATION_METHODS = Object.freeze([
   'rulesAdd', 'rulesRemove',
@@ -97,20 +96,14 @@ export function createAgentAssetsModule(runtime) {
         assembleRuntimeProjection,
         reconcileRuntimePlan,
       });
-      const compatibility = Object.freeze({
-        owner: 'reorganize-buildr-agent-assets-platform',
-        scope: 'existing CLI, HTTP, Doctor and legacy runtime consumers only',
-        exit: 'remove per consumer after CLI and HTTP hosts consume Agent Assets module capabilities directly',
-        methods: application,
-      });
       return Object.freeze({
         provides: {
           [AGENT_ASSETS_APPLICATION]: application,
           [AGENT_ASSETS_RUNTIME]: runtimeAdapters,
-          [AGENT_ASSETS_COMPATIBILITY]: compatibility,
         },
         contributions: {
           cli: createAgentAssetsCliContributions(),
+          diagnostics: [Object.freeze({ id: 'agent-assets.diagnostics', readModel: Object.freeze({ application, runtimeAdapters }) })],
         },
       });
     },

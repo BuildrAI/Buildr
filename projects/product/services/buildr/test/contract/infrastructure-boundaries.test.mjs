@@ -38,7 +38,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
 
 test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persistence', () => {
   const infrastructure = read('src/infrastructure/index.mjs');
-  const bootstrap = read('src/bootstrap/legacy-runtime-module.mjs');
+  const bootstrap = read('src/bootstrap/runtime.mjs');
   const taskModule = read('src/task/module.mjs');
   assert.match(infrastructure, /registerWorkspaceInfrastructure/);
   assert.match(infrastructure, /registerWorkspaceSqlite/);
@@ -51,6 +51,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
     'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',
   ]) assert.match(taskModule, new RegExp(registration));
   assert.match(bootstrap, /registerInfrastructure/);
+  assert.doesNotMatch(bootstrap, /legacy-runtime-module/);
   assert.doesNotMatch(bootstrap, /registerTaskPersistence|registerTaskEnvironmentRepository|registerTaskDevelopmentRepository/);
   assert.doesNotMatch(bootstrap, /infrastructure\/sqlite\/.*repository|infrastructure\/filesystem\/task-/u);
 });

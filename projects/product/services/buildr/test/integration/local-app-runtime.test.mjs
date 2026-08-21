@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { ensureRegisteredTarget, createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.mjs';
 import {
@@ -17,7 +18,7 @@ import {
   readLocalAppInstance,
   writeLocalAppInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
-import { pickWorkspaceDirectory } from '../../src/interfaces/local-app/runtime/directory-picker.mjs';
+import { pickWorkspaceDirectory } from '../../src/web/infrastructure/directory-picker.mjs';
 import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
 
 function opener(platform) {

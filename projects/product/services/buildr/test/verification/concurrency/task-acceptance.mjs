@@ -350,7 +350,12 @@ try {
     const doctor = runBuildr(['doctor', '--agent', 'codex', '--target', workspace, '--json']);
     if (doctor.status === 0) {
       const report = JSON.parse(doctor.stdout);
-      summary.retainedDoctor = { ok: report.ok, ready: report.health?.ready, actionableCount: report.health?.actionableCount };
+      summary.retainedDoctor = {
+        ok: report.ok,
+        ready: report.health?.ready,
+        actionableCount: report.health?.actionableCount,
+        findings: (report.findings || []).map((finding) => ({ code: finding.code, path: finding.path || null, message: finding.message })),
+      };
     } else summary.retainedDoctor = { ok: false, message: doctor.stderr };
   }
   const cleanupPassed = summary.cleanup.previews.every((item) => ['stopped', 'wrong-owner-rejected'].includes(item.status))

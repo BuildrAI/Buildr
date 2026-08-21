@@ -26,12 +26,12 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 |------|------------|------------------|
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`web-dist/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `package/` 只保留仍有明确 owner 和退出条件的兼容内容 |
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
-| Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 已成为显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP contribution 和 lifecycle 合约注册 | `legacy-runtime-module.mjs` 仍是有 owner 和退出条件的迁移 Facade |
+| Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 投射相关技术适配将在 Agent Assets 迁移时重新确认最终边界；Parent 中 Infrastructure Contribution 的交付绑定仍需单独对账 |
-| Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish 与 Terminal Delivery 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册 | Web HTTP Host、System Doctor 与最终 legacy convergence 仍待后续切片；其他旧 consumer 通过有退出条件的 compatibility port 过渡 |
-| Workspace Core | Workspace、Project、Service 的 Domain、Application、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Rule、Skill、Command、Component、Builtin 与 runtime projection 属于后续 Agent Assets；Change、OpenSpec、Publication 和通用 Project Verification 归属仍待决定 |
-| Web 实例生命周期 | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理已迁入 `src/web/` | HTTP Server、Router、Session、安全边界和 `web-dist` 静态托管仍暂存于 `src/interfaces/local-app/http/` |
-| System Installation | installation identity/origin/registry、update/status、npm lifecycle、Launcher 及其 CLI contribution 已迁入 `src/system/installation/` | `system/doctor` 尚未迁移 |
+| Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish 与 Terminal Delivery 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册；Bootstrap 只消费正式 runtime port | HTTP Controller 与 Diagnostic Read Model 通过模块 contribution 参与最终组装，不再由公共 Host 直连 Task 内部实现 |
+| Workspace Core | Workspace、Project、Service 的 Domain、Application、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Change 与 Publication 已由各自模块拥有；通用 Project Verification 继续保留现有 Application owner |
+| Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
+| System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
 
 以上迁移均保持公开 CLI、HTTP、JSON、SQLite schema、migration 顺序与 checksum、事务、锁、幂等、原子性、writer authority 和既有运行行为不变，并同步调整受影响的 Import、Bootstrap 组装、Application Payload、Verification owner 和测试。尚未完成的职责继续遵守本文后续目标边界，不能从目录存在或 Child completed 状态推断已经交付。
 
@@ -189,7 +189,7 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前已经迁移 Task Record、Review、Retrospective、Task 生命周期核心以及 Task Delivery/Finish。生命周期核心包括 Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 和 Parent Coordination；交付切片包括 Task Finish、Terminal Delivery、Delivery Carrier、Adaptation、Reconciliation、Activation、Cleanup、Maintenance、Finish diagnostics、execution evidence、retained/bootstrap recovery 与 Git delivery contribution。它们由 `task/module.mjs` 以独立 descriptor 组装，对 Bootstrap 只公开命名 Application、窄 Persistence Read/Internal capability、CLI/HTTP contribution 和有退出条件的 compatibility port。
+当前已经迁移 Task Record、Review、Retrospective、Task 生命周期核心以及 Task Delivery/Finish。生命周期核心包括 Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 和 Parent Coordination；交付切片包括 Task Finish、Terminal Delivery、Delivery Carrier、Adaptation、Reconciliation、Activation、Cleanup、Maintenance、Finish diagnostics、execution evidence、retained/bootstrap recovery 与 Git delivery contribution。它们由 `task/module.mjs` 以独立 descriptor 组装，对 Bootstrap 只公开命名 Application、窄 Persistence Read/Internal capability、CLI/HTTP/Diagnostic contribution 和正式 runtime port。
 
 Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。Finish 的二十余个私有 Application 协作者集中在 `application/finish/`，Terminal Delivery Application 与单文件 Finish Repository 分别保持为 `application/task-terminal-delivery-application.mjs` 和 `persistence/task-finish-repository.mjs`，CLI 与 maintenance、retained cleanup、target lease driver 位于扁平的 `interfaces/cli/`、`interfaces/internal/`。旧 `src/application/task-finish/`、`src/application/task-terminal-delivery/`、`src/task/persistence/finish/` 和全局 Finish interfaces 不保留转发入口。
 
@@ -207,7 +207,7 @@ Workspace
 
 Workspace 是管理入口，Project 和 Service 是其中具有独立身份与边界的管理对象。
 
-Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application 与 HTTP contribution；为尚未迁移的消费者保留的 compatibility port 必须在 Agent Assets、Web、System 和最终遗留退出切片中逐步删除。
+Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application 以及 CLI、HTTP、Diagnostic contribution；Web 通过窄 Workspace 注册 port 接入，不再保留临时 compatibility Facade。
 
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.mjs`，用例位于 `application/project-daily-progress-application.mjs`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.mjs`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.mjs` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
@@ -334,7 +334,7 @@ task/application
 
 `web/application/` 和 `web/http/` 保持分开：Application 决定是否启动、复用哪个实例以及何时清理，HTTP 负责具体如何创建和运行 Server。这样实例生命周期不会与 Node.js HTTP 实现混在一起。
 
-Web 实例生命周期已经独立迁入上述 `web/` 技术层：默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理均由 `web/application/`、`web/infrastructure/`、`web/interfaces/cli/` 与 `web/module.mjs` 负责。HTTP Router、Session、安全边界与 `web-dist` 静态托管在后续独立切片完成前，仍保留在现有 `interfaces/local-app/http` 宿主；该暂存边界不得反向取得实例 receipt、启动锁、scheduled maintenance 或 CLI command authority。
+Web Runtime Host 已完整迁入上述 `web/` 技术层：默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理由 `web/application/`、`web/infrastructure/`、`web/interfaces/cli/` 与 `web/module.mjs` 负责；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管由 `web/http/` 负责。公共 Host 只分发 Bootstrap 装配的 HTTP contribution，不导入 Workspace、Task、Change、Publication 或 Installation 的业务 Controller，也不取得业务 writer authority。旧 `interfaces/local-app/http` 与 `interfaces/local-app/runtime` 实现路径已退出。
 
 未来引入 Electron 时按真实形态演进：Electron 只是桌面 Launcher 时继续复用 `web/`；Electron 成为独立运行载体时再新增 `desktop/` 或相应 Electron Interface。当前不提前将 `web/` 抽象成含义模糊的 `app/` 或 `runtime/`。
 
@@ -372,7 +372,7 @@ buildr web
 
 没有安装 Launcher，用户仍然可以直接执行 `buildr web`。
 
-System Installation 已完成迁移。installation identity/origin/registry、CLI Update、Installation Status、Release Awareness、npm installation lifecycle、Launcher binding 与 Launcher 管理通过 `system/installation/module.mjs` 向 Bootstrap 提供窄能力和 CLI contribution；为 Doctor 与旧 runtime consumer 保留的 compatibility port 在 Doctor 和最终遗留退出切片完成后删除。
+System Installation 已完成迁移。installation identity/origin/registry、CLI Update、Installation Status、Release Awareness、npm installation lifecycle、Launcher binding 与 Launcher 管理通过 `system/installation/module.mjs` 向 Bootstrap 提供窄能力及 CLI、HTTP、Diagnostic contribution；Doctor 与 Bootstrap 消费正式 Application/identity/launcher port，不再依赖临时 compatibility Facade。
 
 ### `system/doctor`
 
@@ -390,6 +390,8 @@ Doctor
 Doctor 理解 Buildr 业务和产品语义，因此不属于通用 Infrastructure。Doctor 不要求为了形式完整创建没有真实内容的 `domain/` 或 `persistence/`。
 
 Doctor 可以直接读取数据库、文件、进程和安装状态等底层事实，也可以消费模块公开的诊断或 Read Model。原始数据库读取只用于连接、schema、migration、checksum、损坏和其他物理健康诊断；涉及业务状态、关系和语义的诊断优先消费所属模块公开的 Diagnostic/Read Model，不在 Doctor 中重新实现表到业务事实的映射。Doctor 只负责观察、诊断和聚合：不取得业务写入 authority，不通过诊断路径修改业务事实，也不复制正常业务流程。每个结构迁移切片都必须同步更新受影响的 Doctor 检查与诊断路径。
+
+当前实现由 `system/doctor/module.mjs` 注册 Doctor CLI 与 Application port，并在所有业务模块安装完成后接收最终 Diagnostic contribution 列表。诊断实现和结果模型位于 `system/doctor/application/`；旧 `application/doctor.mjs` 与 `application/doctor/` 路径已删除。该装配顺序保证 Doctor 可以观察完整模块图，同时保持诊断只读和各模块 writer 唯一。
 
 ## `infrastructure` 模块
 
@@ -445,7 +447,7 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
 
 当前没有必要创建 `bootstrap/web.mjs`。只有未来出现真正独立的 Electron、Worker 或其他可执行进程时，再增加相应 Bootstrap 入口。
 
-原 `application/compose-runtime.mjs` 的组装职责已经迁入 `bootstrap/`。当前 `bootstrap/runtime.mjs`、`module-registry.mjs` 与模块公开入口共同完成显式装配；`legacy-runtime-module.mjs` 仅为尚未迁移的 Application 和 Interface consumer 提供兼容注册，不是新的长期 composition root。
+原 `application/compose-runtime.mjs` 的组装职责已经迁入 `bootstrap/`。当前 `bootstrap/runtime.mjs`、`module-registry.mjs` 与模块公开入口共同完成显式装配；`legacy-runtime-module.mjs` 已删除。保留在组合 Runtime 上的既有进程内调用由模块声明的正式 runtime port 投射，不再携带临时 owner、scope 或退出元数据，也不形成第二 composition root。
 
 ## 模块公开入口与注册
 
@@ -604,7 +606,7 @@ web/interfaces/cli/web.mjs
     ↓
 web/application/instance-lifecycle.mjs
     ↓
-interfaces/local-app/http/server.mjs
+web/http/server.mjs
 ```
 
 对应职责为：
@@ -612,7 +614,7 @@ interfaces/local-app/http/server.mjs
 - `bootstrap/cli/registry.mjs` 统一发现并分发 Web command descriptor；
 - `web/interfaces/cli/web.mjs` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
 - `web/application` 判断复用还是创建 Web 实例，并管理实例生命周期；
-- 当前 `interfaces/local-app/http` 创建 HTTP Server 并装配公共 HTTP 宿主，后续整体迁入 `web/http`。
+- `web/http` 创建 HTTP Server，拥有 Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管，并只分发模块 HTTP contribution。
 
 HTTP Server 启动后的浏览器请求链为：
 
@@ -704,14 +706,14 @@ src/interfaces/cli/
 src/bootstrap/
     → 已接管进程、CLI Host、模块 registry 和显式组装
     → 已迁移模块通过各自 module.mjs 提供窄 requires/provides/contributions
-    → legacy-runtime-module.mjs 仅兼容尚未迁移的职责
+    → legacy-runtime-module.mjs 与临时 compatibility Facade 已退出
 
 src/interfaces/local-app/http/server.mjs
-    → 公共 HTTP 宿主迁入 src/web/http/
-    → 业务 HTTP Controller 按所有权迁入对应模块 interfaces/http/
+    → 已删除；公共 HTTP 宿主迁入 src/web/http/
+    → 业务 HTTP Controller 已按所有权迁入对应模块 interfaces/http/
 
 src/interfaces/local-app/runtime/
-    → 实例、Preview 和维护编排已经迁入 src/web/application/
+    → 已删除；实例、Preview 和维护编排位于 src/web/application/，目录选择等适配位于 src/web/infrastructure/
 
 src/application/{workspace,project,service}/ 与相关全局 persistence
     → Workspace Core 已迁入 src/workspace/
@@ -723,11 +725,14 @@ src/application、src/domain、src/interfaces 中的 Task 专业入口
 installation、update、status、Launcher 与 product identity
     → 已迁入 src/system/installation/
 
+src/application/doctor.mjs 与 src/application/doctor/
+    → 已删除；Doctor 命令、Application、结果模型和诊断位于 src/system/doctor/
+
 ```
 
 ## 渐进式迁移原则
 
-当前 Buildr Service 已形成 Bootstrap、Infrastructure、Task 部分切片、Workspace Core、Web 实例生命周期和 System Installation 等模块结构，其余生产职责仍与旧全局技术分层并存。后续迁移继续遵循：
+当前 Buildr Service 已形成 Bootstrap、Infrastructure、Task、Workspace Core、Agent Assets、Publication、Change、Web Runtime Host、System Installation 与 System Doctor 的显式模块结构；本轮遗留 Runtime Host 和 Doctor 入口已经收敛。后续结构演进继续遵循：
 
 - 先明确业务和产品模块，再移动文件；
 - 一个模块或一个可独立验证的结构切片逐步迁移；
@@ -740,11 +745,24 @@ installation、update、status、Launcher 与 product identity
 - 每个迁移任务明确范围、依赖、验证和退出条件；
 - 总体重构可以由父任务管理，具体模块由可独立交付的子任务推进。
 
-Task Record 已作为首个纵向参考切片完成迁移，并验证了 Domain、Application、Persistence、CLI、HTTP、SQLite 和 Bootstrap 的新组织方式。Task Review 与 Task Retrospective 已沿用该范式迁移；这不表示 `task/` 的其余能力已经完成，也不授权一次性重写整个 Task 生命周期。
+Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace、Agent Assets、Installation、Web Runtime Host 与 Doctor 已沿同一范式收敛。最终 HTTP/Diagnostic contribution 装配验证了公共 Host 可以保持技术语义，而业务 Controller、Read Model 和 writer authority 仍归所属模块。
 
 ## 迁移台账与第一轮完成定义
 
 迁移台账按生产职责和能力单元维护，不为 Parent Plan 枚举每个生产文件。每个能力单元至少记录稳定名称、事实 owner、职责边界、主要入口、writer/authority、目标模块以及 `migrated|deferred` 处置。
+
+本轮 Runtime Host、Doctor 与最终收敛的实际台账如下：
+
+| 能力单元 | 当前 owner 与主要入口 | writer / authority | 处置 |
+|----------|----------------------|--------------------|------|
+| Web HTTP 公共宿主 | `src/web/http/server.mjs`、`read-executor.mjs`、`read-worker.mjs` | 只拥有 HTTP transport、Session、安全响应、静态文件和只读执行资源；无业务 writer | `migrated` |
+| Web 静态托管 | `src/web/http/server.mjs` + Application Payload 中的 `web-dist` | `buildr-web` 仍是正式前端源码与构建 owner；Host 只读取 payload | `migrated` |
+| 业务 HTTP Controller | `workspace/interfaces/http`、`task/interfaces/http`、`change/interfaces/http`、`publication/interfaces/http`、`system/installation` contribution | writer 与 Read Model 继续归各业务模块 | `migrated` |
+| System Doctor | `src/system/doctor/module.mjs` 与 `application/` | 只读诊断聚合；不拥有 Workspace、Task、Installation 或 Web writer | `migrated` |
+| Diagnostic 最终装配 | 各模块 `diagnostics` contribution，Bootstrap 最后注入 System Doctor | Read Model 由贡献模块拥有，Doctor 只消费 | `migrated` |
+| Bootstrap composition | `src/bootstrap/runtime.mjs`、`module-registry.mjs` | 唯一模块安装、capability 与 contribution registry | `migrated` |
+| 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | `migrated`（已删除） |
+| 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `migrated` |
 
 第一轮结束时，所有现有生产职责都已在迁移台账中归入明确的能力单元，并标记为 `migrated`，或标记为具有明确理由、owner 和后续决策条件的 `deferred`。不得以“尚未讨论”为由留下无 owner、无处置的生产职责。
 

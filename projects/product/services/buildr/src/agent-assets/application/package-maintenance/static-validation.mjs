@@ -319,7 +319,6 @@ export function createPackageStaticValidator(deps) {
     }
     for (const relative of [
       'src/bootstrap/runtime.mjs',
-      'src/bootstrap/legacy-runtime-module.mjs',
       'src/task/application/task-development-application.mjs',
       'src/task/application/task-review-application.mjs',
       'src/task/application/task-verification-application.mjs',
@@ -391,18 +390,18 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const localServer = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'server.mjs');
+    const localServer = path.join(root, 'src', 'web', 'http', 'server.mjs');
     if (!existsFile(localServer)) problems.push('Task Review Buildr Web interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
-      const readWorker = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'read-worker.mjs');
+      const readWorker = path.join(root, 'src', 'web', 'http', 'read-worker.mjs');
       const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
       const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.mjs');
       const taskReviewHttpContent = existsFile(taskReviewHttp) ? fs.readFileSync(taskReviewHttp, 'utf8') : '';
       const taskModule = path.join(root, 'src', 'task', 'module.mjs');
       const taskModuleContent = existsFile(taskModule) ? fs.readFileSync(taskModule, 'utf8') : '';
       for (const [owner, required] of [
-        [content, "submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1])"],
+        [taskReviewHttpContent, "submitTaskRead('reviews', reviews[1])"],
         [readWorkerContent, "reviews: 'inspectTaskReviewView'"],
         [content, 'for (const contribution of httpContributions)'],
         [taskReviewHttpContent, "suffix !== '/prompts/task-review'"],

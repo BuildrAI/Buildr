@@ -7,7 +7,7 @@ import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { normalizeTaskEnvironmentPlan } from '../../src/task/domain/task-environment-plan.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
   BUILDR,

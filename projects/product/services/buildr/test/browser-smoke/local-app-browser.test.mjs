@@ -12,7 +12,7 @@ import { chromium } from 'playwright-core';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { FINISH_PHASES, FINISH_RUN_SCHEMA, inspectFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');

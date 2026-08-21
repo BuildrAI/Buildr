@@ -11,9 +11,9 @@ function lines(relative) {
   return fs.readFileSync(path.join(productRoot, relative), 'utf8').trimEnd().split(/\r?\n/);
 }
 
-test('兼容 facade 保持薄入口', () => {
+test('保留入口保持有界且 Doctor 已归属 System', () => {
   assert.ok(lines('src/agent-assets/infrastructure/runtime/render-claude-code.mjs').length <= 100);
-  assert.ok(lines('src/application/doctor.mjs').length <= 250);
+  assert.ok(lines('src/system/doctor/application/diagnostics.mjs').length <= 250);
   assert.ok(lines('src/agent-assets/application/package-maintenance.mjs').length <= 550);
 });
 
@@ -87,8 +87,10 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
   for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
     assert.equal(fs.existsSync(path.join(productRoot, 'src/interfaces/local-app/runtime', legacy)), false);
   }
-  const host = fs.readFileSync(path.join(productRoot, 'src/interfaces/local-app/http/server.mjs'), 'utf8');
+  const host = fs.readFileSync(path.join(productRoot, 'src/web/http/server.mjs'), 'utf8');
   assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/);
+  const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.mjs'), 'utf8');
+  assert.doesNotMatch(lifecycle, /ensureRegisteredTarget\(runtime,/);
   const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
   assert.doesNotMatch(registry, /key: "web preview|key: "web"/);
 });
@@ -123,8 +125,7 @@ test('Task Delivery 与 Finish 只由 Task module 组装', () => {
       .map((route) => route.key),
     ['task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect'],
   );
-  const legacy = fs.readFileSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs'), 'utf8');
-  assert.doesNotMatch(legacy, /registerTaskFinishRepository|registerTaskFinishApplication|registerTaskTerminalDeliveryApplication/);
+  assert.equal(fs.existsSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs')), false);
   const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
   assert.doesNotMatch(cliRegistry, /key: ["']task (?:finish (?:inspect|reconcile|run)|delivery inspect)/);
 });
@@ -137,7 +138,7 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   const serviceDomain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/service.mjs'), 'utf8');
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
-    'src/interfaces/local-app/http/server.mjs',
+    'src/web/http/server.mjs',
     'web-dist/index.html',
     '../buildr-web/src/styles.css',
     '../buildr-web/src/main.tsx',

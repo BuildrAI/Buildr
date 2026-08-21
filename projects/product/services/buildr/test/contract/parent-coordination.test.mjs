@@ -32,10 +32,10 @@ test('Parent Plan是closed计划值且Task Record不复制计划或Child状态',
 test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一public JSON identity', () => {
   const registry = read('src/bootstrap/cli/registry.mjs');
   const cli = read('src/task/interfaces/cli/parent-coordination.mjs');
-  const server = read('src/interfaces/local-app/http/server.mjs');
+  const server = read('src/web/http/server.mjs');
   const module = read('src/task/module.mjs');
   const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
-  const worker = read('src/interfaces/local-app/http/read-worker.mjs');
+  const worker = read('src/web/http/read-worker.mjs');
   const json = read('src/application/json-contracts.mjs');
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   for (const command of ['task parent inspect', 'task parent record', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(module.includes(command), command);

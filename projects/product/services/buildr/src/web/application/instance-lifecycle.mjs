@@ -56,7 +56,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     const webProfile = resolveWebProfile(productIdentity);
     assertLauncherWebProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
     let initialWorkspaceId = null;
-    if (targetRoot) initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
+    if (targetRoot) initialWorkspaceId = ensureRegisteredTarget(targetRoot);
     const assertCompatibleInstance = (healthy) => {
       let observedProfile = healthy.webProfile;
       if (!observedProfile && healthy.productIdentity) {
@@ -174,6 +174,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
             webProfile,
             previewIdentity,
             httpContributions,
+            ensureRegisteredTarget,
             onShutdown: () => {
               if (state) clearLocalAppInstance(state, webProfile);
               if (previewIdentity) process.exit(0);

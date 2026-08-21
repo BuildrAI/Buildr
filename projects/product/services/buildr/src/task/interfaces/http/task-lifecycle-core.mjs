@@ -21,8 +21,20 @@ export function createTaskDevelopmentHttpContribution(taskIdSource) {
   return readContribution('task-development.http', taskIdSource, 'development', '^/tasks/<task-id>/development$');
 }
 
-export function createTaskVerificationHttpContribution(taskIdSource) {
-  return readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$');
+export function createTaskVerificationHttpContribution(taskIdSource, application) {
+  const read = readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$');
+  return Object.freeze({
+    id: read.id,
+    handle: async (input) => {
+      const readResult = await read.handle(input);
+      if (readResult) return readResult;
+      const { request, suffix, root, authorizeWrite, readBody } = input;
+      if (request.method !== 'POST' || suffix !== '/prompts/task-verification') return null;
+      authorizeWrite();
+      const body = await readBody(new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');
+      return { status: 200, body: application.generateTaskVerificationPrompt(root, body) };
+    },
+  });
 }
 
 export function createTaskExecutionRecordHttpContribution(taskIdSource) {

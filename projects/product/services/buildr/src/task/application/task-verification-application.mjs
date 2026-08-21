@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { normalizeTaskVerificationResult, taskVerificationError } from '../domain/task-verification.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
-import { parseProjectVerification, validateProjectVerification } from '../../application/doctor/project-verification-diagnostics.mjs';
+import { parseProjectVerification, validateProjectVerification } from '../../system/doctor/application/project-verification-diagnostics.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';

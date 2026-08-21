@@ -39,7 +39,7 @@ test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑�
 test('不暴露 public Development CLI，Buildr Web 只读投影复用 Application inspect authority', () => {
   const registry = read('src/bootstrap/cli/registry.mjs');
   const help = read('src/bootstrap/cli/help.mjs');
-  const server = read('src/interfaces/local-app/http/server.mjs');
+  const server = read('src/web/http/server.mjs');
   const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   assert.doesNotMatch(registry, /task development/);
@@ -48,7 +48,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(http, /'development'/);
   assert.match(server, /submitTaskRead: \(operation, taskId/);
   assert.doesNotMatch(server, /runtime\.(?:observe|record|freeze|decide|create)TaskDevelopment/);
-  const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
+  const readWorker = read('src/web/http/read-worker.mjs');
   assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
   assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
   assert.match(skill, /--compact/);

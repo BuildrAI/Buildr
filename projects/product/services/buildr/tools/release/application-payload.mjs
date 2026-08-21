@@ -18,7 +18,7 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const MAIN_ENTRY = path.join(serviceRoot, 'tools/release/application-payload-entry.mjs');
-const WORKER_ENTRY = path.join(serviceRoot, 'src/interfaces/local-app/http/read-worker.mjs');
+const WORKER_ENTRY = path.join(serviceRoot, 'src/web/http/read-worker.mjs');
 const RESOURCE_SOURCES = Object.freeze([
   ['resources', 'product/resources', { exclude: new Set(['installation']) }],
   ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],

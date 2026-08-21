@@ -1,4 +1,4 @@
-import { registerWorkspaceApplication } from './application/workspace-application.mjs';
+import { ensureRegisteredTarget, registerWorkspaceApplication } from './application/workspace-application.mjs';
 import { registerProjectApplication } from './application/project-application.mjs';
 import { registerServiceApplication } from './application/service-application.mjs';
 import { registerProjectDailyProgressApplication } from './application/project-daily-progress-application.mjs';
@@ -40,7 +40,6 @@ export const WORKSPACE_APPLICATION = 'workspace.application';
 export const PROJECT_APPLICATION = 'project.application';
 export const SERVICE_APPLICATION = 'service.application';
 export const PROJECT_DAILY_PROGRESS_APPLICATION = 'workspace.project-daily-progress-application';
-export const WORKSPACE_COMPATIBILITY = 'workspace.bootstrap-compatibility';
 
 const WORKSPACE_METHODS = Object.freeze([
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
@@ -149,27 +148,26 @@ export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
       registerServiceApplication(runtime);
       registerProjectDailyProgressApplication(runtime);
       registerWorkspaceCliAdapter(runtime);
+      runtime.ensureRegisteredTarget = (targetRoot) => ensureRegisteredTarget(runtime, targetRoot);
 
-      const workspace = pick(runtime, WORKSPACE_METHODS);
+      const workspace = Object.freeze({
+        ...pick(runtime, WORKSPACE_METHODS),
+        ensureRegisteredTarget: runtime.ensureRegisteredTarget,
+      });
       const project = pick(runtime, PROJECT_METHODS);
       const service = pick(runtime, SERVICE_METHODS);
       const dailyProgress = pick(runtime, PROJECT_DAILY_PROGRESS_METHODS);
-      const compatibility = Object.freeze({
-        owner: 'workspace-capabilities',
-        scope: 'existing runtime consumers only',
-        exit: 'remove per consumer as Agent Assets, Web and System modules migrate; delete in legacy-exit-and-conformance',
-      });
       return Object.freeze({
         provides: {
           [WORKSPACE_APPLICATION]: workspace,
           [PROJECT_APPLICATION]: project,
           [SERVICE_APPLICATION]: service,
           [PROJECT_DAILY_PROGRESS_APPLICATION]: dailyProgress,
-          [WORKSPACE_COMPATIBILITY]: compatibility,
         },
         contributions: {
           cli: createWorkspaceCliContributions(),
           http: [createWorkspaceHttpContribution(Object.freeze({ ...workspace, ...project, ...service, ...dailyProgress }))],
+          diagnostics: [Object.freeze({ id: 'workspace.diagnostics', readModel: Object.freeze({ workspace, project, service, dailyProgress }) })],
         },
       });
     },

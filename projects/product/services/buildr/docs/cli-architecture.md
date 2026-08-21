@@ -52,7 +52,7 @@ infrastructure -----------> domain
 ```
 
 - `bin` 不包含业务逻辑。
-- `bootstrap` 只拥有进程、module composition、公共 Host 与迁移期兼容投射，不拥有业务规则、DTO 或数据库实现。
+- `bootstrap` 只拥有进程、module composition、公共 Host 与正式 runtime port 投射，不拥有业务规则、DTO 或数据库实现。
 - 已迁移模块只通过根部 `module.mjs` 声明 named `requires`、namespaced `provides`、CLI/HTTP contributions 与可选 lifecycle；模块不扫描全局 Runtime。
 - `interfaces` 负责协议适配，只调用应用用例，不被 application 或 infrastructure 反向依赖。
 - `application` 组合产品行为；现阶段可调用明确命名的 infrastructure adapter。未来抽取纯 domain 时，domain 不得依赖 filesystem、process、runtime、CLI 或测试代码。
@@ -61,24 +61,24 @@ infrastructure -----------> domain
 
 不建立顶层或 `src/shared/`。复用代码按语义归属：文件和 transaction primitive 在 `infrastructure/filesystem`，子进程调用在 `infrastructure/process.mjs`，产品目录常量在 `infrastructure/product-layout.mjs`，远程读取在 `infrastructure/network`，Agent runtime 在 `agent-assets/infrastructure/runtime`，JSON contract 在 `application`，公共 CLI Host 在 `bootstrap/cli`，能力专属 Adapter 在所属模块或 `interfaces/cli`。新增 helper 必须先确定 owner。
 
-`infrastructure/platform.mjs` 只是一份供 `bootstrap/runtime.mjs` 构造兼容 runtime object 的通用技术 dependency registry，不再导出 Agent runtime adapter。`bootstrap/legacy-runtime-module.mjs` 保留尚未迁移能力的原注册顺序；普通模块必须直接导入 Node API、明确的 module capability 或 product-layout owner，不得从 platform 聚合面取 named imports。兼容 Facade 只允许当前冻结调用者；对应能力迁移后逐项退出，最终由 `legacy-exit-and-conformance` 删除。
+`infrastructure/platform.mjs` 只是一份供 `bootstrap/runtime.mjs` 构造进程内 runtime object 的通用技术 dependency registry，不导出 Agent runtime 或业务语义。`bootstrap/legacy-runtime-module.mjs` 与带退出条件的 compatibility Facade 已删除；普通模块必须直接导入 Node API、明确的 module capability/runtime port 或 product-layout owner，不得从 platform 聚合面取 named imports。
 
-三个稳定 facade 保留现有调用表面，但不承载无界长流程：
+三个稳定的有界入口保留现有调用表面，但不承载无界长流程：
 
 ```text
-application/doctor.mjs
-  -> application/doctor/{scope,service,runtime}-diagnostics.mjs
+system/doctor/module.mjs
+  -> system/doctor/application/{doctor-application,scope,service,runtime}-diagnostics.mjs
 agent-assets/application/package-maintenance.mjs
   -> agent-assets/application/package-maintenance/{verification-registry,static-validation,smoke-checks}.mjs
 agent-assets/infrastructure/runtime/render-claude-code.mjs
   -> agent-assets/infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。Agent Assets、Task Record、Workspace、System Installation 和 Web 的已迁移 descriptor 来自各自 module contribution；未迁移命令仍由公共 Host 静态持有。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入Task Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。Agent Assets、Task、Workspace、Publication、Change、System Installation、System Doctor 和 Web 的 descriptor 来自各自 module contribution；公共 Host 只负责合并与分发。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入业务 Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
 Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Task Environment、Review/Verification Result、Finish等正式机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
 
-Task Record 是当前参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer 与 Parent Coordination Reader等命名窄依赖，在私有组合对象中依次创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP contributions。`task/domain/task-record.mjs`只验证closed record与状态，`task/application/task-record-application.mjs`拥有用例与read model，`task/persistence/task-record-repository.mjs`拥有规范化Task tables与transaction，`task/interfaces`拥有协议适配；前三者直接位于扁平技术层，不再增加单文件 `record/` 目录。CLI与HTTP Adapter调用同一Application对象；兼容Facade只把同一对象和既有读取表面投射给未迁移消费者，不创建第二store、writer、双读或双写。Task Environment、Development、Review、Verification、Git、Finish与Retrospective仍由各自owner持有，不能因该参考模块被描述为整个Task能力已经迁移。
+Task Record 是参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer 与 Parent Coordination Reader等命名窄依赖，在私有组合对象中依次创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP/Diagnostic contributions。`task/domain/task-record.mjs`只验证closed record与状态，`task/application/task-record-application.mjs`拥有用例与read model，`task/persistence/task-record-repository.mjs`拥有规范化Task tables与transaction，`task/interfaces`拥有协议适配；前三者直接位于扁平技术层，不再增加单文件 `record/` 目录。CLI与HTTP Adapter调用同一Application对象；正式 runtime port 只把同一对象和既有进程内表面投射给 Bootstrap，不创建第二store、writer、双读或双写。Task Environment、Development、Review、Verification、Git、Finish与Retrospective仍由各自owner持有。
 
 Task Development 是无公共 CLI 的垂直切片：`domain/task-development` 验证 closed Receipt、Content Target、policy、Candidate/generation、gate、decision 与 append-only handoff；`application/task-development` 是唯一 reader/writer，并只通过 Task Record/Environment/Review/Verification Applications 和 Content observer port 取事实。Git-backed Content observer 与 Finish 共用 `infrastructure/git/git-task-contribution.mjs` 的 canonical raw delta identity，使纯交付基线（Delivery Baseline）前进不改变任务内容 identity；SQLite repository只按Task ID事务保存完整closed Receipt，internal driver只转发同一Application methods，不注册command。Review与Verification repositories同样只维护各自current slots；共用数据库不合并专业模块。Buildr Web 使用Workspace-scoped、no-store 的 `GET .../tasks/:taskId/development`，HTTP直接调用Application `inspect`，Web不打开SQLite或暴露writer。
 

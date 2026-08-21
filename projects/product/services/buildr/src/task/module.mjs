@@ -60,52 +60,52 @@ export async function runTaskPlanningIdentityDriver(args, options) {
 export const TASK_RECORD_MODULE_ID = 'task-record';
 export const TASK_RECORD_APPLICATION = 'task-record.application';
 export const TASK_RECORD_PERSISTENCE_READ = 'task-record.persistence-read';
-export const TASK_RECORD_COMPATIBILITY = 'task-record.bootstrap-compatibility';
+export const TASK_RECORD_RUNTIME_PORT = 'task-record.runtime-port';
 export const TASK_REVIEW_MODULE_ID = 'task-review';
 export const TASK_REVIEW_APPLICATION = 'task-review.application';
 export const TASK_REVIEW_PERSISTENCE_READ = 'task-review.persistence-read';
-export const TASK_REVIEW_COMPATIBILITY = 'task-review.bootstrap-compatibility';
+export const TASK_REVIEW_RUNTIME_PORT = 'task-review.runtime-port';
 export const TASK_RETROSPECTIVE_MODULE_ID = 'task-retrospective';
 export const TASK_RETROSPECTIVE_APPLICATION = 'task-retrospective.application';
 export const TASK_RETROSPECTIVE_PERSISTENCE_READ = 'task-retrospective.persistence-read';
-export const TASK_RETROSPECTIVE_COMPATIBILITY = 'task-retrospective.bootstrap-compatibility';
+export const TASK_RETROSPECTIVE_RUNTIME_PORT = 'task-retrospective.runtime-port';
 export const TASK_ENVIRONMENT_MODULE_ID = 'task-environment';
 export const TASK_ENVIRONMENT_APPLICATION = 'task-environment.application';
 export const TASK_ENVIRONMENT_PERSISTENCE_READ = 'task-environment.persistence-read';
-export const TASK_ENVIRONMENT_COMPATIBILITY = 'task-environment.bootstrap-compatibility';
+export const TASK_ENVIRONMENT_RUNTIME_PORT = 'task-environment.runtime-port';
 export const TASK_EXECUTION_RECORD_MODULE_ID = 'task-execution-record';
 export const TASK_EXECUTION_RECORD_APPLICATION = 'task-execution-record.application';
 export const TASK_EXECUTION_RECORD_PERSISTENCE_READ = 'task-execution-record.persistence-read';
-export const TASK_EXECUTION_RECORD_COMPATIBILITY = 'task-execution-record.bootstrap-compatibility';
+export const TASK_EXECUTION_RECORD_RUNTIME_PORT = 'task-execution-record.runtime-port';
 export const TASK_VERIFICATION_MODULE_ID = 'task-verification';
 export const TASK_VERIFICATION_APPLICATION = 'task-verification.application';
 export const TASK_VERIFICATION_PERSISTENCE_READ = 'task-verification.persistence-read';
-export const TASK_VERIFICATION_COMPATIBILITY = 'task-verification.bootstrap-compatibility';
+export const TASK_VERIFICATION_RUNTIME_PORT = 'task-verification.runtime-port';
 export const TASK_PLANNING_IDENTITY_MODULE_ID = 'task-planning-identity';
 export const TASK_PLANNING_IDENTITY_APPLICATION = 'task-planning-identity.application';
-export const TASK_PLANNING_IDENTITY_COMPATIBILITY = 'task-planning-identity.bootstrap-compatibility';
+export const TASK_PLANNING_IDENTITY_RUNTIME_PORT = 'task-planning-identity.runtime-port';
 export const TASK_DEVELOPMENT_MODULE_ID = 'task-development';
 export const TASK_DEVELOPMENT_APPLICATION = 'task-development.application';
 export const TASK_DEVELOPMENT_PERSISTENCE_READ = 'task-development.persistence-read';
-export const TASK_DEVELOPMENT_COMPATIBILITY = 'task-development.bootstrap-compatibility';
+export const TASK_DEVELOPMENT_RUNTIME_PORT = 'task-development.runtime-port';
 export const PARENT_COORDINATION_MODULE_ID = 'task-parent-coordination';
 export const PARENT_COORDINATION_APPLICATION = 'task-parent-coordination.application';
 export const PARENT_COORDINATION_PERSISTENCE_READ = 'task-parent-coordination.persistence-read';
-export const PARENT_COORDINATION_COMPATIBILITY = 'task-parent-coordination.bootstrap-compatibility';
+export const PARENT_COORDINATION_RUNTIME_PORT = 'task-parent-coordination.runtime-port';
 export const TASK_OVERVIEW_MODULE_ID = 'task-overview';
 export const TASK_OVERVIEW_APPLICATION = 'task-overview.application';
-export const TASK_OVERVIEW_COMPATIBILITY = 'task-overview.bootstrap-compatibility';
+export const TASK_OVERVIEW_RUNTIME_PORT = 'task-overview.runtime-port';
 export const TASK_ENTRY_SNAPSHOT_MODULE_ID = 'task-entry-snapshot';
 export const TASK_ENTRY_SNAPSHOT_APPLICATION = 'task-entry-snapshot.application';
-export const TASK_ENTRY_SNAPSHOT_COMPATIBILITY = 'task-entry-snapshot.bootstrap-compatibility';
+export const TASK_ENTRY_SNAPSHOT_RUNTIME_PORT = 'task-entry-snapshot.runtime-port';
 export const TASK_FINISH_MODULE_ID = 'task-finish';
 export const TASK_FINISH_APPLICATION = 'task-finish.application';
 export const TASK_FINISH_PERSISTENCE_READ = 'task-finish.persistence-read';
 export const TASK_FINISH_INTERNAL = 'task-finish.internal';
-export const TASK_FINISH_COMPATIBILITY = 'task-finish.bootstrap-compatibility';
+export const TASK_FINISH_RUNTIME_PORT = 'task-finish.runtime-port';
 export const TASK_TERMINAL_DELIVERY_MODULE_ID = 'task-terminal-delivery';
 export const TASK_TERMINAL_DELIVERY_APPLICATION = 'task-terminal-delivery.application';
-export const TASK_TERMINAL_DELIVERY_COMPATIBILITY = 'task-terminal-delivery.bootstrap-compatibility';
+export const TASK_TERMINAL_DELIVERY_RUNTIME_PORT = 'task-terminal-delivery.runtime-port';
 
 const APPLICATION_METHODS = Object.freeze([
   'listTaskRecords', 'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
@@ -131,7 +131,7 @@ const TASK_REVIEW_PERSISTENCE_READ_METHODS = Object.freeze([
   'taskReviewDirectory', 'taskReviewResultPath', 'readTaskReviewResultPersistence',
 ]);
 
-const TASK_REVIEW_PERSISTENCE_COMPATIBILITY_METHODS = Object.freeze([
+const TASK_REVIEW_RUNTIME_PORT_METHODS = Object.freeze([
   ...TASK_REVIEW_PERSISTENCE_READ_METHODS, 'writeTaskReviewResultPersistence', 'renderTaskReviewResult',
 ]);
 
@@ -143,7 +143,7 @@ const TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS = Object.freeze([
   'taskRetrospectiveResultPath', 'readTaskRetrospectiveResultPersistence',
 ]);
 
-const TASK_RETROSPECTIVE_PERSISTENCE_COMPATIBILITY_METHODS = Object.freeze([
+const TASK_RETROSPECTIVE_RUNTIME_PORT_METHODS = Object.freeze([
   ...TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS,
   'writeTaskRetrospectiveResultPersistence', 'writeTaskRetrospectiveDispositionPersistence', 'renderTaskRetrospectiveResult',
 ]);
@@ -237,11 +237,8 @@ function taskPrivateComposition(runtime, requires) {
   return composition;
 }
 
-function compatibility(owner, methods, testSupportProperties = undefined) {
+function runtimePort(methods, testSupportProperties = undefined) {
   return Object.freeze({
-    owner,
-    scope: 'existing Task Finish, Verification executor, Doctor and Web runtime consumers only',
-    exit: 'remove per consumer as remaining Task Finish and HTTP Host slices migrate; delete in legacy-exit-and-conformance',
     methods: Object.freeze(methods),
     ...(testSupportProperties ? { testSupportProperties: Object.freeze(testSupportProperties) } : {}),
   });
@@ -517,10 +514,7 @@ function createTaskRecordModule(requires) {
     ...application,
     readTaskRecordPersistence: persistenceRead.readTaskRecordPersistence,
   });
-  const compatibility = Object.freeze({
-    owner: 'bootstrap-and-module-contracts',
-    scope: 'existing runtime consumers only',
-    exit: 'remove per consumer as Task, Workspace, Agent Assets, Web and System modules migrate; delete in legacy-exit-and-conformance',
+  const runtimePortValue = Object.freeze({
     methods: Object.freeze({ ...application, ...persistenceRead, ...pick(privateComposition, TEST_SUPPORT_METHODS) }),
     testSupportMethods: TEST_SUPPORT_METHODS,
   });
@@ -528,7 +522,7 @@ function createTaskRecordModule(requires) {
     provides: {
       [TASK_RECORD_APPLICATION]: application,
       [TASK_RECORD_PERSISTENCE_READ]: persistenceRead,
-      [TASK_RECORD_COMPATIBILITY]: compatibility,
+      [TASK_RECORD_RUNTIME_PORT]: runtimePortValue,
     },
     contributions: {
       cli: createTaskRecordCliContributions(cliPort),
@@ -537,6 +531,7 @@ function createTaskRecordModule(requires) {
         taskIdSource: TASK_RECORD_ID_SOURCE,
         handle: (input) => handleTaskRecordHttpRequest({ ...input, runtime: application }),
       })],
+      diagnostics: [Object.freeze({ id: 'task-record.diagnostics', readModel: Object.freeze({ application, persistenceRead }) })],
     },
   });
 }
@@ -565,11 +560,8 @@ function createTaskReviewModule(requires) {
   const application = pick(privateComposition, TASK_REVIEW_APPLICATION_METHODS);
   const persistenceRead = pick(privateComposition, TASK_REVIEW_PERSISTENCE_READ_METHODS);
   const cliPort = Object.freeze({ ...application, taskReviewResultPath: persistenceRead.taskReviewResultPath });
-  const compatibility = Object.freeze({
-    owner: 'task-capabilities',
-    scope: 'existing runtime consumers only',
-    exit: 'remove per consumer as remaining Task lifecycle modules migrate; delete in legacy-exit-and-conformance',
-    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_REVIEW_PERSISTENCE_COMPATIBILITY_METHODS) }),
+  const runtimePortValue = Object.freeze({
+    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_REVIEW_RUNTIME_PORT_METHODS) }),
     testSupportProperties: Object.freeze({
       taskReviewSerialize: Object.freeze({
         get: () => privateComposition.taskReviewSerialize,
@@ -581,7 +573,7 @@ function createTaskReviewModule(requires) {
     provides: {
       [TASK_REVIEW_APPLICATION]: application,
       [TASK_REVIEW_PERSISTENCE_READ]: persistenceRead,
-      [TASK_REVIEW_COMPATIBILITY]: compatibility,
+      [TASK_REVIEW_RUNTIME_PORT]: runtimePortValue,
     },
     contributions: {
       cli: createTaskReviewCliContributions(cliPort),
@@ -614,11 +606,8 @@ function createTaskRetrospectiveModule(requires) {
 
   const application = pick(privateComposition, TASK_RETROSPECTIVE_APPLICATION_METHODS);
   const persistenceRead = pick(privateComposition, TASK_RETROSPECTIVE_PERSISTENCE_READ_METHODS);
-  const compatibility = Object.freeze({
-    owner: 'task-retrospective-capability',
-    scope: 'existing runtime consumers only',
-    exit: 'remove per consumer as remaining Task lifecycle modules migrate; delete in legacy-exit-and-conformance',
-    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_RETROSPECTIVE_PERSISTENCE_COMPATIBILITY_METHODS) }),
+  const runtimePortValue = Object.freeze({
+    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_RETROSPECTIVE_RUNTIME_PORT_METHODS) }),
     testSupportProperties: Object.freeze({
       taskRetrospectiveSerialize: Object.freeze({
         get: () => privateComposition.taskRetrospectiveSerialize,
@@ -630,7 +619,7 @@ function createTaskRetrospectiveModule(requires) {
     provides: {
       [TASK_RETROSPECTIVE_APPLICATION]: application,
       [TASK_RETROSPECTIVE_PERSISTENCE_READ]: persistenceRead,
-      [TASK_RETROSPECTIVE_COMPATIBILITY]: compatibility,
+      [TASK_RETROSPECTIVE_RUNTIME_PORT]: runtimePortValue,
     },
     contributions: {
       http: [Object.freeze({
@@ -671,7 +660,7 @@ export function createTaskEnvironmentModule(runtime) {
         provides: {
           [TASK_ENVIRONMENT_APPLICATION]: application,
           [TASK_ENVIRONMENT_PERSISTENCE_READ]: persistenceRead,
-          [TASK_ENVIRONMENT_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...TASK_ENVIRONMENT_PERSISTENCE_METHODS, ...TASK_ENVIRONMENT_APPLICATION_METHODS]), testSupportProperties),
+          [TASK_ENVIRONMENT_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_ENVIRONMENT_PERSISTENCE_METHODS, ...TASK_ENVIRONMENT_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
           cli: taskEnvironmentCliContributions(),
@@ -706,7 +695,7 @@ export function createTaskExecutionRecordModule(runtime) {
         provides: {
           [TASK_EXECUTION_RECORD_APPLICATION]: application,
           [TASK_EXECUTION_RECORD_PERSISTENCE_READ]: persistenceRead,
-          [TASK_EXECUTION_RECORD_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...TASK_EXECUTION_RECORD_PERSISTENCE_METHODS, ...TASK_EXECUTION_RECORD_APPLICATION_METHODS]), testSupportProperties),
+          [TASK_EXECUTION_RECORD_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_EXECUTION_RECORD_PERSISTENCE_METHODS, ...TASK_EXECUTION_RECORD_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
           cli: taskExecutionRecordCliContributions(),
@@ -738,11 +727,11 @@ export function createTaskVerificationModule(runtime) {
         provides: {
           [TASK_VERIFICATION_APPLICATION]: application,
           [TASK_VERIFICATION_PERSISTENCE_READ]: persistenceRead,
-          [TASK_VERIFICATION_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...TASK_VERIFICATION_PERSISTENCE_METHODS, ...TASK_VERIFICATION_APPLICATION_METHODS]), testSupportProperties),
+          [TASK_VERIFICATION_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_VERIFICATION_PERSISTENCE_METHODS, ...TASK_VERIFICATION_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
           cli: taskVerificationCliContributions(),
-          http: [createTaskVerificationHttpContribution(TASK_RECORD_ID_SOURCE)],
+          http: [createTaskVerificationHttpContribution(TASK_RECORD_ID_SOURCE, application)],
         },
       });
     },
@@ -759,7 +748,7 @@ export function createTaskPlanningIdentityModule(runtime) {
       const application = pick(composition, TASK_PLANNING_IDENTITY_APPLICATION_METHODS);
       return Object.freeze({ provides: {
         [TASK_PLANNING_IDENTITY_APPLICATION]: application,
-        [TASK_PLANNING_IDENTITY_COMPATIBILITY]: compatibility('task-lifecycle-core', application),
+        [TASK_PLANNING_IDENTITY_RUNTIME_PORT]: runtimePort(application),
       } });
     },
   });
@@ -789,7 +778,7 @@ export function createTaskDevelopmentModule(runtime) {
         provides: {
           [TASK_DEVELOPMENT_APPLICATION]: application,
           [TASK_DEVELOPMENT_PERSISTENCE_READ]: persistenceRead,
-          [TASK_DEVELOPMENT_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...TASK_DEVELOPMENT_PERSISTENCE_METHODS, ...TASK_DEVELOPMENT_APPLICATION_METHODS]), testSupportProperties),
+          [TASK_DEVELOPMENT_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_DEVELOPMENT_PERSISTENCE_METHODS, ...TASK_DEVELOPMENT_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: { http: [createTaskDevelopmentHttpContribution(TASK_RECORD_ID_SOURCE)] },
       });
@@ -817,7 +806,7 @@ export function createParentCoordinationModule(runtime) {
         provides: {
           [PARENT_COORDINATION_APPLICATION]: application,
           [PARENT_COORDINATION_PERSISTENCE_READ]: persistenceRead,
-          [PARENT_COORDINATION_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...PARENT_COORDINATION_PERSISTENCE_METHODS, ...PARENT_COORDINATION_APPLICATION_METHODS]), testSupportProperties),
+          [PARENT_COORDINATION_RUNTIME_PORT]: runtimePort(pick(composition, [...PARENT_COORDINATION_PERSISTENCE_METHODS, ...PARENT_COORDINATION_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
           cli: parentCoordinationCliContributions(),
@@ -840,7 +829,7 @@ export function createTaskOverviewModule(runtime) {
       return Object.freeze({
         provides: {
           [TASK_OVERVIEW_APPLICATION]: application,
-          [TASK_OVERVIEW_COMPATIBILITY]: compatibility('task-lifecycle-core', pick(composition, [...TASK_OVERVIEW_PERSISTENCE_METHODS, ...TASK_OVERVIEW_APPLICATION_METHODS])),
+          [TASK_OVERVIEW_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_OVERVIEW_PERSISTENCE_METHODS, ...TASK_OVERVIEW_APPLICATION_METHODS])),
         },
         contributions: { http: [createTaskOverviewHttpContribution(TASK_RECORD_ID_SOURCE)] },
       });
@@ -859,7 +848,7 @@ export function createTaskEntrySnapshotModule(runtime) {
       return Object.freeze({
         provides: {
           [TASK_ENTRY_SNAPSHOT_APPLICATION]: application,
-          [TASK_ENTRY_SNAPSHOT_COMPATIBILITY]: compatibility('task-lifecycle-core', application),
+          [TASK_ENTRY_SNAPSHOT_RUNTIME_PORT]: runtimePort(application),
         },
         contributions: { cli: taskEntrySnapshotCliContributions() },
       });
@@ -889,12 +878,14 @@ export function createTaskFinishModule(runtime) {
           [TASK_FINISH_APPLICATION]: application,
           [TASK_FINISH_PERSISTENCE_READ]: persistenceRead,
           [TASK_FINISH_INTERNAL]: internal,
-          [TASK_FINISH_COMPATIBILITY]: compatibility(
-            'task-delivery-finish',
+          [TASK_FINISH_RUNTIME_PORT]: runtimePort(
             pick(composition, [...TASK_FINISH_PERSISTENCE_METHODS, ...TASK_FINISH_APPLICATION_METHODS]),
           ),
         },
-        contributions: { cli: createTaskFinishCliContributions(application) },
+        contributions: {
+          cli: createTaskFinishCliContributions(application),
+          diagnostics: [Object.freeze({ id: 'task-finish.diagnostics', readModel: Object.freeze({ application, persistenceRead }) })],
+        },
       });
     },
   });
@@ -917,7 +908,7 @@ export function createTaskTerminalDeliveryModule(runtime) {
       return Object.freeze({
         provides: {
           [TASK_TERMINAL_DELIVERY_APPLICATION]: application,
-          [TASK_TERMINAL_DELIVERY_COMPATIBILITY]: compatibility('task-delivery-finish', application),
+          [TASK_TERMINAL_DELIVERY_RUNTIME_PORT]: runtimePort(application),
         },
         contributions: { cli: createTaskTerminalDeliveryCliContributions(application) },
       });

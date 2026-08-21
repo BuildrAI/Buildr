@@ -5,7 +5,7 @@ import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
+import { parseProjectVerification, validateProjectVerification } from '../../system/doctor/application/project-verification-diagnostics.mjs';
 import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,

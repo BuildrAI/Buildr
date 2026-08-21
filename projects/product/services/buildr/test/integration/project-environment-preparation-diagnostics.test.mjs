@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createProjectEnvironmentPreparationDiagnostics } from '../../src/application/doctor/project-environment-preparation-diagnostics.mjs';
+import { createProjectEnvironmentPreparationDiagnostics } from '../../src/system/doctor/application/project-environment-preparation-diagnostics.mjs';
 
 function declaration(service = 'api') {
   return {

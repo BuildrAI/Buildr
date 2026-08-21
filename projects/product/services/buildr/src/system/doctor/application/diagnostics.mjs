@@ -1,19 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from '../infrastructure/process.mjs';
-import { RUNTIME_CHECKERS } from '../agent-assets/infrastructure/runtime/check-runtime.mjs';
-import { assembleRuntimeProjection } from '../agent-assets/infrastructure/runtime/projection.mjs';
-import { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, getRuntimeAdapter, isSupportedAgent } from '../agent-assets/infrastructure/runtime/adapter-contract.mjs';
-import { createRuntimeDiagnostics } from './doctor/runtime-diagnostics.mjs';
-import { createScopeDiagnostics } from './doctor/scope-diagnostics.mjs';
-import { createServiceDiagnostics } from './doctor/service-diagnostics.mjs';
-import { createCapabilityDiagnostics } from './doctor/capability-diagnostics.mjs';
-import { createProjectVerificationDiagnostics } from './doctor/project-verification-diagnostics.mjs';
-import { createProjectEnvironmentPreparationDiagnostics } from './doctor/project-environment-preparation-diagnostics.mjs';
-import { buildDoctorHealth, buildDoctorRepairPlan } from './doctor/result-model.mjs';
-import { printProductInstallationReport } from './doctor/product-installation-report.mjs';
-import { createInternalWorkflowRouteDiagnostics } from './doctor/internal-workflow-route-diagnostics.mjs';
-import { inspectRequiredInternalWorkflowRoutes } from './internal-workflow-route-inventory.mjs';
+import { execFileSync } from '../../../infrastructure/process.mjs';
+import { RUNTIME_CHECKERS } from '../../../agent-assets/infrastructure/runtime/check-runtime.mjs';
+import { assembleRuntimeProjection } from '../../../agent-assets/infrastructure/runtime/projection.mjs';
+import { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, getRuntimeAdapter, isSupportedAgent } from '../../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { createRuntimeDiagnostics } from './runtime-diagnostics.mjs';
+import { createScopeDiagnostics } from './scope-diagnostics.mjs';
+import { createServiceDiagnostics } from './service-diagnostics.mjs';
+import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
+import { createProjectVerificationDiagnostics } from './project-verification-diagnostics.mjs';
+import { createProjectEnvironmentPreparationDiagnostics } from './project-environment-preparation-diagnostics.mjs';
+import { buildDoctorHealth, buildDoctorRepairPlan } from './result-model.mjs';
+import { printProductInstallationReport } from './product-installation-report.mjs';
+import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-route-diagnostics.mjs';
+import { inspectRequiredInternalWorkflowRoutes } from '../../../application/internal-workflow-route-inventory.mjs';
 
 export function registerApplicationDoctor(runtime) {
   const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);

@@ -1,22 +1,22 @@
 import * as platform from '../infrastructure/platform.mjs';
 import { createAgentAssetsModule } from '../agent-assets/module.mjs';
 import {
-  TASK_RECORD_COMPATIBILITY,
+  TASK_RECORD_RUNTIME_PORT,
   TASK_RECORD_MODULE,
-  TASK_RETROSPECTIVE_COMPATIBILITY,
+  TASK_RETROSPECTIVE_RUNTIME_PORT,
   TASK_RETROSPECTIVE_MODULE,
-  TASK_REVIEW_COMPATIBILITY,
+  TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_MODULE,
-  TASK_ENVIRONMENT_COMPATIBILITY,
-  TASK_EXECUTION_RECORD_COMPATIBILITY,
-  TASK_VERIFICATION_COMPATIBILITY,
-  TASK_PLANNING_IDENTITY_COMPATIBILITY,
-  TASK_DEVELOPMENT_COMPATIBILITY,
-  PARENT_COORDINATION_COMPATIBILITY,
-  TASK_OVERVIEW_COMPATIBILITY,
-  TASK_ENTRY_SNAPSHOT_COMPATIBILITY,
-  TASK_FINISH_COMPATIBILITY,
-  TASK_TERMINAL_DELIVERY_COMPATIBILITY,
+  TASK_ENVIRONMENT_RUNTIME_PORT,
+  TASK_EXECUTION_RECORD_RUNTIME_PORT,
+  TASK_VERIFICATION_RUNTIME_PORT,
+  TASK_PLANNING_IDENTITY_RUNTIME_PORT,
+  TASK_DEVELOPMENT_RUNTIME_PORT,
+  PARENT_COORDINATION_RUNTIME_PORT,
+  TASK_OVERVIEW_RUNTIME_PORT,
+  TASK_ENTRY_SNAPSHOT_RUNTIME_PORT,
+  TASK_FINISH_RUNTIME_PORT,
+  TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
   createTaskEnvironmentModule,
   createTaskExecutionRecordModule,
   createTaskVerificationModule,
@@ -28,11 +28,23 @@ import {
   createTaskFinishModule,
   createTaskTerminalDeliveryModule,
 } from '../task/module.mjs';
-import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.mjs';
 import { createWorkspaceModule } from '../workspace/module.mjs';
 import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.mjs';
+import { createSystemDoctorModule } from '../system/doctor/module.mjs';
+import { registerInfrastructure } from '../infrastructure/index.mjs';
+import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
+import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
+import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
+import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
+import { registerDomainsOpenspec } from '../application/domains/openspec.mjs';
+import { registerDomainsPackageAssets } from '../application/domains/package-assets.mjs';
+import { registerApplicationWorkspaceOperations } from '../application/workspace-operations.mjs';
+import { createPublicationModule } from '../publication/module.mjs';
+import { createChangeModule } from '../change/module.mjs';
+import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
+import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
 
@@ -56,16 +68,16 @@ function taskRecordDependencies(runtime) {
 
 function installTaskRecordModule(runtime, registry) {
   const descriptor = registry.install(TASK_RECORD_MODULE);
-  const compatibility = registry.provide(TASK_RECORD_COMPATIBILITY);
-  Object.assign(runtime, compatibility.methods);
+  const runtimePort = registry.provide(TASK_RECORD_RUNTIME_PORT);
+  Object.assign(runtime, runtimePort.methods);
   return descriptor;
 }
 
 function installTaskReviewModule(runtime, registry) {
   const descriptor = registry.install(TASK_REVIEW_MODULE);
-  const compatibility = registry.provide(TASK_REVIEW_COMPATIBILITY);
-  Object.assign(runtime, compatibility.methods);
-  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties)) {
+  const runtimePort = registry.provide(TASK_REVIEW_RUNTIME_PORT);
+  Object.assign(runtime, runtimePort.methods);
+  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties)) {
     Object.defineProperty(runtime, name, {
       configurable: true,
       enumerable: false,
@@ -78,9 +90,9 @@ function installTaskReviewModule(runtime, registry) {
 
 function installTaskRetrospectiveModule(runtime, registry) {
   const descriptor = registry.install(TASK_RETROSPECTIVE_MODULE);
-  const compatibility = registry.provide(TASK_RETROSPECTIVE_COMPATIBILITY);
-  Object.assign(runtime, compatibility.methods);
-  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties)) {
+  const runtimePort = registry.provide(TASK_RETROSPECTIVE_RUNTIME_PORT);
+  Object.assign(runtime, runtimePort.methods);
+  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties)) {
     Object.defineProperty(runtime, name, {
       configurable: true,
       enumerable: false,
@@ -91,11 +103,11 @@ function installTaskRetrospectiveModule(runtime, registry) {
   return descriptor;
 }
 
-function installTaskCompatibilityModule(runtime, registry, definition, capability) {
+function installTaskRuntimeModule(runtime, registry, definition, capability) {
   const descriptor = registry.install(definition);
-  const compatibility = registry.provide(capability);
-  Object.assign(runtime, compatibility.methods);
-  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties || {})) {
+  const runtimePort = registry.provide(capability);
+  Object.assign(runtime, runtimePort.methods);
+  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties || {})) {
     Object.defineProperty(runtime, name, {
       configurable: true,
       enumerable: false,
@@ -109,25 +121,36 @@ function installTaskCompatibilityModule(runtime, registry, definition, capabilit
 export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
-  registerLegacyRuntime(runtime, {
-    installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime, { readProductIdentity: readCurrentProductIdentity })),
-    installAgentAssetsModule: () => registry.install(createAgentAssetsModule(runtime)),
-    installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
-    installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
-    installTaskRetrospectiveModule: () => installTaskRetrospectiveModule(runtime, registry),
-    installTaskEnvironmentModule: () => installTaskCompatibilityModule(runtime, registry, createTaskEnvironmentModule(runtime), TASK_ENVIRONMENT_COMPATIBILITY),
-    installTaskExecutionRecordModule: () => installTaskCompatibilityModule(runtime, registry, createTaskExecutionRecordModule(runtime), TASK_EXECUTION_RECORD_COMPATIBILITY),
-    installTaskVerificationModule: () => installTaskCompatibilityModule(runtime, registry, createTaskVerificationModule(runtime), TASK_VERIFICATION_COMPATIBILITY),
-    installTaskPlanningIdentityModule: () => installTaskCompatibilityModule(runtime, registry, createTaskPlanningIdentityModule(runtime), TASK_PLANNING_IDENTITY_COMPATIBILITY),
-    installTaskDevelopmentModule: () => installTaskCompatibilityModule(runtime, registry, createTaskDevelopmentModule(runtime), TASK_DEVELOPMENT_COMPATIBILITY),
-    installParentCoordinationModule: () => installTaskCompatibilityModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_COMPATIBILITY),
-    installTaskOverviewModule: () => installTaskCompatibilityModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_COMPATIBILITY),
-    installTaskEntrySnapshotModule: () => installTaskCompatibilityModule(runtime, registry, createTaskEntrySnapshotModule(runtime), TASK_ENTRY_SNAPSHOT_COMPATIBILITY),
-    installTaskFinishModule: () => installTaskCompatibilityModule(runtime, registry, createTaskFinishModule(runtime), TASK_FINISH_COMPATIBILITY),
-    installTaskTerminalDeliveryModule: () => installTaskCompatibilityModule(runtime, registry, createTaskTerminalDeliveryModule(runtime), TASK_TERMINAL_DELIVERY_COMPATIBILITY),
-  });
+  registerInfrastructure(runtime);
+  registerProductInvocation(runtime);
+  registerWorkspaceManagementFence(runtime);
+  registry.install(createWorkspaceModule(runtime, { readProductIdentity: readCurrentProductIdentity }));
+  registry.install(createAgentAssetsModule(runtime));
+  registerContentTargetObserver(runtime);
+  registerProjectGitObserver(runtime);
+  registerDomainsOpenspec(runtime);
+  registerDomainsPackageAssets(runtime);
+  registry.install(createPublicationModule(runtime));
+  registry.install(createChangeModule(runtime));
+  registerApplicationWorkspaceOperations(runtime);
+  registerGitWorktreeProvider(runtime);
+  installTaskRecordModule(runtime, registry);
+  installTaskRuntimeModule(runtime, registry, createTaskEnvironmentModule(runtime), TASK_ENVIRONMENT_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskExecutionRecordModule(runtime), TASK_EXECUTION_RECORD_RUNTIME_PORT);
+  installTaskReviewModule(runtime, registry);
+  installTaskRetrospectiveModule(runtime, registry);
+  installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime), TASK_VERIFICATION_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskPlanningIdentityModule(runtime), TASK_PLANNING_IDENTITY_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskDevelopmentModule(runtime), TASK_DEVELOPMENT_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskEntrySnapshotModule(runtime), TASK_ENTRY_SNAPSHOT_RUNTIME_PORT);
+  registerVerificationApplication(runtime);
+  installTaskRuntimeModule(runtime, registry, createTaskFinishModule(runtime), TASK_FINISH_RUNTIME_PORT);
+  installTaskRuntimeModule(runtime, registry, createTaskTerminalDeliveryModule(runtime), TASK_TERMINAL_DELIVERY_RUNTIME_PORT);
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
+  registry.install(createSystemDoctorModule(runtime, { diagnosticContributions: registry.contributions('diagnostics') }));
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));
   Object.defineProperty(runtime, '__bootstrapContributions', {
     enumerable: false,

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createInternalWorkflowRouteDiagnostics } from '../../src/application/doctor/internal-workflow-route-diagnostics.mjs';
+import { createInternalWorkflowRouteDiagnostics } from '../../src/system/doctor/application/internal-workflow-route-diagnostics.mjs';
 import { inspectRequiredInternalWorkflowRoutes } from '../../src/application/internal-workflow-route-inventory.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
