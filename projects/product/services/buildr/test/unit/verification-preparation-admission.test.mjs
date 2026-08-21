@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { verificationCapabilityIdentity, verificationPreparationAdmission } from '../../src/application/verification/preparation-admission.mjs';
+
+function capability() {
+  return {
+    id: 'product.browser-smoke',
+    scope: { project: 'product', services: ['buildr', 'buildr-web'] },
+    invocation: { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' },
+    environment: { requires: ['node'], preparation: [{ project: 'product', service: 'buildr-web', recipe: 'buildr-web.npm-ci' }] },
+    effects: { writes: [], externalSystems: [], authorization: 'implicit' },
+    resourceClaims: ['browser'],
+  };
+}
+
+function context(recipeStatus = 'ready') {
+  const selected = capability();
+  return {
+    taskId: 'demo',
+    preparationPlan: { identity: 'sha256-plan', projects: [{ project: 'product', source: { kind: 'project-declaration', identity: 'sha256-preparation' }, scopes: [{ selector: 'project:product', disposition: 'not-applicable', reason: 'none', recipes: [] }] }], capabilityPreparation: [{ capability: selected.id, capabilityIdentity: verificationCapabilityIdentity(selected), project: 'product', selector: 'service:product/buildr-web', recipe: { id: 'buildr-web.npm-ci' } }] },
+    receiptIdentity: 'sha256-receipt',
+    runtimeInvocation: { kind: 'node', executable: '/runtime/node', version: 'v24', identity: 'sha256-node', searchPrefix: '/runtime', source: 'stable-controller' },
+    preparationRecipes: recipeStatus === 'missing' ? [] : [{ scope: 'service:product/buildr-web', recipe: 'buildr-web.npm-ci', status: recipeStatus, identity: 'sha256-recipe', preparedIdentity: 'sha256-recipe', diagnostic: null }],
+  };
+}
+
+test('preparation admission绑定capability、Plan、Receipt和runtime identity', () => {
+  const result = verificationPreparationAdmission({ projectCode: 'product', declarationIdentity: 'sha256-verification', selectedCapabilities: [capability()], context: context() });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.gaps.length, 0);
+  assert.equal(result.binding.planIdentity, 'sha256-plan');
+  assert.equal(result.binding.receiptIdentity, 'sha256-receipt');
+  assert.ok(result.binding.runtimeInvocationIdentity.startsWith('sha256-'));
+});
+
+test('preparation gap只生成Task Environment恢复输入并声明安全降级边界', () => {
+  const result = verificationPreparationAdmission({ projectCode: 'product', declarationIdentity: 'sha256-verification', selectedCapabilities: [capability()], context: context('missing') });
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(result.gaps.map((gap) => [gap.category, gap.owner, gap.recoverable]), [['preparation', 'task-environment', true]]);
+  assert.equal(result.recovery.changesTaskScope, false);
+  assert.ok(result.recovery.blocks.includes('formal-verification-result'));
+  assert.ok(result.recovery.doesNotBlock.includes('unrelated-development'));
+  assert.deepEqual(result.recovery.planRequest.auxiliaryPreparation.map((item) => item.selector), ['service:product/buildr-web']);
+});
+
+test('没有Formal Task Environment时不把admission扩展成通用工作许可', () => {
+  const result = verificationPreparationAdmission({ projectCode: 'product', declarationIdentity: 'sha256-verification', selectedCapabilities: [capability()], context: null });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.recovery, null);
+});

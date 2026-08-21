@@ -154,7 +154,7 @@ recipes:
   const prepareFinishedAt = Date.now();
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
-  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v5');
+  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v6');
   assert.equal(prepared.environment.preparationDeclarations[0].source, 'project-declaration');
   assert.equal(prepared.environment.preparationDeclarations[0].status, 'ready');
   assert.deepEqual(prepared.environment.preparationRecipes.map((recipe) => [recipe.scope, recipe.status]), [
@@ -180,12 +180,13 @@ recipes:
   assert.equal(fs.realpathSync(path.join(worktreeWeb, 'node_modules', '.bin', 'vite')).startsWith(worktreeWeb), true);
 
   const managedNpm = prepared.environment.preparationSteps.find((step) => step.scope === 'service:product/buildr').executable;
+  const runtimeInvocation = prepared.environment.runtimeInvocation;
   const systemCommandPaths = process.platform === 'win32'
     ? [process.env.SystemRoot && path.join(process.env.SystemRoot, 'System32'), process.env.SystemRoot].filter(Boolean)
     : ['/usr/bin', '/bin'];
-  const managedPath = [path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
+  const managedPath = [runtimeInvocation.searchPrefix, path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
   const buildWebStartedAt = Date.now();
-  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: managedPath } });
+  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, BUILDR_NODE: runtimeInvocation.executable, PATH: managedPath } });
   phase.record('build-web', buildWebStartedAt, Date.now());
   assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
 });

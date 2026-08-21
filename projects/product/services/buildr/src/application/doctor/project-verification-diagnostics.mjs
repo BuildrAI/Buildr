@@ -2,13 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+} from '../../domain/task-environment/project-environment-preparation.mjs';
+
 const ROOT_FIELDS = new Set(['schemaVersion', 'resources', 'capabilities']);
 const RESOURCE_FIELDS = new Set(['id', 'title', 'strategy', 'capacity', 'authorization']);
 const CAPABILITY_FIELDS = new Set(['id', 'title', 'scope', 'invocation', 'applicability', 'proves', 'requiredForDelivery', 'environment', 'effects', 'resourceClaims']);
 const SCOPE_FIELDS = new Set(['project', 'services']);
 const INVOCATION_FIELDS = new Set(['kind', 'argv', 'cwd', 'instructions']);
 const APPLICABILITY_FIELDS = new Set(['paths', 'conditions']);
-const ENVIRONMENT_FIELDS = new Set(['requires']);
+const ENVIRONMENT_FIELDS = new Set(['requires', 'preparation']);
+const PREPARATION_REFERENCE_FIELDS = new Set(['project', 'service', 'recipe']);
 const EFFECTS_FIELDS = new Set(['writes', 'externalSystems', 'authorization']);
 const RESOURCE_STRATEGIES = new Set(['coordinated', 'external']);
 const AUTHORIZATIONS = new Set(['implicit', 'explicit']);
@@ -79,6 +86,7 @@ export function validateProjectVerification(value, context = {}) {
   const capabilityIds = new Set();
   const claimedResources = new Set();
   const knownServices = new Set(context.services || []);
+  const preparationRecipes = new Map(context.preparationRecipes || []);
   for (const [index, capability] of (Array.isArray(value.capabilities) ? value.capabilities : []).entries()) {
     const label = `verification.capabilities[${index}]`;
     if (!isObject(capability)) { errors.push(`${label} must be an object.`); continue; }
@@ -129,6 +137,30 @@ export function validateProjectVerification(value, context = {}) {
       else {
         unknownFields(capability.environment, ENVIRONMENT_FIELDS, `${label}.environment`, errors);
         strings(capability.environment.requires, `${label}.environment.requires`, errors);
+        if (capability.environment.preparation !== undefined) {
+          if (!Array.isArray(capability.environment.preparation)) errors.push(`${label}.environment.preparation must be an array.`);
+          const references = Array.isArray(capability.environment.preparation) ? capability.environment.preparation : [];
+          const identities = new Set();
+          for (const [referenceIndex, reference] of references.entries()) {
+            const referenceLabel = `${label}.environment.preparation[${referenceIndex}]`;
+            if (!isObject(reference)) { errors.push(`${referenceLabel} must be an object.`); continue; }
+            unknownFields(reference, PREPARATION_REFERENCE_FIELDS, referenceLabel, errors);
+            string(reference.project, `${referenceLabel}.project`, errors);
+            string(reference.recipe, `${referenceLabel}.recipe`, errors);
+            string(reference.service, `${referenceLabel}.service`, errors, { optional: true });
+            if (context.projectCode && reference.project !== context.projectCode) errors.push(`${referenceLabel}.project must equal ${context.projectCode}.`);
+            if (reference.service !== undefined && !knownServices.has(reference.service)) errors.push(`${referenceLabel}.service references unknown Service ${reference.service}.`);
+            const recipe = preparationRecipes.get(reference.recipe);
+            if (context.preparationRecipes && !recipe) errors.push(`${referenceLabel}.recipe references unknown Preparation Recipe ${reference.recipe}.`);
+            if (recipe) {
+              const expectedService = recipe.scope?.kind === 'service' ? recipe.scope.service : undefined;
+              if (reference.service !== expectedService) errors.push(`${referenceLabel}.service must match Preparation Recipe scope ${projectEnvironmentPreparationScopeSelector(context.projectCode, recipe)}.`);
+            }
+            const identity = `${reference.project}/${reference.service || ''}/${reference.recipe}`;
+            if (identities.has(identity)) errors.push(`${referenceLabel} is duplicated.`);
+            identities.add(identity);
+          }
+        }
       }
     }
     if (capability.effects !== undefined) {
@@ -162,6 +194,20 @@ function serviceCodes(projectRoot) {
   }
 }
 
+function preparationRecipes(projectRoot, projectCode, services) {
+  const file = path.join(projectRoot, 'preparation.yml');
+  if (!fs.existsSync(file)) return null;
+  try {
+    const declaration = normalizeProjectEnvironmentPreparation(
+      parseProjectEnvironmentPreparation(fs.readFileSync(file, 'utf8'), file),
+      { projectCode, services },
+    );
+    return declaration.recipes.map((recipe) => [recipe.id, recipe]);
+  } catch {
+    return null;
+  }
+}
+
 export function createProjectVerificationDiagnostics({ addDoctorFinding }) {
   function diagnoseProjectVerification(result, targetRoot, registry = null) {
     result.projectVerification = [];
@@ -182,7 +228,9 @@ export function createProjectVerificationDiagnostics({ addDoctorFinding }) {
         result.projectVerification.push({ project: projectName, path: relativePath, valid: false, capabilityCount: 0 });
         continue;
       }
-      const errors = validateProjectVerification(declaration, { projectCode: projectName, services: serviceCodes(projectRoot) });
+      const services = serviceCodes(projectRoot);
+      const recipes = preparationRecipes(projectRoot, projectName, services);
+      const errors = validateProjectVerification(declaration, { projectCode: projectName, services, preparationRecipes: recipes || [] });
       result.projectVerification.push({ project: projectName, path: relativePath, valid: errors.length === 0, capabilityCount: Array.isArray(declaration.capabilities) ? declaration.capabilities.length : 0 });
       for (const message of errors) addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
         path: relativePath,

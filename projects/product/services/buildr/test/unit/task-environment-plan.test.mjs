@@ -76,3 +76,32 @@ test('Plan Request覆盖Project/Service scope，resolved Plan绑定Declaration�
   assert.match(plan.projects[0].scopes[1].recipes[0].identity, /^sha256-/);
   assert.throws(() => normalizeTaskEnvironmentPlanRequest({ ...request, projects: [{ ...request.projects[0], scopes: request.projects[0].scopes.slice(1) }] }, { scopeSelectors: selectors }), (error) => error.code === 'task_environment_plan_scope_incomplete');
 });
+
+test('Plan v3分离Task基础scope、capability辅助准备、typed path与executable authority', () => {
+  const selectors = ['project:product', 'service:product/buildr'];
+  const step = normalizePreparationStepDefinition(service('service:product/buildr-web').steps[0], 'fixture', 0);
+  step.executable = { kind: 'project', name: null, path: 'services/buildr/scripts/run-development-npm' };
+  const recipeIdentity = taskEnvironmentPlanDigest({ project: 'product', id: 'buildr-web.npm-ci', title: null, scope: { kind: 'service', service: 'buildr-web' }, required: true, steps: [step] });
+  const plan = normalizeTaskEnvironmentPlan({
+    schemaVersion: 'buildr.task-environment-plan/v3',
+    projects: [{
+      project: 'product', source: { kind: 'project-declaration', path: 'projects/product/preparation.yml', identity: 'sha256-declaration' },
+      scopes: [
+        { selector: 'project:product', disposition: 'not-applicable', reason: 'No Project-wide preparation.', recipes: [] },
+        { selector: 'service:product/buildr', disposition: 'not-applicable', reason: 'No base preparation.', recipes: [] },
+      ],
+    }],
+    capabilityPreparation: [{
+      capability: 'product.browser-smoke', capabilityIdentity: 'sha256-capability', project: 'product', selector: 'service:product/buildr-web',
+      recipe: { id: 'buildr-web.npm-ci', title: null, required: true, steps: [step], identity: recipeIdentity },
+    }],
+  }, { scopeSelectors: selectors });
+  assert.match(plan.identity, /^sha256-/);
+  assert.equal(plan.projects.flatMap((project) => project.scopes).some((scope) => scope.selector.endsWith('/buildr-web')), false);
+  assert.deepEqual(plan.capabilityPreparation[0].recipe.steps[0].pathReferences.cwd, { base: 'service', selector: 'service:product/buildr-web', path: '.' });
+  assert.deepEqual(plan.capabilityPreparation[0].recipe.steps[0].executableAuthority, { kind: 'project-wrapper', project: 'product', path: 'services/buildr/scripts/run-development-npm' });
+  assert.deepEqual(normalizeTaskEnvironmentPlan(plan, { scopeSelectors: selectors }), plan);
+  const drifted = structuredClone(plan);
+  drifted.capabilityPreparation[0].recipe.steps[0].pathReferences.cwd.base = 'workspace';
+  assert.throws(() => normalizeTaskEnvironmentPlan(drifted, { scopeSelectors: selectors }), (error) => error.code === 'task_environment_plan_path_reference_invalid');
+});

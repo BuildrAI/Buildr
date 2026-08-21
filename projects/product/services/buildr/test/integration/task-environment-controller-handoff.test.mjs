@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
-import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 const TASK_ID = 'controller-binding';
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
@@ -40,7 +40,7 @@ else process.exitCode = 1;
 
 function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
   const planPayload = {
-    schemaVersion: 'buildr.task-environment-plan/v2',
+    schemaVersion: 'buildr.task-environment-plan/v3',
     projects: [{
       project: 'product', source: { kind: 'task-inline', path: null, identity: null },
       scopes: [
@@ -48,8 +48,9 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
         { selector: 'service:product/buildr', disposition: 'not-applicable', reason: 'Controller fixture has no technical preparation Step.', recipes: [] },
       ],
     }],
+    capabilityPreparation: [],
   };
-  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr'] });
+  const plan = normalizeTaskEnvironmentPlan(planPayload, { scopeSelectors: ['project:product', 'service:product/buildr'] });
   const probes = {
     runtime: { status: 'ready', identity: 'runtime-m1', observedAt: timestamp, diagnostic: null },
     cli: { status: 'ready', identity: 'cli-m1', observedAt: timestamp, diagnostic: null },
@@ -57,10 +58,11 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
     projection: { status: 'ready', identity: 'projection-m1', observedAt: timestamp, diagnostic: null },
   };
   return {
-    schemaVersion: 'buildr.task-environment-receipt/v5',
+    schemaVersion: 'buildr.task-environment-receipt/v6',
     taskId: TASK_ID,
     workspace: { id: 'workspace-fixture', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-created-at-m1', adapter: 'codex' },
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
     status: 'ready',
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', executionRoot, validationRoot: executionRoot, shared: !isolated,

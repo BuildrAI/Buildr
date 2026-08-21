@@ -411,7 +411,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const resolveTaskEnvironmentExecution = runtime.resolveTaskEnvironmentExecution.bind(runtime);
   runtime.resolveTaskEnvironmentExecution = (targetRoot, taskId) => {
     if (taskId === 'browser-parent') {
-      return { ready: true, taskId, receiptSchema: 'buildr.task-environment-receipt/v5', workspaceRoot: targetRoot, environmentRoot: targetRoot, validationRoot: targetRoot, scopes: [] };
+      return { ready: true, taskId, receiptSchema: 'buildr.task-environment-receipt/v6', workspaceRoot: targetRoot, environmentRoot: targetRoot, validationRoot: targetRoot, scopes: [] };
     }
     if (forceDevelopmentUnknown && taskId === 'browser-task') {
       const error = new Error('当前机器暂时无法读取任务环境。');

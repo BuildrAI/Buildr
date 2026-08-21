@@ -14,3 +14,9 @@ capabilities:
     proves:
       - Replace with the fact this existing capability proves
     requiredForDelivery: false
+    # environment:
+    #   requires: [node]
+    #   preparation:
+    #     - project: replace-with-project-code
+    #       service: replace-with-registered-service-code
+    #       recipe: replace-with-preparation-recipe-id

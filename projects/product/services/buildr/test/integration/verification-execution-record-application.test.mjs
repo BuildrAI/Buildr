@@ -7,6 +7,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { verificationCapabilityIdentity } from '../../src/application/verification/preparation-admission.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
@@ -109,6 +110,100 @@ test('session丢失后相同验证返回active record且零执行，显式retry�
   const records = current.runtime.listTaskExecutionRecords(current.root, current.taskId).records;
   assert.equal(records.length, 2);
   assert.deepEqual(records.map((record) => record.lifecycleStatus).sort(), ['open', 'retained']);
+});
+
+test('Formal preparation blocked时在Execution Record和process副作用前返回closed恢复请求', async (t) => {
+  const current = setup(t, 'verification-preparation-blocked');
+  const marker = path.join(current.projectRoot, 'must-not-start.txt');
+  const selected = capability('demo.prepared', `require("fs").writeFileSync(${JSON.stringify(marker)}, "started")`);
+  selected.environment.preparation = [{ project: 'demo', recipe: 'demo.prepare' }];
+  declare(current.projectRoot, [selected]);
+  fs.writeFileSync(path.join(current.projectRoot, 'preparation.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-environment-preparation/v1',
+    recipes: [{
+      id: 'demo.prepare', scope: { kind: 'project' }, required: true,
+      steps: [{ id: 'prepare', cwd: '.', executable: { kind: 'workspace-foundation', name: 'node' }, args: ['prepare.mjs'], inputs: ['prepare.mjs'], outputs: [{ path: '.prepared', kind: 'file' }], required: true, timeoutMs: 10_000 }],
+    }],
+  }));
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true,
+    taskId: current.taskId,
+    environmentRoot: current.root,
+    workspaceRoot: current.root,
+    scopes: [],
+    allowedExecutionRoots: [current.root],
+    preparationPlan: { identity: 'sha256-plan', projects: [{ project: 'demo', source: { kind: 'project-declaration', identity: 'sha256-preparation' }, scopes: [{ selector: 'project:demo', disposition: 'not-applicable', reason: 'No base preparation.', recipes: [] }] }], capabilityPreparation: [] },
+    preparationRecipes: [],
+    receiptIdentity: 'sha256-receipt',
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
+  });
+  let opens = 0;
+  const originalOpen = current.runtime.openTaskExecutionRecord;
+  current.runtime.openTaskExecutionRecord = (...args) => { opens += 1; return originalOpen(...args); };
+  await assert.rejects(() => run(current, selected.id), (error) => {
+    assert.equal(error.code, 'verification.preparation_blocked');
+    assert.equal(error.verificationAdmission.status, 'blocked');
+    assert.equal(error.verificationAdmission.recovery.changesTaskScope, false);
+    assert.deepEqual(error.verificationAdmission.recovery.planRequest.auxiliaryPreparation.map((item) => item.recipe), ['demo.prepare']);
+    return true;
+  });
+  assert.equal(opens, 0);
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test('Formal preparation binding在首次副作用前漂移时fail closed', async (t) => {
+  const current = setup(t, 'verification-preparation-race');
+  const marker = path.join(current.projectRoot, 'must-not-start-race.txt');
+  const selected = capability('demo.prepared', `require("fs").writeFileSync(${JSON.stringify(marker)}, "started")`);
+  selected.environment.preparation = [{ project: 'demo', recipe: 'demo.prepare' }];
+  declare(current.projectRoot, [selected]);
+  fs.writeFileSync(path.join(current.projectRoot, 'preparation.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-environment-preparation/v1',
+    recipes: [{ id: 'demo.prepare', scope: { kind: 'project' }, required: true, steps: [{ id: 'prepare', cwd: '.', executable: { kind: 'workspace-foundation', name: 'node' }, args: ['prepare.mjs'], inputs: ['prepare.mjs'], outputs: [{ path: '.prepared', kind: 'file' }], required: true, timeoutMs: 10_000 }] }],
+  }));
+  const capabilityIdentity = verificationCapabilityIdentity(selected);
+  let reads = 0;
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true, taskId: current.taskId, environmentRoot: current.root, workspaceRoot: current.root, scopes: [], allowedExecutionRoots: [current.root],
+    preparationPlan: { identity: 'sha256-plan', projects: [{ project: 'demo', source: { kind: 'project-declaration', identity: 'sha256-preparation' }, scopes: [{ selector: 'project:demo', disposition: 'not-applicable', reason: 'No base preparation.', recipes: [] }] }], capabilityPreparation: [{ capability: selected.id, capabilityIdentity, project: 'demo', selector: 'project:demo', recipe: { id: 'demo.prepare' } }] },
+    preparationRecipes: [{ scope: 'project:demo', recipe: 'demo.prepare', status: 'ready', identity: 'sha256-recipe', preparedIdentity: 'sha256-recipe', diagnostic: null }],
+    receiptIdentity: reads++ === 0 ? 'sha256-receipt-before' : 'sha256-receipt-after',
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
+  });
+  let opens = 0;
+  const originalOpen = current.runtime.openTaskExecutionRecord;
+  current.runtime.openTaskExecutionRecord = (...args) => { opens += 1; return originalOpen(...args); };
+  await assert.rejects(() => run(current, selected.id), (error) => error.code === 'verification.preparation_drifted');
+  assert.equal(opens, 0);
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test('Execution Record打开后admission漂移仍在capability副作用前停止', async (t) => {
+  const current = setup(t, 'verification-preparation-post-open-race');
+  const marker = path.join(current.projectRoot, 'must-not-start-post-open.txt');
+  const selected = capability('demo.prepared', `require("fs").writeFileSync(${JSON.stringify(marker)}, "started")`);
+  selected.environment.preparation = [{ project: 'demo', recipe: 'demo.prepare' }];
+  declare(current.projectRoot, [selected]);
+  fs.writeFileSync(path.join(current.projectRoot, 'preparation.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-environment-preparation/v1',
+    recipes: [{ id: 'demo.prepare', scope: { kind: 'project' }, required: true, steps: [{ id: 'prepare', cwd: '.', executable: { kind: 'workspace-foundation', name: 'node' }, args: ['prepare.mjs'], inputs: ['prepare.mjs'], outputs: [{ path: '.prepared', kind: 'file' }], required: true, timeoutMs: 10_000 }] }],
+  }));
+  const capabilityIdentity = verificationCapabilityIdentity(selected);
+  let reads = 0;
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true, taskId: current.taskId, environmentRoot: current.root, workspaceRoot: current.root, scopes: [], allowedExecutionRoots: [current.root],
+    preparationPlan: { identity: 'sha256-plan', projects: [{ project: 'demo', source: { kind: 'project-declaration', identity: 'sha256-preparation' }, scopes: [{ selector: 'project:demo', disposition: 'not-applicable', reason: 'No base preparation.', recipes: [] }] }], capabilityPreparation: [{ capability: selected.id, capabilityIdentity, project: 'demo', selector: 'project:demo', recipe: { id: 'demo.prepare' } }] },
+    preparationRecipes: [{ scope: 'project:demo', recipe: 'demo.prepare', status: 'ready', identity: 'sha256-recipe', preparedIdentity: 'sha256-recipe', diagnostic: null }],
+    receiptIdentity: reads++ < 2 ? 'sha256-receipt-before' : 'sha256-receipt-after',
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
+  });
+  let opens = 0;
+  const originalOpen = current.runtime.openTaskExecutionRecord;
+  current.runtime.openTaskExecutionRecord = (...args) => { opens += 1; return originalOpen(...args); };
+  await assert.rejects(() => run(current, selected.id), (error) => error.code === 'verification.preparation_drifted' && error.verificationExecutionRecord.lifecycleStatus === 'open');
+  assert.equal(opens, 1);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records[0].lifecycleStatus, 'open');
 });
 
 test('相同terminal verification默认复用原record且只有retry或identity变化才执行', async (t) => {

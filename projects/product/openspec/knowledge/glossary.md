@@ -157,6 +157,13 @@
 - 避免混用：Service repo 不是默认独立 Agent runtime 入口。
 - 来源：[Buildr Service](services/buildr.md)
 
+## 验证准备闭包（Verification Preparation Closure）
+
+- 定义：Formal Verification针对实际selected capabilities，将其声明identity、同Project Preparation Recipe要求、matching Environment Plan/Receipt与runtime invocation identity合并去重后形成的单层、closed执行前置集合。
+- 适用范围：在打开Verification Execution Record、启动进程、Browser或外部资源之前的纯读admission；可恢复的Recipe缺口由Task Environment唯一writer幂等prepare。
+- 避免混用：不是Task scope、Change applicability、Content Target、源码写入授权、测试DAG或通用工作许可；辅助Service准备不表示Task拥有该Service，无关开发、只读调查和明确非正式检查不被该门禁阻塞。
+- 来源：[技术架构](architecture/technical.md)
+
 ## Change
 
 - 定义：OpenSpec 管理的一次可实施行为变更，包含 proposal、design、delta specs、tasks，并可带 Buildr Brief 与 workflow sidecars。

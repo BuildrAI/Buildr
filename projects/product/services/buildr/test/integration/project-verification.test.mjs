@@ -65,6 +65,26 @@ test('Project verification v2 拒绝 v1 lifecycle 字段、越界路径与错误
   assert.ok(errors.some((message) => message.includes('unknown Service unknown')));
 });
 
+test('Project verification capability preparation只接受同Project已登记Recipe scope', () => {
+  const recipe = { id: 'web.npm-ci', scope: { kind: 'service', service: 'web' } };
+  const value = declaration({
+    capabilities: [capability({
+      environment: {
+        requires: ['node'],
+        preparation: [{ project: 'demo', service: 'web', recipe: 'web.npm-ci' }],
+      },
+    })],
+  });
+  assert.deepEqual(validateProjectVerification(value, { projectCode: 'demo', services: ['web'], preparationRecipes: [[recipe.id, recipe]] }), []);
+  value.capabilities[0].environment.preparation[0].project = 'other';
+  value.capabilities[0].environment.preparation[0].service = 'unknown';
+  value.capabilities[0].environment.preparation[0].recipe = 'missing';
+  const errors = validateProjectVerification(value, { projectCode: 'demo', services: ['web'], preparationRecipes: [[recipe.id, recipe]] });
+  assert.ok(errors.some((message) => message.includes('project must equal demo')));
+  assert.ok(errors.some((message) => message.includes('unknown Service unknown')));
+  assert.ok(errors.some((message) => message.includes('unknown Preparation Recipe missing')));
+});
+
 test('Project verification v2 只保留真实 claim 的 coordinated/external 资源', () => {
   const value = declaration({
     resources: [

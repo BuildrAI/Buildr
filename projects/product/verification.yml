@@ -100,6 +100,10 @@ capabilities:
     requiredForDelivery: true
     environment:
       requires: [node, npm, chrome]
+      preparation:
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
     effects:
       writes: ["系统临时目录中的隔离 Workspace、Service source 与浏览器 profile"]
       externalSystems: []

@@ -15,7 +15,7 @@
 ## 数据与依赖
 
 - 依赖 React 19、React Router、Vite、TypeScript，以及 Ant Design 5（`antd` + 必要 icons）；UI 方向为柔和产品感，依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本；前端工程自有 `package-lock.json`。
-- 当Task构建或验证Buildr Web前端时，Agent从Task scope、`buildr`的`build:web`委托和Verification能力判断本Service需要准备，并在Task专属Environment Plan中为本Service登记独立Step。npm场景的Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output、Workspace Foundation受管npm作为executable，不从retained checkout或系统PATH借用TypeScript/Vite。
+- 当Formal Verification选择需要Buildr Web源码工具链的capability时，该capability通过`environment.preparation`引用本Service已登记Recipe；Verification admission把它作为辅助准备闭包交给Task Environment，而不把本Service加入Task scope、Change、Content Target或源码写入authority。npm Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output和受管wrapper authority；Browser build在启动Chrome前只接受本root的TypeScript/Vite，不从retained checkout、全局安装或系统PATH借用。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表默认 `open` (todo + active)，可单独筛选 todo，并继续以 `retrospectiveState` 筛选复盘处置。Task 详情展示复盘来源，复盘 Tab 保持原始 Markdown 只读并展示后续 Task 实时状态。UI 不创建或激活 Task。

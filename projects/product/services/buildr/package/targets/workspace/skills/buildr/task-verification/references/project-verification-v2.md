@@ -23,7 +23,7 @@ capabilities: []
 - `applicability.paths` 和可选自然语言 `conditions`；
 - 非空 `proves`，只写该能力实际能够证明的事实；
 - `requiredForDelivery: true|false`；
-- 可选 `environment.requires`、`effects` 与 `resourceClaims`。
+- 可选 `environment.requires`、`environment.preparation`、`effects` 与 `resourceClaims`。每个preparation reference只允许`project`、可选`service`与`recipe`，必须引用同Project `preparation.yml`中scope完全匹配的Recipe。
 
 只有已经存在的命令、脚本、CI wrapper 或有界 Agent 操作可以进入声明。Buildr 不根据技术栈推断能力，也不在初始化声明时创建或执行新测试。
 
@@ -34,6 +34,8 @@ capabilities: []
 声明只暴露少量、稳定、可独立选择的 capability 接口。一个 Project 入口内部可以拥有多个 Project-specific step；不要把每个测试文件、step、测试意图、执行边界、Quick 成本约束、affected/full 范围、Candidate/Release 验证目标或目标耗时复制进本 schema。测试框架设计和测试建设交给 `project-testing`；本声明只描述已经存在的能力。
 
 ## Environment、effects 与 resource
+
+`environment.preparation`只声明Formal Verification前必须current的已知Recipe，不保存安装命令、机器路径或执行状态。Task Verification admission对实际selected capabilities合并引用；缺口由Task Environment唯一writer恢复。辅助Service不进入Task scope、Change、Content Target或源码写入authority。没有该字段的既有v2 capability行为不变。
 
 `effects` 可声明 `writes`、`externalSystems` 和 `authorization: implicit|explicit`。存在 external system 时必须显式授权；command runner 只在调用方精确传入 `--authorize-capability <id>` 后执行 explicit effects。
 

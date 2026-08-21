@@ -40,6 +40,7 @@ function receipt(root, status = 'ready') {
     taskId: 'demo-task',
     workspace: { id: '22222222-2222-4222-8222-222222222222', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-controller', adapter: 'codex' },
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
     status,
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', executionRoot: root, validationRoot: root, shared: true, provider: null,

@@ -64,6 +64,9 @@ test('same inputs create byte-identical payload and installed resource mapping d
     assert.equal(first.manifest.files.some((entry) => /(?:^|\/)typescript(?:\/|$)/u.test(entry.path)), false);
     assert.equal(first.manifest.files.some((entry) => /(?:^|\/)@types\/node(?:\/|$)/u.test(entry.path)), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('/web-dist/index.html')), true);
+    assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('/preparation.yml')), false);
+    assert.equal(first.manifest.files.some((entry) => entry.path.includes('/services/buildr-web/')), false);
+    assert.equal(first.manifest.files.some((entry) => entry.path.includes('/node_modules/typescript/')), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/sqlite/migrations/0000_')), true);
     for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
       assert.equal(first.manifest.files.some((entry) => entry.path === `resources/product/${relativePath}`), false, relativePath);
@@ -135,6 +138,9 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'payload/product/package/launchers/assets/Buildr.ico',
     ]) assert.equal(paths.includes(required), true, required);
     assert.equal(paths.some((value) => /(^|\/)node(?:\.exe)?(\/|$)/iu.test(value)), false);
+    assert.equal(paths.some((value) => value.endsWith('/preparation.yml')), false);
+    assert.equal(paths.some((value) => value.includes('/services/buildr-web/')), false);
+    assert.equal(paths.some((value) => value.includes('/node_modules/typescript/')), false);
     assert.deepEqual(paths.filter((value) => /(^|\/)launchers?(\/|$)/iu.test(value)), [
       'payload/product/package/launchers/assets/Buildr.icns',
       'payload/product/package/launchers/assets/Buildr.ico',

@@ -1,0 +1,38 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: deterministic-environment-verification-preflight
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/deterministic-environment-verification-preflight/brief.md
+    reason: 为正式Change提供人类可读的目标、边界、核心流程与验收摘要。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/deterministic-environment-verification-preflight/proposal.md
+      - openspec/changes/deterministic-environment-verification-preflight/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 需要说明Environment、Verification admission与Project declaration之间的新所有权、调用顺序、专业gap分类和安全降级边界。
+    status: pending
+    sourceIdentities:
+      - openspec/changes/deterministic-environment-verification-preflight/specs/task-environments/spec.md
+      - openspec/changes/deterministic-environment-verification-preflight/specs/task-verification/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service将拥有closure计算、typed Workspace path与executable authority分离、runtime route及唯一Environment恢复边界。
+    status: pending
+    sourceIdentities:
+      - openspec/changes/deterministic-environment-verification-preflight/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Browser验证需要明确只消费Buildr Web本地锁定工具链且不改变该Service内容所有权。
+    status: pending
+    sourceIdentities:
+      - openspec/changes/deterministic-environment-verification-preflight/specs/local-app-browser-verification/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 需要定义验证准备闭包并与Environment Plan、Verification policy和Task scope区分。
+    status: pending
+    sourceIdentities:
+      - openspec/changes/deterministic-environment-verification-preflight/design.md
+unresolvedItems: []

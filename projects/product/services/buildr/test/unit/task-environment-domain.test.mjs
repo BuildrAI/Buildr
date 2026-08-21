@@ -24,7 +24,7 @@ function receipt(overrides = {}) {
   const recipePayload = { project: 'product', id: 'install-buildr', title: null, scope: { kind: 'service', service: 'buildr' }, required: true, steps: [step] };
   const recipe = { id: recipePayload.id, title: null, required: true, steps: [step], identity: taskEnvironmentPlanDigest(recipePayload) };
   const planPayload = {
-    schemaVersion: 'buildr.task-environment-plan/v2',
+    schemaVersion: 'buildr.task-environment-plan/v3',
     projects: [{
       project: 'product', source: { kind: 'task-inline', path: null, identity: null },
       scopes: [
@@ -32,8 +32,9 @@ function receipt(overrides = {}) {
         { selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr dependencies are required.', recipes: [recipe] },
       ],
     }],
+    capabilityPreparation: [],
   };
-  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr'] });
+  const plan = normalizeTaskEnvironmentPlan(planPayload, { scopeSelectors: ['project:product', 'service:product/buildr'] });
   const scopeProbe = {
     runtime: { status: 'ready', identity: 'node-23', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
     cli: { status: 'ready', identity: 'cli-one', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: null },
@@ -45,6 +46,7 @@ function receipt(overrides = {}) {
     taskId: 'demo-task',
     workspace: { id: 'workspace-id', root: WORKSPACE_ROOT },
     controller: { sourceRoot: CONTROLLER_ROOT, cliSource: CONTROLLER_CLI, identity: 'sha256-controller', adapter: 'codex' },
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
     status: 'ready',
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.',
@@ -92,7 +94,7 @@ function receipt(overrides = {}) {
   };
 }
 
-test('Environment Receipt v5规范化Declaration、Plan、Recipe/Step、实际scope和资源事实', () => {
+test('Environment Receipt v6规范化runtime、Declaration、Plan、Recipe/Step、实际scope和资源事实', () => {
   assert.deepEqual(normalizeTaskEnvironmentReceipt(receipt()), receipt());
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedTaskId: 'other-task' }), (error) => error.code === 'task_environment_identity_mismatch');
   assert.throws(() => normalizeTaskEnvironmentReceipt(receipt(), { expectedWorkspaceRoot: path.join(os.tmpdir(), 'buildr-task-environment-domain', 'other') }), (error) => error.code === 'task_environment_workspace_mismatch');
@@ -105,6 +107,7 @@ test('legacy Environment Receipt v2 保持只读兼容且 read model 明确标�
   delete legacy.preparationScopes;
   delete legacy.preparationRecipes;
   delete legacy.preparationSteps;
+  delete legacy.runtimeInvocation;
   legacy.scopes = legacy.scopes.map(({ preparation, ...scope }) => ({ ...scope, dependencies: preparation }));
   assert.deepEqual(normalizeTaskEnvironmentReceipt(legacy), legacy);
   assert.equal(taskEnvironmentReadModel(legacy).legacy, true);

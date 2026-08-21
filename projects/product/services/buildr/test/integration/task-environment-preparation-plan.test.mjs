@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
+import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
 
 const TASK_ID = 'preparation-plan';
 
@@ -117,6 +118,11 @@ function fixture(t, { services = ['buildr', 'buildr-web', 'unrelated'], scoped =
     runtime,
     plan: planFor(scoped),
     writes: () => writes,
+    mutateReceipt(mutator) {
+      const receipt = structuredClone(persistence.receipt);
+      mutator(receipt);
+      persistence = { ...persistence, receipt };
+    },
     installRoots: () => fs.existsSync(installLog) ? fs.readFileSync(installLog, 'utf8').split(/\r?\n/u).map((line) => line.trim()).filter(Boolean) : [],
     serviceRoot: (service) => path.join(projectRoot, 'services', service),
     writeDeclaration(value = declarationFor(services)) { fs.writeFileSync(path.join(projectRoot, 'preparation.yml'), `${JSON.stringify(value, null, 2)}\n`); },
@@ -146,6 +152,75 @@ test('prepare首次执行两个Service Step，幂等恢复不重复执行且不�
   assert.equal(restored.effects.some((effect) => effect.type === 'preparation-step-executed'), false);
   assert.equal(current.installRoots().length, 2);
   assert.equal(restored.environment.preparationPlan.identity, prepared.environment.preparationPlan.identity);
+});
+
+test('capability辅助Preparation准备非Task Service但不扩Task scope或allowed execution roots', (t) => {
+  const current = fixture(t, { scoped: ['buildr'] });
+  current.writeDeclaration();
+  const request = declarationRequest(['buildr']);
+  request.auxiliaryPreparation = [{
+    capability: 'product.browser-smoke',
+    capabilityIdentity: 'sha256-browser-capability',
+    project: 'product',
+    selector: 'service:product/buildr-web',
+    recipe: 'buildr-web.npm-ci',
+  }];
+  const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: request });
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
+  assert.deepEqual(prepared.environment.scopes.map((scope) => scope.selector), ['workspace', 'project:product', 'service:product/buildr']);
+  assert.ok(prepared.environment.preparationScopes.some((scope) => scope.selector === 'service:product/buildr-web' && scope.status === 'ready'));
+  const auxiliary = prepared.environment.preparationPlan.capabilityPreparation[0];
+  assert.deepEqual(auxiliary.recipe.steps[0].pathReferences.cwd, { base: 'service', selector: 'service:product/buildr-web', path: '.' });
+  assert.deepEqual(auxiliary.recipe.steps[0].executableAuthority, { kind: 'workspace-foundation', name: 'node' });
+  assert.deepEqual(current.installRoots().sort(), [current.serviceRoot('buildr'), current.serviceRoot('buildr-web')].sort());
+  const execution = current.runtime.resolveTaskEnvironmentExecution(current.root, TASK_ID);
+  assert.equal(execution.allowedExecutionRoots.includes(current.serviceRoot('buildr-web')), false);
+  assert.equal(execution.preparationRecipes.some((recipe) => recipe.scope === 'service:product/buildr-web' && recipe.status === 'ready'), true);
+  assert.equal(execution.runtimeInvocation.executable, fs.realpathSync(process.execPath));
+});
+
+test('Receipt v5保持只读且只有显式Plan Request升级为v6', (t) => {
+  const current = fixture(t);
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan }).status, 'ready');
+  current.mutateReceipt((receipt) => {
+    const projects = receipt.preparationPlan.projects.map((project) => ({
+      ...project,
+      scopes: project.scopes.map((scope) => ({
+        ...scope,
+        recipes: scope.recipes.map((recipe) => ({
+          ...recipe,
+          steps: recipe.steps.map(({ pathReferences: _paths, executableAuthority: _authority, ...step }) => step),
+        })),
+      })),
+    }));
+    receipt.schemaVersion = 'buildr.task-environment-receipt/v5';
+    const planPayload = { schemaVersion: 'buildr.task-environment-plan/v2', projects };
+    receipt.preparationPlan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr', 'service:product/buildr-web'] });
+    delete receipt.runtimeInvocation;
+  });
+  const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
+  assert.equal(inspected.status, 'blocked');
+  assert.equal(inspected.diagnostic.code, 'task_environment_legacy_receipt');
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false }).diagnostic.code, 'task_environment_plan_required_for_upgrade');
+  current.writeDeclaration();
+  const upgraded = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: declarationRequest(['buildr', 'buildr-web']) });
+  assert.equal(upgraded.status, 'ready', JSON.stringify(upgraded, null, 2));
+  assert.equal(upgraded.environment.schemaVersion, 'buildr.task-environment-receipt/v6');
+  assert.equal(upgraded.environment.preparationPlan.schemaVersion, 'buildr.task-environment-plan/v3');
+});
+
+test('Receipt runtime invocation漂移时inspect只读blocked且不执行Step', (t) => {
+  const current = fixture(t, { services: ['buildr'], scoped: ['buildr'] });
+  assert.equal(current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false, plan: current.plan }).status, 'ready');
+  const installs = current.installRoots().length;
+  const writes = current.writes();
+  current.mutateReceipt((receipt) => { receipt.runtimeInvocation.identity = 'sha256-drifted-runtime'; });
+  const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
+  assert.equal(inspected.status, 'blocked');
+  assert.equal(inspected.environment.preparationSteps[0].status, 'drifted');
+  assert.match(inspected.environment.preparationSteps[0].diagnostic, /runtime invocation 已漂移/);
+  assert.equal(current.installRoots().length, installs);
+  assert.equal(current.writes(), writes);
 });
 
 test('inspect对部分缺失和input漂移只读，prepare只恢复对应Service', (t) => {

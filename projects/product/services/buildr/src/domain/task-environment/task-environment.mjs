@@ -1,9 +1,15 @@
 import path from 'node:path';
 
 import { isTaskRecordId } from '../../task/domain/record/task-record.mjs';
-import { normalizeTaskEnvironmentPlan } from './task-environment-plan.mjs';
+import {
+  LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA,
+  LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2,
+  normalizeTaskEnvironmentPlan,
+  TASK_ENVIRONMENT_PLAN_SCHEMA,
+} from './task-environment-plan.mjs';
 
-export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v5';
+export const TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v6';
+export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V5 = 'buildr.task-environment-receipt/v5';
 export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4 = 'buildr.task-environment-receipt/v4';
 export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3 = 'buildr.task-environment-receipt/v3';
 export const LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA = 'buildr.task-environment-receipt/v2';
@@ -93,6 +99,22 @@ function normalizeProvider(value, field) {
   };
 }
 
+function normalizeRuntimeInvocation(value) {
+  if (value === null || value === undefined) return null;
+  const field = 'runtimeInvocation';
+  const invocation = object(value, field);
+  closed(invocation, new Set(['kind', 'executable', 'version', 'identity', 'searchPrefix', 'source']), field);
+  if (!['node', 'other'].includes(invocation.kind)) throw taskEnvironmentError('task_environment_runtime_invocation_invalid', `${field}.kind 不受支持。`, 400, { field: `${field}.kind` });
+  return {
+    kind: invocation.kind,
+    executable: absolute(invocation.executable, `${field}.executable`),
+    version: text(invocation.version, `${field}.version`),
+    identity: text(invocation.identity, `${field}.identity`),
+    searchPrefix: absolute(invocation.searchPrefix, `${field}.searchPrefix`),
+    source: identity(invocation.source, `${field}.source`),
+  };
+}
+
 function normalizeScope(value, index, workspaceRoot, schemaVersion) {
   const field = `scopes[${index}]`;
   const scope = object(value, field);
@@ -106,7 +128,7 @@ function normalizeScope(value, index, workspaceRoot, schemaVersion) {
   if (!scope.shared && !inside(validationRoot, executionRoot) && !inside(executionRoot, validationRoot)) {
     throw taskEnvironmentError('task_environment_scope_invalid', `${field} 的 executionRoot 与 validationRoot 不属于同一任务根。`, 400, { field });
   }
-  const preparationReceipt = schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA || schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4;
+  const preparationReceipt = [TASK_ENVIRONMENT_RECEIPT_SCHEMA, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V5, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4].includes(schemaVersion);
   if (preparationReceipt && !scope.preparation) throw taskEnvironmentError('task_environment_field_invalid', `${field}.preparation 必须存在。`, 400, { field: `${field}.preparation` });
   if (!preparationReceipt && !scope.dependencies) throw taskEnvironmentError('task_environment_field_invalid', `${field}.dependencies 必须存在。`, 400, { field: `${field}.dependencies` });
   if (preparationReceipt && scope.dependencies !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', `Environment Receipt preparation schema不支持字段：${field}.dependencies。`, 400, { field: `${field}.dependencies` });
@@ -325,19 +347,22 @@ function inside(root, candidate) {
 
 export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, expectedWorkspaceRoot = null } = {}) {
   const receipt = object(value, 'Environment Receipt');
-  const supportedSchemas = new Set([LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4, TASK_ENVIRONMENT_RECEIPT_SCHEMA]);
-  if (!supportedSchemas.has(receipt.schemaVersion)) throw taskEnvironmentError('task_environment_schema_unsupported', 'Environment Receipt schemaVersion 必须是受支持的v2、v3、v4或v5。', 409, { actual: receipt.schemaVersion });
-  const v5 = receipt.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
+  const supportedSchemas = new Set([LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V5, TASK_ENVIRONMENT_RECEIPT_SCHEMA]);
+  if (!supportedSchemas.has(receipt.schemaVersion)) throw taskEnvironmentError('task_environment_schema_unsupported', 'Environment Receipt schemaVersion 必须是受支持的v2、v3、v4、v5或v6。', 409, { actual: receipt.schemaVersion });
+  const v6 = receipt.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA;
+  const v5 = receipt.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V5;
   const v4 = receipt.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V4;
   const v3 = receipt.schemaVersion === LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V3;
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'status', 'scopes', 'dependencyRoots', 'preparationPlan', 'preparationServices', 'preparationDeclarations', 'preparationScopes', 'preparationRecipes', 'preparationSteps', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'workspace', 'controller', 'runtimeInvocation', 'status', 'scopes', 'dependencyRoots', 'preparationPlan', 'preparationServices', 'preparationDeclarations', 'preparationScopes', 'preparationRecipes', 'preparationSteps', 'resources', 'latest', 'createdAt', 'updatedAt']), '');
   if (v3 && !Array.isArray(receipt.dependencyRoots)) throw taskEnvironmentError('task_environment_field_invalid', 'dependencyRoots 必须是数组。', 400, { field: 'dependencyRoots' });
   if (!v3 && receipt.dependencyRoots !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', '只有Environment Receipt v3支持dependencyRoots。', 400, { field: 'dependencyRoots' });
   if (v4 && (!Array.isArray(receipt.preparationServices) || !Array.isArray(receipt.preparationSteps))) throw taskEnvironmentError('task_environment_field_invalid', 'v4 preparationServices/preparationSteps 必须是数组。', 400, { field: 'preparationServices' });
-  if (v5 && (!Array.isArray(receipt.preparationDeclarations) || !Array.isArray(receipt.preparationScopes) || !Array.isArray(receipt.preparationRecipes) || !Array.isArray(receipt.preparationSteps))) throw taskEnvironmentError('task_environment_field_invalid', 'v5 Preparation分层字段必须是数组。', 400);
-  if (v5 && receipt.preparationServices !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', 'v5不支持preparationServices。', 400);
-  if (!v4 && !v5 && ['preparationPlan', 'preparationServices', 'preparationDeclarations', 'preparationScopes', 'preparationRecipes', 'preparationSteps'].some((field) => receipt[field] !== undefined)) throw taskEnvironmentError('task_environment_field_forbidden', 'Legacy Environment Receipt不支持Preparation Plan字段。', 400);
+  if ((v5 || v6) && (!Array.isArray(receipt.preparationDeclarations) || !Array.isArray(receipt.preparationScopes) || !Array.isArray(receipt.preparationRecipes) || !Array.isArray(receipt.preparationSteps))) throw taskEnvironmentError('task_environment_field_invalid', `${v6 ? 'v6' : 'v5'} Preparation分层字段必须是数组。`, 400);
+  if ((v5 || v6) && receipt.preparationServices !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', `${v6 ? 'v6' : 'v5'}不支持preparationServices。`, 400);
+  if (!v4 && !v5 && !v6 && ['preparationPlan', 'preparationServices', 'preparationDeclarations', 'preparationScopes', 'preparationRecipes', 'preparationSteps'].some((field) => receipt[field] !== undefined)) throw taskEnvironmentError('task_environment_field_forbidden', 'Legacy Environment Receipt不支持Preparation Plan字段。', 400);
   if (v4 && ['preparationDeclarations', 'preparationScopes', 'preparationRecipes'].some((field) => receipt[field] !== undefined)) throw taskEnvironmentError('task_environment_field_forbidden', 'Receipt v4不支持Declaration/Scope/Recipe字段。', 400);
+  if (v6 && receipt.runtimeInvocation === undefined) throw taskEnvironmentError('task_environment_field_invalid', 'v6 runtimeInvocation 必须存在。', 400, { field: 'runtimeInvocation' });
+  if (!v6 && receipt.runtimeInvocation !== undefined) throw taskEnvironmentError('task_environment_field_forbidden', 'Legacy Environment Receipt不支持runtimeInvocation。', 400, { field: 'runtimeInvocation' });
   const taskId = text(receipt.taskId, 'taskId');
   if (!isTaskRecordId(taskId)) throw taskEnvironmentError('task_environment_identity_invalid', `Task ID 不合法：${taskId}。`, 400, { taskId });
   if (expectedTaskId && taskId !== expectedTaskId) throw taskEnvironmentError('task_environment_identity_mismatch', `Environment Receipt Task identity 不匹配：${expectedTaskId} != ${taskId}。`, 409);
@@ -363,8 +388,11 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
   }
   const serviceSelectors = scopes.filter((scope) => scope.kind === 'service').map((scope) => scope.selector);
   const scopeSelectors = scopes.filter((scope) => scope.kind === 'project' || scope.kind === 'service').map((scope) => scope.selector);
-  const preparationPlan = (v4 || v5) && receipt.preparationPlan ? normalizeTaskEnvironmentPlan(receipt.preparationPlan, v5 ? { scopeSelectors } : { serviceSelectors }) : null;
-  const preparationSteps = (v4 || v5) ? receipt.preparationSteps.map((step, index) => normalizePreparationStep(step, index, scopeIds, { v5 })) : [];
+  const preparationPlan = (v4 || v5 || v6) && receipt.preparationPlan ? normalizeTaskEnvironmentPlan(receipt.preparationPlan, (v5 || v6) ? { scopeSelectors } : { serviceSelectors }) : null;
+  const expectedPlanSchema = v6 ? TASK_ENVIRONMENT_PLAN_SCHEMA : v5 ? LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2 : v4 ? LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA : null;
+  if (preparationPlan && preparationPlan.schemaVersion !== expectedPlanSchema) throw taskEnvironmentError('task_environment_plan_schema_mismatch', `Environment Receipt ${receipt.schemaVersion} 必须引用 ${expectedPlanSchema}。`, 409, { receiptSchema: receipt.schemaVersion, expectedPlanSchema, actualPlanSchema: preparationPlan.schemaVersion });
+  const preparationScopeIds = new Set([...scopeIds, ...(preparationPlan?.capabilityPreparation || []).map((item) => item.selector)]);
+  const preparationSteps = (v4 || v5 || v6) ? receipt.preparationSteps.map((step, index) => normalizePreparationStep(step, index, preparationScopeIds, { v5: v5 || v6 })) : [];
   const preparationStepIds = new Set();
   for (const step of preparationSteps) {
     if (preparationStepIds.has(step.id)) throw taskEnvironmentError('task_environment_preparation_step_duplicate', `Preparation Step重复：${step.id}。`, 409, { id: step.id });
@@ -376,16 +404,19 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
     const observedServices = preparationServices.map((service) => service.selector).sort();
     if (JSON.stringify(plannedServices) !== JSON.stringify(observedServices)) throw taskEnvironmentError('task_environment_preparation_scope_invalid', 'preparationServices与current Plan不一致。', 409, { plannedServices, observedServices });
   }
-  const preparationDeclarations = v5 ? receipt.preparationDeclarations.map(normalizePreparationDeclaration) : [];
-  const preparationRecipes = v5 ? receipt.preparationRecipes.map((recipe, index) => normalizePreparationRecipe(recipe, index, scopeIds, preparationStepIds)) : [];
+  const preparationDeclarations = (v5 || v6) ? receipt.preparationDeclarations.map(normalizePreparationDeclaration) : [];
+  const preparationRecipes = (v5 || v6) ? receipt.preparationRecipes.map((recipe, index) => normalizePreparationRecipe(recipe, index, preparationScopeIds, preparationStepIds)) : [];
   const preparationRecipeIds = new Set();
   for (const recipe of preparationRecipes) {
     if (preparationRecipeIds.has(recipe.id)) throw taskEnvironmentError('task_environment_preparation_recipe_duplicate', `Preparation Recipe重复：${recipe.id}。`, 409, { id: recipe.id });
     preparationRecipeIds.add(recipe.id);
   }
-  const preparationScopes = v5 ? receipt.preparationScopes.map((scope, index) => normalizePreparationScope(scope, index, scopeIds, preparationRecipeIds)) : [];
-  if (v5 && preparationPlan) {
-    const plannedScopes = preparationPlan.projects.flatMap((project) => project.scopes.map((scope) => scope.selector)).sort();
+  const preparationScopes = (v5 || v6) ? receipt.preparationScopes.map((scope, index) => normalizePreparationScope(scope, index, preparationScopeIds, preparationRecipeIds)) : [];
+  if ((v5 || v6) && preparationPlan) {
+    const plannedScopes = [...new Set([
+      ...preparationPlan.projects.flatMap((project) => project.scopes.map((scope) => scope.selector)),
+      ...(preparationPlan.capabilityPreparation || []).map((item) => item.selector),
+    ])].sort();
     const observedScopes = preparationScopes.map((scope) => scope.selector).sort();
     if (JSON.stringify(plannedScopes) !== JSON.stringify(observedScopes)) throw taskEnvironmentError('task_environment_preparation_scope_invalid', 'preparationScopes与current Plan不一致。', 409, { plannedScopes, observedScopes });
     const plannedProjects = preparationPlan.projects.map((project) => project.project).sort();
@@ -407,11 +438,12 @@ export function normalizeTaskEnvironmentReceipt(value, { expectedTaskId = null, 
     taskId,
     workspace: { id: identity(workspace.id, 'workspace.id'), root: workspaceRoot },
     controller: { sourceRoot: absolute(controller.sourceRoot, 'controller.sourceRoot'), cliSource: absolute(controller.cliSource, 'controller.cliSource'), identity: text(controller.identity, 'controller.identity'), adapter: identity(controller.adapter, 'controller.adapter') },
+    ...(v6 ? { runtimeInvocation: normalizeRuntimeInvocation(receipt.runtimeInvocation) } : {}),
     status: receipt.status,
     scopes,
     ...(v3 ? { dependencyRoots } : {}),
     ...(v4 ? { preparationPlan, preparationServices, preparationSteps } : {}),
-    ...(v5 ? { preparationPlan, preparationDeclarations, preparationScopes, preparationRecipes, preparationSteps } : {}),
+    ...((v5 || v6) ? { preparationPlan, preparationDeclarations, preparationScopes, preparationRecipes, preparationSteps } : {}),
     resources,
     latest: normalizeLatest(receipt.latest),
     createdAt,
@@ -426,6 +458,7 @@ export function taskEnvironmentReadModel(receipt) {
     taskId: normalized.taskId,
     workspace: normalized.workspace,
     controller: { sourceRoot: normalized.controller.sourceRoot, identity: normalized.controller.identity, adapter: normalized.controller.adapter },
+    ...(normalized.runtimeInvocation ? { runtimeInvocation: normalized.runtimeInvocation } : {}),
     status: normalized.status,
     scopes: normalized.scopes.map((scope) => ({
       selector: scope.selector,
@@ -442,7 +475,7 @@ export function taskEnvironmentReadModel(receipt) {
       ...(scope.preparation ? { preparation: scope.preparation } : { dependencies: scope.dependencies }),
       projection: scope.projection,
     })),
-    ...(normalized.schemaVersion === TASK_ENVIRONMENT_RECEIPT_SCHEMA
+    ...([TASK_ENVIRONMENT_RECEIPT_SCHEMA, LEGACY_TASK_ENVIRONMENT_RECEIPT_SCHEMA_V5].includes(normalized.schemaVersion)
       ? { preparationPlan: normalized.preparationPlan, preparationDeclarations: normalized.preparationDeclarations, preparationScopes: normalized.preparationScopes, preparationRecipes: normalized.preparationRecipes, preparationSteps: normalized.preparationSteps }
       : normalized.preparationPlan !== undefined
         ? { preparationPlan: normalized.preparationPlan, preparationServices: normalized.preparationServices, preparationSteps: normalized.preparationSteps }

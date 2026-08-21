@@ -209,12 +209,12 @@ export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
 ]);
 
 export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
-  Object.freeze({ owner: 'product.browser-smoke', inputs: Object.freeze(['test/browser-smoke/**']) }),
+  Object.freeze({ owner: 'product.browser-smoke', inputs: Object.freeze(['test/browser-smoke/**', 'test/verification/browser-selector-dispatcher.mjs', 'test/verification/web-dist.mjs']) }),
 ]);
 
 const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-verification-admission': Object.freeze(['test/verification/changed*.mjs', 'test/verification/candidate.mjs', 'test/verification/dag-scheduler.mjs', 'test/verification/plan-runner.mjs', 'test/verification/planner.mjs', 'test/verification/registry.mjs', 'src/application/verification/**']),
-  'system-verification-contracts': Object.freeze(['test/verification/focus.mjs', 'test/verification/executor.mjs', 'test/verification/plan-runner.mjs', 'test/verification/resource-coordinator.mjs', 'test/verification/system*.mjs', 'test/verification/timing/**', 'test/verification/workspace/**', 'src/application/verification/capability-runner.mjs', 'src/application/verification/process-executor.mjs', 'src/application/verification/resource-coordinator.mjs', 'src/application/verification/verification-application.mjs']),
+  'system-verification-contracts': Object.freeze(['test/verification/focus.mjs', 'test/verification/executor.mjs', 'test/verification/plan-runner.mjs', 'test/verification/resource-coordinator.mjs', 'test/verification/system*.mjs', 'test/verification/timing/**', 'test/verification/workspace/**', 'src/application/verification/capability-runner.mjs', 'src/application/verification/preparation-admission.mjs', 'src/application/verification/process-executor.mjs', 'src/application/verification/resource-coordinator.mjs', 'src/application/verification/verification-application.mjs']),
   'system-public-json-contracts': Object.freeze(['src/application/json-contracts.mjs', 'src/bootstrap/cli/**', 'src/interfaces/cli/**']),
   'system-openspec-contract-audit': Object.freeze(['src/application/openspec/**', 'src/application/domains/openspec.mjs']),
   'system-workspace-lifecycle': Object.freeze(['src/application/project/**', 'src/application/service/**', 'src/application/workspace/**', 'src/domain/project/**', 'src/domain/service/**', 'src/domain/workspace/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/workspace-product-suite.mjs']),
@@ -249,6 +249,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/doctor/internal-workflow-route-diagnostics.mjs',
     'src/application/doctor/project-environment-preparation-diagnostics.mjs',
     'src/application/doctor/project-verification-diagnostics.mjs',
+    'src/domain/task-environment/project-environment-preparation.mjs',
     'src/application/doctor.mjs',
     'src/application/doctor/result-model.mjs',
     'src/application/doctor/scope-diagnostics.mjs',
@@ -278,6 +279,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/verification/capability-runner.mjs',
     'src/application/verification/evidence-lifecycle.mjs',
     'src/application/verification/process-executor.mjs',
+    'src/application/verification/preparation-admission.mjs',
     'src/application/verification/resource-coordinator.mjs',
     'src/application/verification/verification-application.mjs',
     'test/verification/affected.mjs',

@@ -40,7 +40,7 @@ function taskSummary(inspected) {
 }
 
 function environmentSummary(execution) {
-  if (!execution?.ready) return { status: 'not-ready', observedAt: execution?.observedAt || null, receiptSchema: null, execution: null, controllerInvocation: null, cliInvocation: null };
+  if (!execution?.ready) return { status: 'not-ready', observedAt: execution?.observedAt || null, receiptSchema: null, execution: null, runtimeInvocation: null, controllerInvocation: null, cliInvocation: null };
   return {
     status: 'ready',
     observedAt: execution.observedAt,
@@ -50,6 +50,7 @@ function environmentSummary(execution) {
       roots: execution.executionRoots,
       allowedRoots: execution.allowedExecutionRoots,
     },
+    runtimeInvocation: execution.runtimeInvocation || null,
     controllerInvocation: execution.controllerInvocation,
     cliInvocation: execution.cliInvocation,
   };

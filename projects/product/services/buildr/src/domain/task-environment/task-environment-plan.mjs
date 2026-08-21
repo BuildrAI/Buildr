@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-export const TASK_ENVIRONMENT_PLAN_SCHEMA = 'buildr.task-environment-plan/v2';
+export const TASK_ENVIRONMENT_PLAN_SCHEMA = 'buildr.task-environment-plan/v3';
+export const LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2 = 'buildr.task-environment-plan/v2';
 export const LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA = 'buildr.task-environment-plan/v1';
 export const TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA = 'buildr.task-environment-plan-request/v1';
 
@@ -9,6 +10,46 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SELECTOR = /^service:[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const EXECUTABLE_KINDS = new Set(['workspace-foundation', 'project', 'service', 'absolute']);
 const OUTPUT_KINDS = new Set(['file', 'directory', 'executable']);
+
+function typedPathReference(base, selector, value) {
+  return { base, selector, path: value };
+}
+
+function typedPreparationStep(step, project, selector) {
+  const base = selector.startsWith('service:') ? 'service' : 'project';
+  const executableAuthority = step.executable.kind === 'workspace-foundation'
+    ? { kind: 'workspace-foundation', name: step.executable.name }
+    : step.executable.kind === 'service'
+      ? { kind: 'service-wrapper', selector, path: step.executable.path }
+      : step.executable.kind === 'project'
+        ? { kind: 'project-wrapper', project, path: step.executable.path }
+        : { kind: 'machine', requirement: 'explicit-absolute', name: path.basename(step.executable.path) };
+  return {
+    ...step,
+    pathReferences: {
+      cwd: typedPathReference(base, selector, step.cwd),
+      inputs: step.inputs.map((value) => typedPathReference(base, selector, value)),
+      outputs: step.outputs.map((output) => ({ ...typedPathReference(base, selector, output.path), kind: output.kind })),
+    },
+    executableAuthority,
+  };
+}
+
+function stripTypedPreparationStep(step) {
+  const { pathReferences: _pathReferences, executableAuthority: _executableAuthority, ...legacy } = step;
+  return legacy;
+}
+
+function assertTypedPreparationStep(step, project, selector, field) {
+  if (step.pathReferences === undefined && step.executableAuthority === undefined) return;
+  const expected = typedPreparationStep(stripTypedPreparationStep(step), project, selector);
+  if (JSON.stringify(step.pathReferences) !== JSON.stringify(expected.pathReferences)) throw taskEnvironmentError('task_environment_plan_path_reference_invalid', `${field}.pathReferences 与portable Step不一致。`, 409, { field: `${field}.pathReferences` });
+  if (JSON.stringify(step.executableAuthority) !== JSON.stringify(expected.executableAuthority)) throw taskEnvironmentError('task_environment_plan_executable_invalid', `${field}.executableAuthority 与portable Step不一致。`, 409, { field: `${field}.executableAuthority` });
+}
+
+function typedRecipe(recipe, project, selector) {
+  return { ...recipe, steps: recipe.steps.map((step) => typedPreparationStep(step, project, selector)) };
+}
 
 function taskEnvironmentError(code, message, status = 400, details = undefined, nextAction = undefined) {
   const error = new Error(message);
@@ -180,7 +221,7 @@ function normalizePlanScope(value, field, scopeSelectors) {
 export function normalizeTaskEnvironmentPlanV2(value, { scopeSelectors = [] } = {}) {
   const plan = object(value, 'Environment Plan');
   closed(plan, new Set(['schemaVersion', 'identity', 'notApplicableReason', 'projects']), 'Environment Plan');
-  if (plan.schemaVersion !== TASK_ENVIRONMENT_PLAN_SCHEMA) throw taskEnvironmentError('task_environment_plan_schema_unsupported', `Environment Plan schemaVersion 必须是 ${TASK_ENVIRONMENT_PLAN_SCHEMA}。`, 409, { actual: plan.schemaVersion });
+  if (plan.schemaVersion !== LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2) throw taskEnvironmentError('task_environment_plan_schema_unsupported', `Environment Plan schemaVersion 必须是 ${LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2}。`, 409, { actual: plan.schemaVersion });
   if (!Array.isArray(plan.projects)) throw taskEnvironmentError('task_environment_plan_invalid', 'Environment Plan.projects 必须是数组。', 409, { field: 'projects' });
   const expected = new Set(scopeSelectors);
   const notApplicableReason = plan.notApplicableReason === undefined || plan.notApplicableReason === null ? null : text(plan.notApplicableReason, 'notApplicableReason');
@@ -209,9 +250,70 @@ export function normalizeTaskEnvironmentPlanV2(value, { scopeSelectors = [] } = 
     const owned = scope.selector === `project:${project.project}` || scope.selector.startsWith(`service:${project.project}/`);
     if (!owned) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `Scope不属于Plan Project：${scope.selector}。`, 409, { project: project.project, selector: scope.selector });
   }
-  const payload = { schemaVersion: TASK_ENVIRONMENT_PLAN_SCHEMA, ...(notApplicableReason ? { notApplicableReason } : {}), projects };
+  const payload = { schemaVersion: LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2, ...(notApplicableReason ? { notApplicableReason } : {}), projects };
   const derived = taskEnvironmentPlanDigest(payload);
   if (plan.identity !== derived) throw taskEnvironmentError('task_environment_plan_identity_mismatch', 'Environment Plan identity 与内容不匹配。', 409, { expected: derived, actual: plan.identity });
+  return { ...payload, identity: derived };
+}
+
+function normalizeCapabilityPreparation(value, field, projects) {
+  const item = object(value, field);
+  closed(item, new Set(['capability', 'capabilityIdentity', 'project', 'selector', 'recipe']), field);
+  const project = identifier(item.project, `${field}.project`);
+  const selector = text(item.selector, `${field}.selector`);
+  if (!SELECTOR.test(selector) && selector !== `project:${project}`) throw taskEnvironmentError('task_environment_plan_scope_invalid', `${field}.selector 不合法。`, 409, { selector });
+  if (!(selector === `project:${project}` || selector.startsWith(`service:${project}/`))) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `Capability preparation scope不属于Project：${selector}。`, 409, { project, selector });
+  if (!projects.some((candidate) => candidate.project === project)) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `Capability preparation Project不属于Task Project closure：${project}。`, 409, { project });
+  const recipeInput = object(item.recipe, `${field}.recipe`);
+  if (!Array.isArray(recipeInput.steps)) throw taskEnvironmentError('task_environment_plan_invalid', `${field}.recipe.steps 必须是数组。`, 409);
+  recipeInput.steps.forEach((step, index) => assertTypedPreparationStep(step, project, selector, `${field}.recipe.steps[${index}]`));
+  return {
+    capability: identifier(item.capability, `${field}.capability`),
+    capabilityIdentity: text(item.capabilityIdentity, `${field}.capabilityIdentity`),
+    project,
+    selector,
+    recipe: typedRecipe(normalizeRecipeSnapshot({ ...recipeInput, steps: recipeInput.steps.map(stripTypedPreparationStep) }, `${field}.recipe`, selector), project, selector),
+  };
+}
+
+export function normalizeTaskEnvironmentPlanV3(value, { scopeSelectors = [] } = {}) {
+  const plan = object(value, 'Environment Plan');
+  closed(plan, new Set(['schemaVersion', 'identity', 'notApplicableReason', 'projects', 'capabilityPreparation']), 'Environment Plan');
+  if (plan.schemaVersion !== TASK_ENVIRONMENT_PLAN_SCHEMA) throw taskEnvironmentError('task_environment_plan_schema_unsupported', `Environment Plan schemaVersion 必须是 ${TASK_ENVIRONMENT_PLAN_SCHEMA}。`, 409, { actual: plan.schemaVersion });
+  const legacyProjects = plan.projects.map((project) => ({
+    ...project,
+    scopes: project.scopes.map((scope) => ({
+      ...scope,
+      recipes: scope.recipes.map((recipe) => ({ ...recipe, steps: recipe.steps.map((step, index) => {
+        assertTypedPreparationStep(step, project.project, scope.selector, `projects.${project.project}.${scope.selector}.${recipe.id}.steps[${index}]`);
+        return stripTypedPreparationStep(step);
+      }) })),
+    })),
+  }));
+  const v2Payload = { ...plan, projects: legacyProjects, schemaVersion: LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2 };
+  delete v2Payload.capabilityPreparation;
+  const legacyIdentity = taskEnvironmentPlanDigest({
+    schemaVersion: LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2,
+    ...(plan.notApplicableReason ? { notApplicableReason: plan.notApplicableReason } : {}),
+    projects: legacyProjects,
+  });
+  const base = normalizeTaskEnvironmentPlanV2({ ...v2Payload, identity: legacyIdentity }, { scopeSelectors });
+  if (!Array.isArray(plan.capabilityPreparation)) throw taskEnvironmentError('task_environment_plan_invalid', 'Environment Plan.capabilityPreparation 必须是数组。', 409, { field: 'capabilityPreparation' });
+  const projects = base.projects.map((project) => ({
+    ...project,
+    scopes: project.scopes.map((scope) => ({ ...scope, recipes: scope.recipes.map((recipe) => typedRecipe(recipe, project.project, scope.selector)) })),
+  }));
+  const capabilityPreparation = plan.capabilityPreparation.map((item, index) => normalizeCapabilityPreparation(item, `capabilityPreparation[${index}]`, projects));
+  const keys = capabilityPreparation.map((item) => `${item.capabilityIdentity}/${item.selector}/${item.recipe.id}`);
+  if (new Set(keys).size !== keys.length) throw taskEnvironmentError('task_environment_plan_duplicate', 'Environment Plan capabilityPreparation不能重复。', 409);
+  const payload = {
+    schemaVersion: TASK_ENVIRONMENT_PLAN_SCHEMA,
+    ...(base.notApplicableReason ? { notApplicableReason: base.notApplicableReason } : {}),
+    projects,
+    capabilityPreparation,
+  };
+  const derived = taskEnvironmentPlanDigest(payload);
+  if (plan.identity !== undefined && plan.identity !== derived) throw taskEnvironmentError('task_environment_plan_identity_mismatch', 'Environment Plan identity 与内容不匹配。', 409, { expected: derived, actual: plan.identity });
   return { ...payload, identity: derived };
 }
 
@@ -233,7 +335,7 @@ function normalizeRequestScope(value, field, expected) {
 
 export function normalizeTaskEnvironmentPlanRequest(value, { scopeSelectors = [] } = {}) {
   const request = object(value, 'Environment Plan Request');
-  closed(request, new Set(['schemaVersion', 'notApplicableReason', 'projects']), 'Environment Plan Request');
+  closed(request, new Set(['schemaVersion', 'notApplicableReason', 'projects', 'auxiliaryPreparation']), 'Environment Plan Request');
   if (request.schemaVersion !== TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA) throw taskEnvironmentError('task_environment_plan_schema_unsupported', `Plan Request schemaVersion 必须是 ${TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA}。`, 409, { actual: request.schemaVersion });
   if (!Array.isArray(request.projects)) throw taskEnvironmentError('task_environment_plan_invalid', 'Plan Request.projects 必须是数组。', 409);
   const expected = new Set(scopeSelectors);
@@ -257,10 +359,23 @@ export function normalizeTaskEnvironmentPlanRequest(value, { scopeSelectors = []
   });
   const actual = projects.flatMap((project) => project.scopes.map((scope) => scope.selector));
   if (new Set(projects.map((project) => project.project)).size !== projects.length || new Set(actual).size !== actual.length || JSON.stringify([...actual].sort()) !== JSON.stringify([...expected].sort())) throw taskEnvironmentError('task_environment_plan_scope_incomplete', 'Plan Request必须恰好覆盖Task Project/Service scope。', 409, { expected: [...expected].sort(), actual: [...actual].sort() });
-  return { schemaVersion: TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA, ...(notApplicableReason ? { notApplicableReason } : {}), projects };
+  const auxiliaryPreparation = (request.auxiliaryPreparation || []).map((value, index) => {
+    const field = `auxiliaryPreparation[${index}]`;
+    const item = object(value, field);
+    closed(item, new Set(['capability', 'capabilityIdentity', 'project', 'selector', 'recipe']), field);
+    const project = identifier(item.project, `${field}.project`);
+    const selector = text(item.selector, `${field}.selector`);
+    if (!projects.some((candidate) => candidate.project === project)) throw taskEnvironmentError('task_environment_plan_scope_incomplete', `${field}.project不属于Task Project closure。`, 409, { project });
+    if (!(selector === `project:${project}` || SELECTOR.test(selector) && selector.startsWith(`service:${project}/`))) throw taskEnvironmentError('task_environment_plan_scope_invalid', `${field}.selector不属于Project。`, 409, { project, selector });
+    return { capability: identifier(item.capability, `${field}.capability`), capabilityIdentity: text(item.capabilityIdentity, `${field}.capabilityIdentity`), project, selector, recipe: identifier(item.recipe, `${field}.recipe`) };
+  });
+  const auxiliaryKeys = auxiliaryPreparation.map((item) => `${item.capabilityIdentity}/${item.selector}/${item.recipe}`);
+  if (new Set(auxiliaryKeys).size !== auxiliaryKeys.length) throw taskEnvironmentError('task_environment_plan_duplicate', 'Plan Request auxiliaryPreparation不能重复。', 409);
+  return { schemaVersion: TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA, ...(notApplicableReason ? { notApplicableReason } : {}), projects, auxiliaryPreparation };
 }
 
 export function normalizeTaskEnvironmentPlan(value, options = {}) {
   if (value?.schemaVersion === LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA) return normalizeLegacyTaskEnvironmentPlan(value, options);
-  return normalizeTaskEnvironmentPlanV2(value, options);
+  if (value?.schemaVersion === LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2) return normalizeTaskEnvironmentPlanV2(value, options);
+  return normalizeTaskEnvironmentPlanV3(value, options);
 }

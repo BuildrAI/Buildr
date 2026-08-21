@@ -503,7 +503,7 @@ const COMMAND_ROUTES = [
     help: [
       "Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]",
       "",
-      "输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v2。"
+      "输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。"
     ],
     match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
     run: (r, c) => taskEnvironmentPlanCommand(r, 'record', c.args.slice(1)),

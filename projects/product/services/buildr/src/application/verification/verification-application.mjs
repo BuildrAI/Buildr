@@ -6,7 +6,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { parseProjectVerification, validateProjectVerification } from '../doctor/project-verification-diagnostics.mjs';
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+} from '../../domain/task-environment/project-environment-preparation.mjs';
 import { runVerificationCapabilities } from './capability-runner.mjs';
+import { verificationPreparationAdmission } from './preparation-admission.mjs';
 import { executeVerificationCommand } from './process-executor.mjs';
 import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
 import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from './evidence-lifecycle.mjs';
@@ -35,6 +40,38 @@ function sameFilesystemPath(left, right) {
     try { return fs.realpathSync(path.resolve(value)); } catch { return path.resolve(value); }
   };
   return canonical(left) === canonical(right);
+}
+
+function readPreparationDeclaration(projectRoot, projectCode, services) {
+  const declarationPath = path.join(projectRoot, 'preparation.yml');
+  if (!fs.existsSync(declarationPath)) return null;
+  return normalizeProjectEnvironmentPreparation(
+    parseProjectEnvironmentPreparation(fs.readFileSync(declarationPath, 'utf8'), declarationPath),
+    { projectCode, services: Object.keys(services) },
+  );
+}
+
+function formalExecutionEnvironment(context, resourceEnvironment) {
+  const env = { ...process.env, ...resourceEnvironment };
+  if (context?.runtimeInvocation?.kind === 'node') {
+    env.BUILDR_NODE = context.runtimeInvocation.executable;
+    env.PATH = [context.runtimeInvocation.searchPrefix, process.env.PATH].filter(Boolean).join(path.delimiter);
+  }
+  return env;
+}
+
+function admissionError(code, message, category, owner, details = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.verificationAdmission = {
+    status: 'blocked',
+    identity: null,
+    binding: null,
+    requirements: [],
+    gaps: [{ category, owner, recoverable: false, diagnostic: message, ...details }],
+    recovery: null,
+  };
+  return error;
 }
 
 function runVerificationThroughRetainedController(context, args) {
@@ -251,16 +288,22 @@ export function registerVerificationApplication(runtime) {
     const projectRoot = fs.realpathSync(path.resolve(targetRoot, project.source.path));
     if (!inside(targetRoot, projectRoot)) throw new Error(`Project source escapes the execution Workspace: ${project.source.path}`);
     const declarationPath = path.join(projectRoot, 'verification.yml');
-    if (!fs.existsSync(declarationPath)) throw new Error(`Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`);
+    if (!fs.existsSync(declarationPath)) throw admissionError('verification.coverage_gap', `Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`, 'coverage', 'task-verification', { project: projectCode });
     const declarationContent = fs.readFileSync(declarationPath);
     const declaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
     const services = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
-    const validationErrors = validateProjectVerification(declaration, { projectCode, services: Object.keys(services) });
-    if (validationErrors.length) throw new Error(`Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`);
+    const hasPreparationReferences = declaration.capabilities?.some((capability) => (capability.environment?.preparation || []).length > 0);
+    const preparationDeclaration = hasPreparationReferences ? readPreparationDeclaration(projectRoot, projectCode, services) : null;
+    const validationErrors = validateProjectVerification(declaration, {
+      projectCode,
+      services: Object.keys(services),
+      ...(hasPreparationReferences ? { preparationRecipes: (preparationDeclaration?.recipes || []).map((recipe) => [recipe.id, recipe]) } : {}),
+    });
+    if (validationErrors.length) throw admissionError('verification.declaration_invalid', `Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`, 'declaration-invalid', 'project-verification-declaration', { project: projectCode });
 
     if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Task Environment verification requires --environment <task-id> and --workspace <canonical-workspace> together.');
     const canonicalWorkspace = requestedWorkspace ? path.resolve(requestedWorkspace) : null;
-    const context = requestedEnvironment
+    let context = requestedEnvironment
       ? runtime.withWorkspaceStructuredStoreReadCompatibility(canonicalWorkspace, () => runtime.resolveTaskEnvironmentExecution(canonicalWorkspace, requestedEnvironment))
       : null;
     if (context && !context.ready) throw new Error(context.blocked?.message || 'Requested Task Environment binding is not ready.');
@@ -272,9 +315,9 @@ export function registerVerificationApplication(runtime) {
     const byId = new Map(declaration.capabilities.map((capability) => [capability.id, capability]));
     const selected = requestedCapabilities.map((id) => {
       const capability = byId.get(id);
-      if (!capability) throw new Error(`Project verification capability is not declared: ${id}`);
+      if (!capability) throw admissionError('verification.coverage_gap', `Project verification capability is not declared: ${id}`, 'coverage', 'task-verification', { project: projectCode, capability: id });
       if (capability.invocation.kind !== 'command') throw new Error(`Project verification capability requires bounded Agent execution and cannot be run by the command runner: ${id}`);
-      if (capability.effects?.authorization === 'explicit' && !authorizedCapabilities.includes(id)) throw new Error(`Explicit authorization is required for verification capability effects: ${id}`);
+      if (capability.effects?.authorization === 'explicit' && !authorizedCapabilities.includes(id)) throw admissionError('verification.authorization_blocked', `Explicit authorization is required for verification capability effects: ${id}`, 'authorization', 'user-authorization', { project: projectCode, capability: id });
       const executionCwd = path.resolve(projectRoot, capability.invocation.cwd || '.');
       if (!inside(projectRoot, executionCwd) || !fs.existsSync(executionCwd)) throw new Error(`Verification command cwd is unavailable or escapes Project: ${id}`);
       return {
@@ -285,6 +328,26 @@ export function registerVerificationApplication(runtime) {
     });
 
     const declarationIdentity = digest(declarationContent);
+    let admission = verificationPreparationAdmission({ projectCode, declarationIdentity, selectedCapabilities: selected, context });
+    if (admission.status !== 'ready') {
+      const error = new Error('Formal Verification preparation preflight is blocked; Task Environment must apply the supplied recovery request before execution.');
+      error.code = 'verification.preparation_blocked';
+      error.verificationAdmission = admission;
+      throw error;
+    }
+    if (context) {
+      const refreshedContext = runtime.withWorkspaceStructuredStoreReadCompatibility(canonicalWorkspace, () => runtime.resolveTaskEnvironmentExecution(canonicalWorkspace, requestedEnvironment));
+      const refreshedDeclarationIdentity = digest(fs.readFileSync(declarationPath));
+      const refreshedAdmission = verificationPreparationAdmission({ projectCode, declarationIdentity: refreshedDeclarationIdentity, selectedCapabilities: selected, context: refreshedContext });
+      if (!refreshedContext.ready || refreshedAdmission.status !== 'ready' || refreshedAdmission.identity !== admission.identity) {
+        const error = new Error('Verification preparation facts changed before the first formal execution side effect; run preflight again.');
+        error.code = 'verification.preparation_drifted';
+        error.verificationAdmission = refreshedAdmission;
+        throw error;
+      }
+      context = refreshedContext;
+      admission = refreshedAdmission;
+    }
     const invocationIdentity = context ? verificationInvocationIdentity({
       taskId: context.taskId,
       projectCode,
@@ -327,6 +390,7 @@ export function registerVerificationApplication(runtime) {
         declaration: { path: declarationPath, identity: declarationIdentity },
         environment: { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot },
         selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
+        admission,
         authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
         checks: [],
         durationMs: 0,
@@ -353,6 +417,25 @@ export function registerVerificationApplication(runtime) {
       if (!active && !terminalPassed) process.exitCode = 1;
       return payload;
     }
+    if (context) {
+      const sideEffectContext = runtime.withWorkspaceStructuredStoreReadCompatibility(canonicalWorkspace, () => runtime.resolveTaskEnvironmentExecution(canonicalWorkspace, requestedEnvironment));
+      const sideEffectDeclarationIdentity = digest(fs.readFileSync(declarationPath));
+      const sideEffectAdmission = verificationPreparationAdmission({ projectCode, declarationIdentity: sideEffectDeclarationIdentity, selectedCapabilities: selected, context: sideEffectContext });
+      if (!sideEffectContext.ready || sideEffectAdmission.status !== 'ready' || sideEffectAdmission.identity !== admission.identity) {
+        const error = new Error('Verification preparation facts changed after execution open and before the first capability side effect; no capability process was started.');
+        error.code = 'verification.preparation_drifted';
+        error.verificationAdmission = sideEffectAdmission;
+        error.verificationExecutionRecord = publicVerificationExecutionRecord('attention', {
+          record: openedExecutionRecord?.record,
+          outcome: 'blocked',
+          diagnostic: error,
+          nextActions: [`回读 Execution Record ${openedExecutionRecord?.record?.recordId || 'unknown'}，恢复 Environment 后以 --retry 启动独立执行。`],
+        });
+        throw error;
+      }
+      context = sideEffectContext;
+      admission = sideEffectAdmission;
+    }
     const before = executionContentObservation(targetRoot);
     const startedAt = new Date().toISOString();
     const started = process.hrtime.bigint();
@@ -371,7 +454,7 @@ export function registerVerificationApplication(runtime) {
       concurrency,
       resourceCoordinator: coordinator,
       authorizedResources,
-      execute: (capability, execution) => executeVerificationCommand(capability, { cwd: capability.executionCwd, env: { ...process.env, ...execution.resourceEnvironment } }),
+      execute: (capability, execution) => executeVerificationCommand(capability, { cwd: capability.executionCwd, env: formalExecutionEnvironment(context, execution.resourceEnvironment) }),
     });
     const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
@@ -399,6 +482,7 @@ export function registerVerificationApplication(runtime) {
       declaration: { path: declarationPath, identity: declarationIdentity },
       environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,
       selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
+      admission,
       authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
       checks,
       durationMs,
@@ -512,6 +596,7 @@ export function registerVerificationApplication(runtime) {
         executionRecord: error.verificationExecutionRecord || publicVerificationExecutionRecord('not-opened', {
           diagnostic: error,
         }),
+        admission: error.verificationAdmission || null,
         evidenceReference: null,
         evidenceLifecycle: null,
         error: { code: error.code || 'verification.invalid_request', message: error.message },
