@@ -18,6 +18,8 @@ Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策
 3. 需要 force push、覆盖他人提交、改写共享历史，或 repository/ref/remote 有歧义时停止并请求决定。
 4. Development handoff 或 Candidate 真实 stale 时返回 `task-development`；远端前进、路径不重叠或 Buildr 内部记录缺失本身不使 handoff stale。
 
+`--commit-message` 由 Agent 提供时，默认遵循当前 workspace `AGENTS.md` 的提交语言约定；Project、Service、repository 的更具体约定优先。Task Finish 不翻译或重写提交信息。
+
 ## 由 Agent 选择路径
 
 ### Buildr 自动 Finish
