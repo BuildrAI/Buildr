@@ -479,7 +479,7 @@ export function createPackageSmokeChecks(deps) {
     for (const relative of [
       'bin/buildr.mjs',
       'src/bootstrap/cli/main.mjs',
-      'src/application/package-maintenance/verification-registry.mjs',
+      'src/agent-assets/application/package-maintenance/verification-registry.mjs',
     ]) {
       const runtimeFile = path.join(root, relative);
       if (!existsFile(runtimeFile)) problems.push(`Package runtime support module is missing: ${relative}`);

@@ -56,25 +56,25 @@ infrastructure -----------> domain
 - 已迁移模块只通过根部 `module.mjs` 声明 named `requires`、namespaced `provides`、CLI/HTTP contributions 与可选 lifecycle；模块不扫描全局 Runtime。
 - `interfaces` 负责协议适配，只调用应用用例，不被 application 或 infrastructure 反向依赖。
 - `application` 组合产品行为；现阶段可调用明确命名的 infrastructure adapter。未来抽取纯 domain 时，domain 不得依赖 filesystem、process、runtime、CLI 或测试代码。
-- `infrastructure` 持有 filesystem、network、进程/Git 和 Agent runtime 的具体实现。
+- 全局 `infrastructure` 持有 filesystem、network、进程/Git 等通用机制；Agent runtime 的专属实现属于 `agent-assets/infrastructure/runtime`。
 - `src` 与 `bin` 不得导入 `test/` 或 `scripts/`。
 
-不建立顶层或 `src/shared/`。复用代码按语义归属：文件和 transaction primitive 在 `infrastructure/filesystem`，子进程调用在 `infrastructure/process.mjs`，产品目录常量在 `infrastructure/product-layout.mjs`，远程读取在 `infrastructure/network`，Agent runtime 在 `infrastructure/runtime`，JSON contract 在 `application`，公共 CLI Host 在 `bootstrap/cli`，能力专属 Adapter 在所属模块或 `interfaces/cli`。新增 helper 必须先确定 owner。
+不建立顶层或 `src/shared/`。复用代码按语义归属：文件和 transaction primitive 在 `infrastructure/filesystem`，子进程调用在 `infrastructure/process.mjs`，产品目录常量在 `infrastructure/product-layout.mjs`，远程读取在 `infrastructure/network`，Agent runtime 在 `agent-assets/infrastructure/runtime`，JSON contract 在 `application`，公共 CLI Host 在 `bootstrap/cli`，能力专属 Adapter 在所属模块或 `interfaces/cli`。新增 helper 必须先确定 owner。
 
-`infrastructure/platform.mjs` 只是一份供 `bootstrap/runtime.mjs` 构造兼容 runtime object 的 composition dependency registry。`bootstrap/legacy-runtime-module.mjs` 保留尚未迁移能力的原注册顺序；普通模块必须直接导入 Node API、runtime adapter 或 product-layout owner，不得从 platform 聚合面取 named imports。兼容 Facade 的 owner 是 `bootstrap-and-module-contracts`，只允许当前冻结调用者；对应能力迁移后逐项退出，最终由 `legacy-exit-and-conformance` 删除。
+`infrastructure/platform.mjs` 只是一份供 `bootstrap/runtime.mjs` 构造兼容 runtime object 的通用技术 dependency registry，不再导出 Agent runtime adapter。`bootstrap/legacy-runtime-module.mjs` 保留尚未迁移能力的原注册顺序；普通模块必须直接导入 Node API、明确的 module capability 或 product-layout owner，不得从 platform 聚合面取 named imports。兼容 Facade 只允许当前冻结调用者；对应能力迁移后逐项退出，最终由 `legacy-exit-and-conformance` 删除。
 
 三个稳定 facade 保留现有调用表面，但不承载无界长流程：
 
 ```text
 application/doctor.mjs
   -> application/doctor/{scope,service,runtime}-diagnostics.mjs
-application/package-maintenance.mjs
-  -> application/package-maintenance/{verification-registry,static-validation,smoke-checks}.mjs
-infrastructure/runtime/render-claude-code.mjs
-  -> infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
+agent-assets/application/package-maintenance.mjs
+  -> agent-assets/application/package-maintenance/{verification-registry,static-validation,smoke-checks}.mjs
+agent-assets/infrastructure/runtime/render-claude-code.mjs
+  -> agent-assets/infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。未迁移命令由公共 Host 静态持有；Task Record 六个 descriptor 来自 `src/task/module.mjs` 的 CLI contribution。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入Task Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。Agent Assets、Task Record、Workspace、System Installation 和 Web 的已迁移 descriptor 来自各自 module contribution；未迁移命令仍由公共 Host 静态持有。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入Task Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
 Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Task Environment、Review/Verification Result、Finish等正式机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
 
@@ -90,7 +90,7 @@ Task Finish Application在完整调用前校验和no-op判断之后、任何curr
 
 分类依据是安装后 CLI 的运行依赖，而不是文件名：
 
-- `buildr package check` 可达的 static、workspace、Commands、Rules、Skills 和 runtime verifier 属于产品，位于 `src/application/package-maintenance/` 或明确的 infrastructure owner，并随 npm package 发布。
+- `buildr package check` 可达的 static、workspace、Commands、Rules、Skills 和 runtime verifier 属于产品，位于 `src/agent-assets/application/package-maintenance/` 或明确的 infrastructure owner，并随 npm package 发布。
 - 只服务 `npm test`、Fast、Changed、Focus、Candidate、coverage 或 CI 的 registry、planner、scheduler、runner、timing、evidence 和 focused verifier 位于 `test/verification/`，不进入 npm tarball。
 - `test/verification/verify-buildr-product*` 只是 checkout 入口，委托统一 verification registry，不复制 step、预算或依赖关系。
 

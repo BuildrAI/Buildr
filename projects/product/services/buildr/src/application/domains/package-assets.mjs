@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../infrastructure/product-layout.mjs';
-import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.mjs';
+import { SUPPORTED_AGENT_IDS } from '../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { createProject as createProjectEntity, createService as createServiceEntity } from '../../workspace/module.mjs';
 
 export function registerDomainsPackageAssets(runtime) {

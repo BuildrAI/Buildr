@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
 import { VERIFICATION_DELEGATED_INPUTS, VERIFICATION_EXECUTION_PROFILES, VERIFICATION_FULL_SCOPE_INPUTS, verificationSteps } from '../../test/verification/registry.mjs';
 import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';

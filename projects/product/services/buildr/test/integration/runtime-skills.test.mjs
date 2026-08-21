@@ -8,26 +8,26 @@ import test from 'node:test';
 import {
   parseInstallClaudeCodeBuildrSkillArgs,
   parseRenderClaudeCodeArgs,
-} from '../../src/infrastructure/runtime/skills/arguments.mjs';
-import { parseSkillsManifest } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+} from '../../src/agent-assets/infrastructure/runtime/skills/arguments.mjs';
+import { parseSkillsManifest } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
 import {
   normalizeRelativePath,
   resolveSkillScope,
-} from '../../src/infrastructure/runtime/skills/primitives.mjs';
+} from '../../src/agent-assets/infrastructure/runtime/skills/primitives.mjs';
 import {
   applySkillRenderPlan,
   buildAgentInstallPlanContent,
   buildSkillRenderPlan,
   buildRuntimeSkillTarget,
   hasManagedSkillMarker,
-} from '../../src/infrastructure/runtime/skills/render-plan.mjs';
-import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
-import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/infrastructure/runtime/skills/inventory.mjs';
+} from '../../src/agent-assets/infrastructure/runtime/skills/render-plan.mjs';
+import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/agent-assets/infrastructure/runtime/skills/inventory.mjs';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   runtimeWriteModeMatches,
   skillProjectionOwnershipReceiptTarget,
-} from '../../src/infrastructure/runtime/skills/projection-files.mjs';
+} from '../../src/agent-assets/infrastructure/runtime/skills/projection-files.mjs';
 
 test('Windows runtime 文件一致性忽略 POSIX executable bit', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));

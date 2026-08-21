@@ -11,8 +11,8 @@ import {
   validateCapabilityIdentity,
   validateSkillsManifestDocument,
   validateProjectCapabilitiesDocument,
-} from '../../infrastructure/runtime/skills/manifests.mjs';
-import { selectedProviderImpacts } from '../../infrastructure/runtime/skills/capabilities.mjs';
+} from '../infrastructure/runtime/skills/manifests.mjs';
+import { selectedProviderImpacts } from '../infrastructure/runtime/skills/capabilities.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 export function registerDomainsSkills(runtime) {

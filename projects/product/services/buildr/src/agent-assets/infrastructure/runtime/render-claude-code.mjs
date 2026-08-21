@@ -24,7 +24,7 @@ function renderSkill(repoRoot, targetRoot, skill, runtime = 'claude-code') {
 
 export function renderClaudeCode(argv, options = {}) {
   const repoRoot = options.repoRoot ?? process.cwd();
-  const command = options.command ?? 'node src/infrastructure/runtime/render-claude-code.mjs';
+  const command = options.command ?? 'node src/agent-assets/infrastructure/runtime/render-claude-code.mjs';
   const args = parseRenderClaudeCodeArgs(argv, command);
   const targetRoot = path.resolve(repoRoot, args.target);
   ensureDirectory(targetRoot, `Target directory does not exist: ${targetRoot}`);
@@ -35,7 +35,7 @@ export function renderClaudeCode(argv, options = {}) {
 
 export function installClaudeCodeBuildrSkill(argv, options = {}) {
   const repoRoot = options.repoRoot ?? process.cwd();
-  const command = options.command ?? 'node src/infrastructure/runtime/render-claude-code.mjs install';
+  const command = options.command ?? 'node src/agent-assets/infrastructure/runtime/render-claude-code.mjs install';
   const args = parseInstallClaudeCodeBuildrSkillArgs(argv, command);
   const targetRoot = path.resolve(repoRoot, args.target);
   ensureDirectory(targetRoot, `Target directory does not exist: ${targetRoot}`);

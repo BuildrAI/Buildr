@@ -11,15 +11,15 @@ function lines(relative) {
 }
 
 test('兼容 facade 保持薄入口', () => {
-  assert.ok(lines('src/infrastructure/runtime/render-claude-code.mjs').length <= 100);
+  assert.ok(lines('src/agent-assets/infrastructure/runtime/render-claude-code.mjs').length <= 100);
   assert.ok(lines('src/application/doctor.mjs').length <= 250);
-  assert.ok(lines('src/application/package-maintenance.mjs').length <= 550);
+  assert.ok(lines('src/agent-assets/application/package-maintenance.mjs').length <= 550);
 });
 
 test('package verification 使用稳定 registry 且不恢复共享 smoke runner', () => {
-  const application = fs.readFileSync(path.join(productRoot, 'src/application/package-maintenance.mjs'), 'utf8');
-  const smoke = fs.readFileSync(path.join(productRoot, 'src/application/package-maintenance/smoke-checks.mjs'), 'utf8');
-  const registry = fs.readFileSync(path.join(productRoot, 'src/application/package-maintenance/verification-registry.mjs'), 'utf8');
+  const application = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance.mjs'), 'utf8');
+  const smoke = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance/smoke-checks.mjs'), 'utf8');
+  const registry = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance/verification-registry.mjs'), 'utf8');
   assert.match(application, /selectPackageVerifiers/);
   assert.equal(application.match(/validatePackageStatic\(context\)/g)?.length, 1);
   for (const runner of ['runPackageWorkspaceSmoke', 'runPackageDomainIntegration', 'runPackageRuntimeIntegration']) {
@@ -64,7 +64,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   }
   const worktree = fs.readFileSync(path.join(productRoot, 'src/application/worktree/git-worktree-provider.mjs'), 'utf8');
   assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
-  const adapter = fs.readFileSync(path.join(productRoot, 'src/infrastructure/runtime/adapter-contract.mjs'), 'utf8');
+  const adapter = fs.readFileSync(path.join(productRoot, 'src/agent-assets/infrastructure/runtime/adapter-contract.mjs'), 'utf8');
   assert.match(adapter, /runtimeWriteModeMatches/);
   assert.doesNotMatch(adapter, /ownerExecutable/);
   const closeout = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');

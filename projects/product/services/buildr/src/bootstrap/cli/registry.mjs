@@ -6,6 +6,7 @@ import { printCliError } from './diagnostics.mjs';
 import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
+import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
 import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
 import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
@@ -17,6 +18,33 @@ import { taskTerminalDeliveryInspectCommand } from '../../interfaces/cli/task-te
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
 
 const TASK_RECORD_COMMAND_SLOT = Symbol('task-record-command-contributions');
+const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
+const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
+const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
+
+const AGENT_ASSETS_PACKAGE_COMMANDS = new Set(['package check', 'package build']);
+const AGENT_ASSETS_RUNTIME_COMMANDS = new Set(['runtime list', 'commands check', 'commands add', 'commands remove']);
+const AGENT_ASSETS_SOURCE_COMMANDS = new Set([
+  'component list',
+  'component check',
+  'component install',
+  'component uninstall',
+  'rules add',
+  'rules remove',
+  'builtin list',
+  'builtin uninstall',
+  'builtin restore',
+  'render',
+  'sync',
+  'skills add',
+  'skills remove',
+  'skills bind',
+  'skills unbind',
+  'skill install',
+  'runtime check',
+  'skills render',
+  'rules render',
+]);
 
 const COMMAND_ROUTES = [
   {
@@ -46,30 +74,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action }) => domain === 'bootstrap' && action === 'guide',
     run: (r) => r.bootstrapGuide(),
   },
-  {
-    key: "package check",
-    surface: "maintenance",
-    summary: "供 Buildr 产品维护者检查产品包发布边界和基础行为；不是 workspace onboarding 必需步骤。",
-    help: [
-      "Usage: buildr package check",
-      "",
-      "供 Buildr 产品维护者检查产品包发布边界和基础行为；不是 workspace onboarding 必需步骤。"
-    ],
-    match: ({ domain, action }) => domain === 'package' && action === 'check',
-    run: (r) => r.packageCheck(),
-  },
-  {
-    key: "package build",
-    surface: "maintenance",
-    summary: "供 Buildr 产品维护者构建产品包文件；不是 workspace onboarding 必需步骤。",
-    help: [
-      "Usage: buildr package build [--out <dir>]",
-      "",
-      "供 Buildr 产品维护者构建产品包文件；不是 workspace onboarding 必需步骤。"
-    ],
-    match: ({ domain, action }) => domain === 'package' && action === 'build',
-    run: (r, c) => r.packageBuild(c.argv.slice(4)),
-  },
+  AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   {
     key: "project daily-progress record",
     surface: "agent-machine",
@@ -463,56 +468,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action }) => domain === 'mutation' && action === 'recover',
     run: (r, c) => r.mutationRecover(c.argv.slice(4)),
   },
-  {
-    key: "runtime list",
-    surface: "primary",
-    summary: "列出 Buildr 支持的 Agent runtime adapter；不要求当前目录是 Buildr workspace。",
-    help: [
-      "Usage: buildr runtime list [--json]",
-      "",
-      "列出 Buildr 支持的 Agent runtime adapter；不要求当前目录是 Buildr workspace。"
-    ],
-    match: ({ domain, action }) => domain === 'runtime' && action === 'list',
-    run: (r, c) => r.runtimeList(c.argv.slice(4)),
-  },
-  {
-    key: "commands check",
-    surface: "primary",
-    summary: "不传 --project 时只检查 workspace defaults；重复 --project 可表达跨 Project task context。",
-    help: [
-      "Usage: buildr commands check [--project <project> ...] [--target <dir>] [--json]",
-      "",
-      "不传 --project 时只检查 workspace defaults；重复 --project 可表达跨 Project task context。",
-      "Project requirements 维护在 projects/<project>/commands.yml，只允许 id、required、version 和 purpose 引用字段。",
-      "输出分离 catalog、requirements、effectiveConstraints、observations 和 findings；Buildr 不 render 或安装 Commands。"
-    ],
-    match: ({ domain, action }) => domain === 'commands' && action === 'check',
-    run: (r, c) => r.commandsCheck(c.argv.slice(4)),
-  },
-  {
-    key: "commands add",
-    surface: "primary",
-    summary: "新增或替换 workspace Command catalog definition；不会修改 Project requirements 或安装 binary。",
-    help: [
-      "Usage: buildr commands add <id> --purpose <text> [--target <dir>] [--collection <path>] [--executable <name>] [--name <text>] [--description <text>] [--version-constraint <constraint>] [--version-args <args>] [--install-hint <text>] [--replace]",
-      "",
-      "新增或替换 workspace Command catalog definition；不会修改 Project requirements 或安装 binary。"
-    ],
-    match: ({ domain, action }) => domain === 'commands' && action === 'add',
-    run: (r, c) => r.commandsAdd(c.argv.slice(4)),
-  },
-  {
-    key: "commands remove",
-    surface: "primary",
-    summary: "删除 workspace Command catalog definition；最后一个 definition 仍被 workspace default 或 Project requirement 引用时整次零写入。",
-    help: [
-      "Usage: buildr commands remove <id> [--target <dir>] [--collection <path>]",
-      "",
-      "删除 workspace Command catalog definition；最后一个 definition 仍被 workspace default 或 Project requirement 引用时整次零写入。"
-    ],
-    match: ({ domain, action }) => domain === 'commands' && action === 'remove',
-    run: (r, c) => r.commandsRemove(c.argv.slice(4)),
-  },
+  AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
   {
     key: "openspec converge",
     surface: "maintenance",
@@ -551,259 +507,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'inspect',
     run: (r, c) => r.openspecConvergenceInspect(c.argv.slice(5)),
   },
-  {
-    key: "component list",
-    surface: "primary",
-    summary: "列出 workspace Components。当前不支持 Project 或 Service scope。",
-    help: [
-      "Usage: buildr component list [--target <dir>] [--json]",
-      "",
-      "列出 workspace Components。当前不支持 Project 或 Service scope。"
-    ],
-    match: ({ domain, action }) => domain === 'component' && action === 'list',
-    run: (r, c) => r.componentListOrCheck(c.argv.slice(4), false),
-  },
-  {
-    key: "component check",
-    surface: "primary",
-    summary: "检查 Component definition、成员 integrity 和唯一所有权。",
-    help: [
-      "Usage: buildr component check [<id>] [--target <dir>] [--json]",
-      "",
-      "检查 Component definition、成员 integrity 和唯一所有权。"
-    ],
-    match: ({ domain, action }) => domain === 'component' && action === 'check',
-    run: (r, c) => r.componentListOrCheck(c.argv.slice(4), true),
-  },
-  {
-    key: "component install",
-    surface: "primary",
-    summary: "安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。",
-    help: [
-      "Usage: buildr component install <id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--target <dir>]",
-      "",
-      "安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。"
-    ],
-    match: ({ domain, action }) => domain === 'component' && action === 'install',
-    run: (r, c) => r.componentInstall(c.argv.slice(4)),
-  },
-  {
-    key: "component uninstall",
-    surface: "primary",
-    summary: "卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。",
-    help: [
-      "Usage: buildr component uninstall <id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--target <dir>] [--reason <text>]",
-      "",
-      "卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。"
-    ],
-    match: ({ domain, action }) => domain === 'component' && action === 'uninstall',
-    run: (r, c) => r.componentUninstall(c.argv.slice(4)),
-  },
-  {
-    key: "rules add",
-    surface: "primary",
-    summary: "注册已存在的 root Rule 文件到 rules/manifest.yml。未传 --path 时默认使用 rules/<id>.md。",
-    help: [
-      "Usage: buildr rules add <id> [--path <rules/file.md>] --description <text> [--target <dir>] [--replace]",
-      "",
-      "注册已存在的 root Rule 文件到 rules/manifest.yml。未传 --path 时默认使用 rules/<id>.md。"
-    ],
-    match: ({ domain, action }) => domain === 'rules' && action === 'add',
-    run: (r, c) => r.rulesAdd(c.argv.slice(4)),
-  },
-  {
-    key: "rules remove",
-    surface: "primary",
-    summary: "删除 root Rule 登记和规则文件。传入 --keep-file 时只取消注册并保留文件。",
-    help: [
-      "Usage: buildr rules remove <id> [--target <dir>] [--keep-file]",
-      "",
-      "删除 root Rule 登记和规则文件。传入 --keep-file 时只取消注册并保留文件。"
-    ],
-    match: ({ domain, action }) => domain === 'rules' && action === 'remove',
-    run: (r, c) => r.rulesRemove(c.argv.slice(4)),
-  },
-  {
-    key: "builtin list",
-    surface: "primary",
-    summary: "列出 Buildr 内置能力状态。",
-    help: [
-      "Usage: buildr builtin list [--target <dir>] [--json]",
-      "",
-      "列出 Buildr 内置能力状态。"
-    ],
-    match: ({ domain, action }) => domain === 'builtin' && action === 'list',
-    run: (r, c) => r.builtinList(c.argv.slice(4)),
-  },
-  {
-    key: "builtin uninstall",
-    surface: "primary",
-    summary: "卸载 optional Buildr 内置能力。required 内置能力不能卸载。",
-    help: [
-      "Usage: buildr builtin uninstall <id> --target <dir> [--reason <text>]",
-      "",
-      "卸载 optional Buildr 内置能力。required 内置能力不能卸载。"
-    ],
-    match: ({ domain, action }) => domain === 'builtin' && action === 'uninstall',
-    run: (r, c) => r.builtinUninstall(c.argv.slice(4)),
-  },
-  {
-    key: "builtin restore",
-    surface: "primary",
-    summary: "恢复 optional Buildr 内置能力；该命令表示明确放弃此 Builtin 的本地修改。",
-    help: [
-      "Usage: buildr builtin restore <id> --target <dir>",
-      "",
-      "恢复 optional Buildr 内置能力；该命令表示明确放弃此 Builtin 的本地修改。",
-      "当当前 Builtin 声明 predecessor 时，只接管 manifest 可证明为 Buildr-managed 的旧 identity；随后运行 sync 收敛 Agent runtime。"
-    ],
-    match: ({ domain, action }) => domain === 'builtin' && action === 'restore',
-    run: (r, c) => r.builtinRestore(c.argv.slice(4)),
-  },
-  {
-    key: "render",
-    surface: "agent-machine",
-    summary: "组合渲染 rules entry 和 workspace Skills 到 workspace destination；不安装产品入口 Buildr Skill。",
-    help: [
-      "Usage: buildr render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>]",
-      "",
-      "组合渲染 rules entry 和 workspace Skills 到 workspace destination；不安装产品入口 Buildr Skill。"
-    ],
-    match: ({ domain }) => domain === 'render',
-    run: (r, c) => {
-    const { targetRoot, files, rulesActions, warnings } = r.renderRuntime(c.action, c.argv.slice(4));
-    for (const warning of warnings) console.error(`Warning: ${warning}`);
-    const ruleTargets = new Set(rulesActions.map((item) => item.targetFile));
-    for (const item of rulesActions) console.log(`[${item.action}] ${r.toPosixRelative(targetRoot, item.targetFile)}`);
-    for (const file of files) if (!ruleTargets.has(file)) console.log(r.toPosixRelative(targetRoot, file));
-  },
-  },
-  {
-    key: "sync",
-    surface: "primary",
-    summary: "同步 Buildr 产品能力，安装产品入口 Buildr Skill，并准备当前 Agent 的 workspace 入口 runtime。不是 Project scope 同步工具。",
-    help: [
-      "Usage: buildr sync <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>]",
-      "",
-      "同步 Buildr 产品能力，安装产品入口 Buildr Skill，并准备当前 Agent 的 workspace 入口 runtime。不是 Project scope 同步工具。"
-    ],
-    match: ({ domain }) => domain === 'sync',
-    run: (r, c) => r.syncRuntime(c.action, c.argv.slice(4)),
-  },
-  {
-    key: "skills add",
-    surface: "primary",
-    summary: "只维护 workspace Skills 源资产；Project 使用 capabilities.yml 引用 workspace Skill。",
-    help: [
-      "Usage: buildr skills add [<id>] --source <skill-dir> [--target <workspace>] [--replace] [--ignore-unsupported] [--provides <capability>@<version>] [--requires <capability>@<version>:<required|optional>]",
-      "Usage: buildr skills add <id> --remote-source <url> [--target <workspace>] [--source-kind <kind>] [--description <text>] [--replace]",
-      "Usage: buildr skills add <id> --resolved-source <url> [--target <workspace>] [--resolved-kind <kind>] [--remote-source <url>] [--source-kind <kind>] [--version <version>] [--integrity <hash>] [--description <text>] [--replace]",
-      "",
-      "只维护 workspace Skills 源资产；Project 使用 capabilities.yml 引用 workspace Skill。"
-    ],
-    match: ({ domain, action }) => domain === 'skills' && action === 'add',
-    run: (r, c) => r.skillsAdd(c.argv.slice(4)),
-  },
-  {
-    key: "skills remove",
-    surface: "primary",
-    summary: "删除 workspace Skills 源资产登记。",
-    help: [
-      "Usage: buildr skills remove <id> [--target <workspace>]",
-      "",
-      "删除 workspace Skills 源资产登记。"
-    ],
-    match: ({ domain, action }) => domain === 'skills' && action === 'remove',
-    run: (r, c) => r.skillsRemove(c.argv.slice(4)),
-  },
-  {
-    key: "skills bind",
-    surface: "primary",
-    summary: "显式选择当前 scope 的 capability provider；不会安装 Skill 或证明其行为正确。",
-    help: [
-      "Usage: buildr skills bind <capability>@<version> --provider <skill-id> --scope <.|projects/project> [--target <dir>]",
-      "",
-      "显式选择当前 scope 的 capability provider；不会安装 Skill 或证明其行为正确。"
-    ],
-    match: ({ domain, action }) => domain === 'skills' && action === 'bind',
-    run: (r, c) => r.skillsBind(c.argv.slice(4)),
-  },
-  {
-    key: "skills unbind",
-    surface: "primary",
-    summary: "删除当前 scope 的显式 binding，由 resolver 重新判断唯一 provider、歧义或缺失。",
-    help: [
-      "Usage: buildr skills unbind <capability>@<version> --scope <.|projects/project> [--target <dir>]",
-      "",
-      "删除当前 scope 的显式 binding，由 resolver 重新判断唯一 provider、歧义或缺失。"
-    ],
-    match: ({ domain, action }) => domain === 'skills' && action === 'unbind',
-    run: (r, c) => r.skillsUnbind(c.argv.slice(4)),
-  },
-  {
-    key: "skill install",
-    surface: "agent-machine",
-    summary: "只安装或修复产品入口 Buildr Skill。",
-    help: [
-      "Usage: buildr skill install <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir>",
-      "",
-      "只安装或修复产品入口 Buildr Skill。"
-    ],
-    requiresAgent: true,
-    match: ({ domain, action }) => domain === 'skill' && action === 'install',
-    run: (r, c) => {
-    const command = r.withResolvedTarget(c.args);
-    const adapter = r.getRuntimeAdapter(c.runtimeId);
-    const { targetRoot, files } = r.installProductRuntimeSkill(adapter.id, command.args, { repoRoot: command.targetRoot, command: `buildr skill install ${c.runtimeId}` });
-    for (const file of files) console.log(r.path.relative(targetRoot, file).split(r.path.sep).join('/'));
-  },
-  },
-  {
-    key: "runtime check",
-    surface: "agent-machine",
-    summary: "专项检查某个 Agent runtime render 状态。",
-    help: [
-      "Usage: buildr runtime check <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --scope <.|projects/project[/services/service[/path...]]> --target <dir>",
-      "",
-      "专项检查某个 Agent runtime render 状态。"
-    ],
-    requiresAgent: true,
-    match: ({ domain, action }) => domain === 'runtime' && action === 'check',
-    run: (r, c) => {
-    const command = r.withResolvedTarget(c.args);
-    const adapter = r.getRuntimeAdapter(c.runtimeId);
-    const checker = r.runtimeImplementation(adapter, 'checker', r.RUNTIME_CHECKERS);
-    const printer = r.runtimeImplementation(adapter, 'checker', r.RUNTIME_CHECK_PRINTERS);
-    const result = checker(command.args, { repoRoot: command.targetRoot, adapterId: adapter.id, command: `buildr runtime check ${c.runtimeId}` });
-    printer(result); process.exit(result.exitCode);
-  },
-  },
-  {
-    key: "skills render",
-    surface: "agent-machine",
-    summary: "--target 始终是 Skill source workspace；workspace destination 写当前工作目录 runtime，user destination 写当前 Agent 用户层。默认 workspace。",
-    help: [
-      "Usage: buildr skills render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--destination workspace|user] --target <workspace> [--json]",
-      "",
-      "--target 始终是 Skill source workspace；workspace destination 写当前工作目录 runtime，user destination 写当前 Agent 用户层。默认 workspace。"
-    ],
-    requiresAgent: true,
-    match: ({ domain, action }) => domain === 'skills' && action === 'render',
-    run: (r, c) => runScopedRender(r, c),
-  },
-  {
-    key: "rules render",
-    surface: "agent-machine",
-    summary: "递归发现 canonical workspace scope 的祖先链和子树，并按 adapter reconcile rules bridge 或 vendor rule files。原生消费 AGENTS.md 的 adapter 不执行 rules render。",
-    help: [
-      "Usage: buildr rules render <claude-code|cursor|qoder|trae|trae-work|workbuddy> --scope <.|projects/project[/services/service[/path...]]> --target <dir>",
-      "",
-      "递归发现 canonical workspace scope 的祖先链和子树，并按 adapter reconcile rules bridge 或 vendor rule files。原生消费 AGENTS.md 的 adapter 不执行 rules render。"
-    ],
-    requiresAgent: true,
-    match: ({ domain, action }) => domain === 'rules' && action === 'render',
-    run: (r, c) => runScopedRender(r, c),
-  }
+  AGENT_ASSETS_SOURCE_COMMAND_SLOT,
 ];
 
 const COMMAND_GROUPS = [
@@ -935,7 +639,21 @@ const SPECIAL_COMMANDS = [
 ];
 
 function createCommandRegistry(moduleContributions) {
-  const routes = COMMAND_ROUTES.flatMap((route) => route === TASK_RECORD_COMMAND_SLOT ? moduleContributions : [route]);
+  const agentAssetsPackageContributions = moduleContributions.filter((route) => AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key));
+  const agentAssetsRuntimeContributions = moduleContributions.filter((route) => AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key));
+  const agentAssetsSourceContributions = moduleContributions.filter((route) => AGENT_ASSETS_SOURCE_COMMANDS.has(route.key));
+  const nonAgentAssetsContributions = moduleContributions.filter((route) => (
+    !AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key)
+    && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
+    && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
+  ));
+  const routes = COMMAND_ROUTES.flatMap((route) => {
+    if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
+    if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
+    if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
+    if (route === TASK_RECORD_COMMAND_SLOT) return nonAgentAssetsContributions;
+    return [route];
+  });
   return Object.freeze([...SPECIAL_COMMANDS, ...routes.map(executableCommand)]);
 }
 
@@ -945,6 +663,7 @@ function createCommandCatalog(commandRegistry) {
 
 export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
+  ...createAgentAssetsCliContributions(),
   ...createTaskRecordCliContributions(),
   ...createTaskReviewCliContributions(),
   ...createInstallationCliContributions(),
@@ -954,31 +673,6 @@ export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 
 function commandCandidates(commandRegistry) {
   return commandRegistry.map((item) => item.key);
-}
-
-function runScopedRender(r, context) {
-  const adapter = r.getRuntimeAdapter(context.runtimeId);
-  const renderer = context.domain === 'skills'
-    ? (args) => r.renderSkillsRuntime(context.runtimeId, args)
-    : context.domain === 'rules' && adapter.renderCapabilities['rules-entry'].writesFiles
-      ? (args) => r.renderRulesRuntime(context.runtimeId, args)
-      : null;
-  if (!renderer) { r.usage(); process.exit(2); }
-  const command = r.withResolvedTarget(context.args);
-  const result = renderer(command.args, { repoRoot: command.targetRoot, command: `buildr ${context.domain} render ${context.runtimeId}` });
-  const { targetRoot, files } = result;
-  for (const warning of result.warnings || []) console.error(`Warning: ${warning}`);
-  if (result.jsonReported) return;
-  if (context.domain === 'skills' && files.length === 0) {
-    const scope = r.optionValue(command.args, '--scope');
-    console.log('No workspace Skills declared.');
-    return;
-  }
-  if (context.domain === 'rules' && result.actions) {
-    for (const item of result.actions) console.log(`[${item.action}] ${r.toPosixRelative(targetRoot, item.targetFile)}`);
-    return;
-  }
-  for (const file of files) console.log(r.toPosixRelative(targetRoot, file));
 }
 
 export function dispatch(argv = process.argv) {

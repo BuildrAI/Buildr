@@ -6,7 +6,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
+import { resolveSkillCapabilityGraph } from '../../src/agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 test('task-triage 的 optional provider 不 ready 只降级依赖，不让其他分支伪造成功', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-manager-graph-'));

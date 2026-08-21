@@ -6,7 +6,7 @@ import test from 'node:test';
 import { createRuntimeDiagnostics } from '../../src/application/doctor/runtime-diagnostics.mjs';
 import { createScopeDiagnostics } from '../../src/application/doctor/scope-diagnostics.mjs';
 import { buildDoctorHealth, buildDoctorRepairPlan } from '../../src/application/doctor/result-model.mjs';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {
   assert.deepEqual(selectPackageVerifiers().map((item) => item.id), PACKAGE_VERIFIERS.map((item) => item.id));

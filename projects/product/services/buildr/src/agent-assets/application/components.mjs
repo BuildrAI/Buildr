@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
-import { hasManagedSkillMarker } from '../../infrastructure/runtime/render-claude-code.mjs';
-import { getRuntimeAdapter, isSupportedAgent } from '../../infrastructure/runtime/adapter-contract.mjs';
-import { capabilityKey, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.mjs';
+import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.mjs';
+import { capabilityKey, validateCapabilityIdentity } from '../infrastructure/runtime/skills/manifests.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 import {
   legacySkillProjectionOwnershipReceiptRoot,
   legacySkillProjectionOwnershipReceiptTarget,
@@ -16,7 +16,7 @@ import {
   skillProjectionOwnershipReceiptRoot,
   skillProjectionOwnershipReceiptsEquivalent,
   skillProjectionOwnershipReceiptTarget,
-} from '../../infrastructure/runtime/skills/projection-files.mjs';
+} from '../infrastructure/runtime/skills/projection-files.mjs';
 
 export function registerDomainsComponents(runtime) {
   const renderRuntime = (...args) => runtime.renderRuntime(...args);

@@ -6,7 +6,7 @@ import { taskRecordEffectiveProjectCodes } from '../../task/domain/record/task-r
 import { TASK_DEVELOPMENT_ACTIONS } from '../task-development/task-development-operation-contracts.mjs';
 import { compactTaskDevelopmentOperationResult } from '../task-development/task-development-result-projection.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { resolveCapabilityRoute } from '../../infrastructure/runtime/skills/capabilities.mjs';
+import { resolveCapabilityRoute } from '../../agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 function same(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);

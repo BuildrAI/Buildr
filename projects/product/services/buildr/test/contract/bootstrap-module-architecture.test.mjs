@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.mjs';
 import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../../src/bootstrap/runtime.mjs';
+import {
+  AGENT_ASSETS_APPLICATION,
+  AGENT_ASSETS_COMPATIBILITY,
+  AGENT_ASSETS_RUNTIME,
+} from '../../src/agent-assets/module.mjs';
 import {
   TASK_RECORD_APPLICATION,
   TASK_RECORD_COMPATIBILITY,
@@ -50,7 +56,7 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.match(httpHost, /contribution\.handle\(/);
 });
 
-test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributions 与有退出条件的兼容 Facade', () => {
+test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯一 contributions 与有退出条件的兼容 Facade', () => {
   const runtime = createRuntime();
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
     id: 'workspace-core',
@@ -59,6 +65,25 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
     contributions: {
       cli: ['project create', 'service create'],
       http: ['workspace-core.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
+    id: 'agent-assets',
+    requires: [WORKSPACE_APPLICATION],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_COMPATIBILITY],
+    contributions: {
+      cli: [
+        'package check', 'package build', 'runtime list',
+        'commands check', 'commands add', 'commands remove',
+        'component list', 'component check', 'component install', 'component uninstall',
+        'rules add', 'rules remove',
+        'builtin list', 'builtin uninstall', 'builtin restore',
+        'render', 'sync',
+        'skills add', 'skills remove', 'skills bind', 'skills unbind',
+        'skill install', 'runtime check', 'skills render', 'rules render',
+      ],
+      http: [],
       diagnostics: [],
     },
     lifecycle: 'none',
@@ -118,6 +143,14 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item) => item.key), [
     'project create', 'service create',
+    'package check', 'package build', 'runtime list',
+    'commands check', 'commands add', 'commands remove',
+    'component list', 'component check', 'component install', 'component uninstall',
+    'rules add', 'rules remove',
+    'builtin list', 'builtin uninstall', 'builtin restore',
+    'render', 'sync',
+    'skills add', 'skills remove', 'skills bind', 'skills unbind',
+    'skill install', 'runtime check', 'skills render', 'rules render',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task review inspect', 'task review record',
     'installation status', 'update check', 'update',
@@ -136,6 +169,17 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
   assert.equal(workspaceCompatibility.owner, 'workspace-capabilities');
   assert.match(workspaceCompatibility.exit, /legacy-exit-and-conformance/);
 
+  const agentAssets = runtimeProvide(runtime, AGENT_ASSETS_APPLICATION);
+  assert.equal(typeof agentAssets.skillsAdd, 'function');
+  assert.equal(typeof agentAssets.componentInstall, 'function');
+  assert.equal(typeof agentAssets.syncRuntime, 'function');
+  const agentRuntime = runtimeProvide(runtime, AGENT_ASSETS_RUNTIME);
+  assert.equal(typeof agentRuntime.getRuntimeAdapter, 'function');
+  assert.equal(typeof agentRuntime.assembleRuntimeProjection, 'function');
+  const agentAssetsCompatibility = runtimeProvide(runtime, AGENT_ASSETS_COMPATIBILITY);
+  assert.equal(agentAssetsCompatibility.owner, 'reorganize-buildr-agent-assets-platform');
+  assert.match(agentAssetsCompatibility.scope, /CLI, HTTP, Doctor/);
+
   const application = runtimeProvide(runtime, TASK_RECORD_APPLICATION);
   const persistenceRead = runtimeProvide(runtime, TASK_RECORD_PERSISTENCE_READ);
   assert.equal(typeof application.inspectTaskRecord, 'function');
@@ -152,6 +196,43 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
   const webLifecycle = runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE);
   assert.equal(typeof webLifecycle.startLocalWorkspaceApp, 'function');
   assert.equal(typeof webLifecycle.manageLocalAppPreview, 'function');
+});
+
+test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {
+  const keys = COMMAND_CATALOG.filter((item) => item.executable).map((item) => item.key);
+  assert.deepEqual(keys.slice(keys.indexOf('bootstrap guide'), keys.indexOf('project daily-progress record') + 1), [
+    'bootstrap guide', 'package check', 'package build', 'project daily-progress record',
+  ]);
+  assert.deepEqual(keys.slice(keys.indexOf('mutation recover'), keys.indexOf('openspec converge') + 1), [
+    'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove', 'openspec converge',
+  ]);
+  assert.deepEqual(keys.slice(keys.indexOf('openspec convergence inspect')), [
+    'openspec convergence inspect',
+    'component list', 'component check', 'component install', 'component uninstall',
+    'rules add', 'rules remove',
+    'builtin list', 'builtin uninstall', 'builtin restore',
+    'render', 'sync',
+    'skills add', 'skills remove', 'skills bind', 'skills unbind',
+    'skill install', 'runtime check', 'skills render', 'rules render',
+  ]);
+});
+
+test('Agent Assets 旧全局路径与 legacy direct registrations 已经退出', () => {
+  for (const relative of [
+    'src/application/domains/rules.mjs',
+    'src/application/domains/skills.mjs',
+    'src/application/domains/commands.mjs',
+    'src/application/domains/components.mjs',
+    'src/application/domains/runtime.mjs',
+    'src/application/package-maintenance.mjs',
+    'src/application/package-maintenance',
+    'src/application/runtime.mjs',
+    'src/infrastructure/runtime',
+  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
+
+  const legacy = read('src/bootstrap/legacy-runtime-module.mjs');
+  assert.doesNotMatch(legacy, /agent-assets\/application|registerDomains(?:Rules|Skills|Commands|Components|Runtime)|registerApplication(?:PackageMaintenance|Runtime)/);
+  assert.match(read('src/bootstrap/runtime.mjs'), /createAgentAssetsModule/);
 });
 
 test('System Installation module owns installation identity, update and npm Launcher boundaries', () => {

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
-import { parseSkillsManifest } from '../../../src/infrastructure/runtime/skills/manifests.mjs';
-import { skillProjectionOwnershipReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
+import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { parseSkillsManifest } from '../../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
+import { skillProjectionOwnershipReceiptTarget } from '../../../src/agent-assets/infrastructure/runtime/skills/projection-files.mjs';
 import { findExecutableOnPath } from '../../../src/infrastructure/process.mjs';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 

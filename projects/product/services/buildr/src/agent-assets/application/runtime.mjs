@@ -1,8 +1,8 @@
 import path from 'node:path';
 import process from 'node:process';
-import { parseInstallClaudeCodeBuildrSkillArgs } from '../../infrastructure/runtime/render-claude-code.mjs';
-import { assembleRuntimeProjection } from '../../infrastructure/runtime/projection.mjs';
-import { RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from '../../infrastructure/runtime/check-runtime.mjs';
+import { parseInstallClaudeCodeBuildrSkillArgs } from '../infrastructure/runtime/render-claude-code.mjs';
+import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
+import { RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from '../infrastructure/runtime/check-runtime.mjs';
 import {
   RUNTIME_ADAPTERS,
   SUPPORTED_AGENT_IDS,
@@ -10,8 +10,8 @@ import {
   reconcileRuntimePlan,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
-} from '../../infrastructure/runtime/adapter-contract.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+} from '../infrastructure/runtime/adapter-contract.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 
 export function registerDomainsRuntime(runtime) {
   const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);

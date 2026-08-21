@@ -1,8 +1,8 @@
-function usage(command = 'node src/infrastructure/runtime/render-claude-code.mjs') {
+function usage(command = 'node src/agent-assets/infrastructure/runtime/render-claude-code.mjs') {
   console.error(`Usage: ${command} --scope <.|projects/project> --target <dir>`);
 }
 
-function installUsage(command = 'node src/infrastructure/runtime/render-claude-code.mjs install') {
+function installUsage(command = 'node src/agent-assets/infrastructure/runtime/render-claude-code.mjs install') {
   console.error(`Usage: ${command} --target <dir>`);
 }
 

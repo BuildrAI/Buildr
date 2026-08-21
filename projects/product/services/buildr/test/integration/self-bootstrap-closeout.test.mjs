@@ -18,7 +18,7 @@ import {
   inspectDevelopmentInstance,
   restartDevelopmentInstance,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
-import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
+import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';

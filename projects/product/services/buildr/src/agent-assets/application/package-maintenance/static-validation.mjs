@@ -1,5 +1,5 @@
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
-import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../internal-workflow-route-inventory.mjs';
+import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../../../application/internal-workflow-route-inventory.mjs';
 
 export function createPackageStaticValidator(deps) {
   const {
@@ -272,7 +272,7 @@ export function createPackageStaticValidator(deps) {
   function validateTaskEnvironmentAuthorityResidue(context) {
     const { root, problems } = context;
     const allowedLegacyFiles = new Set([
-      path.join(root, 'src', 'application', 'package-maintenance', 'static-validation.mjs'),
+      path.join(root, 'src', 'agent-assets', 'application', 'package-maintenance', 'static-validation.mjs'),
       path.join(root, 'resources', 'manifest.yml'),
     ].map((file) => path.resolve(file)));
     const forbidden = [
@@ -357,7 +357,7 @@ export function createPackageStaticValidator(deps) {
     if (existsDirectory(sourceRoot)) {
       for (const file of collectFiles(sourceRoot)) {
         if (!/\.(?:mjs|js)$/.test(file)) continue;
-        if (path.resolve(file) === path.resolve(root, 'src/application/package-maintenance/static-validation.mjs')) continue;
+        if (path.resolve(file) === path.resolve(root, 'src/agent-assets/application/package-maintenance/static-validation.mjs')) continue;
         const content = fs.readFileSync(file, 'utf8');
         if (content.includes('.writeTaskReviewResultPersistence(')) writerCallers.push(toPosixRelative(root, file));
       }

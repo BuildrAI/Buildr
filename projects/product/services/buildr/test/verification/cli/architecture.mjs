@@ -66,7 +66,7 @@ const requiredRuntime = [
   'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
   'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
-  'application/doctor.mjs', 'application/package-maintenance.mjs',
+  'application/doctor.mjs', 'agent-assets/application/package-maintenance.mjs',
   'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
   'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
   'workspace/domain/workspace.mjs', 'workspace/domain/project.mjs', 'workspace/domain/service.mjs',
@@ -86,22 +86,23 @@ const requiredRuntime = [
   'task/application/record/task-record-application.mjs', 'task/persistence/record/task-record-repository.mjs',
   'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
   'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
-  'application/domains/rules.mjs', 'application/domains/skills.mjs',
-  'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
-  'application/domains/runtime.mjs', 'application/json-contracts.mjs',
+  'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
+  'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
+  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'application/domains/openspec.mjs',
+  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'application/json-contracts.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
-  'infrastructure/runtime/adapter-contract.mjs', 'infrastructure/runtime/render-claude-code.mjs',
+  'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
   'application/doctor/scope-diagnostics.mjs', 'application/doctor/service-diagnostics.mjs',
-  'application/doctor/runtime-diagnostics.mjs', 'application/package-maintenance/static-validation.mjs',
-  'application/package-maintenance/smoke-checks.mjs', 'application/package-maintenance/verification-registry.mjs',
-  'application/package-maintenance/output.mjs',
+  'application/doctor/runtime-diagnostics.mjs', 'agent-assets/application/package-maintenance/static-validation.mjs',
+  'agent-assets/application/package-maintenance/smoke-checks.mjs', 'agent-assets/application/package-maintenance/verification-registry.mjs',
+  'agent-assets/application/package-maintenance/output.mjs',
 ];
 for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke = path.join(sourceRoot, 'application/package-maintenance/smoke-checks.mjs');
+const packageSmoke = path.join(sourceRoot, 'agent-assets/application/package-maintenance/smoke-checks.mjs');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
@@ -111,7 +112,7 @@ const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
   const moduleOffset = parts[0] === 'system' && parts[1] === 'installation' ? 2 : 1;
-  if (!['task', 'web', 'workspace'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  if (!['task', 'web', 'workspace', 'agent-assets'].includes(parts[0]) && moduleOffset === 1) return parts[0];
   if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
@@ -131,6 +132,7 @@ const allowedTargets = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts = new Set([
+  'agent-assets/module.mjs -> workspace/module.mjs',
   'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
   'web/module.mjs -> system/installation/module.mjs',
 ]);
@@ -198,9 +200,9 @@ for (const file of sourceFiles) {
 }
 
 const facadeLimits = new Map([
-  ['src/infrastructure/runtime/render-claude-code.mjs', 100],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code.mjs', 100],
   ['src/application/doctor.mjs', 250],
-  ['src/application/package-maintenance.mjs', 550],
+  ['src/agent-assets/application/package-maintenance.mjs', 550],
   ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],
 ]);
@@ -211,7 +213,7 @@ for (const [relative, limit] of facadeLimits) {
 }
 
 for (const module of ['arguments.mjs', 'manifests.mjs', 'contributions.mjs', 'sources.mjs', 'render-plan.mjs']) {
-  if (!fs.existsSync(path.join(sourceRoot, 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
+  if (!fs.existsSync(path.join(sourceRoot, 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
 }
 const workspaceVerificationRoot = path.join(productRoot, 'test', 'verification', 'workspace');
 const workspaceVerificationFiles = ['fixture.mjs', 'suites.mjs', 'workspace-lifecycle.mjs', 'ownership-recovery.mjs', 'runtime-reconciliation.mjs'];

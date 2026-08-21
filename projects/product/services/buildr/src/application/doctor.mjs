@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from '../infrastructure/process.mjs';
-import { RUNTIME_CHECKERS } from '../infrastructure/runtime/check-runtime.mjs';
-import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
-import { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.mjs';
+import { RUNTIME_CHECKERS } from '../agent-assets/infrastructure/runtime/check-runtime.mjs';
+import { assembleRuntimeProjection } from '../agent-assets/infrastructure/runtime/projection.mjs';
+import { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, getRuntimeAdapter, isSupportedAgent } from '../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { createRuntimeDiagnostics } from './doctor/runtime-diagnostics.mjs';
 import { createScopeDiagnostics } from './doctor/scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './doctor/service-diagnostics.mjs';

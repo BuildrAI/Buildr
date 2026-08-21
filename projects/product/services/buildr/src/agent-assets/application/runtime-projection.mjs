@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
-import { runFinalDoctor } from '../infrastructure/final-doctor-process.mjs';
+import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
 import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.mjs';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
 import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
@@ -14,7 +14,7 @@ import {
   skillProjectionOwnershipReceiptTarget,
 } from '../infrastructure/runtime/skills/projection-files.mjs';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
-import { observeGitCheckoutIdentity, sameFilesystemPath } from '../infrastructure/git/checkout-identity.mjs';
+import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 
 export function registerApplicationRuntime(runtime) {
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);

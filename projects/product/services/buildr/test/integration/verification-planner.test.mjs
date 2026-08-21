@@ -105,7 +105,7 @@ test('Product path 和 glob matcher 在 Node 20 语义下稳定工作', () => {
   assert.throws(() => normalizeProductPath('../outside'), /escapes root/);
   assert.throws(() => normalizeProductPath('/tmp/file'), /Invalid Product path/);
   assert.match('docs/nested/guide.md', globToRegExp('**/*.md'));
-  assert.equal(matchesInput('src/application/domains/rules.mjs', 'src/**/*.mjs'), true);
+  assert.equal(matchesInput('src/agent-assets/application/rules.mjs', 'src/**/*.mjs'), true);
   assert.equal(matchesInput('bin/buildr.mjs', 'src/**/*.mjs'), false);
 });
 
@@ -259,12 +259,12 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
       excluded: ['contract', 'cli-architecture', 'capability-cli-integration'],
     },
     {
-      path: 'src/application/package-maintenance/builtin-replacement.mjs',
+      path: 'src/agent-assets/application/package-maintenance/builtin-replacement.mjs',
       required: ['unit', 'managed-mutations', 'package-static', 'ownership-recovery', 'release-tarball-smoke', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'capability-cli-integration', 'cli-compatibility', 'cli-package-parity'],
     },
     {
-      path: 'src/infrastructure/runtime/skills/publication.mjs',
+      path: 'src/agent-assets/infrastructure/runtime/skills/publication.mjs',
       required: ['runtime-adapter-contract', 'managed-mutations', 'capability-cli-integration', 'package-skills', 'package-runtime', 'runtime-adapter-parity', 'runtime-reconciliation', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
     },
@@ -289,7 +289,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['integration', 'integration-declarations', 'integration-verification', 'system-verification-contracts', 'system-public-json-contracts'],
     },
     {
-      path: 'src/infrastructure/runtime/skills/render-plan.mjs',
+      path: 'src/agent-assets/infrastructure/runtime/skills/render-plan.mjs',
       required: ['integration-runtime'],
       excluded: ['integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-release', 'integration-data-store'],
     },

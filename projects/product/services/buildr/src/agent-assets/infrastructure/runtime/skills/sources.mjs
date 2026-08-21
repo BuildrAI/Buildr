@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fetchRemoteText } from '../../network/fetch-remote-text.mjs';
+import { fetchRemoteText } from '../../../../infrastructure/network/fetch-remote-text.mjs';
 import { resolveComponentContributions } from './contributions.mjs';
 import { capabilityKey, isSourceLabel, parseSkillsManifestDocument } from './manifests.mjs';
 import { ensureFile, normalizeRelativePath, parseSkillFrontmatterName, parseSkillFrontmatterNameFromContent, productRoot, resourcesRoot, unquoteYamlScalar } from './primitives.mjs';

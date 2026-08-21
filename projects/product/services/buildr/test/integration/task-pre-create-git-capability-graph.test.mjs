@@ -6,7 +6,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { resolveSkillCapabilityGraph } from '../../src/infrastructure/runtime/skills/capabilities.mjs';
+import { resolveSkillCapabilityGraph } from '../../src/agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 test('task-triage 的 Git Operations provider 不 ready 只降级创建前依赖', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-pre-create-git-'));

@@ -57,22 +57,22 @@ const allowed = new Map([
   ])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/workspace/interfaces/cli/workspace.mjs', new Set(['createProject', 'createService'])],
-  ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
-  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
-  ['src/application/domains/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
+  ['src/agent-assets/application/rules.mjs', new Set(['rulesRemoveUnsafe'])],
+  ['src/agent-assets/application/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
+  ['src/agent-assets/application/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
   ['src/application/domains/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
-  ['src/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],
-  ['src/application/package-maintenance/builtin-lifecycle.mjs', new Set(['builtinUninstallUnsafe'])],
-  ['src/application/package-maintenance/output.mjs', new Set(['buildPackageOutput', 'packageBuild'])],
-  ['src/application/package-maintenance/smoke-checks.mjs', new Set([
+  ['src/agent-assets/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],
+  ['src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs', new Set(['builtinUninstallUnsafe'])],
+  ['src/agent-assets/application/package-maintenance/output.mjs', new Set(['buildPackageOutput', 'packageBuild'])],
+  ['src/agent-assets/application/package-maintenance/smoke-checks.mjs', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
   ['src/application/workspace-operations.mjs', new Set(['mutationRecover'])],
-  ['src/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
-  ['src/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
-  ['src/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],
+  ['src/agent-assets/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
+  ['src/agent-assets/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],
 ]);
 
 const violations = [];

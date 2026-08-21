@@ -22,7 +22,7 @@ import {
   projectEnvironmentPreparationScopeSelector,
 } from '../../domain/task-environment/project-environment-preparation.mjs';
 import { observeGitCheckoutIdentity, sameFilesystemPath, sameGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
-import { checkRuntimeAdapter } from '../../infrastructure/runtime/check-runtime.mjs';
+import { checkRuntimeAdapter } from '../../agent-assets/infrastructure/runtime/check-runtime.mjs';
 import { spawnCommandSync, spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 import { declarationIntakeGapNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';

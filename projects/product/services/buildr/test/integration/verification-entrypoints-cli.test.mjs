@@ -6,7 +6,7 @@ import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { PACKAGE_VERIFIERS } from '../../src/application/package-maintenance/verification-registry.mjs';
+import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot = path.resolve(productRoot, '../..');

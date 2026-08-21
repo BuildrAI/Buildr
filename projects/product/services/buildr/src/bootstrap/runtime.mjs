@@ -1,4 +1,5 @@
 import * as platform from '../infrastructure/platform.mjs';
+import { createAgentAssetsModule } from '../agent-assets/module.mjs';
 import {
   TASK_RECORD_COMPATIBILITY,
   TASK_RECORD_MODULE,
@@ -75,6 +76,7 @@ export function createRuntime() {
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
   registerLegacyRuntime(runtime, {
     installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime, { readProductIdentity: readCurrentProductIdentity })),
+    installAgentAssetsModule: () => registry.install(createAgentAssetsModule(runtime)),
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
     installTaskRetrospectiveModule: () => installTaskRetrospectiveModule(runtime, registry),

@@ -6,7 +6,7 @@ import {
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
   isSupportedAgent,
-} from '../infrastructure/runtime/adapter-contract.mjs';
+} from '../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './doctor/result-model.mjs';

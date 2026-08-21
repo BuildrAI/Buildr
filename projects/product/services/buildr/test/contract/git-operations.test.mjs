@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'resources/workspace');

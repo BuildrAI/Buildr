@@ -115,10 +115,9 @@ src/
 
   agent-assets/
     module.mjs
-    domain/
     application/
-    persistence/
-    interfaces/
+    infrastructure/
+    interfaces/cli/
 
   web/
     application/               # Web 实例和运行生命周期编排
@@ -214,21 +213,34 @@ Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspac
 
 `agent-assets` 是“所有提供给 Agent 使用的资产”的模块名称，命名保持不变。它不是“工作资产（Work Asset）”的同义词：Work Asset 是更宽的产品概念，还包括 Specs、Project/Service facts 和协作流程等不一定归属于本模块的内容。
 
+Agent Assets 平台迁移已经完成，当前生产结构为：
+
 ```text
 agent-assets/
-  domain/
-    rule/
-    skill/
-    command/
-    component/
-
   application/
-    builtin/
-    projection/
-
-  persistence/
+    rules.mjs
+    skills.mjs
+    commands.mjs
+    components.mjs
+    runtime.mjs
+    runtime-projection.mjs
+    package-maintenance.mjs
+    package-maintenance/       # Builtin、package sync、receipt 与验证私有协作者
+  infrastructure/
+    runtime/
+      adapter-contract.mjs
+      projection.mjs
+      check-runtime.mjs
+      render-claude-code.mjs
+      render-claude-code-rules.mjs
+      skills/                  # source、Capability Binding、render plan 与 receipt
   interfaces/
+    cli/
+      agent-assets.mjs        # Agent Assets command contributions
+  module.mjs                  # Bootstrap 唯一装配入口
 ```
+
+本模块当前没有独立 Domain、Persistence 或 HTTP Controller，因此不创建空目录。Rule、Skill、Command 和 Component 的 manifest/内容仍是 Workspace 源资产，不因代码归入 Agent Assets 而变成独立数据库领域对象；模块专属 CLI descriptor 位于 `interfaces/cli/`，仍由公共 CLI Host 统一解析和分发。若后续出现 Agent Assets HTTP 协议，再按真实职责建立 `interfaces/http/`。
 
 | 概念 | 含义 |
 |------|------|
@@ -247,7 +259,9 @@ agent-assets/
 - Workspace 是 Skill 的统一源；
 - Agent Runtime 是可重建结果，不是源资产。
 
-产品入口 `buildr` Skill 与 Workspace Builtin、package runtime source 的关系，作为后续产品重构线索保留。本轮只在迁移相关代码时识别其真实所有权，不决定迁移、合并或删除方案。
+Bootstrap 恰好安装一次 `agent-assets/module.mjs`。旧的 `src/application/domains/{rules,skills,commands,components,runtime}.mjs`、`src/application/package-maintenance*`、`src/application/runtime.mjs` 和 `src/infrastructure/runtime/` 已退出；`legacy-runtime-module` 不再逐项注册这些能力。通用文件系统、进程、网络、Git 和原子写入机制继续属于全局 Infrastructure，Agent Assets Infrastructure 只保留 Agent runtime adapter、投射计划、冲突检查和 receipt 等专属技术语义。
+
+产品入口 `buildr` Skill 与 Workspace Builtin、package runtime source 的长期合并或删除关系，仍作为后续产品重构线索保留；本次平台迁移只收敛现有实现所有权，不改变三者的产品语义或 writer authority。
 
 `.buildr/agent-runtime/` 保存投射所有权回执、来源摘要和文件清单等本机控制状态，不是源资产，也不是实际投射结果。实际投射结果位于 `.agents/`、`.claude/`、`CLAUDE.md` 等 Agent 原生位置。
 

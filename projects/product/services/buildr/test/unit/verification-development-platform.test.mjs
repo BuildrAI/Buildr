@@ -13,7 +13,7 @@ test('Windows development projection is empty for non-platform paths and does no
 
 test('Windows development projection selects only the explicit platform owner for sensitive paths', () => {
   for (const input of [
-    'src/infrastructure/runtime/node-runtime.mjs',
+    'src/agent-assets/infrastructure/runtime/node-runtime.mjs',
     'src/application/worktree/worktree-application.mjs',
     'services/buildr-web/package.json',
   ]) {
@@ -27,7 +27,7 @@ test('Windows development projection selects only the explicit platform owner fo
 
 test('platform projection rejects unknown runners and admission remains an explicit caller decision', () => {
   assert.throws(() => createDevelopmentPlatformPlan({ runner: 'macos', paths: ['README.md'] }), /Unknown development verification runner/);
-  const projected = createDevelopmentPlatformPlan({ runner: 'windows', paths: ['src/infrastructure/runtime/node-runtime.mjs'] });
+  const projected = createDevelopmentPlatformPlan({ runner: 'windows', paths: ['src/agent-assets/infrastructure/runtime/node-runtime.mjs'] });
   const withAdmission = createVerificationAdmissionPlan(projected);
   assert.ok(withAdmission.steps.some((step) => step.id === 'unit'));
   assert.deepEqual(verificationSteps.filter((step) => step.developmentRunners.length > 0).map((step) => step.id), ['system-windows-platform']);
