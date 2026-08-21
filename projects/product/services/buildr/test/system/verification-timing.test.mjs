@@ -137,6 +137,7 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
       startedAt: '1970-01-01T00:00:01.050Z',
       finishedAt: '1970-01-01T00:00:01.150Z',
       queueDurationMs: 50,
+      scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1 },
       phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
     }],
   });
@@ -149,6 +150,7 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     startedAt: '1970-01-01T00:00:01.050Z',
     finishedAt: '1970-01-01T00:00:01.150Z',
     queueDurationMs: 50,
+    scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1 },
     phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
   });
   assert.equal(summary.environment.schedulingMode, 'cost');

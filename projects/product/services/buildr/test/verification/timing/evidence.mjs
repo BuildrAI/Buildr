@@ -98,6 +98,7 @@ function normalizedSteps(results) {
     ...(result.finishedAt ? { finishedAt: result.finishedAt } : {}),
     ...(result.blockedAt ? { blockedAt: result.blockedAt } : {}),
     ...(result.queueDurationMs == null ? {} : { queueDurationMs: Number(result.queueDurationMs) }),
+    ...(result.scheduling ? { scheduling: result.scheduling } : {}),
     ...(result.resourceCoordination ? { resourceCoordination: result.resourceCoordination } : {}),
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),

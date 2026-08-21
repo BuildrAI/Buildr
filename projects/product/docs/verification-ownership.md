@@ -72,6 +72,8 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 - Candidate 中 `integration` 使用 general suite，排除 Task Development 与 Task Finish 专属文件；Task Development 专项保持单文件顺序执行并占用真实 `workspace-saturating` 压力容量；
 - `task-lifecycle-heavy` 只由 System 与 Task Development Integration 共同声明，容量为 1。它是已测得的 CPU/process/filesystem 压力节流，不是共享状态锁；OpenSpec recovery、runtime parity 等其他饱和型 owner 仍可在独立临时根上并行；
 - 每个资源 claim 必须命中资源契约要求的 footprint、`unique-temporary-root` 隔离与 lifecycle cleanup，否则 planner 在启动前拒绝。只使用独立临时 Git/CLI fixture 的 Task Environment Integration、Task Finish delivery Integration 与 Release convergence 不再占用 `workspace-saturating`；
+- Candidate DAG 默认按成功样本校准后的粗粒度成本优先启动长 owner；资源或 class 容量不足的 step 不会阻止其他 ready step 填充空闲容量。`critical-path` 模式按“自身调度成本 + 最长后续依赖链成本”排序，同分时优先 fan-out producer；它与 `declaration` 模式只用于受控对照诊断。timing evidence记录实际模式与每步优先级；
+- `system-fresh-build` 使用独立临时 Workspace 和prepared controller，不再占用全局`exclusive`，而是显式声明`workspace-saturating`与`task-lifecycle-heavy`资源。近期成功样本约23–25s，调度成本取25s；Task Finish delivery、System Task Finish、Task Development、execution-record与self-bootstrap等长尾 owner按多次成功样本中位数向上取整，成本仅影响启动顺序，不替代target duration或超时；
 - `test:system` 为 Task Record/Review/Verification 与 Verification CLI 准备一次 `task-lifecycle/v1` 不可变基线，每个 case 复制独立 sandbox；初始化、Git/Task Environment、安装、迁移和 Finish 测试仍自行准备完整环境；
 - `runtime-adapter-parity` 只初始化一次只读 seed，再为每个 adapter 与安全场景复制独立 sandbox，内部最多 3 路；同一 sandbox 内的 mutation、runtime check 和 Doctor 保持串行；
 - System runner 只粗粒度前置已知长 owner，其余保持字母序，并用 dot reporter 压缩成功日志；这不是动态调度器；

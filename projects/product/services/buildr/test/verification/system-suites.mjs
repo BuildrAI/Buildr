@@ -129,7 +129,7 @@ export const SYSTEM_SUITES = Object.freeze([
     id: 'system-task-finish',
     name: 'System Task Finish product journey',
     innerConcurrency: 1,
-    schedulingCostMs: 46000,
+    schedulingCostMs: 120000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
     files: Object.freeze([
@@ -151,9 +151,9 @@ export const SYSTEM_SUITES = Object.freeze([
     id: 'system-fresh-build',
     name: 'System fresh build',
     innerConcurrency: 1,
-    schedulingCostMs: 180000,
-    concurrencyClass: 'exclusive',
-    resources: Object.freeze(['workspace-saturating']),
+    schedulingCostMs: 25000,
+    concurrencyClass: 'workspace-heavy',
+    resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
     files: Object.freeze([
       'test/system/task-environment-fresh-build-web.test.mjs',
     ]),

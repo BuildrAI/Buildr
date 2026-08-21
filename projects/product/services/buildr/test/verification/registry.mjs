@@ -377,7 +377,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'skills/buildr-self-bootstrap-sync/**',
     'resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**',
     'src/application/release-awareness.mjs',
-  ], { schedulingCostMs: 33000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
+  ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
     'test/integration/task-entry-snapshot-application.test.mjs',
     'test/integration/task-overview-repository.test.mjs',
@@ -418,7 +418,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/domain/task-execution-record/**',
     'src/task/persistence/execution-record/task-execution-record-body-store.mjs',
     'src/task/persistence/execution-record/task-execution-record-repository.mjs',
-  ], { schedulingCostMs: 16000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 50000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-development', [
     'test/integration/task-development-application.test.mjs',
     'test/integration/task-development-driver-discovery.test.mjs',
@@ -436,7 +436,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-verification/**',
     'src/interfaces/internal/task-development-driver.mjs',
     'src/interfaces/internal/task-development-driver-runner.mjs',
-  ], { schedulingCostMs: 15000, resources: ['workspace-saturating', 'task-lifecycle-heavy'], args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 60000, resources: ['workspace-saturating', 'task-lifecycle-heavy'], args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish', [
     'test/integration/task-finish-bootstrap-application.test.mjs',
     'test/integration/task-finish-bootstrap-capsule.test.mjs',
@@ -478,7 +478,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-delivery-terminal.mjs',
     'src/application/task-finish/task-finish-product-executor.mjs',
     'src/application/task-terminal-delivery/**',
-  ], { schedulingCostMs: 35000, args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
+  ], { schedulingCostMs: 120000, args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
 ]);
 
 export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
@@ -653,7 +653,7 @@ export const verificationSteps = Object.freeze([
     'test/verification/concurrency/**', 'test/helpers/child-process-supervisor.mjs', 'test/helpers/clean-product-source.mjs',
     'src/application/worktree/**', 'src/application/task-verification/**', 'src/application/verification/**', 'src/interfaces/local-app/runtime/preview-manager.mjs',
     'openspec/specs/concurrent-task-acceptance/**', 'openspec/specs/task-environments/**',
-  ], schedulingCostMs: 33000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  ], schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.mjs' }, profiles: ['host-node'], inputs: ['package.json', 'test/verification/host-node/**', 'test/verification/host-node.mjs'] }),
   step({ id: 'host-node-boundaries', name: 'Host Node sensitive boundaries', executor: { type: 'node-test', files: [
@@ -718,7 +718,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'package-skills', ...packageVerifier('skills'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/workspace/skills/**', 'package/targets/runtime/skills/**', 'src/application/domains/skills.mjs', 'src/infrastructure/runtime/skills/**', 'src/application/package-maintenance/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-runtime', ...packageVerifier('runtime'), profiles: ['candidate'], groups: ['package', 'runtime'], inputs: ['package/targets/runtime/**', 'resources/workspace/rules/**', 'src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/package-maintenance/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'runtime-skill-projection', name: 'runtime packaged Skill projection', executor: { type: 'node', file: 'test/verification/runtime/skill-projection.mjs' }, groups: ['runtime'], inputs: ['test/verification/runtime/skill-projection.mjs', 'test/verification/runtime/fixture.mjs', 'resources/manifest.yml', 'resources/workspace/skills/buildr/**', 'resources/workspace/skills/openspec/**'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'runtime-adapter-parity', name: 'runtime adapter implementation-family parity', executor: { type: 'node', file: 'test/verification/runtime/adapter-parity.mjs' }, profiles: ['candidate'], groups: ['runtime', 'windows-npm-preflight'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-parity.mjs', 'test/verification/runtime/fixture.mjs', 'package/targets/runtime/**', 'resources/workspace/rules/**'], schedulingCostMs: 32000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  step({ id: 'runtime-adapter-parity', name: 'runtime adapter implementation-family parity', executor: { type: 'node', file: 'test/verification/runtime/adapter-parity.mjs' }, profiles: ['candidate'], groups: ['runtime', 'windows-npm-preflight'], inputs: ['src/infrastructure/runtime/**', 'src/application/domains/runtime.mjs', 'src/application/doctor/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-parity.mjs', 'test/verification/runtime/fixture.mjs', 'package/targets/runtime/**', 'resources/workspace/rules/**'], schedulingCostMs: 35000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
 
   step({ id: 'workspace-lifecycle', name: 'Workspace E2E: workspace lifecycle', executor: { type: 'workspace-suite', selector: 'workspace-lifecycle' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: ['src/application/domains/workspace.mjs', 'src/application/domains/commands.mjs', 'src/application/domains/rules.mjs', 'src/application/domains/skills.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/workspace-lifecycle.mjs'], schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'ownership-recovery', name: 'Workspace E2E: ownership recovery', executor: { type: 'workspace-suite', selector: 'ownership-recovery' }, profiles: ['candidate'], inputs: ['src/application/domains/components.mjs', 'src/application/package-maintenance/**', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/ownership-recovery.mjs'], schedulingCostMs: 6000, concurrencyClass: 'workspace-heavy' }),

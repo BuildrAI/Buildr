@@ -188,6 +188,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal((changed.match(/await executePlan\(/g) ?? []).length, 1);
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
+  assert.match(candidate, /BUILDR_VERIFICATION_SCHEDULING \?\? 'cost'/);
   assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
   assert.match(candidate, /Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
@@ -285,7 +286,23 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], 1);
-  assert.ok(verificationSteps.find((step) => step.id === 'system-fresh-build').schedulingCostMs >= 120_000);
+  const freshBuild = verificationSteps.find((step) => step.id === 'system-fresh-build');
+  assert.equal(freshBuild.schedulingCostMs, 25_000);
+  assert.equal(freshBuild.concurrencyClass, 'workspace-heavy');
+  assert.deepEqual(freshBuild.resources, ['workspace-saturating', 'task-lifecycle-heavy']);
+  assert.deepEqual(Object.fromEntries([
+    'integration-task-finish-delivery',
+    'system-task-finish',
+    'integration-task-development',
+    'integration-task-execution-records',
+    'integration-self-bootstrap',
+  ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
+    'integration-task-finish-delivery': 120_000,
+    'system-task-finish': 120_000,
+    'integration-task-development': 60_000,
+    'integration-task-execution-records': 50_000,
+    'integration-self-bootstrap': 50_000,
+  });
 });
 
 test('release tarball smoke isolates npm cache writes without a Workspace runtime', () => {

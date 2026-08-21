@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseVerificationSchedulingMode, runVerificationDag } from '../../test/verification/dag-scheduler.mjs';
+import { createVerificationSchedulingPriorities, parseVerificationSchedulingMode, runVerificationDag } from '../../test/verification/dag-scheduler.mjs';
 
 const step = (id, dependsOn = [], concurrencyClass = 'default', schedulingCostMs) => ({
   id, name: id, dependsOn, concurrencyClass, ...(schedulingCostMs == null ? {} : { schedulingCostMs }),
@@ -84,11 +84,57 @@ test('scheduler 优先启动高成本 ready step、稳定处理同成本并按 p
     step('high-b', [], 'default', 10),
   ]), {
     concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'cost',
     onStart: (item) => started.push(item.id),
     execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
   });
   assert.deepEqual(started, ['high-a', 'high-b', 'low']);
   assert.deepEqual(results.map((item) => item.id), ['low', 'high-a', 'high-b']);
+});
+
+test('critical-path 模式优先启动低成本 producer 以提前解锁长尾', async () => {
+  const verificationPlan = plan([
+    step('independent', [], 'default', 80),
+    step('chain-root', [], 'default', 10),
+    step('chain-tail', ['chain-root'], 'default', 100),
+    step('filler', [], 'default', 70),
+  ]);
+  const priorities = createVerificationSchedulingPriorities(verificationPlan);
+  assert.deepEqual(priorities.get('chain-root'), {
+    stepCostMs: 10,
+    remainingCostMs: 110,
+    directDependentCount: 1,
+  });
+  const started = [];
+  const results = await runVerificationDag(verificationPlan, {
+    concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'critical-path',
+    onStart: (item) => started.push(item.id),
+    execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
+  });
+  assert.deepEqual(started, ['chain-root', 'chain-tail', 'independent', 'filler']);
+  assert.deepEqual(results.find((result) => result.id === 'chain-root').scheduling, {
+    mode: 'critical-path',
+    stepCostMs: 10,
+    remainingCostMs: 110,
+    directDependentCount: 1,
+  });
+});
+
+test('critical-path 同分时优先 fan-out producer，再按自身成本和声明顺序稳定回退', async () => {
+  const started = [];
+  await runVerificationDag(plan([
+    step('plain', [], 'default', 10),
+    step('producer', [], 'default', 10),
+    step('child-a', ['producer'], 'default', 0),
+    step('child-b', ['producer'], 'default', 0),
+  ]), {
+    concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'critical-path',
+    onStart: (item) => started.push(item.id),
+    execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
+  });
+  assert.deepEqual(started, ['producer', 'plain', 'child-a', 'child-b']);
 });
 
 test('scheduler 不为尚未 ready 的高成本 step 空置容量', async () => {
@@ -99,6 +145,7 @@ test('scheduler 不为尚未 ready 的高成本 step 空置容量', async () => 
     step('ready', [], 'default', 50),
   ]), {
     concurrency: { global: 1, classes: { default: 1, exclusive: 1 } },
+    schedulingMode: 'cost',
     onStart: (item) => started.push(item.id),
     execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 1 }),
   });
@@ -164,4 +211,11 @@ test('scheduler 在启动 verifier 前拒绝非法并发上限', async () => {
     execute: async () => { calls += 1; return { status: 'passed', exitCode: 0, durationMs: 1 }; },
   }), /Invalid global concurrency limit/);
   assert.equal(calls, 0);
+});
+
+test('critical-path priority 在非法 cycle 上 fail closed', () => {
+  assert.throws(() => createVerificationSchedulingPriorities(plan([
+    step('a', ['b'], 'default', 1),
+    step('b', ['a'], 'default', 1),
+  ])), /Verification scheduling priority cycle/);
 });

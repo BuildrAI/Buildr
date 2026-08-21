@@ -1,8 +1,36 @@
-export const VERIFICATION_SCHEDULING_MODES = Object.freeze(['cost', 'declaration']);
+export const VERIFICATION_SCHEDULING_MODES = Object.freeze(['critical-path', 'cost', 'declaration']);
 
 export function parseVerificationSchedulingMode(value = 'cost') {
   if (!VERIFICATION_SCHEDULING_MODES.includes(value)) throw new Error(`Invalid verification scheduling mode: ${value}`);
   return value;
+}
+
+export function createVerificationSchedulingPriorities(plan) {
+  const byId = new Map(plan.steps.map((step) => [step.id, step]));
+  const dependents = new Map(plan.steps.map((step) => [step.id, []]));
+  for (const step of plan.steps) {
+    for (const dependency of step.dependsOn ?? []) {
+      if (dependents.has(dependency)) dependents.get(dependency).push(step.id);
+    }
+  }
+  const remainingCostById = new Map();
+  const visiting = new Set();
+  const remainingCost = (id) => {
+    if (remainingCostById.has(id)) return remainingCostById.get(id);
+    if (visiting.has(id)) throw new Error(`Verification scheduling priority cycle: ${id}`);
+    visiting.add(id);
+    const downstream = dependents.get(id) ?? [];
+    const value = (byId.get(id)?.schedulingCostMs ?? 0)
+      + Math.max(0, ...downstream.map((dependent) => remainingCost(dependent)));
+    visiting.delete(id);
+    remainingCostById.set(id, value);
+    return value;
+  };
+  return new Map(plan.steps.map((step) => [step.id, Object.freeze({
+    stepCostMs: step.schedulingCostMs ?? 0,
+    remainingCostMs: remainingCost(step.id),
+    directDependentCount: dependents.get(step.id)?.length ?? 0,
+  })]));
 }
 function failedDependency(step, results) {
   return (step.dependsOn ?? []).find((id) => results.has(id) && results.get(id).status !== 'passed');
@@ -37,6 +65,7 @@ export async function runVerificationDag(plan, options = {}) {
   }
   const schedulingMode = parseVerificationSchedulingMode(options.schedulingMode);
   const planIndex = new Map(plan.steps.map((step, index) => [step.id, index]));
+  const schedulingPriorities = createVerificationSchedulingPriorities(plan);
   const pending = new Map(plan.steps.map((step) => [step.id, step]));
   const active = new Map();
   const activeByClass = new Map();
@@ -83,6 +112,7 @@ export async function runVerificationDag(plan, options = {}) {
       const finishedAtMs = now();
       const scheduledResult = {
         ...result,
+        scheduling: Object.freeze({ mode: schedulingMode, ...schedulingPriorities.get(step.id) }),
         ...(resourceHandle ? { resourceCoordination: { waitDurationMs: resourceHandle.waitDurationMs, acquiredAt: resourceHandle.acquiredAt, claims: resourceHandle.claims.map(({ heartbeat, directory, token, ...claim }) => claim), release } } : {}),
         ...(releaseFailed && result.status === 'passed' ? { status: 'failed', exitCode: 1, stderr: `${result.stderr || ''}Verification resource cleanup did not preserve ownership.\n` } : {}),
         queuedAt,
@@ -101,6 +131,16 @@ export async function runVerificationDag(plan, options = {}) {
   };
 
   const pendingInSchedulingOrder = () => [...pending.values()].sort((left, right) => {
+    if (schedulingMode === 'critical-path') {
+      const leftPriority = schedulingPriorities.get(left.id);
+      const rightPriority = schedulingPriorities.get(right.id);
+      const pathDifference = rightPriority.remainingCostMs - leftPriority.remainingCostMs;
+      if (pathDifference !== 0) return pathDifference;
+      const fanoutDifference = rightPriority.directDependentCount - leftPriority.directDependentCount;
+      if (fanoutDifference !== 0) return fanoutDifference;
+      const costDifference = rightPriority.stepCostMs - leftPriority.stepCostMs;
+      if (costDifference !== 0) return costDifference;
+    }
     if (schedulingMode === 'cost') {
       const costDifference = (right.schedulingCostMs ?? 0) - (left.schedulingCostMs ?? 0);
       if (costDifference !== 0) return costDifference;
