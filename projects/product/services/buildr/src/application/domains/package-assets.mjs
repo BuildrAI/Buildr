@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.mjs';
-import { createProject as createProjectEntity } from '../../domain/project/project.mjs';
-import { createService as createServiceEntity } from '../../domain/service/service.mjs';
+import { createProject as createProjectEntity, createService as createServiceEntity } from '../../workspace/module.mjs';
 
 export function registerDomainsPackageAssets(runtime) {
   const readGitRemote = (...args) => runtime.readGitRemote(...args);

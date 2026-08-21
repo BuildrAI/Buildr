@@ -166,7 +166,7 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
     'src/infrastructure/product-resources/index.mjs',
   ]);
   const unitAndComponentOnly = verificationSteps.filter((item) => ['unit', 'component', 'candidate-tarball', 'application-payload-release'].includes(item.id));
-  assert.equal(auditProductionOwnerCoverage(['src/application/service/new-component-only.mjs'], unitAndComponentOnly).ok, false);
+  assert.equal(auditProductionOwnerCoverage(['src/workspace/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/application/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/persistence/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   const unknownProduction = createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] });
@@ -255,9 +255,9 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
       excluded: ['contract', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
-      path: 'src/application/domains/workspace.mjs',
-      required: ['commands-cli-integration', 'package-workspace', 'workspace-lifecycle', 'init-onboarding', 'service-branch-contract', 'managed-data-integrity'],
-      excluded: ['contract', 'cli-architecture', 'managed-mutations', 'capability-cli-integration', 'cli-compatibility', 'cli-package-parity'],
+      path: 'src/workspace/interfaces/cli/workspace.mjs',
+      required: ['managed-mutations', 'commands-cli-integration', 'package-workspace', 'workspace-lifecycle', 'init-onboarding', 'cli-compatibility', 'cli-package-parity', 'service-branch-contract', 'managed-data-integrity'],
+      excluded: ['contract', 'cli-architecture', 'capability-cli-integration'],
     },
     {
       path: 'src/application/package-maintenance/builtin-replacement.mjs',

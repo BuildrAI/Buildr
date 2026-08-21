@@ -8,7 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/application/workspace/workspace-root-gitignore-entries.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/workspace/module.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-daily-progress-'));

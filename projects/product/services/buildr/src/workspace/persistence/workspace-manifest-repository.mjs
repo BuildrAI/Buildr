@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import { createWorkspace } from '../../domain/workspace/workspace.mjs';
+import { createWorkspace } from '../domain/workspace.mjs';
 
 export const WORKSPACE_SCHEMA_V1 = 'buildr.workspace/v1';
 export const WORKSPACE_DESCRIPTION_TODO = 'TODO: 请补充 Workspace 的管理范围和用途。';

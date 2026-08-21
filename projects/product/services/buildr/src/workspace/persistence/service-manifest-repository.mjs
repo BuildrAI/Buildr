@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import { createService, isServiceCode } from '../../domain/service/service.mjs';
+import { createService, isServiceCode } from '../domain/service.mjs';
 
 export const SERVICES_SCHEMA_V1 = 'buildr.services/v1';
 export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';

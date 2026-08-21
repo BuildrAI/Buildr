@@ -67,7 +67,12 @@ const requiredRuntime = [
   'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
   'application/doctor.mjs', 'application/package-maintenance.mjs',
-  'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
+  'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
+  'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
+  'workspace/domain/workspace.mjs', 'workspace/domain/project.mjs', 'workspace/domain/service.mjs',
+  'workspace/persistence/workspace-manifest-repository.mjs', 'workspace/persistence/workspace-registry-repository.mjs',
+  'workspace/persistence/project-manifest-repository.mjs', 'workspace/persistence/service-manifest-repository.mjs',
+  'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/http/workspace-http.mjs',
   'application/worktree/git-worktree-provider.mjs',
   'application/task-environment/task-environment-application.mjs',
   'domain/task-environment/task-environment.mjs', 'task/persistence/environment/task-environment-repository.mjs',
@@ -81,12 +86,11 @@ const requiredRuntime = [
   'task/application/record/task-record-application.mjs', 'task/persistence/record/task-record-repository.mjs',
   'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
   'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
-  'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
+  'application/domains/rules.mjs', 'application/domains/skills.mjs',
   'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
   'application/domains/runtime.mjs', 'application/json-contracts.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
-  'infrastructure/filesystem/workspace-manifest-repository.mjs',
   'infrastructure/runtime/adapter-contract.mjs', 'infrastructure/runtime/render-claude-code.mjs',
   'application/doctor/scope-diagnostics.mjs', 'application/doctor/service-diagnostics.mjs',
   'application/doctor/runtime-diagnostics.mjs', 'application/package-maintenance/static-validation.mjs',
@@ -106,7 +110,7 @@ const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file))
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
-  if (!['task', 'web'].includes(parts[0])) return parts[0];
+  if (!['task', 'web', 'workspace'].includes(parts[0])) return parts[0];
   if (parts.length === 2 && parts[1] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
@@ -122,7 +126,7 @@ const allowedTargets = {
   domain: new Set(['domain']),
   application: new Set(['application', 'domain', 'infrastructure', 'module']),
   infrastructure: new Set(['infrastructure', 'domain']),
-  interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure']),
+  interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 
@@ -321,7 +325,32 @@ if (fs.existsSync(localAppServer)) {
   const source = fs.readFileSync(localAppServer, 'utf8');
   if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
   if (!source.includes('for (const contribution of httpContributions)') || !source.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
+  if (/runtime\.(?:listRegisteredWorkspaces|registerLocalWorkspace|getWorkspace|listProjects|projectDetail|listServices|serviceDetail)\(/.test(source)) problems.push('Buildr Web HTTP Host must not own Workspace Core routes');
   if (/registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
+}
+
+const workspaceModule = path.join(sourceRoot, 'workspace', 'module.mjs');
+if (!fs.existsSync(workspaceModule)) problems.push('Workspace Core module entry is missing');
+else {
+  const moduleSource = fs.readFileSync(workspaceModule, 'utf8');
+  if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
+    problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
+  }
+}
+for (const legacy of [
+  'application/domains/workspace.mjs',
+  'application/project/project-application.mjs',
+  'application/service/service-application.mjs',
+  'application/workspace/workspace-application.mjs',
+  'domain/project/project.mjs',
+  'domain/service/service.mjs',
+  'domain/workspace/workspace.mjs',
+  'infrastructure/filesystem/project-manifest-repository.mjs',
+  'infrastructure/filesystem/service-manifest-repository.mjs',
+  'infrastructure/filesystem/workspace-manifest-repository.mjs',
+  'infrastructure/filesystem/workspace-registry-repository.mjs',
+]) {
+  if (fs.existsSync(path.join(sourceRoot, legacy))) problems.push(`legacy Workspace Core entry must be removed: ${legacy}`);
 }
 
 const webModule = path.join(sourceRoot, 'web', 'module.mjs');

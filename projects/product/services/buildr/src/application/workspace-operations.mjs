@@ -10,7 +10,7 @@ import {
 import { observeGitCheckoutIdentity } from '../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './doctor/result-model.mjs';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace/workspace-root-gitignore-entries.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.mjs';
 
 export function registerApplicationWorkspaceOperations(runtime) {
   const discoverDoctorScopes = (...args) => runtime.discoverDoctorScopes(...args);

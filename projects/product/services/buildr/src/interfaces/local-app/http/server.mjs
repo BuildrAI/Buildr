@@ -7,6 +7,7 @@ import { resolveProductResource } from '../../../infrastructure/product-resource
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
+import { ensureRegisteredTarget } from '../../../workspace/module.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = resolveProductResource('product/web-dist');
@@ -230,16 +231,7 @@ function workspaceApiMatch(pathname) {
   return pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})(/.*)?$`));
 }
 
-export function ensureRegisteredTarget(runtime, targetRoot) {
-  if (!targetRoot) return null;
-  const root = path.resolve(targetRoot);
-  runtime.assertInitializedBuildrWorkspace(root);
-  let registry = runtime.listRegisteredWorkspaces();
-  const existing = registry.workspaces.find((entry) => entry.rootPath === root);
-  if (!existing) registry = runtime.registerLocalWorkspace({ rootPath: root, revision: registry.revision });
-  const entry = registry.workspaces.find((item) => item.rootPath === root);
-  return entry?.workspace?.id || null;
-}
+export { ensureRegisteredTarget };
 
 export function createLocalWorkspaceServer(runtime, {
   targetRoot = null,
@@ -320,36 +312,17 @@ export function createLocalWorkspaceServer(runtime, {
         jsonResponse(response, 200, withJsonSchema(PUBLIC_JSON_SCHEMAS.releaseAwareness, awareness));
         return;
       }
-      if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
-        jsonResponse(response, 200, runtime.listRegisteredWorkspaces());
-        return;
-      }
-      if (request.method === 'POST' && pathname === '/api/v1/workspaces') {
-        assertWriteRequest(request, origin, sessionToken);
-        jsonResponse(response, 200, runtime.registerLocalWorkspace(await readJsonBody(request)));
-        return;
-      }
-      if (request.method === 'POST' && pathname === '/api/v1/workspaces/pick') {
-        assertWriteRequest(request, origin, sessionToken);
-        const input = await readJsonBody(request);
-        const rootPath = pickWorkspaceDirectory();
-        if (!rootPath) {
-          jsonResponse(response, 200, { canceled: true });
-          return;
-        }
-        jsonResponse(response, 200, runtime.inspectLocalWorkspaceCandidate(rootPath, input.revision));
-        return;
-      }
-      if (request.method === 'DELETE' && pathname === '/api/v1/workspaces') {
-        assertWriteRequest(request, origin, sessionToken);
-        jsonResponse(response, 200, runtime.removeRegisteredWorkspace(await readJsonBody(request)));
-        return;
-      }
-      const removeMatch = pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})$`));
-      if (request.method === 'DELETE' && removeMatch) {
-        assertWriteRequest(request, origin, sessionToken);
-        jsonResponse(response, 200, runtime.removeRegisteredWorkspace({ ...(await readJsonBody(request)), workspaceId: removeMatch[1] }));
-        return;
+      for (const contribution of httpContributions) {
+        if (typeof contribution.handleTopLevel !== 'function') continue;
+        const contributedResponse = await contribution.handleTopLevel({
+          request,
+          pathname,
+          searchParams: requestUrl.searchParams,
+          authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
+          readJsonBody: () => readJsonBody(request),
+          pickWorkspaceDirectory,
+        });
+        if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
       }
       if (request.method === 'POST' && pathname === '/api/v1/app/quit') {
         assertWriteRequest(request, origin, sessionToken);
@@ -368,12 +341,6 @@ export function createLocalWorkspaceServer(runtime, {
         setImmediate(() => server.close(() => onShutdown?.()));
         return;
       }
-      if (request.method === 'POST' && pathname === '/api/v1/prompts/workspace-create') {
-        assertWriteRequest(request, origin, sessionToken);
-        jsonResponse(response, 200, runtime.generateWorkspaceCreatePrompt(await readJsonBody(request)));
-        return;
-      }
-
       const apiMatch = workspaceApiMatch(pathname);
       if (apiMatch) {
         if (requestUrl.searchParams.has('target') || requestUrl.searchParams.has('path') || requestUrl.searchParams.has('root')) {
@@ -385,15 +352,6 @@ export function createLocalWorkspaceServer(runtime, {
         const workspaceId = apiMatch[1];
         const suffix = apiMatch[2] || '';
         const { rootPath: root } = runtime.resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
-        if (request.method === 'GET' && suffix === '') return jsonResponse(response, 200, runtime.getWorkspace(root));
-        if (request.method === 'GET' && suffix === '/getting-started') {
-          return jsonResponse(response, 200, runtime.getWorkspaceGettingStarted(root));
-        }
-        if (request.method === 'PUT' && suffix === '') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.updateWorkspaceMetadata(root, await readJsonBody(request)));
-        }
-        if (request.method === 'GET' && suffix === '/projects') return jsonResponse(response, 200, runtime.listProjects(root));
         if (request.method === 'GET' && suffix === '/publications') return jsonResponse(response, 200, runtime.listPublications(root));
         const publicationMatch = suffix.match(new RegExp(`^/publications/(${TASK_ID})$`));
         if (request.method === 'GET' && publicationMatch) return jsonResponse(response, 200, runtime.publicationDetail(root, publicationMatch[1]));
@@ -419,6 +377,7 @@ export function createLocalWorkspaceServer(runtime, {
             root,
             authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
             readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
+            readJsonBody: () => readJsonBody(request),
           });
           if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
         }
@@ -513,12 +472,6 @@ export function createLocalWorkspaceServer(runtime, {
         }
         const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
         if (request.method === 'GET' && taskDailyProgressMatch) return jsonResponse(response, 200, runtime.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));
-        const projectMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
-        if (request.method === 'GET' && projectMatch) return jsonResponse(response, 200, runtime.projectDetail(root, projectMatch[1]));
-        if (request.method === 'PUT' && projectMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.updateProjectMetadata(root, projectMatch[1], await readJsonBody(request)));
-        }
         const projectDailyProgressTodayMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress$/);
         const projectDailyProgressDateMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress\/(\d{4}-\d{2}-\d{2})$/);
         if (request.method === 'GET' && (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)) {
@@ -537,46 +490,6 @@ export function createLocalWorkspaceServer(runtime, {
             date,
             group: requestUrl.searchParams.get('group') || undefined,
           }));
-        }
-        const projectDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
-        if (request.method === 'GET' && projectDocumentMatch) {
-          let documentPath = projectDocumentMatch[2];
-          try {
-            documentPath = decodeURIComponent(documentPath);
-          } catch {
-            throw Object.assign(new Error('项目文档路径无效。'), { code: 'project_document_path_forbidden', status: 400 });
-          }
-          return jsonResponse(response, 200, runtime.projectDocument(root, projectDocumentMatch[1], documentPath));
-        }
-        const servicesMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services$/);
-        if (request.method === 'GET' && servicesMatch) return jsonResponse(response, 200, runtime.listServices(root, servicesMatch[1]));
-        const serviceDocumentMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)\/documents\/(.+)$/);
-        if (request.method === 'GET' && serviceDocumentMatch) {
-          let documentPath = serviceDocumentMatch[3];
-          try {
-            documentPath = decodeURIComponent(documentPath);
-          } catch {
-            throw Object.assign(new Error('服务文档路径无效。'), { code: 'service_document_path_forbidden', status: 400 });
-          }
-          return jsonResponse(response, 200, runtime.serviceDocument(root, serviceDocumentMatch[1], serviceDocumentMatch[2], documentPath));
-        }
-        const serviceMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/services\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
-        if (request.method === 'GET' && serviceMatch) return jsonResponse(response, 200, runtime.serviceDetail(root, serviceMatch[1], serviceMatch[2]));
-        if (request.method === 'PUT' && serviceMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.updateServiceMetadata(root, serviceMatch[1], serviceMatch[2], await readJsonBody(request)));
-        }
-        if (request.method === 'POST' && suffix === '/prompts/project-create') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.generateProjectCreatePrompt(await readJsonBody(request)));
-        }
-        if (request.method === 'POST' && suffix === '/prompts/service-create') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.generateServiceCreatePrompt(root, await readJsonBody(request)));
-        }
-        if (request.method === 'POST' && suffix === '/prompts/start-work') {
-          assertWriteRequest(request, origin, sessionToken);
-          return jsonResponse(response, 200, runtime.generateStartWorkPrompt(root, await readJsonBody(request)));
         }
         if (request.method === 'POST' && suffix === '/prompts/task-verification') {
           assertWriteRequest(request, origin, sessionToken);

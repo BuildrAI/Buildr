@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { readCurrentProductIdentity } from '../product-identity/current-product-identity.mjs';
-import { productDataRoot, resolveWebProfile } from '../product-identity/web-profile.mjs';
+import { readCurrentProductIdentity } from '../../infrastructure/product-identity/current-product-identity.mjs';
+import { productDataRoot, resolveWebProfile } from '../../infrastructure/product-identity/web-profile.mjs';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 

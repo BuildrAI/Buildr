@@ -5,6 +5,7 @@ import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
 import { registerLauncherInterface } from '../../interfaces/cli/launcher.mjs';
 import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
+import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
 import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
@@ -121,21 +122,6 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.packageBuild(c.argv.slice(4)),
   },
   {
-    key: "project create",
-    surface: "primary",
-    summary: "创建或登记 Project，并把 UUID、workspaceId、code、name、description 与 source 写入 projects/manifest.yml。",
-    help: [
-      "Usage: buildr project create <code> [--target <dir>] [--name <text>] [--description <text>] [--repo <git-url>] [--remote <name>] [--integration-branch <branch>]",
-      "",
-      "创建或登记 Project，并把 UUID、workspaceId、code、name、description 与 source 写入 projects/manifest.yml。",
-      "不传 --repo 时 Project 跟随 root Workspace Git；传入 --repo 时 remote 与 integration branch 是稳定声明，不是当前 checkout 状态。",
-      "--title 继续作为 --name 的 legacy compatibility 输入，但 canonical help 和输出统一使用 --name。",
-      "Project baseline 包含 commands.yml；它只引用 workspace Command catalog，不复制 executable、probe 或 install hint。"
-    ],
-    match: ({ domain, action }) => domain === 'project' && action === 'create',
-    run: (r, c) => r.createProject(c.argv.slice(4)),
-  },
-  {
     key: "project daily-progress record",
     surface: "agent-machine",
     summary: "把 Agent 已构造的 Git 提交日摘要写入本机每日演进文件；Task 关联可选，不进入 Git 或 Task SQLite。",
@@ -174,21 +160,6 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
     run: (r, c) => projectDailyProgressCommand(r, 'list', c.argv.slice(5)),
-  },
-  {
-    key: "service create",
-    surface: "primary",
-    summary: "创建或登记 Service，并把 UUID、workspaceId、projectId、code、name、description、type 与 source 写入所属 Project 的 services/manifest.yml。",
-    help: [
-      "Usage: buildr service create <project>/<service> <repo-ref> [--target <dir>] [--name <text>] [--description <text>] [--type <type>] [--remote <name>] [--integration-branch <branch>] [--json]",
-      "",
-      "创建或登记 Service，并把 UUID、workspaceId、projectId、code、name、description、type 与 source 写入所属 Project 的 services/manifest.yml。",
-      "Git remote 与 integration branch 是稳定声明；current branch、HEAD、dirty 和 upstream 状态只实时观察。",
-      "--title 和 --branch 继续作为 --name、--integration-branch 的 legacy compatibility 输入。",
-      "Service 规则入口是 Service 目录中的 AGENTS.md，不在 Service registry 中记录规则路径。"
-    ],
-    match: ({ domain, action }) => domain === 'service' && action === 'create',
-    run: (r, c) => r.createService(c.argv.slice(4)),
   },
   {
     key: "worktree create",
@@ -1062,6 +1033,7 @@ function createCommandCatalog(commandRegistry) {
 }
 
 export const COMMAND_REGISTRY = createCommandRegistry([
+  ...createWorkspaceCliContributions(),
   ...createTaskRecordCliContributions(),
   ...createTaskReviewCliContributions(),
 ]);

@@ -8,6 +8,7 @@ import {
 import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.mjs';
+import { createWorkspaceModule } from '../workspace/module.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
 
@@ -55,6 +56,7 @@ export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
   registerLegacyRuntime(runtime, {
+    installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime)),
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
   });

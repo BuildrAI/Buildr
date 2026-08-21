@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createProject } from '../../domain/project/project.mjs';
-import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
+import { createProject } from '../domain/project.mjs';
+import { declarationIntakeNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
 
 export function projectError(code, message, status = 400, details = undefined) {
   const error = new Error(message);

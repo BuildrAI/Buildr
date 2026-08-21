@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from '../../infrastructure/process.mjs';
+import { execFileSync, spawnSync } from '../../../infrastructure/process.mjs';
 import YAML from 'yaml';
-import { createProject as createProjectEntity } from '../../domain/project/project.mjs';
-import { createService as createServiceEntity } from '../../domain/service/service.mjs';
-import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
-import { parseProjectsManifest, renderProjectsManifest } from '../../infrastructure/filesystem/project-manifest-repository.mjs';
+import { createProject as createProjectEntity } from '../../domain/project.mjs';
+import { createService as createServiceEntity } from '../../domain/service.mjs';
+import { declarationIntakeNextAction } from '../../../application/declaration-intake/declaration-intake-trigger.mjs';
+import { parseProjectsManifest, renderProjectsManifest } from '../../persistence/project-manifest-repository.mjs';
 
-export function registerDomainsWorkspace(runtime) {
+export function registerWorkspaceCliAdapter(runtime) {
   const readGitRemote = (...args) => runtime.readGitRemote(...args);
   const gitignoreLines = (...args) => runtime.gitignoreLines(...args);
   const isPlainObject = (...args) => runtime.isPlainObject(...args);

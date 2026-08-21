@@ -13,6 +13,12 @@ import {
   TASK_REVIEW_PERSISTENCE_READ,
 } from '../../src/task/module.mjs';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.mjs';
+import {
+  PROJECT_APPLICATION,
+  SERVICE_APPLICATION,
+  WORKSPACE_APPLICATION,
+  WORKSPACE_COMPATIBILITY,
+} from '../../src/workspace/module.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -36,9 +42,19 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.match(httpHost, /contribution\.handle\(/);
 });
 
-test('Task Record module 暴露窄 capability、唯一 contributions 与有退出条件的兼容 Facade', () => {
+test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributions 与有退出条件的兼容 Facade', () => {
   const runtime = createRuntime();
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
+    id: 'workspace-core',
+    requires: [],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_COMPATIBILITY],
+    contributions: {
+      cli: ['project create', 'service create'],
+      http: ['workspace-core.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'task-record',
     requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer', 'task.parent-coordination-reader'],
     provides: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_RECORD_COMPATIBILITY],
@@ -70,11 +86,22 @@ test('Task Record module 暴露窄 capability、唯一 contributions 与有退�
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item) => item.key), [
+    'project create', 'service create',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task review inspect', 'task review record',
     'web preview start', 'web preview list', 'web preview stop', 'web',
   ]);
-  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['task-record.http', 'task-review.http']);
+  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['workspace-core.http', 'task-record.http', 'task-review.http']);
+
+  const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+  const project = runtimeProvide(runtime, PROJECT_APPLICATION);
+  const service = runtimeProvide(runtime, SERVICE_APPLICATION);
+  assert.equal(typeof workspace.getWorkspace, 'function');
+  assert.equal(typeof project.listProjects, 'function');
+  assert.equal(typeof service.listServices, 'function');
+  const workspaceCompatibility = runtimeProvide(runtime, WORKSPACE_COMPATIBILITY);
+  assert.equal(workspaceCompatibility.owner, 'workspace-capabilities');
+  assert.match(workspaceCompatibility.exit, /legacy-exit-and-conformance/);
 
   const application = runtimeProvide(runtime, TASK_RECORD_APPLICATION);
   const persistenceRead = runtimeProvide(runtime, TASK_RECORD_PERSISTENCE_READ);

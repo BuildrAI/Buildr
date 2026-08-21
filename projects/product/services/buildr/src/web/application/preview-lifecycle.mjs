@@ -4,7 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 
-import { localAppDataRoot } from '../../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { localAppDataRoot } from '../../workspace/module.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import { INSTANCE_SCHEMA, healthyLocalAppInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.mjs';
 

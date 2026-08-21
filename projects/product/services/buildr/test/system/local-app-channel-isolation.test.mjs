@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { registerWorkspaceRegistryRepository } from '../../src/infrastructure/filesystem/workspace-registry-repository.mjs';
+import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
 import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
 import { createLocalWorkspaceServer, ensureRegisteredTarget } from '../../src/interfaces/local-app/http/server.mjs';

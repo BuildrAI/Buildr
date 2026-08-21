@@ -1,7 +1,7 @@
-import { createWorkspace, isWorkspaceId } from '../../domain/workspace/workspace.mjs';
+import { createWorkspace, isWorkspaceId } from '../domain/workspace.mjs';
 import process from 'node:process';
-import { WORKSPACE_DESCRIPTION_TODO } from '../../infrastructure/filesystem/workspace-manifest-repository.mjs';
-import { declarationIntakeNextAction } from '../declaration-intake/declaration-intake-trigger.mjs';
+import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.mjs';
+import { declarationIntakeNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
 
 function workspaceError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
@@ -27,6 +27,17 @@ export function resolveWorkspaceIdentity(workspaceId, skillsWorkspaceId, generat
     );
   }
   return workspaceId || skillsWorkspaceId || generateId();
+}
+
+export function ensureRegisteredTarget(runtime, targetRoot) {
+  if (!targetRoot) return null;
+  const root = runtime.path.resolve(targetRoot);
+  runtime.assertInitializedBuildrWorkspace(root);
+  let registry = runtime.listRegisteredWorkspaces();
+  const existing = registry.workspaces.find((entry) => entry.rootPath === root);
+  if (!existing) registry = runtime.registerLocalWorkspace({ rootPath: root, revision: registry.revision });
+  const entry = registry.workspaces.find((item) => item.rootPath === root);
+  return entry?.workspace?.id || null;
 }
 
 export function registerWorkspaceApplication(runtime) {

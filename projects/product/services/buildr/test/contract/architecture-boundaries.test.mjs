@@ -93,11 +93,11 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
 });
 
 test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由顶层 web-dist 交付', () => {
-  const domain = fs.readFileSync(path.join(productRoot, 'src/domain/workspace/workspace.mjs'), 'utf8');
+  const domain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/workspace.mjs'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
-  const projectDomain = fs.readFileSync(path.join(productRoot, 'src/domain/project/project.mjs'), 'utf8');
+  const projectDomain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/project.mjs'), 'utf8');
   assert.doesNotMatch(projectDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
-  const serviceDomain = fs.readFileSync(path.join(productRoot, 'src/domain/service/service.mjs'), 'utf8');
+  const serviceDomain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/service.mjs'), 'utf8');
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
     'src/interfaces/local-app/http/server.mjs',
@@ -116,6 +116,7 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.doesNotMatch(candidatePackage, /\['pack', productRoot/);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'development')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'release')), true);
-  assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project')), true);
-  assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service')), true);
+  assert.equal(fs.existsSync(path.join(productRoot, 'src/workspace/module.mjs')), true);
+  assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project/project.mjs')), false);
+  assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service/service.mjs')), false);
 });

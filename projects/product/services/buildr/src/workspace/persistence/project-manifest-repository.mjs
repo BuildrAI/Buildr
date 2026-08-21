@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import { createProject, isProjectCode } from '../../domain/project/project.mjs';
+import { createProject, isProjectCode } from '../domain/project.mjs';
 
 export const PROJECTS_SCHEMA_V1 = 'buildr.projects/v1';
 export const PROJECTS_SCHEMA_V2 = 'buildr.projects/v2';

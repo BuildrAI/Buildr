@@ -31,7 +31,7 @@ const allowed = new Map([
   ['src/infrastructure/filesystem/index.mjs', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
-  ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/workspace/persistence/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/product-launcher/index.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
@@ -56,7 +56,7 @@ const allowed = new Map([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
-  ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
+  ['src/workspace/interfaces/cli/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
   ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/application/domains/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createWorkspace, isWorkspaceId } from '../../src/domain/workspace/workspace.mjs';
-import { resolveWorkspaceIdentity } from '../../src/application/workspace/workspace-application.mjs';
+import { createWorkspace, isWorkspaceId } from '../../src/workspace/domain/workspace.mjs';
+import { resolveWorkspaceIdentity } from '../../src/workspace/application/workspace-application.mjs';
 
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
 
