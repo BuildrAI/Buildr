@@ -62,7 +62,10 @@ const requiredRuntime = [
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs', 'bootstrap/legacy-runtime-module.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs',
+  'interfaces/local-app/http/server.mjs', 'web/module.mjs',
+  'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
+  'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
+  'web/interfaces/cli/web.mjs',
   'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
   'application/worktree/git-worktree-provider.mjs',
@@ -103,14 +106,16 @@ const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file))
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
-  if (parts[0] !== 'task') return parts[0];
+  if (!['task', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === 2 && parts[1] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
     application: 'application',
     persistence: 'infrastructure',
+    infrastructure: 'infrastructure',
     interfaces: 'interfaces',
-  }[parts[1]] || 'task';
+    http: 'interfaces',
+  }[parts[1]] || parts[0];
 };
 const allowedTargets = {
   bootstrap: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
@@ -316,6 +321,22 @@ if (fs.existsSync(localAppServer)) {
   const source = fs.readFileSync(localAppServer, 'utf8');
   if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
   if (!source.includes('for (const contribution of httpContributions)') || !source.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
+  if (/registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
+}
+
+const webModule = path.join(sourceRoot, 'web', 'module.mjs');
+const webCli = path.join(sourceRoot, 'web', 'interfaces', 'cli', 'web.mjs');
+if (!fs.existsSync(webModule) || !fs.existsSync(webCli)) problems.push('Buildr Web instance lifecycle module entry is missing');
+else {
+  const moduleSource = fs.readFileSync(webModule, 'utf8');
+  const cliSource = fs.readFileSync(webCli, 'utf8');
+  if (!moduleSource.includes("WEB_MODULE_ID = 'web-instance-lifecycle'") || !moduleSource.includes('createWebCliContributions')) problems.push('Buildr Web module must explicitly contribute lifecycle CLI commands');
+  for (const key of ['web preview start', 'web preview list', 'web preview stop', 'web']) {
+    if (!cliSource.includes(`key: "${key}"`)) problems.push(`Buildr Web module is missing CLI contribution: ${key}`);
+  }
+}
+for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
+  if (fs.existsSync(path.join(sourceRoot, 'interfaces', 'local-app', 'runtime', legacy))) problems.push(`legacy Buildr Web lifecycle entry must be removed: ${legacy}`);
 }
 
 const legacyTaskRecordConsumers = new Set([
@@ -341,7 +362,7 @@ const legacyTaskRecordConsumers = new Set([
   'task/persistence/retrospective/task-retrospective-repository.mjs',
   'task/persistence/verification/task-verification-repository.mjs',
   'interfaces/local-app/http/server.mjs',
-  'interfaces/local-app/runtime/preview-manager.mjs',
+  'web/application/preview-lifecycle.mjs',
 ]);
 const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|completeTaskRecordFromFinish|abandonTaskRecord)\(/;
 for (const file of sourceFiles) {

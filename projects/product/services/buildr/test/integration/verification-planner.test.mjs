@@ -338,8 +338,8 @@ test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capabil
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/interfaces/local-app/runtime/instance-manager.mjs'] })), [
-    'unit', 'integration-runtime', 'system-app-process', 'candidate-tarball', 'application-payload-release',
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/web/infrastructure/instance-runtime.mjs'] })), [
+    'unit', 'integration-runtime', 'system-app-process', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
   ]);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);

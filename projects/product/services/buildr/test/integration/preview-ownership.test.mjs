@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
+import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, stopPreview } from '../../src/web/application/preview-lifecycle.mjs';
 
 const head = 'a'.repeat(40);
 const owner = {

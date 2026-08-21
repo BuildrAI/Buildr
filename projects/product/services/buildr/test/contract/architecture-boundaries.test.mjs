@@ -55,7 +55,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
     'src/task/persistence/environment/task-environment-repository.mjs',
     'src/application/task-verification/task-verification-application.mjs',
     'src/application/task-finish/task-finish-application.mjs',
-    'src/interfaces/local-app/runtime/preview-manager.mjs',
+    'src/web/application/preview-lifecycle.mjs',
     'package/launchers/manage.mjs',
   ];
   for (const relative of identityConsumers) {
@@ -72,6 +72,24 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   assert.match(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);
   assert.match(closeout, /BUILDR_NODE: nodeExecutable/);
   assert.doesNotMatch(closeout, /resolveDefaultBuildr|install-development-cli/u);
+});
+
+test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有运行策略', () => {
+  for (const relative of [
+    'src/web/module.mjs',
+    'src/web/application/instance-lifecycle.mjs',
+    'src/web/application/preview-lifecycle.mjs',
+    'src/web/application/scheduled-maintenance.mjs',
+    'src/web/infrastructure/instance-runtime.mjs',
+    'src/web/interfaces/cli/web.mjs',
+  ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
+  for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
+    assert.equal(fs.existsSync(path.join(productRoot, 'src/interfaces/local-app/runtime', legacy)), false);
+  }
+  const host = fs.readFileSync(path.join(productRoot, 'src/interfaces/local-app/http/server.mjs'), 'utf8');
+  assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/);
+  const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
+  assert.doesNotMatch(registry, /key: "web preview|key: "web"/);
 });
 
 test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由顶层 web-dist 交付', () => {

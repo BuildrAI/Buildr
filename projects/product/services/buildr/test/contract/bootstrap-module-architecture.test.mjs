@@ -12,6 +12,7 @@ import {
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_PERSISTENCE_READ,
 } from '../../src/task/module.mjs';
+import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -57,8 +58,22 @@ test('Task Record module 暴露窄 capability、唯一 contributions 与有退�
       diagnostics: [],
     },
     lifecycle: 'none',
+  }, {
+    id: 'web-instance-lifecycle',
+    requires: [],
+    provides: [WEB_INSTANCE_LIFECYCLE],
+    contributions: {
+      cli: ['web preview start', 'web preview list', 'web preview stop', 'web'],
+      http: [],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
   }]);
-  assert.deepEqual(runtimeContributions(runtime, 'cli').map((item) => item.key), ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon', 'task review inspect', 'task review record']);
+  assert.deepEqual(runtimeContributions(runtime, 'cli').map((item) => item.key), [
+    'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'task review inspect', 'task review record',
+    'web preview start', 'web preview list', 'web preview stop', 'web',
+  ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['task-record.http', 'task-review.http']);
 
   const application = runtimeProvide(runtime, TASK_RECORD_APPLICATION);
@@ -73,6 +88,10 @@ test('Task Record module 暴露窄 capability、唯一 contributions 与有退�
   assert.match(compatibility.scope, /existing runtime consumers only/);
   assert.match(compatibility.exit, /legacy-exit-and-conformance/);
   assert.deepEqual(compatibility.testSupportMethods, ['createTaskRecordPersistence', 'mutateTaskRecordPersistence', 'writeTaskRecordPersistence']);
+
+  const webLifecycle = runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE);
+  assert.equal(typeof webLifecycle.startLocalWorkspaceApp, 'function');
+  assert.equal(typeof webLifecycle.manageLocalAppPreview, 'function');
 });
 
 test('Task Review module 只公开共享 Application、只读 Persistence 与有退出条件的兼容 Facade', () => {

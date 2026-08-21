@@ -23,11 +23,12 @@ import {
   repairNpmLauncher,
   uninstallNpmLauncher,
 } from '../../src/infrastructure/product-launcher/index.mjs';
-import { registerLocalWorkspaceAppInterface } from '../../src/interfaces/local-app/http/server.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { createLocalWorkspaceServer, ensureRegisteredTarget } from '../../src/interfaces/local-app/http/server.mjs';
 import {
   clearLocalAppInstance,
   writeLocalAppInstance,
-} from '../../src/interfaces/local-app/runtime/instance-manager.mjs';
+} from '../../src/web/infrastructure/instance-runtime.mjs';
 import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
@@ -281,7 +282,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     installationIdentity: installed.binding.installationOwnershipIdentity,
   };
   const runtime = createRuntime();
-  registerLocalWorkspaceAppInterface(runtime, { readProductIdentity: () => productIdentity });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (message) => warnings.push(String(message));
@@ -384,12 +385,12 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   const productIdentity = productIdentityFor(installed.binding);
   const foreignIdentity = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
   const foreignRuntime = createRuntime();
-  registerLocalWorkspaceAppInterface(foreignRuntime, { readProductIdentity: () => foreignIdentity });
+  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
   const foreign = await foreignRuntime.startLocalWorkspaceApp(['--no-open', '--port', '0']);
   const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
   const foreignReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const currentRuntime = createRuntime();
-  registerLocalWorkspaceAppInterface(currentRuntime, { readProductIdentity: () => productIdentity });
+  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(
     () => currentRuntime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]),
     (error) => error.code === 'launcher_handoff_cli_ownership_conflict',

@@ -38,11 +38,11 @@ const allowed = new Map([
   ['src/task/persistence/execution-record/task-execution-record-body-store.mjs', new Set([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
   ])],
-  ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
+  ['src/web/infrastructure/instance-runtime.mjs', new Set([
     'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
   ])],
   ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
-  ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
+  ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/application/task-finish/task-finish-run.mjs', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',

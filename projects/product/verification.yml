@@ -87,7 +87,7 @@ capabilities:
       argv: ["tools/development/run-development-npm", "run", "test:browser:changed"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr-web/**", "services/buildr/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
+      paths: ["services/buildr-web/**", "services/buildr/web-dist/**", "services/buildr/src/web/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
       conditions:
         - Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化
         - 未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths

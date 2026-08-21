@@ -4,9 +4,9 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 
-import { localAppDataRoot } from '../../../infrastructure/filesystem/workspace-registry-repository.mjs';
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
-import { INSTANCE_SCHEMA, healthyLocalAppInstance, openDefaultBrowser } from './instance-manager.mjs';
+import { localAppDataRoot } from '../../infrastructure/filesystem/workspace-registry-repository.mjs';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { INSTANCE_SCHEMA, healthyLocalAppInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.mjs';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

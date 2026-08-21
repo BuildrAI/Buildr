@@ -7,6 +7,7 @@ import {
 } from '../task/module.mjs';
 import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
+import { createWebModule } from '../web/module.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
 
@@ -57,6 +58,7 @@ export function createRuntime() {
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
   });
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));
   Object.defineProperty(runtime, '__bootstrapContributions', {
     enumerable: false,

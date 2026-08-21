@@ -4,6 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { ensureRegisteredTarget, createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
 import {
   clearLocalAppInstance,
   localAppInstancePath,
@@ -12,7 +15,7 @@ import {
   readLauncherIdentityFromEnvironment,
   readLocalAppInstance,
   writeLocalAppInstance,
-} from '../../src/interfaces/local-app/runtime/instance-manager.mjs';
+} from '../../src/web/infrastructure/instance-runtime.mjs';
 import { pickWorkspaceDirectory } from '../../src/interfaces/local-app/runtime/directory-picker.mjs';
 import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
 
@@ -69,4 +72,56 @@ test('released与development instance receipt和start lock绑定各自Web profil
   assert.equal(readLocalAppInstance(development).webProfile.identity, development.identity);
   assert.equal(clearLocalAppInstance(state, development), true);
   assert.equal(fs.existsSync(localAppInstancePath(development)), false);
+});
+
+test('正式 Web 生命周期启动scheduler，Task Preview生命周期完全不创建scheduled maintenance', async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-local-app-maintenance-boundary-'));
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  const previousPreview = process.env.BUILDR_LOCAL_APP_PREVIEW;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+  t.after(() => {
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+    if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+    else process.env.BUILDR_LOCAL_APP_PREVIEW = previousPreview;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  let formalCreated = 0;
+  let formalStarted = 0;
+  let formalStopped = 0;
+  const formalRuntime = createRuntime();
+  registerWebInstanceLifecycle(formalRuntime, {
+    createLocalWorkspaceServer,
+    ensureRegisteredTarget,
+    scheduledMaintenanceFactory: () => {
+      formalCreated += 1;
+      return { start: () => { formalStarted += 1; }, stop: () => { formalStopped += 1; } };
+    },
+  });
+  const formal = await formalRuntime.startLocalWorkspaceApp(['--port', '0', '--no-open']);
+  assert.equal(formalCreated, 1);
+  assert.equal(formalStarted, 1);
+  await new Promise((resolve) => formal.server.close(resolve));
+  assert.equal(formalStopped, 1);
+
+  process.env.BUILDR_LOCAL_APP_PREVIEW = JSON.stringify({
+    schemaVersion: 'buildr.local-app-preview/v1',
+    instance: 'test-preview',
+    worktree: process.cwd(),
+  });
+  let previewFactoryCalls = 0;
+  const previewRuntime = createRuntime();
+  registerWebInstanceLifecycle(previewRuntime, {
+    createLocalWorkspaceServer,
+    ensureRegisteredTarget,
+    scheduledMaintenanceFactory: () => {
+      previewFactoryCalls += 1;
+      throw new Error('Preview must not create scheduled maintenance.');
+    },
+  });
+  const preview = await previewRuntime.startLocalWorkspaceApp(['--port', '0', '--no-open']);
+  assert.equal(previewFactoryCalls, 0);
+  await new Promise((resolve) => preview.server.close(resolve));
 });

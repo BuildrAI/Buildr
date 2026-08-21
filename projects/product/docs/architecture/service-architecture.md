@@ -233,17 +233,22 @@ agent-assets/
 ```text
 web/
   application/
-    start-web.mjs             # 编排一次 Web 启动用例
-    instance/                 # 默认实例、端口、PID、锁和 Secret 生命周期
-    preview/                  # Preview 实例生命周期
-    scheduled-maintenance/    # 运行期间的定时维护和清理
-
+    instance-lifecycle.mjs    # 默认实例启动、复用、交接与清理编排
+    preview-lifecycle.mjs     # Preview 实例和 Environment resource 编排
+    scheduled-maintenance.mjs # 运行期间的定时维护
+  infrastructure/
+    instance-runtime.mjs      # Web 专属 receipt、锁、健康与退出适配
+  interfaces/cli/
+    web.mjs                   # buildr web 与 preview command contributions
+  module.mjs                  # 向 Bootstrap 注册生命周期能力
   http/
     server.mjs                # 创建、监听和关闭 Node.js HTTP Server
     router.mjs
     session.mjs
     static-files.mjs
 ```
+
+模块内部默认在这些技术层中保持扁平，由文件名表达默认实例、Preview 和 maintenance 能力；只有某项能力形成多个需要独立维护的私有协作者时才增加子目录，不为了目录对称创建单文件层级。
 
 `web/application/` 负责：
 
@@ -283,6 +288,8 @@ task/application
 ```
 
 `web/application/` 和 `web/http/` 保持分开：Application 决定是否启动、复用哪个实例以及何时清理，HTTP 负责具体如何创建和运行 Server。这样实例生命周期不会与 Node.js HTTP 实现混在一起。
+
+Web 实例生命周期先独立迁入上述 `web/` 技术层。HTTP Router、Session、安全边界与 `web-dist` 静态托管在其后续独立切片完成前，仍可保留在现有 `interfaces/local-app/http` 宿主；该暂存边界不得反向取得实例 receipt、启动锁、scheduled maintenance 或 CLI command authority。
 
 未来引入 Electron 时按真实形态演进：Electron 只是桌面 Launcher 时继续复用 `web/`；Electron 成为独立运行载体时再新增 `desktop/` 或相应 Electron Interface。当前不提前将 `web/` 抽象成含义模糊的 `app/` 或 `runtime/`。
 

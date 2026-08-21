@@ -28,7 +28,7 @@ function isBrowserOwnedPath(value) {
   const relative = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
     || relative.startsWith('web-dist/')
-    || relative.startsWith('src/interfaces/local-app/runtime/')
+    || relative.startsWith('src/web/')
     || relative.startsWith('test/browser-smoke/')
     || relative === 'test/verification/browser-selector-dispatcher.mjs'
     || relative === 'test/verification/web-dist.mjs';
@@ -107,7 +107,7 @@ export function selectBrowserSelectors(changedPaths) {
       } else add(plan, 'core', originalValue, 'Unclassified Buildr Web path uses the core smoke fallback.');
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/runtime/')) {
+    if (value.startsWith('src/web/')) {
       add(plan, 'shell', originalValue, 'Buildr Web bootstrap/runtime changed.');
       add(plan, 'core', originalValue, 'Buildr Web runtime change requires the representative route smoke.');
       continue;

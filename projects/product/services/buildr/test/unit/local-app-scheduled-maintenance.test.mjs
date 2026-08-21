@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   createLocalAppScheduledMaintenance,
   millisecondsUntilNextLocalHour,
-} from '../../src/interfaces/local-app/runtime/scheduled-maintenance.mjs';
+} from '../../src/web/application/scheduled-maintenance.mjs';
 
 function fakeTimers() {
   const scheduled = [];

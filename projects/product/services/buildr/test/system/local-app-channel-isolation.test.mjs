@@ -10,7 +10,8 @@ import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository } from '../../src/infrastructure/filesystem/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
 import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
-import { createLocalWorkspaceServer, registerLocalWorkspaceAppInterface } from '../../src/interfaces/local-app/http/server.mjs';
+import { createLocalWorkspaceServer, ensureRegisteredTarget } from '../../src/interfaces/local-app/http/server.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
 
 const CHILD = new URL('../fixtures/local-app-profile-child.mjs', import.meta.url);
 
@@ -159,7 +160,7 @@ test('released Root中的健康legacy development实例不会被released启动�
   const runtime = createRuntime();
   registerWorkspaceRegistryRepository(runtime, { productIdentity: releasedIdentity, webProfile: releasedProfile });
   registerWorkspaceManagementFence(runtime, { peerProfiles: profiles });
-  registerLocalWorkspaceAppInterface(runtime, { readProductIdentity: () => releasedIdentity });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => releasedIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(() => runtime.startLocalWorkspaceApp(['--no-open', '--port', '0']), (error) => error.code === 'web_instance_profile_conflict');
   assert.deepEqual(fs.readFileSync(file), before);
   const health = await fetch(`${ready.url}/api/v1/health`, { headers: { 'x-buildr-instance': ready.instanceSecret } });
