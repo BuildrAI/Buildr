@@ -8,7 +8,7 @@ import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
-const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package', 'targets', 'workspace');
+const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'resources', 'workspace');
 const read = (file) => fs.readFileSync(file, 'utf8');
 const resolveChangeRoot = (change) => {
   const active = path.join(PRODUCT_ROOT, 'openspec/changes', change);
@@ -35,7 +35,7 @@ test('terminology 与 current knowledge contracts 具有稳定 identity 和固�
 });
 
 test('默认 providers 与 bindings 可解析，Development 承接专业依赖且 Finish 只消费 handoff', () => {
-  const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const packageManifest = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const knowledge = packageManifest.builtins.skills.find((item) => item.id === 'current-knowledge-maintenance');
   const packagedDevelopment = packageManifest.builtins.skills.find((item) => item.id === 'task-development');
   const packagedFinish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
@@ -70,7 +70,7 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
 });
 
 test('current knowledge provider 同时提供 v1/v2 且 maintain 不伪造 Change', () => {
-  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const provider = manifest.builtins.skills.find((item) => item.id === 'current-knowledge-maintenance');
   assert.deepEqual(provider.provides, [
     { capability: 'buildr.current-knowledge-maintenance', version: 1 },
@@ -83,7 +83,7 @@ test('current knowledge provider 同时提供 v1/v2 且 maintain 不伪造 Chang
 });
 
 test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护', () => {
-  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'package/manifest.yml')));
+  const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const skills = new Map(manifest.builtins.skills.map((skill) => [skill.id, skill]));
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) assert.equal(skills.get(id).requires, undefined, id);
   const component = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));

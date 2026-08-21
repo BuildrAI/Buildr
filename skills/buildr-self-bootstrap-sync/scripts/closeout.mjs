@@ -89,8 +89,8 @@ function classifications(changedPaths) {
   const cli = [];
   const localApp = [];
   for (const pathname of changedPaths) {
-    if (matches(pathname, [`${SERVICE_ROOT}/package/manifest.yml`], [
-      `${SERVICE_ROOT}/package/targets/workspace/`,
+    if (matches(pathname, [`${SERVICE_ROOT}/resources/manifest.yml`], [
+      `${SERVICE_ROOT}/resources/workspace/`,
       `${SERVICE_ROOT}/package/targets/runtime/skills/buildr/`,
     ])) sync.push(pathname);
     if (matches(pathname, [
@@ -98,7 +98,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/scripts/install-buildr-cli`,
-      `${SERVICE_ROOT}/scripts/run-development-cli`,
+      `${SERVICE_ROOT}/tools/development/run-development-cli`,
       `${SERVICE_ROOT}/scripts/uninstall-buildr-cli`,
     ], [`${SERVICE_ROOT}/bin/`, `${SERVICE_ROOT}/src/`])) cli.push(pathname);
     if (matches(pathname, [
@@ -721,7 +721,7 @@ function developmentEntryFailure(evidence, code, message, details = null) {
 
 function verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, successor, environment, phaseResult }) {
   const projectBridge = path.join(root, PRODUCT_ROOT, 'buildr');
-  const expectedLauncher = path.join(root, SERVICE_ROOT, 'scripts', 'run-development-cli');
+  const expectedLauncher = path.join(root, SERVICE_ROOT, 'tools', 'development', 'run-development-cli');
   const expectedCliEntry = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
   const packageFile = path.join(root, SERVICE_ROOT, 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packageFile, 'utf8'));

@@ -7,11 +7,11 @@ import YAML from 'yaml';
 import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
-const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package/targets/workspace');
+const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'resources/workspace');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
-const workspaceRule = read('package/targets/workspace/AGENTS.md');
-const skill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
+const workspaceRule = read('resources/workspace/AGENTS.md');
+const skill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const contractPath = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/git-operations/v1.md');
 const contract = fs.readFileSync(contractPath, 'utf8');
 
@@ -90,10 +90,10 @@ test('旧 Git graph 只保留 migration evidence，active manifests 与文件为
   assert.equal(packageManifest.initialSkillBindings.some((item) => legacyCapabilities.has(item.capability)), false);
   assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'git-ops'), false);
   for (const file of [
-    'package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md',
-    'package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md',
-    'package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md',
-    'package/targets/workspace/skills/buildr/git-ops/SKILL.md',
+    'resources/workspace/skills/contracts/buildr/git-single-operation/v1.md',
+    'resources/workspace/skills/contracts/buildr/git-task-integration/v1.md',
+    'resources/workspace/skills/contracts/buildr/git-workspace-update/v1.md',
+    'resources/workspace/skills/buildr/git-ops/SKILL.md',
   ]) assert.equal(fs.existsSync(path.join(SERVICE_ROOT, file)), false, file);
 
   const replacement = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.git-operations');

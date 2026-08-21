@@ -32,7 +32,7 @@ try {
   assert.match(drifted.combined, /conflict|冲突|暂停/i);
   assert.match(fs.readFileSync(componentSkill, 'utf8'), /workspace source drift/);
 
-  fs.copyFileSync(path.join(productRoot, 'package', 'targets', 'workspace', 'skills', 'openspec', 'openspec-propose', 'SKILL.md'), componentSkill);
+  fs.copyFileSync(path.join(productRoot, 'resources', 'workspace', 'skills', 'openspec', 'openspec-propose', 'SKILL.md'), componentSkill);
   runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace]);
   assert.doesNotMatch(fs.readFileSync(componentSkill, 'utf8'), /workspace source drift/);
   const recovered = parseJson(runBuildr(['doctor', '--agent', 'codex', '--target', fixture.workspace, '--json', '--detail', 'full']), 'recovered Codex doctor');

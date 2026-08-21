@@ -21,6 +21,7 @@ const ignoredProjectRootEntries = new Set([
 problems.push(...validateProductSourceLayout({
   projectEntries: fs.readdirSync(projectRoot).filter((entryName) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
+  packageFiles: listFiles(path.join(productRoot, 'package')).map((file) => path.relative(path.join(productRoot, 'package'), file).split(path.sep).join('/')),
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
 
@@ -41,13 +42,11 @@ function listFiles(root, predicate = () => true) {
   return files;
 }
 
-for (const required of ['bin', 'src', 'test', 'scripts', 'package']) {
+for (const required of ['bin', 'src', 'resources', 'web-dist', 'test', 'tools', 'docs', 'package']) {
   if (!fs.statSync(path.join(productRoot, required), { throwIfNoEntry: false })?.isDirectory()) {
     problems.push(`missing Product responsibility directory: ${required}/`);
   }
 }
-const legacyDirectoryName = ['to', 'ols'].join('');
-if (fs.existsSync(path.join(productRoot, legacyDirectoryName))) problems.push(`legacy ${legacyDirectoryName} directory must be removed`);
 if (fs.existsSync(path.join(sourceRoot, 'shared'))) problems.push('src/shared/ is not an allowed ownership root');
 
 const entryContent = fs.existsSync(entry) ? fs.readFileSync(entry, 'utf8') : '';
@@ -63,7 +62,7 @@ const requiredRuntime = [
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs', 'bootstrap/legacy-runtime-module.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
+  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs',
   'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
   'application/worktree/git-worktree-provider.mjs',
@@ -131,7 +130,7 @@ for (const file of sourceFiles) {
   if (/const\s+(register[A-Za-z0-9_]+)\s*=\s*\(\.\.\.args\)\s*=>\s*runtime\.\1\(\.\.\.args\)/.test(content)) {
     problems.push(`unused self-registration forwarding wrapper: src/${relative}`);
   }
-  if (/from\s+['"][^'"]*(?:test\/|scripts\/)/.test(content)) problems.push(`Product runtime imports checkout-only code: src/${relative}`);
+  if (/from\s+['"][^'"]*(?:test\/|tools\/|scripts\/)/.test(content)) problems.push(`Product runtime imports checkout-only code: src/${relative}`);
   const edges = [];
   for (const match of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
     const specifier = match[1];
@@ -182,7 +181,7 @@ const facadeLimits = new Map([
   ['src/infrastructure/runtime/render-claude-code.mjs', 100],
   ['src/application/doctor.mjs', 250],
   ['src/application/package-maintenance.mjs', 550],
-  ['scripts/verify-buildr-product-fast', 20],
+  ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],
 ]);
 for (const [relative, limit] of facadeLimits) {
@@ -436,15 +435,23 @@ if (fs.existsSync(gitWorktreeInterface)) {
   }
 }
 
-const legacyRootToken = ['to', 'ols/'].join('');
-const currentRoots = ['bin', 'src', 'scripts', 'test', 'docs', 'package'];
+const legacyRootTokens = [
+  'package/' + 'manifest.yml',
+  'package/targets/' + 'workspace',
+  'package/launchers/' + 'assets',
+  ['package', 'bootstrap'].join('/'),
+  'src/interfaces/local-app/' + 'web-dist',
+  'scripts/' + 'release',
+  'scripts/' + 'run-development',
+];
+const currentRoots = ['bin', 'src', 'resources', 'web-dist', 'test', 'docs', 'package', 'tools'];
 for (const root of currentRoots) {
   for (const file of listFiles(path.join(productRoot, root), (item) => /\.(?:mjs|js|json|md|yml|yaml)$/.test(item) || !path.extname(item))) {
     const relative = path.relative(productRoot, file).split(path.sep).join('/');
     const content = fs.readFileSync(file, 'utf8');
     const historicalDocumentation = relative.startsWith('docs/archive/');
-    if (content.includes(legacyRootToken) && !relative.startsWith('test/fixtures/') && !historicalDocumentation) {
-      problems.push(`current Product file references legacy tools path: ${relative}`);
+    if (legacyRootTokens.some((token) => content.includes(token)) && !relative.startsWith('test/fixtures/') && !historicalDocumentation) {
+      problems.push(`current Product file references migrated root path: ${relative}`);
     }
   }
 }
@@ -460,8 +467,8 @@ const currentCallers = [
 ];
 for (const file of currentCallers) {
   if (!fs.existsSync(file)) continue;
-  if (fs.readFileSync(file, 'utf8').includes(legacyRootToken)) {
-    problems.push(`current Product caller references legacy tools path: ${path.relative(workspaceRoot, file).split(path.sep).join('/')}`);
+  if (legacyRootTokens.some((token) => fs.readFileSync(file, 'utf8').includes(token))) {
+    problems.push(`current Product caller references migrated root path: ${path.relative(workspaceRoot, file).split(path.sep).join('/')}`);
   }
 }
 
@@ -471,5 +478,5 @@ if (problems.length) {
   for (const problem of problems) console.error(`- ${problem}`);
   if (!reportOnly) process.exit(1);
 } else {
-  console.log('CLI architecture verification passed: bin/src/test/scripts/package ownership, runtime inventory, one-way imports, command registry, and npm boundary.');
+  console.log('CLI architecture verification passed: bin/src/resources/web-dist/test/tools/docs ownership, deferred package allowlist, runtime inventory, one-way imports, command registry, and npm boundary.');
 }

@@ -4,10 +4,10 @@ import path from 'node:path';
 import { fetchRemoteText } from '../../network/fetch-remote-text.mjs';
 import { resolveComponentContributions } from './contributions.mjs';
 import { capabilityKey, isSourceLabel, parseSkillsManifestDocument } from './manifests.mjs';
-import { ensureFile, normalizeRelativePath, packageRoot, parseSkillFrontmatterName, parseSkillFrontmatterNameFromContent, productRoot, unquoteYamlScalar } from './primitives.mjs';
+import { ensureFile, normalizeRelativePath, parseSkillFrontmatterName, parseSkillFrontmatterNameFromContent, productRoot, resourcesRoot, unquoteYamlScalar } from './primitives.mjs';
 
 function readPackageSkillEntries(section, runtime) {
-  const manifestPath = path.join(packageRoot(), 'manifest.yml');
+  const manifestPath = path.join(resourcesRoot(), 'manifest.yml');
   if (!fs.existsSync(manifestPath)) return [];
 
   const skills = [];

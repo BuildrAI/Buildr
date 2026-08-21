@@ -35,7 +35,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     }
   });
   const root = path.join(base, 'workspace');
-  const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'package', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
+  const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'resources', 'web-dist', 'tools', 'package', 'docs', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
   const controller = managerStatus.trim()
     ? materializeCleanProductSource(serviceRoot, path.join(base, 'prepared-controller'))
     : { root: serviceRoot, cli: path.join(serviceRoot, 'bin', 'buildr.mjs') };
@@ -47,7 +47,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   const candidateBuildr = path.join(productRoot, 'services', 'buildr');
   const candidateWeb = path.join(productRoot, 'services', 'buildr-web');
   fs.mkdirSync(candidateBuildr, { recursive: true });
-  fs.mkdirSync(path.join(candidateBuildr, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'tools', 'development'), { recursive: true });
   fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
@@ -60,8 +60,8 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'run-development-node.cmd',
     'run-development-npm.cmd',
   ]) {
-    fs.copyFileSync(path.join(serviceRoot, 'scripts', script), path.join(candidateBuildr, 'scripts', script));
-    if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'scripts', script), 0o755);
+    fs.copyFileSync(path.join(serviceRoot, 'tools', 'development', script), path.join(candidateBuildr, 'tools', 'development', script));
+    if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'tools', 'development', script), 0o755);
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];
@@ -107,7 +107,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
+        executable: { kind: project, path: services/buildr/tools/development/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]
@@ -119,7 +119,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
+        executable: { kind: project, path: services/buildr/tools/development/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]
@@ -188,5 +188,5 @@ recipes:
   const buildWebStartedAt = Date.now();
   run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, BUILDR_NODE: runtimeInvocation.executable, PATH: managedPath } });
   phase.record('build-web', buildWebStartedAt, Date.now());
-  assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
+  assert.equal(fs.existsSync(path.join(worktreeBuildr, 'web-dist', 'index.html')), true);
 });

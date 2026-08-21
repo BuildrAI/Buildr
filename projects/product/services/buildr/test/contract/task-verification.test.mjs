@@ -8,27 +8,27 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const contract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
-const verificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const verificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
-const verificationTemplate = read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml');
+const contract = read('resources/workspace/skills/contracts/buildr/task-verification/v3.md');
+const verificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
+const verificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const verificationTemplate = read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml');
 const cliRegistry = read('src/bootstrap/cli/registry.mjs');
 const cliReference = read('docs/cli-reference.md');
 const jsonContracts = read('docs/json-contracts.md');
-const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
-const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
-const gitOperationsContract = read('package/targets/workspace/skills/contracts/buildr/git-operations/v1.md');
-const gitOperationsSkill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
-const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
+const worktreeSkill = read('resources/workspace/skills/buildr/task-worktree/SKILL.md');
+const environmentSkill = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
+const gitOperationsContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
+const gitOperationsSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
+const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
+const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
 const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
-const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
 const developmentApplication = read('src/application/task-development/task-development-application.mjs');
-const openSpecProposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
-const openSpecUpdateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
-const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
+const openSpecProposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const openSpecUpdateSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
+const openSpecApplySidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 
 function sourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

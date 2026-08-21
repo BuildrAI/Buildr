@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const core = fs.readFileSync('package/targets/workspace/rules/buildr/core.md', 'utf8');
+const core = fs.readFileSync('resources/workspace/rules/buildr/core.md', 'utf8');
 
 test('Core 保留人和智能体的基本术语对齐规则并自洽使用', () => {
   assert.match(core, /人和智能体使用一致术语/);

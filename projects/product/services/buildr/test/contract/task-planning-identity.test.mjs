@@ -25,12 +25,12 @@ test('Task Planning Identity runtime保持独立只读入口且由Bootstrap lega
 
 test('全部OpenSpec consumer消费resolver且拒绝手工target摘要', () => {
   const consumers = [
-    'package/targets/workspace/skills/buildr/task-development/SKILL.md',
-    'package/targets/workspace/skills/buildr/task-review/SKILL.md',
-    'package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
+    'resources/workspace/skills/buildr/task-development/SKILL.md',
+    'resources/workspace/skills/buildr/task-review/SKILL.md',
+    'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
   ];
   for (const relative of consumers) {
     const content = read(relative);
@@ -39,8 +39,8 @@ test('全部OpenSpec consumer消费resolver且拒绝手工target摘要', () => {
     assert.doesNotMatch(content, /(?:shasum|sha256sum) proposal\.md/);
   }
   for (const relative of [
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md',
   ]) {
     assert.match(read(relative), /重新调用Task Planning Identity resolver/);
   }

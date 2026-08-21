@@ -112,7 +112,7 @@ suiteTest('manifest-registry', 'init 生成 canonical Workspace，并让两个 M
 suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   const broadEntry = '/.buildr/tasks/';
   const preciseEntry = '/.buildr/tasks/*/environment.json';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === broadEntry).length, 1);
   assert.equal(packageGitignore.includes(preciseEntry), false);
 
@@ -144,7 +144,7 @@ suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中
 
 suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 package、init 与 sync 中整体忽略', (t) => {
   const entry = '/.buildr/agent-runtime/';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
 
   const root = initWorkspaceViaCli(t);
@@ -162,7 +162,7 @@ suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 pa
 
 suiteTest('manifest-registry', '项目每日演进目录在 package、init 与 sync 中整体忽略', (t) => {
   const entry = '/.buildr/daily-progress/';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
   assert.equal(packageGitignore.includes('/.buildr/'), false);
 

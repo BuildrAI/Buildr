@@ -13,7 +13,7 @@ function read(relative) {
 
 test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并等待用户选择', () => {
   const skill = read('package/targets/runtime/skills/buildr/SKILL.md');
-  const guide = read('package/bootstrap/guide.md');
+  const guide = read('docs/bootstrap-guide.md');
   for (const content of [skill, guide]) {
     assert.match(content, /buildr update check --json/);
     assert.match(content, /GA 正式版/);

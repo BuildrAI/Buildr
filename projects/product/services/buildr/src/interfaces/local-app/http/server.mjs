@@ -35,7 +35,7 @@ import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../
 import { assertCurrentNpmLauncherBinding } from '../../../infrastructure/product-launcher/index.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
-const STATIC_ROOT = resolveProductResource('product/src/interfaces/local-app/web-dist');
+const STATIC_ROOT = resolveProductResource('product/web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],

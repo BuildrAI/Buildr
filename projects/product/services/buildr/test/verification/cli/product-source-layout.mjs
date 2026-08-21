@@ -28,15 +28,24 @@ const allowedProjectRootEntries = new Set([
 const requiredServiceRootEntries = new Set([
   'AGENTS.md',
   'bin',
+  'docs',
   'package',
   'package-lock.json',
   'package.json',
-  'scripts',
+  'resources',
   'src',
   'test',
+  'tools',
+  'web-dist',
 ]);
 
-export function validateProductSourceLayout({ projectEntries, serviceEntries, bridgeSource }) {
+const forbiddenServiceRootEntries = new Set(['scripts']);
+const deferredPackageFiles = new Set([
+  'launchers/build.mjs',
+  'launchers/manage.mjs',
+]);
+
+export function validateProductSourceLayout({ projectEntries, serviceEntries, packageFiles = [], bridgeSource }) {
   const findings = [];
 
   for (const entry of projectEntries) {
@@ -47,7 +56,15 @@ export function validateProductSourceLayout({ projectEntries, serviceEntries, br
   for (const entry of requiredServiceRootEntries) {
     if (!serviceEntries.includes(entry)) findings.push(`Buildr Service root is missing ${entry}`);
   }
-  if (!/^#!\/bin\/sh\nset -eu\nproject_root=\$\(CDPATH= cd "\$\{0%\/\*\}" && pwd\)\nexec "\$project_root\/services\/buildr\/scripts\/run-development-cli" "\$@"\s*$/u.test(bridgeSource)) {
+  for (const entry of serviceEntries) {
+    if (forbiddenServiceRootEntries.has(entry)) findings.push(`Buildr Service root must not retain ${entry}`);
+  }
+  for (const file of packageFiles) {
+    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/')) {
+      findings.push(`Buildr Service package/ contains non-deferred file: ${file}`);
+    }
+  }
+  if (!/^#!\/bin\/sh\nset -eu\nproject_root=\$\(CDPATH= cd "\$\{0%\/\*\}" && pwd\)\nexec "\$project_root\/services\/buildr\/tools\/development\/run-development-cli" "\$@"\s*$/u.test(bridgeSource)) {
     findings.push('projects/product/buildr must be a thin Service CLI bridge');
   }
 
@@ -58,4 +75,5 @@ export const productSourceLayoutContract = Object.freeze({
   allowedProjectRootEntries: [...allowedProjectRootEntries].sort(),
   forbiddenProjectRootEntries: [...forbiddenProjectRootEntries].sort(),
   requiredServiceRootEntries: [...requiredServiceRootEntries].sort(),
+  deferredPackageFiles: [...deferredPackageFiles].sort(),
 });

@@ -19,8 +19,8 @@ export function productRoot() {
   return resolveProductRoot();
 }
 
-export function packageRoot() {
-  return path.join(productRoot(), 'package');
+export function resourcesRoot() {
+  return path.join(productRoot(), 'resources');
 }
 
 export function resolveSkillScope(repoRoot, scopeInput) {

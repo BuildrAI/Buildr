@@ -6,11 +6,11 @@ import YAML from 'yaml';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
-const triage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
-const gitOperations = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
-const gitContract = read('package/targets/workspace/skills/contracts/buildr/git-operations/v1.md');
-const taskManager = read('package/targets/workspace/skills/buildr/task-manager/SKILL.md');
-const environment = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
+const triage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
+const gitOperations = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
+const gitContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
+const taskManager = read('resources/workspace/skills/buildr/task-manager/SKILL.md');
+const environment = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
 
 test('task-triage 在新正式 Task create 前按统一 dev 顺序消费 Git Operations', () => {
   for (const required of [
@@ -54,7 +54,7 @@ test('Git Operations 明确提供独立 fetch、selected rebase 与可见 abort 
 });
 
 test('package manifests 声明 task-triage optional Git Operations dependency', () => {
-  const packageManifest = YAML.parse(read('package/manifest.yml'));
+  const packageManifest = YAML.parse(read('resources/manifest.yml'));
   const dependency = { capability: 'buildr.git-operations', version: 1, mode: 'optional' };
   assert.ok(packageManifest.builtins.skills.find((item) => item.id === 'task-triage').requires.some((item) => JSON.stringify(item) === JSON.stringify(dependency)));
 });

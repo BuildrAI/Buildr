@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+product_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+exec "$product_root/tools/development/run-development-node" test/verification/candidate.mjs "$@"

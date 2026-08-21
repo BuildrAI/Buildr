@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { PACKAGE_BOOTSTRAP_CONTRACT } from '../../infrastructure/product-layout.mjs';
+import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.mjs';
 import { createProject as createProjectEntity } from '../../domain/project/project.mjs';
 import { createService as createServiceEntity } from '../../domain/service/service.mjs';
@@ -33,8 +33,8 @@ export function registerDomainsPackageAssets(runtime) {
   const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
   const parseYamlDocument = (...args) => runtime.parseYamlDocument(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
-  const packageRoot = (...args) => runtime.packageRoot(...args);
-  const packageBootstrapContractPath = (...args) => runtime.packageBootstrapContractPath(...args);
+  const resourcesRoot = (...args) => runtime.resourcesRoot(...args);
+  const bootstrapContractPath = (...args) => runtime.bootstrapContractPath(...args);
   const writeMappedFileIfMissing = (...args) => runtime.writeMappedFileIfMissing(...args);
   const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
   const existsDirectory = (...args) => runtime.existsDirectory(...args);
@@ -42,13 +42,13 @@ export function registerDomainsPackageAssets(runtime) {
   const writeFileIfChanged = (...args) => runtime.writeFileIfChanged(...args);
 
   function readPackageManifest() {
-    const manifestPath = path.join(packageRoot(), 'manifest.yml');
+    const manifestPath = path.join(resourcesRoot(), 'manifest.yml');
     if (!existsFile(manifestPath)) {
       throw new Error(`Package manifest not found: ${manifestPath}`);
     }
 
     {
-      const parsed = parseYamlDocument(fs.readFileSync(manifestPath, 'utf8'), 'package/manifest.yml');
+      const parsed = parseYamlDocument(fs.readFileSync(manifestPath, 'utf8'), 'resources/manifest.yml');
       return {
         include: [],
         agentSkills: [],
@@ -311,9 +311,9 @@ export function registerDomainsPackageAssets(runtime) {
   }
 
   function validateBootstrapContract(root, files, problems) {
-    const contractPath = packageBootstrapContractPath();
+    const contractPath = bootstrapContractPath();
     if (!existsFile(contractPath)) {
-      problems.push(`Bootstrap contract is missing: ${PACKAGE_BOOTSTRAP_CONTRACT}`);
+      problems.push(`Bootstrap contract is missing: ${BOOTSTRAP_CONTRACT_RESOURCE}`);
       return;
     }
     files.push(contractPath);

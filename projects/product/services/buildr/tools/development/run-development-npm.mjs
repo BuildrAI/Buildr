@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-const serviceRoot = path.resolve(import.meta.dirname, '..');
+const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const requiredNodeVersion = fs.readFileSync(path.resolve(serviceRoot, '../../.node-version'), 'utf8').trim();
 const actualNodeVersion = process.versions.node;
 if (actualNodeVersion !== requiredNodeVersion) {

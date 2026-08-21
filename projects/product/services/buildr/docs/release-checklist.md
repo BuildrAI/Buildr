@@ -35,7 +35,7 @@
 - [x] 补充 CLI reference，覆盖当前公开命令、参数、典型输出和不支持的边界。
 - [x] 准备公开 example workspace，展示 Organization/Root、Project、Service、Rules、Skills 和 runtime 投射的最小路径。
 - [x] 完成去私有化检查，覆盖模板、默认目录、归档文档、示例内容、作者信息、URL、邮箱和组织内部术语。
-- [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/scripts/verify-buildr-product`。
+- [x] 建立 GitHub Actions 最小 CI，运行 `projects/product/services/buildr/test/verification/verify-buildr-product`。
 - [x] 在同一冻结source SHA上完成至少三轮分布式Candidate：macOS core、Windows runtime/Launcher、Workspace/Task、fresh build，以及macOS/Windows × 最低/当前24.x四个Host Node tuple全部由`Candidate gate`聚合；Node 25及未来主版本须另建适配任务后再加入。冻结SHA `c2a76cde2d39566a2e665dcc7c2a1291c65a89b9`的runs `31719158091`、`31719762961`、`31720456534`全部绿色，总墙钟中位441s。
 - [x] 新workflow首次产生绿色`Candidate gate`并完成精确context回读后更新`main` branch protection，只要求该稳定aggregate；随后删除`managed-runtime-candidate (macos-latest)`、`managed-runtime-candidate (windows-latest)`、`current-host-node (macos-latest)`、`current-host-node (windows-latest)`旧contexts。当前保护规则保持`strict: true`，唯一required check为`Candidate gate`且GitHub Actions app id为`15368`。`dev`保留development feedback而不把它声明为完整Candidate。
 - [x] 明确 npm registry 发布流程：`@buildr-ai/buildr`、RC 使用 `next`、稳定版使用 `latest`、tag/version fail closed、GitHub Environment 审批和 OIDC trusted publishing。

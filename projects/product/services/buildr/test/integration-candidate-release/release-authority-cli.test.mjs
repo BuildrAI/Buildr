@@ -10,13 +10,13 @@ import {
   releaseAuthorityPreflightSchema,
   releaseAuthorityProbeSchema,
   sha256,
-} from '../../scripts/release/release-authority.mjs';
-import { runReleaseAuthorityOidcProbe } from '../../scripts/release/release-authority-oidc-probe.mjs';
-import { containsCredentialMaterial } from '../../scripts/release/release-authority-preflight.mjs';
-import { createReleaseEnvironmentBinding } from '../../scripts/release/release-environment-binding.mjs';
-import { runHostedReleaseTransaction } from '../../scripts/release/release-transaction-runner.mjs';
-import { createReleaseTransactionContext, createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../scripts/release/release-transaction-evidence.mjs';
-import { ensureReleaseTag, inspectReleaseTag } from '../../scripts/release/release-tag-ensure.mjs';
+} from '../../tools/release/release-authority.mjs';
+import { runReleaseAuthorityOidcProbe } from '../../tools/release/release-authority-oidc-probe.mjs';
+import { containsCredentialMaterial } from '../../tools/release/release-authority-preflight.mjs';
+import { createReleaseEnvironmentBinding } from '../../tools/release/release-environment-binding.mjs';
+import { runHostedReleaseTransaction } from '../../tools/release/release-transaction-runner.mjs';
+import { createReleaseTransactionContext, createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.mjs';
+import { ensureReleaseTag, inspectReleaseTag } from '../../tools/release/release-tag-ensure.mjs';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -47,11 +47,11 @@ jobs:
     environment: npm-production
     permissions: { contents: write, id-token: write }
     steps:
-      - run: node scripts/release/release-authority-oidc-probe.mjs fixture
-      - run: node scripts/release/release-convergence.mjs --stage pre-tag
-      - run: node scripts/release/release-tag-ensure.mjs preflight fixture
-      - run: node scripts/release/release-tag-ensure.mjs ensure fixture
-      - run: node scripts/release/trusted-publish.mjs fixture.tgz
+      - run: node tools/release/release-authority-oidc-probe.mjs fixture
+      - run: node tools/release/release-convergence.mjs --stage pre-tag
+      - run: node tools/release/release-tag-ensure.mjs preflight fixture
+      - run: node tools/release/release-tag-ensure.mjs ensure fixture
+      - run: node tools/release/trusted-publish.mjs fixture.tgz
 `;
 
 function hostedEnvironment(sourceCommit = fixtureCommit) {
@@ -158,7 +158,7 @@ test('hosted OIDC probe CLI creates the nested evidence directory even when bloc
   const repo = probeRepo(t, 'buildr-authority-probe-output-');
   const output = path.join(repo, 'runner-temp', 'authority', 'release-authority.json');
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-authority-oidc-probe.mjs'),
+    path.join(serviceRoot, 'tools', 'release', 'release-authority-oidc-probe.mjs'),
     '--repo', repo,
     '--source-commit', fixtureCommit,
     '--workflow-sha256', sha256(workflow),
@@ -370,7 +370,7 @@ test('release transaction finalizer preserves official Registry integrity in the
   fs.writeFileSync(contextFile, `${JSON.stringify(releaseContext())}\n`);
   fs.writeFileSync(registryFile, `${JSON.stringify({ published: true, integrity: 'sha512-aW50ZWdyaXR5' })}\n`);
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-transaction-evidence.mjs'), 'finalize',
+    path.join(serviceRoot, 'tools', 'release', 'release-transaction-evidence.mjs'), 'finalize',
     '--context', contextFile, '--output', output, '--outcome', 'success',
     '--repository', 'BuildrAI/Buildr', '--workflow', '.github/workflows/publish.yml',
     '--run-id', String(runId), '--run-attempt', String(runAttempt),
@@ -488,7 +488,7 @@ else { process.stderr.write('unexpected gh command: '+key); process.exitCode=1; 
 `, { mode: 0o755 });
   const evidencePath = path.join(root, 'authority-evidence.json');
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-authority-preflight.mjs'),
+    path.join(serviceRoot, 'tools', 'release', 'release-authority-preflight.mjs'),
     '--repo', repo,
     '--source-commit', sourceCommit,
     '--gh', fakeGh,

@@ -1,6 +1,6 @@
 # Buildr 产品架构
 
-随包 [Buildr Core](../../../services/buildr/package/targets/workspace/rules/buildr/core.md) 是产品设计与用户 Workspace Agent 工作方式共同遵守的核心产品哲学和通用硬边界；本文只在该边界内解释当前产品架构，不建立第二套原则 authority。
+随包 [Buildr Core](../../../services/buildr/resources/workspace/rules/buildr/core.md) 是产品设计与用户 Workspace Agent 工作方式共同遵守的核心产品哲学和通用硬边界；本文只在该边界内解释当前产品架构，不建立第二套原则 authority。
 
 ## 用户与协作角色
 

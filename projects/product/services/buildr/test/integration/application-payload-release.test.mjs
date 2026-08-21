@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
-import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
+import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
+import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { createInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
-import { GENERATED_USER_REGISTRY_PACKAGE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
+import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.mjs';
 
@@ -55,9 +55,9 @@ test('same inputs create byte-identical payload and installed resource mapping d
     const second = await buildApplicationPayload(path.join(root, 'second'), SOURCE_COMMIT);
     assert.deepEqual(first.manifest, second.manifest);
     assert.deepEqual(fs.readFileSync(path.join(first.root, 'runtime/buildr.cjs')), fs.readFileSync(path.join(second.root, 'runtime/buildr.cjs')));
-    assert.deepEqual(first.manifest.files.filter((entry) => entry.path.includes('/launchers/')).map((entry) => entry.path), [
-      'resources/product/package/launchers/assets/Buildr.icns',
-      'resources/product/package/launchers/assets/Buildr.ico',
+    assert.deepEqual(first.manifest.files.filter((entry) => entry.path.includes('/installation/launcher/')).map((entry) => entry.path), [
+      'resources/product/resources/installation/launcher/Buildr.icns',
+      'resources/product/resources/installation/launcher/Buildr.ico',
     ]);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('.map')), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('.ts')), false);
@@ -68,7 +68,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/services/buildr-web/')), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/node_modules/typescript/')), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/sqlite/migrations/0000_')), true);
-    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+    for (const relativePath of GENERATED_USER_REGISTRY_RESOURCE_SOURCES) {
       assert.equal(first.manifest.files.some((entry) => entry.path === `resources/product/${relativePath}`), false, relativePath);
     }
     const runtimeMetadata = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
@@ -79,7 +79,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
 
     const staging = createNpmPackStaging(first.root, path.join(root, 'npm-staging'));
     assert.equal(verifyApplicationPayload(staging.root, { layout: 'installed' }).manifest.applicationPayloadDigest, first.manifest.applicationPayloadDigest);
-    fs.appendFileSync(path.join(staging.root, 'payload/product/src/interfaces/local-app/web-dist/index.html'), 'drift');
+    fs.appendFileSync(path.join(staging.root, 'payload/product/web-dist/index.html'), 'drift');
     assert.throws(() => verifyApplicationPayload(staging.root, { layout: 'installed' }), /digest mismatch/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -92,7 +92,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     const payload = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT);
     const cleanRoot = path.join(root, 'clean-service');
     for (const relative of [
-      'scripts/release/application-payload.mjs',
+      'tools/release/application-payload.mjs',
       'src/infrastructure/product-resources/index.mjs',
       'src/infrastructure/filesystem/filesystem-path-identity.mjs',
     ]) {
@@ -102,7 +102,7 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     }
     assert.equal(fs.existsSync(path.join(cleanRoot, 'node_modules')), false);
     const result = spawnSync(process.execPath, [
-      path.join(cleanRoot, 'scripts/release/application-payload.mjs'),
+      path.join(cleanRoot, 'tools/release/application-payload.mjs'),
       'verify', '--payload', payload.root, '--layout', 'frozen',
     ], {
       cwd: cleanRoot,
@@ -131,25 +131,25 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'runtime/buildr.cjs',
       'scripts/postinstall.mjs',
       'payload/runtime/read-worker.cjs',
-      'payload/product/src/interfaces/local-app/web-dist/index.html',
+      'payload/product/web-dist/index.html',
       'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-      'payload/product/package/manifest.yml',
-      'payload/product/package/launchers/assets/Buildr.icns',
-      'payload/product/package/launchers/assets/Buildr.ico',
+      'payload/product/resources/manifest.yml',
+      'payload/product/resources/installation/launcher/Buildr.icns',
+      'payload/product/resources/installation/launcher/Buildr.ico',
     ]) assert.equal(paths.includes(required), true, required);
     assert.equal(paths.some((value) => /(^|\/)node(?:\.exe)?(\/|$)/iu.test(value)), false);
     assert.equal(paths.some((value) => value.endsWith('/preparation.yml')), false);
     assert.equal(paths.some((value) => value.includes('/services/buildr-web/')), false);
     assert.equal(paths.some((value) => value.includes('/node_modules/typescript/')), false);
     assert.deepEqual(paths.filter((value) => /(^|\/)launchers?(\/|$)/iu.test(value)), [
-      'payload/product/package/launchers/assets/Buildr.icns',
-      'payload/product/package/launchers/assets/Buildr.ico',
+      'payload/product/resources/installation/launcher/Buildr.icns',
+      'payload/product/resources/installation/launcher/Buildr.ico',
     ]);
     assert.equal(paths.some((value) => /\.(?:app|pkg|msi|map)$/iu.test(value)), false);
     assert.equal(paths.some((value) => value.endsWith('.ts')), false);
     assert.equal(paths.some((value) => /(?:^|\/)typescript(?:\/|$)/u.test(value)), false);
     assert.equal(paths.some((value) => /(?:^|\/)@types\/node(?:\/|$)/u.test(value)), false);
-    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+    for (const relativePath of GENERATED_USER_REGISTRY_RESOURCE_SOURCES) {
       assert.equal(paths.includes(`payload/product/${relativePath}`), false, relativePath);
     }
   } finally {

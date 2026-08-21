@@ -21,8 +21,8 @@ test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON iden
   const cli = read('src/interfaces/cli/project-daily-progress.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
   const json = read('src/application/json-contracts.mjs');
-  const skill = read('package/targets/workspace/skills/buildr/project-daily-progress/SKILL.md');
-  const gitignore = read('package/targets/workspace/gitignore');
+  const skill = read('resources/workspace/skills/buildr/project-daily-progress/SKILL.md');
+  const gitignore = read('resources/workspace/gitignore');
   for (const command of ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list']) {
     assert.ok(registry.includes(command), command);
   }

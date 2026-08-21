@@ -110,11 +110,11 @@ function jobAuthority(job) {
     idTokenPermission: permissions?.['id-token'] ?? null,
     contentsPermission: permissions?.contents ?? null,
     needs: normalizedNeeds(job?.needs),
-    oidcProbeInvocations: runs.filter((value) => value.includes('scripts/release/release-authority-oidc-probe.mjs')).length,
-    preTagInvocations: runs.filter((value) => value.includes('scripts/release/release-convergence.mjs') && value.includes('--stage pre-tag')).length,
-    tagPreflightInvocations: runs.filter((value) => value.includes('scripts/release/release-tag-ensure.mjs preflight')).length,
-    tagEnsureInvocations: runs.filter((value) => value.includes('scripts/release/release-tag-ensure.mjs ensure')).length,
-    trustedPublishInvocations: runs.filter((value) => value.includes('scripts/release/trusted-publish.mjs')).length,
+    oidcProbeInvocations: runs.filter((value) => value.includes('tools/release/release-authority-oidc-probe.mjs')).length,
+    preTagInvocations: runs.filter((value) => value.includes('tools/release/release-convergence.mjs') && value.includes('--stage pre-tag')).length,
+    tagPreflightInvocations: runs.filter((value) => value.includes('tools/release/release-tag-ensure.mjs preflight')).length,
+    tagEnsureInvocations: runs.filter((value) => value.includes('tools/release/release-tag-ensure.mjs ensure')).length,
+    trustedPublishInvocations: runs.filter((value) => value.includes('tools/release/trusted-publish.mjs')).length,
     rawPublishInvocations: runs.filter((value) => /(^|\s)npm\s+publish(?:\s|$)/m.test(value)).length,
   };
 }

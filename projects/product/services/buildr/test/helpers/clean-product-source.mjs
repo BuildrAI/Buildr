@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const PRODUCT_SOURCE_ENTRIES = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
+const PRODUCT_SOURCE_ENTRIES = ['bin', 'src', 'resources', 'web-dist', 'tools', 'package', 'docs', 'package.json', 'package-lock.json'];
 
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });

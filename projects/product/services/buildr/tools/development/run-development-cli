@@ -11,7 +11,7 @@ while [ -L "$self" ]; do
 done
 script_root=$(CDPATH= cd "${self%/*}" && pwd)
 launcher_entry="$script_root/run-development-cli"
-cli_root=$(CDPATH= cd "$script_root/../bin" && pwd)
+cli_root=$(CDPATH= cd "$script_root/../../bin" && pwd)
 cli_entry="$cli_root/buildr.mjs"
 selected_node=$($script_root/resolve-development-node)
 

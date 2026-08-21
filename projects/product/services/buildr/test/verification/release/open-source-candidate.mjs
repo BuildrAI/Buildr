@@ -75,8 +75,8 @@ export function inspectTarballFiles(files) {
     'application-payload.json',
     'installation-origin.json',
     'runtime/buildr.cjs',
-    'payload/product/package/manifest.yml',
-    'payload/product/src/interfaces/local-app/web-dist/index.html',
+    'payload/product/resources/manifest.yml',
+    'payload/product/web-dist/index.html',
   ]) {
     if (!paths.has(required)) findings.push(finding('tarball.required', required, 'required publish asset is missing'));
   }

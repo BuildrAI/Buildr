@@ -42,9 +42,9 @@ function formalOriginOptions(channel, version = '1.0.0') {
     productionDependencies: [],
     files: [
       'resources/product/package.json',
-      'resources/product/package/manifest.yml',
+      'resources/product/resources/manifest.yml',
       'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-      'resources/product/src/interfaces/local-app/web-dist/index.html',
+      'resources/product/web-dist/index.html',
       'resources/runtime/read-worker.cjs',
       'runtime/buildr.cjs',
     ].map((file) => ({ path: file, mode: 0o644, size: 0, sha256: '0'.repeat(64) })),

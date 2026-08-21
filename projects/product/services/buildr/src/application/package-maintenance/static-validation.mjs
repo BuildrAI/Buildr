@@ -3,10 +3,10 @@ import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../internal-workflow-route-in
 
 export function createPackageStaticValidator(deps) {
   const {
-    GENERATED_USER_REGISTRY_PACKAGE_SOURCES,
+    GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
-    PACKAGE_WORKSPACE_TARGET,
+    RESOURCE_WORKSPACE_ROOT,
     SUPPORTED_AGENT_IDS,
     collectFiles,
     builtinRuleEntry,
@@ -20,7 +20,7 @@ export function createPackageStaticValidator(deps) {
     normalizeRelativePathForBuildr,
     packageComponentDefinition,
     packageComponentSourcePath,
-    packageWorkspaceTargetRoot,
+    resourceWorkspaceRoot,
     parseCommandsManifestYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
@@ -127,12 +127,12 @@ export function createPackageStaticValidator(deps) {
 
     for (const [rootRelative, packageRelative] of baselinePairs) {
       const rootFile = path.join(root, rootRelative);
-      const packageFile = path.join(packageWorkspaceTargetRoot(), packageRelative);
+      const packageFile = path.join(resourceWorkspaceRoot(), packageRelative);
       if (existsFile(rootFile) && existsFile(packageFile)) {
         const rootContent = fs.readFileSync(rootFile, 'utf8');
         const packageContent = fs.readFileSync(packageFile, 'utf8');
         if (rootContent !== packageContent) {
-          problems.push(`Root ${rootRelative} differs from ${PACKAGE_WORKSPACE_TARGET}/${packageRelative}.`);
+          problems.push(`Root ${rootRelative} differs from ${RESOURCE_WORKSPACE_ROOT}/${packageRelative}.`);
         }
       }
     }
@@ -188,15 +188,16 @@ export function createPackageStaticValidator(deps) {
           'docs/cli-reference.md',
           'docs/cli-architecture.md',
           'docs/known-limitations.md',
-          'package/README.md',
-          'package/manifest.yml',
-          'package/bootstrap/',
-          'package/targets/',
+          'docs/bootstrap-guide.md',
+          'docs/resources.md',
+          'resources/',
+          'web-dist/',
+          'package/targets/runtime/',
         ]) {
           if (!packagedFiles.has(required)) problems.push(`package.json files must include ${required}.`);
         }
         if (packagedFiles.has('package/')) problems.push('package.json files must not publish package/ wholesale because it contains development-only Launcher assets.');
-        for (const forbiddenPrefix of ['test/', 'scripts/', ['to', 'ols/'].join('')]) {
+        for (const forbiddenPrefix of ['test/', 'scripts/', 'tools/']) {
           if ([...packagedFiles].some((entry) => entry === forbiddenPrefix || entry.startsWith(forbiddenPrefix))) {
             problems.push(`package.json files must not publish checkout-only path: ${forbiddenPrefix}.`);
           }
@@ -257,7 +258,7 @@ export function createPackageStaticValidator(deps) {
     for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.mjs']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
-    for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'scripts/release/release-contract.mjs']) {
+    for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'tools/release/release-contract.mjs']) {
       if (!existsFile(path.join(root, required))) problems.push(`Development checkout verification is missing: ${required}`);
     }
 
@@ -272,7 +273,7 @@ export function createPackageStaticValidator(deps) {
     const { root, problems } = context;
     const allowedLegacyFiles = new Set([
       path.join(root, 'src', 'application', 'package-maintenance', 'static-validation.mjs'),
-      path.join(root, 'package', 'manifest.yml'),
+      path.join(root, 'resources', 'manifest.yml'),
     ].map((file) => path.resolve(file)));
     const forbidden = [
       'buildr.task-worktree-lifecycle',
@@ -302,7 +303,7 @@ export function createPackageStaticValidator(deps) {
       'src/application/worktree/worktree-application.mjs',
       'src/application/task-environment/legacy-migration.mjs',
       'src/application/task-environment/current-migration.mjs',
-      'package/targets/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
+      'resources/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Legacy Task Environment authority file must be removed: ${relative}`);
     }
@@ -438,14 +439,14 @@ export function createPackageStaticValidator(deps) {
     }
 
     const consumers = new Map([
-      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['__internal task-planning-identity inspect', '`planningNodes`', 'raw digest', 'environment.controllerInvocation']],
-      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['__internal task-planning-identity inspect', 'checkbox progress', '不重复record', 'environment.controllerInvocation']],
-      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver', 'environment.controllerInvocation']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', '`planningNodes`', 'environment.controllerInvocation']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target不变则不重复record Review', 'environment.controllerInvocation']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target与apply前相同则复用current Planning Review', 'environment.controllerInvocation']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
+      ['resources/workspace/skills/buildr/task-development/SKILL.md', ['__internal task-planning-identity inspect', '`planningNodes`', 'raw digest', 'environment.controllerInvocation']],
+      ['resources/workspace/skills/buildr/task-review/SKILL.md', ['__internal task-planning-identity inspect', 'checkbox progress', '不重复record', 'environment.controllerInvocation']],
+      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver', 'environment.controllerInvocation']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', '`planningNodes`', 'environment.controllerInvocation']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target不变则不重复record Review', 'environment.controllerInvocation']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target与apply前相同则复用current Planning Review', 'environment.controllerInvocation']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
     ]);
     for (const [relative, requiredTexts] of consumers) {
       const file = path.join(root, relative);
@@ -478,13 +479,13 @@ export function createPackageStaticValidator(deps) {
       if (!existsFile(wrapper)) problems.push(`Required internal workflow checkout wrapper is missing: ${route.id}-driver.mjs.`);
     }
     const consumers = [
-      ['package/targets/workspace/skills/buildr/task-development/SKILL.md', ['task-development', 'task-planning-identity']],
-      ['package/targets/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']],
-      ['package/targets/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity']],
-      ['package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity']],
-      ['package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity']],
+      ['resources/workspace/skills/buildr/task-development/SKILL.md', ['task-development', 'task-planning-identity']],
+      ['resources/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']],
+      ['resources/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity']],
+      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity']],
     ];
     for (const [relative, routes] of consumers) {
       const file = path.join(root, relative);
@@ -494,7 +495,7 @@ export function createPackageStaticValidator(deps) {
       }
       const content = fs.readFileSync(file, 'utf8');
       for (const route of routes) if (!content.includes(`__internal ${route}`)) problems.push(`Required internal workflow consumer ${relative} must use bundled route ${route}.`);
-      if (!content.includes('controllerInvocation') && relative !== 'package/targets/workspace/skills/buildr/task-retrospective/SKILL.md') problems.push(`Required internal workflow consumer ${relative} must use a retained controllerInvocation.`);
+      if (!content.includes('controllerInvocation') && relative !== 'resources/workspace/skills/buildr/task-retrospective/SKILL.md') problems.push(`Required internal workflow consumer ${relative} must use a retained controllerInvocation.`);
       if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) problems.push(`Required internal workflow consumer ${relative} must not use a source driver path.`);
     }
   }
@@ -531,26 +532,26 @@ export function createPackageStaticValidator(deps) {
           continue;
         }
         mappedEntries.push(entry);
-        if (GENERATED_USER_REGISTRY_PACKAGE_SOURCES.includes(entry.source)) {
+        if (GENERATED_USER_REGISTRY_RESOURCE_SOURCES.includes(entry.source)) {
           problems.push(`Package manifest must not map generated user registry source: ${entry.raw}`);
         }
         if (LEGACY_PACKAGE_PATHS.some((legacyPath) => entry.source === legacyPath || entry.source.startsWith(`${legacyPath}/`))) {
           problems.push(`Package manifest must not reference legacy package source: ${entry.raw}`);
         }
-        if (!entry.source.startsWith(`${PACKAGE_WORKSPACE_TARGET}/`)) {
-          problems.push(`Package manifest ${section} source must be under ${PACKAGE_WORKSPACE_TARGET}/: ${entry.raw}`);
+        if (!entry.source.startsWith(`${RESOURCE_WORKSPACE_ROOT}/`)) {
+          problems.push(`Package manifest ${section} source must be under ${RESOURCE_WORKSPACE_ROOT}/: ${entry.raw}`);
         }
         if (entry.source.includes('AGENTS.private')) {
           problems.push(`Package manifest must not publish private business rule: ${entry.raw}`);
         }
         if (entry.source.includes('package/workspace-rules/') || entry.source.includes('package/workspace-skills/') || entry.source.includes('package/baseline/')) {
-          problems.push(`Package manifest must use ${PACKAGE_WORKSPACE_TARGET}/ as the source for workspace baseline assets: ${entry.raw}`);
+          problems.push(`Package manifest must use ${RESOURCE_WORKSPACE_ROOT}/ as the source for workspace baseline assets: ${entry.raw}`);
         }
         if (entry.source.startsWith('rules/')) {
-          problems.push(`Package manifest must use ${PACKAGE_WORKSPACE_TARGET}/rules/ as the source for published rule modules: ${entry.raw}`);
+          problems.push(`Package manifest must use ${RESOURCE_WORKSPACE_ROOT}/rules/ as the source for published rule modules: ${entry.raw}`);
         }
-        if (entry.target.startsWith('rules/') && !entry.source.startsWith(`${PACKAGE_WORKSPACE_TARGET}/rules/`)) {
-          problems.push(`Package manifest rule targets must source from ${PACKAGE_WORKSPACE_TARGET}/rules/: ${entry.raw}`);
+        if (entry.target.startsWith('rules/') && !entry.source.startsWith(`${RESOURCE_WORKSPACE_ROOT}/rules/`)) {
+          problems.push(`Package manifest rule targets must source from ${RESOURCE_WORKSPACE_ROOT}/rules/: ${entry.raw}`);
         }
         if (entry.source.startsWith('product/')) {
           problems.push(`Package manifest source must be relative to the product root, not product/ prefixed: ${entry.raw}`);
@@ -588,12 +589,12 @@ export function createPackageStaticValidator(deps) {
       componentIds.add(entry.id);
       const expectedSuffix = `/components/`;
       const componentPathParts = entry.path.split('/');
-      const exactComponentPath = entry.path.startsWith(`${PACKAGE_WORKSPACE_TARGET}${expectedSuffix}`)
+      const exactComponentPath = entry.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}${expectedSuffix}`)
         && componentPathParts.at(-1) === 'component.yml'
         && componentPathParts.at(-2) === entry.id
-        && componentPathParts.length === PACKAGE_WORKSPACE_TARGET.split('/').length + 4;
+        && componentPathParts.length === RESOURCE_WORKSPACE_ROOT.split('/').length + 4;
       if (!exactComponentPath || path.isAbsolute(entry.path) || entry.path.startsWith('..')) {
-        problems.push(`${label}.path must be ${PACKAGE_WORKSPACE_TARGET}/components/<source>/${entry.id}/component.yml.`);
+        problems.push(`${label}.path must be ${RESOURCE_WORKSPACE_ROOT}/components/<source>/${entry.id}/component.yml.`);
         continue;
       }
       try {
@@ -676,11 +677,11 @@ export function createPackageStaticValidator(deps) {
         }
       }
     }
-    const workspaceSourceRoot = packageWorkspaceTargetRoot();
+    const workspaceSourceRoot = resourceWorkspaceRoot();
     for (const workspaceFile of collectFiles(workspaceSourceRoot)) {
       const relativeFile = toPosixRelative(root, workspaceFile);
       if (!mappedSources.has(relativeFile) && !componentOwnedWorkspaceFiles.has(relativeFile)) {
-        problems.push(`Package workspace source file must be explicitly mapped in package/manifest.yml: ${relativeFile}`);
+        problems.push(`Package workspace source file must be explicitly mapped in resources/manifest.yml: ${relativeFile}`);
       }
     }
   }
@@ -739,7 +740,7 @@ export function createPackageStaticValidator(deps) {
           if (!skillContent.includes(requiredText)) problems.push(`Buildr Agent Skill must include ${JSON.stringify(requiredText)}.`);
         }
         for (const [relativePath, requiredTexts] of [
-          ['package/bootstrap/guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
+          ['docs/bootstrap-guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
           ['docs/cli-reference.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', 'Agent 不自动 stash、reset、rebase、merge 或覆盖', '不重复询问 sync', '非 Git workspace 直接 sync', '不隐式执行 Git 更新']],
         ]) {
           const contractPath = path.join(root, relativePath);
@@ -883,8 +884,8 @@ export function createPackageStaticValidator(deps) {
       if (!rule.target.startsWith('rules/buildr/') || !rule.target.endsWith('.md')) {
         problems.push(`${label}.target must be rules/buildr/*.md.`);
       }
-      if (!rule.path.startsWith(`${PACKAGE_WORKSPACE_TARGET}/rules/`)) {
-        problems.push(`${label}.path must be under ${PACKAGE_WORKSPACE_TARGET}/rules/.`);
+      if (!rule.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}/rules/`)) {
+        problems.push(`${label}.path must be under ${RESOURCE_WORKSPACE_ROOT}/rules/.`);
       }
       if (path.isAbsolute(rule.path) || rule.path.startsWith('..') || path.isAbsolute(rule.target) || rule.target.startsWith('..')) {
         problems.push(`${label} paths must stay relative.`);
@@ -949,8 +950,8 @@ export function createPackageStaticValidator(deps) {
       if (!skill.target.startsWith(expectedSkillRoot)) {
         problems.push(`${label}.target must be under ${expectedSkillRoot}.`);
       }
-      if (!skill.path.startsWith(`${PACKAGE_WORKSPACE_TARGET}/skills/`)) {
-        problems.push(`${label}.path must be under ${PACKAGE_WORKSPACE_TARGET}/skills/.`);
+      if (!skill.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}/skills/`)) {
+        problems.push(`${label}.path must be under ${RESOURCE_WORKSPACE_ROOT}/skills/.`);
       }
       const missingRuntimes = SUPPORTED_AGENT_IDS.filter((runtime) => !skill.runtimes?.includes(runtime));
       if (!Array.isArray(skill.runtimes) || missingRuntimes.length > 0) {
@@ -1336,7 +1337,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const baselineSkillsManifest = path.join(packageWorkspaceTargetRoot(), 'skills', 'manifest.yml');
+    const baselineSkillsManifest = path.join(resourceWorkspaceRoot(), 'skills', 'manifest.yml');
     if (existsFile(baselineSkillsManifest)) {
       try {
         const baselineSkills = readSkillManifest(baselineSkillsManifest);
@@ -1394,7 +1395,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const baselineProjectsRegistry = path.join(packageWorkspaceTargetRoot(), 'projects', 'manifest.yml');
+    const baselineProjectsRegistry = path.join(resourceWorkspaceRoot(), 'projects', 'manifest.yml');
     if (existsFile(baselineProjectsRegistry)) {
       try {
         const registry = parseProjectsYaml(fs.readFileSync(baselineProjectsRegistry, 'utf8'));
@@ -1411,16 +1412,16 @@ export function createPackageStaticValidator(deps) {
   function validatePackageAssets(context) {
     const { root, workspaceRoot, manifestPath, manifest, allowedVariables, files, problems } = context;
     const bootstrapContract = validateBootstrapContract(root, files, problems);
-    for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
+    for (const relativePath of GENERATED_USER_REGISTRY_RESOURCE_SOURCES) {
       if (existsFile(path.resolve(root, relativePath))) {
         problems.push(`Generated user registry must not exist as a package source: ${relativePath}`);
       }
     }
-    for (const file of collectFiles(packageWorkspaceTargetRoot())) {
-      const relativePath = toPosixRelative(packageWorkspaceTargetRoot(), file);
+    for (const file of collectFiles(resourceWorkspaceRoot())) {
+      const relativePath = toPosixRelative(resourceWorkspaceRoot(), file);
       if (!/\.ya?ml$/u.test(relativePath)) continue;
       if (relativePath.startsWith('skills/') || relativePath.startsWith('commands/buildr/') || relativePath.startsWith('components/buildr/')) continue;
-      problems.push(`Workspace-target YAML must be product content, not a user registry source: ${PACKAGE_WORKSPACE_TARGET}/${relativePath}`);
+      problems.push(`Workspace-target YAML must be product content, not a user registry source: ${RESOURCE_WORKSPACE_ROOT}/${relativePath}`);
     }
     if (workspaceRoot) {
       validateWorkspaceSkillsBaseline(workspaceRoot, problems);

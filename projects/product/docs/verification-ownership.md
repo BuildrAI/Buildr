@@ -2,7 +2,7 @@
 
 本文记录 Buildr 当前怎样开发、分层和编排测试，Task Verification 怎样声明并使用这些测试能力，以及每轮性能优化的事实与结论。
 
-通用指导以 [project-testing Skill](../services/buildr/package/targets/workspace/skills/buildr/project-testing/SKILL.md) 和 [testing model](../services/buildr/package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md) 为准；正式能力与结果 authority 以 [verification.yml](../verification.yml)、[Task Verification spec](../openspec/specs/task-verification/spec.md) 和 [task-verification Skill](../services/buildr/package/targets/workspace/skills/buildr/task-verification/SKILL.md) 为准。本文只记录 Buildr 自举实践，不创建第二套 Result 或生命周期 authority。
+通用指导以 [project-testing Skill](../services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md) 和 [testing model](../services/buildr/resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md) 为准；正式能力与结果 authority 以 [verification.yml](../verification.yml)、[Task Verification spec](../openspec/specs/task-verification/spec.md) 和 [task-verification Skill](../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) 为准。本文只记录 Buildr 自举实践，不创建第二套 Result 或生命周期 authority。
 
 ## 1. 测试模型
 

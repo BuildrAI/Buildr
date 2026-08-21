@@ -4,7 +4,8 @@
 
 - Product Project root：`projects/product/`，拥有产品治理、OpenSpec、docs、knowledge 与 Service registry。
 - Buildr Service root：`projects/product/services/buildr/`，拥有 CLI、Buildr Web Runtime、session 托管、`web-dist` 消费、验证、package 和发布实现；不再拥有 Buildr Web React/Vite 权威前端源。
-- Buildr Web Frontend Service root：`projects/product/services/buildr-web/`，与 `buildr` 同仓同级的 workspace Service，拥有 Buildr Web React/Vite 前端源码与正式构建；构建产物写入 `buildr` 的内部 `src/interfaces/local-app/web-dist/`。
+- Buildr Web Frontend Service root：`projects/product/services/buildr-web/`，与 `buildr` 同仓同级的 workspace Service，拥有 Buildr Web React/Vite 前端源码与正式构建；构建产物写入 `buildr` 顶层 `web-dist/`。
+- Buildr Service 根工程按生命周期分工：`resources/` 是文件型交付资源 authority，`tools/development/` 与 `tools/release/` 只服务 checkout，`test/verification/` 持有验证入口，`web-dist/` 是正式静态产物交接路径；`package/` 仅保留有明确后续 owner 的 Runtime Skill 与 Launcher 行为实现。
 - 用户 Workspace 中由 Buildr 交付的 Rules/Skills/Components 是安装结果，只能由 Product checkout 的 update/sync 单向物化。
 - `.buildr/workspace.yml`、Workspace 根 Registry 与 Project 的 capabilities、commands、Service Registry 是用户 Workspace 持久化事实，不是产品包内容。npm package 只发布产品声明、Rule/Skill/Component/Command 内容与实现；`init`、Project create 和 `sync` 通过各领域 renderer/writer 生成缺失 Registry，再从 package 声明收敛 Builtins 与 Components，已有用户内容不由包内模板覆盖。
 - Buildr Service `src/bootstrap/` 是唯一进程级 composition root。稳定薄 `bin/buildr.mjs` 只进入 `bootstrap/cli/main.mjs`；Bootstrap 显式组装 closed module descriptor，校验唯一 `id`、named `requires`、namespaced `provides`、CLI/HTTP/diagnostic contributions和成对 lifecycle。模块按注册顺序启动、逆序停止，部分启动失败只回滚本次已启动资源；不使用扫描、导入副作用或全局 Runtime lookup。

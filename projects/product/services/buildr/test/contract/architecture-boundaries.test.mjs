@@ -74,7 +74,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   assert.doesNotMatch(closeout, /resolveDefaultBuildr|install-development-cli/u);
 });
 
-test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源随 src 交付', () => {
+test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由顶层 web-dist 交付', () => {
   const domain = fs.readFileSync(path.join(productRoot, 'src/domain/workspace/workspace.mjs'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
   const projectDomain = fs.readFileSync(path.join(productRoot, 'src/domain/project/project.mjs'), 'utf8');
@@ -83,7 +83,7 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
     'src/interfaces/local-app/http/server.mjs',
-    'src/interfaces/local-app/web-dist/index.html',
+    'web-dist/index.html',
     '../buildr-web/src/styles.css',
     '../buildr-web/src/main.tsx',
     '../buildr-web/src/App.tsx',
@@ -96,7 +96,8 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.match(candidatePackage, /buildApplicationPayload\(/);
   assert.match(candidatePackage, /createReleaseArtifact\(/);
   assert.doesNotMatch(candidatePackage, /\['pack', productRoot/);
-  assert.equal(fs.existsSync(path.join(productRoot, 'tools')), false);
+  assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'development')), true);
+  assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'release')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service')), true);
 });

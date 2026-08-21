@@ -205,7 +205,7 @@ async function realZeroDeltaCleanupRun(t) {
   const sourceServiceRoot = fileURLToPath(new URL('../..', import.meta.url));
   const targetServiceRoot = path.join(root, 'projects', 'product', 'services', 'buildr');
   fs.mkdirSync(targetServiceRoot, { recursive: true });
-  for (const entry of ['src', 'bin', 'package']) {
+  for (const entry of ['src', 'bin', 'resources', 'package']) {
     fs.cpSync(path.join(sourceServiceRoot, entry), path.join(targetServiceRoot, entry), { recursive: true });
   }
   for (const entry of ['package.json', 'package-lock.json']) {

@@ -8,7 +8,7 @@ const workspaceRoot = path.resolve(serviceRoot, '../../../..');
 const readService = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 
 const buildr = readService('package/targets/runtime/skills/buildr/SKILL.md');
-const triage = readService('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
+const triage = readService('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const selfBootstrap = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
 
 test('协作者 tree transition 无 matching Finish 时排他路由普通 Workspace update', () => {

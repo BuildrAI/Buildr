@@ -9,15 +9,15 @@ const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
 const workspaceRoot = path.resolve(productRoot, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
-const finish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
-const developmentContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v2.md');
-const verification = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
-const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
-const coreRule = read('package/targets/workspace/rules/buildr/core.md');
-const workspaceRule = read('package/targets/workspace/AGENTS.md');
-const packageManifest = read('package/manifest.yml');
+const finish = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
+const development = read('resources/workspace/skills/buildr/task-development/SKILL.md');
+const developmentContract = read('resources/workspace/skills/contracts/buildr/task-development/v2.md');
+const verification = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
+const verificationContract = read('resources/workspace/skills/contracts/buildr/task-verification/v3.md');
+const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
+const coreRule = read('resources/workspace/rules/buildr/core.md');
+const workspaceRule = read('resources/workspace/AGENTS.md');
+const packageManifest = read('resources/manifest.yml');
 const productRule = fs.readFileSync(path.join(productRoot, 'AGENTS.md'), 'utf8');
 
 test('Task Finish 保留可选五阶段自动化，同时允许Agent直接交付后对账', () => {
@@ -62,7 +62,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   const component = fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/component.yml'), 'utf8');
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
   const contribution = fs.readFileSync(path.join(workspaceRoot, 'components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md'), 'utf8');
-  const packageFinish = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
+  const packageFinish = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
   for (const phrase of ['task-finish@append', 'skills/buildr-self-bootstrap-sync', 'source: workspace']) assert.ok(component.includes(phrase), phrase);
   for (const boundary of ['buildr.task-finish-self-bootstrap-input/v1', '唯一runner', 'reconciliation形成的Delivery可以没有Delivery Carrier', 'Service repository不能触发Workspace自举', 'target lease', '只允许fetch与fast-forward', '不merge commit、不rebase、不stash、不reset、不force push', '主任务已交付，自举Workspace激活未完成', 'Environment Cleanup由Task Environment独立处理']) assert.ok(skill.includes(boundary), boundary);
   for (const boundary of ['自动Finish或delivery reconciliation', 'buildr.task-finish-self-bootstrap-input/v1', '可以没有Delivery Carrier', 'Service repository不能触发Workspace自举', '只允许fast-forward', '不撤销Delivery', 'Environment Cleanup由Task Environment']) assert.ok(contribution.includes(boundary), boundary);

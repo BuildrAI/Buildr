@@ -7,17 +7,17 @@ import {
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
-} from '../../scripts/release/release-authority.mjs';
+} from '../../tools/release/release-authority.mjs';
 import {
   containsCredentialMaterial,
   inspectWorkflowAuthority,
   runReleaseAuthorityPreflight,
-} from '../../scripts/release/release-authority-preflight.mjs';
-import { checkReleaseAuthorityEvidence } from '../../scripts/release/release-convergence.mjs';
+} from '../../tools/release/release-authority-preflight.mjs';
+import { checkReleaseAuthorityEvidence } from '../../tools/release/release-convergence.mjs';
 import {
   authorityFailureDiagnostic,
   runTrustedPublish,
-} from '../../scripts/release/trusted-publish.mjs';
+} from '../../tools/release/trusted-publish.mjs';
 
 const commit = 'a'.repeat(40);
 const runId = 123;
@@ -47,11 +47,11 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - run: node scripts/release/release-authority-oidc-probe.mjs --source-commit fixture
-      - run: node scripts/release/release-convergence.mjs --stage pre-tag
-      - run: node scripts/release/release-tag-ensure.mjs preflight v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      - run: node scripts/release/release-tag-ensure.mjs ensure v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      - run: node scripts/release/trusted-publish.mjs candidate.tgz --access public
+      - run: node tools/release/release-authority-oidc-probe.mjs --source-commit fixture
+      - run: node tools/release/release-convergence.mjs --stage pre-tag
+      - run: node tools/release/release-tag-ensure.mjs preflight v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - run: node tools/release/release-tag-ensure.mjs ensure v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - run: node tools/release/trusted-publish.mjs candidate.tgz --access public
 `;
 
 function probeEvidence(overrides = {}) {

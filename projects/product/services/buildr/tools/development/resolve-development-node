@@ -10,7 +10,7 @@ while [ -L "$self" ]; do
   esac
 done
 script_root=$(CDPATH= cd "${self%/*}" && pwd)
-product_root=$(CDPATH= cd "$script_root/../../.." && pwd)
+product_root=$(CDPATH= cd "$script_root/../../../.." && pwd)
 IFS= read -r required_version < "$product_root/.node-version"
 
 node_version() {

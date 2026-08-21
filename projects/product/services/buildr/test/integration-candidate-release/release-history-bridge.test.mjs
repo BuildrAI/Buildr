@@ -7,7 +7,7 @@ import test from 'node:test';
 
 // Candidate-only owner: release history bridge idempotency and remote races.
 
-import { bridgeMainToDev } from '../../scripts/release/bridge-main-to-dev.mjs';
+import { bridgeMainToDev } from '../../tools/release/bridge-main-to-dev.mjs';
 
 function differentTree(tree) {
   return `${tree.slice(0, -1)}${tree.endsWith('0') ? '1' : '0'}`;

@@ -14,8 +14,8 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 
 test('product verification exposes three gates, direct layers, and one focus entry', () => {
   const scripts = JSON.parse(read('package.json')).scripts;
-  assert.equal(scripts.test, './scripts/verify-buildr-product-fast');
-  assert.equal(scripts['test:fast'], './scripts/verify-buildr-product-fast');
+  assert.equal(scripts.test, './test/verification/verify-buildr-product-fast');
+  assert.equal(scripts['test:fast'], './test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs');
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
@@ -35,8 +35,8 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
-  assert.equal(scripts['test:candidate'], 'bash scripts/verify-buildr-product');
-  assert.equal(scripts['test:candidate:ci'], 'bash scripts/verify-buildr-product-ci');
+  assert.equal(scripts['test:candidate'], 'bash test/verification/verify-buildr-product');
+  assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.mjs host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.mjs aggregate');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.mjs');
@@ -44,7 +44,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
 
-  const fast = read('scripts/verify-buildr-product-fast');
+  const fast = read('test/verification/verify-buildr-product-fast');
   assert.match(fast, /run-development-node" test\/verification\/profile\.mjs fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
   assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
@@ -86,21 +86,21 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
   assert.deepEqual(fast.proves, ['低成本 Unit、Component 与 Static Conformance 通过']);
-  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
+  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
   assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
-  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
+  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
   assert.deepEqual(browser.applicability.paths, [
     'services/buildr-web/**',
-    'services/buildr/src/interfaces/local-app/web-dist/**',
+    'services/buildr/web-dist/**',
     'services/buildr/src/interfaces/local-app/runtime/**',
     'services/buildr/test/browser-smoke/**',
     'services/buildr/test/verification/browser-selector-dispatcher.mjs',
@@ -125,7 +125,7 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.ok(browserDelegation);
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
-  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['scripts/run-development-npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
+  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
   assert.equal(releaseSet.requiredForDelivery, false);
   assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
   assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
@@ -156,7 +156,7 @@ test('remote text owner includes product re-entry and payload entry boundaries',
     'src/infrastructure/network/**',
     'src/infrastructure/product-invocation/**',
     'src/bootstrap/cli/main.mjs',
-    'scripts/release/application-payload-entry.mjs',
+    'tools/release/application-payload-entry.mjs',
   ]) assert.ok(remote.inputs.includes(input), `remote-skill-timeout must own ${input}`);
 });
 
@@ -176,7 +176,7 @@ test('Windows npm preflight keeps the bounded high-risk owners and tarball depen
 });
 
 test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
-  const wrapper = read('scripts/verify-buildr-product');
+  const wrapper = read('test/verification/verify-buildr-product');
   const candidate = read('test/verification/candidate.mjs');
   const changed = read('test/verification/changed.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
@@ -392,7 +392,7 @@ test('Candidate workflow checks out one exact source SHA and always aggregates c
   assert.equal((candidateWorkflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 6);
   assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
   for (const input of [
-    '.github/workflows/verify.yml', 'scripts/verify-buildr-product-ci',
+    '.github/workflows/verify.yml', 'test/verification/verify-buildr-product-ci',
     'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
   ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
 });

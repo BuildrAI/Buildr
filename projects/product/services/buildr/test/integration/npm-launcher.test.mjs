@@ -10,8 +10,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
-import { createNpmPackStaging } from '../../scripts/release/release-artifact.mjs';
+import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
+import { createNpmPackStaging } from '../../tools/release/release-artifact.mjs';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,

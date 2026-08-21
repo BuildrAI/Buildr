@@ -12,7 +12,7 @@ import {
   renderClaudeCodeRules,
   resolveRuleScope,
 } from '../infrastructure/runtime/render-claude-code-rules.mjs';
-import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_PACKAGE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, PACKAGE_WORKSPACE_TARGET } from '../infrastructure/product-layout.mjs';
+import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
 import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace/workspace-root-gitignore-entries.mjs';
@@ -79,8 +79,8 @@ export function registerApplicationPackageMaintenance(runtime) {
   const withWorkspaceMutation = (...args) => runtime.withWorkspaceMutation(...args);
   const buildRuntimeOrphanRemovalPlan = (...args) => runtime.buildRuntimeOrphanRemovalPlan(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
-  const packageRoot = (...args) => runtime.packageRoot(...args);
-  const packageWorkspaceTargetRoot = (...args) => runtime.packageWorkspaceTargetRoot(...args);
+  const resourcesRoot = (...args) => runtime.resourcesRoot(...args);
+  const resourceWorkspaceRoot = (...args) => runtime.resourceWorkspaceRoot(...args);
   const developmentWorkspaceRoot = (...args) => runtime.developmentWorkspaceRoot(...args);
   const appendGitignoreEntries = (...args) => runtime.appendGitignoreEntries(...args);
   const hasFlag = (...args) => runtime.hasFlag(...args);
@@ -368,10 +368,10 @@ export function registerApplicationPackageMaintenance(runtime) {
     validatePackageStatic,
     parseJsonOutput,
   } = createPackageStaticValidator({
-    GENERATED_USER_REGISTRY_PACKAGE_SOURCES,
+    GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
-    PACKAGE_WORKSPACE_TARGET,
+    RESOURCE_WORKSPACE_ROOT,
     SUPPORTED_AGENT_IDS,
     collectFiles, builtinRuleEntry, builtinSkillEntry,
     componentMemberPaths,
@@ -383,7 +383,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     normalizeRelativePathForBuildr,
     packageComponentDefinition,
     packageComponentSourcePath,
-    packageWorkspaceTargetRoot,
+    resourceWorkspaceRoot,
     parseCommandsManifestYaml,
     parseProjectCommandsYaml,
     parseManifestFileEntry,
@@ -440,7 +440,7 @@ export function registerApplicationPackageMaintenance(runtime) {
   function packageCheck() {
     const root = productRoot();
     const workspaceRoot = developmentWorkspaceRoot();
-    const manifestPath = path.join(packageRoot(), 'manifest.yml');
+    const manifestPath = path.join(resourcesRoot(), 'manifest.yml');
     const manifest = readPackageManifest();
     const allowedVariables = new Set(manifest.templateVariables);
     const files = [];
@@ -501,7 +501,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     existsFile,
     fs,
     optionValue,
-    packageRoot,
+    resourcesRoot,
     parseManifestFileEntry,
     path,
     productRoot,

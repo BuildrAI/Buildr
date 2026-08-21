@@ -9,7 +9,7 @@ import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills
 const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('task-review contract/provider/binding 以一个能力支持两种参数化 Result', () => {
-  const manifest = YAML.parse(read('package/manifest.yml'));
+  const manifest = YAML.parse(read('resources/manifest.yml'));
   const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-review' && item.version === 1);
   assert.ok(contract);
   assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-review');
@@ -21,7 +21,7 @@ test('task-review contract/provider/binding 以一个能力支持两种参数化
 });
 
 test('task-review 动态审查范围、真实 method，并在中断时不写 Result', () => {
-  const skill = read('package/targets/workspace/skills/buildr/task-review/SKILL.md');
+  const skill = read('resources/workspace/skills/buildr/task-review/SKILL.md');
   for (const required of [
     'Planning Review 或 Completion Review',
     '动态执行语义审查',
@@ -42,7 +42,7 @@ test('task-review 动态审查范围、真实 method，并在中断时不写 Res
 });
 
 test('Task Review 与 Task Retrospective authority 独立且都不成为 Finish 依赖', () => {
-  const manifest = YAML.parse(read('package/manifest.yml'));
+  const manifest = YAML.parse(read('resources/manifest.yml'));
   const review = manifest.builtins.skills.find((item) => item.id === 'task-review');
   const retrospective = manifest.builtins.skills.find((item) => item.id === 'task-retrospective');
   const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
@@ -53,8 +53,8 @@ test('Task Review 与 Task Retrospective authority 独立且都不成为 Finish 
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
-  assert.match(read('package/targets/workspace/skills/buildr/task-review/SKILL.md'), /Task Retrospective/);
-  assert.match(read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md'), /buildr\.task-retrospective\/v2/);
+  assert.match(read('resources/workspace/skills/buildr/task-review/SKILL.md'), /Task Retrospective/);
+  assert.match(read('resources/workspace/skills/buildr/task-retrospective/SKILL.md'), /buildr\.task-retrospective\/v2/);
 });
 
 test('Task Review Application 是唯一 repository writer caller', () => {

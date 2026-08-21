@@ -6,13 +6,13 @@
 ## Requirements
 
 ### Requirement: Product 顶层目录必须按生命周期分离
-Buildr Product MUST 使用 `bin/`、`src/`、`test/`、`scripts/` 和 `package/` 分别承载可执行入口、产品源码、测试验证、仓库脚本和交付源资产，并 MUST NOT 使用 `tools/` 承载这些职责。
+Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、正式 Web 构建产物、测试验证、checkout-only 工具和文档。`package/` MAY 仅保留具备明确后续 owner、理由和退出条件的 deferred 子树。
 
 #### Scenario: 检查完成迁移的 Product checkout
-- **WHEN** 架构 verifier 扫描 Product 顶层和 tracked files
-- **THEN** `bin/`、`src/`、`test/`、`scripts/` 和 `package/` MUST 各自只包含其声明生命周期内的内容
-- **AND** `tools/` MUST 不存在
-- **AND** tracked source、test、package metadata、docs 和 active OpenSpec artifacts MUST NOT 引用旧 `tools/` 内部路径
+- **WHEN** 架构 verifier 扫描 Product Service 顶层和 tracked files
+- **THEN** `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` MUST 各自只包含其声明生命周期内的内容
+- **AND** `package/` MUST 只包含明确 deferred allowlist 内的文件
+- **AND** tracked source、test、package metadata、docs 和 active OpenSpec artifacts MUST NOT 引用已迁移的旧路径
 
 ### Requirement: Product 源码必须按职责和依赖方向分层
 Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，并在模块内部使用 `domain/`、`application/`、`persistence/` 和 `interfaces/` 表达技术职责；跨模块平台能力与尚未迁移的能力 MAY 在渐进迁移期间继续位于明确的全局技术层。Buildr MUST 保持接口调用应用用例、应用组合领域与持久化能力、纯领域模型不依赖 adapters 的显式边界，并 MUST NOT 为目录对称创建空层、重复实现或旧路径兼容 facade。
@@ -49,21 +49,12 @@ Buildr Product MUST 将 filesystem、process、network、runtime、CLI output、
 - **AND** 架构 verifier MUST 在发现顶层或 `src/shared/` 时失败
 
 ### Requirement: 仓库脚本和测试不得成为产品运行时依赖
-Buildr `scripts/` 与仓库 verification MUST 只能作为维护、测试、分发或发布入口调用产品源码，`bin/` 和 `src/` MUST NOT 导入 `scripts/`、`test/` 或 checkout-only dependencies。
+Buildr `tools/` 与 `test/verification/` MUST 只能作为开发、测试、分发或发布入口调用产品源码，`bin/` 和 `src/` MUST NOT 导入 `tools/`、`test/` 或 checkout-only dependencies。
 
 #### Scenario: 从 npm tarball 执行产品命令
 - **WHEN** 用户在不含 development checkout 的临时 prefix 安装 tarball 并运行代表性 `buildr` 命令
-- **THEN** 命令 MUST 只使用 tarball 中的 `bin/`、`src/`、发布文档和 `package/` assets
-- **AND** 命令 MUST NOT 读取 `test/`、`scripts/`、OpenSpec change 或仓库根外部文件
-
-### Requirement: package 目录必须继续表示交付源资产
-Buildr Product MUST 保留顶层 `package/` 作为 init、sync、runtime 和 bootstrap 所需交付源资产的事实目录，并 MUST NOT 将构建脚本、npm runtime source 或测试 fixtures 混入该目录。
-
-#### Scenario: 维护者检查 package 边界
-- **WHEN** package verifier 检查 `package/manifest.yml` 和 targets
-- **THEN** `package/` MUST 只包含交付映射、workspace/runtime/bootstrap 源资产及其维护说明
-- **AND** 构建和发布脚本 MUST 位于 `scripts/`
-- **AND** 测试样本 MUST 位于 `test/fixtures/`
+- **THEN** 命令 MUST 只使用 tarball 中的 `bin/`、`src/`、`resources/`、`web-dist/`、发布文档和明确 deferred 的 runtime assets
+- **AND** 命令 MUST NOT 读取 `test/`、`tools/`、OpenSpec change 或仓库根外部文件
 
 ### Requirement: Project 产品切片必须遵守新源码分层
 Buildr MUST separate Project Domain, Application, filesystem/Git Infrastructure and CLI/HTTP/Web Interfaces.

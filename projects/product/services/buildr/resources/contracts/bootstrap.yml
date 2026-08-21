@@ -1,4 +1,4 @@
-bootstrapGuidePath: package/bootstrap/guide.md
+bootstrapGuidePath: docs/bootstrap-guide.md
 bootstrapGuideMaxLines: 80
 bootstrapGuideRequiredText:
   - Buildr Skill

@@ -39,24 +39,24 @@ function fixture(t) {
   const root = path.join(base, 'workspace');
   const remote = path.join(base, 'remote.git');
   fs.mkdirSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   const projectBridge = path.join(root, 'projects', 'product', 'buildr');
-  const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
+  const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
   const cliEntry = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
   const sourceServiceRoot = path.resolve(import.meta.dirname, '../..');
   const defaultBin = path.join(base, 'default-bin');
   fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
   fs.writeFileSync(projectBridge, `#!/bin/sh
 exec '${launcher}' "$@"
 `, { mode: 0o755 });
-  fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'run-development-cli'), launcher);
+  fs.copyFileSync(path.join(sourceServiceRoot, 'tools', 'development', 'run-development-cli'), launcher);
   fs.chmodSync(launcher, 0o755);
   fs.writeFileSync(cliEntry, `#!/usr/bin/env node
 const args = process.argv.slice(2);
@@ -315,7 +315,7 @@ function multiRepositoryFinishInput(root, baseRef, { workspaceDisposition = 'app
     selector: 'service:product/example',
     identity: 'sha256-service-carrier',
     root: serviceRoot,
-    activationPaths: ['projects/product/services/buildr/package/manifest.yml'],
+    activationPaths: ['projects/product/services/buildr/resources/manifest.yml'],
   };
   const workspaceRepository = {
     selector: 'workspace',
@@ -369,7 +369,7 @@ function executor(root, options = {}) {
     }
     const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
     const projectBridge = path.join(canonicalRoot, 'projects', 'product', 'buildr');
-    const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
+    const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
     const continuityHelper = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
     const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
@@ -577,7 +577,7 @@ function commitRemoteTask(remote, taskId, { buildrOwned = true } = {}) {
 test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root),
@@ -631,7 +631,7 @@ test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', 
 
 test('commit后push失败保留successor，重跑从同一commit恢复', (t) => {
   const { root, baseRef, environment } = fixture(t);
-  const input = finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   const first = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root, { failPush: true }), environment });
   assert.equal(first.status, 'blocked');
   assert.equal(phase(first, 'commit').status, 'passed');
@@ -647,7 +647,7 @@ test('commit后push失败保留successor，重跑从同一commit恢复', (t) => 
 
 test('remote已包含合法successor时不重复commit或push', (t) => {
   const { root, baseRef, environment } = fixture(t);
-  const input = finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   const first = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(first.status, 'passed');
   const successor = git(root, 'rev-parse', 'HEAD');
@@ -714,7 +714,7 @@ test('descendant sync successor以当前activation base为parent并可被下一R
   const { root, baseRef, environment } = fixture(t);
   const delivered = commitBuildrTask(root, 'later-finish');
   const first = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root),
@@ -787,7 +787,7 @@ test('普通descendant尚未push时拒绝选择activation base', (t) => {
 test('同target activation lease被其他run持有时在任何激活副作用前停止', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root, { targetLeaseHeld: true }),
@@ -866,7 +866,7 @@ test('self-bootstrap push后remote readback有界重试且不重复push', async 
     await t.test(scenario.name, (t) => {
       const { root, baseRef, environment } = fixture(t);
       const result = runSelfBootstrapCloseout({
-        finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+        finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
         workspaceRoot: root,
         nodeExecutable: process.execPath,
         execute: executor(root, { failRemoteReadbackAttempts: scenario.failures }),
@@ -922,7 +922,7 @@ test('development entry验证失败保留前序事实，Doctor blocked使用同�
 test('自举恢复闭环以显式Project bridge完成sync、Launcher、identity与same-run resume', (t) => {
   const { root, baseRef, environment, defaultBuildr, projectBridge } = fixture(t);
   const input = doctorBlockedResult(root, baseRef, [
-    'projects/product/services/buildr/package/manifest.yml',
+    'projects/product/services/buildr/resources/manifest.yml',
     'projects/product/services/buildr/src/example.mjs',
     'projects/product/services/buildr/package/launchers/manage.mjs',
   ]);
@@ -1251,10 +1251,10 @@ test('Doctor blocked preflight只排除同一run自有carrier', (t) => {
 
 test('latest target在activation前触发同一Finish run有界target-race恢复', (t) => {
   const { root, remote, baseRef, environment } = fixture(t);
-  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   createCarrier(root);
   const latestRef = commitRemoteTask(remote, 'concurrent-finish');
-  const converged = finishResult(root, latestRef, ['projects/product/services/buildr/package/manifest.yml'], {
+  const converged = finishResult(root, latestRef, ['projects/product/services/buildr/resources/manifest.yml'], {
     runId: input.runId,
   });
   const result = runSelfBootstrapCloseout({
@@ -1277,7 +1277,7 @@ test('latest target在activation前触发同一Finish run有界target-race恢复
 
 test('latest target需要Delivery Adaptation时在sync安装Doctor前交还完整适配提示', (t) => {
   const { root, remote, baseRef, environment } = fixture(t);
-  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   createCarrier(root);
   commitRemoteTask(remote, 'adaptation-baseline');
   const expectedCommitMessage = '交付任务\n\nBuildr-Task: closeout-task';
@@ -1488,7 +1488,7 @@ test('proven foreign carrier只隔离未跟踪根且不掩盖staged差异', (t) 
 test('plan identity由run、frozen paths和去重动作确定', () => {
   const root = '/tmp/buildr-plan';
   const result = finishResult(root, 'a'.repeat(40), [
-    'projects/product/services/buildr/package/manifest.yml',
+    'projects/product/services/buildr/resources/manifest.yml',
     'projects/product/services/buildr/package.json',
   ]);
   const first = createSelfBootstrapCloseoutPlan(result);
@@ -1528,7 +1528,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   });
 
   const installerWrapperPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'b'.repeat(40), [
-    'projects/product/services/buildr/scripts/install-buildr-development',
+    'projects/product/services/buildr/tools/development/install-buildr-development',
   ]));
   assert.deepEqual(installerWrapperPlan.actions, {
     'sync-retained-workspace': [],
@@ -1561,7 +1561,7 @@ test('零差异 Finish Result优先按activation paths规划自举并兼容chang
       root: path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', 'closeout-run'),
       changedPaths: [],
       activationPaths: [
-        'projects/product/services/buildr/package/manifest.yml',
+        'projects/product/services/buildr/resources/manifest.yml',
         'projects/product/services/buildr/src/example.mjs',
       ],
       zeroDelta: true,
@@ -1634,7 +1634,7 @@ test('多仓库nested carrier只使用Workspace paths且验证全部carrier', (t
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
   assert.deepEqual(result.plan.frozenPaths, ['projects/product/services/buildr/src/workspace.mjs']);
   assert.deepEqual(result.plan.actions['sync-retained-workspace'], []);
-  assert.equal(result.plan.actions['verify-development-entry'].includes('projects/product/services/buildr/package/manifest.yml'), false);
+  assert.equal(result.plan.actions['verify-development-entry'].includes('projects/product/services/buildr/resources/manifest.yml'), false);
 });
 
 test('Workspace无贡献时Service carrier不触发自举且环境留给Finish cleanup', (t) => {

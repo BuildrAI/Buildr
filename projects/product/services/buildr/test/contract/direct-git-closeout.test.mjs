@@ -8,10 +8,10 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
 const readProduct = (relative) => fs.readFileSync(path.join(PRODUCT_ROOT, relative), 'utf8');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 const runtimeBuildr = read('package/targets/runtime/skills/buildr/SKILL.md');
-const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const gitSkill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
+const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
+const gitSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const directSpec = readProduct('openspec/specs/direct-git-closeout/spec.md');
 const workflowDelta = readProduct('openspec/specs/agent-task-workflows/spec.md');
 

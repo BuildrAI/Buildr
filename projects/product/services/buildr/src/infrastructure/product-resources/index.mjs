@@ -85,13 +85,13 @@ export function validateApplicationPayloadManifest(value) {
     'runtime/buildr.cjs',
     'resources/runtime/read-worker.cjs',
     'resources/product/package.json',
-    'resources/product/package/manifest.yml',
+    'resources/product/resources/manifest.yml',
     'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-    'resources/product/src/interfaces/local-app/web-dist/index.html',
+    'resources/product/web-dist/index.html',
   ]) if (!filePaths.has(required)) throw new Error(`application payload required file is missing: ${required}`);
   for (const dependency of value.productionDependencies) if (!filePaths.has(dependency.licensePath)) throw new Error(`application payload dependency license is missing: ${dependency.name}`);
   const forbidden = [...filePaths].filter((candidate) => /(^|\/)launchers?(\/|$)|\.(?:app|pkg|msi|vbs|map)$/iu.test(candidate));
-  const forbiddenRuntime = forbidden.filter((candidate) => !/^resources\/product\/package\/launchers\/assets\/Buildr\.(?:icns|ico)$/u.test(candidate));
+  const forbiddenRuntime = forbidden.filter((candidate) => !/^resources\/product\/resources\/installation\/launcher\/Buildr\.(?:icns|ico)$/u.test(candidate));
   if (forbiddenRuntime.length) throw new Error(`application payload contains channel/development files: ${forbiddenRuntime.join(', ')}`);
   if (typeof value.applicationPayloadDigest !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value.applicationPayloadDigest)) throw new Error('applicationPayloadDigest is invalid.');
   if (canonicalManifestIdentity(value) !== value.applicationPayloadDigest) throw new Error('applicationPayloadDigest does not match the canonical manifest identity.');

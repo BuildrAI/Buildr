@@ -6,7 +6,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PRODUCT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const ASSET_ROOT = path.join(PRODUCT_ROOT, 'package', 'launchers', 'assets');
+const ASSET_ROOT = path.join(PRODUCT_ROOT, 'resources', 'installation', 'launcher');
 export const DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT = 4458;
 function option(args, name, fallback = null) {
   const index = args.indexOf(name);

@@ -27,7 +27,7 @@ function isBrowserOwnedPath(value) {
   const normalized = normalize(value);
   const relative = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
-    || relative.startsWith('src/interfaces/local-app/web-dist/')
+    || relative.startsWith('web-dist/')
     || relative.startsWith('src/interfaces/local-app/runtime/')
     || relative.startsWith('test/browser-smoke/')
     || relative === 'test/verification/browser-selector-dispatcher.mjs'
@@ -95,7 +95,7 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Buildr Web package or build configuration changed; run the complete selector set.' });
       continue;
     }
-    if (originalValue.startsWith('services/buildr-web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
+    if (originalValue.startsWith('services/buildr-web/src/') || value.startsWith('web-dist/')) {
       if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');

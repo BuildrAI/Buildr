@@ -5,8 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
-import { createReleaseArtifact, readReleaseArtifact } from '../../scripts/release/release-artifact.mjs';
+import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
+import { createReleaseArtifact, readReleaseArtifact } from '../../tools/release/release-artifact.mjs';
 import { inspectCandidatePaths } from '../../test/verification/release/open-source-candidate.mjs';
 import {
   CANDIDATE_PACK_METADATA_ENV,

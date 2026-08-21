@@ -11,9 +11,9 @@ import {
   inspectPackageVersionConsistency,
   inspectTarballFiles,
 } from '../../test/verification/release/open-source-candidate.mjs';
-import { resolveReleaseContract } from '../../scripts/release/release-contract.mjs';
-import { extractReleaseNotes } from '../../scripts/release/release-notes.mjs';
-import { ensureGitHubRelease } from '../../scripts/release/github-release-ensure.mjs';
+import { resolveReleaseContract } from '../../tools/release/release-contract.mjs';
+import { extractReleaseNotes } from '../../tools/release/release-notes.mjs';
+import { ensureGitHubRelease } from '../../tools/release/github-release-ensure.mjs';
 import {
   assertRegistryArtifact,
   assertRegistryTagTransition,
@@ -21,7 +21,7 @@ import {
   registryDistTagsState,
   registryVersionState,
   waitForRegistryRelease,
-} from '../../scripts/release/registry-version-state.mjs';
+} from '../../tools/release/registry-version-state.mjs';
 import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -65,8 +65,8 @@ test('open-source metadata and tarball contracts enforce public identity and inv
     'application-payload.json',
     'installation-origin.json',
     'runtime/buildr.cjs',
-    'payload/product/package/manifest.yml',
-    'payload/product/src/interfaces/local-app/web-dist/index.html',
+    'payload/product/resources/manifest.yml',
+    'payload/product/web-dist/index.html',
   ].map((path) => ({ path }));
   assert.deepEqual(inspectTarballFiles(files), []);
   assert.equal(inspectTarballFiles([...files, { path: 'openspec/spec.md' }]).at(-1).rule, 'tarball.forbidden');
@@ -479,7 +479,7 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
-  assert.equal(workflow.includes('./scripts/verify-buildr-product'), false);
+  assert.equal(workflow.includes('./test/verification/verify-buildr-product'), false);
   assert.equal(workflow.includes('gh release create'), false);
   for (const retired of [
     'environment: platform-production', 'node-distribution.mjs', 'sea-build.mjs',
@@ -489,7 +489,7 @@ test('publish workflow uses one dispatch and one protected release transaction',
   ]) assert.equal(workflow.includes(retired), false, retired);
   assert.equal((workflow.match(/npm publish/g) || []).length, 0);
   assert.equal((workflow.match(/trusted-publish\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/node scripts\/release\/release-artifact\.mjs/g) || []).length, 1);
+  assert.equal((workflow.match(/node tools\/release\/release-artifact\.mjs/g) || []).length, 1);
   assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 3);
   assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 1);
   assert.equal(workflow.includes('npm-candidate-${{ github.ref_name }}-${{ github.run_attempt }}'), false);
@@ -569,7 +569,7 @@ test('Buildr release Skill fixes release identity, dependency preparation, and t
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-release/SKILL.md'), 'utf8');
   const selfBootstrapSkill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
   const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'scripts/release/bridge-main-to-dev.mjs'), 'utf8');
+  const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/bridge-main-to-dev.mjs'), 'utf8');
   const preparation = skill.slice(skill.indexOf('## 准备发布'), skill.indexOf('## 发布版本'));
   const release = skill.slice(skill.indexOf('## 发布版本'), skill.indexOf('## 中断与失败恢复'));
   const identity = skill.indexOf('tasks/release-<version>');

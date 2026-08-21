@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
-import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../scripts/release/release-artifact.mjs';
+import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.mjs';
 import {
   CANDIDATE_CI_HOST_NODE_TUPLES,
   CANDIDATE_CI_PLATFORM_REPEATS,

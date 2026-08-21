@@ -140,7 +140,7 @@ function writeMacLauncherCandidate(stage, binding) {
   fs.mkdirSync(resources, { recursive: true });
   fs.writeFileSync(executable, macLauncherScript(binding), { encoding: 'utf8', mode: 0o755 });
   fs.writeFileSync(path.join(contents, 'Info.plist'), macInfoPlist(binding), 'utf8');
-  fs.copyFileSync(resolveProductResource('product/package/launchers/assets/Buildr.icns'), path.join(resources, 'Buildr.icns'));
+  fs.copyFileSync(resolveProductResource('product/resources/installation/launcher/Buildr.icns'), path.join(resources, 'Buildr.icns'));
   atomicWriteJson(path.join(resources, 'launcher-binding.json'), binding, { mode: 0o600 });
   const signed = spawnSync('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', stage], { encoding: 'utf8' });
   if (process.platform === 'darwin' && signed.status !== 0) throw new Error(`Cannot ad-hoc sign Buildr Web Launcher: ${(signed.stderr || '').trim()}`);
@@ -177,7 +177,7 @@ function writeWindowsLauncherCandidate(target, binding, options = {}) {
     for (const { file, backup, moved } of originals) if (moved && fs.existsSync(backup)) fs.renameSync(backup, file);
   };
   try {
-    fs.copyFileSync(resolveProductResource('product/package/launchers/assets/Buildr.ico'), stagedIcon);
+    fs.copyFileSync(resolveProductResource('product/resources/installation/launcher/Buildr.ico'), stagedIcon);
     atomicWriteJson(stagedBinding, binding, { mode: 0o600 });
     for (const original of originals) if (original.present) {
       fs.renameSync(original.file, original.backup);

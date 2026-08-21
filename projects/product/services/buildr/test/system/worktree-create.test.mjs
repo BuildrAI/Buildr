@@ -163,7 +163,7 @@ test('Git provider cleanup 只容忍已知 Buildr control metadata，普通嵌�
 
   const sourceTask = 'provider-source-dirt-blocked';
   const source = buildr(['worktree', 'create', sourceTask, '--branch', `codex/${sourceTask}`, '--start-point', 'main', '--target', root, '--json']);
-  const dirtySource = path.join(source.repositories[0].checkoutPath, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  const dirtySource = path.join(source.repositories[0].checkoutPath, 'resources', 'workspace', '.buildr', 'workspace.yml');
   fs.mkdirSync(path.dirname(dirtySource), { recursive: true });
   fs.writeFileSync(dirtySource, 'uncommitted source\n');
   const blocked = buildr(['worktree', 'cleanup', sourceTask, '--integrated-ref', 'workspace=main', '--target', root, '--json'], 1);

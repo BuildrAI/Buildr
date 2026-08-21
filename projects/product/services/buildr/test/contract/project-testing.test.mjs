@@ -8,14 +8,14 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const projectTestingSkill = read('package/targets/workspace/skills/buildr/project-testing/SKILL.md');
-const testingModel = read('package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
-const taskVerificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const taskVerificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
-const taskVerificationTemplate = YAML.parse(read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
-const taskTriage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
+const projectTestingSkill = read('resources/workspace/skills/buildr/project-testing/SKILL.md');
+const testingModel = read('resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
+const taskVerificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
+const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const taskVerificationTemplate = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
+const taskTriage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 
 test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {
   for (const required of [

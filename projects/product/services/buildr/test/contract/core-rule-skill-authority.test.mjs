@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const core = fs.readFileSync('package/targets/workspace/rules/buildr/core.md', 'utf8');
+const core = fs.readFileSync('resources/workspace/rules/buildr/core.md', 'utf8');
 const staticValidation = fs.readFileSync('src/application/package-maintenance/static-validation.mjs', 'utf8');
 
 test('Core 让 Rule 只声明 scope 边界和专业 owner', () => {

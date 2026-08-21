@@ -14,7 +14,7 @@ import {
 } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
 import { mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
-const PACKAGE_SKILLS_ROOT = 'package/targets/workspace/skills';
+const PACKAGE_SKILLS_ROOT = 'resources/workspace/skills';
 const harness = new RuntimeVerificationHarness();
 
 function sourceInventory(sourceRoot) {

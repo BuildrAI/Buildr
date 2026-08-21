@@ -185,17 +185,17 @@ export function assertNpmTarballInventory(inventory) {
     'runtime/buildr.cjs',
     'payload/runtime/read-worker.cjs',
     'payload/product/package.json',
-    'payload/product/package/manifest.yml',
-    'payload/product/package/launchers/assets/Buildr.icns',
-    'payload/product/package/launchers/assets/Buildr.ico',
+    'payload/product/resources/manifest.yml',
+    'payload/product/resources/installation/launcher/Buildr.icns',
+    'payload/product/resources/installation/launcher/Buildr.ico',
     'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-    'payload/product/src/interfaces/local-app/web-dist/index.html',
+    'payload/product/web-dist/index.html',
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);
   const forbidden = paths.filter((value) => (
     /(^|\/)(?:node|node\.exe|npm|npm\.cmd|npx|npx\.cmd)$/iu.test(value)
-    || (/^payload\/product\/package\/launchers\//u.test(value) && !/^payload\/product\/package\/launchers\/assets\/Buildr\.(?:icns|ico)$/u.test(value))
+    || /^payload\/product\/package\/launchers\//u.test(value)
     || /\.(?:app|pkg|msi|vbs|map)$/iu.test(value)
     || /(^|\/)(?:test|tests|fixtures?)(\/|$)/iu.test(value)
     || /(^|\/)buildr-web(\/|$)/iu.test(value)

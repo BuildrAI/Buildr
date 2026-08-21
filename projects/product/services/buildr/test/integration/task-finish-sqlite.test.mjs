@@ -151,7 +151,7 @@ test('Delivery Adaptation Result临时返回完整冻结message与可移植准�
     adaptationGuidance: {
       preparationHints: {
         schemaVersion: 'buildr.task-finish-preparation-hints/v1',
-        steps: [{ id: 'prepare', cwd: 'projects/product/services/buildr', executable: 'scripts/run-development-npm', args: ['ci'], outputs: [] }],
+        steps: [{ id: 'prepare', cwd: 'projects/product/services/buildr', executable: 'tools/development/run-development-npm', args: ['ci'], outputs: [] }],
         unavailable: [],
       },
     },

@@ -9,7 +9,7 @@ export function createPackageOutput(deps) {
     existsFile,
     fs,
     optionValue,
-    packageRoot,
+    resourcesRoot,
     parseManifestFileEntry,
     path,
     productRoot,
@@ -73,8 +73,8 @@ export function createPackageOutput(deps) {
   function buildPackageOutput(outDir, root, manifest) {
     ensureDirectory(outDir);
 
-    const manifestSource = path.join(packageRoot(), 'manifest.yml');
-    const manifestTarget = path.join(outDir, 'package/manifest.yml');
+    const manifestSource = path.join(resourcesRoot(), 'manifest.yml');
+    const manifestTarget = path.join(outDir, 'resources/manifest.yml');
     ensureDirectory(path.dirname(manifestTarget));
     fs.copyFileSync(manifestSource, manifestTarget);
 

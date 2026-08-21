@@ -1,11 +1,11 @@
 const CONSUMERS = Object.freeze([
-  Object.freeze({ path: 'package/targets/workspace/skills/buildr/task-development/SKILL.md', routes: Object.freeze(['task-development', 'task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/skills/buildr/task-retrospective/SKILL.md', routes: Object.freeze(['task-retrospective']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/skills/buildr/task-review/SKILL.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/skills/buildr/task-development/SKILL.md', routes: Object.freeze(['task-development', 'task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/skills/buildr/task-retrospective/SKILL.md', routes: Object.freeze(['task-retrospective']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/skills/buildr/task-review/SKILL.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
+  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
 ]);
 
 export function createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes }) {

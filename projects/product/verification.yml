@@ -13,7 +13,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "test"]
+      argv: ["tools/development/run-development-npm", "test"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -36,7 +36,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:changed", "--", "--base", "origin/dev"]
+      argv: ["tools/development/run-development-npm", "run", "test:changed", "--", "--base", "origin/dev"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -59,7 +59,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:candidate"]
+      argv: ["tools/development/run-development-npm", "run", "test:candidate"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
@@ -84,10 +84,10 @@ capabilities:
       services: [buildr, buildr-web]
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:browser:changed"]
+      argv: ["tools/development/run-development-npm", "run", "test:browser:changed"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr-web/**", "services/buildr/src/interfaces/local-app/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
+      paths: ["services/buildr-web/**", "services/buildr/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
       conditions:
         - Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化
         - 未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths
@@ -116,10 +116,10 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
+      argv: ["tools/development/run-development-node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
       cwd: services/buildr
     applicability:
-      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/package/targets/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/resources/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
       conditions:
         - Change lifecycle、Change path resolution 或 OpenSpec sync/archive workflow 发生变化
     proves:
@@ -139,7 +139,7 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:openspec:convergence"]
+      argv: ["tools/development/run-development-npm", "run", "test:openspec:convergence"]
       cwd: services/buildr
     applicability:
       paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/application/openspec/**", "services/buildr/src/application/domains/openspec.mjs", "services/buildr/src/interfaces/cli/**", "services/buildr/src/application/task-finish/**", "services/buildr/test/verification/openspec/**"]
@@ -162,10 +162,10 @@ capabilities:
       services: [buildr]
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:focus", "--", "group:release"]
+      argv: ["tools/development/run-development-npm", "run", "test:focus", "--", "group:release"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr/scripts/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
+      paths: ["services/buildr/tools/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
       conditions:
         - Application Payload、npm candidate、Host Node、Launcher binding、Registry readback 或发布 workflow 发生变化
     proves:

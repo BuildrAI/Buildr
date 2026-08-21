@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPT_ROOT=%~dp0"
-for %%I in ("%SCRIPT_ROOT%..\..\..") do set "PRODUCT_ROOT=%%~fI"
+for %%I in ("%SCRIPT_ROOT%..\..\..\..") do set "PRODUCT_ROOT=%%~fI"
 set "REQUIRED_VERSION="
 set /p REQUIRED_VERSION=<"%PRODUCT_ROOT%\.node-version"
 if not defined REQUIRED_VERSION (

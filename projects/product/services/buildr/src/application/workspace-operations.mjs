@@ -57,7 +57,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
   const restoreMutationSnapshot = (...args) => runtime.restoreMutationSnapshot(...args);
   const removeMutationRestoreTarget = (...args) => runtime.removeMutationRestoreTarget(...args);
   const withWorkspaceMutation = (...args) => runtime.withWorkspaceMutation(...args);
-  const packageRoot = (...args) => runtime.packageRoot(...args);
+  const productRoot = (...args) => runtime.productRoot(...args);
   const writeMappedFileIfMissing = (...args) => runtime.writeMappedFileIfMissing(...args);
   const appendGitignoreEntries = (...args) => runtime.appendGitignoreEntries(...args);
   const hasFlag = (...args) => runtime.hasFlag(...args);
@@ -139,7 +139,7 @@ export function registerApplicationWorkspaceOperations(runtime) {
   }
 
   function bootstrapGuide() {
-    const guidePath = path.join(packageRoot(), 'bootstrap', 'guide.md');
+    const guidePath = path.join(productRoot(), 'docs', 'bootstrap-guide.md');
     if (!existsFile(guidePath)) {
       throw new Error(`Bootstrap guide not found: ${guidePath}`);
     }

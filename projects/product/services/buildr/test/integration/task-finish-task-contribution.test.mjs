@@ -34,7 +34,7 @@ function repository(t) {
   git(root, ['config', 'user.email', 'buildr@example.com']);
   fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline\n');
-  const packagedWorkspace = path.join(root, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  const packagedWorkspace = path.join(root, 'resources', 'workspace', '.buildr', 'workspace.yml');
   fs.mkdirSync(path.dirname(packagedWorkspace), { recursive: true });
   fs.writeFileSync(packagedWorkspace, 'legacy product source\n');
   git(root, ['add', '-A']);
@@ -92,7 +92,7 @@ test('无 tree delta 时 carrier adapter 不把 baseline HEAD 消息当作本次
 
 test('Task Contribution交付普通嵌套 .buildr 删除并排除OpenSpec Change receipt', (t) => {
   const { root, taskRoot } = repository(t);
-  const packagedWorkspace = 'package/targets/workspace/.buildr/workspace.yml';
+  const packagedWorkspace = 'resources/workspace/.buildr/workspace.yml';
   fs.rmSync(path.join(taskRoot, packagedWorkspace));
   const changeReceipt = path.join(taskRoot, 'openspec', 'changes', 'demo', '.buildr', 'convergence-receipt.json');
   fs.mkdirSync(path.dirname(changeReceipt), { recursive: true });

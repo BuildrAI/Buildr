@@ -65,14 +65,14 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/contract-input"
           node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
-          node scripts/release/release-transaction-evidence.mjs validate-context \
+          node tools/release/release-transaction-evidence.mjs validate-context \
             --input "${RUNNER_TEMP}/contract-input/release-context.json" \
             --output "${RUNNER_TEMP}/contract/release-transaction-context.json" \
             --repo ../../../..
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
-          node scripts/release/release-contract.mjs "v${{ inputs.version }}"
+          node tools/release/release-contract.mjs "v${{ inputs.version }}"
           --source-commit "${{ inputs.source_commit }}"
           --output "${RUNNER_TEMP}/contract/release-contract.json"
       - name: Confirm the frozen dispatch identity
@@ -87,7 +87,7 @@ jobs:
           ' "${RUNNER_TEMP}/contract/release-transaction-context.json" "${{ inputs.source_commit }}" "${{ inputs.candidate_base }}" "${{ inputs.candidate_tree }}"
       - name: Freeze release notes
         run: >-
-          node scripts/release/release-notes.mjs
+          node tools/release/release-notes.mjs
           "${{ steps.contract.outputs.version }}"
           ../../../../CHANGELOG.md
           > "${RUNNER_TEMP}/contract/release-notes.md"
@@ -136,10 +136,10 @@ jobs:
             echo "restored=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          node scripts/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
+          node tools/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
           node --input-type=module -e '
             import fs from "node:fs";
-            import { readReleaseArtifact } from "./scripts/release/release-artifact.mjs";
+            import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
             const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
             if (payload.sourceCommit !== contract.sourceCommit || payload.buildrVersion !== contract.version || payload.enginesNode !== contract.enginesNode) throw new Error("restored payload does not match release contract");
@@ -155,14 +155,14 @@ jobs:
         if: steps.state.outputs.restored != 'true'
         id: payload
         run: >-
-          node scripts/release/application-payload.mjs build
+          node tools/release/application-payload.mjs build
           --output "${RUNNER_TEMP}/candidate/application-payload"
           --source-commit "${{ inputs.source_commit }}"
       - name: Pack the npm tarball exactly once
         if: steps.state.outputs.restored != 'true'
         id: artifact
         run: >-
-          node scripts/release/release-artifact.mjs
+          node tools/release/release-artifact.mjs
           --payload "${{ steps.payload.outputs.payload_root }}"
           --output "${RUNNER_TEMP}/candidate/npm"
       - name: Verify npm inventory and immutable bytes
@@ -281,10 +281,10 @@ jobs:
           path: ${{ runner.temp }}/candidate
       - name: Revalidate frozen bytes before any public mutation
         run: |
-          node scripts/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
+          node tools/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
           node --input-type=module -e '
             import fs from "node:fs";
-            import { readReleaseArtifact } from "./scripts/release/release-artifact.mjs";
+            import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
             const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
             if (payload.sourceCommit !== "${{ inputs.source_commit }}") throw new Error("payload source does not match dispatch source");
@@ -292,13 +292,13 @@ jobs:
           ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
       - name: Prove current hosted publishing authority without retaining credentials
         run: >-
-          node scripts/release/release-authority-oidc-probe.mjs
+          node tools/release/release-authority-oidc-probe.mjs
           --source-commit "${{ inputs.source_commit }}"
           --workflow-sha256 "${{ inputs.workflow_sha256 }}"
           --output "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Recheck final source and authority convergence before tag mutation
         run: >-
-          node scripts/release/release-convergence.mjs
+          node tools/release/release-convergence.mjs
           --repo ../../../..
           --version "${{ inputs.version }}"
           --candidate-base "${{ inputs.candidate_base }}"
@@ -307,20 +307,20 @@ jobs:
           --authority-evidence "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Preflight immutable release tag
         run: >-
-          node scripts/release/release-tag-ensure.mjs preflight
+          node tools/release/release-tag-ensure.mjs preflight
           "v${{ inputs.version }}"
           "${{ inputs.source_commit }}"
           --repo ../../../..
       - name: Snapshot official Registry artifact and both dist-tags
         id: registry_before
         run: >-
-          node scripts/release/registry-version-state.mjs
+          node tools/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
           --snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
       - name: Create or reuse the immutable release tag
         run: >-
-          node scripts/release/release-tag-ensure.mjs ensure
+          node tools/release/release-tag-ensure.mjs ensure
           "v${{ inputs.version }}"
           "${{ inputs.source_commit }}"
           --repo ../../../..
@@ -328,20 +328,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          node scripts/release/github-release-ensure.mjs preflight
+          node tools/release/github-release-ensure.mjs preflight
           "v${{ inputs.version }}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
       - name: Publish the frozen npm tarball
         if: steps.registry_before.outputs.published != 'true'
         run: >-
-          node scripts/release/trusted-publish.mjs
+          node tools/release/trusted-publish.mjs
           "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
           --access public
           --tag "${{ needs.contract.outputs.npm_tag }}"
       - name: Confirm official Registry integrity and both dist-tags
         run: >-
-          node scripts/release/registry-version-state.mjs
+          node tools/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
           --tag "${{ needs.contract.outputs.npm_tag }}"
@@ -353,7 +353,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          node scripts/release/github-release-ensure.mjs ensure
+          node tools/release/github-release-ensure.mjs ensure
           "v${{ inputs.version }}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
@@ -364,7 +364,7 @@ jobs:
       - name: Finalize correlated release evidence
         if: always()
         run: >-
-          node scripts/release/release-transaction-evidence.mjs finalize
+          node tools/release/release-transaction-evidence.mjs finalize
           --context "${RUNNER_TEMP}/contract/release-transaction-context.json"
           --output "${RUNNER_TEMP}/contract/release-transaction-evidence.json"
           --outcome "${{ job.status }}"

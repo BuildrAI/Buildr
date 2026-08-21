@@ -17,13 +17,15 @@ import {
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const MAIN_ENTRY = path.join(serviceRoot, 'scripts/release/application-payload-entry.mjs');
+const MAIN_ENTRY = path.join(serviceRoot, 'tools/release/application-payload-entry.mjs');
 const WORKER_ENTRY = path.join(serviceRoot, 'src/interfaces/local-app/http/read-worker.mjs');
 const RESOURCE_SOURCES = Object.freeze([
-  ['package', 'product/package', { exclude: new Set(['launchers']) }],
-  ['package/launchers/assets', 'product/package/launchers/assets', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
+  ['resources', 'product/resources', { exclude: new Set(['installation']) }],
+  ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
+  ['package/targets/runtime', 'product/package/targets/runtime'],
+  ['docs', 'product/docs', { include: new Set(['bootstrap-guide.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
-  ['src/interfaces/local-app/web-dist', 'product/src/interfaces/local-app/web-dist'],
+  ['web-dist', 'product/web-dist'],
 ]);
 
 function sha256(bytes) {

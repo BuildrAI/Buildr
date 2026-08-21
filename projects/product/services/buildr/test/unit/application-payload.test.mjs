@@ -8,15 +8,15 @@ import {
   canonicalApplicationPayloadIdentity,
   validateApplicationPayloadManifest,
 } from '../../src/infrastructure/product-resources/index.mjs';
-import { createNpmInstallationOrigin } from '../../scripts/release/release-artifact.mjs';
+import { createNpmInstallationOrigin } from '../../tools/release/release-artifact.mjs';
 
 function manifest() {
   const requiredFiles = [
     'resources/licenses/yaml-LICENSE',
     'resources/product/package.json',
-    'resources/product/package/manifest.yml',
+    'resources/product/resources/manifest.yml',
     'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-    'resources/product/src/interfaces/local-app/web-dist/index.html',
+    'resources/product/web-dist/index.html',
     'resources/runtime/read-worker.cjs',
     'runtime/buildr.cjs',
   ];

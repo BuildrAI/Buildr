@@ -7,13 +7,13 @@ import test from 'node:test';
 
 // Candidate-only owner: release convergence across real Git histories.
 
-import { bridgeMainToDev } from '../../scripts/release/bridge-main-to-dev.mjs';
-import { checkReleaseConvergence } from '../../scripts/release/release-convergence.mjs';
+import { bridgeMainToDev } from '../../tools/release/bridge-main-to-dev.mjs';
+import { checkReleaseConvergence } from '../../tools/release/release-convergence.mjs';
 import {
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
-} from '../../scripts/release/release-authority.mjs';
+} from '../../tools/release/release-authority.mjs';
 
 function differentTree(tree) {
   return `${tree.slice(0, -1)}${tree.endsWith('0') ? '1' : '0'}`;

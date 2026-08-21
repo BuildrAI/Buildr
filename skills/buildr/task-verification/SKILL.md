@@ -69,6 +69,10 @@ buildr verification run --project <code> \
 
 `verification run` 只执行已选择的 command capability，并返回 `buildr.verification-execution/v1`；它不接受 `--declaration-root`。带 matching Task Environment 的正式 execution 会在启动 capability 前 open 一条 Task Execution Record，完成后先 seal 受控、脱敏、有限期正文，再精确清理 transient evidence；容量不足时不得启动 capability。Task 外 execution 仍只产生 transient evidence。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
 
+正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。`verification.preparation_blocked`只在`admission.recovery`存在时提供closed `planRequest`：把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
+
+该门禁只保护Formal Verification execution、Result与完成声明。provider/preflight暂不可用时，可以继续无关开发、只读调查和明确标记的有界非正式检查，但不得写Formal Result或据此声称完成；恢复后仍须通过Task Environment与admission。runner在首次副作用前重验全部binding，漂移时返回preparation drift并保持Execution Record未打开。
+
 正式 execution 启动时会返回并持久化 record/run identity。工具PTY或session丢失后，先按Task回查同一次执行，禁止直接整轮重跑：
 
 ```bash

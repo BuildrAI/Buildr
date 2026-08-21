@@ -49,7 +49,7 @@ export function registerDomainsComponents(runtime) {
   const parseYamlDocument = (...args) => runtime.parseYamlDocument(...args);
   const withWorkspaceMutation = (...args) => runtime.withWorkspaceMutation(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
-  const packageWorkspaceTargetRoot = (...args) => runtime.packageWorkspaceTargetRoot(...args);
+  const resourceWorkspaceRoot = (...args) => runtime.resourceWorkspaceRoot(...args);
   const hasFlag = (...args) => runtime.hasFlag(...args);
   const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
   const existsDirectory = (...args) => runtime.existsDirectory(...args);
@@ -436,7 +436,7 @@ export function registerDomainsComponents(runtime) {
   }
 
   function packageComponentSourcePath(member) {
-    return path.join(packageWorkspaceTargetRoot(), member);
+    return path.join(resourceWorkspaceRoot(), member);
   }
 
   function validatePackageComponentMembers(manifest, record) {

@@ -6,28 +6,28 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
-const workspaceTarget = path.join(serviceRoot, 'package/targets/workspace');
+const workspaceTarget = path.join(serviceRoot, 'resources/workspace');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 
 test('ui-prototype 作为无 capability contract 的 optional builtin Skill 投射', () => {
-  const manifest = YAML.parse(read('package/manifest.yml'));
+  const manifest = YAML.parse(read('resources/manifest.yml'));
   const packaged = manifest.builtins.skills.find((skill) => skill.id === 'ui-prototype');
   assert.ok(packaged);
   assert.equal(packaged.required, false);
-  assert.equal(packaged.path, 'package/targets/workspace/skills/buildr/ui-prototype');
+  assert.equal(packaged.path, 'resources/workspace/skills/buildr/ui-prototype');
   assert.equal(packaged.target, 'skills/buildr/ui-prototype');
   assert.deepEqual(packaged.provides, undefined);
   assert.deepEqual(packaged.requires, undefined);
   assert.equal(packaged.runtimes.length, 7);
   assert.equal(manifest.capabilityContracts.some((item) => item.id.includes('ui-prototype')), false);
   assert.equal(manifest.initialSkillBindings.some((item) => item.capability.includes('ui-prototype')), false);
-  assert.ok(manifest.workspaceFiles.includes('package/targets/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy'));
+  assert.ok(manifest.workspaceFiles.includes('resources/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy'));
   assert.equal(manifest.builtins.skills.some((skill) => skill.id === 'ui-preview'), false);
   assert.equal(manifest.workspaceFiles.some((item) => item.includes('/ui-preview/')), false);
 });
 
 test('ui-prototype Skill 保持明确确认、真实 UI、完整页面与浏览器验证边界', () => {
-  const skill = read('package/targets/workspace/skills/buildr/ui-prototype/SKILL.md');
+  const skill = read('resources/workspace/skills/buildr/ui-prototype/SKILL.md');
   assert.match(skill, /未明确确认时不得使用/);
   assert.match(skill, /当前对话中存在用户.*明确确认/s);
   assert.match(skill, /调查现有真实界面/);
@@ -45,12 +45,12 @@ test('ui-prototype Skill 保持明确确认、真实 UI、完整页面与浏览�
 });
 
 test('UI 影响任务路由 selected Skill 并默认按已有原型开发', () => {
-  const triage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
-  const development = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+  const triage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
+  const development = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   const fragments = [
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
-    'package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
+    'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
   ].map(read);
   for (const source of [triage, development, ...fragments]) {
     assert.match(source, /界面原型（UI Prototype）/);

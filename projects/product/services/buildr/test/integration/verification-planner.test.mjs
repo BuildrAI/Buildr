@@ -219,7 +219,7 @@ test('本地 changed/full plan 使用单一去重 admission DAG', () => {
 });
 
 test('candidate-aware preflight只选择登记的低成本直接契约', () => {
-  const skill = createVerificationPreflightPlan({ paths: ['package/targets/workspace/skills/buildr/task-development/SKILL.md'] });
+  const skill = createVerificationPreflightPlan({ paths: ['resources/workspace/skills/buildr/task-development/SKILL.md'] });
   assert.deepEqual(ids(skill), ['preflight-contract']);
   assert.equal(skill.steps[0].executor.file, 'test/contract/task-development.test.mjs');
   assert.deepEqual(ids(createVerificationPreflightPlan({ paths: ['docs/buildr-product.md'] })), []);
@@ -362,14 +362,14 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/system/task-finish-cli.test.mjs'] })), [
     'system-task-finish-cli',
   ]);
-  const skillPlan = ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/buildr/task-finish/SKILL.md'] }));
+  const skillPlan = ids(createVerificationPlan({ paths: ['resources/workspace/skills/buildr/task-finish/SKILL.md'] }));
   assert.deepEqual(skillPlan, [
-    'contract', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration',
+    'contract', 'cli-architecture', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration',
     'package-static', 'package-skills', 'runtime-skill-projection', 'docs-quality',
   ]);
   assert.equal(skillPlan.includes('runtime-adapter-parity'), false);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['package/targets/workspace/skills/contracts/buildr/task-finish/v1.md'] })), [
-    'contract', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['resources/workspace/skills/contracts/buildr/task-finish/v1.md'] })), [
+    'contract', 'cli-architecture', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
     'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
@@ -397,15 +397,15 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
     'docs/cli-architecture.md',
     'docs/cli-reference.md',
     'docs/skill-capability-contracts.md',
-    'package/targets/workspace/skills/buildr/task-finish/SKILL.md',
-    'package/targets/workspace/skills/contracts/buildr/task-finish/v1.md',
+    'resources/workspace/skills/buildr/task-finish/SKILL.md',
+    'resources/workspace/skills/contracts/buildr/task-finish/v1.md',
     'src/application/task-finish/task-finish-application.mjs',
     'test/integration/task-finish-delivery-remote.test.mjs',
     'test/system/task-finish-product-journey.test.mjs',
   ] });
   assert.deepEqual(ids(plan), [
     'unit', 'integration-task-finish', 'integration-task-finish-delivery', 'contract', 'system-task-finish',
-    'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'application-payload-release', 'open-source-candidate', 'openspec-candidate-audit',
+    'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'application-payload-release', 'open-source-candidate', 'openspec-candidate-audit',
     'capability-cli-integration', 'package-static', 'package-skills',
     'runtime-skill-projection', 'cli-compatibility', 'docs-quality',
   ]);

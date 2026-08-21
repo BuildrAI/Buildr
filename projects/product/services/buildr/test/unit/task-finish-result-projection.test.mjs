@@ -111,7 +111,7 @@ test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 
       expectedCommitMessage: 'fix(task-finish): resolve conflict\n\nprivate body\n\nBuildr-Task: finish-task',
       preparationHints: {
         schemaVersion: 'buildr.task-finish-preparation-hints/v1',
-        steps: [{ id: 'npm-ci', scope: 'service:product/buildr', recipe: 'buildr.npm-ci', cwd: 'projects/product/services/buildr', executable: 'projects/product/services/buildr/scripts/run-development-npm', args: ['ci'], timeoutMs: 300000, outputs: [{ path: 'projects/product/services/buildr/node_modules', kind: 'directory' }] }],
+        steps: [{ id: 'npm-ci', scope: 'service:product/buildr', recipe: 'buildr.npm-ci', cwd: 'projects/product/services/buildr', executable: 'projects/product/services/buildr/tools/development/run-development-npm', args: ['ci'], timeoutMs: 300000, outputs: [{ path: 'projects/product/services/buildr/node_modules', kind: 'directory' }] }],
         unavailable: [],
       },
     },

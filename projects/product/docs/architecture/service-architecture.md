@@ -615,36 +615,23 @@ tools/
 
 `src/` 不依赖 `tools/`。验证主体和验证入口统一位于 `test/verification/`，不增加 `tools/verification/`。
 
-## 当前目录迁移关系
+## 当前根工程职责
 
-当前 `package/` 不能整体机械改名，必须按职责拆分：
+Buildr Service 当前按生命周期使用以下目录：
 
 ```text
-package/targets/workspace/
-    → resources/workspace/
-
-package/targets/runtime/skills/buildr/
-    → 本轮保持现状；作为后续 Buildr Skill 产品重构线索
-
-package/bootstrap/
-    → 删除；有价值说明进入 docs，行为保证进入测试或 OpenSpec
-
-package/launchers/assets/
-    → resources/installation/launcher/
-
-package/launchers/build.mjs
-package/launchers/manage.mjs
-    → Development 逻辑进入 tools/development/
-    → 正式安装逻辑进入 src/system/installation/
-
-package/manifest.yml
-    → resources/manifest.yml
-
-package/README.md
-    → 根据用途进入根 README 或 docs/
+bin/          稳定可执行入口
+src/          产品运行源码
+resources/    文件型交付资源
+web-dist/     sibling buildr-web 的正式静态产物
+test/         测试与 verification
+tools/        checkout-only development/release 工具
+docs/         维护者与公开文档
 ```
 
-其他目录迁移：
+`package/` 仅 deferred 保留 Runtime Buildr Skill 与 Launcher 行为实现。前者由后续 Agent Assets Contribution 决定，后者由后续 System Contribution 拆分；不得扩大 allowlist，也不得成为新资源或 runtime 源码的 owner。
+
+模块迁移仍按下列目标继续：
 
 ```text
 bin/buildr.mjs
@@ -665,18 +652,6 @@ src/interfaces/local-app/http/server.mjs
 src/interfaces/local-app/runtime/
     → 实例、Preview 和维护编排迁入 src/web/application/
 
-src/interfaces/local-app/web-dist/
-    → web-dist/
-
-scripts/run-development-*
-scripts/install-buildr-development
-    → tools/development/
-
-scripts/release/
-    → tools/release/
-
-scripts/verify-buildr-product*
-    → test/verification/ 或 package.json 测试入口
 ```
 
 ## 渐进式迁移原则

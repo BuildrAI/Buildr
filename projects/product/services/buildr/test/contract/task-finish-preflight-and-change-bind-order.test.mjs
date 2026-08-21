@@ -5,9 +5,9 @@ import test from 'node:test';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
-const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
-const proposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
+const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
+const proposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
 
 test('Task Finish Skill 在选择交付路径前轻量确认身份与安全边界', () => {
   assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);

@@ -13,7 +13,7 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const webRoot = path.resolve(productRoot, '../buildr-web');
-const trackedWebDist = path.join(productRoot, 'src/interfaces/local-app/web-dist');
+const trackedWebDist = path.join(productRoot, 'web-dist');
 
 export function inspectLocalWebToolchain(root = webRoot) {
   const executable = (name) => {

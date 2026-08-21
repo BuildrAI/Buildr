@@ -40,7 +40,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const registry = read('src/bootstrap/cli/registry.mjs');
   const help = read('src/bootstrap/cli/help.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
-  const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+  const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   assert.doesNotMatch(registry, /task development/);
   assert.doesNotMatch(help, /buildr task development/);
   assert.match(server, /\/tasks\/\(\$\{TASK_ID\}\)\/development/);
@@ -74,7 +74,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const operationContracts = read('src/application/task-development/task-development-operation-contracts.mjs');
   assert.match(operationContracts, /additionalProperties:\s*false/);
   assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
-  const capabilityContract = read('package/targets/workspace/skills/contracts/buildr/task-development/v2.md');
+  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v2.md');
   assert.match(capabilityContract, /buildr\.task-development-driver-compact\/v1/);
   assert.match(capabilityContract, /response-only Formal Verification readiness/);
   assert.match(capabilityContract, /不构成通用Verification executor硬门禁/);
@@ -94,7 +94,7 @@ test('Task Development action使用有界operation scope且不直接缓存专业
 });
 
 test('v2 package声明精确退休v1 contract与binding', () => {
-  const manifest = read('package/manifest.yml');
+  const manifest = read('resources/manifest.yml');
   assert.match(manifest, /id: buildr\.task-development[\s\S]*version: 2[\s\S]*replaces:[\s\S]*id: buildr\.task-development[\s\S]*version: 1[\s\S]*target: skills\/contracts\/buildr\/task-development\/v1\.md[\s\S]*provider: task-development/);
 });
 
@@ -107,7 +107,7 @@ test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测�
 });
 
 test('Task Development 不接管 Project 文本格式约定', () => {
-  const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
+  const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   const observer = read('src/infrastructure/content/content-target-observer.mjs');
   assert.doesNotMatch(skill, /EOF不变量|末尾空白行|最后一个非空字符/);
   assert.match(skill, /检查通过后，向Development Application提交完整Change dispositions并调用`observe`/);
