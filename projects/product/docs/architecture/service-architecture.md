@@ -1,6 +1,6 @@
 # 服务分层与模块组织
 
-本文记录 Buildr Service 的工程目录、源码模块和技术分层共识。它描述渐进式演进的目标方向，不代表当前目录已经完成迁移，也不替代 OpenSpec 对产品行为和架构性变更的规范。
+本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。目标结构尚未全部完成；文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代 Parent 的 Contribution Handoff 与最终集成验收。
 
 本文是长期架构方向和迁移边界，不是单次实施 authority。每个进入实现的独立结构切片必须绑定 Task-scoped OpenSpec Change；Parent Plan 只负责协调总体结果、架构不变量、能力贡献、依赖和最终验收，不替代 Child Change、Development、Verification 或 Finish。
 
@@ -17,6 +17,23 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 - 持久化映射和数据存储边界清楚；
 - 不因目录分层增加无价值的接口、Facade 或转发层；
 - 按真实业务渐进重构，不进行一次性目录搬迁。
+
+## 当前迁移基线
+
+当前源码树已经完成以下结构切片：
+
+| 切片 | 已落地内容 | 仍保留的后续边界 |
+|------|------------|------------------|
+| Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`web-dist/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `package/` 只保留仍有明确 owner 和退出条件的兼容内容 |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 已成为显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP contribution 和 lifecycle 合约注册 | `legacy-runtime-module.mjs` 仍是有 owner 和退出条件的迁移 Facade |
+| 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 投射相关技术适配将在 Agent Assets 迁移时重新确认最终边界；Parent 中 Infrastructure Contribution 的交付绑定仍需单独对账 |
+| Task 参考与专业切片 | Task Record、Task Review、Task Retrospective 的 Domain、Application、Persistence、CLI/HTTP/Internal Adapter 和 `task/module.mjs` 注册已经迁移 | Environment、Development、Verification、Finish、Execution Record、Overview、Planning Identity 与 Parent Coordination 仍待迁移 |
+| Workspace Core | Workspace、Project、Service 的 Domain、Application、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Rule、Skill、Command、Component、Builtin 与 runtime projection 属于后续 Agent Assets；Change、OpenSpec、Publication 和通用 Project Verification 归属仍待决定 |
+| Web 实例生命周期 | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理已迁入 `src/web/` | HTTP Server、Router、Session、安全边界和 `web-dist` 静态托管仍暂存于 `src/interfaces/local-app/http/` |
+| System Installation | installation identity/origin/registry、update/status、npm lifecycle、Launcher 及其 CLI contribution 已迁入 `src/system/installation/` | `system/doctor` 尚未迁移 |
+
+以上迁移均保持公开 CLI、HTTP、JSON、SQLite schema、migration 顺序与 checksum、事务、锁、幂等、原子性、writer authority 和既有运行行为不变，并同步调整受影响的 Import、Bootstrap 组装、Application Payload、Verification owner 和测试。尚未完成的职责继续遵守本文后续目标边界，不能从目录存在或 Child completed 状态推断已经交付。
 
 ## Service 根目录
 
@@ -48,6 +65,8 @@ buildr/
 `node_modules/`、`.buildr/` 和临时构建产物属于本机依赖、控制状态或临时结果，不属于长期工程架构。
 
 `buildr-web` Service 是前端源码和正式构建过程的 authority；Buildr Service 中的 `web-dist/` 是受控生成产物，不手工编辑。构建、校验、复制、Application Payload 和 npm 打包必须保持从 sibling Service 到本 Service 的单向交接。
+
+上述根工程职责已经迁入当前目录。`package/` 不再承担通用产品源码或资源 authority，只保留仍有明确兼容 owner 的内容，并在对应后续切片满足退出条件后收敛。
 
 ### 保留稳定的根目录 `bin`
 
@@ -131,6 +150,8 @@ misc/
 
 具有稳定职责但不属于业务管理对象的 Buildr 自身能力，进入 `system/` 下的明确子模块；`system/` 不能作为无法归类内容的杂物间。
 
+当前开发源码允许 `.mjs` 与 `.ts` 渐进共存。新建或真实拆分的生产模块可以采用仅含可擦除类型语法的 `.ts`；不得为了目录迁移批量改写未触达 `.mjs`，也不得引入第二套 TypeScript 运行入口、路径别名或运行时转换器。
+
 ## `task` 模块
 
 `task/` 管理 Buildr 的任务及任务生命周期，包括 Task Record、Environment、Development、Review、Verification、Retrospective、Finish、Execution Record 和 Parent Coordination 等能力。
@@ -169,6 +190,8 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
+当前已经迁移 Task Record、Task Review 和 Task Retrospective 三个切片，并由 `task/module.mjs` 提供 Application、Persistence Read、CLI/HTTP contribution 和兼容出口。Task Record 现有复杂协作者暂时保留在 `domain/record/`、`application/record/` 和 `persistence/record/`；Review 与 Retrospective 在相应技术层保持扁平。其余 Task 生命周期职责仍位于旧技术分层，待后续切片迁入后再退出兼容入口。
+
 ## `workspace` 模块
 
 `workspace/` 管理 Buildr 的基本结构对象：
@@ -180,6 +203,8 @@ Workspace
 ```
 
 Workspace 是管理入口，Project 和 Service 是其中具有独立身份与边界的管理对象。
+
+Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application 与 HTTP contribution；为尚未迁移的消费者保留的 compatibility port 必须在 Agent Assets、Web、System 和最终遗留退出切片中逐步删除。
 
 Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力是否归入 `workspace/`，本轮不提前决定，统一进入文末的待决策清单。
 
@@ -289,7 +314,7 @@ task/application
 
 `web/application/` 和 `web/http/` 保持分开：Application 决定是否启动、复用哪个实例以及何时清理，HTTP 负责具体如何创建和运行 Server。这样实例生命周期不会与 Node.js HTTP 实现混在一起。
 
-Web 实例生命周期先独立迁入上述 `web/` 技术层。HTTP Router、Session、安全边界与 `web-dist` 静态托管在其后续独立切片完成前，仍可保留在现有 `interfaces/local-app/http` 宿主；该暂存边界不得反向取得实例 receipt、启动锁、scheduled maintenance 或 CLI command authority。
+Web 实例生命周期已经独立迁入上述 `web/` 技术层：默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理均由 `web/application/`、`web/infrastructure/`、`web/interfaces/cli/` 与 `web/module.mjs` 负责。HTTP Router、Session、安全边界与 `web-dist` 静态托管在后续独立切片完成前，仍保留在现有 `interfaces/local-app/http` 宿主；该暂存边界不得反向取得实例 receipt、启动锁、scheduled maintenance 或 CLI command authority。
 
 未来引入 Electron 时按真实形态演进：Electron 只是桌面 Launcher 时继续复用 `web/`；Electron 成为独立运行载体时再新增 `desktop/` 或相应 Electron Interface。当前不提前将 `web/` 抽象成含义模糊的 `app/` 或 `runtime/`。
 
@@ -326,6 +351,8 @@ buildr web
 ```
 
 没有安装 Launcher，用户仍然可以直接执行 `buildr web`。
+
+System Installation 已完成迁移。installation identity/origin/registry、CLI Update、Installation Status、Release Awareness、npm installation lifecycle、Launcher binding 与 Launcher 管理通过 `system/installation/module.mjs` 向 Bootstrap 提供窄能力和 CLI contribution；为 Doctor 与旧 runtime consumer 保留的 compatibility port 在 Doctor 和最终遗留退出切片完成后删除。
 
 ### `system/doctor`
 
@@ -367,6 +394,8 @@ Infrastructure 不理解 Task、Workspace、Agent Assets 或 Doctor 等业务语
 
 SQLite migrations 继续作为 Workspace 数据库的一套全局、只追加、有序 DDL schema 管理，统一放在 `infrastructure/sqlite/migrations/`。业务表的事实所有权仍属于相应模块；migration 文件集中排序不表示 Infrastructure 取得业务 writer authority。
 
+通用 Infrastructure 边界已经在当前源码树收敛：Workspace SQLite 连接和 migration ledger、全局有序 DDL migrations、filesystem、Git、process、network、platform 与产品调用适配均由 `src/infrastructure/` 提供；Task、Workspace 等业务 Repository 已继续迁回所属模块。该实现事实不替代 Parent 中尚待完成的 Infrastructure Contribution binding/Handoff 对账。
+
 例如：
 
 ```text
@@ -396,7 +425,7 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
 
 当前没有必要创建 `bootstrap/web.mjs`。只有未来出现真正独立的 Electron、Worker 或其他可执行进程时，再增加相应 Bootstrap 入口。
 
-当前 `application/compose-runtime.mjs` 承担的组装职责，后续逐步迁入 `bootstrap/`。
+原 `application/compose-runtime.mjs` 的组装职责已经迁入 `bootstrap/`。当前 `bootstrap/runtime.mjs`、`module-registry.mjs` 与模块公开入口共同完成显式装配；`legacy-runtime-module.mjs` 仅为尚未迁移的 Application 和 Interface consumer 提供兼容注册，不是新的长期 composition root。
 
 ## 模块公开入口与注册
 
@@ -551,19 +580,19 @@ bootstrap/cli/main.mjs
     ↓
 bootstrap/cli/registry.mjs
     ↓
-web/interfaces/cli/web-command.mjs
+web/interfaces/cli/web.mjs
     ↓
-web/application/start-web.mjs
+web/application/instance-lifecycle.mjs
     ↓
-web/http/server.mjs
+interfaces/local-app/http/server.mjs
 ```
 
 对应职责为：
 
 - `bootstrap/cli/registry.mjs` 统一发现并分发 Web command descriptor；
-- `web/interfaces/cli/web-command.mjs` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
+- `web/interfaces/cli/web.mjs` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
 - `web/application` 判断复用还是创建 Web 实例，并管理实例生命周期；
-- `web/http` 创建 HTTP Server 并装配公共 HTTP 宿主。
+- 当前 `interfaces/local-app/http` 创建 HTTP Server 并装配公共 HTTP 宿主，后续整体迁入 `web/http`。
 
 HTTP Server 启动后的浏览器请求链为：
 
@@ -640,7 +669,7 @@ tools/        checkout-only development/release 工具
 docs/         维护者与公开文档
 ```
 
-`package/` 仅 deferred 保留 Runtime Buildr Skill 与 Launcher 行为实现。前者由后续 Agent Assets Contribution 决定，后者由后续 System Contribution 拆分；不得扩大 allowlist，也不得成为新资源或 runtime 源码的 owner。
+`package/` 仅 deferred 保留 Runtime Buildr Skill 与 Launcher 构建/兼容入口。Runtime Buildr Skill 由后续 Agent Assets Contribution 决定；Launcher 的安装身份、绑定、状态和管理行为已经迁入 `src/system/installation/`，`package/launchers/` 不得重新取得 System Installation authority。不得扩大 `package/` allowlist，也不得让它成为新资源或 runtime 源码的 owner。
 
 模块迁移仍按下列目标继续：
 
@@ -652,22 +681,33 @@ src/interfaces/cli/
     → 公共 Host 迁入 src/bootstrap/cli/
     → 模块特有 command adapter 迁入对应模块 interfaces/cli/
 
-src/application/compose-runtime.mjs
-    → 组装职责迁入 src/bootstrap/
-    → 模块能力通过各自 module.mjs 显式提供
+src/bootstrap/
+    → 已接管进程、CLI Host、模块 registry 和显式组装
+    → 已迁移模块通过各自 module.mjs 提供窄 requires/provides/contributions
+    → legacy-runtime-module.mjs 仅兼容尚未迁移的职责
 
 src/interfaces/local-app/http/server.mjs
     → 公共 HTTP 宿主迁入 src/web/http/
     → 业务 HTTP Controller 按所有权迁入对应模块 interfaces/http/
 
 src/interfaces/local-app/runtime/
-    → 实例、Preview 和维护编排迁入 src/web/application/
+    → 实例、Preview 和维护编排已经迁入 src/web/application/
+
+src/application/{workspace,project,service}/ 与相关全局 persistence
+    → Workspace Core 已迁入 src/workspace/
+
+src/application、src/domain、src/interfaces 中的 Task 专业入口
+    → Task Record、Review、Retrospective 已迁入 src/task/
+    → 其余 Task 生命周期能力继续按后续切片迁移
+
+installation、update、status、Launcher 与 product identity
+    → 已迁入 src/system/installation/
 
 ```
 
 ## 渐进式迁移原则
 
-当前 Buildr Service 仍主要采用全局技术分层。本结构是目标方向，迁移遵循：
+当前 Buildr Service 已形成 Bootstrap、Infrastructure、Task 部分切片、Workspace Core、Web 实例生命周期和 System Installation 等模块结构，其余生产职责仍与旧全局技术分层并存。后续迁移继续遵循：
 
 - 先明确业务和产品模块，再移动文件；
 - 一个模块或一个可独立验证的结构切片逐步迁移；
@@ -680,7 +720,7 @@ src/interfaces/local-app/runtime/
 - 每个迁移任务明确范围、依赖、验证和退出条件；
 - 总体重构可以由父任务管理，具体模块由可独立交付的子任务推进。
 
-推荐首先以 Task Record 作为参考切片，因为它能够同时验证 Domain、Application、Persistence、CLI、HTTP、SQLite 和 Bootstrap 的新组织方式。这表示一次迁移一个能够闭环验证的 Task Record 纵向切片，不表示一次性迁移 `task/` 下的所有能力。
+Task Record 已作为首个纵向参考切片完成迁移，并验证了 Domain、Application、Persistence、CLI、HTTP、SQLite 和 Bootstrap 的新组织方式。Task Review 与 Task Retrospective 已沿用该范式迁移；这不表示 `task/` 的其余能力已经完成，也不授权一次性重写整个 Task 生命周期。
 
 ## 迁移台账与第一轮完成定义
 
