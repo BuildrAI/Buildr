@@ -13,6 +13,7 @@ const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const projectRoot = path.resolve(productRoot, '../..');
 const sourceRoot = path.join(productRoot, 'src');
 const entry = path.join(productRoot, 'bin', 'buildr.mjs');
+const serviceArchitecture = path.join(projectRoot, 'docs', 'architecture', 'service-architecture.md');
 const problems = [];
 const ignoredProjectRootEntries = new Set([
   '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
@@ -40,6 +41,31 @@ function listFiles(root, predicate = () => true) {
   };
   if (fs.existsSync(root)) visit(root);
   return files;
+}
+
+const globalApplicationResiduals = Object.freeze([
+  'application/change/',
+  'application/declaration-intake/',
+  'application/domains/openspec.mjs',
+  'application/domains/package-assets.mjs',
+  'application/internal-workflow-route-inventory.mjs',
+  'application/json-contracts.mjs',
+  'application/openspec/',
+  'application/publication/',
+  'application/verification/',
+  'application/workspace-operations.mjs',
+  'application/worktree/',
+]);
+const architectureSource = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
+if (!architectureSource) problems.push('missing Service architecture migration ledger');
+for (const residual of globalApplicationResiduals) {
+  const row = architectureSource.split(/\r?\n/u).find((line) => line.includes(`\`${residual}\``));
+  if (!row || !row.includes('| `deferred` |')) problems.push(`global Application residual lacks explicit deferred ledger entry: src/${residual}`);
+}
+for (const file of listFiles(path.join(sourceRoot, 'application'), (item) => /\.(?:mjs|ts)$/u.test(item))) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  const covered = globalApplicationResiduals.some((residual) => residual.endsWith('/') ? relative.startsWith(residual) : relative === residual);
+  if (!covered) problems.push(`global Application production file lacks migration ledger ownership: src/${relative}`);
 }
 
 for (const required of ['bin', 'src', 'resources', 'web-dist', 'test', 'tools', 'docs', 'package']) {

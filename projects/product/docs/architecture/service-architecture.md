@@ -1,6 +1,6 @@
 # 服务分层与模块组织
 
-本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。目标结构尚未全部完成；文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代 Parent 的 Contribution Handoff 与最终集成验收。
+本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。第一轮计划迁移已经进入当前实现；仍未确定最终归属的生产职责必须在迁移台账中显式标记为 `deferred`，不能因暂不移动而成为无 owner 遗留。文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代 Parent 的 Contribution Handoff 与最终集成验收。
 
 本文是长期架构方向和迁移边界，不是单次实施 authority。每个进入实现的独立结构切片必须绑定 Task-scoped OpenSpec Change；Parent Plan 只负责协调总体结果、架构不变量、能力贡献、依赖和最终验收，不替代 Child Change、Development、Verification 或 Finish。
 
@@ -27,9 +27,9 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`web-dist/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `package/` 只保留仍有明确 owner 和退出条件的兼容内容 |
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
-| 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 投射相关技术适配将在 Agent Assets 迁移时重新确认最终边界；Parent 中 Infrastructure Contribution 的交付绑定仍需单独对账 |
+| 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish 与 Terminal Delivery 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册；Bootstrap 只消费正式 runtime port | HTTP Controller 与 Diagnostic Read Model 通过模块 contribution 参与最终组装，不再由公共 Host 直连 Task 内部实现 |
-| Workspace Core | Workspace、Project、Service 的 Domain、Application、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Change 与 Publication 已由各自模块拥有；通用 Project Verification 继续保留现有 Application owner |
+| Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Change 与 Publication 已由各自模块拥有；通用 Project Verification 继续保留现有 Application owner |
 | Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
 | System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
 
@@ -211,7 +211,7 @@ Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象�
 
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.mjs`，用例位于 `application/project-daily-progress-application.mjs`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.mjs`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.mjs` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
-Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力是否归入 `workspace/`，本轮不提前决定，统一进入文末的待决策清单。
+Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力不因作用于 Project/Service 就自动归入 `workspace/`。第一轮保留其 current Application owner，并在迁移台账中记录为 `deferred`；只有对应专项任务重新确认事实 owner、模块边界和 writer authority 后才移动。
 
 ## `agent-assets` 模块
 
@@ -416,7 +416,7 @@ Infrastructure 不理解 Task、Workspace、Agent Assets 或 Doctor 等业务语
 
 SQLite migrations 继续作为 Workspace 数据库的一套全局、只追加、有序 DDL schema 管理，统一放在 `infrastructure/sqlite/migrations/`。业务表的事实所有权仍属于相应模块；migration 文件集中排序不表示 Infrastructure 取得业务 writer authority。
 
-通用 Infrastructure 边界已经在当前源码树收敛：Workspace SQLite 连接和 migration ledger、全局有序 DDL migrations、filesystem、Git、process、network、platform 与产品调用适配均由 `src/infrastructure/` 提供；Task、Workspace 等业务 Repository 已继续迁回所属模块。该实现事实不替代 Parent 中尚待完成的 Infrastructure Contribution binding/Handoff 对账。
+通用 Infrastructure 边界已经在当前源码树收敛：Workspace SQLite 连接和 migration ledger、全局有序 DDL migrations、filesystem、Git、process、network、platform 与产品调用适配均由 `src/infrastructure/` 提供；Task、Workspace 等业务 Repository 已继续迁回所属模块。历史 Infrastructure Child 没有建立 Contribution binding，不能事后用 Child completed 或 Git commit 冒充交付证明；最终架构收敛 Child 必须基于 current tree 重新验证该边界，并以自己的 matching Contribution Handoff 显式 supersede 旧 Contribution。
 
 例如：
 
@@ -719,8 +719,8 @@ src/application/{workspace,project,service}/ 与相关全局 persistence
     → Workspace Core 已迁入 src/workspace/
 
 src/application、src/domain、src/interfaces 中的 Task 专业入口
-    → Task Record、Review、Retrospective 已迁入 src/task/
-    → 其余 Task 生命周期能力继续按后续切片迁移
+    → Task Record、Review、Retrospective、生命周期核心、Delivery 与 Finish 已迁入 src/task/
+    → 旧全局 Task Domain、Application、Persistence 与 Interfaces 入口已退出，不再保留后续迁移切片
 
 installation、update、status、Launcher 与 product identity
     → 已迁入 src/system/installation/
@@ -751,20 +751,45 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 迁移台账按生产职责和能力单元维护，不为 Parent Plan 枚举每个生产文件。每个能力单元至少记录稳定名称、事实 owner、职责边界、主要入口、writer/authority、目标模块以及 `migrated|deferred` 处置。
 
-本轮 Runtime Host、Doctor 与最终收敛的实际台账如下：
+第一轮完整能力台账如下。`Verification owner` 表示当前证明该边界的测试或 Project capability，不表示 Verification 取得业务 authority。
 
-| 能力单元 | 当前 owner 与主要入口 | writer / authority | 处置 |
-|----------|----------------------|--------------------|------|
-| Web HTTP 公共宿主 | `src/web/http/server.mjs`、`read-executor.mjs`、`read-worker.mjs` | 只拥有 HTTP transport、Session、安全响应、静态文件和只读执行资源；无业务 writer | `migrated` |
-| Web 静态托管 | `src/web/http/server.mjs` + Application Payload 中的 `web-dist` | `buildr-web` 仍是正式前端源码与构建 owner；Host 只读取 payload | `migrated` |
-| 业务 HTTP Controller | `workspace/interfaces/http`、`task/interfaces/http`、`change/interfaces/http`、`publication/interfaces/http`、`system/installation` contribution | writer 与 Read Model 继续归各业务模块 | `migrated` |
-| System Doctor | `src/system/doctor/module.mjs` 与 `application/` | 只读诊断聚合；不拥有 Workspace、Task、Installation 或 Web writer | `migrated` |
-| Diagnostic 最终装配 | 各模块 `diagnostics` contribution，Bootstrap 最后注入 System Doctor | Read Model 由贡献模块拥有，Doctor 只消费 | `migrated` |
-| Bootstrap composition | `src/bootstrap/runtime.mjs`、`module-registry.mjs` | 唯一模块安装、capability 与 contribution registry | `migrated` |
-| 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | `migrated`（已删除） |
-| 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `migrated` |
+| 能力单元 | 当前 owner 与主要入口 | writer / authority | Verification owner | 处置 | deferred 理由与触发条件 |
+|----------|----------------------|--------------------|--------------------|------|--------------------------|
+| Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.mjs`、`module-registry.mjs`、`bootstrap/cli/` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
+| 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
+| Task 全生命周期 | `src/task/module.mjs` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Retrospective、Environment、Development、Verification、Parent Coordination、Delivery/Finish 各自保留唯一 Result/Receipt/writer | Task contract/integration suites、`product.delivery` | `migrated` | — |
+| Workspace Core 与 Project Daily Progress | `src/workspace/module.mjs` 及对应技术层 | Workspace/Project/Service registry 与 Daily Progress YAML 各自唯一 writer；Task 引用只读校验 | workspace/project/daily-progress contract 与 integration suites、`product.delivery` | `migrated` | — |
+| Agent Assets | `src/agent-assets/module.mjs`、`application/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、`product.delivery` | `migrated` | — |
+| Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
+| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | 只拥有 HTTP transport、Session、安全响应、静态文件和只读执行资源；`buildr-web` 仍是前端源码/构建 owner | local-app-web、web-dist/browser smoke、release artifact set | `migrated` | — |
+| 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
+| System Installation | `src/system/installation/` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer | installation/npm-launcher/release artifact tests | `migrated` | — |
+| System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
+| 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
+| 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
+| Change | `src/change/module.mjs`、`src/application/change/`、`src/change/interfaces/http/` | Change Application 继续拥有 Change 查询与 Task-scoped Change read model | change application integration、architecture verification | `deferred` | 第一轮不决定是否归 Workspace；当 Change 出现独立写入用例、第二 transport，或启动 Change 模块专项重构时重新评估并迁移 Application |
+| OpenSpec convergence | `src/application/openspec/`、`src/application/domains/openspec.mjs` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一，不并入 Change 或 Workspace writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `deferred` | 与 Change 的产品边界尚需专项设计；当 OpenSpec 契约、canonical writer 或模块公开入口发生实质变化时触发 |
+| Publication | `src/publication/module.mjs`、`src/application/publication/`、HTTP contribution | Publication Application 只读拥有 publication/asset read model | publication application integration、`product.delivery` | `deferred` | 当前模块入口已明确但 Application 尚未整体内聚；新增 writer/CLI 或专项拆分 Publication 时触发 |
+| Project Verification | `src/application/verification/`，由 Bootstrap 与 Task Verification 消费 | Project capability 选择、execution/evidence/resource coordination 保持现有 owner；不与 Task Verification Result writer 合并 | verification unit/integration suites、`product.delivery` | `deferred` | Verification 体系本身不在结构第一轮重构；声明模型、调度或 Result authority 专项启动时触发 |
 
-第一轮结束时，所有现有生产职责都已在迁移台账中归入明确的能力单元，并标记为 `migrated`，或标记为具有明确理由、owner 和后续决策条件的 `deferred`。不得以“尚未讨论”为由留下无 owner、无处置的生产职责。
+### 全局 Application residual 明细
+
+以下清单覆盖当前仍位于 `src/application/` 的全部生产职责。`deferred` 是明确处置，不代表无 owner，也不授权长期增加第二实现。
+
+| 当前路径 | current owner | Verification owner | 处置 | 后续触发条件 |
+|----------|---------------|--------------------|------|--------------|
+| `application/change/` | Change capability / `change/module.mjs` | change integration、architecture verification | `deferred` | Change writer、CLI 或独立模块迁移专项启动 |
+| `application/openspec/`、`application/domains/openspec.mjs` | OpenSpec convergence capability | OpenSpec journey、archive lifecycle | `deferred` | canonical writer、Change/OpenSpec 边界或公开模块入口变化 |
+| `application/publication/` | Publication capability / `publication/module.mjs` | publication integration、delivery verification | `deferred` | Publication 新增 writer/CLI 或独立模块内聚专项启动 |
+| `application/verification/` | Project Verification capability | verification unit/integration、`product.delivery` | `deferred` | Verification 声明、选择、调度或 Result 模型专项启动 |
+| `application/declaration-intake/` | Declaration Intake capability；Workspace/Task 仅消费窄 next-action formatter | declaration-intake unit、verification planner integration | `deferred` | Intake 出现独立 Application 状态/接口，或声明治理专项启动 |
+| `application/worktree/` | Git Worktree provider；Task Environment 是 consumer，不取得 provider 实现 authority | architecture boundaries、Task Contribution integration | `deferred` | checkout provider contract 升级、出现第二 provider 或 Task Environment 平台拆分 |
+| `application/workspace-operations.mjs` | Workspace source mutation 与 onboarding composition | managed-mutations verification、`product.delivery` | `deferred` | init/sync/mutation 被拆成稳定能力模块，或全局 runtime 转发退出专项启动 |
+| `application/domains/package-assets.mjs` | Package Assets compatibility domain，受 Agent Assets Package Maintenance 与 Bootstrap 消费 | package static validation、managed-mutations、release artifact set | `deferred` | 产品入口 Skill/Builtin/package runtime source 关系确定，或 Package Maintenance 专项启动 |
+| `application/internal-workflow-route-inventory.mjs` | Internal workflow route contract；Task internal interfaces 为实际 runner owner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `deferred` | internal route registry 进入模块合约，或增加非 Task workflow runner |
+| `application/json-contracts.mjs` | 公共 JSON schema identity 与最小 envelope utility | public-json-contracts system test、architecture verification | `deferred` | 独立 HTTP 契约演进引入 JSON Schema/Ajv/DTO 生成，或出现第二套 schema registry 风险 |
+
+第一轮结束时，所有现有生产职责都已在上述迁移台账中归入明确的能力单元，并标记为 `migrated`，或标记为具有明确理由、owner 和后续触发条件的 `deferred`。不得以“尚未讨论”为由留下无 owner、无处置的生产职责；触发条件成立后必须建立独立 Task 重新确认 authority，不能直接把 deferred 当作已授权迁移。
 
 Child Task 对自己实际移动、拆分、新增和删除的文件承担精确清单、影响范围、验证证据和旧入口退出责任。Parent Plan 只保存能力贡献、依赖和最终验收，不复制 Child 文件清单、状态、Result 或 checklist。
 
