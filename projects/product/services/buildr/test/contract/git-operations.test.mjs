@@ -10,6 +10,7 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package/targets/workspace');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
 const packageManifest = YAML.parse(read('package/manifest.yml'));
+const workspaceRule = read('package/targets/workspace/AGENTS.md');
 const skill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
 const contractPath = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/git-operations/v1.md');
 const contract = fs.readFileSync(contractPath, 'utf8');
@@ -36,6 +37,13 @@ test('Git Operations routing description 精确一致且不扩展完整命令集
   for (const broad of ['checkout', 'reset', 'cherry-pick', 'stash', '删除分支']) {
     assert.equal(packaged.description.includes(broad), false, broad);
   }
+});
+
+test('默认提交语言由随包 workspace AGENTS 提供，Git Operations 不复制 Core 约定', () => {
+  assert.match(workspaceRule, /Git 提交信息默认使用中文/);
+  assert.match(workspaceRule, /更具体作用域的约定优先于本默认规则/);
+  assert.match(skill, /当前 workspace `AGENTS\.md`/);
+  assert.doesNotMatch(skill, /语言遵循 Buildr Core/);
 });
 
 test('Git Operations playbook 覆盖 commit、push 与组合边界', () => {

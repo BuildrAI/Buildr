@@ -330,7 +330,7 @@ Buildr Product Skill MUST explain the canonical Project fields, source boundary,
 - **THEN** Skill MUST 引导 Agent 结合当前任务判断，而不是让 Buildr 自动切换分支
 
 ### Requirement: Git Operations 生成精简提交信息
-Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循 Core 和更具体的提交语言约定。
+Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循当前 workspace、Project、Service 和 repository 的提交语言约定。
 
 #### Scenario: 生成提交主题
 - **WHEN** Agent 为已确认提交范围生成 commit message
@@ -346,11 +346,11 @@ Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的
 
 #### Scenario: 应用提交语言约定
 - **WHEN** Agent 使用 Git Operations 生成 commit message
-- **THEN** Git Operations MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
-- **AND** Git Operations MUST NOT 在 Skill 正文中复制 Core 的语言约束
+- **THEN** Git Operations MUST 遵循当前 workspace `AGENTS.md` 的默认提交语言和当前 scope 的更具体约定
+- **AND** Git Operations MUST NOT 在 Skill 正文中创建与 workspace 规则竞争的独立语言默认
 
 #### Scenario: 仓库已有明确格式
-- **WHEN** 项目或仓库规则定义了比 Git Operations 默认格式更具体的提交约定
+- **WHEN** 项目或仓库规则定义了比 workspace 默认格式更具体的提交约定
 - **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
 ### Requirement: 产品入口 Buildr Skill 路由 Task Retrospective

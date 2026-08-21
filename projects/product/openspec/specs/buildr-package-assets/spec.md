@@ -400,41 +400,23 @@ Buildr package assets MUST 将 Rule manifest consumption protocol 与通用 Rule
 - **AND** required Core MUST NOT state that Project or Service Rules may own concrete task procedures
 - **AND** reusable task procedures MUST remain available through the corresponding Skills
 
-#### Scenario: Package Core 提供默认提交语言
-- **WHEN** Buildr packages the default Git operations capability
-- **THEN** Conventional Commits generation guidance MUST be provided by the Git operations Skill
-- **AND** required Core MUST define Chinese as the default commit-message language when no more specific convention applies
-- **AND** required Core MUST NOT contain Git commands、type selection or message generation procedures
-
-### Requirement: Core 默认提交语言独立生效
-Buildr package MUST 通过 required Core 提供独立于 Git Ops Skill 生命周期的默认提交语言。
-
-#### Scenario: 初始化默认 workspace
-- **WHEN** Buildr initializes a workspace from the default package
-- **THEN** required Core MUST state that commit-message subject and body use Chinese when no more specific convention applies
-- **AND** it MUST allow code identifiers、paths、scope and proper nouns to retain their original form
-
-#### Scenario: 卸载 Git Ops Skill
-- **WHEN** Git Ops Skill is uninstalled
-- **THEN** the Core commit-language default MUST remain available to Agent rule consumption
-- **AND** Buildr MUST NOT remove or alter Core as a side effect of the Skill lifecycle
-
-#### Scenario: 更具体约定覆盖默认语言
-- **WHEN** Project、Service or repository rules define a more specific commit language
-- **THEN** Agent MUST use the more specific convention instead of the Core default
-
 ### Requirement: 产品验证覆盖提交信息资产边界
-Buildr product verification MUST 防止提交格式与默认语言重新耦合到同一 Skill 生命周期。
+Buildr product verification MUST 防止提交格式与 workspace 默认语言重新耦合到同一 Skill 生命周期。
 
 #### Scenario: 校验 Git Ops 提交格式
 - **WHEN** Buildr validates the packaged Git Operations Skill
 - **THEN** verification MUST confirm the concise Conventional Commits format、supported types、optional scope and breaking-change guidance
-- **AND** verification MUST confirm Git Operations follows Core and more specific conventions without copying the Chinese constraint
+- **AND** verification MUST confirm Git Operations follows the current workspace、Project、Service and repository language conventions without creating a competing language default
 
 #### Scenario: 校验 Core 默认提交语言
 - **WHEN** Buildr validates the default package and a temporary initialized workspace
-- **THEN** verification MUST confirm required Core contains the concise Chinese default and allowed original-form exceptions
-- **AND** verification MUST confirm the Core default remains present when Git Operations is absent
+- **THEN** verification MUST confirm required Core does not own the commit-language default and the rendered workspace `AGENTS.md` contains the concise Chinese default and allowed original-form exceptions
+- **AND** verification MUST confirm the workspace default remains present when Git Operations is absent
+
+#### Scenario: 校验提交消费者组合
+- **WHEN** Buildr validates Git Operations、Task Finish and other packaged commit-producing consumers
+- **THEN** verification MUST confirm each consumer reads the current workspace language convention
+- **AND** verification MUST NOT require Core to own or duplicate the commit-language default
 
 ### Requirement: 产品验证覆盖 task worktree 隔离与证据复用
 Buildr package verification MUST 防止正式 workflow 绕过 Task Environment 直接把 task-worktree 当作环境 authority，也 MUST 防止 change artifacts 双写、合并前污染 retained self-bootstrap Workspace，或让 Git/worktree providers重新拥有 Runtime/依赖、Candidate verification 或 evidence 复用决策。
@@ -1573,3 +1555,20 @@ Buildr package MUST原子交付v3 Application、CLI、HTTP、Agent Skills、Buil
 - **WHEN** 维护者验证包含Parent Coordination v3的候选
 - **THEN** package parity MUST证明checkout与npm CLI使用相同v3 identity和字段
 - **AND** web-dist MUST来自已切换v3类型与consumer的Buildr Web源码
+
+### Requirement: 随包 workspace AGENTS 提供默认提交语言
+Buildr package MUST 通过随包 workspace `AGENTS.md` 提供默认 commit-message 语言约定，而不是把该默认值归属于 required Core。
+
+#### Scenario: 初始化或同步默认 workspace
+- **WHEN** Buildr initializes or synchronizes a workspace from the default package
+- **THEN** the rendered workspace `AGENTS.md` MUST state that commit-message subject and body use Chinese when no more specific convention applies
+- **AND** the rule MUST allow code identifiers、paths、scope and proper nouns to retain their original form
+
+#### Scenario: 更具体约定覆盖默认语言
+- **WHEN** Project、Service or repository rules define a more specific commit language
+- **THEN** Agent MUST use the more specific convention instead of the workspace default
+
+#### Scenario: Git Operations 生命周期变化
+- **WHEN** Git Operations is absent、replaced or unavailable
+- **THEN** the workspace commit-language default MUST remain available through `AGENTS.md`
+- **AND** the default MUST NOT depend on the Git Operations Skill lifecycle

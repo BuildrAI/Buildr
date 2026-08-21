@@ -57,7 +57,7 @@ consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase 
 
 默认 subject 使用 `<type>(<scope>): <subject>`，scope 可选。type 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中按实际内容选择；不猜测 scope。
 
-正文只在需要说明动机、行为差异或破坏性影响时添加；破坏性变更使用 `BREAKING CHANGE:`。语言遵循 Buildr Core 和当前 Project、Service、repository 的更具体规则，本 Skill 不复制默认语言约束。
+正文只在需要说明动机、行为差异或破坏性影响时添加；破坏性变更使用 `BREAKING CHANGE:`。语言遵循当前 workspace `AGENTS.md` 以及 Project、Service、repository 的更具体规则，本 Skill 不复制默认语言约束，也不把 Core 作为提交语言的独立来源。
 
 ## 5. Push 必须检查完整 range
 

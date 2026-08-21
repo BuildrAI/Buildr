@@ -16,6 +16,7 @@ const verification = read('package/targets/workspace/skills/buildr/task-verifica
 const verificationContract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
 const coreRule = read('package/targets/workspace/rules/buildr/core.md');
+const workspaceRule = read('package/targets/workspace/AGENTS.md');
 const packageManifest = read('package/manifest.yml');
 const productRule = fs.readFileSync(path.join(productRoot, 'AGENTS.md'), 'utf8');
 
@@ -28,6 +29,8 @@ test('Task Finish 保留可选五阶段自动化，同时允许Agent直接交付
   assert.match(finishContract, /真实remote target/);
   assert.match(finishContract, /状态与proof必须成对持久化/);
   assert.match(finishContract, /不得因Doctor、Activation、Execution Record、Environment Cleanup、Task登记或Buildr内部派生证据失败而改写为未交付/);
+  assert.match(workspaceRule, /Git 提交信息默认使用中文/);
+  assert.match(finish, /--commit-message[\s\S]*当前 workspace `AGENTS\.md`[\s\S]*不翻译或重写提交信息/);
   const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
   for (const forbidden of ['recordTaskVerification', 'recordTaskReview', 'freezeTaskDevelopmentCandidate', 'openspec', 'runtime-resync', 'target-rebase']) assert.equal(executor.includes(forbidden), false, forbidden);
   assert.doesNotMatch(executor, /runtime\.cleanupTaskEnvironment\(/);

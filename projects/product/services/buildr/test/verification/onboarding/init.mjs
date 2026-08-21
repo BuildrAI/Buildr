@@ -73,6 +73,9 @@ try {
   assert.match(result.stdout, /首次使用交接/);
   assert.match(result.stdout, /第一项真实工作/);
   assert.doesNotMatch(result.stdout, /下一步可按需创建 Project/);
+  const onboardedAgents = fs.readFileSync(path.join(onboarded, 'AGENTS.md'), 'utf8');
+  assert.match(onboardedAgents, /Git 提交信息默认使用中文/);
+  assert.match(onboardedAgents, /更具体作用域的约定优先于本默认规则/);
   assert.equal(fs.existsSync(path.join(onboarded, '.agents', 'skills', 'buildr', 'SKILL.md')), true);
 
   result = run(['project', 'create', 'synced', '--target', onboarded]);
