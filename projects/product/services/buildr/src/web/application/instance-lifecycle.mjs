@@ -3,9 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
-import { readCurrentProductIdentity } from '../../infrastructure/product-identity/current-product-identity.mjs';
-import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../infrastructure/product-identity/web-profile.mjs';
-import { assertCurrentNpmLauncherBinding } from '../../infrastructure/product-launcher/index.mjs';
+import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../infrastructure/web-profile.mjs';
 import {
   clearLocalAppInstance,
   acquireLocalAppStartLock,
@@ -37,6 +35,9 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
   if (typeof createLocalWorkspaceServer !== 'function' || typeof ensureRegisteredTarget !== 'function') {
     throw new Error('Web instance lifecycle requires an HTTP Host server factory and target resolver.');
   }
+  if (typeof options.readProductIdentity !== 'function' || typeof options.assertNpmLauncherBinding !== 'function') {
+    throw new Error('Web instance lifecycle requires the System Installation identity and Launcher binding ports.');
+  }
   registerLocalAppPreviewResourceProvider(runtime);
   async function startLocalWorkspaceApp(args) {
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
@@ -48,8 +49,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
     if (launcherBindingPath && args.includes('--port')) throw new Error('--port cannot be combined with --launcher-binding; the npm Launcher binding owns its port policy.');
     const noOpen = args.includes('--no-open') || (launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
-    const productIdentity = options.readProductIdentity ? options.readProductIdentity() : readCurrentProductIdentity();
-    const npmLauncherBinding = launcherBindingPath ? assertCurrentNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
+    const productIdentity = options.readProductIdentity();
+    const npmLauncherBinding = launcherBindingPath ? options.assertNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
     const launcherIdentity = npmLauncherBinding || readLauncherIdentityFromEnvironment();
     const previewIdentity = readPreviewIdentityFromEnvironment();
     const webProfile = resolveWebProfile(productIdentity);

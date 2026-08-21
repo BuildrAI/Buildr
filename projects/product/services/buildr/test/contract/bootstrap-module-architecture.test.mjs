@@ -15,6 +15,11 @@ import {
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_PERSISTENCE_READ,
 } from '../../src/task/module.mjs';
+import {
+  SYSTEM_INSTALLATION_APPLICATION,
+  SYSTEM_INSTALLATION_IDENTITY,
+  SYSTEM_INSTALLATION_LAUNCHER,
+} from '../../src/system/installation/module.mjs';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.mjs';
 import {
   PROJECT_APPLICATION,
@@ -88,8 +93,21 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
     },
     lifecycle: 'none',
   }, {
-    id: 'web-instance-lifecycle',
+    id: 'system-installation',
     requires: [],
+    provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION],
+    contributions: {
+      cli: [
+        'installation status', 'update check', 'update',
+        'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
+      ],
+      http: [],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
+    id: 'web-instance-lifecycle',
+    requires: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER],
     provides: [WEB_INSTANCE_LIFECYCLE],
     contributions: {
       cli: ['web preview start', 'web preview list', 'web preview stop', 'web'],
@@ -102,6 +120,8 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
     'project create', 'service create',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task review inspect', 'task review record',
+    'installation status', 'update check', 'update',
+    'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['workspace-core.http', 'task-record.http', 'task-review.http', 'task-retrospective.http']);
@@ -132,6 +152,38 @@ test('Workspace、Task 与 Web modules 暴露窄 capability、唯一 contributio
   const webLifecycle = runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE);
   assert.equal(typeof webLifecycle.startLocalWorkspaceApp, 'function');
   assert.equal(typeof webLifecycle.manageLocalAppPreview, 'function');
+});
+
+test('System Installation module owns installation identity, update and npm Launcher boundaries', () => {
+  const runtime = createRuntime();
+  const identity = runtimeProvide(runtime, SYSTEM_INSTALLATION_IDENTITY);
+  const launcher = runtimeProvide(runtime, SYSTEM_INSTALLATION_LAUNCHER);
+  const compatibility = runtimeProvide(runtime, SYSTEM_INSTALLATION_APPLICATION);
+
+  assert.deepEqual(Object.keys(identity), ['readCurrentProductIdentity']);
+  assert.deepEqual(Object.keys(launcher), [
+    'assertCurrentNpmLauncherBinding', 'refreshInstalledNpmLauncher', 'validateNpmLauncherBinding',
+  ]);
+  assert.equal(compatibility.owner, 'reorganize-buildr-system-installation');
+  assert.match(compatibility.scope, /remaining Doctor and legacy runtime consumers only/);
+  assert.match(compatibility.exit, /System Doctor migration and legacy-exit-and-conformance/);
+
+  const cliHost = read('src/bootstrap/cli/registry.mjs');
+  assert.match(cliHost, /from '..\/..\/system\/installation\/module\.mjs'/);
+  assert.doesNotMatch(cliHost, /system\/installation\/(?:application|infrastructure|interfaces)/);
+  for (const relative of [
+    'src/application/cli-update.mjs',
+    'src/application/npm-installation-enrollment.mjs',
+    'src/application/product-installation-status.mjs',
+    'src/application/release-awareness.mjs',
+    'src/infrastructure/product-identity/current-product-identity.mjs',
+    'src/infrastructure/product-identity/installation-origin.mjs',
+    'src/infrastructure/product-identity/installation-registry.mjs',
+    'src/infrastructure/product-identity/launcher-binding.mjs',
+    'src/infrastructure/product-identity/web-profile.mjs',
+    'src/infrastructure/product-launcher/index.mjs',
+    'src/interfaces/cli/launcher.mjs',
+  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
 test('Task Review module 只公开共享 Application、只读 Persistence 与有退出条件的兼容 Facade', () => {

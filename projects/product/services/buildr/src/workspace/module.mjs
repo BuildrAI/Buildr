@@ -76,13 +76,13 @@ export function createWorkspaceCliContributions() {
   ]);
 }
 
-export function createWorkspaceModule(runtime) {
+export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
   return Object.freeze({
     id: WORKSPACE_MODULE_ID,
     requires: Object.freeze([]),
     create() {
       registerWorkspaceManifestRepository(runtime);
-      registerWorkspaceRegistryRepository(runtime);
+      registerWorkspaceRegistryRepository(runtime, { readProductIdentity });
       registerProjectManifestRepository(runtime);
       registerServiceManifestRepository(runtime);
       registerWorkspaceApplication(runtime);

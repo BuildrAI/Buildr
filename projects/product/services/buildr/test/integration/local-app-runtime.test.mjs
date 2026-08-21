@@ -7,6 +7,7 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { ensureRegisteredTarget, createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.mjs';
 import {
   clearLocalAppInstance,
   localAppInstancePath,
@@ -17,7 +18,7 @@ import {
   writeLocalAppInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
 import { pickWorkspaceDirectory } from '../../src/interfaces/local-app/runtime/directory-picker.mjs';
-import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
+import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
 
 function opener(platform) {
   const calls = [];
@@ -93,6 +94,8 @@ test('正式 Web 生命周期启动scheduler，Task Preview生命周期完全不
   let formalStopped = 0;
   const formalRuntime = createRuntime();
   registerWebInstanceLifecycle(formalRuntime, {
+    readProductIdentity: readCurrentProductIdentity,
+    assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
     ensureRegisteredTarget,
     scheduledMaintenanceFactory: () => {
@@ -114,6 +117,8 @@ test('正式 Web 生命周期启动scheduler，Task Preview生命周期完全不
   let previewFactoryCalls = 0;
   const previewRuntime = createRuntime();
   registerWebInstanceLifecycle(previewRuntime, {
+    readProductIdentity: readCurrentProductIdentity,
+    assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
     ensureRegisteredTarget,
     scheduledMaintenanceFactory: () => {

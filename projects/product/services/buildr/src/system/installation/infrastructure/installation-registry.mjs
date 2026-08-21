@@ -3,15 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { atomicWriteJson, withExclusiveFileLock } from '../filesystem/index.mjs';
-import { productDataRoot } from './web-profile.mjs';
-import { sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
+import { atomicWriteJson, withExclusiveFileLock } from '../../../infrastructure/filesystem/index.mjs';
+import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import {
   runtimeIdentityForOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
 } from './installation-origin.mjs';
-import { readApplicationPayloadManifest } from '../product-resources/index.mjs';
+import { readApplicationPayloadManifest } from '../../../infrastructure/product-resources/index.mjs';
 
 export const PRODUCT_INSTALLATION_REGISTRY_SCHEMA = 'buildr.product-installation-registry/v1';
 

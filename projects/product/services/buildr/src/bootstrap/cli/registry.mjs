@@ -3,9 +3,9 @@ import { createRuntime, runtimeContributions } from '../runtime.mjs';
 import { registerCommandHelp } from './help.mjs';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
-import { registerLauncherInterface } from '../../interfaces/cli/launcher.mjs';
 import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
+import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
 import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
@@ -33,57 +33,6 @@ const COMMAND_ROUTES = [
     ],
     match: ({ domain }) => domain === 'init',
     run: (r, c) => r.initBuildr(c.argv.slice(3)),
-  },
-  {
-    key: "web launcher install",
-    surface: "primary",
-    summary: "从当前已验证的 npm installation 显式生成不复制 Node 或 package 的 Buildr Web Launcher。",
-    help: [
-      "Usage: buildr web launcher install [--target <path>] [--port <0..65535>] [--json]",
-      "",
-      "macOS 生成本机 Buildr Web.app，Windows 生成 Start Menu shortcut；两者只绑定已登记的 Host Node、package entry、npm prefix 与 installation identity。",
-      "默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。",
-      "普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
-    run: (r, c) => r.manageLocalAppLauncher('install', c.argv.slice(5)),
-  },
-  {
-    key: "web launcher status",
-    surface: "primary",
-    summary: "只读验证 npm Buildr Web Launcher 的 binding、Host Node、package entry、prefix 与 ownership。",
-    help: [
-      "Usage: buildr web launcher status [--target <path>] [--json]",
-      "",
-      "任何路径或摘要漂移都会 fail closed；不会从 PATH 查找替代 Buildr。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
-    run: (r, c) => r.manageLocalAppLauncher('status', c.argv.slice(5)),
-  },
-  {
-    key: "web launcher repair",
-    surface: "primary",
-    summary: "从同一已登记 npm installation 原子重建当前 owned Launcher binding。",
-    help: [
-      "Usage: buildr web launcher repair [--target <path>] [--port <0..65535>] [--json]",
-      "",
-      "repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。",
-      "省略 --port 时保留 v2 binding 的现有策略；从 v1 迁移时采用默认首选端口 4457。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
-    run: (r, c) => r.manageLocalAppLauncher('repair', c.argv.slice(5)),
-  },
-  {
-    key: "web launcher uninstall",
-    surface: "primary",
-    summary: "只移除 ownership 精确匹配的 npm Buildr Web Launcher，保留 npm package 与 Workspace 数据。",
-    help: [
-      "Usage: buildr web launcher uninstall [--target <path>] [--json]",
-      "",
-      "foreign target 或 binding 会被保留并 fail closed；本命令不卸载 npm Buildr、Workspace Registry、SQLite、日志或 Workspace data。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
-    run: (r, c) => r.manageLocalAppLauncher('uninstall', c.argv.slice(5)),
   },
   {
     key: "bootstrap guide",
@@ -712,44 +661,6 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.builtinRestore(c.argv.slice(4)),
   },
   {
-    key: "installation status",
-    surface: "primary",
-    summary: "分别报告 npm、development、本机 Launcher 与当前运行实例的可信身份。",
-    help: [
-      "Usage: buildr installation status [--json]",
-      "",
-      "只读取 embedded identity 与 ownership receipt；不会扫描 PATH 或按文件名猜测来源。"
-    ],
-    match: ({ domain, action }) => domain === 'installation' && action === 'status',
-    run: (r, c) => r.installationStatus(c.argv.slice(4)),
-  },
-  {
-    key: "update check",
-    surface: "primary",
-    summary: "同时检查 GA 正式版与 RC 候选版；不读取 workspace。",
-    help: [
-      "Usage: buildr update check [--json]",
-      "",
-      "同时检查 latest 对应的 GA 正式版与 next 对应的 RC 候选版；不读取 workspace。"
-    ],
-    match: ({ domain, action }) => domain === 'update' && action === 'check',
-    run: (r, c) => r.updateCheck(c.argv.slice(4)),
-  },
-  {
-    key: "update",
-    surface: "primary",
-    summary: "更新 Buildr CLI 自身；npm installation 可显式选择 GA 或 RC。",
-    help: [
-      "Usage: buildr update [--track <stable|candidate>] [--json]",
-      "",
-      "npm installation 使用 --track stable 选择 GA 正式版，使用 --track candidate 选择 RC 候选版。",
-      "省略 --track 时，当前 RC 跟随 candidate，当前正式版跟随 stable；不会自动切轨或降级。",
-      "同步 workspace 请使用 buildr sync <agent> --target <dir>。"
-    ],
-    match: ({ domain }) => domain === 'update',
-    run: (r, c) => r.updateBuildr(c.argv.slice(3)),
-  },
-  {
     key: "render",
     surface: "agent-machine",
     summary: "组合渲染 rules entry 和 workspace Skills 到 workspace destination；不安装产品入口 Buildr Skill。",
@@ -1036,6 +947,8 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
   ...createTaskRecordCliContributions(),
   ...createTaskReviewCliContributions(),
+  ...createInstallationCliContributions(),
+  ...createLauncherCliContributions(),
 ]);
 export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 
@@ -1072,7 +985,6 @@ export function dispatch(argv = process.argv) {
   const runtime = createRuntime();
   const commandRegistry = createCommandRegistry(runtimeContributions(runtime, 'cli'));
   const commandCatalog = createCommandCatalog(commandRegistry);
-  registerLauncherInterface(runtime);
   registerCommandHelp(runtime, commandCatalog);
   const rawArgs = argv.slice(2);
   const [domain, action, runtimeId, ...args] = rawArgs;

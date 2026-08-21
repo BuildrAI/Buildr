@@ -9,7 +9,7 @@ import {
   productDataRoot,
   resolveWebProfile,
   webProfileName,
-} from '../../src/infrastructure/product-identity/web-profile.mjs';
+} from '../../src/web/infrastructure/web-profile.mjs';
 
 const npmIdentity = { channel: 'npm', runtime: { role: 'host' } };
 const developmentIdentity = { channel: 'development', runtime: { role: 'development' } };

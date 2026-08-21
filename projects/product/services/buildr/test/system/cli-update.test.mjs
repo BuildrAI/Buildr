@@ -5,15 +5,15 @@ import path from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 
-import { buildCliUpdatePlan, compareVersions, executeCliUpdatePlan, identifyCliSource } from '../../src/application/cli-update.mjs';
+import { buildCliUpdatePlan, compareVersions, executeCliUpdatePlan, identifyCliSource } from '../../src/system/installation/application/cli-update.mjs';
 import {
   RELEASE_AWARENESS_STATE_SCHEMA,
   buildReleaseAwareness,
   readReleaseAwarenessState,
-} from '../../src/application/release-awareness.mjs';
+} from '../../src/system/installation/application/release-awareness.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { createInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
-import { createProductUpdateAuthority } from '../../src/infrastructure/product-identity/installation-registry.mjs';
+import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.mjs';
+import { createProductUpdateAuthority } from '../../src/system/installation/infrastructure/installation-registry.mjs';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
 
 function origin(channel, version = '1.0.0') {

@@ -11,6 +11,7 @@ import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.mjs';
 import { createWorkspaceModule } from '../workspace/module.mjs';
+import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
 
@@ -73,11 +74,12 @@ export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
   registerLegacyRuntime(runtime, {
-    installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime)),
+    installWorkspaceModule: () => registry.install(createWorkspaceModule(runtime, { readProductIdentity: readCurrentProductIdentity })),
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
     installTaskRetrospectiveModule: () => installTaskRetrospectiveModule(runtime, registry),
   });
+  registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));
   Object.defineProperty(runtime, '__bootstrapContributions', {

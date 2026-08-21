@@ -32,7 +32,7 @@ const allowed = new Map([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/workspace/persistence/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
-  ['src/infrastructure/product-launcher/index.mjs', new Set([
+  ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
   ['src/task/persistence/execution-record/task-execution-record-body-store.mjs', new Set([

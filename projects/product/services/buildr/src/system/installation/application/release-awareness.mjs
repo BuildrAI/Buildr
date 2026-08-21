@@ -5,15 +5,15 @@ import process from 'node:process';
 import {
   atomicWriteJson,
   withExclusiveFileLock,
-} from '../infrastructure/filesystem/index.mjs';
+} from '../../../infrastructure/filesystem/index.mjs';
 import {
   compareVersions,
   defaultReleaseTrack,
   parseSemver,
-} from '../domain/release-version.mjs';
-import { productDataRoot } from '../infrastructure/product-identity/web-profile.mjs';
-import { spawnCommandSync } from '../infrastructure/process.mjs';
-import { inspectProductUpdateAuthority } from '../infrastructure/product-identity/installation-registry.mjs';
+} from '../../../domain/release-version.mjs';
+import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { inspectProductUpdateAuthority } from '../infrastructure/installation-registry.mjs';
 
 export const RELEASE_AWARENESS_SCHEMA = 'buildr.release-awareness/v1';
 export const RELEASE_AWARENESS_STATE_SCHEMA = 'buildr.release-awareness-state/v1';
@@ -22,7 +22,7 @@ export const RELEASE_TRACKS = Object.freeze({
   candidate: Object.freeze({ tag: 'next', label: 'RC 候选版', prerelease: true }),
 });
 
-export { compareVersions, defaultReleaseTrack, parseSemver } from '../domain/release-version.mjs';
+export { compareVersions, defaultReleaseTrack, parseSemver } from '../../../domain/release-version.mjs';
 
 function emptyTrackState() {
   return { lastSeenVersion: null, lastNotifiedVersion: null, checkedAt: null };

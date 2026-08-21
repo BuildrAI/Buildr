@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { readCurrentProductIdentity } from '../../infrastructure/product-identity/current-product-identity.mjs';
-import { productDataRoot, resolveWebProfile } from '../../infrastructure/product-identity/web-profile.mjs';
+import { productDataRoot } from '../../infrastructure/filesystem/product-data-root.mjs';
+import { resolveWebProfile } from '../../web/infrastructure/web-profile.mjs';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
@@ -53,7 +53,8 @@ export function readWorkspaceRegistryFile(file) {
 }
 
 export function registerWorkspaceRegistryRepository(runtime, options = {}) {
-  const productIdentity = options.productIdentity || readCurrentProductIdentity();
+  const productIdentity = options.productIdentity || options.readProductIdentity?.();
+  if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   const webProfile = options.webProfile || resolveWebProfile(productIdentity, options);
 
   function workspaceRegistryPath() {

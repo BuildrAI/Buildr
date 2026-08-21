@@ -38,12 +38,12 @@ async function runInternalProductAction(argv) {
     return true;
   }
   if (action === 'enroll-npm-installation') {
-    const { enrollNpmInstallationFromLifecycle } = await import('../../application/npm-installation-enrollment.mjs');
+    const { enrollNpmInstallationFromLifecycle } = await import('../../system/installation/module.mjs');
     const result = enrollNpmInstallationFromLifecycle();
     if (result.action === 'skipped') console.warn(`Buildr npm update authority was not enrolled: ${result.reason}.`);
     else {
       try {
-        const { refreshInstalledNpmLauncher } = await import('../../infrastructure/product-launcher/index.mjs');
+        const { refreshInstalledNpmLauncher } = await import('../../system/installation/module.mjs');
         const refresh = refreshInstalledNpmLauncher({ registration: { status: 'installed', entry: result.entry } });
         if (refresh.action === 'blocked') console.warn(`Buildr Web Launcher binding was not refreshed: ${refresh.reason}.`);
       } catch (error) {

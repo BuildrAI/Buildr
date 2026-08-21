@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
-import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
+import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
 
 const RELEASED = { channel: 'npm', runtime: { role: 'host' } };
 const DEVELOPMENT = { channel: 'development', runtime: { role: 'development' } };

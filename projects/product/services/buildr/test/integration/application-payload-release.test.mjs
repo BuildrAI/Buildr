@@ -8,7 +8,7 @@ import test from 'node:test';
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { createInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
+import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.mjs';
 import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.mjs';

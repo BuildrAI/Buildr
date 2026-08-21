@@ -147,7 +147,7 @@ test('npm Launcher candidate is registered without a platform distribution depen
   const direct = createVerificationPlan({ stepIds: ['npm-launcher-candidate'] });
   assert.deepEqual(direct.steps.map((step) => step.id), ['npm-launcher-candidate']);
   assert.equal(direct.steps[0].testing.environment.footprints.includes('network'), false);
-  assert.ok(direct.steps[0].inputs.includes('src/infrastructure/product-launcher/**'));
+  assert.ok(direct.steps[0].inputs.includes('src/system/installation/**'));
 });
 
 test('remote text owner includes product re-entry and payload entry boundaries', () => {

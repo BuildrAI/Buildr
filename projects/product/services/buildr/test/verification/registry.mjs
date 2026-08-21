@@ -238,7 +238,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-workspace-lifecycle': Object.freeze(['src/workspace/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-lifecycle': Object.freeze(['src/bootstrap/**', 'src/task/**', 'src/application/task-development/**', 'src/application/task-review/**', 'src/application/task-verification/**', 'src/application/change/**', 'src/domain/task-development/**', 'src/domain/task-review/**', 'src/domain/task-verification/**', 'test/helpers/task-record-system-fixture.mjs']),
   'system-worktree-lifecycle': Object.freeze(['src/application/worktree/**', 'src/application/task-environment/**', 'src/domain/task-environment/**', 'src/infrastructure/git/**', 'test/helpers/workspace-product-suite.mjs']),
-  'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
+  'system-runtime-recovery': Object.freeze(['src/system/installation/application/cli-update.mjs', 'src/system/installation/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/bootstrap/**', 'src/workspace/module.mjs', 'src/workspace/interfaces/http/**', 'src/task/module.mjs', 'src/task/interfaces/http/**', 'src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/web/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-finish': Object.freeze(['src/application/task-finish/diagnostics-evidence.mjs', 'src/application/task-finish/execution-record.mjs', 'src/application/task-finish/git-task-contribution.mjs', 'src/application/task-finish/task-finish-activation.mjs', 'src/application/task-finish/task-finish-application.mjs', 'src/application/task-finish/task-finish-bootstrap-recovery.mjs', 'src/application/task-finish/task-finish-delivery-commit.mjs', 'src/application/task-finish/task-finish-delivery-reconciliation.mjs', 'src/application/task-finish/task-finish-delivery-remote.mjs', 'src/application/task-finish/task-finish-delivery-target.mjs', 'src/application/task-finish/task-finish-delivery-terminal.mjs', 'src/application/task-finish/task-finish-entry-readiness.mjs', 'src/application/task-finish/task-finish-maintenance.mjs', 'src/application/task-finish/task-finish-occupancy-release.mjs', 'src/application/task-finish/task-finish-product-executor.mjs', 'src/application/task-finish/task-finish-repository-set.mjs', 'src/application/task-finish/task-finish-run.mjs', 'src/application/task-terminal-delivery/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
@@ -346,9 +346,15 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/product-installation-registry.test.mjs',
   ], [
     'tools/release/**',
-    'src/application/product-installation-status.mjs',
+    'src/system/installation/application/product-installation-status.mjs',
+    'src/system/installation/application/npm-installation-enrollment.mjs',
+    'src/system/installation/**',
+    'src/application/cli-update.mjs',
     'src/application/npm-installation-enrollment.mjs',
+    'src/application/product-installation-status.mjs',
+    'src/application/release-awareness.mjs',
     'src/infrastructure/product-identity/**',
+    'src/infrastructure/product-launcher/**',
     'src/infrastructure/product-invocation/**',
     'src/infrastructure/product-resources/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),
@@ -375,7 +381,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], [
     'skills/buildr-self-bootstrap-sync/**',
     'resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**',
-    'src/application/release-awareness.mjs',
+    'src/system/installation/application/release-awareness.mjs',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
     'test/integration/task-entry-snapshot-application.test.mjs',
@@ -634,7 +640,7 @@ export const verificationSteps = Object.freeze([
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
     'test/helpers/task-finish-sqlite-fixture.mjs',
-    'src/application/cli-update.mjs',
+    'src/system/installation/application/cli-update.mjs',
     'src/application/task-finish/**',
     'src/application/task-environment/**',
     'src/application/worktree/**',
@@ -691,8 +697,8 @@ export const verificationSteps = Object.freeze([
   step({ id: 'npm-launcher-candidate', name: 'verified npm installation Launcher projection', executor: { type: 'node-test', files: [
     'test/integration/npm-launcher.test.mjs',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
-    'src/infrastructure/product-launcher/**', 'src/infrastructure/product-identity/**', 'src/bootstrap/cli/identity.ts',
-    'src/interfaces/cli/launcher.mjs', 'src/interfaces/local-app/http/server.mjs',
+    'src/system/installation/**', 'src/bootstrap/cli/identity.ts',
+    'src/system/installation/interfaces/cli/launcher.mjs', 'src/interfaces/local-app/http/server.mjs',
     'tools/release/application-payload.mjs', 'tools/release/application-payload-entry.mjs',
     'test/integration/npm-launcher.test.mjs', 'test/verification/release/release-smoke.mjs',
     '.github/workflows/publish.yml',
@@ -756,7 +762,7 @@ export const verificationSteps = Object.freeze([
   ], concurrencyClass: 'network' }),
   step({ id: 'release-tarball-smoke', name: 'release tarball headless smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/interfaces/cli/**',
-    'src/application/cli-update.mjs',
+    'src/system/installation/application/cli-update.mjs',
     'src/application/package-maintenance/**', 'src/application/package-maintenance.mjs',
     'src/application/workspace-operations.mjs', 'src/infrastructure/product-layout.mjs',
     'package.json', 'package-lock.json', 'test/verification/release/**', '.github/workflows/publish.yml',

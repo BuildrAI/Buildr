@@ -7,12 +7,12 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   readCurrentInstallationOrigin,
   runtimeIdentityForOrigin,
-} from '../infrastructure/product-identity/installation-origin.mjs';
-import { registeredProductInstallations } from '../infrastructure/product-identity/installation-registry.mjs';
-import { localAppDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../workspace/module.mjs';
-import { resolveApplicationPayloadRoot } from '../infrastructure/product-resources/index.mjs';
-import { npmLauncherStatus } from '../infrastructure/product-launcher/index.mjs';
-import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../infrastructure/product-identity/web-profile.mjs';
+} from '../infrastructure/installation-origin.mjs';
+import { registeredProductInstallations } from '../infrastructure/installation-registry.mjs';
+import { localAppDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.mjs';
+import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
+import { npmLauncherStatus } from '../infrastructure/npm-launcher.mjs';
+import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../../../web/infrastructure/web-profile.mjs';
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }

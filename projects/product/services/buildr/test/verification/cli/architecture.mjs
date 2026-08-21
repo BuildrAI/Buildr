@@ -110,8 +110,9 @@ const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file))
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
-  if (!['task', 'web', 'workspace'].includes(parts[0])) return parts[0];
-  if (parts.length === 2 && parts[1] === 'module.mjs') return 'module';
+  const moduleOffset = parts[0] === 'system' && parts[1] === 'installation' ? 2 : 1;
+  if (!['task', 'web', 'workspace'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
     application: 'application',
@@ -119,7 +120,7 @@ const layerOf = (relative) => {
     infrastructure: 'infrastructure',
     interfaces: 'interfaces',
     http: 'interfaces',
-  }[parts[1]] || parts[0];
+  }[parts[moduleOffset]] || parts[0];
 };
 const allowedTargets = {
   bootstrap: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
@@ -129,6 +130,10 @@ const allowedTargets = {
   interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
+const allowedCrossModulePorts = new Set([
+  'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
+  'web/module.mjs -> system/installation/module.mjs',
+]);
 
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
@@ -154,7 +159,10 @@ for (const file of sourceFiles) {
     edges.push(targetRelative);
     const sourceLayer = layerOf(relative);
     const targetLayer = layerOf(targetRelative);
-    if (!allowedTargets[sourceLayer]?.has(targetLayer)) problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
+    if (!allowedTargets[sourceLayer]?.has(targetLayer)
+      && !allowedCrossModulePorts.has(`${relative} -> ${targetRelative}`)) {
+      problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
+    }
   }
   graph.set(relative, edges);
 }

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnCommandSync } from '../infrastructure/process.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from './json-contracts.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
 import {
   RELEASE_TRACKS,
   buildReleaseAwareness,
@@ -13,12 +13,12 @@ import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
-} from '../infrastructure/product-identity/installation-origin.mjs';
+} from '../infrastructure/installation-origin.mjs';
 import {
   findRegisteredProductInstallation,
   inspectProductUpdateAuthority,
-} from '../infrastructure/product-identity/installation-registry.mjs';
-import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../infrastructure/product-resources/index.mjs';
+} from '../infrastructure/installation-registry.mjs';
+import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
 
 function run(command, args, options = {}) {
   const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });

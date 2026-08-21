@@ -15,21 +15,22 @@ import { createNpmPackStaging } from '../../tools/release/release-artifact.mjs';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../../src/infrastructure/product-identity/installation-registry.mjs';
+} from '../../src/system/installation/infrastructure/installation-registry.mjs';
 import {
   installNpmLauncher,
   npmLauncherStatus,
+  assertCurrentNpmLauncherBinding,
   refreshInstalledNpmLauncher,
   repairNpmLauncher,
   uninstallNpmLauncher,
-} from '../../src/infrastructure/product-launcher/index.mjs';
+} from '../../src/system/installation/infrastructure/npm-launcher.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
 import { createLocalWorkspaceServer, ensureRegisteredTarget } from '../../src/interfaces/local-app/http/server.mjs';
 import {
   clearLocalAppInstance,
   writeLocalAppInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
-import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
+import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
@@ -282,7 +283,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     installationIdentity: installed.binding.installationOwnershipIdentity,
   };
   const runtime = createRuntime();
-  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (message) => warnings.push(String(message));
@@ -385,12 +386,12 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   const productIdentity = productIdentityFor(installed.binding);
   const foreignIdentity = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
   const foreignRuntime = createRuntime();
-  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   const foreign = await foreignRuntime.startLocalWorkspaceApp(['--no-open', '--port', '0']);
   const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
   const foreignReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const currentRuntime = createRuntime();
-  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, createLocalWorkspaceServer, ensureRegisteredTarget });
+  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(
     () => currentRuntime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]),
     (error) => error.code === 'launcher_handoff_cli_ownership_conflict',
@@ -443,7 +444,7 @@ test('non-Windows foreground Web clears its receipt on SIGHUP', async (t) => {
 });
 
 test('Windows Launcher PowerShell bridge preserves shortcut and root paths containing spaces', () => {
-  const npmLauncherSource = fs.readFileSync(new URL('../../src/infrastructure/product-launcher/index.mjs', import.meta.url), 'utf8');
+  const npmLauncherSource = fs.readFileSync(new URL('../../src/system/installation/infrastructure/npm-launcher.mjs', import.meta.url), 'utf8');
   const developmentLauncherSource = fs.readFileSync(new URL('../../package/launchers/manage.mjs', import.meta.url), 'utf8');
   for (const source of [npmLauncherSource, developmentLauncherSource]) {
     assert.doesNotMatch(source, /\$args\[[01]\]/);

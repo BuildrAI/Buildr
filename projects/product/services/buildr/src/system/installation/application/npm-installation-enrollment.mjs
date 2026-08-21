@@ -2,20 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { sameFilesystemPath } from '../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
-} from '../infrastructure/product-identity/installation-origin.mjs';
+} from '../infrastructure/installation-origin.mjs';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../infrastructure/product-identity/installation-registry.mjs';
+} from '../infrastructure/installation-registry.mjs';
 import {
   resolveApplicationPayloadRoot,
   readApplicationPayloadManifest,
   resolveProductRoot,
-} from '../infrastructure/product-resources/index.mjs';
+} from '../../../infrastructure/product-resources/index.mjs';
 
 function requiredAbsoluteFile(value, label) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an explicit absolute path.`);

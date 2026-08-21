@@ -5,17 +5,17 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { atomicWriteJson } from '../filesystem/index.mjs';
-import { sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
-import { productDataRoot } from '../product-identity/web-profile.mjs';
+import { atomicWriteJson } from '../../../infrastructure/filesystem/index.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
 import {
   createNpmLauncherBinding,
   DEFAULT_NPM_LAUNCHER_WEB_PORT,
   inspectNpmLauncherBinding,
   readAndInspectNpmLauncherBinding,
   validateNpmLauncherBinding,
-} from '../product-identity/launcher-binding.mjs';
-import { resolveProductResource } from '../product-resources/index.mjs';
+} from './launcher-binding.mjs';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
 
 function quoteShell(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;

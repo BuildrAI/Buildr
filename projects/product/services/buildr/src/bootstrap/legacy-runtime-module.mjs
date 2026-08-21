@@ -15,7 +15,6 @@ import { registerDomainsSkills } from '../application/domains/skills.mjs';
 import { registerApplicationPackageMaintenance } from '../application/package-maintenance.mjs';
 import { registerApplicationWorkspaceOperations } from '../application/workspace-operations.mjs';
 import { registerApplicationRuntime } from '../application/runtime.mjs';
-import { registerApplicationCliUpdate } from '../application/cli-update.mjs';
 import { registerPublicationApplication } from '../application/publication/publication-application.mjs';
 import { registerChangeApplication } from '../application/change/change-application.mjs';
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
@@ -32,7 +31,6 @@ import { registerTaskEnvironmentApplication } from '../application/task-environm
 import { registerTaskExecutionRecordApplication } from '../application/task-execution-record/task-execution-record-application.mjs';
 import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
-import { registerProductInstallationStatus } from '../application/product-installation-status.mjs';
 
 const TASK_RECORD_MODULE_SLOT = Symbol('task-record-module');
 const TASK_REVIEW_MODULE_SLOT = Symbol('task-review-module');
@@ -60,8 +58,6 @@ const REGISTRATIONS = [
   registerChangeApplication,
   registerApplicationPackageMaintenance,
   registerApplicationWorkspaceOperations,
-  registerApplicationCliUpdate,
-  registerProductInstallationStatus,
   registerApplicationRuntime,
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,

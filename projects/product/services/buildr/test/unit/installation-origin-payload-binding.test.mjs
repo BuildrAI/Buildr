@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   createInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
-} from '../../src/infrastructure/product-identity/installation-origin.mjs';
+} from '../../src/system/installation/infrastructure/installation-origin.mjs';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
 
 function manifest() {

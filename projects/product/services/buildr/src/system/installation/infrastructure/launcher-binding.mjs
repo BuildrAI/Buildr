@@ -2,10 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import { inspectProductUpdateAuthority, validateProductInstallationRegistryEntry } from './installation-registry.mjs';
 import { validateFormalInstallationOriginPayloadBinding, validateInstallationOrigin } from './installation-origin.mjs';
-import { readApplicationPayloadManifest } from '../product-resources/index.mjs';
+import { readApplicationPayloadManifest } from '../../../infrastructure/product-resources/index.mjs';
 
 export const NPM_LAUNCHER_BINDING_SCHEMA = 'buildr.npm-launcher-binding/v2';
 export const DEFAULT_NPM_LAUNCHER_WEB_PORT = 4457;
