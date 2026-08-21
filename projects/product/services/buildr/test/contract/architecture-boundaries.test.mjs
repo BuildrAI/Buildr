@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../../src/bootstrap/runtime.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -54,7 +55,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
     'src/application/worktree/git-worktree-provider.mjs',
     'src/task/persistence/task-environment-repository.mjs',
     'src/task/application/task-verification-application.mjs',
-    'src/application/task-finish/task-finish-application.mjs',
+    'src/task/application/finish/task-finish-application.mjs',
     'src/web/application/preview-lifecycle.mjs',
     'package/launchers/manage.mjs',
   ];
@@ -90,6 +91,42 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
   assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/);
   const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
   assert.doesNotMatch(registry, /key: "web preview|key: "web"/);
+});
+
+test('Task Delivery 与 Finish 只由 Task module 组装', () => {
+  for (const relative of [
+    'src/task/application/finish/task-finish-application.mjs',
+    'src/task/application/task-terminal-delivery-application.mjs',
+    'src/task/persistence/task-finish-repository.mjs',
+    'src/task/interfaces/cli/task-terminal-delivery.mjs',
+    'src/task/interfaces/internal/task-finish-maintenance-driver.mjs',
+    'src/task/interfaces/internal/task-finish-retained-cleanup.mjs',
+    'src/task/interfaces/internal/task-finish-target-lease-driver.mjs',
+  ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
+  for (const relative of [
+    'src/application/task-finish',
+    'src/application/task-terminal-delivery',
+    'src/task/persistence/finish',
+    'src/interfaces/cli/task-terminal-delivery.mjs',
+    'src/interfaces/internal/task-finish-maintenance-driver.mjs',
+    'src/interfaces/internal/task-finish-retained-cleanup.mjs',
+    'src/interfaces/internal/task-finish-target-lease-driver.mjs',
+  ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), false, `legacy entry remains: ${relative}`);
+
+  const runtime = createRuntime();
+  const modules = runtimeModuleSnapshot(runtime);
+  assert.equal(modules.filter((module) => module.id === 'task-finish').length, 1);
+  assert.equal(modules.filter((module) => module.id === 'task-terminal-delivery').length, 1);
+  assert.deepEqual(
+    runtimeContributions(runtime, 'cli')
+      .filter((route) => route.key.startsWith('task finish ') || route.key === 'task delivery inspect')
+      .map((route) => route.key),
+    ['task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect'],
+  );
+  const legacy = fs.readFileSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs'), 'utf8');
+  assert.doesNotMatch(legacy, /registerTaskFinishRepository|registerTaskFinishApplication|registerTaskTerminalDeliveryApplication/);
+  const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
+  assert.doesNotMatch(cliRegistry, /key: ["']task (?:finish (?:inspect|reconcile|run)|delivery inspect)/);
 });
 
 test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由顶层 web-dist 交付', () => {

@@ -15,6 +15,8 @@ import {
   PARENT_COORDINATION_COMPATIBILITY,
   TASK_OVERVIEW_COMPATIBILITY,
   TASK_ENTRY_SNAPSHOT_COMPATIBILITY,
+  TASK_FINISH_COMPATIBILITY,
+  TASK_TERMINAL_DELIVERY_COMPATIBILITY,
   createTaskEnvironmentModule,
   createTaskExecutionRecordModule,
   createTaskVerificationModule,
@@ -23,6 +25,8 @@ import {
   createParentCoordinationModule,
   createTaskOverviewModule,
   createTaskEntrySnapshotModule,
+  createTaskFinishModule,
+  createTaskTerminalDeliveryModule,
 } from '../task/module.mjs';
 import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
@@ -119,6 +123,8 @@ export function createRuntime() {
     installParentCoordinationModule: () => installTaskCompatibilityModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_COMPATIBILITY),
     installTaskOverviewModule: () => installTaskCompatibilityModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_COMPATIBILITY),
     installTaskEntrySnapshotModule: () => installTaskCompatibilityModule(runtime, registry, createTaskEntrySnapshotModule(runtime), TASK_ENTRY_SNAPSHOT_COMPATIBILITY),
+    installTaskFinishModule: () => installTaskCompatibilityModule(runtime, registry, createTaskFinishModule(runtime), TASK_FINISH_COMPATIBILITY),
+    installTaskTerminalDeliveryModule: () => installTaskCompatibilityModule(runtime, registry, createTaskTerminalDeliveryModule(runtime), TASK_TERMINAL_DELIVERY_COMPATIBILITY),
   });
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));

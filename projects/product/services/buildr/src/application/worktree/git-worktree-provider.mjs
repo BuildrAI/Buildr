@@ -10,7 +10,7 @@ import {
   verifyDeliveredGitTaskContribution,
   verifyGitNoContributionProof,
   verifyGitTaskContributionContainmentProof,
-} from '../task-finish/git-task-contribution.mjs';
+} from '../../task/application/finish/git-task-contribution.mjs';
 import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';

@@ -1,5 +1,5 @@
 import { parentCoordinationError } from '../domain/parent-coordination.mjs';
-import { decodeTaskFinishCurrentRow } from './finish/task-finish-repository.mjs';
+import { decodeTaskFinishCurrentRow } from './task-finish-repository.mjs';
 
 function asError(cause, taskId) {
   if (cause.parentCoordinationBusiness || cause.structuredStoreBusiness || cause.taskRecordBusiness) return cause;

@@ -8,7 +8,6 @@ import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
 import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
-import { taskTerminalDeliveryInspectCommand } from '../../interfaces/cli/task-terminal-delivery.mjs';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
@@ -137,77 +136,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
     run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
   },
-  {
-    key: "task delivery inspect",
-    surface: "agent-machine",
-    summary: "仅凭 Task ID 回读既有 Terminal Delivery 状态、Finish run ID、最终远端引用、清理事实与可用恢复动作。",
-    help: [
-      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "调用既有 Terminal Delivery Application，返回 buildr.task-terminal-delivery/v1；只读且不执行 resume、cleanup 或 Finish。",
-      "task inspect 继续只查询 Task Record；task finish inspect --run 继续按 run identity 查询完整 Finish 明细。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'delivery' && runtimeId === 'inspect',
-    run: (r, c) => taskTerminalDeliveryInspectCommand(r, c.argv.slice(5)),
-  },
   TASK_MODULE_COMMAND_SLOT,
-  {
-    key: "task finish inspect",
-    surface: "agent-machine",
-    summary: "必需参数：--run。",
-    help: [
-      "Usage: buildr task finish inspect --run <id> [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
-      "",
-      "必需参数：--run。",
-      "互斥参数：无。",
-      "Execution surface：canonical Workspace 中的 durable finish run，只读。",
-      "安全副作用：无；JSON默认返回closed compact投影，显式--detail full返回完整诊断Result；--detail self-bootstrap返回Product-owned稳定自举输入。",
-      "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
-    run: (r, c) => r.taskFinish('inspect', c.argv.slice(5)),
-  },
-  {
-    key: "task finish reconcile",
-    surface: "agent-machine",
-    summary: "观察 current Task Contribution 与真实远端结果，收敛由 Agent、PR 或其他已授权路径完成的交付。",
-    help: [
-      "Usage: buildr task finish reconcile --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
-      "",
-      "从 current Development handoff 与 Task Environment repository set解析交付身份，读取并fetch真实远端ref，逐仓库验证Task Contribution包含关系。",
-      "不接受success、evidence、commit message、run token或手写proof；不会push、force push、改写共享历史或创建Delivery Carrier。",
-      "全部适用repository交付成立后提交Task交付终态；activation、Environment cleanup与diagnostics作为独立maintenance事实交给Agent继续处理。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'reconcile',
-    run: (r, c) => r.taskFinish('reconcile', c.argv.slice(5)),
-  },
-  {
-    key: "task finish run",
-    surface: "agent-machine",
-    summary: "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。",
-    help: [
-      "Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
-      "Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]",
-      "Bootstrap recovery: buildr task finish run --run <id> [--resume <token>] --bootstrap-recovery --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]",
-      "Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]",
-      "",
-      "必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。",
-      "可选 --agent：省略时使用 Task Environment 已绑定 adapter，不得猜测当前聊天宿主或默认为 Codex；传入值必须与 Environment adapter 一致。",
-      "互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。",
-      "零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。",
-      "受控自修复：--bootstrap-recovery只用于已有run在无交付副作用的preflight/prepare Product provider缺陷；必须另行明确授权。retained Application仍是writer，只从冻结clean Task Environment HEAD派生并加载run-owned provider capsule；不接受source/module/tarball/manifest输入。",
-      "占用释放：--release-occupancy只用于Task已放弃且该run从未成功交付时，释放run-owned隔离载体占用；不是普通resume、不是作废已推送交付，也不把abandoned Task改成completed。",
-      "Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。",
-      "安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。",
-      "提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。",
-      "deliver使用Environment adapter冻结的run agent尝试retained Doctor；Doctor未ready时保留已完成remote readback并把Activation标记为attention，不撤销Delivery。",
-      "每次真正执行的run/resume尝试打开独立finish-diagnostics Execution Record；open、seal、capacity或transient cleanup失败只形成Diagnostics attention，不阻止安全Delivery。",
-      "JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full；跨模块自举只消费--detail self-bootstrap稳定投影。",
-      "新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run',
-    run: (r, c) => r.taskFinish('run', c.argv.slice(5)),
-  },
   {
     key: "doctor",
     surface: "primary",

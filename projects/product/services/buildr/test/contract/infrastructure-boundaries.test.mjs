@@ -28,7 +28,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/task/persistence/task-environment-repository.mjs',
     'src/task/persistence/task-execution-record-repository.mjs',
     'src/task/persistence/task-execution-record-body-store.mjs',
-    'src/task/persistence/finish/task-finish-repository.mjs',
+    'src/task/persistence/task-finish-repository.mjs',
     'src/task/persistence/task-overview-repository.mjs',
     'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.mjs',

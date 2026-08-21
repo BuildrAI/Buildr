@@ -1,7 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
 
 const USAGE = 'buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]';
 

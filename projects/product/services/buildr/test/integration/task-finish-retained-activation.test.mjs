@@ -5,9 +5,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { planRetainedTaskFinishActivation } from '../../src/application/task-finish/task-finish-activation.mjs';
-import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { planRetainedTaskFinishActivation } from '../../src/task/application/finish/task-finish-activation.mjs';
+import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
+import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {

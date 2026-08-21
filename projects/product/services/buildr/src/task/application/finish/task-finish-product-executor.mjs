@@ -4,8 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
-import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
+import { controlMetadataPath } from '../../../infrastructure/git/control-metadata-path.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.mjs';
 
 import { planRetainedTaskFinishActivation } from './task-finish-activation.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
@@ -13,8 +13,8 @@ import { acquireFinishTargetLease, readFinishCompletion, releaseFinishTargetLeas
 import { TASK_FINISH_RAW_COMMAND_OUTPUT } from './execution-record.mjs';
 import { legacyTaskFinishDeliveryCommit, publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
-import { classifyFinalDoctorResult } from '../../infrastructure/final-doctor-process.mjs';
-import { createExactNodeExecutionEnvironment } from '../../infrastructure/process.mjs';
+import { classifyFinalDoctorResult } from '../../../infrastructure/final-doctor-process.mjs';
+import { createExactNodeExecutionEnvironment } from '../../../infrastructure/process.mjs';
 import {
   adoptAgentReviewedGitCarrier,
   createGitNoContributionProof,

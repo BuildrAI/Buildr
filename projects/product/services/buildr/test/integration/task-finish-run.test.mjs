@@ -13,8 +13,8 @@ import {
   inspectFinishRun as inspectFinishRunWithSqlite,
   readTaskFinishResults as readTaskFinishResultsWithSqlite,
   readFinishRun as readFinishRunWithSqlite,
-} from '../../src/application/task-finish/task-finish-run.mjs';
-import { normalizeTaskFinishRepositorySet } from '../../src/application/task-finish/task-finish-repository-set.mjs';
+} from '../../src/task/application/finish/task-finish-run.mjs';
+import { normalizeTaskFinishRepositorySet } from '../../src/task/application/finish/task-finish-repository-set.mjs';
 
 const runtimes = new Map();
 

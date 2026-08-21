@@ -8,7 +8,7 @@ import test from 'node:test';
 import {
   finalizeTaskFinishBootstrapRecovery,
   prepareTaskFinishBootstrapRecoveryContext,
-} from '../../src/application/task-finish/task-finish-bootstrap-recovery.mjs';
+} from '../../src/task/application/finish/task-finish-bootstrap-recovery.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -58,7 +58,7 @@ test('retained bootstrap从current Environment clean HEAD创建、复用并撤�
   git(workspaceRoot, ['init', '-b', 'dev']);
   git(workspaceRoot, ['config', 'user.name', 'Buildr Test']);
   git(workspaceRoot, ['config', 'user.email', 'buildr@example.com']);
-  const provider = 'projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs';
+  const provider = 'projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs';
   write(path.join(workspaceRoot, provider), 'export function createTaskFinishProductHandlers() { return {}; }\n');
   git(workspaceRoot, ['add', provider]);
   git(workspaceRoot, ['commit', '-m', 'base']);
@@ -141,7 +141,7 @@ test('dirty Task source不能形成bootstrap capsule', (t) => {
   git(workspaceRoot, ['init', '-b', 'dev']);
   git(workspaceRoot, ['config', 'user.name', 'Buildr Test']);
   git(workspaceRoot, ['config', 'user.email', 'buildr@example.com']);
-  const provider = 'projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs';
+  const provider = 'projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs';
   write(path.join(workspaceRoot, provider), 'export const base = true;\n');
   git(workspaceRoot, ['add', provider]);
   git(workspaceRoot, ['commit', '-m', 'base']);

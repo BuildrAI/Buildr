@@ -12,19 +12,19 @@ import {
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
   observeGitTaskContribution,
-} from '../../src/application/task-finish/git-task-contribution.mjs';
+} from '../../src/task/application/finish/git-task-contribution.mjs';
 import { gitTaskContributionIdentity } from '../../src/infrastructure/git/git-task-contribution.mjs';
 import {
   createFinishRun,
   writeFinishCompletion,
-} from '../../src/application/task-finish/task-finish-run.mjs';
+} from '../../src/task/application/finish/task-finish-run.mjs';
 import {
   normalizeTaskFinishRepositorySet,
   taskFinishCarrierSetIdentity,
   taskFinishDeliverySetIdentity,
   taskFinishRepositorySetIdentity,
-} from '../../src/application/task-finish/task-finish-repository-set.mjs';
-import { executeRetainedTaskFinishCleanup } from '../../src/interfaces/internal/task-finish-retained-cleanup.mjs';
+} from '../../src/task/application/finish/task-finish-repository-set.mjs';
+import { executeRetainedTaskFinishCleanup } from '../../src/task/interfaces/internal/task-finish-retained-cleanup.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -226,7 +226,7 @@ async function realZeroDeltaCleanupRun(t) {
   git(root, ['commit', '-m', 'original baseline']);
 
   const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'bootstrap', 'runtime.mjs')).href;
-  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'task-finish', 'task-finish-product-executor.mjs')).href;
+  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'task', 'application', 'finish', 'task-finish-product-executor.mjs')).href;
   const [{ createRuntime: createRetainedRuntime }, { createTaskFinishProductHandlers }] = await Promise.all([
     import(composeRuntimeUrl),
     import(executorUrl),

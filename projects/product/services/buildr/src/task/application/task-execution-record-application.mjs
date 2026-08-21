@@ -18,11 +18,11 @@ import {
   createAuthorizedUnknownExecutionRecordFiles,
   loadVerificationExecutionRecordRecovery,
 } from '../../application/verification/execution-record-recovery.mjs';
-import { cleanupTaskFinishDiagnosticsEvidence } from '../../application/task-finish/diagnostics-evidence.mjs';
+import { cleanupTaskFinishDiagnosticsEvidence } from '../../task/application/finish/diagnostics-evidence.mjs';
 import {
   loadRetainedTaskFinishExecutionRecordRecovery,
   loadTaskFinishExecutionRecordRecovery,
-} from '../../application/task-finish/execution-record-recovery.mjs';
+} from '../../task/application/finish/execution-record-recovery.mjs';
 
 const PUBLIC_VIEWS = Object.freeze({
   all: null,

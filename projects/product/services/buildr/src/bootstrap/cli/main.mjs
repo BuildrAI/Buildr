@@ -33,7 +33,7 @@ async function runInternalProductAction(argv) {
     return true;
   }
   if (action === 'task-finish-retained-cleanup') {
-    const { runRetainedTaskFinishCleanup } = await import('../../interfaces/internal/task-finish-retained-cleanup.mjs');
+    const { runRetainedTaskFinishCleanup } = await import('../../task/interfaces/internal/task-finish-retained-cleanup.mjs');
     await runRetainedTaskFinishCleanup(argv.slice(4));
     return true;
   }

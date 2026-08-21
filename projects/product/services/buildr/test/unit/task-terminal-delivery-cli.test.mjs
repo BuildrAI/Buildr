@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
-import { parseTaskTerminalDeliveryCli, taskTerminalDeliveryInspectCommand } from '../../src/interfaces/cli/task-terminal-delivery.mjs';
+import { parseTaskTerminalDeliveryCli, taskTerminalDeliveryInspectCommand } from '../../src/task/interfaces/cli/task-terminal-delivery.mjs';
 
 function projection(status, delivery = null) {
   return {

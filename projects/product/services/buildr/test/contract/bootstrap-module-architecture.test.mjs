@@ -20,6 +20,12 @@ import {
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_PERSISTENCE_READ,
+  TASK_FINISH_APPLICATION,
+  TASK_FINISH_COMPATIBILITY,
+  TASK_FINISH_INTERNAL,
+  TASK_FINISH_PERSISTENCE_READ,
+  TASK_TERMINAL_DELIVERY_APPLICATION,
+  TASK_TERMINAL_DELIVERY_COMPATIBILITY,
 } from '../../src/task/module.mjs';
 import {
   SYSTEM_INSTALLATION_APPLICATION,
@@ -179,6 +185,18 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
     contributions: { cli: ['task next'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'task-finish',
+    requires: ['task-record.application', 'task-environment.application', 'task-execution-record.application', 'task-development.application', 'workspace.structured-store'],
+    provides: [TASK_FINISH_APPLICATION, TASK_FINISH_PERSISTENCE_READ, TASK_FINISH_INTERNAL, TASK_FINISH_COMPATIBILITY],
+    contributions: { cli: ['task finish inspect', 'task finish reconcile', 'task finish run'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-terminal-delivery',
+    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-verification.application', 'task-finish.application'],
+    provides: [TASK_TERMINAL_DELIVERY_APPLICATION, TASK_TERMINAL_DELIVERY_COMPATIBILITY],
+    contributions: { cli: ['task delivery inspect'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'system-installation',
     requires: [],
     provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION],
@@ -220,6 +238,7 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
     'task verification inspect', 'task verification record',
     'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept',
     'task next',
+    'task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { planRetainedTaskFinishActivation } from '../../src/application/task-finish/task-finish-activation.mjs';
+import { planRetainedTaskFinishActivation } from '../../src/task/application/finish/task-finish-activation.mjs';
 
 test('Workspace root runtime sources select render-runtime', () => {
   const plan = planRetainedTaskFinishActivation({

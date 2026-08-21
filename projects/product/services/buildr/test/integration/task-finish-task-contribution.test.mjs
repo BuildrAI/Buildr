@@ -16,8 +16,8 @@ import {
   verifyDeliveredGitTaskContribution,
   verifyGitTaskContributionCarrier,
   verifyGitNoContributionProof,
-} from '../../src/application/task-finish/git-task-contribution.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
+} from '../../src/task/application/finish/git-task-contribution.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 import { registerGitWorktreeProvider } from '../../src/application/worktree/git-worktree-provider.mjs';
 
 function git(root, args) {

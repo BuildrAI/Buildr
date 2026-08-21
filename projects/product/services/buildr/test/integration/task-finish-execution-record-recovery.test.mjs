@@ -6,13 +6,13 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createTaskFinishDiagnosticsEvidence } from '../../src/application/task-finish/diagnostics-evidence.mjs';
+import { createTaskFinishDiagnosticsEvidence } from '../../src/task/application/finish/diagnostics-evidence.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
   TASK_FINISH_EXECUTION_RECORD_PRODUCER,
-} from '../../src/application/task-finish/execution-record.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+} from '../../src/task/application/finish/execution-record.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '../../../../../..');

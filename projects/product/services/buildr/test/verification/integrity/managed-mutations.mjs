@@ -44,13 +44,13 @@ const allowed = new Map([
   ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],
   ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
-  ['src/application/task-finish/task-finish-run.mjs', new Set([
+  ['src/task/application/finish/task-finish-run.mjs', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],
-  ['src/application/task-finish/task-finish-bootstrap-recovery.mjs', new Set([
+  ['src/task/application/finish/task-finish-bootstrap-recovery.mjs', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/application/task-finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
+  ['src/task/application/finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
   ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
   ['src/application/verification/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',

@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 import { createTaskFinishSqliteRuntime } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function git(root, args) {
@@ -41,7 +41,7 @@ test('full retained Application在Execution Record gate后写同一run并只给c
   git(root, ['init', '-b', 'dev']);
   git(root, ['config', 'user.name', 'Buildr Test']);
   git(root, ['config', 'user.email', 'buildr@example.com']);
-  const provider = 'projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs';
+  const provider = 'projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs';
   write(path.join(root, provider), 'export function createTaskFinishProductHandlers() { throw new Error("retained provider defect"); }\n');
   git(root, ['add', provider]);
   git(root, ['commit', '-m', 'base']);

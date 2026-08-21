@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
 import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';

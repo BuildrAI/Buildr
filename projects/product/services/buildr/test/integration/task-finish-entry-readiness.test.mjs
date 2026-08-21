@@ -8,7 +8,7 @@ import test from 'node:test';
 import {
   observeTaskFinishEntryReadiness,
   taskFinishEntryGapsError,
-} from '../../src/application/task-finish/task-finish-entry-readiness.mjs';
+} from '../../src/task/application/finish/task-finish-entry-readiness.mjs';
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });

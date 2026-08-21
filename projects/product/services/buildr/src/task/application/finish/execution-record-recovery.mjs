@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { taskExecutionRecordError } from '../../task/domain/task-execution-record.mjs';
+import { taskExecutionRecordError } from '../../domain/task-execution-record.mjs';
 import { TASK_FINISH_DIAGNOSTICS_EVIDENCE_SCHEMA } from './diagnostics-evidence.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,

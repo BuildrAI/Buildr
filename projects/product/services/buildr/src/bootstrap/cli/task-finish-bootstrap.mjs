@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { registerInfrastructure } from '../../infrastructure/index.mjs';
-import { registerTaskFinishRepository } from '../../task/persistence/finish/task-finish-repository.mjs';
-import { registerTaskFinishApplication } from '../../application/task-finish/task-finish-application.mjs';
+import { registerTaskFinishRepository } from '../../task/persistence/task-finish-repository.mjs';
+import { registerTaskFinishApplication } from '../../task/application/finish/task-finish-application.mjs';
 
 function optionValue(args, name, fallback) {
   const index = args.indexOf(name);

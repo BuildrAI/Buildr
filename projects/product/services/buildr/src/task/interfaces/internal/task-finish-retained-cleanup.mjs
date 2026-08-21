@@ -3,14 +3,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
 
-import { createRuntime } from '../../bootstrap/runtime.mjs';
+import { createRuntime } from '../../../bootstrap/runtime.mjs';
 import {
   createGitNoContributionProof,
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
-} from '../../application/task-finish/git-task-contribution.mjs';
-import { readFinishCompletion, readFinishRun } from '../../application/task-finish/task-finish-run.mjs';
-import { taskFinishCarrierSetIdentity, taskFinishDeliverySetIdentity } from '../../application/task-finish/task-finish-repository-set.mjs';
+} from '../../application/finish/git-task-contribution.mjs';
+import { readFinishCompletion, readFinishRun } from '../../application/finish/task-finish-run.mjs';
+import { taskFinishCarrierSetIdentity, taskFinishDeliverySetIdentity } from '../../application/finish/task-finish-repository-set.mjs';
 
 function cleanupError(code, message, details = null) {
   const error = new Error(message);

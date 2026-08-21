@@ -7,8 +7,8 @@ import test from 'node:test';
 import {
   cleanupTaskFinishDiagnosticsEvidence,
   createTaskFinishDiagnosticsEvidence,
-} from '../../src/application/task-finish/diagnostics-evidence.mjs';
-import { TASK_FINISH_RAW_COMMAND_OUTPUT } from '../../src/application/task-finish/execution-record.mjs';
+} from '../../src/task/application/finish/diagnostics-evidence.mjs';
+import { TASK_FINISH_RAW_COMMAND_OUTPUT } from '../../src/task/application/finish/execution-record.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-diagnostics-'));

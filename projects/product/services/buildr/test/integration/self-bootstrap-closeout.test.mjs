@@ -20,8 +20,8 @@ import {
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
-import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { selfBootstrapTaskFinishResult } from '../../src/task/application/finish/task-finish-self-bootstrap-projection.mjs';
 
 function run(executable, args, cwd) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -372,8 +372,8 @@ function executor(root, options = {}) {
     const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
     const continuityHelper = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
-    const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
-    const maintenanceDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-maintenance-driver.mjs');
+    const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
+    const maintenanceDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-maintenance-driver.mjs');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -805,7 +805,7 @@ test('terminal v3投影由bundled runner通过真实driver取得精确repository
   const { root, baseRef, environment } = fixture(t);
   const terminal = await terminalRepositoryFinish(root, baseRef);
   assert.equal(terminal.finishResult.workspaceRepository.leaseTargetIdentity, terminal.exactTargetIdentity);
-  const realTargetLeaseDriver = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-finish-target-lease-driver.mjs');
+  const realTargetLeaseDriver = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-finish-target-lease-driver.mjs');
 
   const result = runSelfBootstrapCloseout({
     finishResult: terminal.finishResult,

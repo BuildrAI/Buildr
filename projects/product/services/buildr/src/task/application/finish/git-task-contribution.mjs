@@ -9,15 +9,15 @@ import {
   observeGitTaskContribution,
   requireGitContributionText as requireGitText,
   withGitTaskContributionSnapshot as withTemporaryIndex,
-} from '../../infrastructure/git/git-task-contribution.mjs';
-import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
+} from '../../../infrastructure/git/git-task-contribution.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.mjs';
 import {
   publicTaskFinishDeliveryCommit,
   taskFinishDeliveryCommitFromMessage,
   taskFinishDeliveryCommitMatches,
 } from './task-finish-delivery-commit.mjs';
 
-export { observeGitTaskContribution } from '../../infrastructure/git/git-task-contribution.mjs';
+export { observeGitTaskContribution } from '../../../infrastructure/git/git-task-contribution.mjs';
 
 function carrierContainer(workspaceRoot, runId) {
   const base = path.resolve(workspaceRoot, '.buildr', 'transient', 'task-finish', 'carriers');

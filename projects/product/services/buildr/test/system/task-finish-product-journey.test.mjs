@@ -6,10 +6,10 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { registerTaskDevelopmentApplication } from '../../src/task/application/task-development-application.mjs';
-import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
-import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
+import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';

@@ -9,7 +9,7 @@ export const TASK_FINISH_BOOTSTRAP_RECOVERY_SCHEMA = 'buildr.task-finish-bootstr
 const MANIFEST_SCHEMA = 'buildr.task-finish-bootstrap-recovery-manifest/v1';
 const REVOCATION_SCHEMA = 'buildr.task-finish-bootstrap-recovery-revocation/v1';
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
-const EXECUTOR_RELATIVE_PATH = 'projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs';
+const EXECUTOR_RELATIVE_PATH = 'projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs';
 const PROVIDER_FAILURE_ORIGIN = 'product-phase-provider';
 const RUNTIME_METHODS = Object.freeze([
   'assertTaskDevelopmentCarrier',

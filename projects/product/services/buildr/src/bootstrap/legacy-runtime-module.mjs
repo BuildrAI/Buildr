@@ -1,6 +1,5 @@
 import { registerInfrastructure } from '../infrastructure/index.mjs';
 import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
-import { registerTaskFinishRepository } from '../task/persistence/finish/task-finish-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsOpenspec } from '../application/domains/openspec.mjs';
@@ -10,8 +9,6 @@ import { registerApplicationWorkspaceOperations } from '../application/workspace
 import { registerPublicationApplication } from '../application/publication/publication-application.mjs';
 import { registerChangeApplication } from '../application/change/change-application.mjs';
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
-import { registerTaskFinishApplication } from '../application/task-finish/task-finish-application.mjs';
-import { registerTaskTerminalDeliveryApplication } from '../application/task-terminal-delivery/task-terminal-delivery-application.mjs';
 import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
 
@@ -28,6 +25,8 @@ const TASK_DEVELOPMENT_MODULE_SLOT = Symbol('task-development-module');
 const PARENT_COORDINATION_MODULE_SLOT = Symbol('parent-coordination-module');
 const TASK_OVERVIEW_MODULE_SLOT = Symbol('task-overview-module');
 const TASK_ENTRY_SNAPSHOT_MODULE_SLOT = Symbol('task-entry-snapshot-module');
+const TASK_FINISH_MODULE_SLOT = Symbol('task-finish-module');
+const TASK_TERMINAL_DELIVERY_MODULE_SLOT = Symbol('task-terminal-delivery-module');
 
 const REGISTRATIONS = [
   registerInfrastructure,
@@ -35,7 +34,6 @@ const REGISTRATIONS = [
   registerWorkspaceManagementFence,
   WORKSPACE_MODULE_SLOT,
   AGENT_ASSETS_MODULE_SLOT,
-  registerTaskFinishRepository,
   registerContentTargetObserver,
   registerProjectGitObserver,
   registerDomainsOpenspec,
@@ -57,8 +55,8 @@ const REGISTRATIONS = [
   TASK_OVERVIEW_MODULE_SLOT,
   TASK_ENTRY_SNAPSHOT_MODULE_SLOT,
   registerVerificationApplication,
-  registerTaskFinishApplication,
-  registerTaskTerminalDeliveryApplication,
+  TASK_FINISH_MODULE_SLOT,
+  TASK_TERMINAL_DELIVERY_MODULE_SLOT,
 ];
 
 export function registerLegacyRuntime(runtime, {
@@ -74,6 +72,8 @@ export function registerLegacyRuntime(runtime, {
   installParentCoordinationModule,
   installTaskOverviewModule,
   installTaskEntrySnapshotModule,
+  installTaskFinishModule,
+  installTaskTerminalDeliveryModule,
   installWorkspaceModule,
 }) {
   if (typeof installAgentAssetsModule !== 'function') throw new Error('Bootstrap must provide the Agent Assets module installer.');
@@ -88,6 +88,8 @@ export function registerLegacyRuntime(runtime, {
   if (typeof installParentCoordinationModule !== 'function') throw new Error('Bootstrap must provide the Parent Coordination module installer.');
   if (typeof installTaskOverviewModule !== 'function') throw new Error('Bootstrap must provide the Task Overview module installer.');
   if (typeof installTaskEntrySnapshotModule !== 'function') throw new Error('Bootstrap must provide the Task Entry Snapshot module installer.');
+  if (typeof installTaskFinishModule !== 'function') throw new Error('Bootstrap must provide the Task Finish module installer.');
+  if (typeof installTaskTerminalDeliveryModule !== 'function') throw new Error('Bootstrap must provide the Task Terminal Delivery module installer.');
   if (typeof installWorkspaceModule !== 'function') throw new Error('Bootstrap must provide the Workspace module installer.');
   for (const register of REGISTRATIONS) {
     if (register === AGENT_ASSETS_MODULE_SLOT) installAgentAssetsModule(runtime);
@@ -102,6 +104,8 @@ export function registerLegacyRuntime(runtime, {
     else if (register === PARENT_COORDINATION_MODULE_SLOT) installParentCoordinationModule(runtime);
     else if (register === TASK_OVERVIEW_MODULE_SLOT) installTaskOverviewModule(runtime);
     else if (register === TASK_ENTRY_SNAPSHOT_MODULE_SLOT) installTaskEntrySnapshotModule(runtime);
+    else if (register === TASK_FINISH_MODULE_SLOT) installTaskFinishModule(runtime);
+    else if (register === TASK_TERMINAL_DELIVERY_MODULE_SLOT) installTaskTerminalDeliveryModule(runtime);
     else if (register === WORKSPACE_MODULE_SLOT) installWorkspaceModule(runtime);
     else register(runtime);
   }

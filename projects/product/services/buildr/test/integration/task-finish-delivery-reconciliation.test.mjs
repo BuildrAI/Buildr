@@ -5,10 +5,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
-import { reconcileTaskFinishDelivery } from '../../src/application/task-finish/task-finish-delivery-reconciliation.mjs';
-import { normalizeTaskFinishRepositorySet, taskFinishRepositorySetIdentity } from '../../src/application/task-finish/task-finish-repository-set.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { observeGitTaskContribution } from '../../src/task/application/finish/git-task-contribution.mjs';
+import { reconcileTaskFinishDelivery } from '../../src/task/application/finish/task-finish-delivery-reconciliation.mjs';
+import { normalizeTaskFinishRepositorySet, taskFinishRepositorySetIdentity } from '../../src/task/application/finish/task-finish-repository-set.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });

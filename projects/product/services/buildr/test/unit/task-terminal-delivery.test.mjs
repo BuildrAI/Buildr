@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { registerTaskTerminalDeliveryApplication } from '../../src/application/task-terminal-delivery/task-terminal-delivery-application.mjs';
+import { registerTaskTerminalDeliveryApplication } from '../../src/task/application/task-terminal-delivery-application.mjs';
 
 const TASK = 'terminal-task';
 const ids = {

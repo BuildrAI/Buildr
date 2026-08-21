@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 const cli = path.resolve('bin/buildr.mjs');
 

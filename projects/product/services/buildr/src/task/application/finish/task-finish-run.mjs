@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import { TASK_RETROSPECTIVE_PROMPT } from '../../task/application/task-retrospective-application.mjs';
+import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-application.mjs';
 import { compactTaskFinishFailure } from './execution-record.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import {

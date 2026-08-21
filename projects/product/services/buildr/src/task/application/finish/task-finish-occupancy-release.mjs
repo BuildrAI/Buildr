@@ -1,4 +1,4 @@
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 import { removeIsolatedGitCarrier } from './git-task-contribution.mjs';
 import { inspectFinishRun } from './task-finish-run.mjs';

@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createFinishRun, executeFinishRun, finishResult } from '../../src/application/task-finish/task-finish-run.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
+import { createFinishRun, executeFinishRun, finishResult } from '../../src/task/application/finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-sqlite-'));
@@ -200,7 +200,7 @@ test('retained内部lease driver以closed schema获取刷新和释放matching ow
   runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove internal lease driver.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId, identity: identity(root, taskId), runtime });
   runtime.writeTaskFinishRunPersistence(root, run);
-  const driver = fileURLToPath(new URL('../../src/interfaces/internal/task-finish-target-lease-driver.mjs', import.meta.url));
+  const driver = fileURLToPath(new URL('../../src/task/interfaces/internal/task-finish-target-lease-driver.mjs', import.meta.url));
   const invoke = (action, extra = []) => spawnSync(process.execPath, [driver, action, '--task', taskId, '--run', runId, '--target-identity', 'origin:dev', '--target', root, ...extra], { encoding: 'utf8' });
 
   const acquired = invoke('acquire');

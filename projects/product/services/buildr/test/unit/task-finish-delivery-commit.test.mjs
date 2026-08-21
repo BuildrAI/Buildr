@@ -5,7 +5,7 @@ import {
   normalizeTaskFinishDeliveryCommit,
   publicTaskFinishDeliveryCommit,
   taskFinishDeliveryCommitFromMessage,
-} from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
+} from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 
 test('Task Finish delivery commit规范化换行并确定性维护Task trailer', () => {
   const commit = normalizeTaskFinishDeliveryCommit('  fix(task-finish): 保留语义提交信息\r\n\r\n说明最终交付内容。\r\n\r\nBuildr-Task: old-task  ', 'finish-message');

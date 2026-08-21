@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { reconcileTaskFinishMaintenance } from '../../src/application/task-finish/task-finish-maintenance.mjs';
+import { reconcileTaskFinishMaintenance } from '../../src/task/application/finish/task-finish-maintenance.mjs';
 
 function closeout(status, taskId = 'task-1', runId = 'run-1') {
   return {

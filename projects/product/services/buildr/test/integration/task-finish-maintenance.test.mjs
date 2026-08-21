@@ -5,8 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { reconcileTaskFinishMaintenance } from '../../src/application/task-finish/task-finish-maintenance.mjs';
-import { createFinishRun, finishResult, inspectFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { reconcileTaskFinishMaintenance } from '../../src/task/application/finish/task-finish-maintenance.mjs';
+import { createFinishRun, finishResult, inspectFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 function fixture(t, taskId) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-maintenance-'));

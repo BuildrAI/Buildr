@@ -309,7 +309,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['system-workspace-lifecycle', 'system-task-lifecycle'],
     },
     {
-      path: 'src/application/task-finish/task-finish-run.mjs',
+      path: 'src/task/application/finish/task-finish-run.mjs',
       required: ['integration-task-finish', 'system-task-finish'],
       excluded: ['integration-task-finish-delivery', 'system-task-finish-cli'],
     },
@@ -364,8 +364,8 @@ test('OpenSpec 路径只选择真实 owner', () => {
 });
 
 test('Task Finish affected 路径使用有界 Integration/System slice', () => {
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/application/task-finish/task-finish-application.mjs'] })), [
-    'unit', 'integration-task-finish', 'system-task-finish', 'candidate-tarball', 'application-payload-release',
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/task/application/finish/task-finish-application.mjs'] })), [
+    'unit', 'integration-task-finish', 'system-task-finish', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-run.test.mjs'] })), [
     'integration-task-finish',
@@ -410,7 +410,7 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
     'docs/skill-capability-contracts.md',
     'resources/workspace/skills/buildr/task-finish/SKILL.md',
     'resources/workspace/skills/contracts/buildr/task-finish/v1.md',
-    'src/application/task-finish/task-finish-application.mjs',
+    'src/task/application/finish/task-finish-application.mjs',
     'test/integration/task-finish-delivery-remote.test.mjs',
     'test/system/task-finish-product-journey.test.mjs',
   ] });

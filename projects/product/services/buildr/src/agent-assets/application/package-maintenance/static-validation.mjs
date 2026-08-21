@@ -325,8 +325,8 @@ export function createPackageStaticValidator(deps) {
       'src/task/application/task-verification-application.mjs',
       'src/task/application/task-environment-application.mjs',
       'src/task/application/task-record-application.mjs',
-      'src/application/task-finish/task-finish-product-executor.mjs',
-      'src/application/task-terminal-delivery/task-terminal-delivery-application.mjs',
+      'src/task/application/finish/task-finish-product-executor.mjs',
+      'src/task/application/task-terminal-delivery-application.mjs',
     ]) {
       const file = path.join(root, relative);
       if (!existsFile(file)) continue;

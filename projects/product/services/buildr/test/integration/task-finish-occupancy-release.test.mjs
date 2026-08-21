@@ -6,10 +6,10 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
-import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
-import { compactTaskFinishResult } from '../../src/application/task-finish/task-finish-result-projection.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
+import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/task/application/finish/git-task-contribution.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { compactTaskFinishResult } from '../../src/task/application/finish/task-finish-result-projection.mjs';
 import { initializeTaskFinishSqliteWorkspace } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function git(root, args) {

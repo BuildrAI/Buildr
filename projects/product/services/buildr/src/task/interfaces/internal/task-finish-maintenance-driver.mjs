@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { createRuntime } from '../../bootstrap/runtime.mjs';
+import { createRuntime } from '../../../bootstrap/runtime.mjs';
 
 const RESULT_SCHEMA = 'buildr.task-finish-maintenance-driver-result/v1';
 

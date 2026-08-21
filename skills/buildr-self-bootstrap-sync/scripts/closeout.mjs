@@ -29,8 +29,8 @@ const FINISH_RUN_TRAILER = 'Buildr-Finish-Run';
 const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
-const TARGET_LEASE_DRIVER = `${SERVICE_ROOT}/src/interfaces/internal/task-finish-target-lease-driver.mjs`;
-const FINISH_MAINTENANCE_DRIVER = `${SERVICE_ROOT}/src/interfaces/internal/task-finish-maintenance-driver.mjs`;
+const TARGET_LEASE_DRIVER = `${SERVICE_ROOT}/src/task/interfaces/internal/task-finish-target-lease-driver.mjs`;
+const FINISH_MAINTENANCE_DRIVER = `${SERVICE_ROOT}/src/task/interfaces/internal/task-finish-maintenance-driver.mjs`;
 const TARGET_LEASE_DURATION_MS = 15 * 60_000;
 
 // This runner must remain executable after the Skill is projected under an

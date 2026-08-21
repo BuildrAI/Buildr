@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compactTaskFinishResult, projectTaskFinishResult } from '../../src/application/task-finish/task-finish-result-projection.mjs';
-import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';
+import { compactTaskFinishResult, projectTaskFinishResult } from '../../src/task/application/finish/task-finish-result-projection.mjs';
+import { selfBootstrapTaskFinishResult } from '../../src/task/application/finish/task-finish-self-bootstrap-projection.mjs';
 
 function canonical(overrides = {}) {
   return {
@@ -206,7 +206,7 @@ test('v3空repositories且仅有legacy singleton carrier时投影唯一Workspace
       identity: 'sha256-980797bee339d60c6820f414eef2b4295150c19d26cc26cd4dfe84eed88e88a2',
       head: '4e220b287c746020a9ff95486935200e2fe1eb32',
       changedPaths: [
-        'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+        'projects/product/services/buildr/src/task/application/finish/task-finish-self-bootstrap-projection.mjs',
         'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
       ],
     },
@@ -227,7 +227,7 @@ test('v3空repositories且仅有legacy singleton carrier时投影唯一Workspace
   assert.equal(result.workspaceRepository.carrier.root, null);
   assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
   assert.deepEqual(result.selfBootstrap.activationPaths, [
-    'projects/product/services/buildr/src/application/task-finish/task-finish-self-bootstrap-projection.mjs',
+    'projects/product/services/buildr/src/task/application/finish/task-finish-self-bootstrap-projection.mjs',
     'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs',
   ]);
   assert.equal(result.selfBootstrap.applicability, 'applicable');

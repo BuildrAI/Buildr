@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { FINISH_PHASES } from '../../src/application/task-finish/task-finish-run.mjs';
+import { FINISH_PHASES } from '../../src/task/application/finish/task-finish-run.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
@@ -31,7 +31,7 @@ test('Task Finish 保留可选五阶段自动化，同时允许Agent直接交付
   assert.match(finishContract, /不得因Doctor、Activation、Execution Record、Environment Cleanup、Task登记或Buildr内部派生证据失败而改写为未交付/);
   assert.match(workspaceRule, /Git 提交信息默认使用中文/);
   assert.match(finish, /--commit-message[\s\S]*当前 workspace `AGENTS\.md`[\s\S]*不翻译或重写提交信息/);
-  const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
+  const executor = read('src/task/application/finish/task-finish-product-executor.mjs');
   for (const forbidden of ['recordTaskVerification', 'recordTaskReview', 'freezeTaskDevelopmentCandidate', 'openspec', 'runtime-resync', 'target-rebase']) assert.equal(executor.includes(forbidden), false, forbidden);
   assert.doesNotMatch(executor, /runtime\.cleanupTaskEnvironment\(/);
   assert.match(executor, /cleanupThroughRetainedController/);
@@ -51,7 +51,7 @@ test('Task Finish 保留可选五阶段自动化，同时允许Agent直接交付
 });
 
 test('Task Finish activation is a closed render decision, not a Project process framework', () => {
-  const activation = read('src/application/task-finish/task-finish-activation.mjs');
+  const activation = read('src/task/application/finish/task-finish-activation.mjs');
   assert.equal(fs.existsSync(path.join(productRoot, 'task-finish.yml')), false);
   assert.match(activation, /render-runtime/);
   assert.match(activation, /ROOT_RUNTIME_SOURCE/);
@@ -81,7 +81,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
   assert.doesNotMatch(runner, /(?:from\s+|import\s*\()['"]\.\.\//, 'workspace-only runner must not import modules outside its Skill directory');
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/self-bootstrap-closeout/self-bootstrap-closeout.mjs')), false);
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/buildr-self-bootstrap-closeout-driver.mjs')), false);
-  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/interfaces/internal/task-finish-target-lease-driver.mjs')), true);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/interfaces/internal/task-finish-target-lease-driver.mjs')), true);
   assert.equal(packageManifest.includes('task-finish-target-lease-driver'), false);
   assert.equal(packageManifest.includes('skills/buildr-self-bootstrap-sync'), false);
   assert.match(runner, /\['merge', '--ff-only', remote\]/, 'latest dev integration must remain fast-forward only');
@@ -92,7 +92,7 @@ test('Buildr self-bootstrap is a Workspace Component contribution, not a package
 test('宽而薄治理保留自举副作用边界，不把Activation变成Delivery门禁', () => {
   const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
   const runner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const projector = read('src/application/task-finish/task-finish-self-bootstrap-projection.mjs');
+  const projector = read('src/task/application/finish/task-finish-self-bootstrap-projection.mjs');
 
   assert.match(coreRule, /Buildr 采用宽而薄的治理/);
   assert.match(coreRule, /越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报/);
@@ -169,22 +169,22 @@ test('新 convergence 路径只有一份事务期Receipt且成功archive后释�
 test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延迟加载', () => {
   const main = read('src/bootstrap/cli/main.mjs');
   const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
-  const application = read('src/application/task-finish/task-finish-application.mjs');
+  const application = read('src/task/application/finish/task-finish-application.mjs');
   assert.match(main, /runLightweightTaskFinish/);
   assert.match(main, /await import\('\.\/registry\.mjs'\)/);
   assert.doesNotMatch(bootstrap, /domains\/openspec|domains\/git|domains\/runtime/);
   assert.match(bootstrap, /registerTaskFinishApplication/);
   assert.match(bootstrap, /action !== 'inspect'/);
   assert.match(application, /await import\('\.\/task-finish-product-executor\.mjs'\)/);
-  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-run.mjs')), true);
-  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-action-registry.mjs')), false);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/application/finish/task-finish-run.mjs')), true);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/application/finish/task-finish-action-registry.mjs')), false);
 });
 
 test('Task Finish bootstrap recovery留在full retained Application且不开放任意candidate runtime', () => {
   const main = read('src/bootstrap/cli/main.mjs');
   const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
-  const application = read('src/application/task-finish/task-finish-application.mjs');
-  const recovery = read('src/application/task-finish/task-finish-bootstrap-recovery.mjs');
+  const application = read('src/task/application/finish/task-finish-application.mjs');
+  const recovery = read('src/task/application/finish/task-finish-bootstrap-recovery.mjs');
   assert.doesNotMatch(main, /runTaskFinishBootstrapRecovery/);
   assert.doesNotMatch(bootstrap, /prepareTaskFinishBootstrapRecoveryContext/);
   assert.match(application, /--bootstrap-recovery/);
@@ -199,7 +199,7 @@ test('Task Finish bootstrap recovery留在full retained Application且不开放�
   assert.match(recovery, /clone.*--shared.*--no-checkout/);
   assert.match(recovery, /RUNTIME_METHODS/);
   assert.match(recovery, /retained-writer-candidate-phase-provider/);
-  const executor = read('src/application/task-finish/task-finish-product-executor.mjs');
+  const executor = read('src/task/application/finish/task-finish-product-executor.mjs');
   assert.doesNotMatch(executor, /cleanupTaskFinishBootstrapRecovery/);
   for (const forbidden of ['npm pack', 'npm install', 'candidateCli', 'registerWorkspaceSqlite(runtime, { sourceRoot: context', '--source', '--module', '--manifest', '--tarball']) {
     assert.equal(bootstrap.includes(forbidden), false, forbidden);
@@ -208,7 +208,7 @@ test('Task Finish bootstrap recovery留在full retained Application且不开放�
 });
 
 test('current Product直接接线自动Git executor与交付对账，没有adapter registry', () => {
-  const application = read('src/application/task-finish/task-finish-application.mjs');
+  const application = read('src/task/application/finish/task-finish-application.mjs');
   const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
   assert.match(bootstrap, /registerTaskFinishApplication\(runtime\)/);
   assert.match(application, /createTaskFinishProductHandlers/);
@@ -218,6 +218,6 @@ test('current Product直接接线自动Git executor与交付对账，没有adapt
     assert.equal(finish.includes(legacy), false, legacy);
     assert.equal(finishContract.includes(legacy), false, legacy);
   }
-  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/task-finish/task-finish-adapter-registry.mjs')), false);
+  assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/application/finish/task-finish-adapter-registry.mjs')), false);
   assert.doesNotMatch(application, /adapterRegistry|selectAdapter|resolveAdapter/);
 });
