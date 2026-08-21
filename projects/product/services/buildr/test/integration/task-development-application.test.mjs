@@ -8,7 +8,7 @@ import test, { after, before } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');

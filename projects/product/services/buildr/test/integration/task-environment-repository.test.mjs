@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { TASK_ENVIRONMENT_RECEIPT_SCHEMA } from '../../src/domain/task-environment/task-environment.mjs';
+import { TASK_ENVIRONMENT_RECEIPT_SCHEMA } from '../../src/task/domain/task-environment.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-environment-repository-'));

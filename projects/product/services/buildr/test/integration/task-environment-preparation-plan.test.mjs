@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
-import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { registerTaskEnvironmentApplication } from '../../src/task/application/task-environment-application.mjs';
+import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/task/domain/task-environment-plan.mjs';
 
 const TASK_ID = 'preparation-plan';
 

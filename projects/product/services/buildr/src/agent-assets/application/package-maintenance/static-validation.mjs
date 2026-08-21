@@ -320,10 +320,10 @@ export function createPackageStaticValidator(deps) {
     for (const relative of [
       'src/bootstrap/runtime.mjs',
       'src/bootstrap/legacy-runtime-module.mjs',
-      'src/application/task-development/task-development-application.mjs',
+      'src/task/application/task-development-application.mjs',
       'src/task/application/task-review-application.mjs',
-      'src/application/task-verification/task-verification-application.mjs',
-      'src/application/task-environment/task-environment-application.mjs',
+      'src/task/application/task-verification-application.mjs',
+      'src/task/application/task-environment-application.mjs',
       'src/task/application/record/task-record-application.mjs',
       'src/application/task-finish/task-finish-product-executor.mjs',
       'src/application/task-terminal-delivery/task-terminal-delivery-application.mjs',
@@ -370,9 +370,9 @@ export function createPackageStaticValidator(deps) {
       'src/task/domain/record/task-record.mjs',
       'src/task/application/record/task-record-application.mjs',
       'src/task/persistence/record/task-record-repository.mjs',
-      'src/domain/task-environment/task-environment.mjs',
-      'src/application/task-environment/task-environment-application.mjs',
-      'src/task/persistence/environment/task-environment-repository.mjs',
+      'src/task/domain/task-environment.mjs',
+      'src/task/application/task-environment-application.mjs',
+      'src/task/persistence/task-environment-repository.mjs',
     ]) {
       const file = path.join(root, relative);
       if (!existsFile(file)) continue;
@@ -424,13 +424,13 @@ export function createPackageStaticValidator(deps) {
   function validateTaskPlanningIdentityAuthority(context) {
     const { root, problems } = context;
     const sourceContracts = new Map([
-      ['src/domain/task-planning-identity/task-planning-identity.mjs', ['createTaskPlanningIdentity', 'checklist-completion', 'change-lifecycle-provenance']],
-      ['src/application/task-planning-identity/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
-      ['src/interfaces/internal/task-planning-identity-driver.mjs', ['runTaskPlanningIdentityDriver']],
-      ['src/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
+      ['src/task/domain/task-planning-identity.mjs', ['createTaskPlanningIdentity', 'checklist-completion', 'change-lifecycle-provenance']],
+      ['src/task/application/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
+      ['src/task/interfaces/internal/task-planning-identity-driver.mjs', ['runTaskPlanningIdentityDriver']],
+      ['src/task/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
       ['src/application/internal-workflow-route-inventory.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
       ['src/interfaces/internal/formal-workflow-routes.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
-      ['src/bootstrap/legacy-runtime-module.mjs', ['registerTaskPlanningIdentityApplication']],
+      ['src/task/module.mjs', ['registerTaskPlanningIdentityApplication', 'createTaskPlanningIdentityModule']],
     ]);
     for (const [relative, requiredTexts] of sourceContracts) {
       const file = path.join(root, relative);
@@ -481,6 +481,7 @@ export function createPackageStaticValidator(deps) {
     for (const route of REQUIRED_INTERNAL_WORKFLOW_ROUTES) {
       if (route.source) {
         if (!existsFile(path.join(root, route.source))) problems.push(`Required internal workflow driver is missing: ${route.source}.`);
+        if (route.wrapperSource && !existsFile(path.join(root, route.wrapperSource))) problems.push(`Required internal workflow checkout wrapper is missing: ${route.wrapperSource}.`);
         continue;
       }
       const runner = path.join(root, 'src/interfaces/internal', route.runner);

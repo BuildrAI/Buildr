@@ -7,6 +7,22 @@ import {
   TASK_RETROSPECTIVE_MODULE,
   TASK_REVIEW_COMPATIBILITY,
   TASK_REVIEW_MODULE,
+  TASK_ENVIRONMENT_COMPATIBILITY,
+  TASK_EXECUTION_RECORD_COMPATIBILITY,
+  TASK_VERIFICATION_COMPATIBILITY,
+  TASK_PLANNING_IDENTITY_COMPATIBILITY,
+  TASK_DEVELOPMENT_COMPATIBILITY,
+  PARENT_COORDINATION_COMPATIBILITY,
+  TASK_OVERVIEW_COMPATIBILITY,
+  TASK_ENTRY_SNAPSHOT_COMPATIBILITY,
+  createTaskEnvironmentModule,
+  createTaskExecutionRecordModule,
+  createTaskVerificationModule,
+  createTaskPlanningIdentityModule,
+  createTaskDevelopmentModule,
+  createParentCoordinationModule,
+  createTaskOverviewModule,
+  createTaskEntrySnapshotModule,
 } from '../task/module.mjs';
 import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
@@ -71,6 +87,21 @@ function installTaskRetrospectiveModule(runtime, registry) {
   return descriptor;
 }
 
+function installTaskCompatibilityModule(runtime, registry, definition, capability) {
+  const descriptor = registry.install(definition);
+  const compatibility = registry.provide(capability);
+  Object.assign(runtime, compatibility.methods);
+  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties || {})) {
+    Object.defineProperty(runtime, name, {
+      configurable: true,
+      enumerable: false,
+      get: bridge.get,
+      set: bridge.set,
+    });
+  }
+  return descriptor;
+}
+
 export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
@@ -80,6 +111,14 @@ export function createRuntime() {
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
     installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
     installTaskRetrospectiveModule: () => installTaskRetrospectiveModule(runtime, registry),
+    installTaskEnvironmentModule: () => installTaskCompatibilityModule(runtime, registry, createTaskEnvironmentModule(runtime), TASK_ENVIRONMENT_COMPATIBILITY),
+    installTaskExecutionRecordModule: () => installTaskCompatibilityModule(runtime, registry, createTaskExecutionRecordModule(runtime), TASK_EXECUTION_RECORD_COMPATIBILITY),
+    installTaskVerificationModule: () => installTaskCompatibilityModule(runtime, registry, createTaskVerificationModule(runtime), TASK_VERIFICATION_COMPATIBILITY),
+    installTaskPlanningIdentityModule: () => installTaskCompatibilityModule(runtime, registry, createTaskPlanningIdentityModule(runtime), TASK_PLANNING_IDENTITY_COMPATIBILITY),
+    installTaskDevelopmentModule: () => installTaskCompatibilityModule(runtime, registry, createTaskDevelopmentModule(runtime), TASK_DEVELOPMENT_COMPATIBILITY),
+    installParentCoordinationModule: () => installTaskCompatibilityModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_COMPATIBILITY),
+    installTaskOverviewModule: () => installTaskCompatibilityModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_COMPATIBILITY),
+    installTaskEntrySnapshotModule: () => installTaskCompatibilityModule(runtime, registry, createTaskEntrySnapshotModule(runtime), TASK_ENTRY_SNAPSHOT_COMPATIBILITY),
   });
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));

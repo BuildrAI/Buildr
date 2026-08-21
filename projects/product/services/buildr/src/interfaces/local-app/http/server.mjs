@@ -84,23 +84,6 @@ function apiError(response, error) {
   });
 }
 
-function parentCoordinationBlocked(taskId, operation, error) {
-  const status = Number.isInteger(error.status) ? error.status : 500;
-  return {
-    status,
-    payload: withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, {
-      operation: operation || 'unknown', status: 'blocked', taskId, mode: 'unknown', plan: null,
-      children: [], contributions: [], prerequisitesSatisfied: false, effects: [],
-      diagnostic: {
-        code: error.code || 'internal_error',
-        message: status >= 500 ? 'Buildr Web 处理Parent coordination请求失败。' : error.message,
-        ...(error.details === undefined ? {} : { details: error.details }),
-        nextAction: error.nextAction || '重新inspect Parent coordination后重试。',
-      },
-    }),
-  };
-}
-
 function readJsonBody(request) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -361,14 +344,6 @@ export function createLocalWorkspaceServer(runtime, {
           return binaryResponse(response, 200, fs.readFileSync(asset.file), asset.contentType);
         }
         const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
-        const taskExecutionRecordsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records$`));
-        const taskQueryAllowed = request.method === 'GET' && (suffix === '/tasks' || taskExecutionRecordsMatch);
-        if (taskApi && requestUrl.searchParams.size > 0 && !taskQueryAllowed) {
-          const error = new Error('Task API 不接受 query 参数。');
-          error.code = 'task_api_query_forbidden';
-          error.status = 400;
-          throw error;
-        }
         for (const contribution of httpContributions) {
           const contributedResponse = await contribution.handle({
             request,
@@ -378,71 +353,19 @@ export function createLocalWorkspaceServer(runtime, {
             authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
             readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
             readJsonBody: () => readJsonBody(request),
+            submitTaskRead: (operation, taskId, input = {}) => submitTaskRead(request, response, operation, root, taskId, input),
           });
           if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
-        }
-        const taskOverviewMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/overview$`));
-        if (request.method === 'GET' && taskOverviewMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'overview', root, taskOverviewMatch[1]));
-        }
-        const taskCoordinationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/coordination$`));
-        if (request.method === 'GET' && taskCoordinationMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'coordination', root, taskCoordinationMatch[1]));
-        }
-        if (request.method === 'PATCH' && taskCoordinationMatch) {
-          assertWriteRequest(request, origin, sessionToken);
-          let input = null;
-          try {
-            input = await readAllowedJsonBody(request, new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination');
-            const operationFields = {
-              record: new Set(['operation', 'plan']),
-              reconcile: new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason']),
-              accept: new Set(['operation', 'expectedPlanIdentity', 'summary']),
-            }[input.operation];
-            if (operationFields) {
-              const forbidden = Object.keys(input).find((field) => !operationFields.has(field));
-              if (forbidden) { const error = new Error(`Parent coordination ${input.operation}.${forbidden} 不受支持。`); error.code = 'parent_coordination_field_forbidden'; error.status = 400; throw error; }
-            }
-            if (input.operation === 'record') return jsonResponse(response, 200, runtime.recordParentPlan(root, taskCoordinationMatch[1], { plan: input.plan }));
-            if (input.operation === 'reconcile') return jsonResponse(response, 200, runtime.reconcileParentPlan(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, plan: input.plan, reason: input.reason }));
-            if (input.operation === 'accept') return jsonResponse(response, 200, runtime.acceptParentCoordination(root, taskCoordinationMatch[1], { expectedPlanIdentity: input.expectedPlanIdentity, summary: input.summary }));
-            const error = new Error('Parent coordination operation必须是record、reconcile或accept。'); error.code = 'parent_coordination_operation_invalid'; error.status = 400; throw error;
-          } catch (error) {
-            const blocked = parentCoordinationBlocked(taskCoordinationMatch[1], input?.operation, error);
-            return jsonResponse(response, blocked.status, blocked.payload);
-          }
-        }
-        const taskEnvironmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/environment$`));
-        if (request.method === 'GET' && taskEnvironmentMatch) {
-          runtime.inspectTaskRecord(root, taskEnvironmentMatch[1]);
-          return jsonResponse(response, 200, runtime.readTaskEnvironmentCurrent(root, taskEnvironmentMatch[1]));
-        }
-        const taskDevelopmentMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/development$`));
-        if (request.method === 'GET' && taskDevelopmentMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'development', root, taskDevelopmentMatch[1]));
         }
         const taskReviewsMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/reviews$`));
         if (request.method === 'GET' && taskReviewsMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1]));
         }
-        const taskVerificationMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/verification$`));
-        if (request.method === 'GET' && taskVerificationMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'verification', root, taskVerificationMatch[1]));
-        }
-        if (request.method === 'GET' && taskExecutionRecordsMatch) {
-          const fields = [...new Set(requestUrl.searchParams.keys())];
-          if (fields.some((field) => field !== 'view') || requestUrl.searchParams.getAll('view').length > 1) {
-            const error = new Error('Task execution records 只接受一个 view query 参数。'); error.code = 'task_api_query_forbidden'; error.status = 400; throw error;
-          }
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-records', root, taskExecutionRecordsMatch[1], { view: requestUrl.searchParams.get('view') || 'all' }));
-        }
-        const taskExecutionRecordDetailMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records/(${TASK_ID})$`));
-        if (request.method === 'GET' && taskExecutionRecordDetailMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-record-detail', root, taskExecutionRecordDetailMatch[1], { recordId: taskExecutionRecordDetailMatch[2] }));
-        }
-        const taskExecutionRecordBodyMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/execution-records/(${TASK_ID})/body/([^/]+)$`));
-        if (request.method === 'GET' && taskExecutionRecordBodyMatch) {
-          return jsonResponse(response, 200, await submitTaskRead(request, response, 'execution-record-body', root, taskExecutionRecordBodyMatch[1], { recordId: taskExecutionRecordBodyMatch[2], filename: decodeURIComponent(taskExecutionRecordBodyMatch[3]) }));
+        if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
+          const error = new Error('Task API 不接受 query 参数。');
+          error.code = 'task_api_query_forbidden';
+          error.status = 400;
+          throw error;
         }
         const taskChangeMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
         if (request.method === 'GET' && taskChangeMatch) {

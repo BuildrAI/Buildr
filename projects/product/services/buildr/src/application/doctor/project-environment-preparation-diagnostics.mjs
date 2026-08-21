@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,
-} from '../../domain/task-environment/project-environment-preparation.mjs';
+} from '../../task/domain/project-environment-preparation.mjs';
 
 function serviceCodes(projectRoot) {
   const file = path.join(projectRoot, 'services', 'manifest.yml');

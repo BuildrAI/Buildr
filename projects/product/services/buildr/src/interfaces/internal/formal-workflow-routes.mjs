@@ -5,7 +5,7 @@ export {
 
 export async function runRequiredInternalWorkflowRoute(route, args, options = {}) {
   if (route === 'task-development') {
-    const { runTaskDevelopmentDriver } = await import('./task-development-driver-runner.mjs');
+    const { runTaskDevelopmentDriver } = await import('../../task/module.mjs');
     return runTaskDevelopmentDriver(args, options);
   }
   if (route === 'task-retrospective') {
@@ -13,7 +13,7 @@ export async function runRequiredInternalWorkflowRoute(route, args, options = {}
     return runTaskRetrospectiveDriver(args, options);
   }
   if (route === 'task-planning-identity') {
-    const { runTaskPlanningIdentityDriver } = await import('./task-planning-identity-driver-runner.mjs');
+    const { runTaskPlanningIdentityDriver } = await import('../../task/module.mjs');
     return runTaskPlanningIdentityDriver(args, options);
   }
   return null;

@@ -23,34 +23,35 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
-    'src/task/persistence/coordination/parent-coordination-repository.mjs',
-    'src/task/persistence/development/task-development-repository.mjs',
-    'src/task/persistence/environment/task-environment-repository.mjs',
-    'src/task/persistence/execution-record/task-execution-record-repository.mjs',
-    'src/task/persistence/execution-record/task-execution-record-body-store.mjs',
+    'src/task/persistence/parent-coordination-repository.mjs',
+    'src/task/persistence/task-development-repository.mjs',
+    'src/task/persistence/task-environment-repository.mjs',
+    'src/task/persistence/task-execution-record-repository.mjs',
+    'src/task/persistence/task-execution-record-body-store.mjs',
     'src/task/persistence/finish/task-finish-repository.mjs',
-    'src/task/persistence/overview/task-overview-repository.mjs',
+    'src/task/persistence/task-overview-repository.mjs',
     'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.mjs',
-    'src/task/persistence/verification/task-verification-repository.mjs',
+    'src/task/persistence/task-verification-repository.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
 });
 
-test('Bootstrap 通过唯一 Infrastructure 与 Task Persistence 注册入口组装', () => {
+test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persistence', () => {
   const infrastructure = read('src/infrastructure/index.mjs');
-  const persistence = read('src/task/persistence/index.mjs');
   const bootstrap = read('src/bootstrap/legacy-runtime-module.mjs');
+  const taskModule = read('src/task/module.mjs');
   assert.match(infrastructure, /registerWorkspaceInfrastructure/);
   assert.match(infrastructure, /registerWorkspaceSqlite/);
   assert.match(infrastructure, /registerInfrastructure/);
-  assert.match(persistence, /registerTaskPersistence/);
-  assert.equal(new Set(persistence.match(/register[A-Za-z]+Repository/g) || []).size, 7);
-  assert.doesNotMatch(persistence, /registerTaskReviewRepository/);
-  assert.doesNotMatch(persistence, /registerTaskRetrospectiveRepository/);
-  assert.match(read('src/task/module.mjs'), /registerTaskReviewRepository/);
-  assert.match(read('src/task/module.mjs'), /registerTaskRetrospectiveRepository/);
+  assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/index.mjs')), false);
+  for (const registration of [
+    'registerTaskEnvironmentRepository', 'registerTaskExecutionRecordRepository',
+    'registerTaskVerificationRepository', 'registerTaskDevelopmentRepository',
+    'registerParentCoordinationRepository', 'registerTaskOverviewRepository',
+    'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',
+  ]) assert.match(taskModule, new RegExp(registration));
   assert.match(bootstrap, /registerInfrastructure/);
-  assert.match(bootstrap, /registerTaskPersistence/);
+  assert.doesNotMatch(bootstrap, /registerTaskPersistence|registerTaskEnvironmentRepository|registerTaskDevelopmentRepository/);
   assert.doesNotMatch(bootstrap, /infrastructure\/sqlite\/.*repository|infrastructure\/filesystem\/task-/u);
 });
 

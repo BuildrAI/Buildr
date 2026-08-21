@@ -7,8 +7,8 @@ import {
   normalizeTaskEnvironmentReceipt,
   TASK_ENVIRONMENT_RECEIPT_SCHEMA,
   taskEnvironmentReadModel,
-} from '../../src/domain/task-environment/task-environment.mjs';
-import { normalizePreparationStepDefinition, normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
+} from '../../src/task/domain/task-environment.mjs';
+import { normalizePreparationStepDefinition, normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/task/domain/task-environment-plan.mjs';
 
 const WORKSPACE_ROOT = path.join(os.tmpdir(), 'buildr-task-environment-domain', 'workspace');
 const EXECUTION_ROOT = path.join(WORKSPACE_ROOT, '.worktrees', 'demo-task');

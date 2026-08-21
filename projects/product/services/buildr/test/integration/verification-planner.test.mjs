@@ -177,7 +177,7 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
 
 test('Task Entry 与 Retrospective changed paths选择真实有界 Integration slice', () => {
   for (const source of [
-    'src/application/task-entry/task-entry-snapshot-application.mjs',
+    'src/task/application/task-entry-snapshot-application.mjs',
     'src/task/application/task-retrospective-application.mjs',
   ]) {
     const selected = ids(createVerificationPlan({ paths: [source] }));
@@ -299,7 +299,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['integration', 'integration-runtime', 'integration-release', 'integration-task-development'],
     },
     {
-      path: 'src/application/task-environment/task-environment-application.mjs',
+      path: 'src/task/application/task-environment-application.mjs',
       required: ['integration-task-environment', 'system-worktree-lifecycle'],
       excluded: ['integration', 'integration-task-development', 'system-workspace-lifecycle', 'system-task-lifecycle'],
     },
@@ -388,9 +388,9 @@ test('Task Finish affected 路径使用有界 Integration/System slice', () => {
 });
 
 test('Task Development lifecycle 路径使用独立重型 Integration owner', () => {
-  const sourcePlan = ids(createVerificationPlan({ paths: ['src/application/task-development/task-development-application.mjs'] }));
+  const sourcePlan = ids(createVerificationPlan({ paths: ['src/task/application/task-development-application.mjs'] }));
   assert.deepEqual(sourcePlan, [
-    'unit', 'integration-task-development', 'system-task-lifecycle', 'candidate-tarball', 'application-payload-release',
+    'unit', 'integration-task-development', 'system-task-lifecycle', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
   ]);
   assert.equal(sourcePlan.includes('integration'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-development-application.test.mjs'] })), [

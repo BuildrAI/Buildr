@@ -6,7 +6,7 @@ import {
   normalizeTaskEnvironmentPlan,
   normalizeTaskEnvironmentPlanRequest,
   taskEnvironmentPlanDigest,
-} from '../../src/domain/task-environment/task-environment-plan.mjs';
+} from '../../src/task/domain/task-environment-plan.mjs';
 
 function service(selector, id = 'prepare') {
   return {

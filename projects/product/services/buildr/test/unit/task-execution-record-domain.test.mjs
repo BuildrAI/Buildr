@@ -11,7 +11,7 @@ import {
   evaluateTaskExecutionRecordTombstonePurge,
   resolveTaskExecutionRecord,
   sealTaskExecutionRecord,
-} from '../../src/domain/task-execution-record/task-execution-record.mjs';
+} from '../../src/task/domain/task-execution-record.mjs';
 
 const body = {
   locator: '.buildr/local/task-execution-records/task-verification/record-1/',

@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createOpenTaskExecutionRecord, TASK_EXECUTION_RECORD_LIMITS } from '../../src/domain/task-execution-record/task-execution-record.mjs';
-import { registerTaskExecutionRecordBodyStore } from '../../src/task/persistence/execution-record/task-execution-record-body-store.mjs';
+import { createOpenTaskExecutionRecord, TASK_EXECUTION_RECORD_LIMITS } from '../../src/task/domain/task-execution-record.mjs';
+import { registerTaskExecutionRecordBodyStore } from '../../src/task/persistence/task-execution-record-body-store.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-execution-body-'));

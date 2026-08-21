@@ -52,8 +52,8 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
   const identityConsumers = [
     'src/application/worktree/git-worktree-provider.mjs',
-    'src/task/persistence/environment/task-environment-repository.mjs',
-    'src/application/task-verification/task-verification-application.mjs',
+    'src/task/persistence/task-environment-repository.mjs',
+    'src/task/application/task-verification-application.mjs',
     'src/application/task-finish/task-finish-application.mjs',
     'src/web/application/preview-lifecycle.mjs',
     'package/launchers/manage.mjs',

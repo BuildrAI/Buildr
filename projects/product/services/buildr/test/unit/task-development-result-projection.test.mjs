@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compactTaskDevelopmentOperationResult } from '../../src/application/task-development/task-development-result-projection.mjs';
-import { deriveFormalVerificationReadiness } from '../../src/application/task-development/task-development-application.mjs';
+import { compactTaskDevelopmentOperationResult } from '../../src/task/application/task-development-result-projection.mjs';
+import { deriveFormalVerificationReadiness } from '../../src/task/application/task-development-application.mjs';
 
 test('compact projection只保留同次Development result的current与guidance', () => {
   const gates = {

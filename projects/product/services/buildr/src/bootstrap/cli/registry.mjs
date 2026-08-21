@@ -7,17 +7,12 @@ import { createTaskRecordCliContributions, createTaskReviewCliContributions } fr
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
-import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
-import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
-import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
 import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
-import { parentCoordinationCommand } from '../../interfaces/cli/parent-coordination.mjs';
 import { projectDailyProgressCommand } from '../../interfaces/cli/project-daily-progress.mjs';
-import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from '../../interfaces/cli/task-execution-record.mjs';
 import { taskTerminalDeliveryInspectCommand } from '../../interfaces/cli/task-terminal-delivery.mjs';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
 
-const TASK_RECORD_COMMAND_SLOT = Symbol('task-record-command-contributions');
+const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
 const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
 const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
@@ -194,199 +189,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'delivery' && runtimeId === 'inspect',
     run: (r, c) => taskTerminalDeliveryInspectCommand(r, c.argv.slice(5)),
   },
-  {
-    key: "task execution-record list",
-    surface: "agent-machine",
-    summary: "按 Task 返回紧凑、可移植的 Execution Record 列表。",
-    help: ["Usage: buildr task execution-record list --task <task-id> [--view <all|verification|finish>] [--target <canonical-workspace>] [--json]", "", "原终端不可用时按Task恢复同一次execution identity；只读取Execution Record，不写Verification Result或Finish current。"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'list',
-    run: (r, c) => taskExecutionRecordListCommand(r, c.argv.slice(5)),
-  },
-  {
-    key: "task execution-record inspect",
-    surface: "agent-machine",
-    summary: "按 Task 与 record identity 回读状态、耗时、失败和证据摘要。",
-    help: ["Usage: buildr task execution-record inspect --task <task-id> --record <record-id> [--target <canonical-workspace>] [--json]", "", "回读同一record的lifecycle、timing、failure与evidence摘要；只读且不写Verification Result或Finish current。"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'inspect',
-    run: (r, c) => taskExecutionRecordInspectCommand(r, c.argv.slice(5)),
-  },
-  {
-    key: "task execution-record gc",
-    surface: "maintenance",
-    summary: "按固定 retention、resolution 与 recent-count 规则执行 bounded Workspace ExecRecord GC；支持 dry-run，不扫描文件系统或清理执行资源。",
-    help: [
-      "Usage: buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]",
-      "",
-      "按固定 retention、resolution 与 recent-count 规则选择 eligible records，复用单记录 cleanup，并删除到期 cleaned tombstone。",
-      "不接受 Task/owner/path、force、retention override 或 failure disposition；不调用 Workspace Doctor。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'gc',
-    run: (r, c) => taskExecutionRecordGcCommand(r, c.argv.slice(5)),
-  },
-  {
-    key: "task execution-record recover",
-    surface: "agent-machine",
-    summary: "按registered producer的完整终态证据补seal Verification或Task Finish Execution Record。",
-    help: [
-      "Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]",
-      "",
-      "--summary只接受matching Buildr-owned Verification transient summary，或该Finish invocation精确diagnostics summary；补seal原record而不重跑。",
-      "Task Finish recovery只读核对matching current/terminal Finish authority，不改写Finish current、delivery、Environment或Task terminal，并只清理该invocation evidence。",
-      "--authorize-unknown-outcome仅适用于Verification：它不证明原结果，会终结原record并可能使仍存活producer的后续seal失败；Task Finish必须有terminal evidence。",
-      "不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
-    run: (r, c) => taskExecutionRecordRecoverCommand(r, c.argv.slice(5)),
-  },
-  {
-    key: "task parent inspect",
-    surface: "primary",
-    summary: "只读返回Parent Plan、Child Contribution交付事实与最终验收前置条件；历史Task保持legacy模式。",
-    help: ["Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]", "", "只组合Task Record与已保存专业事实，不扫描文件系统或回填Parent。"],
-    match: ({ domain, action, runtimeId, operation }) => domain === 'task' && action === 'parent' && runtimeId === 'inspect' && !operation,
-    run: (r, c) => parentCoordinationCommand(r, 'inspect', c.argv.slice(5)),
-  },
-  {
-    key: "task parent record",
-    surface: "agent-machine",
-    summary: "为active Parent首次记录closed Parent Plan。",
-    help: ["Usage: buildr task parent record <task-id> --input <parent-plan.json> [--target <canonical-workspace>] [--json]", "       buildr task parent record --schema|--example [--json]"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'record',
-    run: (r, c) => parentCoordinationCommand(r, 'record', c.argv.slice(5)),
-  },
-  {
-    key: "task parent reconcile",
-    surface: "agent-machine",
-    summary: "以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。",
-    help: ["Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]", "       buildr task parent reconcile --schema|--example [--json]"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'reconcile',
-    run: (r, c) => parentCoordinationCommand(r, 'reconcile', c.argv.slice(5)),
-  },
-  {
-    key: "task parent refresh-planning",
-    surface: "agent-machine",
-    summary: "复用saved Parent Plan与current ready Planning Review，安全刷新Development planning gate。",
-    help: ["Usage: buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'refresh-planning',
-    run: (r, c) => parentCoordinationCommand(r, 'refresh', c.argv.slice(5)),
-  },
-  {
-    key: "task parent bind-child",
-    surface: "agent-machine",
-    summary: "把已有Child Development明确绑定到Parent Plan的一个或多个Contribution。",
-    help: ["Usage: buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'bind-child',
-    run: (r, c) => parentCoordinationCommand(r, 'bind', c.argv.slice(5)),
-  },
-  {
-    key: "task parent accept",
-    surface: "agent-machine",
-    summary: "在全部Contribution得到可证明处置后显式记录Parent最终集成验收；不会自动完成Task。",
-    help: ["Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]"],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'parent' && runtimeId === 'accept',
-    run: (r, c) => parentCoordinationCommand(r, 'accept', c.argv.slice(5)),
-  },
-  {
-    key: "task next",
-    surface: "agent-machine",
-    summary: "只读返回Formal Task当前最小identity、execution/writer route与唯一required或recommended next action。",
-    help: [
-      "Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]",
-      "",
-      "按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。",
-      "--execution-target只核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'next',
-    run: (r, c) => taskEntrySnapshotCommand(r, c.argv.slice(4)),
-  },
-  TASK_RECORD_COMMAND_SLOT,
-  {
-    key: "task verification inspect",
-    surface: "agent-machine",
-    summary: "只读返回单一 current slot、response-only resultDigest 与 target/declaration 派生 applicability；未提供 current target 时 target 轴为 unknown。",
-    help: [
-      "Usage: buildr task verification inspect <task-id> [--target-identity <identity>] [--target <canonical-workspace>] [--json]",
-      "",
-      "只读返回单一 current slot、response-only resultDigest 与 target/declaration 派生 applicability；未提供 current target 时 target 轴为 unknown。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'inspect',
-    run: (r, c) => taskVerificationCommand(r, 'inspect', c.argv.slice(5)),
-  },
-  {
-    key: "task verification record",
-    surface: "agent-machine",
-    summary: "只接收完整 current facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。",
-    help: [
-      "Usage: buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]",
-      "",
-      "只接收完整 current facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。",
-      "完整 stdout/stderr、耗时、临时路径、Environment Receipt、applicability、revision、proceed/blocked 或 Task status 不属于 Result。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'record',
-    run: (r, c) => taskVerificationCommand(r, 'record', c.argv.slice(5)),
-  },
-  {
-    key: "task environment prepare",
-    surface: "agent-machine",
-    summary: "按Project Preparation Declaration与Agent选择的Task Plan幂等准备Project/Service执行环境。",
-    help: [
-      "Usage: buildr task environment prepare <task-id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]",
-      "",
-      "Plan Request必须恰好覆盖Task Record中的全部Project/Service scope，可引用Project preparation.yml的Recipe或显式task-inline Recipe。",
-      "默认使用Git worktree；inspect严格只读，不执行Step或回写current。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare',
-    run: (r, c) => taskEnvironmentCommand(r, 'prepare', c.argv.slice(5)),
-  },
-  {
-    key: "task environment plan record",
-    surface: "agent-machine",
-    summary: "解析Project Preparation Declaration并原子保存当前Task的Plan执行快照，不执行任何准备Step。",
-    help: [
-      "Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]",
-      "",
-      "输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。"
-    ],
-    match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
-    run: (r, c) => taskEnvironmentPlanCommand(r, 'record', c.args.slice(1)),
-  },
-  {
-    key: "task environment plan inspect",
-    surface: "agent-machine",
-    summary: "只读返回Environment current中保存的Preparation Plan，不探测或修复环境。",
-    help: [
-      "Usage: buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "只读取Workspace SQLite current；缺少Plan时返回unavailable。"
-    ],
-    match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'inspect',
-    run: (r, c) => taskEnvironmentPlanCommand(r, 'inspect', c.args.slice(1)),
-  },
-  {
-    key: "task environment inspect",
-    surface: "agent-machine",
-    summary: "只读返回当前机器的 Environment Receipt availability、observedAt、scope/root、执行基础、provider、资源和 cleanup 摘要。",
-    help: [
-      "Usage: buildr task environment inspect <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "只读返回当前机器的 Environment Receipt availability、observedAt、scope/root、执行基础、provider、资源和 cleanup 摘要。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'inspect',
-    run: (r, c) => taskEnvironmentCommand(r, 'inspect', c.argv.slice(5)),
-  },
-  {
-    key: "task environment cleanup",
-    surface: "agent-machine",
-    summary: "按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。",
-    help: [
-      "Usage: buildr task environment cleanup <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。",
-      "公共CLI接受已持久化且可重新验证的Delivery evidence，或已明确abandon终态；不接受调用方声明交付成功。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'cleanup',
-    run: (r, c) => taskEnvironmentCommand(r, 'cleanup', c.argv.slice(5)),
-  },
+  TASK_MODULE_COMMAND_SLOT,
   {
     key: "task finish inspect",
     surface: "agent-machine",
@@ -651,7 +454,7 @@ function createCommandRegistry(moduleContributions) {
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
-    if (route === TASK_RECORD_COMMAND_SLOT) return nonAgentAssetsContributions;
+    if (route === TASK_MODULE_COMMAND_SLOT) return nonAgentAssetsContributions;
     return [route];
   });
   return Object.freeze([...SPECIAL_COMMANDS, ...routes.map(executableCommand)]);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTaskVerificationResult } from '../../src/domain/task-verification/task-verification.mjs';
+import { normalizeTaskVerificationResult } from '../../src/task/domain/task-verification.mjs';
 
 function workspaceResult(overrides = {}) {
   return {

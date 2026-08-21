@@ -281,9 +281,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     const parsedDevelopmentSchema = JSON.parse(developmentSchema.stdout);
     assert.equal(parsedDevelopmentSchema.schemaVersion, 'buildr.task-development-driver-schema/v1');
     assert.equal(parsedDevelopmentSchema.action, 'planning');
-    assert.equal(fs.existsSync(path.join(packageRoot, 'src/interfaces/internal/task-development-driver.mjs')), false);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-development-driver.mjs')), false);
     assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-retrospective-driver.mjs')), false);
-    assert.equal(fs.existsSync(path.join(packageRoot, 'src/interfaces/internal/task-planning-identity-driver.mjs')), false);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-planning-identity-driver.mjs')), false);
 
     const workflowWorkspace = path.join(root, 'workflow-workspace');
     fs.mkdirSync(workflowWorkspace);

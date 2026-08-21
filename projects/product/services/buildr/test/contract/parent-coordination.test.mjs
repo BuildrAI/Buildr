@@ -7,19 +7,19 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Parent Coordination使用固定查询的只读projection且没有filesystem scan或第二store', () => {
-  const application = read('src/application/parent-coordination/parent-coordination-application.mjs');
-  const repository = read('src/task/persistence/coordination/parent-coordination-repository.mjs');
+  const application = read('src/task/application/parent-coordination-application.mjs');
+  const repository = read('src/task/persistence/parent-coordination-repository.mjs');
   for (const required of ['readParentCoordinationPersistence', 'projectParentCoordinationChild']) assert.ok(application.includes(required), required);
   for (const forbidden of ['inspectTaskRecord', 'inspectTaskReview', 'inspectTaskTerminalDelivery', 'resolveTaskEnvironmentExecution']) assert.equal(application.includes(forbidden), false, forbidden);
   for (const forbidden of ['node:fs', 'node:path', 'openWorkspaceStructuredStore', 'task_development_current', 'SELECT ', 'readdir', 'glob']) assert.equal(application.includes(forbidden), false, forbidden);
   for (const required of ['openWorkspaceStructuredStore', 'task_development_current', 'task_review_current', 'task_environment_current', 'task_finish_current', 'decodeTaskFinishCurrentRow', 'queryCount: 2']) assert.ok(repository.includes(required), required);
   for (const forbidden of ['INSERT ', 'UPDATE ', 'DELETE ', 'CREATE TABLE', 'CREATE VIEW']) assert.equal(repository.includes(forbidden), false, forbidden);
-  assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/coordination/parent-coordination-repository.mjs')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/parent-coordination-repository.mjs')), true);
   assert.equal(fs.existsSync(path.join(root, 'src/infrastructure/sqlite/parent-coordination-repository.mjs')), false);
 });
 
 test('Parent Plan是closed计划值且Task Record不复制计划或Child状态', () => {
-  const domain = read('src/domain/parent-coordination/parent-coordination.mjs');
+  const domain = read('src/task/domain/parent-coordination.mjs');
   const taskRecord = read('src/task/domain/record/task-record.mjs');
   for (const required of ['outcome', 'architectureDecisions', 'contributions', 'expectedChild', 'dependencies', 'finalAcceptance']) assert.ok(domain.includes(required), required);
   for (const forbidden of ['completedChildCount', 'completed_child_count', 'childStatuses', 'lifecycleCache']) {
@@ -31,13 +31,17 @@ test('Parent Plan是closed计划值且Task Record不复制计划或Child状态',
 
 test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一public JSON identity', () => {
   const registry = read('src/bootstrap/cli/registry.mjs');
-  const cli = read('src/interfaces/cli/parent-coordination.mjs');
+  const cli = read('src/task/interfaces/cli/parent-coordination.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
+  const module = read('src/task/module.mjs');
+  const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const worker = read('src/interfaces/local-app/http/read-worker.mjs');
   const json = read('src/application/json-contracts.mjs');
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
-  for (const command of ['task parent inspect', 'task parent record', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(registry.includes(command), command);
-  for (const method of ['inspectParentCoordination', 'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || server.includes(method), method);
+  for (const command of ['task parent inspect', 'task parent record', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(module.includes(command), command);
+  assert.match(registry, /runtimeContributions\(runtime, 'cli'\)/);
+  for (const method of ['inspectParentCoordination', 'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination']) assert.ok(cli.includes(method) || http.includes(method), method);
+  assert.doesNotMatch(server, /recordParentPlan|reconcileParentPlan|acceptParentCoordination/);
   for (const flag of ['--schema', '--example']) assert.ok(cli.includes(flag), flag);
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
   assert.match(json, /buildr\.parent-coordination-result\/v3/);
@@ -54,9 +58,9 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
 
 test('模型不恢复lifecycle/progress/event/history authority且没有历史Task专用逻辑', () => {
   const sources = [
-    read('src/domain/parent-coordination/parent-coordination.mjs'),
-    read('src/application/parent-coordination/parent-coordination-application.mjs'),
-    read('src/application/task-development/task-development-application.mjs'),
+    read('src/task/domain/parent-coordination.mjs'),
+    read('src/task/application/parent-coordination-application.mjs'),
+    read('src/task/application/task-development-application.mjs'),
   ].join('\n');
   for (const forbidden of ['task_lifecycle_current', 'completed_child_count', 'parent_progress', 'coordination_events', 'coordination_history', 'delivery_registry', 'govern-task-intermediate-artifacts']) assert.equal(sources.includes(forbidden), false, forbidden);
   const migrations = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite/migrations')).sort();

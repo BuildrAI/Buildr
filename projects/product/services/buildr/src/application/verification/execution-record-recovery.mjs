@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { taskExecutionRecordError } from '../../domain/task-execution-record/task-execution-record.mjs';
+import { taskExecutionRecordError } from '../../task/domain/task-execution-record.mjs';
 import {
   VERIFICATION_EXECUTION_RECORD_KIND,
   VERIFICATION_EXECUTION_RECORD_OWNER,

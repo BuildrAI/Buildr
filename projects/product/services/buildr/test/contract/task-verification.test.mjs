@@ -23,7 +23,7 @@ const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md
 const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
 const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
 const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
-const developmentApplication = read('src/application/task-development/task-development-application.mjs');
+const developmentApplication = read('src/task/application/task-development-application.mjs');
 const openSpecProposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
 const openSpecUpdateSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
 const openSpecApplySidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
@@ -97,10 +97,11 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
 });
 
 test('Application 是 current Result persistence 的唯一 writer/reader', () => {
-  assert.deepEqual(runtimeCallSites('writeTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
-  assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
-  const cli = read('src/interfaces/cli/task-verification.mjs');
+  assert.deepEqual(runtimeCallSites('writeTaskVerificationResultPersistence'), ['src/task/application/task-verification-application.mjs']);
+  assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/task/application/task-verification-application.mjs']);
+  const cli = read('src/task/interfaces/cli/task-verification.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
+  const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const taskDetail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const evidenceTab = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   assert.match(cli, /runtime\.inspectTaskVerification/);
@@ -109,7 +110,9 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.doesNotMatch(cli, /inspect: [^\n]*--declaration-root/);
   assert.match(cli, /operation === 'inspect'\s*\? new Set\(\['--target-identity', '--target', '--json'\]\)/);
   assert.doesNotMatch(cli, /node:fs|YAML|writeTaskVerificationResultPersistence/);
-  assert.match(server, /submitTaskRead\(request, response, 'verification', root, taskVerificationMatch\[1\]\)/);
+  assert.match(http, /task-verification\.http/);
+  assert.match(http, /'verification'/);
+  assert.match(server, /submitTaskRead: \(operation, taskId/);
   assert.doesNotMatch(server, /recordTaskVerification/);
   const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
   assert.match(readWorker, /verification:\s*'inspectTaskVerificationView'/);

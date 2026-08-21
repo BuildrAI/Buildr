@@ -9,7 +9,7 @@ import {
   parentCoordinationDigest,
   projectParentPlan,
   validateContributionHandoffAgainstPlan,
-} from '../../src/domain/parent-coordination/parent-coordination.mjs';
+} from '../../src/task/domain/parent-coordination.mjs';
 
 function plan(overrides = {}) {
   return createParentPlan({

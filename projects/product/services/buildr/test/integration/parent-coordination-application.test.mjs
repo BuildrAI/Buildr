@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createContributionHandoff, parentCoordinationDigest } from '../../src/domain/parent-coordination/parent-coordination.mjs';
-import { createTaskDevelopmentPlanning } from '../../src/domain/task-development/task-development.mjs';
+import { createContributionHandoff, parentCoordinationDigest } from '../../src/task/domain/parent-coordination.mjs';
+import { createTaskDevelopmentPlanning } from '../../src/task/domain/task-development.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 

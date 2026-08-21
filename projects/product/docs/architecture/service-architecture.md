@@ -28,7 +28,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 已成为显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP contribution 和 lifecycle 合约注册 | `legacy-runtime-module.mjs` 仍是有 owner 和退出条件的迁移 Facade |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 投射相关技术适配将在 Agent Assets 迁移时重新确认最终边界；Parent 中 Infrastructure Contribution 的交付绑定仍需单独对账 |
-| Task 参考与专业切片 | Task Record、Task Review、Task Retrospective 的 Domain、Application、Persistence、CLI/HTTP/Internal Adapter 和 `task/module.mjs` 注册已经迁移 | Environment、Development、Verification、Finish、Execution Record、Overview、Planning Identity 与 Parent Coordination 仍待迁移 |
+| Task 参考、专业与生命周期核心切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 与 Parent Coordination 的 Domain、Application、Persistence、CLI/HTTP/Internal Adapter 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册 | Task Finish 仍是后续独立切片；其他旧 consumer 通过有退出条件的 compatibility port 过渡 |
 | Workspace Core | Workspace、Project、Service 的 Domain、Application、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Rule、Skill、Command、Component、Builtin 与 runtime projection 属于后续 Agent Assets；Change、OpenSpec、Publication 和通用 Project Verification 归属仍待决定 |
 | Web 实例生命周期 | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理已迁入 `src/web/` | HTTP Server、Router、Session、安全边界和 `web-dist` 静态托管仍暂存于 `src/interfaces/local-app/http/` |
 | System Installation | installation identity/origin/registry、update/status、npm lifecycle、Launcher 及其 CLI contribution 已迁入 `src/system/installation/` | `system/doctor` 尚未迁移 |
@@ -189,7 +189,9 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前已经迁移 Task Record、Task Review 和 Task Retrospective 三个切片，并由 `task/module.mjs` 提供 Application、Persistence Read、CLI/HTTP contribution 和兼容出口。Task Record 现有复杂协作者暂时保留在 `domain/record/`、`application/record/` 和 `persistence/record/`；Review 与 Retrospective 在相应技术层保持扁平。其余 Task 生命周期职责仍位于旧技术分层，待后续切片迁入后再退出兼容入口。
+当前已经迁移 Task Record、Review、Retrospective 与 Task 生命周期核心。生命周期核心包括 Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 和 Parent Coordination；它们的实现在 `domain/`、`application/`、`persistence/`、`interfaces/cli/`、`interfaces/http/` 与 `interfaces/internal/` 中按技术层保持扁平，由 `task/module.mjs` 组装私有 Repository/Application，对 Bootstrap 只公开命名 capability、CLI/HTTP contribution 和有退出条件的 compatibility port。
+
+Task Record 现有复杂协作者暂时保留在 `domain/record/`、`application/record/` 和 `persistence/record/`；Review、Retrospective 与本次生命周期核心文件保持扁平。Web HTTP Host 仅传入鉴权、closed body 读取和有界读执行能力，Task 路由匹配、业务输入约束与 Application 调用由 `task/interfaces/http/` 负责。该迁移未引入第二套 Persistence/Transaction，也未改变 CLI、HTTP、JSON、SQLite schema 或 writer authority。Task Finish 因包含独立交付步骤与复杂协作者，保留为后续独立迁移切片。
 
 ## `workspace` 模块
 

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-sqlite-'));

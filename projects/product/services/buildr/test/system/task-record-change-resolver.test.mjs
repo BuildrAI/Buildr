@@ -6,7 +6,7 @@ import process from 'node:process';
 import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { normalizeTaskEnvironmentPlan } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/task/domain/task-environment-plan.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {

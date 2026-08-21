@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 
-const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-development-driver.mjs');
+const DRIVER = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-development-driver.mjs');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-profile-'));

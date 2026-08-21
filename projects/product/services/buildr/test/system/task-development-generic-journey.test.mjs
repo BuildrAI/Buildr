@@ -7,7 +7,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
 function declaration() {
   return {

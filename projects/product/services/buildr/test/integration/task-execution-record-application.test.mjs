@@ -12,8 +12,8 @@ import {
   createOpenTaskExecutionRecord,
   resolveTaskExecutionRecord,
   sealTaskExecutionRecord,
-} from '../../src/domain/task-execution-record/task-execution-record.mjs';
-import { TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES } from '../../src/task/persistence/execution-record/task-execution-record-body-store.mjs';
+} from '../../src/task/domain/task-execution-record.mjs';
+import { TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES } from '../../src/task/persistence/task-execution-record-body-store.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');

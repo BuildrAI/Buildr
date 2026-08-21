@@ -8,7 +8,7 @@ import {
   taskDevelopmentActionRequiredFields,
   taskDevelopmentDriverExample,
   taskDevelopmentDriverSchema,
-} from '../../src/application/task-development/task-development-operation-contracts.mjs';
+} from '../../src/task/application/task-development-operation-contracts.mjs';
 
 const expectedActions = ['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier'];
 

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { registerTaskEntrySnapshotApplication } from '../../src/application/task-entry/task-entry-snapshot-application.mjs';
+import { registerTaskEntrySnapshotApplication } from '../../src/task/application/task-entry-snapshot-application.mjs';
 import { resolveCapabilityRoute } from '../../src/agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 const taskId = 'entry-task';

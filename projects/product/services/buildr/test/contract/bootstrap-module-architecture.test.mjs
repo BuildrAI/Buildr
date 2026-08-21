@@ -98,6 +98,26 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
     },
     lifecycle: 'none',
   }, {
+    id: 'task-environment',
+    requires: ['task-record.persistence-read'],
+    provides: ['task-environment.application', 'task-environment.persistence-read', 'task-environment.bootstrap-compatibility'],
+    contributions: {
+      cli: ['task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup'],
+      http: ['task-environment.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
+    id: 'task-execution-record',
+    requires: ['task-record.persistence-read'],
+    provides: ['task-execution-record.application', 'task-execution-record.persistence-read', 'task-execution-record.bootstrap-compatibility'],
+    contributions: {
+      cli: ['task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover'],
+      http: ['task-execution-record.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'task-review',
     requires: [TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store', 'change.resolver'],
     provides: [TASK_REVIEW_APPLICATION, TASK_REVIEW_PERSISTENCE_READ, TASK_REVIEW_COMPATIBILITY],
@@ -116,6 +136,46 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
       http: ['task-retrospective.http'],
       diagnostics: [],
     },
+    lifecycle: 'none',
+  }, {
+    id: 'task-verification',
+    requires: ['task-record.persistence-read', 'task-environment.application'],
+    provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.bootstrap-compatibility'],
+    contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-planning-identity',
+    requires: ['task-record.application'],
+    provides: ['task-planning-identity.application', 'task-planning-identity.bootstrap-compatibility'],
+    contributions: { cli: [], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-development',
+    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-review.application', 'task-verification.application', 'task-planning-identity.application'],
+    provides: ['task-development.application', 'task-development.persistence-read', 'task-development.bootstrap-compatibility'],
+    contributions: { cli: [], http: ['task-development.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-parent-coordination',
+    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-environment.application'],
+    provides: ['task-parent-coordination.application', 'task-parent-coordination.persistence-read', 'task-parent-coordination.bootstrap-compatibility'],
+    contributions: {
+      cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept'],
+      http: ['task-parent-coordination.http'],
+      diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
+    id: 'task-overview',
+    requires: ['task-record.persistence-read'],
+    provides: ['task-overview.application', 'task-overview.bootstrap-compatibility'],
+    contributions: { cli: [], http: ['task-overview.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'task-entry-snapshot',
+    requires: ['task-record.application', 'task-environment.application', 'task-development.application', 'task-parent-coordination.application'],
+    provides: ['task-entry-snapshot.application', 'task-entry-snapshot.bootstrap-compatibility'],
+    contributions: { cli: ['task next'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'system-installation',
@@ -152,12 +212,21 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
+    'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',
     'task review inspect', 'task review record',
+    'task verification inspect', 'task verification record',
+    'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept',
+    'task next',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',
   ]);
-  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), ['workspace-core.http', 'task-record.http', 'task-review.http', 'task-retrospective.http']);
+  assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
+    'workspace-core.http', 'task-record.http', 'task-environment.http', 'task-execution-record.http',
+    'task-review.http', 'task-retrospective.http', 'task-verification.http', 'task-development.http',
+    'task-parent-coordination.http', 'task-overview.http',
+  ]);
 
   const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
   const project = runtimeProvide(runtime, PROJECT_APPLICATION);
@@ -317,4 +386,37 @@ test('Task Retrospective 旧全局技术层路径已经退出', () => {
     'src/interfaces/internal/task-retrospective-driver.mjs',
     'src/interfaces/internal/task-retrospective-driver-runner.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
+});
+
+test('Task 生命周期核心只保留模块内扁平技术层', () => {
+  for (const relative of [
+    'src/domain/parent-coordination/parent-coordination.mjs',
+    'src/domain/task-development/task-development.mjs',
+    'src/domain/task-environment/task-environment.mjs',
+    'src/domain/task-execution-record/task-execution-record.mjs',
+    'src/domain/task-planning-identity/task-planning-identity.mjs',
+    'src/domain/task-verification/task-verification.mjs',
+    'src/application/parent-coordination/parent-coordination-application.mjs',
+    'src/application/task-development/task-development-application.mjs',
+    'src/application/task-entry/task-entry-snapshot-application.mjs',
+    'src/application/task-environment/task-environment-application.mjs',
+    'src/application/task-execution-record/task-execution-record-application.mjs',
+    'src/application/task-overview/task-overview-application.mjs',
+    'src/application/task-planning-identity/task-planning-identity-application.mjs',
+    'src/application/task-verification/task-verification-application.mjs',
+    'src/interfaces/cli/task-environment.mjs',
+    'src/interfaces/internal/task-development-driver.mjs',
+    'src/task/persistence/index.mjs',
+  ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
+
+  for (const relative of [
+    'src/task/domain/task-development.mjs',
+    'src/task/application/task-development-application.mjs',
+    'src/task/persistence/task-development-repository.mjs',
+    'src/task/interfaces/internal/task-development-driver.mjs',
+    'src/task/interfaces/http/task-lifecycle-core.mjs',
+  ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
+
+  const host = read('src/interfaces/local-app/http/server.mjs');
+  assert.doesNotMatch(host, /recordParentPlan|reconcileParentPlan|readTaskEnvironmentCurrent|taskDevelopmentMatch|taskVerificationMatch/);
 });

@@ -9,7 +9,7 @@ import { parseProjectVerification, validateProjectVerification } from '../doctor
 import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,
-} from '../../domain/task-environment/project-environment-preparation.mjs';
+} from '../../task/domain/project-environment-preparation.mjs';
 import { runVerificationCapabilities } from './capability-runner.mjs';
 import { verificationPreparationAdmission } from './preparation-admission.mjs';
 import { executeVerificationCommand } from './process-executor.mjs';
