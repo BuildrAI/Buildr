@@ -73,6 +73,7 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   assert.deepEqual(payload.paths, []);
   assert.deepEqual(payload.preflightSteps, []);
   assert.ok(payload.admissionStepIds.includes('system-verification-admission'));
+  assert.ok(payload.admissionStepIds.includes('integration-verification'));
   assert.equal(new Set(payload.steps.map((step) => step.id)).size, payload.steps.length);
   assert.equal(payload.steps.some((step) => step.id === 'repository-onboarding'), false);
   for (const id of [

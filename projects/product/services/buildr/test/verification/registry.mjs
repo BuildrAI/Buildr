@@ -236,6 +236,7 @@ const integrationSlice = (id, files, inputs, options = {}) => Object.freeze({
   ...(options.timeoutMs == null ? {} : { timeoutMs: options.timeoutMs }),
   concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
   resources: Object.freeze(options.resources ?? []),
+  admission: options.admission === true,
   args: Object.freeze([...(options.args ?? []), '--test-reporter=dot']),
 });
 
@@ -296,7 +297,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/verification/run-node-tests.mjs',
     'test/verification/test-files.mjs',
     'test/verification/worker-budget.mjs',
-  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'] }),
+  ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
     'test/integration/capability-contracts.test.mjs',
     'test/integration/capability-runtime.test.mjs',
@@ -534,6 +535,7 @@ export const verificationSteps = Object.freeze([
     ...(slice.timeoutMs == null ? {} : { timeoutMs: slice.timeoutMs }),
     concurrencyClass: slice.concurrencyClass,
     resources: [...slice.resources],
+    admission: slice.admission,
   })),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/contract/**', 'test/fixtures/**', '.node-version', 'preparation.yml', 'verification.yml', 'task-finish.yml',
@@ -761,7 +763,6 @@ export const CORE_MACOS_STEP_IDS = Object.freeze([
   'integration',
   'integration-declarations',
   'integration-openspec',
-  'integration-verification',
   'integration-runtime',
   'integration-release',
   'integration-data-store',
@@ -811,7 +812,6 @@ export const CORE_MACOS_SHARDS = Object.freeze([
     'integration',
     'integration-declarations',
     'integration-openspec',
-    'integration-verification',
     'integration-data-store',
     'integration-task-read-models',
     'integration-task-coordination',
@@ -864,6 +864,7 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'package-static',
     'docs-quality',
     'system-verification-admission',
+    'integration-verification',
   ]),
   candidateShard('artifact-macos', 'macos', 'artifact', [
     'candidate-tarball',

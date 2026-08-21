@@ -210,6 +210,8 @@ test('本地 changed/full plan 使用单一去重 admission DAG', () => {
 
   const candidate = createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] }));
   assert.ok(candidate.admissionStepIds.includes('system-verification-admission'));
+  assert.ok(candidate.admissionStepIds.includes('integration-verification'));
+  assert.ok(candidate.admissionStepIds.indexOf('integration-verification') < candidate.admissionStepIds.indexOf('system-verification-admission'));
   assert.equal(new Set(ids(candidate)).size, candidate.steps.length);
   for (const step of candidate.steps.filter((item) => !candidate.admissionStepIds.includes(item.id))) {
     for (const admission of candidate.admissionStepIds) assert.ok(step.dependsOn.includes(admission), `${step.id} waits for ${admission}`);
@@ -469,6 +471,22 @@ test('registry validation拒绝有副作用或无预算的preflight', () => {
   const result = validateVerificationRegistry(invalid);
   assert.ok(result.findings.some((finding) => finding.code === 'preflight_side_effects_unsafe'));
   assert.ok(result.findings.some((finding) => finding.code === 'preflight_budget_invalid'));
+});
+
+test('registry validation 限制 admission 为低成本、隔离且无稀缺资源的失败前置门', () => {
+  const invalid = [{
+    id: 'heavy-admission', name: 'heavy admission', executor: { type: 'node', file: 'x.mjs' }, profiles: [], groups: [], inputs: ['x.mjs'],
+    concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'], dependsOn: [], admission: true,
+    testing: {
+      ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'System',
+      targetDurationMs: 20000, proves: 'fixture', primaryEvidenceOwner: 'heavy-admission',
+      environment: { footprints: ['workspace-lifecycle'], isolation: 'unique-temporary-root' }, resetBurden: 'lifecycle',
+    },
+  }];
+  const result = validateVerificationRegistry(invalid);
+  for (const code of ['admission_target_too_slow', 'admission_workspace_lifecycle', 'admission_resource_claim']) {
+    assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
+  }
 });
 
 test('registry validation 拒绝非法 input exclusion 与 node-test files', () => {

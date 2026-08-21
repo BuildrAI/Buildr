@@ -221,6 +221,15 @@ export function validateVerificationRegistry(steps = verificationSteps) {
           findings.push({ step: item.id, code: 'quick_integration_not_isolated', value: forbidden.join(',') || executionEnvironment?.isolation });
         }
       }
+      if (item.admission === true && classification.targetDurationMs > 15000) {
+        findings.push({ step: item.id, code: 'admission_target_too_slow', value: classification.targetDurationMs });
+      }
+      if (item.admission === true && executionEnvironment?.footprints?.includes('workspace-lifecycle')) {
+        findings.push({ step: item.id, code: 'admission_workspace_lifecycle' });
+      }
+      if (item.admission === true && (item.resources?.length ?? 0) > 0) {
+        findings.push({ step: item.id, code: 'admission_resource_claim', value: item.resources.join(',') });
+      }
       if (item.budgetMs != null && item.budgetMs !== classification.targetDurationMs) {
         findings.push({ step: item.id, code: 'testing_target_budget_mismatch', value: item.budgetMs });
       }
