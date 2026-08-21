@@ -8,7 +8,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 import {
   releasePublishAuthority,

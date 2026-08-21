@@ -18,43 +18,43 @@ import { registerTaskExecutionRecordBodyStore } from '../infrastructure/filesyst
 import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
-import { registerDomainsRuntime } from './domains/runtime.mjs';
-import { registerDomainsWorkspace } from './domains/workspace.mjs';
-import { registerDomainsComponents } from './domains/components.mjs';
-import { registerDomainsCommands } from './domains/commands.mjs';
-import { registerDomainsRules } from './domains/rules.mjs';
-import { registerDomainsOpenspec } from './domains/openspec.mjs';
-import { registerApplicationDoctor } from './doctor.mjs';
-import { registerDomainsPackageAssets } from './domains/package-assets.mjs';
-import { registerDomainsSkills } from './domains/skills.mjs';
-import { registerApplicationPackageMaintenance } from './package-maintenance.mjs';
-import { registerApplicationWorkspaceOperations } from './workspace-operations.mjs';
-import { registerApplicationRuntime } from './runtime.mjs';
-import { registerApplicationCliUpdate } from './cli-update.mjs';
-import { registerWorkspaceApplication } from './workspace/workspace-application.mjs';
-import { registerProjectApplication } from './project/project-application.mjs';
-import { registerPublicationApplication } from './publication/publication-application.mjs';
-import { registerServiceApplication } from './service/service-application.mjs';
-import { registerChangeApplication } from './change/change-application.mjs';
-import { registerGitWorktreeProvider } from './worktree/git-worktree-provider.mjs';
-import { registerTaskFinishApplication } from './task-finish/task-finish-application.mjs';
-import { registerTaskTerminalDeliveryApplication } from './task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { registerTaskRecordModule } from '../task/module.mjs';
-import { registerTaskReviewApplication } from './task-review/task-review-application.mjs';
-import { registerTaskRetrospectiveApplication } from './task-retrospective/task-retrospective-application.mjs';
-import { registerTaskVerificationApplication } from './task-verification/task-verification-application.mjs';
-import { registerTaskDevelopmentApplication } from './task-development/task-development-application.mjs';
-import { registerTaskEntrySnapshotApplication } from './task-entry/task-entry-snapshot-application.mjs';
-import { registerTaskPlanningIdentityApplication } from './task-planning-identity/task-planning-identity-application.mjs';
-import { registerTaskOverviewApplication } from './task-overview/task-overview-application.mjs';
-import { registerParentCoordinationApplication } from './parent-coordination/parent-coordination-application.mjs';
-import { registerProjectDailyProgressApplication } from './project-daily-progress/project-daily-progress-application.mjs';
-import { registerTaskEnvironmentApplication } from './task-environment/task-environment-application.mjs';
-import { registerTaskExecutionRecordApplication } from './task-execution-record/task-execution-record-application.mjs';
-import { registerVerificationApplication } from './verification/verification-application.mjs';
+import { registerDomainsRuntime } from '../application/domains/runtime.mjs';
+import { registerDomainsWorkspace } from '../application/domains/workspace.mjs';
+import { registerDomainsComponents } from '../application/domains/components.mjs';
+import { registerDomainsCommands } from '../application/domains/commands.mjs';
+import { registerDomainsRules } from '../application/domains/rules.mjs';
+import { registerDomainsOpenspec } from '../application/domains/openspec.mjs';
+import { registerApplicationDoctor } from '../application/doctor.mjs';
+import { registerDomainsPackageAssets } from '../application/domains/package-assets.mjs';
+import { registerDomainsSkills } from '../application/domains/skills.mjs';
+import { registerApplicationPackageMaintenance } from '../application/package-maintenance.mjs';
+import { registerApplicationWorkspaceOperations } from '../application/workspace-operations.mjs';
+import { registerApplicationRuntime } from '../application/runtime.mjs';
+import { registerApplicationCliUpdate } from '../application/cli-update.mjs';
+import { registerWorkspaceApplication } from '../application/workspace/workspace-application.mjs';
+import { registerProjectApplication } from '../application/project/project-application.mjs';
+import { registerPublicationApplication } from '../application/publication/publication-application.mjs';
+import { registerServiceApplication } from '../application/service/service-application.mjs';
+import { registerChangeApplication } from '../application/change/change-application.mjs';
+import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
+import { registerTaskFinishApplication } from '../application/task-finish/task-finish-application.mjs';
+import { registerTaskTerminalDeliveryApplication } from '../application/task-terminal-delivery/task-terminal-delivery-application.mjs';
+import { registerTaskReviewApplication } from '../application/task-review/task-review-application.mjs';
+import { registerTaskRetrospectiveApplication } from '../application/task-retrospective/task-retrospective-application.mjs';
+import { registerTaskVerificationApplication } from '../application/task-verification/task-verification-application.mjs';
+import { registerTaskDevelopmentApplication } from '../application/task-development/task-development-application.mjs';
+import { registerTaskEntrySnapshotApplication } from '../application/task-entry/task-entry-snapshot-application.mjs';
+import { registerTaskPlanningIdentityApplication } from '../application/task-planning-identity/task-planning-identity-application.mjs';
+import { registerTaskOverviewApplication } from '../application/task-overview/task-overview-application.mjs';
+import { registerParentCoordinationApplication } from '../application/parent-coordination/parent-coordination-application.mjs';
+import { registerProjectDailyProgressApplication } from '../application/project-daily-progress/project-daily-progress-application.mjs';
+import { registerTaskEnvironmentApplication } from '../application/task-environment/task-environment-application.mjs';
+import { registerTaskExecutionRecordApplication } from '../application/task-execution-record/task-execution-record-application.mjs';
+import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
-import { registerProductInstallationStatus } from './product-installation-status.mjs';
-import * as platform from '../infrastructure/platform.mjs';
+import { registerProductInstallationStatus } from '../application/product-installation-status.mjs';
+
+const TASK_RECORD_MODULE_SLOT = Symbol('task-record-module');
 
 const REGISTRATIONS = [
   registerWorkspaceInfrastructure,
@@ -99,7 +99,7 @@ const REGISTRATIONS = [
   registerApplicationRuntime,
   registerGitWorktreeProvider,
   registerTaskEnvironmentApplication,
-  registerTaskRecordModule,
+  TASK_RECORD_MODULE_SLOT,
   registerProjectDailyProgressApplication,
   registerTaskExecutionRecordApplication,
   registerTaskReviewApplication,
@@ -115,8 +115,11 @@ const REGISTRATIONS = [
   registerTaskTerminalDeliveryApplication,
 ];
 
-export function createRuntime() {
-  const runtime = { ...platform };
-  for (const register of REGISTRATIONS) register(runtime);
+export function registerLegacyRuntime(runtime, { installTaskRecordModule }) {
+  if (typeof installTaskRecordModule !== 'function') throw new Error('Bootstrap must provide the Task Record module installer.');
+  for (const register of REGISTRATIONS) {
+    if (register === TASK_RECORD_MODULE_SLOT) installTaskRecordModule(runtime);
+    else register(runtime);
+  }
   return runtime;
 }

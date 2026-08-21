@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { TASK_ENVIRONMENT_RECEIPT_SCHEMA } from '../../src/domain/task-environment/task-environment.mjs';
 
 function fixture(t) {

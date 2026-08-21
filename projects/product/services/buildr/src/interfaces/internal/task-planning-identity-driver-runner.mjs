@@ -20,7 +20,7 @@ export async function runTaskPlanningIdentityDriver(args, options = {}) {
   }
 
   try {
-    const { createRuntime } = await import('../../application/compose-runtime.mjs');
+    const { createRuntime } = await import('../../bootstrap/runtime.mjs');
     const result = createRuntime().inspectTaskPlanningIdentity(targetRoot, taskId);
     stdout(JSON.stringify(result, null, 2));
     return result.status === 'blocked' ? 1 : 0;

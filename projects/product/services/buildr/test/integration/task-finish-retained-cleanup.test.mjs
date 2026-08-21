@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import {
   createIsolatedGitCarrier,
   inspectAgentReviewedZeroDeltaContainment,
@@ -225,7 +225,7 @@ async function realZeroDeltaCleanupRun(t) {
   git(root, ['add', '-A']);
   git(root, ['commit', '-m', 'original baseline']);
 
-  const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'compose-runtime.mjs')).href;
+  const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'bootstrap', 'runtime.mjs')).href;
   const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'task-finish', 'task-finish-product-executor.mjs')).href;
   const [{ createRuntime: createRetainedRuntime }, { createTaskFinishProductHandlers }] = await Promise.all([
     import(composeRuntimeUrl),

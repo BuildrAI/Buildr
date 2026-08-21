@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { isDeepStrictEqual } from 'node:util';
 
-import { createRuntime } from '../../application/compose-runtime.mjs';
+import { createRuntime } from '../../bootstrap/runtime.mjs';
 import {
   createGitNoContributionProof,
   inspectAgentReviewedZeroDeltaContainment,

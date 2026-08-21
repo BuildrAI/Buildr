@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createTaskFinishDiagnosticsEvidence } from '../../src/application/task-finish/diagnostics-evidence.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test, { after, before } from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');

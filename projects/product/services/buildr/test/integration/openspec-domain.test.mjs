@@ -6,7 +6,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerDomainsOpenspec } from '../../src/application/domains/openspec.mjs';
 
 function deltaSpec(statement = '系统 MUST 保持可移植 identity。') {

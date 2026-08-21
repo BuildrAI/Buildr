@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright-core';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { FINISH_PHASES, FINISH_RUN_SCHEMA, inspectFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
@@ -396,7 +396,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
-  const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'application', 'compose-runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
+  const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'bootstrap', 'runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();
   controllerRuntime.currentProductInvocation = (options = {}) => ({
     command: process.execPath,
     argsPrefix: [options.cliPath || controller.cli],

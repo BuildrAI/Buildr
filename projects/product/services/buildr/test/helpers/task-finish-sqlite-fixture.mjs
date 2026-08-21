@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 
 export function initializeTaskFinishSqliteWorkspace(root) {

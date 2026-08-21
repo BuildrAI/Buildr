@@ -17,7 +17,7 @@ test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路
 });
 
 test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON identity', () => {
-  const registry = read('src/interfaces/cli/registry.mjs');
+  const registry = read('src/bootstrap/cli/registry.mjs');
   const cli = read('src/interfaces/cli/project-daily-progress.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
   const json = read('src/application/json-contracts.mjs');

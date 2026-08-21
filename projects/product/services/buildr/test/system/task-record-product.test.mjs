@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
   runBuildr as run,

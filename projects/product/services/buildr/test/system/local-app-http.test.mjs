@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';

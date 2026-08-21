@@ -30,7 +30,7 @@ test('Parent Plan是closed计划值且Task Record不复制计划或Child状态',
 });
 
 test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一public JSON identity', () => {
-  const registry = read('src/interfaces/cli/registry.mjs');
+  const registry = read('src/bootstrap/cli/registry.mjs');
   const cli = read('src/interfaces/cli/parent-coordination.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
   const worker = read('src/interfaces/local-app/http/read-worker.mjs');

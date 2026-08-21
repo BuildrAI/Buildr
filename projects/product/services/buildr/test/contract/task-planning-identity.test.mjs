@@ -6,12 +6,12 @@ import test from 'node:test';
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('Task Planning Identity runtime保持独立只读入口且由compose注册', () => {
+test('Task Planning Identity runtime保持独立只读入口且由Bootstrap legacy module注册', () => {
   const domain = read('src/domain/task-planning-identity/task-planning-identity.mjs');
   const application = read('src/application/task-planning-identity/task-planning-identity-application.mjs');
   const driver = read('src/interfaces/internal/task-planning-identity-driver-runner.mjs');
   const inventory = read('src/application/internal-workflow-route-inventory.mjs');
-  const compose = read('src/application/compose-runtime.mjs');
+  const compose = read('src/bootstrap/legacy-runtime-module.mjs');
   const cli = read('bin/buildr.mjs');
   assert.match(domain, /buildr\.task-planning-identity-result\/v1/);
   assert.match(domain, /checklist-completion/);

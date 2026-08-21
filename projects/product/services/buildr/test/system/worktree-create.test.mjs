@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
 const sourceProductRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

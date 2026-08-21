@@ -236,7 +236,7 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
       excluded: ['contract', 'cli-architecture', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
-      path: 'src/interfaces/cli/help.mjs',
+      path: 'src/bootstrap/cli/help.mjs',
       required: ['cli-architecture', 'commands-cli-integration', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
       excluded: ['contract', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },

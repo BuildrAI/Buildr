@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/application/workspace/workspace-root-gitignore-entries.mjs';
 
 function fixture(t) {

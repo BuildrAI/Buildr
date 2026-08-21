@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
 import { createNpmPackStaging } from '../../scripts/release/release-artifact.mjs';
 import {

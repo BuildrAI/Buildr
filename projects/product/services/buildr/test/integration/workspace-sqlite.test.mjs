@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
@@ -253,12 +253,12 @@ test('operation scope 只复用单次action的canonical与owner Application read
     assert.deepEqual(runtime.inspectTaskEnvironment(root, 'operation-scope'), runtime.inspectTaskEnvironment(root, 'operation-scope'));
   });
   assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 3, 'Task Record owner read + Environment owner/repository validation');
+  assert.equal(taskReads, 2, '兼容 Facade 只观察 Environment owner/repository validation；Task 模块内部读取保持私有');
   assert.equal(environmentReads, 1, 'Local Environment inspect 只查询 SQLite Environment current');
 
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
   assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 4);
+  assert.equal(taskReads, 2, '新 operation 中的 Task 模块内部读取也不经过可替换的兼容 Facade');
 
   assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => {
     runtime.assertCanonicalStructuredWorkspace(root);

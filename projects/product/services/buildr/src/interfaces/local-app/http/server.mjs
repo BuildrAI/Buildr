@@ -30,16 +30,13 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-c
 import { pickWorkspaceDirectory } from '../runtime/directory-picker.mjs';
 import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
 import { createLocalAppScheduledMaintenance } from '../runtime/scheduled-maintenance.mjs';
-import { readCliIdentity } from '../../cli/identity.mjs';
+import { readCurrentProductIdentity } from '../../../infrastructure/product-identity/current-product-identity.mjs';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../../infrastructure/product-identity/web-profile.mjs';
 import { assertCurrentNpmLauncherBinding } from '../../../infrastructure/product-launcher/index.mjs';
-import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from '../../../task/interfaces/http/task-record-http.mjs';
 
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const STATIC_ROOT = resolveProductResource('product/src/interfaces/local-app/web-dist');
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
-const TASK_ID = TASK_RECORD_ID_SOURCE;
-const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
@@ -281,7 +278,16 @@ export function createLocalWorkspaceServer(runtime, {
   onShutdown = null,
   readExecutor = null,
   scheduledMaintenanceFactory = createLocalAppScheduledMaintenance,
+  httpContributions = runtime.__bootstrapContributions?.('http') || [],
 } = {}) {
+  const taskIdSources = [...new Set(httpContributions.map((contribution) => contribution.taskIdSource).filter(Boolean))];
+  if (taskIdSources.length !== 1) {
+    const error = new Error(`Buildr Web requires exactly one Task identity contribution; received ${taskIdSources.length}.`);
+    error.code = 'bootstrap_http_task_identity_invalid';
+    throw error;
+  }
+  const TASK_ID = taskIdSources[0];
+  const WORKSPACE_APP_ROUTE = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${TASK_ID})?|/tasks(?:/${TASK_ID}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${TASK_ID})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
   const initialWorkspaceId = ensureRegisteredTarget(runtime, targetRoot);
   const ownsReadExecutor = !readExecutor;
   const taskReadExecutor = readExecutor || createBoundedLocalAppReadExecutor();
@@ -433,16 +439,17 @@ export function createLocalWorkspaceServer(runtime, {
           error.status = 400;
           throw error;
         }
-        const taskRecordResponse = await handleTaskRecordHttpRequest({
-          request,
-          suffix,
-          searchParams: requestUrl.searchParams,
-          root,
-          runtime,
-          authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
-          readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
-        });
-        if (taskRecordResponse) return jsonResponse(response, taskRecordResponse.status, taskRecordResponse.body);
+        for (const contribution of httpContributions) {
+          const contributedResponse = await contribution.handle({
+            request,
+            suffix,
+            searchParams: requestUrl.searchParams,
+            root,
+            authorizeWrite: () => assertWriteRequest(request, origin, sessionToken),
+            readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
+          });
+          if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
+        }
         const taskOverviewMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/overview$`));
         if (request.method === 'GET' && taskOverviewMatch) {
           return jsonResponse(response, 200, await submitTaskRead(request, response, 'overview', root, taskOverviewMatch[1]));
@@ -641,6 +648,7 @@ export function createLocalWorkspaceServer(runtime, {
 }
 
 export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
+  const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
   registerLocalAppPreviewResourceProvider(runtime);
   async function startLocalWorkspaceApp(args) {
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
@@ -652,7 +660,7 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
     const launcherBindingPath = runtime.optionValue(args, '--launcher-binding', null);
     if (launcherBindingPath && args.includes('--port')) throw new Error('--port cannot be combined with --launcher-binding; the npm Launcher binding owns its port policy.');
     const noOpen = args.includes('--no-open') || (launcherBindingPath && process.env.BUILDR_LAUNCHER_NO_OPEN === '1');
-    const productIdentity = options.readProductIdentity ? options.readProductIdentity() : readCliIdentity();
+    const productIdentity = options.readProductIdentity ? options.readProductIdentity() : readCurrentProductIdentity();
     const npmLauncherBinding = launcherBindingPath ? assertCurrentNpmLauncherBinding(path.resolve(launcherBindingPath), productIdentity) : null;
     const launcherIdentity = npmLauncherBinding || readLauncherIdentityFromEnvironment();
     const previewIdentity = readPreviewIdentityFromEnvironment();
@@ -775,6 +783,7 @@ export function registerLocalWorkspaceAppInterface(runtime, options = {}) {
             productIdentity,
             webProfile,
             previewIdentity,
+            httpContributions,
             onShutdown: () => {
               if (state) clearLocalAppInstance(state, webProfile);
               if (previewIdentity) process.exit(0);

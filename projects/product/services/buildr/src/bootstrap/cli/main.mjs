@@ -9,7 +9,7 @@ function writeInternalDownload(file, bytes) {
 async function runInternalProductAction(argv) {
   if (argv[2] !== '__internal') return false;
   const action = argv[3];
-  const { runRequiredInternalWorkflowRoute } = await import('../internal/formal-workflow-routes.mjs');
+  const { runRequiredInternalWorkflowRoute } = await import('../../interfaces/internal/formal-workflow-routes.mjs');
   const workflowExitCode = await runRequiredInternalWorkflowRoute(action, argv.slice(4));
   if (workflowExitCode !== null) {
     process.exitCode = workflowExitCode;
@@ -33,7 +33,7 @@ async function runInternalProductAction(argv) {
     return true;
   }
   if (action === 'task-finish-retained-cleanup') {
-    const { runRetainedTaskFinishCleanup } = await import('../internal/task-finish-retained-cleanup.mjs');
+    const { runRetainedTaskFinishCleanup } = await import('../../interfaces/internal/task-finish-retained-cleanup.mjs');
     await runRetainedTaskFinishCleanup(argv.slice(4));
     return true;
   }

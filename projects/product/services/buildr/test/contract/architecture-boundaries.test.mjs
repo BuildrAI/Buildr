@@ -41,7 +41,7 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
       if (entry.isDirectory()) visit(file);
       else if (entry.name.endsWith('.mjs') && /import \* as platform/.test(fs.readFileSync(file, 'utf8'))) {
         const relative = path.relative(productRoot, file).split(path.sep).join('/');
-        if (relative !== 'src/application/compose-runtime.mjs') violations.push(relative);
+        if (relative !== 'src/bootstrap/runtime.mjs') violations.push(relative);
       }
     }
   };

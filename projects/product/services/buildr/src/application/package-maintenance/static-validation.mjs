@@ -317,7 +317,8 @@ export function createPackageStaticValidator(deps) {
       if (existsFile(path.join(root, relative))) problems.push(`Retired Task Lifecycle runtime path must not remain: ${relative}`);
     }
     for (const relative of [
-      'src/application/compose-runtime.mjs',
+      'src/bootstrap/runtime.mjs',
+      'src/bootstrap/legacy-runtime-module.mjs',
       'src/application/task-development/task-development-application.mjs',
       'src/application/task-review/task-review-application.mjs',
       'src/application/task-verification/task-verification-application.mjs',
@@ -422,7 +423,7 @@ export function createPackageStaticValidator(deps) {
       ['src/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
       ['src/application/internal-workflow-route-inventory.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
       ['src/interfaces/internal/formal-workflow-routes.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
-      ['src/application/compose-runtime.mjs', ['registerTaskPlanningIdentityApplication']],
+      ['src/bootstrap/legacy-runtime-module.mjs', ['registerTaskPlanningIdentityApplication']],
     ]);
     for (const [relative, requiredTexts] of sourceContracts) {
       const file = path.join(root, relative);
@@ -466,7 +467,7 @@ export function createPackageStaticValidator(deps) {
   function validateInternalWorkflowRouteClosure(context) {
     const { root, problems } = context;
     const inventory = path.join(root, 'src/application/internal-workflow-route-inventory.mjs');
-    const cli = path.join(root, 'src/interfaces/cli/main.mjs');
+    const cli = path.join(root, 'src/bootstrap/cli/main.mjs');
     if (!existsFile(inventory)) problems.push('Required internal workflow route inventory is missing.');
     if (!existsFile(cli)) problems.push('Buildr CLI internal workflow route dispatcher is missing.');
     else if (!fs.readFileSync(cli, 'utf8').includes('runRequiredInternalWorkflowRoute')) problems.push('Buildr CLI must dispatch the required internal workflow route inventory.');

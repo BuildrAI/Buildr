@@ -1,0 +1,33 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: reorganize-buildr-bootstrap-module-contracts
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/reorganize-buildr-bootstrap-module-contracts/brief.md
+    reason: Bootstrap 与模块合约的目标、流程、兼容边界和验收需要可读入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/proposal.md
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/design.md
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/specs/product-source-layout/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Service composition owner、模块依赖方向、Host contribution 与兼容 Runtime 边界发生变化。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/design.md
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/specs/product-source-layout/spec.md
+      - services/buildr/src/bootstrap/runtime.mjs
+      - services/buildr/src/task/module.mjs
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 内部 Bootstrap、业务模块入口和进程 lifecycle 职责需要与实现一致。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/design.md
+      - openspec/changes/reorganize-buildr-bootstrap-module-contracts/specs/product-source-layout/spec.md
+      - services/buildr/src/bootstrap/runtime.mjs
+      - services/buildr/src/bootstrap/cli/registry.mjs
+      - services/buildr/src/task/module.mjs
+unresolvedItems: []

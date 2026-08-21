@@ -9,7 +9,7 @@ import {
 } from '../../src/infrastructure/product-resources/index.mjs';
 import { readCurrentInstallationOrigin } from '../../src/infrastructure/product-identity/installation-origin.mjs';
 import { enrollProductInstallation } from '../../src/infrastructure/product-identity/installation-registry.mjs';
-import { reportCliFailure, runCli } from '../../src/interfaces/cli/main.mjs';
+import { reportCliFailure, runCli } from '../../src/bootstrap/cli/main.mjs';
 
 Promise.resolve()
   .then(() => {

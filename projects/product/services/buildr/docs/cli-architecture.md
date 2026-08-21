@@ -7,6 +7,8 @@
 ```text
 bin/                         npm executable 薄入口
 src/
+  bootstrap/                 进程级 composition、module registry 与公共 CLI Host
+    cli/                     main、统一 command catalog、help、diagnostics 与 dispatch
   domain/
     workspace/               Workspace 实体、UUID 格式与纯字段约束
     task-record/             Task Record closed schema、状态与纯字段约束
@@ -19,8 +21,10 @@ src/
     filesystem/              Manifest 与专业 Task records、路径、YAML、revision 与 transaction primitive
     sqlite/                  Workspace structured store、migrations 与 Task Record repository
   interfaces/
-    cli/                     CLI registry、help、参数与输出 adapter
+    cli/                     未迁移能力的命令参数与输出 adapter
     local-app/               loopback HTTP 与离线 Workspace Web 页面
+  task/                      Task Record 模块优先纵向切片
+    module.mjs               requires/provides/CLI/HTTP contribution 公开入口
 test/
   unit/                      小粒度单元测试
   contract/                  静态和公开契约测试
@@ -31,7 +35,7 @@ scripts/                      checkout 安装、卸载和验证入口
 package/                      Buildr 向 Workspace/runtime 交付的源资产
 ```
 
-`bin/buildr.mjs` 只启动 `src/interfaces/cli/main.mjs`。Product 根 `buildr` 是 checkout convenience entry，也委托同一个 bin；npm 安装、checkout 执行与本机安装因此共享一套 implementation。
+`bin/buildr.mjs` 只启动 `src/bootstrap/cli/main.mjs`。Bootstrap 是唯一 composition root：`runtime.mjs` 组装模块，`bootstrap/cli/` 持有公共 Host。Product 根 `buildr` 是 checkout convenience entry，也委托同一个 bin；npm 安装、checkout 执行与本机安装因此共享一套 implementation。
 
 `src/application/domains/` 保留原有 Rules、Skills、Commands、Components、部分 workspace lifecycle、OpenSpec 和 runtime handler。Workspace、Project、Service 已完成垂直切片：`src/domain/<domain>/` 只表达实体、值对象和纯约束，`src/application/<domain>/` 持有用例，`src/infrastructure/filesystem/*-manifest-repository.mjs` 持有 YAML/path/revision，Git adapter 持有实时观察，`src/interfaces/local-app/` 持有 HTTP/Web。旧 lifecycle 只能逐步委托这些 Application，不得新增 interface 直接解析 manifest 的路径。
 
@@ -40,20 +44,24 @@ package/                      Buildr 向 Workspace/runtime 交付的源资产
 当前迁移接受以下依赖方向：
 
 ```text
-bin -> interfaces -> application -> infrastructure
-                   \--------------> domain（存在纯领域模型后）
-infrastructure --------------------> domain
+bin -> bootstrap -> module entry -> interfaces/application/persistence
+                 \-> legacy runtime module -> application/infrastructure
+interfaces -> application -> infrastructure
+                         \-> domain（存在纯领域模型后）
+infrastructure -----------> domain
 ```
 
 - `bin` 不包含业务逻辑。
+- `bootstrap` 只拥有进程、module composition、公共 Host 与迁移期兼容投射，不拥有业务规则、DTO 或数据库实现。
+- 已迁移模块只通过根部 `module.mjs` 声明 named `requires`、namespaced `provides`、CLI/HTTP contributions 与可选 lifecycle；模块不扫描全局 Runtime。
 - `interfaces` 负责协议适配，只调用应用用例，不被 application 或 infrastructure 反向依赖。
 - `application` 组合产品行为；现阶段可调用明确命名的 infrastructure adapter。未来抽取纯 domain 时，domain 不得依赖 filesystem、process、runtime、CLI 或测试代码。
 - `infrastructure` 持有 filesystem、network、进程/Git 和 Agent runtime 的具体实现。
 - `src` 与 `bin` 不得导入 `test/` 或 `scripts/`。
 
-不建立顶层或 `src/shared/`。复用代码按语义归属：文件和 transaction primitive 在 `infrastructure/filesystem`，子进程调用在 `infrastructure/process.mjs`，产品目录常量在 `infrastructure/product-layout.mjs`，远程读取在 `infrastructure/network`，Agent runtime 在 `infrastructure/runtime`，JSON contract 在 `application`，CLI registry/help/output 在 `interfaces/cli`。新增 helper 必须先确定 owner。
+不建立顶层或 `src/shared/`。复用代码按语义归属：文件和 transaction primitive 在 `infrastructure/filesystem`，子进程调用在 `infrastructure/process.mjs`，产品目录常量在 `infrastructure/product-layout.mjs`，远程读取在 `infrastructure/network`，Agent runtime 在 `infrastructure/runtime`，JSON contract 在 `application`，公共 CLI Host 在 `bootstrap/cli`，能力专属 Adapter 在所属模块或 `interfaces/cli`。新增 helper 必须先确定 owner。
 
-`infrastructure/platform.mjs` 只是一份供 `application/compose-runtime.mjs` 构造兼容 runtime object 的 composition dependency registry。普通模块必须直接导入 Node API、runtime adapter 或 product-layout owner；不得从 platform 聚合面取 named imports。待兼容 runtime object 被后续功能逐步拆除后，该 registry 也可删除。
+`infrastructure/platform.mjs` 只是一份供 `bootstrap/runtime.mjs` 构造兼容 runtime object 的 composition dependency registry。`bootstrap/legacy-runtime-module.mjs` 保留尚未迁移能力的原注册顺序；普通模块必须直接导入 Node API、runtime adapter 或 product-layout owner，不得从 platform 聚合面取 named imports。兼容 Facade 的 owner 是 `bootstrap-and-module-contracts`，只允许当前冻结调用者；对应能力迁移后逐项退出，最终由 `legacy-exit-and-conformance` 删除。
 
 三个稳定 facade 保留现有调用表面，但不承载无界长流程：
 
@@ -66,11 +74,11 @@ infrastructure/runtime/render-claude-code.mjs
   -> infrastructure/runtime/skills/{arguments,manifests,contributions,sources,render-plan}.mjs
 ```
 
-CLI command 只在 `src/interfaces/cli/registry.mjs` 的 command catalog 登记一次。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费该 catalog，架构验证检查 descriptor 关系而不复制完整 supported-key 清单。已退役命令不保留 legacy descriptor、alias 或隐藏 route。领域操作由 `src/application/compose-runtime.mjs` 装配；`buildr web` 的 HTTP interface 由 CLI interface 在同一 composition 边界注册，Application 不反向依赖 Interfaces。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
+CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。未迁移命令由公共 Host 静态持有；Task Record 六个 descriptor 来自 `src/task/module.mjs` 的 CLI contribution。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入Task Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
 Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Task Environment、Review/Verification Result、Finish等正式机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
 
-Task Record 是当前完成垂直切片的领域：`domain/task-record` 只验证 closed v1 record 与状态，`application/task-record` 拥有 create/inspect/update/complete/abandon、Parent setter、registry/Change 引用解析、直接关系 read model 和响应级 digest 前置条件，`interfaces/cli/task-record.mjs` 只拥有 argv/输出/退出码适配，`infrastructure/sqlite/task-record-repository.mjs` 只拥有规范化 Task tables、内联 `tasks.parent_task_id` self-reference foreign key 与 transaction。通用 `infrastructure/sqlite/workspace-sqlite.mjs` 负责 canonical Workspace 边界、connection、migration ledger、checksum 和健康检查。Repository 通过 Git topology 拒绝 linked worktree，不读取或双写旧 Task YAML。CLI 与 Task Manager 使用带 registry/Change currentness 的完整 Application action；Buildr Web 普通列表和详情使用同一 Application 暴露的 SQLite stored-state query projection，只在具体专业交互中调用对应 currentness reader。两类客户端都不接受 caller 提供的 filesystem 或数据库 path。Parent/Child 不传播状态、Result 或专业动作，也不扩展为独立关系实体或通用关系图。Task Environment、Development、Review、Verification、Git、Finish、独立 Board 与 Retrospective 仍由各自模块拥有，不能进入 Task Record repository。
+Task Record 是当前参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer 与 Parent Coordination Reader等命名窄依赖，在私有组合对象中依次创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP contributions。`task/domain/record`只验证closed record与状态，`task/application/record`拥有用例与read model，`task/persistence/record`拥有规范化Task tables与transaction，`task/interfaces`拥有协议适配。CLI与HTTP Adapter调用同一Application对象；兼容Facade只把同一对象和既有读取表面投射给未迁移消费者，不创建第二store、writer、双读或双写。Task Environment、Development、Review、Verification、Git、Finish与Retrospective仍由各自owner持有，不能因该参考模块被描述为整个Task能力已经迁移。
 
 Task Development 是无公共 CLI 的垂直切片：`domain/task-development` 验证 closed Receipt、Content Target、policy、Candidate/generation、gate、decision 与 append-only handoff；`application/task-development` 是唯一 reader/writer，并只通过 Task Record/Environment/Review/Verification Applications 和 Content observer port 取事实。Git-backed Content observer 与 Finish 共用 `infrastructure/git/git-task-contribution.mjs` 的 canonical raw delta identity，使纯交付基线（Delivery Baseline）前进不改变任务内容 identity；SQLite repository只按Task ID事务保存完整closed Receipt，internal driver只转发同一Application methods，不注册command。Review与Verification repositories同样只维护各自current slots；共用数据库不合并专业模块。Buildr Web 使用Workspace-scoped、no-store 的 `GET .../tasks/:taskId/development`，HTTP直接调用Application `inspect`，Web不打开SQLite或暴露writer。
 

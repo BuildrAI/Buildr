@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
 import { validateProductSourceLayout } from './product-source-layout.mjs';
-import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.mjs';
 
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -54,15 +54,17 @@ const entryContent = fs.existsSync(entry) ? fs.readFileSync(entry, 'utf8') : '';
 const entryLines = entryContent.trimEnd().split(/\r?\n/);
 if (!entryContent) problems.push('missing npm executable: bin/buildr.mjs');
 if (entryLines.length > 20) problems.push(`bin/buildr.mjs must remain a thin executable (found ${entryLines.length} lines)`);
-if (!entryContent.includes("from '../src/interfaces/cli/main.mjs'")) problems.push('bin/buildr.mjs must delegate to src/interfaces/cli/main.mjs');
+if (!entryContent.includes("from '../src/bootstrap/cli/main.mjs'")) problems.push('bin/buildr.mjs must delegate to src/bootstrap/cli/main.mjs');
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs',
+  'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
+  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.mjs', 'bootstrap/cli/task-finish-bootstrap.mjs',
+  'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs', 'bootstrap/legacy-runtime-module.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
   'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
-  'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
+  'application/doctor.mjs', 'application/package-maintenance.mjs',
   'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
   'application/worktree/git-worktree-provider.mjs',
   'application/task-environment/task-environment-application.mjs',
@@ -109,20 +111,21 @@ const layerOf = (relative) => {
   }[parts[1]] || 'task';
 };
 const allowedTargets = {
+  bootstrap: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
   domain: new Set(['domain']),
   application: new Set(['application', 'domain', 'infrastructure', 'module']),
   infrastructure: new Set(['infrastructure', 'domain']),
-  interfaces: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
-  module: new Set(['application', 'domain', 'infrastructure']),
+  interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure']),
+  module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'application/compose-runtime.mjs') {
+  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime.mjs') {
     problems.push(`wide platform namespace import: src/${relative}`);
   }
-  if (relative !== 'application/compose-runtime.mjs' && /from\s+['"][^'"]*infrastructure\/platform\.mjs['"]/.test(content)) {
+  if (relative !== 'bootstrap/runtime.mjs' && /from\s+['"][^'"]*infrastructure\/platform\.mjs['"]/.test(content)) {
     problems.push(`composition-only platform registry import: src/${relative}`);
   }
   if (/const\s+(register[A-Za-z0-9_]+)\s*=\s*\(\.\.\.args\)\s*=>\s*runtime\.\1\(\.\.\.args\)/.test(content)) {
@@ -156,6 +159,23 @@ const visitCycle = (file, stack = []) => {
   visited.add(file);
 };
 for (const file of graph.keys()) visitCycle(file);
+
+const bootstrapRuntimeConsumers = new Set([
+  'bootstrap/cli/registry.mjs',
+  'interfaces/internal/task-development-driver-runner.mjs',
+  'interfaces/internal/task-finish-retained-cleanup.mjs',
+  'interfaces/internal/task-finish-target-lease-driver.mjs',
+  'interfaces/internal/task-planning-identity-driver-runner.mjs',
+  'interfaces/internal/task-retrospective-driver-runner.mjs',
+  'interfaces/local-app/http/read-worker.mjs',
+]);
+for (const file of sourceFiles) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  const content = fs.readFileSync(file, 'utf8');
+  if (/(?:from\s+|import\()['"][^'"]*bootstrap\/runtime\.mjs/.test(content) && !bootstrapRuntimeConsumers.has(relative)) {
+    problems.push(`new Bootstrap runtime consumer outside compatibility baseline: src/${relative}`);
+  }
+}
 
 const facadeLimits = new Map([
   ['src/infrastructure/runtime/render-claude-code.mjs', 100],
@@ -214,7 +234,7 @@ if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.mjs'))) problems.push('platform Launcher integration module is missing');
 if (packageJson.exports) problems.push('internal Product modules must not be declared through package exports');
 
-const registry = path.join(sourceRoot, 'interfaces', 'cli', 'registry.mjs');
+const registry = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.mjs');
 if (fs.existsSync(registry)) {
   const source = fs.readFileSync(registry, 'utf8');
   if (!source.includes('COMMAND_REGISTRY')) problems.push('command registry must expose one explicit COMMAND_REGISTRY');
@@ -233,14 +253,16 @@ if (fs.existsSync(registry)) {
   for (const retired of ['openspec audit', 'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
     if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
   }
-  if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');
+  if (!source.includes('registerCommandHelp(runtime, commandCatalog)')) problems.push('dispatch and help must consume the same per-runtime command catalog');
+  if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
 const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'record', 'task-record-application.mjs');
 const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.mjs');
 const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.mjs');
 const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
-const composeRuntime = path.join(sourceRoot, 'application', 'compose-runtime.mjs');
+const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.mjs');
+const legacyRuntimeModule = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
 for (const relative of [
   'domain/task-record/task-record.mjs',
   'application/task-record/task-record-application.mjs',
@@ -269,14 +291,64 @@ if (fs.existsSync(taskRecordHttpInterface)) {
 }
 if (fs.existsSync(taskRecordModule)) {
   const source = fs.readFileSync(taskRecordModule, 'utf8');
-  if (!source.includes('export function registerTaskRecordModule') || !source.includes('registerTaskRecordRepository(runtime)') || !source.includes('registerTaskRecordApplication(runtime)')) {
-    problems.push('Task Record module must register repository before application');
+  const repositoryIndex = source.indexOf('registerTaskRecordRepository(privateComposition)');
+  const applicationIndex = source.indexOf('registerTaskRecordApplication(privateComposition)');
+  for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_COMPATIBILITY']) {
+    if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
   }
+  if (repositoryIndex === -1 || applicationIndex === -1 || repositoryIndex > applicationIndex) problems.push('Task Record module must privately compose repository before application');
 }
-if (fs.existsSync(composeRuntime)) {
-  const source = fs.readFileSync(composeRuntime, 'utf8');
-  if (!source.includes("from '../task/module.mjs'") || !source.includes('registerTaskRecordModule')) problems.push('Product composition must consume the Task Record module entry');
-  if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Product composition must not register Task Record internals directly');
+if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
+if (fs.existsSync(bootstrapRuntime)) {
+  const source = fs.readFileSync(bootstrapRuntime, 'utf8');
+  for (const required of ["from '../task/module.mjs'", 'createModuleRegistry', 'registerLegacyRuntime', 'installTaskRecordModule', '__bootstrapContributions']) {
+    if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
+  }
+  if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
+}
+if (!fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module is missing');
+
+const localAppServer = path.join(sourceRoot, 'interfaces', 'local-app', 'http', 'server.mjs');
+if (fs.existsSync(localAppServer)) {
+  const source = fs.readFileSync(localAppServer, 'utf8');
+  if (/task\/interfaces\/(?:cli|http)|task-record-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task Record adapters directly');
+  if (!source.includes('for (const contribution of httpContributions)') || !source.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
+}
+
+const legacyTaskRecordConsumers = new Set([
+  'application/change/change-application.mjs',
+  'application/project-daily-progress/project-daily-progress-application.mjs',
+  'application/task-development/task-development-application.mjs',
+  'application/task-entry/task-entry-snapshot-application.mjs',
+  'application/task-environment/task-environment-application.mjs',
+  'application/task-execution-record/task-execution-record-application.mjs',
+  'application/task-finish/task-finish-application.mjs',
+  'application/task-finish/task-finish-delivery-terminal.mjs',
+  'application/task-planning-identity/task-planning-identity-application.mjs',
+  'application/task-retrospective/task-retrospective-application.mjs',
+  'application/task-review/task-review-application.mjs',
+  'application/task-terminal-delivery/task-terminal-delivery-application.mjs',
+  'application/task-verification/task-verification-application.mjs',
+  'application/worktree/git-worktree-provider.mjs',
+  'infrastructure/filesystem/task-environment-repository.mjs',
+  'infrastructure/sqlite/parent-coordination-repository.mjs',
+  'infrastructure/sqlite/task-development-repository.mjs',
+  'infrastructure/sqlite/task-execution-record-repository.mjs',
+  'infrastructure/sqlite/task-finish-repository.mjs',
+  'infrastructure/sqlite/task-overview-repository.mjs',
+  'infrastructure/sqlite/task-retrospective-repository.mjs',
+  'infrastructure/sqlite/task-review-repository.mjs',
+  'infrastructure/sqlite/task-verification-repository.mjs',
+  'interfaces/local-app/http/server.mjs',
+  'interfaces/local-app/runtime/preview-manager.mjs',
+]);
+const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|completeTaskRecordFromFinish|abandonTaskRecord)\(/;
+for (const file of sourceFiles) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
+  if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
+    problems.push(`new wide Runtime Task Record consumer outside compatibility baseline: src/${relative}`);
+  }
 }
 
 const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');

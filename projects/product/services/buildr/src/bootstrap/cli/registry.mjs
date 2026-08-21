@@ -1,20 +1,22 @@
 import process from 'node:process';
-import { createRuntime } from '../../application/compose-runtime.mjs';
+import { createRuntime, runtimeContributions } from '../runtime.mjs';
 import { registerCommandHelp } from './help.mjs';
 import { isVersionRequest, printVersion } from './identity.mjs';
 import { printCliError } from './diagnostics.mjs';
-import { registerLocalWorkspaceAppInterface } from '../local-app/http/server.mjs';
-import { registerLauncherInterface } from './launcher.mjs';
-import { taskRecordCommand } from '../../task/interfaces/cli/task-record.mjs';
-import { taskEntrySnapshotCommand } from './task-entry-snapshot.mjs';
-import { taskReviewCommand } from './task-review.mjs';
-import { taskVerificationCommand } from './task-verification.mjs';
-import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './task-environment.mjs';
-import { gitWorktreeCommand } from './git-worktree.mjs';
-import { parentCoordinationCommand } from './parent-coordination.mjs';
-import { projectDailyProgressCommand } from './project-daily-progress.mjs';
-import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './task-execution-record.mjs';
-import { taskTerminalDeliveryInspectCommand } from './task-terminal-delivery.mjs';
+import { registerLocalWorkspaceAppInterface } from '../../interfaces/local-app/http/server.mjs';
+import { registerLauncherInterface } from '../../interfaces/cli/launcher.mjs';
+import { createTaskRecordCliContributions } from '../../task/module.mjs';
+import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
+import { taskReviewCommand } from '../../interfaces/cli/task-review.mjs';
+import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
+import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
+import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
+import { parentCoordinationCommand } from '../../interfaces/cli/parent-coordination.mjs';
+import { projectDailyProgressCommand } from '../../interfaces/cli/project-daily-progress.mjs';
+import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from '../../interfaces/cli/task-execution-record.mjs';
+import { taskTerminalDeliveryInspectCommand } from '../../interfaces/cli/task-terminal-delivery.mjs';
+
+const TASK_RECORD_COMMAND_SLOT = Symbol('task-record-command-contributions');
 
 const COMMAND_ROUTES = [
   {
@@ -430,85 +432,7 @@ const COMMAND_ROUTES = [
     match: ({ domain, action }) => domain === 'task' && action === 'next',
     run: (r, c) => taskEntrySnapshotCommand(r, c.argv.slice(4)),
   },
-  {
-    key: "task create",
-    surface: "primary",
-    summary: "创建 active 正式 Task，或以 --status todo 只保存待办意向；复盘来源可重复。",
-    help: [
-      "Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--retrospective-source <task-id> ...] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]",
-      "",
-      "省略 --status 时创建 active；--status todo 只写 SQLite，拒绝 Change，不创建 Environment、Git 或专业记录。",
-      "--retrospective-source 只接受已有 current 复盘的 completed/abandoned Task，可重复且仅保存 source Task ID。",
-      "--parent 只接受当前 Workspace 中已存在且 active 的 Task；副作用是在本地 structured store 中原子创建 Task 及其直接 Parent 关系。",
-      "不创建 Environment、Change、branch、commit 或专业记录，也不自动改变 Parent/Child 的状态。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'create',
-    run: (r, c) => taskRecordCommand(r, 'create', c.argv.slice(4)),
-  },
-  {
-    key: "task inspect",
-    surface: "primary",
-    summary: "只读返回 Task Record、直接 Parent/Children 摘要和响应级 recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。",
-    help: [
-      "Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "只读返回 Task Record、直接 Parent/Children 摘要和响应级 recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'inspect',
-    run: (r, c) => taskRecordCommand(r, 'inspect', c.argv.slice(4)),
-  },
-  {
-    key: "task update",
-    surface: "primary",
-    summary: "至少提供一个明确 setter/add/remove；只允许修改 todo 或 active Task。",
-    help: [
-      "Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--parent <task-id> | --clear-parent] [--add-retrospective-source <task-id> ...] [--remove-retrospective-source <task-id> ...] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]",
-      "",
-      "至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 todo 或 active Task，todo 拒绝 Change。",
-      "--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。",
-      "不接受 --input、patch、完整 next-state、expected revision 或专业模块字段。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'update',
-    run: (r, c) => taskRecordCommand(r, 'update', c.argv.slice(4)),
-  },
-  {
-    key: "task activate",
-    surface: "primary",
-    summary: "把 todo Task 单向激活为 active；该动作自身不执行 Git、Environment 或研发阶段。",
-    help: [
-      "Usage: buildr task activate <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "只执行 todo -> active。Agent 必须在调用前通过 Task Triage 完成当前事实确认与 Git 基线门禁。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'activate',
-    run: (r, c) => taskRecordCommand(r, 'activate', c.argv.slice(4)),
-  },
-  {
-    key: "task complete",
-    surface: "primary",
-    summary: "完成 todo/active Task；todo 只允许 --no-change。",
-    help: [
-      "Usage: buildr task complete <task-id> --summary <text> [--no-change] [--target <canonical-workspace>] [--json]",
-      "",
-      "active 可正常完成；todo 只允许 --no-change，否则必须先 activate。",
-      "该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'complete',
-    run: (r, c) => taskRecordCommand(r, 'complete', c.argv.slice(4)),
-  },
-  {
-    key: "task abandon",
-    surface: "primary",
-    summary: "把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。",
-    help: [
-      "Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]",
-      "",
-      "把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。",
-      "该动作只更新顶层 Task Record，不执行 Environment cleanup、Git 或其他专业动作。"
-    ],
-    match: ({ domain, action }) => domain === 'task' && action === 'abandon',
-    run: (r, c) => taskRecordCommand(r, 'abandon', c.argv.slice(4)),
-  },
+  TASK_RECORD_COMMAND_SLOT,
   {
     key: "task review inspect",
     surface: "agent-machine",
@@ -1205,7 +1129,7 @@ const SPECIAL_COMMANDS = [
     run: (runtime, context) => {
       const helpArgs = context.rawArgs[0] === 'help' ? context.rawArgs.slice(1) : context.rawArgs;
       if (runtime.printHelp(helpArgs)) return;
-      process.exit(printCliError(context.rawArgs, { candidates: commandCandidates(), helpTopic: context.rawArgs[0] === 'help' }));
+      process.exit(printCliError(context.rawArgs, { candidates: commandCandidates(context.commandRegistry), helpTopic: context.rawArgs[0] === 'help' }));
     },
   }),
   executableCommand({
@@ -1222,18 +1146,20 @@ const SPECIAL_COMMANDS = [
   }),
 ];
 
-export const COMMAND_REGISTRY = Object.freeze([
-  ...SPECIAL_COMMANDS,
-  ...COMMAND_ROUTES.map(executableCommand),
-]);
+function createCommandRegistry(moduleContributions) {
+  const routes = COMMAND_ROUTES.flatMap((route) => route === TASK_RECORD_COMMAND_SLOT ? moduleContributions : [route]);
+  return Object.freeze([...SPECIAL_COMMANDS, ...routes.map(executableCommand)]);
+}
 
-export const COMMAND_CATALOG = Object.freeze([
-  ...COMMAND_REGISTRY,
-  ...COMMAND_GROUPS.map(Object.freeze),
-]);
+function createCommandCatalog(commandRegistry) {
+  return Object.freeze([...commandRegistry, ...COMMAND_GROUPS.map(Object.freeze)]);
+}
 
-function commandCandidates() {
-  return COMMAND_REGISTRY.map((item) => item.key);
+export const COMMAND_REGISTRY = createCommandRegistry(createTaskRecordCliContributions());
+export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
+
+function commandCandidates(commandRegistry) {
+  return commandRegistry.map((item) => item.key);
 }
 
 function runScopedRender(r, context) {
@@ -1263,15 +1189,17 @@ function runScopedRender(r, context) {
 
 export function dispatch(argv = process.argv) {
   const runtime = createRuntime();
-  registerLocalWorkspaceAppInterface(runtime);
+  const commandRegistry = createCommandRegistry(runtimeContributions(runtime, 'cli'));
+  const commandCatalog = createCommandCatalog(commandRegistry);
+  registerLocalWorkspaceAppInterface(runtime, { httpContributions: runtimeContributions(runtime, 'http') });
   registerLauncherInterface(runtime);
-  registerCommandHelp(runtime, COMMAND_CATALOG);
+  registerCommandHelp(runtime, commandCatalog);
   const rawArgs = argv.slice(2);
   const [domain, action, runtimeId, ...args] = rawArgs;
-  const context = { argv, rawArgs, domain, action, runtimeId, args, runtime };
-  const direct = COMMAND_REGISTRY.find((item) => !item.requiresAgent && item.match(context));
+  const context = { argv, rawArgs, domain, action, runtimeId, args, runtime, commandRegistry, commandCatalog };
+  const direct = commandRegistry.find((item) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);
-  const agent = COMMAND_REGISTRY.find((item) => item.requiresAgent && item.match(context));
+  const agent = commandRegistry.find((item) => item.requiresAgent && item.match(context));
   if (agent && runtime.isSupportedAgent(runtimeId)) return agent.run(runtime, context);
-  process.exit(printCliError(rawArgs, { candidates: commandCandidates() }));
+  process.exit(printCliError(rawArgs, { candidates: commandCandidates(commandRegistry) }));
 }

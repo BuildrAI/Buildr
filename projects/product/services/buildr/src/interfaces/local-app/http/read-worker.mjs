@@ -1,6 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 
-import { createRuntime } from '../../../application/compose-runtime.mjs';
+import { createRuntime } from '../../../bootstrap/runtime.mjs';
 
 const runtime = createRuntime();
 const operations = Object.freeze({

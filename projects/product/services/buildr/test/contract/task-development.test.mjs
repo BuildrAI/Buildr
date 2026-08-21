@@ -9,7 +9,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 test('Task Development 是唯一 Receipt/Candidate/generation/handoff Application authority', () => {
   const application = read('src/application/task-development/task-development-application.mjs');
   const repository = read('src/infrastructure/sqlite/task-development-repository.mjs');
-  const composition = read('src/application/compose-runtime.mjs');
+  const composition = read('src/bootstrap/legacy-runtime-module.mjs');
   assert.match(application, /observeTaskDevelopment/);
   assert.match(application, /freezeTaskDevelopmentCandidate/);
   assert.match(application, /createTaskDevelopmentHandoff/);
@@ -37,8 +37,8 @@ test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑�
 });
 
 test('不暴露 public Development CLI，Buildr Web 只读投影复用 Application inspect authority', () => {
-  const registry = read('src/interfaces/cli/registry.mjs');
-  const help = read('src/interfaces/cli/help.mjs');
+  const registry = read('src/bootstrap/cli/registry.mjs');
+  const help = read('src/bootstrap/cli/help.mjs');
   const server = read('src/interfaces/local-app/http/server.mjs');
   const skill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
   assert.doesNotMatch(registry, /task development/);
@@ -63,7 +63,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(driverRunner, /args\.includes\('--profile'\)/);
   assert.match(driverRunner, /args\.includes\('--compact'\)/);
   assert.match(driverRunner, /moduleLoadMs[\s\S]*compositionMs[\s\S]*applicationMs[\s\S]*serializationMs[\s\S]*totalMs/);
-  const main = read('src/interfaces/cli/main.mjs');
+  const main = read('src/bootstrap/cli/main.mjs');
   const routes = read('src/interfaces/internal/formal-workflow-routes.mjs');
   const inventory = read('src/application/internal-workflow-route-inventory.mjs');
   assert.match(main, /__internal[\s\S]*runRequiredInternalWorkflowRoute/);

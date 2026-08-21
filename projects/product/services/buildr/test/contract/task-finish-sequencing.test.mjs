@@ -164,8 +164,8 @@ test('新 convergence 路径只有一份事务期Receipt且成功archive后释�
 });
 
 test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延迟加载', () => {
-  const main = read('src/interfaces/cli/main.mjs');
-  const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
+  const main = read('src/bootstrap/cli/main.mjs');
+  const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
   const application = read('src/application/task-finish/task-finish-application.mjs');
   assert.match(main, /runLightweightTaskFinish/);
   assert.match(main, /await import\('\.\/registry\.mjs'\)/);
@@ -178,8 +178,8 @@ test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延�
 });
 
 test('Task Finish bootstrap recovery留在full retained Application且不开放任意candidate runtime', () => {
-  const main = read('src/interfaces/cli/main.mjs');
-  const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
+  const main = read('src/bootstrap/cli/main.mjs');
+  const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
   const application = read('src/application/task-finish/task-finish-application.mjs');
   const recovery = read('src/application/task-finish/task-finish-bootstrap-recovery.mjs');
   assert.doesNotMatch(main, /runTaskFinishBootstrapRecovery/);
@@ -206,7 +206,7 @@ test('Task Finish bootstrap recovery留在full retained Application且不开放�
 
 test('current Product直接接线自动Git executor与交付对账，没有adapter registry', () => {
   const application = read('src/application/task-finish/task-finish-application.mjs');
-  const bootstrap = read('src/interfaces/cli/task-finish-bootstrap.mjs');
+  const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
   assert.match(bootstrap, /registerTaskFinishApplication\(runtime\)/);
   assert.match(application, /createTaskFinishProductHandlers/);
   assert.match(finishContract, /自动`run`可在明确Git边界内创建Delivery Carrier/);

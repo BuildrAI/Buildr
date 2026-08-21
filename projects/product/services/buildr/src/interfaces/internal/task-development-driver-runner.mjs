@@ -67,7 +67,7 @@ export async function runTaskDevelopmentDriver(args, options = {}) {
 
   try {
     const moduleLoadStartedAt = performance.now();
-    const { createRuntime } = await import('../../application/compose-runtime.mjs');
+    const { createRuntime } = await import('../../bootstrap/runtime.mjs');
     const moduleLoadMs = performance.now() - moduleLoadStartedAt;
     const compositionStartedAt = performance.now();
     const runtime = createRuntime();

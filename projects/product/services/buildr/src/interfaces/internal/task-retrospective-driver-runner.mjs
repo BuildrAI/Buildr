@@ -31,7 +31,7 @@ export async function runTaskRetrospectiveDriver(args, options = {}) {
   }
 
   try {
-    const { createRuntime } = await import('../../application/compose-runtime.mjs');
+    const { createRuntime } = await import('../../bootstrap/runtime.mjs');
     const runtime = createRuntime();
     const output = action === 'list'
       ? runtime.listTaskRetrospectives(targetRoot, {
