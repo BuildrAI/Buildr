@@ -8,14 +8,14 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Parent Coordination使用固定查询的只读projection且没有filesystem scan或第二store', () => {
   const application = read('src/application/parent-coordination/parent-coordination-application.mjs');
-  const repository = read('src/infrastructure/sqlite/parent-coordination-repository.mjs');
+  const repository = read('src/task/persistence/coordination/parent-coordination-repository.mjs');
   for (const required of ['readParentCoordinationPersistence', 'projectParentCoordinationChild']) assert.ok(application.includes(required), required);
   for (const forbidden of ['inspectTaskRecord', 'inspectTaskReview', 'inspectTaskTerminalDelivery', 'resolveTaskEnvironmentExecution']) assert.equal(application.includes(forbidden), false, forbidden);
   for (const forbidden of ['node:fs', 'node:path', 'openWorkspaceStructuredStore', 'task_development_current', 'SELECT ', 'readdir', 'glob']) assert.equal(application.includes(forbidden), false, forbidden);
   for (const required of ['openWorkspaceStructuredStore', 'task_development_current', 'task_review_current', 'task_environment_current', 'task_finish_current', 'decodeTaskFinishCurrentRow', 'queryCount: 2']) assert.ok(repository.includes(required), required);
   for (const forbidden of ['INSERT ', 'UPDATE ', 'DELETE ', 'CREATE TABLE', 'CREATE VIEW']) assert.equal(repository.includes(forbidden), false, forbidden);
-  assert.equal(fs.existsSync(path.join(root, 'src/infrastructure/sqlite/parent-coordination-repository.mjs')), true);
-  assert.equal(fs.existsSync(path.join(root, 'src/infrastructure/filesystem/parent-coordination-repository.mjs')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/coordination/parent-coordination-repository.mjs')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/infrastructure/sqlite/parent-coordination-repository.mjs')), false);
 });
 
 test('Parent Plan是closed计划值且Task Record不复制计划或Child状态', () => {

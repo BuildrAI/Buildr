@@ -8,7 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Task Development 是唯一 Receipt/Candidate/generation/handoff Application authority', () => {
   const application = read('src/application/task-development/task-development-application.mjs');
-  const repository = read('src/infrastructure/sqlite/task-development-repository.mjs');
+  const repository = read('src/task/persistence/development/task-development-repository.mjs');
   const composition = read('src/bootstrap/legacy-runtime-module.mjs');
   assert.match(application, /observeTaskDevelopment/);
   assert.match(application, /freezeTaskDevelopmentCandidate/);

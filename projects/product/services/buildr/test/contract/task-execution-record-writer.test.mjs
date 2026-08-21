@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-const repository = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/infrastructure/sqlite/task-execution-record-repository.mjs'), 'utf8');
+const repository = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/task/persistence/execution-record/task-execution-record-repository.mjs'), 'utf8');
 const workspaceSqlite = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/infrastructure/sqlite/workspace-sqlite.mjs'), 'utf8');
 
 test('Task Execution Record writer不以调用方声明的role绕过checkout provenance', () => {

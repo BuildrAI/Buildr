@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { normalizeTaskVerificationResult, taskVerificationError } from '../../domain/task-verification/task-verification.mjs';
-import { taskRecordEffectiveProjectCodes } from '../../task/domain/record/task-record.mjs';
+import { normalizeTaskVerificationResult, taskVerificationError } from '../../../domain/task-verification/task-verification.mjs';
+import { taskRecordEffectiveProjectCodes } from '../../domain/record/task-record.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-verification/${taskId}`; }
 function digest(value) { return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`; }

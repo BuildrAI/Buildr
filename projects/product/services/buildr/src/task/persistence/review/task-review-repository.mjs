@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError } from '../../domain/task-review/task-review.mjs';
+import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError } from '../../../domain/task-review/task-review.mjs';
 
 function locator(taskId, reviewType) { return `workspace-sqlite:task-review/${taskId}/${reviewType}`; }
 function digest(value) { return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`; }

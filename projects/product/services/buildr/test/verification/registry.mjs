@@ -218,7 +218,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-public-json-contracts': Object.freeze(['src/application/json-contracts.mjs', 'src/bootstrap/cli/**', 'src/interfaces/cli/**']),
   'system-openspec-contract-audit': Object.freeze(['src/application/openspec/**', 'src/application/domains/openspec.mjs']),
   'system-workspace-lifecycle': Object.freeze(['src/application/project/**', 'src/application/service/**', 'src/application/workspace/**', 'src/domain/project/**', 'src/domain/service/**', 'src/domain/workspace/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/workspace-product-suite.mjs']),
-  'system-task-lifecycle': Object.freeze(['src/bootstrap/**', 'src/task/**', 'src/application/task-development/**', 'src/application/task-review/**', 'src/application/task-verification/**', 'src/application/change/**', 'src/domain/task-development/**', 'src/domain/task-review/**', 'src/domain/task-verification/**', 'src/infrastructure/sqlite/task-development-repository.mjs', 'src/infrastructure/sqlite/task-review-repository.mjs', 'src/infrastructure/sqlite/task-verification-repository.mjs', 'test/helpers/task-record-system-fixture.mjs']),
+  'system-task-lifecycle': Object.freeze(['src/bootstrap/**', 'src/task/**', 'src/application/task-development/**', 'src/application/task-review/**', 'src/application/task-verification/**', 'src/application/change/**', 'src/domain/task-development/**', 'src/domain/task-review/**', 'src/domain/task-verification/**', 'test/helpers/task-record-system-fixture.mjs']),
   'system-worktree-lifecycle': Object.freeze(['src/application/worktree/**', 'src/application/task-environment/**', 'src/domain/task-environment/**', 'src/infrastructure/git/**', 'test/helpers/workspace-product-suite.mjs']),
   'system-runtime-recovery': Object.freeze(['src/application/cli-update.mjs', 'src/application/release-awareness.mjs', 'src/application/runtime.mjs', 'src/infrastructure/filesystem/**', 'src/infrastructure/network/**', 'src/infrastructure/runtime/**']),
   'system-local-app-http': Object.freeze(['src/bootstrap/**', 'src/task/module.mjs', 'src/task/interfaces/http/**', 'src/interfaces/local-app/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
@@ -340,6 +340,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/workspace/**',
     'src/infrastructure/filesystem/workspace-management-fence.mjs',
     'src/infrastructure/filesystem/workspace-registry-repository.mjs',
+    'src/infrastructure/index.mjs',
     'src/infrastructure/sqlite/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-environment', [
@@ -350,7 +351,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], [
     'src/application/task-environment/**',
     'src/domain/task-environment/**',
-    'src/infrastructure/sqlite/task-environment-repository.mjs',
+    'src/task/persistence/environment/task-environment-repository.mjs',
   ], { schedulingCostMs: 10000, resources: ['workspace-saturating'], args: ['--test-concurrency=2'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.mjs',
@@ -376,7 +377,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/publication-application.test.mjs',
   ], [
     'src/application/parent-coordination/**',
-    'src/infrastructure/sqlite/parent-coordination-repository.mjs',
+    'src/task/persistence/coordination/parent-coordination-repository.mjs',
     'src/application/publication/**',
   ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-project-daily-progress', [
@@ -397,8 +398,8 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/execution-record-recovery.mjs',
     'src/application/verification/execution-record*.mjs',
     'src/domain/task-execution-record/**',
-    'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
-    'src/infrastructure/sqlite/task-execution-record-repository.mjs',
+    'src/task/persistence/execution-record/task-execution-record-body-store.mjs',
+    'src/task/persistence/execution-record/task-execution-record-repository.mjs',
   ], { schedulingCostMs: 16000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-development', [
     'test/integration/task-development-application.test.mjs',
@@ -410,9 +411,9 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], [
     'src/application/task-development/**',
     'src/domain/task-development/**',
-    'src/infrastructure/sqlite/task-development-repository.mjs',
-    'src/infrastructure/sqlite/task-review-repository.mjs',
-    'src/infrastructure/sqlite/task-verification-repository.mjs',
+    'src/task/persistence/development/task-development-repository.mjs',
+    'src/task/persistence/review/task-review-repository.mjs',
+    'src/task/persistence/verification/task-verification-repository.mjs',
     'src/application/task-review/**',
     'src/application/task-verification/**',
     'src/interfaces/internal/task-development-driver.mjs',

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../../domain/task-retrospective/task-retrospective.mjs';
+import { normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../../../domain/task-retrospective/task-retrospective.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-retrospective/${taskId}`; }
 function digest(value) { return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`; }

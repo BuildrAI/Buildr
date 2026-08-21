@@ -1,21 +1,11 @@
-import { registerWorkspaceInfrastructure } from '../infrastructure/filesystem/index.mjs';
+import { registerInfrastructure } from '../infrastructure/index.mjs';
 import { registerProjectDailyProgressStore } from '../infrastructure/filesystem/project-daily-progress-store.mjs';
 import { registerWorkspaceManifestRepository } from '../infrastructure/filesystem/workspace-manifest-repository.mjs';
 import { registerWorkspaceRegistryRepository } from '../infrastructure/filesystem/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
 import { registerProjectManifestRepository } from '../infrastructure/filesystem/project-manifest-repository.mjs';
 import { registerServiceManifestRepository } from '../infrastructure/filesystem/service-manifest-repository.mjs';
-import { registerWorkspaceSqlite } from '../infrastructure/sqlite/workspace-sqlite.mjs';
-import { registerTaskReviewRepository } from '../infrastructure/sqlite/task-review-repository.mjs';
-import { registerTaskRetrospectiveRepository } from '../infrastructure/sqlite/task-retrospective-repository.mjs';
-import { registerTaskVerificationRepository } from '../infrastructure/sqlite/task-verification-repository.mjs';
-import { registerTaskDevelopmentRepository } from '../infrastructure/sqlite/task-development-repository.mjs';
-import { registerTaskOverviewRepository } from '../infrastructure/sqlite/task-overview-repository.mjs';
-import { registerParentCoordinationRepository } from '../infrastructure/sqlite/parent-coordination-repository.mjs';
-import { registerTaskFinishRepository } from '../infrastructure/sqlite/task-finish-repository.mjs';
-import { registerTaskExecutionRecordRepository } from '../infrastructure/sqlite/task-execution-record-repository.mjs';
-import { registerTaskExecutionRecordBodyStore } from '../infrastructure/filesystem/task-execution-record-body-store.mjs';
-import { registerTaskEnvironmentRepository } from '../infrastructure/filesystem/task-environment-repository.mjs';
+import { registerTaskPersistence } from '../task/persistence/index.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerDomainsRuntime } from '../application/domains/runtime.mjs';
@@ -57,7 +47,7 @@ import { registerProductInstallationStatus } from '../application/product-instal
 const TASK_RECORD_MODULE_SLOT = Symbol('task-record-module');
 
 const REGISTRATIONS = [
-  registerWorkspaceInfrastructure,
+  registerInfrastructure,
   registerProductInvocation,
   registerWorkspaceManifestRepository,
   registerWorkspaceRegistryRepository,
@@ -66,17 +56,7 @@ const REGISTRATIONS = [
   registerDomainsWorkspace,
   registerProjectManifestRepository,
   registerServiceManifestRepository,
-  registerWorkspaceSqlite,
-  registerTaskReviewRepository,
-  registerTaskRetrospectiveRepository,
-  registerTaskVerificationRepository,
-  registerTaskDevelopmentRepository,
-  registerTaskOverviewRepository,
-  registerParentCoordinationRepository,
-  registerTaskFinishRepository,
-  registerTaskExecutionRecordRepository,
-  registerTaskExecutionRecordBodyStore,
-  registerTaskEnvironmentRepository,
+  registerTaskPersistence,
   registerProjectDailyProgressStore,
   registerContentTargetObserver,
   registerProjectGitObserver,

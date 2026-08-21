@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { registerWorkspaceSqlite } from '../../infrastructure/sqlite/workspace-sqlite.mjs';
-import { registerTaskFinishRepository } from '../../infrastructure/sqlite/task-finish-repository.mjs';
+import { registerInfrastructure } from '../../infrastructure/index.mjs';
+import { registerTaskFinishRepository } from '../../task/persistence/finish/task-finish-repository.mjs';
 import { registerTaskFinishApplication } from '../../application/task-finish/task-finish-application.mjs';
 
 function optionValue(args, name, fallback) {
@@ -54,7 +54,7 @@ export async function runLightweightTaskFinish(argv = process.argv) {
     assertInitializedBuildrWorkspace,
     productRoot: () => process.cwd(),
   };
-  registerWorkspaceSqlite(runtime, { sourceRoot: process.cwd() });
+  registerInfrastructure(runtime, { sourceRoot: process.cwd() });
   registerTaskFinishRepository(runtime);
   registerTaskFinishApplication(runtime);
   return await runtime.taskFinish(action, argv.slice(5));

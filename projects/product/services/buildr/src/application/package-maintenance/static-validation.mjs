@@ -372,7 +372,7 @@ export function createPackageStaticValidator(deps) {
       'src/task/persistence/record/task-record-repository.mjs',
       'src/domain/task-environment/task-environment.mjs',
       'src/application/task-environment/task-environment-application.mjs',
-      'src/infrastructure/filesystem/task-environment-repository.mjs',
+      'src/task/persistence/environment/task-environment-repository.mjs',
     ]) {
       const file = path.join(root, relative);
       if (!existsFile(file)) continue;

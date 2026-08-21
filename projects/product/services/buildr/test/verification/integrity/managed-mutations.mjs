@@ -35,7 +35,7 @@ const allowed = new Map([
   ['src/infrastructure/product-launcher/index.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
-  ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
+  ['src/task/persistence/execution-record/task-execution-record-body-store.mjs', new Set([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
   ])],
   ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([

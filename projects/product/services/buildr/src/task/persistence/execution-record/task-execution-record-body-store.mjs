@@ -7,7 +7,7 @@ import {
   TASK_EXECUTION_RECORD_REDACTION_VERSION,
   normalizeTaskExecutionRecord,
   taskExecutionRecordError,
-} from '../../domain/task-execution-record/task-execution-record.mjs';
+} from '../../../domain/task-execution-record/task-execution-record.mjs';
 
 const BODY_FILES = Object.freeze({
   'summary.json': 'json',

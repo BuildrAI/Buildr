@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { normalizeTaskEnvironmentReceipt, taskEnvironmentError } from '../../domain/task-environment/task-environment.mjs';
-import { sameFilesystemPath } from './filesystem-path-identity.mjs';
+import { normalizeTaskEnvironmentReceipt, taskEnvironmentError } from '../../../domain/task-environment/task-environment.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function locator(taskId) { return `workspace-sqlite:task-environment/${taskId}`; }
 

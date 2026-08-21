@@ -4,7 +4,7 @@ import {
   TASK_EXECUTION_RECORD_RETENTION,
   normalizeTaskExecutionRecord,
   taskExecutionRecordError,
-} from '../../domain/task-execution-record/task-execution-record.mjs';
+} from '../../../domain/task-execution-record/task-execution-record.mjs';
 
 function locator(recordId) { return `workspace-sqlite:task-execution-record/${recordId}`; }
 
