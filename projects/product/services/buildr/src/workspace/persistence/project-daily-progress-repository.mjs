@@ -7,7 +7,7 @@ import {
   isDailyProgressDate,
   isLegacyDailyProgressDocument,
   normalizeDailyProgressDocument,
-} from '../../domain/project-daily-progress/project-daily-progress.mjs';
+} from '../domain/project-daily-progress.mjs';
 
 function dailyProgressRoot(targetRoot) {
   return path.join(targetRoot, '.buildr', 'daily-progress');
@@ -36,7 +36,7 @@ function serializeDocument(document) {
   }, { lineWidth: 0 });
 }
 
-export function registerProjectDailyProgressStore(runtime) {
+export function registerProjectDailyProgressRepository(runtime) {
   function readDailyProgressDocument(targetRoot, project, date) {
     const file = dailyProgressFile(targetRoot, project, date);
     if (!runtime.existsFile(file)) return { present: false, incompatible: false, document: null };

@@ -86,7 +86,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
 test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {
   const application = read('src/task/application/task-development-application.mjs');
   const sqlite = read('src/infrastructure/sqlite/workspace-sqlite.mjs');
-  const taskRecord = read('src/task/application/record/task-record-application.mjs');
+  const taskRecord = read('src/task/application/task-record-application.mjs');
   const environment = read('src/task/application/task-environment-application.mjs');
   assert.match(application, /withWorkspaceStructuredStoreOperation/);
   assert.match(sqlite, /operationScopes[\s\S]*finally[\s\S]*operationScopes\.pop/);

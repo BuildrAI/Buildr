@@ -69,10 +69,14 @@ const requiredRuntime = [
   'application/doctor.mjs', 'agent-assets/application/package-maintenance.mjs',
   'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
   'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
+  'workspace/application/project-daily-progress-application.mjs',
   'workspace/domain/workspace.mjs', 'workspace/domain/project.mjs', 'workspace/domain/service.mjs',
+  'workspace/domain/project-daily-progress.mjs',
   'workspace/persistence/workspace-manifest-repository.mjs', 'workspace/persistence/workspace-registry-repository.mjs',
   'workspace/persistence/project-manifest-repository.mjs', 'workspace/persistence/service-manifest-repository.mjs',
-  'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/http/workspace-http.mjs',
+  'workspace/persistence/project-daily-progress-repository.mjs',
+  'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
+  'workspace/interfaces/http/workspace-http.mjs',
   'application/worktree/git-worktree-provider.mjs',
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
@@ -81,9 +85,9 @@ const requiredRuntime = [
   'task/application/task-verification-application.mjs', 'task/domain/task-verification.mjs',
   'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
   'task/persistence/task-verification-repository.mjs',
-  'task/module.mjs', 'task/domain/record/task-record.mjs',
+  'task/module.mjs', 'task/domain/task-record.mjs',
   'task/domain/task-review.mjs', 'task/application/task-review-application.mjs', 'task/persistence/task-review-repository.mjs',
-  'task/application/record/task-record-application.mjs', 'task/persistence/record/task-record-repository.mjs',
+  'task/application/task-record-application.mjs', 'task/persistence/task-record-repository.mjs',
   'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
   'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
   'task/interfaces/http/task-lifecycle-core.mjs',
@@ -281,7 +285,7 @@ if (fs.existsSync(registry)) {
   if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
-const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'record', 'task-record-application.mjs');
+const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task-record-application.mjs');
 const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.mjs');
 const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.mjs');
 const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
@@ -294,6 +298,9 @@ for (const relative of [
   'interfaces/cli/task-record.mjs',
 ]) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
+}
+for (const relative of ['task/domain/record', 'task/application/record', 'task/persistence/record']) {
+  if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`redundant Task Record terminal directory must be removed: src/${relative}`);
 }
 if (fs.existsSync(taskRecordApplication)) {
   const source = fs.readFileSync(taskRecordApplication, 'utf8');
@@ -348,6 +355,9 @@ else {
   if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
     problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
   }
+  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'registerProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
+    if (!moduleSource.includes(required)) problems.push(`Workspace module must own Daily Progress ${required}`);
+  }
 }
 for (const legacy of [
   'application/domains/workspace.mjs',
@@ -361,6 +371,10 @@ for (const legacy of [
   'infrastructure/filesystem/service-manifest-repository.mjs',
   'infrastructure/filesystem/workspace-manifest-repository.mjs',
   'infrastructure/filesystem/workspace-registry-repository.mjs',
+  'domain/project-daily-progress/project-daily-progress.mjs',
+  'application/project-daily-progress/project-daily-progress-application.mjs',
+  'infrastructure/filesystem/project-daily-progress-store.mjs',
+  'interfaces/cli/project-daily-progress.mjs',
 ]) {
   if (fs.existsSync(path.join(sourceRoot, legacy))) problems.push(`legacy Workspace Core entry must be removed: ${legacy}`);
 }
@@ -382,7 +396,7 @@ for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-
 
 const legacyTaskRecordConsumers = new Set([
   'application/change/change-application.mjs',
-  'application/project-daily-progress/project-daily-progress-application.mjs',
+  'workspace/application/project-daily-progress-application.mjs',
   'task/application/task-development-application.mjs',
   'task/application/task-entry-snapshot-application.mjs',
   'task/application/task-environment-application.mjs',
@@ -465,8 +479,8 @@ if (fs.existsSync(taskEnvironmentInterface)) {
   }
 }
 
-const dailyProgressApplication = path.join(sourceRoot, 'application', 'project-daily-progress', 'project-daily-progress-application.mjs');
-const dailyProgressInterface = path.join(sourceRoot, 'interfaces', 'cli', 'project-daily-progress.mjs');
+const dailyProgressApplication = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.mjs');
+const dailyProgressInterface = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.mjs');
 if (fs.existsSync(dailyProgressApplication)) {
   const source = fs.readFileSync(dailyProgressApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
@@ -481,6 +495,9 @@ if (fs.existsSync(dailyProgressInterface)) {
   if (!source.includes('export function projectDailyProgressCommand') || !source.includes('runtime.recordProjectDailyProgress')) {
     problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
   }
+}
+if (fs.existsSync(localAppServer) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(localAppServer, 'utf8'))) {
+  problems.push('Buildr Web HTTP Host must not own Daily Progress routes');
 }
 
 const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');

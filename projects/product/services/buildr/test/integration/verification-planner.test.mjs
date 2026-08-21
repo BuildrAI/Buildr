@@ -166,13 +166,13 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   ]);
   const unitAndComponentOnly = verificationSteps.filter((item) => ['unit', 'component', 'candidate-tarball', 'application-payload-release'].includes(item.id));
   assert.equal(auditProductionOwnerCoverage(['src/workspace/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
-  assert.equal(auditProductionOwnerCoverage(['src/task/application/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
-  assert.equal(auditProductionOwnerCoverage(['src/task/persistence/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
+  assert.equal(auditProductionOwnerCoverage(['src/task/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
+  assert.equal(auditProductionOwnerCoverage(['src/task/persistence/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   const unknownProduction = createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] });
   assert.equal(unknownProduction.scope.mode, 'full');
   assert.deepEqual(unknownProduction.productionOwnerGaps.map((item) => item.path), ['src/application/new-unowned-module.mjs']);
   assert.ok(unknownProduction.scope.reasons.some((reason) => reason.code === 'unknown-path-full-fallback'));
-  assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/record/new-task-record-use-case.mjs'] })).includes('system-task-lifecycle'));
+  assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/task-record-new-use-case.mjs'] })).includes('system-task-lifecycle'));
 });
 
 test('Task Entry 与 Retrospective changed paths选择真实有界 Integration slice', () => {
@@ -319,7 +319,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['system-verification-contracts', 'system-openspec-contract-audit'],
     },
     {
-      path: 'src/application/project-daily-progress/project-daily-progress-application.mjs',
+      path: 'src/workspace/application/project-daily-progress-application.mjs',
       required: ['integration-project-daily-progress'],
       excluded: ['integration', 'integration-task-coordination', 'integration-task-development'],
     },

@@ -8,11 +8,11 @@ import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
 import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
-import { projectDailyProgressCommand } from '../../interfaces/cli/project-daily-progress.mjs';
 import { taskTerminalDeliveryInspectCommand } from '../../interfaces/cli/task-terminal-delivery.mjs';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
+const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
 const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
 const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
@@ -70,46 +70,7 @@ const COMMAND_ROUTES = [
     run: (r) => r.bootstrapGuide(),
   },
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
-  {
-    key: "project daily-progress record",
-    surface: "agent-machine",
-    summary: "把 Agent 已构造的 Git 提交日摘要写入本机每日演进文件；Task 关联可选，不进入 Git 或 Task SQLite。",
-    help: [
-      "Usage: buildr project daily-progress record --project <code> [--date <YYYY-MM-DD>] --input <payload.json> [--target <canonical-workspace>] [--json]",
-      "       buildr project daily-progress record --schema|--example [--json]",
-      "",
-      "把 Agent 已构造的四问摘要、提交与变更文件写入 .buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml。",
-      "一天一份，校验通过后原子覆盖；他人提交不得挂 Task，存在的 Task ID 必须本机已有，否则整次失败且不写文件。",
-      "该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
-    run: (r, c) => projectDailyProgressCommand(r, 'record', c.argv.slice(5)),
-  },
-  {
-    key: "project daily-progress inspect",
-    surface: "agent-machine",
-    summary: "只读查看某 Project 某日已保存的每日演进，并按日、人、任务投影；不创建文件。",
-    help: [
-      "Usage: buildr project daily-progress inspect --project <code> [--date <YYYY-MM-DD>] [--group day|person|task] [--target <canonical-workspace>] [--json]",
-      "",
-      "只读查看已保存的本机每日演进文件并解析仍存在的 Task 摘要。",
-      "文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
-    run: (r, c) => projectDailyProgressCommand(r, 'inspect', c.argv.slice(5)),
-  },
-  {
-    key: "project daily-progress list",
-    surface: "agent-machine",
-    summary: "只读列出某 Project 已保存的每日演进日期；不扫描 Git，不写文件。",
-    help: [
-      "Usage: buildr project daily-progress list --project <code> [--target <canonical-workspace>] [--json]",
-      "",
-      "只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
-    run: (r, c) => projectDailyProgressCommand(r, 'list', c.argv.slice(5)),
-  },
+  WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   {
     key: "worktree create",
     surface: "agent-machine",
@@ -445,15 +406,18 @@ function createCommandRegistry(moduleContributions) {
   const agentAssetsPackageContributions = moduleContributions.filter((route) => AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key));
   const agentAssetsRuntimeContributions = moduleContributions.filter((route) => AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key));
   const agentAssetsSourceContributions = moduleContributions.filter((route) => AGENT_ASSETS_SOURCE_COMMANDS.has(route.key));
+  const workspaceDailyProgressContributions = moduleContributions.filter((route) => route.key.startsWith('project daily-progress '));
   const nonAgentAssetsContributions = moduleContributions.filter((route) => (
     !AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key)
     && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
     && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
+    && !route.key.startsWith('project daily-progress ')
   ));
   const routes = COMMAND_ROUTES.flatMap((route) => {
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
+    if (route === WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT) return workspaceDailyProgressContributions;
     if (route === TASK_MODULE_COMMAND_SLOT) return nonAgentAssetsContributions;
     return [route];
   });

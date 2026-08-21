@@ -1,4 +1,4 @@
-import { registerTaskRecordApplication } from './application/record/task-record-application.mjs';
+import { registerTaskRecordApplication } from './application/task-record-application.mjs';
 import { registerTaskRetrospectiveApplication } from './application/task-retrospective-application.mjs';
 import { registerTaskReviewApplication } from './application/task-review-application.mjs';
 import { registerTaskEnvironmentApplication } from './application/task-environment-application.mjs';
@@ -9,7 +9,7 @@ import { registerTaskDevelopmentApplication } from './application/task-developme
 import { registerParentCoordinationApplication } from './application/parent-coordination-application.mjs';
 import { registerTaskOverviewApplication } from './application/task-overview-application.mjs';
 import { registerTaskEntrySnapshotApplication } from './application/task-entry-snapshot-application.mjs';
-import { registerTaskRecordRepository } from './persistence/record/task-record-repository.mjs';
+import { registerTaskRecordRepository } from './persistence/task-record-repository.mjs';
 import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
 import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';

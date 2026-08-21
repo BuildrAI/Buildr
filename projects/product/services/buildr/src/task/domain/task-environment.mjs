@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { isTaskRecordId } from './record/task-record.mjs';
+import { isTaskRecordId } from './task-record.mjs';
 import {
   LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA,
   LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2,

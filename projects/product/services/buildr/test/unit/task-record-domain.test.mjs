@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes, TASK_RECORD_SCHEMA } from '../../src/task/domain/record/task-record.mjs';
+import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes, TASK_RECORD_SCHEMA } from '../../src/task/domain/task-record.mjs';
 
 function active(overrides = {}) {
   return {

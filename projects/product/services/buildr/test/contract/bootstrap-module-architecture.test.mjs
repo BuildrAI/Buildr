@@ -28,6 +28,7 @@ import {
 } from '../../src/system/installation/module.mjs';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.mjs';
 import {
+  PROJECT_DAILY_PROGRESS_APPLICATION,
   PROJECT_APPLICATION,
   SERVICE_APPLICATION,
   WORKSPACE_APPLICATION,
@@ -61,9 +62,9 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
     id: 'workspace-core',
     requires: [],
-    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_COMPATIBILITY],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, PROJECT_DAILY_PROGRESS_APPLICATION, WORKSPACE_COMPATIBILITY],
     contributions: {
-      cli: ['project create', 'service create'],
+      cli: ['project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
       http: ['workspace-core.http'],
       diagnostics: [],
     },
@@ -203,6 +204,7 @@ test('Workspace、Agent Assets、Task 与 Web modules 暴露窄 capability、唯
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item) => item.key), [
     'project create', 'service create',
+    'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',

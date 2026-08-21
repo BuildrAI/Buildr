@@ -381,27 +381,6 @@ export function createLocalWorkspaceServer(runtime, {
           const prototype = runtime.taskUiPrototype(root, taskUiPrototypeMatch[1], taskUiPrototypeMatch[2]);
           return uiPrototypeHtmlResponse(response, prototype.html);
         }
-        const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
-        if (request.method === 'GET' && taskDailyProgressMatch) return jsonResponse(response, 200, runtime.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));
-        const projectDailyProgressTodayMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress$/);
-        const projectDailyProgressDateMatch = suffix.match(/^\/projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/daily-progress\/(\d{4}-\d{2}-\d{2})$/);
-        if (request.method === 'GET' && (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)) {
-          const extra = [...requestUrl.searchParams.keys()].filter((field) => field !== 'group');
-          if (extra.length) {
-            const error = new Error('每日演进 API 只接受 group query。');
-            error.code = 'daily_progress_query_forbidden';
-            error.status = 400;
-            error.details = { field: extra[0] };
-            throw error;
-          }
-          const project = (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)[1];
-          const date = projectDailyProgressDateMatch?.[2] || undefined;
-          return jsonResponse(response, 200, runtime.inspectProjectDailyProgress(root, {
-            project,
-            date,
-            group: requestUrl.searchParams.get('group') || undefined,
-          }));
-        }
         if (request.method === 'POST' && suffix === '/prompts/task-verification') {
           assertWriteRequest(request, origin, sessionToken);
           const input = await readAllowedJsonBody(request, new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');

@@ -191,7 +191,7 @@ task/
 
 当前已经迁移 Task Record、Review、Retrospective 与 Task 生命周期核心。生命周期核心包括 Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 和 Parent Coordination；它们的实现在 `domain/`、`application/`、`persistence/`、`interfaces/cli/`、`interfaces/http/` 与 `interfaces/internal/` 中按技术层保持扁平，由 `task/module.mjs` 组装私有 Repository/Application，对 Bootstrap 只公开命名 capability、CLI/HTTP contribution 和有退出条件的 compatibility port。
 
-Task Record 现有复杂协作者暂时保留在 `domain/record/`、`application/record/` 和 `persistence/record/`；Review、Retrospective 与本次生命周期核心文件保持扁平。Web HTTP Host 仅传入鉴权、closed body 读取和有界读执行能力，Task 路由匹配、业务输入约束与 Application 调用由 `task/interfaces/http/` 负责。该迁移未引入第二套 Persistence/Transaction，也未改变 CLI、HTTP、JSON、SQLite schema 或 writer authority。Task Finish 因包含独立交付步骤与复杂协作者，保留为后续独立迁移切片。
+Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。当前单文件 `interfaces/cli/`、`interfaces/http/` 目录表达适配协议与调用方向，不是无效能力包装；Task Finish 的剩余目录由其独立迁移切片和父任务最终 conformance 按真实协作者重新判断。Web HTTP Host 仅传入鉴权、closed body 读取和有界读执行能力，Task 路由匹配、业务输入约束与 Application 调用由 `task/interfaces/http/` 负责。该迁移未引入第二套 Persistence/Transaction，也未改变 CLI、HTTP、JSON、SQLite schema 或 writer authority。
 
 ## `workspace` 模块
 
@@ -206,6 +206,8 @@ Workspace
 Workspace 是管理入口，Project 和 Service 是其中具有独立身份与边界的管理对象。
 
 Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application 与 HTTP contribution；为尚未迁移的消费者保留的 compatibility port 必须在 Agent Assets、Web、System 和最终遗留退出切片中逐步删除。
+
+Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.mjs`，用例位于 `application/project-daily-progress-application.mjs`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.mjs`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.mjs` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
 Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力是否归入 `workspace/`，本轮不提前决定，统一进入文末的待决策清单。
 

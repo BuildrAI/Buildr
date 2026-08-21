@@ -13,7 +13,7 @@ import {
 } from '../domain/task-development.mjs';
 import { PARENT_PLAN_SCHEMA, createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings, parentCoordinationError, projectParentPlan, validateContributionHandoffAgainstPlan } from '../domain/parent-coordination.mjs';
 import { taskDevelopmentActionFields, taskDevelopmentActionRequiredFields } from './task-development-operation-contracts.mjs';
-import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/record/task-record.mjs';
+import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
 
 function assertObject(input, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskDevelopmentError('task_development_input_invalid', `${label} 必须是对象。`);

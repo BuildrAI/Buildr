@@ -20,7 +20,7 @@ test('Parent Coordination使用固定查询的只读projection且没有filesyste
 
 test('Parent Plan是closed计划值且Task Record不复制计划或Child状态', () => {
   const domain = read('src/task/domain/parent-coordination.mjs');
-  const taskRecord = read('src/task/domain/record/task-record.mjs');
+  const taskRecord = read('src/task/domain/task-record.mjs');
   for (const required of ['outcome', 'architectureDecisions', 'contributions', 'expectedChild', 'dependencies', 'finalAcceptance']) assert.ok(domain.includes(required), required);
   for (const forbidden of ['completedChildCount', 'completed_child_count', 'childStatuses', 'lifecycleCache']) {
     assert.equal(domain.includes(forbidden), false, forbidden);

@@ -6,8 +6,8 @@ import {
   normalizeDailyProgressDate,
   normalizeDailyProgressGroup,
   normalizeDailyProgressPayload,
-} from '../../domain/project-daily-progress/project-daily-progress.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+} from '../domain/project-daily-progress.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

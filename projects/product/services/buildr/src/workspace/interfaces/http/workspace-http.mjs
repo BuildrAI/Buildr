@@ -1,5 +1,6 @@
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const CODE = '[A-Za-z0-9][A-Za-z0-9._-]*';
+const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
 function ok(body) {
   return { status: 200, body };
@@ -47,7 +48,7 @@ export function createWorkspaceHttpContribution(application) {
       }
       return null;
     },
-    async handle({ request, suffix, root, authorizeWrite, readJsonBody }) {
+    async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }) {
       if (request.method === 'GET' && suffix === '') return ok(application.getWorkspace(root));
       if (request.method === 'GET' && suffix === '/getting-started') return ok(application.getWorkspaceGettingStarted(root));
       if (request.method === 'PUT' && suffix === '') {
@@ -55,6 +56,29 @@ export function createWorkspaceHttpContribution(application) {
         return ok(application.updateWorkspaceMetadata(root, await readJsonBody()));
       }
       if (request.method === 'GET' && suffix === '/projects') return ok(application.listProjects(root));
+
+      const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
+      if (request.method === 'GET' && taskDailyProgressMatch) return ok(application.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));
+
+      const projectDailyProgressTodayMatch = suffix.match(new RegExp(`^/projects/(${CODE})/daily-progress$`));
+      const projectDailyProgressDateMatch = suffix.match(new RegExp(`^/projects/(${CODE})/daily-progress/(\\d{4}-\\d{2}-\\d{2})$`));
+      if (request.method === 'GET' && (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)) {
+        const extra = [...searchParams.keys()].filter((field) => field !== 'group');
+        if (extra.length) {
+          const error = new Error('每日演进 API 只接受 group query。');
+          error.code = 'daily_progress_query_forbidden';
+          error.status = 400;
+          error.details = { field: extra[0] };
+          throw error;
+        }
+        const project = (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)[1];
+        const date = projectDailyProgressDateMatch?.[2] || undefined;
+        return ok(application.inspectProjectDailyProgress(root, {
+          project,
+          date,
+          group: searchParams.get('group') || undefined,
+        }));
+      }
 
       const projectMatch = suffix.match(new RegExp(`^/projects/(${CODE})$`));
       if (request.method === 'GET' && projectMatch) return ok(application.projectDetail(root, projectMatch[1]));

@@ -1,5 +1,5 @@
 import { TASK_RETROSPECTIVE_FOCUS, TASK_RETROSPECTIVE_RESULT_SCHEMA, normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult, taskRetrospectiveError } from '../domain/task-retrospective.mjs';
-import { isTaskRecordId } from '../domain/record/task-record.mjs';
+import { isTaskRecordId } from '../domain/task-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 
 export const TASK_RETROSPECTIVE_PROMPT = '是否进行任务复盘？当前将重点分析 Agent 执行耗时、Token 消耗、重复尝试和人机协作效率。Token 数据仅在 Agent 可取得时记录，缺失不影响复盘。';

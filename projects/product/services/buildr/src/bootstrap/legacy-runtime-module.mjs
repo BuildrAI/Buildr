@@ -1,5 +1,4 @@
 import { registerInfrastructure } from '../infrastructure/index.mjs';
-import { registerProjectDailyProgressStore } from '../infrastructure/filesystem/project-daily-progress-store.mjs';
 import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/workspace-management-fence.mjs';
 import { registerTaskFinishRepository } from '../task/persistence/finish/task-finish-repository.mjs';
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
@@ -13,7 +12,6 @@ import { registerChangeApplication } from '../application/change/change-applicat
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from '../application/task-finish/task-finish-application.mjs';
 import { registerTaskTerminalDeliveryApplication } from '../application/task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { registerProjectDailyProgressApplication } from '../application/project-daily-progress/project-daily-progress-application.mjs';
 import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
 
@@ -38,7 +36,6 @@ const REGISTRATIONS = [
   WORKSPACE_MODULE_SLOT,
   AGENT_ASSETS_MODULE_SLOT,
   registerTaskFinishRepository,
-  registerProjectDailyProgressStore,
   registerContentTargetObserver,
   registerProjectGitObserver,
   registerDomainsOpenspec,
@@ -50,7 +47,6 @@ const REGISTRATIONS = [
   registerGitWorktreeProvider,
   TASK_RECORD_MODULE_SLOT,
   TASK_ENVIRONMENT_MODULE_SLOT,
-  registerProjectDailyProgressApplication,
   TASK_EXECUTION_RECORD_MODULE_SLOT,
   TASK_REVIEW_MODULE_SLOT,
   TASK_RETROSPECTIVE_MODULE_SLOT,

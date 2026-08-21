@@ -238,11 +238,11 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-workspace-lifecycle': Object.freeze(['src/workspace/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-lifecycle': Object.freeze([
     'src/bootstrap/**', 'src/application/change/**', 'test/helpers/task-record-system-fixture.mjs',
-    'src/task/module.mjs', 'src/task/domain/record/**', 'src/task/application/record/**', 'src/task/persistence/record/**',
+    'src/task/module.mjs',
     'src/task/domain/task-record.mjs', 'src/task/domain/task-development.mjs', 'src/task/domain/task-verification.mjs',
     'src/task/domain/task-review.mjs', 'src/task/domain/task-retrospective.mjs', 'src/task/domain/task-execution-record.mjs',
     'src/task/domain/task-planning-identity.mjs', 'src/task/domain/parent-coordination.mjs',
-    'src/task/application/task-record-application.mjs', 'src/task/application/task-development*.mjs',
+    'src/task/application/task-record*.mjs', 'src/task/application/task-development*.mjs',
     'src/task/application/task-verification-application.mjs', 'src/task/application/task-review-application.mjs',
     'src/task/application/task-retrospective-application.mjs', 'src/task/application/task-execution-record-application.mjs',
     'src/task/application/task-planning-identity-application.mjs', 'src/task/application/task-entry-snapshot-application.mjs',
@@ -430,10 +430,12 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-project-daily-progress', [
     'test/integration/project-daily-progress-application.test.mjs',
   ], [
-    'src/application/project-daily-progress/**',
-    'src/domain/project-daily-progress/**',
-    'src/infrastructure/filesystem/project-daily-progress-store.mjs',
-    'src/interfaces/cli/project-daily-progress.mjs',
+    'src/workspace/domain/project-daily-progress.mjs',
+    'src/workspace/application/project-daily-progress-application.mjs',
+    'src/workspace/persistence/project-daily-progress-repository.mjs',
+    'src/workspace/interfaces/cli/project-daily-progress.mjs',
+    'src/workspace/interfaces/http/workspace-http.mjs',
+    'src/workspace/module.mjs',
   ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-execution-records', [
     'test/integration/task-execution-record-application.test.mjs',

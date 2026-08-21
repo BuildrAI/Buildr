@@ -324,7 +324,7 @@ export function createPackageStaticValidator(deps) {
       'src/task/application/task-review-application.mjs',
       'src/task/application/task-verification-application.mjs',
       'src/task/application/task-environment-application.mjs',
-      'src/task/application/record/task-record-application.mjs',
+      'src/task/application/task-record-application.mjs',
       'src/application/task-finish/task-finish-product-executor.mjs',
       'src/application/task-terminal-delivery/task-terminal-delivery-application.mjs',
     ]) {
@@ -367,9 +367,9 @@ export function createPackageStaticValidator(deps) {
     }
 
     for (const relative of [
-      'src/task/domain/record/task-record.mjs',
-      'src/task/application/record/task-record-application.mjs',
-      'src/task/persistence/record/task-record-repository.mjs',
+      'src/task/domain/task-record.mjs',
+      'src/task/application/task-record-application.mjs',
+      'src/task/persistence/task-record-repository.mjs',
       'src/task/domain/task-environment.mjs',
       'src/task/application/task-environment-application.mjs',
       'src/task/persistence/task-environment-repository.mjs',

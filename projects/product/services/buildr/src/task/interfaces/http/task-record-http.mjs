@@ -1,4 +1,4 @@
-import { TASK_RECORD_ID_SOURCE } from '../../domain/record/task-record.mjs';
+import { TASK_RECORD_ID_SOURCE } from '../../domain/task-record.mjs';
 
 export { TASK_RECORD_ID_SOURCE };
 
