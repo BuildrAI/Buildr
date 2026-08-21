@@ -16,6 +16,7 @@ import {
   VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
   VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_RESOURCE_CONTRACTS,
   VERIFICATION_RESET_BURDENS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
@@ -247,7 +248,25 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     }
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
     for (const resource of item.resources ?? []) {
-      if (!VERIFICATION_CONCURRENCY.resources?.[resource]) findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
+      if (!VERIFICATION_CONCURRENCY.resources?.[resource]) {
+        findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
+        continue;
+      }
+      const contract = VERIFICATION_RESOURCE_CONTRACTS[resource];
+      if (!contract) {
+        findings.push({ step: item.id, code: 'resource_contract_missing', value: resource });
+        continue;
+      }
+      const environment = item.testing?.environment;
+      if (contract.requiredFootprints.some((footprint) => !environment?.footprints?.includes(footprint))) {
+        findings.push({ step: item.id, code: 'resource_footprint_mismatch', value: resource });
+      }
+      if (environment?.isolation !== contract.isolation) {
+        findings.push({ step: item.id, code: 'resource_isolation_mismatch', value: resource });
+      }
+      if (!contract.resetBurdens.includes(item.testing?.resetBurden)) {
+        findings.push({ step: item.id, code: 'resource_cleanup_mismatch', value: resource });
+      }
     }
     if (item.schedulingCostMs != null && (!Number.isInteger(item.schedulingCostMs) || item.schedulingCostMs < 1)) {
       findings.push({ step: item.id, code: 'invalid_scheduling_cost', value: item.schedulingCostMs });

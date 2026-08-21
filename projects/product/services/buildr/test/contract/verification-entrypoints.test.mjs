@@ -327,6 +327,13 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   assert.match(hostJob, /name: candidate-package/);
 });
 
+test('runtime adapter contract uses one run-unique temporary root with owner cleanup', () => {
+  const source = read('test/verification/runtime/adapter-contract.mjs');
+  assert.equal((source.match(/os\.tmpdir\(\)/g) || []).length, 1);
+  assert.match(source, /const temporaryRoot = fs\.mkdtempSync/);
+  assert.match(source, /process\.once\('exit', \(\) => fs\.rmSync\(temporaryRoot, \{ recursive: true, force: true \}\)\)/);
+});
+
 test('distributed Candidate creates one artifact and fans out independent consumers', () => {
   const workflow = read('../../../../.github/workflows/verify.yml');
   const document = YAML.parse(workflow);
@@ -347,11 +354,13 @@ test('distributed Candidate creates one artifact and fans out independent consum
   assert.ok(candidateTimeouts.every((timeoutMs) => Number.isInteger(timeoutMs) && timeoutMs > 0));
   assert.ok(Math.max(...candidateTimeouts) + 3_000 < document.jobs['candidate-core-macos']['timeout-minutes'] * 60_000);
   assert.ok(document.jobs['candidate-core-macos']['timeout-minutes'] < 35);
-  for (const id of ['integration-task-finish-delivery', 'integration-self-bootstrap']) {
-    const owner = verificationSteps.find((step) => step.id === id);
-    assert.ok(owner.resources.includes('workspace-saturating'), id);
-    assert.equal(owner.timeoutMs, 360_000, id);
-  }
+  const selfBootstrap = verificationSteps.find((step) => step.id === 'integration-self-bootstrap');
+  assert.ok(selfBootstrap.resources.includes('workspace-saturating'));
+  assert.equal(selfBootstrap.timeoutMs, 360_000);
+  const finishDelivery = verificationSteps.find((step) => step.id === 'integration-task-finish-delivery');
+  assert.deepEqual(finishDelivery.resources, []);
+  assert.equal(finishDelivery.testing.environment.isolation, 'unique-temporary-root');
+  assert.equal(finishDelivery.timeoutMs, 360_000);
   assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
   const runtimeWindowsStep = document.jobs['candidate-runtime-windows'].steps.find((step) => step.name === 'Run Windows runtime shard');
   assert.equal(runtimeWindowsStep.shell, 'pwsh', 'Windows runtime Candidate must preserve native PowerShell environment semantics');

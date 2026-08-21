@@ -26,7 +26,7 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-15，�
 | Component | `test:component`；`test/component` 1 个文件 | 单一有界 Application 组装，使用 fake/受控轻环境 | Node、内存 fake，不穿过真实 filesystem 或进程边界 | `node:test`；外层 `cpu-heavy=2` |
 | Contract | `test:contract`；`test/contract` 32 个文件 | schema、manifest、Skill、文档、源码结构和稳定入口 declaration 一致性 | 只读 Product tree；不创建可变 fixture，不启动真实 CLI/Git/网络 | `node:test` 文件并发；外层 `cpu-heavy=2` |
 | Integration | `test:integration`；`test/integration` 66 个文件 | 真实 filesystem、Git、子进程和模块边界，不运行完整用户生命周期 | 隔离临时目录、本机 Git、Node 子进程；包含从 Contract 迁出的环境测试；无浏览器 | 60 个文件由 14 个领域 primary slice 持有，2 个由外部 primary owner 持有，general 只剩 4 个跨领域文件并以 4 worker 运行 |
-| Domain Integration | 声明、OpenSpec、verification、runtime、release、data store、Task Environment、self-bootstrap，以及 6 个 Task 领域 slice | 修改哪个领域就运行哪个真实 repository/Application 边界；general 不再替所有领域陪跑 | 独立临时 filesystem/Git/CLI；重型生命周期 slice 使用 `workspace-saturating` | 每个文件只属于一个 primary owner；general exclusions 完全从统一 slice registry 派生 |
+| Domain Integration | 声明、OpenSpec、verification、runtime、release、data store、Task Environment、self-bootstrap，以及 7 个 Task 领域 slice | 修改哪个领域就运行哪个真实 repository/Application 边界；general 不再替所有领域陪跑 | 独立临时 filesystem/Git/CLI；只有具有完整 Workspace lifecycle footprint 的压力 owner 才使用 `workspace-saturating` | 每个文件只属于一个 primary owner；general exclusions 完全从统一 slice registry 派生 |
 | System | `test:system`；`test/system` 28 个文件 | 完整 CLI、Workspace、Buildr Web runtime、Task/Environment/Development/Review/Verification/Finish 与 worktree Journey | 隔离 Workspace、Git、CLI 子进程，部分使用 loopback HTTP；无真实浏览器 | 按 13 个 primary owner 执行；verification admission 的 2 个入口文件约 5 秒，Workspace、Task、Worktree 和 Finish CLI/Product Journey 各自独立 |
 | Recovery | `test:integration:candidate:recovery` 1 个文件；Release 专项 2 个文件 | builtin 迁移/恢复与 Git release convergence | 多轮临时 Workspace/Git | `workspace-saturating`；默认最多 2 路，受限 CI 1 路 |
 | Browser System | `test:browser:smoke` 1 个文件、6 个 selector | Buildr Web shell、Task、Project、Service、Change 的真实浏览器 Journey | 本机 Chrome/Chromium、Playwright Core、loopback server、临时 Workspace | 不进入 Product Full；`verification.yml` 的 `browser` 协调资源容量为 1 |
@@ -37,7 +37,7 @@ Buildr Service 使用 Node.js ESM 与内置 `node:test`。截至 2026-08-15，�
 
 ## 3. 完整 registry inventory
 
-Product registry 当前有 71 个 executable primary owners；`test:candidate` 选择 64 个主步骤。Integration 的 14 个领域 slice、4 个 general 文件与 2 个外部 primary owner 互斥持有全部 66 个文件，13 个 System owner 也各自唯一持有全部 28 个文件；Release Git convergence 与 clean-checkout onboarding 保留为 focus/Release 专项。
+Product registry 当前有 73 个 executable primary owners；`test:candidate` 选择 66 个主步骤。Integration 的 15 个领域 slice、4 个 general 文件与 2 个外部 primary owner 互斥持有全部 73 个文件，13 个 System owner 也各自唯一持有其 28 个核心文件；Release Git convergence、clean-checkout onboarding 与 Windows platform owner 保留为显式专项。
 
 | 分组 | step IDs | 主要事实 | 主要环境与并发 |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Product registry 当前有 71 个 executable primary owners；`test:candidate` �
 | Package 组装与集成 | `candidate-tarball`、`package-workspace`、`package-commands`、`package-rules`、`package-skills`、`package-runtime` | tarball 可组装，六类受管资产结构与安装行为正确 | 本地 `npm pack`、临时目录、开发 CLI；不访问 npm registry |
 | Package/Release Journey | `cli-package-parity`、`release-tarball-smoke` | checkout 与同一 tarball 的代表输出/一次 init mutation 一致；安装版 init/sync/doctor/uninstall 可用 | 共享 Candidate tarball、临时 npm prefix/Workspace；三个 consumer 依赖 `candidate-tarball`，可在产物生成后并行 |
 | CLI 与 capability | `capability-cli-integration`、`commands-cli-integration`、`cli-compatibility`、`service-branch-contract`、`remote-skill-timeout` | capability/Commands 资产、公开 CLI 兼容、Service branch、远程读取超时 | 临时 Workspace/Git/CLI；55 项 help 同进程穷举、7 项代表 help 走真实 CLI；timeout 只使用 loopback HTTP |
-| Runtime 与 Workspace E2E | `runtime-adapter-contract`、`runtime-adapter-parity`、`workspace-lifecycle`、`ownership-recovery`、`runtime-reconciliation`、`init-onboarding`、`managed-data-integrity` | adapter descriptor 与多轮临时投射、7 个 adapter inventory/Doctor、5 个实现族生命周期、Workspace 生命周期/恢复/投射、init、原子 mutation 与 nested repo 保留 | `runtime-adapter-contract` 需要重复临时 filesystem cleanup；其余为多轮临时 Workspace、CLI、Git，runtime parity 是 `workspace-saturating` |
+| Runtime 与 Workspace E2E | `runtime-adapter-contract`、`runtime-adapter-parity`、`workspace-lifecycle`、`ownership-recovery`、`runtime-reconciliation`、`init-onboarding`、`managed-data-integrity` | adapter descriptor 与多轮临时投射、7 个 adapter inventory/Doctor、5 个实现族生命周期、Workspace 生命周期/恢复/投射、init、原子 mutation 与 nested repo 保留 | `runtime-adapter-contract` 的全部投射归属一个 run-unique 临时根并在进程退出时清理；其余为多轮临时 Workspace、CLI、Git，runtime parity 是 `workspace-saturating` |
 | 独立专项 | `integration-candidate-release`、`repository-onboarding` | dev/main release convergence；干净 checkout 通过显式 Project bridge 完成同步与诊断且不改变 PATH 默认 CLI | 本地临时 Git；不属于核心 Full，按 Release 或 affected/focus 选择 |
 
 `concurrent-task-acceptance` 是唯一组合 Acceptance owner：它创建本地多仓 Workspace 和两个正式 Task，并发 prepare 两个 Environment，并发运行 Project verification、记录两份独立 current Result，并启动两个 Preview；它验证共享资源容量、owner guard、异常诊断，再顺序 cleanup Environment 以证明清理一个 Task 不影响另一个。完整浏览器业务验收由独立 Browser capability 持有，不混入这个步骤。
@@ -71,6 +71,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 - `node:test` 会按文件启动 worker；`test:system` 的直接默认是最多 14 路，经过 registry 运行时使用 profile 注入的 8 路；
 - Candidate 中 `integration` 使用 general suite，排除 Task Development 与 Task Finish 专属文件；Task Development 专项保持单文件顺序执行并占用真实 `workspace-saturating` 压力容量；
 - `task-lifecycle-heavy` 只由 System 与 Task Development Integration 共同声明，容量为 1。它是已测得的 CPU/process/filesystem 压力节流，不是共享状态锁；OpenSpec recovery、runtime parity 等其他饱和型 owner 仍可在独立临时根上并行；
+- 每个资源 claim 必须命中资源契约要求的 footprint、`unique-temporary-root` 隔离与 lifecycle cleanup，否则 planner 在启动前拒绝。只使用独立临时 Git/CLI fixture 的 Task Environment Integration、Task Finish delivery Integration 与 Release convergence 不再占用 `workspace-saturating`；
 - `test:system` 为 Task Record/Review/Verification 与 Verification CLI 准备一次 `task-lifecycle/v1` 不可变基线，每个 case 复制独立 sandbox；初始化、Git/Task Environment、安装、迁移和 Finish 测试仍自行准备完整环境；
 - `runtime-adapter-parity` 只初始化一次只读 seed，再为每个 adapter 与安全场景复制独立 sandbox，内部最多 3 路；同一 sandbox 内的 mutation、runtime check 和 Doctor 保持串行；
 - System runner 只粗粒度前置已知长 owner，其余保持字母序，并用 dot reporter 压缩成功日志；这不是动态调度器；
@@ -81,7 +82,7 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 
 跨 Task 的 coordinated resource 使用共享 root 中的 owner-bound waiting ticket 排队。ticket 只表达等待资格，lease 继续表达执行容量；可用 slot 只授予容量范围内最早的有效 ticket。ticket 通过 heartbeat 续期，成功、取消和 timeout 只删除匹配 owner/token 的 ticket，崩溃或过期 ticket 可由后续 waiter 有界回收。排队、ticket、lease 和 timing 都是 transient execution evidence，不进入 `verification.yml` 或 current Task Verification Result，也不扩展为通用 scheduler 或优先级平台。
 
-因此外层 `global=4` 不等于全机只有 4 个进程。`workspace-saturating` 是压力节流，不是共享状态锁：只有使用不同临时 execution root 的 verifier 才允许两路并行；受限 CI 可显式选单路 profile。所有 Product tests 默认使用本机隔离临时目录，不要求 Docker、数据库、云服务或真实网络；Browser 例外地要求本机 Chrome/Chromium。
+因此外层 `global=4` 不等于全机只有 4 个进程。`workspace-saturating` 是压力节流，不是共享状态锁：只有使用不同临时 execution root、并真实穿过完整 Workspace lifecycle 的 verifier 才声明该资源并允许两路并行；受限 CI 可显式选单路 profile。所有 Product tests 默认使用本机隔离临时目录，不要求 Docker、数据库、云服务或真实网络；Browser 例外地要求本机 Chrome/Chromium。
 
 ## 5. 编排入口
 

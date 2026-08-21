@@ -20,6 +20,7 @@ import {
   INTEGRATION_PRIMARY_SLICES,
   VERIFICATION_EXECUTION_PROFILES,
   VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_RESOURCE_CONTRACTS,
   VERIFICATION_STEP_TESTING,
   verificationSteps,
 } from '../../test/verification/registry.mjs';
@@ -32,6 +33,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   assert.deepEqual(validation, { ok: true, findings: [] });
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
   assert.deepEqual(Object.keys(VERIFICATION_STEP_TESTING).sort(), verificationSteps.map((step) => step.id).sort());
+  assert.deepEqual(Object.keys(VERIFICATION_RESOURCE_CONTRACTS).sort(), Object.keys(VERIFICATION_EXECUTION_PROFILES.local.resources).sort());
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['fast'] })), [
     'typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
   ]);
@@ -87,6 +89,12 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
   assert.deepEqual(verificationSteps.find((step) => step.id === 'repository-onboarding').profiles, []);
   for (const slice of INTEGRATION_PRIMARY_SLICES) {
     assert.equal(verificationSteps.find((step) => step.id === slice.id).testing.primaryEvidenceOwner, slice.id);
+  }
+  for (const id of ['integration-task-environment', 'integration-task-finish-delivery', 'integration-candidate-release']) {
+    const owner = verificationSteps.find((step) => step.id === id);
+    assert.deepEqual(owner.resources, [], id);
+    assert.equal(owner.testing.environment.isolation, 'unique-temporary-root', id);
+    assert.equal(owner.testing.environment.footprints.includes('workspace-lifecycle'), false, id);
   }
   assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system-task-finish');
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
@@ -486,6 +494,22 @@ test('registry validation 限制 admission 为低成本、隔离且无稀缺资�
   }];
   const result = validateVerificationRegistry(invalid);
   for (const code of ['admission_target_too_slow', 'admission_workspace_lifecycle', 'admission_resource_claim']) {
+    assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
+  }
+});
+
+test('资源claim必须匹配已声明的footprint、隔离与cleanup契约', () => {
+  const owner = verificationSteps.find((step) => step.id === 'system-task-lifecycle');
+  const invalid = {
+    ...owner,
+    testing: {
+      ...owner.testing,
+      environment: { footprints: ['filesystem'], isolation: 'read-only' },
+      resetBurden: 'none',
+    },
+  };
+  const result = validateVerificationRegistry([invalid]);
+  for (const code of ['resource_footprint_mismatch', 'resource_isolation_mismatch', 'resource_cleanup_mismatch']) {
     assert.ok(result.findings.some((finding) => finding.code === code), `missing ${code}`);
   }
 });

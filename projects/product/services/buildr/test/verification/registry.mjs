@@ -147,6 +147,24 @@ const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurren
   innerConcurrency: Object.freeze(innerConcurrency),
 });
 
+export const VERIFICATION_RESOURCE_CONTRACTS = Object.freeze({
+  'workspace-saturating': Object.freeze({
+    requiredFootprints: Object.freeze(['workspace-lifecycle']),
+    isolation: 'unique-temporary-root',
+    resetBurdens: Object.freeze(['lifecycle']),
+  }),
+  'task-lifecycle-heavy': Object.freeze({
+    requiredFootprints: Object.freeze(['workspace-lifecycle']),
+    isolation: 'unique-temporary-root',
+    resetBurdens: Object.freeze(['lifecycle']),
+  }),
+  'app-runtime': Object.freeze({
+    requiredFootprints: Object.freeze(['workspace-lifecycle']),
+    isolation: 'unique-temporary-root',
+    resetBurdens: Object.freeze(['lifecycle']),
+  }),
+});
+
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
@@ -352,7 +370,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-environment/**',
     'src/domain/task-environment/**',
     'src/task/persistence/environment/task-environment-repository.mjs',
-  ], { schedulingCostMs: 10000, resources: ['workspace-saturating'], args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 10000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.mjs',
   ], [
@@ -460,7 +478,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/application/task-finish/task-finish-delivery-terminal.mjs',
     'src/application/task-finish/task-finish-product-executor.mjs',
     'src/application/task-terminal-delivery/**',
-  ], { schedulingCostMs: 35000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
+  ], { schedulingCostMs: 35000, args: ['--test-concurrency=1'], timeoutMs: 360_000 }),
 ]);
 
 export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
@@ -630,7 +648,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'tools/release/bridge-main-to-dev.mjs', 'tools/release/release-authority.mjs', 'tools/release/release-contract.mjs',
     'tools/release/release-convergence.mjs', 'tools/release/release-files.mjs', 'tools/release/release-notes.mjs', 'src/domain/release-version.mjs',
-  ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
+  ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: [
     'test/verification/concurrency/**', 'test/helpers/child-process-supervisor.mjs', 'test/helpers/clean-product-source.mjs',
     'src/application/worktree/**', 'src/application/task-verification/**', 'src/application/verification/**', 'src/interfaces/local-app/runtime/preview-manager.mjs',

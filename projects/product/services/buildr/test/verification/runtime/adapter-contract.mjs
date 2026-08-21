@@ -30,6 +30,8 @@ import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/infrastru
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot = path.resolve(productRoot, '../../../..');
+const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-adapter-contract-'));
+process.once('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
 
 assert.deepEqual(SUPPORTED_AGENT_IDS, ['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
 const implementationMatrix = runtimeAdapterImplementationMatrix();
@@ -50,7 +52,7 @@ for (const adapterId of SUPPORTED_AGENT_IDS.filter((id) => id !== 'codex')) {
 for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
   assert.ok(adapter.traits);
   assert.deepEqual(Object.keys(adapter.renderCapabilities), REQUIRED_RENDER_CAPABILITIES);
-  const root = path.join(os.tmpdir(), `buildr-adapter-${adapter.id}`);
+  const root = path.join(temporaryRoot, `adapter-${adapter.id}`);
   const context = createRuntimeContext({
     adapterId: adapter.id,
     targetRoot: root,
@@ -61,7 +63,7 @@ for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
   validateRuntimePlan(adapter.planRuntime(context), adapter);
 }
 
-const projectionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-adapter-projection-contract-'));
+const projectionRoot = fs.mkdtempSync(path.join(temporaryRoot, 'adapter-projection-contract-'));
 fs.writeFileSync(path.join(projectionRoot, 'AGENTS.md'), '# Adapter projection contract\n');
 const expectedRuleTargets = {
   'claude-code': 'CLAUDE.md',
@@ -107,7 +109,7 @@ for (const adapterId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
   assert.equal('smoke' in adapter.evidence, false);
   assert.deepEqual(adapter.planRuntime(createRuntimeContext({
     adapterId,
-    targetRoot: path.join(os.tmpdir(), `buildr-${adapterId}-evidence`),
+    targetRoot: path.join(temporaryRoot, `${adapterId}-evidence`),
     scope: '.',
     rules: { writes: [], nativeAssets: [], removals: [], actions: [] },
     skills: { writes: [], removals: [] },
@@ -210,7 +212,7 @@ assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { ...fakeValue.traits.rules, implementation: 'missing' } } }, { implementations: fakeImplementations }), /no registered rules implementation/);
 assert.throws(() => createRuntimeAdapterRegistry([fakeDescriptor, fakeDescriptor], { testOnly: true, implementations: fakeImplementations }), /duplicate adapter id/);
 
-const publicationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-publication-'));
+const publicationRoot = fs.mkdtempSync(path.join(temporaryRoot, 'skill-publication-'));
 assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS['claude-code'], { skillId: 'demo', skillDir: publicationRoot }), []);
 assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS.codex, { skillId: 'demo', skillDir: publicationRoot }), [], 'missing optional OpenAI metadata must not block Codex publication');
 fs.mkdirSync(path.join(publicationRoot, 'agents'));
@@ -221,7 +223,7 @@ assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS.codex, { skillId: 'de
 fs.rmSync(publicationRoot, { recursive: true, force: true });
 
 const codex = RUNTIME_ADAPTERS.codex;
-const root = path.join(os.tmpdir(), 'buildr-invalid-plan');
+const root = path.join(temporaryRoot, 'invalid-plan');
 const context = createRuntimeContext({ adapterId: 'codex', targetRoot: root, scope: '.', rules: { writes: [], nativeAssets: [], removals: [], actions: [] }, skills: { writes: [], removals: [] } });
 const valid = codex.planRuntime(context);
 assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.join(root, '..', 'escape'), content: 'bad' }] }, codex), /outside target root/);
@@ -230,15 +232,15 @@ assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.
 assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.join(root, 'invalid-mode'), content: 'bad', mode: 0o111 }] }, codex), /mode is invalid/);
 assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.join(root, 'invalid-commit'), content: 'bad', commitLast: 'yes' }] }, codex), /commitLast must be boolean/);
 
-const symlinkPlanRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-plan-symlink-'));
-const symlinkPlanOutside = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-plan-outside-'));
+const symlinkPlanRoot = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-plan-symlink-'));
+const symlinkPlanOutside = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-plan-outside-'));
 fs.mkdirSync(path.join(symlinkPlanRoot, '.agents'), { recursive: true });
 fs.symlinkSync(symlinkPlanOutside, path.join(symlinkPlanRoot, '.agents', 'skills'), 'dir');
 const symlinkPlanTarget = path.join(symlinkPlanRoot, '.agents', 'skills', 'demo', 'SKILL.md');
 assert.throws(() => validateRuntimePlan({ ...valid, targetRoot: symlinkPlanRoot, writes: [{ targetFile: symlinkPlanTarget, content: 'bad' }] }, codex), /crosses a symbolic link/);
 assert.throws(() => validateRuntimePlan({ ...valid, targetRoot: symlinkPlanRoot, removals: [{ targetFile: symlinkPlanTarget }] }, codex), /crosses a symbolic link/);
 
-const reconcileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-reconcile-'));
+const reconcileRoot = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-reconcile-'));
 const targetFile = path.join(reconcileRoot, '.agents', 'skills', 'demo', 'SKILL.md');
 const orphanFile = path.join(reconcileRoot, '.agents', 'buildr', 'skill-install-plans', 'orphan.md');
 fs.mkdirSync(path.dirname(orphanFile), { recursive: true });
@@ -255,7 +257,7 @@ fs.writeFileSync(targetFile, 'user content\n');
 assert.throws(() => reconcileRuntimePlan(reconcilePlan), /no files were changed/);
 assert.equal(fs.readFileSync(targetFile, 'utf8'), 'user content\n');
 
-const binaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-binary-'));
+const binaryRoot = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-binary-'));
 const binaryFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'sample.bin');
 const staleFile = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'stale.bin');
 const receiptFile = path.join(binaryRoot, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts', 'demo.json');
@@ -297,7 +299,7 @@ assert.throws(() => reconcileRuntimePlan(guardedPlan), /no files were changed/);
 assert.equal(fs.existsSync(untouchedWrite), false, 'removal conflicts must stop every write during preflight');
 assert.deepEqual(fs.readFileSync(guardedRemoval), Buffer.from([1, 2, 3]));
 
-const componentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-component-'));
+const componentRoot = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-component-'));
 const componentDir = path.join(componentRoot, 'components', 'workspace', 'demo');
 const fragmentRelative = 'components/workspace/demo/contributions/demo.md';
 const ruleRelative = 'rules/demo.md';
