@@ -169,7 +169,10 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   assert.equal(auditProductionOwnerCoverage(['src/application/service/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/application/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/persistence/record/new-component-only.mjs'], unitAndComponentOnly).ok, false);
-  assert.throws(() => createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] }), /Production source owner coverage gap/);
+  const unknownProduction = createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] });
+  assert.equal(unknownProduction.scope.mode, 'full');
+  assert.deepEqual(unknownProduction.productionOwnerGaps.map((item) => item.path), ['src/application/new-unowned-module.mjs']);
+  assert.ok(unknownProduction.scope.reasons.some((reason) => reason.code === 'unknown-path-full-fallback'));
   assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/record/new-task-record-use-case.mjs'] })).includes('system-task-lifecycle'));
 });
 
@@ -432,8 +435,34 @@ test('focus step 与 group 去重且只展开真实 artifact 依赖', () => {
   assert.throws(() => createVerificationPlan({ stepIds: ['unknown'] }), /Unknown verification step/);
 });
 
-test('未映射 Product path fail closed', () => {
-  assert.throws(() => createVerificationPlan({ paths: ['new-area/contract.bin'] }), /Unmapped Product paths/);
+test('未知 Product path 保守回退 Full 并保留 coverage gap', () => {
+  const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
+  const plan = createVerificationPlan({ paths: ['new-area/contract.bin'] });
+  assert.deepEqual(ids(plan), candidateIds);
+  assert.equal(plan.scope.mode, 'full');
+  assert.deepEqual(plan.scope.reasons, [{ code: 'unknown-path-full-fallback', path: 'new-area/contract.bin', owners: [] }]);
+  assert.deepEqual(plan.unmapped, ['new-area/contract.bin']);
+});
+
+test('changed path scope matrix closes affected, full, delegated and ignored outcomes', () => {
+  const affected = createVerificationPlan({ paths: ['src/domain/task-record/task-record.mjs'] });
+  assert.equal(affected.scope.mode, 'affected');
+  assert.deepEqual(affected.scope.reasons, [{ code: 'affected-owner', path: 'src/domain/task-record/task-record.mjs', owners: ['unit', 'candidate-tarball', 'application-payload-release'] }]);
+  assert.equal(ids(affected).includes('system-local-app-http'), false);
+
+  const full = createVerificationPlan({ paths: ['test/verification/registry.mjs'] });
+  assert.equal(full.scope.mode, 'full');
+  assert.equal(new Set(ids(full)).size, ids(full).length);
+
+  const delegated = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
+  assert.equal(delegated.scope.mode, 'not-applicable');
+  assert.deepEqual(delegated.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);
+  assert.deepEqual(ids(delegated), []);
+
+  const ignored = createVerificationPlan({ paths: ['node_modules/example/index.mjs'] });
+  assert.equal(ignored.scope.mode, 'not-applicable');
+  assert.deepEqual(ignored.ignored, ['node_modules/example/index.mjs']);
+  assert.deepEqual(ids(ignored), []);
 });
 
 test('registry validation 在启动前拒绝重复、未知依赖、未知 executor 和 cycle', () => {

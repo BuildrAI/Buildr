@@ -54,9 +54,9 @@ try {
     const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
     const affectedPlan = args.developmentRunner
       ? createDevelopmentPlatformPlan({ runner: args.developmentRunner, paths: changed.paths })
-      : createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths });
+      : createVerificationPlan({ paths: changed.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths });
     const plan = args.developmentRunner ? affectedPlan : createVerificationAdmissionPlan(affectedPlan);
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
+    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, scope: plan.scope, delegated: plan.delegated, ignored: plan.ignored, unmapped: plan.unmapped, productionOwnerGaps: plan.productionOwnerGaps, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
     if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);

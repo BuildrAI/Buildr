@@ -122,8 +122,19 @@ test('changed verification exposes plan/json and rejects unknown options before 
   const payload = JSON.parse(json.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
   assert.deepEqual(payload.paths, ['docs/buildr-product.md']);
+  assert.equal(payload.scope.mode, 'affected');
+  assert.deepEqual(payload.scope.reasons.map((reason) => reason.code), ['affected-owner']);
+  assert.deepEqual(payload.unmapped, []);
   assert.deepEqual(payload.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.deepEqual(payload.steps.map((step) => step.id), [...payload.admissionStepIds, 'docs-quality']);
+
+  const fallback = spawnSync(process.execPath, [runner, '--json', 'new-area/contract.bin'], { cwd: productRoot, encoding: 'utf8' });
+  assert.equal(fallback.status, 0, fallback.stderr);
+  const fallbackPayload = JSON.parse(fallback.stdout);
+  assert.equal(fallbackPayload.scope.mode, 'full');
+  assert.deepEqual(fallbackPayload.scope.reasons, [{ code: 'unknown-path-full-fallback', path: 'new-area/contract.bin', owners: [] }]);
+  assert.deepEqual(fallbackPayload.unmapped, ['new-area/contract.bin']);
+  assert.equal(new Set(fallbackPayload.steps.map((step) => step.id)).size, fallbackPayload.steps.length);
   const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(unknown.status, 2);
   assert.match(unknown.stderr, /Unknown test:changed option/);

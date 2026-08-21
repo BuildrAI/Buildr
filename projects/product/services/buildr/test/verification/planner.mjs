@@ -425,14 +425,15 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const reasons = new Map();
   const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
   const productionOwnerAudit = auditProductionOwnerCoverage(paths, steps);
-  if (!productionOwnerAudit.ok) {
-    throw new Error(`Production source owner coverage gap:\n${productionOwnerAudit.gaps.map((item) => `- ${item.path}`).join('\n')}`);
-  }
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
-  const fullScopeExemptPaths = new Set((request.fullScopeExemptPaths ?? []).map(normalizeProductPath));
-  const fullScopeMatches = paths.filter((productPath) => !fullScopeExemptPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+  const versionOnlyPackagePaths = new Set((request.versionOnlyPackagePaths ?? []).map(normalizeProductPath));
+  for (const productPath of versionOnlyPackagePaths) {
+    if (!paths.includes(productPath)) throw new Error(`Version-only package path is not part of the changed paths: ${productPath}`);
+    if (!['package.json', 'package-lock.json'].includes(productPath)) throw new Error(`Invalid version-only package path: ${productPath}`);
+  }
+  const fullScopeMatches = paths.filter((productPath) => !versionOnlyPackagePaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
     .filter((pattern) => matchesInput(productPath, pattern))
     .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
@@ -447,16 +448,6 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `profile ${profile}`]);
     }
   }
-  if (fullScopeMatches.length > 0) {
-    for (const item of steps) if (item.profiles.includes('candidate')) {
-      selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => (
-        ['package.json', 'package-lock.json'].includes(productPath)
-          ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
-          : `${productPath} matches full-scope owner ${pattern}`
-      ))]);
-    }
-  }
   for (const group of groups) {
     if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
     for (const item of steps) if (item.groups.includes(group)) {
@@ -466,27 +457,74 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   }
   const unmatchedPaths = [];
   const delegatedPaths = [];
+  const mappedPaths = [];
+  const ignoredPaths = [];
   for (const productPath of paths) {
     const matched = steps.filter((item) => matchedStepInput(item, productPath));
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
-    if (matched.length === 0 && delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
-    else if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
+    if (matched.length > 0) mappedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(matched.map((item) => item.id)) }));
+    else if (delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
+    else if (VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) ignoredPaths.push(productPath);
+    else unmatchedPaths.push(productPath);
     for (const item of matched) {
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${matchedStepInput(item, productPath)}`]);
     }
   }
-  if (unmatchedPaths.length > 0) throw new Error(`Unmapped Product paths:\n${unmatchedPaths.map((item) => `- ${item}`).join('\n')}`);
+  const fallbackPaths = [...new Set([
+    ...unmatchedPaths,
+    ...productionOwnerAudit.gaps.map((item) => item.path),
+  ])].sort();
+  const fullScopeReasons = [
+    ...fullScopeMatches.map(({ productPath, pattern }) => ({
+      code: 'full-scope-input',
+      path: productPath,
+      owners: Object.freeze([pattern]),
+      message: ['package.json', 'package-lock.json'].includes(productPath)
+        ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
+        : `${productPath} matches full-scope owner ${pattern}`,
+    })),
+    ...fallbackPaths.map((productPath) => ({
+      code: 'unknown-path-full-fallback',
+      path: productPath,
+      owners: Object.freeze([]),
+      message: `${productPath} has no direct verification owner; triggers full-scope fallback`,
+    })),
+  ];
+  if (fullScopeReasons.length > 0) {
+    for (const item of steps) if (item.profiles.includes('candidate')) {
+      selected.add(item.id);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason) => reason.message)]);
+    }
+  }
   expandDependencies(selected, byId, reasons);
   const orderedIds = topologicalOrder(selected, steps);
+  const scopeMode = fullScopeReasons.length > 0 || profiles.includes('candidate')
+    ? 'full'
+    : (mappedPaths.length > 0 || versionOnlyPackagePaths.size > 0)
+      ? 'affected'
+      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0)
+        ? 'explicit'
+        : 'not-applicable';
+  const scopeReasons = [
+    ...fullScopeReasons.map(({ message: _message, ...reason }) => Object.freeze(reason)),
+    ...(scopeMode === 'affected' ? mappedPaths
+      .filter((item) => !versionOnlyPackagePaths.has(item.path))
+      .map((item) => Object.freeze({ code: 'affected-owner', path: item.path, owners: item.owners })) : []),
+    ...[...versionOnlyPackagePaths].map((productPath) => Object.freeze({ code: 'version-only-package-metadata', path: productPath, owners: Object.freeze([]) })),
+  ];
   return Object.freeze({
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
     stepIds: Object.freeze(stepIds),
+    scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),
     delegated: Object.freeze(delegatedPaths),
+    ignored: Object.freeze(ignoredPaths),
+    unmapped: Object.freeze(unmatchedPaths),
+    productionOwnerGaps: productionOwnerAudit.gaps,
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
   });
 }

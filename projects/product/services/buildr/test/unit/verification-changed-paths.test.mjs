@@ -25,9 +25,24 @@ test('package metadata semantic classifier only permits the three version fields
 });
 
 test('version-only paths use affected owners while unverified package paths stay full-scope', () => {
-  const affected = ids(createVerificationPlan({ paths: ['package.json', 'package-lock.json'], fullScopeExemptPaths: ['package.json', 'package-lock.json'] }));
+  const affectedPlan = createVerificationPlan({ paths: ['package.json', 'package-lock.json'], versionOnlyPackagePaths: ['package.json', 'package-lock.json'] });
+  const affected = ids(affectedPlan);
   const full = createVerificationPlan({ paths: ['package.json'] });
   assert.ok(affected.length > 0);
   assert.ok(affected.length < full.steps.length);
+  assert.equal(affectedPlan.scope.mode, 'affected');
+  assert.deepEqual(affectedPlan.scope.reasons.map((reason) => reason.code), ['version-only-package-metadata', 'version-only-package-metadata']);
+  assert.equal(full.scope.mode, 'full');
   assert.ok(full.steps.some((step) => step.reasons.some((reason) => reason.includes('non-version package metadata changes'))));
+});
+
+test('version-only exception is closed to changed package metadata paths', () => {
+  assert.throws(
+    () => createVerificationPlan({ paths: ['test/verification/registry.mjs'], versionOnlyPackagePaths: ['test/verification/registry.mjs'] }),
+    /Invalid version-only package path/,
+  );
+  assert.throws(
+    () => createVerificationPlan({ paths: ['docs/buildr-product.md'], versionOnlyPackagePaths: ['package.json'] }),
+    /not part of the changed paths/,
+  );
 });
