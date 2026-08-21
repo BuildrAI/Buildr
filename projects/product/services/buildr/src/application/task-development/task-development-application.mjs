@@ -502,6 +502,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       const changed = context.identity !== current.receipt.taskContext.identity || planning.identity !== current.receipt.planning.identity || !same(resolvedPlanningGate, current.receipt.gates.planning);
       receipt = normalizeTaskDevelopmentReceipt({
         ...current.receipt,
+        environment: { ...current.receipt.environment, taskId, receiptSchema: execution.receiptSchema },
         taskContext: context,
         planning,
         candidate: changed ? null : current.receipt.candidate,

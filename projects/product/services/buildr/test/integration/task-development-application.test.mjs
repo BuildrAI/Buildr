@@ -185,6 +185,30 @@ test('begin与planning省略完整snapshot时零写入失败关闭', (t) => {
   assert.equal(current.runtime.readTaskDevelopmentPersistence(current.root, current.taskId, { optional: true }), null);
 });
 
+test('begin在Environment Receipt升级后重绑定最新schema并保留planning事实', (t) => {
+  const current = fixture(t, 'environment-schema-refresh');
+  const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receipt;
+  current.runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true,
+    taskId: currentTask,
+    receiptSchema: 'buildr.task-environment-receipt/v3',
+    workspaceRoot: current.root,
+    environmentRoot: current.root,
+    validationRoot: current.root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
+    scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(current.root, 'projects', 'demo') }],
+  });
+
+  const result = current.runtime.beginTaskDevelopment(current.root, current.taskId, {
+    changeDispositions: [],
+    planning: { targetIdentity: before.planning.targetIdentity, nodes: before.planning.nodes },
+  });
+
+  assert.equal(result.development.receipt.environment.receiptSchema, 'buildr.task-environment-receipt/v3');
+  assert.equal(result.development.receipt.taskContext.identity, before.taskContext.identity);
+  assert.equal(result.development.receipt.planning.identity, before.planning.identity);
+});
+
 test('Development result按保存事实给出单一建议方向且不自动推进', (t) => {
   const current = fixture(t, 'development-guidance');
   let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
