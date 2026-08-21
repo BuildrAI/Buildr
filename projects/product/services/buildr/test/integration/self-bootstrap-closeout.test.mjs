@@ -373,6 +373,7 @@ function executor(root, options = {}) {
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
     const continuityHelper = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
     const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
+    const maintenanceDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-maintenance-driver.mjs');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -449,6 +450,14 @@ function executor(root, options = {}) {
           taskId: value('--task'), runId: value('--run'), targetIdentity, resolvedTargetIdentity: targetIdentity, resolution: 'exact',
           ...(action === 'release' ? { released: true } : { lease: { token: 'self-bootstrap-lease-token', expiresAt: new Date(Date.now() + 900_000).toISOString() }, existing: null }),
         }),
+        stderr: '',
+      };
+    }
+    if (executable === process.execPath && args[0] === maintenanceDriver) {
+      const value = (name) => args[args.indexOf(name) + 1];
+      return {
+        status: 0,
+        stdout: JSON.stringify({ schemaVersion: 'buildr.task-finish-maintenance-driver-result/v1', operation: 'maintenance', status: 'refreshed', taskId: value('--task'), runId: value('--run'), maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'pending', diagnostics: 'not-opened' } }),
         stderr: '',
       };
     }
@@ -905,7 +914,8 @@ test('development entry验证失败保留前序事实，Doctor blocked使用同�
   createCarrier(secondFixture.root);
   const resumed = runSelfBootstrapCloseout({ finishResult: blocked, workspaceRoot: secondFixture.root, nodeExecutable: process.execPath, execute: executor(secondFixture.root), environment: secondFixture.environment });
   assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
-  assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'resume-finish-run');
+  assert.equal(phase(resumed, 'finalize').operations.find((item) => item.id === 'resume-finish-run').id, 'resume-finish-run');
+  assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'refresh-finish-maintenance');
   assert.equal(phase(resumed, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 0);
 });
 

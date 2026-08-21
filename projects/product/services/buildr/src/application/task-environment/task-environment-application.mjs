@@ -1208,7 +1208,11 @@ export function registerTaskEnvironmentApplication(runtime) {
       const task = runtime.readTaskRecordPersistence(root, taskId).record;
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (!persistence) return environmentResult('cleanup', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有可清理的 Environment Receipt。' });
-      if (persistence.receipt.status === 'cleaned') return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
+      if (persistence.receipt.status === 'cleaned') {
+        let maintenanceRefresh = null;
+        try { maintenanceRefresh = runtime.refreshTaskFinishMaintenance?.(root, taskId) || null; } catch (error) { maintenanceRefresh = { status: 'attention', code: error.code || 'task_finish_maintenance_refresh_failed', message: error.message }; }
+        return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), maintenanceRefresh?.status === 'attention' ? maintenanceRefresh : null);
+      }
       const persistedAuthorization = authorization === null ? deliveredCleanupAuthorization(root, task) : null;
       authorization ||= persistedAuthorization;
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
@@ -1245,7 +1249,10 @@ export function registerTaskEnvironmentApplication(runtime) {
       const summary = `${abandon ? '明确放弃授权下，已清理可证明属于该 Task 的环境资源。' : 'Task Finish handoff 已交付，环境资源已清理或按决定保留。'}${retainedSummary}`;
       persistence = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, status: 'cleaned', resources: persistence.receipt.resources.map((item) => ({ ...item, status: 'released', updatedAt: completedAt })), latest: { ...persistence.receipt.latest, cleanup: { status: 'cleaned', completedAt, summary } }, updatedAt: completedAt });
       effects.push({ type: 'receipt-finalized', path: persistence.file });
-      return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), null, effects);
+      let maintenanceRefresh = null;
+      try { maintenanceRefresh = runtime.refreshTaskFinishMaintenance?.(root, taskId) || null; } catch (error) { maintenanceRefresh = { status: 'attention', code: error.code || 'task_finish_maintenance_refresh_failed', message: error.message }; }
+      if (maintenanceRefresh?.status === 'attention') effects.push({ type: 'finish-maintenance-refresh-attention', diagnostic: maintenanceRefresh });
+      return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), maintenanceRefresh?.status === 'attention' ? maintenanceRefresh : null, effects);
     } catch (error) {
       if (persistence && (!cleanupAuthorized || managerAuthorized)) {
         try {

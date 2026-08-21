@@ -9,6 +9,7 @@ import { releaseFinishOccupancy } from './task-finish-occupancy-release.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { reconcileTaskFinishDelivery } from './task-finish-delivery-reconciliation.mjs';
+import { reconcileTaskFinishMaintenance } from './task-finish-maintenance.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
 import {
   activateTaskFinishBootstrapRecovery,
@@ -618,6 +619,15 @@ export function registerTaskFinishApplication(runtime) {
     }
   }
 
+  function refreshTaskFinishMaintenance(root, taskId, options = {}) {
+    try {
+      return reconcileTaskFinishMaintenance({ runtime, root, taskId, runId: options.runId || null, selfBootstrapResult: options.selfBootstrapResult || null, clock: options.clock || Date.now });
+    } catch (error) {
+      if (!options.runId && error.code === 'task_finish.maintenance_state_missing') return { schemaVersion: 'buildr.task-finish-maintenance-reconciliation-result/v1', operation: 'maintenance', status: 'skipped', taskId, runId: null, reason: 'no-matching-finish-state' };
+      throw error;
+    }
+  }
+
   async function taskFinish(action, args) {
     assertArgs(action, args);
     const command = withResolvedTarget(args);
@@ -628,6 +638,7 @@ export function registerTaskFinishApplication(runtime) {
 
   Object.assign(runtime, {
     taskFinish,
+    refreshTaskFinishMaintenance,
     inspectTaskFinishReadModel,
     readTaskFinishResults: ({ root, taskId, clock = Date.now }) => readTaskFinishResults({ root, taskId, clock, runtime }),
   });

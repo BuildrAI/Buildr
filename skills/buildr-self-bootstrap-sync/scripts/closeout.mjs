@@ -30,6 +30,7 @@ const PLAN_TRAILER = 'Buildr-Closeout-Plan';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
 const TARGET_LEASE_DRIVER = `${SERVICE_ROOT}/src/interfaces/internal/task-finish-target-lease-driver.mjs`;
+const FINISH_MAINTENANCE_DRIVER = `${SERVICE_ROOT}/src/interfaces/internal/task-finish-maintenance-driver.mjs`;
 const TARGET_LEASE_DURATION_MS = 15 * 60_000;
 
 // This runner must remain executable after the Skill is projected under an
@@ -596,6 +597,11 @@ function targetLeaseCommand(execute, root, nodeExecutable, plan, action, token, 
     throw closeoutError(payload?.diagnostic?.code || 'self-bootstrap-closeout.target-lease-operation-failed', payload?.diagnostic?.message || `Target lease ${action}失败。`, payload?.diagnostic?.details || { exitCode: result.status });
   }
   return payload;
+}
+
+function finishMaintenanceCommand(execute, root, nodeExecutable, plan, result, id, phaseResult) {
+  const script = path.join(root, FINISH_MAINTENANCE_DRIVER);
+  return command(execute, nodeExecutable, [script, '--task', plan.taskId, '--run', plan.runId, '--target', root, '--self-bootstrap-result-json', JSON.stringify(result)], root, id, phaseResult, { kind: 'task-finish-maintenance', script });
 }
 
 function validateDevelopmentLauncherResult(payload, root, nodeExecutable, successor) {
@@ -1231,8 +1237,25 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, currentFinishResult.resume.token, payload.projectionIdentity || payload.runId);
     }
+    const result = closeoutResult(currentFinishResult, plan, stages, 'passed', null, developmentEntryIdentity, recoveryPlan);
+    const maintenance = finishMaintenanceCommand(
+      execute,
+      root,
+      nodeExecutable,
+      plan,
+      result,
+      'refresh-finish-maintenance',
+      active,
+    );
+    requirePassed(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-failed', 'Finish maintenance projection刷新失败。');
+    const maintenancePayload = parseJson(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-invalid', 'Finish maintenance projection刷新没有返回合法JSON。');
+    if (maintenancePayload.schemaVersion !== 'buildr.task-finish-maintenance-driver-result/v1'
+      || maintenancePayload.taskId !== plan.taskId
+      || maintenancePayload.runId !== plan.runId
+      || maintenancePayload.status !== 'refreshed') throw closeoutError('self-bootstrap-closeout.finish-maintenance-refresh-incomplete', 'Finish maintenance projection刷新未完成或identity不匹配。', { payload: maintenancePayload });
+    result.maintenance = maintenancePayload.maintenance || null;
     releaseTargetLease('release-target-lease');
-    return closeoutResult(currentFinishResult, plan, stages, 'passed', null, developmentEntryIdentity, recoveryPlan);
+    return result;
   } catch (error) {
     if (activationLeaseToken) {
       try { releaseTargetLease('release-target-lease-after-block'); } catch (releaseError) {

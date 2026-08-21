@@ -581,6 +581,44 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
+  function writeTaskFinishMaintenancePersistence(targetRoot, { taskId, runId, maintenance }) {
+    if (!taskId || !runId || !maintenance || typeof maintenance !== 'object') throw error('task_finish_maintenance_identity_invalid', 'Finish maintenance persistence requires Task, run and maintenance.');
+    let opened;
+    try {
+      opened = open(runtime, targetRoot, true);
+      const database = opened.database;
+      database.exec('BEGIN IMMEDIATE');
+      const current = readCurrentRow(database, { taskId });
+      if (!current || current.run_id !== runId) throw error('task_finish_current_conflict', 'Finish maintenance requires matching current or terminal Finish state.', 409, { taskId, runId, currentRunId: current?.run_id || null });
+      const decoded = decodeRow(current);
+      const synchronizedCleanup = (completion) => completion && maintenance.environmentCleanup === 'cleaned'
+        ? { ...clone(completion), cleanup: { ...clone(completion.cleanup), status: 'cleaned' } }
+        : clone(completion);
+      let record;
+      if (decoded.kind === 'run') {
+        const run = clone(decoded.run);
+        const preparedCompletion = decoded.preparedCompletion ? { ...synchronizedCleanup(decoded.preparedCompletion), maintenance: clone(maintenance) } : null;
+        if (run.completion) run.completion = { ...synchronizedCleanup(run.completion), maintenance: clone(maintenance) };
+        run.maintenance = clone(maintenance);
+        record = currentRecord(run, { preparedCompletion, lease: leaseFromRow(current) });
+      } else {
+        const completion = { ...synchronizedCleanup(decoded.completion), maintenance: clone(maintenance) };
+        const result = { ...clone(completion.result), maintenance: clone(maintenance) };
+        if (result.completion) result.completion = { ...clone(result.completion), maintenance: clone(maintenance) };
+        completion.result = result;
+        const payload = { kind: 'terminal', identityDigest: current.identity_digest, completion: completionDetail(completion) };
+        record = { ...current, cleanup_status: maintenance.environmentCleanup || null, payload_json: JSON.stringify(payload), updated_at: timestamp() };
+      }
+      const written = decodeRow(writeCurrentRow(database, record));
+      database.exec('COMMIT');
+      return { storage: 'workspace-sqlite', file: COMPLETION_LOCATOR + '/' + taskId, taskId, runId, maintenance: clone(maintenance), kind: written.kind };
+    } catch (cause) {
+      try { opened?.database?.exec('ROLLBACK'); } catch {}
+      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
+      throw error('task_finish_maintenance_write_failed', `Finish maintenance 写入失败：${cause.message}`, 500, { taskId, runId });
+    } finally { close(opened); }
+  }
+
   function acquireTaskFinishCurrentTargetLease(targetRoot, {
     taskId,
     runId,
@@ -706,6 +744,7 @@ export function registerTaskFinishRepository(runtime) {
     readTaskFinishCompletionPersistence,
     writeTaskFinishCompletionPersistence,
     finalizeTaskFinishPersistence,
+    writeTaskFinishMaintenancePersistence,
     acquireTaskFinishCurrentTargetLease,
     acquireTaskFinishTargetLease,
     releaseTaskFinishCurrentTargetLease,
