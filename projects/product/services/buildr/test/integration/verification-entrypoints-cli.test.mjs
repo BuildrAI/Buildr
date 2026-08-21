@@ -121,7 +121,7 @@ test('changed verification exposes plan/json and rejects unknown options before 
   const payload = JSON.parse(json.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
   assert.deepEqual(payload.paths, ['docs/buildr-product.md']);
-  assert.deepEqual(payload.admissionStepIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
+  assert.deepEqual(payload.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.deepEqual(payload.steps.map((step) => step.id), [...payload.admissionStepIds, 'docs-quality']);
   const unknown = spawnSync(process.execPath, [runner, '--unknown'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(unknown.status, 2);

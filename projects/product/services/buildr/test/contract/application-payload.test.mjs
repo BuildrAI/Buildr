@@ -8,6 +8,10 @@ test('payload toolchain is exact and npm runtime bundle stays CommonJS without s
   const metadata = JSON.parse(read('package.json'));
   const lock = JSON.parse(read('package-lock.json'));
   assert.equal(metadata.devDependencies.esbuild, '0.28.2');
+  assert.equal(metadata.devDependencies.typescript, '7.0.2');
+  assert.equal(metadata.devDependencies['@types/node'], '24.13.3');
+  assert.equal(metadata.dependencies.typescript, undefined);
+  assert.equal(metadata.dependencies['@types/node'], undefined);
   assert.equal(lock.packages['node_modules/esbuild'].version, '0.28.2');
   assert.equal(lock.packages['node_modules/postject'], undefined);
   const builder = read('scripts/release/application-payload.mjs');
@@ -20,6 +24,7 @@ test('payload toolchain is exact and npm runtime bundle stays CommonJS without s
   assert.match(builder, /bundle\.warnings\.length/);
   assert.match(builder, /formatMessagesSync\(bundle\.warnings/);
   assert.match(builder, /application payload bundle emitted warnings/);
+  assert.match(read('src/bootstrap/cli/registry.mjs'), /from '\.\/identity\.ts'/);
 });
 
 test('runtime resources use payload resolver and SQLite is a static Node builtin', () => {

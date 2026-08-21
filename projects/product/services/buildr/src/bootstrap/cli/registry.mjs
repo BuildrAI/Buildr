@@ -1,7 +1,7 @@
 import process from 'node:process';
 import { createRuntime, runtimeContributions } from '../runtime.mjs';
 import { registerCommandHelp } from './help.mjs';
-import { isVersionRequest, printVersion } from './identity.mjs';
+import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../../interfaces/local-app/http/server.mjs';
 import { registerLauncherInterface } from '../../interfaces/cli/launcher.mjs';

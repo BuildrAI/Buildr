@@ -60,6 +60,9 @@ test('same inputs create byte-identical payload and installed resource mapping d
       'resources/product/package/launchers/assets/Buildr.ico',
     ]);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('.map')), false);
+    assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('.ts')), false);
+    assert.equal(first.manifest.files.some((entry) => /(?:^|\/)typescript(?:\/|$)/u.test(entry.path)), false);
+    assert.equal(first.manifest.files.some((entry) => /(?:^|\/)@types\/node(?:\/|$)/u.test(entry.path)), false);
     assert.equal(first.manifest.files.some((entry) => entry.path.endsWith('/web-dist/index.html')), true);
     assert.equal(first.manifest.files.some((entry) => entry.path.includes('/sqlite/migrations/0000_')), true);
     for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
@@ -69,6 +72,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
     assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['yaml']);
+    assert.equal(runtimeMetadata.devDependencies, undefined);
 
     const staging = createNpmPackStaging(first.root, path.join(root, 'npm-staging'));
     assert.equal(verifyApplicationPayload(staging.root, { layout: 'installed' }).manifest.applicationPayloadDigest, first.manifest.applicationPayloadDigest);
@@ -136,6 +140,9 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'payload/product/package/launchers/assets/Buildr.ico',
     ]);
     assert.equal(paths.some((value) => /\.(?:app|pkg|msi|map)$/iu.test(value)), false);
+    assert.equal(paths.some((value) => value.endsWith('.ts')), false);
+    assert.equal(paths.some((value) => /(?:^|\/)typescript(?:\/|$)/u.test(value)), false);
+    assert.equal(paths.some((value) => /(?:^|\/)@types\/node(?:\/|$)/u.test(value)), false);
     for (const relativePath of GENERATED_USER_REGISTRY_PACKAGE_SOURCES) {
       assert.equal(paths.includes(`payload/product/${relativePath}`), false, relativePath);
     }

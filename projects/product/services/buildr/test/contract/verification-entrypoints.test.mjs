@@ -20,6 +20,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
+  assert.equal(scripts.typecheck, 'tsc --project tsconfig.json');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');
@@ -46,7 +47,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   const fast = read('scripts/verify-buildr-product-fast');
   assert.match(fast, /run-development-node" test\/verification\/profile\.mjs fast/);
   const fastIds = createVerificationPlan({ profiles: ['fast'] }).steps.map((step) => step.id);
-  assert.deepEqual(fastIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
+  assert.deepEqual(fastIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.equal(fastIds.includes('system'), false);
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);

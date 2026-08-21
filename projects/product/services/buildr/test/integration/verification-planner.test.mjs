@@ -33,10 +33,10 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
   assert.deepEqual(Object.keys(VERIFICATION_STEP_TESTING).sort(), verificationSteps.map((step) => step.id).sort());
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['fast'] })), [
-    'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
+    'typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
-    'unit', 'component', 'integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store', 'integration-task-environment', 'integration-self-bootstrap',
+    'typecheck', 'unit', 'component', 'integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store', 'integration-task-environment', 'integration-self-bootstrap',
     'integration-task-read-models', 'integration-task-coordination', 'integration-project-daily-progress', 'integration-task-execution-records', 'integration-task-development', 'integration-task-finish', 'integration-task-finish-delivery', 'contract',
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
@@ -203,7 +203,7 @@ test('Integration primary slices 与 general exclusions来自同一唯一文件�
 
 test('本地 changed/full plan 使用单一去重 admission DAG', () => {
   const docsPlan = createVerificationAdmissionPlan(createVerificationPlan({ paths: ['docs/buildr-product.md'] }));
-  assert.deepEqual(docsPlan.admissionStepIds, ['unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
+  assert.deepEqual(docsPlan.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.equal(new Set(ids(docsPlan)).size, docsPlan.steps.length);
   assert.deepEqual(docsPlan.steps.find((step) => step.id === 'docs-quality').dependsOn, docsPlan.admissionStepIds);
   assert.equal(ids(docsPlan).includes('system-verification-admission'), false);

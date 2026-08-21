@@ -50,6 +50,7 @@
     "test:component": "node --test test/component/*.test.mjs",
     "test:contract": "node --test test/contract/*.test.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
+    "typecheck": "tsc --project tsconfig.json",
     "test:system": "node test/verification/system.mjs",
     "test:openspec:convergence": "node --test test/integration/openspec-convergence-transaction.test.mjs test/system/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs --suite recovery",
     "build:web": "node scripts/run-development-npm.mjs --prefix ../buildr-web run build",
@@ -89,7 +90,9 @@
   ],
   "devDependencies": {
     "@fission-ai/openspec": "1.6.0",
+    "@types/node": "24.13.3",
     "esbuild": "0.28.2",
-    "playwright-core": "^1.61.1"
+    "playwright-core": "^1.61.1",
+    "typescript": "7.0.2"
   }
 }

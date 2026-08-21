@@ -34,6 +34,7 @@ const testing = (ownerScope, primaryIntent, executionBoundary, targetDurationMs,
 });
 
 export const VERIFICATION_STEP_TESTING = Object.freeze({
+  typecheck: testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Buildr TypeScript production sources satisfy the strict no-emit execution contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Small cross-domain technical boundaries behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
@@ -184,6 +185,7 @@ export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
   'verification.yml',
   'package.json',
   'package-lock.json',
+  'tsconfig.json',
   'scripts/verify-buildr-product',
   'scripts/verify-buildr-product-fast',
   'scripts/verify-buildr-product-ci',
@@ -470,6 +472,9 @@ export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST = Object.freeze([
 ]);
 
 export const verificationSteps = Object.freeze([
+  step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], inputs: [
+    'src/**/*.ts', 'tsconfig.json', 'package.json', 'package-lock.json',
+  ] }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'], inputs: [
     'test/unit/**',
     'src/**',
@@ -655,7 +660,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'npm-launcher-candidate', name: 'verified npm installation Launcher projection', executor: { type: 'node-test', files: [
     'test/integration/npm-launcher.test.mjs',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
-    'src/infrastructure/product-launcher/**', 'src/infrastructure/product-identity/**', 'src/bootstrap/cli/identity.mjs',
+    'src/infrastructure/product-launcher/**', 'src/infrastructure/product-identity/**', 'src/bootstrap/cli/identity.ts',
     'src/interfaces/cli/launcher.mjs', 'src/interfaces/local-app/http/server.mjs',
     'scripts/release/application-payload.mjs', 'scripts/release/application-payload-entry.mjs',
     'test/integration/npm-launcher.test.mjs', 'test/verification/release/release-smoke.mjs',
@@ -844,6 +849,7 @@ export const CORE_MACOS_SHARDS = Object.freeze([
 
 export const CANDIDATE_CI_SHARDS = Object.freeze([
   candidateShard('preflight-macos', 'macos', 'preflight', [
+    'typecheck',
     'unit',
     'component',
     'contract',

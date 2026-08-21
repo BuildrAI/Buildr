@@ -59,7 +59,7 @@ if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)
 
 const requiredRuntime = [
   'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
-  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.mjs', 'bootstrap/cli/task-finish-bootstrap.mjs',
+  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs', 'bootstrap/legacy-runtime-module.mjs',
   'interfaces/cli/task-verification.mjs',
   'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
@@ -97,7 +97,7 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
 
-const sourceFiles = listFiles(sourceRoot, (file) => file.endsWith('.mjs'));
+const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
