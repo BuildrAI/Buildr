@@ -35,6 +35,16 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 
 取得 `ready` 后，只在结果的实际 execution roots / validation root 中写入、构建和测试，并使用结果指定的执行 CLI。Environment Receipt 独占 Runtime、CLI、Preparation Declaration/Scope/Recipe/Step、projection、动态资源、ready、恢复和总 cleanup；Task Record 不保存这些字段。Recipe只允许无 shell 的明确 executable、args、Project或Service相对cwd、input与预期output；受管Node/npm等使用`workspace-foundation` executable，其他技术栈可使用Project/Service wrapper或明确绝对executable。Buildr不实现Node/Python/Go/Rust适配器，也不扫描manifest。不得提交env、secret、stdin或任意shell。Buildr Web Environment GET只展示已保存current，不等同于CLI live inspect。
 
+### 依赖刷新前的安全核对
+
+当 Workspace 管理的依赖包疑似过期，或已安装依赖与当前源码不一致时，先核对依赖所属的 Project/Service、实际 repository、当前分支、HEAD commit、index/working tree/untracked 状态，以及 package manifest、lockfile 和已声明的安装入口。不要从当前目录、会话 PATH、旧 worktree 或相似包名推断这些事实。
+
+只有目标 Service、源码版本、更新目标和安装入口都唯一明确，且工作树已证明 clean 时，才按对应 owner 流程获取或更新目标源码；源码更新使用已选定的 Git Operation 或 Workspace update，依赖安装使用当前 Task Plan 选定的 Preparation Recipe。不得把 fetch、rebase、checkout、安装依赖或构建测试拼成一个未声明的隐式动作，也不得在执行根之外手工安装。
+
+安装完成后，记录实际源码前后 identity、manifest/lockfile identity、使用的 Recipe/Step、安装输出状态和后续构建或测试结果；这些事实以 Environment Receipt 和对应验证 Result 为准。安装失败或输入 identity 漂移时，按同一 Environment 的恢复路径重新核对并重试，不以聊天摘要或“看起来已安装”代替结果证据。
+
+若工作树有改动、依赖来源或 ownership 不明、分支/commit 目标不唯一、lockfile 与目标源码无法对应，或无法确认受管安装入口，必须停止并报告当前事实与最小下一步；保留现场，不 stash、reset、覆盖、手工改写依赖状态或绕过 owner。
+
 候选 Skill、CLI 与 runtime 可以在自身任务验证工作区测试，但候选不能写 retained Workspace、其他 Task worktree 或共享 user runtime，也不能认领或清理自己的 Environment。真实 Agent session 是否采用候选 runtime 属于 Task Verification，不在这里证明。
 
 ## 停止条件

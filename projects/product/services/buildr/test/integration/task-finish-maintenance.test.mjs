@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { reconcileTaskFinishMaintenance } from '../../src/application/task-finish/task-finish-maintenance.mjs';
 import { createFinishRun, finishResult, inspectFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
 

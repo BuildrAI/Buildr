@@ -163,6 +163,7 @@ for (const file of graph.keys()) visitCycle(file);
 const bootstrapRuntimeConsumers = new Set([
   'bootstrap/cli/registry.mjs',
   'interfaces/internal/task-development-driver-runner.mjs',
+  'interfaces/internal/task-finish-maintenance-driver.mjs',
   'interfaces/internal/task-finish-retained-cleanup.mjs',
   'interfaces/internal/task-finish-target-lease-driver.mjs',
   'interfaces/internal/task-planning-identity-driver-runner.mjs',
