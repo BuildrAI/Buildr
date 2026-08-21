@@ -2,6 +2,8 @@ import * as platform from '../infrastructure/platform.mjs';
 import {
   TASK_RECORD_COMPATIBILITY,
   TASK_RECORD_MODULE,
+  TASK_REVIEW_COMPATIBILITY,
+  TASK_REVIEW_MODULE,
 } from '../task/module.mjs';
 import { registerLegacyRuntime } from './legacy-runtime-module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
@@ -33,11 +35,27 @@ function installTaskRecordModule(runtime, registry) {
   return descriptor;
 }
 
+function installTaskReviewModule(runtime, registry) {
+  const descriptor = registry.install(TASK_REVIEW_MODULE);
+  const compatibility = registry.provide(TASK_REVIEW_COMPATIBILITY);
+  Object.assign(runtime, compatibility.methods);
+  for (const [name, bridge] of Object.entries(compatibility.testSupportProperties)) {
+    Object.defineProperty(runtime, name, {
+      configurable: true,
+      enumerable: false,
+      get: bridge.get,
+      set: bridge.set,
+    });
+  }
+  return descriptor;
+}
+
 export function createRuntime() {
   const runtime = { ...platform };
   const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
   registerLegacyRuntime(runtime, {
     installTaskRecordModule: () => installTaskRecordModule(runtime, registry),
+    installTaskReviewModule: () => installTaskReviewModule(runtime, registry),
   });
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));
   Object.defineProperty(runtime, '__bootstrapContributions', {

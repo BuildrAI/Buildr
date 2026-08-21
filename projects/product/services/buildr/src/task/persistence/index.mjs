@@ -6,11 +6,9 @@ import { registerTaskExecutionRecordRepository } from './execution-record/task-e
 import { registerTaskFinishRepository } from './finish/task-finish-repository.mjs';
 import { registerTaskOverviewRepository } from './overview/task-overview-repository.mjs';
 import { registerTaskRetrospectiveRepository } from './retrospective/task-retrospective-repository.mjs';
-import { registerTaskReviewRepository } from './review/task-review-repository.mjs';
 import { registerTaskVerificationRepository } from './verification/task-verification-repository.mjs';
 
 const TASK_PERSISTENCE_REGISTRATIONS = Object.freeze([
-  registerTaskReviewRepository,
   registerTaskRetrospectiveRepository,
   registerTaskVerificationRepository,
   registerTaskDevelopmentRepository,

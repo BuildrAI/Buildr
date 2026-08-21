@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 import { createParentPlan, parentCoordinationError, projectParentPlan } from '../../domain/parent-coordination/parent-coordination.mjs';
 import { normalizeTaskDevelopmentReceipt } from '../../domain/task-development/task-development.mjs';
-import { normalizeTaskReviewResult } from '../../domain/task-review/task-review.mjs';
+import { normalizeTaskReviewResult } from '../../task/domain/task-review.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
 
 function digest(value) {

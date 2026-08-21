@@ -5,9 +5,8 @@ import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
 import { registerLocalWorkspaceAppInterface } from '../../interfaces/local-app/http/server.mjs';
 import { registerLauncherInterface } from '../../interfaces/cli/launcher.mjs';
-import { createTaskRecordCliContributions } from '../../task/module.mjs';
+import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
 import { taskEntrySnapshotCommand } from '../../interfaces/cli/task-entry-snapshot.mjs';
-import { taskReviewCommand } from '../../interfaces/cli/task-review.mjs';
 import { taskVerificationCommand } from '../../interfaces/cli/task-verification.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from '../../interfaces/cli/task-environment.mjs';
 import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
@@ -433,31 +432,6 @@ const COMMAND_ROUTES = [
     run: (r, c) => taskEntrySnapshotCommand(r, c.argv.slice(4)),
   },
   TASK_RECORD_COMMAND_SLOT,
-  {
-    key: "task review inspect",
-    surface: "agent-machine",
-    summary: "只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。",
-    help: [
-      "Usage: buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] [--target <canonical-workspace>] [--json]",
-      "",
-      "只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'inspect',
-    run: (r, c) => taskReviewCommand(r, 'inspect', c.argv.slice(5)),
-  },
-  {
-    key: "task review record",
-    surface: "agent-machine",
-    summary: "只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。",
-    help: [
-      "Usage: buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> [--target <canonical-workspace>] [--json]",
-      "",
-      "只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。",
-      "中断、缺少 target identity、覆盖或结论不完整时不写入；Completion identity 必须由真实 Candidate producer 提供。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'record',
-    run: (r, c) => taskReviewCommand(r, 'record', c.argv.slice(5)),
-  },
   {
     key: "task verification inspect",
     surface: "agent-machine",
@@ -1155,7 +1129,10 @@ function createCommandCatalog(commandRegistry) {
   return Object.freeze([...commandRegistry, ...COMMAND_GROUPS.map(Object.freeze)]);
 }
 
-export const COMMAND_REGISTRY = createCommandRegistry(createTaskRecordCliContributions());
+export const COMMAND_REGISTRY = createCommandRegistry([
+  ...createTaskRecordCliContributions(),
+  ...createTaskReviewCliContributions(),
+]);
 export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 
 function commandCandidates(commandRegistry) {

@@ -29,7 +29,6 @@ import { registerChangeApplication } from '../application/change/change-applicat
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
 import { registerTaskFinishApplication } from '../application/task-finish/task-finish-application.mjs';
 import { registerTaskTerminalDeliveryApplication } from '../application/task-terminal-delivery/task-terminal-delivery-application.mjs';
-import { registerTaskReviewApplication } from '../application/task-review/task-review-application.mjs';
 import { registerTaskRetrospectiveApplication } from '../application/task-retrospective/task-retrospective-application.mjs';
 import { registerTaskVerificationApplication } from '../application/task-verification/task-verification-application.mjs';
 import { registerTaskDevelopmentApplication } from '../application/task-development/task-development-application.mjs';
@@ -45,6 +44,7 @@ import { registerProductInvocation } from '../infrastructure/product-invocation/
 import { registerProductInstallationStatus } from '../application/product-installation-status.mjs';
 
 const TASK_RECORD_MODULE_SLOT = Symbol('task-record-module');
+const TASK_REVIEW_MODULE_SLOT = Symbol('task-review-module');
 
 const REGISTRATIONS = [
   registerInfrastructure,
@@ -82,7 +82,7 @@ const REGISTRATIONS = [
   TASK_RECORD_MODULE_SLOT,
   registerProjectDailyProgressApplication,
   registerTaskExecutionRecordApplication,
-  registerTaskReviewApplication,
+  TASK_REVIEW_MODULE_SLOT,
   registerTaskRetrospectiveApplication,
   registerTaskVerificationApplication,
   registerTaskDevelopmentApplication,
@@ -95,10 +95,12 @@ const REGISTRATIONS = [
   registerTaskTerminalDeliveryApplication,
 ];
 
-export function registerLegacyRuntime(runtime, { installTaskRecordModule }) {
+export function registerLegacyRuntime(runtime, { installTaskRecordModule, installTaskReviewModule }) {
   if (typeof installTaskRecordModule !== 'function') throw new Error('Bootstrap must provide the Task Record module installer.');
+  if (typeof installTaskReviewModule !== 'function') throw new Error('Bootstrap must provide the Task Review module installer.');
   for (const register of REGISTRATIONS) {
     if (register === TASK_RECORD_MODULE_SLOT) installTaskRecordModule(runtime);
+    else if (register === TASK_REVIEW_MODULE_SLOT) installTaskReviewModule(runtime);
     else register(runtime);
   }
   return runtime;

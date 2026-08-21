@@ -1,12 +1,20 @@
 import { registerTaskRecordApplication } from './application/record/task-record-application.mjs';
+import { registerTaskReviewApplication } from './application/task-review-application.mjs';
 import { registerTaskRecordRepository } from './persistence/record/task-record-repository.mjs';
+import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
+import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from './interfaces/http/task-record-http.mjs';
+import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.mjs';
 
 export const TASK_RECORD_MODULE_ID = 'task-record';
 export const TASK_RECORD_APPLICATION = 'task-record.application';
 export const TASK_RECORD_PERSISTENCE_READ = 'task-record.persistence-read';
 export const TASK_RECORD_COMPATIBILITY = 'task-record.bootstrap-compatibility';
+export const TASK_REVIEW_MODULE_ID = 'task-review';
+export const TASK_REVIEW_APPLICATION = 'task-review.application';
+export const TASK_REVIEW_PERSISTENCE_READ = 'task-review.persistence-read';
+export const TASK_REVIEW_COMPATIBILITY = 'task-review.bootstrap-compatibility';
 
 const APPLICATION_METHODS = Object.freeze([
   'listTaskRecords', 'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
@@ -22,6 +30,18 @@ const PERSISTENCE_READ_METHODS = Object.freeze([
 
 const TEST_SUPPORT_METHODS = Object.freeze([
   'createTaskRecordPersistence', 'mutateTaskRecordPersistence', 'writeTaskRecordPersistence',
+]);
+
+const TASK_REVIEW_APPLICATION_METHODS = Object.freeze([
+  'inspectTaskReview', 'recordTaskReview', 'generateTaskReviewPrompt',
+]);
+
+const TASK_REVIEW_PERSISTENCE_READ_METHODS = Object.freeze([
+  'taskReviewDirectory', 'taskReviewResultPath', 'readTaskReviewResultPersistence',
+]);
+
+const TASK_REVIEW_PERSISTENCE_COMPATIBILITY_METHODS = Object.freeze([
+  ...TASK_REVIEW_PERSISTENCE_READ_METHODS, 'writeTaskReviewResultPersistence', 'renderTaskReviewResult',
 ]);
 
 function pick(source, methods) {
@@ -82,6 +102,34 @@ export function createTaskRecordCliContributions(application = null) {
   ].map(Object.freeze));
 }
 
+export function createTaskReviewCliContributions(application = null) {
+  return Object.freeze([
+    {
+      key: 'task review inspect', surface: 'agent-machine',
+      summary: '只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。',
+      help: [
+        'Usage: buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] [--target <canonical-workspace>] [--json]',
+        '',
+        '只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。',
+      ],
+      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'inspect',
+      run: (runtime, context) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'inspect', context.argv.slice(5)),
+    },
+    {
+      key: 'task review record', surface: 'agent-machine',
+      summary: '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
+      help: [
+        'Usage: buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> [--target <canonical-workspace>] [--json]',
+        '',
+        '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
+        '中断、缺少 target identity、覆盖或结论不完整时不写入；Completion identity 必须由真实 Candidate producer 提供。',
+      ],
+      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'record',
+      run: (runtime, context) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'record', context.argv.slice(5)),
+    },
+  ].map(Object.freeze));
+}
+
 function createTaskRecordModule(requires) {
   const privateComposition = {
     ...requires['workspace.structured-store'],
@@ -133,4 +181,54 @@ export const TASK_RECORD_MODULE = Object.freeze({
     'task.parent-coordination-reader',
   ]),
   create: createTaskRecordModule,
+});
+
+function createTaskReviewModule(requires) {
+  const privateComposition = {
+    ...requires[TASK_RECORD_PERSISTENCE_READ],
+    ...requires['workspace.structured-store'],
+    ...requires['change.resolver'],
+  };
+  registerTaskReviewRepository(privateComposition);
+  registerTaskReviewApplication(privateComposition);
+
+  const application = pick(privateComposition, TASK_REVIEW_APPLICATION_METHODS);
+  const persistenceRead = pick(privateComposition, TASK_REVIEW_PERSISTENCE_READ_METHODS);
+  const cliPort = Object.freeze({ ...application, taskReviewResultPath: persistenceRead.taskReviewResultPath });
+  const compatibility = Object.freeze({
+    owner: 'task-capabilities',
+    scope: 'existing runtime consumers only',
+    exit: 'remove per consumer as remaining Task lifecycle modules migrate; delete in legacy-exit-and-conformance',
+    methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_REVIEW_PERSISTENCE_COMPATIBILITY_METHODS) }),
+    testSupportProperties: Object.freeze({
+      taskReviewSerialize: Object.freeze({
+        get: () => privateComposition.taskReviewSerialize,
+        set: (value) => { privateComposition.taskReviewSerialize = value; },
+      }),
+    }),
+  });
+  return Object.freeze({
+    provides: {
+      [TASK_REVIEW_APPLICATION]: application,
+      [TASK_REVIEW_PERSISTENCE_READ]: persistenceRead,
+      [TASK_REVIEW_COMPATIBILITY]: compatibility,
+    },
+    contributions: {
+      cli: createTaskReviewCliContributions(cliPort),
+      http: [Object.freeze({
+        id: 'task-review.http',
+        handle: (input) => handleTaskReviewHttpRequest({ ...input, runtime: application }),
+      })],
+    },
+  });
+}
+
+export const TASK_REVIEW_MODULE = Object.freeze({
+  id: TASK_REVIEW_MODULE_ID,
+  requires: Object.freeze([
+    TASK_RECORD_PERSISTENCE_READ,
+    'workspace.structured-store',
+    'change.resolver',
+  ]),
+  create: createTaskReviewModule,
 });

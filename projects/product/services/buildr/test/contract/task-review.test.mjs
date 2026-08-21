@@ -69,5 +69,5 @@ test('Task Review Application 是唯一 repository writer caller', () => {
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(callers, ['application/task-review/task-review-application.mjs']);
+  assert.deepEqual(callers, ['task/application/task-review-application.mjs']);
 });

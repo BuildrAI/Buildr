@@ -1,0 +1,23 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: reorganize-task-review-capability
+operation: reconcile
+treeIdentity: working-tree:reorganize-task-review-capability
+impacts:
+  - type: brief
+    target: openspec/changes/reorganize-task-review-capability/brief.md
+    reason: 每个正式 Change 需要保持面向人的范围、流程、兼容性和验收入口。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/reorganize-task-review-capability/proposal.md
+      - openspec/changes/reorganize-task-review-capability/design.md
+      - openspec/changes/reorganize-task-review-capability/specs/task-review-module-architecture/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前文档仍描述 Task Review 由全局 Task persistence 一次注册，需要在实现收敛后更新为独立 Task Review module 事实。
+    status: updated
+    sourceIdentities:
+      - docs/architecture/service-architecture.md
+      - openspec/specs/task-review-results/spec.md
+      - openspec/changes/reorganize-task-review-capability/specs/task-review-module-architecture/spec.md
+      - services/buildr/src/task/module.mjs
+unresolvedItems: []

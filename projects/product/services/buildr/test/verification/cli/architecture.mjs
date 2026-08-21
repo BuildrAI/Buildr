@@ -71,11 +71,13 @@ const requiredRuntime = [
   'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
   'application/task-finish/task-finish-product-executor.mjs',
   'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
-  'task/persistence/development/task-development-repository.mjs', 'task/persistence/review/task-review-repository.mjs',
+  'task/persistence/development/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
   'task/persistence/verification/task-verification-repository.mjs', 'task/persistence/index.mjs',
   'task/module.mjs', 'task/domain/record/task-record.mjs',
+  'task/domain/task-review.mjs', 'task/application/task-review-application.mjs', 'task/persistence/task-review-repository.mjs',
   'task/application/record/task-record-application.mjs', 'task/persistence/record/task-record-repository.mjs',
-  'task/interfaces/cli/task-record.mjs', 'task/interfaces/http/task-record-http.mjs',
+  'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
+  'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
   'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
   'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
   'application/domains/runtime.mjs', 'application/json-contracts.mjs',
@@ -312,7 +314,7 @@ if (!fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime
 const localAppServer = path.join(sourceRoot, 'interfaces', 'local-app', 'http', 'server.mjs');
 if (fs.existsSync(localAppServer)) {
   const source = fs.readFileSync(localAppServer, 'utf8');
-  if (/task\/interfaces\/(?:cli|http)|task-record-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task Record adapters directly');
+  if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
   if (!source.includes('for (const contribution of httpContributions)') || !source.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
 }
 
@@ -327,7 +329,6 @@ const legacyTaskRecordConsumers = new Set([
   'application/task-finish/task-finish-delivery-terminal.mjs',
   'application/task-planning-identity/task-planning-identity-application.mjs',
   'application/task-retrospective/task-retrospective-application.mjs',
-  'application/task-review/task-review-application.mjs',
   'application/task-terminal-delivery/task-terminal-delivery-application.mjs',
   'application/task-verification/task-verification-application.mjs',
   'application/worktree/git-worktree-provider.mjs',
@@ -338,7 +339,6 @@ const legacyTaskRecordConsumers = new Set([
   'task/persistence/finish/task-finish-repository.mjs',
   'task/persistence/overview/task-overview-repository.mjs',
   'task/persistence/retrospective/task-retrospective-repository.mjs',
-  'task/persistence/review/task-review-repository.mjs',
   'task/persistence/verification/task-verification-repository.mjs',
   'interfaces/local-app/http/server.mjs',
   'interfaces/local-app/runtime/preview-manager.mjs',
@@ -361,8 +361,8 @@ if (fs.existsSync(taskEnvironmentApplication)) {
   }
 }
 
-const taskReviewApplication = path.join(sourceRoot, 'application', 'task-review', 'task-review-application.mjs');
-const taskReviewInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-review.mjs');
+const taskReviewApplication = path.join(sourceRoot, 'task', 'application', 'task-review-application.mjs');
+const taskReviewInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-review.mjs');
 if (fs.existsSync(taskReviewApplication)) {
   const source = fs.readFileSync(taskReviewApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|taskReviewCommand|parseTaskReviewCli/.test(source)) {

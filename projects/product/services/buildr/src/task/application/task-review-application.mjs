@@ -1,7 +1,7 @@
 import path from 'node:path';
 
-import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError } from '../../domain/task-review/task-review.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError } from '../domain/task-review.mjs';
 
 function assertObject(input, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskReviewError('task_review_input_invalid', `${label} 必须是对象。`);

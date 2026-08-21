@@ -606,11 +606,6 @@ export function createLocalWorkspaceServer(runtime, {
           assertWriteRequest(request, origin, sessionToken);
           return jsonResponse(response, 200, runtime.generateStartWorkPrompt(root, await readJsonBody(request)));
         }
-        if (request.method === 'POST' && suffix === '/prompts/task-review') {
-          assertWriteRequest(request, origin, sessionToken);
-          const input = await readAllowedJsonBody(request, new Set(['taskId', 'reviewType', 'projectCode', 'change']), 'Task Review prompt');
-          return jsonResponse(response, 200, runtime.generateTaskReviewPrompt(root, input));
-        }
         if (request.method === 'POST' && suffix === '/prompts/task-verification') {
           assertWriteRequest(request, origin, sessionToken);
           const input = await readAllowedJsonBody(request, new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');

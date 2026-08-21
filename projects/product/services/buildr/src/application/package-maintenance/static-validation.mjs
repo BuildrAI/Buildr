@@ -321,7 +321,7 @@ export function createPackageStaticValidator(deps) {
       'src/bootstrap/runtime.mjs',
       'src/bootstrap/legacy-runtime-module.mjs',
       'src/application/task-development/task-development-application.mjs',
-      'src/application/task-review/task-review-application.mjs',
+      'src/task/application/task-review-application.mjs',
       'src/application/task-verification/task-verification-application.mjs',
       'src/application/task-environment/task-environment-application.mjs',
       'src/task/application/record/task-record-application.mjs',
@@ -362,7 +362,7 @@ export function createPackageStaticValidator(deps) {
         if (content.includes('.writeTaskReviewResultPersistence(')) writerCallers.push(toPosixRelative(root, file));
       }
     }
-    if (JSON.stringify(writerCallers) !== JSON.stringify(['src/application/task-review/task-review-application.mjs'])) {
+    if (JSON.stringify(writerCallers) !== JSON.stringify(['src/task/application/task-review-application.mjs'])) {
       problems.push(`Task Review Result writer must have exactly one Application caller: ${writerCallers.join(', ') || '<none>'}.`);
     }
 
@@ -382,7 +382,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const cli = path.join(root, 'src', 'interfaces', 'cli', 'task-review.mjs');
+    const cli = path.join(root, 'src', 'task', 'interfaces', 'cli', 'task-review.mjs');
     if (!existsFile(cli)) problems.push('Task Review CLI adapter is missing.');
     else {
       const content = fs.readFileSync(cli, 'utf8');
@@ -397,11 +397,17 @@ export function createPackageStaticValidator(deps) {
       const content = fs.readFileSync(localServer, 'utf8');
       const readWorker = path.join(root, 'src', 'interfaces', 'local-app', 'http', 'read-worker.mjs');
       const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
+      const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.mjs');
+      const taskReviewHttpContent = existsFile(taskReviewHttp) ? fs.readFileSync(taskReviewHttp, 'utf8') : '';
+      const taskModule = path.join(root, 'src', 'task', 'module.mjs');
+      const taskModuleContent = existsFile(taskModule) ? fs.readFileSync(taskModule, 'utf8') : '';
       for (const [owner, required] of [
         [content, "submitTaskRead(request, response, 'reviews', root, taskReviewsMatch[1])"],
         [readWorkerContent, "reviews: 'inspectTaskReviewView'"],
-        [content, "suffix === '/prompts/task-review'"],
-        [content, 'runtime.generateTaskReviewPrompt(root, input)'],
+        [content, 'for (const contribution of httpContributions)'],
+        [taskReviewHttpContent, "suffix !== '/prompts/task-review'"],
+        [taskReviewHttpContent, 'runtime.generateTaskReviewPrompt(root, input)'],
+        [taskModuleContent, "id: 'task-review.http'"],
       ]) {
         if (!owner.includes(required)) problems.push(`Task Review Buildr Web interface must include ${JSON.stringify(required)}.`);
       }
