@@ -116,3 +116,29 @@ Freeze、abandon、cleanup MUST使用独立 Git lifecycle refs，并保持幂等
 - **WHEN** owner 明确 abandon 或 cleanup 一个本地 release
 - **THEN** abandon 阻止后续 Candidate/update 且保留既有 Git/Task事实；cleanup 只在显式确认后删除本地 branch/lifecycle refs
 - **AND** remote ref 存在、ref 漂移或确认缺失时 MUST保留资源并返回恢复动作
+
+### Requirement: Candidate source 与 release tree 必须形成不可变匹配
+Candidate workflow MUST 接受精确 release ref/SHA，在 admission 时解析 commit identity 与 tree identity，并将二者作为 current Candidate source；后续 shard、aggregate 与 publish consumer MUST 拒绝只凭可变 ref 重建 source。
+
+#### Scenario: release HEAD 进入 Candidate admission
+- **WHEN** maintainer 为 release-<version> 请求 Candidate
+- **THEN** workflow MUST 保存解析后的 commit/tree identity、release ref、Candidate generation 与 registry identity
+- **AND** 任一后续 consumer MUST 使用该冻结 source，而不是重新读取 release ref
+
+#### Scenario: release 内容变化使旧 Candidate 失配
+- **WHEN** release HEAD 的 commit 或 tree identity 与 current Candidate source 不同
+- **THEN** workflow MUST 创建新的 Candidate generation
+- **AND** 旧 generation 的 shard、aggregate 与 artifact evidence MUST 不再被接受
+
+### Requirement: 唯一 artifact 必须由 Candidate 冻结并可回读
+Candidate packaging MUST 只生成一个带 source identity、Candidate generation、package version、文件 manifest 与 bytes integrity 的 publishable tarball；所有验证和 publish consumer MUST 复用该 artifact identity。
+
+#### Scenario: Candidate 生成唯一 tarball
+- **WHEN** Candidate packaging 对 current source 成功
+- **THEN** registry MUST 记录唯一 tarball locator、manifest digest 与 bytes digest
+- **AND** repeated consumer request MUST 返回同一 artifact identity
+
+#### Scenario: consumer 试图生成第二份 tarball
+- **WHEN** publish 或 shard consumer 没有 matching frozen artifact 或尝试重新 pack
+- **THEN** consumer MUST fail closed
+- **AND** workflow MUST 不产生第二份 publishable bytes
