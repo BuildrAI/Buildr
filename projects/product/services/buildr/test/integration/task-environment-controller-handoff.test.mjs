@@ -27,9 +27,11 @@ function writeController(controllerRoot, marker = 'm1') {
   fs.mkdirSync(path.join(controllerRoot, 'package'), { recursive: true });
   fs.writeFileSync(path.join(controllerRoot, 'src', 'controller.mjs'), `export const controller = '${marker}';\n`);
   fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), `#!/usr/bin/env node
+import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
-else if (args[0] === 'sync') process.stdout.write('synced\\n');
+else if (args[0] === 'sync') { fs.writeFileSync('candidate-sync-pollution.txt', 'polluted\\n'); process.stdout.write('synced\\n'); }
+else if (args[0] === 'render' && args.includes('--product-skill')) process.stdout.write('rendered product Skill\\n');
 else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
 else process.exitCode = 1;
 `);
@@ -98,9 +100,11 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
   writeController(alternateControllerRoot, 'alternate');
   fs.mkdirSync(path.dirname(productCli), { recursive: true });
   fs.writeFileSync(productCli, `#!/usr/bin/env node
+import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
-else if (args[0] === 'sync') process.stdout.write('synced\\n');
+else if (args[0] === 'sync') { fs.writeFileSync('candidate-sync-pollution.txt', 'polluted\\n'); process.stdout.write('synced\\n'); }
+else if (args[0] === 'render' && args.includes('--product-skill')) process.stdout.write('rendered product Skill\\n');
 else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
 else process.exitCode = 1;
 `);
@@ -243,7 +247,7 @@ else process.exitCode = 1;
   assert.equal(fs.existsSync(path.join(productRoot, 'bin', 'buildr.mjs')), true);
 });
 
-test('retained controller uses candidate CLI to sync and verify a candidate-owned runtime projection', (t) => {
+test('retained controller uses candidate CLI to render and verify a candidate-owned runtime projection without source sync', (t) => {
   const current = fixture(t);
   current.setRetainedProjectionReady(false);
 
@@ -251,6 +255,8 @@ test('retained controller uses candidate CLI to sync and verify a candidate-owne
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.scopes[0].projection.identity, 'candidate-projection');
   assert.equal(prepared.environment.controller.identity, 'sha256-created-at-m1');
+  assert.equal(fs.existsSync(path.join(current.taskRoot, 'candidate-sync-pollution.txt')), false);
+  assert.equal(git(current.taskRoot, ['status', '--short']), '');
 
   const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
   assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));

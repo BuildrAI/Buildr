@@ -64,6 +64,26 @@ export function registerApplicationRuntime(runtime) {
     return { source, target };
   }
 
+  function assertRuntimeSyncTarget(targetRoot, agent) {
+    const authority = assertRuntimeProjectionTarget(targetRoot);
+    if (!authority.source?.linkedWorktree || !authority.target || !sameFilesystemPath(authority.source.checkoutRoot, authority.target.checkoutRoot)) {
+      return { ...authority, disposition: 'full-sync' };
+    }
+    const command = `buildr render ${agent} --product-skill --target ${authority.target.checkoutRoot}`;
+    return {
+      ...authority,
+      disposition: 'projection-only',
+      diagnostic: [
+        '候选 Product checkout 的 sync 已安全收敛为 projection-only；未迁移 Workspace store，也未同步 package builtin/Component 源资产。',
+        `Source: ${authority.source.checkoutRoot}`,
+        `Target: ${authority.target.checkoutRoot}`,
+        `后续请直接使用：${command}`,
+        '需要验证完整 sync：改用不属于同一 Git common-dir checkout 的独立验证 Workspace。',
+      ].join('\n'),
+      projectionCommand: command,
+    };
+  }
+
   function renderRuntime(agent, args, options = {}) {
     const renderArgs = [...args];
     if (!renderArgs.includes('--scope')) {
@@ -228,7 +248,18 @@ export function registerApplicationRuntime(runtime) {
     const syncArgs = [...args];
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
-    assertRuntimeProjectionTarget(targetRoot);
+    const authority = assertRuntimeSyncTarget(targetRoot, agent);
+    if (authority.disposition === 'projection-only') {
+      const rendered = runtime.renderRuntime(agent, syncArgs, { productSkill: true });
+      console.warn(authority.diagnostic);
+      if (rendered.files.length > 0) {
+        const ruleTargets = new Set(rendered.rulesActions.map((item) => item.targetFile));
+        for (const item of rendered.rulesActions) console.log(`[${item.action}] ${toPosixRelative(targetRoot, item.targetFile)}`);
+        for (const file of rendered.files) if (!ruleTargets.has(file)) console.log(toPosixRelative(targetRoot, file));
+      }
+      for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
+      return;
+    }
     assertInitializedBuildrWorkspace(targetRoot);
     const preflight = buildSyncSourcePlan(targetRoot, agent);
     assertSyncSourcePlanReady(preflight);
@@ -286,6 +317,6 @@ export function registerApplicationRuntime(runtime) {
     console.log('doctor 通过。');
   }
 
-  Object.assign(runtime, { assertRuntimeProjectionTarget, renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
+  Object.assign(runtime, { assertRuntimeProjectionTarget, assertRuntimeSyncTarget, renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
   return runtime;
 }

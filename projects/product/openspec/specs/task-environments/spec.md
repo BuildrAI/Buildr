@@ -100,11 +100,12 @@ Buildr MUST以`buildr.git-worktree-provider/v1`表达Git worktree provider，并
 - **AND** identity、ownership、贡献等价或授权不匹配时 MUST零删除失败
 
 ### Requirement: Task Validation Workspace 必须隔离候选 runtime 投射
-Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只投射到 receipt 绑定的任务验证工作区（Task Validation Workspace），并 MUST 在写入前阻止候选 source 更新 retained Workspace、另一个 task worktree 或验证根之外的共享用户 runtime。Environment Receipt MUST 记录 runtime source/projection identity 与 projection probe，但 MUST NOT 保存或声称真实 Agent session adoption evidence。
+Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只投射到 receipt 绑定的任务验证工作区（Task Validation Workspace），并 MUST 使用不执行 Workspace Structured Store migration、Project registry migration、package builtin/Component source sync 的 projection-only 操作准备候选 runtime。Task Environment MUST 在写入前阻止候选 source 更新 retained Workspace、另一个 task worktree 或验证根之外的共享用户 runtime。Environment Receipt MUST 记录 runtime source/projection identity 与 projection probe，但 MUST NOT 保存或声称真实 Agent session adoption evidence。
 
 #### Scenario: 候选投射自身任务验证工作区
-- **WHEN** Buildr 自举候选从 task checkout 向同一 receipt 登记的验证工作区执行 sync/render
-- **THEN** 产品 MUST 允许 workspace-scoped runtime 和验证根内隔离模拟 user destination
+- **WHEN** Buildr 自举候选从 task checkout 向同一 receipt 登记的验证工作区准备 runtime
+- **THEN** 产品 MUST 只投射 workspace-scoped Rule、workspace Skill 与产品入口 Buildr Skill，并允许验证根内隔离模拟 user destination
+- **AND** MUST NOT 执行 Workspace source sync、Structured Store migration 或 Project registry migration
 - **AND** Environment Receipt MUST 更新 source/projection identity 与 projection ready 事实
 
 #### Scenario: 候选尝试更新 retained runtime

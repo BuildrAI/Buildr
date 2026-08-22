@@ -811,7 +811,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     let checked = check(['--target', validationRoot, '--scope', '.'], { repoRoot: validationRoot, adapterId: adapter, command: `buildr runtime check ${adapter}` });
     if (cli.kind === 'task-environment-candidate') {
       try {
-        const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'sync', adapter, '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
+        const rendered = spawnSync(cli.command, [...cli.argsPrefix, 'render', adapter, '--product-skill', '--target', validationRoot], { cwd: validationRoot, encoding: 'utf8', env: process.env, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 });
         if (rendered.status !== 0) return probe('blocked', checked.runtimeSourceEvidence?.projectionIdentity || null, (rendered.stderr || rendered.stdout || 'Candidate runtime projection failed.').trim().slice(0, 2000));
         effects.push({ type: 'runtime-projected', adapter, target: validationRoot, source: cli.kind });
         return probeCandidateProjection(adapter, validationRoot, cli);

@@ -103,11 +103,12 @@ export function createAgentAssetsCliContributions() {
     ].map(([key, summary, usage, run, details]) => route({ key, summary, usage, details, match: ({ domain, action }) => domain === 'builtin' && action === key.split(' ')[1], run })),
     route({
       key: 'render', surface: 'agent-machine',
-      summary: '组合渲染 rules entry 和 workspace Skills 到 workspace destination；不安装产品入口 Buildr Skill。',
-      usage: 'Usage: buildr render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>]',
+      summary: '组合渲染 rules entry 和 workspace Skills 到 workspace destination；仅显式传入 --product-skill 时同时投射产品入口 Buildr Skill。不会同步 workspace 源资产或迁移 Structured Store。',
+      usage: 'Usage: buildr render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>] [--product-skill]',
       match: ({ domain }) => domain === 'render',
       run: (runtime, context) => {
-        const { targetRoot, files, rulesActions, warnings } = runtime.renderRuntime(context.action, context.argv.slice(4));
+        const args = context.argv.slice(4);
+        const { targetRoot, files, rulesActions, warnings } = runtime.renderRuntime(context.action, args, { productSkill: args.includes('--product-skill') });
         for (const warning of warnings) console.error(`Warning: ${warning}`);
         const ruleTargets = new Set(rulesActions.map((item) => item.targetFile));
         for (const item of rulesActions) console.log(`[${item.action}] ${runtime.toPosixRelative(targetRoot, item.targetFile)}`);
