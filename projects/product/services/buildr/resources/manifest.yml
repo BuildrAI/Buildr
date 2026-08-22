@@ -247,7 +247,7 @@ builtins:
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
-      description: 用户明确要求创建或查看待办/正式 Task Record、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；不用于普通任务分流、Task Environment 或专业阶段动作。
+      description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；只管理Task Record，用户同时要求准备或拆分Parent时在active记录成功后自动交接task-development，不自行执行Environment或专业阶段动作。
       required: false
       provides:
         - capability: buildr.task-record
@@ -336,7 +336,7 @@ builtins:
     - id: task-development
       path: resources/workspace/skills/buildr/task-development
       target: skills/buildr/task-development
-      description: 正式实现任务从 proposal、design 或直接实现等首个正式研发动作开始，持续维护研发聚合事实、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、记录适用门禁与风险决定并生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+      description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
       required: false
       provides:
         - capability: buildr.task-development

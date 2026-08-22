@@ -41,3 +41,44 @@ test('task-triage 从 Parent 规划项启动独立 Child 时不共享 Change 或
     '最新`dev`',
   ]) assert.ok(triage.includes(required), required);
 });
+
+test('active Parent创建后默认交接并完整准备到Child前停止点', () => {
+  const manager = fs.readFileSync(path.join(target, 'skills', 'buildr', 'task-manager', 'SKILL.md'), 'utf8');
+  const development = fs.readFileSync(path.join(target, 'skills', 'buildr', 'task-development', 'SKILL.md'), 'utf8');
+  const triage = fs.readFileSync(path.join(target, 'skills', 'buildr', 'task-triage', 'SKILL.md'), 'utf8');
+
+  for (const required of [
+    '创建 Parent Task',
+    'active Task Record create或todo activate成功后',
+    '不得把Task Record成功当作目标完成',
+    '交接给`task-development`',
+    '交接不进入Task Record Result',
+    '不让本Skill调用Environment、Development或Review writer',
+    '只创建todo、只写Task Record',
+  ]) assert.ok(manager.includes(required), `task-manager must include ${required}`);
+
+  for (const required of [
+    '持续准备到可选择首个Child',
+    '`buildr task next <parent-task-id>',
+    'next为`prepare`时交给`task-environment`',
+    'next为`begin`时使用返回的matching retained controller',
+    '每次成功后立即重读`task next`',
+    '直接按v2 schema执行`task parent record`',
+    '`planning-review`交给`task-review`',
+    '`refresh-parent-planning`调用公开`task parent refresh-planning`',
+    '只有current next为`start-child-contribution`',
+    'Parent已准备好，可以选择第一个Child',
+    '不得自动选择或创建Child',
+    '默认准备只在真实blocker处中断',
+  ]) assert.ok(development.includes(required), `task-development must include ${required}`);
+
+  for (const required of [
+    '## 创建并默认准备 Parent Task',
+    'todo或用户明确“只创建记录”仍只写Task Record',
+    'active Parent Task Record创建成功不是Parent准备完成',
+    '不得要求用户再次说“继续准备”',
+    '不新增跨authority的`parent start`命令',
+  ]) assert.ok(triage.includes(required), `task-triage must include ${required}`);
+
+  assert.doesNotMatch(manager, /task environment prepare|__internal task-development|task review record|task parent record/);
+});

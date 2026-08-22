@@ -1,6 +1,6 @@
 ---
 name: task-development
-description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
+description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
 ---
 
 # Task Development
@@ -26,6 +26,16 @@ proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到
 ## Parent Plan 与 Child Contribution
 
 新建Parent可以显式采用Parent Plan。正常启动顺序是：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → `task next`返回首个依赖已满足的Contribution。任何一步blocked都只恢复该步的owner事实；不要先创建Child、手工拼Development写入或把非阻塞建议升级成gate。
+
+当`task-manager`或`task-triage`因用户的创建、准备、拆分Parent或准备到可启动Child目标交接active Parent时，本Skill默认连续完成上述准备，不要求用户为每个阶段重新发指令：
+
+1. 先运行`buildr task next <parent-task-id> --target <canonical-workspace> --json`，只执行current typed next或同一次Parent交接明确要求的Plan采用动作。
+2. next为`prepare`时交给`task-environment`；next为`begin`时使用返回的matching retained controller调用Development `begin`。每次成功后立即重读`task next`，不得缓存后续next。
+3. Environment与Development current、但尚未采用Parent Plan时，复用当前对话已明确的规划输入。能够明确写出outcome、architecture decisions、至少一个Contribution的objective/directions/boundaries、dependencies与final acceptance时，直接按v2 schema执行`task parent record`；不重复询问已知事实。只有缺失信息会改变这些协调语义时才提出最少问题，不创建占位Contribution、不猜架构决定，也不把Child状态、Result或实现清单写入Plan。
+4. Plan保存后继续消费typed next：`planning-review`交给`task-review`；`refresh-parent-planning`调用公开`task parent refresh-planning`。owner成功后均重读current next，不跨owner直接写Environment Receipt、Review Result或Parent progress。
+5. 只有current next为`start-child-contribution`且返回至少一个eligible Contribution时，才报告“Parent已准备好，可以选择第一个Child”，列出eligible Contributions并停止。不得继续`observe`、Verification、Candidate、Finish，也不得自动选择或创建Child。
+
+默认准备只在真实blocker处中断：owner返回blocked且需要业务决定或新授权，或缺失事实会实质改变Parent outcome、Contribution切分、依赖、边界或final acceptance。普通recommended动作、可由对应owner恢复的内部登记缺口和当前对话已经提供的信息都不是要求用户重新发起准备的理由；能够安全恢复时继续循环。若Parent Coordination没有eligible Contribution，报告它返回的真实依赖或planning blocker，不得把Task Record created、Plan saved或Review ready单独误报为Parent已经准备好。
 
 Parent Environment只服务Parent本身。纯协调且在Child前不修改交付内容的Parent可以显式采用coordination-only共享执行根；Parent会直接修改代码、文档或其他生产内容时，必须从一开始使用隔离checkout。Child Environment按Child自己的Task scope另行准备，既不继承Parent Receipt，也不因Parent Plan刚建立而提前prepare。若Child依赖Parent尚未进入canonical baseline的真实交付，Parent Plan必须表达该依赖，并等前置Contribution正式交付后再准备Child Environment。
 

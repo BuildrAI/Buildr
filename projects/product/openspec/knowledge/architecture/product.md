@@ -43,7 +43,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Retrospective：`buildr.task-retrospective/v2` 保留原始 Markdown current Result，处理时基于当前事实重算改进方向。有效方向由 Task Record v2 关联到已有 todo/active Task 或 data-only todo，不建立 action item ID、Change 或执行计划；后续进展只读 Task 当前状态。
 - Task Finish：消费当前研发交接（Development Handoff），提供可选的五阶段自动交付与外部交付后的对账（delivery reconciliation），不垄断Git或PR路径。Agent选择交付、冲突与恢复策略；Buildr从真实remote target验证每个repository是否包含冻结任务贡献（Task Contribution）并登记Delivery。Delivery、Activation、Environment Cleanup与Diagnostics正交；后三者失败只形成attention，不撤销已确认Delivery。交付载体（Delivery Carrier）仍是自动路径的便利实现，不是所有交付的前置条件。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
-- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。
+- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。用户要求创建并准备Parent时，Task Manager只写active Task Record并自动交接Task Development；Agent复用current `task next`依次调用各专业owner，在信息充分时形成Parent Plan并推进到`start-child-contribution`，此后等待用户选择首个Child。
 - Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供独立Board Domain或静态Board writer。既有Task Board/Cockpit HTML只保留历史原文，不是当前Task、进度、证据或协调authority。
 
 ## 产品边界

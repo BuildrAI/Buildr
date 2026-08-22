@@ -66,6 +66,14 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Buildr Web 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
+### 创建并默认准备 Parent Task
+
+用户要求创建Parent、先做总体架构设计与Contribution拆分、准备子任务，或准备到可开发/可启动Child状态时，先按新正式Task路径完成语义治理、完整repository set、Git基线和active Task Record create。todo或用户明确“只创建记录”仍只写Task Record，不准备Environment；纯查看、顶层metadata更新或尚未授权启动也不进入本流程。
+
+active Parent Task Record创建成功不是Parent准备完成。立即把Task ID、canonical Workspace、完整scope，以及authority source map中已经明确的outcome、architecture decisions、Contribution directions/boundaries/dependencies与final acceptance交接给`task-development`；由它持续准备Environment、Development、Parent Plan、Planning Review与planning refresh。不得先向用户报告“Parent已准备好”，也不得要求用户再次说“继续准备”。
+
+信息已经能够形成完整Parent Plan时直接交接并继续；只有缺失内容会实质改变Parent目标、Contribution切分、依赖、边界或最终验收时，才由`task-development`提出最少问题。Task Triage不复制Parent准备循环、不写Parent Plan/Review/Development Result，也不新增跨authority的`parent start`命令。
+
 ### 从 Parent 规划项启动独立 Child Task
 
 当用户准备把active Parent推进到首个Child前，先调用`buildr task next <parent-task-id>`，并严格消费它返回的单一next：缺Environment就准备Parent Environment，缺Development就begin，缺Plan就record，Planning Review未current就审查，Review尚未被Development采用就调用公开的`task parent refresh-planning`。只有next为`start-child-contribution`时，才从`eligibleContributions`选择一个Contribution进入Child创建；不要把其他依赖尚未满足的Contribution当成整体阻塞，也不要为未来Child提前准备Environment。
