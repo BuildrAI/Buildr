@@ -24,7 +24,7 @@ test('日常正式任务按当前动作渐进装配上下文并复用有界 sour
   for (const required of [
     '按 next executable action 渐进装配上下文',
     'Verification、Completion、Finish 等下游阶段只在成为当前动作时再读取',
-    '立即进入 proposal 或当前首个研发动作',
+    '取得matching ready Environment后立即进入proposal或当前首个研发动作',
     '一次有界 authority source map',
     '只有 scope、authority 或相关事实变化时才增量刷新',
   ]) assert.ok(triage.includes(required), `task-triage must include ${required}`);

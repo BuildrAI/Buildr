@@ -142,3 +142,83 @@ test('delivery reconciliation从真实远端登记外部交付且不创建Delive
   assert.equal(carrierResult.repositories[0].delivery.targetDisposition, 'carrier');
   assert.deepEqual(carrierResult.repositories[0].delivery.activationPaths, ['feature.txt']);
 });
+
+test('无Environment的reconciliation不声称cleanup pending或cleaned', (t) => {
+  const { root, taskRoot, taskContribution } = fixture(t);
+  const repositories = normalizeTaskFinishRepositorySet([{
+    selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot,
+    environmentBranch: 'codex/reconcile-task', targetBranch: 'dev', remote: 'origin',
+    disposition: 'applicable', reason: null, taskContribution,
+  }]);
+  const handoff = {
+    identity: 'sha256-handoff-no-environment',
+    candidate: { identity: 'sha256-candidate-no-environment', generation: 1, contentTargetIdentity: 'sha256-content-no-environment' },
+    gates: { planning: { disposition: 'not-applicable' }, verification: { disposition: 'waived' }, completion: { disposition: 'waived' } },
+  };
+  const entry = {
+    handoff,
+    identityParts: {
+      task: 'reconcile-no-environment', handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
+      candidateGeneration: 1, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'agent-led-reconciliation',
+      targetBranch: 'dev', remote: 'origin', repositories, repositorySetIdentity: taskFinishRepositorySetIdentity(repositories),
+      environmentRoot: root, workspaceRoot: root, deliveryCommitIdentity: null, environmentAvailable: false,
+    },
+  };
+  let terminal = null;
+  const runtime = {
+    readTaskFinishCompletionPersistence: () => null,
+    readTaskFinishRunPersistence: () => null,
+    finalizeTaskFinishPersistence: (_target, value) => { terminal = value; },
+    completeTaskRecordFromFinish: () => ({ status: 'completed', record: { status: 'completed', result: { noChange: false } } }),
+  };
+  const result = reconcileTaskFinishDelivery({ runtime, root, entry });
+  assert.equal(result.status, 'complete');
+  assert.equal(result.maintenance.environmentCleanup, 'not-applicable');
+  assert.equal(result.completion.cleanup.status, 'not-applicable');
+  assert.equal(terminal.completion.cleanup.status, 'not-applicable');
+});
+
+test('多repository部分交付保存checkpoint并只重试未证明项', (t) => {
+  const first = fixture(t);
+  const second = fixture(t);
+  git(second.root, ['push', '--force', 'origin', 'HEAD~1:dev']);
+  const repositories = normalizeTaskFinishRepositorySet([
+    { selector: 'workspace', sourcePath: '.', retainedRoot: first.root, taskRoot: first.taskRoot, environmentBranch: 'codex/reconcile-task', targetBranch: 'dev', remote: 'origin', disposition: 'applicable', reason: null, taskContribution: first.taskContribution },
+    { selector: 'service:demo/api', sourcePath: 'projects/demo/services/api', retainedRoot: second.root, taskRoot: second.taskRoot, environmentBranch: 'codex/reconcile-task', targetBranch: 'dev', remote: 'origin', disposition: 'applicable', reason: null, taskContribution: second.taskContribution },
+  ]);
+  const handoff = {
+    identity: 'sha256-handoff-multi',
+    candidate: { identity: 'sha256-candidate-multi', generation: 1, contentTargetIdentity: 'sha256-content-multi' },
+    gates: { planning: { disposition: 'not-applicable' }, verification: { disposition: 'waived' }, completion: { disposition: 'waived' } },
+  };
+  const entry = {
+    handoff,
+    identityParts: {
+      task: 'reconcile-multi', handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
+      candidateGeneration: 1, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'codex',
+      targetBranch: null, remote: null, repositories, repositorySetIdentity: taskFinishRepositorySetIdentity(repositories),
+      environmentRoot: first.taskRoot, workspaceRoot: first.root, deliveryCommitIdentity: null,
+    },
+  };
+  let current = null;
+  let terminal = null;
+  const runtime = {
+    readTaskFinishCompletionPersistence: () => null,
+    readTaskFinishRunPersistence: () => current,
+    writeTaskFinishRunPersistence: (_target, run) => { current = { run: structuredClone(run) }; },
+    finalizeTaskFinishPersistence: (_target, value) => { terminal = value; current = null; },
+    completeTaskRecordFromFinish: () => ({ status: 'completed', record: { status: 'completed', result: { noChange: false } } }),
+  };
+  const partial = reconcileTaskFinishDelivery({ runtime, root: first.root, entry });
+  assert.equal(partial.status, 'unproven');
+  assert.equal(partial.repositories.find((item) => item.selector === 'workspace').status, 'delivered');
+  assert.equal(partial.repositories.find((item) => item.selector === 'service:demo/api').status, 'unproven');
+  assert.deepEqual(partial.effects[0].selectors, ['workspace']);
+  assert.equal(current.run.repositories.find((item) => item.selector === 'workspace').delivery.status, 'delivered');
+  assert.equal(current.run.repositories.find((item) => item.selector === 'service:demo/api').delivery, null);
+
+  git(second.root, ['push', 'origin', 'dev']);
+  const completed = reconcileTaskFinishDelivery({ runtime, root: first.root, entry });
+  assert.equal(completed.status, 'complete');
+  assert.equal(terminal.completion.repositories.every((item) => item.delivery.status === 'delivered'), true);
+});

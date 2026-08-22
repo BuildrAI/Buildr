@@ -207,17 +207,18 @@ function completePhases(run, completedAt) {
   }
 }
 
-function maintenanceProjection(repositories, diagnosticsStatus = 'not-opened') {
+function maintenanceProjection(repositories, diagnosticsStatus = 'not-opened', environmentAvailable = true) {
   const activationAttention = repositories.some((repository) => repository.delivery?.activation?.status === 'attention');
   return {
     delivery: 'delivered',
     activation: activationAttention ? 'attention' : 'not-applicable',
-    environmentCleanup: 'pending',
+    environmentCleanup: environmentAvailable ? 'pending' : 'not-applicable',
     diagnostics: diagnosticsStatus,
   };
 }
 
 export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
+  const environmentAvailable = entry.identityParts.environmentAvailable !== false;
   const terminal = runtime.readTaskFinishCompletionPersistence?.(root, { taskId: entry.identityParts.task }, { optional: true });
   if (terminal?.status === 'complete' && terminal.completion?.result) {
     const result = terminal.completion.result;
@@ -251,19 +252,27 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
     const state = repositories.find((repository) => repository.selector === plan.selector);
     const observed = reconcileRepository(plan, state);
     observations.push(observed);
-    if (!['delivered', 'not-applicable'].includes(observed.status)) {
-      return {
-        schemaVersion: 'buildr.task-finish-reconciliation-result/v1',
-        operation: 'reconcile',
-        status: 'unproven',
-        taskId: run.identity.task,
-        repositorySetIdentity: run.identity.repositorySetIdentity,
-        repositories: observations,
-        effects: [],
-        nextActions: ['由Agent处理对应repository的目标、远端或贡献包含事实后重试；其他已交付repository无需重复push。'],
-      };
+    if (['delivered', 'not-applicable'].includes(observed.status)) Object.assign(state, observed.state);
+  }
+  const unproven = observations.filter((item) => !['delivered', 'not-applicable'].includes(item.status));
+  if (unproven.length) {
+    const checkpointed = observations.some((item) => ['delivered', 'not-applicable'].includes(item.status));
+    if (checkpointed && runtime.writeTaskFinishRunPersistence) {
+      run.repositories = repositories;
+      run.updatedAt = new Date().toISOString();
+      run.reconciliation = { mode: 'agent-led', status: 'partial', updatedAt: run.updatedAt };
+      runtime.writeTaskFinishRunPersistence(root, run);
     }
-    Object.assign(state, observed.state);
+    return {
+      schemaVersion: 'buildr.task-finish-reconciliation-result/v1',
+      operation: 'reconcile',
+      status: 'unproven',
+      taskId: run.identity.task,
+      repositorySetIdentity: run.identity.repositorySetIdentity,
+      repositories: observations,
+      effects: checkpointed ? [{ type: 'delivery-checkpoint-recorded', selectors: observations.filter((item) => ['delivered', 'not-applicable'].includes(item.status)).map((item) => item.selector) }] : [],
+      nextActions: ['由Agent处理对应repository的目标、远端或贡献包含事实后重试；其他已交付repository无需重复push。'],
+    };
   }
 
   const completedAt = new Date().toISOString();
@@ -279,7 +288,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   const singleton = applicable.length === 1
     ? repositories.find((repository) => repository.selector === applicable[0].selector)
     : null;
-  const maintenance = maintenanceProjection(repositories);
+  const maintenance = maintenanceProjection(repositories, 'not-opened', environmentAvailable);
   const completion = {
     schemaVersion: 'buildr.task-finish-completion/v3',
     runId: run.runId,
@@ -312,7 +321,9 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
     status: 'complete',
     preparedAt: completedAt,
     completedAt,
-    cleanup: { status: 'pending', summary: 'Task delivery is complete; Environment cleanup remains an independent Agent action.' },
+    cleanup: environmentAvailable
+      ? { status: 'pending', summary: 'Task delivery is complete; Environment cleanup remains an independent Agent action.' }
+      : { status: 'not-applicable', summary: 'Task delivery was reconciled without a current Task Environment; no cleanup success is claimed.' },
     maintenance,
     association: terminalAssociation(entry.handoff, completedAt),
   };

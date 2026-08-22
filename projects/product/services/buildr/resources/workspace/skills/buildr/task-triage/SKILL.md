@@ -47,7 +47,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - `metadata-only`：仅维护 OpenSpec artifacts、Rules、Skills、文档或模板，不进入代码、构建或测试。
 - `unknown`：信息不足；先澄清，不提前写 Change artifacts 或当前事实。
 
-该轴独立于语义治理：正式持久交付都需要Task Environment；Agent根据Task完整Project/Service scope、Project `preparation.yml`与当前构建/验证事实选择Recipe形成Environment Plan。`metadata-only`可以使用共享执行根，不必创建Git worktree，并对每个Project/Service scope显式选择Recipe或声明not-applicable；进入实现时仍复用同一Receipt或由Environment确定性恢复。
+该轴独立于语义治理。Formal Task Record本身不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用边界均明确时，Agent可以直接工作，但不得把该路径冒充ready Environment、Development、Formal Verification、Candidate、Finish或cleanup事实。选择Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据或自动Finish时，才必须根据Task完整Project/Service scope与Project `preparation.yml`形成Environment Plan并取得ready；`metadata-only`受管执行可以使用共享执行根。
 
 ## 3. 条件化交接
 
@@ -55,14 +55,14 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion、Finish 等下游阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
 
-用户已经授权实现，且 active Task、matching ready Environment 与 Development `begin` 所需事实完整时，立即进入 proposal 或当前首个研发动作；不要为收集非当前阶段信息、预读下游 Skills 或建立额外进度 authority 延迟写入。
+用户已经授权实现时，先选择直接工作或Buildr受管正式证据路径。直接工作在真实Git、文件ownership与副作用边界内立即推进并如实报告证据范围；需要OpenSpec managed flow、Development、Formal Verification、Candidate、自动Finish、Task-owned资源或cleanup时，取得matching ready Environment后立即进入proposal或当前首个研发动作。
 
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
 | 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 均证明当前为 clean `dev`、upstream 为 `origin/dev`；每个 operation 返回 before/after、effects 与 current facts，适用 Workspace transition check ready | 任一前置事实、provider、fetch、rebase、冲突恢复或 Doctor blocked 时不调用 Task Record `create`；报告全部部分 effects，不换策略 |
 | 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Environment、Change或专业placeholder |
 | 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
-| 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Project/Service scope、Project `preparation.yml`及Agent选择的Recipe；首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI | Declaration/Plan缺失或scope不完整时只阻塞execution；不猜技术栈，不回退到cwd或旧Receipt |
+| 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Project/Service scope、Project `preparation.yml`及Agent选择的Recipe；首次受管效果前取得`ready`、实际execution roots、validation root和执行CLI | Declaration/Plan缺失或scope不完整时只阻塞消费Environment authority的动作；不猜技术栈，不回退到cwd或旧Receipt |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Buildr Web 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
@@ -99,7 +99,7 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。正式 Task 取得 ready Environment 后，在写入首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实；后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再继续 Candidate、Completion Review、decision 与 handoff。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该正式分支不 ready 时停止首次研发写入，不能回退为无 Receipt 流程。
+实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实。后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再继续 Candidate、Completion Review、decision 与 handoff。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该受管分支不 ready 时只阻塞受管证据，不撤销其他已获授权的直接工作。
 
 ## 4. 输出契约
 

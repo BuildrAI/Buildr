@@ -109,11 +109,26 @@ export function registerTaskEntrySnapshotApplication(runtime) {
       execution = measured('task-environment', () => runtime.resolveTaskEnvironmentExecution(targetRoot, taskId));
       if (!execution?.ready) {
         const diagnostic = execution?.blocked || { code: 'task_environment_not_ready', message: `Task Environment 未ready：${taskId}。` };
-        const next = requiredNext('task-environment', 'prepare', { id: 'buildr.task-environment', version: 1 }, '准备或恢复matching Task Environment。');
+        const developmentResult = measured('task-development', () => runtime.inspectTaskDevelopmentCurrent(targetRoot, taskId, { inspectedTask: inspected }));
+        development = compactTaskDevelopmentOperationResult(developmentResult).current;
+        const unavailable = ['task_environment_no_receipt', 'task_environment_snapshot_missing', 'task_environment_plan_missing'].includes(diagnostic.code);
+        const directWorkAvailable = unavailable && developmentResult.status === 'missing';
+        const next = directWorkAvailable
+          ? { mode: 'recommended', owner: 'task-environment', action: 'prepare', capability: { id: 'buildr.task-environment', version: 1 }, summary: '如需Buildr受管checkout、Preparation、正式证据或资源，准备matching Task Environment。', route: null }
+          : requiredNext('task-environment', 'prepare', { id: 'buildr.task-environment', version: 1 }, '准备或恢复matching Task Environment。');
         const route = measured('capability-routing', () => capabilityRoute(targetRoot, taskRecordEffectiveProjectCodes(inspected.record), next.capability.id, next.capability.version, { runtime: options.runtime || 'codex' }));
         next.route = route;
-        const unavailable = ['task_environment_no_receipt', 'task_environment_snapshot_missing', 'task_environment_plan_missing'].includes(diagnostic.code);
-        return finish({ status: route.readiness === 'blocked' || !unavailable ? 'blocked' : 'ready', task: taskSummary(inspected), environment: environmentSummary(execution), development: null, blockers: [{ axis: 'environment', owner: 'task-environment', code: diagnostic.code }], next, diagnostic, effects: [] });
+        if (route.readiness === 'blocked') next.mode = 'required';
+        return finish({
+          status: route.readiness === 'blocked' || !directWorkAvailable ? 'blocked' : 'ready',
+          task: taskSummary(inspected),
+          environment: environmentSummary(execution),
+          development,
+          blockers: directWorkAvailable ? [] : [{ axis: 'environment', owner: 'task-environment', code: diagnostic.code }],
+          next,
+          diagnostic: directWorkAvailable ? null : diagnostic,
+          effects: [],
+        });
       }
 
       if (options.executionTarget) {

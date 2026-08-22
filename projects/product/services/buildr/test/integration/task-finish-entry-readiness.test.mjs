@@ -160,3 +160,45 @@ test('Finish --agent 与 Environment adapter 不一致时不创建 identity', (t
   assert.equal(observed.identityParts, null);
   assert.ok(observed.gaps.environment.some((item) => item.code === 'task_finish.environment_mismatch'));
 });
+
+test('reconcile在Environment缺失时从handoff、Task scope与Git topology解析delivery context', (t) => {
+  const root = makeGitRoot(t, { remotes: true });
+  const taskRoot = path.join(root, '.worktrees', 'demo-task');
+  fs.appendFileSync(path.join(root, '.gitignore'), '/.worktrees/\n');
+  git(root, ['add', '.gitignore']);
+  git(root, ['commit', '-m', 'ignore task worktrees']);
+  git(root, ['push', 'origin', 'dev']);
+  git(root, ['worktree', 'add', '-b', 'codex/demo-task', taskRoot, 'dev']);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'environmentless reconciliation\n');
+  git(taskRoot, ['add', 'feature.txt']);
+  git(taskRoot, ['commit', '-m', 'task source']);
+  const handoff = handoffFixture();
+  const receipt = {
+    candidate: handoff.candidate,
+    gates: handoff.gates,
+    decision: handoff.decision,
+    handoffs: [handoff],
+    contentTarget: { components: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'git', identity: `sha256-${'1'.repeat(64)}` }] },
+  };
+  const runtime = {
+    resolveTaskEnvironmentExecution: () => ({ ready: false, blocked: { code: 'task_environment_snapshot_missing', message: 'Environment missing.' } }),
+    inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
+    inspectTaskRecord: () => ({ record: { taskId: 'demo-task', scope: { projects: [], services: [] }, changes: [] } }),
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: {} }),
+    readGitWorktreeEvidence: () => ({ evidence: { repositories: [{ selector: 'workspace', sourcePath: '.', sourceRepository: root, checkoutPath: taskRoot, branch: 'codex/demo-task', remote: 'origin' }] } }),
+  };
+  const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', allowEnvironmentless: true });
+  assert.equal(observed.ready, true);
+  assert.deepEqual(observed.gaps.environment, []);
+  assert.deepEqual(observed.gaps.delivery, []);
+  assert.equal(observed.identityParts.contextSource, 'handoff-scope-git');
+  assert.equal(observed.identityParts.environmentAvailable, false);
+  assert.equal(observed.identityParts.agent, 'agent-led-reconciliation');
+  assert.equal(observed.identityParts.repositories[0].taskRoot, fs.realpathSync(taskRoot));
+  assert.equal(observed.identityParts.repositories[0].remote, 'origin');
+
+  const ambiguous = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task', allowEnvironmentless: true, requestedRemote: 'missing' });
+  assert.equal(ambiguous.ready, false);
+  assert.equal(ambiguous.identityParts, null);
+  assert.ok(ambiguous.gaps.delivery.some((item) => item.code === 'task_finish.remote_unavailable'));
+});

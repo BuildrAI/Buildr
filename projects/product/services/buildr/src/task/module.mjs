@@ -368,9 +368,9 @@ export function createTaskFinishCliContributions(application = null) {
       key: 'task finish reconcile', surface: 'agent-machine', summary: '观察 current Task Contribution 与真实远端结果，收敛由 Agent、PR 或其他已授权路径完成的交付。',
       help: [
         'Usage: buildr task finish reconcile --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]', '',
-        '从 current Development handoff 与 Task Environment repository set解析交付身份，读取并fetch真实远端ref，逐仓库验证Task Contribution包含关系。',
+        '从current Development handoff解析交付身份；优先复用Task Environment repository set，缺失或已清理时从Task scope、registries与实际Git topology构造只读上下文，再读取真实远端ref逐仓库验证Task Contribution包含关系。',
         '不接受success、evidence、commit message、run token或手写proof；不会push、force push、改写共享历史或创建Delivery Carrier。',
-        '全部适用repository交付成立后提交Task交付终态；activation、Environment cleanup与diagnostics作为独立maintenance事实交给Agent继续处理。',
+        '逐repository立即保存已证明Delivery；全部适用repository成立后提交Task交付终态。activation、Environment cleanup与diagnostics独立处理；无current Environment时cleanup不声称cleaned。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'reconcile',
       run: (runtime, context) => invoke(runtime, 'reconcile', context.argv.slice(5)),

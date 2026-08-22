@@ -5,27 +5,32 @@
 ## Requirements
 
 ### Requirement: 正式 Task 必须先取得 ready Task Environment
-Buildr MUST 只为已经存在的正式 Task 建立任务环境（Task Environment），并 MUST 在该 Task 首次修改交付物、构建、测试或创建 Task-owned 持久资源前返回真实 `ready` 的环境结果。Task Environment MUST NOT 把环境事实写入 Task Record，也 MUST NOT 成为 Task 外单次操作的强制入口。
+Buildr MUST只为已经存在的正式Task建立任务环境（Task Environment），并 MUST只在当前动作实际消费Buildr-managed checkout、Preparation、runtime projection、Task-owned持久资源、正式环境证据或cleanup authority时要求matching `ready`。Task Environment MUST NOT把环境事实写入Task Record，也 MUST NOT把Formal Task、编辑、构建或有界测试本身变成通用工作许可；Agent选择直接工作时 MUST如实保留未形成Environment/正式Result的事实。
 
 #### Scenario: 正式 Task 首次进入持久交付
-- **WHEN** active Task 即将修改交付物、执行构建/测试或启动持久资源
-- **THEN** Agent MUST 先通过 selected `buildr.task-environment/v1` provider 准备或恢复环境
-- **AND** 环境未返回 `ready` 时 MUST NOT 开始对应持久效果
+- **WHEN** active Task选择由Buildr准备或拥有的checkout、依赖、runtime projection、持久资源或正式环境证据
+- **THEN** Agent MUST先通过selected `buildr.task-environment/v1` provider准备或恢复环境
+- **AND** 环境未返回`ready`时 MUST NOT开始对应受管效果或声称Environment/正式Result成立
+
+#### Scenario: 正式 Task 在明确仓库直接工作
+- **WHEN** Agent已从用户授权、真实repository/ref、owned scope和副作用边界确认可以直接编辑、构建或执行有界测试，且当前动作不请求Buildr准备、占用、持久资源、正式环境证据或cleanup
+- **THEN** 缺少Environment Plan、Receipt或projection MUST只形成可选准备建议，不得成为该直接动作的通用许可 blocker
+- **AND** Agent MUST NOT把直接工作冒充ready Environment、Formal Verification、Candidate、Handoff或可由Buildr自动清理的资源
 
 #### Scenario: Task Record 不存在
-- **WHEN** 调用方请求为未知 Task ID 创建 Environment Receipt
-- **THEN** Task Environment MUST 返回 `blocked` 和创建/恢复 Task Record 的 next action
-- **AND** MUST NOT 创建 checkout、依赖、runtime projection、资源或 Environment Receipt
+- **WHEN** 调用方请求为未知Task ID创建Environment Receipt
+- **THEN** Task Environment MUST返回`blocked`和创建或恢复Task Record的next action
+- **AND** MUST NOT创建checkout、依赖、runtime projection、资源或Environment Receipt
 
 #### Scenario: Task 外有界操作
-- **WHEN** Agent 只执行单次测试、临时服务、API 调用或其他不形成正式 Task 的有界操作
-- **THEN** Task Environment MUST NOT 自动创建 Task 或 Environment Receipt
-- **AND** Agent MUST 按当前用户意图在本次操作中停止或披露临时资源
+- **WHEN** Agent只执行单次测试、临时服务、API调用或其他不形成正式Task的有界操作
+- **THEN** Task Environment MUST NOT自动创建Task或Environment Receipt
+- **AND** Agent MUST按当前用户意图在本次操作中停止或披露临时资源
 
 #### Scenario: 清理后维护 Task 元数据
-- **WHEN** Task Environment 已完成清理，而生命周期 Skill 仍需在 canonical Workspace 写入 Receipt、Result 或复盘材料
-- **THEN** 该 metadata-only 写入 MUST NOT 要求重新准备已清理的 Task Environment
-- **AND** MUST NOT 把 canonical metadata root 误报为新的执行环境
+- **WHEN** Task Environment已完成清理，而生命周期Skill仍需在canonical Workspace写入Receipt、Result或复盘材料
+- **THEN** 该metadata-only写入 MUST NOT要求重新准备已清理的Task Environment
+- **AND** MUST NOT把canonical metadata root误报为新的执行环境
 
 ### Requirement: Task Environment 必须记录实际执行位置而非固定 mode
 Task Environment MUST 记录每个工作范围的实际执行根、任务验证工作区根、共享/占用和 cleanup 事实，并 MUST NOT 用 `in-place / dedicated` 等顶层 mode 代替真实资源。Git MUST NOT 是 Environment Receipt 或 `ready` 的前提；需要 Git 隔离时才 MUST 调用所选 Git worktree provider。

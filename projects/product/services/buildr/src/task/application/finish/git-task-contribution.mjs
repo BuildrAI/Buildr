@@ -17,7 +17,7 @@ import {
   taskFinishDeliveryCommitMatches,
 } from './task-finish-delivery-commit.mjs';
 
-export { observeGitTaskContribution } from '../../../infrastructure/git/git-task-contribution.mjs';
+export { observeGitTaskContribution, observeGitTaskContributionFromRef } from '../../../infrastructure/git/git-task-contribution.mjs';
 
 function carrierContainer(workspaceRoot, runId) {
   const base = path.resolve(workspaceRoot, '.buildr', 'transient', 'task-finish', 'carriers');

@@ -238,12 +238,12 @@
 
 - 定义：目标与持久交付意图已经对齐，并以稳定 Task ID 进入 Buildr 生命周期管理的任务。
 - 适用范围：准备产生代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他可交付持久变化的工作。
-- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
+- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务；Formal Task Record也不是普通编辑、构建或有界测试的通用工作许可。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
 ## 任务入口快照（Task Entry Snapshot）
 
-- 定义：面向Agent启动或继续Formal Task的只读compact projection，按最早硬前置组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity。
+- 定义：面向Agent启动或继续Formal Task的只读compact projection，组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity；尚无Development时缺少Environment只形成recommended prepare。
 - 适用范围：`buildr task next <task-id>`与`buildr.task-entry-snapshot/v1`；`required`表示不可安全绕过的authority/identity恢复前置，`recommended`表示用户可按实际情况调整的默认路径。
 - 避免混用：不是任务上下文（Task Context）、Context Window、完整lifecycle DAG、Task Overview、Receipt/Result、writer或第二套状态机；不自动执行next，也不把耗时/调用指标变成gate。
 - 来源：[Task Entry Snapshot specification](../specs/task-entry-snapshot/spec.md)
@@ -326,7 +326,7 @@
 
 ## 交付对账（Delivery Reconciliation）
 
-- 定义：Agent通过Git、PR或其他已授权路径完成交付后，Buildr从current handoff、冻结Task Contribution与真实remote target重建并登记逐repository Delivery evidence的只读核验动作。
+- 定义：Agent通过Git、PR或其他已授权路径完成交付后，Buildr从current handoff、Task scope、registries、Git topology与真实remote target重建并登记逐repository Delivery evidence的只读核验动作；Environment可复用但不是唯一上下文来源。
 - 适用范围：外部交付、自动Finish内部证明缺失、多repository部分交付续跑与Task terminal登记恢复。
 - 避免混用：不接受claimed success、commit清单或调用方手写proof；不创建Delivery Carrier、不push，也不把路径不重叠当作语义安全。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
@@ -360,9 +360,9 @@
 
 ## 任务环境（Task Environment）
 
-- 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID、唯一环境回执及其中的实际 checkout/provider/probe facts 确定。
+- 定义：某个正式 Task 的Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据与cleanup authority，由同一Task ID、唯一环境回执及实际checkout/provider/probe facts确定。
 - 适用范围：共享执行根或`.worktrees/<task-id>`checkout、Agent登记的环境准备计划及其显式executable、CLI、Agent runtime投射、动态资源和cleanup。
-- 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider，retained Buildr 的实现版本也不是该 Environment 的源码版本。
+- 避免混用：不是Workspace、保留工作区、Agent runtime、Task Record或普通工作的通用许可；Git worktree只是可选provider，retained Buildr的实现版本也不是该Environment的源码版本。
 - 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
 
 ## 环境准备计划（Environment Preparation Plan）

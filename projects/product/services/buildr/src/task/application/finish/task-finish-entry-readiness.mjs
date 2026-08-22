@@ -4,6 +4,7 @@ import { observeGitTaskContribution } from './git-task-contribution.mjs';
 import { resolveTaskFinishDeliveryRemote } from './task-finish-delivery-remote.mjs';
 import { resolveTaskFinishTargetBranch } from './task-finish-delivery-target.mjs';
 import { normalizeTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { resolveTaskFinishReconciliationContext } from './task-finish-reconciliation-context.mjs';
 import {
   normalizeTaskFinishRepositorySet,
   singletonApplicableTaskFinishRepository,
@@ -139,9 +140,11 @@ export function observeTaskFinishEntryReadiness({
   requestedRemote = null,
   requestedCommitMessage = null,
   requireCommitMessage = false,
+  allowEnvironmentless = false,
 }) {
   const gaps = emptyGaps();
-  const context = runtime.resolveTaskEnvironmentExecution(root, task);
+  let context = runtime.resolveTaskEnvironmentExecution(root, task);
+  const environmentReady = Boolean(context?.ready);
   let agent = requestedAgent;
   let handoff = null;
   let repositories = [];
@@ -157,13 +160,13 @@ export function observeTaskFinishEntryReadiness({
     }
   }
 
-  if (!context?.ready) {
+  if (!environmentReady && !allowEnvironmentless) {
     pushGap(gaps, gap(
       'environment',
       context?.blocked?.code || 'task_finish.not_task_environment',
       context?.blocked?.message || 'Task Finish requires a ready Task Environment.',
     ));
-  } else {
+  } else if (environmentReady) {
     const defaultAgent = context.controller?.adapter || null;
     agent = requestedAgent || defaultAgent;
     if (requestedAgent && defaultAgent && requestedAgent !== defaultAgent) {
@@ -172,7 +175,6 @@ export function observeTaskFinishEntryReadiness({
         environmentAgent: defaultAgent,
       }));
     }
-    repositories = resolveRepositoryPlans({ context, requestedTargetBranch, requestedRemote, gaps });
   }
 
   const development = runtime.inspectTaskDevelopment(root, task);
@@ -189,6 +191,19 @@ export function observeTaskFinishEntryReadiness({
     pushGap(gaps, gap('development', code, detailMessage));
   } else {
     handoff = resolved.handoff;
+  }
+
+  if (!environmentReady && allowEnvironmentless && resolved.current) {
+    try {
+      context = resolveTaskFinishReconciliationContext({ runtime, root, task, receipt: resolved.receipt, requestedTargetBranch, requestedRemote });
+      agent = requestedAgent || 'agent-led-reconciliation';
+      repositories = context.repositories;
+    } catch (error) {
+      pushGap(gaps, gap('delivery', error.code || 'task_finish.reconciliation_context_unavailable', error.message, error.details ? { details: error.details } : {}));
+      context = null;
+    }
+  } else if (environmentReady) {
+    repositories = resolveRepositoryPlans({ context, requestedTargetBranch, requestedRemote, gaps });
   }
 
   const total = TASK_FINISH_ENTRY_GAP_MODULES.reduce((count, module) => count + gaps[module].length, 0);
@@ -215,6 +230,8 @@ export function observeTaskFinishEntryReadiness({
       repositorySetIdentity: taskFinishRepositorySetIdentity(repositories),
       environmentRoot: context.validationRoot,
       workspaceRoot: context.workspaceRoot,
+      contextSource: environmentReady ? 'task-environment' : context.source,
+      environmentAvailable: environmentReady,
       deliveryCommitIdentity: deliveryCommit?.identity || null,
     } : null,
   };

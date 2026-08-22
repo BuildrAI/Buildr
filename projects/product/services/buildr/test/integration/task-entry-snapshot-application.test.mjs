@@ -93,18 +93,44 @@ function fixture(t, options = {}) {
   return { root, runtime, calls };
 }
 
-test('无Environment时短路到required Environment且零Development读取', (t) => {
+test('无Environment且尚无Development时只建议准备并允许直接工作', (t) => {
   const { root, runtime, calls } = fixture(t, { execution: { ready: false, taskId, observedAt: null, blocked: { code: 'task_environment_no_receipt', message: 'No receipt.' } } });
   const result = runtime.inspectTaskEntrySnapshot(root, taskId);
   assert.equal(result.schemaVersion, 'buildr.task-entry-snapshot/v1');
   assert.equal(result.status, 'ready');
-  assert.equal(result.next.mode, 'required');
+  assert.equal(result.next.mode, 'recommended');
   assert.equal(result.next.owner, 'task-environment');
   assert.equal(result.next.action, 'prepare');
-  assert.deepEqual(result.blockers, [{ axis: 'environment', owner: 'task-environment', code: 'task_environment_no_receipt' }]);
+  assert.deepEqual(result.blockers, []);
   assert.equal(result.development, null);
+  assert.equal(result.diagnostic, null);
   assert.deepEqual(result.effects, []);
-  assert.deepEqual(calls, { task: 1, environment: 1, development: 0, parent: 0, capabilities: ['buildr.task-environment@1'] });
+  assert.deepEqual(calls, { task: 1, environment: 1, development: 1, parent: 0, capabilities: ['buildr.task-environment@1'] });
+});
+
+test('已有Development绑定Environment后Environment缺失仍然fail closed', (t) => {
+  const next = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' };
+  const { root, runtime, calls } = fixture(t, {
+    execution: { ready: false, taskId, observedAt: null, blocked: { code: 'task_environment_snapshot_missing', message: 'Environment drifted.' } },
+    development: development(next),
+  });
+  const result = runtime.inspectTaskEntrySnapshot(root, taskId);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.next.mode, 'required');
+  assert.equal(result.next.owner, 'task-environment');
+  assert.deepEqual(result.blockers, [{ axis: 'environment', owner: 'task-environment', code: 'task_environment_snapshot_missing' }]);
+  assert.equal(result.development.receiptDigest, `sha256-${'6'.repeat(64)}`);
+  assert.equal(calls.development, 1);
+});
+
+test('Environment已存在但受管探测失败时仍然是required blocker', (t) => {
+  const { root, runtime } = fixture(t, {
+    execution: { ready: false, taskId, observedAt: null, blocked: { code: 'task_environment_probe_blocked', message: 'Managed checkout is not ready.' } },
+  });
+  const result = runtime.inspectTaskEntrySnapshot(root, taskId);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.next.mode, 'required');
+  assert.deepEqual(result.blockers, [{ axis: 'environment', owner: 'task-environment', code: 'task_environment_probe_blocked' }]);
 });
 
 test('ready Environment直接给出execution root、retained controller与Development begin', (t) => {

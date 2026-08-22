@@ -57,6 +57,8 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 
 ## 从首个研发动作接入
 
+本节只适用于选择Buildr-managed Development与正式Result的路径。用户授权下的直接编辑、构建或有界测试可以在明确repository/ref、ownership与副作用边界内进行，但不会产生Development Receipt、正式Content Target、Verification、Candidate或handoff；一旦需要这些事实，必须回到matching ready Environment并由本Application建立。
+
 1. 读取Task Record，确认Task active、Intent、Project/Service scope和`0..N` Change引用。
 2. 通过`task-environment`恢复matching ready Environment，只使用Receipt返回的execution/validation roots。
 3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。若Task将绑定OpenSpec变更，必须先有可解析脚手架并完成`add-change`再`begin`；不得先对空变更列表`begin`再绑定同一变更。无变更的任务仍在首个实现前`begin`空列表。`begin|planning`都必须显式提交完整`planning`整值；没有node时提交`{"targetIdentity":null,"nodes":[]}`，不得用字段omission表达清空、保留或patch。

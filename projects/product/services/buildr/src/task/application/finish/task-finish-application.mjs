@@ -574,6 +574,7 @@ export function registerTaskFinishApplication(runtime) {
       requestedTargetBranch,
       requestedRemote,
       requireCommitMessage: false,
+      allowEnvironmentless: true,
     });
     if (!entry.ready) throw taskFinishEntryGapsError(entry, 'reconcile');
     const result = reconcileTaskFinishDelivery({ runtime, root, entry });

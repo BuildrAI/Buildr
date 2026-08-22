@@ -38,7 +38,7 @@ Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每�
 
 `buildr task finish reconcile --task <task-id> --target <canonical-workspace> --detail compact --json`
 
-交付对账（Delivery Reconciliation）不接受调用方提交“已成功”、commit 列表或证明文件。它读取冻结的 Task Contribution 与真实 remote target，逐 repository 确认 carrier 已到达、已被后继包含，或目标 tree 精确包含任务贡献结果。无法证明时只报告对应 repository 的事实缺口。
+交付对账（Delivery Reconciliation）不接受调用方提交“已成功”、commit 列表或证明文件。它优先复用current Environment；Environment不存在、已清理或局部不可用时，从current immutable handoff、Task scope、Project/Service registries、实际Git topology以及明确或唯一的remote/target构造只读上下文，不恢复或补造Receipt。它逐repository确认carrier已到达、已被后继包含，或目标tree精确包含任务贡献结果；无法证明时只报告对应repository的事实缺口，并保留其他repository已经登记的Delivery checkpoint。
 
 ## 四个独立结果
 
@@ -54,6 +54,7 @@ Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每�
 `buildr task environment cleanup <task-id> --target <canonical-workspace> --json`
 
 Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态。无法证明 worktree 内容已交付、ownership 不明或 source 已漂移时必须保留现场。
+没有current Environment时，Cleanup必须报告`not-applicable`或`attention`，不得声称`cleaned`。
 
 ## 应当阻断的边界
 
