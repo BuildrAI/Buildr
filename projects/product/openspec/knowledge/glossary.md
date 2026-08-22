@@ -625,10 +625,31 @@
 
 ## Product Candidate verification
 
-- 定义：Project Testing为完整产品候选组织的验证目标/编排；Buildr Product当前由`test:candidate`执行完整registry回归。
-- 适用范围：显式完整Project回归、Release前检查或用户要求的full validation。
-- 避免混用：不是 Task Candidate，也不会自动创建 Candidate/generation、Completion Review 或研发交接。
+- 定义：Project Testing为完整产品候选组织的验证目标/编排；Buildr Product由`test:candidate`及其GitHub分布式投影执行完整registry回归。发布模型完成适配后，每个current release HEAD/tree只对应matching Product Candidate generation和唯一tarball。
+- 适用范围：显式完整Project回归、冻结release source的发布候选门禁或用户要求的full validation。
+- 避免混用：不是 Task Candidate，也不会自动创建Task Candidate/generation、Completion Review或研发交接；changed/affected开发反馈不等于完整Product Candidate。
 - 来源：[Verification ownership](../../docs/verification-ownership.md)
+
+## 发布集合（Release Collection）
+
+- 定义：由维护者为一个精确package version从指定`dev` baseline创建的唯一`release-<version>`内容集合；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata，不自动追随`dev`。
+- 适用范围：release create/update/freeze/abandon/cleanup、Product Candidate source、release→main PR、protected publication和发布后main→dev收敛。
+- 避免混用：不是release Task、Task worktree、Task Candidate、npm dist-tag或GitHub Release；同名branch/ref只是载体，必须同时核验version、baseline、selection chain和HEAD/tree identity。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`。
+
+## 发布选择链（Release Selection Chain）
+
+- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、release-only metadata和generation的closed可验证链。
+- 适用范围：release更新审计、Candidate currentness、readiness、transaction context和失败恢复。
+- 避免混用：不是通用Git history、聊天中的commit列表或caller-claimed success；冲突现场、未授权commit和普通`dev`前进不能被静默加入链。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`。
+
+## 发布源身份（Release Source Identity）
+
+- 定义：current release HEAD commit、Git tree和selection chain identity组成的冻结source；下游Product Candidate、tarball、main tree和transaction context必须精确绑定它。
+- 适用范围：Candidate generation、artifact manifest/integrity、release→main tree equality、pre-tag readiness和publish evidence。
+- 避免混用：不是Task Candidate identity、近似branch name、最新`dev`、main commit identity或版本字符串；source任一部分变化都会使旧下游evidence stale。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/product-verification-quality/spec.md`。
 
 ## 交付载体（Delivery Carrier）
 

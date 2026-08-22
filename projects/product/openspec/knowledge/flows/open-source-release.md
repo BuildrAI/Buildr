@@ -1,16 +1,18 @@
 # Buildr npm 发布流程
 
-本文描述已经实现的发布能力边界；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
+本文描述canonical发布契约、已经实现的验证/发布基线和当前迁移状态；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
+
+`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness和发布后main→dev收敛已经建立规范边界，但对应P1/P2/P3实现尚未全部交付。迁移完成前，发布Skill必须报告缺失owner/read model并停止，不得回退到“最新dev自动成为发布集合”的旧流程或把本文当成实现成功证明。
 
 ## 唯一事实链
 
-1. npm-only release contract绑定`v<version>`、source commit、dist-tag、`engines.node`、协议identity、CHANGELOG release notes与唯一`publishAuthority`。Authority tuple固定provider、GitHub repository、workflow filename、Environment和allowed npm action；contract不声明Product Node、SEA、installer、平台矩阵或binary Assets。
-2. 一次application payload build冻结runtime bundle、Worker bundle与resource inventory，产生稳定`applicationPayloadDigest`。npm staging消费并逐项验证同一manifest。
-3. workflow只执行一次`npm pack`，冻结tarball filename、size、SHA-256、SHA-512 integrity、inventory与release artifact manifest；每个Host Node runner显式消费同一artifact中的tarball、`npm-pack` metadata和manifest，Launcher、publish和Registry readback继续复用该bytes。跨attempt恢复只接受与contract/payload完全一致的冻结candidate。
-4. `dev → main`的源码候选由分布式`Candidate gate`证明：单个bootstrap复用setup并先形成preflight evidence，唯一PR tarball绑定精确source SHA；macOS core分为Task lifecycle、Project/Task state、package/runtime/release与CLI/contract四个互斥语义shard，Windows runtime、相互隔离的Workspace lifecycle与Task workflow、fresh build和四个Host Node tuple并行。每个capability具有独立registry wall timeout、即时completion/digest和周期active/PID/PGID heartbeat；超时由runner回收owned process group及observed descendants。completion原子保存non-aggregate checkpoint，aggregate仍无需安装项目依赖且只接受全部current terminal closed evidence。普通发布准备默认复用changed/affected反馈，不在本机重复完整Candidate；验证系统自身变化或诊断时才额外运行本地完整入口。
-5. 在任何公开写入前，候选必须通过完整CLI、普通CLI不启动HTTP、`buildr web --no-open`与health/readiness、Host Node兼容性，以及macOS/Windows本机Launcher lifecycle验证。
-6. Release Task Environment以Buildr Service的`buildr.npm-ci` preparation recipe准备依赖，并在Receipt保留Plan、declaration、recipe、Service lockfile与精确Node identity；Task Finish可以正常cleanup，publication根据冻结commit与该Receipt重建，不重新创建旧worktree，也不在Product根运行`npm ci`。`dev → main`合入并完成`main → dev`历史衔接后，准备阶段只运行`post-main`source convergence，验证version、tree、ancestry、branch protection与远端竞争，不dispatch正式release transaction，也不请求`npm-production`审批。只有维护者明确授权正式发布后，本机以Receipt的精确Node启动`release-transaction-runner.mjs`，由Application/GitHub/Git read model核对completed release/support Tasks、retrospective sources、Candidate run、main/dev、Environment binding和candidate base/tree，再针对current`origin/main`与workflow digest dispatch一次`publish.yml`并跟踪同一run；本机不创建或push tag。Workflow先用read-only jobs完成contract、一次payload/`npm pack`、Host Node和Launcher可逆验证。
-7. 可逆门禁通过后，唯一`release` job请求一次`npm-production`审批；同一approved execution以GitHub OIDC身份完成credential-free token exchange proof，立即消费为final`pre-tag`convergence，再以ensure语义创建或复用只指向同一source的tag，发布同一tarball并回读Registry/GitHub Release。其他job不持有Environment或write权限。目标version已存在时只接受相同integrity；RC只推进`next`，GA只推进`latest`，非目标tag不得变化。失败保留已有tag/npm/Release事实，新的protected attempt重新证明current authority且可能再次审批，不回退本机publish或弱化Environment protection。
+1. 维护者从可由current `dev`证明的精确baseline创建唯一`release-<version>`；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata。普通`dev`前进不改变release，冲突不自动解决。
+2. 唯一身份链为`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publish dev convergence → transaction evidence`。每个节点由专业owner提供current identity/read model；任一上游变化使下游evidence stale。
+3. Release Task Environment以Buildr Service的`buildr.npm-ci` preparation recipe准备依赖，并在Receipt保留Plan、declaration、recipe、Service lockfile与精确Node identity；不恢复旧worktree，不在Product根运行`npm ci`。Task/Environment/Development/Finish/self-bootstrap只提供各自current read model，release correlation不复制专业Result或建立旁路SQLite store。
+4. current release HEAD/tree上的分布式`Candidate gate`证明完整源码候选：复用现有preflight、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple的primary owner、bounded scheduling、heartbeat/checkpoint与timing。release内容产生新SHA后必须形成新Candidate；普通changed/affected反馈不是完整Candidate。
+5. Candidate只生成一个绑定release source的tarball；application payload、npm staging、Host Node、Launcher、publish和Registry readback消费同一filename、SHA-256、SHA-512 integrity与manifest。正式publish不重跑完整Candidate、不重新pack或生成第二份可发布bytes。
+6. Candidate通过后只创建一个release→main受保护PR；允许squash后commit identity不同，但`main^{tree}`必须等于冻结release tree。维护者尚未授权正式发布时，readiness只收集selection、Candidate、artifact、Task correlation、main、workflow与authority tuple，effects保持为空。
+7. 维护者明确授权后，唯一protected workflow在可逆门禁通过后请求一次`npm-production`审批；同一approved execution完成OIDC proof、final pre-tag convergence、tag ensure、同一tarball publish、dist-tag、GitHub Release与Registry安装readback。发布成功后才执行main→dev收敛；冲突时保留Publication并报告`published-but-dev-convergence-blocked`，不得`ours`、reset、force push、删除tag或unpublish。
 
 ## 本机 Launcher 边界
 
@@ -23,7 +25,7 @@
 
 - `@buildr-ai/buildr` tarball只由npm Registry承载；GitHub Release只保存版本说明，不上传Buildr binary Assets。
 - Actions artifact只保存冻结candidate与验证evidence，不能作为README、官网、安装脚本或其他公共下载authority。
-- `release-evidence-*` artifact中的closed transaction context/evidence正式关联release/support Tasks、retrospective source、Candidate/publish runs、main/dev收敛、Environment binding、tag、npm/GitHub Release和Registry smoke。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
+- `release-evidence-*` artifact中的closed transaction context/evidence正式关联release selection、release/support Tasks、retrospective source、Candidate/publish runs、release/main/dev收敛、Environment binding、tag、npm/GitHub Release和Registry smoke。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
 - 同一Candidate run重跑失败job时，每个逻辑shard用同名overwrite替换旧attempt evidence；成功shard与唯一tarball继续复用。代码修复产生新source SHA后必须重跑完整分布式门禁，但Windows高成本场景保持三个并行恢复边界。
 - GitHub Release ensure只核对tag、target commit、notes、draft、prerelease/Latest并拒绝任何binary Asset；Buildr bytes的missing/same/drift恢复只由npm Registry version与integrity决定。
 - 已发布version不覆盖。RC问题发布新的prerelease；正式版本问题发布patch，必要时deprecate或移动dist-tag。

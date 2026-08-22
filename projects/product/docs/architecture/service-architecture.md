@@ -682,7 +682,21 @@ tools/
 
 `tools/development/` 负责使用声明的 Node/npm 运行源码 checkout、启动 Development CLI、安装或更新 Development Launcher，以及其他只服务 Buildr 开发环境的工具。
 
-`tools/release/` 负责构建 npm 发布物，执行版本、Tag 和 Registry 检查，发布 npm package、维护 GitHub Release，以及组装和验证 Release Artifact。
+`tools/release/` 是 checkout-only 发布编排边界，负责 release selection/provenance、readiness/convergence adapter、构建 npm 发布物，以及版本、Tag、Registry、GitHub Release和Release Artifact的检查或受保护入口。它不取得System Installation、Verification、Task/Finish/self-bootstrap或Bootstrap的writer authority；tag、npm、dist-tag和GitHub Release公共mutation仍只由protected publish workflow执行。
+
+新的`release-<version>`模型使用以下协作边界；P0建立契约，selection、Candidate、correlation、readiness和Git收敛由后续独立Child逐步实现，未实现的read model不得回退为旧`dev → main`自动发布路径：
+
+| owner | 职责 | 允许的consumer方式 |
+|---|---|---|
+| `tools/release` | 人工selection、Git provenance、readiness/convergence adapter | 输出baseline、selection chain、release HEAD/tree与closed findings |
+| `src/system/installation` | SemVer、package/version、release track、installation identity | 通过Domain/Application公开能力复用版本语义 |
+| `src/verification` | Product Candidate、execution evidence与唯一tarball | 消费精确release source，输出matching Candidate/artifact identity |
+| `src/task` | Task、Environment、Development、Verification、Finish、Execution Record、Parent | 只提供各Application的current read model，不保存release正文 |
+| self-bootstrap runner | matching retained Activation与Diagnostics | 提供closed result/readback，不写Delivery或Publication |
+| Bootstrap | 唯一composition root | 只装配窄requires/provides与接口，不实现发布业务规则 |
+| protected `publish.yml` | tag、npm、dist-tag、GitHub Release、Registry readback | 消费matching context和唯一tarball，输出transaction evidence |
+
+这些owner之间不得直接写对方Persistence、复制专业Result或建立release旁路SQLite store。
 
 `src/` 不依赖 `tools/`。验证主体和验证入口统一位于 `test/verification/`，不增加 `tools/verification/`。
 
