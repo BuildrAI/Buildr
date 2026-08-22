@@ -1465,6 +1465,7 @@ button.table-action {
 .task-document-preview-heading strong { color: var(--soft-ink); font-size: 15px; }
 .task-document-preview-heading small { color: var(--soft-muted); }
 .task-document-preview-path { display: block; width: fit-content; max-width: 100%; overflow-wrap: anywhere; }
+.task-document-preview-resolution { margin: 0; color: var(--soft-muted); font-size: 11px; }
 .task-document-preview-loading { display: flex; align-items: center; gap: 8px; min-height: 80px; color: var(--soft-muted); }
 .task-document-preview-content { max-height: 62vh; overflow: auto; padding: 14px; border: 1px solid var(--soft-line); border-radius: 8px; background: #fbfcfb; }
 

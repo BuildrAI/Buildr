@@ -33,13 +33,18 @@ export function registerTaskOverviewRepository(runtime) {
         verification.outcome AS verification_outcome,
         verification.updated_at AS verification_updated_at,
         environment.status AS environment_status,
+        environment.receipt_json AS environment_receipt_json,
         environment.updated_at AS environment_updated_at,
         finish.run_id AS finish_run_id,
         finish.status AS finish_status,
         finish.current_phase AS finish_current_phase,
         finish.updated_at AS finish_updated_at,
         finish.completed_at AS finish_completed_at,
-        finish.association_handoff_identity AS finish_association_handoff_identity
+        finish.association_handoff_identity AS finish_association_handoff_identity,
+        finish.cleanup_status AS finish_cleanup_status,
+        finish.primary_failure_code AS finish_primary_failure_code,
+        finish.primary_failure_status AS finish_primary_failure_status,
+        finish.payload_json AS finish_payload_json
       FROM tasks task
       LEFT JOIN tasks parent ON parent.task_id = task.parent_task_id
       LEFT JOIN task_development_current development ON development.task_id = task.task_id

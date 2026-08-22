@@ -1,6 +1,6 @@
 ---
 name: declaration-intake
-description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；只读发现 preparation.yml 与 verification.yml 候选，长期写入必须经用户确认并交给各声明 owner Skill。
+description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类 routine maintenance 与真正需要用户决定的长期变化，再交给声明 owner。
 ---
 
 # Declaration Intake Skill
@@ -31,23 +31,28 @@ Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilitie
 
 Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `inspect` 与 Task Finish 均不得创建、修改或删除长期声明。
 
-## 3. 取得长期写入授权
+## 3. 区分 routine maintenance 与用户决定
 
-写入前向用户展示：
+任何写入前都先展示精确diff，并按以下closed条件分类：
+
+- `routine-maintenance`：只让声明追上当前用户目标和已登记scope内已经确认的wrapper、lockfile、build/test入口或既有authority；不新增/删除Project或Service scope，不改变applicability/requiredness，不引入capability、外部效果、安全例外，且authority无冲突。Agent可以在当前用户目标授权内直接交给owner维护并验证，无需让用户承担内部声明步骤。
+- `user-decision-required`：新增/删除scope，改变applicability或requiredness，引入新的capability、外部效果或安全例外，或authority证据冲突。必须在写入前请求用户确认精确变化。
+
+分类与展示至少包含：
 
 - 精确目标文件；
 - 新增、修改或删除的 Recipe/Capability identity 与 scope；
 - 关键 invocation、inputs/outputs、environment/effects 差异；
 - 尚未解决的 Commands/Capability 或测试建设缺口。
 
-用户没有确认时，只报告当前缺口与候选。不得把“触发检查”理解为写入授权，也不得用一次宽泛确认覆盖两个文件或新增 scope。
+`user-decision-required`没有确认时只报告当前缺口与候选；不得用触发检查、Formal Task或一次宽泛确认覆盖两个文件、新增scope或其他长期决策。`routine-maintenance`也不得静默扩大scope、伪造capability或绕过owner，只是不为已确认事实重复请求人类授权。
 
 ## 4. 交给声明 owner
 
-用户确认具体变更后：
+分类完成后：
 
-- Preparation 交给 `task-environment` Skill，使用其 schema、模板和 Doctor 校验；
-- Verification 交给 `task-verification` Skill，使用其 schema、模板和 Doctor 校验。
+- Preparation 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-environment` Skill，使用其 schema、模板和 Doctor 校验；
+- Verification 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-verification` Skill，使用其 schema、模板和 Doctor 校验。
 
 Intake 不直接编辑声明，不合并两个 writer。owner 完成后运行适用 Doctor，并再次只读确认文件、scope 和 identity。声明变化只会让各专业 Task snapshot/Result 按自身契约 stale 或 blocked，不由 Intake 改写 Environment Receipt、Task Plan、Verification Result 或 Task Record。
 
@@ -59,7 +64,8 @@ Declaration Intake：
 - Scope：<project/service selectors>
 - Preparation：current / missing / invalid / drifted；<candidate or diff>
 - Verification：current / missing / invalid / gap；<candidate or diff>
+- 分类：routine-maintenance / user-decision-required；<closed reasons>
 - 外部诊断：<Commands/Capability gaps or none>
-- 待授权写入：<exact files and changes or none>
+- 待用户决定：<exact files and semantic changes or none>
 - 下一动作：<request confirmation / owner Skill / done>
 ```

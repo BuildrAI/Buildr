@@ -25,6 +25,8 @@ proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到
 
 ## Parent Plan 与 Child Contribution
 
+正式Child只用于真正独立交付的Contribution：它必须能单独说明目标与scope，并形成自己的Candidate/evidence、immutable Contribution Handoff和真实Delivery。普通并行调查、临时Agent分工、同一Contribution内的局部实现或测试协作不创建Child、不绑定Contribution，也不进入Parent进度事实；Agent可在同一Task内自行编排。不能独立handoff和delivery的工作不得仅因并发人数或目录边界被长期建模。
+
 新建Parent可以显式采用Parent Plan。正常启动顺序是：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → `task next`返回首个依赖已满足的Contribution。任何一步blocked都只恢复该步的owner事实；不要先创建Child、手工拼Development写入或把非阻塞建议升级成gate。
 
 当`task-manager`或`task-triage`因用户的创建、准备、拆分Parent或准备到可启动Child目标交接active Parent时，本Skill默认连续完成上述准备，不要求用户为每个阶段重新发指令：
@@ -45,7 +47,7 @@ Parent Environment只服务Parent本身。纯协调且在Child前不修改交付
 
 Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
 
-Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
+满足独立交付门槛的Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
 
 Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明，`expectedChild`也不能替代真实Child relation与binding。
 

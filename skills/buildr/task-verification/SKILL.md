@@ -7,7 +7,7 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 
 本 Skill 是 `buildr.task-verification/v3` 的默认 provider。它只负责两部分：Project 的 Verification Capability Declaration，以及针对正式 Task 目标的 transient Execution + Workspace本地current Result。它不开发测试，不拥有 Task Environment、Task Review、Task Development、Candidate generation、Task progression、风险接受、部署或业务验收。
 
-开始行动时必须读取 `references/project-verification-v2.md`；只有经`declaration-intake`完成只读发现、展示精确diff并取得用户授权后，才使用`templates/project-verification.yml`维护长期声明。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
+开始行动时必须读取 `references/project-verification-v2.md`；只有经`declaration-intake`完成只读发现、展示精确diff，并形成`routine-maintenance`结论或取得长期适用性变化的用户授权后，才使用`templates/project-verification.yml`维护长期声明。不得绕过Intake分类、静默扩大scope、改变requiredness或伪造capability。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
 
 ## 1. 建立验证边界
 

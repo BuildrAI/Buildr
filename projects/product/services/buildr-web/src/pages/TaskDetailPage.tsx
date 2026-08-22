@@ -17,6 +17,7 @@ import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
+import { TaskOutcomeSummary } from './task-detail/TaskOutcomeSummary';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
 import { PrototypeTab, type UiPrototypeData } from './task-detail/PrototypeTab';
 import {
@@ -753,6 +754,13 @@ export function TaskDetailPage() {
           loading={coordinationLoading}
           onRefresh={() => { void refreshCoordination(); }}
           taskHref={(childTaskId) => href(`/tasks/${encodeURIComponent(childTaskId)}`)}
+        />
+        <TaskOutcomeSummary
+          summary={overviewData?.userSummary}
+          loading={overviewLoading}
+          onRefresh={() => { void refreshOverview(); }}
+          onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'development')}
+          onAuthorize={(authorization) => openAgentAction(authorization.owner, { taskId, action: authorization.action, summary: authorization.summary })}
         />
         <details className={`task-technical-overview${coordinationData?.mode === 'parent-plan' ? ' parent-mode' : ' ordinary-mode'}`} open={coordinationData?.mode !== 'parent-plan'}>
           <summary>技术事实、Change 与 Task Record</summary>

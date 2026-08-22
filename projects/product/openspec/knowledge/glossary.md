@@ -361,8 +361,8 @@
 ## 父任务 / 子任务（Parent Task / Child Task）
 
 - 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
-- 适用范围：协调Task拆分、Buildr Web层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
-- 避免混用：不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
+- 适用范围：把可独立形成Candidate、Verification、Completion、不可变Handoff与Delivery的Contribution拆为Child，以及Buildr Web层级展示、导航和Task Manager显式设置、重挂或清除Parent。
+- 避免混用：不是普通调查、编码、测试或Agent并行分工的强制建模方式，也不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
 - 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 协调任务（Coordinating Task）
@@ -390,14 +390,14 @@
 
 - 定义：Project根可选`preparation.yml`中的长期环境准备事实，使用closed`buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Recipe。
 - 适用范围：团队已知的依赖准备、代码生成、工具初始化等可重复入口；支持只有Project、没有Service的结构，也支持多个Service分别声明。
-- 避免混用：不是Task Plan、Receipt、技术栈自动发现结果或状态store；候选可由Agent只读发现，但长期写入必须经用户授权。
+- 避免混用：不是Task Plan、Receipt、技术栈自动发现结果或状态store；已确认且不改变scope、适用性、requiredness、capability、外部效果、安全例外或authority的routine diff可由专业owner维护，其余长期语义变化仍需用户决定。
 - 来源：[Project Environment Preparation Declaration specification](../specs/project-environment-preparation-declarations/spec.md)
 
 ## 项目声明接入（Project Declaration Intake）
 
 - 定义：面向Project `preparation.yml`与`verification.yml`的无状态Agent编排入口，在注册、首次Task、入口变化、专业gap或显式请求时只读发现候选与差异。
-- 适用范围：确认Project-only或多Service scope、汇总证据与外部诊断、向用户请求精确长期写入授权，并把已授权动作交给各声明owner Skill。
-- 避免混用：不是统一Declaration store/schema/writer、后台扫描器或Task结果；不管理`capabilities.yml`/`commands.yml`，未经用户确认不写长期声明。
+- 适用范围：确认Project-only或多Service scope、汇总证据与外部诊断，把已确认且不改变长期适用性的diff分类为routine maintenance并交给声明owner；scope、适用性、requiredness、capability、外部效果、安全例外或authority变化则请求用户做精确决定。
+- 避免混用：不是统一Declaration store/schema/writer、后台扫描器或Task结果；不管理`capabilities.yml`/`commands.yml`，也不以routine分类绕过证据冲突或真实业务决定。
 - 来源：[Project Declaration Intake specification](../specs/project-declaration-intake/spec.md) 与 [Buildr 项目声明体系](../../docs/architecture/buildr-project-declaration-system.md)
 
 ## 环境准备配方（Environment Preparation Recipe）

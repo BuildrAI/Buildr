@@ -7,6 +7,8 @@ description: 用户明确要求创建或查看待办/正式 Task Record、创建
 
 本 Skill 是 `buildr.task-record/v2` 的默认 provider，只管理 Task 的最小顶层记录、直接 Parent/Child 和复盘来源。`todo` 是已接受但未启动的 data-only 意向，`active` 才进入正式执行。Buildr Web 是同一 Application 的独立人类客户端；Parent Plan、Contribution、复盘正文和专业事实不得复制到 Task Record。
 
+Parent/Child只表达真正独立交付的协调层级。普通Agent并行调查、临时分工、同一交付内的局部实现或测试协作不触发本Skill创建Child；只有工作能单独说明目标/scope并形成Candidate/evidence、immutable Handoff与真实Delivery时，才建立正式Child关系。
+
 ## 1. 何时使用
 
 仅在以下意图使用：

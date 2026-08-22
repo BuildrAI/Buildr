@@ -9,7 +9,7 @@ description: 正式 Task 需要准备、检查、恢复或清理实际执行环�
 
 Task Environment只拥有Buildr-managed checkout、Preparation、runtime projection、Task-owned持久资源、正式环境证据与cleanup authority。Formal Task Record、普通编辑、构建或有界测试本身不自动触发本Skill；缺少Plan/Receipt不能成为这些直接动作的通用许可blocker。直接工作不得反向补造Receipt或认领本Skill的ready、资源与cleanup结果。
 
-开始行动时必须读取 `references/project-environment-preparation-v1.md`。只有经`declaration-intake`完成只读发现、展示精确diff并取得用户授权后，才使用`templates/project-preparation.yml`维护长期声明；提交Task选择时使用 `templates/task-environment-plan-request.json`。未经用户授权不得把候选声明写入Project。
+开始行动时必须读取 `references/project-environment-preparation-v1.md`。只有经`declaration-intake`完成只读发现、展示精确diff，并形成`routine-maintenance`结论或取得长期适用性变化的用户授权后，才使用`templates/project-preparation.yml`维护长期声明；提交Task选择时使用 `templates/task-environment-plan-request.json`。不得绕过Intake分类、静默扩大scope、改变requiredness或把候选能力写入Project。
 
 ## 使用方式
 

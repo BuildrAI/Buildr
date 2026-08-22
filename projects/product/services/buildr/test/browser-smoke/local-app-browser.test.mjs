@@ -938,6 +938,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     await page.locator('#task-document-preview').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-document-preview-path').innerText(), 'projects/demo/docs/task-reference.md');
+    assert.equal(await page.locator('#task-document-preview-resolution').innerText(), '引用已解析 · 正文当前可读取');
     assert.match(await page.locator('.task-document-preview-content').innerText(), /普通用户可以直接查看这份文档/);
     await page.locator('.task-document-preview-content').getByRole('link', { name: '继续阅读', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-document-preview-path')?.textContent?.endsWith('/more.md'));
