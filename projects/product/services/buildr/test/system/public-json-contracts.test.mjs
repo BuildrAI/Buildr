@@ -170,17 +170,18 @@ test('doctor JSON默认compact且full必须显式请求', async (t) => {
   const explicitCompact = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'compact']);
   assert.deepEqual(compact, explicitCompact);
   assert.deepEqual(Object.keys(compact), [
-    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps',
+    'schemaVersion', 'targetRoot', 'scope', 'agentRuntime', 'productInstallation', 'releaseAwareness', 'notices', 'ok', 'summary', 'health', 'domainHealth', 'findings', 'repairPlan', 'nextSteps',
   ]);
   assert.equal(compact.releaseAwareness.schemaVersion, PUBLIC_JSON_SCHEMAS.releaseAwareness);
   assert.equal(compact.releaseAwareness.freshness.status, 'unavailable');
   assert.deepEqual(compact.notices, []);
   assert.equal(compact.health.ready, true, 'Release Awareness unavailable must not block Doctor readiness');
+  assert.ok(Array.isArray(compact.domainHealth));
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in compact, false, field);
 
   const full = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in full, true, field);
-  for (const field of ['releaseAwareness', 'notices', 'ok', 'summary', 'health', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
+  for (const field of ['releaseAwareness', 'notices', 'ok', 'summary', 'health', 'domainHealth', 'findings', 'repairPlan', 'nextSteps']) assert.deepEqual(full[field], compact[field], field);
   const contracts = full.capabilities.graphs.flatMap((graph) => graph.contracts);
   assert.ok(contracts.length > 0);
   assert.ok(contracts.every((contract) => /^[a-f0-9]{64}$/.test(contract.digest)));
