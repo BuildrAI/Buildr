@@ -109,7 +109,7 @@ Runner用Environment retained Node显式验证retained `projects/product/buildr`
 
 Development Launcher安装前，self-bootstrap runner的continuity helper只读取Development Web Data Root并用instance secret认证health；只有健康development实例才冻结当前端口与旧PID，绝不读取、停止或清理released实例。manager原子更新Launcher后，helper通过retained `projects/product/buildr web --port 4458 --no-open`、Environment retained Node与新Launcher identity恢复服务，并记录previous/current端口、新旧PID及retained source/HEAD/Node；历史随机端口实例因此迁移到`4458`。原本未运行、stale或其他channel保持按需启动。恢复失败只回收本次启动且PID可证明的进程，保留代码交付与新Launcher，并以自举激活注意（Activation Attention）停止后续gate/finalize，不回滚交付、不停止foreign占用者。
 
-同一carrier根存在多个run时，runner只隔离可证明ownership、路径和identity的foreign carrier；不得修改或删除。已交付但cleanup pending的owner由Agent通过Task Environment独立处理，不成为其他Delivery或Activation的全局前置条件。
+同一carrier根存在多个run时，runner只隔离可证明ownership、路径和identity的foreign carrier；不得修改或删除仍代表repository carrier的内容。历史Result已由Product明确声明全部carrier为`cleaned/root: null`时，runner只有在精确run container真实、非symlink、未越界且完全为空的情况下，才以`stale-empty-container`兼容分类执行非递归空目录删除；非空、identity不匹配或删除失败继续阻断且不递归清理。已交付但cleanup pending的owner仍由Agent通过Task Environment独立处理，不成为其他Delivery或Activation的全局前置条件。
 
 多个自动Finish run只在相同repository-scoped target mutation窗口竞争短lease；多repository不构成跨remote原子事务。逐repository push/readback后立即checkpoint，部分成功必须保留，恢复或reconciliation不重复push已交付repository。
 

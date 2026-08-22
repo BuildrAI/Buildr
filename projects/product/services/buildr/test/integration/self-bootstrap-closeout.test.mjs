@@ -200,6 +200,26 @@ function cleanupPendingResult(root, baseRef, runId, taskId = `task-${runId}`, ov
   });
 }
 
+function cleanedFinishResult(root, baseRef, runId, taskId = `task-${runId}`) {
+  return selfBootstrapTaskFinishResult(canonicalFinishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+    runId,
+    identity: {
+      ...canonicalFinishResult(root, baseRef, []).identity,
+      task: taskId,
+    },
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    carrier: {
+      identity: `sha256-cleaned-${runId}`,
+      changedPaths: ['projects/product/services/buildr/src/example.mjs'],
+    },
+    completion: {
+      status: 'complete',
+      finalRemoteRef: baseRef,
+      cleanup: { status: 'cleaned' },
+    },
+  }));
+}
+
 function undeliveredBlockedResult(root, runId, taskId = `task-${runId}`, overrides = {}) {
   const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
   const carrierIdentity = `sha256-carrier-${runId}`;
@@ -615,6 +635,7 @@ test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', 
   const finish = selfBootstrapTaskFinishResult(canonical);
   assert.equal(finish.workspaceRepository.carrier.root, null);
   assert.equal(finish.workspaceRepository.carrier.availability, 'cleaned');
+  fs.mkdirSync(finish.carrierContainerRoot, { recursive: true });
 
   const result = runSelfBootstrapCloseoutCommand({
     args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
@@ -624,9 +645,94 @@ test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', 
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(fs.existsSync(finish.carrierContainerRoot), false);
+  assert.equal(result.recoveryPlan.status, 'advisory');
+  assert.equal(result.recoveryPlan.observations[0].classification, 'stale-empty-container');
+  assert.equal(result.recoveryPlan.observations[0].effect.type, 'removed-stale-empty-carrier-container');
   assert.deepEqual(result.plan.frozenPaths, ['projects/product/services/buildr/src/example.mjs']);
   assert.equal(phase(result, 'verify-development-entry').status, 'passed');
   assert.equal(phase(result, 'finalize').status, 'passed');
+});
+
+test('foreign cleaned空run container自动收敛且不阻断当前closeout', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const foreign = cleanedFinishResult(root, baseRef, 'foreign-cleaned-empty');
+  createCarrier(root, current.runId);
+  fs.mkdirSync(foreign.carrierContainerRoot, { recursive: true });
+
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspections: { [current.runId]: current, [foreign.runId]: foreign } }),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(fs.existsSync(foreign.carrierContainerRoot), false);
+  const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
+  assert.equal(observation.classification, 'stale-empty-container');
+  assert.equal(observation.owner.taskId, foreign.identity.taskId);
+  assert.deepEqual(result.recoveryPlan.orderedSteps, []);
+});
+
+test('cleaned carrier container非空或identity不匹配时保持fail closed', async (t) => {
+  for (const scenario of [
+    {
+      name: 'non-empty',
+      mutate(root, finish) { fs.writeFileSync(path.join(finish.carrierContainerRoot, 'unexpected.txt'), 'retain\n'); },
+      code: 'self-bootstrap-closeout.cleaned-carrier-container-not-empty',
+    },
+    {
+      name: 'identity-mismatch',
+      mutate(root, finish) { finish.workspaceRepository.carrier = { ...finish.workspaceRepository.carrier, identity: 'sha256-mismatched-cleaned-carrier' }; },
+      code: 'self-bootstrap-closeout.workspace-carrier-set-mismatch',
+    },
+  ]) {
+    await t.test(scenario.name, (t) => {
+      const { root, baseRef, environment } = fixture(t);
+      const finish = cleanedFinishResult(root, baseRef, `cleaned-${scenario.name}`);
+      fs.mkdirSync(finish.carrierContainerRoot, { recursive: true });
+      scenario.mutate(root, finish);
+
+      const result = runSelfBootstrapCloseoutCommand({
+        args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
+        actualNodeExecutable: process.execPath,
+        execute: executor(root, { finishInspection: finish }),
+        environment,
+      });
+
+      assert.equal(result.status, 'blocked');
+      assert.equal(fs.existsSync(finish.carrierContainerRoot), true);
+      assert.deepEqual(result.effects, []);
+      const observation = result.recoveryPlan.observations.find((item) => item.runId === finish.runId);
+      assert.equal(observation.classification, 'unprovable');
+      assert.equal(observation.diagnostic.code, scenario.code);
+    });
+  }
+
+  await t.test('symlink', (t) => {
+    const { root, baseRef, environment } = fixture(t);
+    const finish = cleanedFinishResult(root, baseRef, 'cleaned-symlink');
+    const outside = path.join(path.dirname(root), 'cleaned-symlink-outside');
+    fs.mkdirSync(path.dirname(finish.carrierContainerRoot), { recursive: true });
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, finish.carrierContainerRoot);
+
+    const result = runSelfBootstrapCloseoutCommand({
+      args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
+      actualNodeExecutable: process.execPath,
+      execute: executor(root, { finishInspection: finish }),
+      environment,
+    });
+
+    assert.equal(result.status, 'blocked');
+    assert.equal(fs.lstatSync(finish.carrierContainerRoot).isSymbolicLink(), true);
+    assert.deepEqual(result.effects, []);
+    const observation = result.recoveryPlan.observations.find((item) => item.runId === finish.runId);
+    assert.equal(observation.classification, 'unprovable');
+    assert.equal(observation.diagnostic.code, 'self-bootstrap-closeout.carrier-entry-invalid');
+  });
 });
 
 test('commit后push失败保留successor，重跑从同一commit恢复', (t) => {

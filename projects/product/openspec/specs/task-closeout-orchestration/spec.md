@@ -115,7 +115,9 @@ Task Finish Skill MUST在启动canonical `buildr task finish run`后，使用宿
 - **AND** MUST NOT在终态后继续poll
 
 ### Requirement: Runner 必须为并存 Finish carrier 生成 owner-ordered 恢复计划
-Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前，只读枚举固定Finish carrier根的直接子项，并通过现有Product `task finish inspect`入口核对每个候选的owning run。目录名 MUST只作为inspect候选；runner MUST以Finish Result证明run、canonical Workspace、真实非symlink carrier路径、carrier identity、状态与适用resume identity。可证明的foreign carrier MUST作为隔离共存observation返回，并作为精确untracked ignored root参与retained cleanliness；它们的owner cleanup或occupancy release建议 MAY按`taskId + runId`稳定排序，但 MUST不成为当前activation predecessor。Runner MUST不读取其业务内容、删除、修改、替owner恢复资源，也 MUST不写入新的Product Application、Receipt、SQLite row、队列或聚合store。只有任一entry ownership/path/identity不可证明时，当前invocation才 MUST保持blocked且activation effects为空。
+Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前，只读枚举固定Finish carrier根的直接子项，并通过现有Product `task finish inspect`入口核对每个候选的owning run。目录名 MUST只作为inspect候选；runner MUST以Finish Result证明run、canonical Workspace、真实非symlink carrier路径、carrier identity、状态与适用resume identity。可证明的foreign carrier MUST作为隔离共存observation返回，并作为精确untracked ignored root参与retained cleanliness；它们的owner cleanup或occupancy release建议 MAY按`taskId + runId`稳定排序，但 MUST不成为当前activation predecessor。Runner MUST不读取其业务内容、修改、替owner恢复资源，也 MUST不写入新的Product Application、Receipt、SQLite row、队列或聚合store。
+
+唯一允许runner删除foreign run entry的兼容例外是：Product稳定Finish Result已明确把该run全部repository carrier声明为`availability: cleaned`且`root: null`，Workspace repository carrier与集合中的selector/identity/cleaned状态一致，entry是固定受管根下与run精确匹配的真实非symlink直接目录，realpath未越界且目录完全为空。Runner MUST把这种历史残留归类为`stale-empty-container`，使用非递归空目录删除在activation前收敛，并重新枚举inventory；MUST不执行owner resume、不修改owner Result/Task/Environment，也不得把该兼容扩展到任意其他managed metadata或用户目录。只有任一entry ownership/path/identity不可证明，或兼容删除失败时，当前invocation才 MUST保持blocked且activation effects为空。
 
 #### Scenario: 可证明 cleanup_pending carrier 与当前 activation 共存
 - **WHEN** 当前run之外存在一个或多个真实foreign目录，Product Result证明其Workspace/path/carrier identity与matching cleanup resume全部一致
@@ -146,6 +148,16 @@ Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前�
 - **WHEN** foreign Result为doctor-blocked、prepare/deliver blocked、terminal残留或其他不能生成确定性cleanup命令的状态，但owner/path/carrier identity仍可证明
 - **THEN** inventory MUST展示原owner状态并将该目录视为isolated coexisting observation
 - **AND** MUST不猜测跨owner恢复动作，也不得仅因状态不能自动cleanup而阻塞当前activation
+
+#### Scenario: 已清理 Result 遗留精确空 run container
+- **WHEN** foreign Product Result把全部repository carrier声明为`availability: cleaned`且`root: null`，Workspace carrier identity匹配，并且精确run entry是真实、非symlink、未越界且完全为空的目录
+- **THEN** runner MUST将其记录为`stale-empty-container`，以非递归空目录删除收敛并重新枚举inventory
+- **AND** 当前activation MUST继续，且runner MUST不执行owner resume或修改owner Product状态
+
+#### Scenario: 已清理 Result 的 run container 非空或删除失败
+- **WHEN** foreign Result声称carrier已清理，但精确run entry包含任意目录项，或空目录删除因race、权限或其他原因失败
+- **THEN** inventory MUST把该条目标记为`unprovable`并返回精确diagnostic
+- **AND** runner MUST在target lease、Git、sync、安装、Doctor、Finish resume与递归删除零副作用状态停止
 
 #### Scenario: foreign carrier ownership或identity不可证明
 - **WHEN** carrier条目是symlink、越出固定根、realpath重复，Product inspect失败，或Result的schema、run、Workspace、carrier path、carrier identity、适用resume identity任一缺失或不匹配
