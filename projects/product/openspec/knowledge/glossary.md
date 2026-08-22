@@ -2,6 +2,34 @@
 
 本表维护 Buildr Product 的 canonical terminology。规范行为仍以 OpenSpec specs 为准。
 
+## 硬门禁（Hard Gate）
+
+- 定义：仅当继续一个具体动作会破坏真实结果不变量时返回的 `blocked` 分类，例如越权、写错对象、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报。
+- 适用范围：产品设计、Application Result、Skill contract 与迁移审查；每项硬门禁必须明确 action、consumer、invariant、harm、authority、scope、fallback 与 classification。
+- 避免混用：不是推荐流程、工具偏好、内部登记完整性、聚合健康或 Agent 的全局工作许可；无法说明具体 harm 的规则不是硬门禁。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 待处理（Attention）
+
+- 定义：当前结果或可独立核验事实仍成立，但存在需要单独恢复、补登记或跟进的问题。
+- 适用范围：Delivery 后的 Activation/cleanup/diagnostics、内部 receipt/provenance 恢复，以及不撤销已成立专业事实的局部缺口。
+- 避免混用：不是 Hard Gate、失败掩盖或 claimed success；若继续当前动作会造成真实不变量损害，必须 blocked。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 建议（Advice）
+
+- 定义：改善效率、质量或体验的推荐，不构成动作许可，也不否定当前事实。
+- 适用范围：optional capability、推荐工具与非强制工作方式。
+- 避免混用：不是 Attention 或 Hard Gate；不能承载必须恢复的问题，也不能替代授权和验证。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 动作局部就绪（Action-local Readiness）
+
+- 定义：`ready|required|blocked` 对一个具体 consumer 的具体 action 是否具备必要事实的判断。
+- 适用范围：Task Entry、Environment、Verification、Finish、capability routing 与其他专业 Application 的局部入口。
+- 避免混用：不是第四种治理级别，不是 Workspace、Task 或 Agent 的全局许可；局部缺口不得阻止不消费该事实或能力的动作。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
 ## CLI 产品表面（CLI Product Surface）
 
 - 定义：Buildr 对每个 CLI command 的可发现性与兼容承诺分类，封闭取值为 `primary`、`agent-machine`、`maintenance`。

@@ -100,6 +100,9 @@ test('无Environment时短路到required Environment且零Development读取', (t
   assert.equal(result.status, 'ready');
   assert.equal(result.next.mode, 'required');
   assert.equal(result.next.owner, 'task-environment');
+  assert.equal(result.next.action, 'prepare');
+  assert.deepEqual(result.blockers, [{ axis: 'environment', owner: 'task-environment', code: 'task_environment_no_receipt' }]);
+  assert.equal(result.development, null);
   assert.deepEqual(result.effects, []);
   assert.deepEqual(calls, { task: 1, environment: 1, development: 0, parent: 0, capabilities: ['buildr.task-environment@1'] });
 });
@@ -209,6 +212,10 @@ test('显式target mismatch不搜索其他worktree且不读取Development', (t) 
   assert.equal(result.status, 'blocked');
   assert.equal(result.diagnostic.code, 'task_entry_execution_target_mismatch');
   assert.equal(result.diagnostic.owner, 'task-environment');
+  assert.equal(result.next.mode, 'required');
+  assert.equal(result.next.action, 'inspect');
+  assert.deepEqual(result.diagnostic.details.allowed, execution(root).allowedExecutionRoots);
+  assert.deepEqual(result.blockers, [{ axis: 'execution-target', owner: 'task-environment', code: 'task_entry_execution_target_mismatch' }]);
   assert.equal(calls.development, 0);
   assert.deepEqual(result.effects, []);
 });

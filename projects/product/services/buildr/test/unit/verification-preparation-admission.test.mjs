@@ -39,13 +39,14 @@ test('preparation gap只生成Task Environment恢复输入并声明安全降级�
   assert.equal(result.status, 'blocked');
   assert.deepEqual(result.gaps.map((gap) => [gap.category, gap.owner, gap.recoverable]), [['preparation', 'task-environment', true]]);
   assert.equal(result.recovery.changesTaskScope, false);
-  assert.ok(result.recovery.blocks.includes('formal-verification-result'));
-  assert.ok(result.recovery.doesNotBlock.includes('unrelated-development'));
+  assert.deepEqual(result.recovery.blocks, ['formal-verification-execution', 'formal-verification-result', 'completion-claim']);
+  assert.deepEqual(result.recovery.doesNotBlock, ['unrelated-development', 'read-only-investigation', 'bounded-informal-checks']);
   assert.deepEqual(result.recovery.planRequest.auxiliaryPreparation.map((item) => item.selector), ['service:product/buildr-web']);
 });
 
 test('没有Formal Task Environment时不把admission扩展成通用工作许可', () => {
   const result = verificationPreparationAdmission({ projectCode: 'product', declarationIdentity: 'sha256-verification', selectedCapabilities: [capability()], context: null });
   assert.equal(result.status, 'ready');
+  assert.deepEqual(result.gaps, []);
   assert.equal(result.recovery, null);
 });

@@ -52,6 +52,9 @@ test('入口同时报告环境与研发缺口且不短路', (t) => {
   const observed = observeTaskFinishEntryReadiness({ runtime, root, task: 'demo-task' });
   assert.equal(observed.ready, false);
   assert.equal(observed.nextWorkflow, 'task-development');
+  assert.equal(observed.identityParts, null);
+  assert.equal(observed.handoff, null);
+  assert.deepEqual(Object.keys(observed.gaps), ['development', 'environment', 'delivery']);
   assert.ok(observed.gaps.environment.length >= 1);
   assert.ok(observed.gaps.development.length >= 1);
   assert.equal(observed.gaps.environment[0].code, 'task_environment_snapshot_missing');
@@ -60,8 +63,8 @@ test('入口同时报告环境与研发缺口且不短路', (t) => {
   const error = taskFinishEntryGapsError(observed);
   assert.equal(error.code, 'task_finish.entry_gaps');
   assert.equal(error.details.nextWorkflow, 'task-development');
-  assert.ok(error.details.gaps.environment.length >= 1);
-  assert.ok(error.details.gaps.development.length >= 1);
+  assert.deepEqual(error.details.gaps, observed.gaps);
+  assert.match(error.nextAction, /task-development/);
 });
 
 test('无贡献 repository 不解析 remote 且入口保持就绪', (t) => {

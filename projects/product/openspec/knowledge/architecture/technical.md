@@ -18,6 +18,12 @@
 - System Installation 是独立纵向模块：`src/system/installation/application` 持有 CLI update、release awareness、installation status 与 npm lifecycle enrollment 编排，`infrastructure` 持有 origin/registry/current identity、Launcher binding 与 npm Launcher 平台适配，`interfaces/cli` 持有 update/status/Launcher commands，`module.mjs` 向 Bootstrap 贡献命令、release-awareness HTTP、Diagnostic Read Model，并公开 identity、launcher 与 Application 窄端口。Web 只依赖身份读取与 binding 校验，不取得 Launcher install/update writer authority；Doctor 只读消费诊断事实。
 - System Doctor 的 CLI、Application 编排、结果模型和诊断实现位于 `src/system/doctor/`。Bootstrap 在其他模块安装后最后装配 Diagnostic/Read Model contribution；Doctor 可观察 Workspace、Task、Agent Assets、Installation 与 Web，但不取得业务 writer authority。旧 `src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` 和带退出条件的 compatibility Facade 已删除；组合 Runtime 仅通过正式 module runtime port 保持既有进程内调用表面。
 
+## 门禁结果与动作局部就绪
+
+产品不建立全局 gate evaluator、registry、SQLite 状态或统一 JSON shape。各专业 Application 继续拥有自己的 closed Result，但设计、审查和迁移统一使用 `action`、`consumer`、`invariant`、`harm`、`authority`、`scope`、`fallback`、`classification` 八字段模板。`blocked` 只保护具体动作的真实结果不变量，`attention` 保留已经成立但需独立恢复的事实，`advice` 只表达建议；`ready|required|blocked` 必须绑定实际 consumer，不得由聚合 `health.ready`、Receipt 完整性或 optional capability readiness 推导 Agent 的通用工作许可。
+
+[门禁分类与有界审计](governance-gate-taxonomy.md)只保存本轮迁移输入和后续 owner，不是运行时或进度 authority。基础证明复用 Task Entry Snapshot、Verification Preparation Admission 与 Task Finish Entry Readiness 的现有结构化 Result，断言局部阻断、无关动作继续及 identity/authorization/evidence fail-closed；全面迁移由后续专业 Contribution 分域完成。
+
 ## 运行结构
 
 - Buildr 本机状态分成共享 Product Data Root 与 channel-scoped Web Data Root。通用平台路径解析位于 `src/infrastructure/filesystem/product-data-root.mjs`；Product installation registry、release awareness 与正式 npm Launcher binding 继续共享既有 Product Root，System Installation 不反向依赖 Web profile。普通 Buildr Web 按产品身份闭合映射为 `npm + host → released`、`development + development → development`。released 默认沿用 macOS `Buildr`、Windows `Buildr`、Linux `buildr`，development 默认使用对应的 `Buildr Dev` / `buildr-dev`；显式 `BUILDR_APP_DATA_DIR` 只建立当前 Web 环境的隔离命名空间，不改变 channel 或共享 Product Root。

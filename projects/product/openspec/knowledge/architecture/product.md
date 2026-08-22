@@ -8,6 +8,8 @@
 
 Buildr 采用宽而薄的治理：Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。硬门禁只保护 authority、目标对象、外部或不可逆副作用、证据真实性与完成结论等结果边界。缺失的若只是辅助 provenance、推荐流程、工具偏好、Buildr 内部登记或自动化信心，而当前事实仍可从权威来源检查、验证并诚实报告，则 Buildr 提供诊断与 Agent 指引，不规定 Agent 或协作者必须采用唯一工作方式，也不阻断专业工作与其他无关工作的安全推进。
 
+产品治理结果统一区分硬门禁（Hard Gate）、待处理（Attention）与建议（Advice）；`ready|required|blocked` 只表示具体 consumer 的具体 action 是否就绪，不是 Workspace、Task 或 Agent 的全局许可。新增或保留硬门禁必须明确 action、consumer、invariant、harm、authority、scope、fallback 与 classification；无法说明放行会破坏什么结果不变量时，应降级为 attention、advice 或更窄动作的局部前置。完整分类与迁移边界见[门禁分类与有界审计](governance-gate-taxonomy.md)。
+
 ## 核心产品模型
 
 ```text
