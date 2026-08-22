@@ -287,6 +287,46 @@ test('连续 target race 每次使用新精确 token 重建 carrier，复用 Can
   assert.equal(inspectFinishRun({ root, runId: 'target-race' }).status, 'complete');
 });
 
+test('多 repository target race 恢复时清理 repository carrier 状态', async (t) => {
+  const root = fixture(t);
+  const task = 'repository-target-race';
+  const contribution = {
+    identity: 'sha256-contribution',
+    originalBaseline: { head: 'baseline-head', tree: 'baseline-tree' },
+    source: { head: 'source-head', tree: 'source-tree' },
+  };
+  const repository = {
+    selector: 'workspace',
+    sourcePath: '.',
+    retainedRoot: root,
+    taskRoot: root,
+    environmentBranch: 'codex/repository-target-race',
+    targetBranch: 'dev',
+    remote: 'origin',
+    disposition: 'applicable',
+    taskContribution: contribution,
+  };
+  const run = createFinishRun({ root, runId: task, identity: { ...identity(root, task), repositories: [repository] } });
+  const carrier = { identity: 'carrier-old', head: 'old-head', tree: 'old-tree' };
+  const firstHandlers = passingHandlers([], 'old');
+  firstHandlers.prepare = async () => ({ status: 'passed', output: { repositories: [{ selector: 'workspace', disposition: 'applicable', taskContribution: contribution, deliveryCarrier: carrier }] } });
+  firstHandlers.deliver = async () => ({ status: 'blocked', failure: { operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Target changed.' } });
+  const first = await executeFinishRun({ root, run, handlers: firstHandlers });
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.repositories[0].deliveryCarrier.identity, carrier.identity);
+
+  let carrierAtResume = 'unset';
+  const secondHandlers = passingHandlers([], 'new');
+  secondHandlers.prepare = async ({ run: resumed }) => {
+    carrierAtResume = resumed.repositories[0].deliveryCarrier;
+    return { status: 'passed', output: { repositories: [{ selector: 'workspace', disposition: 'applicable', taskContribution: contribution, deliveryCarrier: { identity: 'carrier-new', head: 'new-head', tree: 'new-tree' } }] } };
+  };
+  const second = await executeFinishRun({ root, run: readFinishRun({ root, runId: task }), handlers: secondHandlers, resumeToken: first.resume.token });
+  assert.equal(carrierAtResume, null);
+  assert.equal(second.status, 'complete');
+  assert.equal(second.repositories[0].deliveryCarrier.identity, 'carrier-new');
+});
+
 test('retained Doctor blocked保留partial delivery并只恢复deliver与cleanup', async (t) => {
   const root = fixture(t);
   const firstCalls = [];

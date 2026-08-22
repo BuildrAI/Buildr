@@ -322,6 +322,12 @@ function resetTargetRaceCarrierPhases(run) {
     item.output = null;
     item.failure = null;
   }
+  for (const repository of run.repositories || []) {
+    repository.deliveryCarrier = null;
+    repository.equivalence = null;
+    repository.delivery = null;
+    repository.cleanupProof = null;
+  }
   run.deliveryCarrier = null;
   run.equivalence = null;
   run.delivery = null;
