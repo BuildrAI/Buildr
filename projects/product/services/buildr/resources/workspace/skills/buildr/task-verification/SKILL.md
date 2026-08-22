@@ -16,7 +16,8 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 - 正式 Task ID、Intent、Project/Service/Project-bound Change scope 和 active 状态，并计算三者所属Project的去重排序并集；
 - canonical Workspace，以及由 Task Environment 交接的实际 execution root；
 - 当前交付目标的明确、稳定 target identity 和可移植 summary；
-- operation：`inspect`、`execute`、`record` 或 transient `cleanup`；
+- current Task Candidate identity/generation（正式execution、inspect与reconcile必需；Task外transient execution不使用）；
+- operation：`inspect`、`execute`、`reconcile`、仅工作区`record` 或 transient `cleanup`；
 - Task有效Project集合内每个 Project 当前 `verification.yml`，以及实际变更路径、条件、环境和副作用；有效Project集合为空时明确采用仅工作区分支。
 
 没有正式 Task 时可以按用户要求执行已有测试并报告 transient 事实，但不得伪造 Task Result。没有稳定 target identity 时可以 inspect 为 `unknown`，不能 record。
@@ -24,12 +25,14 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 先运行：
 
 ```bash
-buildr task verification inspect <task-id> --target-identity <identity> --target <canonical-workspace> --json
+buildr task verification inspect <task-id> \
+  --candidate-identity <candidate-identity> --candidate-generation <n> \
+  --target-identity <identity> --target <canonical-workspace> --json
 ```
 
-current Result 只有在 target 与全部 declaration identities 都 `current` 时才适用于当前目标。target 未提供为 `unknown`；任一声明缺失/出现、内容、path、Project scope 或有效性变化为 `stale`。不要写回 applicability 标记。
+current v2 Result只有在Candidate identity/generation、target与全部declaration identities都`current`时才适用于当前目标。任一当前identity未提供为`unknown`；Candidate、声明缺失/出现、内容、path或Project scope变化为`stale`。合法v1 Result只读兼容并明确显示`legacy-result-candidate-unbound`，不能用于新Candidate gate。不要写回applicability标记或回填旧Result。
 
-当前目标来自 ready Task Environment 且其中的 declaration bytes 尚未进入 canonical Workspace 时，只在`record`追加 `--declaration-root <task-environment-root>`。Application只在正式写入动作中观察该Task当前ready Environment的精确根目录；`inspect`不接受路径，只比较调用方显式提供的保存identity。本机路径不进入current Result。
+当前目标来自ready Task Environment且其中的declaration bytes尚未进入canonical Workspace时，只在`reconcile`（或仅工作区`record`）追加`--declaration-root <task-environment-root>`。Application只在正式写入动作中观察该Task当前ready Environment的精确根目录；`inspect`不接受路径，只比较调用方显式提供的保存identity。本机路径不进入current Result。
 
 ## 2. 读取和维护 Project declaration
 
@@ -61,13 +64,14 @@ current Result 只有在 target 与全部 declaration identities 都 `current` �
 ```bash
 buildr verification run --project <code> \
   --capability <id> [--capability <id> ...] \
+  --candidate-identity <candidate-identity> --candidate-generation <n> \
   --target-identity <identity> \
   --target <execution-root> \
   --environment <task-id> --workspace <canonical-workspace> \
   --json
 ```
 
-`verification run` 只执行已选择的 command capability，并返回 `buildr.verification-execution/v1`；它不接受 `--declaration-root`。带 matching Task Environment 的正式 execution 会在启动 capability 前 open 一条 Task Execution Record，完成后先 seal 受控、脱敏、有限期正文，再精确清理 transient evidence；容量不足时不得启动 capability。Task 外 execution 仍只产生 transient evidence。`--declaration-root` 只用于 `task verification record`，让 Application 在正式写入动作中读取当前 ready Task Environment 内尚未进入 canonical Workspace 的 declaration bytes；`inspect`不重新观察声明。
+`verification run`只执行已选择的command capability，并返回`buildr.verification-execution/v1`；它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
 
 正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。`verification.preparation_blocked`只在`admission.recovery`存在时提供closed `planRequest`：把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
 
@@ -93,26 +97,26 @@ latest固定按active优先，再在对应集合使用`opened_at DESC, record_id
 
 完整命令、本机路径、waiting ticket、资源 lease 和 Environment handle 只属于 transient execution evidence。正式 Task Execution Record 只保留可移植摘要、按 capability 分段且受配额/脱敏控制的 stdout/stderr、闭合时间线与诊断；不进入 current Verification Result。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
 
-## 4. 提炼并原子记录 current Result
+## 4. 从execution authority对账current Result
 
-只有能力执行、Agent operation、coverage gaps 和整体结论都已经完整形成后，才一次性 record：
+能力执行完成后，先用Execution Record list/inspect确认所选record为matching Task、Candidate、target与declaration的terminal authority，再一次性reconcile：
 
 ```bash
-buildr task verification record <task-id> \
+buildr task verification reconcile <task-id> \
+  --candidate-identity <candidate-identity> --candidate-generation <n> \
   --target-identity <identity> \
   --target-summary <portable-summary> \
-  --capability '<project>/<id>::<passed|failed>::<portable-fact>' \
+  --record <execution-record-id> [--record <execution-record-id> ...] \
   --coverage-gap '<workspace|project:code|service:project/service>::<summary>' \
-  --outcome <passed|not-passed> \
-  --summary <portable-conclusion> \
+  [--declaration-root <task-environment-root>] \
   --target <canonical-workspace> --json
 ```
 
-同一 capability 的多个 `--capability` 会合并 facts。至少需要一个实际 capability 或 coverage gap。存在 failed capability 或 coverage gap 时 outcome 必须为 `not-passed`。
+Application独立读取record metadata与受控`summary.json`，核验body integrity、Task、owner/kind、Candidate、generation、target stability、Project、declaration与selected checks，再派生capability outcome、portable facts、evidence identities和整体结论。调用方不得提交或补充capability outcome/fact、evidence digest、declaration identity或claimed external success；任一authority不匹配、正文不可用或执行未terminal时零写入失败。
 
-仅工作区Result不执行不存在的能力，直接以唯一workspace gap形成完整负向事实；Project/Service/Change Task仍必须绑定全部有效Project declarations并拒绝workspace gap。
+仅工作区Result不执行不存在的能力，可用兼容`task verification record`入口提交Candidate、target、唯一workspace gap与`not-passed`；该入口拒绝capability claims及任何Project/Service/Change Task。Project coverage gap随至少一个matching execution authority一起reconcile；没有可执行authority时如实报告尚不能形成formal Result。
 
-Result 只回答 target、采用的 declarations、实际执行能力及事实、coverage gaps 和总体验证结论。不要复制 stdout/stderr、耗时、临时 evidence path、Environment Receipt、本机绝对路径、applicability、digest、history/revision，或写入 proceed/blocked、Task 状态和 Candidate generation。
+Result只回答Candidate、target、采用的declarations、从authority派生的实际能力及facts/evidence identities、coverage gaps和总体验证结论。不要复制stdout/stderr、耗时、临时evidence path、Environment Receipt、本机绝对路径、applicability、digest、history/revision，或写入proceed/blocked与Task状态。
 
 完整测试失败且 evidence 完整时可以形成 `not-passed` Result；execution 中断、输出不完整、结论未形成或 Application 写入失败时不得覆盖原 current。Repository 的整值原子替换和 rollback 由 Application 负责，Agent 不补写 sibling store。
 

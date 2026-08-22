@@ -13,7 +13,7 @@ description: OpenSpec Change 创建、修订、实现、同步或 Task Developme
 
 - `assess`：proposal/update 阶段评估影响；
 - `reconcile`：实现完成、最终验证前收敛内容；
-- `inspect`：Task Development 观察稳定 Content Target 前检查，不把检查冒充验证 execution；
+- `inspect`：针对current tree在实现、Review或Verification前后形成完成影响分类，不把检查冒充验证execution；
 - `maintain`：没有 Change 时，让 current knowledge 追上已由权威来源确认的既有事实。
 
 事实顺序是 canonical specs → 当前实现与 registries → active Change artifacts → 已确认 evidence/用户决定 → archive provenance。冲突时先修正权威资产，再更新解释性 knowledge。
@@ -60,7 +60,7 @@ Brief 固定表达：一句话摘要、背景与问题、目标/非目标、受�
 
 ## 5. Inspect
 
-核对所有 impacts 已处理、Brief 与权威 artifacts 一致、current knowledge 对应当前 tree、terminology 无 unresolved，并返回 `aligned|not-applicable`；可以建议 fallback reconcile，但不得静默修改后继续沿用旧验证证据。任何 unresolved 必须阻塞 stable Content Target、verification、archive、Git integration、push 和 cleanup。
+核对所有impacts、Brief、权威artifacts、current knowledge、current tree与terminology，并按当前Task完成结论影响返回`aligned|not-applicable|attention|blocked`。只有冲突会导致handoff遗漏必要行为、风险、兼容性或验收事实时返回`blocked`与最小unresolved items；解释性漂移、无关历史债务或不改变当前行为/authority的缺口返回`attention`与portable follow-up。不得把attention升级为全局blocked，也不得静默修改后沿用旧bytes绑定的证据。
 
 ## 6. Maintain
 
@@ -80,7 +80,7 @@ Brief 固定表达：一句话摘要、背景与问题、目标/非目标、受�
 
 ```text
 operation: assess | reconcile | inspect | maintain
-status: aligned | updated | unresolved | not-applicable | change-required
+status: aligned | updated | unresolved | not-applicable | change-required | attention | blocked
 change: <id | none>
 project: <id/code>
 impacts: <type/target/reason/status>
@@ -91,7 +91,7 @@ sourceIdentities: <paths/specs/tree>
 treeIdentity: <current candidate identity>
 ```
 
-Archive 只移动已对齐的 Change、Brief 和 sidecar；archive 后不得再写 glossary 或 current knowledge。
+Development聚合时只保存`aligned|not-applicable|attention|blocked`、tree identity、summary、source identities与bounded unresolved items；`updated`后必须重新观察新tree，`unresolved|change-required`按是否会造成错误完成结论转为blocked或先回到Change flow，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
 
 ## Guardrails
 

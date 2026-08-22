@@ -49,13 +49,16 @@ function groupCapabilities(values, usage) {
 
 function parseTaskVerificationCli(operation, args) {
   const usages = {
-    inspect: 'buildr task verification inspect <task-id> [--target-identity <identity>] [--target <canonical-workspace>] [--json]',
-    record: 'buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
+    inspect: 'buildr task verification inspect <task-id> [--candidate-identity <identity> --candidate-generation <n>] [--target-identity <identity>] [--target <canonical-workspace>] [--json]',
+    record: 'buildr task verification record <task-id> --candidate-identity <identity> --candidate-generation <n> --target-identity <identity> --target-summary <text> --coverage-gap workspace::<summary> --outcome not-passed --summary <text> [--target <canonical-workspace>] [--json]',
+    reconcile: 'buildr task verification reconcile <task-id> --candidate-identity <identity> --candidate-generation <n> --target-identity <identity> --target-summary <text> --record <execution-record-id> ... [--coverage-gap <scope>::<summary> ...] [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]',
   };
   const allowed = operation === 'inspect'
-    ? new Set(['--target-identity', '--target', '--json'])
-    : new Set(['--target-identity', '--target-summary', '--capability', '--coverage-gap', '--outcome', '--summary', '--declaration-root', '--target', '--json']);
-  const repeatable = new Set(['--capability', '--coverage-gap']);
+    ? new Set(['--candidate-identity', '--candidate-generation', '--target-identity', '--target', '--json'])
+    : operation === 'record'
+      ? new Set(['--candidate-identity', '--candidate-generation', '--target-identity', '--target-summary', '--capability', '--coverage-gap', '--outcome', '--summary', '--declaration-root', '--target', '--json'])
+      : new Set(['--candidate-identity', '--candidate-generation', '--target-identity', '--target-summary', '--record', '--coverage-gap', '--declaration-root', '--target', '--json']);
+  const repeatable = new Set(['--capability', '--coverage-gap', '--record']);
   const values = new Map();
   const positions = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -83,6 +86,7 @@ function parseTaskVerificationCli(operation, args) {
     one,
     capabilities: groupCapabilities(many('--capability'), usages[operation]),
     coverageGaps: many('--coverage-gap').map((value) => parseCoverageGap(value, usages[operation])),
+    recordIds: many('--record'),
   };
 }
 
@@ -113,13 +117,23 @@ export function taskVerificationCommand(runtime, operation, args) {
   const parsed = parseTaskVerificationCli(operation, args);
   try {
     const payload = operation === 'inspect'
-      ? runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId, { targetIdentity: parsed.one('--target-identity') })
-      : runtime.recordTaskVerification(parsed.targetRoot, parsed.taskId, {
+      ? runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId, { targetIdentity: parsed.one('--target-identity'), ...(parsed.one('--candidate-identity') ? { candidate: { identity: parsed.one('--candidate-identity'), generation: Number(parsed.one('--candidate-generation')) } } : {}) })
+      : operation === 'record' ? runtime.recordTaskVerification(parsed.targetRoot, parsed.taskId, {
+        candidateIdentity: parsed.one('--candidate-identity'),
+        candidateGeneration: Number(parsed.one('--candidate-generation')),
         targetIdentity: parsed.one('--target-identity'),
         targetSummary: parsed.one('--target-summary'),
         capabilities: parsed.capabilities,
         coverageGaps: parsed.coverageGaps,
         conclusion: { outcome: parsed.one('--outcome'), summary: parsed.one('--summary') },
+        declarationRoot: parsed.one('--declaration-root'),
+      }) : runtime.reconcileTaskVerification(parsed.targetRoot, parsed.taskId, {
+        candidateIdentity: parsed.one('--candidate-identity'),
+        candidateGeneration: Number(parsed.one('--candidate-generation')),
+        targetIdentity: parsed.one('--target-identity'),
+        targetSummary: parsed.one('--target-summary'),
+        recordIds: parsed.recordIds,
+        coverageGaps: parsed.coverageGaps,
         declarationRoot: parsed.one('--declaration-root'),
       });
     return print(payload, parsed.json);

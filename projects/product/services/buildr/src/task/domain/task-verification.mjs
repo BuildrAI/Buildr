@@ -1,4 +1,5 @@
-export const TASK_VERIFICATION_RESULT_SCHEMA = 'buildr.task-verification-result/v1';
+export const LEGACY_TASK_VERIFICATION_RESULT_SCHEMA = 'buildr.task-verification-result/v1';
+export const TASK_VERIFICATION_RESULT_SCHEMA = 'buildr.task-verification-result/v2';
 export const TASK_VERIFICATION_CAPABILITY_OUTCOMES = Object.freeze(['passed', 'failed']);
 export const TASK_VERIFICATION_CONCLUSION_OUTCOMES = Object.freeze(['passed', 'not-passed']);
 
@@ -94,13 +95,39 @@ function normalizeDeclarations(value) {
   });
 }
 
-function normalizeCapabilities(value) {
+function normalizeCandidate(value) {
+  const candidate = object(value, 'candidate');
+  closed(candidate, new Set(['identity', 'generation', 'contentTargetIdentity']), 'candidate');
+  if (!Number.isInteger(candidate.generation) || candidate.generation < 1) throw taskVerificationError('task_verification_candidate_generation_invalid', 'candidate.generation 必须是正整数。', 400, { field: 'candidate.generation' });
+  return {
+    identity: portableText(candidate.identity, 'candidate.identity'),
+    generation: candidate.generation,
+    contentTargetIdentity: portableText(candidate.contentTargetIdentity, 'candidate.contentTargetIdentity'),
+  };
+}
+
+function normalizeEvidence(value, field) {
+  const evidence = object(value, `${field}.evidence`);
+  closed(evidence, new Set(['kind', 'recordId', 'runIdentity', 'invocationIdentity', 'bodyDigest']), `${field}.evidence`);
+  if (evidence.kind !== 'task-execution-record') throw taskVerificationError('task_verification_evidence_kind_invalid', `${field}.evidence.kind 必须是 task-execution-record。`, 400, { field: `${field}.evidence.kind` });
+  const bodyDigest = text(evidence.bodyDigest, `${field}.evidence.bodyDigest`);
+  if (!DIGEST.test(bodyDigest)) throw taskVerificationError('task_verification_evidence_identity_invalid', `${field}.evidence.bodyDigest 必须是 sha256 digest。`, 400, { field: `${field}.evidence.bodyDigest` });
+  return {
+    kind: evidence.kind,
+    recordId: portableText(evidence.recordId, `${field}.evidence.recordId`),
+    runIdentity: portableText(evidence.runIdentity, `${field}.evidence.runIdentity`),
+    invocationIdentity: portableText(evidence.invocationIdentity, `${field}.evidence.invocationIdentity`),
+    bodyDigest,
+  };
+}
+
+function normalizeCapabilities(value, { evidenceRequired = false } = {}) {
   if (!Array.isArray(value)) throw taskVerificationError('task_verification_field_invalid', 'capabilities 必须是数组。', 400, { field: 'capabilities' });
   const seen = new Set();
   return value.map((item, index) => {
     const field = `capabilities[${index}]`;
     const entry = object(item, field);
-    closed(entry, new Set(['project', 'capability', 'outcome', 'facts']), field);
+    closed(entry, new Set(['project', 'capability', 'outcome', 'facts', ...(evidenceRequired ? ['evidence'] : [])]), field);
     const project = portableText(entry.project, `${field}.project`);
     const capability = portableText(entry.capability, `${field}.capability`);
     const key = `${project}/${capability}`;
@@ -109,7 +136,7 @@ function normalizeCapabilities(value) {
     if (!TASK_VERIFICATION_CAPABILITY_OUTCOMES.includes(entry.outcome)) {
       throw taskVerificationError('task_verification_capability_outcome_invalid', `${field}.outcome 必须是 passed 或 failed。`, 400, { field: `${field}.outcome`, value: entry.outcome });
     }
-    return { project, capability, outcome: entry.outcome, facts: stringList(entry.facts, `${field}.facts`, { minimum: 1 }) };
+    return { project, capability, outcome: entry.outcome, facts: stringList(entry.facts, `${field}.facts`, { minimum: 1 }), ...(evidenceRequired ? { evidence: normalizeEvidence(entry.evidence, field) } : {}) };
   });
 }
 
@@ -134,16 +161,18 @@ function normalizeConclusion(value) {
 
 export function normalizeTaskVerificationResult(value, { expectedTaskId = null } = {}) {
   const result = object(value, 'Task Verification Result');
-  closed(result, new Set(['schemaVersion', 'taskId', 'target', 'declarations', 'capabilities', 'coverageGaps', 'conclusion', 'completedAt']), '');
-  if (result.schemaVersion !== TASK_VERIFICATION_RESULT_SCHEMA) {
-    throw taskVerificationError('task_verification_schema_unsupported', `Task Verification Result schemaVersion 必须是 ${TASK_VERIFICATION_RESULT_SCHEMA}。`, 409, { field: 'schemaVersion', actual: result.schemaVersion });
-  }
+  const legacy = result.schemaVersion === LEGACY_TASK_VERIFICATION_RESULT_SCHEMA;
+  if (!legacy && result.schemaVersion !== TASK_VERIFICATION_RESULT_SCHEMA) throw taskVerificationError('task_verification_schema_unsupported', `Task Verification Result schemaVersion 必须是 ${LEGACY_TASK_VERIFICATION_RESULT_SCHEMA} 或 ${TASK_VERIFICATION_RESULT_SCHEMA}。`, 409, { field: 'schemaVersion', actual: result.schemaVersion });
+  closed(result, new Set(['schemaVersion', 'taskId', ...(legacy ? [] : ['candidate']), 'target', 'declarations', 'capabilities', 'coverageGaps', 'conclusion', 'completedAt']), '');
   const taskId = text(result.taskId, 'taskId');
   if (expectedTaskId && taskId !== expectedTaskId) {
     throw taskVerificationError('task_verification_task_identity_mismatch', `Task Verification Result taskId 与目录不一致：${expectedTaskId} != ${taskId}。`, 409, { expectedTaskId, taskId });
   }
   const declarations = normalizeDeclarations(result.declarations);
-  const capabilities = normalizeCapabilities(result.capabilities);
+  const candidate = legacy ? null : normalizeCandidate(result.candidate);
+  const target = normalizeTarget(result.target);
+  if (candidate && candidate.contentTargetIdentity !== target.identity) throw taskVerificationError('task_verification_candidate_target_mismatch', 'candidate.contentTargetIdentity 必须等于 target.identity。', 409, { candidateTarget: candidate.contentTargetIdentity, target: target.identity });
+  const capabilities = normalizeCapabilities(result.capabilities, { evidenceRequired: !legacy });
   const coverageGaps = normalizeCoverageGaps(result.coverageGaps);
   if (capabilities.length === 0 && coverageGaps.length === 0) {
     throw taskVerificationError('task_verification_result_empty', 'Result 必须至少包含一项实际 capability 或 coverage gap。', 400, { field: 'capabilities' });
@@ -164,9 +193,10 @@ export function normalizeTaskVerificationResult(value, { expectedTaskId = null }
     throw taskVerificationError('task_verification_conclusion_inconsistent', '存在 failed capability 或 coverage gap 时 conclusion 不能是 passed。', 400, { field: 'conclusion.outcome' });
   }
   return {
-    schemaVersion: TASK_VERIFICATION_RESULT_SCHEMA,
+    schemaVersion: legacy ? LEGACY_TASK_VERIFICATION_RESULT_SCHEMA : TASK_VERIFICATION_RESULT_SCHEMA,
     taskId,
-    target: normalizeTarget(result.target),
+    ...(candidate ? { candidate } : {}),
+    target,
     declarations,
     capabilities,
     coverageGaps,

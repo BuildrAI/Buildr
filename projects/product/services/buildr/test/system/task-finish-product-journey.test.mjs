@@ -485,6 +485,13 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     ? { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] }
     : { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
   runtime.freezeTaskDevelopmentCandidate(retained, task, { planningTargetIdentity });
+  runtime.recordTaskDevelopmentKnowledge(retained, task, {
+    treeIdentity: runtime.inspectTaskDevelopment(retained, task).development.receipt.contentTarget.identity,
+    status: 'aligned',
+    summary: 'Task Finish system fixture current knowledge is aligned.',
+    sourceIdentities: ['test:task-finish-product-journey'],
+    unresolvedItems: [],
+  });
   runtime.decideTaskDevelopment(retained, task, {
     outcome: 'proceed', summary: 'Current gates.',
     risks: workspaceOnly ? [{ gate: 'verification', resultDigest: taskDevelopmentDigest(`${task}:verification-result`), scope: 'workspace', summary: 'Workspace coverage gap accepted for this Candidate.', source: 'user:system-regression' }] : [],

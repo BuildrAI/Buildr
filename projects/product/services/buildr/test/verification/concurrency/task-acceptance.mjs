@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,6 +19,7 @@ const env = { ...process.env, BUILDR_APP_DATA_DIR: appData, BUILDR_PRODUCT_DATA_
 const platformTimeout = (milliseconds) => process.platform === 'win32' ? milliseconds * 3 : milliseconds;
 const previews = [];
 const taskIds = ['acceptance-task-a', 'acceptance-task-b'];
+const digest = (value) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 const summary = {
   schemaVersion: 'buildr.concurrent-task-acceptance/v1',
   status: 'failed',
@@ -178,7 +180,8 @@ try {
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
     'verification', 'run', '--project', 'nested', '--capability', 'nested.parallel-a', '--capability', 'nested.parallel-b', '--capability', 'nested.coordinated',
-    '--target-identity', `target:${task.taskId}`, '--target', task.environmentRoot,
+    '--target-identity', digest(`target:${task.taskId}`), '--target', task.environmentRoot,
+    '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
     '--environment', task.taskId, '--workspace', workspace, '--json',
   ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(15_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
@@ -200,11 +203,11 @@ try {
   startPhase('verification-result');
   const recordProcesses = summary.tasks.map((task, index) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
-    'task', 'verification', 'record', task.taskId,
-    '--target-identity', `target:${task.taskId}`,
+    'task', 'verification', 'reconcile', task.taskId,
+    '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
+    '--target-identity', digest(`target:${task.taskId}`),
     '--target-summary', `Concurrent acceptance ${task.taskId}`,
-    ...summary.verificationRuns[index].checks.flatMap((check) => ['--capability', `nested/${check.id}::passed::Verification ${check.id} passed`]),
-    '--outcome', 'passed', '--summary', 'Concurrent task verification passed',
+    '--record', summary.verificationRuns[index].executionRecord.recordId,
     '--declaration-root', task.environmentRoot, '--target', workspace, '--json',
   ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-result-record' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }));
   const recordedResults = await Promise.all(recordProcesses.map((run) => run.completed));

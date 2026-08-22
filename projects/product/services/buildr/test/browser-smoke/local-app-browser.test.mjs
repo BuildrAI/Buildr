@@ -14,6 +14,7 @@ import { FINISH_PHASES, FINISH_RUN_SCHEMA, inspectFinishRun } from '../../src/ta
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
+import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -252,7 +253,10 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contr
     capabilities: [{ project: 'demo', capability: 'demo.browser', required: true }], coverageGaps: [], overrides: [],
   });
   const targetIdentity = development.development.receipt.contentTarget.identity;
-  runtime.recordTaskVerification(root, taskId, {
+  development = runtime.freezeTaskDevelopmentCandidate(root, taskId);
+  const candidate = development.development.receipt.candidate;
+  recordVerificationResultFromEvidence(runtime, root, taskId, {
+    candidate,
     targetIdentity,
     targetSummary: '浏览器交付目标',
     capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['Buildr Web 验证投影已通过。'] }],
@@ -267,11 +271,18 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contr
   const finishDiagnostics = runtime.openTaskExecutionRecord(root, taskId, { owner: 'task-finish', kind: 'finish-diagnostics', runIdentity: 'browser-finish-passed', targetIdentity, producer: 'browser-smoke' });
   runtime.sealTaskExecutionRecord(root, finishDiagnostics.record.recordId, { outcome: 'passed', files: [{ name: 'diagnostics.json', content: { outcome: 'passed' } }] });
   development = runtime.freezeTaskDevelopmentCandidate(root, taskId);
-  const candidate = development.development.receipt.candidate;
+  assert.equal(development.status, 'unchanged');
   runtime.recordTaskReview(root, taskId, {
     reviewType: 'completion', targetIdentity: candidate.identity, method: 'human', reviewed: ['当前任务候选'],
     uncovered: [{ subject: '浏览器视觉差异', reason: '本轮只执行烟雾测试。' }], findings: ['没有阻断问题'],
     conclusion: { outcome: 'ready', summary: '候选可交付' },
+  });
+  runtime.recordTaskDevelopmentKnowledge(root, taskId, {
+    treeIdentity: candidate.contentTargetIdentity,
+    status: 'aligned',
+    summary: '浏览器夹具的Current Knowledge已与Candidate收敛。',
+    sourceIdentities: ['test:local-app-browser'],
+    unresolvedItems: [],
   });
   runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
   return runtime.createTaskDevelopmentHandoff(root, taskId, contributionHandoff ? { contributionHandoff } : {}).development.receipt;
@@ -664,7 +675,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
     const deliveredReceipt = prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-delivered');
     prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-stale');
-    runtime.recordTaskVerification(workspaceRoot, 'browser-stale', { targetIdentity: 'sha256-browser-stale-target', targetSummary: '已变化目标', capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['旧目标验证事实。'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: '旧目标曾通过。' }, declarationRoot: workspaceRoot });
+    recordVerificationResultFromEvidence(runtime, workspaceRoot, 'browser-stale', {
+      candidate: { identity: taskDevelopmentDigest('browser-stale-candidate'), generation: 1, contentTargetIdentity: taskDevelopmentDigest('browser-stale-target') },
+      targetIdentity: taskDevelopmentDigest('browser-stale-target'), targetSummary: '已变化目标',
+      capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['旧目标验证事实。'] }],
+      coverageGaps: [], conclusion: { outcome: 'passed', summary: '旧目标曾通过。' }, declarationRoot: workspaceRoot,
+    });
     runtime.completeTaskRecord(workspaceRoot, 'browser-delivered', { summary: '浏览器交付完成', noChange: false });
     const deliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
@@ -984,7 +1000,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
     await page.locator('#task-execution-record-filter-all').click();
-    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 3);
+    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 4);
     assert.match(await page.locator('#task-execution-record-list').innerText(), /Verification · failed/);
     await page.locator('#task-execution-record-list .execution-record-card.failed').click();
     await page.locator('#task-execution-record-detail').waitFor({ state: 'visible' });
@@ -994,7 +1010,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.ant-modal-wrap').waitFor({ state: 'hidden' });
     await page.locator('#task-verification-execution-records').click();
     await page.locator('#task-execution-record-filter-verification[aria-pressed="true"]').waitFor({ state: 'visible' });
-    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 2);
+    await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 3);
     assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /sha256-/);
@@ -1002,7 +1018,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-review-slots').innerText(), /没有阻断问题/);
     assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.match(await page.locator('#task-verification-result').innerText(), /sha256-/);
-    assert.match(await page.locator('#task-verification-result').innerText(), /浏览器验证已通过/);
+    assert.match(await page.locator('#task-verification-result').innerText(), /全部可核验Verification authority均已通过/);
     assert.match(await page.locator('#task-verification-result').innerText(), /demo\/demo.browser · 已通过 · Buildr Web 验证投影已通过/);
     await page.getByRole('button', { name: '交给智能体验证', exact: true }).click();
     await page.getByRole('button', { name: '生成验证指令', exact: true }).click();

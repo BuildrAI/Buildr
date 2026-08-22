@@ -9,6 +9,7 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
+import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -135,13 +136,24 @@ function changeFixture(t, taskId, initial = { availability: 'available', lifecyc
 }
 
 function recordVerification(current, outcome = 'passed') {
-  return current.runtime.recordTaskVerification(current.root, current.taskId, {
+  return recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
     targetIdentity: current.targetIdentity,
     targetSummary: 'Demo Content Target',
     capabilities: [{ project: 'demo', capability: 'demo.check', outcome: outcome === 'passed' ? 'passed' : 'failed', facts: [outcome === 'passed' ? 'Demo check passed.' : 'Demo check failed.'] }],
     coverageGaps: [],
     conclusion: { outcome, summary: outcome === 'passed' ? 'Verified.' : 'Verification found a known failure.' },
     declarationRoot: current.root,
+  });
+}
+
+function recordKnowledge(current, status = 'aligned') {
+  const receipt = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receipt;
+  return current.runtime.recordTaskDevelopmentKnowledge(current.root, current.taskId, {
+    treeIdentity: receipt.contentTarget.identity,
+    status,
+    summary: status === 'blocked' ? 'Completion-critical knowledge conflict remains.' : 'Current knowledge is reconciled for this fixture.',
+    sourceIdentities: ['test:task-development-application'],
+    unresolvedItems: status === 'blocked' ? ['Resolve the completion-critical contract conflict.'] : [],
   });
 }
 
@@ -213,19 +225,24 @@ test('Development result按保存事实给出单一建议方向且不自动推�
   const current = fixture(t, 'development-guidance');
   let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
   assert.equal(result.nextActions.length, 1);
-  assert.equal(result.formalVerificationReadiness.status, 'unknown');
-  assert.equal(result.next.owner, 'current-knowledge-maintenance');
-  assert.match(result.nextActions[0], /current knowledge inspect/);
+  assert.equal(result.formalVerificationReadiness.status, 'not-applicable');
+  assert.equal(result.next.owner, 'task-development');
+  assert.equal(result.next.action, 'freeze');
 
-  recordVerification(current);
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  assert.match(result.nextActions[0], /task-review/);
   const candidate = result.development.receipt.candidate;
+  const verification = recordVerification(current);
+  assert.equal(verification.slot.applicability.status, 'current', JSON.stringify(verification.slot, null, 2));
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  assert.equal(result.status, 'unchanged');
+  assert.equal(result.development.applicability.gates.verification?.applicability, 'current', JSON.stringify(result.development, null, 2));
+  assert.match(result.nextActions[0], /task-review/);
 
   current.runtime.recordTaskReview(current.root, current.taskId, {
     reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Current Candidate'], uncovered: [], findings: [],
     conclusion: { outcome: 'ready', summary: 'Ready.' },
   });
+  recordKnowledge(current);
   result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'All current gates are ready.', risks: [] });
   assert.match(result.nextActions[0], /handoff/);
   assert.equal(result.development.receipt.handoffs.length, 0);
@@ -245,10 +262,10 @@ test('workspace-only policy、负向 Verification、风险决定与 handoff 形�
   assert.deepEqual(policy.declarations, []);
   assert.match(policy.identity, /^sha256-/);
   assert.equal(result.development.applicability.policy, 'current');
-  assert.throws(() => current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId), (error) => error.code === 'task_development_candidate_not_ready'
-    && error.details.reasons.some((reason) => reason.axis === 'verification'));
-
-  const verification = current.runtime.recordTaskVerification(current.root, current.taskId, {
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  const candidate = result.development.receipt.candidate;
+  const verification = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
+    candidate,
     targetIdentity: current.targetIdentity,
     targetSummary: 'Workspace-only Content Target',
     capabilities: [],
@@ -259,10 +276,9 @@ test('workspace-only policy、负向 Verification、风险决定与 handoff 形�
   assert.equal(verification.slot.applicability.status, 'current');
   assert.equal(verification.slot.result.conclusion.outcome, 'not-passed');
   assert.deepEqual(verification.nextActions, []);
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  const candidate = result.development.receipt.candidate;
   assert.equal(candidate.generation, 1);
   const review = current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Workspace-only Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready with explicit verification risk acceptance.' } });
+  recordKnowledge(current, 'attention');
   assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Risk missing.', risks: [] }), (error) => error.code === 'task_development_risk_acceptance_required');
   current.runtime.decideTaskDevelopment(current.root, current.taskId, {
     outcome: 'proceed', summary: 'Authorized workspace coverage risk.',
@@ -280,6 +296,25 @@ test('workspace-only policy、负向 Verification、风险决定与 handoff 形�
   assert.equal(result.development.receipt.candidate, null);
   assert.deepEqual(result.development.receipt.handoffs, [handoff]);
   assert.equal(result.development.applicability.handoff, 'stale');
+});
+
+test('Current Knowledge只让completion-critical blocked阻止handoff，attention保持可交付', (t) => {
+  const current = fixture(t, 'knowledge-disposition');
+  let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  const candidate = result.development.receipt.candidate;
+  recordVerification(current);
+  completion(current, candidate);
+  recordKnowledge(current, 'blocked');
+  assert.throws(
+    () => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Blocked knowledge cannot be waived.', risks: [] }),
+    (error) => error.code === 'task_development_proceed_not_ready' && error.details.reasons.some((reason) => reason.code === 'current-knowledge-completion-conflict'),
+  );
+  result = recordKnowledge(current, 'attention');
+  assert.equal(result.development.receipt.currentKnowledge.status, 'attention');
+  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explanatory drift is non-blocking.', risks: [] });
+  assert.equal(result.development.receipt.decision.outcome, 'proceed');
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  assert.equal(result.development.receipt.handoffs.at(-1).knowledge.status, 'attention');
 });
 
 test('Service-only、Change-only 与多 Project Task 观察完整 declaration，不能伪装成 workspace-only', (t) => {
@@ -430,14 +465,16 @@ function freezeChangeFixture(current) {
   });
   result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
   current.targetIdentity = result.development.receipt.contentTarget.identity;
+  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   recordVerification(current);
-  return current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  return current.runtime.inspectTaskDevelopment(current.root, current.taskId);
 }
 
 function handoffChangeFixture(current) {
   const frozen = freezeChangeFixture(current);
   const candidate = frozen.development.receipt.candidate;
   completion(current, candidate);
+  recordKnowledge(current);
   current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
   return current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
 }
@@ -488,13 +525,15 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   let result = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
   runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
   const targetIdentity = result.development.receipt.contentTarget.identity;
-  runtime.recordTaskVerification(root, taskId, {
+  result = runtime.freezeTaskDevelopmentCandidate(root, taskId);
+  const candidate = result.development.receipt.candidate;
+  recordVerificationResultFromEvidence(runtime, root, taskId, {
+    candidate,
     targetIdentity, targetSummary: 'Git Task Contribution target', capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo check passed.'] }],
     coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Verified.' }, declarationRoot: taskRoot,
   });
-  result = runtime.freezeTaskDevelopmentCandidate(root, taskId);
-  const candidate = result.development.receipt.candidate;
   runtime.recordTaskReview(root, taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Git Task Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  recordKnowledge({ runtime, root, taskId });
   runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
   result = runtime.createTaskDevelopmentHandoff(root, taskId);
   return { root, taskRoot, runtime, taskId, planningTargetIdentity, candidate, handoff: result.development.receipt.handoffs.at(-1), targetIdentity };
@@ -518,12 +557,12 @@ test('从proposal建立planning Receipt，并以明确waiver完成可选Verifica
   result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
   assert.ok(result.development.receipt.contentTarget);
   result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  const targetIdentity = result.development.receipt.contentTarget.identity;
-  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity, summary: 'User explicitly waived formal execution for this fixture.', source: 'user:integration-fixture' });
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   assert.equal(result.status, 'frozen');
   const candidate = result.development.receipt.candidate;
+  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: candidate.identity, summary: 'User explicitly waived formal execution for this fixture.', source: 'user:integration-fixture' });
   current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'completion', disposition: 'waived', targetIdentity: candidate.identity, summary: 'User explicitly waived Completion Review for this fixture.', source: 'user:integration-fixture' });
+  recordKnowledge(current);
   result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explicit optional-node waivers are current.', risks: [] });
   assert.equal(result.development.receipt.decision.outcome, 'proceed');
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
@@ -542,8 +581,8 @@ test('从proposal建立planning Receipt，并以明确waiver完成可选Verifica
   assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
   result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: nextPlanningTarget });
   result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: result.development.receipt.contentTarget.identity, summary: 'User explicitly waived repeated formal execution for this fixture.', source: 'user:integration-fixture' });
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: result.development.receipt.candidate.identity, summary: 'User explicitly waived repeated formal execution for this fixture.', source: 'user:integration-fixture' });
   assert.equal(result.development.receipt.candidate.generation, firstCandidate.generation + 1);
   assert.notEqual(result.development.receipt.candidate.identity, firstCandidate.identity);
   assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
@@ -564,12 +603,13 @@ test('同一输入刷新 Result 不递增 generation；Content 变化递增且�
     capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [],
   });
   current.targetIdentity = policy.development.receipt.contentTarget.identity;
-  const firstVerification = recordVerification(current);
   let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   const first = result.development.receipt.candidate;
+  const firstVerification = recordVerification(current);
   assert.equal(first.generation, 1);
 
-  const replacement = current.runtime.recordTaskVerification(current.root, current.taskId, {
+  const replacement = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
+    candidate: first,
     targetIdentity: current.targetIdentity,
     targetSummary: 'Demo Content Target',
     capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Replacement facts remain applicable.'] }],
@@ -582,6 +622,7 @@ test('同一输入刷新 Result 不递增 generation；Content 变化递增且�
   assert.equal(result.development.receipt.generation, 1);
 
   completion(current, first);
+  recordKnowledge(current);
   current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
   const snapshot = result.development.receipt.handoffs[0];
@@ -591,8 +632,8 @@ test('同一输入刷新 Result 不递增 generation；Content 变化递增且�
   assert.equal(result.development.receipt.candidate, null);
   assert.deepEqual(result.development.receipt.handoffs, [snapshot]);
   current.targetIdentity = result.development.receipt.contentTarget.identity;
-  recordVerification(current);
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  recordVerification(current);
   assert.equal(result.development.receipt.generation, 2);
   assert.notEqual(result.development.receipt.candidate.identity, first.identity);
   assert.deepEqual(result.development.receipt.handoffs, [snapshot]);
@@ -600,10 +641,11 @@ test('同一输入刷新 Result 不递增 generation；Content 变化递增且�
 
 test('Verification not-passed 与 Completion changes-required 可经精确用户风险接受形成 handoff', (t) => {
   const current = fixture(t, 'risk-acceptance');
-  const verification = recordVerification(current, 'not-passed');
   let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   const candidate = result.development.receipt.candidate;
+  const verification = recordVerification(current, 'not-passed');
   const review = completion(current, candidate, 'changes-required');
+  recordKnowledge(current);
   assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Missing risk acceptance.', risks: [] }), (error) => error.code === 'task_development_risk_acceptance_required');
   assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, {
     outcome: 'proceed', summary: 'Contains a stale risk reference.', risks: [

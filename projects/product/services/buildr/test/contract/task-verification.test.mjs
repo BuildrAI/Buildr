@@ -49,11 +49,11 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   assert.match(contract, /id: buildr\.task-verification/);
   assert.match(contract, /version: 3/);
   for (const required of [
-    'buildr.project-verification/v2', 'buildr.task-verification-result/v1',
+    'buildr.project-verification/v2', 'buildr.task-verification-result/v2',
     'buildr.task-verification-operation-result/v1', 'transient Execution Evidence',
     '`current`', '`stale`', '`unknown`', '单一SQLite transaction', 'coverage gap',
-    'requiredForDelivery', 'Task Verification Application', '完整替换 current',
-    '不得提交 declaration identity', '不得保存 stdout/stderr',
+    'requiredForDelivery', 'Task Verification Application', '完整替换current',
+    '不得提交capability outcome/facts', '不得保存stdout/stderr',
     'Task progression', '测试命令完整失败可以形成 `not-passed` Result',
     'exact invocation identity', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`',
     '只有显式`--retry`', 'Execution Record readback不得创建、替换或充当current Verification Result',
@@ -63,12 +63,12 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   }
 });
 
-test('默认 provider 使用 v2 declaration、transient execution 与 Application record', () => {
+test('默认 provider 使用 v2 declaration、Candidate-bound execution 与 Application reconciliation', () => {
   for (const required of [
     '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
     'references/project-verification-v2.md', 'buildr.project-verification/v2',
     'buildr task verification inspect <task-id>', 'buildr verification run --project <code>',
-    'buildr task verification record <task-id>', 'buildr.verification-execution/v1',
+    'buildr task verification reconcile <task-id>', 'buildr.verification-execution/v1',
     '--declaration-root <task-environment-root>',
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
     'Workspace本地current Result', 'buildr verification cleanup --summary <file>',
@@ -107,9 +107,10 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   const evidenceTab = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   assert.match(cli, /runtime\.inspectTaskVerification/);
   assert.match(cli, /runtime\.recordTaskVerification/);
+  assert.match(cli, /runtime\.reconcileTaskVerification/);
   assert.match(cli, /--declaration-root/);
   assert.doesNotMatch(cli, /inspect: [^\n]*--declaration-root/);
-  assert.match(cli, /operation === 'inspect'\s*\? new Set\(\['--target-identity', '--target', '--json'\]\)/);
+  assert.match(cli, /operation === 'inspect'\s*\? new Set\(\['--candidate-identity', '--candidate-generation', '--target-identity', '--target', '--json'\]\)/);
   assert.doesNotMatch(cli, /node:fs|YAML|writeTaskVerificationResultPersistence/);
   assert.match(http, /task-verification\.http/);
   assert.match(http, /'verification'/);
@@ -123,6 +124,7 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.doesNotMatch(evidenceTab, /node:fs|YAML|recordTaskVerification|writeFileSync/);
   assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
+  assert.doesNotMatch(developmentApplication, /runtime\.reconcileTaskVerification/);
   assert.doesNotMatch(finishExecutor, /inspectTaskVerification|recordTaskVerification/);
   assert.doesNotMatch(finishExecutor, /verificationSummary|requiredAssurance|candidate-fingerprint|--level/);
 });
@@ -134,7 +136,7 @@ test('Task Environment、Git provider 与 Task Verification 权限保持解耦',
   assert.match(worktreeSkill, /验证交给 `task-verification`/);
   assert.match(environmentSkill, /候选不能写 retained Workspace、其他 Task worktree 或共享 user runtime/);
   assert.match(verificationSkill, /不拥有 Task Environment/);
-  assert.match(verificationSkill, /不要复制 stdout\/stderr、耗时、临时 evidence path、Environment Receipt/);
+  assert.match(verificationSkill, /不要复制stdout\/stderr、耗时、临时evidence path、Environment Receipt/);
 });
 
 test('Git Operations 只返回操作 facts，不拥有 Verification Result 决策', () => {
@@ -201,7 +203,7 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
   assert.match(openSpecApplySidebar, /Convergence\/archive在Task Development观察stable Content Target/);
   assert.match(openSpecApplySidebar, /change-checklist-incomplete/);
   assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
-  assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 deterministic convergence\/archive/);
+  assert.match(developmentSkill, /每个关联Change的deterministic convergence\/archive/);
   assert.doesNotMatch(finishExecutor, /openspec|archiveChange|legacyConvergence|openspecConverge/);
   assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
 });

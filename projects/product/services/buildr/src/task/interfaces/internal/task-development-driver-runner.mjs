@@ -79,6 +79,7 @@ export async function runTaskDevelopmentDriver(args, options = {}) {
       planning: () => runtime.recordTaskDevelopmentPlanning(targetRoot, taskId, payload),
       observe: () => runtime.observeTaskDevelopment(targetRoot, taskId, payload),
       policy: () => runtime.recordTaskDevelopmentPolicy(targetRoot, taskId, payload),
+      knowledge: () => runtime.recordTaskDevelopmentKnowledge(targetRoot, taskId, payload),
       gate: () => runtime.recordTaskDevelopmentGate(targetRoot, taskId, payload),
       freeze: () => runtime.freezeTaskDevelopmentCandidate(targetRoot, taskId, payload),
       decide: () => runtime.decideTaskDevelopment(targetRoot, taskId, payload),

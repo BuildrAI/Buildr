@@ -7,6 +7,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { verificationCapabilityIdentity } from '../../src/verification/infrastructure/preparation-admission.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
@@ -43,7 +44,7 @@ function setup(t, name = 'verification-execution-record') {
     scopes: [],
     allowedExecutionRoots: [root],
   });
-  return { root, runtime, taskId, projectRoot: path.join(root, 'projects', 'demo') };
+  return { root, runtime, taskId, candidateIdentity: taskDevelopmentDigest(`${taskId}:candidate`), candidateGeneration: 1, projectRoot: path.join(root, 'projects', 'demo') };
 }
 
 function declare(projectRoot, capabilities) {
@@ -57,6 +58,7 @@ async function run(current, id, extra = []) {
   try {
     return await current.runtime.verificationRun([
       '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
+      '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
       '--environment', current.taskId, '--workspace', current.root,
       ...extra,
     ]);
@@ -73,6 +75,7 @@ async function runWithExit(current, id, extra = []) {
   try {
     const payload = await current.runtime.verificationRun([
       '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
+      '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
       '--environment', current.taskId, '--workspace', current.root,
       ...extra,
     ]);
@@ -360,6 +363,7 @@ test('quota/backpressure在runner启动前阻塞且不创建transient evidence',
   current.runtime.openTaskExecutionRecord = () => { throw error; };
   await assert.rejects(() => current.runtime.verificationRun([
     '--project', 'demo', '--capability', 'demo.blocked', '--target-identity', 'target:blocked', '--target', current.root,
+    '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
     '--environment', current.taskId, '--workspace', current.root,
   ]), (caught) => caught.verificationExecutionRecord.status === 'blocked');
   assert.equal(fs.existsSync(marker), false);

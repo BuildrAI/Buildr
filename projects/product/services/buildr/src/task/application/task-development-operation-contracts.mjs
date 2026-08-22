@@ -58,6 +58,14 @@ const override = closed({
   source: text(),
 }, ['project', 'capability', 'required', 'scope', 'basis', 'source']);
 
+const knowledge = {
+  treeIdentity: text('current Content Target identity。'),
+  status: { type: 'string', enum: ['aligned', 'not-applicable', 'attention', 'blocked'] },
+  summary: text(),
+  sourceIdentities: array(text()),
+  unresolvedItems: array(text()),
+};
+
 const risk = closed({
   gate: { type: 'string', enum: ['verification', 'completion'] },
   resultDigest: text('绑定的专业 Result sha256 digest。'),
@@ -125,6 +133,11 @@ const contracts = {
       coverageGaps: [],
       overrides: [],
     },
+  },
+  knowledge: {
+    summary: '保存selected Current Knowledge provider针对current Content Target的最小disposition。',
+    inputSchema: inputSchema(knowledge, ['treeIdentity', 'status', 'summary', 'sourceIdentities', 'unresolvedItems']),
+    example: { treeIdentity: 'sha256-<content-target>', status: 'aligned', summary: '<knowledge-summary>', sourceIdentities: [], unresolvedItems: [] },
   },
   gate: {
     summary: '记录 planning、verification 或 completion gate 的明确 waiver/not-applicable disposition。',

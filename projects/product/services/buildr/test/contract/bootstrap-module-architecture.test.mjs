@@ -199,9 +199,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-verification',
-    requires: ['task-record.persistence-read', 'task-environment.application', VERIFICATION_DECLARATION],
+    requires: ['task-record.persistence-read', 'task-environment.application', 'task-execution-record.application', VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
-    contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
+    contributions: { cli: ['task verification inspect', 'task verification record', 'task verification reconcile'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-planning-identity',
@@ -296,7 +296,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',
     'task review inspect', 'task review record',
-    'task verification inspect', 'task verification record',
+    'task verification inspect', 'task verification record', 'task verification reconcile',
     'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept',
     'task next',
     'task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect',

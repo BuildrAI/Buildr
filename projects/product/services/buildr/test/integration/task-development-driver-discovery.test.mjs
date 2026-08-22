@@ -18,7 +18,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   const global = JSON.parse(run(['--help']).stdout);
   assert.equal(global.schemaVersion, 'buildr.task-development-driver-help/v1');
   assert.equal(global.action, null);
-  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
+  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
   assert.match(global.usage, /--compact \| --profile/);
 

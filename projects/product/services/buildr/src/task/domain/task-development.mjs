@@ -7,6 +7,7 @@ export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS = Object.freeze(['buildr.ta
 export const TASK_DEVELOPMENT_DECISIONS = Object.freeze(['proceed', 'blocked']);
 export const TASK_DEVELOPMENT_CHANGE_DISPOSITIONS = Object.freeze(['pending', 'converged', 'not-applicable']);
 export const TASK_DEVELOPMENT_PLANNING_DISPOSITIONS = Object.freeze(['pending', 'current', 'stale', 'not-applicable', 'waived']);
+export const TASK_DEVELOPMENT_KNOWLEDGE_STATUSES = Object.freeze(['aligned', 'not-applicable', 'attention', 'blocked']);
 
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|file:\/\/)/;
 const DIGEST = /^sha256-[a-f0-9]{64}$/;
@@ -349,7 +350,24 @@ function normalizeDecision(value) {
   return { outcome: decision.outcome, candidateIdentity, summary: portableText(decision.summary, 'decision.summary'), risks: decision.risks.map(normalizeRisk) };
 }
 
-export function createTaskFinishHandoff({ candidate, changes, gates, decision, contributionHandoff = null, createdAt }) {
+export function createTaskDevelopmentKnowledge(value) {
+  const knowledge = object(value, 'currentKnowledge');
+  closed(knowledge, new Set(['identity', 'treeIdentity', 'status', 'summary', 'sourceIdentities', 'unresolvedItems']), 'currentKnowledge');
+  if (!TASK_DEVELOPMENT_KNOWLEDGE_STATUSES.includes(knowledge.status)) throw taskDevelopmentError('task_development_knowledge_status_invalid', 'currentKnowledge.status不受支持。', 400, { status: knowledge.status });
+  const payload = {
+    treeIdentity: digestIdentity(knowledge.treeIdentity, 'currentKnowledge.treeIdentity'),
+    status: knowledge.status,
+    summary: portableText(knowledge.summary, 'currentKnowledge.summary'),
+    sourceIdentities: uniqueStrings(knowledge.sourceIdentities, 'currentKnowledge.sourceIdentities'),
+    unresolvedItems: uniqueStrings(knowledge.unresolvedItems, 'currentKnowledge.unresolvedItems'),
+  };
+  const identity = taskDevelopmentDigest(payload);
+  if (knowledge.identity !== undefined) assertDerivedIdentity(knowledge.identity, identity, 'currentKnowledge.identity');
+  if (payload.status === 'blocked' && payload.unresolvedItems.length === 0) throw taskDevelopmentError('task_development_knowledge_blocker_required', 'blocked currentKnowledge必须包含unresolvedItems。', 409);
+  return { identity, ...payload };
+}
+
+export function createTaskFinishHandoff({ candidate, changes, gates, knowledge = null, decision, contributionHandoff = null, createdAt }) {
   const normalizedCandidate = normalizeTaskCandidate(candidate);
   if (!Array.isArray(changes)) throw taskDevelopmentError('task_development_handoff_changes_invalid', 'handoff.changes 必须是数组。', 400);
   const canonicalChanges = changes.map((item, index) => {
@@ -370,11 +388,13 @@ export function createTaskFinishHandoff({ candidate, changes, gates, decision, c
   }).changes;
   const normalizedGates = normalizeGates(gates);
   const normalizedDecision = normalizeDecision(decision);
+  const normalizedKnowledge = knowledge == null ? null : createTaskDevelopmentKnowledge(knowledge);
   const resolved = (gate, positive) => Boolean(gate) && (gate.disposition === 'waived' || gate.disposition === 'not-applicable' || positive.includes(gate.outcome));
   if (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.verification, ['passed', 'not-passed']) || !resolved(normalizedGates.completion, ['ready', 'changes-required'])) {
     throw taskDevelopmentError('task_development_handoff_gates_incomplete', 'Finish handoff 需要 current专业Result或合法not-applicable/waived gate。', 409);
   }
   if (normalizedDecision?.outcome !== 'proceed' || normalizedDecision.candidateIdentity !== normalizedCandidate.identity) throw taskDevelopmentError('task_development_handoff_decision_blocked', 'Finish handoff 需要绑定 current Candidate 的 proceed decision。', 409);
+  if (normalizedKnowledge && (normalizedKnowledge.treeIdentity !== normalizedCandidate.contentTargetIdentity || normalizedKnowledge.status === 'blocked')) throw taskDevelopmentError('task_development_handoff_knowledge_blocked', 'Finish handoff需要current且非blocked的Current Knowledge disposition。', 409);
   for (const risk of normalizedDecision.risks) {
     const gate = normalizedGates[risk.gate];
     if (!gate || gate.disposition || risk.resultDigest !== gate.resultDigest) throw taskDevelopmentError('task_development_risk_result_mismatch', `风险接受必须绑定current ${risk.gate} Result digest。`, 409, { gate: risk.gate, expected: gate?.resultDigest || null, actual: risk.resultDigest });
@@ -387,14 +407,14 @@ export function createTaskFinishHandoff({ candidate, changes, gates, decision, c
     if (!normalizedDecision.risks.some((risk) => risk.gate === item.gate && risk.resultDigest === item.digest)) throw taskDevelopmentError('task_development_risk_acceptance_required', `proceed 必须显式接受 ${item.gate} gate 风险。`, 409, item);
   }
   const normalizedContributionHandoff = contributionHandoff === null ? null : (contributionHandoff.identity ? normalizeContributionHandoff(contributionHandoff) : createContributionHandoff(contributionHandoff));
-  const payload = { candidate: normalizedCandidate, changes: normalizedChanges, gates: normalizedGates, decision: normalizedDecision, ...(normalizedContributionHandoff ? { contributionHandoff: normalizedContributionHandoff } : {}) };
+  const payload = { candidate: normalizedCandidate, changes: normalizedChanges, gates: normalizedGates, ...(normalizedKnowledge ? { knowledge: normalizedKnowledge } : {}), decision: normalizedDecision, ...(normalizedContributionHandoff ? { contributionHandoff: normalizedContributionHandoff } : {}) };
   return { identity: taskDevelopmentDigest(payload), ...payload, createdAt: timestamp(createdAt, 'handoff.createdAt') };
 }
 
 function normalizeHandoff(value, index) {
   const field = `handoffs[${index}]`;
   const handoff = object(value, 'handoff');
-  closed(handoff, new Set(['identity', 'candidate', 'changes', 'gates', 'decision', 'contributionHandoff', 'createdAt']), field);
+  closed(handoff, new Set(['identity', 'candidate', 'changes', 'gates', 'knowledge', 'decision', 'contributionHandoff', 'createdAt']), field);
   const normalized = createTaskFinishHandoff(handoff);
   assertDerivedIdentity(handoff.identity, normalized.identity, `${field}.identity`);
   return normalized;
@@ -403,7 +423,7 @@ function normalizeHandoff(value, index) {
 export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null } = {}) {
   let receipt = object(value, 'Development Receipt');
   const legacy = LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS.includes(receipt.schemaVersion);
-  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'planning', 'parentPlan', 'plannedContributions', 'parentAcceptance', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
+  closed(receipt, new Set(['schemaVersion', 'taskId', 'environment', 'taskContext', 'planning', 'parentPlan', 'plannedContributions', 'parentAcceptance', 'contentTarget', 'verificationPolicy', 'generation', 'candidate', 'currentKnowledge', 'gates', 'decision', 'handoffs', 'createdAt', 'updatedAt']), '');
   if (!legacy && receipt.schemaVersion !== TASK_DEVELOPMENT_RECEIPT_SCHEMA) throw taskDevelopmentError('task_development_schema_unsupported', `Development Receipt schemaVersion 必须是 ${TASK_DEVELOPMENT_RECEIPT_SCHEMA}。`, 409, { actual: receipt.schemaVersion });
   if (receipt.schemaVersion === 'buildr.task-development-receipt/v1') {
     const targetIdentity = receipt.gates?.planning?.targetIdentity || null;
@@ -430,6 +450,7 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   const contentTarget = receipt.contentTarget === null ? null : normalizeTaskContentTarget(receipt.contentTarget);
   const verificationPolicy = receipt.verificationPolicy === null ? null : normalizeTaskVerificationPolicy(receipt.verificationPolicy);
   const candidate = receipt.candidate === null ? null : normalizeTaskCandidate(receipt.candidate);
+  const currentKnowledge = receipt.currentKnowledge == null ? null : createTaskDevelopmentKnowledge(receipt.currentKnowledge);
   const gates = normalizeGates(receipt.gates);
   const decision = normalizeDecision(receipt.decision);
   if (!Array.isArray(receipt.handoffs)) throw taskDevelopmentError('task_development_field_invalid', 'handoffs 必须是数组。', 400, { field: 'handoffs' });
@@ -437,11 +458,12 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   if (new Set(handoffs.map((item) => item.identity)).size !== handoffs.length) throw taskDevelopmentError('task_development_value_duplicate', 'handoffs identity 不能重复。', 400, { field: 'handoffs' });
   if (candidate && candidate.generation !== receipt.generation) throw taskDevelopmentError('task_development_generation_mismatch', 'current Candidate generation 必须等于 Receipt generation。', 409);
   if (candidate && (!contentTarget || candidate.contentTargetIdentity !== contentTarget.identity || candidate.taskContextIdentity !== taskContext.identity || candidate.policyIdentity !== verificationPolicy?.identity)) throw taskDevelopmentError('task_development_candidate_inputs_mismatch', 'current Candidate 与 Receipt current inputs 不一致。', 409);
-  if (!contentTarget && (verificationPolicy || candidate || gates.verification || gates.completion || decision || handoffs.length)) throw taskDevelopmentError('task_development_content_target_required', 'Content Target形成前不能保存policy、Candidate、Verification/Completion gate、decision或handoff。', 409);
+  if (!contentTarget && (verificationPolicy || candidate || currentKnowledge || gates.verification || gates.completion || decision || handoffs.length)) throw taskDevelopmentError('task_development_content_target_required', 'Content Target形成前不能保存policy、Candidate、Current Knowledge、Verification/Completion gate、decision或handoff。', 409);
+  if (currentKnowledge && (!contentTarget || currentKnowledge.treeIdentity !== contentTarget.identity)) throw taskDevelopmentError('task_development_knowledge_target_mismatch', 'currentKnowledge必须绑定current Content Target。', 409);
   if (!candidate && gates.completion) throw taskDevelopmentError('task_development_completion_without_candidate', '没有 current Candidate 时不能保存 Completion gate。', 409);
   if (decision?.candidateIdentity && decision.candidateIdentity !== candidate?.identity) throw taskDevelopmentError('task_development_decision_candidate_mismatch', 'decision 与 current Candidate 不一致。', 409);
   const createdAt = timestamp(receipt.createdAt, 'createdAt');
   const updatedAt = timestamp(receipt.updatedAt, 'updatedAt');
   if (Date.parse(updatedAt) < Date.parse(createdAt)) throw taskDevelopmentError('task_development_timestamp_invalid', 'updatedAt 不能早于 createdAt。', 400, { field: 'updatedAt' });
-  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, planning, parentPlan, plannedContributions, parentAcceptance, contentTarget, verificationPolicy, generation: receipt.generation, candidate, gates, decision, handoffs, createdAt, updatedAt };
+  return { schemaVersion: TASK_DEVELOPMENT_RECEIPT_SCHEMA, taskId, environment, taskContext, planning, parentPlan, plannedContributions, parentAcceptance, contentTarget, verificationPolicy, generation: receipt.generation, candidate, currentKnowledge, gates, decision, handoffs, createdAt, updatedAt };
 }

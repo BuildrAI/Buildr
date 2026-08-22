@@ -8,6 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -35,14 +36,14 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   fs.writeFileSync(legacy, 'legacy: inert\n');
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task').slot.present, false);
 
-  const recorded = runtime.recordTaskVerification(root, 'demo-task', input());
+  const recorded = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
   assert.equal(recorded.slot.path, 'workspace-sqlite:task-verification/demo-task');
   assert.equal(recorded.slot.applicability.status, 'current');
   assert.equal(recorded.slot.applicability.declarations.status, 'current');
   assert.doesNotMatch(stored(runtime, root), /resultDigest|applicability|revision|requiredAssurance|stdout|stderr/);
   const unknown = runtime.inspectTaskVerification(root, 'demo-task').slot.applicability;
   assert.equal(unknown.status, 'unknown');
-  assert.deepEqual(unknown.reasons.map((reason) => reason.code), ['target-identity-not-provided', 'declaration-identities-not-provided']);
+  assert.deepEqual(unknown.reasons.map((reason) => reason.code), ['candidate-identity-not-provided', 'target-identity-not-provided', 'declaration-identities-not-provided']);
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:two' }).slot.applicability.status, 'stale');
 
   const changed = declaration();
@@ -50,6 +51,26 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(changed));
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.applicability.status, 'unknown');
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
+});
+
+test('Project Result拒绝claimed facts，Candidate不匹配的authority对账保持原current', (t) => {
+  const root = fixture(t);
+  const runtime = createRuntime();
+  assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', {
+    candidateIdentity: 'sha256-claimed-candidate', candidateGeneration: 1,
+    targetIdentity: 'target:claimed', targetSummary: 'Claimed target',
+    capabilities: input().capabilities, coverageGaps: [], conclusion: input().conclusion, declarationRoot: root,
+  }), (error) => error.code === 'task_verification_claimed_facts_forbidden');
+  assert.equal(stored(runtime, root), null);
+
+  const recorded = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
+  const original = stored(runtime, root);
+  const recordId = recorded.slot.result.capabilities[0].evidence.recordId;
+  assert.throws(() => runtime.reconcileTaskVerification(root, 'demo-task', {
+    candidateIdentity: 'sha256-stale-candidate', candidateGeneration: 2,
+    targetIdentity: 'target:one', targetSummary: 'Stale Candidate target', recordIds: [recordId], coverageGaps: [], declarationRoot: root,
+  }), (error) => error.code === 'task_verification_evidence_candidate_mismatch');
+  assert.equal(stored(runtime, root), original);
 });
 
 test('Verification只从canonical或matching ready Task Environment观察declaration', (t) => {
@@ -63,45 +84,45 @@ test('Verification只从canonical或matching ready Task Environment观察declara
   candidateDeclaration.capabilities[0].proves = ['Candidate declaration'];
   fs.writeFileSync(path.join(candidateRoot, 'projects', 'demo', 'verification.yml'), YAML.stringify(candidateDeclaration));
   const runtime = createRuntime();
-  assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', input({ declarationRoot: foreignRoot })), (error) => error.code === 'task_verification_declaration_root_unowned');
+  assert.throws(() => recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ declarationRoot: foreignRoot })), (error) => error.code === 'task_verification_declaration_root_unowned');
   runtime.resolveTaskEnvironmentExecution = () => ({ ready: true, environmentRoot: candidateRoot });
-  const recorded = runtime.recordTaskVerification(root, 'demo-task', input({ declarationRoot: candidateRoot }));
+  const recorded = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ declarationRoot: candidateRoot }));
   assert.equal(recorded.slot.result.declarations[0].path, 'projects/demo/verification.yml');
   assert.equal(JSON.stringify(recorded.slot.result).includes(candidateRoot), false);
-  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarations: recorded.slot.result.declarations }).slot.applicability.status, 'current');
+  assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarations: recorded.slot.result.declarations, candidate: recorded.slot.result.candidate }).slot.applicability.status, 'current');
   assert.throws(() => runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one', declarationRoot: candidateRoot }), (error) => error.code === 'task_verification_field_forbidden');
 });
 
 test('Verification serialization或SQLite mutation失败保留last-valid current', (t) => {
   const root = fixture(t);
   const runtime = createRuntime();
-  runtime.recordTaskVerification(root, 'demo-task', input());
+  recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
   const original = stored(runtime, root);
   runtime.taskVerificationSerialize = () => { throw new Error('serialization failure'); };
-  assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', input({ targetIdentity: 'target:serialization' })), (error) => error.code === 'task_verification_write_failed' && error.details.stage === 'serialization');
+  assert.throws(() => recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ targetIdentity: 'target:serialization' })), (error) => error.code === 'task_verification_write_failed' && error.details.stage === 'serialization');
   runtime.taskVerificationSerialize = null;
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   opened.database.exec("CREATE TRIGGER reject_verification_update BEFORE UPDATE ON task_verification_current BEGIN SELECT RAISE(ABORT, 'injected mutation failure'); END;");
   opened.database.close();
-  assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', input({ targetIdentity: 'target:mutation' })), (error) => error.code === 'task_verification_write_failed' && error.details.stage === 'mutation' && error.details.rollback.status === 'restored');
+  assert.throws(() => recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ targetIdentity: 'target:mutation' })), (error) => error.code === 'task_verification_write_failed' && error.details.stage === 'mutation' && error.details.rollback.status === 'restored');
   assert.equal(stored(runtime, root), original);
 });
 
 test('terminal Task仍可读取既有Verification且拒绝新写入', (t) => {
   const root = fixture(t);
   const runtime = createRuntime();
-  runtime.recordTaskVerification(root, 'demo-task', input());
+  recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
   const task = runtime.readTaskRecordPersistence(root, 'demo-task');
   runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done', noChange: false }, updatedAt: new Date(Date.parse(task.record.createdAt) + 1000).toISOString() });
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:one' }).slot.present, true);
-  assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', input()), (error) => error.code === 'task_verification_task_terminal');
+  assert.throws(() => recordVerificationResultFromEvidence(runtime, root, 'demo-task', input()), (error) => error.code === 'task_execution_record_task_terminal');
 });
 
 test('workspace-only Result写入同一SQLite authority，scope变化后兼容读取并派生stale', (t) => {
   const root = fixture(t);
   const runtime = createRuntime();
   runtime.createTaskRecord(root, { taskId: 'workspace-task', title: 'Workspace only', intent: 'Persist a typed workspace coverage gap.', projects: [], services: [], changes: [] });
-  const recorded = runtime.recordTaskVerification(root, 'workspace-task', {
+  const recorded = recordVerificationResultFromEvidence(runtime, root, 'workspace-task', {
     targetIdentity: 'workspace:one', targetSummary: 'Workspace target', capabilities: [],
     coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }],
     conclusion: { outcome: 'not-passed', summary: 'Workspace coverage gap remains.' }, declarationRoot: root,
@@ -117,11 +138,28 @@ test('workspace-only Result写入同一SQLite authority，scope变化后兼容�
     updatedAt: new Date(Date.parse(current.updatedAt) + 1000).toISOString(),
   });
   assert.deepEqual(runtime.readTaskVerificationResultPersistence(root, 'workspace-task').result.declarations, [], 'old self-described Result remains readable');
+  assert.equal(runtime.readTaskVerificationResultPersistence(root, 'workspace-task').result.schemaVersion, 'buildr.task-verification-result/v2');
   const declarations = runtime.observeTaskVerificationDeclarations(root, 'workspace-task', root).map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
   const inspected = runtime.inspectTaskVerification(root, 'workspace-task', { targetIdentity: 'workspace:one', declarations });
   assert.equal(inspected.slot.applicability.declarations.status, 'stale');
   assert.equal(inspected.slot.applicability.status, 'stale');
   assert.ok(inspected.slot.applicability.reasons.some((reason) => reason.code === 'project-scope-added' && reason.project === 'demo'));
+});
+
+test('合法v1 Result只读兼容且明确标记legacy candidate-unbound', (t) => {
+  const root = fixture(t);
+  const runtime = createRuntime();
+  runtime.writeTaskVerificationResultPersistence(root, {
+    schemaVersion: 'buildr.task-verification-result/v1', taskId: 'demo-task',
+    target: { identity: 'target:legacy', summary: 'Legacy target' },
+    declarations: runtime.observeTaskVerificationDeclarations(root, 'demo-task', root).map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity })),
+    capabilities: [{ project: 'demo', capability: 'demo.unit', outcome: 'passed', facts: ['Legacy unit passed.'] }],
+    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Legacy verified.' }, completedAt: '2026-08-12T00:00:00.000Z',
+  });
+  const result = runtime.inspectTaskVerification(root, 'demo-task', { targetIdentity: 'target:legacy' });
+  assert.equal(result.slot.result.schemaVersion, 'buildr.task-verification-result/v1');
+  assert.equal(result.slot.applicability.status, 'unknown');
+  assert.ok(result.slot.applicability.reasons.some((reason) => reason.code === 'legacy-result-candidate-unbound'));
 });
 
 test('Project Task repository仍拒绝空 declarations workspace shape', (t) => {

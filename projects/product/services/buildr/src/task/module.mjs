@@ -203,7 +203,7 @@ const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
   'cleanupTaskExecutionRecordBody',
 ]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
-  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'recordTaskVerification', 'generateTaskVerificationPrompt',
+  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
 ]);
 const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
   'taskVerificationResultPath', 'readTaskVerificationResultPersistence', 'writeTaskVerificationResultPersistence', 'renderTaskVerificationResult',
@@ -212,6 +212,7 @@ const TASK_PLANNING_IDENTITY_APPLICATION_METHODS = Object.freeze(['inspectTaskPl
 const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
   'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'beginTaskDevelopment',
   'recordTaskDevelopmentPlanning', 'observeTaskDevelopment', 'recordTaskDevelopmentPolicy',
+  'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
   'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier', 'recordTaskParentPlan',
   'bindTaskPlannedContributions', 'recordTaskParentAcceptance',
@@ -382,6 +383,12 @@ function taskVerificationCliContributions() {
       help: ['Usage: buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]', '', '只接收完整 current facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。', '完整 stdout/stderr、耗时、临时路径、Environment Receipt、applicability、revision、proceed/blocked 或 Task status 不属于 Result。'],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'record',
       run: (runtime, context) => taskVerificationCommand(runtime, 'record', context.argv.slice(5)),
+    },
+    {
+      key: 'task verification reconcile', surface: 'agent-machine', summary: '从matching terminal Verification Execution Record独立读取并对账current Result，不接受claimed capability facts。',
+      help: ['Usage: buildr task verification reconcile <task-id> --candidate-identity <identity> --candidate-generation <n> --target-identity <identity> --target-summary <text> --record <execution-record-id> ... [--coverage-gap <scope>::<summary> ...] [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]', '', '只从Task-owned terminal execution authority提炼facts；Candidate、target、declaration或body不匹配时零写入。'],
+      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'reconcile',
+      run: (runtime, context) => taskVerificationCommand(runtime, 'reconcile', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }
@@ -825,6 +832,7 @@ export function createTaskVerificationModule(runtime, { verificationDeclaration 
     requires: Object.freeze([
       TASK_RECORD_PERSISTENCE_READ,
       TASK_ENVIRONMENT_APPLICATION,
+      TASK_EXECUTION_RECORD_APPLICATION,
       ...(verificationDeclaration ? [verificationDeclaration] : []),
     ]),
     create(requires) {

@@ -129,11 +129,20 @@ export function registerTaskVerificationApplication(runtime) {
     return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
   }
 
-  function applicability(result, currentTargetIdentity, declarationsInput) {
+  function applicability(result, currentTargetIdentity, declarationsInput, candidateInput = undefined) {
     const targetStatus = currentTargetIdentity === undefined ? 'unknown' : result.target.identity === currentTargetIdentity ? 'current' : 'stale';
     const expected = new Map(result.declarations.map((item) => [item.project, item]));
     const actual = declarationsInput === undefined ? null : new Map(declarationsInput.map((item) => [item.project, item]));
     const reasons = [];
+    const legacy = result.schemaVersion === 'buildr.task-verification-result/v1';
+    const candidateStatus = legacy || candidateInput === undefined
+      ? 'unknown'
+      : result.candidate.identity === candidateInput.identity && result.candidate.generation === candidateInput.generation
+        ? 'current'
+        : 'stale';
+    if (legacy) reasons.push({ axis: 'candidate', code: 'legacy-result-candidate-unbound', message: 'v1 Result缺少Candidate与evidence authority绑定。' });
+    else if (candidateInput === undefined) reasons.push({ axis: 'candidate', code: 'candidate-identity-not-provided', message: 'Caller未提供current Candidate identity/generation。' });
+    else if (candidateStatus === 'stale') reasons.push({ axis: 'candidate', code: 'candidate-identity-changed', message: `${result.candidate.identity}/${result.candidate.generation} -> ${candidateInput.identity}/${candidateInput.generation}` });
     if (currentTargetIdentity === undefined) {
       reasons.push({ axis: 'target', code: 'target-identity-not-provided', message: 'Caller 未提供 current target identity；未执行外部观察。' });
     }
@@ -153,16 +162,17 @@ export function registerTaskVerificationApplication(runtime) {
     }
     if (targetStatus === 'stale') reasons.unshift({ axis: 'target', code: 'target-identity-changed', message: `${result.target.identity} -> ${currentTargetIdentity}` });
     const declarationsStatus = actual == null ? 'unknown' : reasons.some((item) => item.axis === 'declaration') ? 'stale' : 'current';
-    const status = targetStatus === 'stale' || declarationsStatus === 'stale' ? 'stale' : targetStatus === 'current' && declarationsStatus === 'current' ? 'current' : 'unknown';
+    const status = targetStatus === 'stale' || declarationsStatus === 'stale' || candidateStatus === 'stale' ? 'stale' : targetStatus === 'current' && declarationsStatus === 'current' && candidateStatus === 'current' ? 'current' : 'unknown';
     return {
       status,
+      candidate: { status: candidateStatus, resultIdentity: result.candidate?.identity ?? null, resultGeneration: result.candidate?.generation ?? null, currentIdentity: candidateInput?.identity ?? null, currentGeneration: candidateInput?.generation ?? null },
       target: { status: targetStatus, resultIdentity: result.target.identity, currentIdentity: currentTargetIdentity ?? null },
       declarations: { status: declarationsStatus },
       reasons,
     };
   }
 
-  function slot(task, targetIdentity, declarationsInput = undefined) {
+  function slot(task, targetIdentity, declarationsInput = undefined, candidateInput = undefined) {
     const persisted = runtime.readTaskVerificationResultPersistence(task.root, task.record.taskId, { optional: true });
     if (!persisted) {
       return { path: runtime.taskVerificationResultPath(task.root, task.record.taskId), present: false, result: null, resultDigest: null, applicability: null };
@@ -173,7 +183,7 @@ export function registerTaskVerificationApplication(runtime) {
       result: persisted.result,
       resultDigest: persisted.resultDigest,
       observedAt: persisted.observedAt,
-      applicability: applicability(persisted.result, targetIdentity, declarationsInput),
+      applicability: applicability(persisted.result, targetIdentity, declarationsInput, candidateInput),
     };
   }
 
@@ -209,11 +219,11 @@ export function registerTaskVerificationApplication(runtime) {
   }
 
   function inspectTaskVerification(targetRoot, taskId, input = {}) {
-    assertFields(input, new Set(['targetIdentity', 'declarations']), 'Task Verification inspect');
+    assertFields(input, new Set(['targetIdentity', 'declarations', 'candidate']), 'Task Verification inspect');
     const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
     const targetIdentity = currentTarget(input.targetIdentity);
     if (input.declarations !== undefined && !Array.isArray(input.declarations)) throw taskVerificationError('task_verification_declarations_invalid', 'declarations必须是保存identity数组。', 400, { field: 'declarations' });
-    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, targetIdentity, input.declarations));
+    return operationResult('inspect', 'inspected', task.record.taskId, slot(task, targetIdentity, input.declarations, input.candidate));
   }
 
   function validateRecordAgainstDeclarations(task, observations, capabilities, coverageGaps) {
@@ -261,15 +271,18 @@ export function registerTaskVerificationApplication(runtime) {
   }
 
   function recordTaskVerification(targetRoot, taskId, input) {
-    assertFields(input, new Set(['targetIdentity', 'targetSummary', 'capabilities', 'coverageGaps', 'conclusion', 'declarationRoot']), 'Task Verification record');
+    assertFields(input, new Set(['candidateIdentity', 'candidateGeneration', 'targetIdentity', 'targetSummary', 'capabilities', 'coverageGaps', 'conclusion', 'declarationRoot']), 'Task Verification record');
     const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
     if (task.record.status !== 'active') {
       throw taskVerificationError('task_verification_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能记录新的 Verification Result。`, 409, { status: task.record.status }, `运行 buildr task verification inspect ${taskId} 查看已有结果。`);
     }
     const observations = observeDeclarations(task, input.declarationRoot);
+    if ((input.capabilities || []).length) throw taskVerificationError('task_verification_claimed_facts_forbidden', 'Project capability facts必须通过matching Execution Record reconciliation形成，record只保留仅工作区coverage gap兼容入口。', 409, undefined, `运行 buildr task verification reconcile ${taskId} --record <record-id> ...`);
+    if (!isWorkspaceOnlyTaskRecord(task.record)) throw taskVerificationError('task_verification_reconciliation_required', 'Project或Service Task必须通过matching Execution Record reconciliation形成Result；record只保留仅工作区coverage gap兼容入口。', 409, undefined, `运行 buildr task verification reconcile ${taskId} --record <record-id> ...`);
     const draft = normalizeTaskVerificationResult({
-      schemaVersion: 'buildr.task-verification-result/v1',
+      schemaVersion: 'buildr.task-verification-result/v2',
       taskId: task.record.taskId,
+      candidate: { identity: input.candidateIdentity, generation: input.candidateGeneration, contentTargetIdentity: input.targetIdentity },
       target: { identity: input.targetIdentity, summary: input.targetSummary },
       declarations: declarationValues(observations),
       capabilities: input.capabilities,
@@ -279,11 +292,68 @@ export function registerTaskVerificationApplication(runtime) {
     }, { expectedTaskId: task.record.taskId });
     validateRecordAgainstDeclarations(task, observations, draft.capabilities, draft.coverageGaps);
     const written = runtime.writeTaskVerificationResultPersistence(task.root, draft);
-    const resultSlot = slot(task, draft.target.identity, draft.declarations);
+    const resultSlot = slot(task, draft.target.identity, draft.declarations, draft.candidate);
     return operationResult('record', 'recorded', task.record.taskId, resultSlot, [{
       type: written.created ? 'created' : 'updated',
       path: relative(task.root, written.file),
     }]);
+  }
+
+  function reconcileTaskVerification(targetRoot, taskId, input) {
+    assertFields(input, new Set(['candidateIdentity', 'candidateGeneration', 'targetIdentity', 'targetSummary', 'recordIds', 'coverageGaps', 'declarationRoot']), 'Task Verification reconcile');
+    const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
+    if (task.record.status !== 'active') throw taskVerificationError('task_verification_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能对账新的 Verification Result。`, 409, { status: task.record.status });
+    if (!Array.isArray(input.recordIds) || !input.recordIds.length || new Set(input.recordIds).size !== input.recordIds.length) throw taskVerificationError('task_verification_evidence_records_invalid', 'reconcile需要非空且不重复的recordIds。', 400, { field: 'recordIds' });
+    if (!Number.isInteger(input.candidateGeneration) || input.candidateGeneration < 1) throw taskVerificationError('task_verification_candidate_generation_invalid', 'candidateGeneration必须是正整数。', 400);
+    const observations = observeDeclarations(task, input.declarationRoot);
+    const observationByProject = new Map(observations.map((item) => [item.project, item]));
+    const capabilities = [];
+    for (const recordId of input.recordIds) {
+      let detail;
+      let summary;
+      try {
+        detail = runtime.inspectTaskExecutionRecordCompactView(task.root, taskId, recordId);
+        summary = JSON.parse(runtime.readTaskExecutionRecordBodyFileView(task.root, taskId, recordId, 'summary.json').file.content);
+      } catch (error) {
+        throw taskVerificationError('task_verification_evidence_unavailable', `Execution Record不可独立读取：${recordId}。`, 409, { recordId, cause: error.code || error.message });
+      }
+      const record = detail.record;
+      if (record.owner !== 'task-verification' || record.kind !== 'verification-execution' || !['passed', 'failed'].includes(record.outcome) || !['retained', 'attention'].includes(record.lifecycleStatus)) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record不是可对账的terminal verification authority：${recordId}。`, 409, { recordId, owner: record.owner, kind: record.kind, outcome: record.outcome, lifecycleStatus: record.lifecycleStatus });
+      if (summary.schemaVersion !== 'buildr.verification-execution-record-summary/v1' || summary.task?.id !== taskId) throw taskVerificationError('task_verification_evidence_mismatch', `Execution Record Task或schema不匹配：${recordId}。`, 409, { recordId });
+      if (summary.candidate?.identity !== input.candidateIdentity || summary.candidate?.generation !== input.candidateGeneration || summary.candidate?.contentTargetIdentity !== input.targetIdentity || summary.target?.identity !== input.targetIdentity) throw taskVerificationError('task_verification_evidence_candidate_mismatch', `Execution Record Candidate或Content Target不匹配：${recordId}。`, 409, { recordId });
+      if (summary.target?.stable !== true || summary.target?.drift) throw taskVerificationError('task_verification_evidence_target_drift', `Execution Record target发生漂移：${recordId}。`, 409, { recordId });
+      const project = summary.project?.code;
+      const observation = observationByProject.get(project);
+      if (!observation || observation.path !== summary.declaration?.path || observation.identity !== summary.declaration?.identity) throw taskVerificationError('task_verification_evidence_declaration_mismatch', `Execution Record declaration不匹配：${recordId}。`, 409, { recordId, project });
+      const selected = new Map((summary.selectedCapabilities || []).map((item) => [item.id, item]));
+      if (!Array.isArray(summary.checks) || summary.checks.length !== selected.size) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record capability checks不完整：${recordId}。`, 409, { recordId });
+      for (const check of summary.checks) {
+        if (!selected.has(check.id) || !['passed', 'failed'].includes(check.status)) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record check不完整：${recordId}/${check.id || 'unknown'}。`, 409, { recordId });
+        capabilities.push({
+          project,
+          capability: check.id,
+          outcome: check.status,
+          facts: [check.status === 'passed' ? `${check.title || check.id} 已通过。` : `${check.title || check.id} 未通过（exitCode=${check.exitCode ?? 'none'}, signal=${check.signal || 'none'}）。`],
+          evidence: { kind: 'task-execution-record', recordId, runIdentity: record.runIdentity, invocationIdentity: record.invocationIdentity, bodyDigest: record.body.digest },
+        });
+      }
+    }
+    const coverageGaps = input.coverageGaps || [];
+    const failed = capabilities.some((item) => item.outcome === 'failed') || coverageGaps.length > 0;
+    const draft = normalizeTaskVerificationResult({
+      schemaVersion: 'buildr.task-verification-result/v2',
+      taskId,
+      candidate: { identity: input.candidateIdentity, generation: input.candidateGeneration, contentTargetIdentity: input.targetIdentity },
+      target: { identity: input.targetIdentity, summary: input.targetSummary },
+      declarations: declarationValues(observations),
+      capabilities,
+      coverageGaps,
+      conclusion: { outcome: failed ? 'not-passed' : 'passed', summary: failed ? '可核验Verification authority包含失败事实或coverage gap。' : '全部可核验Verification authority均已通过。' },
+      completedAt: new Date().toISOString(),
+    }, { expectedTaskId: taskId });
+    validateRecordAgainstDeclarations(task, observations, draft.capabilities, draft.coverageGaps);
+    const written = runtime.writeTaskVerificationResultPersistence(task.root, draft);
+    return operationResult('reconcile', 'recorded', taskId, slot(task, draft.target.identity, draft.declarations, draft.candidate), [{ type: written.created ? 'created' : 'updated', path: relative(task.root, written.file) }]);
   }
 
   function generateTaskVerificationPrompt(targetRoot, input) {
@@ -306,10 +376,10 @@ export function registerTaskVerificationApplication(runtime) {
         '1. 读取并遵循 task-verification Skill 与 selected buildr.task-verification/v3 contract；先 inspect Task 和 existing current Result。',
         '2. 按 Task ID 恢复 ready Task Environment，只在 receipt 允许的 execution roots 工作。',
         '3. 读取 Task scope 内 Project verification.yml v2，针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
-        '4. command runner 或 bounded Agent operation 产生的是 transient Execution Evidence；完整 stdout/stderr、耗时、资源与临时路径不得复制进 current Result。',
-        '5. 只有全部适用执行与事实提炼完成后才通过 Task Verification Application record 一份完整 replacement；中断或结论不完整时不得覆盖 current。',
-        '6. Result 只记录 target、declarations、实际 capabilities/facts、coverage gaps 与 passed|not-passed；是否 proceed/blocked 留给用户或未来 Task Development。',
-        '7. 报告 Result digest、target/declaration applicability，并 cleanup 全部 transient execution evidence。',
+        '4. 从Task Development取得current Candidate identity/generation与Content Target lease；正式command runner必须在任何副作用前绑定它，Task外transient run不得伪装formal authority。',
+        '5. 只选择matching terminal Task Execution Records，通过Task Verification Application reconcile形成完整replacement；不得提交capability outcome/fact、CI URL、Git ref或聊天摘要作为claimed success。',
+        '6. Application独立核验Candidate、target、declarations、body integrity与checks后派生Result；中断、authority不匹配或正文不完整时不得覆盖current。仅工作区gap使用受控record兼容入口。',
+        '7. 报告Result digest、Candidate/target/declaration applicability与采用的record identities；cleanup只处理精确owned transient evidence。是否proceed/blocked留给Task Development。',
       ].join('\n'),
       copiedMeansRecorded: false,
     };
@@ -322,6 +392,7 @@ export function registerTaskVerificationApplication(runtime) {
     },
     inspectTaskVerification,
     recordTaskVerification,
+    reconcileTaskVerification,
     generateTaskVerificationPrompt,
   });
   return runtime;

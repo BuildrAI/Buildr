@@ -96,7 +96,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
         verification: association.gates?.verification || null,
       },
       maintenance,
-      snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, verificationPolicy: receipt.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
+      snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, verificationPolicy: receipt.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, currentKnowledge: selectedHandoff?.knowledge || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
       diagnostics: finishReadModel.diagnostics || [],
     };
   }

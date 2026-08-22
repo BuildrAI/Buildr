@@ -463,7 +463,7 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
     'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);
   assert.ok(source.includes('processesOverlap(prepareResults[0], prepareResults[1])'));
-  assert.ok(source.includes("'task', 'verification', 'record'"));
+  assert.ok(source.includes("'task', 'verification', 'reconcile'"));
   assert.equal(source.includes("'task', 'verification', 'inspect'"), false);
   assert.equal(source.includes('taskChangeResolution'), false);
   assert.equal(source.includes('candidate-only'), false);

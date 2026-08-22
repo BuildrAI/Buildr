@@ -7,7 +7,7 @@ export const VERIFICATION_EXECUTION_RECORD_PRODUCER = 'buildr.verification-comma
 
 const PUBLIC_STATUSES = new Set(['not-applicable', 'not-opened', 'active', 'retained', 'blocked', 'attention']);
 const MAPPER_FIELDS = new Set([
-  'runId', 'executionIdentity', 'invocationIdentity', 'context', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
+  'runId', 'executionIdentity', 'invocationIdentity', 'context', 'candidate', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
   'projectCode', 'declarationPath', 'declarationIdentity', 'selectedCapabilities', 'authorizedCapabilities',
   'authorizedResources', 'checks', 'outcome', 'durationMs', 'startedAt', 'finishedAt', 'diagnostic',
 ]);
@@ -16,9 +16,10 @@ function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
-export function verificationInvocationIdentity({ taskId, projectCode, declarationIdentity, targetIdentity, selectedCapabilities }) {
+export function verificationInvocationIdentity({ taskId, candidate, projectCode, declarationIdentity, targetIdentity, selectedCapabilities }) {
   return digest({
     taskId,
+    candidate,
     project: projectCode,
     declarationIdentity,
     targetIdentity,
@@ -118,6 +119,7 @@ export function createVerificationExecutionRecordFiles(input) {
       invocationKind: 'command',
     }),
     task: { id: input.context?.taskId || null, scopes },
+    candidate: input.candidate || null,
     target: {
       identity: input.targetIdentity,
       stable: input.targetStable === true,

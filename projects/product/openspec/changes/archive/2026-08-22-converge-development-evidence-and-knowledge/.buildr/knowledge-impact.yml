@@ -1,0 +1,38 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: converge-development-evidence-and-knowledge
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/converge-development-evidence-and-knowledge/brief.md
+    reason: 本Change需要面向人的研发证据闭环摘要
+    status: updated
+    sourceIdentities:
+      - openspec/changes/converge-development-evidence-and-knowledge/proposal.md
+      - openspec/changes/converge-development-evidence-and-knowledge/design.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Task Candidate、Verification、Current Knowledge与handoff的产品职责顺序改变
+    status: updated
+    sourceIdentities:
+      - openspec/changes/converge-development-evidence-and-knowledge/specs/task-development/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Verification Result v2、reconcile action与Development knowledge disposition改变技术模型
+    status: updated
+    sourceIdentities:
+      - openspec/changes/converge-development-evidence-and-knowledge/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的formal verification execution与Result reconciliation流程改变
+    status: updated
+    sourceIdentities:
+      - openspec/changes/converge-development-evidence-and-knowledge/specs/task-verification/spec.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: Task Candidate、Verification Result与Current Knowledge disposition边界需要更新
+    status: updated
+    sourceIdentities:
+      - openspec/changes/converge-development-evidence-and-knowledge/specs/task-development/spec.md
+      - openspec/changes/converge-development-evidence-and-knowledge/specs/task-verification/spec.md
+unresolvedItems: []

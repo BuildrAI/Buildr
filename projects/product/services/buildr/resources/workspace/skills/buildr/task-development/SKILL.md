@@ -77,7 +77,7 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 ## 开发到稳定目标
 
-在 Candidate freeze 前完成所有内容修改、测试开发与修复、Quick/Task-affected 反馈、current knowledge 维护，以及每个关联 Change 的 deterministic convergence/archive 最终处置。这些动作属于相应 Project/Skill，不由 Development Application 执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
+在Candidate freeze前完成所有会改变交付内容的修改、测试开发与修复、Quick/Task-affected反馈，以及每个关联Change的deterministic convergence/archive最终处置。Current Knowledge provider可在实现、Review或Verification前后调用；若其reconcile/maintain改变delivery bytes，仍须重新observe并使旧Candidate与后续evidence失效。这些动作属于相应Project/Skill，不由Development Application执行。规划期间使用`pending`；只有OpenSpec专业流程已收敛时才能提交`converged`。Application会复用Task Record的Task-scoped Change read model，要求当前working copy为`available + archived`；retained baseline仍active不构成阻塞，调用方summary、路径与文件存在也不能替代该事实。OpenSpec归档路径、provenance、checkbox完成态和filesystem时间不属于plan target；只有Task Planning Identity resolver返回的新target才能使Planning Review stale。
 
 检查通过后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
@@ -96,22 +96,22 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 有效Project集合必须合并显式Project、Service所属Project与Change所属Project。只有并集为空时才使用仅工作区policy：空declarations、空capabilities、唯一`workspace` coverage gap与空overrides；Service或Change不能因省略`scope.projects`进入该分支。仅工作区Content Target变化后重新形成policy；Project集合或declaration变化时旧policy必须stale。
 
-在启动昂贵Formal Verification前读取response-only `formalVerificationReadiness`：`blocked`只处理其中明确的Change、Content Target或policy blocker；`unknown`时调用selected current knowledge provider对同一current tree执行只读`inspect`。返回`aligned|not-applicable`后直接对同一Content Target进入`task-verification`，无需为了保存ready摘要重读Snapshot或写入Development；返回`unresolved`时先由knowledge owner收敛，任何delivery content变化都重新观察Content Target。readiness与inspect Result不进入Receipt、Result或新sidecar。
+先在Task Context、Planning、Content Target与policy current时调用freeze形成或复用Candidate。再读取response-only`formalVerificationReadiness`：`ready`时把current Candidate identity/generation与Content Target作为显式lease交给`task-verification`；`blocked`只处理其中明确的Candidate输入漂移；`not-applicable`表示尚未到Candidate或已有matching Verification。readiness不进入Receipt、Result或新sidecar。
 
-该预检只属于正式Task的Development → Formal Verification交接。开发中的focused/affected/unit/integration反馈、Task外transient `verification run`和Candidate CI不读取readiness、不增加检查步骤，也不因Change pending或knowledge unknown被阻塞。`unknown`产生的是`recommended` owner action，不是通用executor硬门禁；合法替代顺序仍由实际owner contract判断。
+该预检只属于正式Task的Development → Formal Verification交接。开发中的focused/affected/unit/integration反馈、Task外transient`verification run`和Candidate CI不读取readiness。Current Knowledge不再是Formal Verification前的固定预检；它只需在handoff前形成绑定current Content Target的最小disposition。
 
-然后对 Content Target identity 执行正式 `task-verification`。Result target/declarations 必须 current；policy 中每个 required capability 都必须有明确 passed/failed fact，每个 policy gap 都必须在 Result 中有对应 coverage gap。仅工作区没有验证能力时记录空declarations、空capabilities、唯一workspace gap与`not-passed`，不得自动passed。gap尚未进入matching current Result时不得freeze；事实完整后仍按现有风险授权门禁推进。
+然后针对current Candidate执行正式`task-verification`。Execution Record与Result必须绑定Candidate identity/generation、Content Target与declarations；policy中每个required capability都必须有从matching execution authority对账的passed/failed fact，每个policy gap都必须在Result中有对应coverage gap。仅工作区没有验证能力时记录空declarations、空capabilities、唯一workspace gap与`not-passed`，不得自动passed或提交claimed capability facts。
 
 ## Candidate、Completion 与决定
 
-所有Change disposition非pending，且每个`converged`均由current working copy archived事实证明后，planning nodes与适用gates已得到current专业Result、`not-applicable`或明确`waived`处置，policy current且Verification facts满足policy，才调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；Change lifecycle、planning、Content、Task context、policy或gate disposition变化会使旧Candidate失效并在下一次freeze递增generation。
+所有Change disposition非pending、每个`converged`由current working copy archived事实证明、planning disposition明确且Content Target与policy current后，即可调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；Verification、Completion与Current Knowledge都不进入Candidate identity，也不作为首次freeze前置。Change lifecycle、planning、Content、Task context或policy变化会使旧Candidate失效并在下一次freeze递增generation。
 
-随后用 `task-review` 对 Candidate identity 执行 Completion Review。根据 current gates 记录：
+Candidate形成后，按实际工作需要形成matching Verification、用`task-review`执行Completion Review，并由Current Knowledge provider形成绑定current Content Target的最小disposition。`blocked`只用于会造成错误完成结论的冲突；`attention`保留portable follow-up但不阻止proceed/handoff。根据current gates记录：
 
 - `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
 - `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。
 
-只有 current Candidate、三个 current gates 和合法 proceed decision 同时成立时生成正式 handoff。Application append immutable snapshot；不得因后续 Result 刷新或新 generation 改写旧 snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
+只有current Candidate、三个current gates、非blocked且current的Knowledge disposition和合法proceed decision同时成立时生成正式handoff。Application append immutable snapshot；不得因后续Result刷新、Knowledge更新或新generation改写旧snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
 
 ## 交给任务收尾（Task Finish）
 

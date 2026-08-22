@@ -3,6 +3,7 @@ import path from 'node:path';
 import {
   createTaskDevelopmentPlanning,
   createTaskCandidate,
+  createTaskDevelopmentKnowledge,
   createTaskFinishHandoff,
   normalizeTaskContentTarget,
   normalizeTaskDevelopmentContext,
@@ -95,14 +96,15 @@ export function deriveFormalVerificationReadiness(persistence, applicability) {
     changes: pendingChanges.length === 0 ? 'ready' : 'blocked',
     contentTarget: applicability.contentTarget,
     policy: applicability.policy,
-    currentKnowledge: 'not-applicable',
+    candidate: applicability.candidate,
+    currentKnowledge: applicability.currentKnowledge || 'missing',
   };
-  if (!receipt.contentTarget) {
+  if (!receipt.candidate) {
     return {
       scope: 'formal-verification',
       status: 'not-applicable',
       checks,
-      reasons: [{ axis: 'formal-verification', code: 'formal-verification-handoff-not-reached' }],
+      reasons: [{ axis: 'formal-verification', code: 'formal-verification-candidate-not-reached' }],
     };
   }
   if (applicability.gates?.verification) {
@@ -121,12 +123,7 @@ export function deriveFormalVerificationReadiness(persistence, applicability) {
     ...(applicability.policy === 'current' ? [] : [{ axis: 'policy', code: 'verification-policy-not-current' }]),
   ];
   if (reasons.length) return { scope: 'formal-verification', status: 'blocked', checks, reasons };
-  return {
-    scope: 'formal-verification',
-    status: 'unknown',
-    checks: { ...checks, currentKnowledge: 'unknown' },
-    reasons: [{ axis: 'current-knowledge', code: 'current-knowledge-inspect-required' }],
-  };
+  return { scope: 'formal-verification', status: 'ready', checks, reasons: [] };
 }
 
 export function registerTaskDevelopmentApplication(runtime) {
@@ -320,7 +317,7 @@ export function registerTaskDevelopmentApplication(runtime) {
 
   function verificationGate(slot) {
     if (!slot?.present || slot.applicability?.status !== 'current') return null;
-    return { resultDigest: slot.resultDigest, targetIdentity: slot.result.target.identity, outcome: slot.result.conclusion.outcome, applicability: 'current' };
+    return { resultDigest: slot.resultDigest, targetIdentity: slot.result.candidate?.identity || slot.result.target.identity, outcome: slot.result.conclusion.outcome, applicability: 'current' };
   }
 
   function gateDisposition(gate) {
@@ -364,11 +361,11 @@ export function registerTaskDevelopmentApplication(runtime) {
       ...(planningTargetIdentity ? { planningTargetIdentity } : {}),
       ...(receipt.candidate ? { completionTargetIdentity: receipt.candidate.identity } : {}),
     });
-    const verification = target ? runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarations: declarationValues(observedDeclarations) }) : { slot: null };
+    const verification = target ? runtime.inspectTaskVerification(targetRoot, taskId, { targetIdentity: target.identity, declarations: declarationValues(observedDeclarations), ...(receipt.candidate ? { candidate: { identity: receipt.candidate.identity, generation: receipt.candidate.generation } } : {}) }) : { slot: null };
     const planningCurrent = planningGate(planning, receipt.gates.planning, review);
     const savedVerificationDisposition = gateDisposition(receipt.gates.verification);
     const verificationCurrent = policyIsCurrent
-      ? verificationGate(verification.slot) || (['waived', 'not-applicable'].includes(savedVerificationDisposition) && (!receipt.gates.verification.targetIdentity || receipt.gates.verification.targetIdentity === target.identity) ? receipt.gates.verification : null)
+      ? verificationGate(verification.slot) || (['waived', 'not-applicable'].includes(savedVerificationDisposition) && receipt.candidate && (!receipt.gates.verification.targetIdentity || receipt.gates.verification.targetIdentity === receipt.candidate.identity) ? receipt.gates.verification : null)
       : null;
     const coverage = gateDisposition(verificationCurrent) === 'current' ? policyCoverage(receipt.verificationPolicy, verification.slot) : { complete: Boolean(verificationCurrent), missing: [], gaps: [] };
     const reviewedCompletion = receipt.candidate ? reviewGate(review.slots.completion) : null;
@@ -380,13 +377,13 @@ export function registerTaskDevelopmentApplication(runtime) {
       && receipt.candidate.contentTargetIdentity === target.identity
       && receipt.candidate.taskContextIdentity === context.identity
       && receipt.candidate.policyIdentity === receipt.verificationPolicy?.identity
-      && gateResolved(planningCurrent, ['ready'])
-      && gateResolved(verificationCurrent, ['passed', 'not-passed'])
-      && coverage.complete;
+      && gateResolved(planningCurrent, ['ready']);
+    const knowledgeCurrent = Boolean(receipt.currentKnowledge) && Boolean(target) && receipt.currentKnowledge.treeIdentity === target.identity;
+    const knowledgeReady = knowledgeCurrent && receipt.currentKnowledge.status !== 'blocked';
     const completionCurrent = candidateCurrent && gateResolved(completion, ['ready', 'changes-required']);
-    const proceedCurrent = completionCurrent && receipt.decision?.outcome === 'proceed' && receipt.decision.candidateIdentity === receipt.candidate.identity;
+    const proceedCurrent = completionCurrent && gateResolved(verificationCurrent, ['passed', 'not-passed']) && coverage.complete && knowledgeReady && receipt.decision?.outcome === 'proceed' && receipt.decision.candidateIdentity === receipt.candidate.identity;
     const currentGates = { planning: planningCurrent, verification: verificationCurrent, completion: candidateCurrent ? completion : null };
-    const currentHandoff = proceedCurrent ? [...receipt.handoffs].reverse().find((item) => item.candidate.identity === receipt.candidate.identity && same(item.gates, currentGates) && same(item.decision, receipt.decision)) || null : null;
+    const currentHandoff = proceedCurrent ? [...receipt.handoffs].reverse().find((item) => item.candidate.identity === receipt.candidate.identity && same(item.gates, currentGates) && same(item.knowledge, receipt.currentKnowledge) && same(item.decision, receipt.decision)) || null : null;
     const handoffCurrent = Boolean(currentHandoff);
     const reasons = [];
     if (context.identity !== receipt.taskContext.identity) reasons.push({ axis: 'task-context', code: 'task-context-changed' });
@@ -394,18 +391,21 @@ export function registerTaskDevelopmentApplication(runtime) {
     else if (!target || target.identity !== receipt.contentTarget.identity) reasons.push({ axis: 'content-target', code: 'content-target-changed' });
     if (receipt.contentTarget && !policyIsCurrent) reasons.push({ axis: 'policy', code: receipt.verificationPolicy ? 'declarations-changed' : 'policy-missing' });
     if (!gateResolved(planningCurrent, ['ready'])) reasons.push({ axis: 'planning', code: planningCurrent ? 'planning-changes-required' : 'planning-missing-or-stale' });
-    if (receipt.contentTarget && !verificationCurrent) reasons.push({ axis: 'verification', code: 'verification-missing-or-stale' });
+    if (receipt.candidate && !verificationCurrent) reasons.push({ axis: 'verification', code: 'verification-missing-or-stale' });
     else if (gateDisposition(verificationCurrent) === 'current' && verificationCurrent.outcome !== 'passed') reasons.push({ axis: 'verification', code: 'verification-not-passed', riskAcceptable: true });
-    if (receipt.contentTarget && !coverage.complete) reasons.push({ axis: 'verification-policy', code: 'required-facts-incomplete', missing: coverage.missing, gaps: coverage.gaps });
+    if (receipt.candidate && !coverage.complete) reasons.push({ axis: 'verification-policy', code: 'required-facts-incomplete', missing: coverage.missing, gaps: coverage.gaps });
     if (receipt.candidate && !candidateCurrent) reasons.push({ axis: 'candidate', code: 'candidate-stale' });
     if (receipt.candidate && !completionCurrent) reasons.push({ axis: 'completion', code: 'completion-missing-or-stale' });
     else if (gateDisposition(completion) === 'current' && completion?.outcome === 'changes-required') reasons.push({ axis: 'completion', code: 'completion-changes-required', riskAcceptable: true });
-    return { inspected, execution, context, planning, target, observedDeclarations, policyIsCurrent, review, verification, gates: currentGates, coverage, candidateCurrent, completionCurrent, proceedCurrent, handoffCurrent, currentHandoff, reasons };
+    if (!knowledgeCurrent) reasons.push({ axis: 'current-knowledge', code: receipt.currentKnowledge ? 'current-knowledge-stale' : 'current-knowledge-missing' });
+    else if (receipt.currentKnowledge.status === 'blocked') reasons.push({ axis: 'current-knowledge', code: 'current-knowledge-completion-conflict' });
+    else if (receipt.currentKnowledge.status === 'attention') reasons.push({ axis: 'current-knowledge', code: 'current-knowledge-attention', blocking: false });
+    return { inspected, execution, context, planning, target, observedDeclarations, policyIsCurrent, review, verification, gates: currentGates, coverage, candidateCurrent, knowledgeCurrent, knowledgeReady, completionCurrent, proceedCurrent, handoffCurrent, currentHandoff, reasons };
   }
 
   function initialReceipt(taskId, execution, context, planning, content = null, planningGateValue = null) {
     const timestamp = now();
-    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v3', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, parentPlan: null, plannedContributions: [], parentAcceptance: null, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
+    return normalizeTaskDevelopmentReceipt({ schemaVersion: 'buildr.task-development-receipt/v3', taskId, environment: { taskId, receiptSchema: execution.receiptSchema }, taskContext: context, planning, parentPlan: null, plannedContributions: [], parentAcceptance: null, contentTarget: content, verificationPolicy: null, generation: 0, candidate: null, currentKnowledge: null, gates: { planning: planningGateValue, verification: null, completion: null }, decision: null, handoffs: [], createdAt: timestamp, updatedAt: timestamp }, { expectedTaskId: taskId });
   }
 
   function writeDevelopment(targetRoot, taskId, previous, receipt, currentObservation = null, options = {}) {
@@ -437,10 +437,10 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (applicability.policy !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'policy', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current Task Verification declarations记录verification policy。' };
     const verificationReadiness = deriveFormalVerificationReadiness(persistence, applicability);
     if (verificationReadiness?.status === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'stabilize-formal-target', capability: null, summary: '处理Formal Verification readiness中的明确Change、Content Target或policy blocker，再进入正式验证。' };
-    if (verificationReadiness?.status === 'unknown') return { mode: 'recommended', owner: 'current-knowledge-maintenance', action: 'inspect', capability: { id: 'buildr.current-knowledge-maintenance', version: 2 }, summary: '对同一current tree执行只读current knowledge inspect；aligned或not-applicable后直接进入task-verification，unresolved时先收敛内容。' };
-    if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return { mode: 'recommended', owner: 'task-verification', action: 'verify', capability: { id: 'buildr.task-verification', version: 3 }, summary: '通过task-verification形成与current Content Target和policy匹配的正式Result。' };
     if (applicability.candidate !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'freeze', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。' };
+    if (!applicability.gates?.verification || reasonCodes.has('verification-missing-or-stale') || reasonCodes.has('required-facts-incomplete')) return { mode: 'recommended', owner: 'task-verification', action: 'verify-or-reconcile', capability: { id: 'buildr.task-verification', version: 3 }, summary: '通过formal execution与reconciliation形成绑定current Candidate、target、declaration和authority的Result。' };
     if (!applicability.gates?.completion || reasonCodes.has('completion-missing-or-stale')) return { mode: 'recommended', owner: 'task-review', action: 'completion-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review形成current Completion Review，或记录明确的not-applicable/waived disposition。' };
+    if (applicability.currentKnowledge !== 'current' || reasonCodes.has('current-knowledge-completion-conflict')) return { mode: 'recommended', owner: 'current-knowledge-maintenance', action: 'inspect-or-reconcile', capability: { id: 'buildr.current-knowledge-maintenance', version: 2 }, summary: '针对current Content Target形成knowledge disposition；只有completion-critical conflict阻止handoff，解释性drift记录attention。' };
     if (reasonCodes.has('completion-changes-required') && !receipt.decision) return { mode: 'recommended', owner: 'agent', action: 'remediate-or-decide', capability: null, summary: '处理Completion Review findings，或在明确授权下记录与current Result绑定的风险决定。' };
     if (!receipt.decision || receipt.decision.candidateIdentity !== receipt.candidate?.identity) return { mode: 'recommended', owner: 'task-development', action: 'decide', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current gates记录proceed或blocked；风险接受必须绑定精确Result与明确授权。' };
     if (receipt.decision.outcome === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'remediate-blocker', capability: null, summary: '处理blocked原因并更新对应专业事实；Buildr不会自动推进。' };
@@ -462,6 +462,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       contentTarget: !receipt.contentTarget ? 'missing' : observed.target?.identity === receipt.contentTarget.identity ? 'current' : 'stale',
       policy: !receipt.contentTarget ? 'missing' : observed.policyIsCurrent ? 'current' : receipt.verificationPolicy ? 'stale' : 'missing',
       candidate: receipt.candidate ? observed.candidateCurrent ? 'current' : 'stale' : 'missing',
+      currentKnowledge: receipt.currentKnowledge ? observed.knowledgeCurrent ? 'current' : 'stale' : 'missing',
       handoff: receipt.handoffs.length ? observed.handoffCurrent ? 'current' : 'stale' : 'missing',
       gates: observed.gates,
       reasons: observed.reasons,
@@ -506,6 +507,7 @@ export function registerTaskDevelopmentApplication(runtime) {
         taskContext: context,
         planning,
         candidate: changed ? null : current.receipt.candidate,
+        currentKnowledge: changed ? null : current.receipt.currentKnowledge,
         gates: { planning: resolvedPlanningGate, verification: changed ? null : current.receipt.gates.verification, completion: changed ? null : current.receipt.gates.completion },
         decision: changed ? null : current.receipt.decision,
         updatedAt: now(),
@@ -553,6 +555,7 @@ export function registerTaskDevelopmentApplication(runtime) {
         contentTarget: target,
         verificationPolicy: policy,
         candidate: upstreamChanged ? null : receipt.candidate,
+        currentKnowledge: upstreamChanged ? null : receipt.currentKnowledge,
         gates: { planning: currentPlanningGate, verification: upstreamChanged ? null : receipt.gates.verification, completion: upstreamChanged ? null : receipt.gates.completion },
         decision: upstreamChanged ? null : receipt.decision,
         updatedAt: now(),
@@ -574,9 +577,22 @@ export function registerTaskDevelopmentApplication(runtime) {
     const review = runtime.inspectTaskReview(targetRoot, taskId, planningTarget ? { planningTargetIdentity: planningTarget } : {});
     const planning = planningGate(persistence.receipt.planning, persistence.receipt.gates.planning, review);
     const inputsChanged = context.identity !== persistence.receipt.taskContext.identity || target.identity !== persistence.receipt.contentTarget?.identity || policy.identity !== persistence.receipt.verificationPolicy?.identity || !same(planning, persistence.receipt.gates.planning);
-    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, taskContext: context, contentTarget: target, verificationPolicy: policy, candidate: inputsChanged ? null : persistence.receipt.candidate, gates: { planning, verification: inputsChanged ? null : persistence.receipt.gates.verification, completion: inputsChanged ? null : persistence.receipt.gates.completion }, decision: inputsChanged ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
+    const treeChanged = context.identity !== persistence.receipt.taskContext.identity || target.identity !== persistence.receipt.contentTarget?.identity;
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, taskContext: context, contentTarget: target, verificationPolicy: policy, candidate: inputsChanged ? null : persistence.receipt.candidate, currentKnowledge: treeChanged ? null : persistence.receipt.currentKnowledge, gates: { planning, verification: inputsChanged ? null : persistence.receipt.gates.verification, completion: inputsChanged ? null : persistence.receipt.gates.completion }, decision: inputsChanged ? null : persistence.receipt.decision, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
     return result('policy', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
+  }
+
+  function recordTaskDevelopmentKnowledge(targetRoot, taskId, input) {
+    assertActionFields('knowledge', input, 'Task Development knowledge');
+    task(targetRoot, taskId, { active: true, mutation: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
+    if (!observed.target || observed.target.identity !== persistence.receipt.contentTarget?.identity || input.treeIdentity !== observed.target.identity) throw taskDevelopmentError('task_development_knowledge_target_mismatch', 'knowledge disposition必须绑定current Content Target。', 409, { expected: observed.target?.identity || null, actual: input.treeIdentity });
+    const currentKnowledge = createTaskDevelopmentKnowledge(input);
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, currentKnowledge, gates: observed.gates, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
+    const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
+    return result('knowledge', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
 
   function invalidateForObserved(receipt, observed) {
@@ -594,8 +610,8 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (input.gate === 'completion' && !persistence.receipt.candidate) throw taskDevelopmentError('task_development_candidate_required', 'completion disposition需要current Candidate。', 409);
     const gate = { disposition: input.disposition, targetIdentity: input.targetIdentity ?? null, summary: input.summary, source: input.source ?? null };
     const gates = { ...persistence.receipt.gates, [input.gate]: gate };
-    const invalidatesCandidate = input.gate !== 'completion';
-    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, candidate: invalidatesCandidate ? null : persistence.receipt.candidate, gates: { ...gates, completion: invalidatesCandidate ? null : gates.completion }, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
+    const invalidatesCandidate = input.gate === 'planning';
+    const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, candidate: invalidatesCandidate ? null : persistence.receipt.candidate, currentKnowledge: input.gate === 'planning' ? null : persistence.receipt.currentKnowledge, gates: { ...gates, completion: invalidatesCandidate ? null : gates.completion }, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
     return result('gate', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
   }
@@ -606,10 +622,10 @@ export function registerTaskDevelopmentApplication(runtime) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt, input);
     const pendingChanges = observed.context.changes.filter((item) => item.disposition === 'pending');
-    const ready = observed.policyIsCurrent && gateResolved(observed.gates.planning, ['ready']) && gateResolved(observed.gates.verification, ['passed', 'not-passed']) && observed.coverage.complete && pendingChanges.length === 0;
+    const ready = observed.policyIsCurrent && gateResolved(observed.gates.planning, ['ready']) && pendingChanges.length === 0;
     if (!ready) {
       const invalidated = writeDevelopment(targetRoot, taskId, persistence.receipt, invalidateForObserved(persistence.receipt, observed));
-      throw taskDevelopmentError('task_development_candidate_not_ready', 'Candidate freeze前置gate未满足。', 409, { reasons: observed.reasons, pendingChanges: pendingChanges.map((item) => `${item.project}/${item.change}`), receiptDigest: invalidated.receiptDigest }, '完成Change convergence、Planning Review与stable Content Target formal Verification后重试。');
+      throw taskDevelopmentError('task_development_candidate_not_ready', 'Candidate freeze前置事实未满足。', 409, { reasons: observed.reasons, pendingChanges: pendingChanges.map((item) => `${item.project}/${item.change}`), receiptDigest: invalidated.receiptDigest }, '完成Change convergence、Planning Review、stable Content Target与verification policy后重试。');
     }
     const canReuse = observed.candidateCurrent;
     const generation = canReuse ? persistence.receipt.generation : persistence.receipt.generation + 1;
@@ -625,9 +641,9 @@ export function registerTaskDevelopmentApplication(runtime) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
     const base = observed.candidateCurrent ? { ...persistence.receipt, gates: observed.gates } : invalidateForObserved(persistence.receipt, observed);
-    if (input.outcome === 'proceed' && (!observed.candidateCurrent || !observed.completionCurrent)) throw taskDevelopmentError('task_development_proceed_not_ready', 'proceed需要current Candidate与current Completion Review。', 409, { reasons: observed.reasons });
+    if (input.outcome === 'proceed' && (!observed.candidateCurrent || !observed.completionCurrent || !gateResolved(observed.gates.verification, ['passed', 'not-passed']) || !observed.coverage.complete || !observed.knowledgeReady)) throw taskDevelopmentError('task_development_proceed_not_ready', 'proceed需要current Candidate、Verification、Completion Review与非blocked Current Knowledge disposition。', 409, { reasons: observed.reasons });
     const decision = { outcome: input.outcome, candidateIdentity: observed.candidateCurrent ? persistence.receipt.candidate.identity : null, summary: input.summary, risks: input.risks };
-    if (input.outcome === 'proceed') createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision, createdAt: now() });
+    if (input.outcome === 'proceed') createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, knowledge: persistence.receipt.currentKnowledge, decision, createdAt: now() });
     const receipt = normalizeTaskDevelopmentReceipt({ ...base, decision, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
     return result('decide', 'recorded', taskId, written, written.applicability, [effect(written.root, written)]);
@@ -638,7 +654,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     task(targetRoot, taskId, { active: true, mutation: true });
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
-    if (!observed.candidateCurrent || !observed.completionCurrent || persistence.receipt.decision?.outcome !== 'proceed') throw taskDevelopmentError('task_development_handoff_not_ready', 'Finish handoff需要current Candidate、Planning/Verification/Completion gates与proceed decision。', 409, { reasons: observed.reasons });
+    if (!observed.candidateCurrent || !observed.completionCurrent || !observed.knowledgeReady || persistence.receipt.decision?.outcome !== 'proceed') throw taskDevelopmentError('task_development_handoff_not_ready', 'Finish handoff需要current Candidate、Planning/Verification/Completion、Current Knowledge与proceed decision。', 409, { reasons: observed.reasons });
     let contributionHandoff = null;
     if (input.contributionHandoff) {
       contributionHandoff = input.contributionHandoff.identity ? normalizeContributionHandoff(input.contributionHandoff) : createContributionHandoff(input.contributionHandoff);
@@ -654,7 +670,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       ).sort();
       contributionHandoff = validateContributionHandoffAgainstPlan(contributionHandoff, parentPlan, expectedPlanned);
     }
-    const handoff = createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, decision: persistence.receipt.decision, contributionHandoff, createdAt: now() });
+    const handoff = createTaskFinishHandoff({ candidate: persistence.receipt.candidate, changes: observed.context.changes, gates: observed.gates, knowledge: persistence.receipt.currentKnowledge, decision: persistence.receipt.decision, contributionHandoff, createdAt: now() });
     const handoffs = persistence.receipt.handoffs.some((item) => item.identity === handoff.identity) ? persistence.receipt.handoffs : [...persistence.receipt.handoffs, handoff];
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, gates: observed.gates, handoffs, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);
@@ -756,6 +772,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     recordTaskDevelopmentPlanning: scoped(recordTaskDevelopmentPlanning),
     observeTaskDevelopment: scoped(observeTaskDevelopment),
     recordTaskDevelopmentPolicy: scoped(recordTaskDevelopmentPolicy),
+    recordTaskDevelopmentKnowledge: scoped(recordTaskDevelopmentKnowledge),
     recordTaskDevelopmentGate: scoped(recordTaskDevelopmentGate),
     freezeTaskDevelopmentCandidate: scoped(freezeTaskDevelopmentCandidate),
     decideTaskDevelopment: scoped(decideTaskDevelopment),

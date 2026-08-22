@@ -534,15 +534,15 @@
 
 ## 验证结果（Verification Result）
 
-- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。
-- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
-- 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
+- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v2` current row，绑定Task、current Candidate/generation、stable Content Target与实际declarations，记录从matching terminal Task Execution Records提炼的能力facts、portable evidence identities、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。合法v1 row只作`legacy-unbound`双读。
+- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按Candidate、Content Target与declaration identity派生`current / stale / unknown / legacy-unbound`。Task Finish不直接消费该Result。
+- 避免混用：不是raw Execution Evidence、Receipt、history或状态机；不保存完整输出、Environment Receipt、风险决定、推进决定或Candidate生成权。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 正式验证就绪度（Formal Verification Readiness）
 
-- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据已保存Task Context Change dispositions、Content Target、verification policy与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|unknown`，current knowledge owner对同一tree返回`aligned|not-applicable`后由Agent瞬时汇总为`ready`并直接进入Task Verification。
-- 适用范围：`formalVerificationReadiness`与Task Entry typed next，用于在昂贵正式验证前先暴露明确未稳定事实或路由一次只读current knowledge `inspect`。
+- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据current Task Context、Planning、Content Target、verification policy、Candidate与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|ready`。
+- 适用范围：`formalVerificationReadiness`与Task Entry typed next；current Candidate已冻结且Verification缺失时为ready，consumer把显式Candidate lease交给Task Verification。Current Knowledge不再是固定前置预检。
 - 避免混用：不是Verification Result、Development gate、Receipt、持久preflight authority或通用verification executor门禁；不适用于开发期focused/affected测试、Task外transient verification、Candidate CI或Planning Review前的OpenSpec semantic readiness。
 - 来源：[Task Development specification](../specs/task-development/spec.md)与[OpenSpec Change生命周期](flows/openspec-change-lifecycle.md)。
 
@@ -552,6 +552,13 @@
 - 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Buildr Web可通过Application`inspect`只读展示这些事实。
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
+
+## 当前认知处置（Current Knowledge Disposition）
+
+- 定义：selected Current Knowledge provider针对current Content Target形成、由Task Development保存的最小完成影响事实，包含tree identity、`aligned|not-applicable|attention|blocked`、portable summary、source identities与bounded unresolved items。
+- 适用范围：实现、Review或Verification前后均可形成；handoff要求其current且非blocked。会导致错误完成结论的authority冲突为blocked，解释性漂移或无关历史债务为attention且保持可交付。
+- 避免混用：不是规范、知识正文、Verification/Review Result、固定研发阶段或通用ready gate；任何knowledge写入改变delivery bytes时仍须重新观察Content Target。
+- 来源：[Current Knowledge Maintenance capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md)
 
 ## Parent Plan
 
@@ -611,7 +618,7 @@
 
 ## 任务候选（Task Candidate）
 
-- 定义：Task Development在formal Verification facts完整后冻结的Task级交付候选身份与正整数generation；identity只绑定完整Content Target、Task Intent/scope/Change context、verification policy decision和generation。
+- 定义：Task Development在Task Context、Planning disposition、stable Content Target与verification policy明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context、policy identity和generation。Verification、Completion与Current Knowledge随后绑定该Candidate但不改变其identity或generation。
 - 适用范围：Completion Review target、Development decision/handoff和Finish carrier equivalence。
 - 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含 Planning、Verification 或 Completion Result identity。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
@@ -667,7 +674,7 @@
 
 ## 研发交接（Development Handoff）
 
-- 定义：Development Receipt 中 append-only 不可变快照，绑定 Task Candidate、Change dispositions、Planning/Verification/Completion 最小 Result 引用、`proceed` 决定和精确用户风险接受。
+- 定义：Development Receipt中append-only不可变快照，绑定Task Candidate、Change dispositions、Current Knowledge最小disposition、Planning/Verification/Completion最小Result引用、`proceed`决定和精确用户风险接受。
 - 适用范围：Task Finish 的唯一正式输入；上游事实漂移时旧 snapshot 保留但不再 current。
 - 避免混用：不是 Candidate identity、Finish execution plan 或完整 Result history；Finish 不能自行从 Task/Git/Change/Result 拼装研发交接。
 - 来源：[Task Development specification](../specs/task-development/spec.md)

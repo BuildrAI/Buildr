@@ -263,6 +263,8 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const requestedCapabilities = [...new Set(optionValues(args, '--capability'))];
     const requestedEnvironment = runtime.optionValue(args, '--environment', null);
     const requestedWorkspace = runtime.optionValue(args, '--workspace', null);
+    const candidateIdentity = runtime.optionValue(args, '--candidate-identity', null);
+    const candidateGenerationValue = runtime.optionValue(args, '--candidate-generation', null);
     const authorizedCapabilities = [...new Set(optionValues(args, '--authorize-capability'))];
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
@@ -272,11 +274,15 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       error.code = 'verification.run_declaration_root_unsupported';
       throw error;
     }
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--target-identity', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--retry', '--json']), new Set(['--retry', '--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--target-identity', '--candidate-identity', '--candidate-generation', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--retry', '--json']), new Set(['--retry', '--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
     if (requestedCapabilities.length === 0) throw new Error('verification run requires at least one --capability <id>.');
     if (!targetIdentity) throw new Error('verification run requires --target-identity <identity>.');
+    const candidateGeneration = candidateGenerationValue === null ? null : Number(candidateGenerationValue);
+    if (requestedEnvironment && (!candidateIdentity || !Number.isInteger(candidateGeneration) || candidateGeneration < 1)) throw new Error('Formal verification run requires --candidate-identity <identity> and --candidate-generation <positive-integer>.');
+    if (!requestedEnvironment && (candidateIdentity || candidateGenerationValue !== null)) throw new Error('Candidate binding is only valid with formal --environment/--workspace execution.');
+    const candidate = requestedEnvironment ? { identity: candidateIdentity, generation: candidateGeneration, contentTargetIdentity: targetIdentity } : null;
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('--concurrency must be an integer from 1 to 32.');
     for (const id of authorizedCapabilities) if (!requestedCapabilities.includes(id)) throw new Error(`Authorized capability was not requested: ${id}`);
 
@@ -353,6 +359,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     }
     const invocationIdentity = context ? verificationInvocationIdentity({
       taskId: context.taskId,
+      candidate,
       projectCode,
       declarationIdentity,
       targetIdentity,
@@ -518,6 +525,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
             executionIdentity,
             invocationIdentity,
             context,
+            candidate,
             targetRoot,
             targetIdentity,
             targetStable,

@@ -448,6 +448,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-review-repository.test.mjs',
     'test/integration/task-verification-repository.test.mjs',
   ], [
+    'test/helpers/task-verification-result-fixture.mjs',
     'src/task/application/task-development*.mjs',
     'src/task/domain/task-development.mjs',
     'src/task/persistence/task-development-repository.mjs',

@@ -54,7 +54,7 @@ Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决�
 
 `buildr.verification-evidence-cleanup/v1` 只报告 transient execution evidence 的 cleanup 状态。非 transient、identity 不匹配、目录越界或无法证明 provider ownership 的文件不会被删除。
 
-`buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整 `buildr.task-verification-result/v1`、响应级 digest 和派生 applicability。没有 current Result 时 inspect 返回 `unknown`；target 或 declaration identity 变化时返回 `stale`。业务拒绝返回同一 envelope、`status: blocked`、稳定 diagnostic 和非零退出，且不得覆盖旧 slot。
+`buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|reconcile|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整current Result、响应级digest和派生applicability。v2 Result绑定Candidate/generation、Content Target、declarations与Task Execution Record evidence；合法v1 row保持可读但applicability为`legacy-unbound`。没有current Result时inspect返回`unknown`；Candidate、target或declaration identity变化时返回`stale`。业务拒绝返回同一envelope、`status: blocked`、稳定diagnostic和非零退出，且不得覆盖旧slot。
 
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
