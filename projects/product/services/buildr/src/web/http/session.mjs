@@ -68,7 +68,7 @@ export async function readAllowedJsonBody(request, allowed, label) {
       error.status = 400;
       throw error;
     }
-    if (!allowed.has(field)) {
+    if (allowed && !allowed.has(field)) {
       const error = new Error(`${label} 不支持字段：${field}。`);
       error.code = 'task_api_field_forbidden';
       error.status = 400;

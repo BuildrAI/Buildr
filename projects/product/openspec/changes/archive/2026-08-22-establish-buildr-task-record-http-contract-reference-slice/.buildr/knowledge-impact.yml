@@ -1,0 +1,40 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: establish-buildr-task-record-http-contract-reference-slice
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/establish-buildr-task-record-http-contract-reference-slice/brief.md
+    reason: 正式 Change 需要向人和 Agent 解释参考流水线的价值、边界与验收。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/establish-buildr-task-record-http-contract-reference-slice/proposal.md
+      - openspec/changes/establish-buildr-task-record-http-contract-reference-slice/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 新增 Task-owned Schema/catalog、Infrastructure compiler、生成投影与 typed Client 的跨 Service 技术边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/establish-buildr-task-record-http-contract-reference-slice/specs/http-contract-reference-pipeline/spec.md
+      - openspec/knowledge/architecture/technical.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 将真实拥有 Ajv compiler、Task HTTP contracts、DTO generation 与 Contract Test。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/establish-buildr-task-record-http-contract-reference-slice/design.md
+      - openspec/knowledge/services/buildr.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Buildr Web 将通过 generated DTO 与 Task typed Client 消费五个 operation。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/establish-buildr-task-record-http-contract-reference-slice/design.md
+      - openspec/knowledge/services/buildr-web.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: JSON Schema、HTTP DTO、Ajv 与 typed Client 均为既有技术名词，不新增或重定义长期产品术语。
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

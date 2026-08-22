@@ -363,6 +363,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const taskReadLifecycle = read('../buildr-web/src/api/taskReadLifecycle.ts');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
+  const taskDto = read('../buildr-web/src/api/generated/task-record-http-dto.ts');
   const server = read('src/web/http/server.mjs');
   assert.match(tasks, /new AbortController\(\)/);
   assert.match(tasks, /matchesTaskQuery/);
@@ -371,13 +372,13 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /value: 'pending', label: '未处理'/);
   assert.match(tasks, /value: 'handled', label: '已处理'/);
   assert.match(tasks, /value: 'no-action', label: '无需处理'/);
-  assert.match(tasks, /useState\('all'\)/);
+  assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
-  assert.match(tasks, /childTaskCount/);
+  assert.match(taskDto, /childTaskCount/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
-  assert.match(detail, /api\('\/api\/v1\/tasks\?status=active'\)/);
+  assert.match(detail, /tasksApi\.list\(\{ status: 'active' \}\)/);
   assert.match(detail, /addEventListener\('focus'|onFocus.*loadParentOptions/);
   assert.match(detail, /taskReadLifecycleRef\.current\.abortTask\(taskId\)/);
   assert.match(detail, /focusRefreshRef\.current/);

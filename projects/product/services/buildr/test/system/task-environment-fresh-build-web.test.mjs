@@ -48,6 +48,9 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   const candidateWeb = path.join(productRoot, 'services', 'buildr-web');
   fs.mkdirSync(candidateBuildr, { recursive: true });
   fs.mkdirSync(path.join(candidateBuildr, 'tools', 'development'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'tools', 'contracts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'infrastructure', 'contracts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'task', 'interfaces', 'http', 'generated'), { recursive: true });
   fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
@@ -62,6 +65,14 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   ]) {
     fs.copyFileSync(path.join(serviceRoot, 'tools', 'development', script), path.join(candidateBuildr, 'tools', 'development', script));
     if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'tools', 'development', script), 0o755);
+  }
+  for (const relative of [
+    'tools/contracts/task-record-dto.mjs',
+    'src/infrastructure/contracts/json-schema-validator.mjs',
+    'src/task/interfaces/http/task-record-http-contracts.mjs',
+    'src/task/interfaces/http/generated/task-record-http-dto.ts',
+  ]) {
+    fs.copyFileSync(path.join(serviceRoot, relative), path.join(candidateBuildr, relative));
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];

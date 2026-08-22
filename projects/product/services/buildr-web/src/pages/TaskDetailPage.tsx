@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
-import { api, type ApiError } from '../api';
+import { api, tasksApi, type ApiError } from '../api';
 import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
@@ -168,7 +168,7 @@ export function TaskDetailPage() {
   const refresh = useCallback(async () => {
     const [workspace, detail] = await taskReadLifecycleRef.current.run(taskId, 'detail', (signal) => Promise.all([
       api('/api/v1/workspace', { signal }) as Promise<WorkspacePayload>,
-      api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { signal }) as Promise<TaskDetailData>,
+      tasksApi.detail(taskId, { signal }),
     ]));
     if (taskIdRef.current !== taskId) return;
     setWorkspace(workspace);
@@ -515,7 +515,7 @@ export function TaskDetailPage() {
     if (!current || parentOptionsLoaded || parentOptionsLoading || !['todo', 'active'].includes(current.record.status)) return;
     setParentOptionsLoading(true);
     try {
-      const list = await api('/api/v1/tasks?status=active') as { tasks: Array<{ record: { taskId: string; title: string; status: string } }> };
+      const list = await tasksApi.list({ status: 'active' });
       const record = current.record;
       const options: Array<{ value: string; label: string }> = [{ value: '', label: '无 Parent（独立 Task）' }];
       if (record.parentTaskId && current.taskRelations.parent) {
@@ -591,21 +591,17 @@ export function TaskDetailPage() {
     ));
     const nextParentTaskId = parentTaskId || null;
     try {
-      const updated = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          title,
-          intent,
-          ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }),
-          addProjects: projects.add,
-          removeProjects: projects.remove,
-          addServices: services.add,
-          removeServices: services.remove,
-        }),
-      }) as TaskDetailData;
-      applyRecord(updated);
-      void loadBriefs(updated.record.changes);
+      const updated = await tasksApi.update(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        title,
+        intent,
+        ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }),
+        addProjects: projects.add,
+        removeProjects: projects.remove,
+        addServices: services.add,
+        removeServices: services.remove,
+      });
+      await refresh();
       setEditState(updated.effects.length ? '保存成功' : '内容一致');
       setAlert(null);
       setActionModal(null);
@@ -626,13 +622,10 @@ export function TaskDetailPage() {
     });
     if (!ok) return;
     try {
-      await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          summary: completeSummary,
-          noChange: completeNoChange === 'true',
-        }),
+      await tasksApi.complete(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        summary: completeSummary,
+        noChange: completeNoChange === 'true',
       });
       setActionModal(null);
       await refresh();
@@ -653,12 +646,9 @@ export function TaskDetailPage() {
     });
     if (!ok) return;
     try {
-      await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/abandon`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          reason: abandonReason,
-        }),
+      await tasksApi.abandon(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        reason: abandonReason,
       });
       setActionModal(null);
       await refresh();

@@ -3,38 +3,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Form, Input, Popover, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { FilterOutlined } from '@ant-design/icons';
-import { api } from '../api';
+import { api, tasksApi } from '../api';
+import type { TaskListRequest, TaskListResponse } from '../api/generated/task-record-http-dto';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 import { taskStatusLabel } from '../lib/taskLabels';
 
 type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 
-type TaskListItem = {
-  childTaskCount: number;
-  taskRelations: { parent: { taskId: string } | null };
-  record: {
-    taskId: string;
-    title: string;
-    intent: string;
-    status: string;
-    updatedAt: string;
-    scope: {
-      projects: string[];
-      services: Array<{ project: string; service: string }>;
-    };
-  };
-};
-
-type TasksResponse = {
-  tasks: TaskListItem[];
-  diagnostics: Array<{ message: string }>;
-  totalTaskCount: number;
-  filterOptions: {
-    projects: string[];
-    services: string[];
-  };
-};
+type TaskListItem = TaskListResponse['tasks'][number];
+type TaskStatusFilter = NonNullable<TaskListRequest['status']>;
+type BooleanFilter = NonNullable<TaskListRequest['hasChildren']>;
+type RetrospectiveFilter = NonNullable<TaskListRequest['retrospectiveState']>;
 
 type ProjectInfo = { code: string; name: string };
 type ServiceInfo = { code: string; name: string; projectCode: string };
@@ -104,17 +84,17 @@ export function TasksPage() {
   const catalogsLoaded = useRef(false);
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('all');
+  const [status, setStatus] = useState<TaskStatusFilter>('all');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
-  const [hasChildren, setHasChildren] = useState('all');
-  const [retrospectiveState, setRetrospectiveState] = useState('all');
+  const [hasChildren, setHasChildren] = useState<BooleanFilter>('all');
+  const [retrospectiveState, setRetrospectiveState] = useState<RetrospectiveFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState('all');
+  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('all');
   const [draftProject, setDraftProject] = useState('');
   const [draftService, setDraftService] = useState('');
-  const [draftHasChildren, setDraftHasChildren] = useState('all');
-  const [draftRetrospectiveState, setDraftRetrospectiveState] = useState('all');
+  const [draftHasChildren, setDraftHasChildren] = useState<BooleanFilter>('all');
+  const [draftRetrospectiveState, setDraftRetrospectiveState] = useState<RetrospectiveFilter>('all');
 
   const workspaceLoaded = useRef(false);
   const requestGeneration = useRef(0);
@@ -161,35 +141,26 @@ export function TasksPage() {
     setLoading(true);
     setErrorMessage(null);
 
-    const query = new URLSearchParams();
-    const values = {
-      project,
-      service,
-      status,
-      hasChildren,
-      retrospectiveState,
+    const input: TaskListRequest = {
+      ...(project ? { project } : {}),
+      ...(service ? { service } : {}),
+      ...(status !== 'all' ? { status } : {}),
+      ...(hasChildren !== 'all' ? { hasChildren } : {}),
+      ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
     };
-    for (const [key, value] of Object.entries(values)) {
-      if (value && value !== 'all') query.set(key, value);
-    }
-    const suffix = query.toString() ? `?${query.toString()}` : '';
 
     try {
-      const requests: Array<Promise<unknown>> = [
-        api(`/api/v1/tasks${suffix}`, { signal: controller.signal }),
-      ];
-      if (!workspaceLoaded.current) {
-        requests.push(api('/api/v1/workspace', { signal: controller.signal }));
-      }
-      if (!catalogsLoaded.current) {
-        requests.push(api('/api/v1/projects', { signal: controller.signal }));
-      }
-      const settled = await Promise.all(requests);
+      const [data, workspace, projectsPayload] = await Promise.all([
+        tasksApi.list(input, { signal: controller.signal }),
+        workspaceLoaded.current
+          ? Promise.resolve(undefined)
+          : api('/api/v1/workspace', { signal: controller.signal }) as Promise<WorkspacePayload>,
+        catalogsLoaded.current
+          ? Promise.resolve(undefined)
+          : api('/api/v1/projects', { signal: controller.signal }) as Promise<{ projects: ProjectInfo[] }>,
+      ]);
       if (generation !== requestGeneration.current) return;
-      const data = settled[0] as TasksResponse;
-      let offset = 1;
       if (!workspaceLoaded.current) {
-        const workspace = settled[offset++] as WorkspacePayload | undefined;
         if (workspace) {
           setWorkspace(workspace);
           setBreadcrumbParts([workspace.workspace.name, '任务']);
@@ -197,7 +168,6 @@ export function TasksPage() {
         }
       }
       if (!catalogsLoaded.current) {
-        const projectsPayload = settled[offset] as { projects: ProjectInfo[] } | undefined;
         if (projectsPayload?.projects) {
           const nextProjectNames = Object.fromEntries(
             projectsPayload.projects.map((item) => [item.code, item.name || item.code]),

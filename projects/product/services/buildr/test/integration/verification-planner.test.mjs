@@ -336,7 +336,8 @@ test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capabil
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration-runtime']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ServicesPage.tsx'] })), ['unit']);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TasksPage.tsx'] })), ['unit']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TasksPage.tsx'] })), ['unit', 'integration-runtime']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskDetailPage.tsx'] })), ['unit', 'integration-runtime']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/TaskChangeDetailPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);

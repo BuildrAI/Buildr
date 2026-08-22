@@ -190,6 +190,7 @@ export function assertNpmTarballInventory(inventory) {
     'payload/product/resources/installation/launcher/Buildr.ico',
     'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
     'payload/product/web-dist/index.html',
+    'payload/licenses/dependencies/ajv-LICENSE',
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);

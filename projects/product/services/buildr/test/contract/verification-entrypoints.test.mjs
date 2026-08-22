@@ -192,6 +192,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
   assert.match(candidate, /Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
+  assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
   for (const step of candidatePlan.steps) {
     assert.equal(step.testing.environment.footprints.includes('network'), false, `${step.id} must not depend on external network`);
@@ -327,7 +328,7 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   const policy = read('src/infrastructure/network/verification-network-policy.mjs');
   const workflow = read('../../../../.github/workflows/verify.yml');
   const hostJob = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
-  assert.deepEqual(packageManifest.bundleDependencies, ['yaml']);
+  assert.deepEqual(packageManifest.bundleDependencies, ['ajv', 'yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   const executePlanCall = hostNode.slice(hostNode.indexOf('await executePlan('), hostNode.indexOf('results = execution.results'));
   assert.match(executePlanCall, /expectedNodeVersion: null/);

@@ -1,4 +1,14 @@
 import { TASK_RECORD_ID_SOURCE } from '../../domain/task-record.mjs';
+import {
+  mapTaskAbandonRequest,
+  mapTaskCompleteRequest,
+  mapTaskListRequest,
+  mapTaskUpdateRequest,
+} from './task-record-http-mapping.ts';
+import {
+  TASK_RECORD_HTTP_OPERATIONS,
+  TASK_RECORD_HTTP_VALIDATORS,
+} from './task-record-http-contracts.mjs';
 
 export { TASK_RECORD_ID_SOURCE };
 
@@ -6,6 +16,50 @@ const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChil
 const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})$`);
 const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/complete$`);
 const TASK_ABANDON_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/abandon$`);
+const OPERATIONS = new Map(TASK_RECORD_HTTP_OPERATIONS.map((operation) => [operation.id, operation]));
+
+function invalidContractInput(operationId, label, errors) {
+  const errorItem = errors.find((item) => item.keyword === 'additionalProperties')
+    || errors.find((item) => item.params?.missingProperty === 'expectedRecordDigest')
+    || errors.find((item) => item.params?.missingProperty === 'noChange')
+    || errors.find((item) => item.keyword === 'minProperties')
+    || errors[0]
+    || {};
+  const missingField = errorItem.params?.missingProperty;
+  const unknownField = errorItem.params?.additionalProperty;
+  const pathField = String(errorItem.instancePath || '').split('/').filter(Boolean)[0];
+  const field = unknownField || missingField || pathField || null;
+  const error = new Error(`${label} 请求不符合 HTTP 契约${field ? `：${field}` : ''}。`);
+  error.status = 400;
+  error.details = { operation: operationId, ...(field ? { field } : {}), keyword: errorItem.keyword || 'schema' };
+  if (unknownField) {
+    error.code = 'task_api_field_forbidden';
+    error.message = `${label} 不支持字段：${unknownField}。`;
+  } else if (field === 'expectedRecordDigest') {
+    error.code = 'task_record_digest_required';
+    error.message = `${label} 必须包含有效 expectedRecordDigest。`;
+  } else if (operationId === 'task-record.update' && errorItem.keyword === 'minProperties') {
+    error.code = 'task_record_update_empty';
+    error.message = 'Task update 至少需要一个明确 mutation。';
+  } else if (operationId === 'task-record.complete' && field === 'noChange') {
+    error.code = 'task_record_no_change_required';
+    error.message = 'complete 必须明确提供 noChange boolean。';
+  } else if (operationId === 'task-record.list') {
+    error.code = 'task_record_filter_invalid';
+  } else if (field && /Services$/.test(field)) {
+    error.code = 'task_record_reference_invalid';
+  } else {
+    error.code = 'task_record_field_invalid';
+  }
+  return error;
+}
+
+function validateRequest(operationId, value, label) {
+  const operation = OPERATIONS.get(operationId);
+  const result = TASK_RECORD_HTTP_VALIDATORS.validate(operation.requestSchemaId, value);
+  if (!result.valid) throw invalidContractInput(operationId, label, result.errors);
+  return value;
+}
 
 function taskQueryInput(searchParams) {
   const input = {};
@@ -23,15 +77,7 @@ function taskQueryInput(searchParams) {
     }
     input[field] = values[0];
   }
-  return input;
-}
-
-function requireRecordDigest(input, label) {
-  if (Object.hasOwn(input, 'expectedRecordDigest')) return;
-  const error = new Error(`${label} 必须包含 expectedRecordDigest。`);
-  error.code = 'task_record_digest_required';
-  error.status = 400;
-  throw error;
+  return mapTaskListRequest(validateRequest('task-record.list', input, 'Task list'));
 }
 
 export async function handleTaskRecordHttpRequest({ request, suffix, searchParams, root, runtime, authorizeWrite, readBody }) {
@@ -45,25 +91,22 @@ export async function handleTaskRecordHttpRequest({ request, suffix, searchParam
   }
   if (request.method === 'PATCH' && taskMatch) {
     authorizeWrite();
-    const input = await readBody(new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addRetrospectiveSources', 'removeRetrospectiveSources']), 'Task update');
-    requireRecordDigest(input, 'Task update');
-    return { status: 200, body: runtime.updateTaskRecord(root, taskMatch[1], input) };
+    const input = validateRequest('task-record.update', await readBody(null, 'Task update'), 'Task update');
+    return { status: 200, body: runtime.updateTaskRecord(root, taskMatch[1], mapTaskUpdateRequest(input)) };
   }
 
   const taskCompleteMatch = suffix.match(TASK_COMPLETE_PATH);
   if (request.method === 'POST' && taskCompleteMatch) {
     authorizeWrite();
-    const input = await readBody(new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
-    requireRecordDigest(input, 'Task complete');
-    return { status: 200, body: runtime.completeTaskRecord(root, taskCompleteMatch[1], input) };
+    const input = validateRequest('task-record.complete', await readBody(null, 'Task complete'), 'Task complete');
+    return { status: 200, body: runtime.completeTaskRecord(root, taskCompleteMatch[1], mapTaskCompleteRequest(input)) };
   }
 
   const taskAbandonMatch = suffix.match(TASK_ABANDON_PATH);
   if (request.method === 'POST' && taskAbandonMatch) {
     authorizeWrite();
-    const input = await readBody(new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
-    requireRecordDigest(input, 'Task abandon');
-    return { status: 200, body: runtime.abandonTaskRecord(root, taskAbandonMatch[1], input) };
+    const input = validateRequest('task-record.abandon', await readBody(null, 'Task abandon'), 'Task abandon');
+    return { status: 200, body: runtime.abandonTaskRecord(root, taskAbandonMatch[1], mapTaskAbandonRequest(input)) };
   }
 
   return null;

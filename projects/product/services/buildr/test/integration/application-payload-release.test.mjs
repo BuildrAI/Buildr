@@ -74,7 +74,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     const runtimeMetadata = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
-    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['yaml']);
+    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['ajv', 'yaml']);
     assert.equal(runtimeMetadata.devDependencies, undefined);
 
     const staging = createNpmPackStaging(first.root, path.join(root, 'npm-staging'));
