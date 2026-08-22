@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createProject } from '../domain/project.mjs';
+import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.mjs';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
 export function projectError(code, message, status = 400, details = undefined) {
@@ -100,8 +101,9 @@ export function registerProjectApplication(runtime) {
     if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
     let observed = null;
     let comparison = { status: 'not-applicable', findings: [] };
+    const projectRoot = resolveSourceRoot(record.root, project.source);
     if (project.source.type === 'git') {
-      observed = runtime.observeProjectGit(path.join(record.root, project.source.path), project.source.git.remote);
+      observed = runtime.observeProjectGit(projectRoot, project.source.git.remote);
       comparison = compareProjectGit(project, observed, runtime.sameGitIdentity);
     }
     return {
@@ -109,6 +111,7 @@ export function registerProjectApplication(runtime) {
       revision: record.revision,
       migrationRequired: record.registry.migrationRequired,
       project,
+      sourceLocation: { root: sourceRootKind(project.source), path: projectRoot, ownership: sourceOwnership(project.source), identity: sourceIdentity(project.id, project.source) },
       observed,
       comparison,
       nextActions: publicRegistry(record).nextActions,
@@ -120,7 +123,7 @@ export function registerProjectApplication(runtime) {
     const record = readProjectRegistryRecord(targetRoot);
     const project = record.projects[code];
     if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
-    const projectRoot = path.resolve(record.root, project.source.path);
+    const projectRoot = resolveSourceRoot(record.root, project.source);
     const filePath = path.resolve(projectRoot, relativePath);
     if (!inside(projectRoot, filePath)) {
       throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
@@ -149,7 +152,7 @@ export function registerProjectApplication(runtime) {
     const migrated = Object.values(before.projects).map((legacy) => {
       let source = legacy.source;
       if (source.type === 'git') {
-        const observed = runtime.observeProjectGit(path.join(before.root, source.path), source.git.remote);
+        const observed = runtime.observeProjectGit(resolveSourceRoot(before.root, source), source.git.remote);
         const url = source.git.url || observed.remoteUrl;
         const integrationBranch = source.git.integrationBranch || observed.currentBranch;
         source = { ...source, git: { ...source.git, url, integrationBranch } };

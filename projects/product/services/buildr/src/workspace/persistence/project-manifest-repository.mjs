@@ -66,7 +66,7 @@ export function parseProjectsManifest(content, { workspaceId = null, label = 'pr
       const project = plainObject(value, `projects.${key}`);
       closedFields(project, new Set(['id', 'workspaceId', 'code', 'name', 'description', 'source']), `projects.${key}`);
       const source = plainObject(project.source, `projects.${key}.source`);
-      closedFields(source, new Set(['type', 'path', 'git']), `projects.${key}.source`);
+      closedFields(source, new Set(['type', 'root', 'path', 'git']), `projects.${key}.source`);
       if (source.git !== undefined) closedFields(plainObject(source.git, `projects.${key}.source.git`), new Set(['url', 'remote', 'integrationBranch']), `projects.${key}.source.git`);
       const entity = createProject(project);
       if (entity.code !== key) throw new Error(`projects.${key}.code must equal its manifest key.`);
@@ -99,7 +99,7 @@ export function renderProjectsManifest(projects) {
       description: project.description,
       source: project.source.type === 'workspace'
         ? { type: 'workspace', path: project.source.path }
-        : { type: 'git', path: project.source.path, git: { ...project.source.git } },
+        : { type: 'git', ...(project.source.root === 'attached' ? { root: 'attached' } : {}), path: project.source.path, git: { ...project.source.git } },
     };
   }
   return YAML.stringify(document, { lineWidth: 0 });

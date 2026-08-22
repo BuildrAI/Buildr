@@ -51,6 +51,20 @@
 - 避免混用：内容位于 Workspace 不表示它已经被 Buildr 治理。
 - 来源：[Workspace current facts](overview.md)
 
+## 受管根（Managed Root）
+
+- 定义：由 Workspace 布局和 registry 关系确定、由 Buildr 在既有 writer authority 内维护的 Project 或 Service source root；v2 source 未声明 `root` 时默认采用该语义。
+- 适用范围：Project 的 `projects/<code>` 与实际 Project root 下 Service 的 `services/<code>`，以及明确要求 Workspace ownership 的 mutation。
+- 避免混用：不是所有 Workspace 内目录的自动所有权声明，也不表示任意 consumer 可以绕过 identity、path、integrity 或安全删除边界。
+- 来源：[Workspace source and local diagnostics specification](../specs/workspace-source-and-local-diagnostics/spec.md)
+
+## 附接根（Attached Root）
+
+- 定义：Project/Service registry 以 `root: attached` 显式登记的机器局部绝对 Git top-level；Buildr 只拥有 registry relation，不因登记取得外部 repository 的内容所有权。
+- 适用范围：复用 Workspace 外已有独立 Git Project/Service，并由统一 source resolver 提供实际位置、ownership 与 Git identity。
+- 避免混用：不是 clone、copy、move、checkout、adopt、repair 或 delete；不可访问或 identity 漂移只影响消费该来源的 action，不建立 Workspace 全局阻断。
+- 来源：[Workspace source and local diagnostics specification](../specs/workspace-source-and-local-diagnostics/spec.md)
+
 ## Workspace Local Data Store
 
 - 定义：Buildr Local在一个canonical Workspace中维护的全部单机local-only数据范围；当前包含Workspace Structured Store，也可包含明确声明为本机事实的其他存储。

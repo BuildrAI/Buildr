@@ -10,7 +10,7 @@ import { createServiceDiagnostics } from './service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
 import { createProjectVerificationDiagnostics } from '../../../verification/application/project-verification-diagnostics.mjs';
 import { createProjectEnvironmentPreparationDiagnostics } from './project-environment-preparation-diagnostics.mjs';
-import { buildDoctorHealth, buildDoctorRepairPlan } from './result-model.mjs';
+import { finalizeDoctorResult } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';
 import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-route-diagnostics.mjs';
 import { inspectRequiredInternalWorkflowRoutes } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
@@ -44,6 +44,7 @@ export function registerApplicationDoctor(runtime) {
   const observeProjectGit = (...args) => runtime.observeProjectGit(...args);
   const sameGitIdentity = (...args) => runtime.sameGitIdentity(...args);
   const productRoot = (...args) => runtime.productRoot(...args);
+  const resolveSourceRoot = (...args) => runtime.resolveSourceRoot(...args);
 
   const {
     scopeParts,
@@ -80,6 +81,7 @@ export function registerApplicationDoctor(runtime) {
     buildrWorkspaceIdentity,
     observeProjectGit,
     sameGitIdentity,
+    resolveSourceRoot,
   });
   const {
     diagnoseServicesMetadata,
@@ -101,6 +103,7 @@ export function registerApplicationDoctor(runtime) {
     readGitRemote,
     toPosixRelative,
     validateServicesManifest,
+    resolveSourceRoot,
   });
   const {
     runtimeFindingsForDoctor,
@@ -129,8 +132,8 @@ export function registerApplicationDoctor(runtime) {
     toPosixRelative,
   });
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path });
-  const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding });
-  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding });
+  const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
+  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding, resolveSourceRoot });
   const { diagnoseInternalWorkflowRoutes } = createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes: inspectRequiredInternalWorkflowRoutes });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
@@ -158,24 +161,6 @@ export function registerApplicationDoctor(runtime) {
           userActionRequired: true,
         });
     }
-  }
-
-  function finalizeDoctorResult(result) {
-    const counts = { ok: 0, info: 0, warning: 0, error: 0 };
-    for (const finding of result.findings) {
-      counts[finding.status] = (counts[finding.status] ?? 0) + 1;
-    }
-    result.summary = counts;
-    result.ok = counts.error === 0;
-    result.repairPlan = buildDoctorRepairPlan(result.findings);
-    result.health = buildDoctorHealth(result);
-    result.nextSteps = result.repairPlan.slice(0, 10).map((step) => ({
-      code: step.codes[0],
-      codes: step.codes,
-      suggestion: step.suggestion,
-      ...(step.commands?.length === 1 ? { command: step.commands[0] } : {}),
-      ...(step.commands?.length > 1 ? { commands: step.commands } : {}),
-    }));
   }
 
   function printDoctorReport(result) {

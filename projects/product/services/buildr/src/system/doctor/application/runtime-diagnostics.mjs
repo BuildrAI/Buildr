@@ -236,17 +236,22 @@ export function createRuntimeDiagnostics(deps) {
       ownership: Object.fromEntries(status.ownership),
       findings: status.findings,
     };
+    const componentById = new Map(status.components.map((item) => [item.id, item]));
     for (const finding of status.findings) {
-      addDoctorFinding(result, 'error', finding.code || 'components.invalid', finding.message || `Component ownership conflict: ${finding.member || ''}`, {
+      const owners = [finding.componentId, ...(finding.owners || [])].filter(Boolean);
+      const required = owners.some((id) => componentById.get(id)?.required === true);
+      addDoctorFinding(result, required ? 'error' : 'warning', finding.code || 'components.invalid', finding.message || `Component ownership conflict: ${finding.member || ''}`, {
         path: finding.member || 'components/manifest.yml',
         componentId: finding.componentId,
         owners: finding.owners,
         suggestion: '修复 Component definition、成员路径或唯一所有权冲突后重试。',
+        affectedActions: ['inspect', 'reconcile', 'sync'],
+        ownershipUnit: finding.componentId ? `component:${finding.componentId}` : `component-member:${finding.member || 'registry'}`,
       });
     }
     for (const item of status.components) {
       if (['invalid', 'modified', 'missing'].includes(item.status)) {
-        addDoctorFinding(result, 'error', `components.${item.status}`, `Component ${item.id} 状态异常：${item.status}`, {
+        addDoctorFinding(result, item.required ? 'error' : 'warning', `components.${item.status}`, `Component ${item.id} 状态异常：${item.status}`, {
           path: `components/${item.id}`,
           componentId: item.id,
           error: item.error,
@@ -254,6 +259,8 @@ export function createRuntimeDiagnostics(deps) {
           suggestion: item.status === 'missing'
             ? `运行 buildr component install ${item.id} --agent <agent> --target ${targetRoot}，或确认是否应保留卸载状态。`
             : '检查成员差异；不要通过单项资产命令覆盖 Component 成员。',
+          affectedActions: ['reconcile', 'sync'],
+          ownershipUnit: `component:${item.id}`,
         });
       } else if (item.status === 'update-available') {
         addDoctorFinding(result, 'warning', 'components.update_available', `Component ${item.id} 有可用更新。`, {

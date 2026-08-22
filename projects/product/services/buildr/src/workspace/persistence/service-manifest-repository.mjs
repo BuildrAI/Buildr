@@ -4,6 +4,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import { createService, isServiceCode } from '../domain/service.mjs';
+import { resolveSourceRoot } from '../domain/source-root.mjs';
 
 export const SERVICES_SCHEMA_V1 = 'buildr.services/v1';
 export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';
@@ -66,7 +67,7 @@ export function parseServicesManifest(content, { workspaceId = null, projectId =
       const service = plainObject(value, `services.${key}`);
       closedFields(service, new Set(['id', 'workspaceId', 'projectId', 'code', 'name', 'description', 'type', 'source']), `services.${key}`);
       const source = plainObject(service.source, `services.${key}.source`);
-      closedFields(source, new Set(['type', 'path', 'git']), `services.${key}.source`);
+      closedFields(source, new Set(['type', 'root', 'path', 'git']), `services.${key}.source`);
       if (source.git !== undefined) closedFields(plainObject(source.git, `services.${key}.source.git`), new Set(['url', 'remote', 'integrationBranch']), `services.${key}.source.git`);
       const entity = createService({ ...service, projectCode });
       if (entity.code !== key) throw new Error(`services.${key}.code must equal its manifest key.`);
@@ -87,12 +88,12 @@ export function parseServicesManifest(content, { workspaceId = null, projectId =
   throw new Error(`${label}.schemaVersion must be ${SERVICES_SCHEMA_V1} or ${SERVICES_SCHEMA_V2}.`);
 }
 
-export function renderServicesDomainManifest(projectId, services) {
+export function renderServicesDomainManifest(projectId, services, projectCode = null) {
   const entries = Array.isArray(services) ? services : Object.values(services || {});
   if (typeof projectId !== 'string' || !projectId) throw new Error('Service manifest projectId is required.');
   const canonical = entries.map((service) => {
     const match = typeof service?.source?.path === 'string' ? service.source.path.match(/^projects\/([^/]+)\/services\/[^/]+$/) : null;
-    return createService({ ...service, projectCode: service.projectCode || match?.[1] });
+    return createService({ ...service, projectCode: service.projectCode || projectCode || match?.[1] });
   }).sort((a, b) => a.code.localeCompare(b.code));
   const document = { schemaVersion: SERVICES_SCHEMA_V2, projectId, services: {} };
   for (const service of canonical) {
@@ -104,7 +105,7 @@ export function renderServicesDomainManifest(projectId, services) {
       name: service.name,
       description: service.description,
       type: service.type,
-      source: service.source.type === 'workspace' ? { type: 'workspace', path: service.source.path } : { type: 'git', path: service.source.path, git: { ...service.source.git } },
+      source: service.source.type === 'workspace' ? { type: 'workspace', path: service.source.path } : { type: 'git', ...(service.source.root === 'attached' ? { root: 'attached' } : {}), path: service.source.path, git: { ...service.source.git } },
     };
   }
   return YAML.stringify(document, { lineWidth: 0 });
@@ -115,18 +116,21 @@ export function serviceManifestRevision(content) {
 }
 
 export function registerServiceManifestRepository(runtime) {
-  function serviceDomainManifestPath(targetRoot, projectCode) {
-    return path.join(path.resolve(targetRoot), 'projects', projectCode, 'services', 'manifest.yml');
+  function serviceDomainManifestPath(targetRoot, project) {
+    const projectRoot = typeof project === 'string'
+      ? path.join(path.resolve(targetRoot), 'projects', project)
+      : resolveSourceRoot(path.resolve(targetRoot), project.source);
+    return path.join(projectRoot, 'services', 'manifest.yml');
   }
   function readServiceRegistryPersistence(targetRoot, project, workspaceId) {
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
-    const manifestPath = serviceDomainManifestPath(root, project.code);
+    const manifestPath = serviceDomainManifestPath(root, project);
     const content = fs.readFileSync(manifestPath, 'utf8');
     return { root, manifestPath, content, revision: serviceManifestRevision(content), registry: parseServicesManifest(content, { workspaceId, projectId: project.id, projectCode: project.code }) };
   }
-  function writeServiceRegistry(file, projectId, services) {
-    runtime.atomicWriteFile(file, renderServicesDomainManifest(projectId, services));
+  function writeServiceRegistry(file, projectId, services, projectCode = path.basename(path.dirname(path.dirname(file)))) {
+    runtime.atomicWriteFile(file, renderServicesDomainManifest(projectId, services, projectCode));
   }
   Object.assign(runtime, { serviceDomainManifestPath, readServiceRegistryPersistence, writeServiceRegistry, parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision });
   return runtime;

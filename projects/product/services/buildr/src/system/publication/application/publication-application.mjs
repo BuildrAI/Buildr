@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSourceRoot } from '../../../workspace/domain/source-root.mjs';
 
 const PUBLICATION_ID = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const IMAGE_TYPES = new Map([
@@ -93,7 +94,7 @@ export function registerPublicationApplication(runtime, { projectQuery } = {}) {
     const record = projectQuery.readProjectRegistryRecord(targetRoot);
     const project = record.projects.product;
     if (!project) throw publicationError('publication_project_not_found', 'Product Project 尚未登记。', 404);
-    const projectRoot = path.resolve(record.root, project.source.path);
+    const projectRoot = resolveSourceRoot(record.root, project.source);
     if (!inside(record.root, projectRoot) || project.source.type !== 'workspace') throw publicationError('publication_project_boundary', 'Product Project 不在当前 Workspace 的受控范围内。', 409);
     return path.join(projectRoot, 'docs', 'publications');
   }

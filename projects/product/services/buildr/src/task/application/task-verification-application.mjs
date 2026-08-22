@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
 
 import { normalizeTaskVerificationResult, taskVerificationError } from '../domain/task-verification.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
@@ -94,10 +95,10 @@ export function registerTaskVerificationApplication(runtime) {
       if (!project) {
         return { project: projectCode, path: `projects/${projectCode}/verification.yml`, identity: 'unavailable', valid: false, declaration: null, diagnostic: `Project 未登记：${projectCode}` };
       }
-      const projectRoot = path.resolve(sourceRoot, project.source.path);
+      const projectRoot = resolveSourceRoot(sourceRoot, project.source);
       const declarationFile = path.join(projectRoot, 'verification.yml');
       const declarationPath = relative(sourceRoot, declarationFile);
-      if (!inside(sourceRoot, projectRoot)) {
+      if (project.source.root !== 'attached' && !inside(sourceRoot, projectRoot)) {
         return { project: projectCode, path: declarationPath, identity: 'unavailable', valid: false, declaration: null, diagnostic: `Project source 逃逸 Workspace：${project.source.path}` };
       }
       if (!fs.existsSync(declarationFile)) {

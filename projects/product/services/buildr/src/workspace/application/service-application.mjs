@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createService } from '../domain/service.mjs';
+import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.mjs';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
 export function serviceError(code, message, status = 400, details = undefined) {
@@ -97,11 +98,12 @@ export function registerServiceApplication(runtime) {
     if (!service) throw serviceError('service_not_found', `Service 不存在：${projectCode}/${code}。`, 404);
     let observed = null;
     let comparison = { status: 'not-applicable', findings: [] };
+    const serviceRoot = resolveSourceRoot(record.root, service.source);
     if (service.source.type === 'git') {
-      observed = runtime.observeProjectGit(path.join(record.root, service.source.path), service.source.git.remote);
+      observed = runtime.observeProjectGit(serviceRoot, service.source.git.remote);
       comparison = compareServiceGit(service, observed, runtime.sameGitIdentity);
     }
-    return { project: record.project, schemaVersion: record.registry.schemaVersion, revision: record.revision, migrationRequired: record.registry.migrationRequired, service, observed, comparison, nextActions: publicRegistry(record).nextActions };
+    return { project: record.project, schemaVersion: record.registry.schemaVersion, revision: record.revision, migrationRequired: record.registry.migrationRequired, service, sourceLocation: { root: sourceRootKind(service.source), path: serviceRoot, ownership: sourceOwnership(service.source), identity: sourceIdentity(service.id, service.source) }, observed, comparison, nextActions: publicRegistry(record).nextActions };
   }
 
   function serviceDocument(targetRoot, projectCode, code, documentPath) {
@@ -109,7 +111,7 @@ export function registerServiceApplication(runtime) {
     const record = readServiceRegistryRecord(targetRoot, projectCode);
     const service = record.services[code];
     if (!service) throw serviceError('service_not_found', `Service 不存在：${projectCode}/${code}。`, 404);
-    const serviceRoot = path.resolve(record.root, service.source.path);
+    const serviceRoot = resolveSourceRoot(record.root, service.source);
     const filePath = path.resolve(serviceRoot, relativePath);
     if (!inside(serviceRoot, filePath)) {
       throw serviceError('service_document_path_forbidden', '服务文档路径越界。', 400);
@@ -138,7 +140,7 @@ export function registerServiceApplication(runtime) {
     const migrated = Object.values(before.services).map((legacy) => {
       let source = legacy.source;
       if (source.type === 'git') {
-        const observed = runtime.observeProjectGit(path.join(before.root, source.path), source.git.remote);
+        const observed = runtime.observeProjectGit(resolveSourceRoot(before.root, source), source.git.remote);
         source = { ...source, git: { ...source.git, url: source.git.url || observed.remoteUrl, integrationBranch: source.git.integrationBranch || observed.currentBranch } };
       }
       return createService({ ...legacy, id: runtime.crypto.randomUUID(), workspaceId: before.workspaceId, projectId: before.project.id, projectCode, source });
@@ -146,7 +148,7 @@ export function registerServiceApplication(runtime) {
     return runtime.withWorkspaceMutation(before.root, `service.registry.migrate:${projectCode}`, [before.manifestPath], () => {
       const current = readServiceRegistryRecord(before.root, projectCode);
       if (current.revision !== before.revision) throw serviceError('service_migration_changed', 'Service registry 在迁移预检后发生变化，请重新执行。', 409);
-      runtime.writeServiceRegistry(current.manifestPath, current.project.id, migrated);
+      runtime.writeServiceRegistry(current.manifestPath, current.project.id, migrated, projectCode);
       const result = readServiceRegistryRecord(before.root, projectCode);
       if (result.registry.migrationRequired) throw new Error('Service registry migration did not produce canonical v2 data.');
       return { ...publicRegistry(result), changed: [`projects/${projectCode}/services/manifest.yml`] };
@@ -164,7 +166,8 @@ export function registerServiceApplication(runtime) {
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw serviceError('service_update_field_forbidden', `Service 字段不可修改：${field}。`);
     if (typeof input.revision !== 'string' || !input.revision) throw serviceError('service_revision_required', 'Service 修改请求必须包含当前 registry revision。');
     if (input.name === undefined && input.description === undefined && input.type === undefined) throw serviceError('service_update_empty', '至少修改 name、description 或 type。');
-    const manifestPath = runtime.serviceDomainManifestPath(targetRoot, projectCode);
+    const parent = parentRecord(targetRoot, projectCode);
+    const manifestPath = runtime.serviceDomainManifestPath(targetRoot, parent.project);
     return runtime.withWorkspaceMutation(targetRoot, `service.metadata.update:${projectCode}/${code}`, [manifestPath], () => {
       const current = readServiceRegistryRecord(targetRoot, projectCode);
       if (current.registry.migrationRequired) throw serviceError('service_migration_required', 'Service registry 需要先迁移，当前页面只读。', 409);
@@ -172,7 +175,7 @@ export function registerServiceApplication(runtime) {
       const existing = current.services[code];
       if (!existing) throw serviceError('service_not_found', `Service 不存在：${projectCode}/${code}。`, 404);
       const updated = createService({ ...existing, projectCode, name: input.name ?? existing.name, description: input.description ?? existing.description, type: input.type ?? existing.type });
-      runtime.writeServiceRegistry(current.manifestPath, current.project.id, { ...current.services, [code]: updated });
+      runtime.writeServiceRegistry(current.manifestPath, current.project.id, { ...current.services, [code]: updated }, projectCode);
       return serviceDetail(targetRoot, projectCode, code);
     });
   }

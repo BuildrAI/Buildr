@@ -16,6 +16,7 @@ export function createServiceDiagnostics(deps) {
     readGitRemote,
     toPosixRelative,
     validateServicesManifest,
+    resolveSourceRoot,
   } = deps;
 
   function diagnoseServicesMetadata(result, targetRoot, owner, metadataPath, baseRoot, serviceLabel, ignoreLines) {
@@ -62,7 +63,8 @@ export function createServiceDiagnostics(deps) {
             title: service.name,
             description: service.description,
             type: service.type,
-            path: `services/${code}`,
+            path: service.source.path,
+            root: service.source.root || 'managed',
             repo: service.source.type === 'git'
               ? { kind: 'git', url: service.source.git.url, remote: service.source.git.remote, branch: service.source.git.integrationBranch }
               : { kind: 'workspace' },
@@ -94,7 +96,8 @@ export function createServiceDiagnostics(deps) {
     for (const [serviceName, metadata] of Object.entries(manifest.services || {})) {
       if (owner.servicePath && owner.servicePath.split('/')[0] !== serviceName) continue;
       const repo = metadata.repo || {};
-      const repoPath = path.join(baseRoot, metadata.path || `services/${serviceName}`);
+      const source = { type: repo.kind === 'git' ? 'git' : 'workspace', ...(metadata.root === 'attached' ? { root: 'attached' } : {}), path: metadata.path || `services/${serviceName}` };
+      const repoPath = metadata.root === 'attached' ? source.path : (source.path.startsWith('projects/') ? path.resolve(targetRoot, source.path) : path.resolve(baseRoot, source.path));
       const service = {
         org: owner.org,
         project: owner.project || null,
@@ -180,9 +183,9 @@ export function createServiceDiagnostics(deps) {
         }
       }
 
-      const boundary = gitBoundaryFor(targetRoot, { type: 'service', project: owner.project, service: serviceName, assetRoot: repoPath });
-      service.ignoredByWorkspace = gitBoundaryIgnored(boundary);
-      if (!service.ignoredByWorkspace) {
+      const boundary = metadata.root === 'attached' ? null : gitBoundaryFor(targetRoot, { type: 'service', project: owner.project, service: serviceName, assetRoot: repoPath });
+      service.ignoredByWorkspace = metadata.root === 'attached' ? null : gitBoundaryIgnored(boundary);
+      if (metadata.root !== 'attached' && !service.ignoredByWorkspace) {
         addDoctorFinding(result, 'warning', 'gitignore.service_repo_not_ignored', `嵌套 service repo 未被上级 .gitignore 忽略：${serviceLabel}/${serviceName}`, {
           path: service.path,
           suggestion: '运行 buildr update 或 buildr sync 补齐最近上级 Git repo 的 .gitignore 边界。',
@@ -199,7 +202,8 @@ export function createServiceDiagnostics(deps) {
     for (const item of scopes) {
       if (!item.project) continue;
       if (!registry?.projects?.[item.project]) continue;
-      const { projectRoot, metadataPath } = projectDoctorContextFor(targetRoot, item);
+      const project = registry.projects[item.project]?.source ? registry.projects[item.project] : { source: { type: 'workspace', path: `projects/${item.project}` } };
+      const { projectRoot, metadataPath } = projectDoctorContextFor(targetRoot, item, project);
       diagnoseServicesMetadata(result, targetRoot, item, metadataPath, projectRoot, item.project, ignoreLines);
     }
   }

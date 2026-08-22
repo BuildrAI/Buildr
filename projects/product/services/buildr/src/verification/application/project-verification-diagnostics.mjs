@@ -208,11 +208,11 @@ function preparationRecipes(projectRoot, projectCode, services) {
   }
 }
 
-export function createProjectVerificationDiagnostics({ addDoctorFinding }) {
+export function createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot = (root, source) => path.resolve(root, source.path) }) {
   function diagnoseProjectVerification(result, targetRoot, registry = null) {
     result.projectVerification = [];
     for (const [projectName, project] of Object.entries(registry?.projects || {})) {
-      const projectRoot = path.resolve(targetRoot, project.source.path);
+      const projectRoot = resolveSourceRoot(targetRoot, project.source);
       const declarationPath = path.join(projectRoot, 'verification.yml');
       if (!fs.existsSync(declarationPath)) continue;
       const relativePath = path.relative(targetRoot, declarationPath).split(path.sep).join('/');

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
 import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
@@ -285,8 +286,8 @@ export function registerVerificationApplication(runtime) {
     const registry = runtime.readProjectRegistryPersistence(targetRoot).registry.projects;
     const project = registry[projectCode];
     if (!project) throw new Error(`Project is not registered in projects/manifest.yml: ${projectCode}`);
-    const projectRoot = fs.realpathSync(path.resolve(targetRoot, project.source.path));
-    if (!inside(targetRoot, projectRoot)) throw new Error(`Project source escapes the execution Workspace: ${project.source.path}`);
+    const projectRoot = fs.realpathSync(resolveSourceRoot(targetRoot, project.source));
+    if (project.source.root !== 'attached' && !inside(targetRoot, projectRoot)) throw new Error(`Managed Project source escapes the execution Workspace: ${project.source.path}`);
     const declarationPath = path.join(projectRoot, 'verification.yml');
     if (!fs.existsSync(declarationPath)) throw admissionError('verification.coverage_gap', `Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`, 'coverage', 'task-verification', { project: projectCode });
     const declarationContent = fs.readFileSync(declarationPath);

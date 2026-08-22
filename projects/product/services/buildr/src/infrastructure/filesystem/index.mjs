@@ -636,7 +636,18 @@ export function registerWorkspaceInfrastructure(runtime) {
   }
 
   function addDoctorFinding(result, status, code, message, extra = {}) {
-    result.findings.push({ status, code, message, ...extra });
+    const gitFinding = /(?:git|remote|branch|dirty|worktree)/.test(code);
+    const prefix = code.split('.')[0];
+    const domain = extra.domain || (gitFinding ? 'git' : ({ projects: 'project', project: 'project', services: 'service', service: 'service', runtime: 'runtime', components: 'component', component: 'component', commands: 'command', command: 'command', capability: 'capability', mutation: 'transaction', installation: 'installation', launcher: 'installation' }[prefix] || 'workspace'));
+    const defaultActions = {
+      workspace: ['inspect', 'sync'], project: ['inspect', 'create', 'update', 'sync'], service: ['inspect', 'create', 'update', 'sync'],
+      git: ['inspect', 'finish'], runtime: ['inspect', 'render', 'sync'], component: ['inspect', 'reconcile', 'sync'],
+      command: ['inspect', 'execute'], capability: ['inspect', 'execute'], transaction: ['recover'], installation: ['inspect', 'update'],
+    };
+    const scope = extra.scope || (extra.project && extra.service ? `projects/${extra.project}/services/${extra.service}` : extra.project ? `projects/${extra.project}` : '.');
+    const affectedActions = Array.isArray(extra.affectedActions) ? extra.affectedActions : defaultActions[domain];
+    const ownershipUnit = extra.ownershipUnit || extra.path || `${domain}:${scope}`;
+    result.findings.push({ status, code, message, domain, scope, affectedActions, ownershipUnit, ...extra });
   }
 
   Object.assign(runtime, { optionValue, optionValueRaw, withResolvedTarget, withOption, skillScopeForRuleScope, ensureDirectory, copyDirectory, removePath, atomicWriteFile, atomicWriteJson, parseYamlDocument, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, writeMappedFileIfMissing, appendGitignoreEntries, hasFlag, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });

@@ -207,7 +207,7 @@ function loadLayer(manifestPath, options = {}) {
       throw new Error(`Duplicate skill id in same manifest: ${skill.id} (${manifestPath})`);
     }
     seen.add(skill.id);
-    if (skill.enabled === false || skill.state === 'uninstalled') {
+    if (skill.enabled === false || ['uninstalled', 'missing'].includes(skill.state)) {
       return null;
     }
     if (Array.isArray(skill.runtimes) && !skill.runtimes.includes(runtime)) {

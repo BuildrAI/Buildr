@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { resolveSourceRoot } from '../../../workspace/domain/source-root.mjs';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
@@ -83,7 +84,7 @@ export function registerOpenSpecApplication(runtime, { projectQuery } = {}) {
       if (error?.code === 'project_not_found') throw new Error(`Project is not registered in projects/manifest.yml: ${project}`, { cause: error });
       throw error;
     }
-    const projectRoot = path.resolve(targetRoot, detail.project.source.path);
+    const projectRoot = resolveSourceRoot(targetRoot, detail.project.source);
     if (!existsDirectory(projectRoot)) throw new Error(`Project directory is missing: projects/${project}`);
     const planningRoot = path.join(projectRoot, 'openspec');
     if (!existsDirectory(path.join(planningRoot, 'specs')) || !existsDirectory(path.join(planningRoot, 'changes'))) {

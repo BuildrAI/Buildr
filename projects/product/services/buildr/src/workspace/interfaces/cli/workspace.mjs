@@ -361,6 +361,29 @@ export function registerWorkspaceCliAdapter(runtime) {
     }
   }
 
+  function pathInside(parent, child) {
+    const relative = path.relative(parent, child);
+    return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+  }
+
+  function attachedGitSource(rawPath, targetRoot, remote, integrationBranch, label) {
+    const requested = path.resolve(rawPath);
+    if (!path.isAbsolute(rawPath) || path.normalize(rawPath) !== rawPath) throw new Error(`${label} --attach must be a normalized absolute path.`);
+    if (!existsDirectory(requested)) throw new Error(`${label} attached root does not exist: ${rawPath}`);
+    const actual = fs.realpathSync(requested);
+    const workspace = fs.realpathSync(targetRoot);
+    if (pathInside(workspace, actual) || pathInside(actual, workspace)) throw new Error(`${label} attached root must be external to and must not contain the canonical Workspace.`);
+    let topLevel;
+    try { topLevel = fs.realpathSync(gitOutput(['rev-parse', '--show-toplevel'], actual)); }
+    catch { throw new Error(`${label} attached root is not a Git repository: ${rawPath}`); }
+    if (topLevel !== actual) throw new Error(`${label} attached root must be the independent Git top-level: ${rawPath}`);
+    const url = readGitRemote(actual, remote);
+    if (!url) throw new Error(`${label} attached root is missing declared remote ${remote}: ${rawPath}`);
+    const branch = integrationBranch || gitDefaultBranch(actual, remote) || gitCurrentBranch(actual);
+    assertGitBranch(branch);
+    return { rootPath: actual, source: { type: 'git', root: 'attached', path: actual, git: { url, remote, integrationBranch: branch } } };
+  }
+
   function assertGitBranch(value) {
     if (!value) return;
     const result = spawnSync('git', ['check-ref-format', '--branch', value], { encoding: 'utf8' });
@@ -439,19 +462,22 @@ export function registerWorkspaceCliAdapter(runtime) {
   }
 
   function createProject(args) {
-    const allowedFlags = new Set(['--target', '--repo', '--name', '--title', '--description', '--remote', '--integration-branch']);
+    const allowedFlags = new Set(['--target', '--repo', '--attach', '--name', '--title', '--description', '--remote', '--integration-branch']);
     assertNoUnknownOptions(args, allowedFlags);
     const ref = positionalArgs(args)[0];
     if (!ref) throw new Error('Missing project ref');
     const { project } = parseProjectRef(ref);
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const repoRef = optionValue(args, '--repo', null);
+    const attachRef = optionValue(args, '--attach', null);
     const nameOption = optionValue(args, '--name', optionValue(args, '--title', null));
     const descriptionOption = optionValue(args, '--description', null);
     const remoteOption = optionValue(args, '--remote', 'origin');
     const integrationBranchOption = optionValue(args, '--integration-branch', null);
     assertGitBranch(integrationBranchOption);
-    const projectRoot = path.join(targetRoot, 'projects', project);
+    if (repoRef && attachRef) throw new Error('--repo and --attach are mutually exclusive.');
+    const attachment = attachRef ? attachedGitSource(attachRef, targetRoot, remoteOption, integrationBranchOption, 'Project') : null;
+    const projectRoot = attachment?.rootPath || path.join(targetRoot, 'projects', project);
     const created = [];
     const changed = [];
     const manifest = readPackageManifest();
@@ -460,6 +486,14 @@ export function registerWorkspaceCliAdapter(runtime) {
       throw new Error('Project registry needs migration before project create. Run canonical buildr sync <agent> first.');
     }
     const existingEntry = registryRecord.projects[project] || null;
+    if (attachment) {
+      for (const [otherCode, other] of Object.entries(registryRecord.projects)) {
+        if (otherCode === project) continue;
+        let otherRoot;
+        try { otherRoot = fs.realpathSync(runtime.resolveProjectRoot(targetRoot, other)); } catch { continue; }
+        if (otherRoot === attachment.rootPath) throw new Error(`Project attached root is already registered by project:${otherCode}.`);
+      }
+    }
     const name = nameOption ?? existingEntry?.name ?? project;
     const description = descriptionOption ?? existingEntry?.description ?? defaultAssetDescription('Project', project);
 
@@ -489,13 +523,23 @@ export function registerWorkspaceCliAdapter(runtime) {
       throw new Error('--remote and --integration-branch are only supported for Git Project sources.');
     }
 
-    const affected = [projectRoot, projectsManifestPath(targetRoot), path.join(targetRoot, '.gitignore')];
+    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || fs.realpathSync(existingEntry.source.path) !== attachment.rootPath)) {
+      throw new Error(`Project registry identity conflicts for ${project}: existing source is not the requested attached root.`);
+    }
+    const affected = attachment ? [projectsManifestPath(targetRoot)] : [projectRoot, projectsManifestPath(targetRoot), path.join(targetRoot, '.gitignore')];
     return withWorkspaceMutation(targetRoot, `project.create:${project}`, affected, () => {
       const staging = path.join(path.dirname(projectRoot), `.${project}.buildr-stage-${crypto.randomUUID()}`);
       try {
-        if (repoRef && !existsDirectory(projectRoot)) {
+        if (!attachment && repoRef && !existsDirectory(projectRoot)) {
           execFileSync('git', ['clone', repoRef, staging], { stdio: 'inherit' });
           fs.renameSync(staging, projectRoot);
+        }
+        if (attachment) {
+          const entity = createProjectEntity({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source: attachment.source });
+          runtime.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
+          changed.push(toPosixRelative(targetRoot, registryRecord.manifestPath));
+          printResult(`Attached project ${project}`, targetRoot, [], changed, [declarationIntakeNextAction({ trigger: 'project-registered', project })]);
+          return;
         }
         ensureDirectory(projectRoot);
         for (const relativeDir of manifest.projectDirectories) ensureDirectory(path.join(projectRoot, relativeDir));
@@ -538,7 +582,7 @@ export function registerWorkspaceCliAdapter(runtime) {
         }
         runtime.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
         if (!serviceRegistryExists) {
-          runtime.writeServiceRegistry(serviceRegistryPath, entity.id, {});
+          runtime.writeServiceRegistry(serviceRegistryPath, entity.id, {}, project);
           created.push(toPosixRelative(targetRoot, serviceRegistryPath));
         }
         const registryPath = registryRecord.manifestPath;
@@ -552,12 +596,14 @@ export function registerWorkspaceCliAdapter(runtime) {
   }
 
   function createService(args) {
-    assertNoUnknownOptions(args, new Set(['--target', '--name', '--title', '--description', '--type', '--rules', '--branch', '--integration-branch', '--remote', '--json']), new Set(['--json']));
+    assertNoUnknownOptions(args, new Set(['--target', '--attach', '--name', '--title', '--description', '--type', '--rules', '--branch', '--integration-branch', '--remote', '--json']), new Set(['--json']));
     const positional = positionalArgs(args);
     const ref = positional[0];
     const repoRef = positional[1];
     if (!ref) throw new Error('Missing service ref');
-    if (!repoRef) throw new Error('Missing repo ref');
+    const attachRef = optionValue(args, '--attach', null);
+    if (!repoRef && !attachRef) throw new Error('Missing repo ref or --attach path');
+    if (repoRef && attachRef) throw new Error('repo-ref and --attach are mutually exclusive.');
 
     const { project, service } = parseServiceRef(ref);
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
@@ -569,7 +615,9 @@ export function registerWorkspaceCliAdapter(runtime) {
     const remoteInput = optionValue(args, '--remote', 'origin');
     const jsonOutput = args.includes('--json');
     assertGitBranch(branchInput);
-    const projectRoot = path.join(targetRoot, 'projects', project);
+    const projectsRecord = runtime.readProjectRegistryRecord(targetRoot);
+    const parentProject = projectsRecord.projects[project];
+    const projectRoot = parentProject ? runtime.resolveProjectRoot(targetRoot, parentProject) : path.join(targetRoot, 'projects', project);
     const servicesRoot = path.join(projectRoot, 'services');
     const servicePath = path.join(servicesRoot, service);
     const changed = [];
@@ -578,17 +626,31 @@ export function registerWorkspaceCliAdapter(runtime) {
       createProject([project, '--target', targetRoot]);
     }
 
-    const gitSource = isGitUrl(repoRef);
+    const attachment = attachRef ? attachedGitSource(attachRef, targetRoot, remoteInput, branchInput, 'Service') : null;
+    const gitSource = Boolean(attachment) || isGitUrl(repoRef);
     const registryRecord = runtime.readServiceRegistryRecord(targetRoot, project);
     if (registryRecord.registry.migrationRequired) throw new Error('Service registry needs migration before service create. Run canonical buildr sync <agent> first.');
     const existingEntry = registryRecord.services[service] || null;
+    if (attachment) {
+      for (const [otherCode, other] of Object.entries(registryRecord.services)) {
+        if (otherCode === service) continue;
+        let otherRoot;
+        try { otherRoot = fs.realpathSync(runtime.resolveServiceRoot(targetRoot, other)); } catch { continue; }
+        if (otherRoot === attachment.rootPath) throw new Error(`Service attached root is already registered by service:${project}/${otherCode}.`);
+      }
+      for (const [projectCode, registeredProject] of Object.entries(projectsRecord.projects)) {
+        let otherRoot;
+        try { otherRoot = fs.realpathSync(runtime.resolveProjectRoot(targetRoot, registeredProject)); } catch { continue; }
+        if (otherRoot === attachment.rootPath) throw new Error(`Service attached root is already registered by project:${projectCode}.`);
+      }
+    }
     if (branchInput && !gitSource) throw new Error('--integration-branch is only supported for Git Service sources.');
     if (!gitSource && optionValue(args, '--remote', null)) throw new Error('--remote is only supported for Git Service sources.');
     if (branchInput && existingEntry?.source?.git?.integrationBranch && existingEntry.source.git.integrationBranch !== branchInput) {
       throw new Error(`Service integration branch conflicts for ${project}/${service}: requested ${branchInput}, recorded ${existingEntry.source.git.integrationBranch}.`);
     }
     const requestedBranch = branchInput || existingEntry?.source?.git?.integrationBranch || null;
-    if (gitSource && existsDirectory(servicePath)) {
+    if (gitSource && !attachment && existsDirectory(servicePath)) {
       if (!existsDirectory(path.join(servicePath, '.git'))) throw new Error(`Service Git target exists but is not a Git repository: projects/${project}/services/${service}`);
       const actualUrl = readGitRemote(servicePath, remoteInput);
       if (!actualUrl || !sameGitIdentity(actualUrl, repoRef)) throw new Error(`Service repo identity conflicts for ${project}/${service}: expected ${repoRef}, actual ${actualUrl || '<missing origin>'}.`);
@@ -601,11 +663,21 @@ export function registerWorkspaceCliAdapter(runtime) {
     if (!gitSource && !fs.existsSync(localPath)) throw new Error(`Local service source path does not exist: ${repoRef}`);
     if (!gitSource && fs.existsSync(servicePath)) throw new Error(`Service target already exists: projects/${project}/services/${service}`);
 
-    const affected = [servicePath, servicesManifestPath(projectRoot), path.join(projectRoot, '.gitignore'), path.join(targetRoot, '.gitignore')];
+    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || fs.realpathSync(existingEntry.source.path) !== attachment.rootPath)) throw new Error(`Service metadata identity conflicts for ${project}/${service}: existing source is not the requested attached root.`);
+    const affected = attachment ? [servicesManifestPath(projectRoot)] : [servicePath, servicesManifestPath(projectRoot), path.join(projectRoot, '.gitignore'), path.join(targetRoot, '.gitignore')];
     return withWorkspaceMutation(targetRoot, `service.create:${project}/${service}`, affected, () => {
       ensureDirectory(servicesRoot);
       const staging = path.join(servicesRoot, `.${service}.buildr-stage-${crypto.randomUUID()}`);
       try {
+        if (attachment) {
+          const entity = createServiceEntity({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspaceId, projectId: registryRecord.project.id, projectCode: project, code: service, name: nameInput || existingEntry?.name || service, description: descriptionInput || existingEntry?.description || defaultAssetDescription('Service', service), type: serviceType || existingEntry?.type || 'service', source: attachment.source });
+          runtime.writeServiceRegistry(registryRecord.manifestPath, registryRecord.project.id, { ...registryRecord.services, [service]: entity }, project);
+          changed.push(toPosixRelative(targetRoot, registryRecord.manifestPath));
+          const nextActions = [declarationIntakeNextAction({ trigger: 'service-registered', project, services: [service] })];
+          if (jsonOutput) console.log(JSON.stringify({ ...runtime.serviceDetail(targetRoot, project, service), changed, nextActions }, null, 2));
+          else printResult(`Attached service ${project}/${service}`, targetRoot, [], changed, nextActions);
+          return;
+        }
         if (!fs.existsSync(servicePath)) {
           if (gitSource) {
             const cloneArgs = ['clone'];
@@ -636,7 +708,7 @@ export function registerWorkspaceCliAdapter(runtime) {
           source,
         });
         if (rulesSource) console.error('Warning: --rules is deprecated. Service AGENTS.md is treated as the service rule asset and is not recorded in services/manifest.yml.');
-        runtime.writeServiceRegistry(registryRecord.manifestPath, registryRecord.project.id, { ...registryRecord.services, [service]: entity });
+        runtime.writeServiceRegistry(registryRecord.manifestPath, registryRecord.project.id, { ...registryRecord.services, [service]: entity }, project);
         const metadataPath = registryRecord.manifestPath;
         changed.push(path.relative(targetRoot, metadataPath).split(path.sep).join('/'));
         for (const file of ensureGitBoundaries(targetRoot, [{ type: 'service', project, service, assetRoot: servicePath }])) changed.push(file);

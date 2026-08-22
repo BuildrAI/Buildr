@@ -18,6 +18,7 @@ export function createScopeDiagnostics(deps) {
     buildrWorkspaceIdentity,
     observeProjectGit,
     sameGitIdentity,
+    resolveSourceRoot,
   } = deps;
 
   function projectView(code, project) {
@@ -144,9 +145,9 @@ export function createScopeDiagnostics(deps) {
     return false;
   }
 
-  function projectDoctorContextFor(targetRoot, item) {
+  function projectDoctorContextFor(targetRoot, item, project = null) {
     const orgRoot = targetRoot;
-    const projectRoot = item.project ? path.join(orgRoot, 'projects', item.project) : null;
+    const projectRoot = item.project ? (project ? resolveSourceRoot(orgRoot, project.source) : path.join(orgRoot, 'projects', item.project)) : null;
     return {
       orgRoot,
       projectRoot,
@@ -364,9 +365,9 @@ export function createScopeDiagnostics(deps) {
     const ignoreLines = gitignoreLines(targetRoot);
 
     for (const item of scopes) {
-      const { orgRoot, projectRoot, metadataPath, servicesRoot } = projectDoctorContextFor(targetRoot, item);
       const rawRegistryEntry = item.project ? registry?.projects?.[item.project] || null : null;
       const registryEntry = rawRegistryEntry ? projectView(item.project, rawRegistryEntry) : null;
+      const { orgRoot, projectRoot, metadataPath, servicesRoot } = projectDoctorContextFor(targetRoot, item, registryEntry);
       const organization = { name: item.org, path: toPosixRelative(targetRoot, orgRoot), exists: existsDirectory(orgRoot) };
       const organizationKey = `${organization.path}|${organization.name}`;
       if (!seenOrganizations.has(organizationKey)) {
@@ -404,15 +405,19 @@ export function createScopeDiagnostics(deps) {
       result.projects.push(project);
 
       if (!project.exists) {
-        const command = registryEntry?.source?.type === 'git' && registryEntry.source.git.url
+        const attached = registryEntry?.source?.root === 'attached';
+        const command = !attached && registryEntry?.source?.type === 'git' && registryEntry.source.git.url
           ? `buildr project create ${item.project} --repo ${registryEntry.source.git.url} --integration-branch ${registryEntry.source.git.integrationBranch} --target ${targetRoot}`
           : `buildr project create ${item.project} --target ${targetRoot}`;
         addDoctorFinding(result, 'error', 'project.missing', `Project 缺失：${item.project}`, {
           path: project.path,
-          suggestion: registryEntry?.source?.type === 'git' && registryEntry.source.git.url
+          suggestion: attached ? '确认当前机器上的Attached Root路径，或经用户明确选择后重新登记该Project location。' : registryEntry?.source?.type === 'git' && registryEntry.source.git.url
             ? '询问用户是否根据 registry 自动 clone 该 Project 资产 repo。'
             : '创建缺失的项目资产。',
           command,
+          scope: `projects/${item.project}`,
+          affectedActions: ['inspect', 'create', 'update', 'sync'],
+          ownershipUnit: `project:${item.project}`,
         });
         continue;
       }
@@ -424,8 +429,8 @@ export function createScopeDiagnostics(deps) {
         addDoctorFinding(result, 'warning', 'project.baseline_incomplete', `Project baseline 不完整：${item.project}`, {
           path: project.path,
           missing: missingBaseline,
-          suggestion: '运行 buildr project create 补齐项目骨架。',
-          command: `buildr project create ${item.project} --target ${targetRoot}`,
+          suggestion: registryEntry.source.root === 'attached' ? 'Attached Root baseline保持外部ownership；需要补齐时先取得该root的明确写入授权。' : '运行 buildr project create 补齐项目骨架。',
+          command: registryEntry.source.root === 'attached' ? undefined : `buildr project create ${item.project} --target ${targetRoot}`,
         });
       }
 
@@ -459,9 +464,9 @@ export function createScopeDiagnostics(deps) {
           }
           if (observed.dirty) addDoctorFinding(result, 'warning', 'project.git_dirty', `Project Git worktree 有未提交变化：${item.project}`, { path: project.path, suggestion: '识别变化所属任务后再决定提交、保留或处理。' });
         }
-        const boundary = gitBoundaryFor(targetRoot, { type: 'project', project: item.project, assetRoot: projectRoot });
-        project.ignoredByWorkspace = gitBoundaryIgnored(boundary);
-        if (!project.ignoredByWorkspace) {
+        const boundary = registryEntry.source.root === 'attached' ? null : gitBoundaryFor(targetRoot, { type: 'project', project: item.project, assetRoot: projectRoot });
+        project.ignoredByWorkspace = registryEntry.source.root === 'attached' ? null : gitBoundaryIgnored(boundary);
+        if (registryEntry.source.root !== 'attached' && !project.ignoredByWorkspace) {
           addDoctorFinding(result, 'warning', 'gitignore.project_repo_not_ignored', `嵌套 Project repo 未被 workspace .gitignore 忽略：${item.project}`, {
             path: project.path,
             suggestion: '更新 workspace .gitignore，避免外层 Git 误提交 Project 资产 repo 内容。',

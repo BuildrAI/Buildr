@@ -69,6 +69,36 @@ test('Git Service 保存 integrationBranch，观察态不进入 Domain', (t) => 
   assert.equal(stored.currentBranch, undefined);
 });
 
+test('Service attach 只登记外部 Git root，不复制或修改内容', (t) => {
+  const { base, root } = setup(t);
+  const seed = path.join(base, 'seed');
+  const bare = path.join(base, 'service.git');
+  const attached = path.join(base, 'attached-service');
+  fs.mkdirSync(seed);
+  assert.equal(run('git', ['init', '-b', 'dev'], seed).status, 0);
+  fs.writeFileSync(path.join(seed, 'README.md'), '# external service\n');
+  assert.equal(run('git', ['add', 'README.md'], seed).status, 0);
+  assert.equal(run('git', ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'init'], seed).status, 0);
+  assert.equal(run('git', ['clone', '--bare', seed, bare]).status, 0);
+  assert.equal(run('git', ['clone', '--branch', 'dev', bare, attached]).status, 0);
+  const before = { head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') };
+
+  const result = runBuildr(['service', 'create', 'demo/external', '--attach', attached, '--target', root, '--name', 'External', '--description', 'External service', '--type', 'backend', '--json']);
+  assert.equal(result.status, 0, result.stderr);
+  const detail = JSON.parse(result.stdout);
+  assert.equal(detail.service.source.root, 'attached');
+  assert.equal(detail.service.source.path, fs.realpathSync(attached));
+  assert.equal(detail.sourceLocation.ownership, 'external');
+  assert.deepEqual({ head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') }, before);
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'demo', 'services', 'external')), false);
+  const doctor = JSON.parse(runBuildr(['doctor', '--target', root, '--scope', 'projects/demo/services/external', '--json', '--detail', 'full']).stdout);
+  assert.equal(doctor.services.find((service) => service.name === 'external').exists, true);
+  assert.equal(doctor.findings.some((finding) => finding.code === 'service.git.missing'), false);
+  const duplicate = runBuildr(['service', 'create', 'demo/duplicate', '--attach', attached, '--target', root, '--name', 'Duplicate', '--description', 'Duplicate service']);
+  assert.equal(duplicate.status, 1);
+  assert.match(duplicate.stderr, /already registered/);
+});
+
 test('sync 显式迁移 v1 Service registry 并优先使用 branch', (t) => {
   const { root } = setup(t);
   fs.mkdirSync(path.join(root, 'projects', 'demo', 'services', 'api'), { recursive: true });

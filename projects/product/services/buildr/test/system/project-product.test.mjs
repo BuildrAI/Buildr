@@ -177,6 +177,43 @@ test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只�
   assert.equal(fs.existsSync(path.join(root, 'projects', 'git-demo', 'verification.yml')), false, 'doctor does not initialize declarations');
 });
 
+test('Project attach 登记外部 Git root 且不修改外部内容', (t) => {
+  const root = initWorkspace(t);
+  const base = tempRoot(t);
+  const seed = path.join(base, 'seed');
+  const bare = path.join(base, 'project.git');
+  const attached = path.join(base, 'attached');
+  fs.mkdirSync(seed);
+  assert.equal(run('git', ['init', '-b', 'dev'], seed).status, 0);
+  fs.writeFileSync(path.join(seed, 'README.md'), '# attached\n');
+  assert.equal(run('git', ['add', 'README.md'], seed).status, 0);
+  assert.equal(run('git', ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'init'], seed).status, 0);
+  assert.equal(run('git', ['clone', '--bare', seed, bare]).status, 0);
+  assert.equal(run('git', ['clone', '--branch', 'dev', bare, attached]).status, 0);
+  const before = { head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') };
+
+  const result = runBuildr(['project', 'create', 'external', '--target', root, '--attach', attached, '--name', 'External', '--description', 'External project']);
+  assert.equal(result.status, 0, result.stderr);
+  const detail = createRuntime().projectDetail(root, 'external');
+  assert.equal(detail.project.source.root, 'attached');
+  assert.equal(detail.project.source.path, fs.realpathSync(attached));
+  assert.equal(detail.sourceLocation.ownership, 'external');
+  assert.equal(detail.observed.currentBranch, 'dev');
+  assert.deepEqual({ head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') }, before);
+  assert.equal(fs.existsSync(path.join(attached, 'services', 'manifest.yml')), false);
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'external')), false);
+  const doctor = JSON.parse(runBuildr(['doctor', '--target', root, '--scope', 'projects/external', '--json', '--detail', 'full']).stdout);
+  assert.equal(doctor.projects.find((project) => project.code === 'external').exists, true);
+  assert.equal(doctor.findings.some((finding) => finding.code === 'project.missing'), false);
+  assert.ok(doctor.findings.every((finding) => finding.domain && finding.scope && finding.ownershipUnit && Array.isArray(finding.affectedActions)));
+  assert.equal(doctor.health.generalWorkPermitted, null);
+  assert.ok(Array.isArray(doctor.domainHealth));
+  const duplicate = runBuildr(['project', 'create', 'duplicate', '--target', root, '--attach', attached, '--name', 'Duplicate', '--description', 'Duplicate project']);
+  assert.equal(duplicate.status, 1);
+  assert.match(duplicate.stderr, /already registered/);
+  assert.equal(createRuntime().listProjects(root).projects.length, 1);
+});
+
 test('sync 显式把 v1 Project registry 迁移为 v2', (t) => {
   const root = initWorkspace(t);
   fs.mkdirSync(path.join(root, 'projects', 'legacy'), { recursive: true });

@@ -32,6 +32,12 @@ test('canonical Project Manifest v2 round trip 使用封闭 Domain schema', () =
   assert.throws(() => parseProjectsManifest(content, { workspaceId: '1690214e-82dd-4726-b0bf-6db8c34e8153' }), /must equal the current Workspace id/);
 });
 
+test('canonical Project Manifest保留Attached Root且managed shape不变', () => {
+  const content = renderProjectsManifest({ external: { id: PROJECT_ID, workspaceId: WORKSPACE_ID, code: 'external', name: 'External', description: 'External project', source: { type: 'git', root: 'attached', path: '/repos/external', git: { url: 'https://example.com/external.git', remote: 'origin', integrationBranch: 'dev' } } } });
+  assert.match(content, /root: attached/);
+  assert.equal(parseProjectsManifest(content, { workspaceId: WORKSPACE_ID }).entities.external.source.path, '/repos/external');
+});
+
 test('v1 Project Manifest 只兼容投影并标记 migration', () => {
   const content = [
     `schemaVersion: ${PROJECTS_SCHEMA_V1}`,

@@ -1,3 +1,5 @@
+import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.mjs';
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -24,11 +26,8 @@ export function createProjectSource(source, code) {
   if (!['workspace', 'git'].includes(type)) {
     throw new Error('Project.source.type must be workspace or git.');
   }
-  const expectedPath = `projects/${code}`;
-  const sourcePath = requiredText(source.path, 'source.path');
-  if (sourcePath !== expectedPath) {
-    throw new Error(`Project.source.path must be ${expectedPath}.`);
-  }
+  const location = normalizeSourceLocation(source, `projects/${code}`, 'Project.source');
+  const sourcePath = location.path;
   if (type === 'workspace') {
     if (source.git !== undefined) throw new Error('Project.source.git is only supported for git sources.');
     return Object.freeze({ type, path: sourcePath });
@@ -41,7 +40,7 @@ export function createProjectSource(source, code) {
     remote: requiredText(source.git.remote, 'source.git.remote'),
     integrationBranch: requiredText(source.git.integrationBranch, 'source.git.integrationBranch'),
   });
-  return Object.freeze({ type, path: sourcePath, git });
+  return Object.freeze({ type, ...(location.root === SOURCE_ROOT_ATTACHED ? { root: SOURCE_ROOT_ATTACHED } : {}), path: sourcePath, git });
 }
 
 export function createProject({ id, workspaceId, code, name, description, source }) {

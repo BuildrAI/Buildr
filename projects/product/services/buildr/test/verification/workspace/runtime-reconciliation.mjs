@@ -29,7 +29,7 @@ try {
   fs.appendFileSync(componentSkill, '\nworkspace source drift\n');
   const drifted = runBuildr(['sync', 'codex', '--scope', '.', '--target', fixture.workspace], { allowFailure: true });
   assert.notEqual(drifted.status, 0, 'sync must fail closed on modified Component source');
-  assert.match(drifted.combined, /conflict|冲突|暂停/i);
+  assert.match(drifted.combined, /conflict|integrity mismatch|冲突|暂停/i);
   assert.match(fs.readFileSync(componentSkill, 'utf8'), /workspace source drift/);
 
   fs.copyFileSync(path.join(productRoot, 'resources', 'workspace', 'skills', 'openspec', 'openspec-propose', 'SKILL.md'), componentSkill);

@@ -18,11 +18,11 @@ function serviceCodes(projectRoot) {
   }
 }
 
-export function createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding }) {
+export function createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding, resolveSourceRoot = (root, source) => path.resolve(root, source.path) }) {
   function diagnoseProjectEnvironmentPreparation(result, targetRoot, registry = null) {
     result.projectEnvironmentPreparation = [];
     for (const [projectCode, project] of Object.entries(registry?.projects || {})) {
-      const projectRoot = path.resolve(targetRoot, project.source.path);
+      const projectRoot = resolveSourceRoot(targetRoot, project.source);
       const declarationPath = path.join(projectRoot, 'preparation.yml');
       if (!fs.existsSync(declarationPath)) continue;
       const relativePath = path.relative(targetRoot, declarationPath).split(path.sep).join('/');

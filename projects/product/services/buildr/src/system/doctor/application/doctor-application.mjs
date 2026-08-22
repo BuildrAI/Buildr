@@ -156,6 +156,7 @@ export function registerSystemDoctorApplication(runtime) {
       mutations: { blocked: false, lock: null, transactions: [] },
       diagnosticProfile: DOCTOR_DIAGNOSTIC_PROFILE,
       health: { workspaceValid: false, ready: false, actionRequired: false, actionableCount: 0 },
+      domainHealth: [],
       findings: [],
       repairPlan: [],
       nextSteps: [],
@@ -222,7 +223,7 @@ export function registerSystemDoctorApplication(runtime) {
         productInstallation: result.productInstallation,
         releaseAwareness: result.releaseAwareness,
         notices: result.notices,
-        ok: result.ok, summary: result.summary, health: result.health,
+        ok: result.ok, summary: result.summary, health: result.health, domainHealth: result.domainHealth,
         findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,
       } : result;
       process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, report), null, 2)}\n`);

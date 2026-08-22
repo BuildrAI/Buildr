@@ -16,6 +16,12 @@ test('canonical Service manifest v2 round trip 使用封闭 schema', () => {
   assert.throws(() => parseServicesManifest(content.replace('type: backend', 'type: backend\n    status: active'), { workspaceId: WORKSPACE_ID, projectId: PROJECT_ID, projectCode: 'product' }), /status is not a supported/);
 });
 
+test('canonical Service manifest round trip保留Attached Root', () => {
+  const content = renderServicesDomainManifest(PROJECT_ID, { api: { id: ID, workspaceId: WORKSPACE_ID, projectId: PROJECT_ID, projectCode: 'product', code: 'api', name: 'API', description: '接口服务', type: 'backend', source: { type: 'git', root: 'attached', path: '/repos/api', git: { url: 'https://example.com/api.git', remote: 'origin', integrationBranch: 'dev' } } } }, 'product');
+  assert.match(content, /root: attached/);
+  assert.equal(parseServicesManifest(content, { workspaceId: WORKSPACE_ID, projectId: PROJECT_ID, projectCode: 'product' }).entities.api.source.path, '/repos/api');
+});
+
 test('v1 Service manifest compatibility 优先迁移 branch intent', () => {
   const content = [`schemaVersion: ${SERVICES_SCHEMA_V1}`, 'project: product', 'services:', '  api:', '    title: API', '    description: 接口服务', '    type: backend', '    path: services/api', '    repo:', '      kind: git', '      url: https://example.com/api.git', '      remote: origin', '      defaultBranch: main', '      branch: dev', ''].join('\n');
   const parsed = parseServicesManifest(content, { workspaceId: WORKSPACE_ID, projectId: PROJECT_ID, projectCode: 'product' });

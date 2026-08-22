@@ -766,7 +766,11 @@ export function registerDomainsComponents(runtime) {
     const onlyId = options.onlyId || null;
     const status = packageComponentsStatus(targetRoot, packageManifest);
     const findings = [];
-    const errors = status.findings.map((item) => ({ id: item.id || null, error: item.error || item.message || item.code || 'Component inventory is invalid.' }));
+    const componentStatus = new Map(status.components.map((item) => [item.id, item]));
+    const errors = status.findings.map((item) => {
+      const owners = [item.id, item.componentId, ...(item.owners || [])].filter(Boolean);
+      return { id: item.id || item.componentId || null, required: owners.some((id) => componentStatus.get(id)?.required === true), error: item.error || item.message || item.code || 'Component inventory is invalid.' };
+    });
     const plans = [];
     const affectedPaths = [];
     const registry = readComponentsManifestForWrite(targetRoot);
@@ -798,7 +802,7 @@ export function registerDomainsComponents(runtime) {
     const safeAffectedPaths = assertSafeSyncMutationPaths(targetRoot, affectedPaths);
     const signature = JSON.stringify({
       findings,
-      errors: errors.map(({ id, error }) => ({ id, error })),
+      errors: errors.map(({ id, required, error }) => ({ id, required, error })),
       affectedPaths: safeAffectedPaths.map((item) => ({ path: toPosixRelative(targetRoot, item), fingerprint: mutationPathFingerprint(item) })).sort((left, right) => left.path.localeCompare(right.path)),
     });
     return { targetRoot, changed: [], findings, errors, plans, affectedPaths: safeAffectedPaths, signature };
@@ -813,6 +817,7 @@ export function registerDomainsComponents(runtime) {
     const findings = [];
     const registry = readComponentsManifestForWrite(targetRoot);
     const preparedPlans = new Map((options.plans || []).map((item) => [item.id, item]));
+    const preparedFindings = new Map((options.preparedFindings || []).map((item) => [item.id, item]));
     for (const entry of packageManifest.components) {
       if (onlyId && entry.id !== onlyId) continue;
       const installed = registry.components.find((item) => item.id === entry.id);
@@ -822,6 +827,11 @@ export function registerDomainsComponents(runtime) {
       }
       if (!installed && entry.defaultEnabled !== true && !options.restore) {
         findings.push({ id: entry.id, status: 'available', required: entry.required === true });
+        continue;
+      }
+      if (options.strictPreparedPlans === true && !preparedPlans.has(entry.id)) {
+        const preparedFinding = preparedFindings.get(entry.id);
+        findings.push(preparedFinding || { id: entry.id, status: 'blocked', required: entry.required === true, error: 'Component was not independently ready in the locked sync plan.' });
         continue;
       }
       try {

@@ -3,6 +3,10 @@ import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
 import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
+
+export function blockingSyncSourceIssues(plan) {
+  return (plan?.components?.errors || []).filter((item) => item.required === true);
+}
 import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.mjs';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.mjs';
 import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.mjs';
@@ -201,11 +205,9 @@ export function registerApplicationRuntime(runtime) {
   }
 
   function assertSyncSourcePlanReady(plan) {
-    if (plan.components.errors.length) {
-      throw new Error(`sync 暂停：Component 源资产存在冲突。\n- ${plan.components.errors.map((item) => item.error).join('\n- ')}`);
-    }
-    if (plan.needsDecision.length) {
-      throw new Error(`sync 暂停：以下 optional Buildr 内置能力需要用户决策。\n- ${plan.needsDecision.map((item) => `${item.type}:${item.id} (${item.status})`).join('\n- ')}`);
+    const requiredErrors = blockingSyncSourceIssues(plan);
+    if (requiredErrors.length) {
+      throw new Error(`sync 暂停：required Component 源资产存在冲突。\n- ${requiredErrors.map((item) => item.error).join('\n- ')}`);
     }
   }
 
@@ -236,15 +238,11 @@ export function registerApplicationRuntime(runtime) {
       const workspaceMigration = migrateWorkspaceMetadata(targetRoot);
       const projectMigration = migrateProjectRegistry(targetRoot);
       const sourceUpdate = syncPackageBuiltins(targetRoot);
-      const components = syncPackageComponents(targetRoot, { plans: lockedPlan.components.plans });
-      if (components.errors.length) {
-        throw new Error(`sync 暂停：Component 源资产存在冲突。\n- ${components.errors.map((item) => item.error).join('\n- ')}`);
-      }
-      const needsDecision = sourceUpdate.findings.filter((finding) => !finding.component && !finding.required && !finding.converge && ['modified', 'missing'].includes(finding.status));
-      if (needsDecision.length) {
-        throw new Error(`sync 暂停：以下 optional Buildr 内置能力需要用户决策。\n- ${needsDecision.map((item) => `${item.type}:${item.id} (${item.status})`).join('\n- ')}`);
-      }
+      const components = syncPackageComponents(targetRoot, { plans: lockedPlan.components.plans, preparedFindings: lockedPlan.components.findings, strictPreparedPlans: true });
+      const requiredErrors = components.errors.filter((item) => item.required === true);
+      if (requiredErrors.length) throw new Error(`sync 暂停：required Component 源资产存在冲突。\n- ${requiredErrors.map((item) => item.error).join('\n- ')}`);
       sourceUpdate.changed.push(...components.changed);
+      sourceUpdate.findings.push(...components.findings.filter((item) => item.status === 'blocked').map((item) => ({ type: 'component', ...item, ownershipUnit: `component:${item.id}` })));
       sourceUpdate.changed.unshift(...workspaceMigration.changed);
       sourceUpdate.changed.unshift(...projectMigration.changed);
       return sourceUpdate;
@@ -268,6 +266,9 @@ export function registerApplicationRuntime(runtime) {
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
       for (const file of updated.changed) console.log(`  ${file}`);
+    }
+    for (const finding of updated.findings.filter((item) => item.required !== true && ['blocked', 'modified', 'missing'].includes(item.status))) {
+      console.error(`Warning: optional ownership unit ${finding.ownershipUnit || `${finding.type}:${finding.id}`} 保持原样：${finding.error || finding.status}`);
     }
     if (rendered.files.length > 0) {
       console.log('runtime 渲染：');

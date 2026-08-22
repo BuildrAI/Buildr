@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveSourceRoot } from '../../../workspace/domain/source-root.mjs';
 
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
@@ -195,7 +196,7 @@ function projectContext(projectQuery, targetRoot, projectCode) {
   const detail = projectQuery.projectDetail(targetRoot, projectCode);
   return {
     project: detail.project,
-    projectRoot: path.join(targetRoot, detail.project.source.path),
+    projectRoot: resolveSourceRoot(targetRoot, detail.project.source),
   };
 }
 
@@ -235,7 +236,7 @@ function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, l
 }
 
 function buildChange(targetRoot, project, directory, lifecycle, includeContent = false, inspectChecklist) {
-  return buildChangeAtProjectRoot(targetRoot, project, path.join(targetRoot, project.source.path), directory, lifecycle, includeContent, inspectChecklist);
+  return buildChangeAtProjectRoot(targetRoot, project, resolveSourceRoot(targetRoot, project.source), directory, lifecycle, includeContent, inspectChecklist);
 }
 
 function findLogicalChange(targetRoot, project, projectRoot, code, includeContent = false, inspectChecklist) {
@@ -289,7 +290,7 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     if (typeof workspace.executionRoot !== 'string' || typeof workspace.validationRoot !== 'string') return null;
     const executionRoot = path.resolve(workspace.executionRoot);
     if (!inside(workspace.validationRoot, executionRoot)) return null;
-    const candidate = path.resolve(executionRoot, project.source.path);
+    const candidate = resolveSourceRoot(executionRoot, project.source);
     return inside(executionRoot, candidate) && inside(workspace.validationRoot, candidate) ? candidate : null;
   }
 
