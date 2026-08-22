@@ -210,7 +210,7 @@ Workspace
 
 Workspace 是管理入口，Project 和 Service 是其中具有独立身份与边界的管理对象。
 
-Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application 以及 CLI、HTTP、Diagnostic contribution；Web 通过窄 Workspace 注册 port 接入，不再保留临时 compatibility Facade。
+Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、onboarding、mutation recovery、declaration-intake 编排、CLI/HTTP Adapter 和 `workspace/module.mjs` 已进入上述模块。该模块公开 Workspace、Project、Service Application、窄 Workspace/Project Query 以及 CLI、HTTP、Diagnostic contribution；Web 和后续 Task 通过公开 Query/registration port 接入，不再保留临时 compatibility Facade。
 
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.mjs`，用例位于 `application/project-daily-progress-application.mjs`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.mjs`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.mjs` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
@@ -761,8 +761,8 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.mjs`、`module-registry.mjs`、`bootstrap/cli/` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
 | 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
 | Task 全生命周期 | `src/task/module.mjs` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Retrospective、Environment、Development、Verification、Parent Coordination、Delivery/Finish 各自保留唯一 Result/Receipt/writer | Task contract/integration suites、`product.delivery` | `migrated` | — |
-| Workspace Core 与 Project Daily Progress | `src/workspace/module.mjs` 及对应技术层 | Workspace/Project/Service registry 与 Daily Progress YAML 各自唯一 writer；Task 引用只读校验 | workspace/project/daily-progress contract 与 integration suites、`product.delivery` | `migrated` | — |
-| Agent Assets | `src/agent-assets/module.mjs`、`application/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、`product.delivery` | `migrated` | — |
+| Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
+| Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
 | Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | 只拥有 HTTP transport、Session、安全响应、静态文件和只读执行资源；`buildr-web` 仍是前端源码/构建 owner | local-app-web、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
@@ -784,8 +784,6 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | `application/verification/` | Project Verification capability | verification unit/integration、`product.delivery` | `deferred` | Verification 声明、选择、调度或 Result 模型专项启动 |
 | `application/declaration-intake/` | Declaration Intake capability；Workspace/Task 仅消费窄 next-action formatter | declaration-intake unit、verification planner integration | `deferred` | Intake 出现独立 Application 状态/接口，或声明治理专项启动 |
 | `application/worktree/` | Git Worktree provider；Task Environment 是 consumer，不取得 provider 实现 authority | architecture boundaries、Task Contribution integration | `deferred` | checkout provider contract 升级、出现第二 provider 或 Task Environment 平台拆分 |
-| `application/workspace-operations.mjs` | Workspace source mutation 与 onboarding composition | managed-mutations verification、`product.delivery` | `deferred` | init/sync/mutation 被拆成稳定能力模块，或全局 runtime 转发退出专项启动 |
-| `application/domains/package-assets.mjs` | Package Assets compatibility domain，受 Agent Assets Package Maintenance 与 Bootstrap 消费 | package static validation、managed-mutations、release artifact set | `deferred` | 产品入口 Skill/Builtin/package runtime source 关系确定，或 Package Maintenance 专项启动 |
 | `application/internal-workflow-route-inventory.mjs` | Internal workflow route contract；Task internal interfaces 为实际 runner owner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `deferred` | internal route registry 进入模块合约，或增加非 Task workflow runner |
 | `application/json-contracts.mjs` | 公共 JSON schema identity 与最小 envelope utility | public-json-contracts system test、architecture verification | `deferred` | 独立 HTTP 契约演进引入 JSON Schema/Ajv/DTO 生成，或出现第二套 schema registry 风险 |
 

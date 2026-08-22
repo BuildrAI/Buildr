@@ -5,10 +5,10 @@ import {
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
   isSupportedAgent,
-} from '../agent-assets/infrastructure/runtime/adapter-contract.mjs';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.mjs';
+} from '../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace-root-gitignore-entries.mjs';
 
-export function registerApplicationWorkspaceOperations(runtime) {
+export function registerWorkspaceOperations(runtime) {
   const positionalArgs = (...args) => runtime.positionalArgs(...args);
   const syncPackageComponents = (...args) => runtime.syncPackageComponents(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);

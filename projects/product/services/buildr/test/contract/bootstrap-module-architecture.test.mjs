@@ -36,6 +36,7 @@ import {
   PROJECT_DAILY_PROGRESS_APPLICATION,
   PROJECT_APPLICATION,
   SERVICE_APPLICATION,
+  WORKSPACE_QUERY,
   WORKSPACE_APPLICATION,
 } from '../../src/workspace/module.mjs';
 
@@ -67,7 +68,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
     id: 'workspace-core',
     requires: [],
-    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, PROJECT_DAILY_PROGRESS_APPLICATION],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: {
       cli: ['project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
       http: ['workspace-core.http'],
@@ -76,7 +77,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'agent-assets',
-    requires: [WORKSPACE_APPLICATION],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY],
     provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_RUNTIME],
     contributions: {
       cli: [
@@ -280,9 +281,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
   const project = runtimeProvide(runtime, PROJECT_APPLICATION);
   const service = runtimeProvide(runtime, SERVICE_APPLICATION);
+  const query = runtimeProvide(runtime, WORKSPACE_QUERY);
   assert.equal(typeof workspace.getWorkspace, 'function');
   assert.equal(typeof project.listProjects, 'function');
   assert.equal(typeof service.listServices, 'function');
+  assert.equal(typeof query.readProjectRegistryRecord, 'function');
+  assert.equal(typeof query.readServiceRegistryRecord, 'function');
   const agentAssets = runtimeProvide(runtime, AGENT_ASSETS_APPLICATION);
   assert.equal(typeof agentAssets.skillsAdd, 'function');
   assert.equal(typeof agentAssets.componentInstall, 'function');

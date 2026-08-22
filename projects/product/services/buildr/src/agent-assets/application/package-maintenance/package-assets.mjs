@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../infrastructure/product-layout.mjs';
-import { SUPPORTED_AGENT_IDS } from '../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
-import { createProject as createProjectEntity, createService as createServiceEntity } from '../../workspace/module.mjs';
+import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../../infrastructure/product-layout.mjs';
+import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.mjs';
+import { createProject as createProjectEntity } from '../../../workspace/domain/project.mjs';
+import { createService as createServiceEntity } from '../../../workspace/domain/service.mjs';
 
-export function registerDomainsPackageAssets(runtime) {
+export function registerAgentAssetsPackageAssets(runtime) {
   const readGitRemote = (...args) => runtime.readGitRemote(...args);
   const isPlainObject = (...args) => runtime.isPlainObject(...args);
   const readSkillManifest = (...args) => runtime.readSkillManifest(...args);

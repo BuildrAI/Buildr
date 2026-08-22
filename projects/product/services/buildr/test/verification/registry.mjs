@@ -726,16 +726,16 @@ export const verificationSteps = Object.freeze([
   ], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-smoke', name: 'Host Node installed CLI smoke', executor: { type: 'node', file: 'test/verification/host-node/cli-smoke.mjs', consumesArtifact: true }, profiles: ['host-node'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/interfaces/cli/**', 'src/system/doctor/**',
-    'src/application/workspace-operations.mjs', 'package.json', 'package-lock.json',
+    'src/workspace/application/workspace-operations.mjs', 'package.json', 'package-lock.json',
     'test/verification/host-node.mjs', 'test/verification/host-node/**', 'test/verification/release/candidate-package.mjs',
   ], dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'], inputs: ['package.json', 'package-lock.json', '.npmignore', 'README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/workflows/publish.yml', 'docs/cli-reference.md', 'docs/cli-architecture.md', 'docs/known-limitations.md', 'docs/agent-runtime-adapters.md'], dependsOn: ['candidate-tarball'] }),
   step({ id: 'openspec-candidate-audit', name: 'OpenSpec contract candidate audit', executor: { type: 'node', file: 'test/verification/openspec/contract-audit.mjs' }, profiles: ['candidate'], groups: ['openspec'], inputs: ['openspec/**', 'test/verification/openspec/contract-audit.mjs'] }),
-  step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/agent-assets/application/package-maintenance/**', 'src/application/workspace-operations.mjs', 'src/workspace/persistence/**', 'src/workspace/interfaces/cli/**', 'src/infrastructure/filesystem/**', 'src/agent-assets/infrastructure/runtime/**', 'package.json'] }),
+  step({ id: 'managed-mutations', name: 'managed mutations', executor: { type: 'node', file: 'test/verification/integrity/managed-mutations.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: ['src/agent-assets/application/package-maintenance/**', 'src/workspace/application/workspace-operations.mjs', 'src/workspace/persistence/**', 'src/workspace/interfaces/cli/**', 'src/infrastructure/filesystem/**', 'src/agent-assets/infrastructure/runtime/**', 'package.json'] }),
 
   step({ id: 'capability-cli-integration', name: 'capability CLI integration', executor: { type: 'node', file: 'test/capability-cli.integration.mjs' }, profiles: ['candidate'], inputs: [
     'test/capability-cli.integration.mjs',
-    'src/application/domains/package-assets.mjs',
+    'src/agent-assets/application/package-maintenance/package-assets.mjs',
     'src/agent-assets/application/skills.mjs',
     'src/system/doctor/application/capability-diagnostics.mjs',
     'src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs',
@@ -747,7 +747,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'openspec-contract-fixtures', name: 'OpenSpec contract fixtures', executor: { type: 'node', file: 'test/verification/openspec/contract.mjs', args: ['--suite', 'contract'] }, profiles: ['candidate'], groups: ['openspec'], inputs: ['src/task/openspec/application/openspec-application.mjs', 'src/task/openspec/application/**', 'test/verification/openspec/contract.mjs', 'resources/workspace/skills/buildr/openspec-contract-guard/**'], concurrencyClass: 'cpu-heavy' }),
   step({ id: 'openspec-convergence-recovery', name: 'OpenSpec convergence recovery journey', executor: { type: 'node', file: 'test/verification/openspec/contract.mjs', args: ['--suite', 'recovery'] }, profiles: ['candidate'], groups: ['openspec', 'recovery'], inputs: ['src/task/openspec/application/openspec-application.mjs', 'src/task/openspec/application/**', 'test/verification/openspec/contract.mjs', 'resources/workspace/skills/buildr/openspec-contract-guard/**', 'resources/workspace/skills/buildr/task-development/**', 'resources/workspace/skills/buildr/current-knowledge-maintenance/**'], schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating'] }),
   step({ id: 'package-static', ...packageVerifier('static'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/**', 'web-dist/**', 'tools/**', 'package/**', 'package.json', 'package-lock.json', 'src/agent-assets/application/package-maintenance/**', 'test/verification/package/**'] }),
-  step({ id: 'package-workspace', ...packageVerifier('workspace'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/manifest.yml', 'resources/workspace/AGENTS.md', 'resources/workspace/components/**', 'src/workspace/**', 'src/application/workspace-operations.mjs', 'src/agent-assets/application/package-maintenance/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'package-workspace', ...packageVerifier('workspace'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/manifest.yml', 'resources/workspace/AGENTS.md', 'resources/workspace/components/**', 'src/workspace/**', 'src/workspace/application/workspace-operations.mjs', 'src/agent-assets/application/package-maintenance/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-commands', ...packageVerifier('commands'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/workspace/commands/**', 'src/agent-assets/application/commands.mjs', 'src/agent-assets/application/package-maintenance/**'], schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-rules', ...packageVerifier('rules'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/workspace/rules/**', 'src/agent-assets/application/rules.mjs', 'src/agent-assets/infrastructure/runtime/**', 'src/agent-assets/application/package-maintenance/**'], schedulingCostMs: 4000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'package-skills', ...packageVerifier('skills'), profiles: ['candidate'], groups: ['package'], inputs: ['resources/workspace/skills/**', 'package/targets/runtime/skills/**', 'src/agent-assets/application/skills.mjs', 'src/agent-assets/infrastructure/runtime/skills/**', 'src/agent-assets/application/package-maintenance/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
@@ -760,7 +760,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'runtime-reconciliation', name: 'Workspace E2E: runtime reconciliation', executor: { type: 'workspace-suite', selector: 'runtime-reconciliation' }, profiles: ['candidate'], inputs: ['src/agent-assets/infrastructure/runtime/**', 'src/agent-assets/application/runtime.mjs', 'test/verification/workspace/fixture.mjs', 'test/verification/workspace/runtime-reconciliation.mjs', 'package/targets/runtime/**', 'resources/workspace/rules/**'], schedulingCostMs: 10000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, inputs: ['buildr', 'tools/development/run-development-cli', 'test/system/install-buildr-cli-runtime.test.mjs', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], inputExclusions: ['services/buildr-web/**'], schedulingCostMs: 60000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.mjs' }, profiles: ['candidate'], inputs: ['src/workspace/**', 'src/application/workspace-operations.mjs', 'test/verification/onboarding/init.mjs', 'resources/workspace/manifest.yml', 'resources/workspace/AGENTS.md', 'resources/workspace/components/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.mjs' }, profiles: ['candidate'], inputs: ['src/workspace/**', 'src/workspace/application/workspace-operations.mjs', 'test/verification/onboarding/init.mjs', 'resources/workspace/manifest.yml', 'resources/workspace/AGENTS.md', 'resources/workspace/components/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-compatibility', name: 'CLI compatibility', executor: { type: 'node', file: 'test/verification/cli/compatibility.mjs' }, profiles: ['candidate'], groups: ['cli'], inputs: [
     'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/workspace/interfaces/cli/**', 'src/interfaces/cli/**',
     'src/application/json-contracts.mjs',
@@ -785,12 +785,12 @@ export const verificationSteps = Object.freeze([
     'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/interfaces/cli/**',
     'src/system/installation/application/cli-update.mjs',
     'src/agent-assets/application/package-maintenance/**', 'src/agent-assets/application/package-maintenance.mjs',
-    'src/application/workspace-operations.mjs', 'src/infrastructure/product-layout.mjs',
+    'src/workspace/application/workspace-operations.mjs', 'src/infrastructure/product-layout.mjs',
     'package.json', 'package-lock.json', 'test/verification/release/**', '.github/workflows/publish.yml',
   ], dependsOn: ['candidate-tarball'], schedulingCostMs: 18000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.mjs' }, profiles: ['candidate'], groups: ['package'], inputs: [
     'src/agent-assets/application/package-maintenance/**', 'src/agent-assets/application/package-maintenance.mjs',
-    'src/application/workspace-operations.mjs',
+    'src/workspace/application/workspace-operations.mjs',
     'src/agent-assets/application/commands.mjs', 'src/agent-assets/application/components.mjs',
     'src/agent-assets/application/rules.mjs', 'src/agent-assets/application/skills.mjs',
     'src/workspace/**', 'src/system/doctor/**',

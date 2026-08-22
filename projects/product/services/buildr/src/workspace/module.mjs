@@ -1,4 +1,5 @@
 import { ensureRegisteredTarget, registerWorkspaceApplication } from './application/workspace-application.mjs';
+import { registerWorkspaceOperations } from './application/workspace-operations.mjs';
 import { registerProjectApplication } from './application/project-application.mjs';
 import { registerServiceApplication } from './application/service-application.mjs';
 import { registerProjectDailyProgressApplication } from './application/project-daily-progress-application.mjs';
@@ -39,6 +40,7 @@ export const WORKSPACE_MODULE_ID = 'workspace-core';
 export const WORKSPACE_APPLICATION = 'workspace.application';
 export const PROJECT_APPLICATION = 'project.application';
 export const SERVICE_APPLICATION = 'service.application';
+export const WORKSPACE_QUERY = 'workspace.query';
 export const PROJECT_DAILY_PROGRESS_APPLICATION = 'workspace.project-daily-progress-application';
 
 const WORKSPACE_METHODS = Object.freeze([
@@ -57,6 +59,10 @@ const SERVICE_METHODS = Object.freeze([
 ]);
 const PROJECT_DAILY_PROGRESS_METHODS = Object.freeze([
   'recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress',
+]);
+const WORKSPACE_QUERY_METHODS = Object.freeze([
+  'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
+  'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
 ]);
 
 function pick(source, methods) {
@@ -144,6 +150,7 @@ export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
       registerServiceManifestRepository(runtime);
       registerProjectDailyProgressRepository(runtime);
       registerWorkspaceApplication(runtime);
+      registerWorkspaceOperations(runtime);
       registerProjectApplication(runtime);
       registerServiceApplication(runtime);
       registerProjectDailyProgressApplication(runtime);
@@ -156,12 +163,14 @@ export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
       });
       const project = pick(runtime, PROJECT_METHODS);
       const service = pick(runtime, SERVICE_METHODS);
+      const query = pick(runtime, WORKSPACE_QUERY_METHODS);
       const dailyProgress = pick(runtime, PROJECT_DAILY_PROGRESS_METHODS);
       return Object.freeze({
         provides: {
           [WORKSPACE_APPLICATION]: workspace,
           [PROJECT_APPLICATION]: project,
           [SERVICE_APPLICATION]: service,
+          [WORKSPACE_QUERY]: query,
           [PROJECT_DAILY_PROGRESS_APPLICATION]: dailyProgress,
         },
         contributions: {

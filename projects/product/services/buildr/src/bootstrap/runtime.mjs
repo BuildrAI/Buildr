@@ -38,8 +38,6 @@ import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/w
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
-import { registerDomainsPackageAssets } from '../application/domains/package-assets.mjs';
-import { registerApplicationWorkspaceOperations } from '../application/workspace-operations.mjs';
 import { createPublicationModule } from '../system/publication/module.mjs';
 import { createOpenSpecModule } from '../task/openspec/module.mjs';
 import { createChangeModule } from '../task/change/module.mjs';
@@ -128,11 +126,9 @@ export function createRuntime() {
   registry.install(createAgentAssetsModule(runtime));
   registerContentTargetObserver(runtime);
   registerProjectGitObserver(runtime);
-  registerDomainsPackageAssets(runtime);
   registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
   registry.install(createChangeModule(runtime));
-  registerApplicationWorkspaceOperations(runtime);
   registerGitWorktreeProvider(runtime);
   installTaskRecordModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskEnvironmentModule(runtime), TASK_ENVIRONMENT_RUNTIME_PORT);

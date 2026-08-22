@@ -1,7 +1,8 @@
-import { WORKSPACE_APPLICATION } from '../workspace/module.mjs';
+import { WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../workspace/module.mjs';
 import { registerDomainsCommands } from './application/commands.mjs';
 import { registerDomainsComponents } from './application/components.mjs';
 import { registerApplicationPackageMaintenance } from './application/package-maintenance.mjs';
+import { registerAgentAssetsPackageAssets } from './application/package-maintenance/package-assets.mjs';
 import { registerDomainsRules } from './application/rules.mjs';
 import { registerApplicationRuntime } from './application/runtime-projection.mjs';
 import { registerDomainsRuntime } from './application/runtime.mjs';
@@ -76,7 +77,7 @@ function installRuntimeAdapters(runtime) {
 export function createAgentAssetsModule(runtime) {
   return Object.freeze({
     id: AGENT_ASSETS_MODULE_ID,
-    requires: Object.freeze([WORKSPACE_APPLICATION]),
+    requires: Object.freeze([WORKSPACE_APPLICATION, WORKSPACE_QUERY]),
     create() {
       installRuntimeAdapters(runtime);
       registerDomainsRuntime(runtime);
@@ -85,6 +86,7 @@ export function createAgentAssetsModule(runtime) {
       registerDomainsRules(runtime);
       registerDomainsSkills(runtime);
       registerApplicationPackageMaintenance(runtime);
+      registerAgentAssetsPackageAssets(runtime);
       registerApplicationRuntime(runtime);
 
       const application = methodPort(runtime, APPLICATION_METHODS);

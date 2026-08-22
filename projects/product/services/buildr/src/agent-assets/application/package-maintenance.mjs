@@ -15,7 +15,7 @@ import {
 import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../workspace/module.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../workspace/application/workspace-root-gitignore-entries.mjs';
 import { createPackageOutput } from './package-maintenance/output.mjs';
 import { createPackageSmokeChecks } from './package-maintenance/smoke-checks.mjs';
 import { createPackageStaticValidator } from './package-maintenance/static-validation.mjs';

@@ -45,11 +45,9 @@ function listFiles(root, predicate = () => true) {
 
 const globalApplicationResiduals = Object.freeze([
   'application/declaration-intake/',
-  'application/domains/package-assets.mjs',
   'application/internal-workflow-route-inventory.mjs',
   'application/json-contracts.mjs',
   'application/verification/',
-  'application/workspace-operations.mjs',
   'application/worktree/',
 ]);
 const architectureSource = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
@@ -57,6 +55,9 @@ if (!architectureSource) problems.push('missing Service architecture migration l
 for (const residual of globalApplicationResiduals) {
   const row = architectureSource.split(/\r?\n/u).find((line) => line.includes(`\`${residual}\``));
   if (!row || !row.includes('| `deferred` |')) problems.push(`global Application residual lacks explicit deferred ledger entry: src/${residual}`);
+}
+for (const retired of ['application/domains/package-assets.mjs', 'application/workspace-operations.mjs']) {
+  if (fs.existsSync(path.join(sourceRoot, retired))) problems.push(`retired global Application path still exists: src/${retired}`);
 }
 for (const file of listFiles(path.join(sourceRoot, 'application'), (item) => /\.(?:mjs|ts)$/u.test(item))) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
@@ -89,6 +90,7 @@ const requiredRuntime = [
   'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
   'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
+  'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
   'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
   'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
   'workspace/application/project-daily-progress-application.mjs',
