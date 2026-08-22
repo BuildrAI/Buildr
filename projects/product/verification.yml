@@ -72,6 +72,13 @@ capabilities:
     requiredForDelivery: false
     environment:
       requires: [node, npm, git]
+      preparation:
+        - project: product
+          service: buildr
+          recipe: buildr.npm-ci
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
     effects:
       writes: ["系统临时目录中的候选 workspace、tarball、timing evidence 与 diagnostics"]
       externalSystems: []
