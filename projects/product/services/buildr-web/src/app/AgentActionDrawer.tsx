@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Input, Select } from 'antd';
-import { api } from '../api';
+import { api, taskProfessionalApi } from '../api';
 
 const ACTION_LABELS: Record<string, string> = {
   workspace: '工作空间',
@@ -242,14 +242,11 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     const reviewType = context.reviewType === 'completion' ? 'completion' : 'planning';
     const change = context.projectCode && context.change ? String(context.change) : '';
     try {
-      const result = await api('/api/v1/prompts/task-review', {
-        method: 'POST',
-        body: JSON.stringify({
-          taskId: context.taskId,
-          reviewType,
-          ...(change ? { projectCode: context.projectCode, change } : {}),
-        }),
-      }) as { prompt: string };
+      const result = await taskProfessionalApi.reviewPrompt({
+        taskId: String(context.taskId || ''),
+        reviewType,
+        ...(change ? { projectCode: String(context.projectCode), change } : {}),
+      });
       showResult(result.prompt, ACTION_LABELS['task-review'], '审查结果尚未记录。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成指令失败。');
@@ -260,13 +257,10 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     event.preventDefault();
     setError(null);
     try {
-      const result = await api('/api/v1/prompts/task-verification', {
-        method: 'POST',
-        body: JSON.stringify({
-          taskId: context.taskId,
-          ...(context.targetIdentity ? { targetIdentity: context.targetIdentity } : {}),
-        }),
-      }) as { prompt: string };
+      const result = await taskProfessionalApi.verificationPrompt({
+        taskId: String(context.taskId || ''),
+        ...(context.targetIdentity ? { targetIdentity: String(context.targetIdentity) } : {}),
+      });
       showResult(result.prompt, ACTION_LABELS['task-verification'], '验证结果未被修改。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成指令失败。');

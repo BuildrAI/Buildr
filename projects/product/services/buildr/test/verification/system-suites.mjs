@@ -109,6 +109,7 @@ export const SYSTEM_SUITES = Object.freeze([
     resources: Object.freeze([]),
     files: Object.freeze([
       'test/system/local-app-http.test.mjs',
+      'test/system/task-professional-http-contract.test.mjs',
       'test/system/workspace-local-app-http.test.mjs',
     ]),
   }),

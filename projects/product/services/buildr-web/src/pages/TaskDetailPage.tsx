@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
-import { api, tasksApi, type ApiError } from '../api';
+import { api, taskProfessionalApi, tasksApi, type ApiError, type TaskExecutionRecordsView } from '../api';
 import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
 import { confirmModal } from '../lib/confirm';
 import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../lib/taskDocumentLinks';
-import { ChangeBriefPanel } from './TaskChangeDetailPage';
+import { ChangeBriefPanel, type ChangePayload } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
 import { DevelopmentTab } from './task-detail/DevelopmentTab';
@@ -35,7 +35,7 @@ type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 type BriefState =
   | { kind: 'empty' }
   | { kind: 'missing'; key: string; message: string }
-  | { kind: 'ready'; key: string; change: any };
+  | { kind: 'ready'; key: string; change: ChangePayload };
 
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
@@ -91,7 +91,7 @@ export function TaskDetailPage() {
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [executionRecordView, setExecutionRecordView] = useState<ExecutionRecordView>('all');
-  const [executionRecordsData, setExecutionRecordsData] = useState<any>(null);
+  const [executionRecordsData, setExecutionRecordsData] = useState<TaskExecutionRecordsView | null>(null);
   const [executionRecordsLoading, setExecutionRecordsLoading] = useState(false);
   const [executionRecordsError, setExecutionRecordsError] = useState<string | null>(null);
   const [retrospectiveData, setRetrospectiveData] = useState<any>(null);
@@ -152,7 +152,7 @@ export function TaskDetailPage() {
       try {
         const detail = await taskReadLifecycleRef.current.run(taskId, `change:${key}`, (signal) => (
           api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`, { signal })
-        )) as any;
+        )) as { resolution: { workingCopy: { change: ChangePayload } } };
         return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change };
       } catch (err) {
         return {
@@ -182,7 +182,7 @@ export function TaskDetailPage() {
     setOverviewLoading(true);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'overview', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/overview`, { signal })
+        taskProfessionalApi.overview(currentTaskId, { signal })
       ));
       if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setOverviewData(next);
     } catch (err) {
@@ -200,7 +200,7 @@ export function TaskDetailPage() {
     setCoordinationLoading(true);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'coordination', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`, { signal })
+        taskProfessionalApi.coordination(currentTaskId, { signal })
       )) as ParentCoordinationResult;
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
@@ -218,7 +218,7 @@ export function TaskDetailPage() {
     setDevelopmentLoading(true);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'development', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/development`, { signal })
+        taskProfessionalApi.development(currentTaskId, { signal })
       ));
       if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setDevelopmentData(next);
@@ -263,7 +263,7 @@ export function TaskDetailPage() {
     setEnvironmentLoading(true);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'environment', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/environment`, { signal })
+        taskProfessionalApi.environment(currentTaskId, { signal })
       ));
       if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setEnvironmentData(next);
@@ -292,7 +292,7 @@ export function TaskDetailPage() {
     setReviewError(null);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'reviews', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/reviews`, { signal })
+        taskProfessionalApi.reviews(currentTaskId, { signal })
       ));
       if (reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setReviewData(next);
@@ -313,7 +313,7 @@ export function TaskDetailPage() {
     setVerificationError(null);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'verification', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/verification`, { signal })
+        taskProfessionalApi.verification(currentTaskId, { signal })
       ));
       if (verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setVerificationData(next);
@@ -334,7 +334,7 @@ export function TaskDetailPage() {
     setExecutionRecordsError(null);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, `execution-records:${view}`, (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/execution-records?view=${encodeURIComponent(view)}`, { signal })
+        taskProfessionalApi.executionRecords(currentTaskId, { view }, { signal })
       ));
       if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId && executionRecordViewRef.current === view) setExecutionRecordsData(next);
     } catch (err) {
@@ -364,7 +364,7 @@ export function TaskDetailPage() {
     setRetrospectiveError(null);
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'retrospective', (signal) => (
-        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`, { signal })
+        taskProfessionalApi.retrospective(currentTaskId, { signal })
       ));
       if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setRetrospectiveData(next);
@@ -387,10 +387,7 @@ export function TaskDetailPage() {
     setRetrospectiveMutating(true);
     setRetrospectiveError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status, note, expectedCurrentDigest: currentDigest }),
-      });
+      const next = await taskProfessionalApi.updateRetrospective(currentTaskId, { status, note, expectedCurrentDigest: currentDigest });
       if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) setRetrospectiveData(next);
     } catch (err) {
       const apiError = err as ApiError;

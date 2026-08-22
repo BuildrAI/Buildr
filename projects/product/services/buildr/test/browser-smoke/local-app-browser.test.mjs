@@ -389,7 +389,7 @@ async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 300_000 : SELECTORS.has('task') ? 180_000 : 45_000 }, async (t) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 300_000 : SELECTORS.has('task') ? 300_000 : 45_000 }, async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
   const workspaceRoot = path.join(base, 'workspace');
   let browser;

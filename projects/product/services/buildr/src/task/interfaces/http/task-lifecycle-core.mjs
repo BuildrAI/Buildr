@@ -1,6 +1,15 @@
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
+import { validateTaskProfessionalRequest } from './task-professional-http-contracts.mjs';
+import {
+  mapTaskExecutionRecordBodyRequest,
+  mapTaskExecutionRecordDetailRequest,
+  mapTaskExecutionRecordsRequest,
+  mapTaskParentCoordinationRequest,
+  mapTaskProfessionalReadRequest,
+  mapTaskVerificationPromptRequest,
+} from './task-professional-http-mapping.mjs';
 
-function readContribution(id, taskIdSource, operation, suffixPattern, input = () => ({})) {
+function readContribution(id, taskIdSource, operation, suffixPattern, input = () => ({}), contractId = `task-${operation}.detail`) {
   const pattern = new RegExp(suffixPattern.replaceAll('<task-id>', `(${taskIdSource})`));
   return Object.freeze({
     id,
@@ -8,30 +17,44 @@ function readContribution(id, taskIdSource, operation, suffixPattern, input = ()
       if (request.method !== 'GET') return null;
       const match = suffix.match(pattern);
       if (!match) return null;
-      return { status: 200, body: await submitTaskRead(operation, match[1], input(match, searchParams)) };
+      if (searchParams?.size) {
+        const error = new Error(`${id} 不接受 query 参数。`);
+        error.code = 'task_api_query_forbidden';
+        error.status = 400;
+        throw error;
+      }
+      const value = mapTaskProfessionalReadRequest(input(match, searchParams));
+      validateTaskProfessionalRequest(contractId, value, id);
+      return { status: 200, body: await submitTaskRead(operation, match[1], value) };
     },
   });
 }
 
 export function createTaskOverviewHttpContribution(taskIdSource) {
-  return readContribution('task-overview.http', taskIdSource, 'overview', '^/tasks/<task-id>/overview$');
+  return readContribution('task-overview.http', taskIdSource, 'overview', '^/tasks/<task-id>/overview$', undefined, 'task-overview.detail');
 }
 
 export function createTaskDevelopmentHttpContribution(taskIdSource) {
-  return readContribution('task-development.http', taskIdSource, 'development', '^/tasks/<task-id>/development$');
+  return readContribution('task-development.http', taskIdSource, 'development', '^/tasks/<task-id>/development$', undefined, 'task-development.detail');
 }
 
 export function createTaskVerificationHttpContribution(taskIdSource, application) {
-  const read = readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$');
+  const read = readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$', undefined, 'task-verification.detail');
   return Object.freeze({
     id: read.id,
     handle: async (input) => {
       const readResult = await read.handle(input);
       if (readResult) return readResult;
-      const { request, suffix, root, authorizeWrite, readBody } = input;
+      const { request, suffix, searchParams, root, authorizeWrite, readBody } = input;
       if (request.method !== 'POST' || suffix !== '/prompts/task-verification') return null;
+      if (searchParams?.size) {
+        const error = new Error('Task Verification prompt 不接受 query 参数。');
+        error.code = 'task_api_query_forbidden';
+        error.status = 400;
+        throw error;
+      }
       authorizeWrite();
-      const body = await readBody(new Set(['taskId', 'targetIdentity']), 'Task Verification prompt');
+      const body = mapTaskVerificationPromptRequest(validateTaskProfessionalRequest('task-verification.prompt', await readBody(new Set(['taskId', 'targetIdentity']), 'Task Verification prompt'), 'Task Verification prompt'));
       return { status: 200, body: application.generateTaskVerificationPrompt(root, body) };
     },
   });
@@ -54,12 +77,19 @@ export function createTaskExecutionRecordHttpContribution(taskIdSource) {
           error.status = 400;
           throw error;
         }
-        return { status: 200, body: await submitTaskRead('execution-records', listMatch[1], { view: searchParams.get('view') || 'all' }) };
+        const input = mapTaskExecutionRecordsRequest(validateTaskProfessionalRequest('task-execution-record.list', { view: searchParams.get('view') || 'all' }, 'Task execution records'));
+        return { status: 200, body: await submitTaskRead('execution-records', listMatch[1], input) };
       }
       const detailMatch = suffix.match(detail);
-      if (detailMatch) return { status: 200, body: await submitTaskRead('execution-record-detail', detailMatch[1], { recordId: detailMatch[2] }) };
+      if (detailMatch) {
+        const input = validateTaskProfessionalRequest('task-execution-record.detail', { recordId: detailMatch[2] }, 'Task execution record detail');
+        return { status: 200, body: await submitTaskRead('execution-record-detail', detailMatch[1], mapTaskExecutionRecordDetailRequest(input.recordId)) };
+      }
       const bodyMatch = suffix.match(body);
-      if (bodyMatch) return { status: 200, body: await submitTaskRead('execution-record-body', bodyMatch[1], { recordId: bodyMatch[2], filename: decodeURIComponent(bodyMatch[3]) }) };
+      if (bodyMatch) {
+        const input = validateTaskProfessionalRequest('task-execution-record.body', { recordId: bodyMatch[2], filename: decodeURIComponent(bodyMatch[3]) }, 'Task execution record body');
+        return { status: 200, body: await submitTaskRead('execution-record-body', bodyMatch[1], mapTaskExecutionRecordBodyRequest(input.recordId, input.filename)) };
+      }
       return null;
     },
   });
@@ -69,9 +99,16 @@ export function createTaskEnvironmentHttpContribution(taskIdSource, application,
   const pattern = new RegExp(`^/tasks/(${taskIdSource})/environment$`);
   return Object.freeze({
     id: 'task-environment.http',
-    handle: ({ request, suffix, root }) => {
+    handle: ({ request, suffix, root, searchParams }) => {
       const match = suffix.match(pattern);
       if (request.method !== 'GET' || !match) return null;
+      if (searchParams?.size) {
+        const error = new Error('Task environment 不接受 query 参数。');
+        error.code = 'task_api_query_forbidden';
+        error.status = 400;
+        throw error;
+      }
+      validateTaskProfessionalRequest('task-environment.detail', {}, 'Task environment');
       taskRecordRead.readTaskRecordPersistence(root, match[1]);
       return { status: 200, body: application.readTaskEnvironmentCurrent(root, match[1]) };
     },
@@ -99,15 +136,24 @@ export function createParentCoordinationHttpContribution(taskIdSource, applicati
   const pattern = new RegExp(`^/tasks/(${taskIdSource})/coordination$`);
   return Object.freeze({
     id: 'task-parent-coordination.http',
-    handle: async ({ request, suffix, root, authorizeWrite, readBody, submitTaskRead }) => {
+    handle: async ({ request, suffix, searchParams, root, authorizeWrite, readBody, submitTaskRead }) => {
       const match = suffix.match(pattern);
       if (!match) return null;
-      if (request.method === 'GET') return { status: 200, body: await submitTaskRead('coordination', match[1]) };
+      if (request.method === 'GET') {
+        if (searchParams?.size) {
+          const error = new Error('Parent coordination 不接受 query 参数。');
+          error.code = 'task_api_query_forbidden';
+          error.status = 400;
+          throw error;
+        }
+        validateTaskProfessionalRequest('task-parent-coordination.detail', {}, 'Parent coordination');
+        return { status: 200, body: await submitTaskRead('coordination', match[1]) };
+      }
       if (request.method !== 'PATCH') return null;
       authorizeWrite();
       let input = null;
       try {
-        input = await readBody(new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination');
+        input = mapTaskParentCoordinationRequest(validateTaskProfessionalRequest('task-parent-coordination.patch', await readBody(new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination'), 'Parent coordination'));
         const operationFields = {
           record: new Set(['operation', 'plan']),
           reconcile: new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason']),

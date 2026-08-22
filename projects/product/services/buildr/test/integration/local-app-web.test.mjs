@@ -162,7 +162,7 @@ test('任务详情使用概览、原型、研发、证据、复盘、环境六�
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
   assert.match(source, /ParentCoordinationPanel/);
-  assert.match(source, /\/coordination`, \{ signal \}\)/);
+  assert.match(source, /taskProfessionalApi\.coordination\(currentTaskId, \{ signal \}\)/);
   assert.match(coordination, /id="task-parent-coordination"/);
   assert.match(coordination, /父任务目标/);
   assert.match(coordination, /mode === 'ordinary'[\s\S]*mode === 'legacy'[\s\S]*return null/);
@@ -206,8 +206,8 @@ test('任务详情使用概览、原型、研发、证据、复盘、环境六�
   assert.match(retrospective, /data-task-panel="retrospective"/);
   assert.match(retrospective, /尚未复盘/);
   assert.match(retrospective, /MarkdownHost[\s\S]*reportMarkdown|reportMarkdown[\s\S]*MarkdownHost/);
-  assert.match(source, /\/retrospective`, \{ signal \}\)/);
-  assert.match(source, /method: 'PATCH'[\s\S]*expectedCurrentDigest/);
+  assert.match(source, /taskProfessionalApi\.retrospective\(currentTaskId, \{ signal \}\)/);
+  assert.match(source, /taskProfessionalApi\.updateRetrospective\(currentTaskId, \{ status, note, expectedCurrentDigest: currentDigest \}\)/);
   assert.match(source, /task_retrospective_conflict[\s\S]*已刷新为最新状态/);
   assert.match(source, /retrospectiveMutationRef\.current === mutationId[\s\S]*taskIdRef\.current === currentTaskId/);
   assert.match(retrospective, /task-retrospective-no-action[\s\S]*无需处理/);
@@ -218,7 +218,7 @@ test('任务详情使用概览、原型、研发、证据、复盘、环境六�
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
   assert.match(evidence, /openAgentAction\('task-review', \{ taskId, reviewType \}\)/);
   assert.match(evidence, /current: '当前适用', stale: '目标已变化', unknown: '适用性未知'/);
-  assert.match(source, /api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(currentTaskId\)\}\/reviews`, \{ signal \}\)/);
+  assert.match(source, /taskProfessionalApi\.reviews\(currentTaskId, \{ signal \}\)/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.match(styles, /\.review-slot-grid \{[^}]*grid-template-columns: repeat\(2/);
@@ -263,7 +263,7 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /任务研发（Task Development）/);
-  assert.match(detail, /\/development`, \{ signal \}\)/);
+  assert.match(detail, /taskProfessionalApi\.development\(currentTaskId, \{ signal \}\)/);
   assert.match(labels, /'handoff-current': '研发交接已就绪'/);
   assert.match(labels, /'candidate-current': '候选已就绪'/);
   assert.match(labels, /planning: '规划中'/);
@@ -294,9 +294,9 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
   assert.match(source, /验证结果（Verification Result）/);
   assert.match(source, /目标适用性/);
   assert.match(source, /声明适用性/);
-  assert.match(detail, /\/verification`, \{ signal \}\)/);
+  assert.match(detail, /taskProfessionalApi\.verification\(currentTaskId, \{ signal \}\)/);
   assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
-  assert.match(actions, /\/api\/v1\/prompts\/task-verification/);
+  assert.match(actions, /taskProfessionalApi\.verificationPrompt\(/);
   assert.match(actions, /验证结果未被修改/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
 });

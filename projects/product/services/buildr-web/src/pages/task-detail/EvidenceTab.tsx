@@ -8,6 +8,7 @@ import {
 } from '../../lib/taskLabels';
 import { Fact, TechnicalDetails } from './shared';
 import { ExecutionRecordsPanel, type ExecutionRecordView } from './ExecutionRecordsPanel';
+import type { TaskExecutionRecordsView } from '../../api';
 
 type Props = {
   active: boolean;
@@ -20,7 +21,7 @@ type Props = {
   reviewError: string | null;
   verificationError: string | null;
   executionRecordView: ExecutionRecordView;
-  executionRecordsData: any;
+  executionRecordsData: TaskExecutionRecordsView | null;
   executionRecordsLoading: boolean;
   executionRecordsError: string | null;
   onRefreshReview: () => void;

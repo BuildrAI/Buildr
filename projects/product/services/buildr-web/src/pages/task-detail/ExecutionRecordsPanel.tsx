@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Modal, Space } from 'antd';
-import { api, type ApiError } from '../../api';
+import { taskProfessionalApi, type ApiError, type TaskExecutionRecordBodyViewResponse, type TaskExecutionRecordDetailView, type TaskExecutionRecordsView, type TaskExecutionRecordView } from '../../api';
 import { formatDateTime } from '../../lib/taskLabels';
 import { Fact } from './shared';
 
@@ -9,7 +9,7 @@ export type ExecutionRecordView = 'all' | 'verification' | 'finish';
 type Props = {
   taskId: string;
   view: ExecutionRecordView;
-  data: any;
+  data: TaskExecutionRecordsView | null;
   loading: boolean;
   error: string | null;
   onSelectView: (view: ExecutionRecordView) => void;
@@ -26,17 +26,17 @@ function ownerLabel(owner: string) {
   return owner === 'task-verification' ? 'Verification' : owner === 'task-finish' ? 'Finish' : owner;
 }
 
-function bodyState(record: any) {
+function bodyState(record: TaskExecutionRecordView) {
   if (record.body.available) return record.body.truncated ? '正文可读（已截断保存）' : '正文可读';
   if (record.body.status === 'cleaned') return '正文已清理，metadata 保留';
   return `正文不可用（${record.body.status}）`;
 }
 
 export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSelectView, onRefresh }: Props) {
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<TaskExecutionRecordDetailView | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [body, setBody] = useState<any>(null);
+  const [body, setBody] = useState<TaskExecutionRecordBodyViewResponse | null>(null);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -57,7 +57,7 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
     setBody(null);
     setBodyError(null);
     try {
-      setDetail(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/execution-records/${encodeURIComponent(recordId)}`));
+      setDetail(await taskProfessionalApi.executionRecordDetail(taskId, recordId));
     } catch (err) {
       setDetailError(`${(err as ApiError).code || 'task_execution_record_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
     } finally {
@@ -69,7 +69,7 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
     setBodyLoading(true);
     setBodyError(null);
     try {
-      setBody(await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/execution-records/${encodeURIComponent(recordId)}/body/${encodeURIComponent(filename)}`));
+      setBody(await taskProfessionalApi.executionRecordBody(taskId, recordId, filename));
     } catch (err) {
       setBody(null);
       setBodyError(`${(err as ApiError).code || 'task_execution_record_body_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
@@ -118,7 +118,7 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
       {loading ? <div className="page-loading"><span className="loader" /><p>正在读取执行记录…</p></div> : null}
       {!loading && !records.length ? <section className="empty-state"><h3>没有{VIEW_LABELS[view]}执行记录</h3><p>这里不会从 Result、Finish current 或文件系统推断历史记录。</p></section> : null}
       <div id="task-execution-record-list" className="execution-record-list">
-        {records.map((record: any) => (
+        {records.map((record) => (
           <Card
             key={record.recordId}
             size="small"
@@ -168,7 +168,7 @@ export function ExecutionRecordsPanel({ taskId, view, data, loading, error, onSe
               {selected.body.diagnostic ? <p className="environment-diagnostic">{selected.body.diagnostic.message}</p> : null}
               {selected.body.files?.length ? (
                 <div className="execution-record-files">
-                  {selected.body.files.map((file: any) => (
+                  {selected.body.files.map((file) => (
                     <Button key={file.name} disabled={bodyLoading} onClick={() => { void openBody(selected.recordId, file.name); }}>
                       {file.name} · {file.storedSizeBytes} B{file.truncated ? ' · 已截断保存' : ''}
                     </Button>

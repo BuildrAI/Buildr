@@ -68,9 +68,12 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   }
   for (const relative of [
     'tools/contracts/task-record-dto.mjs',
+    'tools/contracts/task-professional-dto.mjs',
     'src/infrastructure/contracts/json-schema-validator.mjs',
     'src/task/interfaces/http/task-record-http-contracts.mjs',
     'src/task/interfaces/http/generated/task-record-http-dto.ts',
+    'src/task/interfaces/http/task-professional-http-contracts.mjs',
+    'src/task/interfaces/http/generated/task-professional-http-dto.ts',
   ]) {
     fs.copyFileSync(path.join(serviceRoot, relative), path.join(candidateBuildr, relative));
   }
