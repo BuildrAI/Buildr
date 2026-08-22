@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { releaseEnvironmentBindingSchema, validateReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.mjs';
 
 export const releaseTransactionContextSchema = 'buildr.release-transaction-context/v1';
 export const releaseTransactionEvidenceSchema = 'buildr.release-transaction-evidence/v1';
@@ -51,7 +52,7 @@ function taskProjection(value, label) {
 }
 
 export function createReleaseTransactionContext(input) {
-  closed(input, ['releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'environment'], 'release transaction context input');
+  closed(input, ['releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'environment', 'taskCorrelation'], 'release transaction context input');
   const releaseTask = taskProjection(input.releaseTask, 'releaseTask');
   const retrospectiveSources = [...(input.retrospectiveSources ?? [])].map((item, index) => taskProjection(item, `retrospectiveSources[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const supportTasks = [...(input.supportTasks ?? [])].map((item, index) => taskProjection(item, `supportTasks[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
@@ -69,6 +70,11 @@ export function createReleaseTransactionContext(input) {
   if (input.environment?.schemaVersion !== releaseEnvironmentBindingSchema || !DIGEST.test(input.environment.identity || '')) throw new Error('Release environment binding is invalid.');
   validateReleaseEnvironmentBinding(input.environment);
   if (input.environment.taskId !== releaseTask.taskId || input.environment.sourceCommit !== convergence.sourceCommit) throw new Error('Release environment binding does not match release Task/final source.');
+  const taskCorrelation = input.taskCorrelation == null ? null : validateReleaseTaskEvidenceCorrelation(input.taskCorrelation);
+  if (taskCorrelation && (taskCorrelation.releaseTask.taskId !== releaseTask.taskId
+    || taskCorrelation.supportTasks.map((item) => item.taskId).join('\0') !== supportTasks.map((item) => item.taskId).join('\0'))) {
+    throw new Error('Release task evidence correlation does not match release/support Tasks.');
+  }
   const value = {
     schemaVersion: releaseTransactionContextSchema,
     releaseTask,
@@ -83,13 +89,14 @@ export function createReleaseTransactionContext(input) {
     },
     convergence: { ...convergence },
     environment: input.environment,
+    ...(taskCorrelation ? { taskCorrelation } : {}),
   };
   value.identity = canonicalIdentity(value);
   return value;
 }
 
 export function validateReleaseTransactionContext(value, options = {}) {
-  closed(value, ['schemaVersion', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'environment', 'identity'], 'release transaction context');
+  closed(value, ['schemaVersion', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'environment', 'taskCorrelation', 'identity'], 'release transaction context');
   if (value.schemaVersion !== releaseTransactionContextSchema || !DIGEST.test(value.identity || '')) throw new Error('Release transaction context schema/identity is invalid.');
   const recreated = createReleaseTransactionContext({
     releaseTask: value.releaseTask,
@@ -98,6 +105,7 @@ export function validateReleaseTransactionContext(value, options = {}) {
     candidate: value.candidate,
     convergence: value.convergence,
     environment: value.environment,
+    taskCorrelation: value.taskCorrelation || null,
   });
   if (recreated.identity !== value.identity) throw new Error(`Release transaction context identity mismatch: ${value.identity} != ${recreated.identity}.`);
   if (options.repo) validateReleaseEnvironmentBinding(recreated.environment, { repo: options.repo });

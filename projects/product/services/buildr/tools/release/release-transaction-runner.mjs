@@ -16,6 +16,7 @@ import {
   sha256,
 } from './release-authority.mjs';
 import { createReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { createReleaseTaskEvidenceCorrelationFromRuntime } from './release-task-evidence-correlation.mjs';
 import { createReleaseTransactionContext, createReleaseTransactionEvidence, validateReleaseTransactionContext } from './release-transaction-evidence.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -157,6 +158,14 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const devCommit = fullCommit(execute, repo, options.devCommit || 'origin/dev');
     const devTree = fullCommit(execute, repo, `${devCommit}^{tree}`);
     if (devTree !== candidateTree) throw new Error(`Dev bridge tree ${devTree} does not match Candidate tree ${candidateTree}.`);
+    const taskCorrelation = options.taskCorrelation || createReleaseTaskEvidenceCorrelationFromRuntime({
+      runtime,
+      root: repo,
+      releaseTask: options.releaseTask,
+      supportTasks: options.supportTasks ?? [],
+      retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
+      source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
+    });
     context = createReleaseTransactionContext({
       releaseTask: taskContextProjection(releaseTask),
       retrospectiveSources,
@@ -170,8 +179,11 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       },
       convergence: { candidateBase, candidateTree, sourceCommit, mainCommit: sourceCommit, devCommit },
       environment,
+      taskCorrelation,
     });
   }
+  if (!context.taskCorrelation) throw new Error('Release transaction context requires current Task evidence correlation.');
+  if (context.taskCorrelation.status !== 'passed') throw new Error(`Release Task evidence correlation is not ready: ${context.taskCorrelation.status}.`);
   const contextIdentity = context.convergence;
   if (contextIdentity.candidateBase !== candidateBase || contextIdentity.candidateTree !== candidateTree || contextIdentity.sourceCommit !== sourceCommit || contextIdentity.mainCommit !== remoteMain) {
     throw new Error(`Release transaction context does not match requested Candidate/main identity: ${JSON.stringify({ requested: { candidateBase, candidateTree, sourceCommit, remoteMain }, context: contextIdentity })}`);

@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import test from 'node:test';
+
+import {
+  createReleaseTaskEvidenceCorrelation,
+  inspectReleaseTaskEvidenceCorrelation,
+  validateReleaseTaskEvidenceCorrelation,
+} from '../../tools/release/release-task-evidence-correlation.mjs';
+import { createReleaseTransactionContext } from '../../tools/release/release-transaction-evidence.mjs';
+
+const digest = (letter) => `sha256-${letter.repeat(64)}`;
+const sha = (letter) => letter.repeat(40);
+
+function task(taskId, title = taskId) {
+  return { taskId, title, status: 'completed', recordDigest: digest('1') };
+}
+
+function entry(taskId, overrides = {}) {
+  const carrierIdentity = digest('7');
+  return {
+    taskId,
+    environment: { status: 'ready', taskId, receiptIdentity: digest('2'), receiptDigest: digest('3'), declarationIdentity: digest('4'), executionIdentity: digest('5') },
+    development: { status: 'current', taskId, handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), taskContextIdentity: digest('d'), contributionIdentity: digest('e'), receiptIdentity: digest('f') },
+    finish: {
+      status: 'complete', taskId, runId: 42, resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: sha('8'), sourceTree: sha('9'),
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: sha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: sha('b') }],
+      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
+      activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened',
+    },
+    selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: sha('8'), sourceTree: sha('9') },
+    ...overrides,
+  };
+}
+
+function correlation(overrides = {}) {
+  return createReleaseTaskEvidenceCorrelation({
+    releaseTask: task('release-1.0.0'),
+    supportTasks: [task('support-1')],
+    retrospectiveSources: [task('retro-1')],
+    taskEvidence: [entry('release-1.0.0'), entry('support-1')],
+    source: { sourceCommit: sha('c'), sourceTree: sha('d'), remoteRef: sha('e') },
+    ...overrides,
+  });
+}
+
+test('correlates release/support Task evidence into one portable identity', () => {
+  const result = correlation();
+  assert.equal(result.schemaVersion, 'buildr.release-task-evidence-correlation/v1');
+  assert.equal(result.status, 'passed');
+  assert.match(result.identity, /^sha256-[a-f0-9]{64}$/u);
+  assert.equal(result.entries.length, 2);
+  assert.equal(result.entries[0].finish.executionRecord.recordId, 'finish-record-42');
+  assert.equal('root' in result.entries[0].finish, false);
+  assert.deepEqual(validateReleaseTaskEvidenceCorrelation(result), result);
+  assert.equal(inspectReleaseTaskEvidenceCorrelation(result).identity, result.identity);
+});
+
+test('blocks cross-run self-bootstrap evidence without changing Finish delivery', () => {
+  const result = correlation({ taskEvidence: [entry('release-1.0.0', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'release-1.0.0', runId: 43, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } }), entry('support-1')] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.entries[0].finish.status, 'passed');
+  assert.match(result.entries[0].findings.map((item) => item.code).join(','), /run|activation|self-bootstrap/u);
+});
+
+test('missing self-bootstrap remains unknown while Delivery stays passed', () => {
+  const result = correlation({ taskEvidence: [entry('release-1.0.0', { selfBootstrap: null }), entry('support-1')] });
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.entries[0].status, 'unknown');
+  assert.equal(result.entries[0].finish.status, 'passed');
+  assert.equal(result.entries[0].finish.deliveryStatus, 'delivered');
+});
+
+test('transaction context can carry validated task correlation without copying Finish Result', () => {
+  const taskCorrelation = correlation();
+  const environment = {
+    schemaVersion: 'buildr.release-environment-binding/v1', taskId: 'release-1.0.0', environmentStatus: 'ready', sourceCommit: sha('1'), service: 'product/buildr', serviceRoot: 'projects/product/services/buildr', planIdentity: digest('1'), declarationIdentity: digest('2'), recipe: { id: 'service:product/buildr/buildr.npm-ci', identity: digest('3'), stepId: 'service:product/buildr/buildr.npm-ci/npm-ci' }, inputs: { 'package.json': digest('4'), 'package-lock.json': digest('5') }, node: { authority: 'projects/product/.node-version', version: '24.15.0', executionIdentity: digest('6') },
+  };
+  environment.identity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(environment)).digest('hex')}`;
+  const contextTask = (item) => ({ taskId: item.taskId, title: item.title, status: item.status });
+  const context = createReleaseTransactionContext({
+    releaseTask: contextTask(task('release-1.0.0')),
+    retrospectiveSources: [contextTask(task('retro-1'))],
+    supportTasks: [contextTask(task('support-1'))],
+    candidate: { sourceCommit: sha('1'), workflow: '.github/workflows/verify.yml', runId: 11, runAttempt: 1, runUrl: 'https://github.example/run/11' },
+    convergence: { candidateBase: sha('2'), candidateTree: sha('3'), sourceCommit: sha('1'), mainCommit: sha('1'), devCommit: sha('4') },
+    environment,
+    taskCorrelation,
+  });
+  assert.equal(context.taskCorrelation.identity, taskCorrelation.identity);
+  assert.equal('executionRecord' in context.taskCorrelation.entries[0].finish, true);
+  assert.equal('body' in context.taskCorrelation.entries[0].finish.executionRecord, false);
+});
