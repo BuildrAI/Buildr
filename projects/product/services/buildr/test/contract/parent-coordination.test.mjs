@@ -36,7 +36,7 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   const module = read('src/task/module.mjs');
   const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const worker = read('src/web/http/read-worker.mjs');
-  const json = read('src/application/json-contracts.mjs');
+  const json = read('src/infrastructure/contracts/public-json.mjs');
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   for (const command of ['task parent inspect', 'task parent record', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile', 'task parent accept']) assert.ok(module.includes(command), command);
   assert.match(registry, /runtimeContributions\(runtime, 'cli'\)/);

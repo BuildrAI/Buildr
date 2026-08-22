@@ -1,7 +1,7 @@
 import { createWorkspace, isWorkspaceId } from '../domain/workspace.mjs';
 import process from 'node:process';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.mjs';
-import { declarationIntakeNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
+import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
 function workspaceError(code, message, status = 400, details = undefined) {
   const error = new Error(message);

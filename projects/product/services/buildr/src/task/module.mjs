@@ -24,6 +24,7 @@ import { registerParentCoordinationRepository } from './persistence/parent-coord
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
+import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
 import { taskVerificationCommand } from './interfaces/cli/task-verification.mjs';
 import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './interfaces/cli/task-execution-record.mjs';
@@ -41,6 +42,11 @@ import { taskTerminalDeliveryInspectCommand } from './interfaces/cli/task-termin
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from './interfaces/http/task-record-http.mjs';
 import { handleTaskRetrospectiveHttpRequest } from './interfaces/http/task-retrospective-http.mjs';
 import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.mjs';
+import {
+  REQUIRED_INTERNAL_WORKFLOW_ROUTES,
+  inspectRequiredInternalWorkflowRoutes,
+} from './contracts/internal-workflow-route-catalog.mjs';
+import { routeInternalWorkflow } from './interfaces/internal/workflow-route-router.mjs';
 
 export async function runTaskRetrospectiveDriver(args, options) {
   const driver = await import('./interfaces/internal/task-retrospective-driver.mjs');
@@ -55,6 +61,18 @@ export async function runTaskDevelopmentDriver(args, options) {
 export async function runTaskPlanningIdentityDriver(args, options) {
   const driver = await import('./interfaces/internal/task-planning-identity-driver-runner.mjs');
   return driver.runTaskPlanningIdentityDriver(args, options);
+}
+
+const INTERNAL_WORKFLOW_RUNNERS = Object.freeze({
+  'task-development': runTaskDevelopmentDriver,
+  'task-retrospective': runTaskRetrospectiveDriver,
+  'task-planning-identity': runTaskPlanningIdentityDriver,
+});
+
+export { REQUIRED_INTERNAL_WORKFLOW_ROUTES, inspectRequiredInternalWorkflowRoutes };
+
+export function runRequiredInternalWorkflowRoute(route, args, options = {}) {
+  return routeInternalWorkflow(route, args, INTERNAL_WORKFLOW_RUNNERS, options);
 }
 
 export const TASK_RECORD_MODULE_ID = 'task-record';
@@ -415,6 +433,49 @@ export function createTaskTerminalDeliveryCliContributions(application = null) {
   })]);
 }
 
+export function createGitWorktreeCliContributions(application = null) {
+  return Object.freeze([
+    {
+      key: 'worktree create',
+      surface: 'agent-machine',
+      summary: '这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。',
+      help: [
+        'Usage: buildr worktree create <task-id> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]',
+        '',
+        '这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。',
+        '全部仓库在写入前统一预检；部分创建失败保留已创建 checkout 和 evidence，供同一计划恢复。它不判断 Environment ready，也不准备 Runtime/CLI/依赖/projection。',
+      ],
+      match: ({ domain, action }) => domain === 'worktree' && action === 'create',
+      run: (runtime, context) => gitWorktreeCommand(application || runtime, 'create', context.argv.slice(4)),
+    },
+    {
+      key: 'worktree cleanup',
+      surface: 'agent-machine',
+      summary: '只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。',
+      help: [
+        'Usage: buildr worktree cleanup <task-id> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]',
+        '',
+        '只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。',
+        '它不读取 Environment Receipt、不停止动态资源、不决定总 cleanup，也不删除远端分支。正式 workflow 由 Task Environment Application 编排。',
+      ],
+      match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup',
+      run: (runtime, context) => gitWorktreeCommand(application || runtime, 'cleanup', context.argv.slice(4)),
+    },
+    {
+      key: 'worktree inspect',
+      surface: 'agent-machine',
+      summary: '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
+      help: [
+        'Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]',
+        '',
+        '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
+      ],
+      match: ({ domain, action }) => domain === 'worktree' && action === 'inspect',
+      run: (runtime, context) => gitWorktreeCommand(application || runtime, 'inspect', context.argv.slice(4)),
+    },
+  ].map(Object.freeze));
+}
+
 export function createTaskRecordCliContributions(application = null) {
   return Object.freeze([
     {
@@ -663,7 +724,7 @@ export function createTaskEnvironmentModule(runtime) {
           [TASK_ENVIRONMENT_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_ENVIRONMENT_PERSISTENCE_METHODS, ...TASK_ENVIRONMENT_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
-          cli: taskEnvironmentCliContributions(),
+          cli: Object.freeze([...taskEnvironmentCliContributions(), ...createGitWorktreeCliContributions()]),
           http: [createTaskEnvironmentHttpContribution(TASK_RECORD_ID_SOURCE, application, requires[TASK_RECORD_PERSISTENCE_READ])],
         },
       });

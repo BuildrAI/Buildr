@@ -9,7 +9,7 @@ function writeInternalDownload(file, bytes) {
 async function runInternalProductAction(argv) {
   if (argv[2] !== '__internal') return false;
   const action = argv[3];
-  const { runRequiredInternalWorkflowRoute } = await import('../../interfaces/internal/formal-workflow-routes.mjs');
+  const { runRequiredInternalWorkflowRoute } = await import('../../task/module.mjs');
   const workflowExitCode = await runRequiredInternalWorkflowRoute(action, argv.slice(4));
   if (workflowExitCode !== null) {
     process.exitCode = workflowExitCode;

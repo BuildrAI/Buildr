@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
 import {
   normalizeProjectEnvironmentPreparation,

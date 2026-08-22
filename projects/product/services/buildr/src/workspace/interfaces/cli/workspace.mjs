@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from '../../../infrastructure/process.mjs';
 import YAML from 'yaml';
 import { createProject as createProjectEntity } from '../../domain/project.mjs';
 import { createService as createServiceEntity } from '../../domain/service.mjs';
-import { declarationIntakeNextAction } from '../../../application/declaration-intake/declaration-intake-trigger.mjs';
+import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.mjs';
 import { parseProjectsManifest, renderProjectsManifest } from '../../persistence/project-manifest-repository.mjs';
 
 export function registerWorkspaceCliAdapter(runtime) {

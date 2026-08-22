@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError } from '../domain/task-review.mjs';
 
 function assertObject(input, label) {

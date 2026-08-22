@@ -12,7 +12,7 @@ import {
   sealTaskExecutionRecord,
   taskExecutionRecordError,
 } from '../domain/task-execution-record.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { cleanupVerificationEvidence } from '../../verification/infrastructure/evidence-lifecycle.mjs';
 import {
   createAuthorizedUnknownExecutionRecordFiles,

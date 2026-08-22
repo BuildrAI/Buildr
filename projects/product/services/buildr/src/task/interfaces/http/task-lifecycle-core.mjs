@@ -1,4 +1,4 @@
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 
 function readContribution(id, taskIdSource, operation, suffixPattern, input = () => ({})) {
   const pattern = new RegExp(suffixPattern.replaceAll('<task-id>', `(${taskIdSource})`));

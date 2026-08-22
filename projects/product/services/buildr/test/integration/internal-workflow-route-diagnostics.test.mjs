@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createInternalWorkflowRouteDiagnostics } from '../../src/system/doctor/application/internal-workflow-route-diagnostics.mjs';
-import { inspectRequiredInternalWorkflowRoutes } from '../../src/application/internal-workflow-route-inventory.mjs';
+import { inspectRequiredInternalWorkflowRoutes } from '../../src/task/contracts/internal-workflow-route-catalog.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const CONSUMERS = [

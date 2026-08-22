@@ -142,7 +142,7 @@ capabilities:
       argv: ["tools/development/run-development-npm", "run", "test:openspec:convergence"]
       cwd: services/buildr
     applicability:
-      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/task/openspec/**", "services/buildr/src/interfaces/cli/**", "services/buildr/src/task/application/finish/**", "services/buildr/test/verification/openspec/**"]
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/task/openspec/**", "services/buildr/src/bootstrap/cli/**", "services/buildr/src/task/application/finish/**", "services/buildr/test/verification/openspec/**"]
       conditions:
         - OpenSpec canonical 写入、恢复、并发 Change、archive 或 checkpoint bootstrap 发生变化
     proves:

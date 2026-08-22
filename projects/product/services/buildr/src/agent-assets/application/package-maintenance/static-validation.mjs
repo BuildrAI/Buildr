@@ -1,5 +1,5 @@
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
-import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../../../application/internal-workflow-route-inventory.mjs';
+import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
 export function createPackageStaticValidator(deps) {
   const {
@@ -390,7 +390,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const localServer = path.join(root, 'src', 'web', 'http', 'server.mjs');
+    const localServer = path.join(root, 'src', 'web', 'http', 'router.mjs');
     if (!existsFile(localServer)) problems.push('Task Review Buildr Web interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
@@ -427,8 +427,8 @@ export function createPackageStaticValidator(deps) {
       ['src/task/application/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
       ['src/task/interfaces/internal/task-planning-identity-driver.mjs', ['runTaskPlanningIdentityDriver']],
       ['src/task/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
-      ['src/application/internal-workflow-route-inventory.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
-      ['src/interfaces/internal/formal-workflow-routes.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
+      ['src/task/contracts/internal-workflow-route-catalog.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
+      ['src/task/module.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
       ['src/task/module.mjs', ['registerTaskPlanningIdentityApplication', 'createTaskPlanningIdentityModule']],
     ]);
     for (const [relative, requiredTexts] of sourceContracts) {
@@ -472,7 +472,7 @@ export function createPackageStaticValidator(deps) {
 
   function validateInternalWorkflowRouteClosure(context) {
     const { root, problems } = context;
-    const inventory = path.join(root, 'src/application/internal-workflow-route-inventory.mjs');
+    const inventory = path.join(root, 'src/task/contracts/internal-workflow-route-catalog.mjs');
     const cli = path.join(root, 'src/bootstrap/cli/main.mjs');
     if (!existsFile(inventory)) problems.push('Required internal workflow route inventory is missing.');
     if (!existsFile(cli)) problems.push('Buildr CLI internal workflow route dispatcher is missing.');
@@ -483,8 +483,8 @@ export function createPackageStaticValidator(deps) {
         if (route.wrapperSource && !existsFile(path.join(root, route.wrapperSource))) problems.push(`Required internal workflow checkout wrapper is missing: ${route.wrapperSource}.`);
         continue;
       }
-      const runner = path.join(root, 'src/interfaces/internal', route.runner);
-      const wrapper = path.join(root, 'src/interfaces/internal', `${route.id}-driver.mjs`);
+      const runner = path.join(root, 'src/task/interfaces/internal', route.runner);
+      const wrapper = path.join(root, 'src/task/interfaces/internal', `${route.id}-driver.mjs`);
       if (!existsFile(runner)) problems.push(`Required internal workflow runner is missing: ${route.runner}.`);
       if (!existsFile(wrapper)) problems.push(`Required internal workflow checkout wrapper is missing: ${route.id}-driver.mjs.`);
     }

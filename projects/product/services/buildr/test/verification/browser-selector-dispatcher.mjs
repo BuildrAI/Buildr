@@ -112,10 +112,6 @@ export function selectBrowserSelectors(changedPaths) {
       add(plan, 'core', originalValue, 'Buildr Web runtime change requires the representative route smoke.');
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/')) {
-      add(plan, 'core', originalValue, 'Unclassified Buildr Web path uses the core smoke fallback.');
-      continue;
-    }
     plan.reasons.push({ path: originalValue, selector: null, reason: 'Path is outside the Browser capability applicability.' });
   }
   if (plan.mode === 'full') plan.selectors = ['all'];

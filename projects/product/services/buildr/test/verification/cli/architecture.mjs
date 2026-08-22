@@ -43,11 +43,7 @@ function listFiles(root, predicate = () => true) {
   return files;
 }
 
-const globalApplicationResiduals = Object.freeze([
-  'application/declaration-intake/',
-  'application/internal-workflow-route-inventory.mjs',
-  'application/json-contracts.mjs',
-]);
+const globalApplicationResiduals = Object.freeze([]);
 const architectureSource = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
 if (!architectureSource) problems.push('missing Service architecture migration ledger');
 for (const residual of globalApplicationResiduals) {
@@ -61,6 +57,12 @@ for (const file of listFiles(path.join(sourceRoot, 'application'), (item) => /\.
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const covered = globalApplicationResiduals.some((residual) => residual.endsWith('/') ? relative.startsWith(residual) : relative === residual);
   if (!covered) problems.push(`global Application production file lacks migration ledger ownership: src/${relative}`);
+}
+for (const retiredRoot of ['domain', 'interfaces']) {
+  for (const file of listFiles(path.join(sourceRoot, retiredRoot), (item) => /\.(?:mjs|ts)$/u.test(item))) {
+    const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+    problems.push(`global ${retiredRoot} production file lacks module ownership: src/${relative}`);
+  }
 }
 
 for (const required of ['bin', 'src', 'resources', 'web-dist', 'test', 'tools', 'docs', 'package']) {
@@ -82,8 +84,8 @@ const requiredRuntime = [
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.mjs',
-  'task/interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'web/http/server.mjs', 'web/module.mjs',
+  'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.mjs',
+  'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.mjs',
   'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
   'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
@@ -114,13 +116,15 @@ const requiredRuntime = [
   'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
   'task/interfaces/http/task-lifecycle-core.mjs',
   'task/interfaces/internal/task-development-driver.mjs', 'task/interfaces/internal/task-planning-identity-driver.mjs',
+  'task/interfaces/internal/workflow-route-router.mjs', 'task/contracts/internal-workflow-route-catalog.mjs',
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
   'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
   'task/openspec/module.mjs', 'task/change/module.mjs', 'task/change/application/change-application.mjs',
   'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
-  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'application/json-contracts.mjs',
+  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
+  'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
   'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
   'system/doctor/application/scope-diagnostics.mjs', 'system/doctor/application/service-diagnostics.mjs',
@@ -140,8 +144,9 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
 const layerOf = (relative) => {
-  if (relative === 'application/json-contracts.mjs' || relative === 'task/application/finish/git-task-contribution.mjs' || relative === 'task/application/finish/task-finish-delivery-commit.mjs') return 'infrastructure';
+  if (relative === 'infrastructure/contracts/public-json.mjs' || relative === 'task/application/finish/git-task-contribution.mjs' || relative === 'task/application/finish/task-finish-delivery-commit.mjs') return 'infrastructure';
   const parts = relative.split('/');
+  if (parts[0] === 'infrastructure') return 'infrastructure';
   const moduleOffset = (
     (parts[0] === 'system' && ['installation', 'doctor', 'publication'].includes(parts[1]))
     || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
@@ -155,6 +160,7 @@ const layerOf = (relative) => {
     infrastructure: 'infrastructure',
     interfaces: 'interfaces',
     http: 'interfaces',
+    contracts: 'domain',
   }[parts[moduleOffset]] || parts[0];
 };
 const allowedTargets = {
@@ -377,10 +383,12 @@ if (fs.existsSync(bootstrapRuntime)) {
 if (fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module must be removed');
 
 const localAppServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
+const localAppRouter = path.join(sourceRoot, 'web', 'http', 'router.mjs');
 if (fs.existsSync(localAppServer)) {
   const source = fs.readFileSync(localAppServer, 'utf8');
+  const routerSource = fs.existsSync(localAppRouter) ? fs.readFileSync(localAppRouter, 'utf8') : '';
   if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
-  if (!source.includes('for (const contribution of httpContributions)') || !source.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
+  if (!routerSource.includes('for (const contribution of httpContributions)') || !routerSource.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
   if (/runtime\.(?:listRegisteredWorkspaces|registerLocalWorkspace|getWorkspace|listProjects|projectDetail|listServices|serviceDetail)\(/.test(source)) problems.push('Buildr Web HTTP Host must not own Workspace Core routes');
   if (/registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
 }
@@ -535,12 +543,12 @@ if (fs.existsSync(dailyProgressInterface)) {
     problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
   }
 }
-if (fs.existsSync(localAppServer) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(localAppServer, 'utf8'))) {
+if ([localAppServer, localAppRouter].some((file) => fs.existsSync(file) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(file, 'utf8')))) {
   problems.push('Buildr Web HTTP Host must not own Daily Progress routes');
 }
 
 const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
-const gitWorktreeInterface = path.join(sourceRoot, 'interfaces', 'cli', 'git-worktree.mjs');
+const gitWorktreeInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'git-worktree.mjs');
 if (fs.existsSync(gitWorktreeProvider)) {
   const source = fs.readFileSync(gitWorktreeProvider, 'utf8');
   if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {

@@ -3,12 +3,11 @@ import { createRuntime, runtimeContributions } from '../runtime.mjs';
 import { registerCommandHelp } from './help.mjs';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
-import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
+import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
 import { createOpenSpecCliContributions } from '../../task/openspec/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
-import { gitWorktreeCommand } from '../../interfaces/cli/git-worktree.mjs';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
@@ -77,44 +76,6 @@ const COMMAND_ROUTES = [
   },
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
-  {
-    key: "worktree create",
-    surface: "agent-machine",
-    summary: "这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。",
-    help: [
-      "Usage: buildr worktree create <task-id> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]",
-      "",
-      "这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。",
-      "全部仓库在写入前统一预检；部分创建失败保留已创建 checkout 和 evidence，供同一计划恢复。它不判断 Environment ready，也不准备 Runtime/CLI/依赖/projection。"
-    ],
-    match: ({ domain, action }) => domain === 'worktree' && action === 'create',
-    run: (r, c) => gitWorktreeCommand(r, 'create', c.argv.slice(4)),
-  },
-  {
-    key: "worktree cleanup",
-    surface: "agent-machine",
-    summary: "只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。",
-    help: [
-      "Usage: buildr worktree cleanup <task-id> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]",
-      "",
-      "只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。",
-      "它不读取 Environment Receipt、不停止动态资源、不决定总 cleanup，也不删除远端分支。正式 workflow 由 Task Environment Application 编排。"
-    ],
-    match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup',
-    run: (r, c) => gitWorktreeCommand(r, 'cleanup', c.argv.slice(4)),
-  },
-  {
-    key: "worktree inspect",
-    surface: "agent-machine",
-    summary: "根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。",
-    help: [
-      "Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]",
-      "",
-      "根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。"
-    ],
-    match: ({ domain, action }) => domain === 'worktree' && action === 'inspect',
-    run: (r, c) => gitWorktreeCommand(r, 'inspect', c.argv.slice(4)),
-  },
   {
     key: "verification run",
     surface: "agent-machine",
@@ -320,6 +281,7 @@ function createCommandCatalog(commandRegistry) {
 export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
   ...createAgentAssetsCliContributions(),
+  ...createGitWorktreeCliContributions(),
   ...createTaskRecordCliContributions(),
   ...createTaskReviewCliContributions(),
   ...createOpenSpecCliContributions(),

@@ -1,4 +1,4 @@
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { selfBootstrapTaskFinishResult } from './task-finish-self-bootstrap-projection.mjs';
 
 const DETAILS = new Set(['compact', 'full', 'self-bootstrap']);

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { createParentPlan, parentCoordinationError, projectParentPlan } from '../domain/parent-coordination.mjs';
 import { normalizeTaskDevelopmentReceipt } from '../domain/task-development.mjs';
 import { normalizeTaskReviewResult } from '../domain/task-review.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;

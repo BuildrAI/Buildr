@@ -5,7 +5,7 @@ import { createLauncherCliContributions, registerLauncherInterface } from './int
 import { readCurrentProductIdentity } from './infrastructure/current-product-identity.mjs';
 import { assertCurrentNpmLauncherBinding, refreshInstalledNpmLauncher } from './infrastructure/npm-launcher.mjs';
 import { validateNpmLauncherBinding } from './infrastructure/launcher-binding.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 
 export * from './application/npm-installation-enrollment.mjs';
 export * from './application/release-awareness.mjs';

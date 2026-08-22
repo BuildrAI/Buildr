@@ -10,7 +10,7 @@ import {
   compareVersions,
   defaultReleaseTrack,
   parseSemver,
-} from '../../../domain/release-version.mjs';
+} from '../domain/release-version.mjs';
 import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
 import { spawnCommandSync } from '../../../infrastructure/process.mjs';
 import { inspectProductUpdateAuthority } from '../infrastructure/installation-registry.mjs';
@@ -22,7 +22,7 @@ export const RELEASE_TRACKS = Object.freeze({
   candidate: Object.freeze({ tag: 'next', label: 'RC 候选版', prerelease: true }),
 });
 
-export { compareVersions, defaultReleaseTrack, parseSemver } from '../../../domain/release-version.mjs';
+export { compareVersions, defaultReleaseTrack, parseSemver } from '../domain/release-version.mjs';
 
 function emptyTrackState() {
   return { lastSeenVersion: null, lastNotifiedVersion: null, checkedAt: null };

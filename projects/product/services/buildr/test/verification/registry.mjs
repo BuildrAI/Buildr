@@ -233,7 +233,7 @@ export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
 const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-verification-admission': Object.freeze(['test/verification/changed*.mjs', 'test/verification/candidate.mjs', 'test/verification/dag-scheduler.mjs', 'test/verification/plan-runner.mjs', 'test/verification/planner.mjs', 'test/verification/registry.mjs', 'src/verification/application/**']),
   'system-verification-contracts': Object.freeze(['test/verification/focus.mjs', 'test/verification/executor.mjs', 'test/verification/plan-runner.mjs', 'test/verification/resource-coordinator.mjs', 'test/verification/system*.mjs', 'test/verification/timing/**', 'test/verification/workspace/**', 'src/verification/infrastructure/capability-runner.mjs', 'src/verification/infrastructure/preparation-admission.mjs', 'src/verification/infrastructure/process-executor.mjs', 'src/verification/infrastructure/resource-coordinator.mjs', 'src/verification/application/verification-application.mjs']),
-  'system-public-json-contracts': Object.freeze(['src/application/json-contracts.mjs', 'src/bootstrap/cli/**', 'src/interfaces/cli/**']),
+  'system-public-json-contracts': Object.freeze(['src/infrastructure/contracts/public-json.mjs', 'src/bootstrap/cli/**', 'src/task/interfaces/cli/**']),
   'system-openspec-contract-audit': Object.freeze(['src/task/openspec/**']),
   'system-workspace-lifecycle': Object.freeze(['src/workspace/**', 'src/infrastructure/platform.mjs', 'src/infrastructure/product-layout.mjs', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-lifecycle': Object.freeze([
@@ -258,7 +258,7 @@ const SYSTEM_OWNER_INPUTS = Object.freeze({
   'system-local-app-http': Object.freeze(['src/bootstrap/**', 'src/workspace/module.mjs', 'src/workspace/interfaces/http/**', 'src/task/module.mjs', 'src/task/change/interfaces/http/**', 'src/task/interfaces/http/**', 'src/system/publication/interfaces/http/**', 'src/web/http/**', 'src/infrastructure/sqlite/**', 'services/buildr-web/src/api/client.ts', 'test/helpers/workspace-product-suite.mjs']),
   'system-app-process': Object.freeze(['src/web/**', 'src/infrastructure/process.mjs', 'package/launchers/**', 'test/helpers/workspace-product-suite.mjs']),
   'system-task-finish': Object.freeze(['src/task/application/finish/diagnostics-evidence.mjs', 'src/task/application/finish/execution-record.mjs', 'src/task/application/finish/git-task-contribution.mjs', 'src/task/application/finish/task-finish-activation.mjs', 'src/task/application/finish/task-finish-application.mjs', 'src/task/application/finish/task-finish-bootstrap-recovery.mjs', 'src/task/application/finish/task-finish-delivery-commit.mjs', 'src/task/application/finish/task-finish-delivery-reconciliation.mjs', 'src/task/application/finish/task-finish-delivery-remote.mjs', 'src/task/application/finish/task-finish-delivery-target.mjs', 'src/task/application/finish/task-finish-delivery-terminal.mjs', 'src/task/application/finish/task-finish-entry-readiness.mjs', 'src/task/application/finish/task-finish-reconciliation-context.mjs', 'src/task/application/finish/task-finish-maintenance.mjs', 'src/task/application/finish/task-finish-occupancy-release.mjs', 'src/task/application/finish/task-finish-product-executor.mjs', 'src/task/application/finish/task-finish-repository-set.mjs', 'src/task/application/finish/task-finish-run.mjs', 'src/task/application/task-terminal-delivery-application.mjs', 'test/helpers/task-finish-sqlite-fixture.mjs']),
-  'system-task-finish-cli': Object.freeze(['src/bootstrap/cli/**', 'src/task/application/finish/task-finish-result-projection.mjs', 'src/task/application/finish/task-finish-self-bootstrap-projection.mjs', 'src/application/json-contracts.mjs', 'src/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
+  'system-task-finish-cli': Object.freeze(['src/bootstrap/cli/**', 'src/task/application/finish/task-finish-result-projection.mjs', 'src/task/application/finish/task-finish-self-bootstrap-projection.mjs', 'src/infrastructure/contracts/public-json.mjs', 'src/task/interfaces/cli/**', 'test/helpers/task-finish-sqlite-fixture.mjs']),
   'system-fresh-build': Object.freeze(['src/task/application/task-environment-application.mjs', 'src/task/domain/project-environment-preparation.mjs', 'src/task/domain/task-environment*.mjs', 'preparation.yml', 'services/buildr-web/package.json', 'services/buildr-web/package-lock.json', 'services/buildr-web/vite.config.*', 'services/buildr-web/tsconfig*.json', 'test/helpers/clean-product-source.mjs']),
 });
 
@@ -280,7 +280,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/internal-workflow-route-diagnostics.test.mjs',
     'test/integration/project-verification.test.mjs',
   ], [
-    'src/application/internal-workflow-route-inventory.mjs',
+    'src/task/contracts/internal-workflow-route-catalog.mjs',
     'src/system/doctor/application/internal-workflow-route-diagnostics.mjs',
     'src/system/doctor/application/project-environment-preparation-diagnostics.mjs',
     'src/verification/application/project-verification-diagnostics.mjs',
@@ -347,7 +347,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/task/module.mjs',
     'src/agent-assets/infrastructure/runtime/**',
     'src/workspace/**',
-    'src/interfaces/local-app/**',
     'src/web/**',
     'services/buildr-web/src/api/client.ts',
     'services/buildr-web/src/App.tsx',
@@ -364,12 +363,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/system/installation/application/product-installation-status.mjs',
     'src/system/installation/application/npm-installation-enrollment.mjs',
     'src/system/installation/**',
-    'src/application/cli-update.mjs',
-    'src/application/npm-installation-enrollment.mjs',
-    'src/application/product-installation-status.mjs',
-    'src/application/release-awareness.mjs',
-    'src/infrastructure/product-identity/**',
-    'src/infrastructure/product-launcher/**',
     'src/infrastructure/product-invocation/**',
     'src/infrastructure/product-resources/**',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=2'] }),
@@ -408,8 +401,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/task/application/task-entry-snapshot-application.mjs',
     'src/task/application/task-overview-application.mjs',
     'src/task/application/task-planning-identity-application.mjs',
-    'src/application/task-retrospective-prompt.mjs',
-    'src/application/task-retrospective/**',
     'src/task/application/task-retrospective-application.mjs',
     'src/task/domain/task-retrospective.mjs',
     'src/task/interfaces/http/task-retrospective-http.mjs',
@@ -466,7 +457,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'src/task/domain/task-review.mjs',
     'src/task/interfaces/cli/task-review.mjs',
     'src/task/interfaces/http/task-review-http.mjs',
-    'src/application/task-review/**',
     'src/task/application/task-verification-application.mjs',
     'src/task/interfaces/internal/task-development-driver.mjs',
     'src/task/interfaces/internal/task-development-driver-runner.mjs',
@@ -523,7 +513,7 @@ export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
 ])]);
 
 export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST = Object.freeze([
-  Object.freeze({ path: 'src/application/declaration-intake/declaration-intake-trigger.mjs', owner: 'unit', reason: 'The trigger is pure declaration selection glue; declaration Application and CLI behavior have separate owners.' }),
+  Object.freeze({ path: 'src/infrastructure/contracts/declaration-intake.mjs', owner: 'unit', reason: 'The trigger is pure declaration selection glue; declaration Application and CLI behavior have separate owners.' }),
   Object.freeze({ path: 'src/infrastructure/product-resources/index.mjs', owner: 'application-payload-release', reason: 'The resource resolver is exercised directly by the application payload release verifier.' }),
 ]);
 
@@ -603,7 +593,7 @@ export const verificationSteps = Object.freeze([
     'tools/release/release-tag-ensure.mjs',
     'tools/release/release-contract.mjs',
     'tools/release/trusted-publish.mjs',
-    'src/domain/release-version.mjs',
+    'src/system/installation/domain/release-version.mjs',
     'src/agent-assets/infrastructure/runtime/render-claude-code.mjs',
     'test/verification/candidate.mjs',
     'test/verification/candidate-ci.mjs',
@@ -676,14 +666,14 @@ export const verificationSteps = Object.freeze([
     'services/buildr-web/vite.config.*',
     'services/buildr-web/tsconfig*.json',
   ], schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
-  step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], inputs: ['bin/**', 'src/bootstrap/**', 'src/interfaces/cli/**', 'src/web/http/server.mjs', 'src/web/**', 'src/task/**', 'src/application/json-contracts.mjs', 'resources/**', 'web-dist/**', 'tools/**', 'package/**', 'test/verification/cli/**', 'package.json'] }),
+  step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], inputs: ['bin/**', 'src/bootstrap/**', 'src/task/interfaces/cli/**', 'src/web/http/server.mjs', 'src/web/**', 'src/task/**', 'src/infrastructure/contracts/public-json.mjs', 'resources/**', 'web-dist/**', 'tools/**', 'package/**', 'test/verification/cli/**', 'package.json'] }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.mjs' }, profiles: ['fast', 'candidate'], inputs: ['openspec/**/*.md', 'openspec/**/*.yaml', 'test/verification/openspec/spec-quality.mjs'] }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], inputs: ['openspec/**'] }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.mjs' }, profiles: ['candidate'], groups: ['runtime'], inputs: ['src/agent-assets/infrastructure/runtime/**', 'src/agent-assets/application/runtime.mjs', 'src/system/doctor/application/runtime-diagnostics.mjs', 'test/verification/runtime/adapter-contract.mjs', 'package/targets/runtime/**', 'docs/agent-runtime-adapters.md'] }),
 
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'], inputs: [
     'test/integration-candidate-release/**', 'tools/release/bridge-main-to-dev.mjs', 'tools/release/release-authority.mjs', 'tools/release/release-contract.mjs',
-    'tools/release/release-convergence.mjs', 'tools/release/release-files.mjs', 'tools/release/release-notes.mjs', 'src/domain/release-version.mjs',
+    'tools/release/release-convergence.mjs', 'tools/release/release-files.mjs', 'tools/release/release-notes.mjs', 'src/system/installation/domain/release-version.mjs',
   ], schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-npm-preflight'], inputs: [
     'test/verification/concurrency/**', 'test/helpers/child-process-supervisor.mjs', 'test/helpers/clean-product-source.mjs',
@@ -726,7 +716,7 @@ export const verificationSteps = Object.freeze([
     '.github/workflows/publish.yml',
   ], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-smoke', name: 'Host Node installed CLI smoke', executor: { type: 'node', file: 'test/verification/host-node/cli-smoke.mjs', consumesArtifact: true }, profiles: ['host-node'], inputs: [
-    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/interfaces/cli/**', 'src/system/doctor/**',
+    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/task/interfaces/cli/**', 'src/system/doctor/**',
     'src/workspace/application/workspace-operations.mjs', 'package.json', 'package-lock.json',
     'test/verification/host-node.mjs', 'test/verification/host-node/**', 'test/verification/release/candidate-package.mjs',
   ], dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
@@ -763,14 +753,14 @@ export const verificationSteps = Object.freeze([
   step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.mjs' }, inputs: ['buildr', 'tools/development/run-development-cli', 'test/system/install-buildr-cli-runtime.test.mjs', 'test/verification/onboarding/repository.mjs', 'services/**', 'package.json', 'package-lock.json', 'README.md'], inputExclusions: ['services/buildr-web/**'], schedulingCostMs: 60000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.mjs' }, profiles: ['candidate'], inputs: ['src/workspace/**', 'src/workspace/application/workspace-operations.mjs', 'test/verification/onboarding/init.mjs', 'resources/workspace/manifest.yml', 'resources/workspace/AGENTS.md', 'resources/workspace/components/**'], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-compatibility', name: 'CLI compatibility', executor: { type: 'node', file: 'test/verification/cli/compatibility.mjs' }, profiles: ['candidate'], groups: ['cli'], inputs: [
-    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/workspace/interfaces/cli/**', 'src/interfaces/cli/**',
-    'src/application/json-contracts.mjs',
+    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/workspace/interfaces/cli/**', 'src/task/interfaces/cli/**',
+    'src/infrastructure/contracts/public-json.mjs',
     'src/agent-assets/application/runtime.mjs', 'src/agent-assets/infrastructure/runtime/adapter-contract.mjs',
     'test/verification/cli/compatibility.mjs', 'docs/cli-reference.md',
   ], schedulingCostMs: 7000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'], inputs: [
-    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/workspace/interfaces/cli/**', 'src/interfaces/cli/**',
-    'src/application/json-contracts.mjs',
+    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/workspace/interfaces/cli/**', 'src/task/interfaces/cli/**',
+    'src/infrastructure/contracts/public-json.mjs',
     'src/task/application/finish/task-finish-result-projection.mjs',
     'src/task/application/finish/task-finish-self-bootstrap-projection.mjs',
     'src/infrastructure/product-layout.mjs',
@@ -783,7 +773,7 @@ export const verificationSteps = Object.freeze([
     'src/agent-assets/application/skills.mjs', 'test/verification/network/**',
   ], concurrencyClass: 'network' }),
   step({ id: 'release-tarball-smoke', name: 'release tarball headless smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.mjs', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], inputs: [
-    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/interfaces/cli/**',
+    'buildr', 'bin/buildr.mjs', 'src/bootstrap/**', 'src/task/interfaces/cli/**',
     'src/system/installation/application/cli-update.mjs',
     'src/agent-assets/application/package-maintenance/**', 'src/agent-assets/application/package-maintenance.mjs',
     'src/workspace/application/workspace-operations.mjs', 'src/infrastructure/product-layout.mjs',

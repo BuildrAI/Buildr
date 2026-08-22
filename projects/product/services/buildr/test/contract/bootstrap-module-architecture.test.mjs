@@ -59,8 +59,11 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
 
   const httpHost = read('src/web/http/server.mjs');
   assert.doesNotMatch(httpHost, /task\/interfaces\/(?:cli|http)|task-(?:record|review|retrospective)-http|taskRetrospectiveMatch/);
-  assert.match(httpHost, /for \(const contribution of httpContributions\)/);
-  assert.match(httpHost, /contribution\.handle\(/);
+  assert.match(httpHost, /createLocalWorkspaceRequestRouter/);
+  const httpRouter = read('src/web/http/router.mjs');
+  assert.doesNotMatch(httpRouter, /task\/interfaces\/(?:cli|http)|task-(?:record|review|retrospective)-http|taskRetrospectiveMatch/);
+  assert.match(httpRouter, /for \(const contribution of httpContributions\)/);
+  assert.match(httpRouter, /contribution\.handle\(/);
 });
 
 test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capability、contribution 与 runtime port', () => {
@@ -130,7 +133,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: ['task-record.persistence-read'],
     provides: ['task-environment.application', 'task-environment.persistence-read', 'task-environment.runtime-port'],
     contributions: {
-      cli: ['task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup'],
+      cli: [
+        'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
+        'worktree create', 'worktree cleanup', 'worktree inspect',
+      ],
       http: ['task-environment.http'],
       diagnostics: [],
     },
@@ -261,6 +267,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
+    'worktree create', 'worktree cleanup', 'worktree inspect',
     'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',

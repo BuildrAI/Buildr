@@ -1,5 +1,5 @@
 import { normalizeTaskRecord, taskRecordError } from '../domain/task-record.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { TASK_RETROSPECTIVE_PROMPT } from './task-retrospective-application.mjs';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;

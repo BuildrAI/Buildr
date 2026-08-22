@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createService } from '../domain/service.mjs';
-import { declarationIntakeNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
+import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
 export function serviceError(code, message, status = 400, details = undefined) {
   const error = new Error(message);

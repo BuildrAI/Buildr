@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
 import { TASK_DEVELOPMENT_ACTIONS } from './task-development-operation-contracts.mjs';
 import { compactTaskDevelopmentOperationResult } from './task-development-result-projection.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { resolveCapabilityRoute } from '../../agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 function same(left, right) {

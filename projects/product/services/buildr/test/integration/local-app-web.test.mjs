@@ -74,7 +74,7 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
 test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒绝 filesystem path 字段语义', () => {
   const client = read('../buildr-web/src/api/client.ts');
   const adapter = read('../buildr-web/src/api/LocalSessionAdapter.ts');
-  const server = read('src/web/http/server.mjs');
+  const session = read('src/web/http/session.mjs');
   assert.match(adapter, /x-buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
   assert.match(client, /sessionAdapter\.writeHeaders/);
@@ -82,8 +82,8 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
   assert.match(client, /error\.code = body\.error\?\.code/);
   assert.match(client, /error\.details = body\.error\?\.details/);
   assert.doesNotMatch(client, /document\.|querySelector|buildr-session/);
-  assert.match(server, /\['target', 'root', 'path'\]\.includes\(field\)/);
-  assert.match(server, /Task API 不接受 filesystem path/);
+  assert.match(session, /\['target', 'root', 'path'\]\.includes\(field\)/);
+  assert.match(session, /Task API 不接受 filesystem path/);
 });
 
 test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
@@ -123,6 +123,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const layout = read('../buildr-web/src/app/AppLayout.tsx');
   const index = read('../buildr-web/index.html');
   const server = read('src/web/http/server.mjs');
+  const staticFiles = read('src/web/http/static-files.mjs');
   const publicationHttp = read('src/system/publication/interfaces/http/publication-http.mjs');
   const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
   const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
@@ -133,7 +134,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.match(app, /ArticleDetailPage/);
   assert.match(index, /buildr-session/);
   assert.doesNotMatch(index, /cdn|unpkg|jsdelivr|googleapis/i);
-  assert.match(server, /STATIC_ROOT[\s\S]*web-dist/);
+  assert.match(staticFiles, /STATIC_ROOT[\s\S]*web-dist/);
   assert.match(publicationHttp, /suffix === '\/publications'/);
   assert.match(publicationHttp, /readPublicationAsset/);
   assert.doesNotMatch(server, /STATIC_ASSETS|features\/publications\.js/);
@@ -228,6 +229,7 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const prototype = read('../buildr-web/src/pages/task-detail/PrototypeTab.tsx');
   const server = read('src/web/http/server.mjs');
+  const responses = read('src/web/http/responses.mjs');
   const changeHttp = read('src/task/change/interfaces/http/change-http.mjs');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /if \(tab === 'prototype'\) void refreshPrototype\(\)/);
@@ -247,10 +249,10 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(changeHttp, /ui-prototypes\/\(\[a-f0-9\]\{32\}\)/);
   assert.equal((changeHttp.match(/application\.taskUiPrototype\(/g) || []).length, 1);
   assert.doesNotMatch(server, /\/ui-previews/);
-  assert.match(server, /sandbox allow-scripts/);
-  assert.match(server, /connect-src 'none'/);
-  assert.match(server, /form-action 'none'/);
-  assert.match(server, /frame-ancestors 'self'/);
+  assert.match(responses, /sandbox allow-scripts/);
+  assert.match(responses, /connect-src 'none'/);
+  assert.match(responses, /form-action 'none'/);
+  assert.match(responses, /frame-ancestors 'self'/);
   assert.match(styles, /\.ui-prototype-layout/);
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-prototype-frame/);
 });

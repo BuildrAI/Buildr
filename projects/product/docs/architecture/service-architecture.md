@@ -770,9 +770,9 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
 | Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
-| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | 只拥有 HTTP transport、Session、安全响应、静态文件和只读执行资源；`buildr-web` 仍是前端源码/构建 owner | local-app-web、web-dist/browser smoke、release artifact set | `migrated` | — |
+| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`router.mjs`、`session.mjs`、`static-files.mjs`、`responses.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | local-app-web、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
-| System Installation | `src/system/installation/` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer | installation/npm-launcher/release artifact tests | `migrated` | — |
+| System Installation | `src/system/installation/`；release version 规则位于 `domain/release-version.mjs` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
 | 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
 | 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
@@ -781,17 +781,19 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Publication | `src/system/publication/module.mjs`、`src/system/publication/application/`、HTTP contribution | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
 | Project Verification | `src/verification/application/`、`src/verification/infrastructure/`，由 Bootstrap 与 Task Verification 消费 | Project capability 选择、execution/evidence/resource coordination 与 declaration parser 归 Verification；Task Verification Result writer 仍归 Task | verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
 
-### 全局 Application residual 明细
+### 全局生产 residual 最终收敛
 
-以下清单覆盖当前仍位于 `src/application/` 的全部生产职责。`deferred` 是明确处置，不代表无 owner，也不授权长期增加第二实现。
+第二轮完成后，`src/application/`、`src/domain/`、`src/interfaces/` 不再保存生产文件。原 residual 已按唯一 owner 收敛：
 
-| 当前路径 | current owner | Verification owner | 处置 | 后续触发条件 |
-|----------|---------------|--------------------|------|--------------|
-| `application/declaration-intake/` | Declaration Intake capability；Workspace/Task 仅消费窄 next-action formatter | declaration-intake unit、verification planner integration | `deferred` | Intake 出现独立 Application 状态/接口，或声明治理专项启动 |
-| `application/internal-workflow-route-inventory.mjs` | Internal workflow route contract；Task internal interfaces 为实际 runner owner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `deferred` | internal route registry 进入模块合约，或增加非 Task workflow runner |
-| `application/json-contracts.mjs` | 公共 JSON schema identity 与最小 envelope utility | public-json-contracts system test、architecture verification | `deferred` | 独立 HTTP 契约演进引入 JSON Schema/Ajv/DTO 生成，或出现第二套 schema registry 风险 |
+| 原职责 | 最终 owner | Verification owner | 处置 |
+|--------|------------|--------------------|------|
+| Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、verification planner integration | `migrated` |
+| Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.mjs` | public-json-contracts system、architecture verification | `migrated` |
+| Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `migrated` |
+| Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.mjs` | Git Worktree contract、CLI architecture | `migrated` |
+| Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
 
-第一轮结束时，所有现有生产职责都已在上述迁移台账中归入明确的能力单元，并标记为 `migrated`，或标记为具有明确理由、owner 和后续触发条件的 `deferred`。不得以“尚未讨论”为由留下无 owner、无处置的生产职责；触发条件成立后必须建立独立 Task 重新确认 authority，不能直接把 deferred 当作已授权迁移。
+完整 JSON Schema、Ajv、DTO 自动生成与 buildr-web typed client 仍属于后续 `evolve-buildr-http-contract-system`，不因本次 identity/envelope 结构迁移而被视为完成。
 
 Child Task 对自己实际移动、拆分、新增和删除的文件承担精确清单、影响范围、验证证据和旧入口退出责任。Parent Plan 只保存能力贡献、依赖和最终验收，不复制 Child 文件清单、状态、Result 或 checklist。
 

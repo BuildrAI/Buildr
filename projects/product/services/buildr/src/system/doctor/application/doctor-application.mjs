@@ -7,7 +7,7 @@ import {
   isSupportedAgent,
 } from '../../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.mjs';
 
 export function registerSystemDoctorApplication(runtime) {

@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { parseSemver } from '../../src/domain/release-version.mjs';
+import { parseSemver } from '../../src/system/installation/domain/release-version.mjs';
 import { extractReleaseNotes } from './release-notes.mjs';
 import { parseArguments, writeJson } from './release-files.mjs';
 import { releasePublishAuthority } from './release-authority.mjs';

@@ -24,8 +24,8 @@ import {
 import { observeGitCheckoutIdentity, sameFilesystemPath, sameGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
 import { checkRuntimeAdapter } from '../../agent-assets/infrastructure/runtime/check-runtime.mjs';
 import { spawnCommandSync, spawnSync } from '../../infrastructure/process.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
-import { declarationIntakeGapNextAction } from '../../application/declaration-intake/declaration-intake-trigger.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { declarationIntakeGapNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 import { currentProductInvocation } from '../../infrastructure/product-invocation/index.mjs';
 
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';

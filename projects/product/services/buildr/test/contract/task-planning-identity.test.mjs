@@ -10,7 +10,7 @@ test('Task Planning Identity runtime保持独立只读入口且由Task module注
   const domain = read('src/task/domain/task-planning-identity.mjs');
   const application = read('src/task/application/task-planning-identity-application.mjs');
   const driver = read('src/task/interfaces/internal/task-planning-identity-driver-runner.mjs');
-  const inventory = read('src/application/internal-workflow-route-inventory.mjs');
+  const inventory = read('src/task/contracts/internal-workflow-route-catalog.mjs');
   const compose = read('src/task/module.mjs');
   const cli = read('bin/buildr.mjs');
   assert.match(domain, /buildr\.task-planning-identity-result\/v1/);

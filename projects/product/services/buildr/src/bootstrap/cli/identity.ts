@@ -1,4 +1,4 @@
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { readCurrentProductIdentity } from '../../system/installation/module.mjs';
 
 export function readCliIdentity() {

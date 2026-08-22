@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../infrastructure/process.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { CONVERGENCE_RECEIPT_SCHEMA, portableExecutableIdentity } from './convergence-model.mjs';
 import { canonicalSnapshots, convergenceReceiptPath, runOpenSpecConvergence } from './openspec-converge.mjs';
 import { runOpenSpecConvergencePreflight } from './openspec-convergence-preflight.mjs';

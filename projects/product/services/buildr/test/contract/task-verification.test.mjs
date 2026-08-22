@@ -101,6 +101,7 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/task/application/task-verification-application.mjs']);
   const cli = read('src/task/interfaces/cli/task-verification.mjs');
   const server = read('src/web/http/server.mjs');
+  const router = read('src/web/http/router.mjs');
   const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const taskDetail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const evidenceTab = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
@@ -112,8 +113,10 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.doesNotMatch(cli, /node:fs|YAML|writeTaskVerificationResultPersistence/);
   assert.match(http, /task-verification\.http/);
   assert.match(http, /'verification'/);
-  assert.match(server, /submitTaskRead: \(operation, taskId/);
+  assert.match(server, /createLocalWorkspaceRequestRouter/);
+  assert.match(router, /submitTaskRead: \(operation, taskId/);
   assert.doesNotMatch(server, /recordTaskVerification/);
+  assert.doesNotMatch(router, /recordTaskVerification/);
   const readWorker = read('src/web/http/read-worker.mjs');
   assert.match(readWorker, /verification:\s*'inspectTaskVerificationView'/);
   assert.doesNotMatch(taskDetail, /node:fs|YAML|recordTaskVerification|writeFileSync/);

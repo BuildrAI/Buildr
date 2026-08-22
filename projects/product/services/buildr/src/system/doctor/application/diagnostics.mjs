@@ -13,7 +13,7 @@ import { createProjectEnvironmentPreparationDiagnostics } from './project-enviro
 import { buildDoctorHealth, buildDoctorRepairPlan } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';
 import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-route-diagnostics.mjs';
-import { inspectRequiredInternalWorkflowRoutes } from '../../../application/internal-workflow-route-inventory.mjs';
+import { inspectRequiredInternalWorkflowRoutes } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
 export function registerApplicationDoctor(runtime) {
   const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);

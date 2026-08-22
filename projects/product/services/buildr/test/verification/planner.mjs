@@ -23,7 +23,6 @@ import {
 } from './registry.mjs';
 
 const PRODUCTION_OWNER_GOVERNED_INPUTS = Object.freeze([
-  'src/application/**/*.mjs',
   'src/infrastructure/**/*.mjs',
   'src/*/application/**/*.mjs',
   'src/*/persistence/**/*.mjs',

@@ -145,7 +145,7 @@ test('验证选择基础路径由同一 changed plan 扩展为完整回归', () 
 });
 
 test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
-  const productionFiles = ['src/application', 'src/infrastructure', 'src/task/application', 'src/task/persistence'].flatMap((root) => {
+  const productionFiles = ['src/infrastructure', 'src/task/application', 'src/task/persistence'].flatMap((root) => {
     const pending = [path.join(productRoot, root)];
     const files = [];
     while (pending.length > 0) {
@@ -161,16 +161,16 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   const audit = auditProductionOwnerCoverage(productionFiles);
   assert.equal(audit.ok, true, JSON.stringify(audit.gaps, null, 2));
   assert.deepEqual(VERIFICATION_PRODUCTION_OWNER_ALLOWLIST.map((item) => item.path).sort(), [
-    'src/application/declaration-intake/declaration-intake-trigger.mjs',
+    'src/infrastructure/contracts/declaration-intake.mjs',
     'src/infrastructure/product-resources/index.mjs',
   ]);
   const unitAndComponentOnly = verificationSteps.filter((item) => ['unit', 'component', 'candidate-tarball', 'application-payload-release'].includes(item.id));
   assert.equal(auditProductionOwnerCoverage(['src/workspace/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/persistence/new-component-only.mjs'], unitAndComponentOnly).ok, false);
-  const unknownProduction = createVerificationPlan({ paths: ['src/application/new-unowned-module.mjs'] });
+  const unknownProduction = createVerificationPlan({ paths: ['src/new-module/application/new-unowned-module.mjs'] });
   assert.equal(unknownProduction.scope.mode, 'full');
-  assert.deepEqual(unknownProduction.productionOwnerGaps.map((item) => item.path), ['src/application/new-unowned-module.mjs']);
+  assert.deepEqual(unknownProduction.productionOwnerGaps.map((item) => item.path), ['src/new-module/application/new-unowned-module.mjs']);
   assert.ok(unknownProduction.scope.reasons.some((reason) => reason.code === 'unknown-path-full-fallback'));
   assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/task-record-new-use-case.mjs'] })).includes('system-task-lifecycle'));
 });
@@ -314,7 +314,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['integration-task-finish-delivery', 'system-task-finish-cli'],
     },
     {
-      path: 'src/application/json-contracts.mjs',
+      path: 'src/infrastructure/contracts/public-json.mjs',
       required: ['system-public-json-contracts', 'system-task-finish-cli'],
       excluded: ['system-verification-contracts', 'system-openspec-contract-audit'],
     },

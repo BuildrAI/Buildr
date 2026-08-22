@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/application/json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/infrastructure/contracts/public-json.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
