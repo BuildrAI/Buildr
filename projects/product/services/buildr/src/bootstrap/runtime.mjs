@@ -41,8 +41,8 @@ import { registerProductInvocation } from '../infrastructure/product-invocation/
 import { createPublicationModule } from '../system/publication/module.mjs';
 import { createOpenSpecModule } from '../task/openspec/module.mjs';
 import { createChangeModule } from '../task/change/module.mjs';
-import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
-import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
+import { registerGitWorktreeProvider } from '../task/infrastructure/git-worktree-provider.mjs';
+import { registerVerificationApplication } from '../verification/application/verification-application.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
 

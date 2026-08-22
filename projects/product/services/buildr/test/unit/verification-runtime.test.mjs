@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runVerificationCapabilities } from '../../src/application/verification/capability-runner.mjs';
+import { runVerificationCapabilities } from '../../src/verification/infrastructure/capability-runner.mjs';
 
 function capability(id) {
   return { id, title: id, resourceClaims: [] };

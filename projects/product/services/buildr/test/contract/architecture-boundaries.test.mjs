@@ -52,7 +52,7 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
 
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
   const identityConsumers = [
-    'src/application/worktree/git-worktree-provider.mjs',
+    'src/task/infrastructure/git-worktree-provider.mjs',
     'src/task/persistence/task-environment-repository.mjs',
     'src/task/application/task-verification-application.mjs',
     'src/task/application/finish/task-finish-application.mjs',
@@ -63,7 +63,7 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
     const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
     assert.match(source, /sameFilesystemPath/, `${relative} must use the shared filesystem identity owner`);
   }
-  const worktree = fs.readFileSync(path.join(productRoot, 'src/application/worktree/git-worktree-provider.mjs'), 'utf8');
+  const worktree = fs.readFileSync(path.join(productRoot, 'src/task/infrastructure/git-worktree-provider.mjs'), 'utf8');
   assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
   const adapter = fs.readFileSync(path.join(productRoot, 'src/agent-assets/infrastructure/runtime/adapter-contract.mjs'), 'utf8');
   assert.match(adapter, /runtimeWriteModeMatches/);

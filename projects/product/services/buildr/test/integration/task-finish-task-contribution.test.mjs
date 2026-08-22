@@ -18,7 +18,7 @@ import {
   verifyGitNoContributionProof,
 } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
-import { registerGitWorktreeProvider } from '../../src/application/worktree/git-worktree-provider.mjs';
+import { registerGitWorktreeProvider } from '../../src/task/infrastructure/git-worktree-provider.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });

@@ -13,11 +13,11 @@ import {
   taskExecutionRecordError,
 } from '../domain/task-execution-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
-import { cleanupVerificationEvidence } from '../../application/verification/evidence-lifecycle.mjs';
+import { cleanupVerificationEvidence } from '../../verification/infrastructure/evidence-lifecycle.mjs';
 import {
   createAuthorizedUnknownExecutionRecordFiles,
   loadVerificationExecutionRecordRecovery,
-} from '../../application/verification/execution-record-recovery.mjs';
+} from '../../verification/infrastructure/execution-record-recovery.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence } from '../../task/application/finish/diagnostics-evidence.mjs';
 import {
   loadRetainedTaskFinishExecutionRecordRecovery,

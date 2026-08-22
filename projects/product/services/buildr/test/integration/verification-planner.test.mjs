@@ -279,7 +279,7 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
 test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
   const cases = [
     {
-      path: 'src/system/doctor/application/project-verification-diagnostics.mjs',
+      path: 'src/verification/application/project-verification-diagnostics.mjs',
       required: ['integration-declarations'],
       excluded: ['integration', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store'],
     },
@@ -304,7 +304,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['integration', 'integration-task-development', 'system-workspace-lifecycle', 'system-task-lifecycle'],
     },
     {
-      path: 'src/application/worktree/git-worktree-provider.mjs',
+      path: 'src/task/infrastructure/git-worktree-provider.mjs',
       required: ['system-worktree-lifecycle'],
       excluded: ['system-workspace-lifecycle', 'system-task-lifecycle'],
     },

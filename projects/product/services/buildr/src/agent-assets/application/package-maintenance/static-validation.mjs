@@ -300,7 +300,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
     for (const relative of [
-      'src/application/worktree/worktree-application.mjs',
+      'src/task/infrastructure/worktree-application.mjs',
       'src/application/task-environment/legacy-migration.mjs',
       'src/application/task-environment/current-migration.mjs',
       'resources/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',

@@ -6,7 +6,7 @@ import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,
   projectEnvironmentPreparationScopeSelector,
-} from '../../../task/domain/project-environment-preparation.mjs';
+} from '../../task/domain/project-environment-preparation.mjs';
 
 const ROOT_FIELDS = new Set(['schemaVersion', 'resources', 'capabilities']);
 const RESOURCE_FIELDS = new Set(['id', 'title', 'strategy', 'capacity', 'authorization']);

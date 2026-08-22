@@ -8,7 +8,7 @@ import { createRuntimeDiagnostics } from './runtime-diagnostics.mjs';
 import { createScopeDiagnostics } from './scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
-import { createProjectVerificationDiagnostics } from './project-verification-diagnostics.mjs';
+import { createProjectVerificationDiagnostics } from '../../../verification/application/project-verification-diagnostics.mjs';
 import { createProjectEnvironmentPreparationDiagnostics } from './project-environment-preparation-diagnostics.mjs';
 import { buildDoctorHealth, buildDoctorRepairPlan } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';

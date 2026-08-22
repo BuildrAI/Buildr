@@ -43,7 +43,7 @@ const allowed = new Map([
   ])],
   ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],
-  ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
+  ['src/task/infrastructure/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/task/application/finish/task-finish-run.mjs', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],
@@ -52,7 +52,7 @@ const allowed = new Map([
   ])],
   ['src/task/application/finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
   ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
-  ['src/application/verification/resource-coordinator.mjs', new Set([
+  ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],

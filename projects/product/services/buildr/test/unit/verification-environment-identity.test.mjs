@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { verificationExecutionIdentityMaterial } from '../../src/application/verification/verification-application.mjs';
+import { verificationExecutionIdentityMaterial } from '../../src/verification/application/verification-application.mjs';
 
 function context(controllerIdentity) {
   return {

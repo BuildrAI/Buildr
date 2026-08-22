@@ -14,7 +14,7 @@ test('Windows development projection is empty for non-platform paths and does no
 test('Windows development projection selects only the explicit platform owner for sensitive paths', () => {
   for (const input of [
     'src/agent-assets/infrastructure/runtime/node-runtime.mjs',
-    'src/application/worktree/worktree-application.mjs',
+    'src/task/infrastructure/worktree-application.mjs',
     'services/buildr-web/package.json',
   ]) {
     const plan = createDevelopmentPlatformPlan({ runner: 'windows', paths: [input] });

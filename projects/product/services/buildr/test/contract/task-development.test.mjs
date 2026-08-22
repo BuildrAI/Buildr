@@ -22,7 +22,7 @@ test('Task Development 是唯一 Receipt/Candidate/generation/handoff Applicatio
   assert.match(application, /deriveFormalVerificationReadiness/);
   assert.match(application, /task_development_change_pending_for_content_target/);
   assert.match(application, /buildr\.current-knowledge-maintenance[\s\S]*version:\s*2/);
-  const verification = read('src/application/verification/verification-application.mjs');
+  const verification = read('src/verification/application/verification-application.mjs');
   assert.doesNotMatch(verification, /formalVerificationReadiness|current-knowledge-maintenance|change-disposition-pending/);
 });
 

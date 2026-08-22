@@ -4,17 +4,17 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { parseProjectVerification, validateProjectVerification } from '../../system/doctor/application/project-verification-diagnostics.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
+import { parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
 import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,
 } from '../../task/domain/project-environment-preparation.mjs';
-import { runVerificationCapabilities } from './capability-runner.mjs';
-import { verificationPreparationAdmission } from './preparation-admission.mjs';
-import { executeVerificationCommand } from './process-executor.mjs';
-import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
-import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from './evidence-lifecycle.mjs';
+import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
+import { verificationPreparationAdmission } from '../infrastructure/preparation-admission.mjs';
+import { executeVerificationCommand } from '../infrastructure/process-executor.mjs';
+import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from '../infrastructure/resource-coordinator.mjs';
+import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from '../infrastructure/evidence-lifecycle.mjs';
 import {
   VERIFICATION_EXECUTION_RECORD_KIND,
   VERIFICATION_EXECUTION_RECORD_OWNER,
@@ -23,7 +23,7 @@ import {
   publicVerificationExecutionRecord,
   verificationExecutionRecordOutcome,
   verificationInvocationIdentity,
-} from './execution-record.mjs';
+} from '../infrastructure/execution-record.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;

@@ -7,7 +7,7 @@ import {
   publicVerificationExecutionRecord,
   verificationExecutionRecordOutcome,
   verificationInvocationIdentity,
-} from '../../src/application/verification/execution-record.mjs';
+} from '../../src/verification/infrastructure/execution-record.mjs';
 
 function input(overrides = {}) {
   const root = path.resolve('/workspace');

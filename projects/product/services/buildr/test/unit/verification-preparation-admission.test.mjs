@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { verificationCapabilityIdentity, verificationPreparationAdmission } from '../../src/application/verification/preparation-admission.mjs';
+import { verificationCapabilityIdentity, verificationPreparationAdmission } from '../../src/verification/infrastructure/preparation-admission.mjs';
 
 function capability() {
   return {

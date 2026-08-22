@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import process from 'node:process';
-import { createVerificationResourceCoordinator } from '../../src/application/verification/resource-coordinator.mjs';
+import { createVerificationResourceCoordinator } from '../../src/verification/infrastructure/resource-coordinator.mjs';
 
 const [root, taskId, acquiredFile, releaseFile, ttlArg] = process.argv.slice(2);
 const coordinator = createVerificationResourceCoordinator({

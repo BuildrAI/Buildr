@@ -7,7 +7,7 @@ import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { verificationCapabilityIdentity } from '../../src/application/verification/preparation-admission.mjs';
+import { verificationCapabilityIdentity } from '../../src/verification/infrastructure/preparation-admission.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');

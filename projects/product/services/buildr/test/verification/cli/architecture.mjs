@@ -47,8 +47,6 @@ const globalApplicationResiduals = Object.freeze([
   'application/declaration-intake/',
   'application/internal-workflow-route-inventory.mjs',
   'application/json-contracts.mjs',
-  'application/verification/',
-  'application/worktree/',
 ]);
 const architectureSource = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
 if (!architectureSource) problems.push('missing Service architecture migration ledger');
@@ -101,7 +99,7 @@ const requiredRuntime = [
   'workspace/persistence/project-daily-progress-repository.mjs',
   'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
   'workspace/interfaces/http/workspace-http.mjs',
-  'application/worktree/git-worktree-provider.mjs',
+  'task/infrastructure/git-worktree-provider.mjs',
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
@@ -142,12 +140,13 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
 const layerOf = (relative) => {
+  if (relative === 'application/json-contracts.mjs' || relative === 'task/application/finish/git-task-contribution.mjs' || relative === 'task/application/finish/task-finish-delivery-commit.mjs') return 'infrastructure';
   const parts = relative.split('/');
   const moduleOffset = (
     (parts[0] === 'system' && ['installation', 'doctor', 'publication'].includes(parts[1]))
     || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
   ) ? 2 : 1;
-  if (!['task', 'web', 'workspace', 'agent-assets', 'system'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  if (!['task', 'web', 'workspace', 'agent-assets', 'system', 'verification'].includes(parts[0]) && moduleOffset === 1) return parts[0];
   if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
@@ -447,7 +446,7 @@ const legacyTaskRecordConsumers = new Set([
   'task/application/task-retrospective-application.mjs',
   'task/application/task-terminal-delivery-application.mjs',
   'task/application/task-verification-application.mjs',
-  'application/worktree/git-worktree-provider.mjs',
+  'task/infrastructure/git-worktree-provider.mjs',
   'task/persistence/task-environment-repository.mjs',
   'task/persistence/parent-coordination-repository.mjs',
   'task/persistence/task-development-repository.mjs',

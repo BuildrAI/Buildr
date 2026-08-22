@@ -5,7 +5,7 @@ import process from 'node:process';
 
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../application/json-contracts.mjs';
 import {
   verifyDeliveredGitTaskContribution,
   verifyGitNoContributionProof,
