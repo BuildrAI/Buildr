@@ -59,7 +59,8 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
   assert.match(prompt.prompt, /集成分支：dev/);
   assert.match(prompt.prompt, /不得盲目 checkout、stash 或 relink/);
   assert.match(prompt.prompt, /trigger: project-registered/);
-  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
+  assert.match(prompt.prompt, /routine-maintenance或user-decision-required/);
+  assert.match(prompt.prompt, /改变长期适用性时请求用户确认/);
   assert.equal(prompt.copiedMeansCreated, false);
 });
 

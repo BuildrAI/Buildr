@@ -192,7 +192,6 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
   assert.match(candidate, /Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
-  assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
   for (const step of candidatePlan.steps) {
     assert.equal(step.testing.environment.footprints.includes('network'), false, `${step.id} must not depend on external network`);

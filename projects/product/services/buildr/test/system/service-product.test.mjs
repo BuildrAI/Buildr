@@ -34,7 +34,8 @@ test('Service create 写入 v2 Domain、父 UUID 与受控 metadata', (t) => {
   assert.equal(created.service.code, 'api');
   assert.match(created.nextActions[0], /trigger: service-registered/);
   assert.match(created.nextActions[0], /service:demo\/api/);
-  assert.match(created.nextActions[0], /未经用户确认不得写入长期声明/);
+  assert.match(created.nextActions[0], /routine-maintenance或user-decision-required/);
+  assert.match(created.nextActions[0], /改变长期适用性时请求用户确认/);
   const runtime = createRuntime();
   const list = runtime.listServices(root, 'demo');
   assert.equal(list.schemaVersion, 'buildr.services/v2');

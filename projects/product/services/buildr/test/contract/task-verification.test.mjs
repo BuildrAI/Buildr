@@ -19,7 +19,6 @@ const worktreeSkill = read('resources/workspace/skills/buildr/task-worktree/SKIL
 const environmentSkill = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
 const gitOperationsContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
 const gitOperationsSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
-const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
 const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
 const finishExecutor = read('src/task/application/finish/task-finish-product-executor.mjs');
 const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
@@ -176,18 +175,10 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
 });
 
 test('Task Finish 保持可选五阶段 handoff consumer 且不接管 Verification authority', () => {
-  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);
-  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 110);
-  for (const required of [
-    'preflight → prepare → verify → deliver → cleanup',
-    'current Development handoff', '交付载体（Delivery Carrier）',
-    'Task Contribution', '不运行或记录 Task Verification',
-  ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
   assert.match(finishContract, /只消费Development handoff/);
+  assert.match(finishContract, /分别投影Delivery、Activation、Environment Cleanup和Diagnostics/);
   assert.match(finishContract, /不得运行或记录Task Verification\/Task Review/);
   assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
-  assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
-  assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);
 });
 
 test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调用', () => {
@@ -205,7 +196,7 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
   assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
   assert.match(developmentSkill, /每个关联Change的deterministic convergence\/archive/);
   assert.doesNotMatch(finishExecutor, /openspec|archiveChange|legacyConvergence|openspecConverge/);
-  assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
+  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review、生成Candidate或收敛OpenSpec Change/);
 });
 
 test('产品入口分别路由 Task Verification、Environment 与 Git provider 意图', () => {

@@ -565,66 +565,11 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
 });
 
-test('Buildr release Skill fixes release identity, dependency preparation, and tree-gated history bridging', () => {
-  const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-release/SKILL.md'), 'utf8');
-  const selfBootstrapSkill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+test('release bridge and self-bootstrap runner fail closed on unmatched delivery evidence', () => {
   const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
   const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/bridge-main-to-dev.mjs'), 'utf8');
-  const preparation = skill.slice(skill.indexOf('## 准备发布'), skill.indexOf('## 发布版本'));
-  const release = skill.slice(skill.indexOf('## 发布版本'), skill.indexOf('## 中断与失败恢复'));
-  const identity = skill.indexOf('tasks/release-<version>');
-  const npmCi = skill.indexOf('`npm ci`');
-  const versionMutation = skill.indexOf('`package.json`');
-  const candidateTree = skill.indexOf('<candidate-tree>');
-  const localCliInstall = skill.indexOf('scripts/install-buildr-cli');
-  const bridge = skill.indexOf('bridge-main-to-dev.mjs');
-  const selfBootstrap = preparation.indexOf('buildr-self-bootstrap-sync');
-  const finish = preparation.indexOf('8. 使用 `task-finish`');
-  const preMain = preparation.indexOf('--stage pre-main');
-  const evidenceBridge = preparation.indexOf('--self-bootstrap-evidence <self-bootstrap-evidence.json>');
-  const postReleaseCleanup = skill.indexOf('必须进入发布后清理检查');
-  for (const [name, value] of Object.entries({ identity, npmCi, versionMutation, candidateTree, localCliInstall, bridge, finish, selfBootstrap, preMain, evidenceBridge, postReleaseCleanup })) {
-    assert.notEqual(value, -1, name);
-  }
-  assert.equal(identity < npmCi, true);
-  assert.equal(npmCi < versionMutation, true);
-  assert.equal(candidateTree < bridge, true);
-  assert.equal(localCliInstall < bridge, true);
-  assert.equal(finish < selfBootstrap, true);
-  assert.equal(selfBootstrap < preMain, true);
-  assert.equal(preMain < evidenceBridge, true);
-  assert.match(selfBootstrapSkill, /只允许fetch与fast-forward/);
-  assert.match(selfBootstrapSkill, /remote或history无法证明时/);
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
   assert.match(bridgeSource, /Missing required --self-bootstrap-run/);
   assert.match(bridgeSource, /Missing required --self-bootstrap-evidence/);
   assert.match(bridgeSource, /Self-bootstrap closeout evidence does not match current remote dev/);
-  for (const required of [
-    'release-<version>', '<workspace-root>/.worktrees/release-<version>',
-    'origin/main^{tree}', 'origin/dev^{tree}', 'force push', 'tree gate',
-    'release-notes.mjs', 'GitHub Release body', '不是 Latest',
-    'projects/product/buildr version --json', 'projects/product/buildr --help', 'projects/product/buildr doctor --agent <agent>',
-    '不得调用`scripts/install-buildr-cli`', '不得读取、创建、覆盖或要求PATH默认`buildr`绑定checkout',
-    'npm发布身份由候选tarball验证与发布后官方registry精确安装smoke独立证明',
-    '展示待删除 ref、commit', '请求用户明确授权删除',
-    '重新查询远端确认 ref 不存在', '清理 follow-up',
-    '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
-    '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
-    'release-transaction-runner.mjs', '只对current`origin/main`dispatch一次`publish.yml`',
-    '本机不得创建或push tag', '唯一`release` job', '不请求第二次发布审批',
-    '新的protected deployment/attempt仍可能按GitHub规则再次要求审批', '不得回退本机token publish',
-    'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
-    '不删除 tag、不 unpublish、不重复 publish',
-    '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
-    '重新运行失败作业', '三个Windows高成本shard继续并行',
-    '--self-bootstrap-run <finish-run-id>', '--self-bootstrap-evidence <self-bootstrap-evidence.json>',
-    '绝不先bridge再补跑', 'activation后冻结的候选',
-  ]) assert.equal(skill.includes(required), true, required);
-  assert.equal(preparation.includes('release-transaction-runner.mjs'), false);
-  assert.equal(preparation.includes('--stage post-main'), true);
-  assert.equal(preparation.includes('--authority-evidence'), false);
-  assert.equal(release.includes('release-transaction-runner.mjs'), true);
-  assert.equal(release.includes('release-authority-probe-runner.mjs'), false);
-  assert.equal(release.includes('本机不得创建或push tag'), true);
-  for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
 });

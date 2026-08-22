@@ -252,7 +252,8 @@ suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范�
   assert.match(prompt.prompt, /trigger: first-task-scope/);
   assert.match(prompt.prompt, /scope: project:demo/);
   assert.doesNotMatch(prompt.prompt, /service:demo\//);
-  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
+  assert.match(prompt.prompt, /routine-maintenance或user-decision-required/);
+  assert.match(prompt.prompt, /改变长期适用性时请求用户确认/);
   assert.equal(prompt.copiedMeansStarted, false);
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'missing', goal: '不应回退' }), (error) => error.code === 'project_not_found');
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: 'x', rootPath: root }), (error) => error.code === 'workspace_start_work_field_forbidden');
