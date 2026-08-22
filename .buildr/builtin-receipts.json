@@ -137,11 +137,11 @@
       "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
-      "integrity": "sha256-0b6d51aac0044c0ae4d9394a6c1b1ae6b7f3d6c0735572ab7115568207f60dfc",
+      "integrity": "sha256-c1c556413c2b5a7fdc1efcab1385ad28bf472c88f8bfde2d63da3c0a3b42393d",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-9a18edd4e83633a546dc3fe86bcda3b41a02596329f06d2f9d5156396a76288d"
+          "integrity": "sha256-81afadcc134d1b3a52251c6d107121ec4fbf8e877999a8680893d7efda999c09"
         }
       ]
     },
@@ -189,15 +189,15 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-c1eea78df83ba91c3ab4577c06ceb12e3a3c4e47d555bacf825ecaccc747422d",
+      "integrity": "sha256-050d62a074c18a2add8d7fb4f2bb6a7ce11c61ca56540a9d22c24b0cb4c38ecb",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-f5de1ce97bbbdb120a16b13a3802e15bba3ce4c2d4bdf5564988c0639042beee"
+          "integrity": "sha256-59903a1a294233da6b00875c8e9090307bd04fa1e5ef174b15d67c34ed156d00"
         },
         {
           "path": "agents/openai.yaml",
-          "integrity": "sha256-835950710b77df7e11884edc964384ff3f8ca999b70b25599fc3186a3053a5f8"
+          "integrity": "sha256-75d7ecaf7f6a056788ec3288b44893f3777054ebdc31c9dcb7a1b516df788906"
         }
       ]
     },
@@ -237,11 +237,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-0f4a452191d02db4e4e043b79e5298789cd10cfc33ec2a64d95c865f1ab26c14",
+      "integrity": "sha256-6d71c5bfb390181ee74e744034b4e4cb3d3d8ad81087be94ac2a924771afc8d6",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-d0080a36103d7167c35136f3e90d47a73234f780488cef9c1d0290288e6f9cd2"
+          "integrity": "sha256-083ad7de4b0757d5bf0fcbde824ded8c313e5707b463c2f82285846d85606f65"
         }
       ]
     },
