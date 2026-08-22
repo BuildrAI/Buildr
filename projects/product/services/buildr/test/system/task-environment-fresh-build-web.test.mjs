@@ -51,6 +51,8 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   fs.mkdirSync(path.join(candidateBuildr, 'tools', 'contracts'), { recursive: true });
   fs.mkdirSync(path.join(candidateBuildr, 'src', 'infrastructure', 'contracts'), { recursive: true });
   fs.mkdirSync(path.join(candidateBuildr, 'src', 'task', 'interfaces', 'http', 'generated'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'workspace', 'interfaces', 'http', 'generated'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'agent-assets', 'interfaces', 'http', 'generated'), { recursive: true });
   fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
@@ -69,11 +71,16 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   for (const relative of [
     'tools/contracts/task-record-dto.mjs',
     'tools/contracts/task-professional-dto.mjs',
+    'tools/contracts/workspace-agent-assets-dto.mjs',
     'src/infrastructure/contracts/json-schema-validator.mjs',
     'src/task/interfaces/http/task-record-http-contracts.mjs',
     'src/task/interfaces/http/generated/task-record-http-dto.ts',
     'src/task/interfaces/http/task-professional-http-contracts.mjs',
     'src/task/interfaces/http/generated/task-professional-http-dto.ts',
+    'src/workspace/interfaces/http/workspace-http-contracts.mjs',
+    'src/workspace/interfaces/http/generated/workspace-http-dto.ts',
+    'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
+    'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts',
   ]) {
     fs.copyFileSync(path.join(serviceRoot, relative), path.join(candidateBuildr, relative));
   }

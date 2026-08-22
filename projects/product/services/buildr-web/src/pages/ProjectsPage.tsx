@@ -2,21 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { api } from '../api';
+import { workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
-type Project = {
-  code: string;
-  name: string;
-  description: string;
-  source: { type: string; path: string };
-};
-
-type WorkspacePayload = {
-  rootPath: string;
-  workspace: { name: string };
-};
+type Project = NonNullable<ProjectResponse['projects']>[number];
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody id="project-table-body" {...props} />
@@ -38,18 +28,15 @@ export function ProjectsPage() {
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api('/api/v1/projects') as Promise<{
-            projects: Project[];
-            migrationRequired?: boolean;
-            nextActions?: string[];
-          }>,
+          workspaceApi.read(),
+          workspaceApi.listProjects(),
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
         setBreadcrumbParts([workspace.workspace.name, '项目']);
-        setProjects(data.projects);
-        setState(`${data.projects.length} 个项目`);
+        const nextProjects = data.projects ?? [];
+        setProjects(nextProjects);
+        setState(`${nextProjects.length} 个项目`);
         setMigrationMessage(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
       } catch (err) {
         if (!cancelled) {

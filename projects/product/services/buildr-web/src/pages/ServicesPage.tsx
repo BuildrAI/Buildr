@@ -2,21 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { api } from '../api';
+import { workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { ServiceEditModal } from '../components/ServiceEditModal';
 import { serviceTypeLabel, workspaceHref } from '../lib/labels';
 
-type Project = { code: string; name: string };
-type Service = {
-  code: string;
-  name: string;
-  description: string;
-  type: string;
-  source: { type: string };
-};
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+type Project = NonNullable<ProjectResponse['projects']>[number];
+type Service = NonNullable<ProjectResponse['services']>[number];
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody id="service-table-body" {...props} />
@@ -43,15 +35,16 @@ export function ServicesPage() {
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api('/api/v1/projects') as Promise<{ projects: Project[] }>,
+          workspaceApi.read(),
+          workspaceApi.listProjects(),
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
         setBreadcrumbParts([workspace.workspace.name, '服务']);
-        setProjects(data.projects);
+        const nextProjects = data.projects ?? [];
+        setProjects(nextProjects);
         const requested = searchParams.get('project');
-        const selected = data.projects.find((project) => project.code === requested) || data.projects[0];
+        const selected = nextProjects.find((project) => project.code === requested) || nextProjects[0];
         if (selected) {
           setProjectCode(selected.code);
         } else {
@@ -77,19 +70,17 @@ export function ServicesPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services`) as {
-          project: { name: string };
-          services: Service[];
-          migrationRequired?: boolean;
-          nextActions?: string[];
-        };
+        const data = await workspaceApi.services(projectCode);
         if (cancelled) return;
-        setProjectName(data.project.name);
-        setServices(data.services);
-        setTitle(`${data.project.name}的服务`);
+        const project = data.project;
+        const nextServices = data.services ?? [];
+        if (!project) throw new Error('项目响应缺少 project。');
+        setProjectName(project.name || projectCode);
+        setServices(nextServices);
+        setTitle(`${project.name || projectCode}的服务`);
         setCopy('目录负责资源定位与关联跳转；稳定元数据可在弹框中编辑。');
-        setCount(`${data.services.length} 个服务`);
-        setEmptyText(`项目“${data.project.name}”暂未登记服务。服务只在需要管理代码仓、应用、模块或可执行资产时添加；你也可以直接回到“开始”页推进项目范围工作。`);
+        setCount(`${nextServices.length} 个服务`);
+        setEmptyText(`项目“${project.name || projectCode}”暂未登记服务。服务只在需要管理代码仓、应用、模块或可执行资产时添加；你也可以直接回到“开始”页推进项目范围工作。`);
         setMigrationMessage(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
         setLoaded(true);
       } catch (err) {

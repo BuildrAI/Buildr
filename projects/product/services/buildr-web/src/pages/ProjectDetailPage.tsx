@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Tabs } from 'antd';
-import { api } from '../api';
+import { api, workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
 import { ProjectEditModal } from '../components/ProjectEditModal';
@@ -9,16 +9,7 @@ import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../lib/pr
 import { workspaceHref } from '../lib/labels';
 import { DailyProgressPanel } from './project-detail/DailyProgressPanel';
 
-type ProjectDetail = {
-  revision: string;
-  migrationRequired?: boolean;
-  nextActions?: string[];
-  project: {
-    code: string;
-    name: string;
-    description?: string;
-  };
-};
+type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 
 type ProjectDocument = {
   path?: string;
@@ -26,8 +17,6 @@ type ProjectDocument = {
   exists: boolean;
   content: string | null;
 };
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 
 const DOC_TABS = [
   { key: 'README.md', label: 'README.md' },
@@ -89,9 +78,9 @@ export function ProjectDetailPage() {
     void (async () => {
       try {
         const [workspace, projectData, servicesData, readme] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}`) as Promise<ProjectDetail>,
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services`) as Promise<{ services: unknown[] }>,
+          workspaceApi.read(),
+          workspaceApi.project(projectCode) as Promise<ProjectDetail>,
+          workspaceApi.services(projectCode),
           api(`/api/v1/projects/${encodeURIComponent(projectCode)}/documents/README.md`) as Promise<ProjectDocument>,
         ]);
         if (cancelled) return;
@@ -99,7 +88,7 @@ export function ProjectDetailPage() {
         setWorkspaceName(workspace.workspace.name);
         setBreadcrumbParts([workspace.workspace.name, '项目', projectData.project.name]);
         setData(projectData);
-        setServiceCount(`${servicesData.services.length} 个已登记服务`);
+        setServiceCount(`${(servicesData.services ?? []).length} 个已登记服务`);
         setViewDoc(readme);
         setViewPath(readme.path || 'README.md');
         setViewHistory([readme.path || 'README.md']);

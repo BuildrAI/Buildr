@@ -1,23 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Space, Typography } from 'antd';
-import { api } from '../api';
+import { workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
-type ProjectEditData = {
-  revision: string;
-  migrationRequired?: boolean;
-  nextActions?: string[];
-  project: {
-    code: string;
-    name: string;
-    description: string;
-    source: { path: string };
-  };
-};
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+type ProjectEditData = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 
 export function ProjectEditPage() {
   const { projectCode = '' } = useParams();
@@ -33,8 +21,8 @@ export function ProjectEditPage() {
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}`) as Promise<ProjectEditData>,
+          workspaceApi.read(),
+          workspaceApi.project(projectCode) as Promise<ProjectEditData>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
@@ -58,13 +46,10 @@ export function ProjectEditPage() {
     const descriptionInput = form.elements.namedItem('description') as HTMLTextAreaElement;
     setSaveState('正在保存…');
     try {
-      const updated = await api(`/api/v1/projects/${encodeURIComponent(projectCode)}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          revision: current.revision,
-          name: nameInput.value,
-          description: descriptionInput.value,
-        }),
+      const updated = await workspaceApi.updateProject(projectCode, {
+        revision: current.revision,
+        name: nameInput.value,
+        description: descriptionInput.value,
       }) as ProjectEditData;
       setCurrent(updated);
       setAlert(updated.migrationRequired ? (updated.nextActions || []).join(' ') : '');

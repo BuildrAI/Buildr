@@ -107,7 +107,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
         'skills add', 'skills remove', 'skills bind', 'skills unbind',
         'skill install', 'runtime check', 'skills render', 'rules render',
       ],
-      http: [],
+      http: ['agent-assets.http'],
       diagnostics: ['agent-assets.diagnostics'],
     },
     lifecycle: 'none',
@@ -306,7 +306,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
-    'workspace-core.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http', 'task-execution-record.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http', 'task-execution-record.http',
     'task-review.http', 'task-retrospective.http', 'task-verification.http', 'task-development.http',
     'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
   ]);

@@ -1,3 +1,5 @@
+import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from './workspace-http-contracts.mjs';
+
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const CODE = '[A-Za-z0-9][A-Za-z0-9._-]*';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
@@ -19,28 +21,42 @@ function decodeDocumentPath(value, kind) {
 }
 
 export function createWorkspaceHttpContribution(application) {
+  const operation = (id) => WORKSPACE_HTTP_OPERATIONS.find((item) => item.id === id);
+  function validateRequest(id, value) {
+    const item = operation(id);
+    return validateWorkspaceHttp(item.requestSchemaId, value, id);
+  }
+  function validateResponse(id, value) {
+    const item = operation(id);
+    return validateWorkspaceHttp(item.successSchemaId, value, id, 'response');
+  }
+  const respond = (id, value) => ({ status: 200, body: validateResponse(id, value) });
   return Object.freeze({
     id: 'workspace-core.http',
     async handleTopLevel({ request, pathname, authorizeWrite, readJsonBody, pickWorkspaceDirectory }) {
-      if (request.method === 'GET' && pathname === '/api/v1/workspaces') return ok(application.listRegisteredWorkspaces());
+      if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
+        validateRequest('workspace.registry.list', {});
+        return respond('workspace.registry.list', application.listRegisteredWorkspaces());
+      }
       if (request.method === 'POST' && pathname === '/api/v1/workspaces') {
         authorizeWrite();
-        return ok(application.registerLocalWorkspace(await readJsonBody()));
+        const input = validateRequest('workspace.registry.register', await readJsonBody());
+        return respond('workspace.registry.register', application.registerLocalWorkspace(input));
       }
       if (request.method === 'POST' && pathname === '/api/v1/workspaces/pick') {
         authorizeWrite();
-        const input = await readJsonBody();
+        const input = validateRequest('workspace.registry.pick', await readJsonBody());
         const rootPath = pickWorkspaceDirectory();
-        return ok(rootPath ? application.inspectLocalWorkspaceCandidate(rootPath, input.revision) : { canceled: true });
+        return respond('workspace.registry.pick', rootPath ? application.inspectLocalWorkspaceCandidate(rootPath, input.revision) : { status: 'canceled', canceled: true });
       }
       if (request.method === 'DELETE' && pathname === '/api/v1/workspaces') {
         authorizeWrite();
-        return ok(application.removeRegisteredWorkspace(await readJsonBody()));
+        return respond('workspace.registry.remove', application.removeRegisteredWorkspace(validateRequest('workspace.registry.remove', await readJsonBody())));
       }
       const removeMatch = pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})$`));
       if (request.method === 'DELETE' && removeMatch) {
         authorizeWrite();
-        return ok(application.removeRegisteredWorkspace({ ...(await readJsonBody()), workspaceId: removeMatch[1] }));
+        return respond('workspace.registry.remove', application.removeRegisteredWorkspace({ ...validateRequest('workspace.registry.remove', await readJsonBody()), workspaceId: removeMatch[1] }));
       }
       if (request.method === 'POST' && pathname === '/api/v1/prompts/workspace-create') {
         authorizeWrite();
@@ -49,13 +65,17 @@ export function createWorkspaceHttpContribution(application) {
       return null;
     },
     async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }) {
-      if (request.method === 'GET' && suffix === '') return ok(application.getWorkspace(root));
+      if (request.method === 'GET' && suffix === '') {
+        validateRequest('workspace.read', {});
+        return respond('workspace.read', application.getWorkspace(root));
+      }
       if (request.method === 'GET' && suffix === '/getting-started') return ok(application.getWorkspaceGettingStarted(root));
       if (request.method === 'PUT' && suffix === '') {
         authorizeWrite();
-        return ok(application.updateWorkspaceMetadata(root, await readJsonBody()));
+        application.updateWorkspaceMetadata(root, validateRequest('workspace.update', await readJsonBody()));
+        return respond('workspace.update', application.getWorkspace(root));
       }
-      if (request.method === 'GET' && suffix === '/projects') return ok(application.listProjects(root));
+      if (request.method === 'GET' && suffix === '/projects') return respond('project.list', application.listProjects(root));
 
       const taskDailyProgressMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/daily-progress$`));
       if (request.method === 'GET' && taskDailyProgressMatch) return ok(application.inspectTaskDailyProgress(root, taskDailyProgressMatch[1]));
@@ -81,26 +101,26 @@ export function createWorkspaceHttpContribution(application) {
       }
 
       const projectMatch = suffix.match(new RegExp(`^/projects/(${CODE})$`));
-      if (request.method === 'GET' && projectMatch) return ok(application.projectDetail(root, projectMatch[1]));
+      if (request.method === 'GET' && projectMatch) return respond('project.detail', application.projectDetail(root, projectMatch[1]));
       if (request.method === 'PUT' && projectMatch) {
         authorizeWrite();
-        return ok(application.updateProjectMetadata(root, projectMatch[1], await readJsonBody()));
+        return respond('project.update', application.updateProjectMetadata(root, projectMatch[1], validateRequest('project.update', await readJsonBody())));
       }
       const projectDocumentMatch = suffix.match(new RegExp(`^/projects/(${CODE})/documents/(.+)$`));
       if (request.method === 'GET' && projectDocumentMatch) {
         return ok(application.projectDocument(root, projectDocumentMatch[1], decodeDocumentPath(projectDocumentMatch[2], 'project')));
       }
       const servicesMatch = suffix.match(new RegExp(`^/projects/(${CODE})/services$`));
-      if (request.method === 'GET' && servicesMatch) return ok(application.listServices(root, servicesMatch[1]));
+      if (request.method === 'GET' && servicesMatch) return respond('service.list', application.listServices(root, servicesMatch[1]));
       const serviceDocumentMatch = suffix.match(new RegExp(`^/projects/(${CODE})/services/(${CODE})/documents/(.+)$`));
       if (request.method === 'GET' && serviceDocumentMatch) {
         return ok(application.serviceDocument(root, serviceDocumentMatch[1], serviceDocumentMatch[2], decodeDocumentPath(serviceDocumentMatch[3], 'service')));
       }
       const serviceMatch = suffix.match(new RegExp(`^/projects/(${CODE})/services/(${CODE})$`));
-      if (request.method === 'GET' && serviceMatch) return ok(application.serviceDetail(root, serviceMatch[1], serviceMatch[2]));
+      if (request.method === 'GET' && serviceMatch) return respond('service.detail', application.serviceDetail(root, serviceMatch[1], serviceMatch[2]));
       if (request.method === 'PUT' && serviceMatch) {
         authorizeWrite();
-        return ok(application.updateServiceMetadata(root, serviceMatch[1], serviceMatch[2], await readJsonBody()));
+        return respond('service.update', application.updateServiceMetadata(root, serviceMatch[1], serviceMatch[2], validateRequest('service.update', await readJsonBody())));
       }
       if (request.method === 'POST' && suffix === '/prompts/project-create') {
         authorizeWrite();

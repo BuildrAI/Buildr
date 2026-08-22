@@ -8,6 +8,8 @@ import { registerApplicationRuntime } from './application/runtime-projection.mjs
 import { registerDomainsRuntime } from './application/runtime.mjs';
 import { registerDomainsSkills } from './application/skills.mjs';
 import { createAgentAssetsCliContributions } from './interfaces/cli/agent-assets.mjs';
+import { createAgentAssetsHttpContribution } from './interfaces/http/agent-assets-http.mjs';
+import { registerAgentAssetsHttpQuery } from './application/http-query.mjs';
 import { checkClaudeCodeRuntime, printRuntimeCheckReport } from './infrastructure/runtime/check-claude-code.mjs';
 import { checkCodexRuntime, printCodexRuntimeCheckReport } from './infrastructure/runtime/check-codex.mjs';
 import { checkRuntimeAdapter, RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from './infrastructure/runtime/check-runtime.mjs';
@@ -45,6 +47,7 @@ const APPLICATION_METHODS = Object.freeze([
   'builtinList', 'builtinUninstall', 'builtinRestore',
   'packageCheck', 'packageBuild',
   'renderRuntime', 'renderSkillsRuntime', 'renderRulesRuntime', 'syncRuntime',
+  'listAgentAssets',
 ]);
 
 function methodPort(runtime, methods) {
@@ -144,6 +147,7 @@ export function createAgentAssetsModule(runtime) {
       registerApplicationPackageMaintenance(runtime);
       registerAgentAssetsPackageAssets(runtime);
       registerApplicationRuntime(runtime);
+      registerAgentAssetsHttpQuery(runtime);
 
       const application = methodPort(runtime, APPLICATION_METHODS);
       const runtimeAdapters = runtimeDiagnosticsReadModel();
@@ -153,6 +157,7 @@ export function createAgentAssetsModule(runtime) {
         },
         contributions: {
           cli: createAgentAssetsCliContributions(),
+          http: [createAgentAssetsHttpContribution(application)],
           diagnostics: [Object.freeze({ id: 'agent-assets.diagnostics', readModel: Object.freeze({ application, runtimeAdapters }) })],
         },
       });
