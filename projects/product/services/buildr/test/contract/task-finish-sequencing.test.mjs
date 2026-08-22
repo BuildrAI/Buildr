@@ -135,7 +135,7 @@ test('Task Verification 只表达 transient execution 与 current Result authori
 });
 
 test('convergence事务Receipt只保存portable executable identity', () => {
-  const source = read('src/application/domains/openspec.mjs');
+  const source = read('src/task/openspec/application/openspec-application.mjs');
   assert.match(source, /portableExecutableIdentity/);
   assert.doesNotMatch(source, /openspecExecutable:\s*executable/);
   const receiptFiles = [];
@@ -152,10 +152,10 @@ test('convergence事务Receipt只保存portable executable identity', () => {
 });
 
 test('新 convergence 路径只有一份事务期Receipt且成功archive后释放', () => {
-  const orchestrator = read('src/application/openspec/openspec-converge.mjs');
-  const model = read('src/application/openspec/convergence-model.mjs');
+  const orchestrator = read('src/task/openspec/application/openspec-converge.mjs');
+  const model = read('src/task/openspec/application/convergence-model.mjs');
   for (const module of ['convergence-planner.mjs', 'projected-validator.mjs', 'canonical-applier.mjs', 'convergence-observer.mjs']) {
-    assert.equal(fs.existsSync(path.join(serviceRoot, 'src/application/openspec', module)), true, module);
+    assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/openspec/application', module)), true, module);
   }
   assert.match(orchestrator, /convergence-receipt\.json/);
   assert.match(orchestrator, /receipt-release/);

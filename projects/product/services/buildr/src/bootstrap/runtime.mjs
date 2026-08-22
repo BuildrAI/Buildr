@@ -38,11 +38,11 @@ import { registerWorkspaceManagementFence } from '../infrastructure/filesystem/w
 import { registerContentTargetObserver } from '../infrastructure/content/content-target-observer.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
-import { registerDomainsOpenspec } from '../application/domains/openspec.mjs';
 import { registerDomainsPackageAssets } from '../application/domains/package-assets.mjs';
 import { registerApplicationWorkspaceOperations } from '../application/workspace-operations.mjs';
-import { createPublicationModule } from '../publication/module.mjs';
-import { createChangeModule } from '../change/module.mjs';
+import { createPublicationModule } from '../system/publication/module.mjs';
+import { createOpenSpecModule } from '../task/openspec/module.mjs';
+import { createChangeModule } from '../task/change/module.mjs';
 import { registerGitWorktreeProvider } from '../application/worktree/git-worktree-provider.mjs';
 import { registerVerificationApplication } from '../application/verification/verification-application.mjs';
 
@@ -128,9 +128,9 @@ export function createRuntime() {
   registry.install(createAgentAssetsModule(runtime));
   registerContentTargetObserver(runtime);
   registerProjectGitObserver(runtime);
-  registerDomainsOpenspec(runtime);
   registerDomainsPackageAssets(runtime);
   registry.install(createPublicationModule(runtime));
+  registry.install(createOpenSpecModule(runtime));
   registry.install(createChangeModule(runtime));
   registerApplicationWorkspaceOperations(runtime);
   registerGitWorktreeProvider(runtime);

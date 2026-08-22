@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnCommandSync } from '../../infrastructure/process.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.mjs';
 
 const diagnosticDigest = (value) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 

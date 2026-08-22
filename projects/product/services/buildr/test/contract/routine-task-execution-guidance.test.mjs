@@ -15,7 +15,7 @@ const applySidebar = read('resources/workspace/components/buildr/openspec/contri
 const syncSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md');
 const archiveSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md');
 const contractGuard = read('resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md');
-const cliRegistry = read('src/bootstrap/cli/registry.mjs');
+const openSpecModule = read('src/task/openspec/module.mjs');
 const cliReference = read('docs/cli-reference.md');
 const overview = read('../../openspec/knowledge/overview.md');
 const serviceKnowledge = read('../../openspec/knowledge/services/buildr.md');
@@ -71,7 +71,7 @@ test('OpenSpec checklist 自检就近执行且converge只指向Task execution ro
     assert.match(sidebar, /convergence\/archive前完成/);
     assert.match(sidebar, /不为.*预读完整下游流程/);
   }
-  for (const surface of [syncSidebar, archiveSidebar, contractGuard, cliRegistry, cliReference]) {
+  for (const surface of [syncSidebar, archiveSidebar, contractGuard, openSpecModule, cliReference]) {
     assert.match(surface, /<task-execution-root>/);
     assert.match(surface, /execution\.workdir/);
   }

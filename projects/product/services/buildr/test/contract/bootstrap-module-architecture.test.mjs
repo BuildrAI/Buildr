@@ -95,13 +95,22 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'publication',
-    requires: [],
+    requires: ['project.application'],
     provides: ['publication.application'],
     contributions: { cli: [], http: ['publication.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'openspec',
+    requires: ['project.application'],
+    provides: ['openspec.application', 'openspec.query'],
+    contributions: {
+      cli: ['openspec converge', 'openspec convergence preflight', 'openspec convergence inspect'],
+      http: [], diagnostics: [],
+    },
+    lifecycle: 'none',
+  }, {
     id: 'change',
-    requires: [],
+    requires: ['openspec.query', 'project.application'],
     provides: ['change.application'],
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -248,6 +257,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'render', 'sync',
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
+    'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
     'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',

@@ -4,6 +4,7 @@ import { registerCommandHelp } from './help.mjs';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
 import { createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
+import { createOpenSpecCliContributions } from '../../task/openspec/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
@@ -15,6 +16,7 @@ const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-c
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
 const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
 const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
+const OPENSPEC_MODULE_COMMAND_SLOT = Symbol('openspec-module-command-contributions');
 
 const AGENT_ASSETS_PACKAGE_COMMANDS = new Set(['package check', 'package build']);
 const AGENT_ASSETS_RUNTIME_COMMANDS = new Set(['runtime list', 'commands check', 'commands add', 'commands remove']);
@@ -38,6 +40,11 @@ const AGENT_ASSETS_SOURCE_COMMANDS = new Set([
   'runtime check',
   'skills render',
   'rules render',
+]);
+const OPENSPEC_MODULE_COMMANDS = new Set([
+  'openspec converge',
+  'openspec convergence preflight',
+  'openspec convergence inspect',
 ]);
 
 const COMMAND_ROUTES = [
@@ -150,44 +157,7 @@ const COMMAND_ROUTES = [
     run: (r, c) => r.mutationRecover(c.argv.slice(4)),
   },
   AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
-  {
-    key: "openspec converge",
-    surface: "maintenance",
-    summary: "产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。",
-    help: [
-      "Usage: buildr openspec converge <change> --project <project> [--target <task-execution-root>] [--json]",
-      "",
-      "--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。",
-      "产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。"
-    ],
-    match: ({ domain, action }) => domain === 'openspec' && action === 'converge',
-    run: (r, c) => r.openspecConverge(c.argv.slice(4)),
-  },
-  {
-    key: "openspec convergence preflight",
-    surface: "maintenance",
-    summary: "只读检查Change能否按当前delta、canonical、active Changes与executable形成唯一且strict有效的收敛计划。",
-    help: [
-      "Usage: buildr openspec convergence preflight <change> --project <project> [--target <task-execution-root>] [--json]",
-      "",
-      "--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。",
-      "只读检查当前语义就绪性；不会写canonical、Receipt或archive。ready会在delta、canonical、active Changes或executable变化后失效，最终converge始终重新检查。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',
-    run: (r, c) => r.openspecConvergencePreflight(c.argv.slice(5)),
-  },
-  {
-    key: "openspec convergence inspect",
-    surface: "maintenance",
-    summary: "只读检查未终结收敛事务的 before/expected 与当前实际摘要；未开始或已归档时不适用。",
-    help: [
-      "Usage: buildr openspec convergence inspect <change> --project <project> [--target <dir>] [--json]",
-      "",
-      "只读检查当前事务 Receipt；不会写 canonical、Receipt 或 archive，也不用于归档后的长期审计。"
-    ],
-    match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'inspect',
-    run: (r, c) => r.openspecConvergenceInspect(c.argv.slice(5)),
-  },
+  OPENSPEC_MODULE_COMMAND_SLOT,
   AGENT_ASSETS_SOURCE_COMMAND_SLOT,
 ];
 
@@ -328,6 +298,7 @@ function createCommandRegistry(moduleContributions) {
     !AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key)
     && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
     && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
+    && !OPENSPEC_MODULE_COMMANDS.has(route.key)
     && !route.key.startsWith('project daily-progress ')
   ));
   const routes = COMMAND_ROUTES.flatMap((route) => {
@@ -335,6 +306,7 @@ function createCommandRegistry(moduleContributions) {
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
     if (route === WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT) return workspaceDailyProgressContributions;
+    if (route === OPENSPEC_MODULE_COMMAND_SLOT) return moduleContributions.filter((item) => OPENSPEC_MODULE_COMMANDS.has(item.key));
     if (route === TASK_MODULE_COMMAND_SLOT) return nonAgentAssetsContributions;
     return [route];
   });
@@ -350,6 +322,7 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createAgentAssetsCliContributions(),
   ...createTaskRecordCliContributions(),
   ...createTaskReviewCliContributions(),
+  ...createOpenSpecCliContributions(),
   ...createInstallationCliContributions(),
   ...createLauncherCliContributions(),
 ]);

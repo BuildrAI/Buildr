@@ -284,7 +284,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
       excluded: ['integration', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store'],
     },
     {
-      path: 'src/application/openspec/projected-validator.mjs',
+      path: 'src/task/openspec/application/projected-validator.mjs',
       required: ['integration-openspec', 'system-openspec-contract-audit'],
       excluded: ['integration', 'integration-declarations', 'integration-verification', 'system-verification-contracts', 'system-public-json-contracts'],
     },

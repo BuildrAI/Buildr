@@ -44,14 +44,10 @@ function listFiles(root, predicate = () => true) {
 }
 
 const globalApplicationResiduals = Object.freeze([
-  'application/change/',
   'application/declaration-intake/',
-  'application/domains/openspec.mjs',
   'application/domains/package-assets.mjs',
   'application/internal-workflow-route-inventory.mjs',
   'application/json-contracts.mjs',
-  'application/openspec/',
-  'application/publication/',
   'application/verification/',
   'application/workspace-operations.mjs',
   'application/worktree/',
@@ -120,7 +116,9 @@ const requiredRuntime = [
   'task/interfaces/internal/task-development-driver.mjs', 'task/interfaces/internal/task-planning-identity-driver.mjs',
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
-  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'application/domains/openspec.mjs',
+  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
+  'task/openspec/module.mjs', 'task/change/module.mjs', 'task/change/application/change-application.mjs',
+  'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
   'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'application/json-contracts.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
@@ -143,8 +141,11 @@ const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file))
 const graph = new Map();
 const layerOf = (relative) => {
   const parts = relative.split('/');
-  const moduleOffset = parts[0] === 'system' && ['installation', 'doctor'].includes(parts[1]) ? 2 : 1;
-  if (!['task', 'web', 'workspace', 'agent-assets', 'change', 'publication'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  const moduleOffset = (
+    (parts[0] === 'system' && ['installation', 'doctor', 'publication'].includes(parts[1]))
+    || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
+  ) ? 2 : 1;
+  if (!['task', 'web', 'workspace', 'agent-assets', 'system'].includes(parts[0]) && moduleOffset === 1) return parts[0];
   if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
   return {
     domain: 'domain',
@@ -168,6 +169,14 @@ const allowedCrossModulePorts = new Set([
   'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
   'web/module.mjs -> system/installation/module.mjs',
   'web/module.mjs -> workspace/module.mjs',
+  'bootstrap/cli/registry.mjs -> task/openspec/module.mjs',
+  'bootstrap/runtime.mjs -> system/publication/module.mjs',
+  'bootstrap/runtime.mjs -> task/openspec/module.mjs',
+  'bootstrap/runtime.mjs -> task/change/module.mjs',
+  'task/openspec/module.mjs -> workspace/module.mjs',
+  'task/change/module.mjs -> task/openspec/module.mjs',
+  'task/change/module.mjs -> workspace/module.mjs',
+  'system/publication/module.mjs -> workspace/module.mjs',
 ]);
 
 for (const file of sourceFiles) {

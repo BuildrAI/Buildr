@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { applyDeterministicSyncPlan, createDeterministicSyncPlan, parseCanonicalSpec } from '../../src/application/openspec/deterministic-sync.mjs';
+import { applyDeterministicSyncPlan, createDeterministicSyncPlan, parseCanonicalSpec } from '../../src/task/openspec/application/deterministic-sync.mjs';
 
 const requirement = (name, statement = 'System MUST work.') => `### Requirement: ${name}\n${statement}\n\n#### Scenario: works\n- **WHEN** invoked\n- **THEN** it MUST pass\n`;
 const delta = (operations) => ({ hash: 'sha256-delta', operations });

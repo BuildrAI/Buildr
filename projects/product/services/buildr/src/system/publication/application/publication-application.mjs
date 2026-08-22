@@ -83,9 +83,14 @@ function parseArticle(file, publicationRoot, runtime) {
   };
 }
 
-export function registerPublicationApplication(runtime) {
+export function registerPublicationApplication(runtime, { projectQuery } = {}) {
+  if (!projectQuery || typeof projectQuery.readProjectRegistryRecord !== 'function') {
+    const error = new Error('Publication Application requires the Project Query capability.');
+    error.code = 'publication_project_query_missing';
+    throw error;
+  }
   function publicationRoot(targetRoot) {
-    const record = runtime.readProjectRegistryRecord(targetRoot);
+    const record = projectQuery.readProjectRegistryRecord(targetRoot);
     const project = record.projects.product;
     if (!project) throw publicationError('publication_project_not_found', 'Product Project 尚未登记。', 404);
     const projectRoot = path.resolve(record.root, project.source.path);

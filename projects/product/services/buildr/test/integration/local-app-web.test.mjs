@@ -123,7 +123,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const layout = read('../buildr-web/src/app/AppLayout.tsx');
   const index = read('../buildr-web/index.html');
   const server = read('src/web/http/server.mjs');
-  const publicationHttp = read('src/publication/interfaces/http/publication-http.mjs');
+  const publicationHttp = read('src/system/publication/interfaces/http/publication-http.mjs');
   const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
   const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
   assert.match(layout, /data-nav=\{item\.nav\}/);
@@ -228,7 +228,7 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const prototype = read('../buildr-web/src/pages/task-detail/PrototypeTab.tsx');
   const server = read('src/web/http/server.mjs');
-  const changeHttp = read('src/change/interfaces/http/change-http.mjs');
+  const changeHttp = read('src/task/change/interfaces/http/change-http.mjs');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /if \(tab === 'prototype'\) void refreshPrototype\(\)/);
   assert.match(source, /\/ui-prototypes`, \{ signal \}\)/);

@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { inspectChangeChecklist } from '../openspec/change-checklist.mjs';
 
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
@@ -191,16 +190,16 @@ function discoverUiPrototypes(changeRoot) {
   return { prototypes, diagnostics };
 }
 
-function projectContext(runtime, targetRoot, projectCode) {
+function projectContext(projectQuery, targetRoot, projectCode) {
   assertSafeSegment(projectCode, 'Project code');
-  const detail = runtime.projectDetail(targetRoot, projectCode);
+  const detail = projectQuery.projectDetail(targetRoot, projectCode);
   return {
     project: detail.project,
     projectRoot: path.join(targetRoot, detail.project.source.path),
   };
 }
 
-function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, lifecycle, includeContent = false) {
+function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, lifecycle, includeContent = false, inspectChecklist) {
   const changesRoot = path.join(projectRoot, 'openspec', 'changes');
   const changeRoot = lifecycle === 'active' ? path.join(changesRoot, directory) : path.join(changesRoot, 'archive', directory);
   const identityFile = path.join(changeRoot, '.openspec.yaml');
@@ -223,7 +222,7 @@ function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, l
     lifecycle,
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
-    progress: inspectChangeChecklist(changeRoot),
+    progress: inspectChecklist(changeRoot),
     brief,
     artifacts: {
       root: relativePath(targetRoot, changeRoot),
@@ -235,19 +234,19 @@ function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, l
   };
 }
 
-function buildChange(targetRoot, project, directory, lifecycle, includeContent = false) {
-  return buildChangeAtProjectRoot(targetRoot, project, path.join(targetRoot, project.source.path), directory, lifecycle, includeContent);
+function buildChange(targetRoot, project, directory, lifecycle, includeContent = false, inspectChecklist) {
+  return buildChangeAtProjectRoot(targetRoot, project, path.join(targetRoot, project.source.path), directory, lifecycle, includeContent, inspectChecklist);
 }
 
-function findLogicalChange(targetRoot, project, projectRoot, code, includeContent = false) {
+function findLogicalChange(targetRoot, project, projectRoot, code, includeContent = false, inspectChecklist) {
   const changesRoot = path.join(projectRoot, 'openspec', 'changes');
-  const active = buildChangeAtProjectRoot(targetRoot, project, projectRoot, code, 'active', includeContent);
+  const active = buildChangeAtProjectRoot(targetRoot, project, projectRoot, code, 'active', includeContent, inspectChecklist);
   if (active) return active;
   const archivedDirectories = readDirectories(path.join(changesRoot, 'archive'))
     .filter((directory) => (directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory) === code)
     .sort((left, right) => right.localeCompare(left));
   for (const directory of archivedDirectories) {
-    const archived = buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, 'archived', includeContent);
+    const archived = buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, 'archived', includeContent, inspectChecklist);
     if (archived) return archived;
   }
   return null;
@@ -262,7 +261,17 @@ function decodeRef(ref) {
   return { lifecycle, directory };
 }
 
-export function registerChangeApplication(runtime) {
+export function registerChangeApplication(runtime, { openSpecQuery, projectQuery } = {}) {
+  if (!openSpecQuery || typeof openSpecQuery.inspectChangeChecklist !== 'function') {
+    const error = new Error('Change Application requires the OpenSpec Query capability.');
+    error.code = 'change_openspec_query_missing';
+    throw error;
+  }
+  if (!projectQuery || typeof projectQuery.projectDetail !== 'function' || typeof projectQuery.listProjects !== 'function') {
+    const error = new Error('Change Application requires the Project Query capability.');
+    error.code = 'change_project_query_missing';
+    throw error;
+  }
   function taskScopedProjectRoot(targetRoot, taskId, projectCode, project) {
     const current = runtime.readTaskEnvironmentCurrent(targetRoot, taskId);
     if (!['ready', 'blocked'].includes(current.status) || !current.environment) return null;
@@ -295,10 +304,10 @@ export function registerChangeApplication(runtime) {
       if (!allowMissingTask || error.code !== 'task_record_not_found') throw error;
       taskAvailable = false;
     }
-    const { project, projectRoot } = projectContext(runtime, targetRoot, projectCode);
+    const { project, projectRoot } = projectContext(projectQuery, targetRoot, projectCode);
     const candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null;
-    const candidate = candidateRoot && isDirectory(candidateRoot) ? findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent) : null;
-    const retained = findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent);
+    const candidate = candidateRoot && isDirectory(candidateRoot) ? findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent, openSpecQuery.inspectChangeChecklist) : null;
+    const retained = findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent, openSpecQuery.inspectChangeChecklist);
     const working = candidate
       ? { provenance: 'task-environment-candidate', root: candidateRoot, change: candidate }
       : retained
@@ -390,13 +399,13 @@ export function registerChangeApplication(runtime) {
   }
 
   function listProjectChanges(targetRoot, projectCode) {
-    const { project, projectRoot } = projectContext(runtime, targetRoot, projectCode);
+    const { project, projectRoot } = projectContext(projectQuery, targetRoot, projectCode);
     const changesRoot = path.join(projectRoot, 'openspec', 'changes');
     const active = readDirectories(changesRoot)
       .filter((directory) => directory !== 'archive')
-      .map((directory) => buildChange(targetRoot, project, directory, 'active'));
+      .map((directory) => buildChange(targetRoot, project, directory, 'active', false, openSpecQuery.inspectChangeChecklist));
     const archived = readDirectories(path.join(changesRoot, 'archive'))
-      .map((directory) => buildChange(targetRoot, project, directory, 'archived'));
+      .map((directory) => buildChange(targetRoot, project, directory, 'archived', false, openSpecQuery.inspectChangeChecklist));
     return {
       project: { id: project.id, code: project.code, name: project.name },
       changes: [...active, ...archived].filter(Boolean).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
@@ -404,16 +413,16 @@ export function registerChangeApplication(runtime) {
   }
 
   function listChanges(targetRoot) {
-    const projects = runtime.listProjects(targetRoot).projects;
+    const projects = projectQuery.listProjects(targetRoot).projects;
     const changes = projects.flatMap((project) => listProjectChanges(targetRoot, project.code).changes)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return { projects: projects.map(({ id, code, name }) => ({ id, code, name })), changes };
   }
 
   function changeDetail(targetRoot, projectCode, ref) {
-    const { project } = projectContext(runtime, targetRoot, projectCode);
+    const { project } = projectContext(projectQuery, targetRoot, projectCode);
     const { lifecycle, directory } = decodeRef(ref);
-    const change = buildChange(targetRoot, project, directory, lifecycle, true);
+    const change = buildChange(targetRoot, project, directory, lifecycle, true, openSpecQuery.inspectChangeChecklist);
     if (!change) throw changeError('change_not_found', `Change 不存在：${projectCode}/${ref}。`, 404);
     return { change };
   }
@@ -424,7 +433,7 @@ export function registerChangeApplication(runtime) {
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw changeError('change_prompt_field_forbidden', `Change prompt 不支持字段：${field}。`);
     const projectCode = String(input.projectCode || '').trim();
     const goal = String(input.goal || '').trim();
-    const { project } = projectContext(runtime, targetRoot, projectCode);
+    const { project } = projectContext(projectQuery, targetRoot, projectCode);
     if (!goal) throw changeError('change_prompt_goal_required', '请填写本次变更目标。');
     return {
       prompt: [

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { registerPublicationApplication } from '../../src/application/publication/publication-application.mjs';
+import { registerPublicationApplication } from '../../src/system/publication/application/publication-application.mjs';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publications-'));
@@ -32,7 +32,7 @@ function fixture() {
     readProjectRegistryRecord: () => ({ root, projects: { product: { source: { type: 'workspace', path: 'projects/product' } } } }),
     parseYamlDocument: (content) => YAML.parse(content),
   };
-  registerPublicationApplication(runtime);
+  registerPublicationApplication(runtime, { projectQuery: { readProjectRegistryRecord: runtime.readProjectRegistryRecord } });
   return { root, publicationRoot, runtime };
 }
 

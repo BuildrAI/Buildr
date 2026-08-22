@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerChangeApplication } from '../../src/application/change/change-application.mjs';
+import { registerChangeApplication } from '../../src/task/change/application/change-application.mjs';
+import { inspectChangeChecklist } from '../../src/task/openspec/application/change-checklist.mjs';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-change-'));
@@ -26,7 +27,10 @@ function fixture() {
       return { project };
     },
   };
-  registerChangeApplication(runtime);
+  registerChangeApplication(runtime, {
+    openSpecQuery: { inspectChangeChecklist },
+    projectQuery: { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail },
+  });
   return { root, runtime, projectRoot: path.join(root, project.source.path) };
 }
 

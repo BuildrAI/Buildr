@@ -2,19 +2,23 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnCommandSync } from '../../infrastructure/process.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../json-contracts.mjs';
-import { CONVERGENCE_RECEIPT_SCHEMA, portableExecutableIdentity } from '../openspec/convergence-model.mjs';
-import { canonicalSnapshots, convergenceReceiptPath, runOpenSpecConvergence } from '../openspec/openspec-converge.mjs';
-import { runOpenSpecConvergencePreflight } from '../openspec/openspec-convergence-preflight.mjs';
-import { observeConvergence } from '../openspec/convergence-observer.mjs';
-import { validateActualOpenSpec, validateProjectedOpenSpec } from '../openspec/projected-validator.mjs';
-import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecRequirementBlocks } from '../openspec/delta-parser.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../application/json-contracts.mjs';
+import { CONVERGENCE_RECEIPT_SCHEMA, portableExecutableIdentity } from './convergence-model.mjs';
+import { canonicalSnapshots, convergenceReceiptPath, runOpenSpecConvergence } from './openspec-converge.mjs';
+import { runOpenSpecConvergencePreflight } from './openspec-convergence-preflight.mjs';
+import { observeConvergence } from './convergence-observer.mjs';
+import { validateActualOpenSpec, validateProjectedOpenSpec } from './projected-validator.mjs';
+import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec, parseOpenSpecRequirementBlocks } from './delta-parser.mjs';
 
 const OPENSPEC_CONTRACT_SUPPORTED_UPSTREAM_VERSIONS = new Set(['1.6.0']);
 
-export function registerDomainsOpenspec(runtime) {
-  const readProjectsRegistryIfExists = (...args) => runtime.readProjectsRegistryIfExists(...args);
+export function registerOpenSpecApplication(runtime, { projectQuery } = {}) {
+  if (!projectQuery || typeof projectQuery.projectDetail !== 'function') {
+    const error = new Error('OpenSpec Application requires the Project Query capability.');
+    error.code = 'openspec_project_query_missing';
+    throw error;
+  }
   const usage = (...args) => runtime.usage(...args);
   const isPlainObject = (...args) => runtime.isPlainObject(...args);
   const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);
@@ -73,9 +77,13 @@ export function registerDomainsOpenspec(runtime) {
   function resolveOpenSpecContractProject(targetRoot, project) {
     assertInitializedBuildrWorkspace(targetRoot);
     assertName(project, 'Project');
-    const registry = readProjectsRegistryIfExists(targetRoot);
-    if (!registry || !registry.projects?.[project]) throw new Error(`Project is not registered in projects/manifest.yml: ${project}`);
-    const projectRoot = path.join(targetRoot, 'projects', project);
+    let detail;
+    try { detail = projectQuery.projectDetail(targetRoot, project); }
+    catch (error) {
+      if (error?.code === 'project_not_found') throw new Error(`Project is not registered in projects/manifest.yml: ${project}`, { cause: error });
+      throw error;
+    }
+    const projectRoot = path.resolve(targetRoot, detail.project.source.path);
     if (!existsDirectory(projectRoot)) throw new Error(`Project directory is missing: projects/${project}`);
     const planningRoot = path.join(projectRoot, 'openspec');
     if (!existsDirectory(path.join(planningRoot, 'specs')) || !existsDirectory(path.join(planningRoot, 'changes'))) {

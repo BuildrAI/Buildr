@@ -29,7 +29,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish 与 Terminal Delivery 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册；Bootstrap 只消费正式 runtime port | HTTP Controller 与 Diagnostic Read Model 通过模块 contribution 参与最终组装，不再由公共 Host 直连 Task 内部实现 |
-| Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Change 与 Publication 已由各自模块拥有；通用 Project Verification 继续保留现有 Application owner |
+| Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Task Change、Task OpenSpec 与 System Publication 已由各自模块拥有；通用 Project Verification 继续保留现有 Application owner |
 | Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
 | System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
 
@@ -105,6 +105,8 @@ src/
     application/               # Task 用例和流程编排
     persistence/               # Task 数据读写和对象映射，模块所有权优先于存储介质
     interfaces/                # CLI、HTTP、Job、内部 Driver 等入口
+    change/                    # Task Change 查询与 Task-scoped Change read model
+    openspec/                  # Task OpenSpec 解析、收敛和内部 CLI
 
   workspace/
     module.mjs
@@ -127,6 +129,7 @@ src/
   system/
     installation/              # Buildr 安装、更新和 Launcher
     doctor/                    # 跨模块只读诊断聚合
+    publication/               # Buildr 发布物只读查询与 HTTP contribution
 
   infrastructure/
     sqlite/                    # SQLite 连接和全局有序 DDL migrations
@@ -211,7 +214,7 @@ Workspace Core 已完成迁移：Workspace、Project、Service 的领域对象�
 
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.mjs`，用例位于 `application/project-daily-progress-application.mjs`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.mjs`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.mjs` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
-Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力不因作用于 Project/Service 就自动归入 `workspace/`。第一轮保留其 current Application owner，并在迁移台账中记录为 `deferred`；只有对应专项任务重新确认事实 owner、模块边界和 writer authority 后才移动。
+Change、OpenSpec、Publication、通用 Project Verification 和其他 Workspace 范围能力不因作用于 Project/Service 就自动归入 `workspace/`。其中 Change 与 OpenSpec 已归入 `task/`，Publication 已归入 `system/`；通用 Project Verification 继续保留现有 Application owner，并在迁移台账中记录为 `deferred`。
 
 ## `agent-assets` 模块
 
@@ -732,7 +735,7 @@ src/application/doctor.mjs 与 src/application/doctor/
 
 ## 渐进式迁移原则
 
-当前 Buildr Service 已形成 Bootstrap、Infrastructure、Task、Workspace Core、Agent Assets、Publication、Change、Web Runtime Host、System Installation 与 System Doctor 的显式模块结构；本轮遗留 Runtime Host 和 Doctor 入口已经收敛。后续结构演进继续遵循：
+当前 Buildr Service 已形成 Bootstrap、Infrastructure、Task（含 Change 与 OpenSpec）、Workspace Core、Agent Assets、System Publication、Web Runtime Host、System Installation 与 System Doctor 的显式模块结构；本轮遗留 Runtime Host 和 Doctor 入口已经收敛。后续结构演进继续遵循：
 
 - 先明确业务和产品模块，再移动文件；
 - 一个模块或一个可独立验证的结构切片逐步迁移；
@@ -767,9 +770,9 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
 | 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
 | 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
-| Change | `src/change/module.mjs`、`src/application/change/`、`src/change/interfaces/http/` | Change Application 继续拥有 Change 查询与 Task-scoped Change read model | change application integration、architecture verification | `deferred` | 第一轮不决定是否归 Workspace；当 Change 出现独立写入用例、第二 transport，或启动 Change 模块专项重构时重新评估并迁移 Application |
-| OpenSpec convergence | `src/application/openspec/`、`src/application/domains/openspec.mjs` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一，不并入 Change 或 Workspace writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `deferred` | 与 Change 的产品边界尚需专项设计；当 OpenSpec 契约、canonical writer 或模块公开入口发生实质变化时触发 |
-| Publication | `src/publication/module.mjs`、`src/application/publication/`、HTTP contribution | Publication Application 只读拥有 publication/asset read model | publication application integration、`product.delivery` | `deferred` | 当前模块入口已明确但 Application 尚未整体内聚；新增 writer/CLI 或专项拆分 Publication 时触发 |
+| Change | `src/task/change/module.mjs`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
+| OpenSpec convergence | `src/task/openspec/module.mjs`、`src/task/openspec/application/` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
+| Publication | `src/system/publication/module.mjs`、`src/system/publication/application/`、HTTP contribution | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
 | Project Verification | `src/application/verification/`，由 Bootstrap 与 Task Verification 消费 | Project capability 选择、execution/evidence/resource coordination 保持现有 owner；不与 Task Verification Result writer 合并 | verification unit/integration suites、`product.delivery` | `deferred` | Verification 体系本身不在结构第一轮重构；声明模型、调度或 Result authority 专项启动时触发 |
 
 ### 全局 Application residual 明细
@@ -778,9 +781,6 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 | 当前路径 | current owner | Verification owner | 处置 | 后续触发条件 |
 |----------|---------------|--------------------|------|--------------|
-| `application/change/` | Change capability / `change/module.mjs` | change integration、architecture verification | `deferred` | Change writer、CLI 或独立模块迁移专项启动 |
-| `application/openspec/`、`application/domains/openspec.mjs` | OpenSpec convergence capability | OpenSpec journey、archive lifecycle | `deferred` | canonical writer、Change/OpenSpec 边界或公开模块入口变化 |
-| `application/publication/` | Publication capability / `publication/module.mjs` | publication integration、delivery verification | `deferred` | Publication 新增 writer/CLI 或独立模块内聚专项启动 |
 | `application/verification/` | Project Verification capability | verification unit/integration、`product.delivery` | `deferred` | Verification 声明、选择、调度或 Result 模型专项启动 |
 | `application/declaration-intake/` | Declaration Intake capability；Workspace/Task 仅消费窄 next-action formatter | declaration-intake unit、verification planner integration | `deferred` | Intake 出现独立 Application 状态/接口，或声明治理专项启动 |
 | `application/worktree/` | Git Worktree provider；Task Environment 是 consumer，不取得 provider 实现 authority | architecture boundaries、Task Contribution integration | `deferred` | checkout provider contract 升级、出现第二 provider 或 Task Environment 平台拆分 |
@@ -889,9 +889,6 @@ Child completed 不等于能力贡献已经被 Parent 接受。每个 Child 必�
 
 以下生产能力的目标模块归属或内部拆分不在总架构阶段提前设计，进入对应结构迁移或后续专项任务时再决定；这不改变每个实施切片必须使用 Task-scoped OpenSpec Change 的治理要求：
 
-- Change 产品能力的模块归属；
-- OpenSpec 产品能力的模块归属；
-- Publication；
 - Package Maintenance；
 - Release Awareness；
 - 通用 Project Verification；

@@ -1,5 +1,6 @@
-import { registerPublicationApplication } from '../application/publication/publication-application.mjs';
+import { registerPublicationApplication } from './application/publication-application.mjs';
 import { createPublicationHttpContribution } from './interfaces/http/publication-http.mjs';
+import { PROJECT_APPLICATION } from '../../workspace/module.mjs';
 
 export const PUBLICATION_MODULE_ID = 'publication';
 export const PUBLICATION_APPLICATION = 'publication.application';
@@ -9,9 +10,9 @@ const METHODS = Object.freeze(['listPublications', 'publicationDetail', 'readPub
 export function createPublicationModule(runtime) {
   return Object.freeze({
     id: PUBLICATION_MODULE_ID,
-    requires: Object.freeze([]),
-    create() {
-      registerPublicationApplication(runtime);
+    requires: Object.freeze([PROJECT_APPLICATION]),
+    create(requires) {
+      registerPublicationApplication(runtime, { projectQuery: requires[PROJECT_APPLICATION] });
       const application = Object.freeze(Object.fromEntries(METHODS.map((method) => [method, (...args) => runtime[method](...args)])));
       return Object.freeze({
         provides: { [PUBLICATION_APPLICATION]: application },
