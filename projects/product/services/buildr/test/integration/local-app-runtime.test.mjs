@@ -19,7 +19,7 @@ import {
   writeLocalAppInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
 import { pickWorkspaceDirectory } from '../../src/web/infrastructure/directory-picker.mjs';
-import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 function opener(platform) {
   const calls = [];

@@ -1,14 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from '../../../infrastructure/process.mjs';
-import { RUNTIME_CHECKERS } from '../../../agent-assets/infrastructure/runtime/check-runtime.mjs';
-import { assembleRuntimeProjection } from '../../../agent-assets/infrastructure/runtime/projection.mjs';
-import { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, getRuntimeAdapter, isSupportedAgent } from '../../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { createRuntimeDiagnostics } from './runtime-diagnostics.mjs';
 import { createScopeDiagnostics } from './scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
-import { createProjectVerificationDiagnostics } from '../../../verification/application/project-verification-diagnostics.mjs';
 import { createProjectEnvironmentPreparationDiagnostics } from './project-environment-preparation-diagnostics.mjs';
 import { finalizeDoctorResult } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';
@@ -16,6 +12,8 @@ import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-rout
 import { inspectRequiredInternalWorkflowRoutes } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
 export function registerApplicationDoctor(runtime) {
+  const { RUNTIME_CHECKERS, SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, assembleRuntimeProjection, getRuntimeAdapter, isSupportedAgent } = runtime;
+  const { resolveSkillCapabilityGraph, createProjectVerificationDiagnostics, normalizeProjectEnvironmentPreparation, parseProjectEnvironmentPreparation } = runtime;
   const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);
   const componentRegistryPath = (...args) => runtime.componentRegistryPath(...args);
   const packageComponentsStatus = (...args) => runtime.packageComponentsStatus(...args);
@@ -131,9 +129,14 @@ export function registerApplicationDoctor(runtime) {
     runtimeImplementation,
     toPosixRelative,
   });
-  const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path });
+  const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
-  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding, resolveSourceRoot });
+  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({
+    addDoctorFinding,
+    normalizeProjectEnvironmentPreparation,
+    parseProjectEnvironmentPreparation,
+    resolveSourceRoot,
+  });
   const { diagnoseInternalWorkflowRoutes } = createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes: inspectRequiredInternalWorkflowRoutes });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {

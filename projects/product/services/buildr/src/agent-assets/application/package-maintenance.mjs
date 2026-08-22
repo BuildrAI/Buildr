@@ -15,7 +15,6 @@ import {
 import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../workspace/application/workspace-root-gitignore-entries.mjs';
 import { createPackageOutput } from './package-maintenance/output.mjs';
 import { createPackageSmokeChecks } from './package-maintenance/smoke-checks.mjs';
 import { createPackageStaticValidator } from './package-maintenance/static-validation.mjs';
@@ -28,6 +27,7 @@ import { createCapabilityRetirement } from './package-maintenance/capability-ret
 import { PACKAGE_VERIFIER_ENV, selectPackageVerifiers } from './package-maintenance/verification-registry.mjs';
 import { validateSkillPublication } from '../infrastructure/runtime/skills/publication.mjs';
 export function registerApplicationPackageMaintenance(runtime) {
+  const WORKSPACE_ROOT_GITIGNORE_ENTRIES = runtime.WORKSPACE_ROOT_GITIGNORE_ENTRIES;
   const doctor = (...args) => runtime.doctor(...args);
   const parseCommandsManifestYaml = (...args) => runtime.parseCommandsManifestYaml(...args);
   const parseProjectCommandsYaml = (...args) => runtime.parseProjectCommandsYaml(...args);

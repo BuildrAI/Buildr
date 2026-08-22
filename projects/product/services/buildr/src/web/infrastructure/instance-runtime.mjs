@@ -4,7 +4,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 
 import { readCurrentProductIdentity, validateNpmLauncherBinding } from '../../system/installation/module.mjs';
-import { resolveWebProfile } from './web-profile.mjs';
+import { resolveWebProfile } from '../../system/installation/contracts/web-profile.mjs';
 
 export const INSTANCE_SCHEMA = 'buildr.local-app-instance/v2';
 const LEGACY_INSTANCE_SCHEMA = 'buildr.local-app-instance/v1';

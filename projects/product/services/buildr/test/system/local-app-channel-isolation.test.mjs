@@ -8,8 +8,8 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
-import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
-import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
+import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.mjs';
+import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
@@ -160,8 +160,8 @@ test('released Root中的健康legacy development实例不会被released启动�
   const before = fs.readFileSync(file);
 
   const runtime = createRuntime();
-  registerWorkspaceRegistryRepository(runtime, { productIdentity: releasedIdentity, webProfile: releasedProfile });
-  registerWorkspaceManagementFence(runtime, { peerProfiles: profiles });
+  registerWorkspaceRegistryRepository(runtime, { productIdentity: releasedIdentity, webProfile: releasedProfile, resolveWebProfile });
+  registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
   registerWebInstanceLifecycle(runtime, { readProductIdentity: () => releasedIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(() => runtime.startLocalWorkspaceApp(['--no-open', '--port', '0']), (error) => error.code === 'web_instance_profile_conflict');
   assert.deepEqual(fs.readFileSync(file), before);

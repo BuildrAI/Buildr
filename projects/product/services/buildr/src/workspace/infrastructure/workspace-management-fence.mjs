@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { withExclusiveFileLock } from './index.mjs';
-import { oppositeWebProfile } from '../../web/infrastructure/web-profile.mjs';
+import { withExclusiveFileLock } from '../../infrastructure/filesystem/index.mjs';
 
 export const WORKSPACE_MANAGEMENT_SCHEMA = 'buildr.workspace-web-management/v1';
 const OWNER_SCHEMA = 'buildr.workspace-web-management-owner/v1';
@@ -82,6 +81,8 @@ function sameOwner(left, right) {
 }
 
 export function registerWorkspaceManagementFence(runtime, options = {}) {
+  const oppositeWebProfile = options.oppositeWebProfile;
+  if (typeof oppositeWebProfile !== 'function') throw new Error('Workspace Management Fence requires the System Installation Web Profile contract.');
   function managementIdentity(targetRoot) {
     const root = canonicalRoot(targetRoot);
     const persistence = runtime.readWorkspacePersistence(root);

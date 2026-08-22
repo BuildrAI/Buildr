@@ -12,6 +12,7 @@ import { registerWorkspaceCliAdapter } from './interfaces/cli/workspace.mjs';
 import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.mjs';
 import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.mjs';
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.mjs';
+import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.mjs';
 
 export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-root-gitignore-entries.mjs';
 export { createProject, createProjectSource, isProjectCode, isProjectId } from './domain/project.mjs';
@@ -65,6 +66,7 @@ const PROJECT_DAILY_PROGRESS_METHODS = Object.freeze([
 const WORKSPACE_QUERY_METHODS = Object.freeze([
   'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
   'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
+  'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
 ]);
 
 function pick(source, methods) {
@@ -143,13 +145,15 @@ export function createWorkspaceCliContributions() {
   ]);
 }
 
-export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
+export function createWorkspaceModule(runtime, { readProductIdentity, webProfileContract, agentRuntimeCapability = null } = {}) {
   return Object.freeze({
     id: WORKSPACE_MODULE_ID,
-    requires: Object.freeze([]),
-    create() {
+    requires: Object.freeze(agentRuntimeCapability ? [agentRuntimeCapability] : []),
+    create(requires) {
+      const agentRuntime = agentRuntimeCapability ? requires[agentRuntimeCapability] : {};
+      Object.assign(runtime, agentRuntime);
       registerWorkspaceManifestRepository(runtime);
-      registerWorkspaceRegistryRepository(runtime, { readProductIdentity });
+      registerWorkspaceRegistryRepository(runtime, { readProductIdentity, resolveWebProfile: webProfileContract?.resolveWebProfile });
       registerProjectManifestRepository(runtime);
       registerServiceManifestRepository(runtime);
       registerProjectDailyProgressRepository(runtime);
@@ -167,6 +171,7 @@ export function createWorkspaceModule(runtime, { readProductIdentity } = {}) {
       registerServiceApplication(runtime);
       registerProjectDailyProgressApplication(runtime);
       registerWorkspaceCliAdapter(runtime);
+      registerWorkspaceManagementFence(runtime, { oppositeWebProfile: webProfileContract?.oppositeWebProfile });
       runtime.ensureRegisteredTarget = (targetRoot) => ensureRegisteredTarget(runtime, targetRoot);
 
       const workspace = Object.freeze({

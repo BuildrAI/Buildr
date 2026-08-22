@@ -106,14 +106,14 @@ test('v2 package声明精确退休v1 contract与binding', () => {
 test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测试技术栈', () => {
   const application = read('src/task/application/task-development-application.mjs');
   for (const forbidden of ['project=product', "'product'", 'service=buildr', "'buildr'", 'origin/dev', "'dev'", 'node_modules', "'npm'", 'git worktree', 'OpenSpec', 'verification registry']) assert.equal(application.includes(forbidden), false, forbidden);
-  const observer = read('src/infrastructure/content/content-target-observer.mjs');
+  const observer = read('src/task/infrastructure/content-target-observer.mjs');
   assert.match(observer, /FILESYSTEM_CONTENT_OBSERVER/);
   assert.match(observer, /GIT_CONTENT_OBSERVER/);
 });
 
 test('Task Development 不接管 Project 文本格式约定', () => {
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
-  const observer = read('src/infrastructure/content/content-target-observer.mjs');
+  const observer = read('src/task/infrastructure/content-target-observer.mjs');
   assert.doesNotMatch(skill, /EOF不变量|末尾空白行|最后一个非空字符/);
   assert.match(skill, /检查通过后，向Development Application提交完整Change dispositions并调用`observe`/);
   assert.match(observer, /'--cached', '--others', '--exclude-standard'/);

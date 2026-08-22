@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { taskExecutionRecordError } from '../../task/domain/task-execution-record.mjs';
 import {
   VERIFICATION_EXECUTION_RECORD_KIND,
   VERIFICATION_EXECUTION_RECORD_OWNER,
@@ -15,6 +14,16 @@ import { VERIFICATION_EVIDENCE_LIFECYCLE_SCHEMA } from './evidence-lifecycle.mjs
 const EXECUTION_SCHEMA = 'buildr.verification-execution/v1';
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const TERMINAL_CHECK_STATUSES = new Set(['passed', 'failed']);
+
+function taskExecutionRecordError(code, message, status = 400, details = undefined, nextAction = undefined) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  error.details = details;
+  error.nextAction = nextAction;
+  error.taskExecutionRecordBusiness = true;
+  return error;
+}
 
 function blocked(code, message, details = undefined) {
   return taskExecutionRecordError(code, message, 409, details, '保留open record与transient evidence；修正matching summary后重试，或请求用户明确授权unknown outcome。');

@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { spawnSync } from '../process.mjs';
-import { controlMetadataPath } from '../git/control-metadata-path.mjs';
-import { taskDevelopmentError } from '../../task/domain/task-development.mjs';
+import { spawnSync } from '../../infrastructure/process.mjs';
+import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
+import { taskDevelopmentError } from '../domain/task-development.mjs';
 
 export const GIT_CONTENT_OBSERVER = 'buildr.git-content-observer/v1';
 export const FILESYSTEM_CONTENT_OBSERVER = 'buildr.filesystem-content-observer/v1';

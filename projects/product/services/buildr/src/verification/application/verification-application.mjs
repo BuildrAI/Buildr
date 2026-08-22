@@ -7,10 +7,6 @@ import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
-import {
-  normalizeProjectEnvironmentPreparation,
-  parseProjectEnvironmentPreparation,
-} from '../../task/domain/project-environment-preparation.mjs';
 import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
 import { verificationPreparationAdmission } from '../infrastructure/preparation-admission.mjs';
 import { executeVerificationCommand } from '../infrastructure/process-executor.mjs';
@@ -43,11 +39,11 @@ function sameFilesystemPath(left, right) {
   return canonical(left) === canonical(right);
 }
 
-function readPreparationDeclaration(projectRoot, projectCode, services) {
+function readPreparationDeclaration(projectRoot, projectCode, services, preparationContract) {
   const declarationPath = path.join(projectRoot, 'preparation.yml');
   if (!fs.existsSync(declarationPath)) return null;
-  return normalizeProjectEnvironmentPreparation(
-    parseProjectEnvironmentPreparation(fs.readFileSync(declarationPath, 'utf8'), declarationPath),
+  return preparationContract.normalizeProjectEnvironmentPreparation(
+    preparationContract.parseProjectEnvironmentPreparation(fs.readFileSync(declarationPath, 'utf8'), declarationPath),
     { projectCode, services: Object.keys(services) },
   );
 }
@@ -257,7 +253,8 @@ export function verificationExecutionIdentityMaterial({ project, declaration, ta
   };
 }
 
-export function registerVerificationApplication(runtime) {
+export function registerVerificationApplication(runtime, { projectEnvironmentPreparation } = {}) {
+  if (!projectEnvironmentPreparation) throw new Error('Verification Application requires the Task Environment Declaration port.');
   async function verificationRun(args) {
     const json = args.includes('--json');
     const projectCode = runtime.optionValue(args, '--project', null);
@@ -294,11 +291,16 @@ export function registerVerificationApplication(runtime) {
     const declaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
     const services = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
     const hasPreparationReferences = declaration.capabilities?.some((capability) => (capability.environment?.preparation || []).length > 0);
-    const preparationDeclaration = hasPreparationReferences ? readPreparationDeclaration(projectRoot, projectCode, services) : null;
+    const preparationDeclaration = hasPreparationReferences
+      ? readPreparationDeclaration(projectRoot, projectCode, services, projectEnvironmentPreparation)
+      : null;
     const validationErrors = validateProjectVerification(declaration, {
       projectCode,
       services: Object.keys(services),
-      ...(hasPreparationReferences ? { preparationRecipes: (preparationDeclaration?.recipes || []).map((recipe) => [recipe.id, recipe]) } : {}),
+      ...(hasPreparationReferences ? {
+        preparationRecipes: (preparationDeclaration?.recipes || []).map((recipe) => [recipe.id, recipe]),
+        projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,
+      } : {}),
     });
     if (validationErrors.length) throw admissionError('verification.declaration_invalid', `Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`, 'declaration-invalid', 'project-verification-declaration', { project: projectCode });
 

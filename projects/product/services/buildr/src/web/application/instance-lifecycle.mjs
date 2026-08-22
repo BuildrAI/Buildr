@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../infrastructure/web-profile.mjs';
+import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../system/installation/contracts/web-profile.mjs';
 import {
   clearLocalAppInstance,
   acquireLocalAppStartLock,

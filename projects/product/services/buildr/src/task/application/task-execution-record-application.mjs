@@ -13,11 +13,6 @@ import {
   taskExecutionRecordError,
 } from '../domain/task-execution-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import { cleanupVerificationEvidence } from '../../verification/infrastructure/evidence-lifecycle.mjs';
-import {
-  createAuthorizedUnknownExecutionRecordFiles,
-  loadVerificationExecutionRecordRecovery,
-} from '../../verification/infrastructure/execution-record-recovery.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence } from '../../task/application/finish/diagnostics-evidence.mjs';
 import {
   loadRetainedTaskFinishExecutionRecordRecovery,
@@ -139,6 +134,9 @@ function recoveryResult(status, mode, persisted, { cleanup = null, diagnostic = 
 }
 
 export function registerTaskExecutionRecordApplication(runtime) {
+  const cleanupVerificationEvidence = (...args) => runtime.cleanupVerificationEvidence(...args);
+  const createAuthorizedUnknownExecutionRecordFiles = (...args) => runtime.createAuthorizedUnknownExecutionRecordFiles(...args);
+  const loadVerificationExecutionRecordRecovery = (...args) => runtime.loadVerificationExecutionRecordRecovery(...args);
   function loadTaskFinishAssociation(targetRoot, runId) {
     try {
       const current = runtime.readTaskFinishRunPersistence(targetRoot, { runId }, { optional: true });

@@ -5,7 +5,6 @@ import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
 
 import { normalizeTaskVerificationResult, taskVerificationError } from '../domain/task-verification.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
-import { parseProjectVerification, validateProjectVerification } from '../../verification/application/project-verification-diagnostics.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { declarationIntakeGapNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
@@ -51,6 +50,8 @@ function regularFile(file) {
 }
 
 export function registerTaskVerificationApplication(runtime) {
+  const parseProjectVerification = (...args) => runtime.parseProjectVerification(...args);
+  const validateProjectVerification = (...args) => runtime.validateProjectVerification(...args);
   function declarationSourceRoot(task, value) {
     if (value === undefined) return task.root;
     if (typeof value !== 'string' || !value.trim()) {

@@ -9,7 +9,7 @@ import {
   FILESYSTEM_CONTENT_OBSERVER,
   GIT_CONTENT_OBSERVER,
   observeContentScope,
-} from '../../src/infrastructure/content/content-target-observer.mjs';
+} from '../../src/task/infrastructure/content-target-observer.mjs';
 
 function temporary(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

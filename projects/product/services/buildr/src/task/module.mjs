@@ -2,10 +2,16 @@ import { registerTaskRecordApplication } from './application/task-record-applica
 import { registerTaskRetrospectiveApplication } from './application/task-retrospective-application.mjs';
 import { registerTaskReviewApplication } from './application/task-review-application.mjs';
 import { registerTaskEnvironmentApplication } from './application/task-environment-application.mjs';
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+} from './domain/project-environment-preparation.mjs';
 import { registerTaskExecutionRecordApplication } from './application/task-execution-record-application.mjs';
 import { registerTaskVerificationApplication } from './application/task-verification-application.mjs';
 import { registerTaskPlanningIdentityApplication } from './application/task-planning-identity-application.mjs';
 import { registerTaskDevelopmentApplication } from './application/task-development-application.mjs';
+import { registerContentTargetObserver } from './infrastructure/content-target-observer.mjs';
 import { registerTaskFinishApplication } from './application/finish/task-finish-application.mjs';
 import { registerTaskTerminalDeliveryApplication } from './application/task-terminal-delivery-application.mjs';
 import { registerParentCoordinationApplication } from './application/parent-coordination-application.mjs';
@@ -22,6 +28,7 @@ import { registerTaskDevelopmentRepository } from './persistence/task-developmen
 import { registerTaskFinishRepository } from './persistence/task-finish-repository.mjs';
 import { registerParentCoordinationRepository } from './persistence/parent-coordination-repository.mjs';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
+import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
 import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
@@ -70,6 +77,11 @@ const INTERNAL_WORKFLOW_RUNNERS = Object.freeze({
 });
 
 export { REQUIRED_INTERNAL_WORKFLOW_ROUTES, inspectRequiredInternalWorkflowRoutes };
+export {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+};
 
 export function runRequiredInternalWorkflowRoute(route, args, options = {}) {
   return routeInternalWorkflow(route, args, INTERNAL_WORKFLOW_RUNNERS, options);
@@ -91,6 +103,8 @@ export const TASK_ENVIRONMENT_MODULE_ID = 'task-environment';
 export const TASK_ENVIRONMENT_APPLICATION = 'task-environment.application';
 export const TASK_ENVIRONMENT_PERSISTENCE_READ = 'task-environment.persistence-read';
 export const TASK_ENVIRONMENT_RUNTIME_PORT = 'task-environment.runtime-port';
+export const TASK_ENVIRONMENT_DECLARATION = 'task-environment.declaration';
+export const TASK_WORKTREE_PROVIDER = 'task-environment.worktree-provider';
 export const TASK_EXECUTION_RECORD_MODULE_ID = 'task-execution-record';
 export const TASK_EXECUTION_RECORD_APPLICATION = 'task-execution-record.application';
 export const TASK_EXECUTION_RECORD_PERSISTENCE_READ = 'task-execution-record.persistence-read';
@@ -260,6 +274,35 @@ function runtimePort(methods, testSupportProperties = undefined) {
     methods: Object.freeze(methods),
     ...(testSupportProperties ? { testSupportProperties: Object.freeze(testSupportProperties) } : {}),
   });
+}
+
+export function createWorktreeProviderModule(runtime) {
+  return Object.freeze({
+    id: 'task-worktree-provider',
+    requires: Object.freeze([]),
+    create() {
+      registerGitWorktreeProvider(runtime);
+      return Object.freeze({
+        provides: {
+          [TASK_WORKTREE_PROVIDER]: pick(runtime, [
+            'gitWorktreeEvidencePath',
+            'readGitWorktreeEvidence',
+            'writeGitWorktreeEvidence',
+            'planGitWorktrees',
+            'prepareGitWorktrees',
+            'inspectGitWorktrees',
+            'cleanupGitWorktrees',
+          ]),
+        },
+      });
+    },
+  });
+}
+
+export function registerTaskFinishBootstrap(runtime) {
+  registerTaskFinishRepository(runtime);
+  registerTaskFinishApplication(runtime);
+  return runtime;
 }
 
 function taskEnvironmentCliContributions() {
@@ -701,10 +744,14 @@ export const TASK_RETROSPECTIVE_MODULE = Object.freeze({
   create: createTaskRetrospectiveModule,
 });
 
-export function createTaskEnvironmentModule(runtime) {
+export function createTaskEnvironmentModule(runtime, { agentRuntimeCapability = null, worktreeProviderCapability = null } = {}) {
   return Object.freeze({
     id: TASK_ENVIRONMENT_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ]),
+    requires: Object.freeze([
+      TASK_RECORD_PERSISTENCE_READ,
+      ...(agentRuntimeCapability ? [agentRuntimeCapability] : []),
+      ...(worktreeProviderCapability ? [worktreeProviderCapability] : []),
+    ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
       registerTaskEnvironmentRepository(composition);
@@ -721,6 +768,11 @@ export function createTaskEnvironmentModule(runtime) {
         provides: {
           [TASK_ENVIRONMENT_APPLICATION]: application,
           [TASK_ENVIRONMENT_PERSISTENCE_READ]: persistenceRead,
+          [TASK_ENVIRONMENT_DECLARATION]: Object.freeze({
+            normalizeProjectEnvironmentPreparation,
+            parseProjectEnvironmentPreparation,
+            projectEnvironmentPreparationScopeSelector,
+          }),
           [TASK_ENVIRONMENT_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_ENVIRONMENT_PERSISTENCE_METHODS, ...TASK_ENVIRONMENT_APPLICATION_METHODS]), testSupportProperties),
         },
         contributions: {
@@ -732,10 +784,10 @@ export function createTaskEnvironmentModule(runtime) {
   });
 }
 
-export function createTaskExecutionRecordModule(runtime) {
+export function createTaskExecutionRecordModule(runtime, { verificationExecutionSupport = null } = {}) {
   return Object.freeze({
     id: TASK_EXECUTION_RECORD_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ]),
+    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ, ...(verificationExecutionSupport ? [verificationExecutionSupport] : [])]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
       registerTaskExecutionRecordRepository(composition);
@@ -767,10 +819,14 @@ export function createTaskExecutionRecordModule(runtime) {
   });
 }
 
-export function createTaskVerificationModule(runtime) {
+export function createTaskVerificationModule(runtime, { verificationDeclaration = null } = {}) {
   return Object.freeze({
     id: TASK_VERIFICATION_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ, TASK_ENVIRONMENT_APPLICATION]),
+    requires: Object.freeze([
+      TASK_RECORD_PERSISTENCE_READ,
+      TASK_ENVIRONMENT_APPLICATION,
+      ...(verificationDeclaration ? [verificationDeclaration] : []),
+    ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
       Object.defineProperty(composition, 'taskVerificationSerialize', { configurable: true, writable: true, value: undefined });
@@ -825,6 +881,7 @@ export function createTaskDevelopmentModule(runtime) {
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
       Object.defineProperty(composition, 'taskDevelopmentSerialize', { configurable: true, writable: true, value: undefined });
+      registerContentTargetObserver(composition);
       registerTaskDevelopmentRepository(composition);
       registerTaskDevelopmentApplication(composition);
       const application = pick(composition, TASK_DEVELOPMENT_APPLICATION_METHODS);
@@ -898,10 +955,16 @@ export function createTaskOverviewModule(runtime) {
   });
 }
 
-export function createTaskEntrySnapshotModule(runtime) {
+export function createTaskEntrySnapshotModule(runtime, { agentCapabilityQuery = null } = {}) {
   return Object.freeze({
     id: TASK_ENTRY_SNAPSHOT_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_APPLICATION, TASK_ENVIRONMENT_APPLICATION, TASK_DEVELOPMENT_APPLICATION, PARENT_COORDINATION_APPLICATION]),
+    requires: Object.freeze([
+      TASK_RECORD_APPLICATION,
+      TASK_ENVIRONMENT_APPLICATION,
+      TASK_DEVELOPMENT_APPLICATION,
+      PARENT_COORDINATION_APPLICATION,
+      ...(agentCapabilityQuery ? [agentCapabilityQuery] : []),
+    ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
       registerTaskEntrySnapshotApplication(composition);

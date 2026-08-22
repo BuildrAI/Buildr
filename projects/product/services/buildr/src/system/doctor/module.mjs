@@ -19,17 +19,29 @@ function createDoctorCliContributions(application) {
   })]);
 }
 
-export function createSystemDoctorModule(runtime, { diagnosticContributions = [] } = {}) {
+export function createSystemDoctorModule(runtime, {
+  diagnosticContributions = [],
+  agentRuntimeCapability = null,
+  agentCapabilityQuery = null,
+  verificationDeclaration = null,
+  taskEnvironmentDeclaration = null,
+  workspaceQuery = null,
+} = {}) {
+  const requiredCapabilities = [agentRuntimeCapability, agentCapabilityQuery, verificationDeclaration, taskEnvironmentDeclaration, workspaceQuery].filter(Boolean);
   return Object.freeze({
     id: SYSTEM_DOCTOR_MODULE_ID,
-    requires: Object.freeze([]),
-    create() {
-      registerApplicationDoctor(runtime);
-      registerSystemDoctorApplication(runtime);
+    requires: Object.freeze(requiredCapabilities),
+    create(requires) {
+      const composition = Object.create(runtime);
+      for (const capability of requiredCapabilities) Object.assign(composition, requires[capability]);
+      registerApplicationDoctor(composition);
+      registerSystemDoctorApplication(composition);
       const diagnostics = Object.freeze([...diagnosticContributions]);
       const application = Object.freeze({
-        doctor: (...args) => runtime.doctor(...args),
-        diagnoseWorkspaceStructuredStore: (...args) => runtime.diagnoseWorkspaceStructuredStore(...args),
+        doctor: (...args) => composition.doctor(...args),
+        diagnoseWorkspaceStructuredStore: (...args) => composition.diagnoseWorkspaceStructuredStore(...args),
+        gitignoreLines: (...args) => composition.gitignoreLines(...args),
+        readGitRemote: (...args) => composition.readGitRemote(...args),
         diagnostics,
       });
       return Object.freeze({

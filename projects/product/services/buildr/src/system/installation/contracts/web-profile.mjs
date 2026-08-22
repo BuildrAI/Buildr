@@ -1,10 +1,8 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
-export { productDataRoot } from '../../infrastructure/filesystem/product-data-root.mjs';
 
 export const WEB_PROFILE_SCHEMA = 'buildr.web-profile/v1';
 export const WEB_PROFILE_NAMES = Object.freeze(['released', 'development']);
@@ -19,6 +17,14 @@ function runtimeRole(identity) {
 
 function resolvePath(value, platform) {
   return platform === 'win32' ? path.win32.resolve(value) : path.resolve(value);
+}
+
+function sameFilesystemPath(left, right) {
+  if (!left || !right) return false;
+  const canonical = (value) => {
+    try { return fs.realpathSync(path.resolve(value)); } catch { return path.resolve(value); }
+  };
+  return canonical(left) === canonical(right);
 }
 
 export function webProfileName(productIdentity) {

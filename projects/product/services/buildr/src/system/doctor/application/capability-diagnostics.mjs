@@ -1,6 +1,4 @@
-import { resolveSkillCapabilityGraph } from '../../../agent-assets/infrastructure/runtime/skills/capabilities.mjs';
-
-export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path }) {
+export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph }) {
   function publicContract(contract) {
     if (!contract) return null;
     const { absolutePath: _absolutePath, ...value } = contract;

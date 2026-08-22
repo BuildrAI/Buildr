@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { registerInfrastructure } from '../../infrastructure/index.mjs';
-import { registerTaskFinishRepository } from '../../task/persistence/task-finish-repository.mjs';
-import { registerTaskFinishApplication } from '../../task/application/finish/task-finish-application.mjs';
+import { registerTaskFinishBootstrap } from '../../task/module.mjs';
 
 function optionValue(args, name, fallback) {
   const index = args.indexOf(name);
@@ -55,7 +54,6 @@ export async function runLightweightTaskFinish(argv = process.argv) {
     productRoot: () => process.cwd(),
   };
   registerInfrastructure(runtime, { sourceRoot: process.cwd() });
-  registerTaskFinishRepository(runtime);
-  registerTaskFinishApplication(runtime);
+  registerTaskFinishBootstrap(runtime);
   return await runtime.taskFinish(action, argv.slice(5));
 }

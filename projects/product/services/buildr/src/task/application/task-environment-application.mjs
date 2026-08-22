@@ -22,7 +22,6 @@ import {
   projectEnvironmentPreparationScopeSelector,
 } from '../domain/project-environment-preparation.mjs';
 import { observeGitCheckoutIdentity, sameFilesystemPath, sameGitCheckoutIdentity } from '../../infrastructure/git/checkout-identity.mjs';
-import { checkRuntimeAdapter } from '../../agent-assets/infrastructure/runtime/check-runtime.mjs';
 import { spawnCommandSync, spawnSync } from '../../infrastructure/process.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { declarationIntakeGapNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
@@ -78,6 +77,7 @@ function fileIdentity(file) {
 }
 
 export function registerTaskEnvironmentApplication(runtime) {
+  const checkRuntimeAdapter = (...args) => runtime.checkRuntimeAdapter(...args);
   const productInvocation = (options) => (runtime.currentProductInvocation || currentProductInvocation)(options);
   function candidateController(sourceCheckout, workspaceCheckout) {
     return Boolean(sourceCheckout?.linkedWorktree && workspaceCheckout

@@ -10,6 +10,17 @@ import {
   parseProjectVerification,
   validateProjectVerification,
 } from '../../src/verification/application/project-verification-diagnostics.mjs';
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+} from '../../src/task/module.mjs';
+
+const projectEnvironmentPreparation = Object.freeze({
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  projectEnvironmentPreparationScopeSelector,
+});
 
 function capability(overrides = {}) {
   return {
@@ -121,6 +132,7 @@ test('Project doctor 对声明缺失零 finding，对 v2 声明只读校验', (c
   const findings = [];
   const diagnostics = createProjectVerificationDiagnostics({
     addDoctorFinding: (result, status, code, message, details) => result.findings.push({ status, code, message, ...details }),
+    projectEnvironmentPreparation,
   });
   const registry = { projects: { demo: { source: { path: 'projects/demo' } } } };
 

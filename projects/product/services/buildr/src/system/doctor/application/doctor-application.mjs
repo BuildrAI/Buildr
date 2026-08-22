@@ -1,16 +1,12 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import {
-  RUNTIME_ADAPTERS,
-  SUPPORTED_AGENT_IDS,
-  isSupportedAgent,
-} from '../../../agent-assets/infrastructure/runtime/adapter-contract.mjs';
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.mjs';
 
 export function registerSystemDoctorApplication(runtime) {
+  const { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, isSupportedAgent } = runtime;
   const discoverDoctorScopes = (...args) => runtime.discoverDoctorScopes(...args);
   const diagnoseProjectRegistry = (...args) => runtime.diagnoseProjectRegistry(...args);
   const diagnoseWorkspace = (...args) => runtime.diagnoseWorkspace(...args);

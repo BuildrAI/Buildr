@@ -173,7 +173,7 @@ test('Task Finish inspect 使用轻量 bootstrap，执行 domain 只在 run 延�
   assert.match(main, /runLightweightTaskFinish/);
   assert.match(main, /await import\('\.\/registry\.mjs'\)/);
   assert.doesNotMatch(bootstrap, /domains\/openspec|domains\/git|domains\/runtime/);
-  assert.match(bootstrap, /registerTaskFinishApplication/);
+  assert.match(bootstrap, /registerTaskFinishBootstrap/);
   assert.match(bootstrap, /action !== 'inspect'/);
   assert.match(application, /await import\('\.\/task-finish-product-executor\.mjs'\)/);
   assert.equal(fs.existsSync(path.join(serviceRoot, 'src/task/application/finish/task-finish-run.mjs')), true);
@@ -210,7 +210,7 @@ test('Task Finish bootstrap recovery留在full retained Application且不开放�
 test('current Product直接接线自动Git executor与交付对账，没有adapter registry', () => {
   const application = read('src/task/application/finish/task-finish-application.mjs');
   const bootstrap = read('src/bootstrap/cli/task-finish-bootstrap.mjs');
-  assert.match(bootstrap, /registerTaskFinishApplication\(runtime\)/);
+  assert.match(bootstrap, /registerTaskFinishBootstrap\(runtime\)/);
   assert.match(application, /createTaskFinishProductHandlers/);
   assert.match(finishContract, /自动`run`可在明确Git边界内创建Delivery Carrier/);
   assert.match(finishContract, /`reconcile`只观察远端并登记交付/);

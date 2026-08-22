@@ -2,11 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import {
-  normalizeProjectEnvironmentPreparation,
-  parseProjectEnvironmentPreparation,
-  projectEnvironmentPreparationScopeSelector,
-} from '../../task/domain/project-environment-preparation.mjs';
 
 const ROOT_FIELDS = new Set(['schemaVersion', 'resources', 'capabilities']);
 const RESOURCE_FIELDS = new Set(['id', 'title', 'strategy', 'capacity', 'authorization']);
@@ -154,7 +149,12 @@ export function validateProjectVerification(value, context = {}) {
             if (context.preparationRecipes && !recipe) errors.push(`${referenceLabel}.recipe references unknown Preparation Recipe ${reference.recipe}.`);
             if (recipe) {
               const expectedService = recipe.scope?.kind === 'service' ? recipe.scope.service : undefined;
-              if (reference.service !== expectedService) errors.push(`${referenceLabel}.service must match Preparation Recipe scope ${projectEnvironmentPreparationScopeSelector(context.projectCode, recipe)}.`);
+              if (reference.service !== expectedService) {
+                const selector = context.projectEnvironmentPreparationScopeSelector
+                  ? context.projectEnvironmentPreparationScopeSelector(context.projectCode, recipe)
+                  : recipe.scope.kind === 'project' ? `project:${context.projectCode}` : `service:${context.projectCode}/${recipe.scope.service}`;
+                errors.push(`${referenceLabel}.service must match Preparation Recipe scope ${selector}.`);
+              }
             }
             const identity = `${reference.project}/${reference.service || ''}/${reference.recipe}`;
             if (identities.has(identity)) errors.push(`${referenceLabel} is duplicated.`);
@@ -194,12 +194,12 @@ function serviceCodes(projectRoot) {
   }
 }
 
-function preparationRecipes(projectRoot, projectCode, services) {
+function preparationRecipes(projectRoot, projectCode, services, preparationContract) {
   const file = path.join(projectRoot, 'preparation.yml');
   if (!fs.existsSync(file)) return null;
   try {
-    const declaration = normalizeProjectEnvironmentPreparation(
-      parseProjectEnvironmentPreparation(fs.readFileSync(file, 'utf8'), file),
+    const declaration = preparationContract.normalizeProjectEnvironmentPreparation(
+      preparationContract.parseProjectEnvironmentPreparation(fs.readFileSync(file, 'utf8'), file),
       { projectCode, services },
     );
     return declaration.recipes.map((recipe) => [recipe.id, recipe]);
@@ -208,7 +208,12 @@ function preparationRecipes(projectRoot, projectCode, services) {
   }
 }
 
-export function createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot = (root, source) => path.resolve(root, source.path) }) {
+export function createProjectVerificationDiagnostics({
+  addDoctorFinding,
+  projectEnvironmentPreparation,
+  resolveSourceRoot = (root, source) => path.resolve(root, source.path),
+}) {
+  if (!projectEnvironmentPreparation) throw new Error('Project Verification diagnostics require the Task Environment Declaration port.');
   function diagnoseProjectVerification(result, targetRoot, registry = null) {
     result.projectVerification = [];
     for (const [projectName, project] of Object.entries(registry?.projects || {})) {
@@ -229,8 +234,13 @@ export function createProjectVerificationDiagnostics({ addDoctorFinding, resolve
         continue;
       }
       const services = serviceCodes(projectRoot);
-      const recipes = preparationRecipes(projectRoot, projectName, services);
-      const errors = validateProjectVerification(declaration, { projectCode: projectName, services, preparationRecipes: recipes || [] });
+      const recipes = preparationRecipes(projectRoot, projectName, services, projectEnvironmentPreparation);
+      const errors = validateProjectVerification(declaration, {
+        projectCode: projectName,
+        services,
+        preparationRecipes: recipes || [],
+        projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,
+      });
       result.projectVerification.push({ project: projectName, path: relativePath, valid: errors.length === 0, capabilityCount: Array.isArray(declaration.capabilities) ? declaration.capabilities.length : 0 });
       for (const message of errors) addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
         path: relativePath,

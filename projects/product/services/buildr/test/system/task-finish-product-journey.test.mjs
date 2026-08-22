@@ -11,7 +11,7 @@ import { createTaskFinishProductHandlers } from '../../src/task/application/fini
 import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
-import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
+import { registerContentTargetObserver } from '../../src/task/infrastructure/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args, options = {}) {

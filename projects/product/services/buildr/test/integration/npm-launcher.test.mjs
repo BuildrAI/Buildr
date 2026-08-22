@@ -31,7 +31,7 @@ import {
   clearLocalAppInstance,
   writeLocalAppInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
-import { resolveWebProfile } from '../../src/web/infrastructure/web-profile.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 

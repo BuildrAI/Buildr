@@ -7,6 +7,7 @@ import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.mjs';
 import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../../src/bootstrap/runtime.mjs';
 import {
   AGENT_ASSETS_APPLICATION,
+  AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_RUNTIME,
 } from '../../src/agent-assets/module.mjs';
 import {
@@ -25,7 +26,14 @@ import {
   TASK_FINISH_PERSISTENCE_READ,
   TASK_TERMINAL_DELIVERY_APPLICATION,
   TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
+  TASK_ENVIRONMENT_DECLARATION,
+  TASK_WORKTREE_PROVIDER,
 } from '../../src/task/module.mjs';
+import {
+  VERIFICATION_APPLICATION,
+  VERIFICATION_DECLARATION,
+  VERIFICATION_EXECUTION_SUPPORT,
+} from '../../src/verification/module.mjs';
 import {
   SYSTEM_INSTALLATION_APPLICATION,
   SYSTEM_INSTALLATION_IDENTITY,
@@ -69,8 +77,14 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
 test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capability、contribution 与 runtime port', () => {
   const runtime = createRuntime();
   assert.deepEqual(runtimeModuleSnapshot(runtime), [{
-    id: 'workspace-core',
+    id: 'agent-assets-runtime',
     requires: [],
+    provides: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
+    contributions: { cli: [], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'workspace-core',
+    requires: [AGENT_ASSETS_RUNTIME],
     provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: {
       cli: ['project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
@@ -80,8 +94,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'agent-assets',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_RUNTIME],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
+    provides: [AGENT_ASSETS_APPLICATION],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -119,6 +133,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'task-worktree-provider',
+    requires: [],
+    provides: [TASK_WORKTREE_PROVIDER],
+    contributions: { cli: [], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'task-record',
     requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer', 'task.parent-coordination-reader'],
     provides: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_RECORD_RUNTIME_PORT],
@@ -130,8 +150,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-environment',
-    requires: ['task-record.persistence-read'],
-    provides: ['task-environment.application', 'task-environment.persistence-read', 'task-environment.runtime-port'],
+    requires: ['task-record.persistence-read', AGENT_ASSETS_RUNTIME, TASK_WORKTREE_PROVIDER],
+    provides: ['task-environment.application', 'task-environment.persistence-read', TASK_ENVIRONMENT_DECLARATION, 'task-environment.runtime-port'],
     contributions: {
       cli: [
         'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
@@ -142,8 +162,14 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'project-verification',
+    requires: [TASK_ENVIRONMENT_DECLARATION],
+    provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION, VERIFICATION_EXECUTION_SUPPORT],
+    contributions: { cli: [], http: [], diagnostics: ['project-verification.diagnostics'] },
+    lifecycle: 'none',
+  }, {
     id: 'task-execution-record',
-    requires: ['task-record.persistence-read'],
+    requires: ['task-record.persistence-read', VERIFICATION_EXECUTION_SUPPORT],
     provides: ['task-execution-record.application', 'task-execution-record.persistence-read', 'task-execution-record.runtime-port'],
     contributions: {
       cli: ['task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover'],
@@ -173,7 +199,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-verification',
-    requires: ['task-record.persistence-read', 'task-environment.application'],
+    requires: ['task-record.persistence-read', 'task-environment.application', VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
     contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -207,7 +233,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-entry-snapshot',
-    requires: ['task-record.application', 'task-environment.application', 'task-development.application', 'task-parent-coordination.application'],
+    requires: ['task-record.application', 'task-environment.application', 'task-development.application', 'task-parent-coordination.application', AGENT_ASSETS_CAPABILITY_QUERY],
     provides: ['task-entry-snapshot.application', 'task-entry-snapshot.runtime-port'],
     contributions: { cli: ['task next'], http: [], diagnostics: [] },
     lifecycle: 'none',
@@ -248,7 +274,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'system-doctor',
-    requires: [],
+    requires: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, VERIFICATION_DECLARATION, TASK_ENVIRONMENT_DECLARATION, WORKSPACE_QUERY],
     provides: ['system.doctor.application'],
     contributions: { cli: ['doctor'], http: [], diagnostics: [] },
     lifecycle: 'none',

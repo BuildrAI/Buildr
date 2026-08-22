@@ -2,11 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import {
-  normalizeProjectEnvironmentPreparation,
-  parseProjectEnvironmentPreparation,
-} from '../../../task/domain/project-environment-preparation.mjs';
-
 function serviceCodes(projectRoot) {
   const file = path.join(projectRoot, 'services', 'manifest.yml');
   if (!fs.existsSync(file)) return [];
@@ -18,7 +13,12 @@ function serviceCodes(projectRoot) {
   }
 }
 
-export function createProjectEnvironmentPreparationDiagnostics({ addDoctorFinding, resolveSourceRoot = (root, source) => path.resolve(root, source.path) }) {
+export function createProjectEnvironmentPreparationDiagnostics({
+  addDoctorFinding,
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+  resolveSourceRoot = (root, source) => path.resolve(root, source.path),
+}) {
   function diagnoseProjectEnvironmentPreparation(result, targetRoot, registry = null) {
     result.projectEnvironmentPreparation = [];
     for (const [projectCode, project] of Object.entries(registry?.projects || {})) {

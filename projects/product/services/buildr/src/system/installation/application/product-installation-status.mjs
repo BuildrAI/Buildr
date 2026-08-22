@@ -12,7 +12,7 @@ import { registeredProductInstallations } from '../infrastructure/installation-r
 import { localAppDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.mjs';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.mjs';
-import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../../../web/infrastructure/web-profile.mjs';
+import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.mjs';
 
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }

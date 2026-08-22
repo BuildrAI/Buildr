@@ -6,7 +6,6 @@ import { taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
 import { TASK_DEVELOPMENT_ACTIONS } from './task-development-operation-contracts.mjs';
 import { compactTaskDevelopmentOperationResult } from './task-development-result-projection.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import { resolveCapabilityRoute } from '../../agent-assets/infrastructure/runtime/skills/capabilities.mjs';
 
 function same(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -82,7 +81,7 @@ function profileEntry(startedAt, reads, attempts, status) {
 }
 
 export function registerTaskEntrySnapshotApplication(runtime) {
-  const capabilityRoute = (...args) => runtime.resolveTaskEntryCapabilityRoute?.(...args) || resolveCapabilityRoute(...args);
+  const capabilityRoute = (...args) => runtime.resolveTaskEntryCapabilityRoute(...args);
 
   function inspectTaskEntrySnapshot(targetRoot, taskId, options = {}) {
     const startedAt = performance.now();

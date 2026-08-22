@@ -16,6 +16,7 @@ export * from './infrastructure/installation-origin.mjs';
 export * from './infrastructure/installation-registry.mjs';
 export * from './infrastructure/launcher-binding.mjs';
 export * from './infrastructure/npm-launcher.mjs';
+export * from './contracts/web-profile.mjs';
 
 export const SYSTEM_INSTALLATION_MODULE_ID = 'system-installation';
 export const SYSTEM_INSTALLATION_IDENTITY = 'system.installation.identity';
