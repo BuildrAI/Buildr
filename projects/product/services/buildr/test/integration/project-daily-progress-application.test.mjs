@@ -4,18 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/workspace/module.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
+
+const test = createBuildrApplicationTest('integration-project-daily-progress-application');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-daily-progress-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const previousLog = console.log;
   console.log = () => {};
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   try {
     runtime.initBuildr(['--target', root, '--name', 'Daily', '--description', 'Daily progress fixture', '--profile', 'team']);
     runtime.createProject(['demo', '--target', root, '--name', 'Demo', '--description', 'Demo project']);

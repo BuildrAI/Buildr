@@ -1,4 +1,5 @@
 import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
+import { assertVerificationContextDispositionCoverage, verificationContextDisposition } from '../context/dispositions.mjs';
 import { TEST_CONTEXT_KEYS, TASK_LIFECYCLE_CONTEXT_KEY, testContextProfileByKey } from '../context/profiles.mjs';
 import { verificationStepOwnership } from './ownership.mjs';
 import { SYSTEM_SUITES } from './system-suites.mjs';
@@ -130,6 +131,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS = Object.freeze({
 
 const step = (definition) => {
   const classification = VERIFICATION_STEP_TESTING[definition.id];
+  const contextDisposition = verificationContextDisposition(definition.id);
   const ownership = verificationStepOwnership(definition.id);
   const declaredProfiles = definition.profiles ?? [];
   const profiles = declaredProfiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, definition.id)
@@ -178,6 +180,7 @@ const step = (definition) => {
     timeoutMs,
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
     testing: classification ? Object.freeze({ ...classification, primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id }) : null,
+    contextDisposition,
   });
 };
 
@@ -273,6 +276,8 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/verification-resource-coordinator.test.mjs',
     'test/integration/test-context-runtime.test.mjs',
     'test/integration/node-test-context-host.test.mjs',
+    'test/integration/buildr-test-context-provider.test.mjs',
+    'test/integration/test-context-public-consumer.test.mjs',
     'test/integration/verification-test-files.test.mjs',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
@@ -302,7 +307,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-environment-controller-handoff.test.mjs',
     'test/integration/task-environment-preparation-plan.test.mjs',
     'test/integration/task-environment-repository.test.mjs',
-  ], { schedulingCostMs: 10000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 10000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.mjs',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
@@ -311,21 +316,21 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-overview-repository.test.mjs',
     'test/integration/task-planning-identity-application.test.mjs',
     'test/integration/task-retrospective-repository.test.mjs',
-  ], { schedulingCostMs: 4000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 4000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-coordination', [
     'test/integration/parent-coordination-application.test.mjs',
     'test/integration/parent-coordination-repository.test.mjs',
     'test/integration/publication-application.test.mjs',
-  ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-project-daily-progress', [
     'test/integration/project-daily-progress-application.test.mjs',
-  ], { schedulingCostMs: 5000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-execution-records', [
     'test/integration/task-execution-record-application.test.mjs',
     'test/integration/task-execution-record-body-store.test.mjs',
     'test/integration/task-finish-execution-record-recovery.test.mjs',
     'test/integration/verification-execution-record-application.test.mjs',
-  ], { schedulingCostMs: 50000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 50000, executorType: 'node-context-test', args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-task-development', [
     'test/integration/task-verification-repository.test.mjs',
     'test/integration/task-development-application-shard-3.test.mjs',
@@ -345,7 +350,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-finish-run.test.mjs',
     'test/integration/task-finish-sqlite.test.mjs',
     'test/integration/task-finish-maintenance.test.mjs',
-  ], { schedulingCostMs: 11000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 11000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish-delivery', [
     'test/integration/task-finish-delivery-reconciliation.test.mjs',
     'test/integration/task-finish-delivery-remote.test.mjs',
@@ -474,6 +479,8 @@ export const verificationSteps = Object.freeze([
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.mjs' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
 ]);
+
+assertVerificationContextDispositionCoverage(verificationSteps.map((item) => item.id));
 
 const candidateShard = (id, runner, phase, stepIds, options = {}) => Object.freeze({
   id,

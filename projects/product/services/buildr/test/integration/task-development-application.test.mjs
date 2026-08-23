@@ -5,7 +5,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
 
-import { contextTest } from '../../src/infrastructure/testing/context-runtime/index.mjs';
+import { createBuildrContextTest } from '../context/buildr-node-test.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { BUILDR_TASK_TEST_CONTEXTS } from '../context/providers/task-application.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
@@ -16,22 +16,11 @@ const shardIndex = Number.parseInt(shardValue, 10);
 if (!Number.isInteger(shardIndex) || shardIndex < 0 || shardIndex >= SHARD_COUNT || String(shardIndex) !== shardValue) {
   throw new Error(`Invalid BUILDR_TASK_DEVELOPMENT_TEST_SHARD: ${shardValue}`);
 }
-let registeredTestIndex = 0;
-function test(name, options, callback) {
-  const currentIndex = registeredTestIndex;
-  registeredTestIndex += 1;
-  if (currentIndex % SHARD_COUNT !== shardIndex) return undefined;
-  const nodeOptions = callback === undefined ? {} : options;
-  const testCallback = callback === undefined ? options : callback;
-  return contextTest(name, {
-    ...nodeOptions,
-    suiteId: `task-development-application-shard-${shardIndex}`,
-    contexts: BUILDR_TASK_TEST_CONTEXTS,
-  }, async (t, contexts) => {
-    Object.defineProperty(t, 'buildrContexts', { value: contexts });
-    return testCallback(t);
-  });
-}
+const test = createBuildrContextTest({
+  suiteId: `task-development-application-shard-${shardIndex}`,
+  contexts: BUILDR_TASK_TEST_CONTEXTS,
+  select: (index) => index % SHARD_COUNT === shardIndex,
+});
 
 function writeVerificationDeclaration(root) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({

@@ -60,7 +60,7 @@ export function validateProductSourceLayout({ projectEntries, serviceEntries, pa
     if (forbiddenServiceRootEntries.has(entry)) findings.push(`Buildr Service root must not retain ${entry}`);
   }
   for (const file of packageFiles) {
-    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/')) {
+    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/') && !file.startsWith('targets/test-context/')) {
       findings.push(`Buildr Service package/ contains non-deferred file: ${file}`);
     }
   }

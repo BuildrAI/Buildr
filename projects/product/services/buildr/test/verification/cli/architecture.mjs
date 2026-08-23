@@ -203,7 +203,11 @@ for (const file of sourceFiles) {
   for (const match of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
     const specifier = match[1];
     if (!specifier.startsWith('.')) continue;
-    const target = path.resolve(path.dirname(file), specifier);
+    const requestedTarget = path.resolve(path.dirname(file), specifier);
+    const typescriptSourceTarget = file.endsWith('.ts') && requestedTarget.endsWith('.js')
+      ? `${requestedTarget.slice(0, -3)}.ts`
+      : requestedTarget;
+    const target = fs.existsSync(requestedTarget) ? requestedTarget : typescriptSourceTarget;
     if (!fs.existsSync(target)) problems.push(`src/${relative} imports missing module ${specifier}`);
     if (!target.startsWith(sourceRoot + path.sep)) continue;
     const targetRelative = path.relative(sourceRoot, target).split(path.sep).join('/');
@@ -306,7 +310,11 @@ if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/re
 if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/release/release-smoke.mjs --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.mjs'))) problems.push('platform Launcher integration module is missing');
 const expectedPackageExports = {
-  './test-context': './test-context.mjs',
+  './test-context': {
+    types: './package/targets/test-context/index.d.ts',
+    import: './test-context.mjs',
+    default: './test-context.mjs',
+  },
   './package.json': './package.json',
   './*': './*',
 };

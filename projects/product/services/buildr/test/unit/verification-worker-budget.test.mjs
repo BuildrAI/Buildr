@@ -44,8 +44,11 @@ test('Context-aware node runner只按outer grant启动持久Host', () => {
 });
 
 test('Context-aware node runner摘要进入稳定timing evidence', () => {
-  const summary = parseNodeTestContextSummary('TAP version 13\n# node-test-context-summary {"schemaVersion":"node.test-context-summary/v1","hosts":4,"creates":8}\n');
-  assert.deepEqual(summary, { schemaVersion: 'node.test-context-summary/v1', hosts: 4, creates: 8 });
+  const summary = parseNodeTestContextSummary('TAP version 13\n# node-test-context-summary {"schemaVersion":"node.test-context-summary/v1","hosts":4,"creates":8,"createDurationMs":12,"waitDurationMs":3,"testBodyDurationMs":40,"wallClockDurationMs":22}\n');
+  assert.deepEqual(summary, {
+    schemaVersion: 'node.test-context-summary/v1', hosts: 4, creates: 8,
+    createDurationMs: 12, waitDurationMs: 3, testBodyDurationMs: 40, wallClockDurationMs: 22,
+  });
   assert.equal(parseNodeTestContextSummary('# node-test-context-summary {'), null);
   assert.equal(parseNodeTestContextSummary('TAP version 13'), null);
 });

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+const test = createBuildrApplicationTest('integration-parent-coordination-repository');
 
 function record(taskId, parentTaskId = null) {
   return {
@@ -31,7 +31,7 @@ function fixture(t, childCount = 32) {
   fs.mkdirSync(path.join(root, 'projects'));
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecordPersistence(root, record('parent-task'));
   for (let index = 0; index < childCount; index += 1) {
     runtime.createTaskRecordPersistence(root, record(`child-${String(index).padStart(2, '0')}`, 'parent-task'));

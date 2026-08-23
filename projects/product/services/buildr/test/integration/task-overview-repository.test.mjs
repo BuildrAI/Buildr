@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+const test = createBuildrApplicationTest('integration-task-overview-repository');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-overview-'));
@@ -13,7 +13,7 @@ function fixture(t) {
   fs.mkdirSync(path.join(root, 'projects'));
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const record = (taskId, parentTaskId = null) => ({
     schemaVersion: 'buildr.task-record/v2', taskId, title: taskId, intent: 'Verify one-query overview', scope: { projects: [], services: [] }, changes: [], parentTaskId, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null, createdAt: '2026-08-08T00:00:00.000Z', updatedAt: '2026-08-08T00:00:00.000Z',
   });

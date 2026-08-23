@@ -15,6 +15,7 @@ import { readSharedCandidatePackage } from '../verification/release/candidate-pa
 
 const SOURCE_COMMIT = 'b'.repeat(40);
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
+const testContextConsumerFixture = path.join(serviceRoot, 'test/fixtures/test-context-consumer');
 
 function npmCliForCurrentNode() {
   const executableDirectory = path.dirname(process.execPath);
@@ -130,6 +131,9 @@ test('npm release artifact freezes one tarball with complete payload and no plat
     for (const required of [
       'runtime/buildr.cjs',
       'scripts/postinstall.mjs',
+      'test-context.mjs',
+      'package/targets/test-context/index.js',
+      'package/targets/test-context/index.d.ts',
       'payload/runtime/read-worker.cjs',
       'payload/product/web-dist/index.html',
       'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
@@ -146,12 +150,46 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'payload/product/resources/installation/launcher/Buildr.ico',
     ]);
     assert.equal(paths.some((value) => /\.(?:app|pkg|msi|map)$/iu.test(value)), false);
-    assert.equal(paths.some((value) => value.endsWith('.ts')), false);
+    assert.equal(paths.some((value) => value.endsWith('.ts') && !value.endsWith('.d.ts')), false);
     assert.equal(paths.some((value) => /(?:^|\/)typescript(?:\/|$)/u.test(value)), false);
     assert.equal(paths.some((value) => /(?:^|\/)@types\/node(?:\/|$)/u.test(value)), false);
     for (const relativePath of GENERATED_USER_REGISTRY_RESOURCE_SOURCES) {
       assert.equal(paths.includes(`payload/product/${relativePath}`), false, relativePath);
     }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('installed Candidate exposes the same Test Context ESM and strict TypeScript contract', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-test-context-'));
+  try {
+    const { artifact } = await candidateArtifact(root);
+    const consumerRoot = path.join(root, 'consumer');
+    fs.mkdirSync(consumerRoot, { recursive: true });
+    for (const file of ['consumer.ts', 'runtime.mjs', 'tsconfig.json']) {
+      fs.copyFileSync(path.join(testContextConsumerFixture, file), path.join(consumerRoot, file));
+    }
+    fs.writeFileSync(path.join(consumerRoot, 'package.json'), '{"type":"module"}\n');
+    const installed = runNpm(['install', '--offline', '--ignore-scripts', '--prefix', consumerRoot, artifact.tarball], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: [path.dirname(process.execPath), process.env.PATH].filter(Boolean).join(path.delimiter),
+        npm_config_cache: path.join(root, 'npm-cache'),
+        npm_config_update_notifier: 'false',
+      },
+    });
+    assert.equal(installed.status, 0, installed.stderr || installed.stdout);
+
+    const runtime = spawnSync(process.execPath, [path.join(consumerRoot, 'runtime.mjs')], { cwd: consumerRoot, encoding: 'utf8' });
+    assert.equal(runtime.status, 0, runtime.stderr || runtime.stdout);
+    const types = spawnSync(process.execPath, [
+      path.join(serviceRoot, 'node_modules/typescript/bin/tsc'),
+      '--project', path.join(consumerRoot, 'tsconfig.json'),
+      '--typeRoots', path.join(serviceRoot, 'node_modules/@types'),
+    ], { cwd: consumerRoot, encoding: 'utf8' });
+    assert.equal(types.status, 0, types.stderr || types.stdout);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

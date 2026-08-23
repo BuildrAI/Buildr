@@ -4,7 +4,20 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-function normalizeFiles(files, cwd) {
+import type {
+  NodeTestContextFile,
+  NodeTestContextHostResult,
+  NodeTestContextRunOptions,
+  NodeTestContextRunResult,
+  TestContextEvent,
+} from './types.js';
+
+interface NormalizedFile {
+  file: string;
+  signature: string;
+}
+
+function normalizeFiles(files: readonly (string | NodeTestContextFile)[], cwd: string): NormalizedFile[] {
   const result = files.map((item) => typeof item === 'string' ? { file: item, signature: 'default' } : item);
   for (const item of result) {
     if (!item || typeof item.file !== 'string' || !item.file) throw new Error('node_test_context_runner_input_invalid: each file descriptor requires file.');
@@ -14,16 +27,29 @@ function normalizeFiles(files, cwd) {
     .sort((left, right) => left.signature.localeCompare(right.signature) || left.file.localeCompare(right.file));
 }
 
-function partition(files, workerCount) {
-  const groups = Array.from({ length: workerCount }, () => []);
+function partition(files: readonly NormalizedFile[], workerCount: number): NormalizedFile[][] {
+  const groups = Array.from({ length: workerCount }, () => [] as NormalizedFile[]);
   for (const item of files) {
-    const target = groups.reduce((best, group) => group.length < best.length ? group : best, groups[0]);
+    const target = groups.reduce((best, group) => group.length < best.length ? group : best, groups[0]!);
     target.push(item);
   }
   return groups.filter((group) => group.length > 0);
 }
 
-function runHost(input, options) {
+interface HostInput {
+  cwd: string;
+  files: readonly string[];
+  eventsFile: string;
+}
+
+interface HostOptions {
+  nodeExecutable: string;
+  env: NodeJS.ProcessEnv;
+}
+
+type HostProcessResult = Omit<NodeTestContextHostResult, 'host' | 'files' | 'events'>;
+
+function runHost(input: HostInput, options: HostOptions): Promise<HostProcessResult> {
   return new Promise((resolve) => {
     const child = spawn(options.nodeExecutable, [
       '--test',
@@ -43,14 +69,14 @@ function runHost(input, options) {
     let stderr = '';
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
     child.on('error', (error) => resolve({ status: 'failed', exitCode: null, signal: null, stdout, stderr: `${stderr}${error.stack || error.message}\n` }));
     child.on('close', (exitCode, signal) => resolve({ status: exitCode === 0 ? 'passed' : 'failed', exitCode, signal, stdout, stderr }));
   });
 }
 
-export async function runNodeTestContextHosts(options) {
+export async function runNodeTestContextHosts(options: NodeTestContextRunOptions): Promise<NodeTestContextRunResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const files = normalizeFiles(options.files ?? [], cwd);
   if (files.length === 0) throw new Error('node_test_context_runner_input_invalid: at least one file is required.');
@@ -61,14 +87,14 @@ export async function runNodeTestContextHosts(options) {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'node-test-context-hosts-'));
   const startedAt = Date.now();
   try {
-    const results = await Promise.all(groups.map(async (group, index) => {
+    const results = await Promise.all(groups.map(async (group, index): Promise<NodeTestContextHostResult> => {
       const eventsFile = path.join(temporaryRoot, `host-${index + 1}.ndjson`);
       const result = await runHost({ cwd, files: group.map((item) => item.file), eventsFile }, {
         nodeExecutable: options.nodeExecutable ?? process.execPath,
         env: { ...process.env, ...options.env },
       });
-      const events = fs.statSync(eventsFile, { throwIfNoEntry: false })?.isFile()
-        ? fs.readFileSync(eventsFile, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+      const events: TestContextEvent[] = fs.statSync(eventsFile, { throwIfNoEntry: false })?.isFile()
+        ? fs.readFileSync(eventsFile, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as TestContextEvent)
         : [];
       return Object.freeze({ host: index + 1, files: Object.freeze(group.map((item) => item.file)), events: Object.freeze(events), ...result });
     }));

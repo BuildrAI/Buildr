@@ -95,6 +95,14 @@ function stagingPackageJson(payloadManifest, productMetadata) {
     keywords: productMetadata.keywords,
     publishConfig: productMetadata.publishConfig,
     type: 'module',
+    exports: {
+      './test-context': {
+        types: './package/targets/test-context/index.d.ts',
+        import: './test-context.mjs',
+        default: './test-context.mjs',
+      },
+      './package.json': './package.json',
+    },
     bin: { buildr: 'bin/buildr.mjs' },
     scripts: { postinstall: 'node scripts/postinstall.mjs' },
     files: [
@@ -103,6 +111,8 @@ function stagingPackageJson(payloadManifest, productMetadata) {
       'application-payload.json',
       'installation-origin.json',
       'bin/buildr.mjs',
+      'test-context.mjs',
+      'package/targets/test-context/',
       'scripts/postinstall.mjs',
       'runtime/buildr.cjs',
       'payload/',
@@ -158,12 +168,15 @@ export function createNpmPackStaging(payloadRoot, destination) {
     fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(root, 'runtime'), { recursive: true });
     fs.mkdirSync(path.join(root, 'payload'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'package/targets/test-context'), { recursive: true });
     fs.copyFileSync(path.join(frozen.root, APPLICATION_PAYLOAD_MANIFEST), path.join(root, APPLICATION_PAYLOAD_MANIFEST));
     fs.copyFileSync(path.join(frozen.root, 'runtime/buildr.cjs'), path.join(root, 'runtime/buildr.cjs'));
     copyTree(path.join(frozen.root, 'resources'), path.join(root, 'payload'));
     const productMetadata = JSON.parse(fs.readFileSync(path.join(root, 'payload/product/package.json'), 'utf8'));
     fs.copyFileSync(path.join(root, 'payload/product/LICENSE'), path.join(root, 'LICENSE'));
     fs.copyFileSync(path.join(root, 'payload/product/README.md'), path.join(root, 'README.md'));
+    fs.copyFileSync(path.join(serviceRoot, 'test-context.mjs'), path.join(root, 'test-context.mjs'));
+    copyTree(path.join(serviceRoot, 'package/targets/test-context'), path.join(root, 'package/targets/test-context'));
     fs.writeFileSync(path.join(root, 'package.json'), `${JSON.stringify(stagingPackageJson(frozen.manifest, productMetadata), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'installation-origin.json'), `${JSON.stringify(createNpmInstallationOrigin(frozen.manifest), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'bin/buildr.mjs'), npmBinSource(), { encoding: 'utf8', mode: 0o755 });
@@ -182,6 +195,9 @@ export function assertNpmTarballInventory(inventory) {
     'application-payload.json',
     'installation-origin.json',
     'scripts/postinstall.mjs',
+    'test-context.mjs',
+    'package/targets/test-context/index.js',
+    'package/targets/test-context/index.d.ts',
     'runtime/buildr.cjs',
     'payload/runtime/read-worker.cjs',
     'payload/product/package.json',
@@ -201,6 +217,7 @@ export function assertNpmTarballInventory(inventory) {
     || /(^|\/)(?:test|tests|fixtures?)(\/|$)/iu.test(value)
     || /(^|\/)buildr-web(\/|$)/iu.test(value)
     || /(^|\/)(?:vite\.config|node_modules)(?:\.|\/|$)/iu.test(value)
+    || (value.endsWith('.ts') && !value.endsWith('.d.ts'))
   ));
   if (forbidden.length) throw new Error(`npm tarball inventory contains platform/development content: ${forbidden.join(', ')}`);
   return inventory;

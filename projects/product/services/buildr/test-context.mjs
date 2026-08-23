@@ -9,4 +9,4 @@ export {
   defineTestContext,
   isTestContextDefinition,
   runNodeTestContextHosts,
-} from './src/infrastructure/testing/context-runtime/index.mjs';
+} from './package/targets/test-context/index.js';

@@ -3,9 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
-
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import {
   beginTaskExecutionRecordCleanup,
   completeTaskExecutionRecordCleanup,
@@ -17,6 +15,7 @@ import { TASK_EXECUTION_RECORD_BODY_READ_LIMIT_BYTES } from '../../src/task/pers
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const test = createBuildrApplicationTest('integration-task-execution-record-application');
 
 function taskRecord(taskId) {
   return {
@@ -34,7 +33,7 @@ function fixture(t, taskIds = ['record-task']) {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Fixture\n');
   fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 44444444-4444-4444-8444-444444444444\nname: Fixture\ndescription: Fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   for (const taskId of taskIds) runtime.createTaskRecordPersistence(root, taskRecord(taskId));
   return { root: fs.realpathSync(root), runtime };
 }

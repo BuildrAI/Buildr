@@ -3,16 +3,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test, { after } from 'node:test';
+import { after } from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { verificationCapabilityIdentity } from '../../src/verification/infrastructure/preparation-admission.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
+const test = createBuildrApplicationTest('integration-verification-execution-record-application');
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
@@ -33,7 +34,7 @@ function capability(id, script) {
 
 function setup(t, name = 'verification-execution-record') {
   const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, name).root);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const taskId = `${name}-task`;
   runtime.createTaskRecord(root, { taskId, title: 'Verification records', intent: 'Exercise formal verification record retention.', projects: ['demo'], services: [], changes: [] });
   runtime.resolveTaskEnvironmentExecution = () => ({

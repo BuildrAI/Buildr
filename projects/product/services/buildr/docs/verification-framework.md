@@ -45,14 +45,20 @@ Context Runtime 不读取 changed paths、Core/Candidate profile 或 Buildr Work
 
 ```text
 src/infrastructure/testing/context-runtime/
-├── definition.mjs          defineTestContext、配置规范化与identity
-├── runtime.mjs             cache、scope、dependency、lease、reset、dirty/evict
-├── node-test.mjs           node:test注册adapter与direct-file lifecycle
-├── node-runner.mjs         多持久Worker Host编排
-├── node-runner-cli.mjs     verification executor入口
-└── index.mjs               内部公共API聚合
+├── types.ts                strict公共类型与泛型推导
+├── definition.ts           defineTestContext、配置规范化与identity
+├── runtime.ts              cache、scope、dependency、lease、reset、dirty/evict
+├── node-test.ts            node:test注册adapter与direct-file lifecycle
+├── node-runner.ts          多持久Worker Host编排
+├── node-runner-cli.ts      verification executor入口
+└── index.ts                TypeScript公共API聚合
 
 test-context.mjs            package顶层稳定facade
+package/targets/test-context/
+├── *.js                    确定性生成的标准ESM
+└── *.d.ts                  JavaScript消费者对应的类型声明
+tools/testing/test-context-build.mjs
+                           generate/check唯一生成入口
 ```
 
 公共入口是：
@@ -67,7 +73,9 @@ import {
 } from '@buildr-ai/buildr/test-context';
 ```
 
-该入口进入唯一 `@buildr-ai/buildr` npm tarball，不创建第二个Candidate、tarball或Release transaction。公共模块只依赖Node.js标准库，不依赖Buildr CLI、Workspace、Git或SQLite。出现第二个真实消费者或独立版本需求后，可以把同一API提取到独立包；当前先用真实接入证明抽象。
+该入口进入唯一 `@buildr-ai/buildr` npm tarball，不创建第二个Candidate、tarball或Release transaction。源码authority是strict TypeScript；`test-context:generate`生成标准ESM和`.d.ts`，`test-context:check`逐字节重建并拒绝projection drift，根`typecheck`总是先执行该检查。package export的`types`指向生成声明，Node只执行生成JavaScript，不执行raw `.ts`或依赖类型擦除。正式tarball不包含raw Runtime TypeScript、compiler或Buildr test-only provider。
+
+公共模块只依赖Node.js标准库，不依赖Buildr CLI、Workspace、Git或SQLite。出现第二个真实消费者或独立版本需求后，可以把同一API提取到独立包；当前先用真实接入证明抽象。
 
 ### 2.2 Buildr adapters
 
@@ -238,7 +246,7 @@ node --test --test-isolation=none --test-concurrency=1 <assigned files...>
 
 不能让整个Core直接使用一个`isolation=none`进程：未注册测试可能依赖process global隔离，单进程也无法提供CPU并行。只有`node-context-test` owner进入持久Host；其他owners继续默认process isolation。
 
-## 10. Buildr首个provider组合
+## 10. Buildr provider组合与真实采用
 
 Task Development Application集合注册两个Context：
 
@@ -257,9 +265,31 @@ Task Development Application集合注册两个Context：
 - 每test取得独立sandbox lease，release删除case-owned sandbox；
 - marker、tree digest、realpath containment和alias检查继续失败关闭。
 
-4个Task Development shard现在是Context Host消费者：Host内多个case复用Application state和seed pool。真实SQLite repository、Git contribution、CLI、Task Environment、Finish、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
+统一adapter `test/context/buildr-node-test.mjs`向测试暴露`createBuildrContextTest()`、`createBuildrApplicationTest()`与`createBuildrApplicationWorkspaceTest()`。当前以下owner已经使用`node-context-test`持久Host，并在每个Host内复用matching Application assembly：
+
+- Task read models；
+- Parent/Task coordination；
+- Project Daily Progress；
+- Task Execution Records；
+- Task Environment repository/Application边界；
+- Task Finish Application core；
+- Task Development Application与Workspace lease。
+
+其中只有Task Development需要`buildr.task-workspace/v1`；其他迁移集合只复用Application组装，测试自己创建的SQLite或临时目录仍保持逐case隔离。动态修改`BUILDR_APP_DATA_DIR`、跨CLI/Git/SQLite多连接或以真实生命周期为断言的case继续为hybrid/full-lifecycle，不为提高注册率共享process global或可变Workspace。
+
+真实Git contribution、完整CLI协议、Task Environment create/cleanup、Finish、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
 
 ## 11. Verification Control Plane
+
+`test/context/dispositions.mjs`为registry中每个step保存唯一Context处置：
+
+| disposition | 含义 |
+| --- | --- |
+| `context-runtime` | 可复用组装和逐case隔离均由公共Runtime/provider拥有 |
+| `hybrid` | 复用Application或immutable seed，但仍执行真实filesystem、SQLite、CLI、Git或process边界 |
+| `full-lifecycle` | stateless检查，或初始化、恢复、Finish、自举、cleanup、Candidate/Release本身就是primary evidence |
+
+处置包含稳定reason code；registry增删或重命名step而未同步处置会在执行前失败。处置不是profile：同一个`full-lifecycle` owner仍可能属于affected、Core、Candidate、Host Node或Windows显式投影。
 
 - `ownership.mjs`：changed path → primary owner；
 - `registry.mjs`：step、profile、dependency、executor、Context、资源和预算；
@@ -298,7 +328,7 @@ affected解决任务相关性，Context解决已选测试的重复环境成本�
 
 ## 14. Evidence
 
-step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty和destroy。
+step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty/evict、destroy和wall-clock。阶段同时提供`createDurationMs`、`acquireDurationMs`、`releaseDurationMs`、`waitDurationMs`、`resetDurationMs`与`destroyDurationMs`，使“测试体慢”与“环境组装/争用/恢复慢”可以分开判断。
 
 outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/materialize/release/cleanup。前者证明Host内Application Context复用，后者证明跨runner seed隔离。事件属于runner-owned transient evidence，不进入Project declaration或Task Verification Result。
 
@@ -327,30 +357,37 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 - dirty后静默重建并把当前test记为passed；
 - 因Core变快删除Candidate/Release主证据。
 
-## 17. 本轮性能证据
+## 17. 性能验收方法与当前基线
 
 Task Development owner的历史基线约为71.9秒；第一阶段只做seed与手工shard后约40.8秒。迁移到公共Runtime后的独立focus为31.670秒：4个Host、8次Context创建、22次cache hit、15次隔离lease，累计test body为69.202秒，而Workspace materialize/cleanup合计只有0.931秒。
 
-相同最终实现树的两轮完整Core全部52/52通过：
+最终冻结实现树的三轮无外部竞争Core均为52/52通过；计划目标工作量为976秒，全局容量为4，因此数学容量下限为244秒：
 
-| 样本 | Core墙钟 | Task Development | 最慢step |
-| --- | ---: | ---: | --- |
-| Core 1 | 321.437s | 42.455s | `system-task-finish` 107.035s |
-| Core 2 | 319.937s | 44.037s | `system-task-finish` 106.021s |
-| 中位 | 320.687s | 43.246s | 约106.5s |
+| 样本 | Core墙钟 | 累计executor work | 有效并行度 | Task Development | 最慢step |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Core 1 | 266.434s | 877.724s | 3.294 | 30.709s | `system-task-finish` 78.802s |
+| Core 2 | 269.674s | 888.804s | 3.296 | 31.160s | `system-task-finish` 84.000s |
+| Core 3 | 267.561s | 881.674s | 3.295 | 30.810s | `system-task-finish` 80.596s |
+| 中位 | 267.561s | 881.674s | 3.295 | 30.810s | 80.596s |
 
-因此本轮有两条同时成立的结论：
+三轮墙钟极差为3.240秒，约占中位数1.2%。每轮聚合15个Host、16次Context创建、93次cache hit和94次lease；均为0 dirty、0 eviction、0 Context wait。Context创建累计约1.9--2.0秒，Task Development的Workspace materialize与cleanup均约0.6秒，说明这一批owner的重复环境创建已经不再是Core主导成本。相对本Change中途两轮Core的320.687秒阶段中位数，最终中位数下降约16.6%；Task Development相对71.9秒历史基线下降约57.1%。
 
-- 公共Runtime确实消除了首个owner的重复Application组装和手写生命周期责任，独立墙钟相对71.9秒基线下降约56%；
-- 整体Core仍约5分20秒，尚未达到180秒目标，关键路径已经转移到完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance；不能把首个owner收益外推成整体达标。
+同一冻结树另做一次真实Core/affected竞争。affected由`test/integration/task-development-application.test.mjs`选择8个step，双方均通过：
 
-Core竞争下Task Development比独立focus慢约34%–39%，说明跨step资源竞争仍显著。下一轮应优先让更多“初始化不是主证据”的Application/SQLite/Git owner注册Context provider，同时继续优化唯一完整Finish/System旅程本身；affected仍负责避免无关测试，但不是唯一性能手段。
+| 执行 | 墙钟 | 关键结果 |
+| --- | ---: | --- |
+| affected | 44.367s | Task Development 35.427s；8 creates、22 hits、0 dirty/evict |
+| Core | 285.105s | 累计work 913.074s；有效并行度3.203；最慢step 81.498s |
+
+affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释放；Core的`system-task-finish`等待29.529秒后取得同一slots，执行后也完整释放。Core相对无竞争中位数增加17.544秒（约6.6%），但没有并发写入、脏Context、遗留进程或失效缓存。该样本证明跨plan资源协调会把竞争记录为resource wait，而不是把等待混入Context创建收益；同时也说明CPU、磁盘与生命周期容量竞争仍会放大墙钟。
+
+最终结论必须保持预算诚实：180秒低于当前244秒数学下限，不能作为现有52-step Core的可达目标。本Change已把稳定Core从阶段约5分20秒收敛到约4分28秒，并建立可继续注册和复用Context的技术框架；若要进一步下降，必须减少Core目标工作量、消除剩余primary evidence重复，或优化完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance等真实测试体。affected仍负责避免无关测试，但不是唯一性能手段；Candidate与Release证据不能为追求Core数字而下放或删除。
 
 ## 18. 当前能力与下一边界
 
 已经实现：公共definition/runtime/npm入口、configuration identity、dependency graph、worker/suite/test scope、shared/exclusive/isolated lease、reset、dirty/evict、逆序destroy、direct-file adapter、多持久Host runner、outer grant约束、Host失败汇总、Buildr Application/Workspace provider、timing summary和package inventory验证。
 
-当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter；未迁移owner仍每文件process isolation。下一步应优先为重复成本高且初始化不是主证据的owner增加SQLite snapshot或Git/source seed provider。完整Finish、自举和cleanup黄金旅程应优化产品/fixture内部实现，不用预建Context跳过。
+当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter；full-lifecycle owner仍使用默认process isolation。下一步应按Execution Record确认剩余重复成本，再决定增加SQLite snapshot、Git/source seed provider或直接优化黄金旅程内部实现。完整Finish、自举和cleanup不能用预建Context跳过。
 
 ## 19. 维护不变量
 

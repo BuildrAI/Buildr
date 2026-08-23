@@ -93,7 +93,7 @@ export function createVerificationExecutor(options) {
       return {
         command: exactNode.nodeExecutable,
         args: nodeContextTestArguments(step, executionContext, {
-          runner: path.join(productRoot, 'src/infrastructure/testing/context-runtime/node-runner-cli.mjs'),
+          runner: path.join(productRoot, 'package/targets/test-context/node-runner-cli.js'),
           cwd: productRoot,
           files: files.map(nodeTestFile),
         }),

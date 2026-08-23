@@ -34,6 +34,8 @@ const deferredPackageFiles = [
   'launchers/build.mjs',
   'launchers/manage.mjs',
   'targets/runtime/skills/buildr/SKILL.md',
+  'targets/test-context/index.js',
+  'targets/test-context/index.d.ts',
 ];
 const canonicalBridge = '#!/bin/sh\nset -eu\nproject_root=$(CDPATH= cd "${0%/*}" && pwd)\nexec "$project_root/services/buildr/tools/development/run-development-cli" "$@"\n';
 

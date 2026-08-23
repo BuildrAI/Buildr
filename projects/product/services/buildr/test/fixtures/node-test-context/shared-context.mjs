@@ -1,4 +1,4 @@
-import { defineTestContext } from '../../../src/infrastructure/testing/context-runtime/index.mjs';
+import { defineTestContext } from '../../../test-context.mjs';
 
 const COUNT = Symbol.for('@buildr-ai/test-context/fixture-create-count');
 
@@ -12,4 +12,3 @@ export const sharedMemoryContext = defineTestContext({
     return Object.freeze({ generation: globalThis[COUNT], pid: process.pid });
   },
 });
-

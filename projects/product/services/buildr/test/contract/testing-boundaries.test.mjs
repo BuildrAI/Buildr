@@ -5,7 +5,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { inspectTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
-import { verificationSteps } from '../verification/registry.mjs';
+import { assertVerificationContextDispositionCoverage, VERIFICATION_CONTEXT_DISPOSITIONS } from '../context/dispositions.mjs';
+import { VERIFICATION_DAILY_CORE_EXCLUSIONS, verificationSteps } from '../verification/registry.mjs';
 import { SYSTEM_SUITES, validateSystemSuiteRegistry } from '../verification/system-suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -47,6 +48,79 @@ function directBoundaryImports(layer) {
 test('Unit 与 Component 不直接穿过真实进程、网络或文件系统边界', () => {
   assert.deepEqual(directBoundaryImports('unit'), []);
   assert.deepEqual(directBoundaryImports('component'), []);
+});
+
+test('每个Verification owner都有唯一且有理由的Context disposition', () => {
+  assert.deepEqual(
+    assertVerificationContextDispositionCoverage(verificationSteps.map((step) => step.id)),
+    { status: 'covered', owners: verificationSteps.length },
+  );
+  assert.equal(Object.keys(VERIFICATION_CONTEXT_DISPOSITIONS).length, verificationSteps.length);
+  for (const step of verificationSteps) {
+    assert.equal(step.contextDisposition, VERIFICATION_CONTEXT_DISPOSITIONS[step.id]);
+    assert.match(step.contextDisposition.mode, /^(?:context-runtime|hybrid|full-lifecycle)$/u);
+    assert.match(step.contextDisposition.reasonCode, /^[a-z][a-z0-9-]+$/u);
+    assert.ok(step.contextDisposition.reason.length >= 20, step.id);
+  }
+  assert.throws(
+    () => assertVerificationContextDispositionCoverage(verificationSteps.slice(1).map((step) => step.id)),
+    /verification_context_disposition_coverage_invalid/,
+  );
+});
+
+test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () => {
+  const byId = new Map(verificationSteps.map((step) => [step.id, step]));
+  const assertGolden = (id, reasonCode) => {
+    const step = byId.get(id);
+    assert.ok(step, `missing golden owner ${id}`);
+    assert.equal(step.testing.primaryEvidenceOwner, id, `${id} must remain its own primary evidence owner`);
+    assert.equal(step.contextDisposition.mode, 'full-lifecycle', `${id} must retain the real lifecycle`);
+    assert.equal(step.contextDisposition.reasonCode, reasonCode, id);
+  };
+
+  for (const id of [
+    'integration-self-bootstrap',
+    'system-task-finish',
+    'system-task-finish-cli',
+    'system-workspace-lifecycle',
+    'system-worktree-lifecycle',
+    'concurrent-task-acceptance',
+  ]) {
+    assertGolden(id, 'lifecycle-is-primary-evidence');
+    assert.equal(byId.get(id).profiles.includes('core'), true, `${id} must remain in daily Core`);
+  }
+
+  for (const id of [
+    'candidate-tarball',
+    'application-payload-release',
+    'npm-launcher-candidate',
+    'release-tarball-smoke',
+  ]) {
+    assertGolden(id, 'release-artifact-is-primary-evidence');
+    assert.equal(byId.get(id).profiles.includes('candidate'), true, `${id} must remain in Candidate`);
+    assert.equal(byId.get(id).profiles.includes('core'), false, `${id} must stay out of daily Core`);
+    assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS[id], `${id} needs a closed Core exclusion reason`);
+  }
+
+  assertGolden('system-fresh-build', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('system-fresh-build').profiles.includes('candidate'), true);
+  assert.equal(byId.get('system-fresh-build').profiles.includes('core'), false);
+  assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS['system-fresh-build']);
+
+  assertGolden('init-onboarding', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('init-onboarding').profiles.includes('candidate'), true);
+  assert.equal(byId.get('init-onboarding').profiles.includes('core'), false);
+  assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS['init-onboarding']);
+
+  assertGolden('repository-onboarding', 'release-artifact-is-primary-evidence');
+  assert.deepEqual(byId.get('repository-onboarding').profiles, [], 'development checkout onboarding remains affected-only');
+
+  assertGolden('host-node-cli-smoke', 'release-artifact-is-primary-evidence');
+  assert.deepEqual(byId.get('host-node-cli-smoke').profiles, ['host-node']);
+
+  assertGolden('system-windows-platform', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('system-windows-platform').selection, 'explicit-only');
+  assert.deepEqual(byId.get('system-windows-platform').developmentRunners, ['windows']);
 });
 
 test('Quick Contract 只保留只读静态契约并拒绝可变环境测试', () => {
@@ -161,9 +235,13 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
 
 test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {
   const packageMetadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
-  assert.equal(packageMetadata.exports['./test-context'], './test-context.mjs');
+  assert.deepEqual(packageMetadata.exports['./test-context'], {
+    types: './package/targets/test-context/index.d.ts',
+    import: './test-context.mjs',
+    default: './test-context.mjs',
+  });
   const runtimeRoot = path.join(productRoot, 'src/infrastructure/testing/context-runtime');
-  const publicSource = fs.readdirSync(runtimeRoot).filter((name) => name.endsWith('.mjs'))
+  const publicSource = fs.readdirSync(runtimeRoot).filter((name) => name.endsWith('.ts'))
     .map((name) => fs.readFileSync(path.join(runtimeRoot, name), 'utf8')).join('\n');
   assert.match(publicSource, /defineTestContext/);
   assert.match(publicSource, /test-isolation=none/);
@@ -175,7 +253,7 @@ test('公共Node Test Context Runtime与Buildr provider保持独立authority', (
   assert.match(provider, /parallelSafety: 'exclusive'/);
   assert.match(provider, /parallelSafety: 'isolated'/);
   const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.mjs'), 'utf8');
-  assert.match(taskTests, /contextTest/);
+  assert.match(taskTests, /createBuildrContextTest/);
   assert.match(taskTests, /BUILDR_TASK_TEST_CONTEXTS/);
   assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');
   const framework = fs.readFileSync(path.join(productRoot, 'docs/verification-framework.md'), 'utf8');

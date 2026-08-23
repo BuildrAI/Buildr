@@ -4,14 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
-
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { createContributionHandoff, parentCoordinationDigest } from '../../src/task/domain/parent-coordination.mjs';
 import { createTerminalContributionReconciliation } from '../../src/task/domain/terminal-contribution-reconciliation.mjs';
 import { createTaskCandidate, createTaskDevelopmentPlanning, createTaskFinishHandoff, normalizeTaskContentTarget, normalizeTaskDevelopmentReceipt, normalizeTaskVerificationPolicy, taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
+const test = createBuildrApplicationTest('integration-parent-coordination-application');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-parent-coordination-'));
@@ -21,7 +20,7 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Parent coordination fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({
     ready: true,
     taskId,

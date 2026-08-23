@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   createTestContextRuntime,
   defineTestContext,
-} from '../../src/infrastructure/testing/context-runtime/index.mjs';
+} from '../../test-context.mjs';
 
 test('matching worker configuration creates once and returns isolated leases', async () => {
   let creates = 0;

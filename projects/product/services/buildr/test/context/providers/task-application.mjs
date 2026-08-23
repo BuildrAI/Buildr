@@ -1,4 +1,4 @@
-import { defineTestContext } from '../../../src/infrastructure/testing/context-runtime/index.mjs';
+import { defineTestContext } from '../../../test-context.mjs';
 import { createRuntime } from '../../../src/bootstrap/runtime.mjs';
 import { createTestContextPool } from '../runtime.mjs';
 import { TEST_CONTEXT_PROVIDERS } from '../registry.mjs';
@@ -71,3 +71,10 @@ export const BUILDR_TASK_TEST_CONTEXTS = Object.freeze({
   application: buildrTaskApplicationContext,
   workspace: buildrTaskWorkspaceContext,
 });
+
+export const buildrApplicationContext = buildrTaskApplicationContext;
+export const buildrWorkspaceContext = buildrTaskWorkspaceContext;
+export const BUILDR_APPLICATION_TEST_CONTEXTS = Object.freeze({
+  application: buildrApplicationContext,
+});
+export const BUILDR_APPLICATION_WORKSPACE_TEST_CONTEXTS = BUILDR_TASK_TEST_CONTEXTS;

@@ -10,6 +10,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "src/**/*.ts",
       "tsconfig.json",
+      "tsconfig.test-context.json",
       "package.json",
       "package-lock.json"
     ],
@@ -172,6 +173,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/fixtures/node-test-context/**",
       "test-context.mjs",
       "src/infrastructure/testing/context-runtime/**",
+      "package/targets/test-context/**",
+      "tools/testing/test-context-build.mjs",
+      "tsconfig.test-context.json",
       "src/verification/infrastructure/capability-runner.mjs",
       "src/verification/infrastructure/evidence-lifecycle.mjs",
       "src/verification/infrastructure/process-executor.mjs",
@@ -967,8 +971,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   },
   "managed-mutations": {
     "inputs": [
-      "src/infrastructure/testing/context-runtime/node-test.mjs",
-      "src/infrastructure/testing/context-runtime/node-runner.mjs",
+      "src/infrastructure/testing/context-runtime/node-test.ts",
+      "src/infrastructure/testing/context-runtime/node-runner.ts",
       "src/agent-assets/application/package-maintenance/**",
       "src/workspace/application/workspace-operations.mjs",
       "src/workspace/persistence/**",
@@ -1292,6 +1296,11 @@ export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
   "package.json",
   "package-lock.json",
   "tsconfig.json",
+  "tsconfig.test-context.json",
+  "test-context.mjs",
+  "src/infrastructure/testing/context-runtime/**",
+  "package/targets/test-context/**",
+  "tools/testing/test-context-build.mjs",
   "test/verification/verify-buildr-product",
   "test/verification/verify-buildr-product-core",
   "test/verification/verify-buildr-product-fast",

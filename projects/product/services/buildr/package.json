@@ -26,7 +26,11 @@
   },
   "type": "module",
   "exports": {
-    "./test-context": "./test-context.mjs",
+    "./test-context": {
+      "types": "./package/targets/test-context/index.d.ts",
+      "import": "./test-context.mjs",
+      "default": "./test-context.mjs"
+    },
     "./package.json": "./package.json",
     "./*": "./*"
   },
@@ -37,6 +41,7 @@
     "LICENSE",
     "bin/buildr.mjs",
     "test-context.mjs",
+    "package/targets/test-context/",
     "src/",
     "README.md",
     "docs/agent-runtime-adapters.md",
@@ -65,7 +70,9 @@
     "contracts:professional:check": "node tools/contracts/task-professional-dto.mjs --check",
     "contracts:generate:runtime-system": "node tools/contracts/runtime-system-dto.mjs",
     "contracts:check:runtime-system": "node tools/contracts/runtime-system-dto.mjs --check",
-    "typecheck": "tsc --project tsconfig.json",
+    "test-context:generate": "node tools/testing/test-context-build.mjs generate",
+    "test-context:check": "node tools/testing/test-context-build.mjs check",
+    "typecheck": "npm run test-context:check && tsc --project tsconfig.json",
     "test:system": "node test/verification/system.mjs",
     "test:openspec:convergence": "node --test test/integration/openspec-convergence-transaction.test.mjs test/system/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs --suite recovery",
     "build:web": "npm run contracts:check && npm run contracts:check:workspace && node tools/development/run-development-npm.mjs --prefix ../buildr-web run build",

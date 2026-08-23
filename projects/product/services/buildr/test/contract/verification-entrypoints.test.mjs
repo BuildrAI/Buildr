@@ -26,7 +26,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
-  assert.equal(scripts.typecheck, 'tsc --project tsconfig.json');
+  assert.equal(scripts.typecheck, 'npm run test-context:check && tsc --project tsconfig.json');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');

@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
-
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { TASK_ENVIRONMENT_RECEIPT_SCHEMA } from '../../src/task/domain/task-environment.mjs';
+
+const test = createBuildrApplicationTest('integration-task-environment-repository');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-environment-repository-'));
@@ -25,7 +25,7 @@ function fixture(t) {
     'profile: team',
     '',
   ].join('\n'));
-  createRuntime().createTaskRecordPersistence(root, {
+  t.buildrContexts.application.createTaskRecordPersistence(root, {
     schemaVersion: 'buildr.task-record/v2', taskId: 'demo-task', title: 'Demo', intent: 'Verify Environment repository',
     scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
@@ -62,7 +62,7 @@ function receipt(root, status = 'ready') {
 
 test('Environment repository 只替换 SQLite current row，不创建 environment.json', (t) => {
   const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const written = runtime.writeTaskEnvironmentPersistence(root, receipt(root));
   assert.equal(written.file, 'workspace-sqlite:task-environment/demo-task');
   assert.equal(written.receipt.status, 'ready');
@@ -78,7 +78,7 @@ test('Environment repository 只替换 SQLite current row，不创建 environmen
 
 test('Environment repository 要求正式 Task、canonical Workspace 和匹配 identity', (t) => {
   const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), taskId: 'missing-task' }), (error) => error.code === 'task_record_not_found');
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), workspace: { id: 'fixture-workspace', root: path.resolve('other') } }), (error) => error.code === 'task_environment_workspace_mismatch');
   assert.equal(runtime.readTaskEnvironmentPersistence(root, 'demo-task', { optional: true }), null);
@@ -86,7 +86,7 @@ test('Environment repository 要求正式 Task、canonical Workspace 和匹配 i
 
 test('Environment repository 写入失败保留最后一份有效 current', (t) => {
   const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.writeTaskEnvironmentPersistence(root, receipt(root));
   assert.throws(() => runtime.writeTaskEnvironmentPersistence(root, { ...receipt(root), updatedAt: '2026-08-01T00:00:00.000Z' }), /updatedAt 不能早于 createdAt/);
   assert.equal(runtime.readTaskEnvironmentPersistence(root, 'demo-task').receipt.status, 'ready');
@@ -94,7 +94,7 @@ test('Environment repository 写入失败保留最后一份有效 current', (t) 
 
 test('cleanup context 只读取保存的 ownership facts，不要求执行 foundations ready', (t) => {
   const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const blocked = receipt(root, 'blocked');
   blocked.scopes[0].projection = { status: 'blocked', identity: 'projection', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: 'Runtime projection is stale.' };
   blocked.latest.ready = { status: 'blocked', observedAt: '2026-08-02T00:00:00.000Z', diagnostic: 'Runtime projection is stale.' };

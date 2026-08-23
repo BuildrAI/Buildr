@@ -3,7 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { runNodeTestContextHosts } from '../../src/infrastructure/testing/context-runtime/index.mjs';
+import { runNodeTestContextHosts } from '../../test-context.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const fixture = (name) => path.join(serviceRoot, 'test/fixtures/node-test-context', name);
@@ -44,4 +44,3 @@ test('a failing Host makes the aggregate fail without hiding other Host results'
   assert.equal(result.hosts.filter((host) => host.status === 'passed').length, 1);
   assert.match(result.hosts.find((host) => host.status === 'failed').stdout, /intentional host fixture failure/);
 });
-

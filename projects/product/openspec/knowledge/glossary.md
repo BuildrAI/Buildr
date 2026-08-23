@@ -546,6 +546,27 @@
 - 避免混用：不是test case、fixture数据、changed-path owner或资源grant；使用同名id但不同version会形成不同cache identity。
 - 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
 
+## 测试上下文缓存身份（Test Context Cache Identity）
+
+- 定义：由definition `id/version`、canonical configuration、source identity、dependency identities和所属scope identity共同派生的稳定SHA-256身份，用于决定一个Worker Host内的Context state能否复用。
+- 适用范围：Context cache命中、配置或源码变化后的cache miss，以及Execution Record中的Context关联。
+- 避免混用：不是Git tree identity、Task Candidate identity或跨Host共享键；matching identity只允许复用，不能证明可变state当前无污染。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文处置（Test Context Disposition）
+
+- 定义：verification registry中每个step对Context采用方式的闭合判断，只取`context-runtime | hybrid | full-lifecycle`并带稳定reason code。
+- 适用范围：说明owner完整使用公共Runtime、只复用前置状态，或因stateless/黄金生命周期边界不接入Context。
+- 避免混用：不是测试profile、execution boundary或性能等级；`full-lifecycle`不自动表示Candidate-only，`hybrid`也不允许共享Git refs、SQLite多连接或可变Workspace。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文污染（Dirty Test Context）
+
+- 定义：test lease显式标记或provider检查确认一个缓存state无法安全reset到可复用状态；Runtime在active leases归还后将其evict并执行destroy。
+- 适用范围：process global、property descriptor、database/filesystem marker或provider identity发生不可恢复漂移时的失败关闭与清理。
+- 避免混用：不是普通cache miss或测试失败的同义词；unexpected污染必须使当前测试可见失败，不能静默重建后记录为passed。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
 ## 测试工作进程宿主（Test Worker Host）
 
 - 定义：由Context-aware runner持久维护的Node进程，在`node:test` non-process isolation下连续执行一组文件并保留本进程的module与Context cache。
