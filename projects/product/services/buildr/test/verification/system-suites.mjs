@@ -121,6 +121,7 @@ export const SYSTEM_SUITES = Object.freeze([
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['app-runtime']),
     files: Object.freeze([
+      'test/system/development-workspace-smoke-isolation.test.mjs',
       'test/system/local-app-channel-isolation.test.mjs',
       'test/system/local-app-launcher.test.mjs',
       'test/system/workspace-app-process.test.mjs',

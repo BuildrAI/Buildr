@@ -93,6 +93,15 @@ test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskVerificationReference, /一个 Project 入口内部可以拥有多个 Project-specific step/);
 });
 
+test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除普通临时 Workspace', () => {
+  assert.match(buildrSkill, /必须经过 `tools\/development\/run-isolated-workspace-smoke\.mjs`/);
+  assert.match(buildrSkill, /运行 `npm run smoke:workspace`/);
+  assert.match(buildrSkill, /独立设置 Workspace、`BUILDR_APP_DATA_DIR` 与 `BUILDR_PRODUCT_DATA_DIR`/);
+  assert.match(buildrSkill, /成功或失败后统一清理/);
+  assert.match(buildrSkill, /不得用裸 `mktemp` 启动指向默认用户 profile 的 `buildr web`/);
+  assert.match(buildrSkill, /不扩大为对普通临时 Workspace 的自动删除策略/);
+});
+
 test('声明指导不扩展 project verification v2 schema', () => {
   assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v2');
   assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['capabilities', 'schemaVersion']);

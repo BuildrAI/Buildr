@@ -390,8 +390,12 @@ async function capture(page, name) {
 }
 
 test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 300_000 : SELECTORS.has('task') ? 300_000 : 45_000 }, async (t) => {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
-  const workspaceRoot = path.join(base, 'workspace');
+  const requestedSmokeRoot = process.env.BUILDR_SMOKE_ROOT;
+  const managedSmokeRoot = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
+  const base = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
+  const workspaceRoot = process.env.BUILDR_SMOKE_WORKSPACE_ROOT || path.join(base, 'workspace');
+  const previousAppData = process.env.BUILDR_APP_DATA_DIR;
+  const previousProductData = process.env.BUILDR_PRODUCT_DATA_DIR;
   let browser;
   let server;
   let previewServer;
@@ -404,7 +408,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
-  t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
+  process.env.BUILDR_PRODUCT_DATA_DIR = path.join(base, 'product-data');
+  t.after(() => {
+    if (previousAppData === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousAppData;
+    if (previousProductData === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR;
+    else process.env.BUILDR_PRODUCT_DATA_DIR = previousProductData;
+  });
 
   const controller = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
   const controllerRuntime = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'bootstrap', 'runtime.mjs')).href}?browser=${Date.now()}`)).createRuntime();

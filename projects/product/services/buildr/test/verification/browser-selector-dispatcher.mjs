@@ -170,7 +170,8 @@ function main() {
     return;
   }
   const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/local-app-browser.test.mjs');
-  const result = spawnSync(process.execPath, [browserTest, plan.selectors.join(',')], {
+  const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
+  const result = spawnSync(process.execPath, [isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], {
     cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'),
     stdio: 'inherit',
     env: { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) },
