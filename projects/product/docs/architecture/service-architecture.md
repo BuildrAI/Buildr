@@ -684,7 +684,7 @@ tools/
 
 `tools/release/` 是 checkout-only 发布编排边界，负责 release selection/provenance、readiness/convergence adapter、构建 npm 发布物，以及版本、Tag、Registry、GitHub Release和Release Artifact的检查或受保护入口。它不取得System Installation、Verification、Task/Finish/self-bootstrap或Bootstrap的writer authority；tag、npm、dist-tag和GitHub Release公共mutation仍只由protected publish workflow执行。
 
-新的`release-<version>`模型使用以下协作边界；P0建立契约，selection、Candidate、correlation、readiness和Git收敛由后续独立Child逐步实现，未实现的read model不得回退为旧`dev → main`自动发布路径：
+current `release-<version>`模型使用以下协作边界；selection、Candidate、correlation、readiness、受保护发布事务和Git收敛均已由对应owner实现并通过窄read model协作，任何owner事实缺失或漂移都不得回退为旧`dev → main`自动发布路径：
 
 | owner | 职责 | 允许的consumer方式 |
 |---|---|---|

@@ -141,7 +141,7 @@ Development 稳定 Content Target 并固定 verification policy
         ↓ Verification facts 完整后冻结 Task Candidate
 ```
 
-GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`dev → main`和手工dispatch运行完整Candidate；tag workflow验证并发布正式制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。
+GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`release-<version> → main`受保护PR和手工dispatch运行绑定current release HEAD/tree的完整Candidate；tag workflow验证并发布同一冻结制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。
 
 GitHub Candidate不是第二套测试registry，而是同一Candidate profile的闭合分布式投影：低成本`candidate-preflight`先短路；`candidate-artifact`只构建一次tarball；macOS core、Windows runtime/Launcher、Windows Workspace/Task、Windows fresh build和四个Host Node tuple并行；`Candidate gate`聚合全部closed evidence并作为`main`唯一稳定required context。每个shard evidence绑定source SHA、registry identity、适用artifact identity、primary steps、内部阶段timing和workflow attempt。同一SHA只重跑失败job时，新attempt以相同逻辑artifact名覆盖旧evidence并重跑aggregate；新SHA不复用旧结果。
 
