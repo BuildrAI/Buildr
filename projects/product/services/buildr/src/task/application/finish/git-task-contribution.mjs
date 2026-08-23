@@ -81,6 +81,113 @@ function containmentIdentity(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
+function carrierContentDigest(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function carrierFileDigest(file) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally { fs.closeSync(descriptor); }
+  return hash.digest('hex');
+}
+
+function observeUntrackedCarrierContent(root) {
+  const listed = git(root, ['ls-files', '--others', '--exclude-standard', '-z']);
+  if (listed.status !== 0) return { status: 'unprovable', code: 'task-finish.carrier-untracked-unreadable' };
+  const files = String(listed.stdout).split('\0').filter(Boolean).sort();
+  const entries = [];
+  for (const relativePath of files) {
+    const target = path.resolve(root, relativePath);
+    if (target === root || !target.startsWith(`${root}${path.sep}`)) return { status: 'unprovable', code: 'task-finish.carrier-untracked-path-invalid' };
+    let stat;
+    try { stat = fs.lstatSync(target); }
+    catch { return { status: 'unprovable', code: 'task-finish.carrier-untracked-unreadable' }; }
+    try {
+      if (stat.isSymbolicLink()) {
+        entries.push({ path: relativePath.replaceAll('\\', '/'), kind: 'symlink', mode: stat.mode & 0o7777, digest: carrierContentDigest(fs.readlinkSync(target)) });
+      } else if (stat.isFile()) {
+        entries.push({ path: relativePath.replaceAll('\\', '/'), kind: 'file', mode: stat.mode & 0o7777, digest: carrierFileDigest(target) });
+      } else return { status: 'unprovable', code: 'task-finish.carrier-untracked-kind-unsupported' };
+    } catch { return { status: 'unprovable', code: 'task-finish.carrier-untracked-unreadable' }; }
+  }
+  return { status: 'observed', entries };
+}
+
+function observeGitCarrierContent({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, carrier }) {
+  const expectedRoot = taskFinishCarrierRoot(workspaceRoot, runId, repositorySelector);
+  if (!carrier?.root || !sameFilesystemPath(carrier.root, expectedRoot)) {
+    return { status: 'unprovable', code: 'task-finish.carrier-root-mismatch' };
+  }
+  const registered = carrierRegistration(repositoryRoot, expectedRoot);
+  if (!registered) {
+    return fs.existsSync(expectedRoot)
+      ? { status: 'unprovable', code: 'task-finish.carrier-ownership-unprovable' }
+      : { status: 'absent', code: null };
+  }
+  const head = gitText(expectedRoot, ['rev-parse', 'HEAD^{commit}']);
+  const index = git(expectedRoot, ['ls-files', '--stage', '-z']);
+  const worktree = git(expectedRoot, ['diff', '--binary', '--full-index', '--no-ext-diff']);
+  const status = git(expectedRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+  const untracked = observeUntrackedCarrierContent(expectedRoot);
+  if (!head || index.status !== 0 || worktree.status !== 0 || status.status !== 0 || untracked.status !== 'observed') {
+    return { status: 'unprovable', code: untracked.code || 'task-finish.carrier-content-unreadable' };
+  }
+  return {
+    status: 'observed',
+    content: {
+      head,
+      indexDigest: containmentIdentity(String(index.stdout)),
+      worktreeDigest: containmentIdentity(String(worktree.stdout)),
+      statusDigest: containmentIdentity(String(status.stdout)),
+      untracked: untracked.entries,
+    },
+  };
+}
+
+export function createGitCarrierDisposabilityProof({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, carrier, handoffIdentity = null, repositoryTopology = null, prepareFailure = null }) {
+  const observed = observeGitCarrierContent({ repositoryRoot, workspaceRoot, runId, repositorySelector, carrier });
+  if (observed.status !== 'observed') return observed;
+  const proof = {
+    schemaVersion: 'buildr.task-finish-carrier-disposability-proof/v1',
+    runId,
+    repositorySelector: repositorySelector || 'workspace',
+    carrierIdentity: carrier.identity || null,
+    handoffIdentity,
+    repositoryTopology,
+    initialPrepareFailure: prepareFailure ? { operation: prepareFailure.operation || null, code: prepareFailure.code || null, status: prepareFailure.status || null } : null,
+    content: observed.content,
+  };
+  return { status: 'proved', proof: { ...proof, identity: containmentIdentity(proof) } };
+}
+
+export function verifyGitCarrierDisposabilityProof({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, carrier, proof, handoffIdentity = null, repositoryTopology = null }) {
+  if (proof?.schemaVersion !== 'buildr.task-finish-carrier-disposability-proof/v1'
+    || proof.runId !== runId
+    || proof.repositorySelector !== (repositorySelector || 'workspace')
+    || proof.carrierIdentity !== (carrier?.identity || null)
+    || proof.handoffIdentity !== handoffIdentity
+    || JSON.stringify(proof.repositoryTopology) !== JSON.stringify(repositoryTopology)
+    || !proof.identity) return { status: 'unprovable', code: 'task-finish.carrier-disposability-proof-invalid' };
+  const unsigned = { ...proof };
+  delete unsigned.identity;
+  if (containmentIdentity(unsigned) !== proof.identity) return { status: 'unprovable', code: 'task-finish.carrier-disposability-proof-identity-mismatch' };
+  const observed = observeGitCarrierContent({ repositoryRoot, workspaceRoot, runId, repositorySelector, carrier });
+  if (observed.status === 'absent') return { status: 'not-applicable', code: null, proofIdentity: proof.identity };
+  if (observed.status !== 'observed') return observed;
+  if (JSON.stringify(observed.content) !== JSON.stringify(proof.content)) {
+    return { status: 'changed', code: 'task-finish.carrier-disposability-drift', proofIdentity: proof.identity };
+  }
+  return { status: 'unchanged', code: null, proofIdentity: proof.identity };
+}
+
 export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrier }) {
   const carrierRef = carrier?.head || null;
   const changedPaths = [...new Set((carrier?.changedPaths || []).map((value) => String(value).replaceAll('\\', '/')))].sort();

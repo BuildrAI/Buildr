@@ -69,7 +69,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'currentFacts', 'rollover', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -83,6 +83,24 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   for (const forbidden of ['/private/', 'checks', 'operations', 'observations', 'stdout', 'stderr', 'equivalence', 'locator']) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test('compact rollover结果只公开有界qualification和逐repository cleanup effects', () => {
+  const compact = compactTaskFinishResult(canonical({
+    status: 'active',
+    primaryFailure: null,
+    resume: null,
+    rollover: {
+      status: 'ready', supersededRunId: 'old-run', qualificationIdentity: 'sha256-qualification', currentReplacement: 'written',
+      carrierCleanup: { status: 'removed', root: '/private/carrier', repositories: [{ selector: 'workspace', status: 'removed', root: '/private/repository', carrierIdentity: 'sha256-carrier' }] },
+    },
+  }));
+  assert.deepEqual(compact.rollover, {
+    status: 'ready', supersededRunId: 'old-run', qualificationIdentity: 'sha256-qualification',
+    carrierCleanup: { status: 'removed', repositories: [{ selector: 'workspace', status: 'removed', carrierIdentity: 'sha256-carrier' }] },
+    currentReplacement: 'written',
+  });
+  assert.equal(JSON.stringify(compact.rollover).includes('/private/'), false);
 });
 
 test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 的结构化路径', () => {

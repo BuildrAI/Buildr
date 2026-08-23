@@ -609,6 +609,63 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
+  function replaceTaskFinishRunPersistence(targetRoot, { run, supersededCurrent }) {
+    const normalized = assertRun(run);
+    if (normalized.status !== 'active'
+      || !supersededCurrent?.runId
+      || !supersededCurrent?.runDigest
+      || supersededCurrent.runId === normalized.runId) {
+      throw error('task_finish_current_replacement_identity_invalid', 'Task Finish rollover requires a distinct active run and exact superseded current identity.', 400, {
+        taskId: normalized.identity.task,
+        runId: normalized.runId,
+        supersededRunId: supersededCurrent?.runId || null,
+      });
+    }
+    let opened;
+    try {
+      opened = open(runtime, targetRoot, true);
+      const database = opened.database;
+      database.exec('BEGIN IMMEDIATE');
+      const current = readCurrentRow(database, { taskId: normalized.identity.task });
+      const decoded = current ? decodeRow(current) : null;
+      const currentRunDigest = decoded?.kind === 'run' ? digest(JSON.stringify(decoded.run)) : null;
+      if (!current
+        || decoded?.kind !== 'run'
+        || current.run_id !== supersededCurrent.runId
+        || !['blocked', 'failed'].includes(decoded.run.status)
+        || currentRunDigest !== supersededCurrent.runDigest
+        || leaseFromRow(current)) {
+        throw error('task_finish_current_conflict', 'Task Finish rollover refused because the superseded current run drifted or owns a lease.', 409, {
+          taskId: normalized.identity.task,
+          runId: normalized.runId,
+          expectedCurrentRunId: supersededCurrent.runId,
+          currentRunId: current?.run_id || null,
+          expectedCurrentRunDigest: supersededCurrent.runDigest,
+          currentRunDigest,
+          currentKind: decoded?.kind || null,
+          currentStatus: decoded?.kind === 'run' ? decoded.run.status : null,
+          leasePresent: Boolean(leaseFromRow(current)),
+        });
+      }
+      const row = writeCurrentRow(database, currentRecord(normalized));
+      const written = decodeRow(row);
+      database.exec('COMMIT');
+      const serialized = JSON.stringify(written.run);
+      return {
+        root: opened.root,
+        file: runLocator(written.run.runId),
+        content: serialized,
+        runDigest: digest(serialized),
+        run: written.run,
+        replaced: { runId: supersededCurrent.runId, runDigest: supersededCurrent.runDigest },
+      };
+    } catch (cause) {
+      try { opened?.database?.exec('ROLLBACK'); } catch {}
+      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
+      throw error('task_finish_run_replacement_failed', `Task Finish rollover persistence failed: ${cause.message}`, 500, { taskId: normalized.identity.task, runId: normalized.runId });
+    } finally { close(opened); }
+  }
+
   function writeTaskFinishMaintenancePersistence(targetRoot, { taskId, runId, maintenance }) {
     if (!taskId || !runId || !maintenance || typeof maintenance !== 'object') throw error('task_finish_maintenance_identity_invalid', 'Finish maintenance persistence requires Task, run and maintenance.');
     let opened;
@@ -772,6 +829,7 @@ export function registerTaskFinishRepository(runtime) {
     readTaskFinishCompletionPersistence,
     writeTaskFinishCompletionPersistence,
     finalizeTaskFinishPersistence,
+    replaceTaskFinishRunPersistence,
     writeTaskFinishMaintenancePersistence,
     acquireTaskFinishCurrentTargetLease,
     acquireTaskFinishTargetLease,

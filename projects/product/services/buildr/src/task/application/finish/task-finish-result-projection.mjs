@@ -233,6 +233,21 @@ export function compactTaskFinishResult(result) {
     resume: resume(result.resume),
     nextWorkflow: result.nextWorkflow || null,
     nextAction: result.nextAction || null,
+    currentFacts: result.currentFacts ? JSON.parse(JSON.stringify(result.currentFacts)) : null,
+    rollover: result.rollover ? {
+      status: result.rollover.status || null,
+      supersededRunId: result.rollover.supersededRunId || null,
+      qualificationIdentity: result.rollover.qualificationIdentity || null,
+      carrierCleanup: result.rollover.carrierCleanup ? {
+        status: result.rollover.carrierCleanup.status || null,
+        repositories: (result.rollover.carrierCleanup.repositories || []).map((repository) => ({
+          selector: repository.selector || null,
+          status: repository.status || null,
+          carrierIdentity: repository.carrierIdentity || null,
+        })),
+      } : null,
+      currentReplacement: result.rollover.currentReplacement || null,
+    } : null,
     reuseMode: result.reuseMode || null,
     deliveryAdaptation: deliveryAdaptation(result.deliveryAdaptation),
     refs: refs(result),

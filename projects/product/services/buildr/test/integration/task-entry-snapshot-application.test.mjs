@@ -89,6 +89,7 @@ function fixture(t, options = {}) {
     inspectParentStartupReadiness: () => { calls.parent += 1; return options.parentStartup; },
     resolveTaskEntryCapabilityRoute: (_root, _projects, capability, version) => { calls.capabilities.push(`${capability}@${version}`); return options.route || route(capability, version); },
   };
+  if (options.finishFacts) runtime.inspectTaskFinishCurrentFacts = () => structuredClone(options.finishFacts);
   registerTaskEntrySnapshotApplication(runtime);
   return { root, runtime, calls };
 }
@@ -282,6 +283,50 @@ test('Review、Verification与Finish只在成为next时出现', (t) => {
     runtime.inspectTaskEntrySnapshot(root, taskId);
     assert.deepEqual(calls.capabilities, [`${capability}@${version}`]);
   }
+});
+
+test('Finish成为next时投影blockers与多种可用能力但不替Agent选择策略', (t) => {
+  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
+  const finishFacts = {
+    schemaVersion: 'buildr.task-finish-current-facts/v1', taskId, operation: 'entry-readiness', source: 'task-finish-application',
+    identity: { handoffIdentity: 'sha256-handoff' }, applicability: { handoff: 'current', finish: 'blocked' }, repositories: [], ownership: { runId: 'run-1', occupancy: null, carrierOwned: true },
+    sideEffects: { carrierOwned: true, deliveryRecorded: false, activationRecorded: false, cleanupRecorded: false, diagnosticsRecorded: false }, maintenance: null,
+    blockers: [{ source: 'finish-run', module: 'finish', code: 'task_finish.unknown_blocker', message: 'Unknown strategy.', selector: null }],
+    requiredPrerequisites: [],
+    availableCapabilities: [
+      { id: 'finish-run', owner: 'task-finish', status: 'available', prerequisites: [] },
+      { id: 'finish-reconcile', owner: 'task-finish', status: 'available', prerequisites: [] },
+      { id: 'git-operations', owner: 'git-operations', status: 'available', prerequisites: [] },
+    ],
+    compatibilityHint: 'repeat-task-finish-run-with-resume-token',
+  };
+  const { root, runtime } = fixture(t, { development: development(next), finishFacts });
+  const result = runtime.inspectTaskEntrySnapshot(root, taskId);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.next.action, 'finish');
+  assert.deepEqual(result.finish.availableCapabilities.map((item) => item.id), ['finish-run', 'finish-reconcile', 'git-operations']);
+  assert.deepEqual(result.blockers, finishFacts.blockers);
+  assert.equal(result.diagnostic, null);
+});
+
+test('旧current run存在时task next不再生成普通run命令并保留Agent策略选择', (t) => {
+  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
+  const finishFacts = {
+    schemaVersion: 'buildr.task-finish-current-facts/v1', taskId, operation: 'entry-readiness', source: 'task-finish-application',
+    recovery: { disposition: 'stale-run-retirable', eligible: true, qualificationIdentity: 'sha256-qualification', recoveryToken: 'sha256-token', blockers: [], carrierDisposability: [{ selector: 'workspace', status: 'unchanged', code: null }] },
+    blockers: [], requiredPrerequisites: [], repositories: [], availableCapabilities: [
+      { id: 'finish-run', owner: 'task-finish', status: 'blocked', prerequisites: [{ code: 'task_finish.current_run_identity_conflict' }] },
+      { id: 'finish-rollover', owner: 'task-finish', status: 'available', prerequisites: [], recoveryToken: 'sha256-token' },
+      { id: 'finish-reconcile', owner: 'task-finish', status: 'available', prerequisites: [] },
+      { id: 'git-operations', owner: 'git-operations', status: 'available', prerequisites: [] },
+    ],
+  };
+  const { root, runtime } = fixture(t, { development: development(next), finishFacts });
+  const result = runtime.inspectTaskEntrySnapshot(root, taskId);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.next.action, 'finish-recovery');
+  assert.equal(result.next.command, null);
+  assert.equal(result.finish.availableCapabilities.find((item) => item.id === 'finish-rollover').status, 'available');
 });
 
 test('cross-Project provider不一致时targeted route fail closed', (t) => {

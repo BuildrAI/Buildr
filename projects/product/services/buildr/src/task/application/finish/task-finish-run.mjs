@@ -4,6 +4,8 @@ import path from 'node:path';
 import { TASK_RETROSPECTIVE_PROMPT } from '../task-retrospective-application.mjs';
 import { compactTaskFinishFailure } from './execution-record.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
+import { withTaskFinishCurrentFacts } from './task-finish-current-facts.mjs';
+import { createGitCarrierDisposabilityProof } from './git-task-contribution.mjs';
 import {
   createTaskFinishRepositoryStates,
   normalizeTaskFinishRepositorySet,
@@ -304,6 +306,38 @@ function applyPhaseOutput(run, phaseId, output) {
   if (phaseId === 'cleanup' && output?.completion) run.completion = clone(output.completion);
 }
 
+function captureNewPrepareCarrierDisposability(run, carriersBefore, prepareResult) {
+  const plans = new Map((run.identity.repositories || []).map((repository) => [repository.selector, repository]));
+  for (const state of run.repositories || []) {
+    const carrier = state.deliveryCarrier;
+    const plan = plans.get(state.selector);
+    if (!carrier?.root || !plan || carriersBefore.has(state.selector) || state.carrierDisposability) continue;
+    const observed = createGitCarrierDisposabilityProof({
+      repositoryRoot: plan.taskRoot,
+      workspaceRoot: run.identity.workspaceRoot,
+      runId: run.runId,
+      repositorySelector: plan.selector,
+      carrier,
+      handoffIdentity: run.identity.handoffIdentity,
+      repositoryTopology: plan,
+      prepareFailure: prepareResult.failure,
+    });
+    if (observed.status === 'proved') state.carrierDisposability = observed.proof;
+  }
+  if (run.deliveryCarrier?.root && !carriersBefore.has('legacy') && !run.carrierDisposability) {
+    const observed = createGitCarrierDisposabilityProof({
+      repositoryRoot: run.identity.environmentRoot,
+      workspaceRoot: run.identity.workspaceRoot,
+      runId: run.runId,
+      carrier: run.deliveryCarrier,
+      handoffIdentity: run.identity.handoffIdentity,
+      repositoryTopology: { taskRoot: run.identity.environmentRoot, workspaceRoot: run.identity.workspaceRoot },
+      prepareFailure: prepareResult.failure,
+    });
+    if (observed.status === 'proved') run.carrierDisposability = observed.proof;
+  }
+}
+
 function resetTargetRaceCarrierPhases(run) {
   const targetRace = run.status === 'blocked'
     && run.primaryFailure?.code === 'task-finish.target-race';
@@ -395,6 +429,10 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     const started = clock();
     observer?.phaseStarted?.({ phase: phaseId, attempt: item.attempts, at: item.startedAt });
     writeRun(root, run, clock, runtime);
+    const carriersBefore = new Set((run.repositories || [])
+      .filter((repository) => repository.deliveryCarrier?.root)
+      .map((repository) => repository.selector));
+    if (run.deliveryCarrier?.root) carriersBefore.add('legacy');
     let normalized;
     try {
       normalized = normalizePhaseResult(await handlers[phaseId]({
@@ -443,6 +481,9 @@ export async function executeFinishRun({ root, run, handlers, resumeToken = null
     item.inputIdentity = normalized.inputIdentity;
     item.outputIdentity = normalized.outputIdentity;
     applyPhaseOutput(run, phaseId, normalized.output);
+    if (phaseId === 'prepare' && ['blocked', 'failed'].includes(normalized.status)) {
+      captureNewPrepareCarrierDisposability(run, carriersBefore, normalized);
+    }
     item.checks = [];
     item.operations = [];
     item.observations = [];
@@ -619,7 +660,7 @@ export function finishResult(run, clock = Date.now) {
     updatedAt: run.updatedAt,
     completedAt: run.completedAt,
   };
-  return result;
+  return withTaskFinishCurrentFacts(result, { taskId: run.identity.task, operation: 'inspect' });
 }
 
 export function inspectFinishRun({ root, runId, clock = Date.now, runtime = null }) {

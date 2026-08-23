@@ -4,13 +4,15 @@ import path from 'node:path';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
-import { executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
+import { createFinishRun, executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { releaseFinishOccupancy } from './task-finish-occupancy-release.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
 import { reconcileTaskFinishDelivery } from './task-finish-delivery-reconciliation.mjs';
 import { reconcileTaskFinishMaintenance } from './task-finish-maintenance.mjs';
 import { projectTaskFinishResult } from './task-finish-result-projection.mjs';
+import { projectTaskFinishCurrentFacts, withTaskFinishCurrentFacts } from './task-finish-current-facts.mjs';
+import { cleanupStaleFinishRunForRollover } from './task-finish-recovery-primitives.mjs';
 import {
   activateTaskFinishBootstrapRecovery,
   createTaskFinishBootstrapRecoveryRuntimeFacade,
@@ -188,10 +190,11 @@ function assertArgs(action, args) {
   const allowedByAction = {
     run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--release-occupancy', '--target', '--detail', '--json']),
     reconcile: new Set(['--task', '--agent', '--target-branch', '--remote', '--target', '--detail', '--json']),
+    rollover: new Set(['--task', '--agent', '--target-branch', '--remote', '--commit-message', '--recovery-token', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
   };
   const allowed = allowedByAction[action];
-  if (!allowed) throw inputError('task_finish.unsupported_action', `Task Finish only supports run, reconcile, and inspect: ${action || '<missing>'}`, 'run');
+  if (!allowed) throw inputError('task_finish.unsupported_action', `Task Finish only supports run, rollover, reconcile, and inspect: ${action || '<missing>'}`, 'run');
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (!option.startsWith('--') || !allowed.has(option)) throw inputError('task_finish.unknown_parameter', `Unknown argument: ${option}`, action);
@@ -586,6 +589,77 @@ export function registerTaskFinishApplication(runtime) {
     return print(result, command.args);
   }
 
+  function rollover(command) {
+    const root = command.targetRoot;
+    const task = optionValue(command.args, '--task', null);
+    const recoveryToken = optionValue(command.args, '--recovery-token', null);
+    const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
+    if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish rollover requires --task <task-id>.', 'rollover');
+    if (!recoveryToken) throw inputError('task_finish.missing_parameter', 'Task Finish rollover requires --recovery-token <token>.', 'rollover');
+    if (!requestedCommitMessage) throw inputError('task_finish.missing_parameter', 'Task Finish rollover requires --commit-message <message>.', 'rollover');
+    const terminal = runtime.readTaskFinishCompletionPersistence?.(root, { taskId: task }, { optional: true });
+    if (terminal?.status === 'complete') {
+      throw inputError('task_finish.rollover_task_complete', 'Task Finish rollover is not applicable after Task delivery completed.', 'rollover', { taskId: task });
+    }
+    const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
+    if (!current) throw inputError('task_finish.rollover_current_missing', 'Task Finish rollover requires a current stale run.', 'rollover', { taskId: task });
+    const entry = observeTaskFinishEntryReadiness({
+      runtime,
+      root,
+      task,
+      requestedAgent: optionValue(command.args, '--agent', null),
+      requestedTargetBranch: optionValue(command.args, '--target-branch', null),
+      requestedRemote: optionValue(command.args, '--remote', null),
+      requestedCommitMessage,
+      requireCommitMessage: true,
+    });
+    if (!entry.ready) throw taskFinishEntryGapsError(entry, 'rollover');
+    const identity = { ...entry.identityParts, deliveryCommitIdentity: entry.deliveryCommit.identity };
+    const nextRun = createFinishRun({
+      root,
+      identity,
+      deliveryCommit: entry.deliveryCommit,
+      developmentHandoff: entry.handoff,
+      runtime: { ...runtime, readTaskFinishRunPersistence: () => null },
+    });
+    const prepared = cleanupStaleFinishRunForRollover({ persistence: current, identity, recoveryToken });
+    if (prepared.status !== 'ready') {
+      throw inputError(prepared.code, 'Task Finish rollover qualification or carrier cleanup did not complete; the current row was preserved and exact cleanup effects are reported.', 'rollover', prepared);
+    }
+    nextRun.supersededCurrent = {
+      runId: current.run.runId,
+      runDigest: current.runDigest,
+      reason: 'stale-run-rollover',
+      qualificationIdentity: prepared.qualification.qualificationIdentity,
+    };
+    let persisted;
+    try {
+      persisted = runtime.replaceTaskFinishRunPersistence(root, {
+        run: nextRun,
+        supersededCurrent: { runId: current.run.runId, runDigest: current.runDigest },
+      });
+    } catch (error) {
+      error.details = {
+        ...(error.details || {}),
+        rolloverEffects: { carrierCleanup: prepared.cleanup, currentReplacement: 'not-written' },
+        nextAction: 'Re-inspect Task Finish current facts. Carrier cleanup is idempotent; retry only with a newly projected recovery token.',
+      };
+      throw error;
+    }
+    const result = inspectFinishRun({ root, runId: persisted.run.runId, runtime });
+    return print(withTaskFinishCurrentFacts({
+      ...result,
+      rollover: {
+        status: 'ready',
+        supersededRunId: current.run.runId,
+        qualificationIdentity: prepared.qualification.qualificationIdentity,
+        carrierCleanup: prepared.cleanup,
+        currentReplacement: 'written',
+      },
+      nextAction: `buildr task finish run --task ${task} --run ${persisted.run.runId} --target ${root}`,
+    }, { taskId: task, operation: 'rollover' }), command.args);
+  }
+
   function inspect(command) {
     const runId = optionValue(command.args, '--run', null);
     if (!runId) throw inputError('task_finish.missing_parameter', 'Task Finish inspect requires --run.', 'inspect');
@@ -611,13 +685,34 @@ export function registerTaskFinishApplication(runtime) {
   function inspectTaskFinishReadModel({ root, taskId, clock = Date.now }) {
     try {
       const current = runtime.readTaskFinishRunPersistence?.(root, { taskId }, { optional: true });
-      if (current) return { taskId, state: 'current', result: inspectFinishRun({ root, runId: current.run.runId, clock, runtime }), completion: current.preparedCompletion || null };
+      if (current) {
+        const result = inspectFinishRun({ root, runId: current.run.runId, clock, runtime });
+        return { taskId, state: 'current', result, completion: current.preparedCompletion || null, facts: result.currentFacts };
+      }
       const terminal = readTaskFinishResults({ root, taskId, clock, runtime });
-      if (terminal.results.length > 0) return { taskId, state: 'terminal', result: terminal.results[0].result, completion: terminal.results[0].completion, diagnostics: terminal.diagnostics };
-      return { taskId, state: 'none', result: null, completion: null, diagnostics: terminal.diagnostics };
+      if (terminal.results.length > 0) {
+        const stored = terminal.results[0].result;
+        const result = withTaskFinishCurrentFacts(stored, { taskId, operation: 'inspect' });
+        return { taskId, state: 'terminal', result, completion: terminal.results[0].completion, diagnostics: terminal.diagnostics, facts: result.currentFacts };
+      }
+      const facts = projectTaskFinishCurrentFacts({ taskId, operation: 'inspect', diagnostics: terminal.diagnostics });
+      return { taskId, state: 'none', result: null, completion: null, diagnostics: terminal.diagnostics, facts };
     } catch (error) {
-      return { taskId, state: 'none', result: null, completion: null, diagnostics: [{ code: error.code || 'task_finish_read_unavailable', message: error.message }] };
+      const diagnostics = [{ code: error.code || 'task_finish_read_unavailable', message: error.message }];
+      return { taskId, state: 'none', result: null, completion: null, diagnostics, facts: projectTaskFinishCurrentFacts({ taskId, operation: 'inspect', diagnostics }) };
     }
+  }
+
+  function inspectTaskFinishCurrentFacts(root, taskId, options = {}) {
+    const readiness = observeTaskFinishEntryReadiness({
+      runtime,
+      root,
+      task: taskId,
+      requestedAgent: options.agent || null,
+      requireCommitMessage: false,
+      allowEnvironmentless: true,
+    });
+    return readiness.facts;
   }
 
   function refreshTaskFinishMaintenance(root, taskId, options = {}) {
@@ -633,6 +728,7 @@ export function registerTaskFinishApplication(runtime) {
     assertArgs(action, args);
     const command = withResolvedTarget(args);
     if (action === 'run') return run(command);
+    if (action === 'rollover') return rollover(command);
     if (action === 'reconcile') return reconcile(command);
     return inspect(command);
   }
@@ -641,6 +737,7 @@ export function registerTaskFinishApplication(runtime) {
     taskFinish,
     refreshTaskFinishMaintenance,
     inspectTaskFinishReadModel,
+    inspectTaskFinishCurrentFacts,
     readTaskFinishResults: ({ root, taskId, clock = Date.now }) => readTaskFinishResults({ root, taskId, clock, runtime }),
   });
 }

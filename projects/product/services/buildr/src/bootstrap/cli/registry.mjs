@@ -208,11 +208,11 @@ const COMMAND_GROUPS = [
   {
     key: "task finish",
     surface: "agent-machine",
-    summary: "run 提供可选自动交付；reconcile 收敛 Agent 或外部路径已形成的远端事实；inspect 只读查看 durable result。",
+    summary: "run 提供可选自动交付；rollover 安全替换无副作用旧run；reconcile 收敛 Agent 或外部路径已形成的远端事实；inspect 只读查看 durable result。",
     help: [
-      "Usage: buildr task finish <run|reconcile|inspect> ...",
+      "Usage: buildr task finish <run|rollover|reconcile|inspect> ...",
       "",
-      "run 消费 current formal Development handoff 并自动执行交付；reconcile独立观察远端交付结果；inspect只读查看durable result。",
+      "run 消费 current formal Development handoff 并自动执行交付；rollover只在严格本地资格成立时替换旧run；reconcile独立观察远端交付结果；inspect只读查看durable result。",
       "该聚合入口不创建 Candidate、不执行 formal Verification/Review，也不收敛 OpenSpec Change。"
     ],
     executable: false,

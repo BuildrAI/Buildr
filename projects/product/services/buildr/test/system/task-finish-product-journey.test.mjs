@@ -10,6 +10,7 @@ import { registerTaskFinishApplication } from '../../src/task/application/finish
 import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
 import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
+import { createGitCarrierDisposabilityProof, taskFinishCarrierRoot } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 import { registerContentTargetObserver } from '../../src/task/infrastructure/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
@@ -181,7 +182,7 @@ function processEnvironmentJourney(name, run) {
   processEnvironmentJourneys.push({ name, run });
 }
 
-isolatedJourney('无副作用preflight/prepare陈旧run要求新commit message；prepare恢复或carrier事实拒绝换绑', async (t) => {
+isolatedJourney('无副作用陈旧run保持兼容；Contribution漂移旧carrier经显式rollover换代', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -296,31 +297,49 @@ isolatedJourney('无副作用preflight/prepare陈旧run要求新commit message�
   );
 
   const persisted = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
-  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', third.runId) };
-  persisted.run.status = 'blocked';
+  const plan = persisted.run.identity.repositories[0];
+  const carrierRoot = taskFinishCarrierRoot(retained, third.runId, plan.selector);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  command(retained, 'git', ['worktree', 'add', '--detach', carrierRoot, 'HEAD']);
+  const carrier = { identity: 'sha256-owned-carrier', root: carrierRoot, head: command(carrierRoot, 'git', ['rev-parse', 'HEAD']) };
+  const proof = createGitCarrierDisposabilityProof({
+    repositoryRoot: plan.taskRoot, workspaceRoot: retained, runId: third.runId, repositorySelector: plan.selector, carrier,
+    handoffIdentity: persisted.run.identity.handoffIdentity, repositoryTopology: plan,
+    prepareFailure: { operation: 'delivery-adaptation', code: 'task-finish.delivery-adaptation-required', status: 'blocked' },
+  });
+  assert.equal(proof.status, 'proved');
+  const driftFailure = { phase: 'prepare', operation: 'task-contribution', check: null, failureClass: 'upstream-candidate-defect', code: 'task-finish.task-contribution-drift-unresolved', status: 'failed', exitCode: null, message: 'Task Contribution changed before prepare.', findings: [], diagnostic: null };
+  persisted.run.status = 'failed';
   persisted.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
-  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'preflight').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'failed';
   persisted.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
-  persisted.run.phases.find((phase) => phase.id === 'verify').status = 'passed';
-  persisted.run.phases.find((phase) => phase.id === 'verify').attempts = 1;
-  persisted.run.phases.find((phase) => phase.id === 'deliver').status = 'blocked';
-  persisted.run.phases.find((phase) => phase.id === 'deliver').attempts = 1;
-  persisted.run.primaryFailure = { phase: 'deliver', operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', status: 'blocked', exitCode: null, message: 'Target changed.', findings: [], diagnostic: null };
-  persisted.run.resume = { phase: 'deliver', token: 'sha256-deliver-resume', generatedAt: new Date().toISOString(), carrierIdentity: 'sha256-owned-carrier' };
+  persisted.run.phases.find((phase) => phase.id === 'prepare').failure = driftFailure;
+  for (const phaseId of ['verify', 'deliver', 'cleanup']) Object.assign(persisted.run.phases.find((phase) => phase.id === phaseId), { status: 'pending', attempts: 0, failure: null });
+  persisted.run.repositories[0].deliveryCarrier = carrier;
+  persisted.run.repositories[0].carrierDisposability = proof.proof;
+  persisted.run.deliveryCarrier = carrier;
+  persisted.run.carrierDisposability = proof.proof;
+  persisted.run.primaryFailure = driftFailure;
+  persisted.run.resume = null;
   runtime.writeTaskFinishRunPersistence(retained, persisted.run);
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]),
-    (error) => error.code === 'task_finish.current_run_identity_conflict'
-      && error.details?.sideEffectFacts?.includes('carrier'),
+    (error) => error.code === 'task_finish.current_run_identity_conflict',
   );
-  await assert.rejects(
-    runtime.taskFinish('run', ['--run', third.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
-    (error) => error.code === 'task_finish.current_run_identity_conflict'
-      && error.details?.runId === third.runId,
-  );
+  const facts = runtime.inspectTaskFinishCurrentFacts(retained, task);
+  assert.equal(facts.recovery.disposition, 'stale-run-retirable');
+  const rolloverCapability = facts.availableCapabilities.find((capability) => capability.id === 'finish-rollover');
+  assert.equal(rolloverCapability.status, 'available');
+  const rollover = await runtime.taskFinish('rollover', ['--task', task, '--recovery-token', rolloverCapability.recoveryToken, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]);
+  assert.equal(rollover.status, 'active');
+  assert.equal(rollover.identity.candidateGeneration, 4);
+  assert.equal(rollover.rollover.supersededRunId, third.runId);
+  assert.equal(fs.existsSync(carrierRoot), false);
   const retainedCurrent = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  assert.equal(retainedCurrent.runId, third.runId);
-  assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
+  assert.equal(retainedCurrent.runId, rollover.runId);
+  assert.equal(retainedCurrent.supersededCurrent.runId, third.runId);
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
 });
 
@@ -751,12 +770,16 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
   assert.equal(fs.existsSync(environmentRoot), true);
   assert.equal(command(environmentRoot, 'git', ['rev-parse', 'HEAD']), taskHeadBeforeFinish);
   assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
+  const initialCarrierProof = runtime.readTaskFinishRunPersistence(retained, { runId: first.runId }).run.repositories[0].carrierDisposability;
+  assert.match(initialCarrierProof.identity, /^sha256-/);
+  assert.equal(initialCarrierProof.initialPrepareFailure.code, 'task-finish.delivery-adaptation-required');
 
   const carrierHeadBeforeResume = command(first.carrier.root, 'git', ['rev-parse', 'HEAD']);
   const missingConfirmation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
   assert.equal(missingConfirmation.status, 'blocked');
   assert.equal(missingConfirmation.primaryFailure.code, 'task-finish.delivery-adaptation-missing');
   assert.equal(command(first.carrier.root, 'git', ['rev-parse', 'HEAD']), carrierHeadBeforeResume);
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { runId: first.runId }).run.repositories[0].carrierDisposability.identity, initialCarrierProof.identity);
 
   const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');

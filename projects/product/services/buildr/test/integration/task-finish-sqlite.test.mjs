@@ -167,6 +167,39 @@ test('reconciliation terminal只在failed current run ID与digest精确匹配时
   assert.equal(stored.completion.handoffIdentity, newIdentity.handoffIdentity);
 });
 
+test('rollover只用旧run ID和digest原子替换为新的active current run', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const task = 'sqlite-rollover-current';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove atomic active run rollover.', projects: [], services: [], changes: [] });
+  const oldRun = createFinishRun({ root, runId: 'sqlite-rollover-old', identity: identity(root, task), runtime });
+  oldRun.status = 'failed';
+  oldRun.phases[0] = { ...oldRun.phases[0], status: 'passed', attempts: 1 };
+  oldRun.phases[1] = { ...oldRun.phases[1], status: 'failed', attempts: 1 };
+  runtime.writeTaskFinishRunPersistence(root, oldRun);
+  const frozen = runtime.readTaskFinishRunPersistence(root, { taskId: task });
+  const nextRun = createFinishRun({
+    root,
+    runId: 'sqlite-rollover-next',
+    identity: { ...identity(root, task), handoffIdentity: 'sha256-handoff-2', candidateIdentity: 'sha256-candidate-2', candidateGeneration: 2, contentTargetIdentity: 'sha256-content-2' },
+    runtime: { ...runtime, readTaskFinishRunPersistence: () => null },
+  });
+
+  assert.throws(() => runtime.replaceTaskFinishRunPersistence(root, {
+    run: nextRun,
+    supersededCurrent: { runId: oldRun.runId, runDigest: 'sha256-wrong' },
+  }), (error) => error.code === 'task_finish_current_conflict');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, oldRun.runId);
+
+  const replaced = runtime.replaceTaskFinishRunPersistence(root, {
+    run: nextRun,
+    supersededCurrent: { runId: oldRun.runId, runDigest: frozen.runDigest },
+  });
+  assert.equal(replaced.run.runId, nextRun.runId);
+  assert.equal(replaced.run.status, 'active');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, nextRun.runId);
+});
+
 test('Task Finish current独占完整delivery message且公开result只投影subject与identity', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();

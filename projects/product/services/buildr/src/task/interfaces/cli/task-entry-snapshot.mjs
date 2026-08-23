@@ -43,6 +43,7 @@ function print(payload, json) {
     console.log(`Task ${payload.task?.taskId || '<unknown>'}: ${payload.status}`);
     if (payload.environment?.execution?.workdir) console.log(`Execution root: ${payload.environment.execution.workdir}`);
     if (payload.next) console.log(`${payload.next.mode === 'required' ? 'Required' : 'Recommended'}: ${payload.next.summary}`);
+    if (payload.finish?.availableCapabilities?.length) console.log(`Finish capabilities: ${payload.finish.availableCapabilities.map((item) => `${item.id}:${item.status}`).join(', ')}`);
     if (payload.diagnostic) console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}`);
   }
   if (payload.status === 'blocked') process.exitCode = 1;

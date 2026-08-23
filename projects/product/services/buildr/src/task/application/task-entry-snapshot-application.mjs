@@ -19,6 +19,7 @@ function ownerFor(error) {
   const code = error?.code || '';
   if (code.startsWith('task_environment_')) return 'task-environment';
   if (code.startsWith('task_development_')) return 'task-development';
+  if (code.startsWith('task_finish') || code.startsWith('task-finish')) return 'task-finish';
   if (code.includes('capability') || code.includes('binding') || code.includes('provider')) return 'capability-routing';
   return 'task-manager';
 }
@@ -69,10 +70,11 @@ function commandRoute(next, execution, taskId) {
     ? ['__internal', 'task-development', next.action, '--task', taskId, '--target', execution.workspaceRoot]
     : null;
   const args = publicArgs || internalArgs;
+  if (!args) return null;
   return {
     writer: next.owner === 'agent' ? 'agent' : 'retained-controller',
     invocation: controller,
-    argv: args ? [...controller.argsPrefix, ...args] : null,
+    argv: [...controller.argsPrefix, ...args],
   };
 }
 
@@ -101,6 +103,7 @@ export function registerTaskEntrySnapshotApplication(runtime) {
     let execution = null;
     let development = null;
     let parent = null;
+    let finishFacts = null;
     try {
       inspected = measured('task-manager', () => runtime.inspectTaskRecord(targetRoot, taskId));
       if (inspected.record.status !== 'active') return finish({ status: 'blocked', task: taskSummary(inspected), environment: null, development: null, blockers: [{ axis: 'task', owner: 'task-manager', code: 'task_entry_task_not_active' }], next: requiredNext('task-manager', 'inspect', { id: 'buildr.task-record', version: 2 }, `Task ${taskId} 已是 ${inspected.record.status}，不能继续正式研发。`), diagnostic: { code: 'task_entry_task_not_active', owner: 'task-manager', message: `Task ${taskId} 不是 active。` }, effects: [] });
@@ -172,21 +175,34 @@ export function registerTaskEntrySnapshotApplication(runtime) {
           next = { ...parentNext, capability };
         }
       }
+      if (!identityBlocker && next?.action === 'finish' && typeof runtime.inspectTaskFinishCurrentFacts === 'function') {
+        finishFacts = measured('task-finish', () => runtime.inspectTaskFinishCurrentFacts(targetRoot, taskId, {
+          agent: execution.controller?.adapter || options.runtime || 'codex',
+        }));
+        if (finishFacts?.recovery) next = {
+          ...next,
+          action: 'finish-recovery',
+          summary: 'Task Finish已有current recovery现场；读取Finish facts并由Agent选择rollover、resume、reconcile、Git/PR、Development或放弃。',
+        };
+      }
       if (next?.capability) {
         next = { ...next, route: measured('capability-routing', () => capabilityRoute(targetRoot, taskRecordEffectiveProjectCodes(inspected.record), next.capability.id, next.capability.version, { runtime: execution.controller?.adapter || options.runtime || 'codex' })) };
         if (next.route.readiness === 'blocked') next = { ...next, mode: 'required' };
       } else if (next) next = { ...next, route: null };
       if (next) next = { ...next, command: commandRoute(next, execution, taskId) };
       const routeBlocked = next?.route?.readiness === 'blocked';
+      const finishRequired = (finishFacts?.requiredPrerequisites || []).length > 0;
+      const finishBlockers = finishFacts?.blockers || [];
       return finish({
-        status: routeBlocked || identityBlocker ? 'blocked' : 'ready',
+        status: routeBlocked || identityBlocker || finishRequired ? 'blocked' : 'ready',
         task: taskSummary(inspected),
         environment: environmentSummary(execution),
         development,
         parent,
-        blockers: identityBlocker ? [identityBlocker] : routeBlocked ? [{ axis: 'capability', owner: 'capability-routing', code: next.route.reason }] : parent?.blockers || [],
+        finish: finishFacts,
+        blockers: identityBlocker ? [identityBlocker] : routeBlocked ? [{ axis: 'capability', owner: 'capability-routing', code: next.route.reason }] : [...(parent?.blockers || []), ...finishBlockers],
         next,
-        diagnostic: identityBlocker ? { code: identityBlocker.code, owner: identityBlocker.owner, message: identityBlocker.message } : routeBlocked ? { code: `task_entry_${next.route.reason}`, owner: 'capability-routing', message: `当前capability route不可用：${next.capability.id}@${next.capability.version}。` } : null,
+        diagnostic: identityBlocker ? { code: identityBlocker.code, owner: identityBlocker.owner, message: identityBlocker.message } : routeBlocked ? { code: `task_entry_${next.route.reason}`, owner: 'capability-routing', message: `当前capability route不可用：${next.capability.id}@${next.capability.version}。` } : finishRequired ? { code: 'task_entry_finish_safety_prerequisite', owner: 'task-finish', message: 'Task Finish存在必须先恢复的authority或identity安全前置。', details: finishFacts.requiredPrerequisites } : null,
         effects: [],
       });
     } catch (error) {

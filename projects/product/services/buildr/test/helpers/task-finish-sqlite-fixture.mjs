@@ -20,6 +20,7 @@ export function createTaskFinishSqliteRuntime(root, task) {
     'acquireTaskFinishTargetLease',
     'discardFailedTaskFinishRunPersistence',
     'finalizeTaskFinishPersistence',
+    'replaceTaskFinishRunPersistence',
     'readTaskFinishCompletionPersistence',
     'readTaskFinishResultsPersistence',
     'readTaskFinishRunPersistence',

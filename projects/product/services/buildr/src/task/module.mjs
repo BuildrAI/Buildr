@@ -231,13 +231,13 @@ const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview'])
 const TASK_OVERVIEW_PERSISTENCE_METHODS = Object.freeze(['readTaskOverviewPersistence']);
 const TASK_ENTRY_SNAPSHOT_APPLICATION_METHODS = Object.freeze(['inspectTaskEntrySnapshot']);
 const TASK_FINISH_APPLICATION_METHODS = Object.freeze([
-  'taskFinish', 'refreshTaskFinishMaintenance', 'inspectTaskFinishReadModel', 'readTaskFinishResults',
+  'taskFinish', 'refreshTaskFinishMaintenance', 'inspectTaskFinishReadModel', 'inspectTaskFinishCurrentFacts', 'readTaskFinishResults',
 ]);
 const TASK_FINISH_PERSISTENCE_METHODS = Object.freeze([
   'taskFinishRunPath', 'taskFinishCompletionPath', 'readTaskFinishRunPersistence',
   'writeTaskFinishRunPersistence', 'discardFailedTaskFinishRunPersistence',
   'readTaskFinishCompletionPersistence', 'writeTaskFinishCompletionPersistence',
-  'finalizeTaskFinishPersistence', 'writeTaskFinishMaintenancePersistence',
+  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence',
   'acquireTaskFinishCurrentTargetLease', 'acquireTaskFinishTargetLease',
   'releaseTaskFinishCurrentTargetLease', 'releaseTaskFinishTargetLease',
   'readTaskFinishResultsPersistence', 'inspectTaskFinishPersistence',
@@ -434,6 +434,17 @@ export function createTaskFinishCliContributions(application = null) {
       ],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
       run: (runtime, context) => invoke(runtime, 'inspect', context.argv.slice(5)),
+    }),
+    Object.freeze({
+      key: 'task finish rollover', surface: 'agent-machine', summary: '在Product只读资格证明成立时，精确清理旧prepare carrier并原子创建current Development的新run。',
+      help: [
+        'Usage: buildr task finish rollover --task <task-id> --recovery-token <token> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', '',
+        '只接受Task Finish current facts投影的当前recovery token；重新验证old run只因Task Contribution drift停在prepare、无lease/Delivery/Activation/Cleanup副作用、repository topology未变、carrier ownership与内容仍匹配初始proof。',
+        '先精确清理run-owned carrier，再以SQLite compare-and-swap将旧blocked/failed current row替换为current Development的新active run；不访问remote证明、不push、不自动执行新run。',
+        '任一资格不成立时保留现场并阻断；cleanup后current row发生并发漂移时报告已发生的cleanup effect，重新inspect后才可重试。',
+      ],
+      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'rollover',
+      run: (runtime, context) => invoke(runtime, 'rollover', context.argv.slice(5)),
     }),
     Object.freeze({
       key: 'task finish reconcile', surface: 'agent-machine', summary: '观察 current Task Contribution 与真实远端结果，收敛由 Agent、PR 或其他已授权路径完成的交付。',

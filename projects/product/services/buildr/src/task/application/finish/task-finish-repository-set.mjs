@@ -98,6 +98,7 @@ export function createTaskFinishRepositoryStates(repositories) {
     reason: repository.reason,
     taskContribution: JSON.parse(JSON.stringify(repository.taskContribution)),
     deliveryCarrier: null,
+    carrierDisposability: null,
     equivalence: null,
     delivery: null,
     cleanupProof: null,

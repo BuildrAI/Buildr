@@ -8,7 +8,11 @@ import {
 } from './git-task-contribution.mjs';
 import { createFinishRun, finishResult } from './task-finish-run.mjs';
 import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
-import { removeFinishRunCarriers } from './task-finish-occupancy-release.mjs';
+import {
+  cleanupStaleFinishRunForRetirement,
+  inspectStaleFinishRunRetirementEligibility,
+} from './task-finish-recovery-primitives.mjs';
+import { withTaskFinishCurrentFacts } from './task-finish-current-facts.mjs';
 import {
   taskFinishCarrierSetIdentity,
   taskFinishDeliverySetIdentity,
@@ -80,71 +84,6 @@ function reconciliationError(code, message, details = null) {
 function runIdentityMismatches(run, identity) {
   const fields = ['task', 'handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'repositorySetIdentity'];
   return fields.filter((field) => run.identity?.[field] !== identity?.[field]);
-}
-
-function repositoryTopology(repositories) {
-  return (repositories || [])
-    .map((repository) => ({
-      selector: repository.selector,
-      sourcePath: repository.sourcePath,
-      retainedRoot: repository.retainedRoot,
-      taskRoot: repository.taskRoot,
-      environmentBranch: repository.environmentBranch,
-      targetBranch: repository.targetBranch,
-      remote: repository.remote,
-      disposition: repository.disposition,
-      reason: repository.reason,
-    }))
-    .sort((left, right) => left.selector.localeCompare(right.selector));
-}
-
-function sameRepositoryTopology(left, right) {
-  return JSON.stringify(repositoryTopology(left)) === JSON.stringify(repositoryTopology(right));
-}
-
-function untouchedPhase(phase) {
-  return Boolean(phase && phase.status === 'pending' && phase.attempts === 0);
-}
-
-function staleRunRecoveryEligibility(persistence, identity) {
-  const run = persistence?.run;
-  const mismatches = runIdentityMismatches(run, identity);
-  const preflight = run?.phases?.find((phase) => phase.id === 'preflight');
-  const prepare = run?.phases?.find((phase) => phase.id === 'prepare');
-  const downstream = (run?.phases || []).filter((phase) => ['verify', 'deliver', 'cleanup'].includes(phase.id));
-  const repositoryStates = run?.repositories || [];
-  const carriers = repositoryStates.filter((repository) => repository.deliveryCarrier?.root);
-  const facts = {
-    identityBoundary: Boolean(run?.identity?.task === identity?.task
-      && sameRepositoryTopology(run?.identity?.repositories, identity?.repositories)
-      && mismatches.length > 0
-      && mismatches.every((field) => ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'repositorySetIdentity'].includes(field))),
-    terminalPrepareFailure: Boolean(run?.status === 'failed'
-      && preflight?.status === 'passed'
-      && preflight.attempts > 0
-      && prepare?.status === 'failed'
-      && prepare.attempts > 0
-      && downstream.length === 3
-      && downstream.every(untouchedPhase)),
-    carrier: carriers.length > 0 || Boolean(run?.deliveryCarrier?.root),
-    resume: Boolean(run?.resume),
-    lease: Boolean(persistence?.lease),
-    delivery: Boolean(run?.delivery || repositoryStates.some((repository) => repository.delivery)),
-    retained: Boolean(run?.delivery?.remoteAfterRef
-      || run?.delivery?.finalRemoteRef
-      || run?.delivery?.activation
-      || repositoryStates.some((repository) => repository.delivery?.remoteAfterRef
-        || repository.delivery?.finalRemoteRef
-        || repository.delivery?.activation)),
-    completion: Boolean(persistence?.preparedCompletion || run?.completion),
-    cleanup: Boolean(repositoryStates.some((repository) => repository.cleanupProof)
-      || (run?.phases || []).find((phase) => phase.id === 'cleanup' && !untouchedPhase(phase))),
-    occupancyReleased: Boolean(run?.occupancy?.status === 'released'),
-  };
-  const blockers = Object.entries(facts)
-    .filter(([key, value]) => ['identityBoundary', 'terminalPrepareFailure', 'carrier'].includes(key) ? !value : value)
-    .map(([key]) => key);
-  return { eligible: blockers.length === 0, mismatches, facts, blockers };
 }
 
 function recoverySummary(run, cleanup) {
@@ -315,7 +254,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
     if (mismatches.length === 0) {
       run = clone(current.run);
     } else {
-      const eligibility = staleRunRecoveryEligibility(current, entry.identityParts);
+      const eligibility = inspectStaleFinishRunRetirementEligibility(current, entry.identityParts);
       if (!eligibility.eligible) {
         throw reconciliationError(
           'task_finish.reconciliation_current_run_identity_conflict',
@@ -361,7 +300,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       run.reconciliation = { mode: 'agent-led', status: 'partial', updatedAt: run.updatedAt };
       runtime.writeTaskFinishRunPersistence(root, run);
     }
-    return {
+    return withTaskFinishCurrentFacts({
       schemaVersion: 'buildr.task-finish-reconciliation-result/v1',
       operation: 'reconcile',
       status: 'unproven',
@@ -370,7 +309,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       repositories: observations,
       effects: !recovery && checkpointed ? [{ type: 'delivery-checkpoint-recorded', selectors: observations.filter((item) => ['delivered', 'not-applicable'].includes(item.status)).map((item) => item.selector) }] : [],
       nextActions: ['由Agent处理对应repository的目标、远端或贡献包含事实后重试；其他已交付repository无需重复push。'],
-    };
+    }, { taskId: run.identity.task, operation: 'reconcile', readiness: entry });
   }
 
   if (recovery) {
@@ -378,10 +317,15 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       runId: recovery.persistence.run.runId,
       runDigest: recovery.persistence.runDigest,
     };
-    const cleanup = removeFinishRunCarriers(recovery.persistence.run);
+    const primitive = cleanupStaleFinishRunForRetirement({
+      persistence: recovery.persistence,
+      identity: entry.identityParts,
+      remoteContainmentProven: true,
+    });
+    const cleanup = primitive.cleanup || { status: 'blocked', repositories: [], code: primitive.code };
     const summary = recoverySummary(recovery.persistence.run, cleanup);
-    if (!['removed', 'not-applicable'].includes(cleanup.status)) {
-      return {
+    if (primitive.status !== 'ready') {
+      return withTaskFinishCurrentFacts({
         schemaVersion: 'buildr.task-finish-reconciliation-result/v1',
         operation: 'reconcile',
         status: 'unproven',
@@ -393,7 +337,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
           .filter((repository) => repository.status === 'removed')
           .map((repository) => ({ type: 'stale-carrier-removed', selector: repository.selector, carrierIdentity: repository.carrierIdentity || null })),
         nextActions: ['修复旧run-owned carrier的精确ownership或cleanup条件后重试；旧current run保持不变。'],
-      };
+      }, { taskId: run.identity.task, operation: 'reconcile', readiness: entry });
     }
     recovery = summary;
   }

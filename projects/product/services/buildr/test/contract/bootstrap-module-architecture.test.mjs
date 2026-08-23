@@ -241,7 +241,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'task-finish',
     requires: ['task-record.application', 'task-environment.application', 'task-execution-record.application', 'task-development.application', 'workspace.structured-store'],
     provides: [TASK_FINISH_APPLICATION, TASK_FINISH_PERSISTENCE_READ, TASK_FINISH_INTERNAL, TASK_FINISH_RUNTIME_PORT],
-    contributions: { cli: ['task finish inspect', 'task finish reconcile', 'task finish run'], http: [], diagnostics: ['task-finish.diagnostics'] },
+    contributions: { cli: ['task finish inspect', 'task finish rollover', 'task finish reconcile', 'task finish run'], http: [], diagnostics: ['task-finish.diagnostics'] },
     lifecycle: 'none',
   }, {
     id: 'task-terminal-delivery',
@@ -299,7 +299,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task verification inspect', 'task verification record', 'task verification reconcile',
     'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept',
     'task next',
-    'task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect',
+    'task finish inspect', 'task finish rollover', 'task finish reconcile', 'task finish run', 'task delivery inspect',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',

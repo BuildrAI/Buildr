@@ -1,0 +1,42 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: safe-stale-finish-run-rollover
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/safe-stale-finish-run-rollover/brief.md
+    reason: 正式 Change 需要解释旧 run 本地安全换代的目标、边界、风险与验收
+    status: updated
+    sourceIdentities:
+      - openspec/changes/safe-stale-finish-run-rollover/proposal.md
+      - openspec/changes/safe-stale-finish-run-rollover/design.md
+      - openspec/changes/safe-stale-finish-run-rollover/specs/task-finish-execution/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Finish 增加 carrier disposability proof、共享资格与 fenced current-run rollover
+    status: updated
+    sourceIdentities:
+      - openspec/changes/safe-stale-finish-run-rollover/design.md
+      - openspec/changes/safe-stale-finish-run-rollover/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 的 Finish Application、CLI、SQLite转换与Task Entry Snapshot消费边界扩展
+    status: updated
+    sourceIdentities:
+      - openspec/changes/safe-stale-finish-run-rollover/design.md
+      - openspec/changes/safe-stale-finish-run-rollover/specs/task-finish-execution/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Finish
+    - Delivery Carrier
+    - Delivery Reconciliation
+    - Task Entry Snapshot
+  canonicalTerms: 安全换代与carrier可丢弃性证明是Task Finish内部恢复机制，不新增Project领域术语
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/knowledge/glossary.md
+    - openspec/changes/safe-stale-finish-run-rollover/design.md
+    - openspec/changes/safe-stale-finish-run-rollover/specs/task-finish-execution/spec.md
+unresolvedItems: []

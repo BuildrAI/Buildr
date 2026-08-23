@@ -199,6 +199,10 @@ Task Development 拥有 Content Target、verification policy、Candidate/generat
 
 Agent 也可以选择直接 Git 或 PR。`task finish reconcile` 不创建 carrier、不 push、不接受调用方声明的成功，只根据 current Handoff 和真实 remote 对账 Delivery。
 
+Finish Application 通过统一的 current facts 投影 handoff applicability、repository topology、run/carrier ownership、side effects、remote containment、四类维护结果、recovery disposition、typed blockers、required 安全前置与 available capabilities，供 `run`、`rollover`、`reconcile`、`inspect` 和 Task Entry Snapshot 共同消费；事实模型不替 Agent 选择 Git、PR、重新开发、恢复或放弃策略。Product 首次以 prepare blocked/failed 交接新 carrier 时保存不可刷新的 HEAD、index、worktree 与 untracked 可丢弃性证明；精确 carrier cleanup、remote reconciliation retirement 与显式 local rollover 只由 identity-fenced 封闭原语执行。Local rollover 仅在已知 Task Contribution drift、无 lease/Delivery/Activation/Cleanup 副作用、repository topology 不变且 carrier proof 未漂移时成立，先幂等 cleanup，再以旧 run ID/digest CAS 写入 current Handoff 的新 active run；它不访问 remote，也不执行 Delivery。
+
+`task next` 在 Development 进入 Finish 后只展示上述 typed blockers、安全前置与 available capabilities；兼容 next 提示不承诺唯一正确动作，也不把 Task Entry Snapshot 扩张为全局工作流引擎。
+
 详细行为见 [Task Finish execution specification](../../specs/task-finish-execution/spec.md)、[Task Development specification](../../specs/task-development/spec.md) 和 [Task Delivery/Finish module architecture](../../specs/task-delivery-finish-module-architecture/spec.md)。
 
 ## Runtime、构建与分发

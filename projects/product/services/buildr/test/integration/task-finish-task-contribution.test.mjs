@@ -7,15 +7,18 @@ import test from 'node:test';
 
 import {
   adoptAgentReviewedGitCarrier,
+  createGitCarrierDisposabilityProof,
   createGitNoContributionProof,
   createIsolatedGitCarrier,
   inspectGitCarrierContainment,
   inspectGitTaskContributionContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
+  taskFinishCarrierRoot,
   verifyDeliveredGitTaskContribution,
   verifyGitTaskContributionCarrier,
   verifyGitNoContributionProof,
+  verifyGitCarrierDisposabilityProof,
 } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 import { registerGitWorktreeProvider } from '../../src/task/infrastructure/git-worktree-provider.mjs';
@@ -45,6 +48,29 @@ function repository(t) {
   git(taskRoot, ['config', 'user.email', 'buildr@example.com']);
   return { root, taskRoot };
 }
+
+test('carrier disposability proof冻结commit、index、worktree与untracked内容并支持cleanup中断重试', (t) => {
+  const { root } = repository(t);
+  const runId = 'proof-run';
+  const selector = 'workspace';
+  const carrierRoot = taskFinishCarrierRoot(root, runId, selector);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  git(root, ['worktree', 'add', '--detach', carrierRoot, 'HEAD']);
+  fs.writeFileSync(path.join(carrierRoot, 'untracked.txt'), 'initial\n');
+  const carrier = { root: carrierRoot, identity: 'sha256-carrier' };
+  const created = createGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier });
+  assert.equal(created.status, 'proved');
+  assert.equal(verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof }).status, 'unchanged');
+
+  fs.writeFileSync(path.join(carrierRoot, 'untracked.txt'), 'agent changed this\n');
+  const drifted = verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof });
+  assert.equal(drifted.status, 'changed');
+  assert.equal(drifted.code, 'task-finish.carrier-disposability-drift');
+
+  git(root, ['worktree', 'remove', '--force', carrierRoot]);
+  const interruptedRetry = verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof });
+  assert.equal(interruptedRetry.status, 'not-applicable');
+});
 
 test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保持等价', (t) => {
   const { root, taskRoot } = repository(t);

@@ -138,13 +138,16 @@ test('canonical run 要求 receipt-bound task environment，帮助区分自动ru
   assert.match(rejectedPayload.suggestions.join('\n'), /task-development/);
 
   const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
+  const rolloverHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'rollover'], { encoding: 'utf8' });
   const reconcileHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'reconcile'], { encoding: 'utf8' });
   const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });
   assert.equal(runHelp.status, 0, runHelp.stderr);
+  assert.equal(rolloverHelp.status, 0, rolloverHelp.stderr);
   assert.equal(reconcileHelp.status, 0, reconcileHelp.stderr);
   assert.equal(inspectHelp.status, 0, inspectHelp.stderr);
-  const helpText = `${runHelp.stdout}\n${reconcileHelp.stdout}\n${inspectHelp.stdout}`;
+  const helpText = `${runHelp.stdout}\n${rolloverHelp.stdout}\n${reconcileHelp.stdout}\n${inspectHelp.stdout}`;
   assert.match(helpText, /task finish run/);
+  assert.match(helpText, /task finish rollover/);
   assert.match(helpText, /task finish reconcile/);
   assert.match(helpText, /task finish inspect/);
   assert.match(helpText, /不接受success、evidence、commit message、run token或手写proof/);
@@ -160,6 +163,7 @@ test('canonical run 要求 receipt-bound task environment，帮助区分自动ru
   assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
   assert.match(helpText, /省略时使用 Task Environment 已绑定 adapter/);
   assert.match(helpText, /不得猜测当前聊天宿主或默认为 Codex/);
+  assert.match(helpText, /SQLite compare-and-swap/);
   assert.match(helpText, /deliver使用Environment adapter冻结的run agent/);
   assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
   assert.doesNotMatch(helpText, /target branch 默认来自 Git carrier provider start point/);

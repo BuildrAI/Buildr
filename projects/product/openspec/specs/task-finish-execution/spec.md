@@ -439,17 +439,22 @@ Buildr MUST在只有一个真实交付 adapter 时直接使用当前 Product/Git
 - **AND** MUST NOT为Roadmap完整性预建selection、registry、receipt或兼容层
 
 ### Requirement: Blocked Task Finish 必须只返回一个当前恢复动作
-Task Finish MUST根据current Development applicability与run-owned事实返回唯一`nextWorkflow`或`nextAction`。只有Task Development Application报告source、Task Context、policy、gate或handoff真实stale时 MUST返回`nextWorkflow: task-development`；Delivery Adaptation、target-race、retained activation或cleanup暂态阻塞 MUST保持同一run并只返回产品生成的current exact resume token及一个明确动作。
+Task Finish与Task Entry Snapshot MUST根据current Development applicability、Finish current facts和run-owned事实投影typed blockers、required安全前置与available capabilities。只有继续推进会违反确定性authority、identity或side-effect不变量时，产品 MUST返回`required` owner/action；其他恢复、重新开发、Git、PR、reconciliation、cleanup、retirement或放弃选择 MUST作为可用能力或`recommended`提示交给Agent判断。兼容`nextWorkflow`或`nextAction`字段若仍存在，MUST从同一typed projection派生为非规范性提示，不得成为唯一合法路径或执行授权。
 
 #### Scenario: Delivery Adaptation阻塞
-- **WHEN** Task Contribution不能机械应用到最新Delivery Baseline但Development handoff仍current
-- **THEN** result MUST只返回在run-owned carrier完成Agent review后以current token恢复同一run的nextAction
-- **AND** MUST NOT同时返回Task Development rebuild、Candidate generation或formal Verification动作
+- **WHEN** Task Contribution不能机械应用到最新Delivery Baseline但Development handoff仍current，并且Agent仍可选择run-owned adaptation、直接Git/PR后reconcile或停止交付
+- **THEN** result MUST返回current carrier、baseline、ownership blocker和这些能力各自的required prerequisites
+- **AND** MUST NOT把恢复同一run投影为唯一正确动作或自动进入Task Development rebuild
 
 #### Scenario: Development applicability真实stale
 - **WHEN** Task Development Application报告current handoff不再适用
-- **THEN** result MUST只返回`nextWorkflow: task-development`
-- **AND** MUST NOT保留一个与Development rebuild竞争的Finish resume动作
+- **THEN** result MUST把Task Development标记为解除该identity blocker的required owner
+- **AND** MUST保留既有Finish side effects与资源事实，不得把required前置解释为自动重新开发、自动删除或放弃授权
+
+#### Scenario: 未知 blocker 没有预定义策略
+- **WHEN** Buildr能安全观察current facts但无法确定Agent应选择的交付策略
+- **THEN** result MUST返回unknown blocker、相关事实与仍安全可用的能力
+- **AND** MUST NOT生成虚假的唯一`nextAction`、完成结论或开放式状态迁移
 
 ### Requirement: Finish repository 必须支持按 Task 安全读取既有 completed Result
 Task Finish MUST 提供最窄的按 Task 只读查询，复用 `.buildr/task-finish/runs/<run-id>.json` 与 `.buildr/task-finish/completed/<run-id>.json` 现有 authority。查询 MUST 校验固定目录、普通 JSON 文件、current schema、Task identity 与 completion identity，MUST NOT 新增 writer、数据库表、索引、缓存或聚合 store。
@@ -1308,3 +1313,103 @@ Task Finish MUST继续独占Task Contribution、Delivery Carrier、remote contai
 - **WHEN** 调用方启动普通`task finish run`且current run绑定旧Handoff并拥有carrier
 - **THEN** 产品 MUST继续返回`task_finish.current_run_identity_conflict`
 - **AND** MUST NOT使用本Requirement的reconciliation恢复规则自动supersede旧run
+
+### Requirement: Task Finish 必须提供统一的可信 current facts
+Buildr MUST通过Task Finish Application提供同一组只读current facts，至少表达current Development handoff applicability、Task Contribution、repository topology、current或terminal Finish关联、run与carrier ownership、已发生side effects、remote containment、Delivery、Activation、Environment Cleanup、Diagnostics以及可用安全原语。自动`run`、`task finish reconcile`、`task finish inspect`与Task Entry Snapshot MUST消费同一事实模型；该模型 MUST只引用各专业authority的current identity与有界事实，不得复制专业Result正文、创建第二writer或把调用方声明当成事实。
+
+#### Scenario: 自动 run 与 reconciliation 观察同一事实
+- **WHEN** 同一Task分别通过自动`run`或Agent直接交付后的`reconcile`读取Finish上下文
+- **THEN** 两条路径 MUST对相同handoff、repository、carrier、remote containment与maintenance事实返回一致identity和applicability
+- **AND** 路径选择 MUST NOT改变事实模型或提前写入Delivery
+
+#### Scenario: 未知交付情况仍可读取
+- **WHEN** current facts不匹配任何已知自动恢复旅程，但Task、handoff、repository与既有side effects仍可安全观察
+- **THEN** Buildr MUST返回这些current facts、精确unknown blocker与可用能力
+- **AND** MUST NOT仅因没有预定义恢复状态就伪造stale、Delivery失败或唯一策略
+
+### Requirement: 确定性安全不变量必须与Agent策略分离
+Buildr MUST对ownership、identity、path containment、symlink、side-effect containment、remote containment、target fencing、未经授权远端写入、完成真实性与安全删除保持fail-closed保护。Git、PR、重新开发、继续或退休旧run、恢复、reconciliation或放弃的策略 MUST由Agent依据current facts选择；Product MUST NOT把策略推荐升级为唯一合法动作、执行授权或全局workflow状态。
+
+#### Scenario: 安全不变量不成立
+- **WHEN** carrier owner、run identity、remote target、containment proof或删除边界任一无法证明
+- **THEN** Buildr MUST在对应副作用前停止并返回精确blocker与已发生effects
+- **AND** MUST NOT通过推荐动作、caller claim或兼容分支绕过不变量
+
+#### Scenario: 多个合法策略同时存在
+- **WHEN** current facts同时允许Agent选择直接Git/PR后reconcile、继续自动run或回到Task Development
+- **THEN** Buildr MUST把这些能力及各自required prerequisites投影给Agent
+- **AND** MUST NOT自动选择、排序执行或把其中一个声明为唯一正确动作
+
+### Requirement: Finish 恢复原语必须少量、封闭且可幂等验证
+Product-owned Finish恢复原语 MUST只接受由Task Finish解析的Task、run、handoff与current facts identity，并在写入前重新验证资格。精确carrier清理 MUST只处理已登记、真实非symlink、受预期container包含且没有未交付内容的owner资源。用于远端reconciliation的旧run退休 MUST继续要求current Handoff已由真实remote containment完整证明；用于显式本地换代的旧run退休 MUST只允许旧run停止于已知的`task-finish.task-contribution-drift-unresolved` prepare blocker，且blocked run仍持有该blocker生成的原run resume token、failed run没有resume，并同时满足没有lease、delivery、retained、prepared completion、cleanup或后续phase事实、repository topology未变化、全部carrier ownership与cleanup可证明，以及每个carrier的HEAD、index、worktree与untracked内容精确匹配Product首次返回该carrier时持久化且后续不可刷新的可丢弃性证明。任一原语 MUST逐项报告effects、支持相同identity幂等重试，并拒绝caller提供任意path、claimed success、状态patch、carrier-clean boolean或语义等价boolean。
+
+#### Scenario: 精确 carrier 可安全清理
+- **WHEN** Product证明carrier及container属于matching Task/run、路径真实且受控、没有未交付内容并满足当前cleanup资格
+- **THEN** cleanup原语 MUST只删除该owner的精确资源并报告逐项effects
+- **AND** 相同identity重试 MUST不触碰其他run或扩大删除范围
+
+#### Scenario: 旧 run 可安全退休
+- **WHEN** current Handoff已从真实remote证明全部Task Contribution contained，旧run满足delivery前无副作用资格且carrier cleanup全部可证明
+- **THEN** retirement原语 MUST以旧run ID与精确digest作为transaction fence原子退休旧current并允许current Handoff结果对账
+- **AND** MUST保留旧Execution Record与有界superseded关联
+
+#### Scenario: 本地安全换代旧 run
+- **WHEN** current Handoff尚未形成remote containment，旧run因已知Task Contribution漂移停在prepare blocker，blocked run持有matching原run resume token或failed run没有resume，且全部carrier内容仍精确匹配Product首次交接时持久化的可丢弃性证明
+- **THEN** 显式换代原语 MUST精确清理旧carrier，并以旧run ID与精确current digest为fence原子写入绑定current Handoff的新active run
+- **AND** MUST保留旧Execution Record与有界superseded关联，MUST NOT复用旧Candidate、handoff、Verification或Delivery Adaptation结论
+
+#### Scenario: carrier 在 prepare 失败后被修改
+- **WHEN** 任一carrier的HEAD、index、worktree、untracked内容、owner、container或topology不再匹配持久化证明
+- **THEN** 本地换代原语 MUST零写入保留旧current row与全部现场
+- **AND** MUST返回精确carrier-disposability blocker，不得把clean working tree或caller声明作为替代证明
+
+#### Scenario: 其他 prepare blocker 或 resume token
+- **WHEN** 旧run因Delivery Adaptation、target race、外部故障或其他原因blocked，或resume token不再绑定已知Task Contribution漂移blocker
+- **THEN** 本地换代原语 MUST保持unavailable并保留原run恢复语义
+- **AND** MUST NOT仅因carrier内容仍匹配某次观察就退休旧run
+
+#### Scenario: 原语资格无法证明
+- **WHEN** 任一ownership、identity、topology、phase、side-effect、carrier disposability、remote containment或cleanup事实缺失、漂移或矛盾
+- **THEN** 对应原语 MUST零写入返回blocker并保留现场
+- **AND** MUST NOT退化为通用delete、reset、migration或旧Candidate复用接口
+
+### Requirement: Task Finish 必须提供显式的旧 run 安全换代动作
+Task Finish MUST提供显式、Product-owned且由current facts token保护的旧run安全换代动作。调用方 MUST只提交Task、canonical target、Product返回的recovery token与current Handoff所需语义commit message；MUST NOT提交carrier path、run状态patch、claimed cleanup、remote success或等价boolean。普通`task finish run` MUST继续对不同identity的旧current run返回`task_finish.current_run_identity_conflict`，MUST NOT静默调用换代动作。
+
+#### Scenario: Agent 显式选择安全换代
+- **WHEN** Finish current facts表明旧run为`stale-run-retirable`，且Agent使用matching recovery token显式请求换代
+- **THEN** Product MUST在副作用前重验Task、current Handoff、旧run digest、资格与全部carrier事实
+- **AND** 成功后 MUST返回绑定current Candidate generation的新active run及后续正常run/resume能力，不得在换代动作中执行远端Delivery
+
+#### Scenario: recovery token 或 current row 漂移
+- **WHEN** recovery token不匹配当前facts identity，或旧current row的run ID、kind、status、digest任一变化
+- **THEN** Product MUST零覆盖返回类型化current conflict
+- **AND** MUST NOT删除竞争者资源、替换current row或创建第二个新run
+
+#### Scenario: cleanup 后事务前中断
+- **WHEN** 旧carrier已由本动作精确清理，但SQLite current替换尚未提交即发生中断
+- **THEN** 相同old run与token的重试 MUST把已登记carrier缺失识别为幂等cleanup结果并重新执行current-row fence
+- **AND** MUST NOT因此放宽owner、container、topology、side-effect或digest检查
+
+#### Scenario: 多 repository 部分清理失败
+- **WHEN** 多repository旧run中仅部分已证明carrier清理成功
+- **THEN** Product MUST保留旧current row并逐selector报告已发生与未发生effects
+- **AND** 后续重试 MUST只处理仍由该old run拥有的剩余资源
+
+### Requirement: Finish current facts 必须暴露可行动的换代资格
+Finish current facts与Task Entry Snapshot MUST从同一共享资格投影旧run的恢复disposition、typed blockers、required prerequisites、qualification identity与available capabilities。可安全本地换代时 MUST暴露`finish-rollover`能力及Product生成的有界recovery token；证据不足或存在副作用时 MUST暴露检查现场的能力并保持`finish-rollover` unavailable。Task Entry Snapshot MUST保持只读，不得访问远端证明Delivery、清理carrier、退休run或替Agent选择唯一策略。
+
+#### Scenario: 新 Candidate 被可安全退休的旧 run 阻塞
+- **WHEN** current Development Handoff已更新，旧run满足本地换代全部资格且Task尚未完成
+- **THEN** Finish facts与Task Entry Snapshot MUST在执行普通run前投影`stale-run-retirable`、matching qualification identity与`finish-rollover`能力
+- **AND** Git/PR后reconcile、检查现场、回到Development或放弃等仍合法的能力 MUST按真实事实保持可见
+
+#### Scenario: 旧 run 存在不确定副作用或不可丢失内容
+- **WHEN** 旧run存在lease、Delivery/Activation/cleanup事实、carrier内容漂移或任何资格未知
+- **THEN** Finish facts与Task Entry Snapshot MUST投影精确blocker并使`finish-rollover` unavailable
+- **AND** MUST保留现场，不得把通用`finish`提示伪装成已经可以安全换代
+
+#### Scenario: task next 不探测远端
+- **WHEN** current facts尚无Product-owned remote containment observation
+- **THEN** Task Entry Snapshot MUST只报告reconciliation所需前置与可用能力
+- **AND** MUST NOT自行访问remote、声明新贡献已交付或把reconciliation选为唯一动作

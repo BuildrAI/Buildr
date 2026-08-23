@@ -10,6 +10,8 @@ import {
   singletonApplicableTaskFinishRepository,
   taskFinishRepositorySetIdentity,
 } from './task-finish-repository-set.mjs';
+import { projectTaskFinishCurrentFacts } from './task-finish-current-facts.mjs';
+import { inspectStaleFinishRunRolloverEligibility } from './task-finish-recovery-primitives.mjs';
 
 export const TASK_FINISH_ENTRY_GAP_MODULES = Object.freeze(['development', 'environment', 'delivery']);
 
@@ -210,7 +212,7 @@ export function observeTaskFinishEntryReadiness({
   const nextWorkflow = gaps.development.length > 0 ? 'task-development' : null;
   const singleton = repositories.length ? singletonApplicableTaskFinishRepository({ repositories }) : null;
 
-  return {
+  const observation = {
     ready: total === 0,
     gaps,
     nextWorkflow,
@@ -234,6 +236,25 @@ export function observeTaskFinishEntryReadiness({
       environmentAvailable: environmentReady,
       deliveryCommitIdentity: deliveryCommit?.identity || null,
     } : null,
+  };
+  let readModel = null;
+  try { readModel = runtime.inspectTaskFinishReadModel?.({ root, taskId: task }) || null; }
+  catch { /* entry facts remain available from current authority observations */ }
+  let recovery = null;
+  try {
+    const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true }) || null;
+    if (current && observation.identityParts) recovery = inspectStaleFinishRunRolloverEligibility(current, observation.identityParts);
+  } catch { /* inability to prove rollover remains unavailable */ }
+  return {
+    ...observation,
+    facts: projectTaskFinishCurrentFacts({
+      taskId: task,
+      operation: 'entry-readiness',
+      readiness: observation,
+      result: readModel?.result || null,
+      diagnostics: readModel?.diagnostics || [],
+      recovery,
+    }),
   };
 }
 
