@@ -54,6 +54,7 @@ function activationPaths(carrier) {
 
 function cleanupCompleted(result) {
   if (result?.status !== 'complete') return false;
+  if (result.maintenance?.environmentCleanup === 'cleaned') return true;
   if (result.completion?.cleanup?.status === 'cleaned') return true;
   return Array.isArray(result.phases)
     && result.phases.some((phase) => phase?.id === 'cleanup' && phase?.status === 'passed');

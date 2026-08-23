@@ -89,5 +89,6 @@ test('Product writer updates terminal Finish cleanup from Environment current', 
   const inspected = inspectFinishRun({ root, runId: run.runId, runtime });
   assert.equal(refreshed.maintenance.environmentCleanup, 'cleaned');
   assert.equal(inspected.maintenance.environmentCleanup, 'cleaned');
+  assert.equal(inspected.completion.cleanup.status, 'cleaned');
   assert.equal(inspected.maintenance.activation, 'attention');
 });

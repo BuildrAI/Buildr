@@ -604,7 +604,7 @@ export function registerTaskFinishRepository(runtime) {
       } else {
         const completion = { ...synchronizedCleanup(decoded.completion), maintenance: clone(maintenance) };
         const result = { ...clone(completion.result), maintenance: clone(maintenance) };
-        if (result.completion) result.completion = { ...clone(result.completion), maintenance: clone(maintenance) };
+        if (result.completion) result.completion = { ...synchronizedCleanup(result.completion), maintenance: clone(maintenance) };
         completion.result = result;
         const payload = { kind: 'terminal', identityDigest: current.identity_digest, completion: completionDetail(completion) };
         record = { ...current, cleanup_status: maintenance.environmentCleanup || null, payload_json: JSON.stringify(payload), updated_at: timestamp() };

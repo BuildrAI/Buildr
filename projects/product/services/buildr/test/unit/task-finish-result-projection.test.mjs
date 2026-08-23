@@ -338,6 +338,29 @@ test('complete cleanup后carrier root可清理但冻结自举事实保持可投�
   assert.equal(result.selfBootstrap.baseRef, 'final-ref');
 });
 
+test('maintenance已确认cleanup时不会从旧completion快照恢复不存在的carrier root', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened' },
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-cleaned-carrier', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete', cleanup: { status: 'pending' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-cleaned-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+});
+
 test('v3 reconciliation carrier缺root时恢复确定性的run-owned repository root', () => {
   const result = selfBootstrapTaskFinishResult(canonical({
     status: 'complete', primaryFailure: null, resume: null,
