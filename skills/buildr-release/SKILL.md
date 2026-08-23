@@ -28,7 +28,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 4. shared readiness/protected transaction：同一context digest、collect-all findings、effects为空的local检查与唯一publish workflow；
 5. release→main、Publication后main→dev与release branch closeout：tree equality、dev新内容保留和独立cleanup授权。
 
-当前P0只建立release集合契约；若任一后续owner/read model尚未实现或无法证明current：
+当前P0 release集合契约与P2 shared readiness/protected transaction已经实现；P1/P3或任一其他owner/read model尚未实现或无法证明current时：
 
 - 检查意图返回`blocked: release-model-implementation-incomplete`，列出缺失owner和对应Parent Contribution；
 - 准备、发布、继续意图在任何Git/PR/workflow/public副作用前停止；
@@ -79,7 +79,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 8. 对该release source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一source SHA/tree、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。
 9. 创建唯一release→main受保护PR。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败只重跑失败job和aggregate。
 10. merge后核验`origin/main^{tree}`精确等于冻结release tree。commit identity可因squash不同，tree不一致或remote race立即停止。
-11. 执行shared readiness，只读取selection、Candidate/artifact、Task correlation、main/workflow/authority facts，要求`effects: []`；不得本地模拟OIDC、审批、tag、npm或GitHub Release。
+11. 用transaction runner的默认`readiness`动作构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
 12. 报告“准备完成，尚未dispatch正式release transaction，尚未创建tag/npm version/GitHub Release，尚未请求`npm-production`审批”，然后停止。
 
 ## 6. 发布版本
@@ -88,8 +88,8 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 1. fetch并重新核验current release HEAD/tree、main tree、Candidate generation、tarball manifest/integrity、Task correlation、readiness context和workflow digest全部matching。
 2. 首次发布确认tag/npm version/GitHub Release不存在；恢复路径核对已有事实与同一context/tarball，不删除或覆盖。
-3. 使用release Task Environment保存的exact Node启动唯一transaction runner；只dispatch一次`publish.yml`并定位同一run，本机不创建/push tag、不dispatch probe-only workflow。
-4. read-only jobs验证contract/context/Candidate/唯一tarball/Host Node/Launcher；全部通过后唯一protected job请求一次`npm-production`审批。
+3. 使用release Task Environment保存的exact Node启动唯一transaction runner的显式`dispatch`动作，并传入对current frozen context的publication授权；runner逐项绑定main、tree、workflow digest与exact Node后只dispatch一次`publish.yml`并定位同一run。本机不创建/push tag、不dispatch probe-only workflow。
+4. read-only jobs按context中的Candidate run下载matching `candidate-aggregate`和`candidate-package`，验证aggregate identity与tarball manifest/bytes后供Host Node、Launcher和protected job复用；publish run不得build Application Payload、`npm pack`或形成第二份候选物。全部通过后唯一protected job请求一次`npm-production`审批。
 5. 审批后同一job完成OIDC proof、final pre-tag convergence、tag ensure、Registry snapshot、`npm publish <same-tarball>`、双dist-tag/integrity readback、GitHub Release ensure和官方Registry精确安装smoke。
 6. 已存在npm version只在integrity与manifest相同、tag/source/context匹配时复用；否则停止，不unpublish、不覆盖、不重新pack。
 7. 按publish run inspect `release-evidence-*`，核验selection、release/support Tasks、Candidate、main、publish、tag、npm/GitHub Release、Registry smoke与context digest；临时下载立即清理。
@@ -103,7 +103,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 - release内容变化：旧Candidate/artifact/readiness/context全部stale，形成新generation和唯一tarball，不拼接旧evidence。
 - selection冲突：保持pre-operation identity和冲突现场，停止后续选择/remote/public mutation；只在维护者作出新决定后恢复。
 - release→main tree不一致或remote race：停止publication，不用历史形状、`ours`、reset或force push掩盖。
-- protected transaction已创建tag后失败：保留tag和同run事实，按matchingcontext恢复；不删除tag后重发。
+- protected transaction失败：先读取terminal run/attempt与逐步evidence，按`same-attempt`、`new-attempt`或`blocked-new-version`解释恢复；已创建tag时保留tag和同context事实，不删除tag后重发。
 - npm version已存在：先比较official registry integrity与manifest；一致才恢复后续readback，不一致fail closed。
 - GitHub Release已存在：核对tag target、notes、prerelease/Latest；一致才复用，不自动覆盖。
 - publish或Release成功但smoke/网络失败：保留不可逆事实，从同一context/readback恢复，不重复publish。

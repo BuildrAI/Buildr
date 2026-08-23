@@ -427,23 +427,23 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
   const document = parsed.toJS();
   for (const required of [
-    'workflow_dispatch:', 'release_id:', 'release_context:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
+    'workflow_dispatch:', 'release_id:', 'release_context:', 'context_digest:', 'candidate_run_id:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
     'id-token: write', 'contents: write', 'environment: npm-production',
     'release-authority-oidc-probe.mjs', 'release-convergence.mjs', '--stage pre-tag',
     'release-tag-ensure.mjs preflight', 'release-tag-ensure.mjs ensure',
-    'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
-    'release-artifact.mjs',
-    'release-transaction-evidence.mjs validate-context', 'release-transaction-evidence.mjs finalize', 'release-transaction-evidence.json',
+    'release-contract.mjs', 'release-notes.mjs',
+    'release-readiness.mjs validate-context', 'release-readiness.mjs evaluate', 'release-transaction-evidence.mjs finalize', 'release-transaction-evidence.json',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
     'trusted-publish.mjs', 'github-release-ensure.mjs',
     'github-release-ensure.mjs preflight',
     'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
     '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
     'contract:', 'candidate:', 'host-node:', 'launcher:', 'release:',
-    'name: npm-candidate-v${{ inputs.version }}',
+    'name: candidate-aggregate', 'name: candidate-package', 'run-id: ${{ inputs.candidate_run_id }}',
+    'releaseContextIdentity(aggregate)',
   ]) assert.equal(workflow.includes(required), true, required);
   assert.deepEqual(Object.keys(document.on), ['workflow_dispatch']);
-  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_tree', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
+  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_run_id', 'candidate_tree', 'context_digest', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
   assert.equal(document.on.push, undefined);
   assert.equal(document.jobs['authority-probe'], undefined);
   const protectedJobs = Object.entries(document.jobs).filter(([, job]) => job.environment !== undefined);
@@ -471,8 +471,8 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.equal(downloadIndex < verifierIndex, true);
   for (const binding of [
     'BUILDR_CANDIDATE_TARBALL=',
-    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"',
-    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/npm/release-artifact.json"',
+    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm-pack.json"',
+    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/release-artifact.json"',
   ]) assert.equal(verifierStep.run.includes(binding), true, binding);
   assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
   assert.equal(hostNodeSteps.some((step) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
@@ -489,11 +489,12 @@ test('publish workflow uses one dispatch and one protected release transaction',
   ]) assert.equal(workflow.includes(retired), false, retired);
   assert.equal((workflow.match(/npm publish/g) || []).length, 0);
   assert.equal((workflow.match(/trusted-publish\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/node tools\/release\/release-artifact\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 3);
-  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 1);
+  assert.equal((workflow.match(/node tools\/release\/release-artifact\.mjs/g) || []).length, 0);
+  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 2);
+  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 0);
+  assert.equal((workflow.match(/npm pack/g) || []).length, 0);
   assert.equal(workflow.includes('npm-candidate-${{ github.ref_name }}-${{ github.run_attempt }}'), false);
-  assert.equal(workflow.includes('Validate restored bytes or declare the candidate missing'), true);
+  assert.equal(workflow.includes('Validate matching Candidate aggregate and immutable bytes'), true);
   const contract = workflow.indexOf('\n  contract:');
   const candidate = workflow.indexOf('\n  candidate:');
   const hostNode = workflow.indexOf('\n  host-node:');

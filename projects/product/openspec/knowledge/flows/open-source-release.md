@@ -2,7 +2,7 @@
 
 本文描述canonical发布契约、已经实现的验证/发布基线和当前迁移状态；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
 
-`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness和发布后main→dev收敛已经建立规范边界，但对应P1/P2/P3实现尚未全部交付。迁移完成前，发布Skill必须报告缺失owner/read model并停止，不得回退到“最新dev自动成为发布集合”的旧流程或把本文当成实现成功证明。
+`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness和发布后main→dev收敛已经建立规范边界；其中P2 shared readiness/protected transaction已经交付，P1/P3仍未全部交付。迁移完成前，发布Skill必须报告缺失owner/read model并停止，不得回退到“最新dev自动成为发布集合”的旧流程或把本文当成其余实现成功证明。
 
 ## 唯一事实链
 
@@ -11,8 +11,8 @@
 3. Release Task Environment以Buildr Service的`buildr.npm-ci` preparation recipe准备依赖，并在Receipt保留Plan、declaration、recipe、Service lockfile与精确Node identity；不恢复旧worktree，不在Product根运行`npm ci`。Task/Environment/Development/Finish/self-bootstrap只提供各自current read model，release correlation不复制专业Result或建立旁路SQLite store。
 4. current release HEAD/tree上的分布式`Candidate gate`证明完整源码候选：复用现有preflight、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple的primary owner、bounded scheduling、heartbeat/checkpoint与timing。release内容产生新SHA后必须形成新Candidate；普通changed/affected反馈不是完整Candidate。
 5. Candidate只生成一个绑定release source的tarball；application payload、npm staging、Host Node、Launcher、publish和Registry readback消费同一filename、SHA-256、SHA-512 integrity与manifest。正式publish不重跑完整Candidate、不重新pack或生成第二份可发布bytes。
-6. Candidate通过后只创建一个release→main受保护PR；允许squash后commit identity不同，但`main^{tree}`必须等于冻结release tree。维护者尚未授权正式发布时，readiness只收集selection、Candidate、artifact、Task correlation、main、workflow与authority tuple，effects保持为空。
-7. 维护者明确授权后，唯一protected workflow在可逆门禁通过后请求一次`npm-production`审批；同一approved execution完成OIDC proof、final pre-tag convergence、tag ensure、同一tarball publish、dist-tag、GitHub Release与Registry安装readback。发布成功后才执行main→dev收敛；冲突时保留Publication并报告`published-but-dev-convergence-blocked`，不得`ours`、reset、force push、删除tag或unpublish。
+6. Candidate通过后只创建一个release→main受保护PR；允许squash后commit identity不同，但`main^{tree}`必须等于冻结release tree。维护者尚未授权正式发布时，transaction runner默认只生成closed context与分阶段collect-all readiness，绑定selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev和workflow identity，返回hosted deferred checks与`effects: []`。
+7. 维护者对current frozen context明确授权后，runner才显式dispatch一次唯一protected workflow。Workflow从matching Candidate run下载并验证aggregate与`candidate-package`，所有Host Node、Launcher和protected consumer复用同一tarball bytes，不重建payload或重新pack；可逆门禁通过后请求一次`npm-production`审批，同一approved execution完成OIDC proof、final pre-tag convergence、tag ensure、同一tarball publish、dist-tag、GitHub Release与Registry安装readback。Terminal evidence按run/attempt保留逐步事实并分类`same-attempt|new-attempt|blocked-new-version`。发布成功后才执行main→dev收敛；冲突时保留Publication并报告`published-but-dev-convergence-blocked`，不得`ours`、reset、force push、删除tag或unpublish。
 
 ## 本机 Launcher 边界
 

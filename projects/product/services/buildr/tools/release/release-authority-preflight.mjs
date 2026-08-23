@@ -25,7 +25,9 @@ const packagePath = 'projects/product/services/buildr/package.json';
 const protectedJobId = 'release';
 const expectedDispatchInputs = Object.freeze([
   'candidate_base',
+  'candidate_run_id',
   'candidate_tree',
+  'context_digest',
   'release_context',
   'release_id',
   'source_commit',

@@ -79,8 +79,10 @@ test('正式Release消费冻结artifact且不重跑完整Product Candidate', () 
     .filter((value) => typeof value === 'string')
     .join('\n');
   assert.doesNotMatch(allRuns, /test:candidate|verify-buildr-product(?:-ci)?/u);
-  assert.equal(workflow.jobs.candidate.steps.filter((step) => step.name === 'Build the application payload exactly once').length, 1);
-  assert.equal(workflow.jobs.candidate.steps.filter((step) => step.name === 'Pack the npm tarball exactly once').length, 1);
+  assert.equal(allRuns.includes('application-payload.mjs build'), false);
+  assert.equal(allRuns.includes('npm pack'), false);
+  assert.equal(workflow.jobs.candidate.steps.filter((step) => step.name === 'Download the matching Candidate aggregate').length, 1);
+  assert.equal(workflow.jobs.candidate.steps.filter((step) => step.name === 'Download the single frozen Candidate package').length, 1);
   assert.deepEqual(workflow.jobs.release.needs, ['contract', 'candidate', 'host-node', 'launcher']);
   assert.equal(workflow.jobs.release.environment, 'npm-production');
   assert.equal(workflow.jobs.release.permissions['id-token'], 'write');

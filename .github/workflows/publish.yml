@@ -29,8 +29,16 @@ on:
         description: SHA-256 of publish.yml at source_commit
         required: true
         type: string
+      context_digest:
+        description: Frozen buildr.release-context/v1 identity
+        required: true
+        type: string
+      candidate_run_id:
+        description: Matching successful Product Candidate workflow run
+        required: true
+        type: string
       release_context:
-        description: Closed release Task, Candidate, convergence and Environment correlation context
+        description: Closed shared release context
         required: true
         type: string
 
@@ -63,12 +71,11 @@ jobs:
         env:
           BUILDR_RELEASE_CONTEXT: ${{ inputs.release_context }}
         run: |
-          mkdir -p "${RUNNER_TEMP}/contract-input"
+          mkdir -p "${RUNNER_TEMP}/contract-input" "${RUNNER_TEMP}/contract"
           node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
-          node tools/release/release-transaction-evidence.mjs validate-context \
+          node tools/release/release-readiness.mjs validate-context \
             --input "${RUNNER_TEMP}/contract-input/release-context.json" \
-            --output "${RUNNER_TEMP}/contract/release-transaction-context.json" \
-            --repo ../../../..
+            --output "${RUNNER_TEMP}/contract/release-context.json"
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
@@ -83,8 +90,9 @@ jobs:
           node --input-type=module -e '
             import fs from "node:fs";
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            if (context.convergence.sourceCommit !== process.argv[2] || context.convergence.candidateBase !== process.argv[3] || context.convergence.candidateTree !== process.argv[4]) throw new Error("release transaction context does not match dispatch identity");
-          ' "${RUNNER_TEMP}/contract/release-transaction-context.json" "${{ inputs.source_commit }}" "${{ inputs.candidate_base }}" "${{ inputs.candidate_tree }}"
+            if (context.identity !== process.argv[2]) throw new Error("release context digest does not match dispatch input");
+            if (context.convergence.mainCommit !== process.argv[3] || context.release.sourceTree !== process.argv[4] || String(context.candidate.runId) !== process.argv[5]) throw new Error("release context does not match dispatch identity");
+          ' "${RUNNER_TEMP}/contract/release-context.json" "${{ inputs.context_digest }}" "${{ inputs.source_commit }}" "${{ inputs.candidate_tree }}" "${{ inputs.candidate_run_id }}"
       - name: Freeze release notes
         run: >-
           node tools/release/release-notes.mjs
@@ -101,9 +109,7 @@ jobs:
   candidate:
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    outputs:
-      artifact: npm-candidate-v${{ inputs.version }}
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -114,76 +120,38 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24.15.0"
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - uses: actions/download-artifact@v7
         with:
           name: ${{ needs.contract.outputs.artifact }}
           path: ${{ runner.temp }}/contract
-      - name: Restore the frozen npm candidate from an earlier attempt
-        id: restore
-        continue-on-error: true
+      - name: Download the matching Candidate aggregate
         uses: actions/download-artifact@v7
         with:
-          name: npm-candidate-v${{ inputs.version }}
+          name: candidate-aggregate
+          path: ${{ runner.temp }}/candidate-aggregate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Download the single frozen Candidate package
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-package
           path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
-          run-id: ${{ github.run_id }}
-      - name: Validate restored bytes or declare the candidate missing
-        id: state
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Validate matching Candidate aggregate and immutable bytes
         run: |
-          if [ ! -f "${RUNNER_TEMP}/candidate/npm/release-artifact.json" ]; then
-            echo "restored=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          node tools/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
           node --input-type=module -e '
             import fs from "node:fs";
             import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
-            const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-            if (payload.sourceCommit !== contract.sourceCommit || payload.buildrVersion !== contract.version || payload.enginesNode !== contract.enginesNode) throw new Error("restored payload does not match release contract");
-            readReleaseArtifact(process.argv[3], { packageName: contract.packageName, version: contract.version, applicationPayloadDigest: payload.applicationPayloadDigest });
-          ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
-          echo "restored=true" >> "${GITHUB_OUTPUT}"
-      - name: Install locked release tooling
-        if: steps.state.outputs.restored != 'true'
-        run: |
-          npm install --global npm@11.5.1
-          npm ci
-      - name: Build the application payload exactly once
-        if: steps.state.outputs.restored != 'true'
-        id: payload
-        run: >-
-          node tools/release/application-payload.mjs build
-          --output "${RUNNER_TEMP}/candidate/application-payload"
-          --source-commit "${{ inputs.source_commit }}"
-      - name: Pack the npm tarball exactly once
-        if: steps.state.outputs.restored != 'true'
-        id: artifact
-        run: >-
-          node tools/release/release-artifact.mjs
-          --payload "${{ steps.payload.outputs.payload_root }}"
-          --output "${RUNNER_TEMP}/candidate/npm"
-      - name: Verify npm inventory and immutable bytes
-        if: steps.state.outputs.restored != 'true'
-        env:
-          BUILDR_CANDIDATE_TARBALL: ${{ steps.artifact.outputs.tarball }}
-          BUILDR_CANDIDATE_PACK_METADATA: ${{ steps.artifact.outputs.pack_metadata }}
-        run: node test/verification/release/open-source-candidate.mjs
-      - name: Smoke the same tarball before public writes
-        if: steps.state.outputs.restored != 'true'
-        env:
-          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ steps.artifact.outputs.manifest }}
-        run: node test/verification/release/release-smoke.mjs
-      - name: Freeze the candidate for partial reruns
-        if: steps.state.outputs.restored != 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: npm-candidate-v${{ inputs.version }}
-          path: ${{ runner.temp }}/candidate
-          if-no-files-found: error
-          retention-days: 14
+            import { releaseContextIdentity } from "./tools/release/release-readiness.mjs";
+            const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const aggregate = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            const artifact = readReleaseArtifact(process.argv[3]).manifest;
+            if (aggregate.status !== "passed" || aggregate.sourceCommit !== context.candidate.sourceCommit || aggregate.registryIdentity !== context.candidate.registryIdentity) throw new Error("Candidate aggregate does not match frozen release context");
+            if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity) throw new Error("Candidate aggregate identity does not match frozen release context");
+            for (const field of ["sourceCommit", "filename", "size", "sha256", "integrity", "applicationPayloadDigest"]) if (artifact[field] !== context.artifact[field]) throw new Error(`Candidate artifact ${field} does not match frozen release context`);
+          ' "${RUNNER_TEMP}/contract/release-context.json" "${RUNNER_TEMP}/candidate-aggregate/candidate-ci-aggregate.json" "${RUNNER_TEMP}/candidate/release-artifact.json"
 
   host-node:
     needs: [contract, candidate]
@@ -208,13 +176,15 @@ jobs:
         run: npm ci
       - uses: actions/download-artifact@v7
         with:
-          name: ${{ needs.candidate.outputs.artifact }}
+          name: candidate-package
           path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
       - name: Verify CLI, Web and Host/Workspace runtime roles from the same tarball
         run: |
-          export BUILDR_CANDIDATE_TARBALL="$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
-          export BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"
-          export BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          export BUILDR_CANDIDATE_TARBALL="$(find "${RUNNER_TEMP}/candidate" -maxdepth 1 -name '*.tgz' -print -quit)"
+          export BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm-pack.json"
+          export BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/release-artifact.json"
           node test/verification/host-node.mjs
 
   launcher:
@@ -240,11 +210,13 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@v7
         with:
-          name: ${{ needs.candidate.outputs.artifact }}
+          name: candidate-package
           path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
       - name: Verify explicit local Launcher lifecycle from the same tarball
         env:
-          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ runner.temp }}/candidate/npm/release-artifact.json
+          BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ runner.temp }}/candidate/release-artifact.json
         run: node test/verification/release/release-smoke.mjs
 
   release:
@@ -277,19 +249,19 @@ jobs:
           path: ${{ runner.temp }}/contract
       - uses: actions/download-artifact@v7
         with:
-          name: ${{ needs.candidate.outputs.artifact }}
+          name: candidate-package
           path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
       - name: Revalidate frozen bytes before any public mutation
         run: |
-          node tools/release/application-payload.mjs verify --payload "${RUNNER_TEMP}/candidate/application-payload" --layout frozen
           node --input-type=module -e '
             import fs from "node:fs";
             import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
-            const contract = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-            if (payload.sourceCommit !== "${{ inputs.source_commit }}") throw new Error("payload source does not match dispatch source");
-            readReleaseArtifact(process.argv[3], { packageName: contract.packageName, version: contract.version, applicationPayloadDigest: payload.applicationPayloadDigest });
-          ' "${RUNNER_TEMP}/contract/release-contract.json" "${RUNNER_TEMP}/candidate/application-payload/application-payload.json" "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+            const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const artifact = readReleaseArtifact(process.argv[2]).manifest;
+            for (const field of ["sourceCommit", "filename", "size", "sha256", "integrity", "applicationPayloadDigest"]) if (artifact[field] !== context.artifact[field]) throw new Error(`Protected transaction artifact ${field} does not match frozen context`);
+          ' "${RUNNER_TEMP}/contract/release-context.json" "${RUNNER_TEMP}/candidate/release-artifact.json"
       - name: Prove current hosted publishing authority without retaining credentials
         run: >-
           node tools/release/release-authority-oidc-probe.mjs
@@ -297,14 +269,15 @@ jobs:
           --workflow-sha256 "${{ inputs.workflow_sha256 }}"
           --output "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Recheck final source and authority convergence before tag mutation
-        run: >-
-          node tools/release/release-convergence.mjs
-          --repo ../../../..
-          --version "${{ inputs.version }}"
-          --candidate-base "${{ inputs.candidate_base }}"
-          --candidate-tree "${{ inputs.candidate_tree }}"
-          --stage pre-tag
-          --authority-evidence "${RUNNER_TEMP}/contract/release-authority.json"
+        run: |
+          node tools/release/release-readiness.mjs evaluate --stage pre-tag --input "${RUNNER_TEMP}/contract/release-context.json" --output "${RUNNER_TEMP}/contract/release-readiness-pre-tag.json"
+          node tools/release/release-convergence.mjs \
+            --repo ../../../.. \
+            --version "${{ inputs.version }}" \
+            --candidate-base "${{ inputs.candidate_base }}" \
+            --candidate-tree "${{ inputs.candidate_tree }}" \
+            --stage pre-tag \
+            --authority-evidence "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Preflight immutable release tag
         run: >-
           node tools/release/release-tag-ensure.mjs preflight
@@ -316,7 +289,7 @@ jobs:
         run: >-
           node tools/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
-          --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          --manifest "${RUNNER_TEMP}/candidate/release-artifact.json"
           --snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
       - name: Create or reuse the immutable release tag
         run: >-
@@ -336,14 +309,14 @@ jobs:
         if: steps.registry_before.outputs.published != 'true'
         run: >-
           node tools/release/trusted-publish.mjs
-          "$(find "${RUNNER_TEMP}/candidate/npm" -maxdepth 1 -name '*.tgz' -print -quit)"
+          "$(find "${RUNNER_TEMP}/candidate" -maxdepth 1 -name '*.tgz' -print -quit)"
           --access public
           --tag "${{ needs.contract.outputs.npm_tag }}"
       - name: Confirm official Registry integrity and both dist-tags
         run: >-
           node tools/release/registry-version-state.mjs
           "${{ needs.contract.outputs.version }}"
-          --manifest "${RUNNER_TEMP}/candidate/npm/release-artifact.json"
+          --manifest "${RUNNER_TEMP}/candidate/release-artifact.json"
           --tag "${{ needs.contract.outputs.npm_tag }}"
           --before-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
           --require-published
@@ -365,7 +338,7 @@ jobs:
         if: always()
         run: >-
           node tools/release/release-transaction-evidence.mjs finalize
-          --context "${RUNNER_TEMP}/contract/release-transaction-context.json"
+          --context "${RUNNER_TEMP}/contract/release-context.json"
           --output "${RUNNER_TEMP}/contract/release-transaction-evidence.json"
           --outcome "${{ job.status }}"
           --repository "${{ github.repository }}"
@@ -386,6 +359,6 @@ jobs:
           name: release-evidence-v${{ inputs.version }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/contract
-            ${{ runner.temp }}/candidate/npm/release-artifact.json
+            ${{ runner.temp }}/candidate/release-artifact.json
           if-no-files-found: warn
           retention-days: 14

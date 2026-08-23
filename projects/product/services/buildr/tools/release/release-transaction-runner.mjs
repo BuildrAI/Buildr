@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +17,11 @@ import {
   sha256,
 } from './release-authority.mjs';
 import { createReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { readReleaseArtifact } from './release-artifact.mjs';
+import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.mjs';
+import { inspectReleaseSelection } from './release-selection.mjs';
 import { createReleaseTaskEvidenceCorrelationFromRuntime } from './release-task-evidence-correlation.mjs';
-import { createReleaseTransactionContext, createReleaseTransactionEvidence, validateReleaseTransactionContext } from './release-transaction-evidence.mjs';
+import { createReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot = path.resolve(serviceRoot, '../../../..');
@@ -45,14 +49,18 @@ function requiredVersion(value) {
 }
 
 function parseOptions(argv) {
+  const values = [...argv];
+  const action = values[0] && !values[0].startsWith('--') ? values.shift() : 'readiness';
+  if (!['readiness', 'dispatch'].includes(action)) throw new Error(`Unsupported release transaction action: ${action}.`);
   const options = {};
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < values.length; index += 2) {
+    const key = values[index];
+    const value = values[index + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`Invalid argument: ${key || '<missing>'}`);
     options[key.slice(2)] = value;
   }
   return {
+    action,
     repo: path.resolve(options.repo || workspaceRoot),
     sourceCommit: options['source-commit'] || 'origin/main',
     remoteMain: options['remote-main'] || 'origin/main',
@@ -66,6 +74,8 @@ function parseOptions(argv) {
     ghCommand: options.gh || 'gh',
     output: options.output ? path.resolve(options.output) : null,
     timeoutMs: Number(options['timeout-ms'] || 20 * 60 * 1000),
+    publicationAuthorized: options['publication-authorized'] === 'true',
+    releaseContext: options['release-context'] ? JSON.parse(fs.readFileSync(path.resolve(options['release-context']), 'utf8')) : null,
   };
 }
 
@@ -92,6 +102,47 @@ async function defaultWait(delayMs) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
+function findSingleFile(root, name) {
+  const matches = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(target);
+      else if (entry.isFile() && entry.name === name) matches.push(target);
+    }
+  };
+  visit(root);
+  if (matches.length !== 1) throw new Error(`Expected exactly one ${name} in Candidate artifacts, found ${matches.length}.`);
+  return matches[0];
+}
+
+function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies }) {
+  if (dependencies.candidateEvidence) return dependencies.candidateEvidence;
+  const root = (dependencies.makeTempDirectory ?? ((prefix) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
+  try {
+    for (const name of ['candidate-aggregate', 'candidate-package']) {
+      invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo);
+    }
+    const aggregate = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
+    const artifact = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
+    return { aggregate, manifest: artifact.manifest };
+  } finally {
+    (dependencies.removeDirectory ?? ((directory) => fs.rmSync(directory, { recursive: true, force: true })))(root);
+  }
+}
+
+function taskCorrelationProjection(value) {
+  const releaseEntry = value?.entries?.find((entry) => entry.taskId === value.releaseTask?.taskId);
+  return value ? {
+    identity: value.identity,
+    carrierIdentity: releaseEntry?.selfBootstrap?.carrierIdentity || releaseEntry?.finish?.repositories?.[0]?.carrierIdentity || null,
+    status: value.status,
+    sourceCommit: value.source?.sourceCommit || null,
+    sourceTree: value.source?.sourceTree || null,
+    remoteRef: value.source?.remoteRef || null,
+  } : null;
+}
+
 export async function runHostedReleaseTransaction(options = {}, dependencies = {}) {
   const rawExecute = dependencies.execute ?? defaultExecute;
   const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
@@ -100,6 +151,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
   const onStatus = dependencies.onStatus ?? ((message) => process.stderr.write(`${message}\n`));
   const nowMs = dependencies.nowMs ?? (() => Date.now());
   const releaseId = dependencies.releaseId ?? crypto.randomUUID();
+  const action = options.action || 'readiness';
   const repo = path.resolve(options.repo || workspaceRoot);
   const ghCommand = options.ghCommand || 'gh';
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20 * 60 * 1000;
@@ -119,7 +171,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
   const environmentNodeVersion = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
   if (exactNode.audit.version !== environmentNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Task Environment project Node ${environmentNodeVersion}.`);
   let context;
-  if (options.releaseContext) context = validateReleaseTransactionContext(options.releaseContext);
+  if (options.releaseContext) context = validateReleaseContext(options.releaseContext);
   else {
     if (!options.releaseTask) throw new Error('--release-task is required.');
     const candidateRunId = Number(options.candidateRunId);
@@ -157,7 +209,6 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     if (candidateSourceTree !== candidateTree) throw new Error(`Candidate run tree ${candidateSourceTree} does not match frozen candidate tree ${candidateTree}.`);
     const devCommit = fullCommit(execute, repo, options.devCommit || 'origin/dev');
     const devTree = fullCommit(execute, repo, `${devCommit}^{tree}`);
-    if (devTree !== candidateTree) throw new Error(`Dev bridge tree ${devTree} does not match Candidate tree ${candidateTree}.`);
     const taskCorrelation = options.taskCorrelation || createReleaseTaskEvidenceCorrelationFromRuntime({
       runtime,
       root: repo,
@@ -166,31 +217,70 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
     });
-    context = createReleaseTransactionContext({
-      releaseTask: taskContextProjection(releaseTask),
-      retrospectiveSources,
-      supportTasks,
+    const inspectSelection = dependencies.inspectSelection ?? inspectReleaseSelection;
+    const selection = inspectSelection({ version, repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
+    const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
+    const aggregate = candidateEvidence.aggregate;
+    const manifest = candidateEvidence.manifest;
+    context = createReleaseContext({
+      selection: selection.selectionIdentity ? {
+        identity: selection.selectionIdentity,
+        version: selection.version,
+        branch: selection.branch,
+        releaseHead: selection.releaseHead,
+        releaseTree: selection.releaseTree,
+        generation: selection.generation,
+        status: selection.status,
+      } : null,
+      release: { version, sourceCommit: candidateSourceCommit, sourceTree: candidateSourceTree },
       candidate: {
-        sourceCommit: candidateSourceCommit,
         workflow: '.github/workflows/verify.yml',
         runId: candidateRunId,
         runAttempt: Number(candidateRun.run_attempt),
         runUrl: candidateRun.html_url || `https://github.com/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`,
+        sourceCommit: aggregate.sourceCommit || candidateSourceCommit,
+        sourceTree: candidateSourceTree,
+        registryIdentity: aggregate.registryIdentity,
+        aggregateIdentity: releaseContextIdentity(aggregate),
+        status: aggregate.status,
       },
-      convergence: { candidateBase, candidateTree, sourceCommit, mainCommit: sourceCommit, devCommit },
-      environment,
-      taskCorrelation,
+      artifact: {
+        artifactName: 'candidate-package',
+        sourceCommit: manifest.sourceCommit,
+        filename: manifest.filename,
+        size: manifest.size,
+        sha256: manifest.sha256,
+        integrity: manifest.integrity,
+        applicationPayloadDigest: manifest.applicationPayloadDigest,
+      },
+      convergence: { mainCommit: sourceCommit, mainTree: actualTree, devCommit, devTree },
+      environment: { identity: environment.identity, status: environment.environmentStatus, taskId: environment.taskId, nodeVersion: environment.node.version, nodeIdentity: environment.node.executionIdentity },
+      node: { authority: environment.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
+      workflow: { path: releaseWorkflowPath, digest: `sha256-${workflowSha256}`, repository: releasePublishAuthority.repository, environment: releasePublishAuthority.environment },
+      taskCorrelation: taskCorrelationProjection(taskCorrelation),
     });
   }
-  if (!context.taskCorrelation) throw new Error('Release transaction context requires current Task evidence correlation.');
-  if (context.taskCorrelation.status !== 'passed') throw new Error(`Release Task evidence correlation is not ready: ${context.taskCorrelation.status}.`);
-  const contextIdentity = context.convergence;
-  if (contextIdentity.candidateBase !== candidateBase || contextIdentity.candidateTree !== candidateTree || contextIdentity.sourceCommit !== sourceCommit || contextIdentity.mainCommit !== remoteMain) {
-    throw new Error(`Release transaction context does not match requested Candidate/main identity: ${JSON.stringify({ requested: { candidateBase, candidateTree, sourceCommit, remoteMain }, context: contextIdentity })}`);
-  }
-  if (context.environment.node.version !== exactNode.audit.version || context.environment.node.executionIdentity !== exactNode.audit.identity) {
-    throw new Error(`Release transaction context Node does not match the exact runner environment: ${JSON.stringify({ context: context.environment.node, runner: exactNode.audit })}`);
-  }
+  const observedBindings = {
+    version: context.release?.version,
+    mainCommit: context.convergence?.mainCommit,
+    mainTree: context.convergence?.mainTree,
+    workflowDigest: context.workflow?.digest,
+    nodeVersion: context.node?.version,
+    nodeIdentity: context.node?.executionIdentity,
+  };
+  const expectedBindings = {
+    version,
+    mainCommit: sourceCommit,
+    mainTree: actualTree,
+    workflowDigest: `sha256-${workflowSha256}`,
+    nodeVersion: exactNode.audit.version,
+    nodeIdentity: exactNode.audit.identity,
+  };
+  if (JSON.stringify(observedBindings) !== JSON.stringify(expectedBindings)) throw new Error(`Release context/current source binding mismatch: ${JSON.stringify({ expected: expectedBindings, actual: observedBindings })}`);
+  const readiness = evaluateReleaseReadiness({ stage: 'dispatch-check', context });
+  if (action !== 'dispatch') return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'readiness', ...readiness };
+  if (!options.publicationAuthorized) return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'blocked', context, contextIdentity: context.identity, findings: [{ code: 'publication-authorization-required', severity: 'blocked', owner: 'maintainer', expected: true, actual: false, nextAction: '请维护者对当前frozen context明确授权publication。' }], deferredChecks: readiness.deferredChecks, effects: [], nextActions: ['请维护者对当前frozen context明确授权publication。'] };
+  if (readiness.status !== 'ready') return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', ...readiness };
 
   invoke(execute, ghCommand, [
     'workflow', 'run', releasePublishAuthority.workflow,
@@ -202,6 +292,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     '-f', `candidate_base=${candidateBase}`,
     '-f', `candidate_tree=${candidateTree}`,
     '-f', `workflow_sha256=${workflowSha256}`,
+    '-f', `context_digest=${context.identity}`,
+    '-f', `candidate_run_id=${context.candidate.runId}`,
     '-f', `release_context=${JSON.stringify(context)}`,
   ], repo);
 
@@ -253,7 +345,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     publicFacts: { version, tagCommit: sourceCommit, npmDistTag: version.includes('-') ? 'next' : 'latest', registryPublished: true, githubRelease: `https://github.com/${releasePublishAuthority.repository}/releases/tag/v${version}`, registrySmoke: 'passed' },
   });
   return {
-    schemaVersion: 'buildr.release-transaction-runner/v2',
+    schemaVersion: 'buildr.release-transaction-runner/v3',
+    action: 'dispatch',
     status: 'passed',
     releaseId,
     version,
@@ -279,7 +372,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
-    const result = { schemaVersion: 'buildr.release-transaction-runner/v2', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release transaction输入或GitHub run后重新dispatch；不得本机创建tag或publish。'] };
+    const result = { schemaVersion: 'buildr.release-transaction-runner/v3', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release readiness输入后重试；只有明确publication授权才能dispatch，且不得本机创建tag或publish。'] };
     if (options?.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stderr.write(`${JSON.stringify(result, null, 2)}\n`);
     process.exitCode = 1;

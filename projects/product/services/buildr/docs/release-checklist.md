@@ -133,16 +133,16 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 
 ## npm-only Release 流程
 
-当前迁移状态：P0已建立`release-<version>`人工选择集合和模块所有权契约；P1 selection/Candidate/correlation、P2 shared readiness/transaction和P3 Git convergence尚未全部交付时，发布检查必须返回`release-model-implementation-incomplete`，准备/发布在任何Git、PR、workflow或公共副作用前停止。不得继续使用旧“最新dev自动成为候选”的步骤。
+当前迁移状态：P0已建立`release-<version>`人工选择集合和模块所有权契约，P2已交付shared readiness与唯一protected transaction；P1 selection/Candidate/correlation和P3 Git convergence尚未全部交付时，发布检查仍必须返回`release-model-implementation-incomplete`，准备/发布在任何Git、PR、workflow或公共副作用前停止。不得继续使用旧“最新dev自动成为候选”的步骤。
 
 1. 维护者明确目标`<version>`、精确`<dev-baseline>`和有序选择commit；release owner从可由current `dev`证明的baseline创建唯一`release-<version>`，后续只接受明确选择且带`-x`provenance的dev commit或明确授权release-only metadata。普通dev前进不改变release，冲突不自动解决。
 2. 唯一身份链为`dev baseline → selection chain → release HEAD/tree → Product Candidate generation → frozen tarball → main → post-publish dev convergence → transaction evidence`。任一上游identity变化使旧Candidate、artifact、readiness和context stale。
 3. release Task Environment只由`service:product/buildr/buildr.npm-ci`在Buildr Service root准备依赖并冻结Plan/declaration/recipe/lockfile/exact Node identities；Task/Environment/Development/Finish/self-bootstrap各自提供current read model，不复制Result或建立旁路store。
 4. current release HEAD/tree运行同一分布式Candidate owner集合：preflight、唯一tarball、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple。现有exact Node/PATH、primary owner、affected/full、bounded scheduling、heartbeat/checkpoint与timing保持不变；普通changed/affected反馈不是完整Candidate。
 5. Candidate通过后只创建一个release→main受保护PR；squash commit可以不同，但`origin/main^{tree}`必须精确等于冻结release tree。tree或remote ref漂移时在publication前停止。
-6. 准备阶段shared readiness只收集selection、Candidate/artifact、Task correlation、main/workflow/authority facts，返回collect-all findings与`effects: []`；不dispatch、不请求`npm-production`审批、不模拟OIDC、不创建tag。
-7. 维护者明确授权后，唯一workflow只构建/消费同一tarball；可逆门禁通过后唯一protected job请求一次`npm-production`审批，并完成OIDC、pre-tag、tag ensure、npm、双dist-tag/integrity、GitHub Release与Registry安装readback。其他job不持有Environment/write权限。
-8. `release-evidence-*`绑定selection、release/support Tasks、Candidate、release/main/dev、publish run、tag、npm/GitHub Release和Registry smoke；inspect校验同一context/run/attempt，不写Task Record、SQLite或旁路store。
+6. 准备阶段transaction runner默认只执行shared readiness，收集selection、Candidate/artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，返回frozen context digest、collect-all findings、hosted deferred checks与`effects: []`；不dispatch、不请求`npm-production`审批、不模拟OIDC、不创建tag。
+7. 维护者对current frozen context明确授权后，runner才执行显式dispatch。唯一workflow从matching Candidate run下载并验证`candidate-aggregate`与`candidate-package`，Host Node、Launcher和protected job消费同一tarball bytes；不得重建payload、`npm pack`或形成第二份候选物。可逆门禁通过后唯一protected job请求一次`npm-production`审批，并完成OIDC、pre-tag、tag ensure、npm、双dist-tag/integrity、GitHub Release与Registry安装readback。其他job不持有Environment/write权限。
+8. `release-evidence-*`绑定selection、release/support Tasks、Candidate、release/main/dev、publish run/attempt、逐步terminal状态、tag、npm/GitHub Release和Registry smoke；inspect校验同一context/run/attempt，并把失败恢复分类为`same-attempt`、`new-attempt`或`blocked-new-version`，不写Task Record、SQLite或旁路store。
 9. Publication成功后才收敛main→dev；必须保留release创建后进入dev的新内容。冲突返回`published-but-dev-convergence-blocked`，不`ours`、reset、force push、删tag或unpublish。
 10. 已发布版本不覆盖；RC问题发新prerelease，GA问题发patch。Environment/local release资源按owner清理；远端release branch删除仍需单独展示ref/commit和公开事实后取得明确授权，清理失败不回滚Publication。
 

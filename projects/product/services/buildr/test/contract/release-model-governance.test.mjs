@@ -64,7 +64,7 @@ test('current knowledge, checklist and architecture use the same release identit
 
   for (const document of [flow, service, checklist]) {
     assert.match(document, /dev baseline → (ordered )?selection chain → release HEAD\/tree/);
-    assert.match(document, /release-model-implementation-incomplete|P1.*P2.*P3/s);
+    assert.match(document, /release-model-implementation-incomplete|P2.*交付.*P1.*P3/s);
     assert.match(document, /published-but-dev-convergence-blocked/);
   }
   for (const term of ['发布集合（Release Collection）', '发布选择链（Release Selection Chain）', '发布源身份（Release Source Identity）']) assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));

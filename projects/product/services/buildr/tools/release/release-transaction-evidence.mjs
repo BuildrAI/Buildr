@@ -10,10 +10,11 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { releaseEnvironmentBindingSchema, validateReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { releaseContextSchema, validateReleaseContext } from './release-readiness.mjs';
 import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.mjs';
 
 export const releaseTransactionContextSchema = 'buildr.release-transaction-context/v1';
-export const releaseTransactionEvidenceSchema = 'buildr.release-transaction-evidence/v1';
+export const releaseTransactionEvidenceSchema = 'buildr.release-transaction-evidence/v2';
 export const releaseTransactionInspectSchema = 'buildr.release-transaction-inspect/v1';
 
 const SHA = /^[a-f0-9]{40}$/u;
@@ -112,14 +113,43 @@ export function validateReleaseTransactionContext(value, options = {}) {
   return recreated;
 }
 
+function validateEvidenceContext(value, options = {}) {
+  return value?.schemaVersion === releaseContextSchema ? validateReleaseContext(value) : validateReleaseTransactionContext(value, options);
+}
+
+function contextSourceCommit(context) {
+  return context.schemaVersion === releaseContextSchema ? context.convergence?.mainCommit : context.convergence?.sourceCommit;
+}
+
+function recoveryClass({ outcome, tagCommit, registryPublished, conflict = false, requested = null }) {
+  if (outcome === 'passed') return null;
+  if (requested && ['same-attempt', 'new-attempt', 'blocked-new-version'].includes(requested)) return requested;
+  if (conflict) return 'blocked-new-version';
+  return tagCommit || registryPublished ? 'new-attempt' : 'new-attempt';
+}
+
+function attemptSteps({ tagCommit, registryPublished, githubRelease, registrySmoke }) {
+  const reachedTag = Boolean(tagCommit);
+  const reachedRegistry = registryPublished === true;
+  return [
+    ['oidc', reachedTag ? 'passed' : 'unknown'],
+    ['pre-tag', reachedTag ? 'passed' : 'unknown'],
+    ['tag', reachedTag ? 'passed' : 'not-reached'],
+    ['npm', reachedRegistry ? 'passed' : reachedTag ? 'failed' : 'not-reached'],
+    ['dist-tag-readback', reachedRegistry ? 'passed' : 'not-reached'],
+    ['github-release', githubRelease ? 'passed' : reachedRegistry ? 'unknown' : 'not-reached'],
+    ['registry-smoke', registrySmoke === 'passed' ? 'passed' : reachedRegistry ? 'unknown' : 'not-reached'],
+  ].map(([id, status]) => ({ id, status }));
+}
+
 export function createReleaseTransactionEvidence({ context, publish, outcome, publicFacts = null, observedAt = new Date().toISOString() }) {
-  const normalizedContext = validateReleaseTransactionContext(context);
+  const normalizedContext = validateEvidenceContext(context);
   closed(publish, ['repository', 'workflow', 'runId', 'runAttempt', 'runUrl', 'headSha'], 'publish');
   positiveInteger(publish.runId, 'publish.runId');
   positiveInteger(publish.runAttempt, 'publish.runAttempt');
   sha(publish.headSha, 'publish.headSha');
   if (!publish.repository || publish.workflow !== '.github/workflows/publish.yml' || !publish.runUrl) throw new Error('Publish run repository/workflow/url is invalid.');
-  if (publish.headSha !== normalizedContext.convergence.sourceCommit) throw new Error('Publish run head does not match release context source.');
+  if (publish.headSha !== contextSourceCommit(normalizedContext)) throw new Error('Publish run head does not match release context source.');
   if (!['passed', 'failed', 'cancelled'].includes(outcome)) throw new Error(`Unsupported release transaction outcome: ${outcome}.`);
   const version = String(publicFacts?.version || '');
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) throw new Error('Release transaction evidence requires the target version.');
@@ -141,6 +171,12 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
       githubRelease: publicFacts?.githubRelease ?? null,
       registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown'),
     },
+    attempt: {
+      runId: publish.runId,
+      runAttempt: publish.runAttempt,
+      steps: attemptSteps({ tagCommit, registryPublished: publicFacts?.registryPublished, githubRelease: publicFacts?.githubRelease, registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown') }),
+      recovery: recoveryClass({ outcome, tagCommit, registryPublished: publicFacts?.registryPublished, conflict: publicFacts?.conflict === true, requested: publicFacts?.recoveryClass }),
+    },
     observedAt,
     aggregateEligible: false,
   };
@@ -149,9 +185,12 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
 }
 
 export function validateReleaseTransactionEvidence(value) {
-  closed(value, ['schemaVersion', 'status', 'context', 'publish', 'release', 'observedAt', 'aggregateEligible', 'identity'], 'release transaction evidence');
+  closed(value, ['schemaVersion', 'status', 'context', 'publish', 'release', 'attempt', 'observedAt', 'aggregateEligible', 'identity'], 'release transaction evidence');
   if (value.schemaVersion !== releaseTransactionEvidenceSchema || !DIGEST.test(value.identity || '')) throw new Error('Release transaction evidence schema/identity is invalid.');
   closed(value.release, ['tag', 'tagCommit', 'npmVersion', 'npmDistTag', 'registryPublished', 'registryIntegrity', 'githubRelease', 'registrySmoke'], 'release transaction evidence release');
+  closed(value.attempt, ['runId', 'runAttempt', 'steps', 'recovery'], 'release transaction evidence attempt');
+  if (value.attempt.runId !== value.publish.runId || value.attempt.runAttempt !== value.publish.runAttempt || !Array.isArray(value.attempt.steps)) throw new Error('Release transaction attempt identity is invalid.');
+  if (value.attempt.recovery !== null && !['same-attempt', 'new-attempt', 'blocked-new-version'].includes(value.attempt.recovery)) throw new Error('Release transaction recovery class is invalid.');
   if (value.release.tag !== `v${value.release.npmVersion}`) throw new Error('Release transaction evidence tag/version mismatch.');
   if (value.release.registryIntegrity !== null && !/^sha512-[A-Za-z0-9+/]+={0,2}$/u.test(value.release.registryIntegrity)) throw new Error('Release transaction evidence Registry integrity is invalid.');
   const recreated = createReleaseTransactionEvidence({
@@ -166,6 +205,7 @@ export function validateReleaseTransactionEvidence(value) {
       registryIntegrity: value.release.registryIntegrity,
       githubRelease: value.release.githubRelease,
       registrySmoke: value.release.registrySmoke,
+      recoveryClass: value.attempt.recovery,
     },
     observedAt: value.observedAt,
   });
@@ -234,10 +274,10 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     let value;
     let resultSchema;
     if (options.action === 'validate-context' && options.input && options.output) {
-      value = validateReleaseTransactionContext(JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8')), { repo: options.repo });
-      resultSchema = releaseTransactionContextSchema;
+      value = validateEvidenceContext(JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8')), { repo: options.repo });
+      resultSchema = value.schemaVersion;
     } else if (options.action === 'finalize' && options.context && options.output) {
-      const context = validateReleaseTransactionContext(JSON.parse(fs.readFileSync(path.resolve(options.context), 'utf8')));
+      const context = validateEvidenceContext(JSON.parse(fs.readFileSync(path.resolve(options.context), 'utf8')));
       const outcome = options.outcome === 'success' ? 'passed' : options.outcome === 'cancelled' ? 'cancelled' : 'failed';
       const registryState = options['registry-state'] && fs.statSync(path.resolve(options['registry-state']), { throwIfNoEntry: false })?.isFile()
         ? JSON.parse(fs.readFileSync(path.resolve(options['registry-state']), 'utf8'))
@@ -266,6 +306,8 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           registryIntegrity: registryState?.published === true ? registryState.integrity : null,
           githubRelease: outcome === 'passed' ? options['github-release'] : null,
           registrySmoke: outcome === 'passed' ? 'passed' : 'unknown',
+          conflict: options.conflict === 'true',
+          recoveryClass: options['recovery-class'] || null,
         },
       });
       resultSchema = releaseTransactionEvidenceSchema;
