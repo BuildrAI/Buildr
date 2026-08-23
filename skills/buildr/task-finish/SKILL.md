@@ -11,6 +11,8 @@ description: 用户要求已有正式任务（formal Task）“收尾”或交�
 
 Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策略；Buildr 负责读取当前研发交接（Development handoff）、验证真实远端、登记交付，并在可证明安全时协助清理。Task Finish 不运行或记录 Task Verification、Task Review，不生成 Candidate，也不收敛 OpenSpec Change。
 
+开始决策前先读取 Finish current facts。它统一表达 handoff、repository topology、run/carrier ownership、side effects、remote containment、维护结果、typed blockers、required 安全前置与 available capabilities。`task next`只把这些事实和能力带到入口，不替 Agent 选择唯一动作；兼容性的 `next` 提示不是行为权威。
+
 ## 交付前
 
 1. 确认 Task ID、canonical Workspace、current Development handoff 和实际 repository 集合。
@@ -29,6 +31,12 @@ Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策
 `buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
 
 `run` 按 `preflight → prepare → verify → deliver → cleanup` 尝试自动化；这些阶段不是 Agent 必须遵循的唯一工作方式。出现冲突或远端变化时，Agent 可继续同一 run、处理交付适配（Delivery Adaptation）、改走 PR 或直接 Git。不得手写 resume token、claimed success 或语义等价证明。
+
+如果Agent误改原Task worktree并形成新的current Candidate，先重新读取Finish current facts。只有facts明确返回`stale-run-retirable`与available `finish-rollover`能力时，Agent才可显式执行：
+
+`buildr task finish rollover --task <task-id> --recovery-token <facts-token> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
+
+`rollover`只重新验证已知Task Contribution漂移、不可刷新的carrier初始内容证明、无lease/Delivery/Activation/Cleanup副作用及不变repository topology；它精确清理旧carrier并以current-row fence创建绑定新Handoff的active run，不访问远端、不执行Delivery。能力不可用、token漂移或carrier被Agent修改时保留现场，Agent改走检查、直接Git/PR、reconcile、Development或放弃策略。普通`run`不得替Agent静默执行该换代。
 
 ### Agent 直接交付
 
@@ -49,12 +57,12 @@ Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每�
 
 只有 Delivery 决定业务任务是否已交付。Doctor、Execution Record、Activation、Cleanup、Task 登记或 Buildr 内部派生证据失败只能形成 `attention`，不能撤销已确认交付。Task 顶层登记失败时重复 `task finish reconcile`，不得重新提交或推送业务代码。
 
-环境清理由 Agent 在适当时机独立执行：
-
-`buildr task environment cleanup <task-id> --target <canonical-workspace> --json`
+环境清理由 Agent 在适当时机独立执行：`buildr task environment cleanup <task-id> --target <canonical-workspace> --json`
 
 Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态。无法证明 worktree 内容已交付、ownership 不明或 source 已漂移时必须保留现场。
 没有current Environment时，Cleanup必须报告`not-applicable`或`attention`，不得声称`cleaned`。
+
+精确 carrier cleanup、旧 run retirement和本地安全rollover只能通过 Buildr 提供的封闭原语执行。原语会重新验证 Task/run/carrier identity、ownership、repository topology、phase、side effects，以及对应路径需要的remote containment或carrier disposability proof，不接受调用方指定任意删除路径；事实不足时保留现场，由 Agent 选择下一策略。
 
 ## 应当阻断的边界
 
