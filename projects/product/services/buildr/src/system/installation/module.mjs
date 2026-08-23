@@ -2,10 +2,10 @@ import { registerApplicationCliUpdate } from './application/cli-update.mjs';
 import { registerProductInstallationStatus } from './application/product-installation-status.mjs';
 import { createInstallationCliContributions } from './interfaces/cli/installation.mjs';
 import { createLauncherCliContributions, registerLauncherInterface } from './interfaces/cli/launcher.mjs';
+import { createReleaseAwarenessHttpContribution } from './interfaces/http/release-awareness-http.mjs';
 import { readCurrentProductIdentity } from './infrastructure/current-product-identity.mjs';
 import { assertCurrentNpmLauncherBinding, refreshInstalledNpmLauncher } from './infrastructure/npm-launcher.mjs';
 import { validateNpmLauncherBinding } from './infrastructure/launcher-binding.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 
 export * from './application/npm-installation-enrollment.mjs';
 export * from './application/release-awareness.mjs';
@@ -37,17 +37,6 @@ function methodPort(runtime, methods) {
   return Object.freeze(Object.fromEntries(methods.map((method) => [method, (...args) => runtime[method](...args)])));
 }
 
-function releaseAwarenessHttpContribution(application) {
-  return Object.freeze({
-    id: 'system-installation.release-awareness.http',
-    handleTopLevel: ({ request, pathname }) => {
-      if (request.method !== 'GET' || pathname !== '/api/v1/release-awareness') return null;
-      const awareness = application.releaseAwareness({ allowDevelopmentQuery: false, persistState: true, notify: true });
-      return { status: 200, body: withJsonSchema(PUBLIC_JSON_SCHEMAS.releaseAwareness, awareness) };
-    },
-  });
-}
-
 export function createSystemInstallationModule(runtime) {
   return Object.freeze({
     id: SYSTEM_INSTALLATION_MODULE_ID,
@@ -74,7 +63,7 @@ export function createSystemInstallationModule(runtime) {
             ...createInstallationCliContributions(),
             ...createLauncherCliContributions(),
           ]),
-          http: Object.freeze([releaseAwarenessHttpContribution(application)]),
+          http: Object.freeze([createReleaseAwarenessHttpContribution(application)]),
           diagnostics: Object.freeze([Object.freeze({ id: 'system-installation.diagnostics', readModel: application })]),
         },
       });

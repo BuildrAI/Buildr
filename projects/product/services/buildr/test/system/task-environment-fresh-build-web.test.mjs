@@ -72,6 +72,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'tools/contracts/task-record-dto.mjs',
     'tools/contracts/task-professional-dto.mjs',
     'tools/contracts/workspace-agent-assets-dto.mjs',
+    'tools/contracts/runtime-system-dto.mjs',
     'src/infrastructure/contracts/json-schema-validator.mjs',
     'src/task/interfaces/http/task-record-http-contracts.mjs',
     'src/task/interfaces/http/generated/task-record-http-dto.ts',
@@ -81,8 +82,14 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'src/workspace/interfaces/http/generated/workspace-http-dto.ts',
     'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
     'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts',
+    'src/web/http/local-app-http-contracts.mjs',
+    'src/web/http/generated/runtime-system-http-dto.ts',
+    'src/system/installation/interfaces/http/release-awareness-http-contracts.mjs',
+    'src/system/publication/interfaces/http/publication-http-contracts.mjs',
   ]) {
-    fs.copyFileSync(path.join(serviceRoot, relative), path.join(candidateBuildr, relative));
+    const target = path.join(candidateBuildr, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(serviceRoot, relative), target);
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];

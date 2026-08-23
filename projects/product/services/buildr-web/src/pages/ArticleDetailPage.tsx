@@ -1,31 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Segmented } from 'antd';
-import { api } from '../api';
+import { runtimeSystemApi, workspaceApi, type PublicationDetail } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 import { renderMarkdown } from '../markdown';
 
 const statusLabel: Record<string, string> = { published: '已发布', planned: '待发布', draft: '草稿' };
 const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Buildr Web' };
-
-type PublicationDetail = {
-  content: string;
-  publication: {
-    id: string;
-    title: string;
-    kind: string;
-    status: string;
-    publishedAt?: string;
-    sourcePath?: string;
-    targets: Array<{ platform: string; status: string; url?: string }>;
-  };
-};
-
-type WorkspacePayload = {
-  rootPath: string;
-  workspace: { id: string; name: string };
-};
 
 export function ArticleDetailPage() {
   const { publicationId = '' } = useParams();
@@ -42,8 +24,8 @@ export function ArticleDetailPage() {
     void (async () => {
       try {
         const [workspace, detail] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api(`/api/v1/publications/${encodeURIComponent(publicationId)}`) as Promise<PublicationDetail>,
+          workspaceApi.read(),
+          runtimeSystemApi.publication(publicationId),
         ]);
         if (cancelled) return;
         setWorkspace(workspace);

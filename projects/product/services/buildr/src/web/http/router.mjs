@@ -4,6 +4,12 @@ import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.mjs';
 import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse } from './responses.mjs';
 import { assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.mjs';
 import { injectedIndexHtml, serveDistAsset } from './static-files.mjs';
+import {
+  LOCAL_APP_HTTP_OPERATIONS,
+  LOCAL_APP_HTTP_SCHEMAS,
+  localAppOperation,
+  validateLocalAppHttp,
+} from './local-app-http-contracts.mjs';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 
@@ -33,6 +39,7 @@ export function createLocalWorkspaceRequestRouter({
   shutdown,
   submitTaskRead,
 }) {
+  const validateRequest = (id, value) => validateLocalAppHttp(localAppOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${taskIdPattern})?|/tasks(?:/${taskIdPattern}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request, response) {
@@ -52,6 +59,7 @@ export function createLocalWorkspaceRequestRouter({
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });
         return;
       }
+      validateRequest('local-app.health', {});
       jsonResponse(response, 200, {
         schemaVersion: 'buildr.local-app-health/v1',
         status: isClosing() ? 'stopping' : 'ready',
@@ -79,6 +87,7 @@ export function createLocalWorkspaceRequestRouter({
     }
     if (request.method === 'POST' && pathname === '/api/v1/app/quit') {
       assertWriteRequest(request, origin(), sessionToken);
+      validateRequest('local-app.quit', await readJsonBody(request));
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
       return;
@@ -88,6 +97,7 @@ export function createLocalWorkspaceRequestRouter({
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });
         return;
       }
+      validateRequest('local-app.quit-instance', {});
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
       return;
@@ -130,3 +140,5 @@ export function createLocalWorkspaceRequestRouter({
     jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr Web 资源不存在。' } });
   };
 }
+
+export { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_SCHEMAS };
