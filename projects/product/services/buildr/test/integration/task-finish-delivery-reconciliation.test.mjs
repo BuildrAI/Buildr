@@ -278,7 +278,7 @@ test('多repository部分交付保存checkpoint并只重试未证明项', (t) =>
   assert.equal(terminal.completion.repositories.every((item) => item.delivery.status === 'delivered'), true);
 });
 
-test('显式reconciliation在current Handoff已被远端包含后清理旧失败run carrier并登记terminal Delivery', (t) => {
+test('显式reconciliation在同repository topology的Task Contribution更新后清理旧失败run carrier并登记terminal Delivery', (t) => {
   const { root, taskRoot, taskContribution } = fixture(t);
   const repositories = normalizeTaskFinishRepositorySet([{
     selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot,
@@ -300,7 +300,20 @@ test('显式reconciliation在current Handoff已被远端包含后清理旧失败
       workspaceRoot: root, deliveryCommitIdentity: null,
     },
   };
-  const { run: staleRun, carrierRoot } = failedCarrierRun({ root, entry });
+  const { run: staleRun, carrierRoot } = failedCarrierRun({ root, entry, mutate: (run) => {
+    const oldContribution = {
+      ...run.identity.repositories[0].taskContribution,
+      identity: 'sha256-old-task-contribution',
+      source: {
+        ...run.identity.repositories[0].taskContribution.source,
+        tree: run.identity.repositories[0].taskContribution.originalBaseline.tree,
+      },
+    };
+    run.identity.repositories[0].taskContribution = oldContribution;
+    run.repositories[0].taskContribution = structuredClone(oldContribution);
+    run.identity.repositorySetIdentity = taskFinishRepositorySetIdentity(run.identity.repositories);
+  } });
+  assert.notEqual(staleRun.identity.repositorySetIdentity, entry.identityParts.repositorySetIdentity);
   let current = { run: staleRun };
   let terminal = null;
   const runtime = {
@@ -357,7 +370,7 @@ test('current Handoff未被远端包含时保留旧失败run与carrier且不写c
   assert.deepEqual(result.effects, []);
 });
 
-test('旧run有下游事实或repository set漂移时reconciliation保持identity conflict', (t) => {
+test('旧run有下游事实或repository topology漂移时reconciliation保持identity conflict', (t) => {
   const { root, taskRoot, taskContribution } = fixture(t);
   const repositories = normalizeTaskFinishRepositorySet([{
     selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot,
@@ -388,7 +401,8 @@ test('旧run有下游事实或repository set漂移时reconciliation保持identit
   );
 
   const drifted = structuredClone(entry);
-  drifted.identityParts.repositorySetIdentity = 'sha256-different-repository-set';
+  drifted.identityParts.repositories[0].targetBranch = 'release';
+  drifted.identityParts.repositorySetIdentity = taskFinishRepositorySetIdentity(drifted.identityParts.repositories);
   assert.throws(
     () => reconcileTaskFinishDelivery({ runtime, root, entry: drifted }),
     (error) => error.code === 'task_finish.reconciliation_current_run_identity_conflict'

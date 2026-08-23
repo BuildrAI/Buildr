@@ -1259,14 +1259,20 @@ Task Finish MUST继续独占Task Contribution、Delivery Carrier、remote contai
 
 ### Requirement: 显式 Delivery reconciliation 必须能安全收敛被旧失败 run 占用的 current Handoff
 
-当 `task finish reconcile` 观察到 current Finish run 绑定旧 Development Handoff 时，产品 MUST 保持普通 `run` 对已有 carrier 的自动 supersede 禁令，并 MUST 只在显式 reconciliation 已从真实远端证明 current Handoff 的全部 repository Task Contribution 被包含、旧 run 终止于 delivery 前且没有 lease、delivery、retained、prepared completion、cleanup或后续phase事实、repository set未变化、以及全部旧 carrier ownership与cleanup均可证明时，以current Handoff形成新的terminal reconciliation。产品 MUST 不把旧 carrier、旧 Candidate 或旧人工 adaptation 作为 current Handoff 的 Delivery 证明；MUST 保留旧 run 的既有 Execution Record并在新terminal结果中记录有界superseded关联。
+当 `task finish reconcile` 观察到 current Finish run 绑定旧 Development Handoff 时，产品 MUST 保持普通 `run` 对已有 carrier 的自动 supersede 禁令，并 MUST 只在显式 reconciliation 已从真实远端证明 current Handoff 的全部 repository Task Contribution 被包含、旧 run 终止于 delivery 前且没有 lease、delivery、retained、prepared completion、cleanup或后续phase事实、repository topology未变化、以及全部旧 carrier ownership与cleanup均可证明时，以current Handoff形成新的terminal reconciliation。repository topology MUST 精确覆盖 selector、source path、retained/task roots、Environment branch、target branch、remote 与 disposition；它 MUST NOT 因 current Handoff 的 Task Contribution 更新及由此产生的 `repositorySetIdentity` 变化而被误判为仓库边界变化。产品 MUST 不把旧 carrier、旧 Candidate 或旧人工 adaptation 作为 current Handoff 的 Delivery 证明；MUST 保留旧 run 的既有 Execution Record并在新terminal结果中记录有界superseded关联。
 
 #### Scenario: 当前Handoff已交付且旧run只遗留可清理carrier
 
 - **WHEN** 旧run绑定Handoff A并在prepare阶段terminal failed，verify、deliver与cleanup从未开始，旧run没有resume、lease、delivery、retained或completion事实，且拥有Buildr可证明ownership的隔离carrier
-- **AND** current Handoff B使用相同repository set，且真实远端完整包含B的全部Task Contribution
+- **AND** current Handoff B使用相同repository topology但Task Contribution与`repositorySetIdentity`已更新，且真实远端完整包含B的全部Task Contribution
 - **THEN** 显式`task finish reconcile` MUST先完成全部远端包含证明，再清理A的run-owned carrier，并以独立reconciliation run登记B的terminal Delivery与Task completion
 - **AND** 结果 MUST保留A的Execution Record并报告superseded run与carrier cleanup摘要
+
+#### Scenario: repository topology真实变化
+
+- **WHEN** 旧run与current Handoff的selector、source path、retained/task root、Environment branch、target branch、remote或disposition任一不同
+- **THEN** reconciliation MUST返回类型化current-run identity conflict
+- **AND** MUST NOT把`repositorySetIdentity`变化解释为可恢复的Task Contribution更新
 
 #### Scenario: 当前Handoff的任一repository尚未被远端包含
 

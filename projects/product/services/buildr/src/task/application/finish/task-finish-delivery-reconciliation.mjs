@@ -82,6 +82,26 @@ function runIdentityMismatches(run, identity) {
   return fields.filter((field) => run.identity?.[field] !== identity?.[field]);
 }
 
+function repositoryTopology(repositories) {
+  return (repositories || [])
+    .map((repository) => ({
+      selector: repository.selector,
+      sourcePath: repository.sourcePath,
+      retainedRoot: repository.retainedRoot,
+      taskRoot: repository.taskRoot,
+      environmentBranch: repository.environmentBranch,
+      targetBranch: repository.targetBranch,
+      remote: repository.remote,
+      disposition: repository.disposition,
+      reason: repository.reason,
+    }))
+    .sort((left, right) => left.selector.localeCompare(right.selector));
+}
+
+function sameRepositoryTopology(left, right) {
+  return JSON.stringify(repositoryTopology(left)) === JSON.stringify(repositoryTopology(right));
+}
+
 function untouchedPhase(phase) {
   return Boolean(phase && phase.status === 'pending' && phase.attempts === 0);
 }
@@ -96,9 +116,9 @@ function staleRunRecoveryEligibility(persistence, identity) {
   const carriers = repositoryStates.filter((repository) => repository.deliveryCarrier?.root);
   const facts = {
     identityBoundary: Boolean(run?.identity?.task === identity?.task
-      && run?.identity?.repositorySetIdentity === identity?.repositorySetIdentity
+      && sameRepositoryTopology(run?.identity?.repositories, identity?.repositories)
       && mismatches.length > 0
-      && mismatches.every((field) => ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity'].includes(field))),
+      && mismatches.every((field) => ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'repositorySetIdentity'].includes(field))),
     terminalPrepareFailure: Boolean(run?.status === 'failed'
       && preflight?.status === 'passed'
       && preflight.attempts > 0
