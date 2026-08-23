@@ -91,11 +91,24 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
-| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或 3 条精确 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架全局 owner 时扩展 full 并加入 canary |
+| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或闭合 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架执行权威时扩展 full 并加入 canary |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
 | `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；同一 DAG 先运行 Quick + verification admission canary，再启动重型步骤，输出一份 transient timing/diagnostics |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Buildr Web 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
+
+### 选择权威与执行权威
+
+Changed selection 现在由两个物理分离的 authority 组成：
+
+- `test/verification/ownership.mjs` 保存路径到 primary owner 的 inputs/exclusions、ignore、delegation、production allowlist 和 Full 输入分类。只增加、迁移或重命名 owner 时走 affected，并选择 registry contract、verification admission 与命中的直接 owner；它本身不再无条件触发 Candidate。
+- `test/verification/registry.mjs` 保存 command、profile、dependency、resource、timeout、target budget 和 Candidate membership。修改执行图，或修改 planner、scheduler、executor、resource coordination、Candidate entry 与实际执行基础时仍进入 Full。
+
+`verification.yml`、`package.json` 和 lockfile 由 Git diff 的语义分类器处理：纯展示字段、`proves`/说明条件或 version-only 变化走 affected；command、environment、scripts、engines、dependency 等执行语义变化仍进入 Full。`test/verification/timing/**` 的预算、证据与报告维护走对应 affected owner；只有 parallel runner 等调度/执行语义进入 Full。
+
+任一 unknown path 或 direct production owner gap 都会在 admission 和业务 verifier 启动前返回 `status=blocked`、`verification-owner-gap`、完整 gap 列表与补 owner 的 next action。完整 Candidate 不再作为 unknown ownership 的替代证明。
+
+Changed Full 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 66-step combined Candidate 的过渡总预算为 600 秒；这是对尚未拆分 Core/Release-heavy 集合的诚实准入值，不代表性能目标已经达成。后续 Contribution 仍以核心 Full 约 180 秒为目标，并把发布重型 Journey 移到 Parent 最终集成、Release 或 CI lane。
 
 ### Quick 准入快照（2026-08-04）
 

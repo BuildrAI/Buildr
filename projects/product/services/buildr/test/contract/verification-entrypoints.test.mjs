@@ -6,7 +6,13 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
-import { VERIFICATION_DELEGATED_INPUTS, VERIFICATION_EXECUTION_PROFILES, VERIFICATION_FULL_SCOPE_INPUTS, verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.mjs';
+import {
+  VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_FULL_SCOPE_INPUTS,
+  VERIFICATION_STEP_OWNERSHIP,
+  validateVerificationStepOwnership,
+} from '../../test/verification/ownership.mjs';
 import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -424,6 +430,20 @@ test('Candidate workflow checks out one exact source SHA and always aggregates c
     '.github/workflows/verify.yml', 'test/verification/verify-buildr-product-ci',
     'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
   ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
+});
+
+test('changed ownership authority is physically separate from the Candidate execution graph', () => {
+  const registry = read('test/verification/registry.mjs');
+  const ownership = read('test/verification/ownership.mjs');
+  assert.match(registry, /verificationStepOwnership\(definition\.id\)/u);
+  assert.match(ownership, /VERIFICATION_STEP_OWNERSHIP/u);
+  assert.deepEqual(Object.keys(VERIFICATION_STEP_OWNERSHIP).sort(), verificationSteps.map((step) => step.id).sort());
+  assert.deepEqual(validateVerificationStepOwnership(verificationSteps.map((step) => step.id)), { ok: true, findings: [] });
+  assert.equal(validateVerificationStepOwnership([...verificationSteps.map((step) => step.id), 'missing-owner']).ok, false);
+  assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/registry.mjs'));
+  assert.equal(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/ownership.mjs'), false);
+  assert.equal(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/timing/budgets.mjs'), false);
+  assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/timing/parallel-runner.mjs'));
 });
 
 test('Candidate aggregate import graph is clean-checkout Node-only', () => {

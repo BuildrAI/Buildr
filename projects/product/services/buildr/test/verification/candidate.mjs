@@ -6,7 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { executePlan } from './plan-runner.mjs';
 import { parseVerificationSchedulingMode } from './dag-scheduler.mjs';
-import { createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
+import { admitVerificationPlanBudget, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
 import { CANDIDATE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
@@ -26,12 +26,16 @@ function parseArgs(args) {
   return result;
 }
 const request = parseArgs(process.argv.slice(2));
-const plan = createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] }));
+const plan = admitVerificationPlanBudget(
+  createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] })),
+  { concurrency: executionProfile.limits, declaredBudgetMs: CANDIDATE_TOTAL_BUDGET_MS },
+);
 if (request.json) {
   const project = (step) => ({ id: step.id, name: step.name, reasons: step.reasons });
-  await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', base: null, source: 'candidate-profile', paths: plan.paths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
-  process.exit(0);
+  await new Promise((resolve, reject) => process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.verification-full-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: null, source: 'candidate-profile', paths: plan.paths, estimate: plan.estimate, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds, preflightSteps: [], steps: plan.steps.map(project) }, null, 2)}\n`, (error) => error ? reject(error) : resolve()));
+  process.exit(plan.status === 'ready' ? 0 : 1);
 }
+if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Candidate verification plan is blocked.');
 const developmentNodeVersion = fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim();
 if (process.versions.node !== developmentNodeVersion) throw new Error(`Buildr Product development Node mismatch: expected ${developmentNodeVersion}, active ${process.versions.node}.`);
 enforceOfflineVerification();
@@ -41,7 +45,6 @@ const evidence = createVerificationEvidencePaths('candidate');
 const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
 const totalStartedAt = Date.now();
 let results = [];
-
 function writeSummary(status) {
   return writeVerificationTimingEvidence({
     ...evidence,
@@ -60,7 +63,6 @@ function writeSummary(status) {
     executionProfile,
   });
 }
-
 let passed = false;
 try {
   fs.rmSync(evidence.diagnosticsOutput, { recursive: true, force: true });

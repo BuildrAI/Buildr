@@ -1,6 +1,8 @@
 import { verificationSteps } from '../registry.mjs';
 
-export const CANDIDATE_TOTAL_BUDGET_MS = 120000;
+// Transitional budget for the current combined Core + Release-heavy Candidate profile.
+// The Parent verification work will replace this with separate lane budgets.
+export const CANDIDATE_TOTAL_BUDGET_MS = 600000;
 
 export const CANDIDATE_STEP_BUDGETS_MS = Object.freeze(Object.fromEntries(
   verificationSteps

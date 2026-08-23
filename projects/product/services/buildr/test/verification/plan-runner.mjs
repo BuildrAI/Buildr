@@ -9,12 +9,16 @@ export const FULL_PLAN_RESOURCE_ID = 'product-full-execution';
 export const FULL_PLAN_WAIT_TIMEOUT_MS = 30 * 60_000;
 
 export function printPlan(plan, stream = process.stdout) {
-  stream.write(`Verification plan: ${plan.steps.length} step(s)\n`);
+  stream.write(`Verification plan: status=${plan.status ?? 'ready'} ${plan.steps.length} step(s)\n`);
   if (plan.paths.length > 0) {
     stream.write('Changed paths:\n');
     for (const item of plan.paths) stream.write(`  ${item}\n`);
   }
   for (const item of plan.delegated ?? []) stream.write(`Delegated: ${item.path} -> ${item.owners.join(', ')}\n`);
+  if (plan.estimate) {
+    stream.write(`Estimate: work=${plan.estimate.totalTargetDurationMs}ms minimum=${plan.estimate.minimumFeasibleDurationMs}ms budget=${plan.estimate.declaredBudgetMs ?? 'none'} feasible=${plan.estimate.feasible ?? 'not-declared'}\n`);
+  }
+  if (plan.diagnostic) stream.write(`Blocked: ${plan.diagnostic.code} — ${plan.diagnostic.message}\n`);
   for (const step of plan.steps) {
     stream.write(`\n${step.id} — ${step.name}\n`);
     for (const reason of step.reasons) stream.write(`  selected: ${reason}\n`);
@@ -23,6 +27,7 @@ export function printPlan(plan, stream = process.stdout) {
 }
 
 export async function executePlan(plan, options) {
+  if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Verification plan is blocked.');
   const prefix = options.prefix ?? 'verify';
   const diagnosticsDirectory = options.diagnosticsDirectory ?? path.join(os.tmpdir(), 'buildr-verification-diagnostics');
   const artifactDirectory = options.artifactDirectory ?? path.join(os.tmpdir(), 'buildr-verification-candidate-package');

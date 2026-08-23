@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isVersionOnlyPackageMetadataChange } from '../../test/verification/changed-paths.mjs';
+import {
+  isSelectionOnlyPackageMetadataChange,
+  isVerificationDeclarationMetadataOnlyChange,
+  isVersionOnlyPackageMetadataChange,
+} from '../../test/verification/changed-paths.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
 
 const ids = (plan) => plan.steps.map((step) => step.id);
@@ -45,4 +49,27 @@ test('version-only exception is closed to changed package metadata paths', () =>
     () => createVerificationPlan({ paths: ['docs/buildr-product.md'], versionOnlyPackagePaths: ['package.json'] }),
     /not part of the changed paths/,
   );
+  assert.throws(
+    () => createVerificationPlan({ paths: ['test/verification/registry.mjs'], selectionOnlyPaths: ['test/verification/registry.mjs'] }),
+    /Invalid selection-only metadata path/,
+  );
+  assert.throws(
+    () => createVerificationPlan({ paths: ['docs/buildr-product.md'], selectionOnlyPaths: ['verification.yml'] }),
+    /not part of the changed paths/,
+  );
+});
+
+test('package presentation metadata stays affected while scripts and dependencies force Full', () => {
+  const base = JSON.stringify({ name: 'buildr', description: 'old', scripts: { test: 'node --test' }, dependencies: { yaml: '1' } });
+  assert.equal(isSelectionOnlyPackageMetadataChange('package.json', base, JSON.stringify({ name: 'buildr', description: 'new', scripts: { test: 'node --test' }, dependencies: { yaml: '1' } })), true);
+  assert.equal(isSelectionOnlyPackageMetadataChange('package.json', base, JSON.stringify({ name: 'buildr', description: 'old', scripts: { test: 'node test/run.mjs' }, dependencies: { yaml: '1' } })), false);
+  assert.equal(isSelectionOnlyPackageMetadataChange('package.json', base, JSON.stringify({ name: 'buildr', description: 'old', scripts: { test: 'node --test' }, dependencies: { yaml: '2' } })), false);
+});
+
+test('verification presentation metadata stays affected while invocation and environment changes force Full', () => {
+  const base = `schemaVersion: buildr.project-verification/v2\nresources:\n  - id: browser\n    title: Old\ncapabilities:\n  - id: product.delivery\n    title: Old\n    invocation:\n      kind: command\n      argv: [npm, test]\n    proves: [old]\n    applicability:\n      paths: ['**']\n      conditions: [old]\n`;
+  const presentation = base.replaceAll('Old', 'New').replace('proves: [old]', 'proves: [new]').replace('conditions: [old]', 'conditions: [new]');
+  assert.equal(isVerificationDeclarationMetadataOnlyChange(base, presentation), true);
+  assert.equal(isVerificationDeclarationMetadataOnlyChange(base, base.replace('argv: [npm, test]', 'argv: [npm, run, test:changed]')), false);
+  assert.equal(isVerificationDeclarationMetadataOnlyChange(base, `${base}    environment:\n      requires: [node]\n`), false);
 });

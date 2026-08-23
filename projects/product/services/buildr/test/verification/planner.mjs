@@ -4,23 +4,27 @@ import {
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
-  VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
   VERIFICATION_DEVELOPMENT_RUNNERS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
-  VERIFICATION_FULL_SCOPE_INPUTS,
-  VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
   VERIFICATION_GROUPS,
-  VERIFICATION_IGNORED_INPUTS,
   VERIFICATION_PROFILES,
-  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
   VERIFICATION_RESOURCE_CONTRACTS,
   VERIFICATION_RESET_BURDENS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
+import {
+  VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_FULL_SCOPE_INPUTS,
+  VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
+  VERIFICATION_IGNORED_INPUTS,
+  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_SELECTION_METADATA_INPUTS,
+  validateVerificationStepOwnership,
+} from './ownership.mjs';
 
 const PRODUCTION_OWNER_GOVERNED_INPUTS = Object.freeze([
   'src/infrastructure/**/*.mjs',
@@ -142,7 +146,10 @@ function matchedStepInput(step, productPath) {
 }
 
 export function validateVerificationRegistry(steps = verificationSteps) {
-  const findings = [];
+  const ownershipValidation = steps === verificationSteps
+    ? validateVerificationStepOwnership(steps.map((item) => item.id))
+    : { findings: [] };
+  const findings = [...ownershipValidation.findings];
   const ids = new Set();
   for (const item of steps) {
     if (!item.id || ids.has(item.id)) findings.push({ step: item.id || '<missing>', code: 'duplicate_or_missing_id' });
@@ -416,6 +423,79 @@ function topologicalOrder(selected, steps) {
   return order;
 }
 
+export function estimateVerificationPlan(plan, options = {}) {
+  const concurrency = options.concurrency ?? VERIFICATION_CONCURRENCY;
+  const declaredBudgetMs = options.declaredBudgetMs ?? null;
+  const missingStepBudgets = plan.steps.filter((step) => !Number.isFinite(step.budgetMs) || step.budgetMs < 0).map((step) => step.id);
+  const totalTargetDurationMs = plan.steps.reduce((total, step) => total + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0), 0);
+  const globalCapacity = concurrency.global;
+  const globalCapacityLowerBoundMs = globalCapacity > 0 ? Math.ceil(totalTargetDurationMs / globalCapacity) : Number.POSITIVE_INFINITY;
+  const criticalPaths = new Map();
+  for (const step of plan.steps) {
+    const dependencies = (step.dependsOn ?? []).map((id) => criticalPaths.get(id)).filter(Boolean);
+    const longest = dependencies.sort((left, right) => right.durationMs - left.durationMs)[0] ?? { durationMs: 0, stepIds: [] };
+    criticalPaths.set(step.id, Object.freeze({
+      durationMs: longest.durationMs + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0),
+      stepIds: Object.freeze([...longest.stepIds, step.id]),
+    }));
+  }
+  const dependencyCriticalPath = [...criticalPaths.values()].sort((left, right) => right.durationMs - left.durationMs)[0]
+    ?? Object.freeze({ durationMs: 0, stepIds: Object.freeze([]) });
+  const resourceCapacityLowerBounds = Object.freeze(Object.entries(concurrency.resources ?? {}).map(([resource, capacity]) => {
+    const resourceSteps = plan.steps.filter((step) => (step.resources ?? []).includes(resource));
+    const stepIds = resourceSteps.map((step) => step.id);
+    const targetDurationMs = resourceSteps.reduce((total, step) => total + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0), 0);
+    return Object.freeze({
+      resource,
+      capacity,
+      stepIds: Object.freeze(stepIds),
+      targetDurationMs,
+      lowerBoundMs: capacity > 0 ? Math.ceil(targetDurationMs / capacity) : Number.POSITIVE_INFINITY,
+    });
+  }));
+  const constraints = [
+    Object.freeze({ kind: 'global-capacity', id: 'global', lowerBoundMs: globalCapacityLowerBoundMs, capacity: globalCapacity }),
+    Object.freeze({ kind: 'dependency-critical-path', id: dependencyCriticalPath.stepIds.join(' -> ') || 'none', lowerBoundMs: dependencyCriticalPath.durationMs, stepIds: dependencyCriticalPath.stepIds }),
+    ...resourceCapacityLowerBounds.map((item) => Object.freeze({ kind: 'resource-capacity', id: item.resource, lowerBoundMs: item.lowerBoundMs, capacity: item.capacity, stepIds: item.stepIds })),
+  ];
+  const minimumFeasibleDurationMs = constraints.reduce((maximum, item) => Math.max(maximum, item.lowerBoundMs), 0);
+  const limitingConstraints = Object.freeze(constraints.filter((item) => item.lowerBoundMs === minimumFeasibleDurationMs));
+  const feasible = declaredBudgetMs == null
+    ? null
+    : missingStepBudgets.length === 0 && declaredBudgetMs >= minimumFeasibleDurationMs;
+  return Object.freeze({
+    stepCount: plan.steps.length,
+    totalTargetDurationMs,
+    missingStepBudgets: Object.freeze(missingStepBudgets),
+    globalCapacity: Object.freeze({ capacity: globalCapacity, lowerBoundMs: globalCapacityLowerBoundMs }),
+    dependencyCriticalPath,
+    resourceCapacityLowerBounds,
+    minimumFeasibleDurationMs,
+    limitingConstraints,
+    declaredBudgetMs,
+    feasible,
+  });
+}
+
+export function admitVerificationPlanBudget(plan, options = {}) {
+  const estimate = estimateVerificationPlan(plan, options);
+  if (plan.status === 'blocked' || estimate.feasible !== false) return Object.freeze({ ...plan, estimate });
+  return Object.freeze({
+    ...plan,
+    status: 'blocked',
+    diagnostic: Object.freeze({
+      code: estimate.missingStepBudgets.length > 0 ? 'verification-step-budget-missing' : 'verification-budget-infeasible',
+      message: estimate.missingStepBudgets.length > 0
+        ? 'Verification plan contains executable steps without target budgets.'
+        : `Verification plan lower bound ${estimate.minimumFeasibleDurationMs}ms exceeds declared budget ${estimate.declaredBudgetMs}ms.`,
+      missingStepBudgets: estimate.missingStepBudgets,
+      limitingConstraints: estimate.limitingConstraints,
+      nextActions: Object.freeze(['Adjust the declared budget or the required execution graph before running verification.']),
+    }),
+    estimate,
+  });
+}
+
 export function createVerificationPlan(request = {}, steps = verificationSteps) {
   const validation = validateVerificationRegistry(steps);
   if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}${item.value ? ` (${item.value})` : ''}`).join('\n')}`);
@@ -428,11 +508,24 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
   const versionOnlyPackagePaths = new Set((request.versionOnlyPackagePaths ?? []).map(normalizeProductPath));
+  const selectionOnlyPaths = new Set([
+    ...versionOnlyPackagePaths,
+    ...(request.selectionOnlyPaths ?? []).map(normalizeProductPath),
+  ]);
+  const selectionReasons = new Map((request.selectionReasons ?? []).map((item) => [normalizeProductPath(item.path), item.code]));
   for (const productPath of versionOnlyPackagePaths) {
     if (!paths.includes(productPath)) throw new Error(`Version-only package path is not part of the changed paths: ${productPath}`);
     if (!['package.json', 'package-lock.json'].includes(productPath)) throw new Error(`Invalid version-only package path: ${productPath}`);
   }
-  const fullScopeMatches = paths.filter((productPath) => !versionOnlyPackagePaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
+  for (const productPath of selectionOnlyPaths) {
+    if (!paths.includes(productPath)) throw new Error(`Selection-only metadata path is not part of the changed paths: ${productPath}`);
+    if (!VERIFICATION_SELECTION_METADATA_INPUTS.includes(productPath)) throw new Error(`Invalid selection-only metadata path: ${productPath}`);
+  }
+  for (const [productPath, code] of selectionReasons) {
+    if (!selectionOnlyPaths.has(productPath)) throw new Error(`Selection reason path is not classified as selection-only: ${productPath}`);
+    if (typeof code !== 'string' || code.length === 0) throw new Error(`Invalid selection reason code for path: ${productPath}`);
+  }
+  const fullScopeMatches = paths.filter((productPath) => !selectionOnlyPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
     .filter((pattern) => matchesInput(productPath, pattern))
     .map((pattern) => ({ productPath, pattern })));
   for (const id of stepIds) {
@@ -472,24 +565,19 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${matchedStepInput(item, productPath)}`]);
     }
   }
-  const fallbackPaths = [...new Set([
-    ...unmatchedPaths,
-    ...productionOwnerAudit.gaps.map((item) => item.path),
-  ])].sort();
+  const fallbackPaths = [...new Set([...unmatchedPaths, ...productionOwnerAudit.gaps.map((item) => item.path)])].sort();
   const fullScopeReasons = [
     ...fullScopeMatches.map(({ productPath, pattern }) => ({
-      code: 'full-scope-input',
+      code: ['package.json', 'package-lock.json'].includes(productPath)
+        ? 'package-execution-metadata-change'
+        : productPath === 'test/verification/registry.mjs'
+          ? 'execution-graph-change'
+          : 'execution-authority-change',
       path: productPath,
       owners: Object.freeze([pattern]),
       message: ['package.json', 'package-lock.json'].includes(productPath)
         ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
         : `${productPath} matches full-scope owner ${pattern}`,
-    })),
-    ...fallbackPaths.map((productPath) => ({
-      code: 'unknown-path-full-fallback',
-      path: productPath,
-      owners: Object.freeze([]),
-      message: `${productPath} has no direct verification owner; triggers full-scope fallback`,
     })),
   ];
   if (fullScopeReasons.length > 0) {
@@ -502,7 +590,7 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const orderedIds = topologicalOrder(selected, steps);
   const scopeMode = fullScopeReasons.length > 0 || profiles.includes('candidate')
     ? 'full'
-    : (mappedPaths.length > 0 || versionOnlyPackagePaths.size > 0)
+    : (mappedPaths.length > 0 || selectionOnlyPaths.size > 0)
       ? 'affected'
       : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0)
         ? 'explicit'
@@ -510,11 +598,39 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const scopeReasons = [
     ...fullScopeReasons.map(({ message: _message, ...reason }) => Object.freeze(reason)),
     ...(scopeMode === 'affected' ? mappedPaths
-      .filter((item) => !versionOnlyPackagePaths.has(item.path))
+      .filter((item) => !selectionOnlyPaths.has(item.path))
       .map((item) => Object.freeze({ code: 'affected-owner', path: item.path, owners: item.owners })) : []),
-    ...[...versionOnlyPackagePaths].map((productPath) => Object.freeze({ code: 'version-only-package-metadata', path: productPath, owners: Object.freeze([]) })),
+    ...[...selectionOnlyPaths].map((productPath) => Object.freeze({
+      code: selectionReasons.get(productPath) ?? (versionOnlyPackagePaths.has(productPath) ? 'version-only-package-metadata' : 'selection-metadata-change'),
+      path: productPath,
+      owners: Object.freeze(mappedPaths.find((item) => item.path === productPath)?.owners ?? []),
+    })),
   ];
+  if (fallbackPaths.length > 0) {
+    return Object.freeze({
+      status: 'blocked',
+      diagnostic: Object.freeze({
+        code: 'verification-owner-gap',
+        message: 'Product changed paths require explicit verification ownership before execution.',
+        unmapped: Object.freeze([...unmatchedPaths].sort()),
+        productionOwnerGaps: productionOwnerAudit.gaps,
+        nextActions: Object.freeze(['Add or repair ownership declarations for every reported path, then regenerate the plan.']),
+      }),
+      paths: Object.freeze(paths),
+      profiles: Object.freeze(profiles),
+      groups: Object.freeze(groups),
+      stepIds: Object.freeze(stepIds),
+      scope: Object.freeze({ mode: 'blocked', reasons: Object.freeze(scopeReasons) }),
+      delegated: Object.freeze(delegatedPaths),
+      ignored: Object.freeze(ignoredPaths),
+      unmapped: Object.freeze(unmatchedPaths),
+      productionOwnerGaps: productionOwnerAudit.gaps,
+      steps: Object.freeze([]),
+    });
+  }
   return Object.freeze({
+    status: 'ready',
+    diagnostic: null,
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),

@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: truthful-verification-selection
+operation: reconcile
+treeIdentity: content-target
+impacts:
+  - type: brief
+    target: openspec/changes/truthful-verification-selection/brief.md
+    reason: 正式 Change 需要稳定说明 owner gap、预算准入、影响角色和兼容边界。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/truthful-verification-selection/proposal.md
+      - openspec/changes/truthful-verification-selection/design.md
+      - openspec/changes/truthful-verification-selection/specs/product-verification-quality/spec.md
+  - type: service
+    target: docs/verification-ownership.md
+    reason: Buildr 当前测试实践需要反映 ownership 与 execution authority、owner gap 和预算准入的新事实。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/product-verification-quality/spec.md
+      - openspec/changes/truthful-verification-selection/specs/product-verification-quality/spec.md
+      - services/buildr/test/verification/registry.mjs
+      - services/buildr/test/verification/ownership.mjs
+      - services/buildr/test/verification/planner.mjs
+      - services/buildr/test/verification/changed-paths.mjs
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: ownership authority、execution graph 与预算下限沿用测试工程通用含义，不新增或重定义长期 Product 术语。
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/truthful-verification-selection/design.md
+unresolvedItems: []

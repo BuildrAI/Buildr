@@ -7,9 +7,11 @@ import { fileURLToPath } from 'node:url';
 import {
   auditProductionOwnerCoverage,
   auditVerificationInputCoverage,
+  admitVerificationPlanBudget,
   createVerificationAdmissionPlan,
   createVerificationPreflightPlan,
   createVerificationPlan,
+  estimateVerificationPlan,
   globToRegExp,
   matchesInput,
   normalizeProductPath,
@@ -19,11 +21,14 @@ import {
   INTEGRATION_GENERAL_EXCLUDED_FILES,
   INTEGRATION_PRIMARY_SLICES,
   VERIFICATION_EXECUTION_PROFILES,
-  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_CONCURRENCY,
   VERIFICATION_RESOURCE_CONTRACTS,
   VERIFICATION_STEP_TESTING,
   verificationSteps,
 } from '../../test/verification/registry.mjs';
+import { VERIFICATION_PRODUCTION_OWNER_ALLOWLIST } from '../../test/verification/ownership.mjs';
+import { executePlan } from '../../test/verification/plan-runner.mjs';
+import { CANDIDATE_TOTAL_BUDGET_MS } from '../../test/verification/timing/budgets.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ids = (plan) => plan.steps.map((step) => step.id);
@@ -135,13 +140,31 @@ test('受治理 repo-root publish workflow 精确进入 release owners，其他 
   assert.throws(() => createVerificationPlan({ paths: ['.github/workflows/unowned.yml'] }), /Ungoverned repository path/);
 });
 
-test('验证选择基础路径由同一 changed plan 扩展为完整回归', () => {
+test('execution authority 扩展 Full，ownership authority 保持 affected', () => {
   const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
   for (const path of ['verification.yml', 'test/verification/registry.mjs', 'test/verification/planner.mjs']) {
     const plan = createVerificationPlan({ paths: [path] });
     assert.deepEqual(ids(plan), candidateIds, `${path} must select the full registered regression`);
     assert.ok(plan.steps.every((step) => step.reasons.some((reason) => reason.includes('full-scope owner'))));
   }
+  const ownerOnly = createVerificationPlan({ paths: ['test/verification/ownership.mjs'] });
+  assert.equal(ownerOnly.status, 'ready');
+  assert.equal(ownerOnly.scope.mode, 'affected');
+  assert.deepEqual(ids(ownerOnly), ['contract', 'system-verification-admission']);
+  assert.deepEqual(ownerOnly.scope.reasons.map((reason) => reason.code), ['affected-owner']);
+  assert.deepEqual(createVerificationPlan({ paths: ['test/verification/registry.mjs'] }).scope.reasons.map((reason) => reason.code), ['execution-graph-change']);
+  assert.deepEqual(createVerificationPlan({ paths: ['test/verification/planner.mjs'] }).scope.reasons.map((reason) => reason.code), ['execution-authority-change']);
+  const timingOnly = createVerificationPlan({ paths: ['test/verification/timing/budgets.mjs'] });
+  assert.equal(timingOnly.scope.mode, 'affected');
+  assert.deepEqual(ids(timingOnly), ['system-verification-contracts']);
+  const declarationMetadata = createVerificationPlan({
+    paths: ['verification.yml'],
+    selectionOnlyPaths: ['verification.yml'],
+    selectionReasons: [{ path: 'verification.yml', code: 'verification-presentation-metadata-change' }],
+  });
+  assert.equal(declarationMetadata.scope.mode, 'affected');
+  assert.deepEqual(declarationMetadata.scope.reasons.map((reason) => reason.code), ['verification-presentation-metadata-change']);
+  assert.deepEqual(ids(declarationMetadata), ['contract']);
 });
 
 test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
@@ -169,9 +192,11 @@ test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {
   assert.equal(auditProductionOwnerCoverage(['src/task/application/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   assert.equal(auditProductionOwnerCoverage(['src/task/persistence/new-component-only.mjs'], unitAndComponentOnly).ok, false);
   const unknownProduction = createVerificationPlan({ paths: ['src/new-module/application/new-unowned-module.mjs'] });
-  assert.equal(unknownProduction.scope.mode, 'full');
+  assert.equal(unknownProduction.status, 'blocked');
+  assert.equal(unknownProduction.scope.mode, 'blocked');
+  assert.equal(unknownProduction.diagnostic.code, 'verification-owner-gap');
+  assert.deepEqual(ids(unknownProduction), []);
   assert.deepEqual(unknownProduction.productionOwnerGaps.map((item) => item.path), ['src/new-module/application/new-unowned-module.mjs']);
-  assert.ok(unknownProduction.scope.reasons.some((reason) => reason.code === 'unknown-path-full-fallback'));
   assert.ok(ids(createVerificationPlan({ paths: ['src/task/application/task-record-new-use-case.mjs'] })).includes('system-task-lifecycle'));
 });
 
@@ -435,13 +460,76 @@ test('focus step 与 group 去重且只展开真实 artifact 依赖', () => {
   assert.throws(() => createVerificationPlan({ stepIds: ['unknown'] }), /Unknown verification step/);
 });
 
-test('未知 Product path 保守回退 Full 并保留 coverage gap', () => {
-  const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
+test('未知 Product path 在 admission 前阻断并保留 coverage gap', () => {
   const plan = createVerificationPlan({ paths: ['new-area/contract.bin'] });
-  assert.deepEqual(ids(plan), candidateIds);
-  assert.equal(plan.scope.mode, 'full');
-  assert.deepEqual(plan.scope.reasons, [{ code: 'unknown-path-full-fallback', path: 'new-area/contract.bin', owners: [] }]);
+  assert.equal(plan.status, 'blocked');
+  assert.deepEqual(ids(plan), []);
+  assert.equal(plan.scope.mode, 'blocked');
+  assert.equal(plan.diagnostic.code, 'verification-owner-gap');
+  assert.deepEqual(plan.diagnostic.unmapped, ['new-area/contract.bin']);
   assert.deepEqual(plan.unmapped, ['new-area/contract.bin']);
+  const admitted = createVerificationAdmissionPlan(plan);
+  assert.deepEqual(admitted.admissionStepIds, []);
+  assert.deepEqual(ids(admitted), []);
+});
+
+test('verification plan estimator reports global, dependency, resource and budget admission constraints', () => {
+  const plan = {
+    status: 'ready',
+    steps: [
+      { id: 'prepare', budgetMs: 40, dependsOn: [], resources: ['workspace'] },
+      { id: 'first', budgetMs: 80, dependsOn: ['prepare'], resources: ['workspace'] },
+      { id: 'second', budgetMs: 60, dependsOn: ['prepare'], resources: [] },
+    ],
+  };
+  const concurrency = { global: 2, resources: { workspace: 1 } };
+  const estimate = estimateVerificationPlan(plan, { concurrency, declaredBudgetMs: 100 });
+  assert.equal(estimate.totalTargetDurationMs, 180);
+  assert.deepEqual(estimate.globalCapacity, { capacity: 2, lowerBoundMs: 90 });
+  assert.deepEqual(estimate.dependencyCriticalPath, { durationMs: 120, stepIds: ['prepare', 'first'] });
+  assert.deepEqual(estimate.resourceCapacityLowerBounds[0], {
+    resource: 'workspace', capacity: 1, stepIds: ['prepare', 'first'], targetDurationMs: 120, lowerBoundMs: 120,
+  });
+  assert.equal(estimate.minimumFeasibleDurationMs, 120);
+  assert.equal(estimate.feasible, false);
+  const blocked = admitVerificationPlanBudget(plan, { concurrency, declaredBudgetMs: 100 });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'verification-budget-infeasible');
+  const ready = admitVerificationPlanBudget(plan, { concurrency, declaredBudgetMs: 120 });
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.estimate.feasible, true);
+  const missing = admitVerificationPlanBudget({ status: 'ready', steps: [{ id: 'missing', dependsOn: [], resources: [] }] }, { concurrency, declaredBudgetMs: 120 });
+  assert.equal(missing.status, 'blocked');
+  assert.equal(missing.diagnostic.code, 'verification-step-budget-missing');
+  assert.deepEqual(missing.estimate.missingStepBudgets, ['missing']);
+});
+
+test('current Candidate budget is honest against the declared execution graph lower bound', () => {
+  const candidate = createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['candidate'] }));
+  const oldAdmission = admitVerificationPlanBudget(candidate, { concurrency: VERIFICATION_CONCURRENCY, declaredBudgetMs: 120_000 });
+  assert.equal(oldAdmission.status, 'blocked');
+  assert.equal(oldAdmission.diagnostic.code, 'verification-budget-infeasible');
+  assert.ok(oldAdmission.estimate.minimumFeasibleDurationMs > 120_000);
+  const currentAdmission = admitVerificationPlanBudget(candidate, { concurrency: VERIFICATION_CONCURRENCY, declaredBudgetMs: CANDIDATE_TOTAL_BUDGET_MS });
+  assert.equal(CANDIDATE_TOTAL_BUDGET_MS, 600_000);
+  assert.equal(currentAdmission.status, 'ready');
+  assert.equal(currentAdmission.estimate.feasible, true);
+  assert.equal(currentAdmission.estimate.stepCount, candidate.steps.length);
+});
+
+test('blocked plan cannot construct or start an executor', async () => {
+  const plan = createVerificationAdmissionPlan(createVerificationPlan({ paths: ['new-area/contract.bin'] }));
+  let executorConstructed = false;
+  await assert.rejects(
+    executePlan(plan, {
+      executorFactory() {
+        executorConstructed = true;
+        return async () => ({ status: 'passed' });
+      },
+    }),
+    /explicit verification ownership/,
+  );
+  assert.equal(executorConstructed, false);
 });
 
 test('changed path scope matrix closes affected, full, delegated and ignored outcomes', () => {
