@@ -30,7 +30,7 @@ test('TypeScript execution foundation is strict, no-emit, and development-only',
 test('TypeScript production source has a low-cost affected verification owner', () => {
   const typecheck = verificationSteps.find((step) => step.id === 'typecheck');
   assert.ok(typecheck);
-  assert.deepEqual(typecheck.profiles, ['fast', 'candidate']);
+  assert.deepEqual(typecheck.profiles, ['fast', 'candidate', 'core']);
   assert.equal(typecheck.executor.type, 'npm');
   assert.deepEqual(typecheck.executor.args, ['run', 'typecheck']);
   assert.ok(typecheck.inputs.includes('src/**/*.ts'));

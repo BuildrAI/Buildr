@@ -110,9 +110,30 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.', TEST_ENVIRONMENTS.sourceReadOnly),
 });
 
+export const VERIFICATION_DAILY_CORE_EXCLUSIONS = Object.freeze({
+  'candidate-tarball': 'Produces the unique release Candidate tarball.',
+  'application-payload-release': 'Validates the packaged application payload and npm runtime.',
+  'npm-launcher-candidate': 'Validates the Launcher against a verified npm Candidate installation.',
+  'open-source-candidate': 'Validates public release materials in the frozen Candidate.',
+  'package-static': 'Validates the publishable npm package structure.',
+  'package-workspace': 'Validates packaged Workspace assets.',
+  'package-commands': 'Validates packaged Commands assets.',
+  'package-rules': 'Validates packaged Rules assets.',
+  'package-skills': 'Validates packaged Skills assets.',
+  'package-runtime': 'Validates packaged runtime assets.',
+  'cli-package-parity': 'Compares source and packaged CLI behavior.',
+  'release-tarball-smoke': 'Runs the installed release tarball smoke journey.',
+  'system-fresh-build': 'Runs a clean dependency installation and Web build Candidate journey.',
+  'init-onboarding': 'Runs the complete fresh initialization onboarding journey.',
+});
+
 const step = (definition) => {
   const classification = VERIFICATION_STEP_TESTING[definition.id];
   const ownership = verificationStepOwnership(definition.id);
+  const declaredProfiles = definition.profiles ?? [];
+  const profiles = declaredProfiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, definition.id)
+    ? [...declaredProfiles, 'core']
+    : [...declaredProfiles];
   const timeoutMs = definition.timeoutMs ?? (
     classification?.environment.footprints.includes('workspace-lifecycle') ? 360_000
       : classification?.primaryIntent === 'Delivery / Release' || (classification?.targetDurationMs ?? 0) >= 25_000 ? 300_000
@@ -128,6 +149,7 @@ const step = (definition) => {
     admission: false,
     developmentRunners: [],
     ...definition,
+    profiles: Object.freeze(profiles),
     inputs: ownership.inputs,
     inputExclusions: ownership.inputExclusions,
     preflight: definition.preflight ? Object.freeze({ ...definition.preflight, inputs: ownership.preflightInputs }) : null,
@@ -579,7 +601,7 @@ export const CANDIDATE_CI_HOST_NODE_TUPLES = Object.freeze([
 
 export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);
 export const VERIFICATION_EXECUTION_BOUNDARIES = Object.freeze(['Static', 'Unit', 'Component', 'Integration', 'System']);
-export const VERIFICATION_PROFILES = Object.freeze(['fast', 'candidate', 'host-node']);
+export const VERIFICATION_PROFILES = Object.freeze(['fast', 'core', 'candidate', 'host-node']);
 export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'windows-npm-preflight']);
 export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'node-test', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
 

@@ -91,9 +91,10 @@ Candidate DAG 的默认并发不是“测试进程总数”，只约束外层 st
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
-| `test:changed` | affected 或必要 full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或闭合 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架执行权威时扩展 full 并加入 canary |
+| `test:changed` | affected 或必要 core Full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或闭合 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架执行权威时扩展 core 并加入 canary |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:candidate` | 显式 Product Full | 只选择 Candidate profile 的全部 required owners；不读取 Git diff 或 changed paths；同一 DAG 先运行 Quick + verification admission canary，再启动重型步骤，输出一份 transient timing/diagnostics |
+| `test:core` | 日常核心 Full | 从唯一 registry 选择 52 个 core owners；不读取 Git diff，不生成 tarball，不运行 package、Launcher、fresh-build/onboarding 或 release smoke primary evidence；同一 DAG 先运行 Quick + verification admission canary |
+| `test:candidate` | 完整 Product Candidate | 选择 Candidate profile 的全部 66 个 required owners；不读取 Git diff 或 core exclusion 缩小覆盖；生成唯一 tarball并运行 package、Launcher、fresh-build/onboarding 与 release smoke primary evidence |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Buildr Web 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 
@@ -108,7 +109,7 @@ Changed selection 现在由两个物理分离的 authority 组成：
 
 任一 unknown path 或 direct production owner gap 都会在 admission 和业务 verifier 启动前返回 `status=blocked`、`verification-owner-gap`、完整 gap 列表与补 owner 的 next action。完整 Candidate 不再作为 unknown ownership 的替代证明。
 
-Changed Full 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 66-step combined Candidate 的过渡总预算为 600 秒；这是对尚未拆分 Core/Release-heavy 集合的诚实准入值，不代表性能目标已经达成。后续 Contribution 仍以核心 Full 约 180 秒为目标，并把发布重型 Journey 移到 Parent 最终集成、Release 或 CI lane。
+Changed Full、Core 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 core 为 52 step、目标工作量 976 秒、全局容量理论下限 244 秒，使用 360 秒过渡预算；完整 Candidate 保持 66 step、目标工作量 1,338 秒、理论下限 334.5 秒和 600 秒过渡预算。180 秒仍是后续 lifecycle/fixture/resource Contribution 的核心 Full 收敛目标，不把过渡预算描述为性能目标。
 
 ### Quick 准入快照（2026-08-04）
 
@@ -131,13 +132,14 @@ Quick 是成本约束，affected/full 是选择范围，Candidate/Release 是验
 
 ## 6. Task Verification 如何使用项目测试
 
-Task Verification 不登记内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 7 个稳定能力接口：
+Task Verification 不登记内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 8 个稳定能力接口：
 
 | capability | 调用与证明范围 | 交付要求 |
 | --- | --- | ---: |
 | `product.fast` | `npm run test:fast`；低成本开发反馈 | 否 |
 | `product.delivery` | `test:changed -- --base origin/dev`；同一 plan 的 affected 或必要 full | 是 |
-| `product.full-regression` | `npm run test:candidate`；Candidate profile 的全部 required owners | 否 |
+| `product.full-regression` | `npm run test:core`；日常 core profile 的全部 required owners | 否 |
+| `product.candidate` | `npm run test:candidate`；完整 Candidate profile、唯一 tarball 与发布级 primary evidence | 否 |
 | `product.browser-smoke` | Buildr Web paths 适用时运行真实浏览器 Journey | 适用时是 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 import { createVerificationPlan } from '../../test/verification/planner.mjs';
-import { VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.mjs';
+import { VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.mjs';
 import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -18,7 +18,7 @@ import { workspaceSuites } from '../../test/verification/workspace/suites.mjs';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-test('product verification exposes three gates, direct layers, and one focus entry', () => {
+test('product verification exposes four gates, direct layers, and one focus entry', () => {
   const scripts = JSON.parse(read('package.json')).scripts;
   assert.equal(scripts.test, './test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], './test/verification/verify-buildr-product-fast');
@@ -41,6 +41,7 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
+  assert.equal(scripts['test:core'], 'bash test/verification/verify-buildr-product-core');
   assert.equal(scripts['test:candidate'], 'bash test/verification/verify-buildr-product');
   assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.mjs host');
@@ -81,11 +82,12 @@ test('Development Launcher固定端口不改变Task Preview的随机端口与无
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
-test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付能力', () => {
+test('Product 声明唯一 delivery、日常 core、完整 Candidate 与单一 Browser 交付能力', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
   const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
   const fullRegression = declaration.capabilities.find((capability) => capability.id === 'product.full-regression');
+  const candidate = declaration.capabilities.find((capability) => capability.id === 'product.candidate');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
   const releaseSet = declaration.capabilities.find((capability) => capability.id === 'product.release-artifact-set');
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
@@ -96,11 +98,15 @@ test('Product 声明唯一 delivery、显式完整回归与单一 Browser 交付
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:core'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
-  assert.equal(declaration.capabilities.some((capability) => ['product.task-affected', 'product.candidate'].includes(capability.id)), false);
+  assert.deepEqual(candidate.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
+  assert.equal(candidate.requiredForDelivery, false);
+  assert.deepEqual(candidate.environment.requires, ['node', 'npm', 'git']);
+  assert.deepEqual(candidate.applicability.paths, ['**']);
+  assert.equal(declaration.capabilities.some((capability) => capability.id === 'product.task-affected'), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
   assert.equal(browser.requiredForDelivery, true);
@@ -181,13 +187,15 @@ test('Windows npm preflight keeps the bounded high-risk owners and tarball depen
   assert.equal(plan.steps.some((step) => step.id === 'open-source-candidate'), false);
 });
 
-test('candidate verification retains necessary Candidate facts without Browser and Release-only owners', () => {
+test('core and candidate reuse one runner while retaining distinct evidence responsibilities', () => {
   const wrapper = read('test/verification/verify-buildr-product');
+  const coreWrapper = read('test/verification/verify-buildr-product-core');
   const candidate = read('test/verification/candidate.mjs');
   const changed = read('test/verification/changed.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
   assert.ok(wrapper.includes('"$@"'));
-  assert.ok(candidate.includes("profiles: ['candidate']"));
+  assert.ok(coreWrapper.includes('test/verification/candidate.mjs --profile core'));
+  assert.ok(candidate.includes('profiles: [request.profile]'));
   assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
   assert.doesNotMatch(changed, /createVerificationPreflightPlan/);
   assert.equal((candidate.match(/await executePlan\(/g) ?? []).length, 1);
@@ -200,6 +208,11 @@ test('candidate verification retains necessary Candidate facts without Browser a
   assert.match(candidate, /enforceOfflineVerification\(\)/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan = createVerificationPlan({ profiles: ['candidate'] });
+  const corePlan = createVerificationPlan({ profiles: ['core'] });
+  assert.ok(corePlan.steps.length < candidatePlan.steps.length);
+  assert.ok(corePlan.steps.every((step) => step.profiles.includes('candidate')));
+  assert.deepEqual(candidatePlan.steps.filter((step) => !corePlan.steps.some((coreStep) => coreStep.id === step.id)).map((step) => step.id).sort(), Object.keys(VERIFICATION_DAILY_CORE_EXCLUSIONS).sort());
+  for (const id of Object.keys(VERIFICATION_DAILY_CORE_EXCLUSIONS)) assert.equal(corePlan.steps.some((step) => step.id === id), false, id);
   for (const step of candidatePlan.steps) {
     assert.equal(step.testing.environment.footprints.includes('network'), false, `${step.id} must not depend on external network`);
   }
@@ -491,7 +504,7 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
   assert.ok(source.includes("profiles: ['candidate']") === false);
   const entry = verificationSteps.find((step) => step.id === 'concurrent-task-acceptance');
   assert.equal(entry.executor.file, 'test/verification/concurrency/task-acceptance.mjs');
-  assert.deepEqual(entry.profiles, ['candidate']);
+  assert.deepEqual(entry.profiles, ['candidate', 'core']);
   assert.ok(entry.resources.includes('workspace-saturating'));
   assert.ok(entry.budgetMs > 0);
 });

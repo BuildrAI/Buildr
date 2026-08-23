@@ -20,6 +20,7 @@ import {
 import {
   INTEGRATION_GENERAL_EXCLUDED_FILES,
   INTEGRATION_PRIMARY_SLICES,
+  VERIFICATION_DAILY_CORE_EXCLUSIONS,
   VERIFICATION_EXECUTION_PROFILES,
   VERIFICATION_CONCURRENCY,
   VERIFICATION_RESOURCE_CONTRACTS,
@@ -28,12 +29,12 @@ import {
 } from '../../test/verification/registry.mjs';
 import { VERIFICATION_PRODUCTION_OWNER_ALLOWLIST } from '../../test/verification/ownership.mjs';
 import { executePlan } from '../../test/verification/plan-runner.mjs';
-import { CANDIDATE_TOTAL_BUDGET_MS } from '../../test/verification/timing/budgets.mjs';
+import { CANDIDATE_TOTAL_BUDGET_MS, CORE_TOTAL_BUDGET_MS } from '../../test/verification/timing/budgets.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ids = (plan) => plan.steps.map((step) => step.id);
 
-test('统一 registry 固化 fast 与 Candidate required gates', () => {
+test('统一 registry 固化 fast、core 与 Candidate required gates', () => {
   const validation = validateVerificationRegistry();
   assert.deepEqual(validation, { ok: true, findings: [] });
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
@@ -55,6 +56,10 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
     'init-onboarding', 'cli-compatibility', 'cli-package-parity', 'service-branch-contract',
     'remote-skill-timeout', 'release-tarball-smoke', 'managed-data-integrity', 'docs-quality',
   ]);
+  const coreIds = ids(createVerificationPlan({ profiles: ['core'] }));
+  const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
+  assert.deepEqual(candidateIds.filter((id) => !coreIds.includes(id)).sort(), Object.keys(VERIFICATION_DAILY_CORE_EXCLUSIONS).sort());
+  assert.ok(coreIds.every((id) => candidateIds.includes(id)));
 });
 
 test('Full plan 联合 Candidate 与 changed owner 并按 step identity 去重', () => {
@@ -141,10 +146,10 @@ test('受治理 repo-root publish workflow 精确进入 release owners，其他 
 });
 
 test('execution authority 扩展 Full，ownership authority 保持 affected', () => {
-  const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
+  const coreIds = ids(createVerificationPlan({ profiles: ['core'] }));
   for (const path of ['verification.yml', 'test/verification/registry.mjs', 'test/verification/planner.mjs']) {
     const plan = createVerificationPlan({ paths: [path] });
-    assert.deepEqual(ids(plan), candidateIds, `${path} must select the full registered regression`);
+    assert.deepEqual(ids(plan), coreIds, `${path} must select the daily core regression`);
     assert.ok(plan.steps.every((step) => step.reasons.some((reason) => reason.includes('full-scope owner'))));
   }
   const ownerOnly = createVerificationPlan({ paths: ['test/verification/ownership.mjs'] });
@@ -515,6 +520,12 @@ test('current Candidate budget is honest against the declared execution graph lo
   assert.equal(currentAdmission.status, 'ready');
   assert.equal(currentAdmission.estimate.feasible, true);
   assert.equal(currentAdmission.estimate.stepCount, candidate.steps.length);
+  const core = createVerificationAdmissionPlan(createVerificationPlan({ profiles: ['core'] }));
+  const coreAdmission = admitVerificationPlanBudget(core, { concurrency: VERIFICATION_CONCURRENCY, declaredBudgetMs: CORE_TOTAL_BUDGET_MS });
+  assert.equal(CORE_TOTAL_BUDGET_MS, 360_000);
+  assert.equal(coreAdmission.status, 'ready');
+  assert.equal(coreAdmission.estimate.feasible, true);
+  assert.ok(coreAdmission.estimate.minimumFeasibleDurationMs < currentAdmission.estimate.minimumFeasibleDurationMs);
 });
 
 test('blocked plan cannot construct or start an executor', async () => {

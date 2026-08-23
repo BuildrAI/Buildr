@@ -9,7 +9,7 @@ import { collectChangedProductPaths } from './changed-paths.mjs';
 import { admitVerificationPlanBudget, createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
-import { CANDIDATE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
+import { CORE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -59,7 +59,7 @@ try {
     const composedPlan = args.developmentRunner ? affectedPlan : createVerificationAdmissionPlan(affectedPlan);
     const plan = admitVerificationPlanBudget(composedPlan, {
       concurrency: executionProfile.limits,
-      declaredBudgetMs: composedPlan.scope?.mode === 'full' ? CANDIDATE_TOTAL_BUDGET_MS : null,
+      declaredBudgetMs: composedPlan.scope?.mode === 'full' ? CORE_TOTAL_BUDGET_MS : null,
     });
     const output = { schemaVersion: 'buildr.verification-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, selectionOnlyPaths: changed.selectionOnlyPaths, scope: plan.scope, estimate: plan.estimate, delegated: plan.delegated, ignored: plan.ignored, unmapped: plan.unmapped, productionOwnerGaps: plan.productionOwnerGaps, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
     if (args.json) {

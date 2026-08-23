@@ -43,32 +43,32 @@ capabilities:
       conditions:
         - Product 或 Buildr Service 形成冻结的待交付目标
     proves:
-      - 冻结目标相对 Product 集成分支的 changed paths 均有 owner，且同一 plan 选择的 affected 或 full 证据通过
+      - 冻结目标相对 Product 集成分支的 changed paths 均有 owner，且同一 plan 选择的 affected 或 core Full 证据通过
     requiredForDelivery: true
     environment:
       requires: [node, npm, git]
     effects:
-      writes: ["系统临时目录中的验证 fixture、候选 tarball、timing evidence 与 diagnostics"]
+      writes: ["系统临时目录中的验证 fixture、timing evidence 与 diagnostics"]
       externalSystems: []
       authorization: implicit
     resourceClaims: []
   - id: product.full-regression
-    title: Buildr Product 显式完整回归
+    title: Buildr Product 日常核心 Full
     scope:
       project: product
       services: []
     invocation:
       kind: command
-      argv: ["tools/development/run-development-npm", "run", "test:candidate"]
+      argv: ["tools/development/run-development-npm", "run", "test:core"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
       conditions:
-        - 用户明确要求完整 Product 回归、准备 Release 或独立核验完整回归入口
-        - 显式 Full 交付时只选择本 capability，不同时选择 product.delivery；verification policy 通过 required override 将本能力设为交付必需
+        - 用户明确要求日常核心 Full 或独立核验核心回归入口
+        - 显式核心 Full 交付时只选择本 capability，不同时选择 product.delivery；verification policy 通过 required override 将本能力设为交付必需
     proves:
-      - Product Project 与 Buildr Service 登记为完整回归主证据的全部步骤通过
-      - Candidate profile 登记的全部 required gate identities 通过一次完整执行计划
+      - Product Project 与 Buildr Service 登记为日常核心回归主证据的全部步骤通过
+      - Core profile 登记的全部 required step identities 通过一次完整执行计划
     requiredForDelivery: false
     environment:
       requires: [node, npm, git]
@@ -80,7 +80,39 @@ capabilities:
           service: buildr-web
           recipe: buildr-web.npm-ci
     effects:
-      writes: ["系统临时目录中的候选 workspace、tarball、timing evidence 与 diagnostics"]
+      writes: ["系统临时目录中的隔离 workspace、timing evidence 与 diagnostics"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
+  - id: product.candidate
+    title: Buildr Product 完整 Candidate 验证
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
+      argv: ["tools/development/run-development-npm", "run", "test:candidate"]
+      cwd: services/buildr
+    applicability:
+      paths: ["**"]
+      conditions:
+        - Parent 最终集成、正式 Candidate 准备或维护者明确要求完整冻结 Product 回归
+        - 本 capability 不与 product.full-regression 重复选择；core 结果不得重标记为 Candidate evidence
+    proves:
+      - Candidate profile 登记的全部 required gate identities 通过一次完整执行计划
+      - 唯一 Candidate tarball、package、Launcher、fresh-install/onboarding 与 Release smoke primary evidence 完整
+    requiredForDelivery: false
+    environment:
+      requires: [node, npm, git]
+      preparation:
+        - project: product
+          service: buildr
+          recipe: buildr.npm-ci
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
+    effects:
+      writes: ["系统临时目录中的候选 workspace、唯一 tarball、timing evidence 与 diagnostics"]
       externalSystems: []
       authorization: implicit
     resourceClaims: []

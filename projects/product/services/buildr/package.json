@@ -80,6 +80,7 @@
     "test:changed": "node test/verification/changed.mjs",
     "test:focus": "node test/verification/focus.mjs",
     "test:host-node": "node test/verification/host-node.mjs",
+    "test:core": "bash test/verification/verify-buildr-product-core",
     "test:candidate": "bash test/verification/verify-buildr-product",
     "test:candidate:ci": "bash test/verification/verify-buildr-product-ci",
     "test:candidate:host": "node test/verification/candidate-ci.mjs host",

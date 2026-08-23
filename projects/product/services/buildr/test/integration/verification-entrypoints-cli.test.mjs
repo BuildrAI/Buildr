@@ -93,6 +93,21 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   assert.doesNotMatch(`${unknown.stdout}${unknown.stderr}`, /\[verify-product\]/);
 });
 
+test('core full plan uses the daily core profile without Candidate-only owners', () => {
+  const runner = path.join(productRoot, 'test', 'verification', 'candidate.mjs');
+  const planned = spawnSync(process.execPath, [runner, '--profile', 'core', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  assert.equal(planned.status, 0, planned.stderr);
+  const payload = JSON.parse(planned.stdout);
+  assert.equal(payload.schemaVersion, 'buildr.verification-full-plan/v1');
+  assert.equal(payload.source, 'core-profile');
+  assert.equal(payload.scope.mode, 'full');
+  assert.equal(payload.estimate.declaredBudgetMs, 360_000);
+  assert.equal(payload.estimate.feasible, true);
+  for (const id of ['candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'package-static', 'cli-package-parity', 'system-fresh-build', 'init-onboarding', 'release-tarball-smoke']) {
+    assert.equal(payload.steps.some((step) => step.id === id), false, id);
+  }
+});
+
 test('OpenSpec fixture runner lists disjoint suites and rejects unknown suites', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'openspec', 'contract.mjs');
   const listed = spawnSync(process.execPath, [runner, '--list-suites'], { cwd: productRoot, encoding: 'utf8' });

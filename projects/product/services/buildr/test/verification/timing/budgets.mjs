@@ -1,8 +1,15 @@
 import { verificationSteps } from '../registry.mjs';
 
-// Transitional budget for the current combined Core + Release-heavy Candidate profile.
-// The Parent verification work will replace this with separate lane budgets.
+// Transitional lane budgets. The Parent verification work keeps 180 seconds as
+// the Core optimization target while the current registry remains above it.
+export const CORE_TOTAL_BUDGET_MS = 360000;
 export const CANDIDATE_TOTAL_BUDGET_MS = 600000;
+
+export const CORE_STEP_BUDGETS_MS = Object.freeze(Object.fromEntries(
+  verificationSteps
+    .filter((step) => step.profiles.includes('core') && step.budgetMs != null)
+    .map((step) => [step.id, step.budgetMs]),
+));
 
 export const CANDIDATE_STEP_BUDGETS_MS = Object.freeze(Object.fromEntries(
   verificationSteps
@@ -12,6 +19,10 @@ export const CANDIDATE_STEP_BUDGETS_MS = Object.freeze(Object.fromEntries(
 
 export function candidateStepBudget(id) {
   return CANDIDATE_STEP_BUDGETS_MS[id];
+}
+
+export function coreStepBudget(id) {
+  return CORE_STEP_BUDGETS_MS[id];
 }
 
 export function budgetStatus(durationMs, budgetMs) {

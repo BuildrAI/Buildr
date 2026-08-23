@@ -4,6 +4,7 @@ import {
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_DAILY_CORE_EXCLUSIONS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
   VERIFICATION_DEVELOPMENT_RUNNERS,
@@ -285,6 +286,19 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     }
     for (const profile of item.profiles ?? []) if (!VERIFICATION_PROFILES.includes(profile)) findings.push({ step: item.id, code: 'unknown_profile', value: profile });
     for (const group of item.groups ?? []) if (!VERIFICATION_GROUPS.includes(group)) findings.push({ step: item.id, code: 'unknown_group', value: group });
+  }
+  if (steps === verificationSteps) {
+    const coreIds = new Set(steps.filter((item) => item.profiles.includes('core')).map((item) => item.id));
+    const candidateIds = new Set(steps.filter((item) => item.profiles.includes('candidate')).map((item) => item.id));
+    for (const id of coreIds) if (!candidateIds.has(id)) findings.push({ step: id, code: 'core_step_not_candidate' });
+    for (const [id, reason] of Object.entries(VERIFICATION_DAILY_CORE_EXCLUSIONS)) {
+      if (!candidateIds.has(id)) findings.push({ step: id, code: 'core_exclusion_not_candidate' });
+      if (coreIds.has(id)) findings.push({ step: id, code: 'core_exclusion_in_core' });
+      if (typeof reason !== 'string' || reason.trim().length === 0) findings.push({ step: id, code: 'core_exclusion_reason_missing' });
+    }
+    for (const id of candidateIds) {
+      if (!coreIds.has(id) && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, id)) findings.push({ step: id, code: 'candidate_step_core_disposition_missing' });
+    }
   }
   for (const item of steps) for (const dependency of item.dependsOn ?? []) {
     if (!ids.has(dependency)) findings.push({ step: item.id, code: 'unknown_dependency', value: dependency });
@@ -581,14 +595,14 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     })),
   ];
   if (fullScopeReasons.length > 0) {
-    for (const item of steps) if (item.profiles.includes('candidate')) {
+    for (const item of steps) if (item.profiles.includes('core')) {
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason) => reason.message)]);
     }
   }
   expandDependencies(selected, byId, reasons);
   const orderedIds = topologicalOrder(selected, steps);
-  const scopeMode = fullScopeReasons.length > 0 || profiles.includes('candidate')
+  const scopeMode = fullScopeReasons.length > 0 || profiles.some((profile) => ['core', 'candidate'].includes(profile))
     ? 'full'
     : (mappedPaths.length > 0 || selectionOnlyPaths.size > 0)
       ? 'affected'
