@@ -1259,14 +1259,26 @@ Task Finish MUST继续独占Task Contribution、Delivery Carrier、remote contai
 
 ### Requirement: 显式 Delivery reconciliation 必须能安全收敛被旧失败 run 占用的 current Handoff
 
-当 `task finish reconcile` 观察到 current Finish run 绑定旧 Development Handoff 时，产品 MUST 保持普通 `run` 对已有 carrier 的自动 supersede 禁令，并 MUST 只在显式 reconciliation 已从真实远端证明 current Handoff 的全部 repository Task Contribution 被包含、旧 run 终止于 delivery 前且没有 lease、delivery、retained、prepared completion、cleanup或后续phase事实、repository topology未变化、以及全部旧 carrier ownership与cleanup均可证明时，以current Handoff形成新的terminal reconciliation。repository topology MUST 精确覆盖 selector、source path、retained/task roots、Environment branch、target branch、remote 与 disposition；它 MUST NOT 因 current Handoff 的 Task Contribution 更新及由此产生的 `repositorySetIdentity` 变化而被误判为仓库边界变化。产品 MUST 不把旧 carrier、旧 Candidate 或旧人工 adaptation 作为 current Handoff 的 Delivery 证明；MUST 保留旧 run 的既有 Execution Record并在新terminal结果中记录有界superseded关联。
+当 `task finish reconcile` 观察到 current Finish run 绑定旧 Development Handoff 时，产品 MUST 保持普通 `run` 对已有 carrier 的自动 supersede 禁令，并 MUST 只在显式 reconciliation 已从真实远端证明 current Handoff 的全部 repository Task Contribution 被包含、旧 run 终止于 delivery 前且没有 lease、delivery、retained、prepared completion、cleanup或后续phase事实、repository topology未变化、以及全部旧 carrier ownership与cleanup均可证明时，以current Handoff形成新的terminal reconciliation。repository topology MUST 精确覆盖 selector、source path、retained/task roots、Environment branch、target branch、remote 与 disposition；它 MUST NOT 因 current Handoff 的 Task Contribution 更新及由此产生的 `repositorySetIdentity` 变化而被误判为仓库边界变化。terminal persistence MUST 在同一事务内校验旧 current row 仍是 eligibility 观察到的 failed run ID 与精确 run digest，只有完全匹配时才 MUST 原子替换为current Handoff的新terminal row；任一漂移 MUST 零写入并保持旧 current。产品 MUST 不把旧 carrier、旧 Candidate 或旧人工 adaptation 作为 current Handoff 的 Delivery 证明；MUST 保留旧 run 的既有 Execution Record并在新terminal结果中记录有界superseded关联。
 
 #### Scenario: 当前Handoff已交付且旧run只遗留可清理carrier
 
 - **WHEN** 旧run绑定Handoff A并在prepare阶段terminal failed，verify、deliver与cleanup从未开始，旧run没有resume、lease、delivery、retained或completion事实，且拥有Buildr可证明ownership的隔离carrier
 - **AND** current Handoff B使用相同repository topology但Task Contribution与`repositorySetIdentity`已更新，且真实远端完整包含B的全部Task Contribution
-- **THEN** 显式`task finish reconcile` MUST先完成全部远端包含证明，再清理A的run-owned carrier，并以独立reconciliation run登记B的terminal Delivery与Task completion
+- **THEN** 显式`task finish reconcile` MUST先完成全部远端包含证明，再清理A的run-owned carrier，并以A的run ID与精确digest作为事务fence原子登记B的terminal Delivery与Task completion
 - **AND** 结果 MUST保留A的Execution Record并报告superseded run与carrier cleanup摘要
+
+#### Scenario: terminal写入前旧current发生漂移
+
+- **WHEN** eligibility观察后旧current row缺失、变为terminal、状态不再failed，或run ID、payload digest任一变化
+- **THEN** terminal persistence MUST返回类型化current conflict并保持零写入
+- **AND** MUST NOT以新reconciliation terminal覆盖已变化的current owner
+
+#### Scenario: 普通finalize尝试替换其他run
+
+- **WHEN** 非recovery路径以不同run ID终结Task且未携Product内部旧current fence
+- **THEN** Persistence MUST继续拒绝terminal replacement
+- **AND** MUST NOT因支持reconciliation recovery而放宽普通finalize
 
 #### Scenario: repository topology真实变化
 

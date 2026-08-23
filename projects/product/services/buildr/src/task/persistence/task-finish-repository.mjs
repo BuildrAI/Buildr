@@ -559,8 +559,15 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
-  function finalizeTaskFinishPersistence(targetRoot, { run, result, completion = null }) {
+  function finalizeTaskFinishPersistence(targetRoot, { run, result, completion = null, supersededCurrent = null }) {
     const normalized = assertRun(run);
+    if (supersededCurrent && (!supersededCurrent.runId || !supersededCurrent.runDigest || supersededCurrent.runId === normalized.runId)) {
+      throw error('task_finish_current_recovery_identity_invalid', 'Task Finish recovery terminal requires a distinct superseded run ID and exact run digest.', 400, {
+        taskId: normalized.identity.task,
+        runId: normalized.runId,
+        supersededRunId: supersededCurrent.runId || null,
+      });
+    }
     const terminal = terminalRecord(normalized, result, completion);
     let opened;
     try {
@@ -568,7 +575,28 @@ export function registerTaskFinishRepository(runtime) {
       const database = opened.database;
       database.exec('BEGIN IMMEDIATE');
       const current = readCurrentRow(database, { taskId: normalized.identity.task });
-      if (current && current.run_id !== normalized.runId) throw error('task_finish_current_conflict', 'Task Finish terminal state与current run不一致。', 409, { taskId: normalized.identity.task, runId: normalized.runId, currentRunId: current.run_id });
+      if (supersededCurrent) {
+        const decoded = current ? decodeRow(current) : null;
+        const currentRunDigest = decoded?.kind === 'run' ? digest(JSON.stringify(decoded.run)) : null;
+        if (!current
+          || current.run_id !== supersededCurrent.runId
+          || decoded?.kind !== 'run'
+          || decoded.run.status !== 'failed'
+          || currentRunDigest !== supersededCurrent.runDigest) {
+          throw error('task_finish_current_conflict', 'Task Finish recovery terminal的superseded current已漂移。', 409, {
+            taskId: normalized.identity.task,
+            runId: normalized.runId,
+            expectedCurrentRunId: supersededCurrent.runId,
+            currentRunId: current?.run_id || null,
+            expectedCurrentRunDigest: supersededCurrent.runDigest,
+            currentRunDigest,
+            currentKind: decoded?.kind || null,
+            currentStatus: decoded?.kind === 'run' ? decoded.run.status : null,
+          });
+        }
+      } else if (current && current.run_id !== normalized.runId) {
+        throw error('task_finish_current_conflict', 'Task Finish terminal state与current run不一致。', 409, { taskId: normalized.identity.task, runId: normalized.runId, currentRunId: current.run_id });
+      }
       const row = writeCurrentRow(database, terminal.record);
       const written = decodeRow(row);
       database.exec('COMMIT');

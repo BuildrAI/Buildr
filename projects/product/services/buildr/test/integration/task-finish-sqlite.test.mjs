@@ -108,6 +108,65 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   database.close();
 });
 
+test('reconciliation terminal只在failed current run ID与digest精确匹配时原子替换', (t) => {
+  const root = workspace(t);
+  const runtime = createRuntime();
+  const task = 'sqlite-recovery-terminal';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove atomic recovery terminal replacement.', projects: [], services: [], changes: [] });
+  const oldRun = createFinishRun({ root, runId: 'sqlite-recovery-old', identity: identity(root, task), runtime });
+  oldRun.status = 'failed';
+  oldRun.updatedAt = new Date().toISOString();
+  runtime.writeTaskFinishRunPersistence(root, oldRun);
+  const frozen = runtime.readTaskFinishRunPersistence(root, { taskId: task });
+
+  const newIdentity = {
+    ...identity(root, task),
+    handoffIdentity: 'sha256-handoff-current',
+    candidateIdentity: 'sha256-candidate-current',
+    candidateGeneration: 2,
+    contentTargetIdentity: 'sha256-content-current',
+  };
+  const terminalRun = createFinishRun({ root, runId: 'sqlite-recovery-current', identity: newIdentity, runtime: { ...runtime, readTaskFinishRunPersistence: () => null } });
+  terminalRun.status = 'complete';
+  terminalRun.completedAt = new Date().toISOString();
+  terminalRun.updatedAt = terminalRun.completedAt;
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v3',
+    runId: terminalRun.runId,
+    task,
+    handoffIdentity: newIdentity.handoffIdentity,
+    candidateIdentity: newIdentity.candidateIdentity,
+    candidateGeneration: newIdentity.candidateGeneration,
+    contentTargetIdentity: newIdentity.contentTargetIdentity,
+    repositorySetIdentity: terminalRun.identity.repositorySetIdentity,
+    status: 'complete',
+    cleanup: { status: 'pending' },
+    association: null,
+  };
+  terminalRun.completion = completion;
+  const result = { ...finishResult(terminalRun), completion };
+
+  assert.throws(() => runtime.finalizeTaskFinishPersistence(root, { run: terminalRun, result, completion }), (error) => error.code === 'task_finish_current_conflict');
+  assert.throws(() => runtime.finalizeTaskFinishPersistence(root, {
+    run: terminalRun,
+    result,
+    completion,
+    supersededCurrent: { runId: oldRun.runId, runDigest: 'sha256-stale-digest' },
+  }), (error) => error.code === 'task_finish_current_conflict');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, oldRun.runId);
+
+  runtime.finalizeTaskFinishPersistence(root, {
+    run: terminalRun,
+    result,
+    completion,
+    supersededCurrent: { runId: oldRun.runId, runDigest: frozen.runDigest },
+  });
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }, { optional: true }), null);
+  const stored = runtime.readTaskFinishCompletionPersistence(root, { taskId: task });
+  assert.equal(stored.runId, terminalRun.runId);
+  assert.equal(stored.completion.handoffIdentity, newIdentity.handoffIdentity);
+});
+
 test('Task Finish current独占完整delivery message且公开result只投影subject与identity', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();

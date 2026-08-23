@@ -309,6 +309,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: entry.identityParts.task }, { optional: true });
   let run;
   let recovery = null;
+  let supersededCurrent = null;
   if (current?.run) {
     const mismatches = runIdentityMismatches(current.run, entry.identityParts);
     if (mismatches.length === 0) {
@@ -373,6 +374,10 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   }
 
   if (recovery) {
+    supersededCurrent = {
+      runId: recovery.persistence.run.runId,
+      runDigest: recovery.persistence.runDigest,
+    };
     const cleanup = removeFinishRunCarriers(recovery.persistence.run);
     const summary = recoverySummary(recovery.persistence.run, cleanup);
     if (!['removed', 'not-applicable'].includes(cleanup.status)) {
@@ -461,7 +466,12 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
     maintenance,
     recovery,
   };
-  runtime.finalizeTaskFinishPersistence(root, { run, result: canonical, completion });
+  runtime.finalizeTaskFinishPersistence(root, {
+    run,
+    result: canonical,
+    completion,
+    supersededCurrent,
+  });
   let taskCompletion;
   try {
     taskCompletion = completeTaskDeliveryTerminal(runtime, root, run.identity.task);

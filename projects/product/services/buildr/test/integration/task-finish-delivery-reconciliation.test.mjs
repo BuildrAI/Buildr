@@ -314,13 +314,20 @@ test('显式reconciliation在同repository topology的Task Contribution更新后
     run.identity.repositorySetIdentity = taskFinishRepositorySetIdentity(run.identity.repositories);
   } });
   assert.notEqual(staleRun.identity.repositorySetIdentity, entry.identityParts.repositorySetIdentity);
-  let current = { run: staleRun };
+  let current = { run: staleRun, runDigest: 'sha256-stale-run-digest' };
   let terminal = null;
   const runtime = {
     readTaskFinishCompletionPersistence: () => null,
     readTaskFinishRunPersistence: () => current,
     writeTaskFinishRunPersistence: () => assert.fail('recovery must not checkpoint over the stale current run'),
-    finalizeTaskFinishPersistence: (_target, value) => { terminal = value; current = null; },
+    finalizeTaskFinishPersistence: (_target, value) => {
+      assert.deepEqual(value.supersededCurrent, {
+        runId: staleRun.runId,
+        runDigest: 'sha256-stale-run-digest',
+      });
+      terminal = value;
+      current = null;
+    },
     completeTaskRecordFromFinish: () => ({ status: 'completed', record: { status: 'completed', result: { noChange: false } } }),
   };
 
