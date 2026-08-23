@@ -8,6 +8,7 @@ import {
 } from './git-task-contribution.mjs';
 import { createFinishRun, finishResult } from './task-finish-run.mjs';
 import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
+import { removeFinishRunCarriers } from './task-finish-occupancy-release.mjs';
 import {
   taskFinishCarrierSetIdentity,
   taskFinishDeliverySetIdentity,
@@ -76,16 +77,71 @@ function reconciliationError(code, message, details = null) {
   return error;
 }
 
-function assertMatchingRun(run, identity) {
+function runIdentityMismatches(run, identity) {
   const fields = ['task', 'handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'repositorySetIdentity'];
-  const mismatches = fields.filter((field) => run.identity?.[field] !== identity?.[field]);
-  if (mismatches.length) {
-    throw reconciliationError(
-      'task_finish.reconciliation_current_run_identity_conflict',
-      'Current Task Finish run is bound to a different delivery identity.',
-      { runId: run.runId, mismatches },
-    );
-  }
+  return fields.filter((field) => run.identity?.[field] !== identity?.[field]);
+}
+
+function untouchedPhase(phase) {
+  return Boolean(phase && phase.status === 'pending' && phase.attempts === 0);
+}
+
+function staleRunRecoveryEligibility(persistence, identity) {
+  const run = persistence?.run;
+  const mismatches = runIdentityMismatches(run, identity);
+  const preflight = run?.phases?.find((phase) => phase.id === 'preflight');
+  const prepare = run?.phases?.find((phase) => phase.id === 'prepare');
+  const downstream = (run?.phases || []).filter((phase) => ['verify', 'deliver', 'cleanup'].includes(phase.id));
+  const repositoryStates = run?.repositories || [];
+  const carriers = repositoryStates.filter((repository) => repository.deliveryCarrier?.root);
+  const facts = {
+    identityBoundary: Boolean(run?.identity?.task === identity?.task
+      && run?.identity?.repositorySetIdentity === identity?.repositorySetIdentity
+      && mismatches.length > 0
+      && mismatches.every((field) => ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity'].includes(field))),
+    terminalPrepareFailure: Boolean(run?.status === 'failed'
+      && preflight?.status === 'passed'
+      && preflight.attempts > 0
+      && prepare?.status === 'failed'
+      && prepare.attempts > 0
+      && downstream.length === 3
+      && downstream.every(untouchedPhase)),
+    carrier: carriers.length > 0 || Boolean(run?.deliveryCarrier?.root),
+    resume: Boolean(run?.resume),
+    lease: Boolean(persistence?.lease),
+    delivery: Boolean(run?.delivery || repositoryStates.some((repository) => repository.delivery)),
+    retained: Boolean(run?.delivery?.remoteAfterRef
+      || run?.delivery?.finalRemoteRef
+      || run?.delivery?.activation
+      || repositoryStates.some((repository) => repository.delivery?.remoteAfterRef
+        || repository.delivery?.finalRemoteRef
+        || repository.delivery?.activation)),
+    completion: Boolean(persistence?.preparedCompletion || run?.completion),
+    cleanup: Boolean(repositoryStates.some((repository) => repository.cleanupProof)
+      || (run?.phases || []).find((phase) => phase.id === 'cleanup' && !untouchedPhase(phase))),
+    occupancyReleased: Boolean(run?.occupancy?.status === 'released'),
+  };
+  const blockers = Object.entries(facts)
+    .filter(([key, value]) => ['identityBoundary', 'terminalPrepareFailure', 'carrier'].includes(key) ? !value : value)
+    .map(([key]) => key);
+  return { eligible: blockers.length === 0, mismatches, facts, blockers };
+}
+
+function recoverySummary(run, cleanup) {
+  return {
+    schemaVersion: 'buildr.task-finish-reconciliation-recovery/v1',
+    supersededRunId: run.runId,
+    frozenHandoffIdentity: run.identity.handoffIdentity,
+    carrierCleanup: {
+      status: cleanup.status,
+      repositories: (cleanup.repositories || []).map((repository) => ({
+        selector: repository.selector,
+        carrierIdentity: repository.carrierIdentity || null,
+        status: repository.status,
+        code: repository.code || null,
+      })),
+    },
+  };
 }
 
 function observeRemote(plan) {
@@ -232,9 +288,30 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
 
   const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: entry.identityParts.task }, { optional: true });
   let run;
+  let recovery = null;
   if (current?.run) {
-    assertMatchingRun(current.run, entry.identityParts);
-    run = clone(current.run);
+    const mismatches = runIdentityMismatches(current.run, entry.identityParts);
+    if (mismatches.length === 0) {
+      run = clone(current.run);
+    } else {
+      const eligibility = staleRunRecoveryEligibility(current, entry.identityParts);
+      if (!eligibility.eligible) {
+        throw reconciliationError(
+          'task_finish.reconciliation_current_run_identity_conflict',
+          'Current Task Finish run is bound to a different delivery identity and is not eligible for explicit reconciliation recovery.',
+          { runId: current.run.runId, mismatches, recoveryBlockers: eligibility.blockers },
+        );
+      }
+      const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+      run = createFinishRun({
+        root,
+        identity: entry.identityParts,
+        developmentHandoff: entry.handoff,
+        runId: `${entry.identityParts.task}-reconcile-${stamp}`,
+        runtime: { ...runtime, readTaskFinishRunPersistence: () => null },
+      });
+      recovery = { persistence: current, eligibility };
+    }
   } else {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
     run = createFinishRun({
@@ -257,7 +334,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   const unproven = observations.filter((item) => !['delivered', 'not-applicable'].includes(item.status));
   if (unproven.length) {
     const checkpointed = observations.some((item) => ['delivered', 'not-applicable'].includes(item.status));
-    if (checkpointed && runtime.writeTaskFinishRunPersistence) {
+    if (!recovery && checkpointed && runtime.writeTaskFinishRunPersistence) {
       run.repositories = repositories;
       run.updatedAt = new Date().toISOString();
       run.reconciliation = { mode: 'agent-led', status: 'partial', updatedAt: run.updatedAt };
@@ -270,9 +347,30 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       taskId: run.identity.task,
       repositorySetIdentity: run.identity.repositorySetIdentity,
       repositories: observations,
-      effects: checkpointed ? [{ type: 'delivery-checkpoint-recorded', selectors: observations.filter((item) => ['delivered', 'not-applicable'].includes(item.status)).map((item) => item.selector) }] : [],
+      effects: !recovery && checkpointed ? [{ type: 'delivery-checkpoint-recorded', selectors: observations.filter((item) => ['delivered', 'not-applicable'].includes(item.status)).map((item) => item.selector) }] : [],
       nextActions: ['由Agent处理对应repository的目标、远端或贡献包含事实后重试；其他已交付repository无需重复push。'],
     };
+  }
+
+  if (recovery) {
+    const cleanup = removeFinishRunCarriers(recovery.persistence.run);
+    const summary = recoverySummary(recovery.persistence.run, cleanup);
+    if (!['removed', 'not-applicable'].includes(cleanup.status)) {
+      return {
+        schemaVersion: 'buildr.task-finish-reconciliation-result/v1',
+        operation: 'reconcile',
+        status: 'unproven',
+        taskId: run.identity.task,
+        repositorySetIdentity: run.identity.repositorySetIdentity,
+        repositories: observations,
+        recovery: summary,
+        effects: (cleanup.repositories || [])
+          .filter((repository) => repository.status === 'removed')
+          .map((repository) => ({ type: 'stale-carrier-removed', selector: repository.selector, carrierIdentity: repository.carrierIdentity || null })),
+        nextActions: ['修复旧run-owned carrier的精确ownership或cleanup条件后重试；旧current run保持不变。'],
+      };
+    }
+    recovery = summary;
   }
 
   const completedAt = new Date().toISOString();
@@ -282,7 +380,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   run.updatedAt = completedAt;
   run.primaryFailure = null;
   run.resume = null;
-  run.reconciliation = { mode: 'agent-led', completedAt };
+  run.reconciliation = { mode: 'agent-led', completedAt, recovery };
   completePhases(run, completedAt);
   const applicable = run.identity.repositories.filter((repository) => repository.disposition === 'applicable');
   const singleton = applicable.length === 1
@@ -326,6 +424,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       : { status: 'not-applicable', summary: 'Task delivery was reconciled without a current Task Environment; no cleanup success is claimed.' },
     maintenance,
     association: terminalAssociation(entry.handoff, completedAt),
+    recovery,
   };
   run.completion = completion;
   const canonical = {
@@ -340,6 +439,7 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       identity: digest(completion.repositories),
     },
     maintenance,
+    recovery,
   };
   runtime.finalizeTaskFinishPersistence(root, { run, result: canonical, completion });
   let taskCompletion;
@@ -352,5 +452,10 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       nextAction: 'retry-task-finish-reconcile-to-complete-task-record',
     };
   }
-  return { ...canonical, taskCompletion, taskTerminal: { status: 'completed' } };
+  return {
+    ...canonical,
+    taskCompletion,
+    taskTerminal: { status: 'completed' },
+    effects: recovery ? [{ type: 'stale-finish-run-superseded', runId: recovery.supersededRunId }] : [],
+  };
 }

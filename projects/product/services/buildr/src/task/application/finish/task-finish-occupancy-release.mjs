@@ -34,7 +34,7 @@ function repositoryCarriers(run) {
     .filter((entry) => entry.plan?.retainedRoot);
 }
 
-function removeRunCarriers(run) {
+export function removeFinishRunCarriers(run) {
   const carriers = repositoryCarriers(run);
   if (carriers.length === 0) {
     const legacy = removeIsolatedGitCarrier({
@@ -116,7 +116,7 @@ export function releaseFinishOccupancy({ root, run, taskId, runtime, clock = Dat
 
 function persistOccupancyRelease({ root, run, runtime, clock }) {
   if (run.occupancy?.status === 'released') {
-    const leftover = removeRunCarriers(run);
+    const leftover = removeFinishRunCarriers(run);
     if (!['removed', 'not-applicable'].includes(leftover.status)) {
       throw occupancyError(
         leftover.code || 'task-finish.carrier-cleanup-failed',
@@ -128,7 +128,7 @@ function persistOccupancyRelease({ root, run, runtime, clock }) {
   }
 
   const expectedRoot = run.deliveryCarrier?.root || null;
-  const carrierCleanup = removeRunCarriers(run);
+  const carrierCleanup = removeFinishRunCarriers(run);
   if (!['removed', 'not-applicable'].includes(carrierCleanup.status)) {
     throw occupancyError(
       carrierCleanup.code || 'task-finish.carrier-cleanup-failed',
