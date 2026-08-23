@@ -133,7 +133,7 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 
 ## npm-only Release 流程
 
-当前迁移状态：P0已建立`release-<version>`人工选择集合和模块所有权契约，P2已交付shared readiness与唯一protected transaction；P1 selection/Candidate/correlation和P3 Git convergence尚未全部交付时，发布检查仍必须返回`release-model-implementation-incomplete`，准备/发布在任何Git、PR、workflow或公共副作用前停止。不得继续使用旧“最新dev自动成为候选”的步骤。
+当前实现状态：P0契约与P1 selection/Candidate/correlation、P2 shared readiness/protected transaction、P3 Git convergence均已进入current Product。发布检查仍必须逐项回读五类owner；任一能力缺失或漂移时返回`release-model-implementation-incomplete`，并在任何Git、PR、workflow或公共副作用前停止。不得继续使用旧“最新dev自动成为候选”或history bridge步骤。
 
 1. 维护者明确目标`<version>`、精确`<dev-baseline>`和有序选择commit；release owner从可由current `dev`证明的baseline创建唯一`release-<version>`，后续只接受明确选择且带`-x`provenance的dev commit或明确授权release-only metadata。普通dev前进不改变release，冲突不自动解决。
 2. 唯一身份链为`dev baseline → selection chain → release HEAD/tree → Product Candidate generation → frozen tarball → main → post-publish dev convergence → transaction evidence`。任一上游identity变化使旧Candidate、artifact、readiness和context stale。

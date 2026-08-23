@@ -2,7 +2,7 @@
 
 本文描述canonical发布契约、已经实现的验证/发布基线和当前迁移状态；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
 
-`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness和发布后main→dev收敛已经建立规范边界；其中P2 shared readiness/protected transaction已经交付，P1/P3仍未全部交付。迁移完成前，发布Skill必须报告缺失owner/read model并停止，不得回退到“最新dev自动成为发布集合”的旧流程或把本文当成其余实现成功证明。
+`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness、release→main和发布后main→dev收敛均已由current Product实现。发布Skill仍须逐项回读owner identity；任何能力缺失或漂移都返回`release-model-implementation-incomplete`，不得回退到“最新dev自动成为发布集合”或旧history bridge。
 
 ## 唯一事实链
 

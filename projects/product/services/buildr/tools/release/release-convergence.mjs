@@ -108,33 +108,37 @@ export function checkReleaseConvergence({
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
   if (!['pre-main', 'post-main', 'pre-tag'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
   if (stage !== 'pre-tag' && authorityEvidence) throw new Error('authority evidence is only accepted by the pre-tag stage');
-  if (fetch) runGit(repo, ['fetch', remote, main, dev]);
+  const release = `release-${version}`;
+  if (fetch) runGit(repo, ['fetch', remote, main, dev, release]);
   const devRef = `${remote}/${dev}`;
   const mainRef = `${remote}/${main}`;
+  const releaseRef = `${remote}/${release}`;
   const findings = [];
   const checksMain = stage === 'post-main' || stage === 'pre-tag';
   const refs = {
+    release: rev(repo, releaseRef),
     dev: rev(repo, devRef),
     main: checksMain ? rev(repo, mainRef) : null,
   };
   const trees = {
+    release: rev(repo, `${releaseRef}^{tree}`),
     dev: rev(repo, `${devRef}^{tree}`),
     main: checksMain ? rev(repo, `${mainRef}^{tree}`) : null,
   };
   const versions = {
+    release: packageVersionAt(repo, releaseRef),
     dev: packageVersionAt(repo, devRef),
     main: checksMain ? packageVersionAt(repo, mainRef) : null,
   };
   if (!isAncestor(repo, candidateBase, devRef)) findings.push({ code: 'candidate_base_not_in_dev', expected: candidateBase, actual: refs.dev });
-  if (trees.dev !== candidateTree) findings.push({ code: 'dev_tree_mismatch', expected: candidateTree, actual: trees.dev });
-  if (versions.dev !== version) findings.push({ code: 'dev_version_mismatch', expected: version, actual: versions.dev });
+  if (trees.release !== candidateTree) findings.push({ code: 'release_tree_mismatch', expected: candidateTree, actual: trees.release });
+  if (versions.release !== version) findings.push({ code: 'release_version_mismatch', expected: version, actual: versions.release });
   for (const item of releaseTaskRefs(repo, version)) {
     if (!isAncestor(repo, item.commit, devRef)) findings.push({ code: 'release_task_not_integrated', ref: item.ref, commit: item.commit });
   }
   if (checksMain) {
     if (trees.main !== candidateTree) findings.push({ code: 'main_tree_mismatch', expected: candidateTree, actual: trees.main });
     if (versions.main !== version) findings.push({ code: 'main_version_mismatch', expected: version, actual: versions.main });
-    if (!isAncestor(repo, mainRef, devRef)) findings.push({ code: 'main_not_ancestor_of_dev', main: refs.main, dev: refs.dev });
   }
   if (stage === 'pre-tag') {
     findings.push(...checkReleaseAuthorityEvidence({
@@ -155,7 +159,7 @@ export function checkReleaseConvergence({
     trees,
     versions,
     findings,
-    nextActions: findings.length ? ['修复 release candidate/dev/main、current hosted authority或workflow identity后重新运行checker；不得创建tag或执行npm publish。'] : [],
+    nextActions: findings.length ? ['修复 current release/main、Candidate或hosted authority identity后重新运行checker；dev可在release创建后独立前进，Publication后再由独立owner收敛。'] : [],
   };
 }
 

@@ -84,10 +84,12 @@ function prepareTerminalChildWithoutContribution(current, childTaskId = 'child-t
   const gate = { disposition: 'not-applicable', targetIdentity: null, summary: 'Terminal recovery fixture gate.', source: 'integration-test' };
   let candidate;
   let handoff;
+  let terminalAt;
   const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
   try {
     const row = opened.database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(childTaskId);
     const currentReceipt = JSON.parse(row.record_json);
+    terminalAt = currentReceipt.updatedAt;
     const components = [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'integration-test', identity: taskDevelopmentDigest(`${childTaskId}/tree`) }];
     const contentTarget = normalizeTaskContentTarget({ identity: taskDevelopmentDigest({ components }), components });
     const policyPayload = { declarations: [], capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Terminal recovery integration fixture.' }], overrides: [] };
@@ -95,12 +97,12 @@ function prepareTerminalChildWithoutContribution(current, childTaskId = 'child-t
     candidate = createTaskCandidate({ generation: 1, contentTargetIdentity: contentTarget.identity, taskContextIdentity: currentReceipt.taskContext.identity, policyIdentity: verificationPolicy.identity });
     const gates = { planning: gate, verification: gate, completion: gate };
     const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'Fixture proceeds.', risks: [] };
-    handoff = createTaskFinishHandoff({ candidate, changes: [], gates, decision, contributionHandoff: nativeContributionHandoff, createdAt: '2026-08-23T00:00:00.000Z' });
-    const receipt = normalizeTaskDevelopmentReceipt({ ...currentReceipt, contentTarget, verificationPolicy, generation: 1, candidate, currentKnowledge: null, gates, decision, handoffs: [handoff], updatedAt: '2026-08-23T00:00:00.000Z' }, { expectedTaskId: childTaskId });
+    handoff = createTaskFinishHandoff({ candidate, changes: [], gates, decision, contributionHandoff: nativeContributionHandoff, createdAt: terminalAt });
+    const receipt = normalizeTaskDevelopmentReceipt({ ...currentReceipt, contentTarget, verificationPolicy, generation: 1, candidate, currentKnowledge: null, gates, decision, handoffs: [handoff], updatedAt: terminalAt }, { expectedTaskId: childTaskId });
     opened.database.prepare('UPDATE task_development_current SET record_json = ? WHERE task_id = ?').run(JSON.stringify(receipt), childTaskId);
   } finally { opened.database.close(); }
   current.runtime.completeTaskRecord(current.root, childTaskId, { summary: 'Delivered before Contribution evidence was recorded.', noChange: false });
-  const phases = ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1, startedAt: '2026-08-23T00:00:00.000Z', completedAt: '2026-08-23T00:00:00.000Z', durationMs: 0, inputIdentity: null, outputIdentity: null, failure: null }));
+  const phases = ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1, startedAt: terminalAt, completedAt: terminalAt, durationMs: 0, inputIdentity: null, outputIdentity: null, failure: null }));
   const association = {
     schemaVersion: 'buildr.task-terminal-delivery-associations/v1',
     handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation,
@@ -109,14 +111,14 @@ function prepareTerminalChildWithoutContribution(current, childTaskId = 'child-t
       verification: { status: 'gate-disposition', ...gate },
       completion: { status: 'gate-disposition', ...gate },
     },
-    observedAt: '2026-08-23T00:00:00.000Z', source: 'integration-test',
+    observedAt: terminalAt, source: 'integration-test',
   };
   const run = {
     schemaVersion: 'buildr.task-finish-run/v3', runId: `${childTaskId}-terminal-run`, status: 'complete',
     identity: { task: childTaskId, handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation, contentTargetIdentity: candidate.contentTargetIdentity, targetBranch: 'dev', remote: 'origin' },
-    phases, createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', completedAt: '2026-08-23T00:00:00.000Z',
+    phases, createdAt: terminalAt, updatedAt: terminalAt, completedAt: terminalAt,
   };
-  current.runtime.finalizeTaskFinishPersistence(current.root, { run, result: { identity: run.identity, phases, completedAt: '2026-08-23T00:00:00.000Z' }, completion: { association, completedAt: '2026-08-23T00:00:00.000Z' } });
+  current.runtime.finalizeTaskFinishPersistence(current.root, { run, result: { identity: run.identity, phases, completedAt: terminalAt }, completion: { association, completedAt: terminalAt } });
   return handoff;
 }
 

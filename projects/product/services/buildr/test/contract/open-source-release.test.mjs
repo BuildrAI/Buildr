@@ -566,11 +566,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
 });
 
-test('release bridge and self-bootstrap runner fail closed on unmatched delivery evidence', () => {
+test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
   const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/bridge-main-to-dev.mjs'), 'utf8');
+  const convergenceSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/release-git-convergence.mjs'), 'utf8');
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
-  assert.match(bridgeSource, /Missing required --self-bootstrap-run/);
-  assert.match(bridgeSource, /Missing required --self-bootstrap-evidence/);
-  assert.match(bridgeSource, /Self-bootstrap closeout evidence does not match current remote dev/);
+  assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
+  assert.match(convergenceSource, /published-but-dev-convergence-blocked/);
+  assert.match(convergenceSource, /authorizeRemoteDelete/);
+  assert.doesNotMatch(convergenceSource, /\['merge', '-s', 'ours'|\['push'[^\]]*'--force'|\['reset', '--hard'/);
 });
