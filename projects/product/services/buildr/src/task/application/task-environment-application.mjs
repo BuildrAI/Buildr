@@ -107,9 +107,19 @@ export function registerTaskEnvironmentApplication(runtime) {
     for (const plan of plans) {
       const state = states.find((repository) => repository.selector === plan.selector);
       const targetRef = state?.delivery?.finalRemoteRef || state?.cleanupProof?.target?.head || null;
+      const adaptedProof = state?.deliveryCarrier
+        && state?.equivalence?.status === 'equivalent'
+        && state.equivalence.reuseMode === 'agent-reviewed-delivery-adaptation'
+        ? {
+            ...state.deliveryCarrier,
+            reuseMode: state.equivalence.reuseMode,
+            taskContribution: state.taskContribution,
+            deliveryEquivalence: state.equivalence,
+          }
+        : null;
       const proof = state?.delivery?.containment?.schemaVersion === 'buildr.task-delivery-containment-proof/v1'
         ? { ...state.delivery.containment, taskContribution: state.taskContribution }
-        : state?.deliveryCarrier || state?.cleanupProof || null;
+        : adaptedProof || state?.deliveryCarrier || state?.cleanupProof || null;
       if (!targetRef || !proof) return null;
       deliveries[plan.selector] = targetRef;
       integratedContributions[plan.selector] = proof;

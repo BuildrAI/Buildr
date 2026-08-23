@@ -340,6 +340,40 @@ test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptat
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'zero-delta', expectedRoot: carrier.root }).status, 'removed');
 });
 
+test('持久化agent-reviewed equivalence可证明精简reconciliation carrier的cleanup', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
+  git(taskRoot, ['add', 'shared.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'conflicting baseline']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const taskContribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'persisted-adaptation', deliveryBaselineHead: baselineHead, taskContribution, message: 'delivery carrier' });
+  fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
+  git(carrier.root, ['add', 'shared.txt']);
+  git(carrier.root, ['commit', '-m', 'delivery carrier']);
+  const head = git(carrier.root, ['rev-parse', 'HEAD']);
+  const tree = git(carrier.root, ['rev-parse', 'HEAD^{tree}']);
+  const proof = {
+    identity: 'sha256-persisted-carrier', head, tree,
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    taskContribution,
+    deliveryEquivalence: {
+      status: 'equivalent',
+      reuseMode: 'agent-reviewed-delivery-adaptation',
+      semanticEquivalence: 'agent-reviewed-not-proven-by-buildr',
+      carrierIdentity: 'sha256-persisted-carrier',
+      taskContributionIdentity: taskContribution.identity,
+    },
+  };
+
+  assert.equal(verifyDeliveredGitTaskContribution({ taskRoot, targetRef: head, proof }).status, 'equivalent');
+  assert.equal(verifyDeliveredGitTaskContribution({ taskRoot, targetRef: head, proof: { ...proof, identity: 'sha256-drifted' } }).code, 'git_worktree_delivery_adaptation_proof_invalid');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'persisted-adaptation', expectedRoot: carrier.root }).status, 'removed');
+});
+
 test('Agent-reviewed adaptation改变冻结message时保持blocked', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');

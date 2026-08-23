@@ -26,7 +26,7 @@ function carrierContainer(workspaceRoot, runId) {
   return target;
 }
 
-function carrierRoot(workspaceRoot, runId, repositorySelector = null) {
+export function taskFinishCarrierRoot(workspaceRoot, runId, repositorySelector = null) {
   const container = carrierContainer(workspaceRoot, runId);
   if (!repositorySelector) return container;
   const readable = String(repositorySelector).replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'repository';
@@ -199,7 +199,7 @@ export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, works
   const changedPaths = Array.isArray(carrier?.changedPaths) ? carrier.changedPaths : null;
   const changes = Array.isArray(carrier?.changes) ? carrier.changes : null;
   let expectedRoot = null;
-  try { expectedRoot = runId ? carrierRoot(workspaceRoot, runId, repositorySelector) : null; } catch { /* invalid run identity remains unprovable */ }
+  try { expectedRoot = runId ? taskFinishCarrierRoot(workspaceRoot, runId, repositorySelector) : null; } catch { /* invalid run identity remains unprovable */ }
   if (!carrierRef || !targetRef || !expectedRoot || !carrier?.root || !sameFilesystemPath(carrier.root, expectedRoot)
     || carrier?.reuseMode !== 'agent-reviewed-delivery-adaptation'
     || carrier?.zeroDelta !== true
@@ -268,7 +268,7 @@ export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, works
 }
 
 export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector = null, expectedRoot = null }) {
-  const target = carrierRoot(workspaceRoot, runId, repositorySelector);
+  const target = taskFinishCarrierRoot(workspaceRoot, runId, repositorySelector);
   if (expectedRoot && !sameFilesystemPath(expectedRoot, target)) return { status: 'blocked', code: 'task-finish.carrier-root-mismatch', root: target };
   const registered = carrierRegistration(repositoryRoot, target);
   if (!registered) {
@@ -301,7 +301,7 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
   const expectedDeliveryCommit = deliveryCommit || taskFinishDeliveryCommitFromMessage(message);
   const activationPaths = taskContributionActivationPaths(repositoryRoot, taskContribution);
   if (!activationPaths) throw Object.assign(new Error('Task Contribution activation paths are unavailable.'), { code: 'task-finish.task-contribution-unprovable' });
-  const target = carrierRoot(workspaceRoot, runId, repositorySelector);
+  const target = taskFinishCarrierRoot(workspaceRoot, runId, repositorySelector);
   const existing = removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId, repositorySelector });
   if (existing.status === 'blocked') throw Object.assign(new Error('Existing Delivery Carrier ownership cannot be proved.'), { code: existing.code, details: existing });
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -454,7 +454,7 @@ export function verifyGitTaskContributionCarrier({ repositoryRoot, carrier }) {
 
 export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof }) {
   try {
-    if (!proof?.taskContribution || !proof?.deliveryBaseline || !proof?.head || !proof?.tree) return { status: 'stale', code: 'git_worktree_contribution_proof_invalid' };
+    if (!proof?.taskContribution || !proof?.head || !proof?.tree) return { status: 'stale', code: 'git_worktree_contribution_proof_invalid' };
     const targetHead = requireGitText(taskRoot, ['rev-parse', `${targetRef}^{commit}`], 'Delivered target ref is unavailable.');
     const proofHead = requireGitText(taskRoot, ['rev-parse', `${proof.head}^{commit}`], 'Delivered carrier ref is unavailable.');
     const proofTree = requireGitText(taskRoot, ['rev-parse', `${proof.head}^{tree}`], 'Delivered carrier tree is unavailable.');
@@ -469,12 +469,24 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
     const current = withTemporaryIndex(taskRoot, proof.taskContribution.originalBaseline.head, ({ tree }) => ({ tree }));
     if (current.tree !== proof.taskContribution.source.tree) return { status: 'stale', code: 'git_worktree_contribution_source_drift' };
     const sourceIdentity = deltaIdentity(taskRoot, proof.taskContribution.originalBaseline.tree, current.tree);
-    const deliveredIdentity = deltaIdentity(taskRoot, proof.deliveryBaseline.tree, proof.tree);
     if (sourceIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_source_not_equivalent' };
     if (proof.reuseMode === 'agent-reviewed-delivery-adaptation') {
+      const equivalence = proof.deliveryEquivalence;
+      if (equivalence?.status === 'equivalent'
+        && equivalence.reuseMode === proof.reuseMode
+        && equivalence.semanticEquivalence === 'agent-reviewed-not-proven-by-buildr'
+        && proof.identity
+        && equivalence.carrierIdentity === proof.identity
+        && equivalence.taskContributionIdentity === sourceIdentity) {
+        return { status: 'equivalent', identity: sourceIdentity, carrierIdentity: proof.identity, reuseMode: proof.reuseMode };
+      }
+      if (!proof.deliveryBaseline) return { status: 'stale', code: 'git_worktree_delivery_adaptation_proof_invalid' };
+      const deliveredIdentity = deltaIdentity(taskRoot, proof.deliveryBaseline.tree, proof.tree);
       if (!proof.carrierDeltaIdentity || deliveredIdentity !== proof.carrierDeltaIdentity) return { status: 'stale', code: 'git_worktree_delivery_adaptation_not_equivalent' };
       return { status: 'equivalent', identity: sourceIdentity, carrierIdentity: deliveredIdentity, reuseMode: proof.reuseMode };
     }
+    if (!proof.deliveryBaseline) return { status: 'stale', code: 'git_worktree_contribution_proof_invalid' };
+    const deliveredIdentity = deltaIdentity(taskRoot, proof.deliveryBaseline.tree, proof.tree);
     if (deliveredIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_not_equivalent' };
     return { status: 'equivalent', identity: sourceIdentity, reuseMode: 'deterministic-reuse' };
   } catch (error) {

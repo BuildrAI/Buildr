@@ -338,6 +338,28 @@ test('complete cleanup后carrier root可清理但冻结自举事实保持可投�
   assert.equal(result.selfBootstrap.baseRef, 'final-ref');
 });
 
+test('v3 reconciliation carrier缺root时恢复确定性的run-owned repository root', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-adapted-carrier', head: 'final-ref', tree: 'final-tree', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete', cleanup: { status: 'pending' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-adapted-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.workspaceRepository.carrier.root, '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/workspace-21a3230e0377');
+  assert.equal(result.workspaceRepository.carrier.availability, 'retained');
+});
+
 test('self-bootstrap projector对未知内部major与不完整carrier fail closed', () => {
   assert.throws(
     () => selfBootstrapTaskFinishResult(canonical({ schemaVersion: 'buildr.task-finish-result/v4', futureField: true })),

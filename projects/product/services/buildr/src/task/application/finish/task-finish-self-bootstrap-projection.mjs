@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
+import { taskFinishCarrierRoot } from './git-task-contribution.mjs';
 
 const SUPPORTED_RESULT_SCHEMAS = new Set([
   'buildr.task-finish-result/v2',
@@ -58,10 +59,10 @@ function cleanupCompleted(result) {
     && result.phases.some((phase) => phase?.id === 'cleanup' && phase?.status === 'passed');
 }
 
-function projectedCarrier(selector, carrier, { allowCleanedRoot = false } = {}) {
+function projectedCarrier(selector, carrier, { allowCleanedRoot = false, fallbackRoot = null } = {}) {
   if (!carrier) return null;
   const identity = optionalString(carrier.identity);
-  const root = optionalString(carrier.root);
+  const root = optionalString(carrier.root) || (!allowCleanedRoot ? optionalString(fallbackRoot) : null);
   if (!identity || (root && !path.isAbsolute(root)) || (!root && !allowCleanedRoot)) {
     throw projectionError('Task Finish carrier is missing a stable identity or absolute root.', {
       selector,
@@ -130,7 +131,7 @@ function hasProjectableLegacyCarrier(result) {
   return Boolean(optionalString(result?.carrier?.identity));
 }
 
-function repositoryProjection(result) {
+function repositoryProjection(result, identity, runId) {
   const allowCleanedRoot = cleanupCompleted(result);
   if (result.schemaVersion === 'buildr.task-finish-result/v2') {
     return legacyWorkspaceProjection(result, allowCleanedRoot);
@@ -169,7 +170,12 @@ function repositoryProjection(result) {
       targetBranch: optionalString(plan.targetBranch),
       remote: optionalString(plan.remote),
       leaseTargetIdentity: optionalString(plan.leaseTargetIdentity),
-      carrier: projectedCarrier(selector, state.deliveryCarrier, { allowCleanedRoot }),
+      carrier: projectedCarrier(selector, state.deliveryCarrier, {
+        allowCleanedRoot,
+        fallbackRoot: identity.workspaceRoot && runId
+          ? taskFinishCarrierRoot(identity.workspaceRoot, runId, selector)
+          : null,
+      }),
       delivery: projectedDelivery(state.delivery),
     };
   });
@@ -269,14 +275,13 @@ export function selfBootstrapTaskFinishResult(result) {
     });
   }
   const identity = resultIdentity(result);
-  const repositories = repositoryProjection(result);
+  const runId = optionalString(result.runId);
+  const repositories = repositoryProjection(result, identity, runId);
   const workspaceRepositories = repositories.filter((repository) => repository.selector === 'workspace');
   const workspaceRepository = workspaceRepositories.length === 1 ? workspaceRepositories[0] : null;
   const carriers = repositories.map((repository) => repository.carrier).filter(Boolean);
-  const runId = optionalString(result.runId);
-  const carrierContainerRoot = identity.workspaceRoot && runId && !runId.includes('/') && runId !== '.'
-    ? path.resolve(identity.workspaceRoot, '.buildr', 'transient', 'task-finish', 'carriers', runId)
-    : null;
+  let carrierContainerRoot = null;
+  try { carrierContainerRoot = identity.workspaceRoot && runId ? taskFinishCarrierRoot(identity.workspaceRoot, runId) : null; } catch { /* invalid run identity remains unprojectable */ }
   const mode = finishMode(result, workspaceRepository);
   const workspaceDelivery = workspaceRepository?.delivery || projectedDelivery(result.delivery);
   const workspaceFinal = workspaceCompletion(result);

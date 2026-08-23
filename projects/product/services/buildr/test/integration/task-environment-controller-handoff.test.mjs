@@ -489,3 +489,54 @@ test('completed Task可由持久化交付证据独立授权Environment cleanup',
   assert.equal(current.calls.providerCleanupInput.integratedRefs.workspace, current.m1);
   assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, { ...containment, taskContribution });
 });
+
+test('completed reconciliation以持久化agent-reviewed equivalence授权Environment cleanup', async (t) => {
+  const current = fixture(t);
+  const taskContribution = {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: `sha256-${'4'.repeat(64)}`,
+    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
+    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
+  };
+  const carrier = {
+    identity: `sha256-${'7'.repeat(64)}`,
+    kind: 'git-isolated-commit',
+    head: current.m1,
+    tree: git(current.root, ['rev-parse', `${current.m1}^{tree}`]),
+    changedPaths: ['feature.txt'],
+  };
+  const equivalence = {
+    status: 'equivalent',
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    semanticEquivalence: 'agent-reviewed-not-proven-by-buildr',
+    carrierIdentity: carrier.identity,
+    taskContributionIdentity: taskContribution.identity,
+  };
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '适配后的任务贡献已验证交付。', noChange: false },
+  } });
+  current.runtime.readTaskFinishCompletionPersistence = () => ({
+    status: 'complete',
+    completion: {
+      result: {
+        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
+        repositories: [{
+          selector: 'workspace', taskContribution, deliveryCarrier: carrier, equivalence,
+          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment: null },
+        }],
+      },
+    },
+  });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, {
+    ...carrier,
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    taskContribution,
+    deliveryEquivalence: equivalence,
+  });
+});
