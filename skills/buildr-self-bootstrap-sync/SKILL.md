@@ -48,7 +48,7 @@ Runner通过retained `projects/product/buildr task finish inspect --detail self-
 Runner依次尝试：
 
 ```text
-preflight → plan → sync → commit → push → install-local-app
+preflight → plan → sync → commit → push → install-buildr-web
 → verify-development-entry → finalize
 ```
 

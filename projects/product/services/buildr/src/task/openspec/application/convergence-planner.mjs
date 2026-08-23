@@ -43,6 +43,11 @@ export function createConvergencePlan({ change, project, delta, canonicalFiles, 
     const replacements = new Map();
     const removals = new Set();
     const additions = [];
+    const scenarioRenames = new Map(
+      capabilityOperations
+        .filter((operation) => operation.type === 'RENAMED_SCENARIO')
+        .map((operation) => [`${operation.requirement}\0${operation.from}`, operation.to]),
+    );
     if (!exists && !removesWholeAbsentCapability && (!purpose || purpose.length < 50)) blocked.push({ capability, requirement: null, operation: 'CREATE_CAPABILITY', code: 'semantic-resolution-required' });
 
     for (const operation of capabilityOperations) {
@@ -62,14 +67,24 @@ export function createConvergencePlan({ change, project, delta, canonicalFiles, 
         const currentScenarios = scenarioNames(copies[0] || '');
         const expectedScenarios = scenarioNames(expected);
         const omitted = currentScenarios.names.filter((name) => !expectedScenarios.names.includes(name));
+        const unaccountedOmissions = omitted.filter((name) => !scenarioRenames.has(`${operation.title}\0${name}`));
         if (copies.length !== 1) fail('requirement-not-unique');
         else if (!currentScenarios.unique || !expectedScenarios.unique) fail('semantic-resolution-required');
-        else if (omitted.length) fail('semantic-resolution-required', {
+        else if (unaccountedOmissions.length) fail('semantic-resolution-required', {
           reason: 'scenario-identities-omitted',
-          omittedScenarioIdentities: [...omitted].sort((left, right) => left.localeCompare(right)),
+          omittedScenarioIdentities: [...unaccountedOmissions].sort((left, right) => left.localeCompare(right)),
         });
         else if (copies[0] === expected) { status = 'already-applied'; reason = 'canonical-equals-delta'; }
         else replacements.set(operation.title, expected);
+      } else if (operation.type === 'RENAMED_SCENARIO') {
+        status = 'safe';
+        reason = 'explicit-scenario-rename';
+      } else if (operation.type === 'RENAMED') {
+        if (copies.length !== 1 || document.identities.get(operation.to)?.length) fail('rename-not-unique');
+        else {
+          const source = replacements.get(operation.from) || copies[0];
+          replacements.set(operation.from, normalizeConvergenceText(source.replace(`### Requirement: ${operation.from}`, `### Requirement: ${operation.to}`)));
+        }
       } else if (operation.type === 'REMOVED') {
         if (copies.length === 0) { status = 'already-applied'; reason = 'requirement-absent'; }
         else if (copies.length !== 1) fail('requirement-not-unique');

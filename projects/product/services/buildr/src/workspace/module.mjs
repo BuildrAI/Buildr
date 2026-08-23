@@ -22,7 +22,7 @@ export { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } fr
 export { parseProjectsManifest, renderProjectsManifest } from './persistence/project-manifest-repository.mjs';
 export { parseServicesManifest, renderServicesDomainManifest } from './persistence/service-manifest-repository.mjs';
 export { parseWorkspaceManifest } from './persistence/workspace-manifest-repository.mjs';
-export { localAppDataRoot, readWorkspaceRegistryFile } from './persistence/workspace-registry-repository.mjs';
+export { buildrWebDataRoot, readWorkspaceRegistryFile } from './persistence/workspace-registry-repository.mjs';
 export { ensureRegisteredTarget } from './application/workspace-application.mjs';
 export {
   PROJECT_DAILY_PROGRESS_SCHEMA,

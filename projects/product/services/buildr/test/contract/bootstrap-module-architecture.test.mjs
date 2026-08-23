@@ -340,8 +340,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.equal(runtimePort.exit, undefined);
 
   const webLifecycle = runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE);
-  assert.equal(typeof webLifecycle.startLocalWorkspaceApp, 'function');
-  assert.equal(typeof webLifecycle.manageLocalAppPreview, 'function');
+  assert.equal(typeof webLifecycle.startBuildrWeb, 'function');
+  assert.equal(typeof webLifecycle.manageBuildrWebPreview, 'function');
 });
 
 test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {

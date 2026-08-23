@@ -85,10 +85,10 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
     'src/web/interfaces/cli/web.mjs',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
   for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
-    assert.equal(fs.existsSync(path.join(productRoot, 'src/interfaces/local-app/runtime', legacy)), false);
+    assert.equal(fs.existsSync(path.join(productRoot, 'src/web/runtime', legacy)), false);
   }
   const host = fs.readFileSync(path.join(productRoot, 'src/web/http/server.mjs'), 'utf8');
-  assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/);
+  assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/);
   const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.mjs'), 'utf8');
   assert.doesNotMatch(lifecycle, /ensureRegisteredTarget\(runtime,/);
   const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');

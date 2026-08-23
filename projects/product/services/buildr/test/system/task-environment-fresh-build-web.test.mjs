@@ -82,7 +82,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'src/workspace/interfaces/http/generated/workspace-http-dto.ts',
     'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
     'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts',
-    'src/web/http/local-app-http-contracts.mjs',
+    'src/web/http/buildr-web-http-contracts.mjs',
     'src/web/http/generated/runtime-system-http-dto.ts',
     'src/system/installation/interfaces/http/release-awareness-http-contracts.mjs',
     'src/system/publication/interfaces/http/publication-http-contracts.mjs',

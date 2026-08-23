@@ -70,7 +70,7 @@ export const SYSTEM_SUITES = Object.freeze([
     files: Object.freeze([
       'test/system/task-development-generic-journey.test.mjs',
       'test/system/task-record-change-resolver.test.mjs',
-      'test/system/task-record-local-app.test.mjs',
+      'test/system/task-record-buildr-web.test.mjs',
       'test/system/task-record-product.test.mjs',
       'test/system/task-review-product.test.mjs',
       'test/system/task-verification-product.test.mjs',
@@ -101,16 +101,16 @@ export const SYSTEM_SUITES = Object.freeze([
     ]),
   }),
   Object.freeze({
-    id: 'system-local-app-http',
+    id: 'system-buildr-web-http',
     name: 'System Buildr Web Runtime',
     innerConcurrency: 2,
     schedulingCostMs: 20000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze([]),
     files: Object.freeze([
-      'test/system/local-app-http.test.mjs',
+      'test/system/buildr-web-http.test.mjs',
       'test/system/task-professional-http-contract.test.mjs',
-      'test/system/workspace-local-app-http.test.mjs',
+      'test/system/workspace-buildr-web-http.test.mjs',
     ]),
   }),
   Object.freeze({
@@ -122,8 +122,8 @@ export const SYSTEM_SUITES = Object.freeze([
     resources: Object.freeze(['app-runtime']),
     files: Object.freeze([
       'test/system/development-workspace-smoke-isolation.test.mjs',
-      'test/system/local-app-channel-isolation.test.mjs',
-      'test/system/local-app-launcher.test.mjs',
+      'test/system/buildr-web-channel-isolation.test.mjs',
+      'test/system/buildr-web-launcher.test.mjs',
       'test/system/workspace-app-process.test.mjs',
     ]),
   }),

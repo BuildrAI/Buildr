@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
-import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/local-app-http-contracts.mjs';
+import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.mjs';
 import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.mjs';
 import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
 import { TASK_RECORD_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-record-http-contracts.mjs';

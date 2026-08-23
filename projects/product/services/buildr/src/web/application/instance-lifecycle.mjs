@@ -5,28 +5,28 @@ import process from 'node:process';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../system/installation/contracts/web-profile.mjs';
 import {
-  clearLocalAppInstance,
-  acquireLocalAppStartLock,
-  healthyLocalAppInstance,
+  clearBuildrWebInstance,
+  acquireBuildrWebStartLock,
+  healthyBuildrWebInstance,
   matchesNpmLauncherBinding,
   npmLauncherInstanceDisposition,
   openDefaultBrowser,
-  readLocalAppInstance,
-  requestLocalAppInstanceShutdown,
-  releaseLocalAppStartLock,
-  waitForLocalAppInstance,
-  waitForLocalAppInstanceExit,
-  writeLocalAppInstance,
+  readBuildrWebInstance,
+  requestBuildrWebInstanceShutdown,
+  releaseBuildrWebStartLock,
+  waitForBuildrWebInstance,
+  waitForBuildrWebInstanceExit,
+  writeBuildrWebInstance,
   readLauncherIdentityFromEnvironment,
 } from '../infrastructure/instance-runtime.mjs';
 import {
   listPreviews,
   readPreviewIdentityFromEnvironment,
-  registerLocalAppPreviewResourceProvider,
+  registerBuildrWebPreviewResourceProvider,
   startPreview,
   stopPreview,
 } from './preview-lifecycle.mjs';
-import { createLocalAppScheduledMaintenance } from './scheduled-maintenance.mjs';
+import { createBuildrWebScheduledMaintenance } from './scheduled-maintenance.mjs';
 
 export function registerWebInstanceLifecycle(runtime, options = {}) {
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
@@ -38,8 +38,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
   if (typeof options.readProductIdentity !== 'function' || typeof options.assertNpmLauncherBinding !== 'function') {
     throw new Error('Web instance lifecycle requires the System Installation identity and Launcher binding ports.');
   }
-  registerLocalAppPreviewResourceProvider(runtime);
-  async function startLocalWorkspaceApp(args) {
+  registerBuildrWebPreviewResourceProvider(runtime);
+  async function startBuildrWeb(args) {
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--port', '--no-open', '--launcher-binding']), new Set(['--no-open']));
     const targetValue = runtime.optionValue(args, '--target', null);
     const targetRoot = targetValue ? path.resolve(targetValue) : null;
@@ -82,7 +82,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       return healthy;
     };
     const reuseInstance = (healthy, startLock = null) => {
-      releaseLocalAppStartLock(startLock);
+      releaseBuildrWebStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${healthy.url}/workspaces/${initialWorkspaceId}/` : healthy.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
       console.log(`Buildr Web 已运行：${pageUrl}`);
@@ -95,8 +95,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       error.details = { pid: healthy.pid, disposition: disposition.disposition };
       return error;
     };
-    const recorded = readLocalAppInstance(webProfile);
-    const healthy = await healthyLocalAppInstance(recorded);
+    const recorded = readBuildrWebInstance(webProfile);
+    const healthy = await healthyBuildrWebInstance(recorded);
     if (healthy) {
       assertCompatibleInstance(healthy);
       if (!npmLauncherBinding) return reuseInstance(healthy);
@@ -110,9 +110,9 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       error.details = { expected: webProfile, actual: recorded.webProfile };
       throw error;
     }
-    const startLock = acquireLocalAppStartLock(webProfile);
+    const startLock = acquireBuildrWebStartLock(webProfile);
     if (!startLock.owner) {
-      const started = await waitForLocalAppInstance({
+      const started = await waitForBuildrWebInstance({
         profile: webProfile,
         match: npmLauncherBinding ? (instanceValue) => matchesNpmLauncherBinding(instanceValue, npmLauncherBinding) : null,
       });
@@ -132,8 +132,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     let scheduledMaintenance = null;
     let fallbackPort = null;
     try {
-      const currentRecorded = readLocalAppInstance(webProfile);
-      const currentHealthy = await healthyLocalAppInstance(currentRecorded);
+      const currentRecorded = readBuildrWebInstance(webProfile);
+      const currentHealthy = await healthyBuildrWebInstance(currentRecorded);
       if (currentHealthy) {
         assertCompatibleInstance(currentHealthy);
         if (!npmLauncherBinding) return reuseInstance(currentHealthy, startLock);
@@ -142,8 +142,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
         if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) {
           throw launcherConflict(disposition, currentHealthy);
         }
-        await requestLocalAppInstanceShutdown(currentHealthy);
-        const exit = await waitForLocalAppInstanceExit(currentHealthy, { profile: webProfile });
+        await requestBuildrWebInstanceShutdown(currentHealthy);
+        const exit = await waitForBuildrWebInstanceExit(currentHealthy, { profile: webProfile });
         if (exit.status !== 'exited') {
           const error = new Error(exit.status === 'replaced'
             ? 'Launcher 交接期间实例 receipt 被另一实例替换，已保留现场并停止启动。'
@@ -159,7 +159,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
         error.details = { expected: webProfile, actual: currentRecorded.webProfile };
         throw error;
       } else if (currentRecorded) {
-        clearLocalAppInstance(currentRecorded, webProfile);
+        clearBuildrWebInstance(currentRecorded, webProfile);
       }
       const preferredPort = npmLauncherBinding ? npmLauncherBinding.webPort.preferred : port;
       const attempts = npmLauncherBinding && preferredPort > 0 ? [preferredPort, 0] : [preferredPort];
@@ -176,13 +176,13 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
             httpContributions,
             ensureRegisteredTarget,
             onShutdown: () => {
-              if (state) clearLocalAppInstance(state, webProfile);
+              if (state) clearBuildrWebInstance(state, webProfile);
               if (previewIdentity) process.exit(0);
             },
           });
           ready = await instance.ready;
           if (!previewIdentity) {
-            scheduledMaintenance = (options.scheduledMaintenanceFactory || createLocalAppScheduledMaintenance)(runtime);
+            scheduledMaintenance = (options.scheduledMaintenanceFactory || createBuildrWebScheduledMaintenance)(runtime);
             scheduledMaintenance.start();
             instance.server.once('close', () => scheduledMaintenance?.stop());
           }
@@ -198,16 +198,16 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       }
       if (!ready || !instance) throw new Error('Buildr Web server did not become ready.');
       state = { url: ready.url, secret, pid: process.pid, launcherIdentity, productIdentity, webProfile };
-      writeLocalAppInstance(runtime, state);
+      writeBuildrWebInstance(runtime, state);
       if (npmLauncherBinding) {
-        const verified = await healthyLocalAppInstance(state);
+        const verified = await healthyBuildrWebInstance(state);
         if (!verified || !matchesNpmLauncherBinding(verified, npmLauncherBinding)) {
           const error = new Error('新 Buildr Web health 未返回当前 Launcher binding identity，已停止启动。');
           error.code = 'launcher_handoff_readiness_identity_mismatch';
           throw error;
         }
       }
-      const cleanupReceipt = () => { clearLocalAppInstance(state, webProfile); };
+      const cleanupReceipt = () => { clearBuildrWebInstance(state, webProfile); };
       const closeForSignal = () => {
         cleanupReceipt();
         instance.server.close(() => process.exit(0));
@@ -221,7 +221,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       process.once('exit', cleanupReceipt);
       for (const signal of signalNames) process.once(signal, closeForSignal);
       instance.server.once('close', detachLifecycleListeners);
-      releaseLocalAppStartLock(startLock);
+      releaseBuildrWebStartLock(startLock);
       const pageUrl = initialWorkspaceId ? `${ready.url}/workspaces/${initialWorkspaceId}/` : ready.url;
       if (!noOpen) openDefaultBrowser(pageUrl);
       if (fallbackPort !== null) console.log(`Buildr Web Launcher 已从端口 ${fallbackPort} 回退，实际地址：${ready.url}`);
@@ -229,8 +229,8 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       console.log('仅限本机访问；关闭浏览器不会退出服务，请在页面中选择“退出 Buildr”。');
       return { ...instance, reused: false, url: pageUrl };
     } catch (error) {
-      releaseLocalAppStartLock(startLock);
-      if (state) clearLocalAppInstance(state, webProfile);
+      releaseBuildrWebStartLock(startLock);
+      if (state) clearBuildrWebInstance(state, webProfile);
       instance?.server.close();
       scheduledMaintenance?.stop();
       const wrapped = new Error(`Buildr Web 启动失败：${error.message}`, { cause: error });
@@ -241,7 +241,7 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     }
   }
 
-  async function manageLocalAppPreview(action, args) {
+  async function manageBuildrWebPreview(action, args) {
     if (action === 'start') {
       const [name, ...options] = args;
       if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
@@ -296,6 +296,6 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     throw new Error(`未知 preview 操作：${action}`);
   }
 
-  Object.assign(runtime, { startLocalWorkspaceApp, manageLocalAppPreview });
+  Object.assign(runtime, { startBuildrWeb, manageBuildrWebPreview });
   return runtime;
 }

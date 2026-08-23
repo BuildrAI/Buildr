@@ -213,7 +213,7 @@ Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前�
 - **AND** MUST不替owner删除，也不得仅因残留目录阻塞当前activation
 
 ### Requirement: Self-bootstrap activation 必须复用 Task Finish target lease
-Buildr 自举 Workspace 的bundled runner MUST在任何retained target fast-forward、sync、successor commit/push、Development Local App安装或重启、开发入口验证、最终Doctor或same-run Finish resume副作用前，以canonical Workspace、Task/run和稳定self-bootstrap投影中的Workspace repository `leaseTargetIdentity`通过retained Product内部driver获取同一Task Finish target lease。Runner MUST原样使用冻结exact identity，不得由`remote + targetBranch`或本机路径重新计算。matching retained Doctor blocked current row与matching terminal complete row MUST都可作为self-bootstrap owner；terminal row只临时持有lease普通列，不得改变terminal Result、Task状态或重新打开Finish。
+Buildr 自举 Workspace 的bundled runner MUST在任何retained target fast-forward、sync、successor commit/push、Development Buildr Web安装或重启、开发入口验证、最终Doctor或same-run Finish resume副作用前，以canonical Workspace、Task/run和稳定self-bootstrap投影中的Workspace repository `leaseTargetIdentity`通过retained Product内部driver获取同一Task Finish target lease。Runner MUST原样使用冻结exact identity，不得由`remote + targetBranch`或本机路径重新计算。matching retained Doctor blocked current row与matching terminal complete row MUST都可作为self-bootstrap owner；terminal row只临时持有lease普通列，不得改变terminal Result、Task状态或重新打开Finish。
 
 为迁移已存在的run，旧bundled runner仍以`remote:targetBranch`请求时，retained Product MAY仅在matching run的冻结repository set中恰有一个applicable repository命中该逻辑target时解析为其exact identity。零匹配、多匹配、Workspace/Task/run不匹配或错误exact identity MUST在activation副作用前fail closed；新runner MUST不主动使用该兼容路径。
 

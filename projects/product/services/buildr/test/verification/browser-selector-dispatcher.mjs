@@ -169,7 +169,7 @@ function main() {
     process.exitCode = webDistResult.status ?? 1;
     return;
   }
-  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/local-app-browser.test.mjs');
+  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.mjs');
   const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
   const result = spawnSync(process.execPath, [isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], {
     cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'),

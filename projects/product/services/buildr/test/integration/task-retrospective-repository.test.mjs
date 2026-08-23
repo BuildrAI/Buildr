@@ -28,7 +28,7 @@ function fixture(t) {
   return { root: fs.realpathSync(root), runtime, legacy };
 }
 
-function isolateLocalAppData(t) {
+function isolateBuildrWebData(t) {
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-app-data-'));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -194,7 +194,7 @@ test('内部driver以单进程list支持重复Task过滤和正文opt-in', (t) =>
 });
 
 test('Buildr Web只读返回current Result或尚未复盘', async (t) => {
-  const appData = isolateLocalAppData(t);
+  const appData = isolateBuildrWebData(t);
   const { root, runtime } = fixture(t);
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));

@@ -44,7 +44,7 @@ function printLauncherResult(result) {
 }
 
 export function registerLauncherInterface(runtime) {
-  function manageLocalAppLauncher(action, args) {
+  function manageBuildrWebLauncher(action, args) {
     const supportsPort = ['install', 'repair'].includes(action);
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--platform', '--json', ...(supportsPort ? ['--port'] : [])]), new Set(['--json']));
     const rawPort = supportsPort ? runtime.optionValue(args, '--port', undefined) : undefined;
@@ -69,7 +69,7 @@ export function registerLauncherInterface(runtime) {
     if (['stale', 'invalid'].includes(result.status)) process.exitCode = 1;
     return result;
   }
-  Object.assign(runtime, { manageLocalAppLauncher });
+  Object.assign(runtime, { manageBuildrWebLauncher });
   return runtime;
 }
 
@@ -87,7 +87,7 @@ export function createLauncherCliContributions() {
         '普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
-      run: (runtime, context) => runtime.manageLocalAppLauncher('install', context.argv.slice(5)),
+      run: (runtime, context) => runtime.manageBuildrWebLauncher('install', context.argv.slice(5)),
     },
     {
       key: 'web launcher status',
@@ -99,7 +99,7 @@ export function createLauncherCliContributions() {
         '任何路径或摘要漂移都会 fail closed；不会从 PATH 查找替代 Buildr。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
-      run: (runtime, context) => runtime.manageLocalAppLauncher('status', context.argv.slice(5)),
+      run: (runtime, context) => runtime.manageBuildrWebLauncher('status', context.argv.slice(5)),
     },
     {
       key: 'web launcher repair',
@@ -112,7 +112,7 @@ export function createLauncherCliContributions() {
         '省略 --port 时保留 v2 binding 的现有策略；从 v1 迁移时采用默认首选端口 4457。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
-      run: (runtime, context) => runtime.manageLocalAppLauncher('repair', context.argv.slice(5)),
+      run: (runtime, context) => runtime.manageBuildrWebLauncher('repair', context.argv.slice(5)),
     },
     {
       key: 'web launcher uninstall',
@@ -124,7 +124,7 @@ export function createLauncherCliContributions() {
         'foreign target 或 binding 会被保留并 fail closed；本命令不卸载 npm Buildr、Workspace Registry、SQLite、日志或 Workspace data。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
-      run: (runtime, context) => runtime.manageLocalAppLauncher('uninstall', context.argv.slice(5)),
+      run: (runtime, context) => runtime.manageBuildrWebLauncher('uninstall', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }

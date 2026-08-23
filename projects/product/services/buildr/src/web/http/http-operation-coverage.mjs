@@ -1,9 +1,9 @@
 const ALLOWED = new Set(['migrated-json', 'migrated-binary', 'deferred', 'not-applicable']);
 
 export const NON_HTTP_SYSTEM_DISPOSITIONS = Object.freeze([
-  Object.freeze({ id: 'system-doctor.cli', owner: 'system-doctor', disposition: 'not-applicable', reason: 'Doctor is a read-only CLI/Application diagnostic capability, not a Local App HTTP route.' }),
+  Object.freeze({ id: 'system-doctor.cli', owner: 'system-doctor', disposition: 'not-applicable', reason: 'Doctor is a read-only CLI/Application diagnostic capability, not a Buildr Web HTTP route.' }),
   Object.freeze({ id: 'system-installation.launcher-cli', owner: 'system-installation', disposition: 'not-applicable', reason: 'Launcher install/status/repair/uninstall remain CLI/Application operations.' }),
-  Object.freeze({ id: 'system-release.transaction', owner: 'release-workflow', disposition: 'not-applicable', reason: 'Protected release mutation is not exposed through Local App HTTP.' }),
+  Object.freeze({ id: 'system-release.transaction', owner: 'release-workflow', disposition: 'not-applicable', reason: 'Protected release mutation is not exposed through Buildr Web HTTP.' }),
 ]);
 
 export const DEFERRED_HTTP_OPERATIONS = Object.freeze([

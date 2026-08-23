@@ -9,7 +9,7 @@ import {
   runtimeIdentityForOrigin,
 } from '../infrastructure/installation-origin.mjs';
 import { registeredProductInstallations } from '../infrastructure/installation-registry.mjs';
-import { localAppDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.mjs';
+import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.mjs';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.mjs';
 import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.mjs';
@@ -197,7 +197,7 @@ function annotateInstanceProfile(instance, profile) {
 }
 
 function observeCurrentInstance(options = {}) {
-  const file = path.resolve(options.instanceFile || path.join(options.dataRoot || localAppDataRoot(), 'instance.json'));
+  const file = path.resolve(options.instanceFile || path.join(options.dataRoot || buildrWebDataRoot(), 'instance.json'));
   if (!fs.existsSync(file)) return { receipt: null, result: { status: 'absent', identity: null, observation: { file, pidAlive: false, endpoint: 'absent', health: 'not-probed' } } };
   const value = readJson(file);
   if (!value || !['buildr.local-app-instance/v1', 'buildr.local-app-instance/v2'].includes(value.schemaVersion) || typeof value.secret !== 'string' || !Number.isInteger(value.pid) || value.pid <= 0) {

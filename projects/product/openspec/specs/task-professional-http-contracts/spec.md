@@ -60,7 +60,7 @@ Buildr MUST 从 Task professional Schema 确定性生成 Buildr backend 与 Buil
 
 ### Requirement: 专业 HTTP Contract Test 必须锁定成功、错误和未迁移边界
 
-Buildr MUST 提供真实 Local App HTTP Contract Test，覆盖每个已登记 professional operation 的合法请求、成功 response schema、统一错误 envelope、未知/缺失/非法字段、不变异和既有 security/error precedence；测试 MUST 明确报告未登记 operation，但 MUST NOT 将未迁移的其他 HTTP API 作为本 Change 的全局 hard gate。
+Buildr MUST 提供真实 Buildr Web HTTP Contract Test，覆盖每个已登记 professional operation 的合法请求、成功 response schema、统一错误 envelope、未知/缺失/非法字段、不变异和既有 security/error precedence；测试 MUST 明确报告未登记 operation，但 MUST NOT 将未迁移的其他 HTTP API 作为本 Change 的全局 hard gate。
 
 #### Scenario: 合法请求和响应通过同一契约
 - **WHEN** Contract Test 发送合法专业请求

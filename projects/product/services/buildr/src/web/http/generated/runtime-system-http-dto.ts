@@ -2,9 +2,9 @@
 // Generated from Runtime/System HTTP JSON Schemas. Do not edit.
 // Run: npm run contracts:generate:runtime-system
 
-export interface LocalAppEmptyRequestLocalAppEmptyRequest {}
-export interface LocalAppQuitRequestLocalAppQuitRequest {}
-export interface LocalAppHealthResponseLocalAppHealthResponse {
+export interface BuildrWebEmptyRequestBuildrWebEmptyRequest {}
+export interface BuildrWebQuitRequestBuildrWebQuitRequest {}
+export interface BuildrWebHealthResponseBuildrWebHealthResponse {
   schemaVersion: 'buildr.local-app-health/v1';
   status: 'ready' | 'stopping';
   pid: number;
@@ -21,10 +21,10 @@ export interface LocalAppHealthResponseLocalAppHealthResponse {
     [k: string]: unknown | undefined;
   } | null;
 }
-export interface LocalAppStoppingResponseLocalAppStoppingResponse {
+export interface BuildrWebStoppingResponseBuildrWebStoppingResponse {
   status: 'stopping';
 }
-export interface LocalAppErrorResponseLocalAppErrorResponse {
+export interface BuildrWebErrorResponseBuildrWebErrorResponse {
   error: {
     code: string;
     message: string;

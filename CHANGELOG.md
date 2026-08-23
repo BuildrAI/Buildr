@@ -74,7 +74,7 @@
 ## 0.1.0-rc.9 - 2026-08-14
 
 - Breaking：Buildr 的机器默认 CLI 现在只属于 npm installation，development checkout 不再创建、覆盖或要求 PATH 中的 `buildr` 指向源码；自举 workspace 统一显式使用 retained checkout 的 `projects/product/buildr`，并独立核对 Node、development channel、source commit 与 package version。
-- Breaking：本机产品入口统一为 Buildr Web；CLI、Launcher、文档和自举激活不再把旧 Local App/Buildr App 身份当作当前产品表面。公开 npm 安装默认不产生桌面副作用，只有显式 Launcher 生命周期操作才创建、启动、修复或卸载图形入口。
+- Breaking：本机产品入口统一为 Buildr Web；CLI、Launcher、文档和自举激活不再把旧 Buildr Web/Buildr Web 身份当作当前产品表面。公开 npm 安装默认不产生桌面副作用，只有显式 Launcher 生命周期操作才创建、启动、修复或卸载图形入口。
 - 将 Buildr Web 前端权威源码拆分到独立 `buildr-web` Service，并优化 Project/Service 目录与详情交互：支持文档展示、类型下拉、弹框编辑和更紧凑的目录页眉。
 - 加固 Formal Task Finish：阻止陈旧 handoff 恢复，正确处理重命名贡献的包含性判定，支持受控零差异 Delivery Adaptation、可恢复 compact 输出、多个 Finish run 并存时的 owner-ordered 自举恢复预检，以及 retained provider 失败后的同 run bootstrap recovery。
 - 扩展正式 Verification 执行记录：支持按 Task 回读并复用同一次终态执行、阻止相同目标和 capability 集合的重复启动，并恢复多任务数据库与 migration 的隔离边界。
@@ -91,10 +91,10 @@
 - 修复候选验证的跨平台 npm 入口，并让 CI 在 Pull Request 与推送场景显式使用对应 Git 基线，保证 Windows 和 OpenSpec changed-path 审计可以执行。
 - 修复 Windows 8.3 checkout 路径导致的 Environment Manager 误判，并隔离候选矩阵的 Node runtime 临时目录。
 - 加固 Windows 受管 Node runtime 的离线 source copy、并发安装锁、短暂 `EPERM` 恢复和失败诊断；锁竞争测试使用平台无关的探测替身，不再把 POSIX shell fixture 当作 Windows `node.exe` 执行。
-- 系统收敛跨平台候选验证：统一 Windows npm/OpenSpec shim、node:test 盘符路径、Git checkout 与用户目录边界；隔离 macOS Local App loopback 连接复用，改用确定性资源容量证据，并在 CI 采用受限 workspace 并发。
+- 系统收敛跨平台候选验证：统一 Windows npm/OpenSpec shim、node:test 盘符路径、Git checkout 与用户目录边界；隔离 macOS Buildr Web loopback 连接复用，改用确定性资源容量证据，并在 CI 采用受限 workspace 并发。
 - 明确 CLI 支持 Node.js `>=24.15.0 <25`：macOS 与 Windows 各运行一份固定受管 runtime 完整 Candidate，并以最低和当前 24.x 的短版 Host Node 作业验证版本敏感边界，删除重复的完整 Candidate 与独立 release smoke。
 - 发布工作流只打包一次不可变 npm tarball，并让发布前 smoke、registry publish、CI artifact 与发布后 integrity 核验消费同一制品；已存在版本仅在官方 registry integrity 一致时安全复用。
-- 扩展 Task 与 Local App 的交付可观察性：保留正式验证执行记录、终态交付关联和复盘入口，支持 Parent/Child Task、嵌套筛选，并在 Environment 阻塞时仍可读取 Task 关联 Change。
+- 扩展 Task 与 Buildr Web 的交付可观察性：保留正式验证执行记录、终态交付关联和复盘入口，支持 Parent/Child Task、嵌套筛选，并在 Environment 阻塞时仍可读取 Task 关联 Change。
 - 收敛 Task Development、Environment 与 Finish 编排：稳定 Planning identity、Candidate 复用、语义化交付提交、隔离 Delivery Carrier 和自举同步边界，减少目标前进后的重复验证与恢复成本。
 
 ## 0.1.0-rc.7 - 2026-07-24
@@ -102,7 +102,7 @@
 - 将本机工作台扩展为 Workspace、Project、Service 与 Change 的统一治理入口：支持稳定的目录、详情与编辑路径，展示真实 Git 状态和 OpenSpec 变更，并通过“交给 Agent”保持页面负责认知与交接、Agent 负责执行的边界。
 - 提供全局多 Workspace 本机应用与完整安装体验：用户可登记、切换和移除本机 Workspace；macOS、Windows 提供可双击 launcher，修复 Finder 前台等待和 Windows 中文路径问题。
 - 完善首次使用和日常导航：开始页展示真实工作范围与下一步，Project/Service 创建改为意图式 Agent Action，公开 README 与 Agent onboarding 说明两种开始路径。
-- 加固 Agent 任务执行环境：实现前先路由 task worktree；支持多仓 task environment、隔离的 Local App preview、任务收尾同端口迁移，并默认不推送远端任务分支。
+- 加固 Agent 任务执行环境：实现前先路由 task worktree；支持多仓 task environment、隔离的 Buildr Web preview、任务收尾同端口迁移，并默认不推送远端任务分支。
 - 收敛验证体验与证据边界：日常交付使用受影响验证，发布/高风险使用完整 Candidate；浏览器冒烟覆盖 Project、Service、Change 主流程，Candidate evidence 与实际 task environment identity 绑定。
 - 将 Buildr 可执行实现迁入 `product/buildr` Service，并按 Domain、Application、Infrastructure、Interfaces 分层，保持 Product 治理资产与运行源码的责任边界清晰。
 

@@ -49,7 +49,7 @@ test('Browser dispatcher uses core fallback for unknown web paths and shared rou
 });
 
 test('Browser Smoke and selection mechanism changes choose explicit full selector set', () => {
-  assert.deepEqual(selectBrowserSelectors(['test/browser-smoke/local-app-browser.test.mjs']).selectors, ['all']);
+  assert.deepEqual(selectBrowserSelectors(['test/browser-smoke/buildr-web-browser.test.mjs']).selectors, ['all']);
   assert.deepEqual(selectBrowserSelectors(['test/verification/registry.mjs']).selectors, ['all']);
 });
 
@@ -81,6 +81,6 @@ test('Browser dispatcher rejects malformed or unresolvable changed path input', 
 test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', () => {
   const plan = createVerificationPlan({ paths: ['src/web/http/server.mjs'] });
   const ids = plan.steps.map((step) => step.id);
-  assert.ok(ids.includes('system-local-app-http'));
+  assert.ok(ids.includes('system-buildr-web-http'));
   assert.equal(ids.includes('system'), false);
 });

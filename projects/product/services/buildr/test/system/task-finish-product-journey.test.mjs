@@ -835,10 +835,10 @@ processEnvironmentJourney('真实 code-only 候选完成五阶段且不执行任
   const task = 'finish-code-only-task';
   const environmentRoot = path.join(retained, '.worktrees', task);
   command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
-  const localAppChange = path.join(environmentRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'local-app', 'runtime', 'code-only.mjs');
-  fs.mkdirSync(path.dirname(localAppChange), { recursive: true });
-  fs.writeFileSync(localAppChange, 'export const finishedWithoutChange = true;\n');
-  command(environmentRoot, 'git', ['add', path.relative(environmentRoot, localAppChange)]);
+  const buildrWebChange = path.join(environmentRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'local-app', 'runtime', 'code-only.mjs');
+  fs.mkdirSync(path.dirname(buildrWebChange), { recursive: true });
+  fs.writeFileSync(buildrWebChange, 'export const finishedWithoutChange = true;\n');
+  command(environmentRoot, 'git', ['add', path.relative(environmentRoot, buildrWebChange)]);
   command(environmentRoot, 'git', ['commit', '-m', 'implement code-only candidate']);
 
   const hostileBin = path.join(fixture, 'hostile-bin');

@@ -6,7 +6,7 @@ import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
 const statusLabel: Record<string, string> = { published: '已发布', planned: '待发布', draft: '草稿' };
-const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Buildr Web' };
+const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'buildr-web': 'Buildr Web', 'local-app': 'Buildr Web' };
 
 type Publication = PublicationList['publications'][number];
 

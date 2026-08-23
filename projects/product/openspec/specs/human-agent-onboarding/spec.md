@@ -397,7 +397,7 @@ Buildr MUST 区分技术 onboarding 完成与用户第一次有效工作。技�
 ### Requirement: Onboarding 必须提供 Buildr Web 与 Agent-only 两种一致入口
 Buildr MUST 允许用户通过 Buildr Web 或直接在 Agent 对话中开始使用，并 MUST 让两种入口使用相同的 Workspace → Project → Service 心智、同一 source authority 和同一 Agent 执行边界。
 
-#### Scenario: 用户选择 local app
+#### Scenario: 用户选择 Buildr Web
 - **WHEN** 用户通过 Buildr Web 添加或进入 Workspace
 - **THEN** Buildr Web MUST 帮助用户理解和选择 Workspace、Project 与可选 Service
 - **AND** 创建、迁移、修复和开始工作 MUST 通过可复制 Agent Action 交接给 Agent

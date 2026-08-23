@@ -30,7 +30,7 @@ const APPLICATION_METHODS = Object.freeze([
   'buildInstallationInventory',
   'buildInstallationStatusInventory',
   'installationStatus',
-  'manageLocalAppLauncher',
+  'manageBuildrWebLauncher',
 ]);
 
 function methodPort(runtime, methods) {

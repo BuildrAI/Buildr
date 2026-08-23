@@ -175,7 +175,7 @@ Project `verification.yml`仍只声明可由Task Verification选择的稳定本�
 | Public JSON 重复准备完整 Workspace/runtime | 隔离 10.86s；5 个场景分别重复 `init`，Codex/managed runtime 又重复 `sync + Doctor`。把 Doctor 改成同步 Application 调用会破坏现有异步并行，11.76s，无收益 | suite 只准备一次 `plain → codex → codex+claude` 不可变基线；runtime 用与 sync 相同的 Product Skill 投射，但不在 fixture setup 重跑 sync 的最终 Doctor。每个 case 复制独立目录，全部 JSON/Doctor 仍走真实 CLI。隔离 7/7、6.75s，下降约 38%；普通 `render` 缺少 Product Skill 会产生真实 warning，已否定 |
 | Full 与 affected 重复启动 registry runner | 同一目标中 affected 仅选 `system/docs-quality`，两者已全部包含于 38-step Full；Task Verification 默认并发执行两个无资源 claim 的 capability。Full 单独为 148.208s，与 affected 并发时为 193.622s，放大 45.414s（约 31%） | Candidate 与 changed owner 分离：`test:candidate` 只执行 Candidate profile；changed owner 由 `product.delivery` 的 `test:changed -- --base origin/dev` 独立负责。显式 Full 交付只选择 `product.full-regression`，不扩展 Verification schema 或建设跨 capability cache |
 
-本轮 Candidate 耗时优化任务将选择边界与执行成本分开：`test:candidate` 只接受 `candidate` profile，不读取 Git diff，也不接受 `--base`；changed-path owner 继续由 `test:changed -- --base origin/dev` 的 `product.delivery` 负责。System 热点同时做了两处测试机制去重：`local-app-launcher` 在同一文件内缓存相同平台/通道的只读 bundle，并在文件结束统一清理；`package-capability-retirement` 只通过真实 CLI 初始化一次不可变 Workspace 基线，各用例复制到独立临时根后再执行迁移 mutation。
+本轮 Candidate 耗时优化任务将选择边界与执行成本分开：`test:candidate` 只接受 `candidate` profile，不读取 Git diff，也不接受 `--base`；changed-path owner 继续由 `test:changed -- --base origin/dev` 的 `product.delivery` 负责。System 热点同时做了两处测试机制去重：`buildr-web-launcher` 在同一文件内缓存相同平台/通道的只读 bundle，并在文件结束统一清理；`package-capability-retirement` 只通过真实 CLI 初始化一次不可变 Workspace 基线，各用例复制到独立临时根后再执行迁移 mutation。
 
 同一优化 Task worktree 修复契约漂移后的完整 Candidate timing 为 `116.826s`，预算 `120s` 内；System 为 `70.992s`，比本轮改造前的 `88.094s` 降低约 19.4%，相对此前 `170.862s` 基线降低约 31.6%。Candidate 38 steps 全部通过，正式串行执行的 `product.fast`、`product.delivery`、`product.full-regression` 也全部通过；正式 Result 为 passed。
 
@@ -190,7 +190,7 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | `integration-declarations` | 0.203 / 0.223 | 0.213 / 0.020 | Doctor、Project verification declaration 与 package verification registry |
 | `integration-openspec` | 1.048 / 1.246 | 1.147 / 0.198 | Change/OpenSpec Application 与 convergence |
 | `integration-verification` | 4.443 / 5.301 | 4.872 / 0.858 | planner、runner、evidence、resource coordinator |
-| `integration-runtime` | 3.395 / 4.024 | 3.710 / 0.629 | runtime、Local App、Preview 与 Web dist |
+| `integration-runtime` | 3.395 / 4.024 | 3.710 / 0.629 | runtime、Buildr Web、Preview 与 Web dist |
 | `integration-task-environment` | 9.163 / 10.436 | 9.800 / 1.273 | Task Environment plan/controller/repository |
 | `integration-self-bootstrap` | 29.981 / 36.060 | 33.021 / 6.079 | self-bootstrap closeout；普通产品源码不陪跑 |
 | `integration-task-finish-delivery` | 35.151 / 35.516 | 35.334 / 0.365 | Finish remote、retained activation/cleanup、Contribution |
@@ -247,7 +247,7 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | 19. 复用 Public JSON 分层上下文 | 单次 Doctor 约 0.69s，主要成本并非异常扫描，而是 5 次 Workspace 初始化和重复 runtime sync/Doctor。同步 Application 实验破坏异步并行并回退；最终只共享 `plain/codex/managed` 不可变基线，case 仍独立复制且全部公共命令保持真实 CLI。隔离 10.86s→6.75s，下降约 38% |
 | 20. 合并 Full 与 affected 执行计划 | 代码、plan 与实测共同确认两个 capability 会并发启动重叠 runner：独立 Full 148.208s，并发 Full 193.622s。复用既有 planner 的 profile/path union，Candidate `--base` 输出 38 个唯一 owner，`system` 与 `docs-quality` 各一次；最终联合 Full 154.633s、全部通过。显式 Full 通过单一 capability 同时证明 changed owner coverage 与完整回归 |
 | 21. Candidate 与 changed owner 解耦 | Candidate 的 `--base` 会把 broad changed-path owner（例如 repository onboarding）带入普通 Candidate，破坏 profile 选择边界；本轮移除 Candidate 的 Git diff、preflight 和 `--base`，Full regression 只调用 `npm run test:candidate`，changed owner 仍由 delivery capability 负责 |
-| 22. 去重 System fixture 准备 | `local-app-launcher` 重复构建相同 launcher bundle，`package-capability-retirement` 重复 CLI 初始化相同 Workspace；分别改为文件内 bundle cache 与不可变基线复制。两个热点单文件均通过，完整 Candidate timing 从 126.295s 降到 118.890s，首次进入 120s 目标以内 |
+| 22. 去重 System fixture 准备 | `buildr-web-launcher` 重复构建相同 launcher bundle，`package-capability-retirement` 重复 CLI 初始化相同 Workspace；分别改为文件内 bundle cache 与不可变基线复制。两个热点单文件均通过，完整 Candidate timing 从 126.295s 降到 118.890s，首次进入 120s 目标以内 |
 | 23. 对齐 Buildr Web read-worker 契约 | Buildr Web 三个只读 Tab 已由 `submitTaskRead` 派发至 `read-worker`，旧 contract/static verifier 仍要求 server 直接出现 `runtime.inspectTaskReviewView/inspectTaskVerification`，导致 Candidate 非代码失败；契约改为检查实际 operation dispatch 与 worker mapping，不恢复 terminal 聚合投影。修复后 Contract、package-static 与 38-step Candidate 全部通过 |
 | 24. 对齐 development onboarding 与 npm CLI 隔离 | Windows旧owner在约102.917s准备后才因POSIX `install-buildr-cli` 返回`ENOENT`。实现删除PATH installer lifecycle，以显式Project bridge、双sentinel和共享Git object candidate snapshot保留clean checkout/sync/Launcher/Doctor证据；三次本地成功focus为15.507s、15.659s、15.572s，中位数15.572s、范围0.152s，完整changed资源竞争下为22.115s且185.121s DAG全绿。archive后两次hosted Windows source SHA均执行通过，onboarding实际为45.452s与63.162s，完整plan为769.226s与630.575s；这证明测试本体优化后仍存在真实跨平台与runner波动，25s/20s只按macOS标定不合理，60s也无法覆盖第二个真实样本，因此非阻断target校准为90s、调度成本60s。Candidate jobs在这些PR run中均skipped，完整Candidate仍只属于后续dev到main候选门禁。 |
 | 25. 拆分重型领域 owner | 66 个 Integration 文件收敛为 14 个领域 slice、4 个 general 文件和 2 个外部 owner；28 个 System 文件拆为 13 个 owner。两轮 focused union 全绿，general 中位约 4.54s；13 条历史 warning 分别通过结构拆分或生命周期预算校准处置，Candidate 文件并集与 CI phase/artifact/gate/platform 拓扑不变。 |

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 
-import { createBoundedLocalAppReadExecutor } from './read-executor.mjs';
+import { createBoundedBuildrWebReadExecutor } from './read-executor.mjs';
 import { apiError } from './responses.mjs';
 import { createLocalWorkspaceRequestRouter } from './router.mjs';
 
@@ -28,7 +28,7 @@ export function createLocalWorkspaceServer(runtime, {
 
   const initialWorkspaceId = ensureRegisteredTarget(targetRoot);
   const ownsReadExecutor = !readExecutor;
-  const taskReadExecutor = readExecutor || createBoundedLocalAppReadExecutor();
+  const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin = null;

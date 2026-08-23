@@ -134,7 +134,7 @@
 - 定义：Buildr 通过默认浏览器提供的本机 Web 界面与能力；canonical CLI 入口为 `buildr web`。
 - 适用范围：用户可见界面、CLI 产品表面、文档、Launcher 与诊断建议。
 - 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
-- 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
+- 来源：canonical `openspec/specs/buildr-web-workspace-application/spec.md`、`openspec/specs/buildr-web-browser-verification/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
 
 ### 界面原型（UI Prototype）
 
@@ -161,8 +161,8 @@
 
 - 定义：启动 `buildr web` 并打开默认浏览器的平台图形入口；正式显示名为 Buildr Web，开发入口为 Buildr Web Dev。
 - 适用范围：正式npm用户显式运行`buildr web launcher install|status|repair|uninstall`后生成的macOS `.app`或Windows Start Menu shortcut；它精确绑定Host Node、npm package entry、prefix和installation identity并执行`web`。checkout-backed入口另名Buildr Web Dev。
-- 避免混用：它不是 Buildr App，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
-- 来源：canonical `openspec/specs/local-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+- 避免混用：它不是 Buildr Web，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
+- 来源：canonical `openspec/specs/buildr-web-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
 
 ### 平台启动入口集成（Platform Launcher Integration）
 
@@ -185,12 +185,12 @@
 - 避免混用：不表示没有HTTP server、loopback端口或owned子进程；仍必须使用隔离Root并精确清理owned资源。
 - 来源：[Buildr Service](services/buildr.md)。
 
-### Buildr App
+### Buildr Desktop
 
-- 定义：为未来真正的 Buildr 桌面应用保留的产品术语；当前尚未实现。
+- 定义：为未来真正的桌面应用保留的产品术语；当前尚未实现。
 - 适用范围：只用于说明保留边界；当前不是 CLI command、help topic、Launcher 名称或运行时产品。
-- 避免混用：不得用于指称 Buildr Web 或 Buildr Web Launcher，也不为 `buildr app` 建立 alias 或 legacy surface。
-- 来源：canonical `openspec/specs/cli-product-surface/spec.md` 与 `openspec/specs/local-app-browser-interface/spec.md`。
+- 避免混用：不得用于指称 Buildr Web 或 Buildr Web Launcher，也不为桌面应用建立当前 alias 或 legacy surface。
+- 来源：canonical `openspec/specs/cli-product-surface/spec.md` 与 `openspec/specs/buildr-web-workspace-application/spec.md`。
 
 ## Service
 
@@ -742,7 +742,7 @@
 - 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
-## Buildr 应用负载（Buildr Application Payload）
+## Buildr 应用负载（Buildr Weblication Payload）
 
 - 定义：一次构建形成的渠道无关、可摘要比较的公共应用内容，包括CLI、Core/Application、Buildr Web HTTP/runtime与正式静态资源、SQLite migrations、package baseline、生产依赖、许可证、版本和协议identity。
 - 适用范围：npm package消费的`buildr.application-payload/v1` manifest及`applicationPayloadDigest`；同一payload内只携带生成Launcher所需图标，不携带已生成入口。
@@ -778,7 +778,7 @@
 - 定义：Buildr同时读取npm的`latest`和`next`，把GA正式版与RC候选版的当前发布头、可更新状态、提示与精确更新命令组合为统一的只读Application结果。
 - 适用范围：`buildr update check`、Doctor非阻断提示、Buildr Web全局提示和Buildr Skill；真正更新只在用户明确选择后由CLI执行。
 - 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace数据或Agent runtime。
-- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/local-workspace-application/spec.md`。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/buildr-web-workspace-application/spec.md`。
 
 ## 发布轨道（Release Track）
 

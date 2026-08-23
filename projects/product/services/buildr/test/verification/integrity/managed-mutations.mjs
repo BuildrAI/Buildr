@@ -39,7 +39,7 @@ const allowed = new Map([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
   ])],
   ['src/web/infrastructure/instance-runtime.mjs', new Set([
-    'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
+    'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],

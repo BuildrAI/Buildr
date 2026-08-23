@@ -21,7 +21,7 @@ const taskLifecycleContextConsumers = [
 const taskRecordContextConsumers = [
   'task-record-product.test.mjs',
   'task-record-change-resolver.test.mjs',
-  'task-record-local-app.test.mjs',
+  'task-record-buildr-web.test.mjs',
 ];
 const fullIsolationOwners = [
   'project-product.test.mjs',
@@ -120,7 +120,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+    'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }

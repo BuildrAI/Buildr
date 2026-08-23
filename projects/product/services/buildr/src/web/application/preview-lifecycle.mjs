@@ -4,9 +4,9 @@ import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 
-import { localAppDataRoot } from '../../workspace/module.mjs';
+import { buildrWebDataRoot } from '../../workspace/module.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
-import { INSTANCE_SCHEMA, healthyLocalAppInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.mjs';
+import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.mjs';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -22,7 +22,7 @@ export function assertPreviewName(value) {
   return name;
 }
 
-export function previewDataRoot(name, dataRoot = localAppDataRoot()) {
+export function previewDataRoot(name, dataRoot = buildrWebDataRoot()) {
   return path.join(path.resolve(dataRoot), 'previews', assertPreviewName(name));
 }
 
@@ -135,7 +135,7 @@ function clearOwner(name, dataRoot) {
 async function waitForPreview(name, dataRoot, attempts = 80) {
   for (let index = 0; index < attempts; index += 1) {
     const instance = readPreviewInstance(name, dataRoot);
-    const healthy = await healthyLocalAppInstance(instance);
+    const healthy = await healthyBuildrWebInstance(instance);
     if (healthy) return healthy;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -196,7 +196,7 @@ function taskPreviewResource(owner, instance) {
   };
 }
 
-export async function startPreview(runtime, name, args, { cliPath = process.argv[1], dataRoot = localAppDataRoot() } = {}) {
+export async function startPreview(runtime, name, args, { cliPath = process.argv[1], dataRoot = buildrWebDataRoot() } = {}) {
   const instance = assertPreviewName(name);
   runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
   const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()));
@@ -235,7 +235,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskEnvironment);
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
-  const healthy = await healthyLocalAppInstance(existingInstance);
+  const healthy = await healthyBuildrWebInstance(existingInstance);
   if (healthy && !samePreviewOwner(existingOwner, owner)) {
     const error = new Error(`预览实例 ${instance} 正由 ${existingOwner.worktree} 使用；请改用其他实例名，或由该任务先停止它。`);
     error.code = 'preview_owner_conflict';
@@ -308,7 +308,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   return result;
 }
 
-export async function listPreviews({ dataRoot = localAppDataRoot() } = {}) {
+export async function listPreviews({ dataRoot = buildrWebDataRoot() } = {}) {
   const root = path.join(path.resolve(dataRoot), 'previews');
   if (!fs.existsSync(root)) return { schemaVersion: PREVIEW_SCHEMA, previews: [] };
   const previews = [];
@@ -317,13 +317,13 @@ export async function listPreviews({ dataRoot = localAppDataRoot() } = {}) {
     const owner = readPreviewOwner(entry.name, dataRoot);
     if (!owner) continue;
     const instance = readPreviewInstance(entry.name, dataRoot);
-    const healthy = await healthyLocalAppInstance(instance);
+    const healthy = await healthyBuildrWebInstance(instance);
     previews.push({ instance: entry.name, owner, url: instance?.url || null, pid: instance?.pid || null, status: healthy ? 'healthy' : instance ? 'stale' : 'stopped' });
   }
   return { schemaVersion: PREVIEW_SCHEMA, previews };
 }
 
-export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller = null, retainOwner = false } = {}) {
+export async function stopPreview(name, { dataRoot = buildrWebDataRoot(), caller = null, retainOwner = false } = {}) {
   const instance = assertPreviewName(name);
   const owner = readPreviewOwner(instance, dataRoot);
   if (!owner) {
@@ -333,14 +333,14 @@ export async function stopPreview(name, { dataRoot = localAppDataRoot(), caller 
   }
   assertPreviewStopOwner(owner, caller);
   const state = readPreviewInstance(instance, dataRoot);
-  const healthy = await healthyLocalAppInstance(state);
+  const healthy = await healthyBuildrWebInstance(state);
   if (healthy) {
     await requestInstanceShutdown(healthy);
     for (let index = 0; index < 40; index += 1) {
-      if (!await healthyLocalAppInstance(readPreviewInstance(instance, dataRoot))) break;
+      if (!await healthyBuildrWebInstance(readPreviewInstance(instance, dataRoot))) break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    if (await healthyLocalAppInstance(readPreviewInstance(instance, dataRoot))) {
+    if (await healthyBuildrWebInstance(readPreviewInstance(instance, dataRoot))) {
       const error = new Error(`预览实例 ${instance} 停止后仍保持健康。`);
       error.code = 'preview_stop_unconfirmed';
       throw error;
@@ -368,7 +368,7 @@ function previewResourceMatch(resource, owner, instance) {
   return Boolean(instance && previewOwnerResourceMatch(resource, owner) && resource.identity.pid === instance.pid && resource.identity.url === instance.url);
 }
 
-export function probePreviewResource(resource, { dataRoot = localAppDataRoot() } = {}) {
+export function probePreviewResource(resource, { dataRoot = buildrWebDataRoot() } = {}) {
   const observedAt = new Date().toISOString();
   const owner = readPreviewOwner(resource.handle.instance, dataRoot);
   const instance = readPreviewInstance(resource.handle.instance, dataRoot);
@@ -377,7 +377,7 @@ export function probePreviewResource(resource, { dataRoot = localAppDataRoot() }
   return { status: 'ready', identity: resource.identity.providerIdentity, observedAt, diagnostic: null };
 }
 
-export async function cleanupPreviewResource(resource, context, { dataRoot = localAppDataRoot() } = {}) {
+export async function cleanupPreviewResource(resource, context, { dataRoot = buildrWebDataRoot() } = {}) {
   const owner = readPreviewOwner(resource.handle.instance, dataRoot);
   if (!previewOwnerResourceMatch(resource, owner)) {
     const error = new Error(`Preview resource identity 不匹配：${resource.id}。`);
@@ -397,7 +397,7 @@ export async function cleanupPreviewResource(resource, context, { dataRoot = loc
   return { provider: PREVIEW_RESOURCE_PROVIDER, stopped, probe: { status: 'blocked', identity: resource.identity.providerIdentity, observedAt: new Date().toISOString(), diagnostic: 'Preview 已停止并释放。' } };
 }
 
-export function registerLocalAppPreviewResourceProvider(runtime) {
+export function registerBuildrWebPreviewResourceProvider(runtime) {
   runtime.probeTaskEnvironmentResource = (resource) => {
     if (resource.provider !== PREVIEW_RESOURCE_PROVIDER) { const error = new Error(`未知 Task Environment resource provider：${resource.provider}。`); error.code = 'task_environment_resource_provider_unknown'; throw error; }
     return probePreviewResource(resource);

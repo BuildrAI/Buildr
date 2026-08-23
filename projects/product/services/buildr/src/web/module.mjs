@@ -26,8 +26,8 @@ export function createWebModule(runtime, { httpContributions = [] } = {}) {
         assertNpmLauncherBinding: launcher.assertCurrentNpmLauncherBinding,
       });
       const application = Object.freeze({
-        startLocalWorkspaceApp: (...args) => runtime.startLocalWorkspaceApp(...args),
-        manageLocalAppPreview: (...args) => runtime.manageLocalAppPreview(...args),
+        startBuildrWeb: (...args) => runtime.startBuildrWeb(...args),
+        manageBuildrWebPreview: (...args) => runtime.manageBuildrWebPreview(...args),
       });
       return Object.freeze({
         provides: { [WEB_INSTANCE_LIFECYCLE]: application },

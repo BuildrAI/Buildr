@@ -458,7 +458,7 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'system-verification-contracts',
     'system-workspace-lifecycle',
     'system-runtime-recovery',
-    'system-local-app-http',
+    'system-buildr-web-http',
     'system-app-process',
     'system-task-finish',
     'system-fresh-build',

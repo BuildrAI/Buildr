@@ -1043,7 +1043,7 @@ test('自举恢复闭环以显式Project bridge完成sync、Launcher、identity�
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  for (const id of ['sync', 'install-local-app', 'verify-development-entry', 'finalize']) {
+  for (const id of ['sync', 'install-buildr-web', 'verify-development-entry', 'finalize']) {
     assert.equal(phase(result, id).status, 'passed', `${id} must pass in the same closeout chain`);
   }
   assert.equal(fs.readFileSync(defaultBuildr, 'utf8'), '#!/bin/sh\nexit 97\n');
@@ -1070,8 +1070,8 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
     });
     assert.equal(result.status, scenario.status, `${scenario.name}: ${JSON.stringify(result.diagnostic)}`);
     assert.equal(result.diagnostic?.code || null, scenario.code);
-    const install = phase(result, 'install-local-app');
-    const manager = install.operations.find((item) => item.id === 'install-development-local-app');
+    const install = phase(result, 'install-buildr-web');
+    const manager = install.operations.find((item) => item.id === 'install-development-buildr-web');
     assert.equal(manager.kind, 'development-launcher-manager');
     assert.deepEqual(manager.args, ['install', '--channel', 'development']);
     assert.doesNotMatch(`${manager.script} ${manager.args.join(' ')}`, /bin\/buildr\.mjs web launcher/u);
@@ -1090,10 +1090,10 @@ test('Development Web连续性只恢复安装前健康实例并迁移到固定�
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  const install = phase(result, 'install-local-app');
+  const install = phase(result, 'install-buildr-web');
   assert.deepEqual(install.operations.filter((item) => item.kind !== 'task-finish-target-lease').map((item) => item.id), [
     'inspect-development-web-continuity',
-    'install-development-local-app',
+    'install-development-buildr-web',
     'restart-development-web-continuity',
   ]);
   const restart = install.operations.find((item) => item.id === 'restart-development-web-continuity');
@@ -1118,7 +1118,7 @@ test('Development Web安装前未运行、记录过期或owner不同时保持按
     });
 
     assert.equal(result.status, 'passed', `${continuityStatus}: ${JSON.stringify(result.diagnostic)}`);
-    const install = phase(result, 'install-local-app');
+    const install = phase(result, 'install-buildr-web');
     assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
     assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
       type: 'development-web-continuity', status: 'not-applicable', reason: continuityStatus,
@@ -1146,8 +1146,8 @@ test('Development Web恢复失败或identity漂移时阻断后续activation', as
       assert.equal(result.diagnostic.code, scenario.code);
       assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
       assert.equal(phase(result, 'finalize').status, 'not-applicable');
-      if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-local-app').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /"status":"requested"/u);
-      if (scenario.name === 'occupied-port') assert.match(phase(result, 'install-local-app').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /EADDRINUSE.*4458/u);
+      if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-buildr-web').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /"status":"requested"/u);
+      if (scenario.name === 'occupied-port') assert.match(phase(result, 'install-buildr-web').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /EADDRINUSE.*4458/u);
     });
   }
 });
@@ -1406,7 +1406,7 @@ test('latest target需要Delivery Adaptation时在sync安装Doctor前交还完�
   assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.target-race-adaptation-required');
   assert.deepEqual(result.diagnostic.details.deliveryAdaptation, adaptation.deliveryAdaptation);
   assert.equal(phase(result, 'sync').status, 'not-applicable');
-  assert.equal(phase(result, 'install-local-app').status, 'not-applicable');
+  assert.equal(phase(result, 'install-buildr-web').status, 'not-applicable');
   assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
   assert.equal(phase(result, 'finalize').status, 'not-applicable');
   assert.deepEqual(result.effects.map((item) => item.type), ['retained-target-fast-forward']);
@@ -1602,7 +1602,7 @@ test('plan identity由run、frozen paths和去重动作确定', () => {
   assert.deepEqual(first, second);
   assert.equal(first.actions['sync-retained-workspace'].length, 1);
   assert.ok(first.actions['verify-development-entry'].length >= 1);
-  assert.equal(first.actions['install-development-local-app'].length, 1);
+  assert.equal(first.actions['install-development-buildr-web'].length, 1);
 });
 
 test('Buildr runtime Skill source变化必须触发retained workspace sync', () => {
@@ -1615,7 +1615,7 @@ test('Buildr runtime Skill source变化必须触发retained workspace sync', () 
     'projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md',
   ]);
   assert.equal(plan.actions['verify-development-entry'].length, 1);
-  assert.equal(plan.actions['install-development-local-app'].length, 0);
+  assert.equal(plan.actions['install-development-buildr-web'].length, 0);
 });
 
 test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品动作', () => {
@@ -1629,7 +1629,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const runtimeSourcePlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'a'.repeat(40), runtimeSourcePaths));
   assert.deepEqual(runtimeSourcePlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [],
   });
 
@@ -1638,7 +1638,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   ]));
   assert.deepEqual(installerWrapperPlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [],
   });
 
@@ -1646,7 +1646,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const launcherManagerPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'c'.repeat(40), [launcherManagerPath]));
   assert.deepEqual(launcherManagerPlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [launcherManagerPath],
+    'install-development-buildr-web': [launcherManagerPath],
     'verify-development-entry': [launcherManagerPath],
   });
 
@@ -1654,7 +1654,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const runtimeSkillPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'd'.repeat(40), [runtimeSkillPath]));
   assert.deepEqual(runtimeSkillPlan.actions, {
     'sync-retained-workspace': [runtimeSkillPath],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [runtimeSkillPath],
   });
 });

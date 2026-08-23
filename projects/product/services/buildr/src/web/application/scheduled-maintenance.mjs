@@ -8,7 +8,7 @@ export function millisecondsUntilNextLocalHour(value = new Date()) {
   return Math.max(1, next.getTime() - now.getTime());
 }
 
-export function createLocalAppScheduledMaintenance(runtime, {
+export function createBuildrWebScheduledMaintenance(runtime, {
   clock = () => new Date(),
   timers = { setTimeout, clearTimeout },
   onResult = () => {},

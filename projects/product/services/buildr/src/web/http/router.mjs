@@ -5,11 +5,11 @@ import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse } f
 import { assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.mjs';
 import { injectedIndexHtml, serveDistAsset } from './static-files.mjs';
 import {
-  LOCAL_APP_HTTP_OPERATIONS,
-  LOCAL_APP_HTTP_SCHEMAS,
-  localAppOperation,
-  validateLocalAppHttp,
-} from './local-app-http-contracts.mjs';
+  BUILDR_WEB_HTTP_OPERATIONS,
+  BUILDR_WEB_HTTP_SCHEMAS,
+  buildrWebOperation,
+  validateBuildrWebHttp,
+} from './buildr-web-http-contracts.mjs';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 
@@ -39,7 +39,7 @@ export function createLocalWorkspaceRequestRouter({
   shutdown,
   submitTaskRead,
 }) {
-  const validateRequest = (id, value) => validateLocalAppHttp(localAppOperation(id).requestSchemaId, value, id);
+  const validateRequest = (id, value) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${taskIdPattern})?|/tasks(?:/${taskIdPattern}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request, response) {
@@ -141,4 +141,4 @@ export function createLocalWorkspaceRequestRouter({
   };
 }
 
-export { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_SCHEMAS };
+export { BUILDR_WEB_HTTP_OPERATIONS, BUILDR_WEB_HTTP_SCHEMAS };

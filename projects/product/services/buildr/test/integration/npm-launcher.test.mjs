@@ -28,8 +28,8 @@ import { registerWebInstanceLifecycle } from '../../src/web/application/instance
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import {
-  clearLocalAppInstance,
-  writeLocalAppInstance,
+  clearBuildrWebInstance,
+  writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.mjs';
 import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
@@ -290,7 +290,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   console.warn = (message) => warnings.push(String(message));
   t.after(() => { console.warn = originalWarn; });
 
-  const started = await runtime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]);
+  const started = await runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]);
   const actualPort = Number(new URL(started.url).port);
   assert.notEqual(actualPort, preferred);
   assert.match(warnings.join('\n'), new RegExp(`首选端口 ${preferred} 已被占用`));
@@ -307,7 +307,7 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json')), false);
 
   await assert.rejects(
-    () => runtime.startLocalWorkspaceApp(['--no-open', '--port', String(preferred)]),
+    () => runtime.startBuildrWeb(['--no-open', '--port', String(preferred)]),
     /EADDRINUSE|address already in use/i,
   );
 });
@@ -388,13 +388,13 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   const foreignIdentity = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
   const foreignRuntime = createRuntime();
   registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
-  const foreign = await foreignRuntime.startLocalWorkspaceApp(['--no-open', '--port', '0']);
+  const foreign = await foreignRuntime.startBuildrWeb(['--no-open', '--port', '0']);
   const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
   const foreignReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const currentRuntime = createRuntime();
   registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(
-    () => currentRuntime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]),
+    () => currentRuntime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]),
     (error) => error.code === 'launcher_handoff_cli_ownership_conflict',
   );
   assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).secret, foreignReceipt.secret);
@@ -422,13 +422,13 @@ test('npm Launcher preserves foreign ownership and a non-stopping handoff receip
   });
   t.after(() => { if (fake.listening) fake.close(); });
   const fakeState = { url: `http://127.0.0.1:${fake.address().port}`, secret: fakeSecret, pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile };
-  writeLocalAppInstance(currentRuntime, fakeState);
+  writeBuildrWebInstance(currentRuntime, fakeState);
   await assert.rejects(
-    () => currentRuntime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]),
+    () => currentRuntime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]),
     (error) => error.code === 'launcher_handoff_shutdown_timeout',
   );
   assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).secret, fakeSecret);
-  clearLocalAppInstance(fakeState, profile);
+  clearBuildrWebInstance(fakeState, profile);
   await new Promise((resolve) => fake.close(resolve));
 });
 

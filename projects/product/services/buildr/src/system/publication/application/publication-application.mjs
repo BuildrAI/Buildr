@@ -11,6 +11,15 @@ const IMAGE_TYPES = new Map([
   ['.webp', 'image/webp'],
 ]);
 
+export const PUBLICATION_PLATFORM_ALIASES = Object.freeze({
+  'buildr-web': 'buildr-web',
+  'local-app': 'buildr-web',
+});
+
+export function canonicalPublicationPlatform(value) {
+  return typeof value === 'string' ? (PUBLICATION_PLATFORM_ALIASES[value] || value) : value;
+}
+
 export function publicationError(code, message, status = 400, details = undefined) {
   const error = new Error(message);
   error.code = code;
@@ -68,7 +77,7 @@ function parseArticle(file, publicationRoot, runtime) {
   try { metadata = runtime.parseYamlDocument(match[1], `publication front matter: ${file}`); } catch { return null; }
   if (typeof metadata.id !== 'string' || !PUBLICATION_ID.test(metadata.id) || typeof metadata.title !== 'string' || !metadata.title.trim()) return null;
   const targets = Array.isArray(metadata.targets)
-    ? metadata.targets.filter((target) => target && typeof target === 'object' && typeof target.platform === 'string' && typeof target.status === 'string').map((target) => ({ platform: target.platform, status: target.status, ...(typeof target.url === 'string' ? { url: target.url } : {}) }))
+    ? metadata.targets.filter((target) => target && typeof target === 'object' && typeof target.platform === 'string' && typeof target.status === 'string').map((target) => ({ platform: canonicalPublicationPlatform(target.platform), status: target.status, ...(typeof target.url === 'string' ? { url: target.url } : {}) }))
     : [];
   return {
     id: metadata.id,

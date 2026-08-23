@@ -22,16 +22,16 @@ export function readLauncherIdentityFromEnvironment(env = process.env) {
   } catch { return null; }
 }
 
-export function localAppInstancePath(profile = null) {
+export function buildrWebInstancePath(profile = null) {
   return path.join(resolvedProfile(profile).dataRoot, 'instance.json');
 }
 
-export function localAppStartLockPath(profile = null) {
+export function buildrWebStartLockPath(profile = null) {
   return path.join(resolvedProfile(profile).dataRoot, 'instance-start.lock');
 }
 
-export function acquireLocalAppStartLock(profile = null) {
-  const file = localAppStartLockPath(profile);
+export function acquireBuildrWebStartLock(profile = null) {
+  const file = buildrWebStartLockPath(profile);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try {
     const descriptor = fs.openSync(file, 'wx');
@@ -46,16 +46,16 @@ export function acquireLocalAppStartLock(profile = null) {
       try { process.kill(ownerPid, 0); return { file, owner: false }; } catch {}
     }
     fs.rmSync(file, { force: true });
-    return acquireLocalAppStartLock(profile);
+    return acquireBuildrWebStartLock(profile);
   }
 }
 
-export function releaseLocalAppStartLock(lock) {
+export function releaseBuildrWebStartLock(lock) {
   if (lock?.owner) fs.rmSync(lock.file, { force: true });
 }
 
-export function readLocalAppInstance(profile = null) {
-  const file = localAppInstancePath(profile);
+export function readBuildrWebInstance(profile = null) {
+  const file = buildrWebInstancePath(profile);
   if (!fs.existsSync(file)) return null;
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -72,9 +72,9 @@ export function readLocalAppInstance(profile = null) {
   }
 }
 
-export function writeLocalAppInstance(runtime, value) {
+export function writeBuildrWebInstance(runtime, value) {
   const profile = value.webProfile || resolvedProfile();
-  const file = localAppInstancePath(profile);
+  const file = buildrWebInstancePath(profile);
   runtime.atomicWriteJson(file, {
     schemaVersion: INSTANCE_SCHEMA,
     url: value.url,
@@ -87,14 +87,14 @@ export function writeLocalAppInstance(runtime, value) {
   return file;
 }
 
-export function clearLocalAppInstance(expected = null, profile = expected?.webProfile || null) {
-  const current = readLocalAppInstance(profile);
+export function clearBuildrWebInstance(expected = null, profile = expected?.webProfile || null) {
+  const current = readBuildrWebInstance(profile);
   if (expected && current && (current.secret !== expected.secret || current.url !== expected.url)) return false;
-  fs.rmSync(localAppInstancePath(profile), { force: true });
+  fs.rmSync(buildrWebInstancePath(profile), { force: true });
   return true;
 }
 
-export async function healthyLocalAppInstance(instance = readLocalAppInstance()) {
+export async function healthyBuildrWebInstance(instance = readBuildrWebInstance()) {
   if (!instance) return null;
   try {
     const response = await fetch(`${instance.url}/api/v1/health`, {
@@ -157,7 +157,7 @@ export function matchesNpmLauncherBinding(instance, binding) {
   return npmLauncherInstanceDisposition(instance, binding).disposition === 'reuse';
 }
 
-export async function requestLocalAppInstanceShutdown(instance, { fetchImpl = fetch, timeoutMs = 1000 } = {}) {
+export async function requestBuildrWebInstanceShutdown(instance, { fetchImpl = fetch, timeoutMs = 1000 } = {}) {
   let response;
   try {
     response = await fetchImpl(new URL('/api/v1/app/quit-instance', instance.url), {
@@ -178,11 +178,11 @@ export async function requestLocalAppInstanceShutdown(instance, { fetchImpl = fe
   return { status: 'accepted', pid: instance.pid };
 }
 
-export async function waitForLocalAppInstanceExit(instance, {
+export async function waitForBuildrWebInstanceExit(instance, {
   attempts = 40,
   intervalMs = 50,
   profile = instance?.webProfile || null,
-  readInstance = readLocalAppInstance,
+  readInstance = readBuildrWebInstance,
 } = {}) {
   for (let index = 0; index < attempts; index += 1) {
     const current = readInstance(profile);
@@ -195,9 +195,9 @@ export async function waitForLocalAppInstanceExit(instance, {
   return { status: 'timeout', pid: instance.pid };
 }
 
-export async function waitForLocalAppInstance({ attempts = 40, intervalMs = 50, profile = null, match = null } = {}) {
+export async function waitForBuildrWebInstance({ attempts = 40, intervalMs = 50, profile = null, match = null } = {}) {
   for (let index = 0; index < attempts; index += 1) {
-    const healthy = await healthyLocalAppInstance(readLocalAppInstance(profile));
+    const healthy = await healthyBuildrWebInstance(readBuildrWebInstance(profile));
     if (healthy && (!match || match(healthy))) return healthy;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

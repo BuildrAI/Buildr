@@ -24,7 +24,7 @@ function temporaryRoot(t) {
   return root;
 }
 
-function isolateLocalAppData(t, appData) {
+function isolateBuildrWebData(t, appData) {
   const previous = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = appData;
   t.after(() => {
@@ -260,7 +260,7 @@ suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范�
 });
 
 suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'picker-app-data'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'picker-app-data'));
   const runtime = createRuntime();
   const candidate = path.join(temporaryRoot(t), 'not-initialized'); fs.mkdirSync(candidate);
   const result = runtime.inspectLocalWorkspaceCandidate(candidate, runtime.listRegisteredWorkspaces().revision);
@@ -270,7 +270,7 @@ suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不
 });
 
 suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data'));
   const first = initWorkspace(t, { name: 'First' });
   const second = initWorkspace(t, { name: 'Second' });
   const runtime = createRuntime();
@@ -302,7 +302,7 @@ suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支�
 });
 
 suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
   const first = initWorkspace(t, { name: 'Original' });
   const duplicate = path.join(temporaryRoot(t), 'duplicate');
   fs.cpSync(first, duplicate, { recursive: true });
@@ -376,9 +376,9 @@ suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 iden
   assert.equal(sha256(path.join(conflictRoot, '.buildr', 'workspace.yml')), before);
 });
 
-suiteTest('local-app-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
+suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
   const root = initWorkspace(t);
-  isolateLocalAppData(t, path.join(temporaryRoot(t), 'local-app-data'));
+  isolateBuildrWebData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime = createRuntime();
   const metadataFile = path.join(root, '.buildr', 'workspace.yml');
   const beforeHash = sha256(metadataFile);
@@ -493,9 +493,9 @@ suiteTest('local-app-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
-suiteTest('local-app-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
+suiteTest('buildr-web-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
   const root = initWorkspace(t);
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'publication-app-data'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'publication-app-data'));
   const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
   assert.equal(created.status, 0, created.stderr);
   const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
@@ -530,9 +530,9 @@ suiteTest('local-app-http', 'Buildr Web 文章入口只读投影项目文章、�
   assert.equal(response.status, 400);
 });
 
-suiteTest('local-app-http', '全局 Buildr Web Runtime 隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
+suiteTest('buildr-web-http', '全局 Buildr Web Runtime 隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
-  isolateLocalAppData(t, path.join(base, 'global-app-data'));
+  isolateBuildrWebData(t, path.join(base, 'global-app-data'));
   const first = initWorkspace(t, { name: 'global-first' });
   const second = initWorkspace(t, { name: 'global-second' });
   const runtime = createRuntime();

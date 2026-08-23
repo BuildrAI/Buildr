@@ -79,7 +79,7 @@ test('candidate full plan only uses Candidate profile and rejects changed-path o
   for (const id of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build', 'docs-quality',
+    'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build', 'docs-quality',
   ]) {
     assert.equal(payload.steps.filter((step) => step.id === id).length, 1);
   }

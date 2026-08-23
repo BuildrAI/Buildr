@@ -382,15 +382,15 @@ if (fs.existsSync(bootstrapRuntime)) {
 }
 if (fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module must be removed');
 
-const localAppServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
-const localAppRouter = path.join(sourceRoot, 'web', 'http', 'router.mjs');
-if (fs.existsSync(localAppServer)) {
-  const source = fs.readFileSync(localAppServer, 'utf8');
-  const routerSource = fs.existsSync(localAppRouter) ? fs.readFileSync(localAppRouter, 'utf8') : '';
+const buildrWebServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
+const buildrWebRouter = path.join(sourceRoot, 'web', 'http', 'router.mjs');
+if (fs.existsSync(buildrWebServer)) {
+  const source = fs.readFileSync(buildrWebServer, 'utf8');
+  const routerSource = fs.existsSync(buildrWebRouter) ? fs.readFileSync(buildrWebRouter, 'utf8') : '';
   if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
   if (!routerSource.includes('for (const contribution of httpContributions)') || !routerSource.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
   if (/runtime\.(?:listRegisteredWorkspaces|registerLocalWorkspace|getWorkspace|listProjects|projectDetail|listServices|serviceDetail)\(/.test(source)) problems.push('Buildr Web HTTP Host must not own Workspace Core routes');
-  if (/registerLocalWorkspaceAppInterface|startLocalWorkspaceApp|manageLocalAppPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
+  if (/registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
 }
 
 const workspaceModule = path.join(sourceRoot, 'workspace', 'module.mjs');
@@ -543,7 +543,7 @@ if (fs.existsSync(dailyProgressInterface)) {
     problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
   }
 }
-if ([localAppServer, localAppRouter].some((file) => fs.existsSync(file) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(file, 'utf8')))) {
+if ([buildrWebServer, buildrWebRouter].some((file) => fs.existsSync(file) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(file, 'utf8')))) {
   problems.push('Buildr Web HTTP Host must not own Daily Progress routes');
 }
 
@@ -567,7 +567,7 @@ const legacyRootTokens = [
   'package/targets/' + 'workspace',
   'package/launchers/' + 'assets',
   ['package', 'bootstrap'].join('/'),
-  'src/interfaces/local-app/' + 'web-dist',
+  'src/web/' + 'web-dist',
   'scripts/' + 'release',
   'scripts/' + 'run-development',
 ];

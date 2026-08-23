@@ -11,7 +11,7 @@ function registryRevision(content) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function localAppDataRoot({ respectOverride = true } = {}) {
+export function buildrWebDataRoot({ respectOverride = true } = {}) {
   if (respectOverride && process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
   return productDataRoot({ respectOverride: false });
 }

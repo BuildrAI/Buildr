@@ -40,5 +40,13 @@ export function parseOpenSpecDeltaSpec(content, capability) {
     const to = match[2].trim();
     if (from && to && from !== to) operations.push({ type: 'RENAMED', capability, from, to });
   }
+  const renamedScenarios = openSpecSection(content, 'RENAMED Scenarios');
+  const scenarioRenamePattern = /-\s*REQUIREMENT:\s*`?(.+?)`?\s*\n\s*-\s*FROM:\s*`?(.+?)`?\s*\n\s*-\s*TO:\s*`?(.+?)`?\s*(?=\n|$)/g;
+  for (const match of renamedScenarios.matchAll(scenarioRenamePattern)) {
+    const requirement = match[1].trim();
+    const from = match[2].trim();
+    const to = match[3].trim();
+    if (requirement && from && to && from !== to) operations.push({ type: 'RENAMED_SCENARIO', capability, requirement, from, to });
+  }
   return operations;
 }

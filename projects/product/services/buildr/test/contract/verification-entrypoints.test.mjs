@@ -24,10 +24,10 @@ test('product verification exposes three gates, direct layers, and one focus ent
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');
-  assert.equal(scripts['test:browser:smoke'], 'npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/local-app-browser.test.mjs');
+  assert.equal(scripts['test:browser:smoke'], 'npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs');
   assert.equal(scripts['test:browser:changed'], 'node test/verification/browser-selector-dispatcher.mjs --run');
   for (const selector of ['core', 'shell', 'project', 'service', 'change', 'task', 'articles']) {
-    assert.match(scripts[`test:browser:${selector}`], new RegExp(`^npm run test:web-dist && node tools/development/run-isolated-workspace-smoke\\.mjs --script test/browser-smoke/local-app-browser\\.test\\.mjs -- ${selector}$`));
+    assert.match(scripts[`test:browser:${selector}`], new RegExp(`^npm run test:web-dist && node tools/development/run-isolated-workspace-smoke\\.mjs --script test/browser-smoke/buildr-web-browser\\.test\\.mjs -- ${selector}$`));
   }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
   assert.equal(scripts['test:integration:candidate:release'], 'node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs');
@@ -204,7 +204,7 @@ test('candidate verification retains necessary Candidate facts without Browser a
     'Project declaration integration slice',
     'OpenSpec application integration slice',
     'Verification orchestration integration slice',
-    'Runtime and Local App integration slice',
+    'Runtime and Buildr Web integration slice',
     'Release and installation integration slice',
     'Workspace data-store integration slice',
     'Task Environment integration slice',

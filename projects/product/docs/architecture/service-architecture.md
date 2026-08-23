@@ -731,11 +731,11 @@ src/bootstrap/
     → 已迁移模块通过各自 module.mjs 提供窄 requires/provides/contributions
     → legacy-runtime-module.mjs 与临时 compatibility Facade 已退出
 
-src/interfaces/local-app/http/server.mjs
+src/web/http/server.mjs
     → 已删除；公共 HTTP 宿主迁入 src/web/http/
     → 业务 HTTP Controller 已按所有权迁入对应模块 interfaces/http/
 
-src/interfaces/local-app/runtime/
+src/web/runtime/
     → 已删除；实例、Preview 和维护编排位于 src/web/application/，目录选择等适配位于 src/web/infrastructure/
 
 src/application/{workspace,project,service}/ 与相关全局 persistence
@@ -784,11 +784,11 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
 | Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
-| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`router.mjs`、`session.mjs`、`static-files.mjs`、`responses.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | local-app-web、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
+| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`router.mjs`、`session.mjs`、`static-files.mjs`、`responses.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | buildr-web-http、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
 | System Installation | `src/system/installation/`；release version 规则位于 `domain/release-version.mjs` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
-| 遗留入口与临时 Facade | 旧 `src/interfaces/local-app/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
+| 遗留入口与临时 Facade | 旧 `src/web/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
 | 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
 | Change | `src/task/change/module.mjs`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
 | OpenSpec convergence | `src/task/openspec/module.mjs`、`src/task/openspec/application/` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |

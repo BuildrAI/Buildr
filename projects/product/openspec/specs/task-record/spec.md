@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义正式 Task identity、最小 Task Record v1、canonical 路径、共享 Application、Skill/CLI 与 Local App 客户端、产品化创建/读取/更新/结束、三态结果、限定引用与失败边界。
+定义正式 Task identity、最小 Task Record v1、canonical 路径、共享 Application、Skill/CLI 与 Buildr Web 客户端、产品化创建/读取/更新/结束、三态结果、限定引用与失败边界。
 
 ## Requirements
 

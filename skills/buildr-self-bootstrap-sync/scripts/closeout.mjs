@@ -16,7 +16,7 @@ export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'sync',
   'commit',
   'push',
-  'install-local-app',
+  'install-buildr-web',
   'verify-development-entry',
   'finalize',
 ]);
@@ -87,7 +87,7 @@ function matches(pathname, exact, prefixes = []) {
 function classifications(changedPaths) {
   const sync = [];
   const cli = [];
-  const localApp = [];
+  const buildrWeb = [];
   for (const pathname of changedPaths) {
     if (matches(pathname, [`${SERVICE_ROOT}/resources/manifest.yml`], [
       `${SERVICE_ROOT}/resources/workspace/`,
@@ -106,12 +106,12 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/LICENSE`,
-    ], [`${SERVICE_ROOT}/src/interfaces/local-app/`, `${SERVICE_ROOT}/package/launchers/`])) localApp.push(pathname);
+    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/package/launchers/`])) buildrWeb.push(pathname);
   }
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
-    'install-development-local-app': [...new Set(localApp)].sort(),
-    'verify-development-entry': [...new Set([...sync, ...cli, ...localApp])].sort(),
+    'install-development-buildr-web': [...new Set(buildrWeb)].sort(),
+    'verify-development-entry': [...new Set([...sync, ...cli, ...buildrWeb])].sort(),
   };
 }
 
@@ -1249,16 +1249,16 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       markNotApplicable(stages.get('push'), '没有successor commit需要发布。');
     }
 
-    active = stages.get('install-local-app');
+    active = stages.get('install-buildr-web');
     holdTargetLease('refresh-target-lease-before-local-app');
-    if (plan.actions['install-development-local-app'].length) {
+    if (plan.actions['install-development-buildr-web'].length) {
       const continuityBefore = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
       const manager = path.join(root, SERVICE_ROOT, 'package', 'launchers', 'manage.mjs');
       const args = [manager, 'install', '--channel', 'development'];
-      const installed = command(execute, nodeExecutable, args, root, 'install-development-local-app', active, { kind: 'development-launcher-manager', script: manager, args: args.slice(1) });
-      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', 'Development Local App安装失败。');
+      const installed = command(execute, nodeExecutable, args, root, 'install-development-buildr-web', active, { kind: 'development-launcher-manager', script: manager, args: args.slice(1) });
+      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', 'Development Buildr Web安装失败。');
       const payload = validateDevelopmentLauncherResult(
-        parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Local App installer没有返回JSON。'),
+        parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', 'Development Buildr Web installer没有返回JSON。'),
         root,
         nodeExecutable,
         successor,
@@ -1274,7 +1274,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
         phaseResult: active,
       });
       markPassed(active, plan.identity, digest({ launcher: payload, continuityBefore, continuityAfter }), [
-        { type: 'install-development-local-app', ref: successor, channel: 'development', target: payload.target },
+        { type: 'install-development-buildr-web', ref: successor, channel: 'development', target: payload.target },
         {
           type: 'development-web-continuity',
           status: continuityAfter.status,
@@ -1285,7 +1285,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
           currentPort: continuityAfter.instance?.port || null,
         },
       ]);
-    } else markNotApplicable(active, 'frozen paths未命中Development Local App输入。');
+    } else markNotApplicable(active, 'frozen paths未命中Development Buildr Web输入。');
 
     active = stages.get('verify-development-entry');
     holdTargetLease('refresh-target-lease-before-development-entry');

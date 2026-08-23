@@ -40,7 +40,7 @@ test('统一 registry 固化 fast 与 Candidate required gates', () => {
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'typecheck', 'unit', 'component', 'integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store', 'integration-task-environment', 'integration-self-bootstrap',
     'integration-task-read-models', 'integration-task-coordination', 'integration-project-daily-progress', 'integration-task-execution-records', 'integration-task-development', 'integration-task-finish', 'integration-task-finish-delivery', 'contract',
-    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'concurrent-task-acceptance', 'candidate-tarball',
     'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate',
@@ -332,7 +332,7 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
 });
 
 test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capability 拥有', () => {
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration-runtime', 'system-local-app-http']);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/api/client.ts'] })), ['unit', 'integration-runtime', 'system-buildr-web-http']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/App.tsx'] })), ['unit', 'integration-runtime']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ProjectsPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/ServicesPage.tsx'] })), ['unit']);
@@ -344,9 +344,9 @@ test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capabil
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/web/infrastructure/instance-runtime.mjs'] })), [
     'unit', 'integration-runtime', 'system-app-process', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
   ]);
-  const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
+  const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/buildr-web-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);
-  assert.deepEqual(browserTest.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);
+  assert.deepEqual(browserTest.delegated, [{ path: 'test/browser-smoke/buildr-web-browser.test.mjs', owners: ['product.browser-smoke'] }]);
 });
 
 test('OpenSpec 路径只选择真实 owner', () => {
@@ -448,15 +448,15 @@ test('changed path scope matrix closes affected, full, delegated and ignored out
   const affected = createVerificationPlan({ paths: ['src/domain/task-record/task-record.mjs'] });
   assert.equal(affected.scope.mode, 'affected');
   assert.deepEqual(affected.scope.reasons, [{ code: 'affected-owner', path: 'src/domain/task-record/task-record.mjs', owners: ['unit', 'candidate-tarball', 'application-payload-release'] }]);
-  assert.equal(ids(affected).includes('system-local-app-http'), false);
+  assert.equal(ids(affected).includes('system-buildr-web-http'), false);
 
   const full = createVerificationPlan({ paths: ['test/verification/registry.mjs'] });
   assert.equal(full.scope.mode, 'full');
   assert.equal(new Set(ids(full)).size, ids(full).length);
 
-  const delegated = createVerificationPlan({ paths: ['test/browser-smoke/local-app-browser.test.mjs'] });
+  const delegated = createVerificationPlan({ paths: ['test/browser-smoke/buildr-web-browser.test.mjs'] });
   assert.equal(delegated.scope.mode, 'not-applicable');
-  assert.deepEqual(delegated.delegated, [{ path: 'test/browser-smoke/local-app-browser.test.mjs', owners: ['product.browser-smoke'] }]);
+  assert.deepEqual(delegated.delegated, [{ path: 'test/browser-smoke/buildr-web-browser.test.mjs', owners: ['product.browser-smoke'] }]);
   assert.deepEqual(ids(delegated), []);
 
   const ignored = createVerificationPlan({ paths: ['node_modules/example/index.mjs'] });
@@ -593,6 +593,6 @@ test('当前 Product inventory 每条路径都有 verifier owner 或显式 ignor
     .filter((relative) => relative && fs.existsSync(path.join(productRoot, relative)));
   const audit = auditVerificationInputCoverage(inventory);
   assert.deepEqual(audit.unmapped, []);
-  assert.ok(audit.delegated.some((item) => item.path === 'test/browser-smoke/local-app-browser.test.mjs' && item.owners.includes('product.browser-smoke')));
+  assert.ok(audit.delegated.some((item) => item.path === 'test/browser-smoke/buildr-web-browser.test.mjs' && item.owners.includes('product.browser-smoke')));
   assert.equal(audit.ok, true);
 });

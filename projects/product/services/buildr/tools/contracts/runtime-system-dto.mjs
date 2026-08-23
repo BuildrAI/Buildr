@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
-import { LOCAL_APP_HTTP_SCHEMAS } from '../../src/web/http/local-app-http-contracts.mjs';
+import { BUILDR_WEB_HTTP_SCHEMAS } from '../../src/web/http/buildr-web-http-contracts.mjs';
 import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.mjs';
 import { PUBLICATION_HTTP_SCHEMAS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
 
@@ -12,7 +12,7 @@ const productRoot = path.resolve(serviceRoot, '../..');
 const backend = path.join(serviceRoot, 'src/web/http/generated/runtime-system-http-dto.ts');
 const web = path.join(productRoot, 'services/buildr-web/src/api/generated/runtime-system-http-dto.ts');
 const catalogs = Object.freeze([
-  ['localApp', LOCAL_APP_HTTP_SCHEMAS],
+  ['buildrWeb', BUILDR_WEB_HTTP_SCHEMAS],
   ['releaseAwareness', RELEASE_AWARENESS_HTTP_SCHEMAS],
   ['publication', PUBLICATION_HTTP_SCHEMAS],
 ]);
