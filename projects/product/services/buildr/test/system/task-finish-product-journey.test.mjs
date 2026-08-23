@@ -1171,6 +1171,9 @@ isolatedJourney('多贡献 repository 在第二个 target advance 后保存部�
   assert.equal(secondA.delivery.targetDisposition, 'carrier');
   assert.equal(secondA.delivery.containment, null);
   assert.equal(secondA.deliveryCarrier.identity, firstA.deliveryCarrier.identity);
+  assert.equal(secondA.deliveryCarrier.head, firstA.deliveryCarrier.head);
+  assert.equal(secondA.deliveryCarrier.preparedAt, firstA.deliveryCarrier.preparedAt);
+  assert.equal(secondA.delivery.finalRemoteRef, firstA.delivery.finalRemoteRef);
   assert.equal(secondB.delivery.status, 'delivered');
   assert.equal(secondB.deliveryCarrier.expectedTargetRef, advancedServiceB);
   assert.equal(command(serviceB.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], secondB.deliveryCarrier.head);
