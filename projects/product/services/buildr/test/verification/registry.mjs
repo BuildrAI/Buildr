@@ -1,4 +1,5 @@
 import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
+import { TEST_CONTEXT_KEYS, TASK_LIFECYCLE_CONTEXT_KEY, testContextProfileByKey } from '../context/profiles.mjs';
 import { verificationStepOwnership } from './ownership.mjs';
 import { SYSTEM_SUITES } from './system-suites.mjs';
 
@@ -139,17 +140,38 @@ const step = (definition) => {
       : classification?.primaryIntent === 'Delivery / Release' || (classification?.targetDurationMs ?? 0) >= 25_000 ? 300_000
         : 180_000
   );
+  const contexts = [...(definition.contexts ?? [])];
+  const contextProfiles = contexts.map(testContextProfileByKey).filter(Boolean);
+  const staticWorkerArgument = definition.executor?.args?.find((argument) => argument.startsWith('--test-concurrency='));
+  const workers = definition.workerDemand ?? (staticWorkerArgument ? Number(staticWorkerArgument.split('=')[1]) : 1);
+  const footprints = classification?.environment?.footprints ?? [];
+  const resourceDemand = definition.resourceDemand ?? {
+    workers,
+    processes: workers,
+    ...(footprints.includes('git') ? { git: 1 } : {}),
+    ...(footprints.includes('workspace-lifecycle') || contextProfiles.some((profile) => profile.resourceDemand.workspaceIo) ? { workspaceIo: 1 } : {}),
+  };
   return Object.freeze({
     dependsOn: [],
     profiles: [],
     groups: [],
     concurrencyClass: 'default',
     resources: [],
+    contexts: Object.freeze([]),
+    isolationMode: 'none',
+    resetStrategy: 'none',
+    parallelSafety: 'worker-safe',
+    resourceDemand: Object.freeze({ workers: 1, processes: 1 }),
     preflight: null,
     admission: false,
     developmentRunners: [],
     ...definition,
     profiles: Object.freeze(profiles),
+    contexts: Object.freeze(contexts),
+    isolationMode: definition.isolationMode ?? (contexts.length > 0 ? 'sandbox' : footprints.includes('workspace-lifecycle') ? 'full-lifecycle' : classification?.environment?.isolation === 'unique-temporary-root' ? 'sandbox' : 'none'),
+    resetStrategy: definition.resetStrategy ?? (contexts.length > 0 || ['single-cleanup', 'repeated-cleanup', 'lifecycle'].includes(classification?.resetBurden) ? 'recreate' : 'none'),
+    parallelSafety: definition.parallelSafety ?? (definition.concurrencyClass === 'exclusive' ? 'exclusive' : definition.concurrencyClass === 'workspace-heavy' || (definition.resources?.length ?? 0) > 0 ? 'bounded' : 'worker-safe'),
+    resourceDemand: Object.freeze({ ...resourceDemand }),
     inputs: ownership.inputs,
     inputExclusions: ownership.inputExclusions,
     preflight: definition.preflight ? Object.freeze({ ...definition.preflight, inputs: ownership.preflightInputs }) : null,
@@ -165,11 +187,12 @@ const packageVerifier = (selector) => {
   return { name: verifier.name, executor: { type: 'package-selector', selector } };
 };
 
-const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurrency) => Object.freeze({
+const concurrency = (global, workspaceHeavy, workspaceSaturating, innerConcurrency, capacities) => Object.freeze({
   global,
   classes: Object.freeze({ default: global, 'cpu-heavy': 2, 'workspace-heavy': workspaceHeavy, network: 2, exclusive: 1 }),
   resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1, 'app-runtime': 1 }),
   innerConcurrency: Object.freeze(innerConcurrency),
+  capacities: Object.freeze(capacities),
 });
 
 export const VERIFICATION_RESOURCE_CONTRACTS = Object.freeze({
@@ -191,9 +214,9 @@ export const VERIFICATION_RESOURCE_CONTRACTS = Object.freeze({
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  ci: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-task-finish-delivery': 1, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }),
+  local: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
+  ci: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-task-finish-delivery': 1, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
@@ -202,6 +225,11 @@ export const VERIFICATION_ENVIRONMENT_FOOTPRINTS = Object.freeze(['filesystem', 
 export const VERIFICATION_DEVELOPMENT_RUNNERS = Object.freeze(['windows']);
 export const VERIFICATION_ENVIRONMENT_ISOLATIONS = Object.freeze(['none', 'read-only', 'unique-temporary-root', 'shared']);
 export const VERIFICATION_RESET_BURDENS = Object.freeze(['none', 'single-cleanup', 'repeated-cleanup', 'lifecycle']);
+export const VERIFICATION_CONTEXT_KEYS = TEST_CONTEXT_KEYS;
+export const VERIFICATION_ISOLATION_MODES = Object.freeze(['none', 'transaction', 'sandbox', 'full-lifecycle']);
+export const VERIFICATION_RESET_STRATEGIES = Object.freeze(['none', 'rollback', 'snapshot', 'recreate']);
+export const VERIFICATION_PARALLEL_SAFETY = Object.freeze(['worker-safe', 'bounded', 'exclusive']);
+export const VERIFICATION_RESOURCE_DEMANDS = Object.freeze(['workers', 'processes', 'git', 'workspaceIo']);
 
 export function resolveVerificationExecutionProfile(value, env = process.env) {
   const id = value || (env.CI === 'true' ? 'ci' : 'local');
@@ -213,10 +241,12 @@ export function resolveVerificationExecutionProfile(value, env = process.env) {
 const integrationSlice = (id, files, options = {}) => Object.freeze({
   id,
   files: Object.freeze(files),
+  executorType: options.executorType ?? 'node-test',
   schedulingCostMs: options.schedulingCostMs,
   ...(options.timeoutMs == null ? {} : { timeoutMs: options.timeoutMs }),
   concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
   resources: Object.freeze(options.resources ?? []),
+  contexts: Object.freeze(options.contexts ?? []),
   admission: options.admission === true,
   args: Object.freeze([...(options.args ?? []), '--test-reporter=dot']),
 });
@@ -239,9 +269,10 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-verification', [
     'test/integration/verification-entrypoints-cli.test.mjs',
     'test/integration/verification-evidence-lifecycle.test.mjs',
-    'test/integration/verification-node-runtime.test.mjs',
     'test/integration/verification-planner.test.mjs',
     'test/integration/verification-resource-coordinator.test.mjs',
+    'test/integration/test-context-runtime.test.mjs',
+    'test/integration/node-test-context-host.test.mjs',
     'test/integration/verification-test-files.test.mjs',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
@@ -256,7 +287,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-manager-capability-graph.test.mjs',
     'test/integration/task-pre-create-git-capability-graph.test.mjs',
     'test/integration/web-dist-verification.test.mjs',
-  ], { schedulingCostMs: 4000, args: ['--test-concurrency=4'] }),
+  ], { schedulingCostMs: 4000, args: ['--test-concurrency=4'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-release', [
     'test/integration/open-source-release-filesystem.test.mjs',
     'test/integration/product-installation-identity.test.mjs',
@@ -294,15 +325,18 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-execution-record-body-store.test.mjs',
     'test/integration/task-finish-execution-record-recovery.test.mjs',
     'test/integration/verification-execution-record-application.test.mjs',
-  ], { schedulingCostMs: 50000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 50000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-task-development', [
-    'test/integration/task-development-application.test.mjs',
-    'test/integration/task-development-driver-discovery.test.mjs',
-    'test/integration/task-development-driver-profile.test.mjs',
-    'test/integration/task-development-repository.test.mjs',
-    'test/integration/task-review-repository.test.mjs',
     'test/integration/task-verification-repository.test.mjs',
-  ], { schedulingCostMs: 60000, resources: ['workspace-saturating', 'task-lifecycle-heavy'], args: ['--test-concurrency=2'] }),
+    'test/integration/task-development-application-shard-3.test.mjs',
+    'test/integration/task-development-application.test.mjs',
+    'test/integration/task-development-application-shard-4.test.mjs',
+    'test/integration/task-development-application-shard-2.test.mjs',
+    'test/integration/task-review-repository.test.mjs',
+    'test/integration/task-development-repository.test.mjs',
+    'test/integration/task-development-driver-profile.test.mjs',
+    'test/integration/task-development-driver-discovery.test.mjs',
+  ], { schedulingCostMs: 30000, executorType: 'node-context-test', resources: ['workspace-saturating', 'task-lifecycle-heavy'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY], args: ['--test-concurrency=4'] }),
   integrationSlice('integration-task-finish', [
     'test/integration/task-finish-bootstrap-application.test.mjs',
     'test/integration/task-finish-bootstrap-capsule.test.mjs',
@@ -332,7 +366,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.mjs', args: ['--suite', 'general'] }, profiles: ['candidate'],   schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.mjs', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice) => step({
     id: slice.id,
     name: ({
@@ -352,12 +386,13 @@ export const verificationSteps = Object.freeze([
       'integration-task-finish': 'Task Finish core integration slice',
       'integration-task-finish-delivery': 'Task Finish delivery integration slice',
     })[slice.id],
-    executor: { type: 'node-test', files: [...slice.files], args: [...slice.args] },
+    executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
     schedulingCostMs: slice.schedulingCostMs,
     ...(slice.timeoutMs == null ? {} : { timeoutMs: slice.timeoutMs }),
     concurrencyClass: slice.concurrencyClass,
     resources: [...slice.resources],
+    contexts: [...slice.contexts],
     admission: slice.admission,
   })),
   step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy', preflight: {
@@ -373,6 +408,8 @@ export const verificationSteps = Object.freeze([
     schedulingCostMs: suite.schedulingCostMs,
     concurrencyClass: suite.concurrencyClass,
     resources: [...suite.resources],
+    contexts: [...(suite.contexts ?? [])],
+    workerDemand: suite.innerConcurrency,
     admission: suite.id === 'system-verification-admission',
   })),
   step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
@@ -603,7 +640,7 @@ export const VERIFICATION_TEST_INTENTS = Object.freeze(['Development', 'Acceptan
 export const VERIFICATION_EXECUTION_BOUNDARIES = Object.freeze(['Static', 'Unit', 'Component', 'Integration', 'System']);
 export const VERIFICATION_PROFILES = Object.freeze(['fast', 'core', 'candidate', 'host-node']);
 export const VERIFICATION_GROUPS = Object.freeze(['public', 'cli', 'runtime', 'package', 'openspec', 'release', 'recovery', 'windows-npm-preflight']);
-export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'node-test', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
+export const VERIFICATION_EXECUTORS = Object.freeze(['node', 'node-test', 'node-context-test', 'npm', 'openspec', 'package-selector', 'workspace-suite', 'candidate-artifact']);
 
 export function verificationStepById(id) {
   return verificationSteps.find((item) => item.id === id);

@@ -103,6 +103,7 @@ function normalizedSteps(results) {
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
     ...(result.phases?.length ? { phases: result.phases } : {}),
+    ...(result.testContextRuntime ? { testContextRuntime: result.testContextRuntime } : {}),
   }));
 }
 
@@ -132,6 +133,7 @@ export function createVerificationTimingSummary(options) {
       } : {}),
     },
     summaryPath: path.resolve(options.timingOutput),
+    ...(options.contextLifecycle ? { contextLifecycle: options.contextLifecycle } : {}),
     ...(options.evidenceLifecycle ? { evidenceLifecycle: options.evidenceLifecycle } : {}),
   };
   if (options.totalBudgetMs != null) {

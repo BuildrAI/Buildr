@@ -107,6 +107,7 @@ try {
         source,
         status: execution.passed ? 'passed' : 'failed',
         results,
+        contextLifecycle: execution.contextLifecycle,
         startedAt: totalStartedAt,
         finishedAt: Date.now(),
         diagnosticsDirectory: evidence.diagnosticsOutput,

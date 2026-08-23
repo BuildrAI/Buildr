@@ -89,18 +89,22 @@ test('Candidate 的网络协议仅使用本机回环 fixture', () => {
 
 test('Task lifecycle System context 只共享不可变基线并保留全生命周期测试的独立 owner', () => {
   const helper = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'task-lifecycle-system-context.mjs'), 'utf8');
+  const contextRuntime = fs.readFileSync(path.join(productRoot, 'test', 'context', 'runtime.mjs'), 'utf8');
+  const provider = fs.readFileSync(path.join(productRoot, 'test', 'context', 'providers', 'task-lifecycle.mjs'), 'utf8');
   const runner = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'system.mjs'), 'utf8');
-  assert.match(helper, /TASK_LIFECYCLE_CONTEXT_ID = 'task-lifecycle\/v1'/);
-  assert.match(helper, /if \(provided\) return inspectTaskLifecycleSystemContext\(provided\)/, 'an invalid suite context must not fall back to a local context');
-  assert.match(helper, /fs\.cpSync\(context\.workspaceRoot, root, \{ recursive: true \}\)/, 'test cases must receive copied sandboxes');
-  assert.match(helper, /actualIdentity !== marker\.identity/, 'shared baseline must be identity checked');
-  assert.match(helper, /runtime\.initBuildr/);
-  assert.match(helper, /runtime\.createProject/);
-  assert.match(helper, /runtime\.createService/);
+  assert.match(helper, /TASK_LIFECYCLE_CONTEXT_ID = TASK_LIFECYCLE_CONTEXT_KEY/);
+  assert.match(helper, /defaultTestContextPool/, 'direct files and inherited runners must use the same Pool contract');
+  assert.match(contextRuntime, /fs\.cpSync\(context\.seedRoot, sandboxRoot, \{ recursive: true \}\)/, 'test cases must receive copied sandboxes');
+  assert.match(contextRuntime, /actualIdentity !== marker\.identity/, 'shared baseline must be identity checked');
+  assert.match(contextRuntime, /test_context_sandbox_alias/);
+  assert.match(provider, /runtime\.initBuildr/);
+  assert.match(provider, /runtime\.createProject/);
+  assert.match(provider, /runtime\.createService/);
   assert.doesNotMatch(helper, /spawnSync/, 'fixture-only setup must not pay public CLI cold starts');
-  assert.match(runner, /prepareTaskLifecycleSystemContext/);
-  assert.match(runner, /\[TASK_LIFECYCLE_CONTEXT_ENV\]: context\.contextRoot/);
-  assert.match(runner, /finally \{[\s\S]*context\.cleanup\(\)/);
+  assert.match(runner, /createTestContextPool/);
+  assert.match(runner, /selectedSuites\.flatMap\(\(suite\) => suite\.contexts/);
+  assert.match(runner, /\[TASK_LIFECYCLE_CONTEXT_ENV\]: taskContext\.contextRoot/);
+  assert.match(runner, /finally \{[\s\S]*contextPool\.cleanup\(\)/);
   assert.match(runner, /--test-reporter=dot/, 'successful System output must stay compact while dot reporter retains failure details');
   assert.match(runner, /--test-reporter-destination=stdout/);
   assert.match(runner, /system-file-timing-reporter\.mjs/);
@@ -125,6 +129,13 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
   assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1);
+  assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-verification-contracts')?.contexts ?? [], [], 'unrelated System owners must not pay Task Context setup');
+  assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-task-lifecycle')?.contexts, ['task-lifecycle/v1']);
+  const taskDevelopment = verificationSteps.find((step) => step.id === 'integration-task-development');
+  assert.deepEqual(taskDevelopment?.contexts, ['task-lifecycle/v1']);
+  assert.equal(taskDevelopment?.resourceDemand.workers, 4, 'Task Development shards must consume the outer worker grant');
+  assert.equal(taskDevelopment?.executor.type, 'node-context-test', 'Task Development must use persistent Context Worker Hosts');
+  assert.equal(taskDevelopment?.executor.files.filter((file) => file.includes('task-development-application')).length, 4);
 
   for (const file of taskLifecycleContextConsumers) {
     const source = fs.readFileSync(path.join(productRoot, 'test', 'system', file), 'utf8');
@@ -143,7 +154,30 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
 
   assert.throws(
     () => inspectTaskLifecycleSystemContext(path.join(productRoot, 'test', '.missing-task-lifecycle-context')),
-    (error) => error.code === 'system_test_context_root_invalid',
+    (error) => error.code === 'test_context_root_invalid',
     'a missing suite context must fail with a stable context diagnostic',
   );
+});
+
+test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {
+  const packageMetadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
+  assert.equal(packageMetadata.exports['./test-context'], './test-context.mjs');
+  const runtimeRoot = path.join(productRoot, 'src/infrastructure/testing/context-runtime');
+  const publicSource = fs.readdirSync(runtimeRoot).filter((name) => name.endsWith('.mjs'))
+    .map((name) => fs.readFileSync(path.join(runtimeRoot, name), 'utf8')).join('\n');
+  assert.match(publicSource, /defineTestContext/);
+  assert.match(publicSource, /test-isolation=none/);
+  assert.doesNotMatch(publicSource, /src\/bootstrap|task-lifecycle|BUILDR_TEST_CONTEXTS|createRuntime\(/,
+    'public Runtime must not depend on Buildr Workspace or Application assembly');
+  const provider = fs.readFileSync(path.join(productRoot, 'test/context/providers/task-application.mjs'), 'utf8');
+  assert.match(provider, /buildrTaskApplicationContext = defineTestContext/);
+  assert.match(provider, /buildrTaskWorkspaceContext = defineTestContext/);
+  assert.match(provider, /parallelSafety: 'exclusive'/);
+  assert.match(provider, /parallelSafety: 'isolated'/);
+  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.mjs'), 'utf8');
+  assert.match(taskTests, /contextTest/);
+  assert.match(taskTests, /BUILDR_TASK_TEST_CONTEXTS/);
+  assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');
+  const framework = fs.readFileSync(path.join(productRoot, 'docs/verification-framework.md'), 'utf8');
+  for (const term of ['@buildr-ai/buildr/test-context', 'Worker Host', 'Cache Identity', 'Dirty', 'node-context-test']) assert.match(framework, new RegExp(term));
 });

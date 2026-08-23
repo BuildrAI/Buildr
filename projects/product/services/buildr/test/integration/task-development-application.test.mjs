@@ -1,24 +1,36 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import test, { after, before } from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { contextTest } from '../../src/infrastructure/testing/context-runtime/index.mjs';
 import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
+import { BUILDR_TASK_TEST_CONTEXTS } from '../context/providers/task-application.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
-const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
-const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-let fixtureTemplateBase;
-let fixtureTemplateRoot;
-
-function run(args) {
-  const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
-  assert.equal(result.status, 0, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+const SHARD_COUNT = 4;
+const shardValue = process.env.BUILDR_TASK_DEVELOPMENT_TEST_SHARD ?? '0';
+const shardIndex = Number.parseInt(shardValue, 10);
+if (!Number.isInteger(shardIndex) || shardIndex < 0 || shardIndex >= SHARD_COUNT || String(shardIndex) !== shardValue) {
+  throw new Error(`Invalid BUILDR_TASK_DEVELOPMENT_TEST_SHARD: ${shardValue}`);
+}
+let registeredTestIndex = 0;
+function test(name, options, callback) {
+  const currentIndex = registeredTestIndex;
+  registeredTestIndex += 1;
+  if (currentIndex % SHARD_COUNT !== shardIndex) return undefined;
+  const nodeOptions = callback === undefined ? {} : options;
+  const testCallback = callback === undefined ? options : callback;
+  return contextTest(name, {
+    ...nodeOptions,
+    suiteId: `task-development-application-shard-${shardIndex}`,
+    contexts: BUILDR_TASK_TEST_CONTEXTS,
+  }, async (t, contexts) => {
+    Object.defineProperty(t, 'buildrContexts', { value: contexts });
+    return testCallback(t);
+  });
 }
 
 function writeVerificationDeclaration(root) {
@@ -34,32 +46,13 @@ function writeVerificationDeclaration(root) {
   }));
 }
 
-before(() => {
-  fixtureTemplateBase = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-development-template-'));
-  fixtureTemplateRoot = path.join(fixtureTemplateBase, 'workspace');
-  run(['init', '--target', fixtureTemplateRoot, '--name', 'development-fixture', '--description', 'Task Development integration fixture']);
-  run(['project', 'create', 'demo', '--target', fixtureTemplateRoot, '--name', 'Demo', '--description', 'Demo project']);
-  run(['project', 'create', 'other', '--target', fixtureTemplateRoot, '--name', 'Other', '--description', 'Other project']);
-  const serviceSource = path.join(fixtureTemplateBase, 'service-source');
-  fs.mkdirSync(serviceSource);
-  fs.writeFileSync(path.join(serviceSource, 'README.md'), '# Demo API\n');
-  run(['service', 'create', 'demo/api', serviceSource, '--target', fixtureTemplateRoot, '--name', 'Demo API', '--description', 'Demo service', '--type', 'backend']);
-  fs.writeFileSync(path.join(fixtureTemplateRoot, 'projects', 'demo', 'README.md'), '# Demo\n');
-  writeVerificationDeclaration(fixtureTemplateRoot);
-  fs.writeFileSync(path.join(fixtureTemplateRoot, 'projects', 'other', 'verification.yml'), YAML.stringify({
+function copyFixtureWorkspace(t, name) {
+  const { base, root } = t.buildrContexts.workspace;
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
+  writeVerificationDeclaration(root);
+  fs.writeFileSync(path.join(root, 'projects', 'other', 'verification.yml'), YAML.stringify({
     schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [],
   }));
-});
-
-after(() => {
-  if (fixtureTemplateBase) fs.rmSync(fixtureTemplateBase, { recursive: true, force: true });
-});
-
-function copyFixtureWorkspace(t, name) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-task-development-${name}-`));
-  const root = path.join(base, 'workspace');
-  fs.cpSync(fixtureTemplateRoot, root, { recursive: true });
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return { base, root };
 }
 
@@ -81,7 +74,7 @@ function git(root, args) {
 
 function fixture(t, taskId) {
   const { root } = copyFixtureWorkspace(t, 'application');
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId, title: 'Develop demo', intent: 'Deliver current demo content.', projects: ['demo'], services: [], changes: [] });
   runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
     ready: true,
@@ -103,7 +96,7 @@ function fixture(t, taskId) {
 
 function changeFixture(t, taskId, initial = { availability: 'available', lifecycle: 'archived' }) {
   const { root } = copyFixtureWorkspace(t, 'change-convergence');
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   let observed = { availability: 'available', lifecycle: 'archived' };
   runtime.resolveTaskScopedChange = (_workspace, currentTaskId, reference) => ({
     schemaVersion: 'buildr.task-scoped-change-reference/v1',
@@ -159,7 +152,7 @@ function recordKnowledge(current, status = 'aligned') {
 
 function workspaceOnlyFixture(t, taskId) {
   const { root } = copyFixtureWorkspace(t, 'workspace-only');
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId, title: 'Develop workspace content', intent: 'Deliver a workspace-only formal Task.', projects: [], services: [], changes: [] });
   runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
     ready: true,
@@ -319,7 +312,7 @@ test('Current Knowledge只让completion-critical blocked阻止handoff，attentio
 
 test('Service-only、Change-only 与多 Project Task 观察完整 declaration，不能伪装成 workspace-only', (t) => {
   const { root } = copyFixtureWorkspace(t, 'effective-projects');
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId: 'service-only', title: 'Service only', intent: 'Observe parent Project declaration.', projects: [], services: ['demo/api'], changes: [] });
   assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'service-only', root).map((item) => item.project), ['demo']);
   runtime.createTaskRecord(root, { taskId: 'multi-project', title: 'Multi Project', intent: 'Observe all Project declarations.', projects: ['other', 'demo'], services: ['demo/api'], changes: [] });
@@ -492,7 +485,7 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   git(root, ['config', 'user.email', 'development@example.com']);
   git(root, ['add', '-A']);
   git(root, ['commit', '-m', 'baseline']);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId, title: 'Develop Git demo', intent: 'Preserve contribution applicability across baseline advance.', projects: ['demo'], services: [], changes: [] });
   fs.mkdirSync(path.dirname(taskRoot), { recursive: true });
   git(root, ['worktree', 'add', '-b', `codex/${taskId}`, taskRoot, 'dev']);

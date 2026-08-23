@@ -234,7 +234,11 @@ Buildr 自举只在 matching Task Delivery 后，由专用 self-bootstrap runner
 
 Project `preparation.yml` 描述已知环境准备配方，`verification.yml` 描述可执行验证能力。Task Environment 保存实际准备结果，Task Verification 只从 matching terminal execution evidence 提炼 current Result；两者不复制对方 authority。
 
+Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.mjs`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/`拥有runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host，并通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供。test-only `test/context/`只拥有Buildr immutable-seed Pool与领域provider：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
+
 Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 artifact。正式发布不重新构建 Application Payload 或重新 `npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
+
+Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md)。
 
 ## 跨模块不变量
 
@@ -255,6 +259,7 @@ Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 ar
 | 产品角色、领域模型和产品边界 | [产品架构](product.md) |
 | Buildr Service 工程目录与模块分层 | [服务分层与模块组织](../../../docs/architecture/service-architecture.md) |
 | Buildr Service 详细接口、数据和运行事实 | [Buildr Service](../services/buildr.md) |
+| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md) |
 | Buildr Web 前端源码、构建和消费边界 | [Buildr Web Frontend Service](../services/buildr-web.md) |
 | OpenSpec 从提案到归档的跨模块流程 | [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md) |
 | npm Candidate、发布与安装事实链 | [Buildr npm 发布流程](../flows/open-source-release.md) |

@@ -96,6 +96,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
           source,
           status: execution.passed ? 'passed' : 'failed',
           results: execution.results,
+          contextLifecycle: execution.contextLifecycle,
           startedAt,
           finishedAt: Date.now(),
           diagnosticsDirectory: evidence.diagnosticsOutput,

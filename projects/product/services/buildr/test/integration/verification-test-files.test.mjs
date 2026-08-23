@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { verificationSteps } from '../verification/registry.mjs';
 import { resolveNodeTestFiles } from '../verification/test-files.mjs';
+
+const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('node-test selectors resolve sorted files and fail closed when empty', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-test-files-'));
@@ -17,5 +21,16 @@ test('node-test selectors resolve sorted files and fail closed when empty', () =
     assert.throws(() => resolveNodeTestFiles(root, ['test/directory.test.mjs']), /resolved no test files/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('registry 中每个显式 node-test 文件都必须真实存在', () => {
+  for (const step of verificationSteps.filter((candidate) => ['node-test', 'node-context-test'].includes(candidate.executor.type))) {
+    for (const selector of step.executor.files) {
+      assert.doesNotThrow(
+        () => resolveNodeTestFiles(serviceRoot, [selector], step.id),
+        `${step.id} 声明了不存在的测试文件 ${selector}`,
+      );
+    }
   }
 });

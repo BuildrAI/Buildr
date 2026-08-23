@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { createTestContextPool } from '../context/runtime.mjs';
 import { runVerificationDag } from './dag-scheduler.mjs';
 import { createVerificationExecutor } from './executor.mjs';
 import { coordinatedResourcesFromLimits, createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.mjs';
@@ -34,17 +35,6 @@ export async function executePlan(plan, options) {
   const active = new Map();
   let completed = 0;
   const heartbeatIntervalMs = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
-  const executorFactory = options.executorFactory ?? createVerificationExecutor;
-  const execute = executorFactory({
-    ...options,
-    diagnosticsDirectory,
-    artifactDirectory,
-    onProcessStart(step, processIdentity) {
-      const current = active.get(step.id);
-      if (current) active.set(step.id, { ...current, ...processIdentity });
-      options.onProcessStart?.(step, processIdentity);
-    },
-  });
   const concurrency = options.concurrency ?? VERIFICATION_CONCURRENCY;
   const resourceCoordinator = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
@@ -80,6 +70,37 @@ export async function executePlan(plan, options) {
     }
     options.stream?.write(`[${prefix}] acquired: ${FULL_PLAN_RESOURCE_ID} wait=${fullPlanLease.waitDurationMs}ms\n`);
   }
+  // Provider implementations may load the full Product runtime. Keep them out of
+  // the clean-checkout Candidate aggregate import graph until execution starts.
+  const { TEST_CONTEXT_PROVIDERS } = await import('../context/registry.mjs');
+  const contextPool = createTestContextPool({
+    providers: TEST_CONTEXT_PROVIDERS,
+    env: { ...process.env, ...(options.env ?? {}) },
+  });
+  const contextKeys = [...new Set(plan.steps.flatMap((step) => step.contexts ?? []))];
+  let preparedContexts;
+  try {
+    preparedContexts = contextPool.prepareAll(contextKeys);
+  } catch (error) {
+    contextPool.cleanup();
+    if (fullPlanLease) await fullPlanLease.release();
+    throw error;
+  }
+  for (const context of preparedContexts) {
+    options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
+  }
+  const executorFactory = options.executorFactory ?? createVerificationExecutor;
+  const execute = executorFactory({
+    ...options,
+    env: { ...(options.env ?? process.env), ...contextPool.environment() },
+    diagnosticsDirectory,
+    artifactDirectory,
+    onProcessStart(step, processIdentity) {
+      const current = active.get(step.id);
+      if (current) active.set(step.id, { ...current, ...processIdentity });
+      options.onProcessStart?.(step, processIdentity);
+    },
+  });
   const heartbeat = setInterval(() => {
     const now = Date.now();
     const running = [...active.entries()].map(([id, item]) => `${id}:${now - item.startedAtMs}ms:pid=${item.pid ?? 'pending'}:pgid=${item.processGroupId ?? 'pending'}`);
@@ -88,6 +109,7 @@ export async function executePlan(plan, options) {
   heartbeat.unref?.();
   let results;
   let fullPlanRelease = [];
+  let contextCleanup = null;
   try {
     results = await runVerificationDag(plan, {
       execute,
@@ -117,7 +139,11 @@ export async function executePlan(plan, options) {
     });
   } finally {
     clearInterval(heartbeat);
-    if (fullPlanLease) fullPlanRelease = await fullPlanLease.release();
+    try {
+      contextCleanup = contextPool.cleanup();
+    } finally {
+      if (fullPlanLease) fullPlanRelease = await fullPlanLease.release();
+    }
   }
   const releaseFailed = fullPlanRelease.some((item) => item.status !== 'released');
   if (releaseFailed) throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`);
@@ -127,6 +153,7 @@ export async function executePlan(plan, options) {
     artifactDirectory,
     coordinationRoot: resourceCoordinator.root,
     fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
+    contextLifecycle: { contexts: preparedContexts.map((context) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },
     passed: results.every((result) => result.status === 'passed'),
   };
 }

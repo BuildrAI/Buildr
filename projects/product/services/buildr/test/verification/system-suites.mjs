@@ -1,3 +1,5 @@
+import { TASK_LIFECYCLE_CONTEXT_KEY } from '../context/profiles.mjs';
+
 export const SYSTEM_SUITES = Object.freeze([
   Object.freeze({
     id: 'system-verification-admission',
@@ -6,6 +8,7 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 5000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/verification-changed-paths.test.mjs',
       'test/system/verification-run-cli.test.mjs',
@@ -67,6 +70,7 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 16000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/task-development-generic-journey.test.mjs',
       'test/system/task-record-change-resolver.test.mjs',
@@ -107,6 +111,7 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 20000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze([]),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/buildr-web-http.test.mjs',
       'test/system/task-professional-http-contract.test.mjs',
@@ -167,6 +172,7 @@ export function validateSystemSuiteRegistry(fileNames) {
   const findings = [];
   for (const suite of SYSTEM_SUITES) {
     if (!Number.isInteger(suite.innerConcurrency) || suite.innerConcurrency < 1) findings.push({ code: 'invalid_inner_concurrency', owner: suite.id });
+    if (suite.contexts != null && (!Array.isArray(suite.contexts) || new Set(suite.contexts).size !== suite.contexts.length)) findings.push({ code: 'invalid_contexts', owner: suite.id });
     for (const file of suite.files) {
       if (owners.has(file)) findings.push({ code: 'duplicate_owner', file, owners: [owners.get(file), suite.id] });
       else owners.set(file, suite.id);

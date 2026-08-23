@@ -127,6 +127,10 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     finishedAt: 1200,
     schedulingMode: 'cost',
     executionProfile: { id: 'ci', limits: { global: 4, classes: { 'workspace-heavy': 3 }, resources: { 'workspace-saturating': 1 } } },
+    contextLifecycle: {
+      contexts: [{ provider: 'task-lifecycle/v1', identity: `sha256-${'a'.repeat(64)}`, owned: true, prepareDurationMs: 12 }],
+      events: [{ operation: 'prepare', provider: 'task-lifecycle/v1', durationMs: 12, identity: `sha256-${'a'.repeat(64)}` }],
+    },
     timingOutput: path.join(os.tmpdir(), 'buildr-scheduling-summary.json'),
     results: [{
       name: 'scheduled',
@@ -137,8 +141,9 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
       startedAt: '1970-01-01T00:00:01.050Z',
       finishedAt: '1970-01-01T00:00:01.150Z',
       queueDurationMs: 50,
-      scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1 },
+      scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1, demand: { workers: 2, processes: 2 }, grant: { workers: 2, processes: 2 } },
       phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
+      testContextRuntime: { hosts: 2, creates: 2, cacheHits: 6, materializeDurationMs: 40, cleanupDurationMs: 12 },
     }],
   });
   assert.deepEqual(summary.steps[0], {
@@ -150,12 +155,22 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     startedAt: '1970-01-01T00:00:01.050Z',
     finishedAt: '1970-01-01T00:00:01.150Z',
     queueDurationMs: 50,
-    scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1 },
+    scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1, demand: { workers: 2, processes: 2 }, grant: { workers: 2, processes: 2 } },
     phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
+    testContextRuntime: { hosts: 2, creates: 2, cacheHits: 6, materializeDurationMs: 40, cleanupDurationMs: 12 },
   });
   assert.equal(summary.environment.schedulingMode, 'cost');
   assert.equal(summary.environment.executionProfile, 'ci');
   assert.deepEqual(summary.environment.concurrency.resources, { 'workspace-saturating': 1 });
+  assert.deepEqual(summary.contextLifecycle.contexts.map((context) => context.provider), ['task-lifecycle/v1']);
+  assert.deepEqual(summary.contextLifecycle.events.map((event) => event.operation), ['prepare']);
+  assert.deepEqual(summary.steps[0].testContextRuntime, {
+    hosts: 2,
+    creates: 2,
+    cacheHits: 6,
+    materializeDurationMs: 40,
+    cleanupDurationMs: 12,
+  });
 });
 
 test('verification timing reporter emits a versioned machine-readable summary', () => {

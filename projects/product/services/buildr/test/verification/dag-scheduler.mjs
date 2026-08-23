@@ -41,12 +41,23 @@ function dependenciesPassed(step, results) {
 }
 
 function normalizedLimits(requested, plan) {
-  if (Number.isInteger(requested)) return { global: requested, classes: { default: requested }, resources: {} };
-  if (requested) return requested;
+  if (Number.isInteger(requested)) return { global: requested, classes: { default: requested }, resources: {}, capacities: { workers: requested, processes: requested, git: requested, workspaceIo: requested } };
+  if (requested) return { ...requested, capacities: requested.capacities ?? { workers: requested.global, processes: requested.global, git: requested.global, workspaceIo: requested.global } };
   const global = Math.max(1, Math.min(4, plan.steps.length));
   const classes = Object.fromEntries([...new Set(plan.steps.map((step) => step.concurrencyClass || 'default'))].map((id) => [id, global]));
   const resources = Object.fromEntries([...new Set(plan.steps.flatMap((step) => step.resources || []))].map((id) => [id, global]));
-  return { global, classes, resources };
+  return { global, classes, resources, capacities: { workers: global, processes: global, git: global, workspaceIo: global } };
+}
+
+function stepDemand(step, executionProfile) {
+  const declared = step.resourceDemand ?? { workers: 1, processes: 1 };
+  const profileWorkers = executionProfile?.limits?.innerConcurrency?.[step.id];
+  const workers = profileWorkers ?? declared.workers ?? 1;
+  return Object.freeze({
+    ...declared,
+    workers,
+    processes: profileWorkers == null ? (declared.processes ?? 1) : Math.min(declared.processes ?? workers, workers),
+  });
 }
 
 export async function runVerificationDag(plan, options = {}) {
@@ -63,6 +74,9 @@ export async function runVerificationDag(plan, options = {}) {
   for (const [name, value] of Object.entries(limits.resources ?? {})) {
     if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid concurrency limit for resource ${name}`);
   }
+  for (const [name, value] of Object.entries(limits.capacities ?? {})) {
+    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid resource capacity for ${name}`);
+  }
   const schedulingMode = parseVerificationSchedulingMode(options.schedulingMode);
   const planIndex = new Map(plan.steps.map((step, index) => [step.id, index]));
   const schedulingPriorities = createVerificationSchedulingPriorities(plan);
@@ -70,7 +84,14 @@ export async function runVerificationDag(plan, options = {}) {
   const active = new Map();
   const activeByClass = new Map();
   const activeByResource = new Map();
+  const activeDemand = new Map();
   const results = new Map();
+  const demandByStep = new Map(plan.steps.map((step) => [step.id, stepDemand(step, options.executionProfile)]));
+  for (const step of plan.steps) for (const [dimension, value] of Object.entries(demandByStep.get(step.id))) {
+    const capacity = limits.capacities?.[dimension];
+    if (!Number.isInteger(value) || value < 1) throw new Error(`Invalid ${dimension} resource demand for ${step.id}`);
+    if (!Number.isInteger(capacity) || capacity < value) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
+  }
 
   const capacityAvailable = (step) => {
     if (active.size >= limits.global) return false;
@@ -83,6 +104,9 @@ export async function runVerificationDag(plan, options = {}) {
       if (!Number.isInteger(resourceLimit) || resourceLimit < 1) throw new Error(`Invalid concurrency limit for resource ${resource}`);
       if ((activeByResource.get(resource) ?? 0) >= resourceLimit) return false;
     }
+    for (const [dimension, demand] of Object.entries(demandByStep.get(step.id))) {
+      if ((activeDemand.get(dimension) ?? 0) + demand > limits.capacities[dimension]) return false;
+    }
     const exclusiveRunning = [...active.values()].some((item) => (item.step.concurrencyClass || 'default') === 'exclusive');
     if (exclusiveRunning) return false;
     if (concurrencyClass === 'exclusive' && active.size > 0) return false;
@@ -92,17 +116,19 @@ export async function runVerificationDag(plan, options = {}) {
   const launch = (step) => {
     let startedAtMs = null;
     const concurrencyClass = step.concurrencyClass || 'default';
+    const resourceGrant = demandByStep.get(step.id);
     pending.delete(step.id);
     activeByClass.set(concurrencyClass, (activeByClass.get(concurrencyClass) ?? 0) + 1);
     for (const resource of step.resources ?? []) activeByResource.set(resource, (activeByResource.get(resource) ?? 0) + 1);
+    for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, (activeDemand.get(dimension) ?? 0) + demand);
     let resourceHandle = null;
     const promise = Promise.resolve().then(async () => {
       resourceHandle = options.resourceCoordinator && (step.resourceClaims ?? step.resources ?? []).length > 0
         ? await options.resourceCoordinator.acquire(step.resourceClaims ?? step.resources, { authorizedResources: options.authorizedResources, signal: options.signal })
         : null;
       startedAtMs = now();
-      options.onStart?.(step);
-      return execute(step, { resourceEnvironment: resourceHandle?.environment || {}, executionProfile: options.executionProfile });
+      options.onStart?.(step, resourceGrant);
+      return execute(step, { resourceEnvironment: resourceHandle?.environment || {}, executionProfile: options.executionProfile, resourceGrant });
     }).then((result) => ({ id: step.id, title: step.title, name: step.name, ...result }), (error) => ({
       id: step.id, title: step.title, name: step.name, status: 'failed', exitCode: 1, signal: null, durationMs: 0, stdout: '', stderr: `${error.stack || error.message}\n`,
     })).then(async (result) => {
@@ -112,7 +138,7 @@ export async function runVerificationDag(plan, options = {}) {
       const finishedAtMs = now();
       const scheduledResult = {
         ...result,
-        scheduling: Object.freeze({ mode: schedulingMode, ...schedulingPriorities.get(step.id) }),
+        scheduling: Object.freeze({ mode: schedulingMode, ...schedulingPriorities.get(step.id), demand: resourceGrant, grant: resourceGrant }),
         ...(resourceHandle ? { resourceCoordination: { waitDurationMs: resourceHandle.waitDurationMs, acquiredAt: resourceHandle.acquiredAt, claims: resourceHandle.claims.map(({ heartbeat, directory, token, ...claim }) => claim), release } } : {}),
         ...(releaseFailed && result.status === 'passed' ? { status: 'failed', exitCode: 1, stderr: `${result.stderr || ''}Verification resource cleanup did not preserve ownership.\n` } : {}),
         queuedAt,
@@ -123,6 +149,7 @@ export async function runVerificationDag(plan, options = {}) {
       active.delete(step.id);
       activeByClass.set(concurrencyClass, activeByClass.get(concurrencyClass) - 1);
       for (const resource of step.resources ?? []) activeByResource.set(resource, activeByResource.get(resource) - 1);
+      for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, activeDemand.get(dimension) - demand);
       results.set(step.id, scheduledResult);
       options.onComplete?.(scheduledResult, step);
       return scheduledResult;

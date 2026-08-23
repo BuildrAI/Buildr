@@ -2,28 +2,30 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
-import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
-const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
-const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-function run(args) { const result = spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' }); assert.equal(result.status, 0, `buildr ${args.join(' ')}\n${result.stdout}\n${result.stderr}`); }
+after(() => cleanupLocalTaskLifecycleSystemContext());
+
 function declaration() {
   return { schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [{ id: 'demo.unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, invocation: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, applicability: { paths: ['**'], conditions: [] }, proves: ['Demo unit behavior'], requiredForDelivery: true, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
 }
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-verification-sqlite-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  run(['init', '--target', root, '--name', 'Verification', '--description', 'Task Verification fixture']);
-  run(['project', 'create', 'demo', '--target', root, '--name', 'Demo', '--description', 'Demo Project']);
-  run(['task', 'create', 'demo-task', '--title', 'Demo', '--intent', 'Verify current Result authority', '--project', 'demo', '--target', root]);
+  const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-repository').root);
+  createRuntime().createTaskRecord(root, {
+    taskId: 'demo-task',
+    title: 'Demo',
+    intent: 'Verify current Result authority',
+    projects: ['demo'],
+    services: [],
+    changes: [],
+  });
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration()));
-  return fs.realpathSync(root);
+  return root;
 }
 function input(overrides = {}) { return { targetIdentity: 'target:one', targetSummary: 'Demo delivery target', capabilities: [{ project: 'demo', capability: 'demo.unit', outcome: 'passed', facts: ['unit passed'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Demo verified' }, ...overrides }; }
 function stored(runtime, root) { const opened = runtime.openWorkspaceStructuredStore(root, { writable: false }); try { return opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'demo-task'").get()?.result_json ?? null; } finally { opened.database.close(); } }

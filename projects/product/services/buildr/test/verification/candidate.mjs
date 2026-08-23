@@ -45,7 +45,7 @@ const executionRoot = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${lane.kind}
 const evidence = createVerificationEvidencePaths(lane.kind);
 const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
 const totalStartedAt = Date.now();
-let results = [];
+let results = [], contextLifecycle = null;
 function writeSummary(status) {
   return writeVerificationTimingEvidence({
     ...evidence,
@@ -53,6 +53,7 @@ function writeSummary(status) {
     source,
     status,
     results,
+    contextLifecycle,
     startedAt: totalStartedAt,
     finishedAt: Date.now(),
     totalBudgetMs: lane.budgetMs,
@@ -83,8 +84,7 @@ try {
     taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? lane.kind,
   };
   const execution = await executePlan(plan, executionOptions);
-  results = execution.results;
-  passed = execution.passed;
+  results = execution.results; contextLifecycle = execution.contextLifecycle; passed = execution.passed;
   writeSummary(passed ? 'passed' : 'failed');
   if (passed) process.stdout.write(`\nBuildr product ${lane.kind} verification passed.\n`);
 } catch (error) {

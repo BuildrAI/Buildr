@@ -6,10 +6,9 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
-import {
-  prepareTaskLifecycleSystemContext,
-  TASK_LIFECYCLE_CONTEXT_ENV,
-} from '../helpers/task-lifecycle-system-context.mjs';
+import { createTestContextPool } from '../context/runtime.mjs';
+import { TEST_CONTEXT_PROVIDERS, TASK_LIFECYCLE_CONTEXT_KEY } from '../context/registry.mjs';
+import { TASK_LIFECYCLE_CONTEXT_ENV } from '../helpers/task-lifecycle-system-context.mjs';
 import { SYSTEM_SUITES, validateSystemSuiteRegistry } from './system-suites.mjs';
 import { resolveVerificationWorkerBudget } from './worker-budget.mjs';
 
@@ -40,8 +39,14 @@ if (selectedSuites.length === 0) throw new Error(`Unknown System owner: ${reques
 const files = selectedSuites.flatMap((suite) => suite.files).map((file) => `./${file}`);
 const fallback = request.owner ? selectedSuites[0].innerConcurrency : 8;
 const workerBudget = resolveVerificationWorkerBudget({ env: process.env, fallback, maximum: files.length, label: request.owner || 'System suite' });
-const context = prepareTaskLifecycleSystemContext();
-process.stderr.write(`[buildr-system-context] status=ready id=${context.marker.contextId} identity=${context.marker.identity} owner=${request.owner || 'all'} setupApplicationOperations=${context.marker.setup.applicationOperations} setupDurationMs=${context.marker.setup.durationMs} workerBudget=${workerBudget}\n`);
+const contextKeys = [...new Set(selectedSuites.flatMap((suite) => suite.contexts ?? []))];
+const contextPool = createTestContextPool({ providers: TEST_CONTEXT_PROVIDERS, env: process.env });
+const contexts = contextPool.prepareAll(contextKeys);
+for (const context of contexts) {
+  process.stderr.write(`[buildr-test-context] status=${context.owned ? 'prepared' : 'reused'} id=${context.provider.key} identity=${context.marker.identity} owner=${request.owner || 'all'} prepareDurationMs=${context.prepareDurationMs} workerBudget=${workerBudget}\n`);
+}
+const contextEnvironment = contextPool.environment();
+const taskContext = contexts.find((context) => context.provider.key === TASK_LIFECYCLE_CONTEXT_KEY);
 
 let result = null;
 let cleanupError = null;
@@ -57,15 +62,19 @@ try {
   ], {
     cwd: productRoot,
     stdio: 'inherit',
-    env: { ...process.env, [TASK_LIFECYCLE_CONTEXT_ENV]: context.contextRoot },
+    env: {
+      ...process.env,
+      ...contextEnvironment,
+      ...(taskContext ? { [TASK_LIFECYCLE_CONTEXT_ENV]: taskContext.contextRoot } : {}),
+    },
   });
 } finally {
   try {
-    const cleanup = context.cleanup();
-    process.stderr.write(`[buildr-system-context] status=${cleanup.status} id=${context.marker.contextId} identity=${cleanup.identity} owner=${request.owner || 'all'}\n`);
+    const cleanup = contextPool.cleanup();
+    for (const context of contexts) process.stderr.write(`[buildr-test-context] status=${cleanup.status} id=${context.provider.key} identity=${context.marker.identity} owner=${request.owner || 'all'}\n`);
   } catch (error) {
     cleanupError = error;
-    process.stderr.write(`[buildr-system-context] status=failed id=${context.marker.contextId} code=${error.code || 'cleanup_failed'} message=${error.message}\n`);
+    process.stderr.write(`[buildr-test-context] status=failed code=${error.code || 'cleanup_failed'} message=${error.message}\n`);
   }
 }
 

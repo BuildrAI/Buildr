@@ -42,7 +42,7 @@ Buildr MUST 在模块化迁移前后保持现有 public、legacy compatibility �
 - **THEN** CLI MUST 保持既有输出通道、退出状态和无副作用契约
 
 ### Requirement: CLI runtime 模块必须完整发布且不扩大公开 API
-Buildr npm package MUST 包含 `bin/buildr.mjs` 引用的完整 `src/` runtime dependency closure、运行所需 `resources/`、`web-dist/` 与明确 deferred runtime assets，并 MUST 让 checkout 与 npm 安装入口使用同一命令实现；内部 modules 与资源路径不得因此成为面向使用者的公开编程 API。
+Buildr npm package MUST 包含 `bin/buildr.mjs` 引用的完整 `src/` runtime dependency closure、运行所需 `resources/`、`web-dist/` 与明确 deferred runtime assets，并 MUST 让 checkout 与 npm 安装入口使用同一命令实现；内部 modules 与资源路径不得因此成为面向使用者的公开编程 API，只有规范和文档明确声明的独立公共 facade 可以成为稳定 package subpath。
 
 #### Scenario: 从 tarball 安装并执行 CLI
 - **WHEN** 维护者构建 tarball并在不依赖 development checkout 的干净目录安装
@@ -52,8 +52,9 @@ Buildr npm package MUST 包含 `bin/buildr.mjs` 引用的完整 `src/` runtime d
 
 #### Scenario: 使用者查看 package public surface
 - **WHEN** 使用者检查 package metadata 或公开文档
-- **THEN** package MUST 继续只承诺 `buildr` bin 和已记录的 CLI 产品表面
-- **AND** 内部源码与资源路径 MUST NOT 被声明为稳定 public exports
+- **THEN** package MUST 继续承诺 `buildr` bin、已记录的 CLI 产品表面和明确声明的独立公共 facade
+- **AND** `@buildr-ai/buildr/test-context` MUST 只通过顶层 facade 暴露已记录的 Node Test Context Runtime API
+- **AND** 内部源码与资源路径以及兼容性 deep subpaths MUST NOT 被描述为稳定 public API
 
 ### Requirement: CLI 架构和 mutation 边界必须由自动验证保护
 Buildr 产品验证 MUST 自动检查 `bin` 薄入口、command 唯一登记、`src` 单向依赖、明确基础设施 owner、关键 facade 职责、npm runtime inventory、根工程生命周期、产品 verifier 与仓库 verification 边界和直接文件写入边界，并 MUST 在 runtime 依赖 `tools/`/`test/`、出现无所有权 shared、未获许可的 legacy package 文件、旧资源/Web dist 引用、漏发运行时文件、验证流程重新内嵌到聚合入口或绕过受管 mutation primitive 时失败。

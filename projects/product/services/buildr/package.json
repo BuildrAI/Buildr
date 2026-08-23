@@ -25,12 +25,18 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
+  "exports": {
+    "./test-context": "./test-context.mjs",
+    "./package.json": "./package.json",
+    "./*": "./*"
+  },
   "bin": {
     "buildr": "bin/buildr.mjs"
   },
   "files": [
     "LICENSE",
     "bin/buildr.mjs",
+    "test-context.mjs",
     "src/",
     "README.md",
     "docs/agent-runtime-adapters.md",

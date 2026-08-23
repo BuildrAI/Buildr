@@ -118,7 +118,42 @@ test('critical-path 模式优先启动低成本 producer 以提前解锁长尾',
     stepCostMs: 10,
     remainingCostMs: 110,
     directDependentCount: 1,
+    demand: { workers: 1, processes: 1 },
+    grant: { workers: 1, processes: 1 },
   });
+});
+
+test('scheduler按数值容量发放完整grant并阻止outer乘inner过度订阅', async () => {
+  let activeWorkers = 0;
+  let peakWorkers = 0;
+  const grants = [];
+  const heavy = (id) => ({ ...step(id), resourceDemand: { workers: 3, processes: 2, git: 1 } });
+  await runVerificationDag(plan([heavy('a'), heavy('b'), heavy('c')]), {
+    concurrency: { global: 3, classes: { default: 3 }, resources: {}, capacities: { workers: 6, processes: 4, git: 2 } },
+    execute: async (_item, context) => {
+      grants.push(context.resourceGrant);
+      activeWorkers += context.resourceGrant.workers;
+      peakWorkers = Math.max(peakWorkers, activeWorkers);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeWorkers -= context.resourceGrant.workers;
+      return { status: 'passed', exitCode: 0, durationMs: 5 };
+    },
+  });
+  assert.equal(peakWorkers, 6);
+  assert.deepEqual(grants, [
+    { workers: 3, processes: 2, git: 1 },
+    { workers: 3, processes: 2, git: 1 },
+    { workers: 3, processes: 2, git: 1 },
+  ]);
+});
+
+test('scheduler在启动step前拒绝超过profile容量的需求', async () => {
+  let calls = 0;
+  await assert.rejects(runVerificationDag(plan([{ ...step('too-heavy'), resourceDemand: { workers: 5, processes: 1 } }]), {
+    concurrency: { global: 1, classes: { default: 1 }, resources: {}, capacities: { workers: 4, processes: 2 } },
+    execute: async () => { calls += 1; return { status: 'passed', exitCode: 0, durationMs: 1 }; },
+  }), /Unsatisfied workers resource demand/);
+  assert.equal(calls, 0);
 });
 
 test('critical-path 同分时优先 fan-out producer，再按自身成本和声明顺序稳定回退', async () => {

@@ -6,12 +6,13 @@ import { verificationSteps } from '../../test/verification/registry.mjs';
 
 const unit = verificationSteps.find((step) => step.id === 'unit');
 
-function registryStep(testing, profiles = ['fast']) {
+function registryStep(testing, profiles = ['fast'], overrides = {}) {
   return [{
     ...unit,
     id: 'sample',
     profiles,
     testing: { ...testing, primaryEvidenceOwner: 'sample' },
+    ...overrides,
   }];
 }
 
@@ -67,4 +68,22 @@ test('Quick Integration 拒绝 Git、network、Workspace lifecycle 或共享环�
     };
     assert.ok(findingCodes(registryStep(testing)).includes('quick_integration_not_isolated'), footprint);
   }
+});
+
+test('registry在执行前闭合验证Context、隔离/reset、并行安全和数值需求', () => {
+  const invalid = registryStep(unit.testing, ['fast'], {
+    contexts: ['missing/v1'],
+    isolationMode: 'shared-mutable',
+    resetStrategy: 'magic',
+    parallelSafety: 'unbounded',
+    resourceDemand: { workers: 0, processes: 99, gpu: 1 },
+  });
+  const codes = findingCodes(invalid);
+  assert.ok(codes.includes('unknown_context'));
+  assert.ok(codes.includes('invalid_isolation_mode'));
+  assert.ok(codes.includes('invalid_reset_strategy'));
+  assert.ok(codes.includes('invalid_parallel_safety'));
+  assert.ok(codes.includes('invalid_resource_demand'));
+  assert.ok(codes.includes('unsatisfied_resource_demand'));
+  assert.ok(codes.includes('unknown_resource_demand'));
 });

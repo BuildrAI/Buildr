@@ -20,6 +20,7 @@ const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
 const startedAt = Date.now();
 const plan = createVerificationPlan({ profiles: ['host-node'] });
 let results = [];
+let contextLifecycle = null;
 let passed = false;
 
 enforceOfflineVerification();
@@ -31,6 +32,7 @@ function writeSummary(status) {
     source,
     status,
     results,
+    contextLifecycle,
     startedAt,
     finishedAt: Date.now(),
     diagnosticsDirectory: evidence.diagnosticsOutput,
@@ -59,6 +61,7 @@ try {
     expectedNodeVersion: null,
   });
   results = execution.results;
+  contextLifecycle = execution.contextLifecycle;
   passed = execution.passed;
   writeSummary(passed ? 'passed' : 'failed');
   if (passed) process.stdout.write('Buildr Host Node compatibility verification passed.\n');

@@ -28,6 +28,8 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 }
 productionFiles.sort();
 const allowed = new Map([
+  ['src/infrastructure/testing/context-runtime/node-test.mjs', new Set(['defaultNodeTestContextRuntime'])],
+  ['src/infrastructure/testing/context-runtime/node-runner.mjs', new Set(['runHost'])],
   ['src/infrastructure/filesystem/index.mjs', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],

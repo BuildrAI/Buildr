@@ -518,6 +518,55 @@
 - 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；Quick、affected/full、Candidate/Release 不是同一层级的测试类型，Candidate 不自动等于 full；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
 - 来源：canonical `openspec/specs/project-testing-guidance/spec.md`（本 Change converge 时建立）
 
+## 验证控制面（Verification Control Plane）
+
+- 定义：Buildr Product测试中由ownership、registry、planner、DAG scheduler与executor组成的test-only编排层，负责affected owner选择、执行图、预算准入、依赖、资源需求与exact grant。
+- 适用范围：`test:changed`、`test:focus`、`test:core`、`test:candidate`及Candidate CI对同一registry的执行投影。
+- 避免混用：不是Task Verification、`verification.yml`通用能力schema、Product runtime scheduler或Task lifecycle authority；不拥有测试fixture内容。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试执行面（Test Execution Plane）
+
+- 定义：验证控制面选定step后，实际组装runner、Test Context、Worker Host、sandbox、进程和cleanup的执行机制；当前测试runner为`node:test`，Context生命周期由公共Node Test Context Runtime拥有。
+- 适用范围：Buildr Product直接测试与registry execution；通过Context lifecycle、step timing和diagnostic输出transient evidence。
+- 避免混用：不是生产Application runtime或Verification Result；Context Runtime也不替代assertion/discovery runner，更换Vitest等runner不会自动改变Context与资源语义。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## Node测试上下文运行时（Node Test Context Runtime）
+
+- 定义：供Node.js测试注册Context definition、按配置与依赖identity缓存state、发放test lease，并管理scope、并发安全、reset、dirty/evict和destroy的runner-independent公共组件。
+- 适用范围：`@buildr-ai/buildr/test-context`公共入口、直接`node:test`文件以及一个或多个持久Worker Host；未来其他runner只能通过adapter复用同一生命周期authority。
+- 避免混用：不是Buildr生产Application Runtime、test runner、Verification Control Plane或全局共享可变环境；Context对象只在单个Host进程内共享。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文定义（Test Context Definition）
+
+- 定义：以稳定`id/version`声明scope、dependency、configuration identity、parallel safety及create/acquire/release/reset/inspect/destroy hooks的closed Context contract。
+- 适用范围：Application/DI state、transaction、snapshot、immutable seed、sandbox或worker-owned service provider。
+- 避免混用：不是test case、fixture数据、changed-path owner或资源grant；使用同名id但不同version会形成不同cache identity。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试工作进程宿主（Test Worker Host）
+
+- 定义：由Context-aware runner持久维护的Node进程，在`node:test` non-process isolation下连续执行一组文件并保留本进程的module与Context cache。
+- 适用范围：多个Host并行、每Host文件顺序执行、Host数量受outer worker grant约束。
+- 避免混用：不是单个test case、DAG step或跨进程共享内存；多个Host各自拥有matching Context state。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## Buildr测试上下文（Buildr Test Context）
+
+- 定义：Buildr test-only provider以`<id>/vN`稳定key标识、在一次verification plan内最多prepare一次的只读测试基线；provider marker与完整tree identity共同证明其结构和未污染状态。
+- 适用范围：昂贵且不是当前case主要待证事实的Workspace/领域前置环境跨runner复用；当前首个profile为`task-lifecycle/v1`。
+- 避免混用：不是通用上下文（Context）、Task Context、共享可写Workspace、跨plan缓存或测试分类；使用Context不把Integration/System降为Component。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试沙箱租约（Test Sandbox Lease）
+
+- 定义：Buildr Test Context Pool为一个worker/case从不可变seed物化的独立可写sandbox及其owner-bound幂等release责任；发放与释放前后检查containment、alias和seed identity。
+- 适用范围：允许并发case复用同一只读Context，同时隔离filesystem、SQLite、Git或Workspace副作用并形成materialize/release timing。
+- 避免混用：不是Execution Resource lease、Task checkout、Git worktree provider或共享Context本身；consumer只能删除自己拥有的sandbox，不能清理outer plan拥有的seed。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
 ## 验证能力声明（Verification Capability Declaration）
 
 - 定义：Project 根 `verification.yml` 中由团队确认的现有验证能力目录，使用 closed `buildr.project-verification/v2`，声明 capability identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求和必要的环境/副作用边界。

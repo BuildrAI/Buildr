@@ -12,26 +12,42 @@ import {
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.mjs';
 import { resolveNodeTestFiles } from './test-files.mjs';
 
-function innerConcurrencyBudget(step, executionProfile) {
-  const budget = executionProfile?.limits?.innerConcurrency?.[step.id];
+function innerConcurrencyBudget(step, executionContext = {}) {
+  const executionProfile = executionContext.executionProfile ?? executionContext;
+  const budget = executionContext.resourceGrant?.workers ?? executionProfile?.limits?.innerConcurrency?.[step.id];
   if (budget == null) return null;
   if (!Number.isInteger(budget) || budget < 1) throw new Error(`Invalid inner concurrency budget for ${step.id}`);
   return budget;
 }
 
-export function workerBudgetEnvironment(step, executionProfile) {
-  const budget = innerConcurrencyBudget(step, executionProfile);
+export function workerBudgetEnvironment(step, executionContext) {
+  if (step.executor?.type !== 'node') return {};
+  const budget = innerConcurrencyBudget(step, executionContext);
   if (budget == null) return {};
   return { BUILDR_VERIFICATION_WORKER_BUDGET: String(budget) };
 }
 
-export function nodeTestConcurrencyArguments(step, executionProfile) {
-  const budget = innerConcurrencyBudget(step, executionProfile);
+export function nodeTestConcurrencyArguments(step, executionContext) {
+  const budget = innerConcurrencyBudget(step, executionContext);
   if (budget == null) return [];
-  if ((step.executor.args ?? []).some((argument) => argument.startsWith('--test-concurrency'))) {
-    throw new Error(`Node test step ${step.id} declares both static and profile inner concurrency`);
-  }
   return [`--test-concurrency=${budget}`];
+}
+
+export function nodeContextTestArguments(step, executionContext, options) {
+  const budget = innerConcurrencyBudget(step, executionContext) ?? 1;
+  return [options.runner, '--workers', String(budget), '--cwd', options.cwd, ...options.files];
+}
+
+export function parseNodeTestContextSummary(output) {
+  const line = String(output ?? '').split('\n').find((item) => item.startsWith('# node-test-context-summary '));
+  if (!line) return null;
+  try {
+    const summary = JSON.parse(line.slice('# node-test-context-summary '.length));
+    if (summary?.schemaVersion !== 'node.test-context-summary/v1' || !Number.isInteger(summary.hosts) || summary.hosts < 1) return null;
+    return Object.freeze(summary);
+  } catch {
+    return null;
+  }
 }
 
 export function createVerificationExecutor(options) {
@@ -62,14 +78,25 @@ export function createVerificationExecutor(options) {
     return relative.startsWith('.') ? relative : `./${relative}`;
   };
 
-  const commandFor = (step, executionProfile) => {
+  const commandFor = (step, executionContext) => {
     const executor = step.executor;
     if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
       const files = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
-        args: ['--test', ...nodeTestConcurrencyArguments(step, executionProfile), ...(executor.args ?? []), ...files.map(nodeTestFile)],
+        args: ['--test', ...nodeTestConcurrencyArguments(step, executionContext), ...(executor.args ?? []).filter((argument) => !argument.startsWith('--test-concurrency')), ...files.map(nodeTestFile)],
+      };
+    }
+    if (executor.type === 'node-context-test') {
+      const files = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
+      return {
+        command: exactNode.nodeExecutable,
+        args: nodeContextTestArguments(step, executionContext, {
+          runner: path.join(productRoot, 'src/infrastructure/testing/context-runtime/node-runner-cli.mjs'),
+          cwd: productRoot,
+          files: files.map(nodeTestFile),
+        }),
       };
     }
     if (executor.type === 'npm') {
@@ -111,21 +138,23 @@ export function createVerificationExecutor(options) {
         ...diagnostics,
       };
     }
-    const resolved = commandFor(step, executionContext.executionProfile);
+    const resolved = commandFor(step, executionContext);
     const artifactEnv = step.executor.consumesArtifact && artifacts.candidate ? {
       [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
       [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,
       [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
     } : {};
-    return runVerificationStep({
+    const result = await runVerificationStep({
       ...step,
       ...resolved,
       cwd: resolved.cwd ?? productRoot,
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext.executionProfile) },
+      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext) },
       diagnosticsDirectory: options.diagnosticsDirectory,
     }, {
       signal: options.signal,
       onSpawn: (processIdentity) => options.onProcessStart?.(step, processIdentity),
     });
+    const testContextRuntime = step.executor.type === 'node-context-test' ? parseNodeTestContextSummary(result.stdout) : null;
+    return testContextRuntime ? { ...result, testContextRuntime } : result;
   };
 }

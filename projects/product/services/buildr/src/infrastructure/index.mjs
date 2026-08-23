@@ -14,6 +14,7 @@ export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([
   Object.freeze({ id: 'process', owner: 'src/infrastructure/process.mjs' }),
   Object.freeze({ id: 'product-resources', owner: 'src/infrastructure/product-resources/index.mjs' }),
   Object.freeze({ id: 'sqlite', owner: 'src/infrastructure/sqlite/workspace-sqlite.mjs' }),
+  Object.freeze({ id: 'test-context-runtime', owner: 'src/infrastructure/testing/context-runtime/index.mjs' }),
   Object.freeze({ id: 'migration', owner: 'src/infrastructure/sqlite/migrations' }),
 ]);
 

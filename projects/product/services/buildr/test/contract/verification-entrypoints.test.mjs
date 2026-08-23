@@ -321,7 +321,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
     'integration-task-finish-delivery': 75_000,
     'system-task-finish': 120_000,
-    'integration-task-development': 60_000,
+    'integration-task-development': 30_000,
     'integration-task-execution-records': 50_000,
     'integration-self-bootstrap': 50_000,
   });

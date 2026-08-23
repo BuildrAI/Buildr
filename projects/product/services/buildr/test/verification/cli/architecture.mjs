@@ -305,7 +305,15 @@ if (packageJson.scripts?.['test:focus'] !== 'node test/verification/focus.mjs') 
 if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/release-smoke.mjs') problems.push('package.json must retain the cross-platform release smoke entry');
 if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/release/release-smoke.mjs --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.mjs'))) problems.push('platform Launcher integration module is missing');
-if (packageJson.exports) problems.push('internal Product modules must not be declared through package exports');
+const expectedPackageExports = {
+  './test-context': './test-context.mjs',
+  './package.json': './package.json',
+  './*': './*',
+};
+if (JSON.stringify(packageJson.exports) !== JSON.stringify(expectedPackageExports)) {
+  problems.push('package exports must expose only the documented Test Context facade and compatibility subpaths');
+}
+if (!packageJson.files?.includes('test-context.mjs')) problems.push('npm package must include the public Test Context facade');
 
 const registry = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.mjs');
 if (fs.existsSync(registry)) {

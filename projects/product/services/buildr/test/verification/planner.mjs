@@ -4,6 +4,7 @@ import {
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
+  VERIFICATION_CONTEXT_KEYS,
   VERIFICATION_DAILY_CORE_EXCLUSIONS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
@@ -11,9 +12,13 @@ import {
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
   VERIFICATION_GROUPS,
+  VERIFICATION_ISOLATION_MODES,
+  VERIFICATION_PARALLEL_SAFETY,
   VERIFICATION_PROFILES,
   VERIFICATION_RESOURCE_CONTRACTS,
+  VERIFICATION_RESOURCE_DEMANDS,
   VERIFICATION_RESET_BURDENS,
+  VERIFICATION_RESET_STRATEGIES,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
@@ -243,9 +248,9 @@ export function validateVerificationRegistry(steps = verificationSteps) {
       }
     }
     if (!VERIFICATION_EXECUTORS.includes(item.executor?.type)) findings.push({ step: item.id, code: 'unknown_executor', value: item.executor?.type });
-    if (item.executor?.type === 'node-test' && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
+    if (['node-test', 'node-context-test'].includes(item.executor?.type) && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
       findings.push({ step: item.id, code: 'node_test_files_missing' });
-    } else if (item.executor?.type === 'node-test') {
+    } else if (['node-test', 'node-context-test'].includes(item.executor?.type)) {
       if (item.testing?.primaryEvidenceOwner !== item.id) {
         findings.push({ step: item.id, code: 'node_test_primary_evidence_owner_mismatch', value: item.testing?.primaryEvidenceOwner });
       }
@@ -254,6 +259,25 @@ export function validateVerificationRegistry(steps = verificationSteps) {
       }
     }
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
+    if (!Array.isArray(item.contexts) || new Set(item.contexts ?? []).size !== (item.contexts?.length ?? -1)) {
+      findings.push({ step: item.id, code: 'invalid_contexts' });
+    } else for (const context of item.contexts) if (!VERIFICATION_CONTEXT_KEYS.includes(context)) {
+      findings.push({ step: item.id, code: 'unknown_context', value: context });
+    }
+    if (!VERIFICATION_ISOLATION_MODES.includes(item.isolationMode)) findings.push({ step: item.id, code: 'invalid_isolation_mode', value: item.isolationMode });
+    if (!VERIFICATION_RESET_STRATEGIES.includes(item.resetStrategy)) findings.push({ step: item.id, code: 'invalid_reset_strategy', value: item.resetStrategy });
+    if (!VERIFICATION_PARALLEL_SAFETY.includes(item.parallelSafety)) findings.push({ step: item.id, code: 'invalid_parallel_safety', value: item.parallelSafety });
+    if (!item.resourceDemand || typeof item.resourceDemand !== 'object' || Array.isArray(item.resourceDemand)) {
+      findings.push({ step: item.id, code: 'invalid_resource_demand' });
+    } else {
+      const demandEntries = Object.entries(item.resourceDemand);
+      if (!Object.hasOwn(item.resourceDemand, 'workers') || !Object.hasOwn(item.resourceDemand, 'processes')) findings.push({ step: item.id, code: 'resource_demand_required_dimension_missing' });
+      for (const [dimension, value] of demandEntries) {
+        if (!VERIFICATION_RESOURCE_DEMANDS.includes(dimension)) findings.push({ step: item.id, code: 'unknown_resource_demand', value: dimension });
+        else if (!Number.isInteger(value) || value < 1) findings.push({ step: item.id, code: 'invalid_resource_demand', value: `${dimension}:${value}` });
+        else if (value > (VERIFICATION_CONCURRENCY.capacities?.[dimension] ?? 0)) findings.push({ step: item.id, code: 'unsatisfied_resource_demand', value: `${dimension}:${value}>${VERIFICATION_CONCURRENCY.capacities?.[dimension] ?? 0}` });
+      }
+    }
     for (const resource of item.resources ?? []) {
       if (!VERIFICATION_CONCURRENCY.resources?.[resource]) {
         findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
