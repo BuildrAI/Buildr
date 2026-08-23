@@ -25,6 +25,7 @@ import { registerTaskExecutionRecordRepository } from './persistence/task-execut
 import { registerTaskExecutionRecordBodyStore } from './persistence/task-execution-record-body-store.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from './persistence/task-development-repository.mjs';
+import { registerTerminalContributionReconciliationRepository } from './persistence/terminal-contribution-reconciliation-repository.mjs';
 import { registerTaskFinishRepository } from './persistence/task-finish-repository.mjs';
 import { registerParentCoordinationRepository } from './persistence/parent-coordination-repository.mjs';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
@@ -215,14 +216,15 @@ const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
   'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
   'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier', 'recordTaskParentPlan',
-  'bindTaskPlannedContributions', 'recordTaskParentAcceptance',
+  'bindTaskPlannedContributions', 'reconcileTerminalChildContributionDelivery', 'recordTaskParentAcceptance',
 ]);
 const TASK_DEVELOPMENT_PERSISTENCE_METHODS = Object.freeze([
   'taskDevelopmentReceiptPath', 'readTaskDevelopmentPersistence', 'writeTaskDevelopmentPersistence', 'renderTaskDevelopmentReceipt',
+  'readTerminalContributionReconciliationContext', 'writeTerminalContributionReconciliationPersistence',
 ]);
 const PARENT_COORDINATION_APPLICATION_METHODS = Object.freeze([
   'projectParentCoordinationChild', 'inspectParentCoordination', 'inspectParentStartupReadiness',
-  'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'acceptParentCoordination',
+  'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'reconcileChildDelivery', 'acceptParentCoordination',
 ]);
 const PARENT_COORDINATION_PERSISTENCE_METHODS = Object.freeze(['readParentCoordinationPersistence']);
 const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview']);
@@ -400,6 +402,7 @@ function parentCoordinationCliContributions() {
     ['reconcile', 'agent-machine', '以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。', ['Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile --schema|--example [--json]'], 'reconcile'],
     ['refresh-planning', 'agent-machine', '复用saved Parent Plan与current ready Planning Review，安全刷新Development planning gate。', ['Usage: buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]'], 'refresh'],
     ['bind-child', 'agent-machine', '把已有Child Development明确绑定到Parent Plan的一个或多个Contribution。', ['Usage: buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]'], 'bind'],
+    ['reconcile-child-delivery', 'agent-machine', '为严格可证明的completed Child追加一次terminal Contribution交付对账；不改写旧handoff或Task。', ['Usage: buildr task parent reconcile-child-delivery <child-task-id> --parent <parent-task-id> --expected-plan <identity> --input <contribution-handoff.json> --reason <text> --source <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile-child-delivery --schema|--example [--json]'], 'reconcile-child-delivery'],
     ['accept', 'agent-machine', '在全部Contribution得到可证明处置后显式记录Parent最终集成验收；不会自动完成Task。', ['Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]'], 'accept'],
   ];
   return Object.freeze(definitions.map(([runtimeId, surface, summary, help, operation]) => Object.freeze({
@@ -891,6 +894,7 @@ export function createTaskDevelopmentModule(runtime) {
       Object.defineProperty(composition, 'taskDevelopmentSerialize', { configurable: true, writable: true, value: undefined });
       registerContentTargetObserver(composition);
       registerTaskDevelopmentRepository(composition);
+      registerTerminalContributionReconciliationRepository(composition);
       registerTaskDevelopmentApplication(composition);
       const application = pick(composition, TASK_DEVELOPMENT_APPLICATION_METHODS);
       const persistenceRead = pick(composition, ['taskDevelopmentReceiptPath', 'readTaskDevelopmentPersistence']);

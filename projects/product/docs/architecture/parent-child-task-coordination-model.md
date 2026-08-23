@@ -18,13 +18,13 @@ Buildr 的父子任务模型采用“Parent 协调结果，Child 独立交付变
 | Task identity、顶层 active/completed/abandoned、直接 Parent/Children | Task Record / SQLite `tasks` | Parent Plan、Child Result、专业状态副本 |
 | Parent 协调计划 | Task Development current Receipt 中的 `parentPlan` | Child status、完整 Requirement/delta、字段/migration/file checklist、checkbox进度 |
 | Child planned Contribution | Child Task Development current Receipt 中的 `plannedContributions` | Parent current status、Child delivery结论 |
-| Child/Parent 实际 Contribution 交付 | 既有 immutable Development handoff 中的 `contributionHandoff`，并由 Finish terminal association 证明 Child delivery | 第二套 Result、registry、event/history/audit log |
+| Child/Parent 实际 Contribution 交付 | 正常路径使用immutable Development handoff中的`contributionHandoff`并由Finish terminal association证明；严格终态异常使用独立append-only reconciliation evidence引用同一handoff/association | 改写旧handoff/Finish、第二套progress、event/history/audit log |
 | Parent Planning Review | Task Review planning slot，target 为 Parent Plan identity | Child lifecycle、Verification或Change archive状态 |
 | Parent 最终集成验收 | Parent Task Development current Receipt 中的 `parentAcceptance` | Parent completed状态或自动Finish |
 | 当前规范契约 | canonical OpenSpec specs | active Parent/Child计划副本 |
 | Parent progress | Parent Coordination Application 基于固定只读projection派生的动态 read model | 物化count、status array、lifecycle cache、progress表 |
 
-所有长期事实仍写入已有 `task_development_current.record_json` 整值 authority。Receipt 写入版本为 `buildr.task-development-receipt/v3`；SQLite table shape和migration ledger不变，因此没有新表、数据迁移或历史 backfill。v1/v2 Receipt只读归一化为 `parentPlan: null`、`plannedContributions: []`、`parentAcceptance: null`。
+正常Development长期事实仍写入`task_development_current.record_json`整值authority。Receipt写入版本为`buildr.task-development-receipt/v3`；v1/v2只读归一化为`parentPlan: null`、`plannedContributions: []`、`parentAcceptance: null`。终态异常恢复单独写入按Child唯一的`terminal_contribution_reconciliations` closed row，因为旧handoff与Finish association必须保持immutable；该表不保存progress、status history或物化disposition，也不做历史backfill。
 
 ## 3. Parent Plan
 
@@ -107,6 +107,12 @@ Application要求：
 - handoff仍是既有Candidate/gates/decision snapshot的一部分，append-only且immutable。
 
 Child顶层`completed`但没有与Finish completion association匹配的Contribution Handoff时，read model必须返回`unproven`，不能假设原计划已经完整交付。
+
+### 5.1 终态异常恢复
+
+`task parent reconcile-child-delivery`只接受completed、非no-change的直接Child。Task Development Application同时验证active Parent与current Plan identity、Task关系、Development Receipt、matching immutable handoff、Candidate/generation、三个gate、terminal Finish association、archived Change、完整Contribution Handoff及Sibling owner；缺少历史binding时，planned必须由调用方显式给出，不能自动推断。成功后只追加内容寻址reconciliation，不修改Task、Receipt、handoff、Finish或Parent Plan。Parent read model优先使用原生handoff；只有原生缺失且reconciliation仍匹配current Plan与Finish时才消费，并以`delivery.proof.kind = terminal-reconciliation`保留来源。
+
+该能力不是normal Child步骤。active Child仍按Task relation → planned binding → 独立Development/Verification/Review → 同一handoff内Contribution Handoff → Finish交付；不得先省略证据再依赖终态恢复。
 
 ## 6. 派生 read model
 

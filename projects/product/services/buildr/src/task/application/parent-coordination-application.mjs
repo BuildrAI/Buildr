@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
-import { createParentPlan, parentCoordinationError, projectParentPlan } from '../domain/parent-coordination.mjs';
+import { createParentPlan, parentCoordinationError, projectParentPlan, validateContributionHandoffAgainstPlan } from '../domain/parent-coordination.mjs';
+import { normalizeTerminalContributionReconciliation, terminalAssociationFromHandoff } from '../domain/terminal-contribution-reconciliation.mjs';
 import { normalizeTaskDevelopmentReceipt } from '../domain/task-development.mjs';
 import { normalizeTaskReviewResult } from '../domain/task-review.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
@@ -40,29 +41,26 @@ function planningReviewSlot(row, targetIdentity) {
   };
 }
 
-function deliveredGate(gate, type) {
-  if (!gate) return null;
-  if (gate.disposition) return { status: 'gate-disposition', disposition: gate.disposition, targetIdentity: gate.targetIdentity ?? null, summary: gate.summary, source: gate.source };
-  return { status: type === 'verification' ? 'verified-at-delivery' : 'adopted-at-delivery', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
-}
-
-function associationMatches(association, handoff) {
-  return Boolean(association && handoff
-    && association.handoffIdentity === handoff.identity
-    && association.candidateIdentity === handoff.candidate?.identity
-    && association.candidateGeneration === handoff.candidate?.generation
-    && JSON.stringify(association.gates || {}) === JSON.stringify({
-      planning: deliveredGate(handoff.gates?.planning, 'planning'),
-      completion: deliveredGate(handoff.gates?.completion, 'completion'),
-      verification: deliveredGate(handoff.gates?.verification, 'verification'),
-    }));
-}
-
-function savedContributionHandoff(row, receipt) {
-  if (row.status !== 'completed' || row.result_no_change === 1 || row.finish?.kind !== 'terminal') return null;
+function savedContributionProof(row, receipt, parentTaskId, parentPlan) {
+  if (row.status !== 'completed' || row.result_no_change === 1 || row.finish?.kind !== 'terminal') return { handoff: null, proof: null, diagnostic: null };
   const completion = row.finish.completion;
   const handoff = receipt?.handoffs?.find((item) => item.identity === completion.association?.handoffIdentity) || null;
-  return associationMatches(completion.association, handoff) ? handoff.contributionHandoff || null : null;
+  if (!handoff) return { handoff: null, proof: null, diagnostic: { code: 'parent_contribution_delivery_unproven', message: 'terminal Finish没有matching immutable Development handoff。' } };
+  try { terminalAssociationFromHandoff(completion.association, handoff); }
+  catch (error) { return { handoff: null, proof: null, diagnostic: { code: error.code, message: error.message } }; }
+  if (handoff.contributionHandoff) return { handoff: handoff.contributionHandoff, proof: { kind: 'native-handoff', reconciliationIdentity: null }, diagnostic: null };
+  if (row.reconciliation_json == null) return { handoff: null, proof: null, diagnostic: { code: 'parent_contribution_delivery_unproven', message: 'Child已completed，但没有matching saved Contribution Handoff或terminal reconciliation。' } };
+  try {
+    const reconciliation = normalizeTerminalContributionReconciliation(JSON.parse(row.reconciliation_json));
+    if (reconciliation.childTaskId !== row.task_id || reconciliation.parentTaskId !== parentTaskId) throw parentCoordinationError('terminal_contribution_reconciliation_relation_mismatch', '恢复evidence与当前Parent/Child关系不一致。', 409);
+    if (!parentPlan || reconciliation.parentPlanIdentity !== parentPlan.identity) throw parentCoordinationError('terminal_contribution_reconciliation_plan_stale', '恢复evidence绑定的Parent Plan已不是current。', 409, { current: parentPlan?.identity || null, evidence: reconciliation.parentPlanIdentity });
+    const association = terminalAssociationFromHandoff(completion.association, handoff);
+    if (JSON.stringify(association) !== JSON.stringify(reconciliation.finishAssociation)) throw parentCoordinationError('terminal_contribution_reconciliation_finish_mismatch', '恢复evidence与current terminal Finish association不一致。', 409);
+    const contributionHandoff = validateContributionHandoffAgainstPlan(reconciliation.contributionHandoff, parentPlan, reconciliation.contributionHandoff.planned);
+    return { handoff: contributionHandoff, proof: { kind: 'terminal-reconciliation', reconciliationIdentity: reconciliation.identity }, diagnostic: null };
+  } catch (error) {
+    return { handoff: null, proof: null, diagnostic: { code: error.code || 'terminal_contribution_reconciliation_invalid', message: error.message } };
+  }
 }
 
 function planSummary(plan) {
@@ -86,9 +84,10 @@ function planningReviewSummary(slot) {
   };
 }
 
-function deliverySummary(handoff) {
+function deliverySummary(handoff, proof) {
   if (!handoff) return null;
   return {
+    proof,
     handoffIdentity: handoff.identity,
     delivered: [...handoff.delivered],
     extra: handoff.extra.map((item) => item.contributionId),
@@ -106,7 +105,8 @@ function childSummary(child) {
     status: child.status,
     boundContributions: child.boundContributions,
     deliveryProven: child.deliveryProven,
-    delivery: deliverySummary(child.contributionHandoff),
+    delivery: deliverySummary(child.contributionHandoff, child.proof),
+    proof: child.proof,
     diagnostic: child.diagnostic,
   };
 }
@@ -127,17 +127,19 @@ function actualStatus(child, contributionId) {
 }
 
 export function registerParentCoordinationApplication(runtime) {
-  function projectParentCoordinationChild(row, parentTaskId) {
+  function projectParentCoordinationChild(row, parentTaskId, parentReceipt = null) {
     const receipt = row.development_json == null ? null : normalizeTaskDevelopmentReceipt(JSON.parse(row.development_json), { expectedTaskId: row.task_id });
-    const boundContributions = (receipt?.plannedContributions || []).filter((item) => item.parentTaskId === parentTaskId).map((item) => item.contributionId);
-    const contributionHandoff = savedContributionHandoff(row, receipt);
+    const proof = savedContributionProof(row, receipt, parentTaskId, parentReceipt?.parentPlan || null);
+    const savedBindings = (receipt?.plannedContributions || []).filter((item) => item.parentTaskId === parentTaskId).map((item) => item.contributionId);
+    const boundContributions = savedBindings.length ? savedBindings : proof.handoff?.planned || [];
+    const contributionHandoff = proof.handoff;
     return {
       taskId: row.task_id, title: row.title, status: row.status,
       boundContributions,
-      deliveryProven: Boolean(contributionHandoff), contributionHandoff,
-      diagnostic: row.status === 'completed' && boundContributions.length && !contributionHandoff
+      deliveryProven: Boolean(contributionHandoff), contributionHandoff, proof: proof.proof,
+      diagnostic: proof.diagnostic || (row.status === 'completed' && boundContributions.length && !contributionHandoff
         ? { code: 'parent_contribution_delivery_unproven', message: 'Child已completed，但没有matching saved Contribution Handoff。' }
-        : null,
+        : null),
     };
   }
 
@@ -253,7 +255,7 @@ export function registerParentCoordinationApplication(runtime) {
     const development = options.development || developmentReadModel(row);
     const receipt = development.development?.receipt || null;
     const storedPlan = receipt?.parentPlan || null;
-    const contributors = persistence.children.map((child) => runtime.projectParentCoordinationChild(child, taskId));
+    const contributors = persistence.children.map((child) => runtime.projectParentCoordinationChild(child, taskId, receipt));
     const children = contributors.map(childSummary);
     const parentDevelopment = row.parent_development_json == null
       ? { development: null }
@@ -261,7 +263,7 @@ export function registerParentCoordinationApplication(runtime) {
     if (!storedPlan) return withJsonSchema(PUBLIC_JSON_SCHEMAS.parentCoordinationResult, { operation: 'inspect', status: 'inspected', taskId, parentStatus: task.record.status, parentAcceptance: null, planningReview: null, blockers: [], effects: [], ...absentResult(task, children, receipt, parentDevelopment) });
     const plan = projectParentPlan(storedPlan);
     const handoff = development.development?.applicability?.handoff === 'current' ? [...(receipt.handoffs || [])].reverse().find((item) => item.contributionHandoff?.parentTaskId === taskId)?.contributionHandoff || null : null;
-    const parentContributor = handoff ? { taskId, title: task.record.title, status: task.record.status, boundContributions: handoff.planned, deliveryProven: true, contributionHandoff: handoff, diagnostic: null } : null;
+    const parentContributor = handoff ? { taskId, title: task.record.title, status: task.record.status, boundContributions: handoff.planned, deliveryProven: true, contributionHandoff: handoff, proof: { kind: 'native-handoff', reconciliationIdentity: null }, diagnostic: null } : null;
     const progress = aggregate(plan, parentContributor ? [...contributors, parentContributor] : contributors);
     const planningReview = planningReviewSlot(row, plan.identity);
     const execution = options.execution || { ready: row.environment_status === 'ready' };
@@ -332,6 +334,18 @@ export function registerParentCoordinationApplication(runtime) {
     return { ...inspectParentCoordination(targetRoot, input.parentTaskId), operation: 'bind-child', status: result.status, effects: result.effects };
   }
 
+  function reconcileChildDelivery(targetRoot, childTaskId, input) {
+    assertFields(input, new Set(['parentTaskId', 'expectedPlanIdentity', 'contributionHandoff', 'reason', 'source']), 'Terminal Child Contribution reconciliation');
+    const result = runtime.reconcileTerminalChildContributionDelivery(targetRoot, childTaskId, input);
+    return {
+      ...inspectParentCoordination(targetRoot, input.parentTaskId),
+      operation: 'reconcile-child-delivery', status: result.status,
+      reconciliation: result.reconciliation,
+      proof: result.proof,
+      effects: result.effects,
+    };
+  }
+
   function acceptParentCoordination(targetRoot, taskId, input) {
     assertFields(input, new Set(['expectedPlanIdentity', 'summary']), 'Parent final acceptance');
     const current = inspectParentCoordination(targetRoot, taskId);
@@ -341,6 +355,6 @@ export function registerParentCoordinationApplication(runtime) {
     return { ...inspectParentCoordination(targetRoot, taskId), operation: 'accept', status: result.status, effects: result.effects };
   }
 
-  Object.assign(runtime, { projectParentCoordinationChild, inspectParentCoordination, inspectParentStartupReadiness, refreshParentPlanning, recordParentPlan, reconcileParentPlan, bindChildContributions, acceptParentCoordination });
+  Object.assign(runtime, { projectParentCoordinationChild, inspectParentCoordination, inspectParentStartupReadiness, refreshParentPlanning, recordParentPlan, reconcileParentPlan, bindChildContributions, reconcileChildDelivery, acceptParentCoordination });
   return runtime;
 }

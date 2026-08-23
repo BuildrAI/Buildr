@@ -44,10 +44,12 @@ export function registerParentCoordinationRepository(runtime) {
         child.status AS child_status,
         child.result_no_change AS child_result_no_change,
         development.record_json AS development_json,
+        reconciliation.record_json AS reconciliation_json,
         finish.*
       FROM tasks child
       LEFT JOIN task_development_current development ON development.task_id = child.task_id
       LEFT JOIN task_finish_current finish ON finish.task_id = child.task_id
+      LEFT JOIN terminal_contribution_reconciliations reconciliation ON reconciliation.child_task_id = child.task_id
       WHERE child.parent_task_id = ?
       ORDER BY child.task_id`).all(taskId);
       const children = childRows.map((row) => {
@@ -59,6 +61,7 @@ export function registerParentCoordinationRepository(runtime) {
           status: row.child_status,
           result_no_change: row.child_result_no_change,
           development_json: row.development_json,
+          reconciliation_json: row.reconciliation_json,
           finish,
         };
       });

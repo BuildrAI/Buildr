@@ -220,7 +220,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-environment.application'],
     provides: ['task-parent-coordination.application', 'task-parent-coordination.persistence-read', 'task-parent-coordination.runtime-port'],
     contributions: {
-      cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept'],
+      cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept'],
       http: ['task-parent-coordination.http'],
       diagnostics: [],
     },
@@ -297,7 +297,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record', 'task verification reconcile',
-    'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent accept',
+    'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept',
     'task next',
     'task finish inspect', 'task finish reconcile', 'task finish run', 'task delivery inspect',
     'installation status', 'update check', 'update',

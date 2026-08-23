@@ -40,7 +40,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
 | 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Development、Review、Verification 公开 read model；Buildr Web 动态投影 |
 | 启动或继续已有active Formal Task并确定当前执行根、writer与next action | `buildr task next <task-id> --json`；只加载返回的当前capability/provider，`required`先恢复安全前置，`recommended`可按实际情况调整 |
-| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化或记录Parent最终集成验收 | `buildr.task-development/v2` selected provider + `task parent inspect|record|bind-child|reconcile|accept`；progress只由Application动态派生 |
+| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化、严格恢复终态遗漏的交付证据或记录Parent最终集成验收 | `buildr.task-development/v2` selected provider + `task parent inspect|record|bind-child|reconcile|reconcile-child-delivery|accept`；终态恢复只用于matching Finish异常，progress只由Application动态派生 |
 | 记录、查看或处理已结束Task的Agent执行效率复盘 | `buildr.task-retrospective/v2` selected provider；有效方向由todo/active Task承接，不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |

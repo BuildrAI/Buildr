@@ -10,6 +10,7 @@ import {
   projectParentPlan,
   validateContributionHandoffAgainstPlan,
 } from '../../src/task/domain/parent-coordination.mjs';
+import { createTerminalContributionReconciliation, normalizeTerminalContributionReconciliation } from '../../src/task/domain/terminal-contribution-reconciliation.mjs';
 
 function plan(overrides = {}) {
   return createParentPlan({
@@ -103,4 +104,30 @@ test('Contribution Handoff表达planned、delivered、extra、residual、superse
   assert.throws(() => createContributionHandoff({
     parentTaskId: 'parent-one', planned: ['independent-delivery'], delivered: ['not-planned'], nextAction: 'Reconcile once.',
   }), (error) => error.code === 'contribution_handoff_delivered_not_planned');
+});
+
+test('terminal contribution reconciliation identity不含createdAt且拒绝Finish association漂移', () => {
+  const contributionHandoff = createContributionHandoff({
+    parentTaskId: 'parent-task', planned: ['application-read-model'], delivered: ['application-read-model'],
+    nextAction: 'Continue with the next eligible Contribution.',
+  });
+  const gate = { disposition: 'not-applicable', targetIdentity: null, summary: 'Fixture gate.', source: 'unit-test' };
+  const handoff = {
+    identity: 'sha256-handoff', candidate: { identity: 'sha256-candidate', generation: 1 },
+    gates: { planning: gate, verification: gate, completion: gate },
+  };
+  const finishAssociation = {
+    handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: 1,
+    gates: {
+      planning: { status: 'gate-disposition', ...gate },
+      verification: { status: 'gate-disposition', ...gate },
+      completion: { status: 'gate-disposition', ...gate },
+    },
+  };
+  const input = { childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: 'sha256-plan', finishAssociation, handoff, contributionHandoff, reason: 'Recover omitted evidence.', source: 'unit-test' };
+  const first = createTerminalContributionReconciliation({ ...input, createdAt: '2026-08-23T00:00:00.000Z' });
+  const replay = createTerminalContributionReconciliation({ ...input, createdAt: '2026-08-23T00:01:00.000Z' });
+  assert.equal(first.identity, replay.identity);
+  assert.deepEqual(normalizeTerminalContributionReconciliation(first), first);
+  assert.throws(() => createTerminalContributionReconciliation({ ...input, finishAssociation: { ...finishAssociation, candidateGeneration: 2 }, createdAt: '2026-08-23T00:00:00.000Z' }), (error) => error.code === 'terminal_contribution_reconciliation_finish_mismatch');
 });

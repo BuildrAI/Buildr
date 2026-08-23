@@ -10,9 +10,10 @@ function parse(operation, args) {
     reconcile: 'buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json] | --schema | --example',
     refresh: 'buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]',
     bind: 'buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]',
+    'reconcile-child-delivery': 'buildr task parent reconcile-child-delivery <child-task-id> --parent <parent-task-id> --expected-plan <identity> --input <contribution-handoff.json> --reason <text> --source <text> [--target <canonical-workspace>] [--json] | --schema | --example',
     accept: 'buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]',
   }[operation];
-  const allowed = { inspect: ['--target', '--json'], record: ['--input', '--target', '--json', '--schema', '--example'], reconcile: ['--expected-plan', '--input', '--reason', '--target', '--json', '--schema', '--example'], refresh: ['--target', '--json'], bind: ['--parent', '--contribution', '--target', '--json'], accept: ['--expected-plan', '--summary', '--target', '--json'] }[operation];
+  const allowed = { inspect: ['--target', '--json'], record: ['--input', '--target', '--json', '--schema', '--example'], reconcile: ['--expected-plan', '--input', '--reason', '--target', '--json', '--schema', '--example'], refresh: ['--target', '--json'], bind: ['--parent', '--contribution', '--target', '--json'], 'reconcile-child-delivery': ['--parent', '--expected-plan', '--input', '--reason', '--source', '--target', '--json', '--schema', '--example'], accept: ['--expected-plan', '--summary', '--target', '--json'] }[operation];
   const repeatable = new Set(['--contribution']); const boolean = new Set(['--json', '--schema', '--example']); const values = new Map(); const positions = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]; if (!arg.startsWith('--')) { positions.push(arg); continue; }
@@ -23,22 +24,41 @@ function parse(operation, args) {
   }
   const one = (name) => values.get(name)?.[0]; const many = (name) => values.get(name) || [];
   const discovery = Boolean(one('--schema') || one('--example'));
-  if (discovery && operation !== 'record' && operation !== 'reconcile') throw syntax(`${operation} does not support discovery.`, usage);
+  if (discovery && !['record', 'reconcile', 'reconcile-child-delivery'].includes(operation)) throw syntax(`${operation} does not support discovery.`, usage);
   if (discovery && (positions.length || one('--schema') && one('--example') || [...values.keys()].some((name) => !['--schema', '--example', '--json'].includes(name)))) throw syntax('Discovery accepts exactly one of --schema or --example, optionally with --json.', usage);
   if (!discovery && positions.length !== 1) throw syntax(`${operation} requires exactly one task id.`, usage);
   if (!discovery && operation === 'record' && !one('--input')) throw syntax('record requires --input.', usage);
   if (!discovery && operation === 'reconcile' && (!one('--input') || !one('--expected-plan') || !one('--reason'))) throw syntax('reconcile requires --input, --expected-plan and --reason.', usage);
+  if (!discovery && operation === 'reconcile-child-delivery' && (!one('--parent') || !one('--input') || !one('--expected-plan') || !one('--reason') || !one('--source'))) throw syntax('reconcile-child-delivery requires --parent, --input, --expected-plan, --reason and --source.', usage);
   if (operation === 'bind' && (!one('--parent') || !many('--contribution').length)) throw syntax('bind-child requires --parent and at least one --contribution.', usage);
   if (operation === 'accept' && (!one('--expected-plan') || !one('--summary'))) throw syntax('accept requires --expected-plan and --summary.', usage);
   return { taskId: positions[0] || null, targetRoot: path.resolve(one('--target') || process.cwd()), json: Boolean(one('--json')), discovery: one('--schema') ? 'schema' : one('--example') ? 'example' : null, one, many, usage };
 }
 
 function plan(file) { const value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')); return value.parentPlan || value; }
+function contributionHandoff(file) { const value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')); return value.contributionHandoff || value; }
 function print(payload, json) { if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`); else console.log(`Parent coordination ${payload.taskId}: ${payload.status} (${payload.mode})`); return payload; }
 
-function discovery(kind) {
+function discovery(kind, operation) {
   const text = { type: 'string', minLength: 1, maxLength: 4000 };
   const id = { ...text, pattern: '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$' };
+  if (operation === 'reconcile-child-delivery') {
+    const summary = { type: 'object', additionalProperties: false, required: ['contributionId', 'summary'], properties: { contributionId: id, summary: text } };
+    const handoff = {
+      type: 'object', additionalProperties: false,
+      required: ['parentTaskId', 'planned', 'delivered', 'extra', 'residual', 'superseded', 'affected', 'nextAction'],
+      properties: {
+        schemaVersion: { type: 'string', const: 'buildr.contribution-handoff/v1' }, identity: text, parentTaskId: id,
+        planned: { type: 'array', maxItems: 128, items: id }, delivered: { type: 'array', maxItems: 128, items: id },
+        extra: { type: 'array', maxItems: 128, items: summary }, residual: { type: 'array', maxItems: 128, items: summary },
+        superseded: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: false, required: ['contributionId', 'deliveredByContributionId', 'reason'], properties: { contributionId: id, deliveredByContributionId: id, reason: text } } },
+        affected: { type: 'array', maxItems: 128, items: summary }, nextAction: text,
+      },
+    };
+    const argumentsSchema = { parent: id, expectedPlan: text, reason: text, source: text };
+    if (kind === 'example') return { schemaVersion: 'buildr.terminal-contribution-reconciliation-input-example/v1', operation: 'discover-example', status: 'ready', arguments: { parent: 'parent-task', expectedPlan: 'sha256-<current-parent-plan>', reason: 'Recover omitted terminal contribution evidence.', source: 'explicit-user-approved-recovery' }, contributionHandoff: { parentTaskId: 'parent-task', planned: ['first-contribution'], delivered: ['first-contribution'], extra: [], residual: [], superseded: [], affected: [], nextAction: 'Continue with the next eligible Contribution.' }, effects: [] };
+    return { schemaVersion: 'buildr.terminal-contribution-reconciliation-input-schema/v1', operation: 'discover-schema', status: 'ready', arguments: argumentsSchema, inputSchema: { $schema: 'https://json-schema.org/draft/2020-12/schema', ...handoff, description: '该closed schema只描述--input文件；Parent Plan、Task、handoff、Finish、archived Change与ownership在运行时关闭式校验。' }, effects: [] };
+  }
   const example = {
     outcome: 'Integrated Parent outcome.',
     architectureDecisions: ['One fact has one authority.'],
@@ -56,7 +76,7 @@ function discovery(kind) {
 export function parentCoordinationCommand(runtime, operation, args) {
   const parsed = parse(operation, args);
   if (parsed.discovery) {
-    const payload = discovery(parsed.discovery);
+    const payload = discovery(parsed.discovery, operation);
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return payload;
   }
@@ -67,6 +87,7 @@ export function parentCoordinationCommand(runtime, operation, args) {
     else if (operation === 'record') payload = runtime.recordParentPlan(parsed.targetRoot, parsed.taskId, { plan: plan(parsed.one('--input')) });
     else if (operation === 'reconcile') payload = runtime.reconcileParentPlan(parsed.targetRoot, parsed.taskId, { expectedPlanIdentity: parsed.one('--expected-plan'), plan: plan(parsed.one('--input')), reason: parsed.one('--reason') });
     else if (operation === 'bind') payload = runtime.bindChildContributions(parsed.targetRoot, parsed.taskId, { parentTaskId: parsed.one('--parent'), contributionIds: parsed.many('--contribution') });
+    else if (operation === 'reconcile-child-delivery') payload = runtime.reconcileChildDelivery(parsed.targetRoot, parsed.taskId, { parentTaskId: parsed.one('--parent'), expectedPlanIdentity: parsed.one('--expected-plan'), contributionHandoff: contributionHandoff(parsed.one('--input')), reason: parsed.one('--reason'), source: parsed.one('--source') });
     else payload = runtime.acceptParentCoordination(parsed.targetRoot, parsed.taskId, { expectedPlanIdentity: parsed.one('--expected-plan'), summary: parsed.one('--summary') });
     return print(payload, parsed.json);
   } catch (error) {

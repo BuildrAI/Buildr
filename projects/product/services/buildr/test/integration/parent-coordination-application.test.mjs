@@ -8,7 +8,8 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createContributionHandoff, parentCoordinationDigest } from '../../src/task/domain/parent-coordination.mjs';
-import { createTaskDevelopmentPlanning } from '../../src/task/domain/task-development.mjs';
+import { createTerminalContributionReconciliation } from '../../src/task/domain/terminal-contribution-reconciliation.mjs';
+import { createTaskCandidate, createTaskDevelopmentPlanning, createTaskFinishHandoff, normalizeTaskContentTarget, normalizeTaskDevelopmentReceipt, normalizeTaskVerificationPolicy, taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 
@@ -79,6 +80,46 @@ function realisticParentPlan(label, contributionCount) {
   };
 }
 
+function prepareTerminalChildWithoutContribution(current, childTaskId = 'child-task', nativeContributionHandoff = null) {
+  const gate = { disposition: 'not-applicable', targetIdentity: null, summary: 'Terminal recovery fixture gate.', source: 'integration-test' };
+  let candidate;
+  let handoff;
+  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
+  try {
+    const row = opened.database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(childTaskId);
+    const currentReceipt = JSON.parse(row.record_json);
+    const components = [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'integration-test', identity: taskDevelopmentDigest(`${childTaskId}/tree`) }];
+    const contentTarget = normalizeTaskContentTarget({ identity: taskDevelopmentDigest({ components }), components });
+    const policyPayload = { declarations: [], capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Terminal recovery integration fixture.' }], overrides: [] };
+    const verificationPolicy = normalizeTaskVerificationPolicy({ identity: taskDevelopmentDigest(policyPayload), ...policyPayload });
+    candidate = createTaskCandidate({ generation: 1, contentTargetIdentity: contentTarget.identity, taskContextIdentity: currentReceipt.taskContext.identity, policyIdentity: verificationPolicy.identity });
+    const gates = { planning: gate, verification: gate, completion: gate };
+    const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'Fixture proceeds.', risks: [] };
+    handoff = createTaskFinishHandoff({ candidate, changes: [], gates, decision, contributionHandoff: nativeContributionHandoff, createdAt: '2026-08-23T00:00:00.000Z' });
+    const receipt = normalizeTaskDevelopmentReceipt({ ...currentReceipt, contentTarget, verificationPolicy, generation: 1, candidate, currentKnowledge: null, gates, decision, handoffs: [handoff], updatedAt: '2026-08-23T00:00:00.000Z' }, { expectedTaskId: childTaskId });
+    opened.database.prepare('UPDATE task_development_current SET record_json = ? WHERE task_id = ?').run(JSON.stringify(receipt), childTaskId);
+  } finally { opened.database.close(); }
+  current.runtime.completeTaskRecord(current.root, childTaskId, { summary: 'Delivered before Contribution evidence was recorded.', noChange: false });
+  const phases = ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1, startedAt: '2026-08-23T00:00:00.000Z', completedAt: '2026-08-23T00:00:00.000Z', durationMs: 0, inputIdentity: null, outputIdentity: null, failure: null }));
+  const association = {
+    schemaVersion: 'buildr.task-terminal-delivery-associations/v1',
+    handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation,
+    gates: {
+      planning: { status: 'gate-disposition', ...gate },
+      verification: { status: 'gate-disposition', ...gate },
+      completion: { status: 'gate-disposition', ...gate },
+    },
+    observedAt: '2026-08-23T00:00:00.000Z', source: 'integration-test',
+  };
+  const run = {
+    schemaVersion: 'buildr.task-finish-run/v3', runId: `${childTaskId}-terminal-run`, status: 'complete',
+    identity: { task: childTaskId, handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation, contentTargetIdentity: candidate.contentTargetIdentity, targetBranch: 'dev', remote: 'origin' },
+    phases, createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', completedAt: '2026-08-23T00:00:00.000Z',
+  };
+  current.runtime.finalizeTaskFinishPersistence(current.root, { run, result: { identity: run.identity, phases, completedAt: '2026-08-23T00:00:00.000Z' }, completion: { association, completedAt: '2026-08-23T00:00:00.000Z' } });
+  return handoff;
+}
+
 test('ordinary Task保持absent，不扫描或自动backfill Parent Plan', (t) => {
   const current = fixture(t);
   current.runtime.createTaskRecord(current.root, { taskId: 'legacy-task', title: 'Legacy', intent: 'Remain readable.', projects: [], services: [], changes: [] });
@@ -140,6 +181,87 @@ test('Parent Plan record/reconcile公开closed schema与最小example', () => {
   assert.equal(example.schemaVersion, 'buildr.parent-plan-input-example/v2');
   assert.equal(example.parentPlan.contributions.length, 1);
   assert.equal(example.parentPlan.contributions[0].expectedChild, 'A focused implementation Child');
+});
+
+test('terminal Child恢复入口公开closed schema且discovery零Workspace读取', () => {
+  const schemaRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile-child-delivery', '--schema', '--json'], { encoding: 'utf8', cwd: os.tmpdir() });
+  assert.equal(schemaRun.status, 0, schemaRun.stderr);
+  const schema = JSON.parse(schemaRun.stdout);
+  assert.equal(schema.schemaVersion, 'buildr.terminal-contribution-reconciliation-input-schema/v1');
+  assert.equal(schema.inputSchema.additionalProperties, false);
+  assert.equal(schema.inputSchema.properties.parentTaskId.pattern, '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$');
+  assert.deepEqual(Object.keys(schema.arguments), ['parent', 'expectedPlan', 'reason', 'source']);
+});
+
+test('completed Child可追加恢复proof并幂等重放，旧handoff与Task保持不变', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
+  const originalHandoff = prepareTerminalChildWithoutContribution(current);
+  const beforeTask = current.runtime.inspectTaskRecord(current.root, 'child-task');
+  const contributionHandoff = createContributionHandoff({
+    parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'],
+    nextAction: 'Continue with the parent integration Contribution.',
+  });
+  const input = { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Recover the omitted terminal Contribution mapping.', source: 'integration-test' };
+  const inputFile = path.join(current.root, 'contribution-handoff.json');
+  fs.writeFileSync(inputFile, JSON.stringify(contributionHandoff));
+  const cli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile-child-delivery', 'child-task', '--parent', input.parentTaskId, '--expected-plan', input.expectedPlanIdentity, '--input', inputFile, '--reason', input.reason, '--source', input.source, '--target', current.root, '--json'], { encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  const first = JSON.parse(cli.stdout);
+  assert.equal(first.schemaVersion, 'buildr.parent-coordination-result/v3');
+  assert.equal(first.status, 'recorded');
+  assert.equal(first.children[0].proof.kind, 'terminal-reconciliation');
+  assert.equal(first.children[0].delivery.proof.reconciliationIdentity, first.reconciliation.identity);
+  assert.equal(first.contributions.find((item) => item.id === 'child-delivery').actual.status, 'delivered');
+  assert.deepEqual(first.children[0].boundContributions, ['child-delivery']);
+  const replay = current.runtime.reconcileChildDelivery(current.root, 'child-task', input);
+  assert.equal(replay.status, 'unchanged');
+  assert.equal(replay.reconciliation.identity, first.reconciliation.identity);
+  assert.equal(replay.reconciliation.createdAt, first.reconciliation.createdAt);
+  assert.deepEqual(current.runtime.inspectTaskRecord(current.root, 'child-task'), beforeTask);
+  const receipt = current.runtime.inspectTaskDevelopment(current.root, 'child-task').development.receipt;
+  assert.equal(receipt.handoffs[0].identity, originalHandoff.identity);
+  assert.equal(receipt.handoffs[0].contributionHandoff, undefined);
+  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { ...input, reason: 'Different semantic recovery.' }), (error) => error.code === 'terminal_contribution_reconciliation_conflict');
+});
+
+test('terminal恢复拒绝stale Plan和Sibling owner冲突且零写入', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
+  current.runtime.createTaskRecord(current.root, { taskId: 'sibling-task', title: 'Sibling', intent: 'Own the planned Contribution.', parentTaskId: 'parent-task', projects: [], services: [], changes: [] });
+  current.runtime.beginTaskDevelopment(current.root, 'sibling-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Fixture sibling planning.', source: 'test fixture' } });
+  current.runtime.bindChildContributions(current.root, 'sibling-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
+  const terminalHandoff = prepareTerminalChildWithoutContribution(current);
+  const contributionHandoff = createContributionHandoff({ parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'], nextAction: 'Continue.' });
+  const context = current.runtime.readTerminalContributionReconciliationContext(current.root, 'child-task');
+  const staleRecord = createTerminalContributionReconciliation({ childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: recorded.plan.identity, finishAssociation: context.child.finish.completion.association, handoff: terminalHandoff, contributionHandoff, reason: 'Exercise rollback.', source: 'integration-test', createdAt: '2026-08-23T00:00:00.000Z' });
+  assert.throws(() => current.runtime.writeTerminalContributionReconciliationPersistence(current.root, staleRecord, 'sha256-stale-context'), (error) => error.code === 'terminal_contribution_reconciliation_context_conflict');
+  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: 'sha256-stale', contributionHandoff, reason: 'Stale.', source: 'integration-test' }), (error) => error.code === 'parent_plan_conflict');
+  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Conflicting.', source: 'integration-test' }), (error) => error.code === 'parent_contribution_owner_conflict');
+  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: false });
+  try { assert.equal(opened.database.prepare('SELECT COUNT(*) AS count FROM terminal_contribution_reconciliations').get().count, 0); }
+  finally { opened.database.close(); }
+});
+
+test('terminal恢复接受精确历史binding并拒绝已有原生Contribution Handoff', (t) => {
+  const current = fixture(t);
+  createTasks(current);
+  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
+  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
+  const contributionHandoff = createContributionHandoff({ parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'], nextAction: 'Continue.' });
+  prepareTerminalChildWithoutContribution(current);
+  const recovered = current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Recover the omitted handoff payload.', source: 'integration-test' });
+  assert.equal(recovered.status, 'recorded');
+  assert.equal(recovered.children[0].proof.kind, 'terminal-reconciliation');
+
+  const second = fixture(t);
+  createTasks(second);
+  const secondPlan = second.runtime.recordParentPlan(second.root, 'parent-task', { plan: parentPlan() });
+  second.runtime.bindChildContributions(second.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
+  prepareTerminalChildWithoutContribution(second, 'child-task', contributionHandoff);
+  assert.throws(() => second.runtime.reconcileChildDelivery(second.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: secondPlan.plan.identity, contributionHandoff, reason: 'Must not replace native proof.', source: 'integration-test' }), (error) => error.code === 'terminal_contribution_reconciliation_not_applicable');
 });
 
 test('Parent startup按真实安全顺序推进Review、gate refresh与首个eligible Contribution', (t) => {

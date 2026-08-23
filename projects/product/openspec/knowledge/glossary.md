@@ -255,6 +255,13 @@
 - 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务；Formal Task Record也不是普通编辑、构建或有界测试的通用工作许可。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 终态贡献交付对账（Terminal Contribution Delivery Reconciliation）
+
+- 定义：当直接 Child 已 completed 且既有 immutable Development handoff 与 terminal Finish association 能证明真实交付，但原生 Contribution Handoff 因历史编排遗漏而缺失时，由 Task Development 追加的一次性、内容寻址恢复证据。
+- 适用范围：Parent Coordination 对历史终态 Child 的 Contribution delivery 恢复；必须绑定 current Parent Plan、Parent/Child 关系、Candidate/generation、三个 gate、archived Change、完整 Contribution Handoff、reason 与 source。
+- 避免混用：不是 normal Child 的常规 handoff、Task reopen、Parent Plan reconcile、Git 交付声明或通用审计日志；不能仅凭 completed、commit、文件或 canonical specs 建立。
+- 来源：active Change `recover-terminal-child-contribution-delivery`，convergence 后由 canonical Parent/Child Coordination 与 Task Development specs 持有行为语义。
+
 ## 任务入口快照（Task Entry Snapshot）
 
 - 定义：面向Agent启动或继续Formal Task的只读compact projection，组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity；尚无Development时缺少Environment只形成recommended prepare。

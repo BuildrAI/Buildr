@@ -51,7 +51,9 @@ Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输�
 
 Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明，`expectedChild`也不能替代真实Child relation与binding。
 
-Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：Plan identity与治理摘要取`plan`，工作项取唯一顶层`contributions`，预期Child取`expectation.child`，真实Child binding取`boundContributions`，下一步取`startup.next`。不得期待v2的raw `parentPlan`、`plan.contributions`、顶层`nextActions`、`finalAcceptanceReady`、Child `plannedContributions`或完整Review/Handoff Result；需要完整长期事实时回到对应专业authority，而不是要求Parent Coordination复制。
+只有Child已经completed且非no-change、matching terminal Finish association精确指向不含Contribution Handoff的immutable handoff、全部Change仍为archived，并且用户或治理任务已经明确给出current Parent Plan映射时，才可使用`task parent reconcile-child-delivery`异常恢复。先用`--schema|--example`发现closed输入，再显式提交`--parent`、`--expected-plan`、完整Contribution Handoff、`--reason`与`--source`；不得从Git、代码、文件、canonical specs或completed状态猜测delivery。相同恢复可幂等重放；Plan漂移、handoff/Finish不匹配、已有原生handoff或其他Child owner冲突时停止。该入口不重开Task、不修改旧Receipt/handoff/Finish，也不得被建议为正常Child省略binding或handoff的后补路径。
+
+Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：Plan identity与治理摘要取`plan`，工作项取唯一顶层`contributions`，预期Child取`expectation.child`，真实Child binding取`boundContributions`，delivery来源取`delivery.proof.kind`（`native-handoff|terminal-reconciliation`），下一步取`startup.next`。不得期待v2的raw `parentPlan`、`plan.contributions`、顶层`nextActions`、`finalAcceptanceReady`、Child `plannedContributions`或完整Review/Handoff Result；需要完整长期事实时回到对应专业authority，而不是要求Parent Coordination复制。
 
 Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
 
