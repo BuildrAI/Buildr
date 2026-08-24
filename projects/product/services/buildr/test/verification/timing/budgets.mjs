@@ -1,7 +1,9 @@
 import { verificationSteps } from '../registry.mjs';
 
-// Transitional lane budgets. The Parent verification work keeps 180 seconds as
-// the Core optimization target while the current registry remains above it.
+// Parent acceptance uses 300 seconds as the standard uncontended Core
+// optimization target and 360 seconds as the honest execution budget. The
+// former 180-second target is retired because it is below the 244-second
+// capacity lower bound of the current 52-step Core.
 export const CORE_TOTAL_BUDGET_MS = 360000;
 export const CANDIDATE_TOTAL_BUDGET_MS = 600000;
 

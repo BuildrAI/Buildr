@@ -113,7 +113,7 @@ Changed selection 现在由两个物理分离的 authority 组成：
 
 任一 unknown path 或 direct production owner gap 都会在 admission 和业务 verifier 启动前返回 `status=blocked`、`verification-owner-gap`、完整 gap 列表与补 owner 的 next action。完整 Candidate 不再作为 unknown ownership 的替代证明。
 
-Changed Full、Core 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 core 为 52 step、目标工作量 976 秒、全局容量理论下限 244 秒，使用 360 秒过渡预算；完整 Candidate 保持 66 step、目标工作量 1,338 秒、理论下限 334.5 秒和 600 秒过渡预算。180 秒仍是后续 lifecycle/fixture/resource Contribution 的核心 Full 收敛目标，不把过渡预算描述为性能目标。
+Changed Full、Core 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 core 为 52 step、目标工作量 976 秒、全局容量理论下限 244 秒，以 300 秒作为标准无竞争优化目标、360 秒作为诚实执行预算；完整 Candidate 保持 66 step、目标工作量 1,338 秒、理论下限 334.5 秒和 600 秒执行预算。原 180 秒目标低于当前数学下限，已经退役，不能再作为现有 Core 的可达声明。
 
 ### Quick 准入快照（2026-08-04）
 

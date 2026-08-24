@@ -414,7 +414,7 @@ Task Development owner的历史基线约为71.9秒；第一阶段只做seed与�
 
 affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释放；Core的`system-task-finish`等待29.529秒后取得同一slots，执行后也完整释放。Core相对无竞争中位数增加17.544秒（约6.6%），但没有并发写入、脏Context、遗留进程或失效缓存。该样本证明跨plan资源协调会把竞争记录为resource wait，而不是把等待混入Context创建收益；同时也说明CPU、磁盘与生命周期容量竞争仍会放大墙钟。
 
-最终结论必须保持预算诚实：180秒低于当前244秒数学下限，不能作为现有52-step Core的可达目标。本Change已把稳定Core从阶段约5分20秒收敛到约4分28秒，并建立可继续注册和复用Context的技术框架；若要进一步下降，必须减少Core目标工作量、消除剩余primary evidence重复，或优化完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance等真实测试体。affected仍负责避免无关测试，但不是唯一性能手段；Candidate与Release证据不能为追求Core数字而下放或删除。
+最终结论必须保持预算诚实：180秒低于当前244秒数学下限，不能作为现有52-step Core的可达目标；Parent最终验收采用300秒标准无竞争优化目标和360秒诚实执行预算。本Change已把稳定Core从阶段约5分20秒收敛到约4分28秒，并建立可继续注册和复用Context的技术框架；若要进一步下降，必须减少Core目标工作量、消除剩余primary evidence重复，或优化完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance等真实测试体。affected仍负责避免无关测试，但不是唯一性能手段；Candidate与Release证据不能为追求Core数字而下放或删除。
 
 ## 18. 当前能力与下一边界
 
