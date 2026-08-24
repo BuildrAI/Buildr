@@ -213,6 +213,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       runtime,
       root: repo,
       releaseTask: options.releaseTask,
+      releaseTaskStatus: action === 'dispatch' ? 'completed' : 'active',
       supportTasks: options.supportTasks ?? [],
       retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
