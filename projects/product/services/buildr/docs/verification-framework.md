@@ -277,6 +277,22 @@ Task Development Application集合注册两个Context：
 
 其中只有Task Development需要`buildr.task-workspace/v1`；其他迁移集合只复用Application组装，测试自己创建的SQLite或临时目录仍保持逐case隔离。动态修改`BUILDR_APP_DATA_DIR`、跨CLI/Git/SQLite多连接或以真实生命周期为断言的case继续为hybrid/full-lifecycle，不为提高注册率共享process global或可变Workspace。
 
+后续接入审查把“可以复用的组装”与“必须重新发生的行为”明确分开：
+
+| 旅程 | Context结论 | 必须保留的真实证据 |
+| --- | --- | --- |
+| 初始化 | `full-lifecycle` | fresh root、首次registry/manifest创建、重入与原子失败 |
+| migration | `full-lifecycle` | 每个历史schema、candidate/retained分离、连续升级与rollback |
+| self-bootstrap | `full-lifecycle` | retained checkout、sync、activation、process identity与closeout |
+| Finish Application core | `hybrid` | 复用Application；每case仍使用独立SQLite/filesystem/CLI sandbox |
+| Finish delivery与cleanup | `full-lifecycle` | carrier、target transition、retained activation、删除/保留/ownership与重复执行 |
+| Candidate与tarball | `full-lifecycle` | 唯一artifact生成、inventory、offline install与从成品执行 |
+| Launcher | `full-lifecycle` | 多独立进程、Host Node/package binding、ownership冲突、handoff与shutdown |
+
+这不表示黄金旅程“不能调用”公共Runtime，而是它们不能共享正在被验证的可变状态。只有当一段准备工作昂贵、与待证事实无关、可以完整检查与reset时，才把该段提取成新的provider；单纯把`createRuntime()`换成lease而不减少真实成本，不算有效迁移。`test/context/dispositions.mjs`中的黄金边界审查由Contract逐owner校验，防止后续为了接入率误改成共享Context。
+
+Task Development owner中原先仍有四个repository/profile文件直接调用`createRuntime()`，与其`context-runtime`声明不一致。它们现已统一通过`createBuildrApplicationTest()`取得Application lease；Contract同时禁止`context-runtime` owner再次直接组装matching Runtime。因此这里的收益首先是事实一致、descriptor reset与dirty检查覆盖，其次才是同一Worker Host内减少重复Application组装。
+
 真实Git contribution、完整CLI协议、Task Environment create/cleanup、Finish、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
 
 ## 11. Verification Control Plane

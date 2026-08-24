@@ -5,7 +5,11 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { inspectTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
-import { assertVerificationContextDispositionCoverage, VERIFICATION_CONTEXT_DISPOSITIONS } from '../context/dispositions.mjs';
+import {
+  assertVerificationContextDispositionCoverage,
+  VERIFICATION_CONTEXT_DISPOSITIONS,
+  VERIFICATION_GOLDEN_CONTEXT_AUDIT,
+} from '../context/dispositions.mjs';
 import { VERIFICATION_DAILY_CORE_EXCLUSIONS, verificationSteps } from '../verification/registry.mjs';
 import { SYSTEM_SUITES, validateSystemSuiteRegistry } from '../verification/system-suites.mjs';
 
@@ -66,6 +70,33 @@ test('每个Verification owner都有唯一且有理由的Context disposition', (
     () => assertVerificationContextDispositionCoverage(verificationSteps.slice(1).map((step) => step.id)),
     /verification_context_disposition_coverage_invalid/,
   );
+});
+
+test('context-runtime owner的Runtime组装必须来自统一adapter', () => {
+  for (const step of verificationSteps.filter((candidate) => candidate.contextDisposition.mode === 'context-runtime')) {
+    assert.equal(step.executor.type, 'node-context-test', `${step.id} must run in persistent Context Worker Hosts`);
+    const files = step.executor.files ?? [];
+    const sources = files.map((file) => [file, fs.readFileSync(path.join(productRoot, file), 'utf8')]);
+    assert.ok(sources.some(([, source]) => /buildr-node-test\.mjs/u.test(source)), `${step.id} must contain a unified adapter consumer`);
+    for (const [file, source] of sources) {
+      assert.doesNotMatch(source, /\bcreateRuntime\s*\(/u, `${step.id}/${file} must lease the matching Application instead of assembling another Runtime`);
+    }
+  }
+});
+
+test('初始化、迁移、自举、Finish、cleanup、Candidate、tarball与Launcher保持审查后的Context边界', () => {
+  assert.deepEqual(Object.keys(VERIFICATION_GOLDEN_CONTEXT_AUDIT), [
+    'initialization', 'migration', 'selfBootstrap', 'finishApplication', 'finishDelivery', 'cleanup', 'candidate', 'tarball', 'launcher',
+  ]);
+  const byId = new Map(verificationSteps.map((step) => [step.id, step]));
+  for (const [journey, audit] of Object.entries(VERIFICATION_GOLDEN_CONTEXT_AUDIT)) {
+    assert.ok(audit.reason.length >= 40, journey);
+    assert.match(audit.reusableBoundary, /^(?:none|application|artifact-only)$/u, journey);
+    for (const owner of audit.owners) {
+      assert.ok(byId.has(owner), `${journey} references unknown owner ${owner}`);
+      assert.equal(byId.get(owner).contextDisposition.mode, audit.expectedMode, `${journey}/${owner}`);
+    }
+  }
 });
 
 test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () => {

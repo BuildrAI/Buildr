@@ -2,21 +2,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test, { after } from 'node:test';
+import { after } from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
+
+const test = createBuildrApplicationTest('integration-task-verification-repository');
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
 function declaration() {
   return { schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [{ id: 'demo.unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, invocation: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, applicability: { paths: ['**'], conditions: [] }, proves: ['Demo unit behavior'], requiredForDelivery: true, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
 }
-function fixture(t) {
+function fixture(t, runtime) {
   const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-repository').root);
-  createRuntime().createTaskRecord(root, {
+  runtime.createTaskRecord(root, {
     taskId: 'demo-task',
     title: 'Demo',
     intent: 'Verify current Result authority',
@@ -31,8 +33,8 @@ function input(overrides = {}) { return { targetIdentity: 'target:one', targetSu
 function stored(runtime, root) { const opened = runtime.openWorkspaceStructuredStore(root, { writable: false }); try { return opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'demo-task'").get()?.result_json ?? null; } finally { opened.database.close(); } }
 
 test('Verification current Result只写SQLite并保持target/declaration applicability', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   const legacy = path.join(root, '.buildr', 'tasks', 'demo-task', 'verification.yml');
   fs.mkdirSync(path.dirname(legacy), { recursive: true });
   fs.writeFileSync(legacy, 'legacy: inert\n');
@@ -56,8 +58,8 @@ test('Verification current Result只写SQLite并保持target/declaration applica
 });
 
 test('Project Result拒绝claimed facts，Candidate不匹配的authority对账保持原current', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', {
     candidateIdentity: 'sha256-claimed-candidate', candidateGeneration: 1,
     targetIdentity: 'target:claimed', targetSummary: 'Claimed target',
@@ -76,7 +78,8 @@ test('Project Result拒绝claimed facts，Candidate不匹配的authority对账�
 });
 
 test('Verification只从canonical或matching ready Task Environment观察declaration', (t) => {
-  const root = fixture(t);
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   const candidateRoot = `${root}-candidate`;
   const foreignRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-verification-foreign-'));
   t.after(() => fs.rmSync(candidateRoot, { recursive: true, force: true }));
@@ -85,7 +88,6 @@ test('Verification只从canonical或matching ready Task Environment观察declara
   const candidateDeclaration = declaration();
   candidateDeclaration.capabilities[0].proves = ['Candidate declaration'];
   fs.writeFileSync(path.join(candidateRoot, 'projects', 'demo', 'verification.yml'), YAML.stringify(candidateDeclaration));
-  const runtime = createRuntime();
   assert.throws(() => recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ declarationRoot: foreignRoot })), (error) => error.code === 'task_verification_declaration_root_unowned');
   runtime.resolveTaskEnvironmentExecution = () => ({ ready: true, environmentRoot: candidateRoot });
   const recorded = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ declarationRoot: candidateRoot }));
@@ -96,8 +98,8 @@ test('Verification只从canonical或matching ready Task Environment观察declara
 });
 
 test('Verification serialization或SQLite mutation失败保留last-valid current', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
   const original = stored(runtime, root);
   runtime.taskVerificationSerialize = () => { throw new Error('serialization failure'); };
@@ -111,8 +113,8 @@ test('Verification serialization或SQLite mutation失败保留last-valid current
 });
 
 test('terminal Task仍可读取既有Verification且拒绝新写入', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   recordVerificationResultFromEvidence(runtime, root, 'demo-task', input());
   const task = runtime.readTaskRecordPersistence(root, 'demo-task');
   runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done', noChange: false }, updatedAt: new Date(Date.parse(task.record.createdAt) + 1000).toISOString() });
@@ -121,8 +123,8 @@ test('terminal Task仍可读取既有Verification且拒绝新写入', (t) => {
 });
 
 test('workspace-only Result写入同一SQLite authority，scope变化后兼容读取并派生stale', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   runtime.createTaskRecord(root, { taskId: 'workspace-task', title: 'Workspace only', intent: 'Persist a typed workspace coverage gap.', projects: [], services: [], changes: [] });
   const recorded = recordVerificationResultFromEvidence(runtime, root, 'workspace-task', {
     targetIdentity: 'workspace:one', targetSummary: 'Workspace target', capabilities: [],
@@ -149,8 +151,8 @@ test('workspace-only Result写入同一SQLite authority，scope变化后兼容�
 });
 
 test('合法v1 Result只读兼容且明确标记legacy candidate-unbound', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   runtime.writeTaskVerificationResultPersistence(root, {
     schemaVersion: 'buildr.task-verification-result/v1', taskId: 'demo-task',
     target: { identity: 'target:legacy', summary: 'Legacy target' },
@@ -165,8 +167,8 @@ test('合法v1 Result只读兼容且明确标记legacy candidate-unbound', (t) =
 });
 
 test('Project Task repository仍拒绝空 declarations workspace shape', (t) => {
-  const root = fixture(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
   assert.throws(() => runtime.writeTaskVerificationResultPersistence(root, {
     schemaVersion: 'buildr.task-verification-result/v1', taskId: 'demo-task',
     target: { identity: 'workspace:forged', summary: 'Forged workspace target' }, declarations: [], capabilities: [],

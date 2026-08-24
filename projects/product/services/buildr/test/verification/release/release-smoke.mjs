@@ -467,13 +467,18 @@ export async function runReleaseSmoke(env = process.env) {
       assert.equal(Number(new URL(launcherHealth.url).port) === 4457, defaultPortAvailable, 'default Launcher uses 4457 exactly when it is available');
       if (process.platform === 'darwin') {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
+        const launcherLogPath = path.join(root, 'launcher-home', 'Library', 'Logs', 'Buildr', 'launcher.log');
+        const launcherLogBeforeRepeatedOpen = fs.readFileSync(launcherLogPath);
         await launchLauncher();
-        let launcherLog = '';
-        for (let attempt = 0; attempt < 40 && !/Buildr Web 已运行：/.test(launcherLog); attempt += 1) {
-          try { launcherLog = fs.readFileSync(path.join(root, 'launcher-home', 'Library', 'Logs', 'Buildr', 'launcher.log'), 'utf8'); } catch {}
-          if (!/Buildr Web 已运行：/.test(launcherLog)) await new Promise((resolve) => setTimeout(resolve, 50));
+        const repeatedOpenDeadline = Date.now() + RELEASE_LAUNCHER_READINESS_TIMEOUT_MS;
+        let repeatedLauncherLog = '';
+        while (Date.now() < repeatedOpenDeadline && !/Buildr Web 已运行：/.test(repeatedLauncherLog)) {
+          try {
+            repeatedLauncherLog = fs.readFileSync(launcherLogPath).subarray(launcherLogBeforeRepeatedOpen.length).toString('utf8');
+          } catch {}
+          if (!/Buildr Web 已运行：/.test(repeatedLauncherLog)) await new Promise((resolve) => setTimeout(resolve, RELEASE_READINESS_POLL_INTERVAL_MS));
         }
-        assert.match(launcherLog, /Buildr Web 已运行：/, 'repeated macOS open executes the CLI reuse path');
+        assert.match(repeatedLauncherLog, /Buildr Web 已运行：/, 'repeated macOS open executes the CLI reuse path within the shared Launcher readiness budget');
         const repeated = await waitForLauncherReadiness('repeated-open');
         assert.equal(repeated.pid, launcherHealth.pid, 'repeated macOS open reuses the released instance');
       }

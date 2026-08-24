@@ -100,6 +100,70 @@ if (duplicateOwners.length > 0) throw new Error(`verification_context_dispositio
 
 export const VERIFICATION_CONTEXT_DISPOSITIONS = Object.freeze(Object.fromEntries(entries.map((entry) => [entry.owner, entry])));
 
+const goldenJourney = (owners, expectedMode, reusableBoundary, reason) => Object.freeze({
+  owners: Object.freeze(owners),
+  expectedMode,
+  reusableBoundary,
+  reason,
+});
+
+export const VERIFICATION_GOLDEN_CONTEXT_AUDIT = Object.freeze({
+  initialization: goldenJourney(
+    ['init-onboarding', 'system-workspace-lifecycle'],
+    'full-lifecycle',
+    'none',
+    'Fresh initialization and registry creation are the observed behavior, so a prepared mutable Workspace would replace the evidence.',
+  ),
+  migration: goldenJourney(
+    ['integration-data-store', 'system-runtime-recovery'],
+    'full-lifecycle',
+    'none',
+    'Historical schemas, retained/candidate separation, atomic upgrade, and rollback require independently constructed stores and Runtime instances.',
+  ),
+  selfBootstrap: goldenJourney(
+    ['integration-self-bootstrap'],
+    'full-lifecycle',
+    'none',
+    'Retained checkout synchronization, activation, process identity, and closeout are the primary evidence and cannot start from a cached Application.',
+  ),
+  finishApplication: goldenJourney(
+    ['integration-task-finish'],
+    'hybrid',
+    'application',
+    'Finish Application core reuses the Application assembly while every case retains its own SQLite, filesystem, CLI, and failure sandbox.',
+  ),
+  finishDelivery: goldenJourney(
+    ['integration-task-finish-delivery', 'system-task-finish', 'system-task-finish-cli'],
+    'full-lifecycle',
+    'none',
+    'Delivery carrier construction, target transition, retained activation, public CLI, and cleanup are the primary evidence.',
+  ),
+  cleanup: goldenJourney(
+    ['integration-task-finish-delivery', 'workspace-lifecycle', 'ownership-recovery'],
+    'full-lifecycle',
+    'none',
+    'Cleanup must prove removal, retention, ownership, rollback, and repeatability against state created by the same case.',
+  ),
+  candidate: goldenJourney(
+    ['integration-candidate-release', 'candidate-tarball'],
+    'full-lifecycle',
+    'artifact-only',
+    'Candidate generation and the unique artifact are the observed outputs; an in-source Application Context cannot replace artifact construction.',
+  ),
+  tarball: goldenJourney(
+    ['candidate-tarball', 'application-payload-release', 'release-tarball-smoke'],
+    'full-lifecycle',
+    'artifact-only',
+    'Packing, offline installation, inventory, and execution from the unique tarball must operate on the real artifact.',
+  ),
+  launcher: goldenJourney(
+    ['npm-launcher-candidate', 'host-node-cli-smoke'],
+    'full-lifecycle',
+    'none',
+    'Launcher evidence requires independent processes, exact Host Node and package binding, ownership conflict, handoff, and shutdown behavior.',
+  ),
+});
+
 export function verificationContextDisposition(owner) {
   const result = VERIFICATION_CONTEXT_DISPOSITIONS[owner];
   if (!result) throw new Error(`verification_context_disposition_missing: ${owner}`);
