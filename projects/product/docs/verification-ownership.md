@@ -111,6 +111,8 @@ Changed selection 现在由两个物理分离的 authority 组成：
 
 `verification.yml`、`package.json` 和 lockfile 由 Git diff 的语义分类器处理：纯展示字段、`proves`/说明条件或 version-only 变化走 affected；command、environment、scripts、engines、dependency 等执行语义变化仍进入 Full。`test/verification/timing/**` 的预算、证据与报告维护走对应 affected owner；只有 parallel runner 等调度/执行语义进入 Full。
 
+affected只承担开发反馈，不再从路径ownership直接执行`Delivery / Release` owner。普通源码变化因此不会隐式选择`candidate-tarball`、`application-payload-release`、package安装、Launcher或release smoke；只由Release owner持有的路径明确delegated给`product.candidate-release`。Candidate profile、Release group与正式Release仍消费相同registry owner，覆盖不下降。`npm run test:audit:verification -- --base <base> --head <head>`可复核direct owner、dependency、Full reason、step count、目标工作量和数学下限；近期样本与27个慢owner map见[Product 日常验证证据与选择审计](verification-evidence-audit.md)。
+
 任一 unknown path 或 direct production owner gap 都会在 admission 和业务 verifier 启动前返回 `status=blocked`、`verification-owner-gap`、完整 gap 列表与补 owner 的 next action。完整 Candidate 不再作为 unknown ownership 的替代证明。
 
 Changed Full、Core 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 core 为 52 step、目标工作量 976 秒、全局容量理论下限 244 秒，以 300 秒作为标准无竞争优化目标、360 秒作为诚实执行预算；完整 Candidate 保持 66 step、目标工作量 1,338 秒、理论下限 334.5 秒和 600 秒执行预算。原 180 秒目标低于当前数学下限，已经退役，不能再作为现有 Core 的可达声明。

@@ -5,12 +5,15 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
+  auditDailyCoreReleaseEvidence,
   auditProductionOwnerCoverage,
   auditVerificationInputCoverage,
   admitVerificationPlanBudget,
   createVerificationAdmissionPlan,
+  createVerificationEvidenceMap,
   createVerificationPreflightPlan,
   createVerificationPlan,
+  createVerificationSelectionAudit,
   estimateVerificationPlan,
   globToRegExp,
   matchesInput,
@@ -62,12 +65,63 @@ test('统一 registry 固化 fast、core 与 Candidate required gates', () => {
   assert.ok(coreIds.every((id) => candidateIds.includes(id)));
 });
 
-test('Full plan 联合 Candidate 与 changed owner 并按 step identity 去重', () => {
+test('日常Core慢owner形成闭合primary evidence map', () => {
+  const evidence = createVerificationEvidenceMap();
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.findings.length, 0);
+  assert.ok(evidence.entries.length > 20);
+  for (const entry of evidence.entries) {
+    assert.equal(entry.evidenceRole, 'primary');
+    assert.equal(entry.primaryEvidenceOwner, entry.id);
+    assert.ok(entry.publicOutcome.length > 20, entry.id);
+    assert.ok(entry.counterexample.length > 20, entry.id);
+    assert.ok(entry.retainedBoundary.length > 10, entry.id);
+    assert.equal(entry.decision, 'retain-primary');
+  }
+
+  const owner = verificationSteps.find((step) => step.id === 'system-task-finish');
+  const invalid = { ...owner, testing: { ...owner.testing, evidence: { ...owner.testing.evidence, counterexample: '' } } };
+  const validation = validateVerificationRegistry([invalid]);
+  assert.ok(validation.findings.some((finding) => finding.step === owner.id && finding.code === 'slow_evidence_counterexample_missing'));
+});
+
+test('Release-only evidence不属于日常Core并与Candidate core shard命名分离', () => {
+  const audit = auditDailyCoreReleaseEvidence();
+  assert.equal(audit.ok, true);
+  assert.equal(audit.dailyProfile, 'core');
+  assert.equal(audit.candidateShardPrefixIsDailyProfile, false);
+  assert.ok(audit.releaseOnlyStepIds.includes('candidate-tarball'));
+  assert.ok(audit.releaseOnlyStepIds.includes('release-tarball-smoke'));
+
+  const candidateTarball = verificationSteps.find((step) => step.id === 'candidate-tarball');
+  const invalid = { ...candidateTarball, profiles: [...candidateTarball.profiles, 'core'] };
+  assert.ok(auditDailyCoreReleaseEvidence([invalid]).findings.some((finding) => finding.code === 'release_only_step_in_daily_core'));
+});
+
+test('selection audit分离直接owner、依赖扩张与Full reason', () => {
+  const affected = createVerificationPlan({ paths: ['docs/buildr-product.md'] });
+  const affectedAudit = createVerificationSelectionAudit(affected);
+  assert.deepEqual(affectedAudit.counts, {
+    directOwners: 1, directHeavyOwners: 0, dependencies: 0, selectedSteps: 1, selectedHeavySteps: 0,
+  });
+  assert.equal(affectedAudit.selectionAmplification, 1);
+
+  const full = createVerificationPlan({ paths: ['test/verification/registry.mjs'] });
+  const fullAudit = createVerificationSelectionAudit(full);
+  assert.equal(fullAudit.scope.mode, 'full');
+  assert.ok(fullAudit.scope.reasons.some((reason) => reason.code === 'execution-graph-change'));
+  assert.ok(fullAudit.counts.directOwners > 0);
+  assert.ok(fullAudit.selectionAmplification > 1);
+  assert.equal(fullAudit.selectedStepIds.length, createVerificationPlan({ profiles: ['core'] }).steps.length);
+});
+
+test('Candidate profile与changed development owner正交并按step identity去重', () => {
   const plan = createVerificationPlan({ profiles: ['candidate'], paths: ['test/integration-candidate-release/release.test.mjs', 'test/system/public-json-contracts.test.mjs'] });
   const selected = ids(plan);
   assert.equal(new Set(selected).size, selected.length);
   assert.equal(selected.filter((id) => id === 'system-verification-contracts').length, 1);
-  assert.equal(selected.filter((id) => id === 'integration-candidate-release').length, 1);
+  assert.equal(selected.filter((id) => id === 'integration-candidate-release').length, 0);
+  assert.equal(ids(createVerificationPlan({ groups: ['release'] })).filter((id) => id === 'integration-candidate-release').length, 1);
 });
 
 test('Project Testing 分类完整且 Quick 只包含低成本非 System step', () => {
@@ -130,17 +184,19 @@ test('migration变更选择读取全局migration集合的契约owner', () => {
   assert.ok(ids(plan).includes('contract'));
 });
 
-test('受治理 repo-root publish workflow 精确进入 release owners，其他 root workflow 仍 fail closed', () => {
+test('受治理 publish workflow的开发反馈与Candidate Release evidence保持正交', () => {
   const workflow = '.github/workflows/publish.yml';
   const plan = createVerificationPlan({ paths: [workflow] });
-  assert.deepEqual(ids(plan), [
-    'contract', 'candidate-tarball', 'application-payload-release',
-    'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke',
-  ]);
+  assert.deepEqual(ids(plan), ['contract']);
   const audit = auditVerificationInputCoverage([workflow]);
   assert.deepEqual(audit.mapped, [{
     path: workflow,
     owners: ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke'],
+  }]);
+  const releaseFixture = createVerificationPlan({ paths: ['test/integration-candidate-release/release.test.mjs'] });
+  assert.deepEqual(ids(releaseFixture), []);
+  assert.deepEqual(releaseFixture.delegated, [{
+    path: 'test/integration-candidate-release/release.test.mjs', owners: ['product.candidate-release'],
   }]);
   assert.throws(() => createVerificationPlan({ paths: ['.github/workflows/unowned.yml'] }), /Ungoverned repository path/);
 });
@@ -275,27 +331,27 @@ test('代表源码路径只选择真实 Changed owner 并排除无关重型 owne
     },
     {
       path: 'src/infrastructure/product-layout.mjs',
-      required: ['system-workspace-lifecycle', 'cli-package-parity', 'release-tarball-smoke'],
+      required: ['system-workspace-lifecycle'],
       excluded: ['contract', 'cli-architecture', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
       path: 'src/bootstrap/cli/help.mjs',
-      required: ['cli-architecture', 'commands-cli-integration', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
+      required: ['cli-architecture', 'commands-cli-integration', 'cli-compatibility'],
       excluded: ['contract', 'managed-mutations', 'capability-cli-integration', 'managed-data-integrity'],
     },
     {
       path: 'src/workspace/interfaces/cli/workspace.mjs',
-      required: ['managed-mutations', 'commands-cli-integration', 'package-workspace', 'workspace-lifecycle', 'init-onboarding', 'cli-compatibility', 'cli-package-parity', 'service-branch-contract', 'managed-data-integrity'],
+      required: ['managed-mutations', 'commands-cli-integration', 'workspace-lifecycle', 'init-onboarding', 'cli-compatibility', 'service-branch-contract', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'capability-cli-integration'],
     },
     {
       path: 'src/agent-assets/application/package-maintenance/builtin-replacement.mjs',
-      required: ['unit', 'managed-mutations', 'package-static', 'ownership-recovery', 'release-tarball-smoke', 'managed-data-integrity'],
+      required: ['unit', 'managed-mutations', 'ownership-recovery', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'capability-cli-integration', 'cli-compatibility', 'cli-package-parity'],
     },
     {
       path: 'src/agent-assets/infrastructure/runtime/skills/publication.mjs',
-      required: ['runtime-adapter-contract', 'managed-mutations', 'capability-cli-integration', 'package-skills', 'package-runtime', 'runtime-adapter-parity', 'runtime-reconciliation', 'managed-data-integrity'],
+      required: ['runtime-adapter-contract', 'managed-mutations', 'capability-cli-integration', 'runtime-adapter-parity', 'runtime-reconciliation', 'managed-data-integrity'],
       excluded: ['contract', 'cli-architecture', 'cli-compatibility', 'cli-package-parity', 'release-tarball-smoke'],
     },
   ];
@@ -372,7 +428,7 @@ test('Buildr Web Changed 路由只选择内部 owner，Browser 由独立 capabil
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/main.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['services/buildr-web/src/pages/WorkspacesPage.tsx'] })), ['unit']);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/web/infrastructure/instance-runtime.mjs'] })), [
-    'unit', 'integration-runtime', 'system-app-process', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
+    'unit', 'integration-runtime', 'system-app-process', 'cli-architecture',
   ]);
   const browserTest = createVerificationPlan({ paths: ['test/browser-smoke/buildr-web-browser.test.mjs'] });
   assert.deepEqual(ids(browserTest), []);
@@ -396,32 +452,34 @@ test('OpenSpec 路径只选择真实 owner', () => {
 
 test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/task/application/finish/task-finish-application.mjs'] })), [
-    'unit', 'integration-task-finish', 'system-task-finish', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
+    'unit', 'integration-task-finish', 'system-task-finish', 'cli-architecture',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-run.test.mjs'] })), [
     'integration-task-finish',
   ]);
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['src/task/persistence/task-finish-repository.mjs'] })), [
+    'unit', 'integration-task-finish', 'cli-architecture',
+  ], 'Finish SQLite repository由直接Integration owner主证，不扩张到通用Task System或Release artifact');
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/system/task-finish-cli.test.mjs'] })), [
     'system-task-finish-cli',
   ]);
   const skillPlan = ids(createVerificationPlan({ paths: ['resources/workspace/skills/buildr/task-finish/SKILL.md'] }));
   assert.deepEqual(skillPlan, [
-    'contract', 'cli-architecture', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration',
-    'package-static', 'package-skills', 'runtime-skill-projection', 'docs-quality',
+    'contract', 'cli-architecture', 'capability-cli-integration', 'runtime-skill-projection', 'docs-quality',
   ]);
   assert.equal(skillPlan.includes('runtime-adapter-parity'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['resources/workspace/skills/contracts/buildr/task-finish/v1.md'] })), [
-    'contract', 'cli-architecture', 'candidate-tarball', 'application-payload-release', 'capability-cli-integration', 'package-static', 'package-skills', 'docs-quality',
+    'contract', 'cli-architecture', 'capability-cli-integration', 'docs-quality',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['docs/cli-reference.md'] })), [
-    'candidate-tarball', 'open-source-candidate', 'cli-compatibility', 'docs-quality',
+    'cli-compatibility', 'docs-quality',
   ]);
 });
 
 test('Task Development lifecycle 路径使用独立重型 Integration owner', () => {
   const sourcePlan = ids(createVerificationPlan({ paths: ['src/task/application/task-development-application.mjs'] }));
   assert.deepEqual(sourcePlan, [
-    'unit', 'integration-task-development', 'system-task-lifecycle', 'cli-architecture', 'candidate-tarball', 'application-payload-release',
+    'unit', 'integration-task-development', 'system-task-lifecycle', 'cli-architecture',
   ]);
   assert.equal(sourcePlan.includes('integration'), false);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-development-application.test.mjs'] })), [
@@ -447,8 +505,8 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
   ] });
   assert.deepEqual(ids(plan), [
     'unit', 'integration-task-finish', 'integration-task-finish-delivery', 'contract', 'system-task-finish',
-    'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'candidate-tarball', 'application-payload-release', 'open-source-candidate', 'openspec-candidate-audit',
-    'capability-cli-integration', 'package-static', 'package-skills',
+    'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'openspec-candidate-audit',
+    'capability-cli-integration',
     'runtime-skill-projection', 'cli-compatibility', 'docs-quality',
   ]);
 });
@@ -546,7 +604,7 @@ test('blocked plan cannot construct or start an executor', async () => {
 test('changed path scope matrix closes affected, full, delegated and ignored outcomes', () => {
   const affected = createVerificationPlan({ paths: ['src/domain/task-record/task-record.mjs'] });
   assert.equal(affected.scope.mode, 'affected');
-  assert.deepEqual(affected.scope.reasons, [{ code: 'affected-owner', path: 'src/domain/task-record/task-record.mjs', owners: ['unit', 'candidate-tarball', 'application-payload-release'] }]);
+  assert.deepEqual(affected.scope.reasons, [{ code: 'affected-owner', path: 'src/domain/task-record/task-record.mjs', owners: ['unit'] }]);
   assert.equal(ids(affected).includes('system-buildr-web-http'), false);
 
   const full = createVerificationPlan({ paths: ['test/verification/registry.mjs'] });

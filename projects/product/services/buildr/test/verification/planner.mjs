@@ -19,6 +19,7 @@ import {
   VERIFICATION_RESOURCE_DEMANDS,
   VERIFICATION_RESET_BURDENS,
   VERIFICATION_RESET_STRATEGIES,
+  VERIFICATION_SLOW_EVIDENCE_THRESHOLD_MS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
@@ -46,6 +47,125 @@ const PRODUCTION_OWNER_BOUNDARIES = new Set(['Static', 'Integration', 'System'])
 
 const CANDIDATE_CI_RUNNERS = Object.freeze(['macos', 'windows']);
 const CANDIDATE_CI_PHASES = Object.freeze(['preflight', 'artifact', 'verification']);
+
+export function createVerificationEvidenceMap(steps = verificationSteps, options = {}) {
+  const thresholdMs = options.thresholdMs ?? VERIFICATION_SLOW_EVIDENCE_THRESHOLD_MS;
+  const byId = new Map(steps.map((item) => [item.id, item]));
+  const slowOwners = steps.filter((item) => (
+    item.profiles.includes('core')
+    && ['Integration', 'System'].includes(item.testing?.executionBoundary)
+    && item.testing.targetDurationMs >= thresholdMs
+  ));
+  const includedIds = new Set(slowOwners.map((item) => item.id));
+  for (const item of slowOwners) includedIds.add(item.testing.primaryEvidenceOwner);
+  const entries = [...includedIds].map((id) => {
+    const item = byId.get(id);
+    if (!item) return Object.freeze({ id, missing: true });
+    const primaryEvidenceOwner = item.testing?.primaryEvidenceOwner;
+    const evidence = item.testing?.evidence;
+    return Object.freeze({
+      id,
+      executionBoundary: item.testing?.executionBoundary ?? null,
+      targetDurationMs: item.testing?.targetDurationMs ?? null,
+      publicOutcome: evidence?.publicOutcome ?? null,
+      counterexample: evidence?.counterexample ?? null,
+      retainedBoundary: evidence?.retainedBoundary ?? null,
+      decision: evidence?.decision ?? null,
+      primaryEvidenceOwner,
+      evidenceRole: id === primaryEvidenceOwner ? 'primary' : 'supporting',
+    });
+  });
+  const findings = [];
+  const entryById = new Map(entries.map((item) => [item.id, item]));
+  for (const owner of slowOwners) {
+    const entry = entryById.get(owner.id);
+    if (!entry || entry.missing) findings.push({ step: owner.id, code: 'slow_evidence_owner_missing' });
+    else {
+      for (const field of ['publicOutcome', 'counterexample', 'retainedBoundary', 'decision']) {
+        if (typeof entry[field] !== 'string' || entry[field].trim().length === 0) findings.push({ step: owner.id, code: `slow_evidence_${field}_missing` });
+      }
+    }
+    const primary = entryById.get(owner.testing.primaryEvidenceOwner);
+    if (!primary || primary.missing) findings.push({ step: owner.id, code: 'slow_evidence_primary_owner_missing', value: owner.testing.primaryEvidenceOwner });
+    else if (primary.evidenceRole !== 'primary') findings.push({ step: owner.id, code: 'slow_evidence_primary_owner_not_primary', value: owner.testing.primaryEvidenceOwner });
+  }
+  const primaryClaims = new Map();
+  for (const entry of entries.filter((item) => !item.missing && item.evidenceRole === 'primary')) {
+    primaryClaims.set(entry.primaryEvidenceOwner, [...(primaryClaims.get(entry.primaryEvidenceOwner) ?? []), entry.id]);
+  }
+  for (const owner of new Set(entries.filter((item) => !item.missing).map((item) => item.primaryEvidenceOwner))) {
+    const claims = primaryClaims.get(owner) ?? [];
+    if (claims.length !== 1) findings.push({ step: owner, code: 'slow_evidence_primary_claim_count', value: claims.length });
+  }
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-primary-evidence-map/v1',
+    thresholdMs,
+    ok: findings.length === 0,
+    entries: Object.freeze(entries),
+    findings: Object.freeze(findings),
+  });
+}
+
+export function auditDailyCoreReleaseEvidence(steps = verificationSteps) {
+  const releaseOnly = steps.filter((item) => item.testing?.primaryIntent === 'Delivery / Release');
+  const findings = [];
+  for (const item of releaseOnly) {
+    if (item.profiles.includes('core')) findings.push({ step: item.id, code: 'release_only_step_in_daily_core' });
+    if (item.profiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, item.id)) {
+      findings.push({ step: item.id, code: 'release_only_candidate_exclusion_missing' });
+    }
+  }
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-release-evidence-audit/v1',
+    ok: findings.length === 0,
+    dailyProfile: 'core',
+    candidateShardPrefixIsDailyProfile: false,
+    releaseOnlyStepIds: Object.freeze(releaseOnly.map((item) => item.id)),
+    findings: Object.freeze(findings),
+  });
+}
+
+export function createVerificationSelectionAudit(plan) {
+  const scopeMappings = (plan.scope?.reasons ?? []).filter((item) => item.code === 'affected-owner');
+  const directMappings = scopeMappings.length > 0 ? scopeMappings : (plan.paths ?? []).flatMap((productPath) => {
+    const owners = (plan.steps ?? [])
+      .filter((item) => (item.reasons ?? []).some((reason) => reason.startsWith(`${productPath} matches `) && !reason.includes('full-scope owner')))
+      .map((item) => item.id);
+    return owners.length === 0 ? [] : [Object.freeze({ code: 'direct-owner', path: productPath, owners: Object.freeze(owners) })];
+  });
+  const directOwnerIds = [...new Set(directMappings.flatMap((item) => item.owners ?? []))];
+  const selectedStepIds = (plan.steps ?? []).map((item) => item.id);
+  const dependencyStepIds = (plan.steps ?? [])
+    .filter((item) => !directOwnerIds.includes(item.id) && (item.reasons ?? []).some((reason) => reason.startsWith('dependency of ')))
+    .map((item) => item.id);
+  const heavySelectedStepIds = (plan.steps ?? [])
+    .filter((item) => ['Integration', 'System'].includes(item.testing?.executionBoundary))
+    .map((item) => item.id);
+  const directHeavyOwnerIds = directOwnerIds.filter((id) => {
+    const boundary = plan.steps?.find((item) => item.id === id)?.testing?.executionBoundary;
+    return ['Integration', 'System'].includes(boundary);
+  });
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-selection-audit/v1',
+    status: plan.status,
+    scope: plan.scope,
+    changedPathCount: plan.paths?.length ?? 0,
+    directMappings: Object.freeze(directMappings),
+    directOwnerIds: Object.freeze(directOwnerIds),
+    dependencyStepIds: Object.freeze(dependencyStepIds),
+    selectedStepIds: Object.freeze(selectedStepIds),
+    heavySelectedStepIds: Object.freeze(heavySelectedStepIds),
+    counts: Object.freeze({
+      directOwners: directOwnerIds.length,
+      directHeavyOwners: directHeavyOwnerIds.length,
+      dependencies: dependencyStepIds.length,
+      selectedSteps: selectedStepIds.length,
+      selectedHeavySteps: heavySelectedStepIds.length,
+    }),
+    selectionAmplification: directOwnerIds.length === 0 ? null : selectedStepIds.length / directOwnerIds.length,
+    heavySelectionAmplification: directHeavyOwnerIds.length === 0 ? null : heavySelectedStepIds.length / directHeavyOwnerIds.length,
+  });
+}
 
 export function validateCandidateCiCoverage(
   steps = verificationSteps,
@@ -143,12 +263,17 @@ export function matchesInput(productPath, pattern) {
   return globToRegExp(pattern).test(normalizeProductPath(productPath));
 }
 
-function matchedStepInput(step, productPath) {
+function ownedStepInput(step, productPath) {
   if (step.selection === 'explicit-only') return null;
   const matched = step.inputs.find((pattern) => matchesInput(productPath, pattern));
   if (!matched) return null;
   if ((step.inputExclusions ?? []).some((pattern) => matchesInput(productPath, pattern))) return null;
   return matched;
+}
+
+function matchedStepInput(step, productPath) {
+  if (step.testing?.primaryIntent === 'Delivery / Release') return null;
+  return ownedStepInput(step, productPath);
 }
 
 export function validateVerificationRegistry(steps = verificationSteps) {
@@ -356,6 +481,8 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     visited.add(id);
   };
   for (const item of steps) visit(item.id);
+  findings.push(...createVerificationEvidenceMap(steps).findings);
+  findings.push(...auditDailyCoreReleaseEvidence(steps).findings);
   if (steps === verificationSteps) findings.push(...validateCandidateCiCoverage(steps).findings);
   return { ok: findings.length === 0, findings };
 }
@@ -385,7 +512,7 @@ export function auditVerificationInputCoverage(paths, steps = verificationSteps)
   const unmapped = [];
   for (const rawPath of paths) {
     const productPath = normalizeProductPath(rawPath);
-    const owners = steps.filter((item) => matchedStepInput(item, productPath)).map((item) => item.id);
+    const owners = steps.filter((item) => ownedStepInput(item, productPath)).map((item) => item.id);
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
@@ -591,10 +718,14 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const ignoredPaths = [];
   for (const productPath of paths) {
     const matched = steps.filter((item) => matchedStepInput(item, productPath));
+    const releaseOwners = steps
+      .filter((item) => item.testing?.primaryIntent === 'Delivery / Release' && ownedStepInput(item, productPath))
+      .map((item) => item.id);
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
     if (matched.length > 0) mappedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(matched.map((item) => item.id)) }));
+    else if (releaseOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(['product.candidate-release']) }));
     else if (delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
     else if (VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) ignoredPaths.push(productPath);
     else unmatchedPaths.push(productPath);

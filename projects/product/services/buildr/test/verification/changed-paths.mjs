@@ -113,8 +113,12 @@ export function collectChangedProductPaths(options) {
   const productPrefix = git(productRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const projectPrefix = git(projectRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const base = resolveVerificationBase(gitRoot, options.base);
+  const head = options.head ?? 'HEAD';
+  git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]);
   const pathspecs = [projectPrefix || '.', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
-  const commands = [
+  const commands = options.head ? [
+    ['diff', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
+  ] : [
     ['diff', '--name-only', '-z', `${base}...HEAD`, '--', ...pathspecs],
     ['diff', '--cached', '--name-only', '-z', '--', ...pathspecs],
     ['diff', '--name-only', '-z', '--', ...pathspecs],
@@ -142,7 +146,7 @@ export function collectChangedProductPaths(options) {
     try {
       const workspacePath = productPrefix ? `${productPrefix}/${productPath}` : productPath;
       const baseText = git(gitRoot, ['show', `${base}:${workspacePath}`]);
-      const currentText = fs.readFileSync(path.join(productRoot, productPath), 'utf8');
+      const currentText = options.head ? git(gitRoot, ['show', `${head}:${workspacePath}`]) : fs.readFileSync(path.join(productRoot, productPath), 'utf8');
       if (isVersionOnlyPackageMetadataChange(productPath, baseText, currentText)) {
         versionOnlyPackagePaths.push(productPath);
         selectionOnlyPaths.push(productPath);
@@ -157,12 +161,12 @@ export function collectChangedProductPaths(options) {
     try {
       const workspacePath = productPrefix ? `${productPrefix}/verification.yml` : 'verification.yml';
       const baseText = git(gitRoot, ['show', `${base}:${workspacePath}`]);
-      const currentText = fs.readFileSync(path.join(productRoot, 'verification.yml'), 'utf8');
+      const currentText = options.head ? git(gitRoot, ['show', `${head}:${workspacePath}`]) : fs.readFileSync(path.join(productRoot, 'verification.yml'), 'utf8');
       if (isVerificationDeclarationMetadataOnlyChange(baseText, currentText)) {
         selectionOnlyPaths.push('verification.yml');
         selectionReasons.push({ path: 'verification.yml', code: 'verification-presentation-metadata-change' });
       }
     } catch {}
   }
-  return { base, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+  return { base, head, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
 }

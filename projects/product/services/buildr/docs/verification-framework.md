@@ -359,6 +359,8 @@ Application Context不是Component的同义词。复用worker Application state�
 
 affected解决任务相关性，Context解决已选测试的重复环境成本，Host grant解决安全并行。三者互补。
 
+changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是日常`core` profile。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
+
 ## 14. Evidence
 
 step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty/evict、destroy和wall-clock。阶段同时提供`createDurationMs`、`acquireDurationMs`、`releaseDurationMs`、`waitDurationMs`、`resetDurationMs`与`destroyDurationMs`，使“测试体慢”与“环境组装/争用/恢复慢”可以分开判断。
@@ -415,6 +417,8 @@ Task Development owner的历史基线约为71.9秒；第一阶段只做seed与�
 affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释放；Core的`system-task-finish`等待29.529秒后取得同一slots，执行后也完整释放。Core相对无竞争中位数增加17.544秒（约6.6%），但没有并发写入、脏Context、遗留进程或失效缓存。该样本证明跨plan资源协调会把竞争记录为resource wait，而不是把等待混入Context创建收益；同时也说明CPU、磁盘与生命周期容量竞争仍会放大墙钟。
 
 最终结论必须保持预算诚实：180秒低于当前244秒数学下限，不能作为现有52-step Core的可达目标；Parent最终验收采用300秒标准无竞争优化目标和360秒诚实执行预算。本Change已把稳定Core从阶段约5分20秒收敛到约4分28秒，并建立可继续注册和复用Context的技术框架；若要进一步下降，必须减少Core目标工作量、消除剩余primary evidence重复，或优化完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance等真实测试体。affected仍负责避免无关测试，但不是唯一性能手段；Candidate与Release证据不能为追求Core数字而下放或删除。
+
+后续跨层证据审计以27个target duration至少15秒的日常Core Integration/System owner建立了registry派生map。近期普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。Core仍为52 steps、976秒工作量与244秒下限，说明剩余成本主要在真实Finish、Workspace、Worktree、进程和其他生命周期body/cleanup，而不是Node Unit/Component框架本身。详见[审计报告](../../../docs/verification-evidence-audit.md)。
 
 ## 18. 当前能力与下一边界
 

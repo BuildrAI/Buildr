@@ -183,6 +183,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/verification/infrastructure/resource-coordinator.mjs",
       "src/verification/application/verification-application.mjs",
       "test/verification/affected.mjs",
+      "test/verification/audit.mjs",
       "test/verification/changed.mjs",
       "test/verification/changed-paths.mjs",
       "test/verification/dag-scheduler.mjs",
@@ -384,7 +385,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/application/finish/task-finish-result-projection.mjs",
       "src/task/application/finish/task-finish-self-bootstrap-projection.mjs",
       "src/task/application/finish/task-finish-run.mjs",
-      "src/task/application/finish/task-finish-maintenance.mjs"
+      "src/task/application/finish/task-finish-maintenance.mjs",
+      "src/task/persistence/task-finish-repository.mjs"
     ],
     "inputExclusions": []
   },
@@ -612,7 +614,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/helpers/task-lifecycle-system-context.mjs",
       "test/verification/system-file-timing-reporter.mjs"
     ],
-    "inputExclusions": []
+    "inputExclusions": [
+      "src/task/persistence/task-finish-repository.mjs"
+    ]
   },
   "system-worktree-lifecycle": {
     "inputs": [

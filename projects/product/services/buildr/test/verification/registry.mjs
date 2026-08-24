@@ -36,6 +36,14 @@ const testing = (ownerScope, primaryIntent, executionBoundary, targetDurationMs,
   ...(primaryEvidenceOwner ? { primaryEvidenceOwner } : {}),
 });
 
+export const VERIFICATION_SLOW_EVIDENCE_THRESHOLD_MS = 15_000;
+
+const primaryEvidence = (counterexample, retainedBoundary, decision = 'retain-primary') => Object.freeze({
+  counterexample,
+  retainedBoundary,
+  decision,
+});
+
 export const VERIFICATION_STEP_TESTING = Object.freeze({
   typecheck: testing(SERVICE_OWNER, 'Static Conformance', 'Static', 5000, 'Buildr TypeScript production sources satisfy the strict no-emit execution contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
@@ -112,6 +120,117 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'docs-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product documentation links and required content remain valid.', TEST_ENVIRONMENTS.sourceReadOnly),
 });
 
+export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
+  'integration-task-environment': primaryEvidence(
+    'A preparation plan with a stale controller, invalid repository handoff, or leaked diagnostic must be rejected.',
+    'real filesystem, Git repository, and CLI handoff',
+  ),
+  'integration-self-bootstrap': primaryEvidence(
+    'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
+    'real retained checkout, Git identity, and runtime synchronization',
+  ),
+  'integration-task-execution-records': primaryEvidence(
+    'A truncated body, mismatched metadata identity, failed recovery, or retention leak must be observable.',
+    'real SQLite and filesystem-backed execution record persistence',
+  ),
+  'integration-task-development': primaryEvidence(
+    'A stale planning, Candidate, Review, Verification, or repository identity must block the lifecycle transition.',
+    'real CLI, filesystem, Git, and SQLite-backed Task Development lifecycle',
+  ),
+  'integration-task-finish': primaryEvidence(
+    'A bootstrap, readiness, run, diagnostics, or SQLite mismatch must stop Task Finish before unsafe effects.',
+    'real Task Finish CLI and SQLite boundary',
+  ),
+  'integration-task-finish-delivery': primaryEvidence(
+    'A remote delivery mismatch, retained activation drift, occupied carrier, or cleanup ownership gap must fail closed.',
+    'real Git remote, retained activation, contribution, and cleanup boundaries',
+  ),
+  'system-verification-contracts': primaryEvidence(
+    'A public verification run that violates scheduling, timing, resource, or Workspace result contracts must fail.',
+    'public verification and Workspace entrypoints',
+  ),
+  'system-public-json-contracts': primaryEvidence(
+    'A CLI command emitting an open, unversioned, or unstable JSON result must fail the public contract.',
+    'real CLI process and serialized public JSON',
+  ),
+  'system-workspace-lifecycle': primaryEvidence(
+    'A Project, Service, catalog, or package capability journey that loses persisted state must fail.',
+    'real Workspace, Project, Service, Git, and package capability journeys',
+  ),
+  'system-task-lifecycle': primaryEvidence(
+    'A public Task Record, Change, Development, Review, or Verification journey with stale state must fail.',
+    'real public Task lifecycle across CLI, Git, Workspace, and SQLite',
+  ),
+  'system-worktree-lifecycle': primaryEvidence(
+    'A real worktree create or cleanup that targets the wrong ref, repository, or ownership must fail.',
+    'real Git worktree and Task Environment lifecycle',
+  ),
+  'system-runtime-recovery': primaryEvidence(
+    'A runtime install or recovery with mismatched target authority or incomplete projection must fail.',
+    'real runtime installation, filesystem projection, and recovery process',
+  ),
+  'system-buildr-web-http': primaryEvidence(
+    'A real Buildr Web HTTP session that leaks state, misprojects an error, or survives cleanup must fail.',
+    'real loopback HTTP server, session, and cleanup lifecycle',
+  ),
+  'system-app-process': primaryEvidence(
+    'A Buildr Web or preview process that crosses channel/profile boundaries or survives owned cleanup must fail.',
+    'real child process, port, profile, and process cleanup',
+  ),
+  'system-task-finish': primaryEvidence(
+    'A complete Product delivery journey with mismatched source, remote result, activation, or cleanup must fail.',
+    'complete real Task Finish product delivery journey',
+  ),
+  'system-task-finish-cli': primaryEvidence(
+    'The public Task Finish CLI must reject stale readiness and project the exact terminal result.',
+    'real public Task Finish CLI process',
+  ),
+  'concurrent-task-acceptance': primaryEvidence(
+    'Two concurrent Task workflows that leak state, violate isolation, or corrupt a shared authority must fail.',
+    'real concurrent Workspace, Git, SQLite, and process lifecycle',
+  ),
+  'capability-cli-integration': primaryEvidence(
+    'A capability CLI mutation with inconsistent package/runtime projection or public result must fail.',
+    'real capability CLI and managed asset boundary',
+  ),
+  'commands-cli-integration': primaryEvidence(
+    'A Commands CLI operation that writes outside managed Workspace assets or returns stale state must fail.',
+    'real Commands CLI and managed Workspace filesystem',
+  ),
+  'openspec-contract-fixtures': primaryEvidence(
+    'An isolated OpenSpec fixture with an invalid application contract or Git state must fail.',
+    'real isolated fixture repository, Git, and OpenSpec process',
+  ),
+  'openspec-convergence-recovery': primaryEvidence(
+    'An interrupted or drifting convergence transaction must recover or fail without corrupting canonical specs.',
+    'complete real OpenSpec convergence and recovery lifecycle',
+  ),
+  'runtime-adapter-parity': primaryEvidence(
+    'Two supported runtime adapter families that project different behavior or inventories must fail parity.',
+    'real supported runtime adapter processes and filesystem projections',
+  ),
+  'workspace-lifecycle': primaryEvidence(
+    'The public init-to-doctor journey must fail when Project, Service, Rule, Command, Skill, sync, or Doctor state is missing.',
+    'single complete public Workspace init, registration, sync, and Doctor journey',
+  ),
+  'ownership-recovery': primaryEvidence(
+    'A Workspace ownership conflict that overwrites or loses existing user state must fail recovery.',
+    'real conflicting Workspace ownership and recovery mutation',
+  ),
+  'runtime-reconciliation': primaryEvidence(
+    'Runtime projections that cannot reconcile to one declared adapter identity must fail.',
+    'real Workspace runtime projections across supported adapters',
+  ),
+  'cli-compatibility': primaryEvidence(
+    'A documented CLI command whose arguments, exit status, or observable result becomes incompatible must fail.',
+    'real CLI process and documented command surface',
+  ),
+  'managed-data-integrity': primaryEvidence(
+    'A managed mutation that is non-atomic or damages a nested repository must fail integrity checks.',
+    'real filesystem mutation and nested Git repository preservation',
+  ),
+});
+
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS = Object.freeze({
   'candidate-tarball': 'Produces the unique release Candidate tarball.',
   'application-payload-release': 'Validates the packaged application payload and npm runtime.',
@@ -131,6 +250,7 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS = Object.freeze({
 
 const step = (definition) => {
   const classification = VERIFICATION_STEP_TESTING[definition.id];
+  const evidence = VERIFICATION_STEP_EVIDENCE[definition.id] ?? null;
   const contextDisposition = verificationContextDisposition(definition.id);
   const ownership = verificationStepOwnership(definition.id);
   const declaredProfiles = definition.profiles ?? [];
@@ -179,7 +299,11 @@ const step = (definition) => {
     preflight: definition.preflight ? Object.freeze({ ...definition.preflight, inputs: ownership.preflightInputs }) : null,
     timeoutMs,
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
-    testing: classification ? Object.freeze({ ...classification, primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id }) : null,
+    testing: classification ? Object.freeze({
+      ...classification,
+      primaryEvidenceOwner: classification.primaryEvidenceOwner ?? definition.id,
+      ...(evidence ? { evidence: Object.freeze({ ...evidence, publicOutcome: classification.proves }) } : {}),
+    }) : null,
     contextDisposition,
   });
 };

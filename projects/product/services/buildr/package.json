@@ -91,6 +91,7 @@
     "test:integration:candidate:release": "node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs",
     "coverage:unit": "node test/verification/unit-coverage.mjs",
     "test:changed": "node test/verification/changed.mjs",
+    "test:audit:verification": "node test/verification/audit.mjs",
     "test:focus": "node test/verification/focus.mjs",
     "test:host-node": "node test/verification/host-node.mjs",
     "test:core": "bash test/verification/verify-buildr-product-core",
