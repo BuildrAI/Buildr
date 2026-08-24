@@ -117,3 +117,38 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 - 完整Candidate/Release在保持66-step与唯一tarball下的当前墙钟；
 - Finish、Workspace、Worktree与进程owner内部哪些Git init/clone/fetch、Workspace init、冷启动、状态读取和cleanup可以在同一journey内消除；
 - 审计后剩余成本若均为必要primary evidence，继续优化的收益是否足以覆盖复杂度。
+
+## 8. 黄金执行路径优化结论
+
+第二个 Contribution 先选择当前最慢且最有重复准备嫌疑的 `system-task-finish` 做同 owner 实验，没有扩展到第二套 Context Runtime或其他 owner。
+
+### Prepared Fixture 反例
+
+基线三轮墙钟为77.44/75.34/75.79秒，中位75.79秒。将4条单仓journey的非主证据Git初始化替换为现有`GIT_REPOSITORY_CONTEXT_KEY`独立物化后，三轮为77.36/74.05/75.85秒，中位75.85秒。两者等价且候选中位慢0.06秒，因此正式实现已回退该复用；没有为了保留“优化”而增加Context依赖。
+
+该反例仍保留完整真实证据：实验期间每个case都有独立bare remote、checkout、worktree与SQLite，scratch和复杂多仓路径没有被替换。回退后全部journey继续独立执行。
+
+### prepare/body/wait/cleanup
+
+正式独立执行的一轮分段如下；`wait`表示harness级显式资源等待，真实Git/CLI子进程执行仍计入body。
+
+| journey | prepare | body | wait | cleanup | total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Doctor失败后reconcile | 1.589s | 6.085s | 0 | 0.032s | 7.706s |
+| code-only五阶段 | 1.638s | 5.145s | 0 | 0.028s | 6.811s |
+| stale run与rollover | 0.962s | 10.742s | 0 | 0.022s | 11.726s |
+| legacy mismatch恢复 | 0.911s | 6.719s | 0 | 0.025s | 7.655s |
+| Delivery Adaptation | 1.393s | 17.602s | 0 | 0.030s | 19.025s |
+| 多仓有贡献Service | 1.137s | 7.116s | 0 | 0.031s | 8.284s |
+| 多贡献部分交付恢复 | 1.329s | 13.595s | 0 | 0.047s | 14.972s |
+| 合计 | 8.959s | 67.004s | 0 | 0.215s | 76.179s |
+
+文件墙钟为76.640秒。主体占分段总量88.0%，prepare占11.8%，cleanup占0.3%；剩余主要成本是必须真实执行的Finish、Git remote/readback、SQLite checkpoint和恢复主证据，不是fixture初始化或cleanup。System reporter现在转发`buildr.golden-journey-timing/v1`，成功和失败run都能保留分段诊断。
+
+### 预算与数学下限
+
+`system-task-finish`的60秒target长期低于当前75–77秒独立中位区间，也低于三轮无外部竞争Core中的113.439/107.242/99.506秒，现按真实日常调度校准为120秒观察预算。三轮Core总墙钟为345.690/326.479/309.143秒，均为52 steps、lease等待不超过3ms并全部通过。Core total target work由976秒变为1036秒，容量4的数学下限由244秒变为259秒；Candidate仍为66 steps，total target work由1338秒变为1398秒，数学下限由334.5秒变为349.5秒。两者当前限制项仍是global capacity，资源容量和Candidate/tarball/Launcher/Release authority均未改变；这里诚实提高预算，不把没有稳定收益的实验当作降本。
+
+本轮正式结论是：继续把该owner的独立准备替换成Prepared Fixture收益不足。后续若要降低主体成本，必须先找到不承担Finish primary evidence的具体Git/SQLite操作反例；在此之前不扩建基础设施、不缓存结果、不提高并发。
+
+实现树affected因`verification/registry.mjs`与runner authority变化可解释地升级为53-step Full并全部通过，lease等待3ms，总墙钟335.066秒。并发执行时`system-task-finish`为111.643秒；prepare/body/cleanup合计约11.2/98.2/0.3秒，说明CPU、磁盘和Git主体竞争会显著放大journey，而cleanup仍不是瓶颈。这一轮不冒充干净Core，也不用于降低预算。

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -171,15 +172,55 @@ function taskDevelopmentFixture() {
 
 const isolatedJourneys = [];
 const processEnvironmentJourneys = [];
+const journeyTiming = new AsyncLocalStorage();
+
+function timedJourney(name, run) {
+  return async (t) => {
+    const timing = { name, startedAt: performance.now(), bodyStartedAt: null, bodyFinishedAt: null };
+    let result;
+    let failure;
+    try {
+      result = await journeyTiming.run(timing, () => run(t));
+    } catch (error) {
+      failure = error;
+    } finally {
+      timing.bodyFinishedAt = performance.now();
+    }
+    t.after(() => {
+      const finishedAt = performance.now();
+      const bodyStartedAt = timing.bodyStartedAt ?? timing.startedAt;
+      const bodyFinishedAt = timing.bodyFinishedAt ?? finishedAt;
+      process.stderr.write(`[buildr-golden-journey-timing] ${JSON.stringify({
+        schemaVersion: 'buildr.golden-journey-timing/v1',
+        owner: 'system-task-finish',
+        journey: name,
+        prepareDurationMs: Math.round(bodyStartedAt - timing.startedAt),
+        bodyDurationMs: Math.round(bodyFinishedAt - bodyStartedAt),
+        waitDurationMs: 0,
+        cleanupDurationMs: Math.round(finishedAt - bodyFinishedAt),
+        totalDurationMs: Math.round(finishedAt - timing.startedAt),
+      })}\n`);
+    });
+    if (failure) throw failure;
+    return result;
+  };
+}
+
+function startJourneyBody() {
+  const timing = journeyTiming.getStore();
+  assert.ok(timing, 'golden journey timing context is required');
+  assert.equal(timing.bodyStartedAt, null, 'golden journey body can only start once');
+  timing.bodyStartedAt = performance.now();
+}
 
 function isolatedJourney(name, run) {
   assert.doesNotMatch(Function.prototype.toString.call(run), /process\.env/, `${name} mutates process.env and must use processEnvironmentJourney`);
-  isolatedJourneys.push({ name, run });
+  isolatedJourneys.push({ name, run: timedJourney(name, run) });
 }
 
 function processEnvironmentJourney(name, run) {
   assert.match(Function.prototype.toString.call(run), /process\.env/, `${name} does not need the serialized process environment group`);
-  processEnvironmentJourneys.push({ name, run });
+  processEnvironmentJourneys.push({ name, run: timedJourney(name, run) });
 }
 
 isolatedJourney('无副作用陈旧run保持兼容；Contribution漂移旧carrier经显式rollover换代', async (t) => {
@@ -230,6 +271,7 @@ isolatedJourney('无副作用陈旧run保持兼容；Contribution漂移旧carrie
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
 
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation one', '--target', retained]);
   assert.equal(first.status, 'blocked');
@@ -429,6 +471,7 @@ isolatedJourney('旧 v2 无副作用 commit-message mismatch 可由同一首次�
   legacy.primaryFailure = mismatch;
   runtime.writeTaskFinishRunPersistence(retained, legacy);
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
 
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): different message', '--target', retained]),
@@ -596,6 +639,7 @@ processEnvironmentJourney('Doctor与内部登记失败不否定交付，reconcil
     },
   });
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const gateObservation = runtime.inspectTaskDevelopment(retained, task);
   const expectedHandoff = gateObservation.development.receipt.handoffs.at(-1);
   assert.equal(gateObservation.development.applicability.contentTarget, 'current');
@@ -757,6 +801,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
     },
   });
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const firstSubject = 'fix(task-finish): deliver adapted journey candidate';
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', firstSubject, '--target', retained]);
 
@@ -893,6 +938,7 @@ processEnvironmentJourney('真实 code-only 候选完成五阶段且不执行任
   /* The helper persists the SQLite current run; the executor owns subsequent checkpoints. */
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
   const observedOperations = [];
+  startJourneyBody();
   const result = await executeFinishRun({
     root: retained,
     run,
@@ -1037,6 +1083,7 @@ isolatedJourney('多仓库 Task 只交付有贡献 Service 并统一清理无贡
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const result = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver service contribution', '--target', retained]);
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
@@ -1173,6 +1220,7 @@ isolatedJourney('多贡献 repository 在第二个 target advance 后保存部�
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const commitMessage = 'fix(task-finish): deliver multiple repositories';
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', commitMessage, '--target', workspace.retained]);
 
