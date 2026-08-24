@@ -32,7 +32,7 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 - Application保存的resolved `buildr.task-environment-plan/v3`与`buildr.task-environment-receipt/v6`是Plan和机器状态authority；v3把Workspace path reference与executable authority分开，并把capability preparation closure与基础Task选择分开，v6保存closed runtime invocation与解析后的机器事实。旧Plan/Receipt只读；显式`prepare --plan`才升级。原始Plan Request不进入SQLite。Environment cleanup只清理Receipt已登记资源与provider-owned执行位置，不扫描或删除调用方临时输入。
 - `prepare` 同时承担首次准备和幂等恢复；只重跑输出缺失或 executable/input identity 漂移的 Step，没有单独 `restore`。
 - `inspect`只读重新观察已保存Plan的executable、inputs和outputs；它不执行Step、不创建或修复输出、不回写Receipt。
-- `cleanup`只在Task已明确abandon，或Buildr已持久化并能重新验证Delivery evidence时成立。Delivery可来自自动Finish或Agent直接交付后的reconciliation；Agent不提交claimed success，也不绕过ownership和Task Contribution等价检查。
+- `cleanup`只在Task已明确abandon、Buildr已持久化并能重新验证Delivery evidence，或current Task Record为`completed + noChange=true`且provider证明checkout干净、HEAD未偏离Environment evidence时成立。Delivery可来自自动Finish或Agent直接交付后的reconciliation；Agent不提交claimed success，也不绕过ownership和Task Contribution等价检查。
 
 ## 执行边界
 

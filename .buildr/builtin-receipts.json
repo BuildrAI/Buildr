@@ -149,11 +149,11 @@
       "type": "skill",
       "id": "task-environment",
       "target": "skills/buildr/task-environment",
-      "integrity": "sha256-ee662eea320d490374fe40fb699e30486f28f2335c7f858dfd97166008fe66ab",
+      "integrity": "sha256-39292b1246a01494f8aa157dede4e0dd20acabd87bf41226c742123f9f075672",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-4bb058a33ce02e61fce5ba044b96cc9203f870a58dec247985759c181b59d0b3"
+          "integrity": "sha256-5c04e24e5e935edd8917a4247cc522257467025d2ef9dcc8341dd87d7f1b923b"
         },
         {
           "path": "agents/openai.yaml",
