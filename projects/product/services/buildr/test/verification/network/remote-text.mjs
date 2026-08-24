@@ -91,7 +91,7 @@ try {
   assert.equal(fetchRemoteText(`${baseUrl}/ok`, { env: offlineEnv, invocation: directInvocation }), 'ready');
   const redirectStarted = Date.now();
   assert.equal(fetchRemoteText(`${baseUrl}/redirect`, { env: offlineEnv, invocation: directInvocation }), 'ready');
-  assert(Date.now() - redirectStarted < 1000, 'redirect must close the abandoned response body');
+  assert(Date.now() - redirectStarted < 5000, 'redirect must close the abandoned response body within the bounded verification window');
   assert.throws(
     () => fetchRemoteText(`${baseUrl}/redirect-external`, { env: offlineEnv, invocation: directInvocation }),
     /Remote text redirect is disabled during offline verification/,

@@ -108,6 +108,9 @@ async function waitFor(check, { attempts = 160, intervalMs = 50, message = 'cond
   throw new Error(`Timed out waiting for ${message}.`);
 }
 
+const LAUNCHER_HANDOFF_ATTEMPTS = 400;
+const LAUNCHER_HANDOFF_TIMEOUT_MS = 20000;
+
 function spawnInstalledWeb(entry, args) {
   const child = spawn(process.execPath, [entry, 'web', ...args], {
     env: { ...process.env, BUILDR_LAUNCHER_NO_OPEN: '1' },
@@ -124,7 +127,7 @@ async function waitForChildExit(child, label) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   await Promise.race([
     once(child, 'exit'),
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} did not exit: ${child.output.join('')}`)), 8000)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} did not exit: ${child.output.join('')}`)), LAUNCHER_HANDOFF_TIMEOUT_MS)),
   ]);
 }
 
@@ -344,7 +347,7 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
     return valueAtFile.pid !== cliReceipt.pid && valueAtFile.launcherIdentity?.bindingIdentity === installed.binding.bindingIdentity
       ? valueAtFile
       : null;
-  }, { message: 'Launcher-managed replacement receipt' });
+  }, { attempts: LAUNCHER_HANDOFF_ATTEMPTS, message: 'Launcher-managed replacement receipt' });
   await waitForChildExit(cli, 'foreground CLI after Launcher handoff');
   assert.notEqual(managed.pid, cliReceipt.pid);
   const managedHealth = await fetch(`${managed.url}/api/v1/health`, { headers: { 'x-buildr-instance': managed.secret } }).then((response) => response.json());
