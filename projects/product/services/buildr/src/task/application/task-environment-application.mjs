@@ -85,7 +85,11 @@ export function registerTaskEnvironmentApplication(runtime) {
   }
 
   function deliveredCleanupAuthorization(root, task) {
-    if (task.status !== 'completed' || task.result?.noChange !== false
+    if (task.status !== 'completed') return null;
+    if (task.result?.noChange === true) {
+      return { type: 'no-change', source: 'completed-no-change-task-record' };
+    }
+    if (task.result?.noChange !== false
       || typeof runtime.readTaskFinishCompletionPersistence !== 'function') return null;
     const completion = runtime.readTaskFinishCompletionPersistence(root, { taskId: task.taskId }, { optional: true });
     const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task.taskId }, { optional: true });
@@ -1315,7 +1319,8 @@ export function registerTaskEnvironmentApplication(runtime) {
       authorization ||= persistedAuthorization;
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
       const finish = authorization?.type === 'finish' && authorization.deliveries && typeof authorization.deliveries === 'object';
-      if (!abandon && !finish) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已持久化的交付证明或明确 abandon 终态。', 409, undefined, '先完成并对账交付，或明确 abandon Task。');
+      const noChange = persistedAuthorization?.type === 'no-change' && authorization === persistedAuthorization;
+      if (!abandon && !finish && !noChange) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已持久化的交付证明、completed no-change 终态或明确 abandon 终态。', 409, undefined, '先完成并对账交付、确认 Task 无代码变更，或明确 abandon Task。');
       cleanupAuthorized = true;
       assertEnvironmentManager(root, persistence.receipt);
       managerAuthorized = true;
@@ -1334,7 +1339,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       }
       const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);
       if (hasGit) {
-        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, integratedRefs: finish ? authorization.deliveries : {}, integratedContributions: finish ? authorization.integratedContributions || {} : {}, allowDirty: abandon });
+        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, integratedRefs: finish ? authorization.deliveries : {}, integratedContributions: finish ? authorization.integratedContributions || {} : {}, allowDirty: abandon, allowNoChange: noChange });
         effects.push(...provider.effects.map((effect) => ({ ...effect, provider: GIT_PROVIDER })));
         if (provider.status === 'blocked') throw taskEnvironmentError(provider.diagnostic?.code || 'task_environment_provider_cleanup_blocked', provider.diagnostic?.message || 'Git provider cleanup blocked.', 409, provider.diagnostic);
       }
@@ -1344,7 +1349,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       }
       const completedAt = now();
       const retainedSummary = retainedSharedScopes.length ? `共享执行根已保留（${retainedSharedScopes.map((scope) => scope.selector).join('、')}），仅解除 Environment 占用。` : '';
-      const summary = `${abandon ? '明确放弃授权下，已清理可证明属于该 Task 的环境资源。' : 'Task Finish handoff 已交付，环境资源已清理或按决定保留。'}${retainedSummary}`;
+      const summary = `${abandon ? '明确放弃授权下，已清理可证明属于该 Task 的环境资源。' : noChange ? 'Task 已确认无代码变更，环境资源已在无 HEAD 漂移证明下清理。' : 'Task Finish handoff 已交付，环境资源已清理或按决定保留。'}${retainedSummary}`;
       persistence = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, status: 'cleaned', resources: persistence.receipt.resources.map((item) => ({ ...item, status: 'released', updatedAt: completedAt })), latest: { ...persistence.receipt.latest, cleanup: { status: 'cleaned', completedAt, summary } }, updatedAt: completedAt });
       effects.push({ type: 'receipt-finalized', path: persistence.file });
       let maintenanceRefresh = null;

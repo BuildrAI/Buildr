@@ -352,7 +352,7 @@ export function registerGitWorktreeProvider(runtime) {
     }
   }
 
-  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, integratedContributions = {}, allowDirty = false }) {
+  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, integratedContributions = {}, allowDirty = false, allowNoChange = false }) {
     const effects = [];
     try {
       const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
@@ -372,7 +372,8 @@ export function registerGitWorktreeProvider(runtime) {
           const branchHead = gitText(record.sourceRepository, ['rev-parse', '--verify', `refs/heads/${record.branch}^{commit}`]);
           if (branchHead && branchHead !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` }, ['保留 evidence 并人工核对 branch ownership。']);
         }
-        const integratedRef = integratedRefs[record.selector] || null;
+        if (allowNoChange && identity?.head !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_no_change_head_drift', message: `Task 声明 no-change，但 checkout HEAD 已偏离 Environment evidence：${record.selector}。` }, ['保留 checkout，并交付或处置新增提交后重试。']);
+        const integratedRef = allowNoChange ? record.head : integratedRefs[record.selector] || null;
         const contributionProof = integratedContributions[record.selector] || null;
         const contribution = !allowDirty && integratedRef && contributionProof && checkoutExists
           ? contributionProof.kind === 'no-contribution'

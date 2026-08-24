@@ -448,6 +448,41 @@ test('cleanup keeps the existing unauthorized diagnostic persistence behavior', 
   assert.equal(current.receipt().latest.cleanup.status, 'blocked');
 });
 
+test('active到completed no-change的golden lifecycle可受控清理Environment', async (t) => {
+  const current = fixture(t);
+
+  const active = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+  assert.equal(active.status, 'blocked');
+  assert.equal(active.diagnostic.code, 'task_environment_cleanup_unauthorized');
+
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '协调任务确认无代码变更。', noChange: true },
+  } });
+  const completed = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(completed.status, 'cleaned', JSON.stringify(completed, null, 2));
+  assert.equal(current.calls.providerCleanupInput.allowNoChange, true);
+  assert.deepEqual(current.calls.providerCleanupInput.integratedRefs, {});
+  assert.match(current.receipt().latest.cleanup.summary, /无代码变更/);
+});
+
+test('普通completed Task缺少Delivery evidence时仍拒绝cleanup', async (t) => {
+  const current = fixture(t);
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '声称已有代码交付。', noChange: false },
+  } });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic.code, 'task_environment_cleanup_unauthorized');
+  assert.equal(current.calls.providerCleanups, 0);
+});
+
 test('completed Task可由持久化交付证据独立授权Environment cleanup', async (t) => {
   const current = fixture(t);
   const containment = {
