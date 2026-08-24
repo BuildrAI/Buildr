@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+## 0.1.0-rc.22 - 2026-08-24
+
+- 重构 Buildr 的智能体优先治理与服务架构：收敛 Bootstrap、Task、Workspace、Runtime Host、System Installation、Agent Assets、HTTP contracts 和 TypeScript 执行边界，并让 Core、专业能力与模块依赖保持宽而薄的职责划分。
+- 完善 Parent Task 与研发证据流：引入结构化 Parent Plan、Contribution Handoff、Planning/Completion Review、current knowledge 与正式 Verification 的 current identity，改进 Buildr Web 的 Parent 概览、任务引用和 UI Prototype 工作流。
+- 建立新的 release 集合与受保护发布链：以精确 dev baseline、逐 commit provenance、release HEAD Candidate、唯一 tarball、Task/Environment/Finish/self-bootstrap correlation、shared readiness 和 release→main/main→dev 收敛替代旧的“最新 dev 自动成为候选”流程。
+- 加固 Agent 主导的 Task Finish 与恢复：支持真实远端交付对账、多仓库部分交付、target race、清理投影、失败 run 恢复和隔离 smoke，保持 Delivery、Activation、Cleanup 与 Diagnostics 正交。
+- 优化 Product 验证成本与证据所有权：确定化 Environment preparation，拆分 affected/full/Candidate 范围，引入可复用 Test Context Runtime 与 prepared fixture providers，并收窄日常验证输出和调度预算。
+- 统一 Buildr Web 命名与本机实例生命周期，保持 npm/development channel、Launcher 接管和兼容 identity 的明确边界。
+
 ## 0.1.0-rc.21 - 2026-08-20
 
 - 收敛正式工作流运行时闭环：canonical Workspace 写入来源绑定真实 retained controller，npm artifact 自包含 Task Development、Task Retrospective 与 Task Planning Identity 内部路由，并由 package validation、Doctor 与安装产物测试共同检查；Verification 公共 JSON 改为有界摘要，完整输出继续保存在 Execution Record。
