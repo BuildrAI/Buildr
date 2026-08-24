@@ -66,10 +66,10 @@ function roleStatus(value, missingStatus = 'unknown') {
   return status ? 'unknown' : missingStatus;
 }
 
-function taskProjection(value, label) {
+function taskProjection(value, label, expectedStatus = 'completed') {
   closed(value, ALLOWED_TASK_FIELDS, label);
   const task = taskId(value.taskId, `${label}.taskId`);
-  if (value.status !== 'completed') throw new Error(`${label} must be completed.`);
+  if (value.status !== expectedStatus) throw new Error(`${label} must be ${expectedStatus}.`);
   return { taskId: task, title: String(value.title || ''), status: value.status, recordDigest: identity(value.recordDigest, `${label}.recordDigest`) };
 }
 
@@ -218,6 +218,17 @@ function correlateEntry(entry, expectedTaskId) {
   return { taskId: expectedTaskId, status, environment, development, finish, selfBootstrap, findings };
 }
 
+function correlateReleaseEntry(entry, expectedTaskId) {
+  const environment = normalizeEnvironment(entry.environment, expectedTaskId, `${expectedTaskId}.environment`);
+  const development = normalizeDevelopment(entry.development, expectedTaskId, `${expectedTaskId}.development`);
+  const finish = normalizeFinish(entry.finish, expectedTaskId, `${expectedTaskId}.finish`);
+  const selfBootstrap = normalizeSelfBootstrap(entry.selfBootstrap, expectedTaskId, finish.runId, `${expectedTaskId}.selfBootstrap`);
+  const findings = [];
+  if (environment.status !== 'passed') findings.push(finding('task-environment', 'environment-not-ready', environment.reason || 'Release coordination Task Environment evidence is not ready.'));
+  const status = findings.some((item) => item.severity === 'blocked') ? 'blocked' : 'passed';
+  return { taskId: expectedTaskId, status, environment, development, finish, selfBootstrap, findings };
+}
+
 function taskSet(releaseTask, supportTasks) {
   const items = [releaseTask, ...supportTasks];
   const ids = items.map((item) => item.taskId);
@@ -225,12 +236,12 @@ function taskSet(releaseTask, supportTasks) {
   return ids;
 }
 
-function normalizeTaskEvidence(value, expectedIds) {
+function normalizeTaskEvidence(value, expectedIds, releaseTaskId) {
   if (!Array.isArray(value)) throw new Error('taskEvidence must be an array.');
   const entries = value.map((item, index) => {
     closed(item, ALLOWED_ENTRY_FIELDS, `taskEvidence[${index}]`);
     const id = taskId(item.taskId, `taskEvidence[${index}].taskId`);
-    return correlateEntry(item, id);
+    return id === releaseTaskId ? correlateReleaseEntry(item, id) : correlateEntry(item, id);
   }).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const actual = entries.map((item) => item.taskId);
   if (new Set(actual).size !== actual.length) throw new Error('taskEvidence Task IDs must be unique.');
@@ -239,12 +250,14 @@ function normalizeTaskEvidence(value, expectedIds) {
 }
 
 export function createReleaseTaskEvidenceCorrelation(input) {
-  closed(input, new Set(['releaseTask', 'retrospectiveSources', 'supportTasks', 'taskEvidence', 'source']), 'release task evidence correlation input');
-  const releaseTask = taskProjection(input.releaseTask, 'releaseTask');
+  closed(input, new Set(['releaseTask', 'releaseTaskStatus', 'retrospectiveSources', 'supportTasks', 'taskEvidence', 'source']), 'release task evidence correlation input');
+  const releaseTaskStatus = input.releaseTaskStatus || 'completed';
+  if (!['active', 'completed'].includes(releaseTaskStatus)) throw new Error('releaseTaskStatus must be active or completed.');
+  const releaseTask = taskProjection(input.releaseTask, 'releaseTask', releaseTaskStatus);
   const supportTasks = [...(input.supportTasks || [])].map((item, index) => taskProjection(item, `supportTasks[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const retrospectiveSources = [...(input.retrospectiveSources || [])].map((item, index) => taskProjection(item, `retrospectiveSources[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const ids = taskSet(releaseTask, supportTasks);
-  const entries = normalizeTaskEvidence(input.taskEvidence, ids);
+  const entries = normalizeTaskEvidence(input.taskEvidence, ids, releaseTask.taskId);
   const source = input.source == null ? null : (() => {
     closed(input.source, new Set(['sourceCommit', 'sourceTree', 'remoteRef']), 'source');
     return {
@@ -270,7 +283,7 @@ export function createReleaseTaskEvidenceCorrelation(input) {
 export function validateReleaseTaskEvidenceCorrelation(value) {
   closed(value, new Set(['schemaVersion', 'status', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'source', 'entries', 'identity']), 'release task evidence correlation');
   if (value.schemaVersion !== RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA || !DIGEST.test(value.identity || '')) throw new Error('Release task evidence correlation schema/identity is invalid.');
-  const recreated = createReleaseTaskEvidenceCorrelation({ releaseTask: value.releaseTask, retrospectiveSources: value.retrospectiveSources, supportTasks: value.supportTasks, source: value.source, taskEvidence: value.entries.map((entry) => ({
+  const recreated = createReleaseTaskEvidenceCorrelation({ releaseTask: value.releaseTask, releaseTaskStatus: value.releaseTask.status, retrospectiveSources: value.retrospectiveSources, supportTasks: value.supportTasks, source: value.source, taskEvidence: value.entries.map((entry) => ({
     taskId: entry.taskId,
     environment: entry.environment,
     development: entry.development,
@@ -407,7 +420,7 @@ function runtimeSelfBootstrapProjection(runtime, root, taskId) {
   };
 }
 
-export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, supportTasks = [], retrospectiveSources = [], selfBootstrapResults = {}, source = null }) {
+export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, releaseTaskStatus = 'completed', supportTasks = [], retrospectiveSources = [], selfBootstrapResults = {}, source = null }) {
   const taskIds = [releaseTask, ...supportTasks].map((item) => typeof item === 'string' ? item : item.taskId);
   const taskEvidence = taskIds.map((taskId) => ({
     taskId,
@@ -418,6 +431,7 @@ export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root,
   }));
   return createReleaseTaskEvidenceCorrelation({
     releaseTask: typeof releaseTask === 'string' ? runtimeTaskProjection(runtime, root, releaseTask) : releaseTask,
+    releaseTaskStatus,
     supportTasks: supportTasks.map((item) => typeof item === 'string' ? runtimeTaskProjection(runtime, root, item) : item),
     retrospectiveSources: retrospectiveSources.map((item) => typeof item === 'string' ? runtimeTaskProjection(runtime, root, item) : item),
     taskEvidence,
