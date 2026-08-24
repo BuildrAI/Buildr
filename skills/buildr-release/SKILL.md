@@ -22,7 +22,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 在任何release branch、PR、workflow、tag或npm写入前，确认当前Product已提供并能回读以下五类current能力：
 
-1. release selection/provenance：精确dev baseline、ordered selection chain、release HEAD/tree、create/update/freeze/abandon/cleanup结果；
+1. release selection/provenance：精确dev baseline、ordered selection chain、release HEAD/tree、freeze history、create/update/freeze/reopen/abandon/cleanup结果；
 2. release-source Product Candidate：matching release source、Candidate generation、完整required owners与唯一tarball manifest/integrity；
 3. release Task correlation：release/support Tasks、Environment、Development handoff、Finish Delivery和self-bootstrap的closed portable关联；
 4. shared readiness/protected transaction：同一context digest、collect-all findings、effects为空的local检查与唯一publish workflow；
@@ -70,17 +70,17 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 准备阶段是正式开发/发布Task，遵循`task-triage`、`task-environment`、`task-development`、`task-verification`、`task-finish`和self-bootstrap唯一runner：
 
 1. 取得维护者确认的`<version>`、精确`<dev-baseline>`和有序待选择dev commits；fetch后重新证明这些commits属于current dev authority。
-2. 创建或复用唯一`release-<version>` Task/Environment。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
+2. 创建或复用唯一`release-<version>`协调Task/Environment。该Task的intent必须覆盖selection、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部current前保持active/blocked，不调用Task Finish或complete。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
 3. 通过release selection owner创建或核验唯一`release-<version>`集合。create不隐含push；同版本identity冲突时停止。
 4. 对维护者明确列出的commit逐个执行selection update；只允许`cherry-pick -x`。冲突立即停止，保留可诊断现场，不自动解决、继续、rebase、reset、force push或直接编辑冒充选择成功。
-5. 通过正式Task维护version、CHANGELOG、README/known limitations/checklist等release-only metadata；其commit、scope与授权必须在selection read model中与selected dev commits区分。
-6. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。适用Task按正式Development/Verification/Finish闭环交付，matching self-bootstrap仍由唯一runner完成，失败不改写Delivery。
+5. version、CHANGELOG、README/known limitations/checklist、测试修复或release owner修复等需要在Candidate前独立交付的内容，必须使用scope/intent明确的release support Task完成Development/Verification/Finish；其commit与授权在selection read model中与其他selected dev commits区分。不得用`release-<version>`协调Task承担这类提前Finish的内容贡献。
+6. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。support Task按正式Development/Verification/Finish闭环交付，matching self-bootstrap仍由唯一runner完成，失败不改写Delivery；support Task terminal、Delivery或Activation都不使release协调Task completed。
 7. Freeze current release HEAD/tree与selection chain；任一内容变化使旧freeze、Candidate、artifact、readiness和context stale。
-8. 对该release source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一source SHA/tree、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。
+8. 对该release source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一source SHA/tree、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active/blocked，不得Finish/complete或把support delivery误报为准备完成。
 9. 创建唯一release→main受保护PR。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败只重跑失败job和aggregate。
 10. merge后核验`origin/main^{tree}`精确等于冻结release tree。commit identity可因squash不同，tree不一致或remote race立即停止。
 11. 用transaction runner的默认`readiness`动作构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
-12. 报告“准备完成，尚未dispatch正式release transaction，尚未创建tag/npm version/GitHub Release，尚未请求`npm-production`审批”，然后停止。
+12. 只有current selection、Candidate aggregate、唯一tarball、main tree与dispatch-check readiness全部matching时，才完成`release-<version>`协调Task并报告“准备完成，尚未dispatch正式release transaction，尚未创建tag/npm version/GitHub Release，尚未请求`npm-production`审批”，然后停止。Task completed不构成publication授权。
 
 ## 6. 发布版本
 
@@ -101,6 +101,8 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 ## 7. 中断与失败恢复
 
 - release内容变化：旧Candidate/artifact/readiness/context全部stale，形成新generation和唯一tarball，不拼接旧evidence。
+- frozen Candidate失败且需要选择新的dev修复：先从GitHub、Git tag、npm官方registry、GitHub Release和protected workflow回读目标version的全部公开/不可逆事实；只有证明尚无tag、npm version、GitHub Release且protected transaction未开始公共mutation，维护者才可独立授权selection `reopen --confirm --reason <text>`。reopen只保留immutable freeze history并释放current frozen ref，不隐含update/push；随后逐commit `cherry-pick -x`、重新freeze、普通push并对新SHA运行完整Candidate。任何公开事实已存在时停止并选择新version，不接受caller布尔值或历史stdout代替证明。
+- 同version release协调Task已被提前completed但准备intent尚未满足：保留terminal Task与既有Finish审计事实，不直接改SQLite、不伪造reopen或重建同名Task；创建明确标识的active recovery Task承载剩余准备，并在correlation与完成报告中同时披露旧Task、support facts和恢复边界。
 - selection冲突：保持pre-operation identity和冲突现场，停止后续选择/remote/public mutation；只在维护者作出新决定后恢复。
 - release→main tree不一致或remote race：停止publication，不用历史形状、`ours`、reset或force push掩盖。
 - protected transaction失败：先读取terminal run/attempt与逐步evidence，按`same-attempt`、`new-attempt`或`blocked-new-version`解释恢复；已创建tag时保留tag和同context事实，不删除tag后重发。
