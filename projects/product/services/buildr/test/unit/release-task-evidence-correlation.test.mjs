@@ -23,12 +23,12 @@ function entry(taskId, overrides = {}) {
     environment: { status: 'ready', taskId, receiptIdentity: digest('2'), receiptDigest: digest('3'), declarationIdentity: digest('4'), executionIdentity: digest('5') },
     development: { status: 'current', taskId, handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), taskContextIdentity: digest('d'), contributionIdentity: digest('e'), receiptIdentity: digest('f') },
     finish: {
-      status: 'complete', taskId, runId: 42, resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: sha('8'), sourceTree: sha('9'),
+      status: 'complete', taskId, runId: 'finish-run-42', resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: sha('8'), sourceTree: sha('9'),
       repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: sha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: sha('b') }],
       executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
       activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened',
     },
-    selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: sha('8'), sourceTree: sha('9') },
+    selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 'finish-run-42', resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: sha('8'), sourceTree: sha('9') },
     ...overrides,
   };
 }
@@ -78,7 +78,7 @@ test('publication correlation still requires the release coordination Task to be
 });
 
 test('blocks cross-run self-bootstrap evidence without changing Finish delivery', () => {
-  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'support-1', runId: 43, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } })] });
+  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'support-1', runId: 'finish-run-43', resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } })] });
   assert.equal(result.status, 'blocked');
   const support = result.entries.find((item) => item.taskId === 'support-1');
   assert.equal(support.finish.status, 'passed');
