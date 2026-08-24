@@ -49,6 +49,77 @@ function repository(t) {
   return { root, taskRoot };
 }
 
+function gitProvider(root) {
+  return registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (target, value) => {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
+    },
+    removePath: (target) => fs.rmSync(target, { force: true }),
+  });
+}
+
+function writeTaskWorktreeEvidence(runtime, root, taskRoot, head) {
+  runtime.writeGitWorktreeEvidence(root, {
+    schemaVersion: 'buildr.git-worktree-evidence/v1',
+    taskId: 'task',
+    workspaceRoot: root,
+    branch: 'codex/task',
+    planDigest: `sha256-${'9'.repeat(64)}`,
+    status: 'ready',
+    repositories: [{
+      selector: 'workspace', entityType: 'workspace', sourcePath: '.', sourceRepository: fs.realpathSync(root),
+      checkoutPath: fs.realpathSync(taskRoot), branch: 'codex/task', startPoint: 'dev', head,
+      clean: true, registered: true, remote: null, remoteUrl: null, state: 'ready', diagnostic: null,
+    }],
+    effects: [],
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+test('Git provider允许no-change cleanup且拒绝dirty或HEAD漂移', async (t) => {
+  await t.test('clean and unchanged', (subtest) => {
+    const { root, taskRoot } = repository(subtest);
+    const head = git(taskRoot, ['rev-parse', 'HEAD']);
+    const runtime = gitProvider(root);
+    writeTaskWorktreeEvidence(runtime, root, taskRoot, head);
+
+    const result = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: 'task', allowNoChange: true });
+
+    assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+    assert.equal(fs.existsSync(taskRoot), false);
+  });
+
+  await t.test('dirty', (subtest) => {
+    const { root, taskRoot } = repository(subtest);
+    const head = git(taskRoot, ['rev-parse', 'HEAD']);
+    const runtime = gitProvider(root);
+    writeTaskWorktreeEvidence(runtime, root, taskRoot, head);
+    fs.writeFileSync(path.join(taskRoot, 'unexpected.txt'), 'not delivered\n');
+
+    const result = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: 'task', allowNoChange: true });
+
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'git_worktree_dirty');
+    assert.equal(fs.existsSync(taskRoot), true);
+  });
+
+  await t.test('clean HEAD drift', (subtest) => {
+    const { root, taskRoot } = repository(subtest);
+    const head = git(taskRoot, ['rev-parse', 'HEAD']);
+    const runtime = gitProvider(root);
+    writeTaskWorktreeEvidence(runtime, root, taskRoot, head);
+    git(taskRoot, ['commit', '--allow-empty', '-m', 'unexpected task commit']);
+
+    const result = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId: 'task', allowNoChange: true });
+
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic.code, 'git_worktree_no_change_head_drift');
+    assert.equal(fs.existsSync(taskRoot), true);
+  });
+});
+
 test('carrier disposability proof冻结commit、index、worktree与untracked内容并支持cleanup中断重试', (t) => {
   const { root } = repository(t);
   const runId = 'proof-run';
