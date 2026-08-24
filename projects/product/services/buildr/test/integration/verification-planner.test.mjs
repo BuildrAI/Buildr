@@ -72,7 +72,7 @@ test('三轴选择反例保持affected默认、authority Full与Release-only隔�
   assert.ok(local.scope.reasons.every((reason) => reason.code === 'affected-owner'));
   const executionAuthority = createVerificationPlan({ paths: ['test/verification/planner.mjs'] });
   assert.equal(executionAuthority.scope.mode, 'full');
-  assert.equal(executionAuthority.scope.reasons[0].code, 'execution-authority-change');
+  assert.equal(executionAuthority.scope.reasons[0].code, 'selection-authority-change');
   assert.equal(executionAuthority.scope.reasons[0].path, 'test/verification/planner.mjs');
   const dailyIds = ids(createVerificationPlan({ profiles: ['core'] }));
   const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
@@ -130,6 +130,10 @@ test('selection audit分离直接owner、依赖扩张与Full reason', () => {
   assert.ok(fullAudit.counts.directOwners > 0);
   assert.ok(fullAudit.selectionAmplification > 1);
   assert.equal(fullAudit.selectedStepIds.length, createVerificationPlan({ profiles: ['core'] }).steps.length);
+  assert.ok(fullAudit.stepSelections.every((step) => step.selectionKinds.includes('full-scope')));
+  assert.ok(fullAudit.stepSelections.every((step) => typeof step.publicOutcome === 'string' && step.publicOutcome.length > 0));
+  assert.equal(fullAudit.stepSelections[0].triggers.find((trigger) => trigger.kind === 'full-scope').reasons[0].pattern, 'test/verification/registry.mjs');
+  assert.deepEqual(Object.keys(fullAudit.layerCounts), ['Static', 'Unit', 'Component', 'Integration', 'System']);
 });
 
 test('Candidate profile与changed development owner正交并按step identity去重', () => {
@@ -218,7 +222,7 @@ test('受治理 publish workflow的开发反馈与Candidate Release evidence保�
   assert.throws(() => createVerificationPlan({ paths: ['.github/workflows/unowned.yml'] }), /Ungoverned repository path/);
 });
 
-test('execution authority 扩展 Full，ownership authority 保持 affected', () => {
+test('selection、execution与ownership authority均以稳定reason扩展Full', () => {
   const coreIds = ids(createVerificationPlan({ profiles: ['core'] }));
   for (const path of ['verification.yml', 'test/verification/registry.mjs', 'test/verification/planner.mjs']) {
     const plan = createVerificationPlan({ paths: [path] });
@@ -227,11 +231,11 @@ test('execution authority 扩展 Full，ownership authority 保持 affected', ()
   }
   const ownerOnly = createVerificationPlan({ paths: ['test/verification/ownership.mjs'] });
   assert.equal(ownerOnly.status, 'ready');
-  assert.equal(ownerOnly.scope.mode, 'affected');
-  assert.deepEqual(ids(ownerOnly), ['contract', 'system-verification-admission']);
-  assert.deepEqual(ownerOnly.scope.reasons.map((reason) => reason.code), ['affected-owner']);
+  assert.equal(ownerOnly.scope.mode, 'full');
+  assert.deepEqual(ids(ownerOnly), coreIds);
+  assert.deepEqual(ownerOnly.scope.reasons.map((reason) => reason.code), ['ownership-authority-change']);
   assert.deepEqual(createVerificationPlan({ paths: ['test/verification/registry.mjs'] }).scope.reasons.map((reason) => reason.code), ['execution-graph-change']);
-  assert.deepEqual(createVerificationPlan({ paths: ['test/verification/planner.mjs'] }).scope.reasons.map((reason) => reason.code), ['execution-authority-change']);
+  assert.deepEqual(createVerificationPlan({ paths: ['test/verification/planner.mjs'] }).scope.reasons.map((reason) => reason.code), ['selection-authority-change']);
   const timingOnly = createVerificationPlan({ paths: ['test/verification/timing/budgets.mjs'] });
   assert.equal(timingOnly.scope.mode, 'affected');
   assert.deepEqual(ids(timingOnly), ['system-verification-contracts']);
@@ -243,6 +247,16 @@ test('execution authority 扩展 Full，ownership authority 保持 affected', ()
   assert.equal(declarationMetadata.scope.mode, 'affected');
   assert.deepEqual(declarationMetadata.scope.reasons.map((reason) => reason.code), ['verification-presentation-metadata-change']);
   assert.deepEqual(ids(declarationMetadata), ['contract']);
+});
+
+test('未知高风险production application path不会由通用Unit或架构owner静默兜底', () => {
+  const plan = createVerificationPlan({ paths: ['src/task/application/unknown/unowned-high-risk.mjs'] });
+  assert.equal(plan.status, 'blocked');
+  assert.equal(plan.diagnostic.code, 'verification-owner-gap');
+  assert.deepEqual(plan.productionOwnerGaps, [{
+    path: 'src/task/application/unknown/unowned-high-risk.mjs',
+    broadOwners: ['unit', 'cli-architecture'],
+  }]);
 });
 
 test('生产源码必须命中直接领域 owner 或闭合 allowlist', () => {

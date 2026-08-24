@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
-import { admitVerificationPlanBudget, createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
+import { admitVerificationPlanBudget, createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan, createVerificationSelectionAudit } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { CORE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
@@ -61,7 +61,7 @@ try {
       concurrency: executionProfile.limits,
       declaredBudgetMs: composedPlan.scope?.mode === 'full' ? CORE_TOTAL_BUDGET_MS : null,
     });
-    const output = { schemaVersion: 'buildr.verification-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, selectionOnlyPaths: changed.selectionOnlyPaths, scope: plan.scope, estimate: plan.estimate, delegated: plan.delegated, ignored: plan.ignored, unmapped: plan.unmapped, productionOwnerGaps: plan.productionOwnerGaps, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
+    const output = { schemaVersion: 'buildr.verification-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, selectionOnlyPaths: changed.selectionOnlyPaths, scope: plan.scope, selectionAudit: createVerificationSelectionAudit(plan), estimate: plan.estimate, delegated: plan.delegated, ignored: plan.ignored, unmapped: plan.unmapped, productionOwnerGaps: plan.productionOwnerGaps, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
     if (args.json) {
       process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
       if (plan.status === 'blocked') process.exitCode = 1;

@@ -379,6 +379,10 @@ affected解决任务相关性，Context解决已选测试的重复环境成本�
 
 changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是daily-full membership。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
 
+`test:changed -- --json` 的 `selectionAudit.stepSelections` 直接投影同一plan，不重新实现选择算法。每个step列出`selectionKinds`与对应trigger：`direct-owner`关联触发path，`dependency`关联引入它的parent step，`full-scope`关联稳定Full authority reason，profile/admission/explicit分别说明公共入口选择；同时列出execution boundary、primary evidence owner、public outcome和target duration。Full pattern、code和说明只在`ownership.mjs`维护，planner不按文件名另建reason authority。当前稳定code包括execution graph、selection、ownership、runtime、environment、package execution metadata和其他执行基础变化；无法安全局部判断的关键authority保持Full，unknown/unowned高风险production path阻断。
+
+2026-08-24的三个近期`product.delivery`可回放样本中，两个为affected，一个因registry变更以`execution-graph-change`合法Full；before/after step集合没有变化。因此本轮不声明性能收益，现场结论是普通Task选择并非当前主要瓶颈，剩余耗时来自被正确选择的真实primary owner。样本量、missing字段和计算口径以审计报告为准。
+
 ## 14. Evidence
 
 step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty/evict、destroy和wall-clock。阶段同时提供`createDurationMs`、`acquireDurationMs`、`releaseDurationMs`、`waitDurationMs`、`resetDurationMs`与`destroyDurationMs`，使“测试体慢”与“环境组装/争用/恢复慢”可以分开判断。

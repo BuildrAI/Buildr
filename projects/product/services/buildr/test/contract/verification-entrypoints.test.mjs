@@ -473,7 +473,7 @@ test('changed ownership authority is physically separate from the Candidate exec
   assert.deepEqual(validateVerificationStepOwnership(verificationSteps.map((step) => step.id)), { ok: true, findings: [] });
   assert.equal(validateVerificationStepOwnership([...verificationSteps.map((step) => step.id), 'missing-owner']).ok, false);
   assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/registry.mjs'));
-  assert.equal(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/ownership.mjs'), false);
+  assert.equal(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/ownership.mjs'), true);
   assert.equal(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/timing/budgets.mjs'), false);
   assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes('test/verification/timing/parallel-runner.mjs'));
 });

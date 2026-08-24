@@ -377,11 +377,13 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/application/finish/execution-record.mjs",
       "src/task/application/finish/task-finish-application.mjs",
       "src/task/application/finish/task-finish-bootstrap-recovery.mjs",
+      "src/task/application/finish/task-finish-current-facts.mjs",
       "src/task/application/finish/task-finish-occupancy-release.mjs",
       "src/task/application/finish/task-finish-delivery-commit.mjs",
       "src/task/application/finish/task-finish-entry-readiness.mjs",
       "src/task/application/finish/task-finish-reconciliation-context.mjs",
       "src/task/application/finish/task-finish-repository-set.mjs",
+      "src/task/application/finish/task-finish-recovery-primitives.mjs",
       "src/task/application/finish/task-finish-result-projection.mjs",
       "src/task/application/finish/task-finish-self-bootstrap-projection.mjs",
       "src/task/application/finish/task-finish-run.mjs",
@@ -1295,43 +1297,41 @@ export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS = Object.freeze([
   ".github/workflows/verify.yml"
 ]);
 
-export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze([
-  ".github/workflows/verify.yml",
-  ".node-version",
-  "preparation.yml",
-  "verification.yml",
-  "package.json",
-  "package-lock.json",
-  "tsconfig.json",
-  "tsconfig.test-context.json",
-  "test-context.mjs",
-  "src/infrastructure/testing/context-runtime/**",
-  "package/targets/test-context/**",
-  "tools/testing/test-context-build.mjs",
-  "test/verification/verify-buildr-product",
-  "test/verification/verify-buildr-product-daily-full",
-  "test/verification/verify-buildr-product-core",
-  "test/verification/verify-buildr-product-fast",
-  "test/verification/verify-buildr-product-ci",
-  "tools/development/resolve-development-node",
-  "tools/development/run-development-node",
-  "tools/development/run-development-npm",
-  "tools/development/run-development-npm.mjs",
-  "test/verification/candidate.mjs",
-  "test/verification/candidate-ci.mjs",
-  "test/verification/candidate-ci-evidence.mjs",
-  "test/verification/changed.mjs",
-  "test/verification/changed-paths.mjs",
-  "test/context/**",
-  "test/verification/dag-scheduler.mjs",
-  "test/verification/executor.mjs",
-  "test/verification/plan-runner.mjs",
-  "test/verification/planner.mjs",
-  "test/verification/profile.mjs",
-  "test/verification/registry.mjs",
-  "test/verification/resource-coordinator.mjs",
-  "test/verification/timing/parallel-runner.mjs"
+const fullScopeAuthority = (pattern, code, explanation) => Object.freeze({ pattern, code, explanation });
+
+export const VERIFICATION_FULL_SCOPE_AUTHORITIES = Object.freeze([
+  fullScopeAuthority('.github/workflows/verify.yml', 'execution-graph-change', 'Candidate and development verification workflow topology changed.'),
+  fullScopeAuthority('.node-version', 'execution-foundation-change', 'The retained Product development Node authority changed.'),
+  fullScopeAuthority('preparation.yml', 'environment-authority-change', 'Formal verification preparation authority changed.'),
+  fullScopeAuthority('verification.yml', 'verification-authority-change', 'Public verification capability authority changed.'),
+  fullScopeAuthority('package.json', 'package-execution-metadata-change', 'non-version package metadata changes may affect scripts, dependencies, or execution semantics.'),
+  fullScopeAuthority('package-lock.json', 'package-execution-metadata-change', 'non-version package metadata changes may affect locked dependencies or execution semantics.'),
+  ...[
+    'tsconfig.json', 'tsconfig.test-context.json', 'test-context.mjs',
+    'src/infrastructure/testing/context-runtime/**', 'package/targets/test-context/**',
+    'tools/testing/test-context-build.mjs', 'test/context/**',
+  ].map((pattern) => fullScopeAuthority(pattern, 'execution-foundation-change', 'Shared TypeScript or Test Context execution foundation changed.')),
+  ...[
+    'test/verification/verify-buildr-product', 'test/verification/verify-buildr-product-daily-full',
+    'test/verification/verify-buildr-product-core', 'test/verification/verify-buildr-product-fast',
+    'test/verification/verify-buildr-product-ci', 'test/verification/candidate.mjs',
+    'test/verification/candidate-ci.mjs', 'test/verification/candidate-ci-evidence.mjs',
+    'test/verification/dag-scheduler.mjs', 'test/verification/executor.mjs',
+    'test/verification/plan-runner.mjs', 'test/verification/profile.mjs',
+    'test/verification/registry.mjs', 'test/verification/resource-coordinator.mjs',
+    'test/verification/timing/parallel-runner.mjs',
+  ].map((pattern) => fullScopeAuthority(pattern, 'execution-graph-change', 'Verification execution graph, profile, scheduler, executor, or resource semantics changed.')),
+  ...[
+    'test/verification/changed.mjs', 'test/verification/changed-paths.mjs', 'test/verification/planner.mjs',
+  ].map((pattern) => fullScopeAuthority(pattern, 'selection-authority-change', 'Affected and full selection authority changed.')),
+  fullScopeAuthority('test/verification/ownership.mjs', 'ownership-authority-change', 'Changed path ownership and full-scope authority changed.'),
+  ...[
+    'tools/development/resolve-development-node', 'tools/development/run-development-node',
+    'tools/development/run-development-npm', 'tools/development/run-development-npm.mjs',
+  ].map((pattern) => fullScopeAuthority(pattern, 'runtime-authority-change', 'Development runtime invocation authority changed.')),
 ]);
+
+export const VERIFICATION_FULL_SCOPE_INPUTS = Object.freeze(VERIFICATION_FULL_SCOPE_AUTHORITIES.map((item) => item.pattern));
 
 export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
   {

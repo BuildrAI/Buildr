@@ -152,3 +152,46 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 本轮正式结论是：继续把该owner的独立准备替换成Prepared Fixture收益不足。后续若要降低主体成本，必须先找到不承担Finish primary evidence的具体Git/SQLite操作反例；在此之前不扩建基础设施、不缓存结果、不提高并发。
 
 实现树affected因`verification/registry.mjs`与runner authority变化可解释地升级为53-step Full并全部通过，lease等待3ms，总墙钟335.066秒。并发执行时`system-task-finish`为111.643秒；prepare/body/cleanup合计约11.2/98.2/0.3秒，说明CPU、磁盘和Git主体竞争会显著放大journey，而cleanup仍不是瓶颈。这一轮不冒充干净Core，也不用于降低预算。
+
+## 9. affected / Full 选择复核（2026-08-24）
+
+本节使用当前 `origin/dev`、三个 retained 且 body 未截断的正式 Execution Record，以及同一批 frozen changed paths 在本 Change 前后 planner 上的只读回放。历史 Execution Record 没有 step-level selection trace，因此墙钟来自原 record，step、owner、closure 与 Full reason 来自当前 planner 回放；两类事实不混写。
+
+### 9.1 近期普通 Task 样本
+
+| Task | 正式 capability | 当前回放 scope / reason | steps 前→后 | 正式墙钟 |
+| --- | --- | --- | ---: | ---: |
+| `prepare-parent-by-default` | `product.delivery` | affected | 15→15 | 45.687s |
+| `reconcile-cleaned-empty-finish-carriers` | `product.delivery` | affected | 10→10 | 88.692s |
+| `optimize-golden-lifecycle-execution-paths` | `product.delivery` | full / `execution-graph-change`，由 `test/verification/registry.mjs` 触发 | 53→53 | 320.841s |
+
+此可复核小样本的 Full 升级率为 1/3（33.3%）；selected step 中位数为15、P90为53；正式墙钟中位数为88.692秒、nearest-rank P90为320.841秒。唯一 Full reason 是 `execution-graph-change`。五个最常出现的重型 owner 并列各2次：`integration-self-bootstrap`、`capability-cli-integration`、`commands-cli-integration`、`openspec-convergence-recovery`、`managed-data-integrity`；其中四项来自技能/资源投影样本，`integration-self-bootstrap`来自自举收尾样本，Full 样本自然包含全部日常 owner。
+
+样本量只有3，不能外推长期升级率；`converge-product-golden-lifecycle-verification-cost` 的正式 record 没有 changed paths，明确标记 missing，未纳入分母。`redesign-release-workflow` 的 retained record是显式 `product.full-regression`，不是普通 `product.delivery` 的 affected 选择，也未混入普通样本。
+
+### 9.2 路径反例与选择粒度
+
+| 路径类型 | scope | steps | Static / Unit / Component / Integration / System | 重型 primary owner |
+| --- | --- | ---: | --- | --- |
+| 普通 Task domain logic | affected | 9 | 5 / 1 / 1 / 1 / 1 | `integration-task-development`、`system-task-lifecycle` |
+| Finish application | affected | 9 | 5 / 1 / 1 / 1 / 1 | `integration-task-finish`、`system-task-finish` |
+| Git worktree provider | affected | 9 | 5 / 1 / 1 / 0 / 2 | `system-worktree-lifecycle`、`concurrent-task-acceptance` |
+| process boundary | affected | 10 | 5 / 1 / 1 / 2 / 1 | `system-app-process`、`host-node-boundaries` |
+| planner / registry / ownership authority | full | 52 | 8 / 1 / 1 / 21 / 21 | 完整 daily-full evidence set |
+| unknown high-risk application path | blocked | 0 | 0 / 0 / 0 / 0 / 0 | 无 owner 时 fail closed |
+| Release contract input | not-applicable | 0 | 0 / 0 / 0 / 0 / 0 | delegated to `product.candidate-release` |
+
+Unit 的实际粒度是：只要计划选择 `unit` step，就运行完整低成本 Unit suite；Component、Integration 与 System 按 path→owner 选择，并通过 `dependency-closure` trace解释附带步骤。每个 `stepSelections` 条目现同时投影触发 path、selection kind、execution boundary、primary evidence owner、public outcome 与目标预算。
+
+### 9.3 本轮 before / after 与结论
+
+三个真实普通 Task 的 scope、step count 与 owner集合均未变化，所以本轮没有可归因的执行时间收益。新增的两个变化是安全修正，不是降本：
+
+- `test/verification/ownership.mjs`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
+- 未知高风险 `src/task/application/**`：affected 7 steps → blocked；通用 Unit/CLI architecture owner不能再掩盖缺失的领域 primary owner。
+
+因此当前正式结论是：在这个近期小样本中，普通 Task 没有无理由进入 Full；唯一升级由 execution graph authority 变更触发。选择规则不是主要瓶颈，剩余成本来自被正确选择的真实 primary owner，尤其是 Finish、self-bootstrap、Workspace/Worktree、进程和 capability/OpenSpec runtime 边界。继续降本必须优化这些 owner 内部的真实准备或主体成本，不能通过放宽 Full、删除证据、缓存被测选择结果或提高全局并发取得。
+
+当前日常完整集合仍为52 steps、1036秒目标工作量、容量4的数学下限259秒；Product Candidate仍为66 steps、1398秒目标工作量、数学下限349.5秒。最近当前树正式 daily-full Execution Record 为 `task-exec-f3035c44-9d33-4413-8315-40e6d1ecbc9a`，capability墙钟427.822秒。Candidate与无外部发布副作用的Release contract/smoke仍须在本 Task 的冻结Content Target上现场执行；未执行前不填入当前基线。
+
+本Change实现树随后因planner/ownership authority变更运行一次真实changed→Full：52 steps全部通过，总墙钟288.354秒，`product-full-execution`等待2ms，最慢owner为`system-task-finish` 81.083秒。该轮比427.822秒历史正式Full快，但step集合没有变化，且是单次transient开发反馈，不能把差值归因于selection实现；它只证明当前完整daily-full在本轮无竞争机器状态下可执行，并保留了超目标owner的逐项warning。

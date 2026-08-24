@@ -133,6 +133,12 @@ Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkou
 - 正式静态资产落在本 Service 的`web-dist`；公共application payload只消费已提交dist，npm package不携带`buildr-web`源码或Vite toolchain。
 - Buildr Web Runtime 继续从 `web-dist` 同源 loopback 托管并注入 session，不改为独立前端端口。
 
+### Changed selection 解释与现场结论
+
+- Changed plan的`selectionAudit`复用同一planner结果，逐step区分direct owner、Full展开、profile/admission和dependency closure，并投影触发path、执行边界、primary evidence owner、公共结果与目标预算。
+- Full pattern、稳定reason code和用户说明只由ownership authority声明；planner、registry、ownership、scheduler/executor、验证入口和执行基础变化分别以稳定authority reason升级daily-full。未知高风险production path缺少领域owner时阻断，不由通用Unit或CLI architecture静默兜底。
+- 2026-08-24三个近期`product.delivery`可回放样本中，2个保持affected、1个因registry execution graph变更合法Full；没有观察到普通Task无理由Full，剩余瓶颈是被正确选择的真实primary owner。本结论来自小样本，不外推长期升级率。
+
 ## 局部术语
 
 本 Service 当前不重定义 Project glossary。CLI、runtime adapter、Component、provider、consumer 和 binding 继续使用 [Project canonical terminology](../glossary.md) 及相关 specs 的精确定义。

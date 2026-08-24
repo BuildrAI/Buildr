@@ -25,6 +25,7 @@ import {
 } from './registry.mjs';
 import {
   VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_FULL_SCOPE_AUTHORITIES,
   VERIFICATION_FULL_SCOPE_INPUTS,
   VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
   VERIFICATION_IGNORED_INPUTS,
@@ -42,6 +43,7 @@ const PRODUCTION_OWNER_BROAD_STEPS = new Set([
   'unit',
   'candidate-tarball',
   'application-payload-release',
+  'cli-architecture',
 ]);
 const PRODUCTION_OWNER_BOUNDARIES = new Set(['Static', 'Integration', 'System']);
 
@@ -145,6 +147,47 @@ export function createVerificationSelectionAudit(plan) {
     const boundary = plan.steps?.find((item) => item.id === id)?.testing?.executionBoundary;
     return ['Integration', 'System'].includes(boundary);
   });
+  const fullReasons = (plan.scope?.reasons ?? []).filter((item) => item.code !== 'affected-owner');
+  const stepSelections = (plan.steps ?? []).map((item) => {
+    const triggers = [];
+    for (const mapping of directMappings.filter((entry) => entry.owners?.includes(item.id))) {
+      triggers.push(Object.freeze({ kind: 'direct-owner', path: mapping.path }));
+    }
+    if (fullReasons.length > 0 && item.profiles?.includes('core')) {
+      triggers.push(Object.freeze({
+        kind: 'full-scope',
+        reasons: Object.freeze(fullReasons.map((reason) => Object.freeze({
+          code: reason.code,
+          path: reason.path ?? null,
+          pattern: reason.pattern ?? reason.owners?.[0] ?? null,
+          explanation: reason.explanation ?? null,
+        }))),
+      }));
+    }
+    for (const reason of item.reasons ?? []) {
+      const dependency = /^dependency of (.+)$/u.exec(reason);
+      if (dependency) triggers.push(Object.freeze({ kind: 'dependency-closure', parentStepId: dependency[1] }));
+      else if (reason.startsWith('profile ')) triggers.push(Object.freeze({ kind: 'profile', profile: reason.slice('profile '.length) }));
+      else if (reason.startsWith('group ')) triggers.push(Object.freeze({ kind: 'group', group: reason.slice('group '.length) }));
+      else if (reason.startsWith('step ')) triggers.push(Object.freeze({ kind: 'explicit-step', stepId: reason.slice('step '.length) }));
+    }
+    if ((plan.admissionStepIds ?? []).includes(item.id)) triggers.push(Object.freeze({ kind: 'admission' }));
+    return Object.freeze({
+      stepId: item.id,
+      selectionKinds: Object.freeze([...new Set(triggers.map((trigger) => trigger.kind))]),
+      triggers: Object.freeze(triggers),
+      executionBoundary: item.testing?.executionBoundary ?? null,
+      primaryEvidenceOwner: item.testing?.primaryEvidenceOwner ?? null,
+      publicOutcome: item.testing?.evidence?.publicOutcome ?? item.testing?.proves ?? null,
+      targetDurationMs: item.testing?.targetDurationMs ?? null,
+    });
+  });
+  const layerCounts = Object.freeze(Object.fromEntries(
+    ['Static', 'Unit', 'Component', 'Integration', 'System'].map((boundary) => [
+      boundary,
+      stepSelections.filter((item) => item.executionBoundary === boundary).length,
+    ]),
+  ));
   return Object.freeze({
     schemaVersion: 'buildr.verification-selection-audit/v1',
     status: plan.status,
@@ -155,6 +198,8 @@ export function createVerificationSelectionAudit(plan) {
     dependencyStepIds: Object.freeze(dependencyStepIds),
     selectedStepIds: Object.freeze(selectedStepIds),
     heavySelectedStepIds: Object.freeze(heavySelectedStepIds),
+    stepSelections: Object.freeze(stepSelections),
+    layerCounts,
     counts: Object.freeze({
       directOwners: directOwnerIds.length,
       directHeavyOwners: directHeavyOwnerIds.length,
@@ -690,9 +735,9 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
     if (!selectionOnlyPaths.has(productPath)) throw new Error(`Selection reason path is not classified as selection-only: ${productPath}`);
     if (typeof code !== 'string' || code.length === 0) throw new Error(`Invalid selection reason code for path: ${productPath}`);
   }
-  const fullScopeMatches = paths.filter((productPath) => !selectionOnlyPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
-    .filter((pattern) => matchesInput(productPath, pattern))
-    .map((pattern) => ({ productPath, pattern })));
+  const fullScopeMatches = paths.filter((productPath) => !selectionOnlyPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_AUTHORITIES
+    .filter((authority) => matchesInput(productPath, authority.pattern))
+    .map((authority) => ({ productPath, authority })));
   for (const id of stepIds) {
     if (!byId.has(id)) throw new Error(`Unknown verification step: ${id}`);
     selected.add(id);
@@ -736,17 +781,13 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   }
   const fallbackPaths = [...new Set([...unmatchedPaths, ...productionOwnerAudit.gaps.map((item) => item.path)])].sort();
   const fullScopeReasons = [
-    ...fullScopeMatches.map(({ productPath, pattern }) => ({
-      code: ['package.json', 'package-lock.json'].includes(productPath)
-        ? 'package-execution-metadata-change'
-        : productPath === 'test/verification/registry.mjs'
-          ? 'execution-graph-change'
-          : 'execution-authority-change',
+    ...fullScopeMatches.map(({ productPath, authority }) => ({
+      code: authority.code,
       path: productPath,
-      owners: Object.freeze([pattern]),
-      message: ['package.json', 'package-lock.json'].includes(productPath)
-        ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
-        : `${productPath} matches full-scope owner ${pattern}`,
+      pattern: authority.pattern,
+      explanation: authority.explanation,
+      owners: Object.freeze([authority.pattern]),
+      message: `${productPath} matches full-scope owner ${authority.pattern}: ${authority.explanation}`,
     })),
   ];
   if (fullScopeReasons.length > 0) {

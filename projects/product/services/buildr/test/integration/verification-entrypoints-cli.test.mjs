@@ -164,6 +164,21 @@ test('changed verification exposes plan/json and rejects unknown options before 
   assert.deepEqual(payload.unmapped, []);
   assert.deepEqual(payload.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.deepEqual(payload.steps.map((step) => step.id), [...payload.admissionStepIds, 'docs-quality']);
+  assert.deepEqual(payload.selectionAudit.directMappings, [{
+    code: 'affected-owner', path: 'docs/buildr-product.md', owners: ['docs-quality'],
+  }]);
+  assert.deepEqual(payload.selectionAudit.layerCounts, { Static: 6, Unit: 1, Component: 1, Integration: 0, System: 0 });
+  assert.equal(payload.selectionAudit.stepSelections.find((step) => step.stepId === 'docs-quality').selectionKinds.includes('direct-owner'), true);
+  assert.equal(payload.selectionAudit.stepSelections.find((step) => step.stepId === 'typecheck').selectionKinds.includes('admission'), true);
+
+  const full = spawnSync(process.execPath, [runner, '--json', 'test/verification/ownership.mjs'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  assert.equal(full.status, 0, full.stderr);
+  const fullPayload = JSON.parse(full.stdout);
+  assert.equal(fullPayload.scope.mode, 'full');
+  assert.equal(fullPayload.scope.reasons[0].code, 'ownership-authority-change');
+  assert.equal(fullPayload.scope.reasons[0].pattern, 'test/verification/ownership.mjs');
+  assert.match(fullPayload.scope.reasons[0].explanation, /ownership/u);
+  assert.ok(fullPayload.selectionAudit.stepSelections.every((step) => step.selectionKinds.includes('full-scope') || step.selectionKinds.includes('admission')));
 
   const fallback = spawnSync(process.execPath, [runner, '--json', 'new-area/contract.bin'], { cwd: productRoot, encoding: 'utf8' });
   assert.equal(fallback.status, 1, fallback.stderr);
