@@ -64,13 +64,14 @@ function fixture() {
   git(seed, 'config', 'user.email', 'buildr@example.com');
   writeVersion(seed, '0.1.0-rc.3', 'base');
   git(seed, 'commit', '-m', 'base');
-  const candidateBase = git(seed, 'rev-parse', 'HEAD');
   git(seed, 'branch', 'main');
+  git(seed, 'checkout', '-b', 'release-0.1.0-rc.5');
   writeVersion(seed, '0.1.0-rc.5', 'candidate');
   git(seed, 'commit', '-m', 'candidate');
   const releaseCommit = git(seed, 'rev-parse', 'HEAD');
+  const candidateBase = releaseCommit;
   const candidateTree = git(seed, 'rev-parse', 'HEAD^{tree}');
-  git(seed, 'branch', 'release-0.1.0-rc.5', releaseCommit);
+  git(seed, 'checkout', 'dev');
   fs.writeFileSync(path.join(seed, 'dev-only.txt'), 'new dev content\n');
   git(seed, 'add', 'dev-only.txt');
   git(seed, 'commit', '-m', 'continue dev after release freeze');
@@ -91,6 +92,7 @@ test('release convergence binds the frozen release tree while allowing dev to ad
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   const pre = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-main' });
   assert.equal(pre.ok, true);
+  assert.notEqual(spawnSync('git', ['merge-base', '--is-ancestor', data.candidateBase, 'origin/dev'], { cwd: data.work }).status, 0);
   assert.notEqual(pre.trees.dev, data.candidateTree);
   assert.equal(pre.trees.release, data.candidateTree);
   const afterMain = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });

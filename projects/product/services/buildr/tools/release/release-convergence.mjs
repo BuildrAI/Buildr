@@ -130,7 +130,6 @@ export function checkReleaseConvergence({
     dev: packageVersionAt(repo, devRef),
     main: checksMain ? packageVersionAt(repo, mainRef) : null,
   };
-  if (!isAncestor(repo, candidateBase, devRef)) findings.push({ code: 'candidate_base_not_in_dev', expected: candidateBase, actual: refs.dev });
   if (trees.release !== candidateTree) findings.push({ code: 'release_tree_mismatch', expected: candidateTree, actual: trees.release });
   if (versions.release !== version) findings.push({ code: 'release_version_mismatch', expected: version, actual: versions.release });
   for (const item of releaseTaskRefs(repo, version)) {
