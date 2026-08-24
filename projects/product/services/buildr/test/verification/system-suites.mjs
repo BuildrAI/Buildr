@@ -1,4 +1,9 @@
-import { TASK_LIFECYCLE_CONTEXT_KEY } from '../context/profiles.mjs';
+import {
+  GIT_REPOSITORY_CONTEXT_KEY,
+  PROJECT_FOUNDATION_CONTEXT_KEY,
+  TASK_LIFECYCLE_CONTEXT_KEY,
+  WORKSPACE_FOUNDATION_CONTEXT_KEY,
+} from '../context/profiles.mjs';
 
 export const SYSTEM_SUITES = Object.freeze([
   Object.freeze({
@@ -56,6 +61,11 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 45000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([
+      WORKSPACE_FOUNDATION_CONTEXT_KEY,
+      PROJECT_FOUNDATION_CONTEXT_KEY,
+      GIT_REPOSITORY_CONTEXT_KEY,
+    ]),
     files: Object.freeze([
       'test/system/package-capability-retirement.test.mjs',
       'test/system/project-product.test.mjs',

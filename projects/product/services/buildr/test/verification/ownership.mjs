@@ -554,6 +554,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/workspace/**",
       "src/infrastructure/platform.mjs",
       "src/infrastructure/product-layout.mjs",
+      "test/helpers/prepared-fixtures.mjs",
       "test/helpers/workspace-product-suite.mjs",
       "test/verification/system-suites.mjs",
       "test/verification/system.mjs",

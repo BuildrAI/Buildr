@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -9,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import YAML from 'yaml';
 
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
+import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -16,30 +16,12 @@ const LEGACY = [
   { version: 1, description: '管理任务 worktree 的放置、保留和安全清理。' },
   { version: 2, description: '管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。' },
 ];
-let pristineFixture = null;
-
-test.after(() => {
-  if (pristineFixture) fs.rmSync(pristineFixture.base, { recursive: true, force: true });
-  pristineFixture = null;
-});
-
 function run(args) {
   return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
 }
 
 function fixtureRoot(t) {
-  if (!pristineFixture) {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-retirement-pristine-'));
-    const root = path.join(base, 'workspace');
-    const initialized = run(['init', '--target', root, '--name', 'retirement', '--description', 'Capability retirement fixture', '--profile', 'team']);
-    assert.equal(initialized.status, 0, initialized.stderr);
-    pristineFixture = { base, root };
-  }
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-retirement-'));
-  const root = path.join(base, 'workspace');
-  fs.cpSync(pristineFixture.root, root, { recursive: true });
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  return root;
+  return copyPreparedWorkspace(t, 'capability-retirement').root;
 }
 
 function injectLegacy(root) {

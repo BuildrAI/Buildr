@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createTestContextRuntime } from '../../test-context.mjs';
+import {
+  createGitRepositoryContextProvider,
+  createProjectFoundationContextProvider,
+  createWorkspaceFoundationContextProvider,
+} from '../context/providers/prepared-fixtures.mjs';
+import { createTestContextPool } from '../context/runtime.mjs';
 import {
   buildrApplicationContext,
   buildrWorkspaceContext,
@@ -71,5 +79,64 @@ test('Buildr Workspace Context materializes isolated sandboxes and cleans failed
   } finally {
     await runtime.close();
     if (firstRoot) assert.equal(fs.existsSync(firstRoot), false);
+  }
+});
+
+test('Prepared Workspace and Project foundations prepare once and isolate every sandbox', () => {
+  const providers = [createWorkspaceFoundationContextProvider(), createProjectFoundationContextProvider()];
+  const pool = createTestContextPool({ providers, env: {} });
+  try {
+    const prepared = providers.map((provider) => pool.prepare(provider.key));
+    assert.deepEqual(prepared.map((context) => context.marker.providerData), [
+      { workspaceInitialized: true },
+      { workspaceInitialized: true, projectCode: 'demo' },
+    ]);
+    for (const provider of providers) assert.equal(pool.prepare(provider.key), prepared.find((context) => context.provider.key === provider.key));
+
+    const first = pool.acquire(providers[0].key, { name: 'foundation-first' });
+    const second = pool.acquire(providers[0].key, { name: 'foundation-second' });
+    fs.writeFileSync(path.join(first.root, 'first-only.txt'), 'isolated\n');
+    assert.equal(fs.existsSync(path.join(second.root, 'first-only.txt')), false);
+    first.release();
+    second.release();
+
+    const project = pool.acquire(providers[1].key, { name: 'project-foundation' });
+    assert.equal(fs.statSync(path.join(project.root, 'projects', 'demo')).isDirectory(), true);
+    project.release();
+    assert.equal(pool.events().filter((event) => event.operation === 'prepare').length, 2);
+  } finally {
+    pool.cleanup();
+  }
+});
+
+test('Prepared Git repositories expose independent remotes and working clones', () => {
+  const provider = createGitRepositoryContextProvider();
+  const pool = createTestContextPool({ providers: [provider], env: {} });
+  const git = (cwd, args) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout.trim();
+  };
+  try {
+    const first = pool.acquire(provider.key, { name: 'git-first' });
+    const second = pool.acquire(provider.key, { name: 'git-second' });
+    const firstRemote = path.join(first.root, 'repository.git');
+    const secondRemote = path.join(second.root, 'repository.git');
+    const firstClone = path.join(first.root, 'attached');
+    const secondClone = path.join(second.root, 'attached');
+    const baseline = git(secondClone, ['rev-parse', 'HEAD']);
+
+    fs.writeFileSync(path.join(firstClone, 'first-only.txt'), 'independent\n');
+    git(firstClone, ['add', 'first-only.txt']);
+    git(firstClone, ['commit', '-m', 'advance first repository']);
+    git(firstClone, ['push', 'origin', 'dev']);
+
+    assert.notEqual(git(firstRemote, ['rev-parse', 'refs/heads/dev']), baseline);
+    assert.equal(git(secondRemote, ['rev-parse', 'refs/heads/dev']), baseline);
+    assert.equal(fs.existsSync(path.join(secondClone, 'first-only.txt')), false);
+    first.release();
+    second.release();
+  } finally {
+    pool.cleanup();
   }
 });

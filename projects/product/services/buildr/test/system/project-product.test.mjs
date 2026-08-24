@@ -9,6 +9,7 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { copyPreparedGitRepository, copyPreparedWorkspace } from '../helpers/prepared-fixtures.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -28,10 +29,7 @@ function runBuildr(args) {
 }
 
 function initWorkspace(t) {
-  const root = path.join(tempRoot(t), 'workspace');
-  const result = runBuildr(['init', '--target', root, '--name', 'Demo', '--description', 'Demo workspace']);
-  assert.equal(result.status, 0, result.stderr);
-  return root;
+  return copyPreparedWorkspace(t, 'project-product').root;
 }
 
 test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt', (t) => {
@@ -144,12 +142,7 @@ test('v1 Project registry 读取零写入，显式 migration 原子且幂等', (
 
 test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只实时观察', (t) => {
   const root = initWorkspace(t);
-  const fixture = path.join(tempRoot(t), 'source');
-  fs.mkdirSync(fixture, { recursive: true });
-  assert.equal(run('git', ['init', '-b', 'dev'], fixture).status, 0);
-  fs.writeFileSync(path.join(fixture, 'README.md'), '# demo\n');
-  assert.equal(run('git', ['add', 'README.md'], fixture).status, 0);
-  assert.equal(run('git', ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'init'], fixture).status, 0);
+  const fixture = copyPreparedGitRepository(t, 'project-git-source').attached;
   const url = `file://${fixture}`;
   const result = runBuildr(['project', 'create', 'git-demo', '--target', root, '--repo', url, '--remote', 'origin', '--integration-branch', 'dev', '--name', 'Git Demo', '--description', 'Git project']);
   assert.equal(result.status, 0, result.stderr);
@@ -180,17 +173,7 @@ test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只�
 
 test('Project attach 登记外部 Git root 且不修改外部内容', (t) => {
   const root = initWorkspace(t);
-  const base = tempRoot(t);
-  const seed = path.join(base, 'seed');
-  const bare = path.join(base, 'project.git');
-  const attached = path.join(base, 'attached');
-  fs.mkdirSync(seed);
-  assert.equal(run('git', ['init', '-b', 'dev'], seed).status, 0);
-  fs.writeFileSync(path.join(seed, 'README.md'), '# attached\n');
-  assert.equal(run('git', ['add', 'README.md'], seed).status, 0);
-  assert.equal(run('git', ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'init'], seed).status, 0);
-  assert.equal(run('git', ['clone', '--bare', seed, bare]).status, 0);
-  assert.equal(run('git', ['clone', '--branch', 'dev', bare, attached]).status, 0);
+  const { attached } = copyPreparedGitRepository(t, 'project-attach');
   const before = { head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') };
 
   const result = runBuildr(['project', 'create', 'external', '--target', root, '--attach', attached, '--name', 'External', '--description', 'External project']);

@@ -10,6 +10,7 @@ import YAML from 'yaml';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { stopPreview } from '../../src/web/application/preview-lifecycle.mjs';
+import { copyPreparedWorkspace } from './prepared-fixtures.mjs';
 
 export function registerWorkspaceProductSuite(selectedSuite) {
 
@@ -60,6 +61,17 @@ function initWorkspaceViaCli(t, options = {}) {
 
 function initWorkspace(t, options = {}) {
   if (options.env) return initWorkspaceViaCli(t, options);
+  if (selectedSuite === 'manifest-registry' && !options.freshIdentity) {
+    const root = copyPreparedWorkspace(t, `workspace-${options.name || 'manifest'}`).root;
+    const runtime = createRuntime();
+    const current = runtime.getWorkspace(root);
+    runtime.updateWorkspaceMetadata(root, {
+      revision: current.revision,
+      name: options.name || 'Demo',
+      description: options.description || 'Demo workspace',
+    });
+    return root;
+  }
   const root = path.join(temporaryRoot(t), 'workspace');
   const previousLog = console.log;
   console.log = () => {};
@@ -271,8 +283,8 @@ suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不
 
 suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
   const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data'));
-  const first = initWorkspace(t, { name: 'First' });
-  const second = initWorkspace(t, { name: 'Second' });
+  const first = initWorkspace(t, { name: 'First', freshIdentity: true });
+  const second = initWorkspace(t, { name: 'Second', freshIdentity: true });
   const runtime = createRuntime();
 
   let registry = runtime.listRegisteredWorkspaces();
@@ -303,7 +315,7 @@ suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支�
 
 suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
   const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
-  const first = initWorkspace(t, { name: 'Original' });
+  const first = initWorkspace(t, { name: 'Original', freshIdentity: true });
   const duplicate = path.join(temporaryRoot(t), 'duplicate');
   fs.cpSync(first, duplicate, { recursive: true });
   const runtime = createRuntime();

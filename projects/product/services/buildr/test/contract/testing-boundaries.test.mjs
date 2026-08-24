@@ -264,6 +264,37 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   );
 });
 
+test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox', () => {
+  const profiles = fs.readFileSync(path.join(productRoot, 'test', 'context', 'profiles.mjs'), 'utf8');
+  const provider = fs.readFileSync(path.join(productRoot, 'test', 'context', 'providers', 'prepared-fixtures.mjs'), 'utf8');
+  const helper = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'prepared-fixtures.mjs'), 'utf8');
+  const suites = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'system-suites.mjs'), 'utf8');
+  const project = fs.readFileSync(path.join(productRoot, 'test', 'system', 'project-product.test.mjs'), 'utf8');
+  const service = fs.readFileSync(path.join(productRoot, 'test', 'system', 'service-product.test.mjs'), 'utf8');
+  const workspace = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'workspace-product-suite.mjs'), 'utf8');
+  const retirement = fs.readFileSync(path.join(productRoot, 'test', 'system', 'package-capability-retirement.test.mjs'), 'utf8');
+  const finish = fs.readFileSync(path.join(productRoot, 'test', 'system', 'task-finish-product-journey.test.mjs'), 'utf8');
+
+  for (const key of ['workspace-foundation/v1', 'project-foundation/v1', 'git-repository/v1']) assert.match(profiles, new RegExp(key.replace('/', '\\/')));
+  assert.match(provider, /runtime\.initBuildr/);
+  assert.match(provider, /runtime\.createProject/);
+  assert.match(provider, /git\.clone-bare/);
+  assert.match(provider, /fs\.cpSync\(context\.seedRoot, sandboxRoot/);
+  assert.match(helper, /defaultTestContextPool\(\)\.acquire/);
+  assert.match(suites, /id: 'system-workspace-lifecycle'[\s\S]*WORKSPACE_FOUNDATION_CONTEXT_KEY[\s\S]*PROJECT_FOUNDATION_CONTEXT_KEY[\s\S]*GIT_REPOSITORY_CONTEXT_KEY/);
+  assert.match(project, /copyPreparedWorkspace/);
+  assert.match(project, /copyPreparedGitRepository/);
+  assert.doesNotMatch(project, /runBuildr\(\['init'/);
+  assert.match(service, /copyPreparedProjectWorkspace/);
+  assert.match(service, /copyPreparedGitRepository/);
+  assert.doesNotMatch(service, /runBuildr\(\['init'/);
+  assert.match(workspace, /selectedSuite === 'manifest-registry' && !options\.freshIdentity/,
+    'manifest cases may reuse a foundation, while identity evidence requests a fresh Workspace');
+  assert.match(retirement, /copyPreparedWorkspace/);
+  assert.doesNotMatch(finish, /prepared-fixtures\.mjs|copyPreparedGitRepository/,
+    'Finish retained/carrier/worktree construction remains primary evidence after the no-benefit trial');
+});
+
 test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {
   const packageMetadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   assert.deepEqual(packageMetadata.exports['./test-context'], {

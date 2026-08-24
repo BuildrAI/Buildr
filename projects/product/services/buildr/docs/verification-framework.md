@@ -295,6 +295,23 @@ Task Development owner中原先仍有四个repository/profile文件直接调用`
 
 真实Git contribution、完整CLI协议、Task Environment create/cleanup、Finish、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
 
+### Prepared Fixture Provider
+
+Buildr测试层现在在公共Test Context Runtime之上注册三类可复用准备组件：
+
+- `workspace-foundation/v1`：已初始化但没有业务Project的不可变Workspace；
+- `project-foundation/v1`：包含`demo` Project、但没有Service的不可变Workspace；
+- `git-repository/v1`：带`dev`基线的bare remote；每次lease复制remote并创建独立working clone。
+
+首批只迁移`system-workspace-lifecycle`中不以准备行为为主证据的case。Project create/migration/attach、Service create/migration/attach、Workspace metadata/registry、capability retirement、HTTP与Git观察仍在逐case sandbox中真实发生；Workspace init与Project foundation不再由每个case重复支付。相同机器同一基线的一次直接对照中，Project文件约从24.1秒降到14.9秒，Service文件约从18.6秒降到9.7秒，manifest文件约从31.2秒降到29.0秒，package retirement约从20.2秒降到16.6秒；并行owner墙钟约从51.3秒降到42.6秒。该owner仍是`full-lifecycle`，因为同一owner内的fresh init、identity、migration、registry和Workspace黄金证据没有被替换。
+
+其余重型旅程已按同一准则复核：
+
+- Finish曾试接Git provider，全部9个journey通过，但两轮约84.4/82.4秒，高于改造前约76.7秒，因此撤回；carrier、worktree、target transition和cleanup继续由case自己构造。
+- Candidate tarball已由plan中的唯一`candidate-artifact`生成并供后续step消费，不再建立第二套Context缓存。
+- npm安装、Launcher、Host Node与release smoke验证的正是artifact安装、进程启动、绑定、readback和shutdown；共享已启动process会替换主证据，因此保持独立。
+- 初始化、migration、自举和cleanup同样只可复用与断言无关的外层准备，不能复用正在被验证的可变结果。
+
 ## 11. Verification Control Plane
 
 `test/context/dispositions.mjs`为registry中每个step保存唯一Context处置：
@@ -403,7 +420,7 @@ affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释
 
 已经实现：公共definition/runtime/npm入口、configuration identity、dependency graph、worker/suite/test scope、shared/exclusive/isolated lease、reset、dirty/evict、逆序destroy、direct-file adapter、多持久Host runner、outer grant约束、Host失败汇总、Buildr Application/Workspace provider、timing summary和package inventory验证。
 
-当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter；full-lifecycle owner仍使用默认process isolation。下一步应按Execution Record确认剩余重复成本，再决定增加SQLite snapshot、Git/source seed provider或直接优化黄金旅程内部实现。完整Finish、自举和cleanup不能用预建Context跳过。
+当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter。当前Git provider使用逐lease复制bare remote与独立clone，不共享可变repository；full-lifecycle owner仍使用默认process isolation。下一步应按Execution Record确认剩余重复成本，再决定增加SQLite snapshot、文件系统COW或直接优化黄金旅程内部实现。完整Finish、自举和cleanup不能用预建Context跳过。
 
 ## 19. 维护不变量
 

@@ -1,9 +1,29 @@
 import { createTaskLifecycleContextProvider, taskLifecycleContextProvider, TASK_LIFECYCLE_CONTEXT_KEY } from './providers/task-lifecycle.mjs';
+import {
+  createGitRepositoryContextProvider,
+  createProjectFoundationContextProvider,
+  createWorkspaceFoundationContextProvider,
+  gitRepositoryContextProvider,
+  projectFoundationContextProvider,
+  workspaceFoundationContextProvider,
+} from './providers/prepared-fixtures.mjs';
 import { TEST_CONTEXT_KEYS, TEST_CONTEXT_PROFILES } from './profiles.mjs';
 
-export { createTaskLifecycleContextProvider, TASK_LIFECYCLE_CONTEXT_KEY, TEST_CONTEXT_KEYS };
+export {
+  createGitRepositoryContextProvider,
+  createProjectFoundationContextProvider,
+  createTaskLifecycleContextProvider,
+  createWorkspaceFoundationContextProvider,
+  TASK_LIFECYCLE_CONTEXT_KEY,
+  TEST_CONTEXT_KEYS,
+};
 
-export const TEST_CONTEXT_PROVIDERS = Object.freeze([taskLifecycleContextProvider]);
+export const TEST_CONTEXT_PROVIDERS = Object.freeze([
+  workspaceFoundationContextProvider,
+  projectFoundationContextProvider,
+  gitRepositoryContextProvider,
+  taskLifecycleContextProvider,
+]);
 
 if (TEST_CONTEXT_PROVIDERS.length !== TEST_CONTEXT_KEYS.length
   || TEST_CONTEXT_PROVIDERS.some((provider, index) => {
