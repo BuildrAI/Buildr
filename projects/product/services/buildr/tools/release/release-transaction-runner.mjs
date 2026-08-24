@@ -183,6 +183,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
     const environment = createReleaseEnvironmentBinding({
       task: releaseTask,
+      taskStatus: action === 'dispatch' ? 'completed' : 'active',
       environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
       repo,
       sourceCommit,

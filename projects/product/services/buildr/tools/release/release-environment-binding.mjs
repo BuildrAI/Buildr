@@ -50,8 +50,9 @@ export function validateReleaseEnvironmentBinding(value, options = {}) {
   return value;
 }
 
-export function createReleaseEnvironmentBinding({ task, environmentResult, repo, sourceCommit, readSourceFile, nodeAudit }) {
-  if (task?.status !== 'completed') throw new Error(`Release Task must be completed before publication: ${task?.taskId || '<missing>'}.`);
+export function createReleaseEnvironmentBinding({ task, taskStatus = 'completed', environmentResult, repo, sourceCommit, readSourceFile, nodeAudit }) {
+  if (!['active', 'completed'].includes(taskStatus)) throw new Error('Release Task status must be active or completed.');
+  if (task?.status !== taskStatus) throw new Error(`Release Task must be ${taskStatus} for this release action: ${task?.taskId || '<missing>'}.`);
   if (!['cleaned', 'ready'].includes(environmentResult?.status)) throw new Error(`Release Task Environment must be ready or cleaned: ${environmentResult?.status || '<missing>'}.`);
   const environment = environmentResult.environment;
   const plan = environment?.preparationPlan;
