@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createAgentAssetsCliContributions } from '../../src/agent-assets/interfaces/cli/agent-assets.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -51,8 +52,8 @@ test('候选 Product checkout 只能投射自身任务验证 Workspace', (t) => 
   assert.equal(renderCalls, 1);
   const compatibility = runtime.assertRuntimeSyncTarget(candidate, 'codex');
   assert.equal(compatibility.disposition, 'projection-only');
-  assert.equal(compatibility.source.checkoutRoot, fs.realpathSync(candidate));
-  assert.equal(compatibility.target.checkoutRoot, fs.realpathSync(candidate));
+  assert.equal(sameFilesystemPath(compatibility.source.checkoutRoot, candidate), true);
+  assert.equal(sameFilesystemPath(compatibility.target.checkoutRoot, candidate), true);
   assert.match(compatibility.diagnostic, /buildr render codex --product-skill/);
   assert.match(compatibility.diagnostic, /独立验证 Workspace/);
   assert.doesNotThrow(() => runtime.assertRuntimeProjectionTarget(unrelated));

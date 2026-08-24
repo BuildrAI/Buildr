@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawnSync } from '../../../infrastructure/process.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import YAML from 'yaml';
 import { createProject as createProjectEntity } from '../../domain/project.mjs';
 import { createService as createServiceEntity } from '../../domain/service.mjs';
@@ -376,7 +377,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     let topLevel;
     try { topLevel = fs.realpathSync(gitOutput(['rev-parse', '--show-toplevel'], actual)); }
     catch { throw new Error(`${label} attached root is not a Git repository: ${rawPath}`); }
-    if (topLevel !== actual) throw new Error(`${label} attached root must be the independent Git top-level: ${rawPath}`);
+    if (!sameFilesystemPath(topLevel, actual)) throw new Error(`${label} attached root must be the independent Git top-level: ${rawPath}`);
     const url = readGitRemote(actual, remote);
     if (!url) throw new Error(`${label} attached root is missing declared remote ${remote}: ${rawPath}`);
     const branch = integrationBranch || gitDefaultBranch(actual, remote) || gitCurrentBranch(actual);
@@ -491,7 +492,7 @@ export function registerWorkspaceCliAdapter(runtime) {
         if (otherCode === project) continue;
         let otherRoot;
         try { otherRoot = fs.realpathSync(runtime.resolveProjectRoot(targetRoot, other)); } catch { continue; }
-        if (otherRoot === attachment.rootPath) throw new Error(`Project attached root is already registered by project:${otherCode}.`);
+        if (sameFilesystemPath(otherRoot, attachment.rootPath)) throw new Error(`Project attached root is already registered by project:${otherCode}.`);
       }
     }
     const name = nameOption ?? existingEntry?.name ?? project;
@@ -523,7 +524,7 @@ export function registerWorkspaceCliAdapter(runtime) {
       throw new Error('--remote and --integration-branch are only supported for Git Project sources.');
     }
 
-    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || fs.realpathSync(existingEntry.source.path) !== attachment.rootPath)) {
+    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || !sameFilesystemPath(fs.realpathSync(existingEntry.source.path), attachment.rootPath))) {
       throw new Error(`Project registry identity conflicts for ${project}: existing source is not the requested attached root.`);
     }
     const affected = attachment ? [projectsManifestPath(targetRoot)] : [projectRoot, projectsManifestPath(targetRoot), path.join(targetRoot, '.gitignore')];
@@ -636,12 +637,12 @@ export function registerWorkspaceCliAdapter(runtime) {
         if (otherCode === service) continue;
         let otherRoot;
         try { otherRoot = fs.realpathSync(runtime.resolveServiceRoot(targetRoot, other)); } catch { continue; }
-        if (otherRoot === attachment.rootPath) throw new Error(`Service attached root is already registered by service:${project}/${otherCode}.`);
+        if (sameFilesystemPath(otherRoot, attachment.rootPath)) throw new Error(`Service attached root is already registered by service:${project}/${otherCode}.`);
       }
       for (const [projectCode, registeredProject] of Object.entries(projectsRecord.projects)) {
         let otherRoot;
         try { otherRoot = fs.realpathSync(runtime.resolveProjectRoot(targetRoot, registeredProject)); } catch { continue; }
-        if (otherRoot === attachment.rootPath) throw new Error(`Service attached root is already registered by project:${projectCode}.`);
+        if (sameFilesystemPath(otherRoot, attachment.rootPath)) throw new Error(`Service attached root is already registered by project:${projectCode}.`);
       }
     }
     if (branchInput && !gitSource) throw new Error('--integration-branch is only supported for Git Service sources.');
@@ -663,7 +664,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     if (!gitSource && !fs.existsSync(localPath)) throw new Error(`Local service source path does not exist: ${repoRef}`);
     if (!gitSource && fs.existsSync(servicePath)) throw new Error(`Service target already exists: projects/${project}/services/${service}`);
 
-    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || fs.realpathSync(existingEntry.source.path) !== attachment.rootPath)) throw new Error(`Service metadata identity conflicts for ${project}/${service}: existing source is not the requested attached root.`);
+    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || !sameFilesystemPath(fs.realpathSync(existingEntry.source.path), attachment.rootPath))) throw new Error(`Service metadata identity conflicts for ${project}/${service}: existing source is not the requested attached root.`);
     const affected = attachment ? [servicesManifestPath(projectRoot)] : [servicePath, servicesManifestPath(projectRoot), path.join(projectRoot, '.gitignore'), path.join(targetRoot, '.gitignore')];
     return withWorkspaceMutation(targetRoot, `service.create:${project}/${service}`, affected, () => {
       ensureDirectory(servicesRoot);
