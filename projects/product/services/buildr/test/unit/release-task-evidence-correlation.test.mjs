@@ -56,19 +56,42 @@ test('correlates release/support Task evidence into one portable identity', () =
   assert.equal(inspectReleaseTaskEvidenceCorrelation(result).identity, result.identity);
 });
 
+test('preparation correlation keeps the release coordination Task active without requiring Finish evidence', () => {
+  const releaseTask = { ...task('release-1.0.0'), status: 'active' };
+  const releaseEntry = entry('release-1.0.0', { development: null, finish: null, selfBootstrap: null });
+  const result = correlation({
+    releaseTask,
+    releaseTaskStatus: 'active',
+    taskEvidence: [releaseEntry, entry('support-1')],
+  });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.releaseTask.status, 'active');
+  assert.equal(result.entries.find((item) => item.taskId === 'release-1.0.0').environment.status, 'passed');
+  assert.equal(result.entries.find((item) => item.taskId === 'release-1.0.0').finish.status, 'unknown');
+});
+
+test('publication correlation still requires the release coordination Task to be completed', () => {
+  assert.throws(
+    () => correlation({ releaseTask: { ...task('release-1.0.0'), status: 'active' } }),
+    /releaseTask must be completed/u,
+  );
+});
+
 test('blocks cross-run self-bootstrap evidence without changing Finish delivery', () => {
-  const result = correlation({ taskEvidence: [entry('release-1.0.0', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'release-1.0.0', runId: 43, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } }), entry('support-1')] });
+  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'support-1', runId: 43, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } })] });
   assert.equal(result.status, 'blocked');
-  assert.equal(result.entries[0].finish.status, 'passed');
-  assert.match(result.entries[0].findings.map((item) => item.code).join(','), /run|activation|self-bootstrap/u);
+  const support = result.entries.find((item) => item.taskId === 'support-1');
+  assert.equal(support.finish.status, 'passed');
+  assert.match(support.findings.map((item) => item.code).join(','), /run|activation|self-bootstrap/u);
 });
 
 test('missing self-bootstrap remains unknown while Delivery stays passed', () => {
-  const result = correlation({ taskEvidence: [entry('release-1.0.0', { selfBootstrap: null }), entry('support-1')] });
+  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: null })] });
   assert.equal(result.status, 'unknown');
-  assert.equal(result.entries[0].status, 'unknown');
-  assert.equal(result.entries[0].finish.status, 'passed');
-  assert.equal(result.entries[0].finish.deliveryStatus, 'delivered');
+  const support = result.entries.find((item) => item.taskId === 'support-1');
+  assert.equal(support.status, 'unknown');
+  assert.equal(support.finish.status, 'passed');
+  assert.equal(support.finish.deliveryStatus, 'delivered');
 });
 
 test('transaction context can carry validated task correlation without copying Finish Result', () => {
