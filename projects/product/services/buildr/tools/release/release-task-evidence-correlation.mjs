@@ -49,6 +49,12 @@ function optionalPositiveInteger(value, label) {
   return value;
 }
 
+function optionalRunIdentity(value, label) {
+  if (value == null) return null;
+  if (typeof value === 'string' && value.trim()) return value;
+  return optionalPositiveInteger(value, label);
+}
+
 function optionalText(value) {
   return typeof value === 'string' && value.trim() ? value : null;
 }
@@ -150,7 +156,7 @@ function normalizeFinish(value, expectedTaskId, label) {
   return {
     status: roleStatus(value),
     taskId: expectedTaskId,
-    runId: optionalPositiveInteger(value.runId, `${label}.runId`),
+    runId: optionalRunIdentity(value.runId, `${label}.runId`),
     identity: resultIdentity,
     resultIdentity,
     handoffIdentity: identity(value.handoffIdentity, `${label}.handoffIdentity`),
@@ -174,7 +180,7 @@ function normalizeSelfBootstrap(value, expectedTaskId, expectedRunId, label) {
   if (!value) return { status: 'unknown', taskId: expectedTaskId, runId: null, runIdMismatch: false, resultIdentity: null, activationIdentity: null, planIdentity: null, carrierIdentity: null, deliveredRef: null, sourceTree: null, diagnosticRef: null, reason: 'self-bootstrap-evidence-missing' };
   closed(value, ALLOWED_SELF_BOOTSTRAP_FIELDS, label);
   if (value.taskId != null && value.taskId !== expectedTaskId) throw new Error(`${label}.taskId does not match task entry.`);
-  const runId = optionalPositiveInteger(value.runId, `${label}.runId`);
+  const runId = optionalRunIdentity(value.runId, `${label}.runId`);
   const runIdMismatch = expectedRunId != null && runId != null && runId !== expectedRunId;
   if (!['passed', 'not-applicable', 'blocked', 'failed'].includes(value.status)) throw new Error(`${label}.status is not supported.`);
   const resultIdentity = identity(value.resultIdentity || value.identity, `${label}.resultIdentity`);
