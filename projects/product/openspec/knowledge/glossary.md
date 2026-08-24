@@ -514,14 +514,14 @@
 ## 项目测试（Project Testing）
 
 - 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界，以及一次编排的成本约束、选择范围和验证目标。
-- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick 成本约束；focus、affected、full 范围；开发目标、冻结 Candidate、Release artifact 验证节点。
-- 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；Quick、affected/full、Candidate/Release 不是同一层级的测试类型，Candidate 不自动等于 full；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
+- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick 成本约束；focus、affected、full 范围；frozen Task Content / Task Delivery、Product Artifact Candidate与Published Release验证节点。
+- 避免混用：不是Task Verification或测试平台，不创建Result、Receipt、Application或provider contract；证据边界、affected/full选择范围与验证对象/决策节点是三个正交问题；Quick只提供开发反馈，System不自动等于Acceptance，`focus`只用于诊断选择；此处Component表示组件测试边界，不是Buildr受管资产Component。
 - 来源：canonical `openspec/specs/project-testing-guidance/spec.md`（本 Change converge 时建立）
 
 ## 验证控制面（Verification Control Plane）
 
 - 定义：Buildr Product测试中由ownership、registry、planner、DAG scheduler与executor组成的test-only编排层，负责affected owner选择、执行图、预算准入、依赖、资源需求与exact grant。
-- 适用范围：`test:changed`、`test:focus`、`test:core`、`test:candidate`及Candidate CI对同一registry的执行投影。
+- 适用范围：`test:changed`、`test:focus`、`test:daily-full`、兼容`test:core`、`test:candidate`及Candidate CI对同一registry的执行投影。
 - 避免混用：不是Task Verification、`verification.yml`通用能力schema、Product runtime scheduler或Task lifecycle authority；不拥有测试fixture内容。
 - 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
 
@@ -700,11 +700,11 @@
 - 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含 Planning、Verification 或 Completion Result identity。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
-## Product Candidate verification
+## Product Artifact Candidate verification
 
-- 定义：Project Testing为完整产品候选组织的验证目标/编排；Buildr Product由`test:candidate`及其GitHub分布式投影执行完整registry回归。发布模型完成适配后，每个current release HEAD/tree只对应matching Product Candidate generation和唯一tarball。
+- 定义：Project Testing针对exact source与唯一候选制品组织的验证目标/编排；Buildr Product由`test:candidate`及其GitHub分布式投影执行完整daily evidence并增加artifact、package、install与compatibility evidence。每个current release HEAD/tree只对应matching Product Artifact Candidate generation和唯一tarball。
 - 适用范围：显式完整Project回归、冻结release source的发布候选门禁或用户要求的full validation。
-- 避免混用：不是 Task Candidate，也不会自动创建Task Candidate/generation、Completion Review或研发交接；changed/affected开发反馈不等于完整Product Candidate。
+- 避免混用：不是Task Candidate或Task Content Target，也不会自动创建Task Candidate/generation、Completion Review或研发交接；changed/affected开发反馈和daily-full都不等于完整Product Artifact Candidate。
 - 来源：[Verification ownership](../../docs/verification-ownership.md)
 
 ## 发布集合（Release Collection）

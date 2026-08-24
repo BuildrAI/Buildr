@@ -7,7 +7,7 @@
 ## 1. 总体架构
 
 ```text
-changed / focus / core / candidate
+changed / focus / daily-full / candidate
                  │
                  ▼
 Verification Control Plane
@@ -37,7 +37,7 @@ queue/grant + create/hit/acquire/body/reset/dirty/destroy + diagnostics
 - provider 决定“某种技术状态如何隔离和恢复”；
 - `node:test` 继续负责 assertion、test semantics、reporter 和结果。
 
-Context Runtime 不读取 changed paths、Core/Candidate profile 或 Buildr Workspace；Verification planner 也不创建 Application Context。
+Context Runtime 不读取 changed paths、daily-full/Candidate profile 或 Buildr Workspace；Verification planner 也不创建 Application Context。内部`core` profile只是不破坏历史plan/timing identity的daily-full兼容投射。
 
 ## 2. 目录与发布边界
 
@@ -345,21 +345,39 @@ step声明contexts、isolation/reset/parallel safety、`workers/processes/git/wo
 
 Application Context不是Component的同义词。复用worker Application state后，只要仍穿过真实SQLite、filesystem或Git，测试仍是Integration/System。
 
-## 13. affected、Core、Candidate与Release
+## 13. 证据、选择与验证对象
+
+Product验证只回答三个正交问题：
+
+| 问题 | 权威事实 | 可选值 |
+| --- | --- | --- |
+| 用什么证据证明？ | registry step `executionBoundary` | Static、Unit、Component、Integration、System |
+| 本次选择多少？ | ownership + planner | affected、full |
+| 验证什么对象、支持哪个决定？ | `verification.yml` capability + Candidate/Release workflow | frozen Task Content / Task Delivery、Product Artifact Candidate、Published Release |
+
+Quick只表示开发期低成本反馈，focus只用于诊断；两者都不冒充正式Task Verification。`verification.yml`声明capability级对象、选择、决定、环境与副作用；ownership唯一持有path→primary owner；registry唯一持有step、profile、dependency、resource、budget和primary evidence。planner只消费这些authority，不存在第二套执行图。
+
+| Verification target | Default selection | Object | Added evidence |
+| --- | --- | --- | --- |
+| Task Delivery | affected | frozen Task Content | affected development evidence |
+| Full Regression | full | Task/current source | complete daily evidence |
+| Product Artifact Candidate | full | exact source + candidate artifact | artifact/package/install compatibility evidence |
+| Published Release | release-only | published artifact/result | publish, install, launcher, smoke, readback |
 
 | 入口 | 责任 |
 | --- | --- |
 | `test:fast` | Unit、Component和低成本Static |
 | `test:changed` | affected；unknown path/owner gap执行前失败 |
 | `test:focus` | 指定primary owner定位和计时 |
-| `test:core` | 52-step日常核心Full，不承担Release专属旅程 |
-| `test:candidate` | 66-step完整Product Candidate与唯一tarball |
+| `test:daily-full` | 52-step完整日常证据，不承担Candidate/Release专属旅程 |
+| `test:core` | 兼容入口；转发到相同daily-full runner与内部`core` profile |
+| `test:candidate` | 66-step Product Artifact Candidate与唯一tarball |
 | Candidate CI | 平台分片、Windows/Host Node和closed aggregate |
 | Release | 冻结source、publication、readback和Git convergence |
 
 affected解决任务相关性，Context解决已选测试的重复环境成本，Host grant解决安全并行。三者互补。
 
-changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是日常`core` profile。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
+changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是daily-full membership。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
 
 ## 14. Evidence
 
@@ -396,7 +414,7 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 
 Task Development owner的历史基线约为71.9秒；第一阶段只做seed与手工shard后约40.8秒。迁移到公共Runtime后的独立focus为31.670秒：4个Host、8次Context创建、22次cache hit、15次隔离lease，累计test body为69.202秒，而Workspace materialize/cleanup合计只有0.931秒。
 
-最终冻结实现树的三轮无外部竞争Core均为52/52通过；计划目标工作量为976秒，全局容量为4，因此数学容量下限为244秒：
+下表保留当时冻结实现树的三轮无外部竞争历史样本。2026-08-24现场plan-only复核显示当前daily-full仍为52 steps，但registry目标工作量已变为1,036秒、全局容量数学下限259秒、预算360秒；当前Product Artifact Candidate为66 steps、目标工作量1,398秒、数学下限349.5秒、预算600秒。历史样本不得替代当前Execution Record。
 
 | 样本 | Core墙钟 | 累计executor work | 有效并行度 | Task Development | 最慢step |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -416,9 +434,9 @@ Task Development owner的历史基线约为71.9秒；第一阶段只做seed与�
 
 affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释放；Core的`system-task-finish`等待29.529秒后取得同一slots，执行后也完整释放。Core相对无竞争中位数增加17.544秒（约6.6%），但没有并发写入、脏Context、遗留进程或失效缓存。该样本证明跨plan资源协调会把竞争记录为resource wait，而不是把等待混入Context创建收益；同时也说明CPU、磁盘与生命周期容量竞争仍会放大墙钟。
 
-最终结论必须保持预算诚实：180秒低于当前244秒数学下限，不能作为现有52-step Core的可达目标；Parent最终验收采用300秒标准无竞争优化目标和360秒诚实执行预算。本Change已把稳定Core从阶段约5分20秒收敛到约4分28秒，并建立可继续注册和复用Context的技术框架；若要进一步下降，必须减少Core目标工作量、消除剩余primary evidence重复，或优化完整Finish、Workspace/System、execution record、coordination、runtime parity和Acceptance等真实测试体。affected仍负责避免无关测试，但不是唯一性能手段；Candidate与Release证据不能为追求Core数字而下放或删除。
+该历史轮次的结论是180秒低于当时244秒数学下限，不能作为当时52-step集合的可达目标；它建立了Context技术框架，但不是当前预算事实。2026-08-24的current daily-full数学下限已现场复核为259秒，预算360秒。若要进一步下降，必须减少选择放大、消除重复primary evidence或优化真实生命周期body/cleanup；Product Artifact Candidate与Published Release证据不能为追求daily-full数字而下放或删除。
 
-后续跨层证据审计以27个target duration至少15秒的日常Core Integration/System owner建立了registry派生map。近期普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。Core仍为52 steps、976秒工作量与244秒下限，说明剩余成本主要在真实Finish、Workspace、Worktree、进程和其他生命周期body/cleanup，而不是Node Unit/Component框架本身。详见[审计报告](../../../docs/verification-evidence-audit.md)。
+后续跨层证据审计以27个target duration至少15秒的日常Integration/System owner建立了registry派生map。历史普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。该历史树为52 steps、976秒工作量与244秒下限；当前树以本节开头的现场plan-only为准。剩余成本仍需分别审计selection amplification与真实Finish、Workspace、Worktree、进程等owner body/cleanup，详见[审计报告](../../../docs/verification-evidence-audit.md)。
 
 ## 18. 当前能力与下一边界
 
@@ -434,6 +452,6 @@ affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释
 - shared seed只读，mutation发生在lease-owned state/sandbox。
 - outer scheduler是Host/resource budget authority，inner runner只消费grant。
 - unknown owner、无效Context、不可满足资源、污染和失真预算都在安全边界失败。
-- Core性能目标不能削弱Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Release readback/convergence证据。
+- daily-full性能目标不能削弱Product Artifact Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Published Release readback/convergence证据。
 
 相关入口：`test-context.mjs`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.mjs`、`test/verification/planner.mjs`、`test/verification/dag-scheduler.mjs`、`test/verification/executor.mjs`。

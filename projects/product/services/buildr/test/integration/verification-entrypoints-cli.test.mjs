@@ -108,6 +108,27 @@ test('core full plan uses the daily core profile without Candidate-only owners',
   }
 });
 
+test('daily-full public entry and core compatibility select one registry evidence set', () => {
+  const runner = path.join(productRoot, 'test', 'verification', 'candidate.mjs');
+  const daily = spawnSync(process.execPath, [runner, '--profile', 'daily-full', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  const compatibility = spawnSync(process.execPath, [runner, '--profile', 'core', '--json'], { cwd: productRoot, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+  assert.equal(daily.status, 0, daily.stderr);
+  assert.equal(compatibility.status, 0, compatibility.stderr);
+  const dailyPlan = JSON.parse(daily.stdout);
+  const compatibilityPlan = JSON.parse(compatibility.stdout);
+  assert.equal(dailyPlan.source, 'daily-full-entry');
+  assert.deepEqual(dailyPlan.model, {
+    verificationTarget: 'task-or-current-source',
+    selection: 'full',
+    evidenceSet: 'daily-full',
+    compatibilityProfile: 'core',
+  });
+  assert.equal(compatibilityPlan.source, 'core-profile');
+  assert.deepEqual(compatibilityPlan.model, dailyPlan.model);
+  assert.deepEqual(dailyPlan.steps, compatibilityPlan.steps);
+  assert.deepEqual(dailyPlan.estimate, compatibilityPlan.estimate);
+});
+
 test('OpenSpec fixture runner lists disjoint suites and rejects unknown suites', () => {
   const runner = path.join(productRoot, 'test', 'verification', 'openspec', 'contract.mjs');
   const listed = spawnSync(process.execPath, [runner, '--list-suites'], { cwd: productRoot, encoding: 'utf8' });

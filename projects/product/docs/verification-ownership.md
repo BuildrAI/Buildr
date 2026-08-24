@@ -14,9 +14,10 @@ Buildr 不把所有验证强行塞进 Unit、Component、Integration。每个 re
 | --- | --- | --- |
 | 测试意图 | Development、Acceptance、Static Conformance、Delivery / Release | 为什么验证 |
 | 执行边界 | Static、Unit、Component、Integration、System | 穿过了什么技术边界 |
-| 选择与目标 | Quick；focus / affected / full；Candidate / Release | 什么时候、按多大范围、验证哪个目标 |
+| 选择范围 | affected / full | 本次证明多少 |
+| 验证对象与决策 | frozen Task Content / Task Delivery；Product Artifact Candidate；Published Release | 证明什么、支持哪个决定 |
 
-`System` 不等于 Acceptance，`Static` 不是 Unit，`Candidate` 也不是测试类型。Service 主要拥有自身代码、公开技术契约和独立交付物事实；Project 主要拥有跨 Service 行为、治理资产、用户 Journey 和组合交付事实。多个测试可以提供辅助证据，但每项事实只有一个 primary owner。
+`System` 不等于 Acceptance，`Static` 不是 Unit，Product Artifact Candidate也不是测试类型。Quick只表示开发期低成本反馈，focus只用于诊断选择。Service 主要拥有自身代码、公开技术契约和独立交付物事实；Project 主要拥有跨 Service 行为、治理资产、用户 Journey 和组合交付事实。多个测试可以提供辅助证据，但每项事实只有一个 primary owner。
 
 ## 2. 直接测试层
 
@@ -95,10 +96,11 @@ Context 与内层并发遵循：
 | 入口 | 定位 | 选择规则 |
 | --- | --- | --- |
 | `npm test` / `test:fast` | Quick | 完整 Unit、Component、静态 Contract、CLI architecture、OpenSpec spec quality/strict；不含真实投射、重复 cleanup、System、npm pack、浏览器或恢复矩阵 |
-| `test:changed` | affected 或必要 core Full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或闭合 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架执行权威时扩展 core 并加入 canary |
+| `test:changed` | affected 或必要 daily-full | 按 Git diff/显式 Product paths 匹配直接 owner；生产 Application/Infrastructure 源码必须命中领域 owner 或闭合 allowlist；未映射/owner gap fail closed；非空 plan 在同一 DAG 先运行 Quick，命中验证框架执行权威时扩展内部 core compatibility profile并加入canary |
 | `test:focus -- <step|group>` | 故障定位 | 只选择指定 primary owner 与真实 artifact dependency，不附加完整 Quick |
-| `test:core` | 日常核心 Full | 从唯一 registry 选择 52 个 core owners；不读取 Git diff，不生成 tarball，不运行 package、Launcher、fresh-build/onboarding 或 release smoke primary evidence；同一 DAG 先运行 Quick + verification admission canary |
-| `test:candidate` | 完整 Product Candidate | 选择 Candidate profile 的全部 66 个 required owners；不读取 Git diff 或 core exclusion 缩小覆盖；生成唯一 tarball并运行 package、Launcher、fresh-build/onboarding 与 release smoke primary evidence |
+| `test:daily-full` | 完整日常证据 | 从唯一registry选择52个内部core compatibility owners；不读取Git diff，不生成tarball，不运行package、Launcher、fresh-build/onboarding或release smoke primary evidence；同一DAG先运行Quick + verification admission canary |
+| `test:core` | 兼容入口 | 转发到`test:daily-full`的相同runner和evidence set，不创建第二profile或执行图 |
+| `test:candidate` | Product Artifact Candidate | 选择Candidate profile的全部66个required owners；不读取Git diff或daily-full exclusion缩小覆盖；生成唯一tarball并运行package、Launcher、fresh-build/onboarding与artifact smoke primary evidence |
 | `test:release` 与 Release focus | 发布专项 | release convergence、tarball 安装与发布物行为；不把发布 Git 流程塞进每个 Candidate |
 | `test:browser:smoke` | 条件化 Browser System | Buildr Web 变化时由独立 capability 选择；可用 selector 定位，不在 Product Full 重复五次 |
 
@@ -115,7 +117,7 @@ affected只承担开发反馈，不再从路径ownership直接执行`Delivery / 
 
 任一 unknown path 或 direct production owner gap 都会在 admission 和业务 verifier 启动前返回 `status=blocked`、`verification-owner-gap`、完整 gap 列表与补 owner 的 next action。完整 Candidate 不再作为 unknown ownership 的替代证明。
 
-Changed Full、Core 与 Candidate 计划会在执行前输出 step 数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与 `minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或 executable step 缺少 target budget 时，runner fail closed。当前 core 为 52 step、目标工作量 976 秒、全局容量理论下限 244 秒，以 300 秒作为标准无竞争优化目标、360 秒作为诚实执行预算；完整 Candidate 保持 66 step、目标工作量 1,338 秒、理论下限 334.5 秒和 600 秒执行预算。原 180 秒目标低于当前数学下限，已经退役，不能再作为现有 Core 的可达声明。
+Changed Full、daily-full与Product Artifact Candidate计划会在执行前输出step数、目标工作量、全局容量下限、依赖关键路径、资源容量下限与`minimumFeasibleDurationMs`。声明总预算低于任何理论下限，或executable step缺少target budget时，runner fail closed。2026-08-24现场plan-only显示daily-full为52 steps、目标工作量1,036秒、全局容量理论下限259秒与360秒诚实执行预算；Product Artifact Candidate为66 steps、目标工作量1,398秒、理论下限349.5秒和600秒执行预算。历史180秒目标低于当前数学下限，不能作为现有daily-full的可达声明。
 
 ### Quick 准入快照（2026-08-04）
 
@@ -134,7 +136,7 @@ Quick runner 全局最多并发 4 个 step；`unit`、`component`、`contract` �
 
 迁出的 `development-entry`、`task-asset-observation`、候选文件系统、Task Manager 临时 capability graph 与 verification CLI process cases 现在由 `integration` 选择；它们包含真实 CLI/Git/filesystem 或 cleanup。`runtime-adapter-contract` 虽单次耗时较低，但会重复创建和清理临时投射目录，因此保留 changed/focus/Candidate identity 并退出 Quick。
 
-Quick 是成本约束，affected/full 是选择范围，Candidate/Release 是验证目标或节点。三者不再作为一条混合层级，也不进入 Task Verification Result schema。
+Quick是成本约束，affected/full是选择范围，frozen Task Content、Product Artifact Candidate与Published Release是验证对象或决策节点。它们不是一条混合层级，也不进入Task Verification Result schema。内部Task Candidate identity只冻结Task lifecycle事实，不等于Product Artifact Candidate。
 
 ## 6. Task Verification 如何使用项目测试
 
@@ -144,8 +146,8 @@ Task Verification 不登记内部 executable step，也不为用户设计测试�
 | --- | --- | ---: |
 | `product.fast` | `npm run test:fast`；低成本开发反馈 | 否 |
 | `product.delivery` | `test:changed -- --base origin/dev`；同一 plan 的 affected 或必要 full | 是 |
-| `product.full-regression` | `npm run test:core`；日常 core profile 的全部 required owners | 否 |
-| `product.candidate` | `npm run test:candidate`；完整 Candidate profile、唯一 tarball 与发布级 primary evidence | 否 |
+| `product.full-regression` | `npm run test:daily-full`；完整日常evidence set的全部required owners | 否 |
+| `product.candidate` | `npm run test:candidate`；完整daily evidence、唯一Product Artifact Candidate tarball与artifact primary evidence | 否 |
 | `product.browser-smoke` | Buildr Web paths 适用时运行真实浏览器 Journey | 适用时是 |
 | `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
 | `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |

@@ -37,7 +37,7 @@ import { CANDIDATE_TOTAL_BUDGET_MS, CORE_TOTAL_BUDGET_MS } from '../../test/veri
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ids = (plan) => plan.steps.map((step) => step.id);
 
-test('统一 registry 固化 fast、core 与 Candidate required gates', () => {
+test('统一 registry 固化 fast、daily-full兼容core与Candidate required gates', () => {
   const validation = validateVerificationRegistry();
   assert.deepEqual(validation, { ok: true, findings: [] });
   assert.equal(new Set(verificationSteps.map((step) => step.id)).size, verificationSteps.length);
@@ -63,6 +63,23 @@ test('统一 registry 固化 fast、core 与 Candidate required gates', () => {
   const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
   assert.deepEqual(candidateIds.filter((id) => !coreIds.includes(id)).sort(), Object.keys(VERIFICATION_DAILY_CORE_EXCLUSIONS).sort());
   assert.ok(coreIds.every((id) => candidateIds.includes(id)));
+});
+
+test('三轴选择反例保持affected默认、authority Full与Release-only隔离', () => {
+  const local = createVerificationPlan({ paths: ['src/task/domain/task-record.mjs'] });
+  assert.equal(local.status, 'ready');
+  assert.equal(local.scope.mode, 'affected');
+  assert.ok(local.scope.reasons.every((reason) => reason.code === 'affected-owner'));
+  const executionAuthority = createVerificationPlan({ paths: ['test/verification/planner.mjs'] });
+  assert.equal(executionAuthority.scope.mode, 'full');
+  assert.equal(executionAuthority.scope.reasons[0].code, 'execution-authority-change');
+  assert.equal(executionAuthority.scope.reasons[0].path, 'test/verification/planner.mjs');
+  const dailyIds = ids(createVerificationPlan({ profiles: ['core'] }));
+  const candidateIds = ids(createVerificationPlan({ profiles: ['candidate'] }));
+  for (const releaseOnlyId of Object.keys(VERIFICATION_DAILY_CORE_EXCLUSIONS)) {
+    assert.equal(dailyIds.includes(releaseOnlyId), false, releaseOnlyId);
+    assert.equal(candidateIds.includes(releaseOnlyId), true, releaseOnlyId);
+  }
 });
 
 test('日常Core慢owner形成闭合primary evidence map', () => {

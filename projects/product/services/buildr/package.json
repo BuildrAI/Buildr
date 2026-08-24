@@ -94,6 +94,7 @@
     "test:audit:verification": "node test/verification/audit.mjs",
     "test:focus": "node test/verification/focus.mjs",
     "test:host-node": "node test/verification/host-node.mjs",
+    "test:daily-full": "bash test/verification/verify-buildr-product-daily-full",
     "test:core": "bash test/verification/verify-buildr-product-core",
     "test:candidate": "bash test/verification/verify-buildr-product",
     "test:candidate:ci": "bash test/verification/verify-buildr-product-ci",

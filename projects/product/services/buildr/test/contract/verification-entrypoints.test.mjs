@@ -41,6 +41,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
+  assert.equal(scripts['test:daily-full'], 'bash test/verification/verify-buildr-product-daily-full');
   assert.equal(scripts['test:core'], 'bash test/verification/verify-buildr-product-core');
   assert.equal(scripts['test:candidate'], 'bash test/verification/verify-buildr-product');
   assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
@@ -59,6 +60,11 @@ test('product verification exposes four gates, direct layers, and one focus entr
   for (const forbidden of ['npm pack', 'npm install', 'verification/workspace/run.mjs', 'release-smoke.mjs']) {
     assert.equal(fast.includes(forbidden), false, `fast verifier must exclude ${forbidden}`);
   }
+  const dailyFull = read('test/verification/verify-buildr-product-daily-full');
+  const coreCompatibility = read('test/verification/verify-buildr-product-core');
+  assert.match(dailyFull, /candidate\.mjs --profile daily-full/u);
+  assert.match(coreCompatibility, /verify-buildr-product-daily-full/u);
+  assert.doesNotMatch(coreCompatibility, /candidate\.mjs|--profile core/u);
 });
 
 test('普通发布测试无GUI副作用，真实平台Launcher仅由显式入口调用', () => {
@@ -82,7 +88,7 @@ test('Development Launcher固定端口不改变Task Preview的随机端口与无
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
-test('Product 声明唯一 delivery、日常 core、完整 Candidate 与单一 Browser 交付能力', () => {
+test('Product 声明三轴模型、完整日常证据、Artifact Candidate 与单一 Browser 交付能力', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
   const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
@@ -93,12 +99,16 @@ test('Product 声明唯一 delivery、日常 core、完整 Candidate 与单一 B
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
-  assert.deepEqual(fast.proves, ['低成本 Unit、Component 与 Static Conformance 通过']);
+  assert.equal(fast.title, 'Buildr Product Quick 开发反馈');
+  assert.match(fast.proves[0], /不证明完整 Task Delivery、Product Artifact Candidate 或 Published Release/u);
   assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
   assert.equal(delivery.requiredForDelivery, true);
   assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:core'], cwd: 'services/buildr' });
+  assert.match(delivery.proves.join(' '), /frozen Task Content/u);
+  assert.match(delivery.proves.join(' '), /affected 或必要 daily-full/u);
+  assert.match(delivery.applicability.conditions.join(' '), /稳定 reason code/u);
+  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:daily-full'], cwd: 'services/buildr' });
   assert.equal(fullRegression.requiredForDelivery, false);
   assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(fullRegression.applicability.paths, ['**']);
@@ -106,6 +116,10 @@ test('Product 声明唯一 delivery、日常 core、完整 Candidate 与单一 B
   assert.equal(candidate.requiredForDelivery, false);
   assert.deepEqual(candidate.environment.requires, ['node', 'npm', 'git']);
   assert.deepEqual(candidate.applicability.paths, ['**']);
+  assert.equal(fullRegression.title, 'Buildr Product 完整日常证据');
+  assert.match(fullRegression.proves.join(' '), /core compatibility profile/u);
+  assert.equal(candidate.title, 'Buildr Product Artifact Candidate 验证');
+  assert.match(candidate.proves.join(' '), /不表示Published Release已经成功/u);
   assert.equal(declaration.capabilities.some((capability) => capability.id === 'product.task-affected'), false);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
@@ -139,6 +153,9 @@ test('Product 声明唯一 delivery、日常 core、完整 Candidate 与单一 B
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
   assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
   assert.equal(releaseSet.requiredForDelivery, false);
+  assert.equal(releaseSet.title, 'Buildr Release contract 与本机 smoke 验证');
+  assert.match(releaseSet.applicability.conditions.join(' '), /不执行真实外部发布/u);
+  assert.match(releaseSet.proves.join(' '), /不冒充matching Candidate/u);
   assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
   assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
   assert.equal(declaration.capabilities.some((capability) => capability.id.startsWith('product.platform-')), false);
@@ -189,13 +206,15 @@ test('Windows npm preflight keeps the bounded high-risk owners and tarball depen
 
 test('core and candidate reuse one runner while retaining distinct evidence responsibilities', () => {
   const wrapper = read('test/verification/verify-buildr-product');
+  const dailyFullWrapper = read('test/verification/verify-buildr-product-daily-full');
   const coreWrapper = read('test/verification/verify-buildr-product-core');
   const candidate = read('test/verification/candidate.mjs');
   const changed = read('test/verification/changed.mjs');
   assert.ok(wrapper.includes('test/verification/candidate.mjs'));
   assert.ok(wrapper.includes('"$@"'));
-  assert.ok(coreWrapper.includes('test/verification/candidate.mjs --profile core'));
-  assert.ok(candidate.includes('profiles: [request.profile]'));
+  assert.ok(dailyFullWrapper.includes('test/verification/candidate.mjs --profile daily-full'));
+  assert.ok(coreWrapper.includes('verify-buildr-product-daily-full'));
+  assert.ok(candidate.includes('profiles: [registryProfile]'));
   assert.doesNotMatch(candidate, /collectChangedProductPaths|createVerificationPreflightPlan|--base/);
   assert.doesNotMatch(changed, /createVerificationPreflightPlan/);
   assert.equal((candidate.match(/await executePlan\(/g) ?? []).length, 1);

@@ -282,8 +282,12 @@ for (const suite of ['workspace-lifecycle', 'ownership-recovery', 'runtime-recon
   }
 }
 const candidateSource = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'candidate.mjs'), 'utf8');
-if (!candidateSource.includes("profile: 'candidate'") || !candidateSource.includes('profiles: [request.profile]')) {
-  problems.push('candidate verifier must default to the complete candidate profile while allowing the explicit core lane');
+if (
+  !candidateSource.includes("profile: 'candidate'")
+  || !candidateSource.includes("request.profile === 'daily-full' ? 'core' : request.profile")
+  || !candidateSource.includes('profiles: [registryProfile]')
+) {
+  problems.push('candidate verifier must default to the complete candidate profile while allowing daily-full and the core compatibility lane');
 }
 if (/\b(?:nodeStep|commandStep|runBatch|workspaceSuiteSteps|candidateStepBudget)\b/.test(candidateSource)) {
   problems.push('candidate verifier must not inline step commands, batches, suites, or budgets');
