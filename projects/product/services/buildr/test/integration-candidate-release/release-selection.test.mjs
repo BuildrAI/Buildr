@@ -11,8 +11,11 @@ import {
   createReleaseSelection,
   freezeReleaseSelection,
   inspectReleaseSelection,
+  reopenReleaseSelection,
   selectReleaseCommit,
 } from '../../tools/release/release-selection.mjs';
+
+const RELEASE_SELECTION_CLI = path.resolve(import.meta.dirname, '../../tools/release/release-selection.mjs');
 
 function git(repo, ...args) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -74,13 +77,14 @@ test('release selection creates from exact dev baseline and reconstructs ordered
   assert.equal(inspected.selectionIdentity.startsWith('sha256-'), true);
 });
 
-test('freeze is idempotent and prevents later selection; abandon remains explicit', (t) => {
+test('freeze is idempotent, direct update stays blocked, and explicit reopen allows a new generation', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', baseline: data.baseline });
   const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
   assert.equal(frozen.status, 'passed', JSON.stringify(frozen));
   assert.equal(frozen.freeze.state, 'frozen');
+  assert.deepEqual(frozen.freezeHistory.map(({ generation, commit, state }) => ({ generation, commit, state })), [{ generation: 0, commit: data.baseline, state: 'valid' }]);
   const repeated = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
   assert.equal(repeated.status, 'passed');
   assert.deepEqual(repeated.effects, []);
@@ -88,9 +92,49 @@ test('freeze is idempotent and prevents later selection; abandon remains explici
   assert.equal(blocked.status, 'blocked');
   assert.equal(blocked.effects.length, 0);
   assert.match(blocked.diagnostic.message, /frozen/);
+  const missingConfirmation = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', reason: 'Candidate failed.' });
+  assert.equal(missingConfirmation.status, 'blocked');
+  const missingReason = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', confirm: true });
+  assert.equal(missingReason.status, 'blocked');
+  const reopenedCli = spawnSync(process.execPath, [RELEASE_SELECTION_CLI, 'reopen', '--repo', data.repo, '--version', '0.1.0-rc.2', '--confirm', '--reason', 'Candidate failed before publication.'], { cwd: data.repo, encoding: 'utf8' });
+  assert.equal(reopenedCli.status, 0, reopenedCli.stderr || reopenedCli.stdout);
+  const reopened = JSON.parse(reopenedCli.stdout);
+  assert.equal(reopened.status, 'passed', JSON.stringify(reopened));
+  assert.equal(reopened.freeze.state, 'open');
+  assert.equal(reopened.freezeHistory[0].commit, data.baseline);
+  assert.equal(reopened.effects[0].reason, 'Candidate failed before publication.');
+  const selected = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.2', source: data.sourceA });
+  assert.equal(selected.status, 'passed', JSON.stringify(selected));
+  assert.equal(selected.generation, 1);
+  const refrozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
+  assert.equal(refrozen.status, 'passed', JSON.stringify(refrozen));
+  assert.deepEqual(refrozen.freezeHistory.map((entry) => entry.generation), [0, 1]);
+  assert.equal(refrozen.freezeHistory[1].commit, refrozen.releaseHead);
   const abandoned = abandonReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
   assert.equal(abandoned.status, 'passed');
   assert.equal(abandoned.abandon.state, 'abandoned');
+});
+
+test('reopen migrates a legacy frozen ref and fails closed when immutable history drifts', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', baseline: data.baseline });
+  git(data.repo, 'update-ref', 'refs/buildr/release/0.1.0-rc.7/frozen', data.baseline);
+  const legacy = inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
+  assert.equal(legacy.status, 'frozen');
+  assert.deepEqual(legacy.freezeHistory, []);
+  const reopened = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', confirm: true, reason: 'Legacy Candidate failed.' });
+  assert.equal(reopened.status, 'passed', JSON.stringify(reopened));
+  assert.equal(reopened.freezeHistory[0].commit, data.baseline);
+  const refrozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
+  assert.equal(refrozen.status, 'passed', JSON.stringify(refrozen));
+  git(data.repo, 'update-ref', 'refs/buildr/release/0.1.0-rc.7/freezes/0', data.sourceA, data.baseline);
+  const drifted = inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
+  assert.equal(drifted.status, 'blocked');
+  assert.equal(drifted.integrity.code, 'freeze_history_invalid');
+  const blocked = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', confirm: true, reason: 'Must not bypass drift.' });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.effects.length, 0);
 });
 
 test('selection fails closed for baseline drift, dirty worktree and a real cherry-pick conflict', (t) => {
@@ -133,6 +177,7 @@ test('cleanup is local-only, explicit and refuses remote-tracking release refs',
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5', baseline: data.baseline });
+  freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5' });
   const missingConfirmation = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5' });
   assert.equal(missingConfirmation.status, 'blocked');
   assert.equal(missingConfirmation.effects.length, 0);
@@ -140,6 +185,7 @@ test('cleanup is local-only, explicit and refuses remote-tracking release refs',
   const cleaned = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5', confirm: true });
   assert.equal(cleaned.status, 'passed', JSON.stringify(cleaned));
   assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/release-0.1.0-rc.5'], { cwd: data.repo }).status, 1);
+  assert.equal(spawnSync('git', ['for-each-ref', '--format=%(refname)', 'refs/buildr/release/0.1.0-rc.5/'], { cwd: data.repo, encoding: 'utf8' }).stdout.trim(), '');
   createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', baseline: data.baseline });
   git(data.repo, 'checkout', 'dev');
   git(data.repo, 'push', 'origin', 'release-0.1.0-rc.6:release-0.1.0-rc.6');

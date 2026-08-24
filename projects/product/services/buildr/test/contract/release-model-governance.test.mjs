@@ -6,11 +6,15 @@ import test from 'node:test';
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
 const WORKSPACE_ROOT = path.resolve(PRODUCT_ROOT, '../..');
-const CHANGE_ROOT = path.join(PRODUCT_ROOT, 'openspec/changes/define-release-model-contract');
+const CHANGE_ROOTS = [
+  path.join(PRODUCT_ROOT, 'openspec/changes/correct-release-preparation-lifecycle'),
+  path.join(PRODUCT_ROOT, 'openspec/changes/define-release-model-contract'),
+];
 const read = (file) => fs.readFileSync(file, 'utf8');
 const capabilityContract = (capability) => {
-  const active = path.join(CHANGE_ROOT, 'specs', capability, 'spec.md');
-  return read(fs.existsSync(active) ? active : path.join(PRODUCT_ROOT, 'openspec/specs', capability, 'spec.md'));
+  const active = CHANGE_ROOTS.map((root) => path.join(root, 'specs', capability, 'spec.md')).find((candidate) => fs.existsSync(candidate));
+  const canonical = read(path.join(PRODUCT_ROOT, 'openspec/specs', capability, 'spec.md'));
+  return active ? `${canonical}\n${read(active)}` : canonical;
 };
 
 test('release collection contract freezes one manual selection chain and fails closed', () => {
@@ -21,6 +25,8 @@ test('release collection contract freezes one manual selection chain and fails c
     'cherry-pick -x',
     'dev baseline → ordered selection chain → release HEAD/tree',
     'Release生命周期动作必须独立授权且幂等',
+    'reopen',
+    'freezes/<generation>',
     '发布模块必须保持唯一owner与窄consumer边界',
   ]) assert.match(contract, new RegExp(marker.replace(/[<>/]/g, '\\$&')), marker);
   assert.match(contract, /MUST NOT自动解决、直接编辑、rebase、reset、force push/);
@@ -49,6 +55,10 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /release-model-implementation-incomplete/);
   assert.match(skill, /精确`<dev-baseline>`和有序待选择dev commits/);
   assert.match(skill, /只允许`cherry-pick -x`/);
+  assert.match(skill, /reopen --confirm --reason/);
+  assert.match(skill, /support Task terminal、Delivery或Activation都不使release协调Task completed/);
+  assert.match(skill, /aggregate失败、缺失或source不匹配时，release协调Task保持active\/blocked/);
+  assert.match(skill, /全部current前保持active\/blocked，不调用Task Finish或complete/);
   assert.match(skill, /Publication成功后才执行main→dev收敛/);
   assert.doesNotMatch(skill, /bridge-main-to-dev\.mjs/);
   assert.doesNotMatch(skill, /冻结最新`origin\/dev`/);

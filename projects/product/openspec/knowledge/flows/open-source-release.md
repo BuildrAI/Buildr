@@ -6,9 +6,9 @@
 
 ## 唯一事实链
 
-1. 维护者从可由current `dev`证明的精确baseline创建唯一`release-<version>`；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata。普通`dev`前进不改变release，冲突不自动解决。
-2. 唯一身份链为`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publish dev convergence → transaction evidence`。每个节点由专业owner提供current identity/read model；任一上游变化使下游evidence stale。
-3. Release Task Environment以Buildr Service的`buildr.npm-ci` preparation recipe准备依赖，并在Receipt保留Plan、declaration、recipe、Service lockfile与精确Node identity；不恢复旧worktree，不在Product根运行`npm ci`。Task/Environment/Development/Finish/self-bootstrap只提供各自current read model，release correlation不复制专业Result或建立旁路SQLite store。
+1. 维护者从可由current `dev`证明的精确baseline创建唯一`release-<version>`；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata。普通`dev`前进不改变release，冲突不自动解决。每次freeze另以不可变`freezes/<generation>` ref保存历史source；frozen不能直接update。
+2. 唯一身份链为`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publish dev convergence → transaction evidence`。每个节点由专业owner提供current identity/read model；任一上游变化使下游evidence stale。Candidate在任何公开mutation前失败且需要新修复时，release workflow先回读GitHub、tag、npm与GitHub Release公共事实；证明尚未publication后，维护者可显式`reopen --confirm --reason`，再逐commit update、refreeze并对新SHA运行完整Candidate。已存在公开事实时必须使用新version。
+3. `release-<version>`是覆盖selection、Candidate、唯一tarball、release→main与readiness的协调Task，上述终点前保持active/blocked。需要在Candidate前交付的版本材料、测试或owner修复使用窄support Task完成Development/Verification/Finish与适用self-bootstrap；support terminal不使release Task completed。Release Task Environment以Buildr Service的`buildr.npm-ci` preparation recipe准备依赖，并在Receipt保留Plan、declaration、recipe、Service lockfile与精确Node identity；不恢复旧worktree，不在Product根运行`npm ci`。Task/Environment/Development/Finish/self-bootstrap只提供各自current read model，release correlation不复制专业Result或建立旁路SQLite store。
 4. current release HEAD/tree上的分布式`Candidate gate`证明完整源码候选：复用现有preflight、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple的primary owner、bounded scheduling、heartbeat/checkpoint与timing。release内容产生新SHA后必须形成新Candidate；普通changed/affected反馈不是完整Candidate。
 5. Candidate只生成一个绑定release source的tarball；application payload、npm staging、Host Node、Launcher、publish和Registry readback消费同一filename、SHA-256、SHA-512 integrity与manifest。正式publish不重跑完整Candidate、不重新pack或生成第二份可发布bytes。
 6. Candidate通过后只创建一个release→main受保护PR；允许squash后commit identity不同，但`main^{tree}`必须等于冻结release tree。维护者尚未授权正式发布时，transaction runner默认只生成closed context与分阶段collect-all readiness，绑定selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev和workflow identity，返回hosted deferred checks与`effects: []`。
@@ -27,6 +27,7 @@
 - Actions artifact只保存冻结candidate与验证evidence，不能作为README、官网、安装脚本或其他公共下载authority。
 - `release-evidence-*` artifact中的closed transaction context/evidence正式关联release selection、release/support Tasks、retrospective source、Candidate/publish runs、release/main/dev收敛、Environment binding、tag、npm/GitHub Release和Registry smoke。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
 - 同一Candidate run重跑失败job时，每个逻辑shard用同名overwrite替换旧attempt evidence；成功shard与唯一tarball继续复用。代码修复产生新source SHA后必须重跑完整分布式门禁，但Windows高成本场景保持三个并行恢复边界。
+- 历史`release-<version>` Task若被提前completed而Candidate/main/readiness尚未成立，保留该terminal记录与Finish事实，不直接改SQLite或重建同名Task；以明确active recovery Task承载剩余准备并在correlation/完成报告中披露恢复边界。
 - GitHub Release ensure只核对tag、target commit、notes、draft、prerelease/Latest并拒绝任何binary Asset；Buildr bytes的missing/same/drift恢复只由npm Registry version与integrity决定。
 - 已发布version不覆盖。RC问题发布新的prerelease；正式版本问题发布patch，必要时deprecate或移动dist-tag。
 

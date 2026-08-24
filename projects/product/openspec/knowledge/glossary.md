@@ -710,13 +710,13 @@
 ## 发布集合（Release Collection）
 
 - 定义：由维护者为一个精确package version从指定`dev` baseline创建的唯一`release-<version>`内容集合；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata，不自动追随`dev`。
-- 适用范围：release create/update/freeze/abandon/cleanup、Product Candidate source、release→main PR、protected publication和发布后main→dev收敛。
+- 适用范围：release create/update/freeze/reopen/abandon/cleanup、不可变generation freeze history、Product Candidate source、release→main PR、protected publication和发布后main→dev收敛。
 - 避免混用：不是release Task、Task worktree、Task Candidate、npm dist-tag或GitHub Release；同名branch/ref只是载体，必须同时核验version、baseline、selection chain和HEAD/tree identity。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`。
 
 ## 发布选择链（Release Selection Chain）
 
-- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、release-only metadata和generation的closed可验证链。
+- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、release-only metadata、generation和不可变历史freeze identity的closed可验证链。
 - 适用范围：release更新审计、Candidate currentness、readiness、transaction context和失败恢复。
 - 避免混用：不是通用Git history、聊天中的commit列表或caller-claimed success；冲突现场、未授权commit和普通`dev`前进不能被静默加入链。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`。
