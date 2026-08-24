@@ -1030,6 +1030,26 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
     targetLeaseCommand(execute, root, nodeExecutable, plan, 'release', activationLeaseToken, id, active);
     activationLeaseToken = null;
   };
+  const persistTerminalResult = (result) => {
+    active = stages.get('finalize');
+    const maintenance = finishMaintenanceCommand(
+      execute,
+      root,
+      nodeExecutable,
+      plan,
+      result,
+      'refresh-finish-maintenance',
+      active,
+    );
+    requirePassed(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-failed', 'Finish maintenance projection刷新失败。');
+    const maintenancePayload = parseJson(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-invalid', 'Finish maintenance projection刷新没有返回合法JSON。');
+    if (maintenancePayload.schemaVersion !== 'buildr.task-finish-maintenance-driver-result/v1'
+      || maintenancePayload.taskId !== plan.taskId
+      || maintenancePayload.runId !== plan.runId
+      || maintenancePayload.status !== 'refreshed') throw closeoutError('self-bootstrap-closeout.finish-maintenance-refresh-incomplete', 'Finish maintenance projection刷新未完成或identity不匹配。', { payload: maintenancePayload });
+    result.maintenance = maintenancePayload.maintenance || null;
+    return result;
+  };
   try {
     const componentFile = path.join(root, COMPONENT_PATH);
     if (!fs.existsSync(componentFile) || !/^id:\s*buildr-self-bootstrap\s*$/m.test(fs.readFileSync(componentFile, 'utf8'))) {
@@ -1054,7 +1074,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       active = stages.get('plan');
       markPassed(active, currentFinishResult.projectionIdentity, plan.identity);
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), 'Workspace repository没有自举贡献。');
-      return closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan);
+      return persistTerminalResult(closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan));
     }
     if (!plan.baseRef) throw closeoutError('self-bootstrap-closeout.identity-incomplete', 'Finish投影缺少Workspace repository final ref。');
     const applicable = Object.values(plan.actions).some((paths) => paths.length);
@@ -1063,7 +1083,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       active = stages.get('plan');
       markPassed(active, currentFinishResult.projectionIdentity, plan.identity);
       for (const id of SELF_BOOTSTRAP_CLOSEOUT_PHASES.slice(2)) markNotApplicable(stages.get(id), '当前plan没有适用动作。');
-      return closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan);
+      return persistTerminalResult(closeoutResult(currentFinishResult, plan, stages, 'not-applicable', null, developmentEntryIdentity, recoveryPlan));
     }
     const actualRoot = gitText(execute, root, ['rev-parse', '--show-toplevel'], 'workspace-root', active, 'self-bootstrap-closeout.git-root-unavailable');
     if (!sameFilesystemPath(actualRoot, root)) throw closeoutError('self-bootstrap-closeout.git-root-mismatch', 'Runner target不是retained Git根目录。', { actualRoot });
@@ -1325,23 +1345,7 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       if (payload.status !== 'complete') throw closeoutError('self-bootstrap-closeout.finish-resume-incomplete', '同一Finish run恢复后仍未complete。', { status: payload.status, resume: payload.resume || null });
       markPassed(active, currentFinishResult.resume.token, payload.projectionIdentity || payload.runId);
     }
-    const result = closeoutResult(currentFinishResult, plan, stages, 'passed', null, developmentEntryIdentity, recoveryPlan);
-    const maintenance = finishMaintenanceCommand(
-      execute,
-      root,
-      nodeExecutable,
-      plan,
-      result,
-      'refresh-finish-maintenance',
-      active,
-    );
-    requirePassed(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-failed', 'Finish maintenance projection刷新失败。');
-    const maintenancePayload = parseJson(maintenance, 'self-bootstrap-closeout.finish-maintenance-refresh-invalid', 'Finish maintenance projection刷新没有返回合法JSON。');
-    if (maintenancePayload.schemaVersion !== 'buildr.task-finish-maintenance-driver-result/v1'
-      || maintenancePayload.taskId !== plan.taskId
-      || maintenancePayload.runId !== plan.runId
-      || maintenancePayload.status !== 'refreshed') throw closeoutError('self-bootstrap-closeout.finish-maintenance-refresh-incomplete', 'Finish maintenance projection刷新未完成或identity不匹配。', { payload: maintenancePayload });
-    result.maintenance = maintenancePayload.maintenance || null;
+    const result = persistTerminalResult(closeoutResult(currentFinishResult, plan, stages, 'passed', null, developmentEntryIdentity, recoveryPlan));
     releaseTargetLease('release-target-lease');
     return result;
   } catch (error) {

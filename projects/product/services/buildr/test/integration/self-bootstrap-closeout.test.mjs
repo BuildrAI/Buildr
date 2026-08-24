@@ -992,6 +992,8 @@ test('无匹配动作not-applicable且未push successor fail closed', (t) => {
   const none = runSelfBootstrapCloseout({ finishResult: finishResult(root, baseRef, ['README.md']), workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(none.status, 'not-applicable');
   assert.equal(phase(none, 'sync').operations.length, 0);
+  assert.equal(phase(none, 'finalize').operations.at(-1).id, 'refresh-finish-maintenance');
+  assert.equal(none.maintenance.delivery, 'delivered');
 
   fs.writeFileSync(path.join(root, 'unknown.txt'), 'unknown\n');
   git(root, 'add', '--', 'unknown.txt');
@@ -1761,6 +1763,8 @@ test('Workspace无贡献时Service carrier不触发自举且环境留给Finish c
   assert.equal(result.plan.applicability, 'not-applicable');
   assert.equal(fs.existsSync(input.carriers[0].root), true);
   assert.deepEqual(result.effects, []);
+  assert.equal(phase(result, 'finalize').operations.at(-1).id, 'refresh-finish-maintenance');
+  assert.equal(result.maintenance.delivery, 'delivered');
 });
 
 test('多仓库carrier越界或重复realpath时在activation前fail closed', async (t) => {
