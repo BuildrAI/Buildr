@@ -409,6 +409,18 @@ test('release environment binding consumes the completed Task Environment Servic
     nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` },
     readSourceFile: (_commit, file) => sourceFiles.get(file),
   });
+
+  const activeBinding = createReleaseEnvironmentBinding({
+    task: { taskId: 'release-fixture', status: 'active' },
+    taskStatus: 'active',
+    environmentResult,
+    repo,
+    sourceCommit: candidateBase,
+    nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` },
+    readSourceFile: (_commit, file) => sourceFiles.get(file),
+  });
+  assert.equal(activeBinding.taskId, 'release-fixture');
+  assert.throws(() => createReleaseEnvironmentBinding({ task: { taskId: 'release-fixture', status: 'active' }, environmentResult, repo, sourceCommit: candidateBase, nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` }, readSourceFile: (_commit, file) => sourceFiles.get(file) }), /must be completed for this release action/u);
   assert.equal(binding.environmentStatus, 'cleaned');
   assert.equal(binding.serviceRoot, 'projects/product/services/buildr');
   assert.equal(binding.recipe.stepId, 'service:product/buildr/buildr.npm-ci/npm-ci');
