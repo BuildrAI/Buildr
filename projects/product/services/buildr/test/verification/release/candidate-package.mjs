@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
-import { buildApplicationPayload } from '../../../scripts/release/application-payload.mjs';
-import { createReleaseArtifact, readReleaseArtifact } from '../../../scripts/release/release-artifact.mjs';
+import { buildApplicationPayload } from '../../../tools/release/application-payload.mjs';
+import { createReleaseArtifact, readReleaseArtifact } from '../../../tools/release/release-artifact.mjs';
 
 export const CANDIDATE_TARBALL_ENV = 'BUILDR_CANDIDATE_TARBALL';
 export const CANDIDATE_PACK_METADATA_ENV = 'BUILDR_CANDIDATE_PACK_METADATA';

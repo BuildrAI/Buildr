@@ -1,24 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
-import { api } from '../api';
+import { workspaceApi } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { confirmModal } from '../lib/confirm';
 import { workspaceHomePath } from '../lib/labels';
 
-type WorkspaceEntry = {
-  status: string;
-  rootPath: string;
-  updatedAt?: string;
-  workspace?: { id: string; name: string; description?: string };
-  error?: { message?: string };
-};
-
-type Registry = {
-  revision: string;
-  workspaces: WorkspaceEntry[];
-  lastOpenedWorkspaceId?: string;
-};
+type WorkspaceEntry = (Awaited<ReturnType<typeof workspaceApi.listRegistered>>['workspaces'])[number];
+type Registry = Awaited<ReturnType<typeof workspaceApi.listRegistered>>;
 
 function healthLabel(status: string): string {
   if (status === 'ready') return '可用';
@@ -41,7 +30,7 @@ export function WorkspacesPage() {
   }, [setBreadcrumbParts]);
 
   const load = useCallback(async () => {
-    const next = await api('/api/v1/workspaces') as Registry;
+    const next = await workspaceApi.listRegistered();
     setRegistry(next);
     return next;
   }, []);
@@ -68,10 +57,7 @@ export function WorkspacesPage() {
       okButtonProps: { danger: true },
     });
     if (!ok) return;
-    await api('/api/v1/workspaces', {
-      method: 'DELETE',
-      body: JSON.stringify({ revision, rootPath: entry.rootPath }),
-    });
+    await workspaceApi.remove({ revision, rootPath: entry.rootPath });
     await load();
   };
 
@@ -79,16 +65,7 @@ export function WorkspacesPage() {
     if (!registry) return;
     setAdding(true);
     try {
-      const result = await api('/api/v1/workspaces/pick', {
-        method: 'POST',
-        body: JSON.stringify({ revision: registry.revision }),
-      }) as {
-        canceled?: boolean;
-        status?: string;
-        registry?: Registry;
-        message?: string;
-        prompt?: string;
-      };
+      const result = await workspaceApi.pick({ revision: registry.revision });
       if (!result.canceled && result.status === 'canonical' && result.registry) {
         setRegistry(result.registry);
         await load();

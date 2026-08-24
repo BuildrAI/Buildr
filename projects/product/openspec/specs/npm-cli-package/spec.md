@@ -20,11 +20,11 @@ Buildr MUST 在 Product root 下提供 npm package metadata，使维护者能够
 - **AND** the executable MUST NOT require `tools/`, `test/` or `scripts/`
 
 ### Requirement: installed CLI uses package assets
-已安装的 `buildr` command MUST 使用 npm package 中包含的 assets，而不是要求访问 development checkout。
+已安装的 `buildr` command MUST 使用 npm package 中包含的 `resources/`、`web-dist/` 和明确发布的 runtime assets，而不是要求访问 development checkout。
 
 #### Scenario: Initialize workspace from installed command
 - **WHEN** the installed `buildr` command runs `buildr init --target <dir> --name <name> --profile <profile>`
-- **THEN** Buildr MUST create the default workspace baseline from the package assets
+- **THEN** Buildr MUST create the default workspace baseline from packaged `resources/`
 - **AND** the workspace MUST NOT require files outside the installed npm package
 
 #### Scenario: Complete onboarding from installed command
@@ -37,12 +37,12 @@ Buildr MUST 在 Product root 下提供 npm package metadata，使维护者能够
 - **THEN** each command MUST behave consistently with the checkout-based CLI for the same inputs
 
 ### Requirement: npm package excludes private workspace assets
-Buildr npm package MUST 仅包含已安装命令所需的 `bin/`、产品 `src/` runtime、明确可发布的文档和 `package/` 交付资产，并 MUST 排除仓库测试、维护脚本、active changes 和私有 Workspace 内容。
+Buildr npm package MUST 仅包含已安装命令所需的 `bin/`、产品 `src/` runtime、`resources/`、`web-dist/`、明确可发布的文档和 deferred runtime assets，并 MUST 排除仓库测试、checkout-only 工具、active changes 和私有 Workspace 内容。
 
 #### Scenario: Inspect packed file list
 - **WHEN** verification inspects the `npm pack --json` file list
-- **THEN** the package MUST include package metadata、`bin/buildr.mjs`、安装后可达的 `src/` dependency closure、package assets 和 publishable docs
-- **AND** the package MUST NOT include `test/`、`scripts/`、`tools/`、active OpenSpec changes、private business projects、root workspace rules、local runtime directories or service repositories
+- **THEN** the package MUST include package metadata、`bin/buildr.mjs`、安装后可达的 `src/` dependency closure、declared resources、`web-dist/` 和 publishable docs
+- **AND** the package MUST NOT include `test/`、`tools/`、active OpenSpec changes、private business projects、root workspace rules、local runtime directories or service repositories
 
 #### Scenario: Product verifier belongs to installed runtime
 - **WHEN** `buildr package check` or another installed command requires a verifier
@@ -50,12 +50,12 @@ Buildr npm package MUST 仅包含已安装命令所需的 `bin/`、产品 `src/`
 - **AND** package metadata MUST NOT include `test/verification/` merely to satisfy an installed command dependency
 
 ### Requirement: npm runtime inventory 必须与源码生命周期边界一致
-Buildr package inventory MUST 从静态入口和 import graph证明安装后命令的完整依赖闭包，并 MUST 将 checkout-only tests、verification orchestration 和 maintenance scripts 排除在 runtime inventory 之外。
+Buildr package inventory MUST 从静态入口和 import graph 证明安装后命令的完整依赖闭包，并 MUST 将 checkout-only tests、verification orchestration 和 development/release tools 排除在 runtime inventory 之外。
 
 #### Scenario: Verify candidate tarball inventory
 - **WHEN** Candidate 构建 npm tarball
-- **THEN** verifier MUST 证明每个 `bin` 和 `src` runtime dependency 已包含
-- **AND** verifier MUST 证明 `test/`、`scripts/` 和旧 `tools/` 未包含
+- **THEN** verifier MUST 证明每个 `bin` 和 `src` runtime dependency、declared resource 与 Web dist 已包含
+- **AND** verifier MUST 证明 `test/` 和 `tools/` 未包含
 - **AND** package parity MUST 在无 development checkout 的临时目录执行代表性命令
 
 ### Requirement: product verification covers npm installation
@@ -285,3 +285,39 @@ Buildr npm package MUST 包含 application payload 中 Buildr Web 运行所需�
 - **WHEN** 维护者或 CI 构建 npm application payload
 - **THEN** 构建 MUST 只消费已进入 `buildr` authority 的正式 Web dist
 - **AND** npm pack 与 Launcher install MUST NOT 需要 `projects/product/services/buildr-web` 或重建前端资源
+
+### Requirement: npm发行版运行时不得依赖development准备事实
+npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、development Environment Receipt、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
+
+#### Scenario: 用户在普通Workspace运行发行版CLI
+- **WHEN** 用户通过npm installation执行`buildr doctor`、`sync`、`update`或其他发行版命令
+- **THEN** CLI MUST从安装回执与package entry使用兼容Host Node启动
+- **AND** MUST不查找Product checkout的精确development Node或源码依赖，但doctor与sync仍 MUST按各自契约读取目标Workspace authority
+
+#### Scenario: 用户运行发行版Buildr Web
+- **WHEN** 用户执行npm installation的`buildr web`或已验证Launcher binding
+- **THEN** runtime MUST托管该package携带的`web-dist`
+- **AND** MUST不安装Buildr Web源码依赖、运行源码TypeScript/Vite或读取Task preparation closure
+
+#### Scenario: 发行资产泄漏源码依赖
+- **WHEN** npm tarball或Launcher smoke发现入口需要`BUILDR_NODE`、Product checkout、源码`node_modules`或源码TypeScript
+- **THEN** Candidate或发布验证 MUST将其判为发行缺陷并失败
+- **AND** MUST不把设置环境变量或安装源码依赖作为用户恢复动作
+
+### Requirement: 唯一npm tarball必须发布公共Test Context Runtime与类型
+正式`@buildr-ai/buildr` Candidate tarball MUST在既有CLI Application Payload之外包含`@buildr-ai/buildr/test-context` facade、生成的标准ESM JavaScript和matching `.d.ts`，并 MUST从package exports提供稳定`import`与`types`解析。该公共library MUST由同一Candidate artifact生成和发布，不得形成第二tarball或发布流程。
+
+#### Scenario: 外部项目安装Candidate并运行Test Context
+- **WHEN** verifier在隔离prefix安装唯一Candidate tarball并从普通Node.js项目导入Test Context subpath
+- **THEN** 内存Context、lease、reset与Host runner代表行为 MUST成功
+- **AND** 执行 MUST不读取development checkout、Buildr Workspace或CLI Application Payload内部模块
+
+#### Scenario: 外部TypeScript项目安装Candidate
+- **WHEN** strict NodeNext fixture只依赖安装后的package编译typed Context测试
+- **THEN** compiler MUST从exports types condition解析matching声明并通过正例
+- **AND** 类型反例 MUST按预期失败，不能通过deep import或本地源码补齐类型
+
+#### Scenario: Candidate inventory保持边界
+- **WHEN** release artifact检查新增公共library文件
+- **THEN** inventory MUST包含facade、生成JS和`.d.ts`
+- **AND** MUST排除raw Runtime `.ts`、Buildr `test/context` provider、fixtures、verification registry、TypeScript compiler与开发类型依赖

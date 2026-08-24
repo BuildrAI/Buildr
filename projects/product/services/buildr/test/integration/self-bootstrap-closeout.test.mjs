@@ -13,13 +13,15 @@ import {
   runSelfBootstrapCloseoutCommand,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import {
+  DEFAULT_DEVELOPMENT_WEB_PORT,
+  developmentWebDataRoot,
   inspectDevelopmentInstance,
   restartDevelopmentInstance,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
-import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/infrastructure/runtime/adapter-contract.mjs';
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
-import { selfBootstrapTaskFinishResult } from '../../src/application/task-finish/task-finish-self-bootstrap-projection.mjs';
+import { RUNTIME_ADAPTERS, skillDestinationRoot } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { selfBootstrapTaskFinishResult } from '../../src/task/application/finish/task-finish-self-bootstrap-projection.mjs';
 
 function run(executable, args, cwd) {
   const result = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -37,24 +39,24 @@ function fixture(t) {
   const root = path.join(base, 'workspace');
   const remote = path.join(base, 'remote.git');
   fs.mkdirSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   const projectBridge = path.join(root, 'projects', 'product', 'buildr');
-  const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
+  const launcher = path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
   const cliEntry = path.join(root, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
   const sourceServiceRoot = path.resolve(import.meta.dirname, '../..');
   const defaultBin = path.join(base, 'default-bin');
   fs.writeFileSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap', 'component.yml'), 'schemaVersion: buildr.component/v1\nid: buildr-self-bootstrap\n');
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
   fs.writeFileSync(projectBridge, `#!/bin/sh
 exec '${launcher}' "$@"
 `, { mode: 0o755 });
-  fs.copyFileSync(path.join(sourceServiceRoot, 'scripts', 'run-development-cli'), launcher);
+  fs.copyFileSync(path.join(sourceServiceRoot, 'tools', 'development', 'run-development-cli'), launcher);
   fs.chmodSync(launcher, 0o755);
   fs.writeFileSync(cliEntry, `#!/usr/bin/env node
 const args = process.argv.slice(2);
@@ -198,6 +200,26 @@ function cleanupPendingResult(root, baseRef, runId, taskId = `task-${runId}`, ov
   });
 }
 
+function cleanedFinishResult(root, baseRef, runId, taskId = `task-${runId}`) {
+  return selfBootstrapTaskFinishResult(canonicalFinishResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs'], {
+    runId,
+    identity: {
+      ...canonicalFinishResult(root, baseRef, []).identity,
+      task: taskId,
+    },
+    phases: [{ id: 'cleanup', status: 'passed' }],
+    carrier: {
+      identity: `sha256-cleaned-${runId}`,
+      changedPaths: ['projects/product/services/buildr/src/example.mjs'],
+    },
+    completion: {
+      status: 'complete',
+      finalRemoteRef: baseRef,
+      cleanup: { status: 'cleaned' },
+    },
+  }));
+}
+
 function undeliveredBlockedResult(root, runId, taskId = `task-${runId}`, overrides = {}) {
   const carrierRoot = path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', runId);
   const carrierIdentity = `sha256-carrier-${runId}`;
@@ -313,7 +335,7 @@ function multiRepositoryFinishInput(root, baseRef, { workspaceDisposition = 'app
     selector: 'service:product/example',
     identity: 'sha256-service-carrier',
     root: serviceRoot,
-    activationPaths: ['projects/product/services/buildr/package/manifest.yml'],
+    activationPaths: ['projects/product/services/buildr/resources/manifest.yml'],
   };
   const workspaceRepository = {
     selector: 'workspace',
@@ -367,10 +389,11 @@ function executor(root, options = {}) {
     }
     const productScript = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
     const projectBridge = path.join(canonicalRoot, 'projects', 'product', 'buildr');
-    const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'scripts', 'run-development-cli');
+    const launcher = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
     const launcherManager = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
     const continuityHelper = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
-    const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
+    const targetLeaseDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
+    const maintenanceDriver = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-maintenance-driver.mjs');
     let resolvedExecutable = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -450,6 +473,14 @@ function executor(root, options = {}) {
         stderr: '',
       };
     }
+    if (executable === process.execPath && args[0] === maintenanceDriver) {
+      const value = (name) => args[args.indexOf(name) + 1];
+      return {
+        status: 0,
+        stdout: JSON.stringify({ schemaVersion: 'buildr.task-finish-maintenance-driver-result/v1', operation: 'maintenance', status: 'refreshed', taskId: value('--task'), runId: value('--run'), maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'pending', diagnostics: 'not-opened' } }),
+        stderr: '',
+      };
+    }
     if (executable === process.execPath && args[0] === launcherManager) {
       if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };
       return {
@@ -462,6 +493,7 @@ function executor(root, options = {}) {
           identity: {
             schemaVersion: 'buildr.launcher-identity/v1',
             channel: 'development',
+            webPort: DEFAULT_DEVELOPMENT_WEB_PORT,
             source: 'checkout',
             sourceRoot: options.observedLauncherSourceRoot || path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr'),
             developmentRuntime: { executable: options.observedLauncherNode || process.execPath },
@@ -494,19 +526,23 @@ function executor(root, options = {}) {
         };
       }
       if (args[1] === 'restart') {
+        if (options.occupiedDevelopmentPort) {
+          return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'EADDRINUSE', message: `listen EADDRINUSE: 127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}` }) };
+        }
         if (options.failDevelopmentRestart) {
           return { status: 1, stdout: '', stderr: JSON.stringify({ code: 'development-web-continuity.start-timeout', details: { cleanup: { pid: 72200, status: 'requested' } } }) };
         }
         const value = (name) => args[args.indexOf(name) + 1];
         const previousPid = Number(value('--previous-pid'));
         const port = Number(value('--port'));
+        const previousPort = Number(value('--previous-port'));
         return {
           status: 0,
           stdout: JSON.stringify({
             schemaVersion: 'buildr.development-web-continuity/v1',
             action: 'restart',
             status: 'passed',
-            previous: { pid: previousPid, port },
+            previous: { pid: previousPid, port: previousPort },
             instance: {
               url: `http://127.0.0.1:${port}`,
               port,
@@ -561,7 +597,7 @@ function commitRemoteTask(remote, taskId, { buildrOwned = true } = {}) {
 test('fresh closeout以精确successor commit和remote readback完成', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root),
@@ -599,6 +635,7 @@ test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', 
   const finish = selfBootstrapTaskFinishResult(canonical);
   assert.equal(finish.workspaceRepository.carrier.root, null);
   assert.equal(finish.workspaceRepository.carrier.availability, 'cleaned');
+  fs.mkdirSync(finish.carrierContainerRoot, { recursive: true });
 
   const result = runSelfBootstrapCloseoutCommand({
     args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
@@ -608,14 +645,99 @@ test('Skill命令入口消费cleanup后无carrier root的terminal稳定投影', 
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(fs.existsSync(finish.carrierContainerRoot), false);
+  assert.equal(result.recoveryPlan.status, 'advisory');
+  assert.equal(result.recoveryPlan.observations[0].classification, 'stale-empty-container');
+  assert.equal(result.recoveryPlan.observations[0].effect.type, 'removed-stale-empty-carrier-container');
   assert.deepEqual(result.plan.frozenPaths, ['projects/product/services/buildr/src/example.mjs']);
   assert.equal(phase(result, 'verify-development-entry').status, 'passed');
   assert.equal(phase(result, 'finalize').status, 'passed');
 });
 
+test('foreign cleaned空run container自动收敛且不阻断当前closeout', (t) => {
+  const { root, baseRef, environment } = fixture(t);
+  const current = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/src/example.mjs']);
+  const foreign = cleanedFinishResult(root, baseRef, 'foreign-cleaned-empty');
+  createCarrier(root, current.runId);
+  fs.mkdirSync(foreign.carrierContainerRoot, { recursive: true });
+
+  const result = runSelfBootstrapCloseoutCommand({
+    args: ['--run', current.runId, '--target', root, '--node-executable', process.execPath],
+    actualNodeExecutable: process.execPath,
+    execute: executor(root, { finishInspections: { [current.runId]: current, [foreign.runId]: foreign } }),
+    environment,
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
+  assert.equal(fs.existsSync(foreign.carrierContainerRoot), false);
+  const observation = result.recoveryPlan.observations.find((item) => item.runId === foreign.runId);
+  assert.equal(observation.classification, 'stale-empty-container');
+  assert.equal(observation.owner.taskId, foreign.identity.taskId);
+  assert.deepEqual(result.recoveryPlan.orderedSteps, []);
+});
+
+test('cleaned carrier container非空或identity不匹配时保持fail closed', async (t) => {
+  for (const scenario of [
+    {
+      name: 'non-empty',
+      mutate(root, finish) { fs.writeFileSync(path.join(finish.carrierContainerRoot, 'unexpected.txt'), 'retain\n'); },
+      code: 'self-bootstrap-closeout.cleaned-carrier-container-not-empty',
+    },
+    {
+      name: 'identity-mismatch',
+      mutate(root, finish) { finish.workspaceRepository.carrier = { ...finish.workspaceRepository.carrier, identity: 'sha256-mismatched-cleaned-carrier' }; },
+      code: 'self-bootstrap-closeout.workspace-carrier-set-mismatch',
+    },
+  ]) {
+    await t.test(scenario.name, (t) => {
+      const { root, baseRef, environment } = fixture(t);
+      const finish = cleanedFinishResult(root, baseRef, `cleaned-${scenario.name}`);
+      fs.mkdirSync(finish.carrierContainerRoot, { recursive: true });
+      scenario.mutate(root, finish);
+
+      const result = runSelfBootstrapCloseoutCommand({
+        args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
+        actualNodeExecutable: process.execPath,
+        execute: executor(root, { finishInspection: finish }),
+        environment,
+      });
+
+      assert.equal(result.status, 'blocked');
+      assert.equal(fs.existsSync(finish.carrierContainerRoot), true);
+      assert.deepEqual(result.effects, []);
+      const observation = result.recoveryPlan.observations.find((item) => item.runId === finish.runId);
+      assert.equal(observation.classification, 'unprovable');
+      assert.equal(observation.diagnostic.code, scenario.code);
+    });
+  }
+
+  await t.test('symlink', (t) => {
+    const { root, baseRef, environment } = fixture(t);
+    const finish = cleanedFinishResult(root, baseRef, 'cleaned-symlink');
+    const outside = path.join(path.dirname(root), 'cleaned-symlink-outside');
+    fs.mkdirSync(path.dirname(finish.carrierContainerRoot), { recursive: true });
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, finish.carrierContainerRoot);
+
+    const result = runSelfBootstrapCloseoutCommand({
+      args: ['--run', finish.runId, '--target', root, '--node-executable', process.execPath],
+      actualNodeExecutable: process.execPath,
+      execute: executor(root, { finishInspection: finish }),
+      environment,
+    });
+
+    assert.equal(result.status, 'blocked');
+    assert.equal(fs.lstatSync(finish.carrierContainerRoot).isSymbolicLink(), true);
+    assert.deepEqual(result.effects, []);
+    const observation = result.recoveryPlan.observations.find((item) => item.runId === finish.runId);
+    assert.equal(observation.classification, 'unprovable');
+    assert.equal(observation.diagnostic.code, 'self-bootstrap-closeout.carrier-entry-invalid');
+  });
+});
+
 test('commit后push失败保留successor，重跑从同一commit恢复', (t) => {
   const { root, baseRef, environment } = fixture(t);
-  const input = finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   const first = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root, { failPush: true }), environment });
   assert.equal(first.status, 'blocked');
   assert.equal(phase(first, 'commit').status, 'passed');
@@ -631,7 +753,7 @@ test('commit后push失败保留successor，重跑从同一commit恢复', (t) => 
 
 test('remote已包含合法successor时不重复commit或push', (t) => {
   const { root, baseRef, environment } = fixture(t);
-  const input = finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   const first = runSelfBootstrapCloseout({ finishResult: input, workspaceRoot: root, nodeExecutable: process.execPath, execute: executor(root), environment });
   assert.equal(first.status, 'passed');
   const successor = git(root, 'rev-parse', 'HEAD');
@@ -698,7 +820,7 @@ test('descendant sync successor以当前activation base为parent并可被下一R
   const { root, baseRef, environment } = fixture(t);
   const delivered = commitBuildrTask(root, 'later-finish');
   const first = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root),
@@ -771,7 +893,7 @@ test('普通descendant尚未push时拒绝选择activation base', (t) => {
 test('同target activation lease被其他run持有时在任何激活副作用前停止', (t) => {
   const { root, baseRef, environment } = fixture(t);
   const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+    finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
     workspaceRoot: root,
     nodeExecutable: process.execPath,
     execute: executor(root, { targetLeaseHeld: true }),
@@ -789,7 +911,7 @@ test('terminal v3投影由bundled runner通过真实driver取得精确repository
   const { root, baseRef, environment } = fixture(t);
   const terminal = await terminalRepositoryFinish(root, baseRef);
   assert.equal(terminal.finishResult.workspaceRepository.leaseTargetIdentity, terminal.exactTargetIdentity);
-  const realTargetLeaseDriver = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-finish-target-lease-driver.mjs');
+  const realTargetLeaseDriver = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-finish-target-lease-driver.mjs');
 
   const result = runSelfBootstrapCloseout({
     finishResult: terminal.finishResult,
@@ -850,7 +972,7 @@ test('self-bootstrap push后remote readback有界重试且不重复push', async 
     await t.test(scenario.name, (t) => {
       const { root, baseRef, environment } = fixture(t);
       const result = runSelfBootstrapCloseout({
-        finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']),
+        finishResult: finishResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']),
         workspaceRoot: root,
         nodeExecutable: process.execPath,
         execute: executor(root, { failRemoteReadbackAttempts: scenario.failures }),
@@ -898,14 +1020,15 @@ test('development entry验证失败保留前序事实，Doctor blocked使用同�
   createCarrier(secondFixture.root);
   const resumed = runSelfBootstrapCloseout({ finishResult: blocked, workspaceRoot: secondFixture.root, nodeExecutable: process.execPath, execute: executor(secondFixture.root), environment: secondFixture.environment });
   assert.equal(resumed.status, 'passed', JSON.stringify(resumed.diagnostic));
-  assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'resume-finish-run');
+  assert.equal(phase(resumed, 'finalize').operations.find((item) => item.id === 'resume-finish-run').id, 'resume-finish-run');
+  assert.equal(phase(resumed, 'finalize').operations.at(-1).id, 'refresh-finish-maintenance');
   assert.equal(phase(resumed, 'finalize').operations.filter((item) => item.id === 'final-doctor').length, 0);
 });
 
 test('自举恢复闭环以显式Project bridge完成sync、Launcher、identity与same-run resume', (t) => {
   const { root, baseRef, environment, defaultBuildr, projectBridge } = fixture(t);
   const input = doctorBlockedResult(root, baseRef, [
-    'projects/product/services/buildr/package/manifest.yml',
+    'projects/product/services/buildr/resources/manifest.yml',
     'projects/product/services/buildr/src/example.mjs',
     'projects/product/services/buildr/package/launchers/manage.mjs',
   ]);
@@ -920,7 +1043,7 @@ test('自举恢复闭环以显式Project bridge完成sync、Launcher、identity�
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  for (const id of ['sync', 'install-local-app', 'verify-development-entry', 'finalize']) {
+  for (const id of ['sync', 'install-buildr-web', 'verify-development-entry', 'finalize']) {
     assert.equal(phase(result, id).status, 'passed', `${id} must pass in the same closeout chain`);
   }
   assert.equal(fs.readFileSync(defaultBuildr, 'utf8'), '#!/bin/sh\nexit 97\n');
@@ -947,8 +1070,8 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
     });
     assert.equal(result.status, scenario.status, `${scenario.name}: ${JSON.stringify(result.diagnostic)}`);
     assert.equal(result.diagnostic?.code || null, scenario.code);
-    const install = phase(result, 'install-local-app');
-    const manager = install.operations.find((item) => item.id === 'install-development-local-app');
+    const install = phase(result, 'install-buildr-web');
+    const manager = install.operations.find((item) => item.id === 'install-development-buildr-web');
     assert.equal(manager.kind, 'development-launcher-manager');
     assert.deepEqual(manager.args, ['install', '--channel', 'development']);
     assert.doesNotMatch(`${manager.script} ${manager.args.join(' ')}`, /bin\/buildr\.mjs web launcher/u);
@@ -956,7 +1079,7 @@ test('Development Launcher只调用内部manager并在identity或安装失败时
   }
 });
 
-test('Development Web连续性只恢复安装前健康实例并保持同端口新identity', (t) => {
+test('Development Web连续性只恢复安装前健康实例并迁移到固定端口', (t) => {
   const current = fixture(t);
   const result = runSelfBootstrapCloseout({
     finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
@@ -967,37 +1090,47 @@ test('Development Web连续性只恢复安装前健康实例并保持同端口�
   });
 
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  const install = phase(result, 'install-local-app');
+  const install = phase(result, 'install-buildr-web');
   assert.deepEqual(install.operations.filter((item) => item.kind !== 'task-finish-target-lease').map((item) => item.id), [
     'inspect-development-web-continuity',
-    'install-development-local-app',
+    'install-development-buildr-web',
     'restart-development-web-continuity',
   ]);
+  const restart = install.operations.find((item) => item.id === 'restart-development-web-continuity');
+  assert.equal(restart.args[restart.args.indexOf('--port') + 1], String(DEFAULT_DEVELOPMENT_WEB_PORT));
+  assert.equal(restart.args[restart.args.indexOf('--previous-port') + 1], '4317');
   const effect = install.effects.find((item) => item.type === 'development-web-continuity');
-  assert.deepEqual(effect, { type: 'development-web-continuity', status: 'passed', reason: null, previousPid: 71173, currentPid: 71174, port: 4317 });
+  assert.deepEqual(effect, {
+    type: 'development-web-continuity', status: 'passed', reason: null,
+    previousPid: 71173, currentPid: 71174, previousPort: 4317, currentPort: DEFAULT_DEVELOPMENT_WEB_PORT,
+  });
 });
 
-test('Development Web安装前未运行时保持按需启动', (t) => {
-  const current = fixture(t);
-  const result = runSelfBootstrapCloseout({
-    finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
-    workspaceRoot: current.root,
-    nodeExecutable: process.execPath,
-    execute: executor(current.root),
-    environment: current.environment,
-  });
+test('Development Web安装前未运行、记录过期或owner不同时保持按需启动', (t) => {
+  for (const continuityStatus of ['not-running', 'stale', 'different-owner']) {
+    const current = fixture(t);
+    const result = runSelfBootstrapCloseout({
+      finishResult: finishResult(current.root, current.baseRef, ['projects/product/services/buildr/package/launchers/manage.mjs']),
+      workspaceRoot: current.root,
+      nodeExecutable: process.execPath,
+      execute: executor(current.root, { continuityStatus }),
+      environment: current.environment,
+    });
 
-  assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
-  const install = phase(result, 'install-local-app');
-  assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
-  assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
-    type: 'development-web-continuity', status: 'not-applicable', reason: 'not-running', previousPid: null, currentPid: null, port: null,
-  });
+    assert.equal(result.status, 'passed', `${continuityStatus}: ${JSON.stringify(result.diagnostic)}`);
+    const install = phase(result, 'install-buildr-web');
+    assert.equal(install.operations.some((item) => item.id === 'restart-development-web-continuity'), false);
+    assert.deepEqual(install.effects.find((item) => item.type === 'development-web-continuity'), {
+      type: 'development-web-continuity', status: 'not-applicable', reason: continuityStatus,
+      previousPid: null, currentPid: null, previousPort: null, currentPort: null,
+    });
+  }
 });
 
 test('Development Web恢复失败或identity漂移时阻断后续activation', async (t) => {
   for (const scenario of [
     { name: 'start-timeout', options: { runningDevelopmentInstance: true, failDevelopmentRestart: true }, code: 'self-bootstrap-closeout.development-web-restart-failed' },
+    { name: 'occupied-port', options: { runningDevelopmentInstance: true, occupiedDevelopmentPort: true }, code: 'self-bootstrap-closeout.development-web-restart-failed' },
     { name: 'identity-drift', options: { runningDevelopmentInstance: true, observedRestartHead: 'f'.repeat(40) }, code: 'self-bootstrap-closeout.development-web-restart-identity-mismatch' },
   ]) {
     await t.test(scenario.name, (t) => {
@@ -1013,7 +1146,8 @@ test('Development Web恢复失败或identity漂移时阻断后续activation', as
       assert.equal(result.diagnostic.code, scenario.code);
       assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
       assert.equal(phase(result, 'finalize').status, 'not-applicable');
-      if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-local-app').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /"status":"requested"/u);
+      if (scenario.name === 'start-timeout') assert.match(phase(result, 'install-buildr-web').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /"status":"requested"/u);
+      if (scenario.name === 'occupied-port') assert.match(phase(result, 'install-buildr-web').operations.find((item) => item.id === 'restart-development-web-continuity').stderr, /EADDRINUSE.*4458/u);
     });
   }
 });
@@ -1053,7 +1187,8 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
   let spawnOptions;
   const restarted = await restartDevelopmentInstance({
     projectBridge,
-    port: 4317,
+    port: DEFAULT_DEVELOPMENT_WEB_PORT,
+    previousPort: 4317,
     launcherIdentityPath: identityPath,
     expectedSourceRoot: sourceRoot,
     expectedHead: 'a'.repeat(40),
@@ -1064,12 +1199,14 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
     spawnImpl: (_command, _args, options) => {
       spawnOptions = options;
       fs.writeFileSync(path.join(dataRoot, 'instance.json'), JSON.stringify({
-        url: 'http://127.0.0.1:4317', secret: 'secret', pid: 71174, launcherIdentity,
+        url: `http://127.0.0.1:${DEFAULT_DEVELOPMENT_WEB_PORT}`, secret: 'secret', pid: 71174, launcherIdentity,
       }));
       return { pid: 71174, exitCode: null, unref() {} };
     },
   });
   assert.equal(restarted.status, 'passed');
+  assert.deepEqual(restarted.previous, { pid: 71173, port: 4317 });
+  assert.equal(restarted.instance.port, DEFAULT_DEVELOPMENT_WEB_PORT);
   assert.equal(restarted.instance.pid, 71174);
   assert.equal(spawnOptions.env.BUILDR_NODE, process.execPath);
   assert.equal(spawnOptions.env.BUILDR_LAUNCHER_IDENTITY, identityPath);
@@ -1077,7 +1214,8 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
   const killed = [];
   await assert.rejects(() => restartDevelopmentInstance({
     projectBridge,
-    port: 4317,
+    port: DEFAULT_DEVELOPMENT_WEB_PORT,
+    previousPort: 4317,
     launcherIdentityPath: identityPath,
     expectedSourceRoot: sourceRoot,
     expectedHead: 'a'.repeat(40),
@@ -1094,7 +1232,35 @@ test('continuity helper认证health、验证新identity并回收失败启动PID'
     return true;
   });
   assert.deepEqual(killed, [{ pid: 72200, signal: 'SIGTERM' }]);
+  await assert.rejects(() => restartDevelopmentInstance({
+    projectBridge,
+    port: 4317,
+    previousPort: 4317,
+    launcherIdentityPath: identityPath,
+    expectedSourceRoot: sourceRoot,
+    expectedHead: 'a'.repeat(40),
+    nodeExecutable: process.execPath,
+    previousPid: 71173,
+    dataRoot,
+    fetchImpl: healthyFetch,
+  }), /continuity port must be 4458/u);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+});
+
+test('continuity helper默认只读Development数据根且不复用正式产品根', () => {
+  assert.equal(
+    developmentWebDataRoot({}, 'darwin', '/test-home'),
+    '/test-home/Library/Application Support/Buildr Dev',
+  );
+  assert.equal(
+    developmentWebDataRoot({ LOCALAPPDATA: 'C:\\TestHome\\AppData\\Local' }, 'win32', 'C:\\TestHome'),
+    path.join('C:\\TestHome\\AppData\\Local', 'Buildr Dev'),
+  );
+  assert.equal(
+    developmentWebDataRoot({ XDG_STATE_HOME: '/tmp/state' }, 'linux', '/home/tester'),
+    '/tmp/state/buildr-dev',
+  );
+  assert.equal(developmentWebDataRoot({ BUILDR_APP_DATA_DIR: '/tmp/isolated' }, 'darwin', '/test-home'), '/tmp/isolated');
 });
 
 test('development entry identity evidence覆盖完整入口链且complete只经Project bridge Doctor', (t) => {
@@ -1191,10 +1357,10 @@ test('Doctor blocked preflight只排除同一run自有carrier', (t) => {
 
 test('latest target在activation前触发同一Finish run有界target-race恢复', (t) => {
   const { root, remote, baseRef, environment } = fixture(t);
-  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   createCarrier(root);
   const latestRef = commitRemoteTask(remote, 'concurrent-finish');
-  const converged = finishResult(root, latestRef, ['projects/product/services/buildr/package/manifest.yml'], {
+  const converged = finishResult(root, latestRef, ['projects/product/services/buildr/resources/manifest.yml'], {
     runId: input.runId,
   });
   const result = runSelfBootstrapCloseout({
@@ -1217,7 +1383,7 @@ test('latest target在activation前触发同一Finish run有界target-race恢复
 
 test('latest target需要Delivery Adaptation时在sync安装Doctor前交还完整适配提示', (t) => {
   const { root, remote, baseRef, environment } = fixture(t);
-  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/package/manifest.yml']);
+  const input = doctorBlockedResult(root, baseRef, ['projects/product/services/buildr/resources/manifest.yml']);
   createCarrier(root);
   commitRemoteTask(remote, 'adaptation-baseline');
   const expectedCommitMessage = '交付任务\n\nBuildr-Task: closeout-task';
@@ -1240,7 +1406,7 @@ test('latest target需要Delivery Adaptation时在sync安装Doctor前交还完�
   assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.target-race-adaptation-required');
   assert.deepEqual(result.diagnostic.details.deliveryAdaptation, adaptation.deliveryAdaptation);
   assert.equal(phase(result, 'sync').status, 'not-applicable');
-  assert.equal(phase(result, 'install-local-app').status, 'not-applicable');
+  assert.equal(phase(result, 'install-buildr-web').status, 'not-applicable');
   assert.equal(phase(result, 'verify-development-entry').status, 'not-applicable');
   assert.equal(phase(result, 'finalize').status, 'not-applicable');
   assert.deepEqual(result.effects.map((item) => item.type), ['retained-target-fast-forward']);
@@ -1428,7 +1594,7 @@ test('proven foreign carrier只隔离未跟踪根且不掩盖staged差异', (t) 
 test('plan identity由run、frozen paths和去重动作确定', () => {
   const root = '/tmp/buildr-plan';
   const result = finishResult(root, 'a'.repeat(40), [
-    'projects/product/services/buildr/package/manifest.yml',
+    'projects/product/services/buildr/resources/manifest.yml',
     'projects/product/services/buildr/package.json',
   ]);
   const first = createSelfBootstrapCloseoutPlan(result);
@@ -1436,7 +1602,7 @@ test('plan identity由run、frozen paths和去重动作确定', () => {
   assert.deepEqual(first, second);
   assert.equal(first.actions['sync-retained-workspace'].length, 1);
   assert.ok(first.actions['verify-development-entry'].length >= 1);
-  assert.equal(first.actions['install-development-local-app'].length, 1);
+  assert.equal(first.actions['install-development-buildr-web'].length, 1);
 });
 
 test('Buildr runtime Skill source变化必须触发retained workspace sync', () => {
@@ -1449,7 +1615,7 @@ test('Buildr runtime Skill source变化必须触发retained workspace sync', () 
     'projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md',
   ]);
   assert.equal(plan.actions['verify-development-entry'].length, 1);
-  assert.equal(plan.actions['install-development-local-app'].length, 0);
+  assert.equal(plan.actions['install-development-buildr-web'].length, 0);
 });
 
 test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品动作', () => {
@@ -1463,16 +1629,16 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const runtimeSourcePlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'a'.repeat(40), runtimeSourcePaths));
   assert.deepEqual(runtimeSourcePlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [],
   });
 
   const installerWrapperPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'b'.repeat(40), [
-    'projects/product/services/buildr/scripts/install-buildr-development',
+    'projects/product/services/buildr/tools/development/install-buildr-development',
   ]));
   assert.deepEqual(installerWrapperPlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [],
   });
 
@@ -1480,7 +1646,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const launcherManagerPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'c'.repeat(40), [launcherManagerPath]));
   assert.deepEqual(launcherManagerPlan.actions, {
     'sync-retained-workspace': [],
-    'install-development-local-app': [launcherManagerPath],
+    'install-development-buildr-web': [launcherManagerPath],
     'verify-development-entry': [launcherManagerPath],
   });
 
@@ -1488,7 +1654,7 @@ test('self-bootstrap精确路径矩阵区分通用runtime render与专用产品�
   const runtimeSkillPlan = createSelfBootstrapCloseoutPlan(finishResult(root, 'd'.repeat(40), [runtimeSkillPath]));
   assert.deepEqual(runtimeSkillPlan.actions, {
     'sync-retained-workspace': [runtimeSkillPath],
-    'install-development-local-app': [],
+    'install-development-buildr-web': [],
     'verify-development-entry': [runtimeSkillPath],
   });
 });
@@ -1501,7 +1667,7 @@ test('零差异 Finish Result优先按activation paths规划自举并兼容chang
       root: path.join(root, '.buildr', 'transient', 'task-finish', 'carriers', 'closeout-run'),
       changedPaths: [],
       activationPaths: [
-        'projects/product/services/buildr/package/manifest.yml',
+        'projects/product/services/buildr/resources/manifest.yml',
         'projects/product/services/buildr/src/example.mjs',
       ],
       zeroDelta: true,
@@ -1574,7 +1740,7 @@ test('多仓库nested carrier只使用Workspace paths且验证全部carrier', (t
   assert.equal(result.status, 'passed', JSON.stringify(result.diagnostic));
   assert.deepEqual(result.plan.frozenPaths, ['projects/product/services/buildr/src/workspace.mjs']);
   assert.deepEqual(result.plan.actions['sync-retained-workspace'], []);
-  assert.equal(result.plan.actions['verify-development-entry'].includes('projects/product/services/buildr/package/manifest.yml'), false);
+  assert.equal(result.plan.actions['verify-development-entry'].includes('projects/product/services/buildr/resources/manifest.yml'), false);
 });
 
 test('Workspace无贡献时Service carrier不触发自举且环境留给Finish cleanup', (t) => {

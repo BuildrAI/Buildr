@@ -6,9 +6,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths } from './changed-paths.mjs';
-import { createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
+import { admitVerificationPlanBudget, createDevelopmentPlatformPlan, createVerificationAdmissionPlan, createVerificationPlan, createVerificationSelectionAudit } from './planner.mjs';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
+import { CORE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -54,13 +55,24 @@ try {
     const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
     const affectedPlan = args.developmentRunner
       ? createDevelopmentPlatformPlan({ runner: args.developmentRunner, paths: changed.paths })
-      : createVerificationPlan({ paths: changed.paths, fullScopeExemptPaths: changed.versionOnlyPackagePaths });
-    const plan = args.developmentRunner ? affectedPlan : createVerificationAdmissionPlan(affectedPlan);
-    const output = { schemaVersion: 'buildr.verification-plan/v1', base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, delegated: plan.delegated, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
-    if (args.json) process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+      : createVerificationPlan({ paths: changed.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, selectionOnlyPaths: changed.selectionOnlyPaths, selectionReasons: changed.selectionReasons });
+    const composedPlan = args.developmentRunner ? affectedPlan : createVerificationAdmissionPlan(affectedPlan);
+    const plan = admitVerificationPlanBudget(composedPlan, {
+      concurrency: executionProfile.limits,
+      declaredBudgetMs: composedPlan.scope?.mode === 'full' ? CORE_TOTAL_BUDGET_MS : null,
+    });
+    const output = { schemaVersion: 'buildr.verification-plan/v1', status: plan.status, diagnostic: plan.diagnostic, base: changed.base, source: changed.source, developmentRunner: args.developmentRunner, paths: plan.paths, versionOnlyPackagePaths: changed.versionOnlyPackagePaths, selectionOnlyPaths: changed.selectionOnlyPaths, scope: plan.scope, selectionAudit: createVerificationSelectionAudit(plan), estimate: plan.estimate, delegated: plan.delegated, ignored: plan.ignored, unmapped: plan.unmapped, productionOwnerGaps: plan.productionOwnerGaps, admissionStepIds: plan.admissionStepIds ?? [], preflightSteps: [], steps: plan.steps };
+    if (args.json) {
+      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+      if (plan.status === 'blocked') process.exitCode = 1;
+    }
     else if (args.planOnly) {
       if (changed.base) process.stdout.write(`Git base: ${changed.base}\n`);
       printPlan(plan);
+      if (plan.status === 'blocked') process.exitCode = 1;
+    } else if (plan.status === 'blocked') {
+      printPlan(plan, process.stderr);
+      process.exitCode = 1;
     } else if (plan.steps.length === 0) {
       process.stdout.write('No Product verification steps selected.\n');
     } else {
@@ -95,6 +107,7 @@ try {
         source,
         status: execution.passed ? 'passed' : 'failed',
         results,
+        contextLifecycle: execution.contextLifecycle,
         startedAt: totalStartedAt,
         finishedAt: Date.now(),
         diagnosticsDirectory: evidence.diagnosticsOutput,

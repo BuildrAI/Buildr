@@ -1,103 +1,273 @@
 # Buildr 技术架构
 
+本文是 Buildr 已实现技术架构的入口，帮助维护者快速判断：源码由谁拥有、模块如何协作、数据写在哪里、运行时如何形成，以及关键流程应继续阅读哪份文档。
+
+本文不是行为规范、迁移台账或实现清单。规范性行为以 [OpenSpec specs](../../specs/) 为准；单个 Service 的详细职责见 [Buildr Service](../services/buildr.md) 与 [Buildr Web Frontend Service](../services/buildr-web.md)；源码目录和分层约定见 [服务分层与模块组织](../../../docs/architecture/service-architecture.md)。
+
+## 一页架构图
+
+```text
+Product Project: projects/product/
+├── OpenSpec / docs / knowledge / Service registry
+└── Services
+    ├── buildr-web                         React / Vite 前端源码
+    │     └── build ───────────────────┐
+    └── buildr                         │
+          ├── bin/buildr.mjs           │  稳定薄 CLI 入口
+          ├── src/bootstrap/           │  唯一进程组装入口
+          ├── src/workspace/           │  Workspace / Project / Service
+          ├── src/task/                │  Task 及其生命周期
+          ├── src/agent-assets/        │  Rule / Skill / Component 与 runtime 投射
+          ├── src/verification/        │  Project 验证执行
+          ├── src/web/                 │  Buildr Web Runtime 与本机 HTTP Host
+          ├── src/system/              │  Installation / Doctor / Publication
+          ├── src/infrastructure/      │  SQLite / Git / 文件 / 进程 / 网络
+          └── web-dist/ <──────────────┘  正式前端静态产物
+
+Buildr npm package
+└── CLI + Application Payload + migrations + resources + web-dist
+      ├── 命令行调用
+      ├── loopback Buildr Web
+      └── 向 Agent runtime 投射受管工作资产
+```
+
+这套结构遵守三个基本方向：
+
+- Product Project 管治理事实，Service 管可执行实现。
+- Bootstrap 只负责组装；业务模块拥有自己的语义、Application 和数据写入权。
+- Buildr 提供可信事实、确定性安全边界和少量安全原语；Agent 负责理解目标并选择专业动作。
+
 ## 所有权与源码边界
 
-- Product Project root：`projects/product/`，拥有产品治理、OpenSpec、docs、knowledge 与 Service registry。
-- Buildr Service root：`projects/product/services/buildr/`，拥有 CLI、Buildr Web Runtime、session 托管、`web-dist` 消费、验证、package 和发布实现；不再拥有 Buildr Web React/Vite 权威前端源。
-- Buildr Web Frontend Service root：`projects/product/services/buildr-web/`，与 `buildr` 同仓同级的 workspace Service，拥有 Buildr Web React/Vite 前端源码与正式构建；构建产物写入 `buildr` 的内部 `src/interfaces/local-app/web-dist/`。
-- 用户 Workspace 中由 Buildr 交付的 Rules/Skills/Components 是安装结果，只能由 Product checkout 的 update/sync 单向物化。
-- `.buildr/workspace.yml`、Workspace 根 Registry 与 Project 的 capabilities、commands、Service Registry 是用户 Workspace 持久化事实，不是产品包内容。npm package 只发布产品声明、Rule/Skill/Component/Command 内容与实现；`init`、Project create 和 `sync` 通过各领域 renderer/writer 生成缺失 Registry，再从 package 声明收敛 Builtins 与 Components，已有用户内容不由包内模板覆盖。
+| 范围 | 当前职责 | 不负责 |
+|------|----------|--------|
+| `projects/product/` | 产品治理、OpenSpec、文档、当前认知和 Service registry | CLI、HTTP 或业务运行实现 |
+| `services/buildr/` | CLI、Application、Buildr Web Runtime、数据存储、验证、npm package 和发布实现 | Buildr Web React/Vite 权威源码 |
+| `services/buildr-web/` | React/Vite/TypeScript 前端源码、依赖和正式构建 | 生产 HTTP、session、SQLite 或业务 writer |
+| 用户 Workspace | Workspace/Project/Service registries、用户长期工作资产和本机 Task 事实 | Buildr 产品包源码 |
+| Agent runtime 目录 | Buildr 从 Workspace 源资产生成的可重建投影 | 长期事实源和业务 authority |
+| Product Data Root / Web Data Root | installation、Launcher、Web instance 和本机协调状态 | 可移植工作资产或 Git 内容 |
 
-## 运行结构
+Workspace 中由 Buildr 交付的 Rules、Skills、Commands 和 Components 是安装结果，只能由 Product checkout 的 `update` / `sync` 单向物化。Agent runtime 投影可以重建，不能反向成为 Workspace 源资产。
 
-- Buildr 本机状态分成共享 Product Data Root 与 channel-scoped Web Data Root。Product installation registry、release awareness 与正式 npm Launcher binding 继续共享既有 Product Root；普通 Buildr Web 按产品身份闭合映射为 `npm + host → released`、`development + development → development`。released 默认沿用 macOS `Buildr`、Windows `Buildr`、Linux `buildr`，development 默认使用对应的 `Buildr Dev` / `buildr-dev`；显式 `BUILDR_APP_DATA_DIR` 只建立当前 Web 环境的隔离命名空间，不改变 channel 或共享 Product Root。
-- released 与 development 各自拥有 Workspace registry、instance receipt、start lock与日志，可以同时运行且只复用、等待、清理和退出同一 Web profile 的实例。development、Preview与普通CLI保持显式端口或随机loopback端口语义；正式npm Launcher由closed binding保存端口策略，默认首选`4457`，非零首选端口真实listen返回`EADDRINUSE`时只在同一start lock内以端口`0`回退一次。Launcher identity、Server product identity 与 instance profile 必须一致；旧共享 Root 中属于另一 channel 的健康实例只报告冲突并保留现场，不被错误复用、停止或清理。Preview 继续使用实例名下的独立 Root，跳过普通 Web management claim，并保存自身启动日志。
-- 同一 canonical Workspace 只能由一个 Web profile 管理。注册、`web --target`、Launcher 和任何可能打开 writable/migration Structured Store 的路径，先在 `DatabaseSync`、WAL/SHM、migration ledger或业务行产生前核对 canonical real root、Workspace UUID、两侧 registry 与 Workspace-local `.buildr/local/web-management.json`；任一对侧 identity 不可读、registry 损坏、root/UUID 重复或 owner/profile 不匹配都 fail closed。移除错误 registry 条目不打开或删除 SQLite，只在当前 registry 已不再持有该 Workspace 时释放完全匹配的本机 claim；没有 force、adopt 或降级入口。
-- CLI 解析 Workspace/Project/Service manifests、Task Record、Task Environment、Task Review、Task Verification、Parent Coordination、Task Finish 与项目每日演进请求，执行确定性 source mutation、render、doctor、package 和 Buildr Web lifecycle。`project daily-progress record|inspect|list` 是 Daily Progress Application 的 agent-machine 薄适配层，权威写入 ignored YAML 而不是 SQLite。`task environment prepare`必须带`--agent <adapter>`，省略时在进 Application 前失败，不得默认为 Codex；未给`--branch`时默认任务分支为`<adapter>/<task-id>`。`task environment prepare|inspect|cleanup`、`task review inspect|record`、`task verification inspect|record`与`task parent inspect|record|refresh-planning|bind-child|reconcile|accept`都只是各自Application的薄适配层；Parent Plan record/reconcile另公开closed schema/example发现。`verification run`在Task外只产生transient execution，在正式Task context中额外保留Execution Record；`worktree create|inspect|cleanup`只适配Git provider。Task Development、Task Retrospective与Task Planning Identity的受管消费者统一通过matching retained controller invocation进入bundled `__internal` route；npm artifact内runner与source checkout薄wrapper共用同一Application实现，不依赖安装包之外的source-only driver。Parent `refresh-planning`只能让Application复用saved Plan、planning snapshot与current ready Review写入既有gate，不接受caller planning JSON；`task finish run|inspect`只适配当前研发交接的固定五阶段交付。
-- Runtime adapter 将受管 Rules、Skills、contributions 和 consumer-local capability binding evidence 投射到 Agent 原生入口；Project 普通知识和 Service repo 保持源资产，不复制进 runtime。投射 adapter 只证明Buildr写入目标，不提供读取者身份authority；产品入口`buildr`保持adapter-neutral，只从宿主明确身份或用户明确目标选择`<agent>`，不从Skill路径、marker、receipt或Doctor投射字段推断。该入口只保留自身实际使用的按需路由，不注入完整Workspace consumer graph，也不成为全部capabilities的manifest consumer。
-- Agent 实际消费的 Skill 文件保留在 adapter 原生 Skills root；Buildr 用于判断更新权和清理权的 Skill 投射所有权回执属于本机控制状态，按 destination 与 adapter 保存在 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，不进入 Git，也不混入 Agent runtime namespace。consumer receipt 另外保存contract digest、binding provenance、readiness和selected provider的局部快照及独立完整性，runtime正文只保留identity、mode、readiness/reason、contract/provider路径与blocked safety stop；完整workspace graph继续由Doctor full read model提供。旧 runtime-root 回执只在 schema/identity 有效且当前文件 inventory 可证明时由同一 reconcile 迁移；canonical/legacy 冲突或 runtime drift 必须零写入停止，不建立长期双 authority。
-- Buildr Web 的 overview、development、reviews、verification 只读操作通过固定容量的 bounded read executor 承载可能阻塞的 `DatabaseSync` read operation；默认使用 2 个 long-lived Worker 与 32 个 FIFO 排队槽位，队列满、取消、Worker failure 和 server close 都有明确结算。Worker 只接受四个白名单 read operation，不接收任意函数、数据库连接或 filesystem path，不改变任何专业authority；写入、Environment、worktree、Finish、Doctor继续走各自边界。
-- Buildr Web 只监听 loopback，以 Workspace registry 为全局目录，通过 application/domain 层读取和受控管理 Project、Service 与已有 Task Record，并只读展示 Change 与项目每日演进。项目详情第三 Tab「每日演进」只读展示四问摘要与提交（不展示变更文件列表），按日/人/任务分组读取 `.buildr/daily-progress/`，GET 不扫描 Git；Task 详情概览不展示每日演进反向关联。页面不提供写入控件，HTTP 不接受 `target`/`path`/`root`。Task列表使用Task Record Application-owned stored-state query；Task Overview repository用一条参数化SQLite `LEFT JOIN`查询组合Task、Parent/Children和Development/Review/Verification/Environment/Finish的最小保存摘要，不建立聚合store、view或第二writer。Task详情固定为“概览、研发、证据、复盘、环境”：概览中的父子任务协调区块直接调用Parent Coordination Application，优先展示startup readiness、next、eligible Contribution的saved `summary`与稳定`id`、真实blocker和final acceptance进度，并继续展示Child status与saved Contribution handoff；依赖等待直接消费Application的response-only派生字段，不在Web层重算或复制。研发、Review、Verification、Environment与Retrospective分别调用所属Application reader。Terminal Delivery直接消费Task、Development handoff与Finish run/completion association，缺失或不匹配时返回`completed-unproven`。全部GET只消费SQLite保存事实，不执行Git、Content Target、declaration、Environment provider或transient Finish扫描。Buildr Web通过registry解析出的root读取structured store时，read-only path不执行Git/worktree provenance校验或`git rev-parse`；writable/migration path继续执行writer provenance guard。Agent action只生成受限prompt，不提供专业Result writer或通用Development mutation API；Parent coordination与Retrospective处置PATCH是窄Application-owned例外。Task-scoped Change route复用共享Resolver并进入Planning Review：Resolver只从Environment saved current取得Receipt-owned Project locator，独立验证scope/source path/root归属与目录可读性，因而非路径类`blocked`不隐藏Change；该只读能力不改变Environment执行readiness。全局Change generic review保持retained-only。
+Project 和 Service source 统一通过 Workspace registry 解析：
 
-- npm package是唯一正式Buildr安装。macOS `Buildr Web.app`和Windows Start Menu shortcut只在用户显式执行`buildr web launcher install`后本机生成，保存closed binding并精确调用已登记Host Node与package entry的`web`命令；它们不复制Node、Buildr source/package或payload，也不拥有独立更新渠道。macOS wrapper同步校验binding、Node与entry摘要后，把一次性runner提交给用户launchd并立即退出；runner只转发三个受控Buildr运行变量、执行同一npm entry、写日志并在退出时移除临时job。bundle identifier从Launcher ownership派生，避免不同target或候选installation共享LaunchServices identity。npm更新只对同installation slot的既有Launcher原子刷新binding，Node、entry、prefix或package identity漂移时fail closed。Development Launcher继续是checkout-backed thin入口并与正式npm Launcher隔离；development installer和self-bootstrap只用明确Node直接调用checkout内的development-only manager，公开npm Launcher命令不接受development channel。Buildr App与SEA/installer保留为未来产品阶段重新评估的能力。
+- 未声明 `root` 的 v2 source 使用受管根（Managed Root）。
+- `root: attached` 表示登记机器本地已有的绝对 Git top-level。Buildr 只拥有 registry relation，不因 attach 获得外部仓库内容所有权。
+- 任何 mutation 都必须由实际 consumer 继续证明目标 identity、路径和 ownership，不能凭目录名推断权限。
 
-- `src/interfaces/local-app/`、既有 `local-app-*` OpenSpec capability code/path 及其兼容 H1/Purpose、`BUILDR_APP_*`、`buildr.local-app-*` JSON schema identity、SQLite schema 与既有 persistent identity 保留为内部或已发布兼容标识；它们不是当前 CLI 或用户产品表面。本次更名没有为这些标识建立第二套读写、migration 或 alias；规范性 Requirement/Scenario 与 current knowledge 仍统一使用 Buildr Web。
+相关术语见 [Workspace、Managed Root 与 Attached Root](../glossary.md)。
 
-## Capability 与 Component
+## Buildr Service 模块
 
-- `skills/manifest.yml` 注册 capability contracts、providers、consumers 和 workspace default bindings。
-- Consumer 依赖 capability identity，不依赖 provider Skill id；required/optional 分别产生 blocked/degraded readiness。
-- Consumer dependency graph只包含installed Skills的`requires`边。Agent按description完成首次Skill发现；产品入口内部路由、正文提及其他Skill或Agent执行期读取多个Skills都不伪装为dependency edge。runtime consumer只接收自身binding，完整contract digest、provenance、候选provider与nextActions分别留在receipt和Doctor full。
-- Component definition 可在 `contributions.skillDependencies` 中为同一 Component fragment 的目标 Skill 声明结构化 capability、major version 与 required/optional mode。runtime 将 enabled/installed Component dependency 与 base `requires` 按 `capability@version` 合并，required 优先并保留来源；install/update/uninstall 与 fragment 原子生效。Doctor 只读取该结构化结果，不从 Markdown 推断依赖，也不以 capability graph 代替直接 CLI 的 Application 检查。
-- `task-manager` 提供并默认绑定 `buildr.task-record/v2`；`task-triage` optional 消费 Task Record 与 Git Operations。data-only todo 在 Git 之前创建；新 active Task 或 todo 激活必须先通过既有 Git 门禁。Application activate 不获得 Git mutation authority，Buildr Web 不提供 create/activate。
-- `task-environment`提供并默认绑定`buildr.task-environment/v1`。`prepare`必须由调用方写出当前宿主`--agent`，首次准备把该 adapter 登记到 Environment Receipt，未给`--branch`时默认`<adapter>/<task-id>`；产品不探测宿主，也不再默认 Codex。Project可选`preparation.yml`长期声明Project-wide或Service-scoped Recipe，Agent按正式Task完整Project/Service scope与构建/验证事实选择Recipe，Application解析Declaration/Recipe identity后保存Plan v2执行快照。没有长期声明时只接受显式task-inline Recipe，不静默回写Project。Environment核心不枚举package manager、不扫描manifest，只安全执行明确executable/args并保存分层current/prepared identity及恢复事实。`task-worktree`只提供`buildr.git-worktree-provider/v1`，Environment按实际Git scope组合该provider。
-- `task-review` 保持 `buildr.task-review/v1`。`task-retrospective` 提供 `buildr.task-retrospective/v2`，仍以单一 SQLite current row 与 digest 维护 Result/处置；复盘到后续 Task 的多对多来源关系由 Task Record v2 所有，不复制 Result 或 action item。
-- `task-verification` 提供并默认绑定 `buildr.task-verification/v3`；Project `verification.yml` v2 是测试能力声明，不进入 capability binding manifest。Skill 负责执行与语义提炼，Task Verification Application 独占 current Result writer/reader。
-- `task-development`提供并默认绑定`buildr.task-development@2`，required消费Task Record、Task Environment、Task Review、Task Verification与current knowledge，不消费Task Retrospective。它是closed Development Receipt v3、v1/v2 absent-compatible read normalization、planning snapshot、可选Parent Plan/planned Contribution binding、Content Target、verification policy、Task Candidate/generation、gates/dispositions/decision与不可变研发/Contribution handoff的唯一authority；仍复用同一`task_development_current.record_json`，不新增SQLite表或backfill。Parent Coordination Application只组合Task Record、Environment、Development、Review与Finish Applications的current facts，response-only派生Parent启动checks、真实blockers、全部dependency blockers、eligible Contributions与next；Parent progress不物化，Child completion不传播，显式final acceptance不自动完成Parent。Task Entry仅在current Development含Parent Plan时条件装配该投影并覆盖普通Development recommendation；ordinary/legacy Task零额外Parent读取。Task Record terminal operation result与Task Finish complete result只复用既有`nextActions`/`nextAction`附带非阻塞“任务复盘”建议，blocked恢复动作保持优先。
-- `git-operations` 只提供并默认绑定 `buildr.git-operations@1`，没有 Application、CLI、Receipt 或持久状态；直接用户或上游 consumer 选择 repository/operation/ref/scope/order，provider 只保护精确 staging、commit/push 分离、完整 push range、共享历史冻结与最小 Result。`git-worktree-provider/v1` 继续独立。
-- `task-finish` 继续提供 `buildr.task-finish/v1`，但 required 消费 Task Development 与 Task Environment，只把当前允许推进的研发交接交给内容等价交付载体适配器；current Product 只有一个直接接线的 Git carrier adapter，不建立 adapter registry 或未来路径占位。Git Operations 仅对 retained metadata-only handoff optional，commit/push 顺序仍由 Task Finish 决定。
-- OpenSpec 1.6.0 作为默认 Component 交付上游 workflow Skills。Buildr 通过 Skill Contributions 在 runtime 组合 apply-ready、Task/Environment/Development/current knowledge、terminology 与 convergence 边界，不修改上游 Skill source bytes；这些 Component-owned dependencies 不在 package builtin descriptor 双写。OpenSpec Semantic Readiness Preflight在Planning Review前只读复用active Change scan、deterministic planner与projected strict validation，结果绑定当前delta、完整canonical observation、全部active Changes及executable/algorithm identity；它不经过checklist、Receipt、canonical applier、confirmation或archive，也不写Task/Review authority。Planning Review只审ready后的planning target，不拥有或复制该逻辑。OpenSpec Converge仍是唯一canonical writer并始终按最新事实重建plan：首次canonical mutation前在active Change的`.buildr/convergence-receipt.json`保存事务期before/expected恢复材料，确认并archive后释放本次Receipt。OpenSpec Convergence Inspect只读当前未决事务现场，未开始或已归档时不适用；Preflight结果与Receipt都不进入Git交付、Formal Finish或长期audit authority，Archived Change、Canonical Specs、Git与Task专业事实继续承担长期证明。
+Buildr Service 根目录按工程职责组织，`src/` 先按业务或产品模块划分，模块内部再按 Domain、Application、Persistence、Infrastructure 和 Interfaces 等真实需要分层。
 
-## 数据与完整性
+```text
+services/buildr/
+├── bin/                  npm executable 的稳定薄入口
+├── src/                  产品运行源码
+├── test/                 Unit 到 System / Browser 的测试与验证
+├── resources/            随产品交付的文件型资源
+├── web-dist/             buildr-web 交付的正式静态产物
+├── tools/                只服务 Buildr checkout 的开发与发布工具
+├── package/              有明确兼容 owner 的保留实现
+└── docs/                 Service 使用和维护文档
+```
 
-Workspace-local Web management claim 是本机并存保护记录，不是 Domain、Task、同步或发布数据。它只保存 canonical root、Workspace UUID、Web profile owner 与时间，并与两套 registry 共同承担 migration 前判定；SQLite 仍是各专业 current facts 的唯一 Structured Store authority，claim 不复制业务行或专业状态。
+### 进程组装
 
-Workspace、Project、Service、Rules、Skills、Commands 和 Components 由各自 manifests/registries 维护稳定 identity。源码与用户明确选择的普通Git内容继续使用Workspace File Store与Git；`.buildr/local/workspace.sqlite`是每个canonical Workspace独立的local-only Workspace Structured Store，也是全部Task current records的唯一持久化authority，不进入Git、同步或runtime投射。项目每日演进的权威是 Workspace 根 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`：Daily Progress Application 写入前校验已登记 Project、closed v2 payload 与存在的 Task ID（允许空关联，他人提交禁止挂 Task），读取时解析标题/状态或标 unresolved，不扫描 Git、不写 Task Record、不暴露本机路径。v1 文件标 incompatible，需 Agent 重跑覆盖。该目录由 init/sync 幂等写入 root `.gitignore`，不进入 Content Target。Buildr 对路径、symlink、ownership、transaction、integrity 和并发 mutation fail closed；runtime 是可重建投影，不是源资产。目录/checkout ownership由共享的平台感知filesystem identity owner判定，Windows短路径、长路径、大小写和扩展路径拼写不构成不同identity；普通内容字段仍保留原始字符串。Node脚本由已绑定Node executable加脚本参数启动，runtime文件一致性在Windows不使用POSIX executable bit。PATH默认`buildr`只属于npm installation；development checkout不建立机器默认CLI installation。Buildr自举显式执行retained `projects/product/buildr`并注入Environment retained Node，通过运行时identity核对launcher、CLI entry、Node、channel、source commit和package/version，不从PATH、文件名或realpath猜来源。自举时，retained Buildr runtime 是 canonical store 的唯一 writer；同一 Git common-dir 中的 candidate runtime 在任何 SQLite filesystem/database mutation 前必须被 provenance guard 限定到自己的 linked Task Validation Workspace。候选写 retained canonical root 或 peer worktree 均被拒绝，候选验证数据库的数据不合并回主库。
+`src/bootstrap/` 是唯一进程级 composition root。`bin/buildr.mjs` 只进入 Bootstrap CLI；Bootstrap 显式注册模块 descriptor，检查模块 identity、依赖、公开能力、CLI/HTTP/Diagnostic contributions 和成对生命周期。
 
-通用SQLite infrastructure使用Node 24.15+内置`node:sqlite`，从随npm包交付的连续SQL scripts发现schema。`schema_migrations`按原始script bytes保存SHA-256；每个script使用独立`BEGIN IMMEDIATE` transaction，启用foreign keys、WAL与有界busy timeout。缺口、checksum漂移、数据库版本超前、未知schema、busy或corruption均fail closed；Doctor只读报告uninitialized/healthy/unavailable及migration/integrity状态，不泄露数据内容。候选 migration 先在独立 validation store 从完整脚本链验证；只有最终源码进入 retained checkout 后，retained writer 才能在下一次合法 canonical mutation 中前向升级主库。migration identity 或内容在集成前改变时必须重建验证库并重跑受影响验证，未改变时只复核最终 identity。
+模块按注册顺序启动、逆序停止。部分启动失败只回滚本次已启动资源。业务模块不依赖目录扫描、导入副作用或全局 Runtime lookup 完成组装。
 
-Task Record 由 `domain/task-record` 验证 closed v2 schema，`application/task-record` 持有 create/inspect/update/activate/complete/abandon、Parent setter、引用校验和关系 read/result model。SQLite repository 在 `tasks`、Project/Service/Change 关系表及 `task_retrospective_sources` 中以单事务维护；复盘关系只接受终态且已有 current 复盘的 source Task，正反向投影均不复制报告。Parent/Child、Git topology guard、旧 Task 文件 inert 和 `recordDigest` 并发语义保持不变。
+### 业务与产品模块
 
-Environment Receipt由`domain/task-environment`closed schema、`application/task-environment`与SQLite-backed repository共同维护，canonical authority是Workspace SQLite的`task_environment_current`row；旧Environment文件不再是migration input、fallback或兼容reader。新写入使用`buildr.task-environment-receipt/v5`，保存resolved Plan v2、逐Declaration/Scope/Recipe/Step current与prepared identity、executed、inputs/outputs/required/status/diagnostic，scope`preparation`只保存同一Plan生成的聚合probe。Application是唯一writer：`prepare`同时承担首次准备和串行恢复，只复用Declaration/Recipe/executable/input identity未漂移且outputs仍ready的Step；任一required Recipe/Step缺失、漂移或失败则整体blocked。每个Step完成或失败后只替换同一current row；旧Receipt保持只读兼容，只有显式Plan Request才能升级。公共CLI`inspect`只读观察saved Plan，不执行Step、不创建输出、不升级Plan、不回写Receipt；Buildr Web GET调用独立saved-current reader。Task checkout/provider evidence决定源码版本；Git evidence不与Environment ready或cleanup竞争authority。retained Buildr只在mutation中要求sourceRoot/adapter可信且Git source clean；Receipt controller identity保留为创建指纹。候选Product checkout可以只读inspect并在自身Task Validation Workspace运行/投射，但不能创建、恢复、认领、释放或清理自己的Environment。
+| 模块 | 拥有的主要职责 | 公开协作边界 |
+|------|----------------|--------------|
+| `workspace/` | Workspace、Project、Service、Project Daily Progress、registry 与 source 解析 | Workspace/Project query、CLI/HTTP/Diagnostic contribution |
+| `task/` | Task Record、Environment、Development、Review、Verification Result、Retrospective、Execution Record、Parent Coordination、Finish | 专业 Application、窄 read/internal capability、CLI/HTTP/Diagnostic contribution |
+| `agent-assets/` | Rule、Skill、Command、Component、Builtin/package maintenance 和 Agent runtime 投射 | runtime projection、capability binding、CLI contribution |
+| `verification/` | Project verification declaration、capability execution、资源协调和 transient evidence | verification Application 与 execution result |
+| `web/` | Buildr Web 实例、Preview、session、安全、静态文件和本机 HTTP Host | loopback HTTP、业务 HTTP contribution 分发 |
+| `system/installation/` | 安装身份、版本感知、update 和 Launcher binding | CLI、release-awareness HTTP、诊断读取 |
+| `system/doctor/` | 跨模块只读诊断聚合 | CLI 与结构化 Diagnostic Result |
+| `system/publication/` | 发布物只读查询 | Publication HTTP contribution |
 
-Task Review Result 由 `domain/task-review` closed schema、`application/task-review` 和 SQLite repository 共同维护。唯一 writer 按`(task_id, review_type)`精确拥有`planning|completion`两个current slots，要求 active Task 和明确 target identity，并在单一transaction中保存完整Result及规范化的`target_identity`、`outcome`、`updated_at`查询字段；失败保留旧slot、另一slot、Task Record与其他专业current rows。持久模型不含 revision、history或第二份applicability；inspect只读取保存值，调用方显式提供target时才做纯identity比较，未提供时返回`unknown`。Buildr Web与CLI都不直接解析旧YAML或打开SQLite。
+模块只公开协作者真正需要的窄能力。公共 CLI Host、HTTP Host 和 Doctor 不重新实现业务语义，也不取得专业 writer authority。
 
-正式Task的OpenSpec方案目标由response-only Task Planning Identity Application解释。它复用Task Record与Task-scoped Change Resolver，从Task Intent/scope和全部关联Change的proposal、design、delta specs、tasks构造closed semantic projection，按逻辑key排序并返回aggregate target与最小planning nodes；独立internal driver只提供只读调用入口。投影统一换行、尾随空白、连续空行和checkbox marker，排除path、active/archive provenance、mtime、progress、Brief、sidecar、Git/Environment/Review/Verification事实；缺失artifact或未知结构返回`blocked`与空target，不回退raw digest或旧Review Result。该Application不写SQLite、Change、Development、Review、cache或history；Review Application继续只比较opaque target，Development只保存resolver返回的最小nodes。
+### 通用基础设施
 
-Task Verification Result 由 `domain/task-verification` closed schema、`application/task-verification` 和 SQLite repository 共同维护。唯一 writer 按Task ID维护一个current row，要求 active Task、明确 Content Target identity和完整事实结果；Application把显式Project、Service所属Project与Change所属Project去重排序为有效Project集合并观察全部declarations。仅当集合为空时，closed Result允许空declarations、空capabilities、唯一workspace gap与`not-passed`；repository新写入再次校验declaration Project集合与current Task精确相等，reader只按自描述shape解码，使后续scope变化派生stale而不损坏旧row。record action自行读取、校验并计算declaration identities，caller不能注入digest，并在单一transaction中保存完整Result及规范化的`target_identity`、`outcome`、`updated_at`查询字段。持久模型不含Candidate/generation、stdout/stderr、Environment Receipt、revision/history、第二份applicability、风险或推进决定。inspect只读取保存Result与查询字段，不接受declaration root或读取`verification.yml`；显式target/declaration identity只做纯值比较，未提供时对应axis返回`unknown`，并分别使用`target-identity-not-provided`或`declaration-identities-not-provided`解释缺失输入。CLI、Buildr Web和Development通过同一reader消费，Finish不读取或写入。
+`src/infrastructure/` 只提供通用技术机制：
 
-Development Receipt 由 `domain/task-development` closed schema、`application/task-development`、SQLite repository 与 Content Target observer port 共同维护。唯一 writer 按Task ID维护一个current row，保存Task ID、Environment逻辑引用、Task context、Content Target、verification policy、generation/Candidate、gates/decision、append-only handoffs与时间；每次合法action还在同一transaction保存本次正式`applicability_status`、`applicability_json`和`observed_at`。任一serialization、constraint或写后回读失败整体rollback。Content Target observer只在mutation action中观察原Task source snapshot的deliverable bytes，不读取retained最新Delivery Baseline；Workspace根`.buildr/**`、任意`.git/**`与OpenSpec Change内`.buildr/**`属于控制元数据，不进入Content Target，其他嵌套`.buildr`路径仍是普通仓库内容，必须进入Content Target、Task Contribution与交付清理门禁；worktree/branch/commit/runtime/session与Delivery Carrier同样不进入Content Target。inspect只查询Receipt与同行保存观察，不调用Environment、Content Target observer、declaration parser或其他外部观察；缺失旧观察时返回稳定`unknown`。
+- SQLite 连接、全局有序 migration、事务和锁；
+- filesystem identity、路径 containment、symlink 与原子写入；
+- Git、process、network、platform 和 Product invocation；
+- 通用 JSON Schema 编译、公共 identity/envelope 等跨模块契约机制。
 
-Task Execution Record由closed Domain、唯一Application、SQLite `task_execution_records` metadata authority与Workspace-local正文Store共同维护。v1接受`task-verification/verification-execution`和`task-finish/finish-diagnostics`两组owner/kind；正式Task的command Verification execution与每次真正执行的Finish invocation均已接入producer。producer在首次target/process/resource或专业owner副作用前open并固定预留16 MiB，受Task-owner 256 MiB与Workspace 2 GiB backpressure约束；一次invocation对应一条record，失败、重试、中断、resume与target drift不互相覆盖。正文只允许五种白名单文件，在任何持久写入前应用版本化脱敏和4 MiB单文件/16 MiB单record安全截断，再从staging原子publish到`.buildr/local/task-execution-records/<owner>/<record-id>/`；retained后才精确清理producer-owned diagnostics transient。SQLite只保存identity、outcome、lifecycle、quota、retention、relative locator、digest与size；部分失败通过manifest、attention与CAS cleanup保持可识别、可重试。Buildr Web通过同一Application提供Task-scoped `all|verification|finish` portable列表、详情与closed filename正文读取，先验证manifest/digest/size并把单次响应限制为512 KiB，不暴露locator或本机路径。Workspace级ExecRecord GC以100条默认、500条最大batch从同一表选择candidate，优先恢复`cleanup_pending`，再复用单记录cleanup；cleaned tombstone至少保留90天和同一Task/owner/kind最近20条，过期后以expected-current条件删除。CLI提供手动/headless入口；正式Local HTTP Server从下一本地整点按当前Workspace Registry逐个调用Application，单进程防重入并隔离Workspace失败，Task Preview Server不创建timer或执行任何scheduled maintenance。GC不读取目录做discovery，不接入Doctor、不自动处置失败或管理execution resource，也不保存Task专业current/terminal fact、通用event/history payload、Consumer/Adoption或第二GC/lifecycle聚合表。
+业务 Schema、错误语义、DTO mapping 和写入规则仍由所属模块拥有。Infrastructure 不成为业务状态仓库或全局 service locator。
 
-专业SQLite repositories只负责持久化各自完整closed payload、必要查询字段与外键/slot完整性；不存在跨专业current副本或projection writer。Task Overview只用一条参数化`LEFT JOIN`组合最小保存事实。Task Finish按Task唯一使用`task_finish_current`：总体状态、当前阶段、repository/carrier/delivery set identity、失败、resume、cleanup、lease与时间使用普通列，固定五阶段只保存status/timing/current failure等compact恢复事实；run/prepared completion/compact terminal payload保存在同一行且terminal原位替换current。target lease以同行target/token/expiry提供CAS fencing，不另建lease或phase表；deliver串行复用该slot，并以retained repository、remote与target branch形成repository-scoped lease identity。每个repository完成remote readback后在同一deliver phase内立即checkpoint其delivery state；attempt history、checks/operations/observations/output、execution record关联与Carrier不进入Finish current。完整stdout/stderr、timeline和命令诊断只进入每次invocation的Task Execution Record，Delivery Carrier、target、lease、resume与其他恢复资源仍只由Finish owner管理。Terminal Delivery直接读取compact terminal association并与Development handoff确定性匹配。连续migration保留合法v2 singleton row并扩展v3 repository-set列；无法证明的旧identity/phase/owner仍fail closed，普通GET不迁移，旧runtime读取新schema继续fail closed。旧`development.yml`、Task-scoped `verification.yml`与`reviews/*.yml`完全inert，不读取、不迁移、不双写。Task Retrospective、Environment与Finish继续由各自独立writer维护；未来团队协作由Buildr Server/Cloud承担，本地SQLite不设计同步协议。
+## 主要调用链
 
-Workspace manifest 不声明通用Node runtime；旧`runtime.node`只在读取时被忽略，并在canonical sync重写时移除，既有本机runtime文件不因此删除。`package.json#engines.node`是npm Host Node兼容范围，当前为`>=24.15.0 <25`；npm main process始终使用启动package的Host Node。Buildr Product checkout以`projects/product/.node-version`锁定精确development Node `24.15.0`，development CLI、npm准备、验证、安装与self-bootstrap入口全部使用该精确版本并拒绝漂移。hosted最低/current Host Node tuple则以该tuple实际启动verifier的绝对Node为authority，同时冻结子进程PATH，不能回退应用development精确版本。Project Verification直接执行声明的argv；Task Environment只解析显式Preparation Step的executable，不再注入Workspace级Node/npm/npx绑定。
+### CLI
 
-## 验证
+```text
+bin/buildr.mjs
+  → bootstrap/cli/main
+  → Bootstrap module registry
+  → 模块贡献的 CLI adapter
+  → 专业 Application
+  → 专业 Repository 或外部 effect port
+```
 
-GitHub候选拓扑是Product唯一verification registry的闭合投影，不是第二测试清单。Registry同时声明Candidate shard、runner OS、允许的平台复验和最低/当前Host Node tuple；契约验证保证分片primary steps并集与本地完整Candidate相等且拒绝空`node-test`集合。单个macOS bootstrap顺序形成独立preflight与artifact evidence并只构建一个tarball，再并行运行macOS core、Windows runtime artifact consumer、Windows fresh build、无artifact的Windows Workspace lifecycle、Task/worktree recovery、Task Finish与Task Development四个有界shard，以及Host Node matrix。每个Host Node tuple都以runner实际Node构造exact execution environment、输出executable/version/PATH audit并消费同一tarball，不读取checkout `.node-version`。`Candidate gate`在`if: always()`下继续使用macOS与pinned Node、无需`npm ci`，只接受source SHA、registry identity、artifact digest和coverage全部current的closed evidence。每个逻辑shard只保留一个Actions evidence artifact；同一run重试用overwrite替换旧attempt，新SHA使旧evidence失效。Project `verification.yml`不登记这些CI内部job。
+CLI adapter 负责参数和结果映射，不复制 Application 规则。正式 Task 的受管消费者通过 retained controller 与内部 route 调用同一 Application，不另建第二套业务实现。
 
-开发PR不复用Candidate分片：macOS持有主要affected/admission及条件Browser，Windows只执行registry中显式声明的platform-sensitive development owner投影，空投影不安装依赖。Browser selected先在系统临时根构建staging dist并与tracked `web-dist`精确比较，再启动Chrome；not-applicable与coverage gap均为显式状态，验证过程不改写冻结Content Target。Candidate jobs、needs、runner和稳定`Candidate gate`保持独立且不变。
+### Buildr Web
 
-高成本lifecycle verifier通过结构化stdout marker向外层runner报告内部phase timing。产品owned进程、Launcher、端口、Task Environment、资源协调和Workspace cleanup失败保持correctness failure；macOS release Launcher从binding Host Node重建launchd后代PATH并输出实际Node identity，每次startup使用15秒专用wall-clock readiness budget。readiness失败在cleanup前把脱敏instance、进程观测、elapsed/budget、Node audit和launcher log写入同step diagnostics，不保留整棵安装根或旁路evidence store。只有全部断言及owned cleanup完成后，Windows harness最外层临时根的`EPERM`、`EBUSY`或`ENOTEMPTY`占用可记录retained warning。未知清理错误仍失败。
+```text
+Browser
+  → loopback Buildr Web Runtime
+  → session / Origin / request validation
+  → 模块贡献的 HTTP Controller
+  → 专业 Application 或 read model
+  → SQLite、registry 或受控文件读取
+```
 
-开发反馈、最终候选与正式发布物使用不同CI边界。显式dispatch的正式release workflow先解析唯一npm-only release contract，contract同时声明provider/repository/workflow/Environment/allowed action发布权威元组；候选准备在`dev → main`合入与历史衔接后只运行无hosted evidence的`post-main`source convergence，不触发真实OIDC exchange。维护者明确授权正式发布后，本机runner以current`origin/main`、version、candidate base/tree和workflow digest只dispatch一次run且不创建tag。Read-only contract/candidate/Host Node/Launcher jobs先冻结一次公共payload与一次`npm pack`；每个Host Node隔离runner依据lockfile独立安装checkout verification harness依赖，并显式消费同一artifact的tarball、`npm-pack`metadata与release artifact manifest。全部可逆门禁通过后，唯一声明`npm-production`、`contents: write`与`id-token: write`的protected`release` job请求一次审批，在同一execution内完成GitHub OIDC token exchange proof、final`pre-tag`convergence、tag`preflight|ensure`、Trusted Publishing、Registry/GitHub Release readback与精确安装smoke。Credential-free evidence绑定source、workflow、package与同一run/attempt，必须在tag前消费且exchange未过期；本机npm session不属于身份链。已有tag只接受解析到同一source，已有version只接受完全相同Registry integrity；OIDC或后续失败保留tag/npm/Release事实，不回退本机publish。新的protected attempt可能再次审批，不通过额外Environment job或弱化protection规避。GitHub Release只ensure tag、commit、notes、prerelease/Latest且拒绝binary Assets；Actions artifact只保存按source/tag/payload冻结的临时候选与credential-free evidence。
+Buildr Web Runtime 只监听 loopback，并同源托管 `web-dist`。HTTP Host 负责传输、安全、session 和资源限制；Workspace、Task、Installation、Publication 等业务 Controller 由对应模块贡献。
 
-Project `preparation.yml`使用closed `buildr.project-environment-preparation/v1`，只声明已知Project/Service Recipe及其明确无shell Step，不保存Task选择或机器状态；Project `verification.yml`使用closed `buildr.project-verification/v2`，只声明已存在capability的identity、Project/Service scope、invocation、applicability、可证明事实、delivery policy及必要environment/effects/resource边界。两者都由Agent只读发现并在用户授权后维护长期文件；Task级选择与结果分别进入Environment Plan/Receipt和Verification Result。声明缺失不会触发Buildr扫描或自动开发能力。
+普通 GET 只读取已保存事实，不执行 Git、Environment provider、Content Target observation、migration 或 Finish 扫描。Web 页面不通过拼装多个响应建立第二个业务 authority。
 
-`declaration-intake`是两类Project声明的无状态Agent编排入口。Project/Service注册、首次Task scope、依赖/构建/测试入口变化、Environment declaration/Recipe gap、Verification coverage gap或显式initialize/refresh只触发当前scope的只读Discovery与候选diff；用户确认精确目标文件后，Preparation与Verification仍分别交给`task-environment`和`task-verification` owner维护。Intake不拥有schema、store、writer、scheduler或Task结果，不管理`capabilities.yml`/`commands.yml`，也不在Buildr Web GET、Doctor、inspect或Finish中写文件。
+### Agent runtime 投射
 
-Production `verification run` 接受显式 Project、capability 列表和 opaque target identity，只运行 command capabilities，并形成`buildr.verification-execution/v1`。公共JSON的checks只投影capability identity、outcome、timing、resource coordination与固定有界失败摘要，不返回stdout/stderr内容；Task外run只产生同样紧凑的provider-owned transient evidence。带matching Task Environment的正式run在执行前申请record容量，完成后把完整输出写入受控、脱敏的Execution Record正文，同时seal可移植摘要、闭合timeline与diagnostics，record retained后精确清理transient evidence。完整命令、本机路径、Environment handle、resource token与敏感argv不进入record；不提供caller-managed output writer。`--declaration-root`只属于`task verification record`的正式写入观察，不能用于run或inspect。声明级通用plan/DAG已删除；Product selector/registry/DAG留在`test/verification`，production只保留平坦capability runner、process executor、真实claim使用的coordinated/external resource coordinator和evidence cleanup。
+```text
+Workspace 源资产
+  → Agent Assets render plan
+  → ownership / conflict / integrity 检查
+  → adapter 原生 runtime 目录
+  → projection receipt 与局部 binding evidence
+```
 
-Browser changed capability 的输入契约由 capability 自身负责：优先读取显式 `BUILDR_CHANGED_PATHS_JSON`，未提供时从当前 execution root 与 `BUILDR_VERIFICATION_BASE`（若有）推导 changed paths；两者都无法证明时 fail closed。run 同时保存执行前后 target observation，并把 added/removed paths 与 status change 作为 drift 诊断，不把 worktree dirty 本身等同于 capability 失败。
+Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-local capability binding。Project 普通知识、Service repository 和 Task 本机状态不会复制进 Agent runtime。
 
-Task Verification Application 从 execution evidence、有界 Agent 事实或明确workspace coverage gap提炼完整 `buildr.task-verification-result/v1`，并整值写入 current slot。Result 只包含 Task/Content Target/declaration identity、实际 capability 的 `passed / failed` 精炼事实、coverage gaps、`passed / not-passed` 结论与完成时间。仅工作区无能力时不执行不存在的capability，也不创建passed事实；中断、非终态 execution 或写入失败不覆盖 current。Content Target、有效Project集合或当前 declaration identity 变化后 inspect 派生 stale。Result 不拥有 verification policy、推进决定、Task 状态、Candidate generation、risk 或 handoff。
+## 数据与写入权
 
-Task Development 先固定 verification policy，再请求 Task Verification 对稳定 Content Target执行Formal Verification。Project模式仍要求非空完整declarations；仅工作区模式的policy以空declarations、空capabilities、唯一workspace gap和空overrides形成稳定identity，Content Target或有效Project集合变化后旧policy stale。matching Result尚未包含gap时不能freeze；完整`not-passed` Result可使事实完整，但没有绑定当前Result digest与`workspace` scope的明确风险接受时阻止`proceed`和handoff。Candidate 只绑定 generation、Content Target、Task context 与 policy identity；Completion Review 随后绑定 Candidate，三个 gate 只进入 Development decision/handoff，不进入 Candidate identity。Candidate freeze后Delivery Baseline前进时不rebase原Task worktree；Development只读inspect原Task source、Task Context、policy与gates，未变则全部current。只有原Task source/Task Contribution或其他applicability input真实变化时才调用observe并重建。
+| 数据 | Authority | 写入者 | 生命周期 |
+|------|-----------|--------|----------|
+| Workspace、Project、Service 与资产 registries | Workspace 源文件 | 各领域 renderer/writer | 可进入 Git 的长期事实 |
+| OpenSpec specs / changes / knowledge | Product Project 文件 | OpenSpec 或 current knowledge 对应流程 | 可进入 Git 的产品事实 |
+| Task current records | `.buildr/local/workspace.sqlite` | 各专业 Application + Repository | Workspace 本机 current facts |
+| SQLite schema | 随 npm package 交付的连续 SQL scripts | SQLite infrastructure migration | 只允许前向迁移 |
+| Project Daily Progress | `.buildr/daily-progress/<project>/<date>.yml` | Daily Progress Application | Git ignored 的本机日事实 |
+| Task Execution Record 正文 | `.buildr/local/task-execution-records/` | Execution Record Application | 有配额、脱敏和清理生命周期 |
+| Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
+| Delivery Carrier | Finish run-owned 隔离目录 | Task Finish | 临时交付与恢复资源 |
+| Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
 
-transient cleanup 只删除系统临时根下、名称和 summary containment 均匹配的 provider-owned run directory。非 transient、symlink、越界或不可证明的 evidence 保留现场。资源协调只处理声明中真实 claim 的 `coordinated / external` 边界；explicit resource 必须精确授权。Buildr 不创建或调度 Agent/task。
+专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；面向页面和 Agent 的 Overview 通过只读查询或 Application projection 组合事实。
 
-## Task Finish
+SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不进入 Git、同步或 Agent runtime。共享团队 authority 属于未来 Server/Cloud 边界，不能通过同步本机数据库实现。
 
-Task Finish 是产品持有的固定五阶段窄 adapter：`preflight → prepare → verify → deliver → cleanup`。CLI 只公开 `task finish run|inspect`；Application 对仅工作区和Project/Service Task都只从 Task Development Application读取current handoff，不检查或解释declarations、workspace gap、Verification结论或风险授权。新run/result v3冻结研发交接、Candidate identity/generation、Content Target、完整Environment repository set，以及逐repository的Task Contribution、Delivery Baseline、目标、Delivery Carrier、equivalence、delivery/readback与cleanup state；旧v2 singleton状态只作有界读取和恢复。preflight、prepare、verify、deliver及复用阶段输出的resume都把四项Development identity交给Development Application精确断言，不自行遍历历史handoffs。`formalVerificationExecutions`固定为0。current Product/Git adapter直接注册到Application；多个repository仍属于同一adapter与固定五阶段，不建立adapter registry或跨remote原子事务。Task Finish current run、repository checkpoints、prepared cleanup、target lease与compact terminal Result统一写入唯一`task_finish_current`行；terminal完成时原位替换current，matching terminal row仍可临时持有self-bootstrap activation lease，且不改变terminal payload或Task终态。完整命令诊断与各repository Carrier只保留在run-owned transient root，成功后清理。`.buildr/task-finish`不属于新runtime输入；不建立Finish Receipt、第二Candidate/decision store或旧v1 reader。
+## Task 生命周期与交付
 
-retained Product phase provider自身若在无交付副作用的`preflight|prepare`抛出异常，existing-run `--bootstrap-recovery`仍进入同一完整retained registry与Application。状态机只为未处理handler异常保存`origin=product-phase-provider`；Application先闭合run资格，再通过Execution Record open gate，并由current Environment与Development authority确认冻结source，才创建deterministic自修复Provider载体。载体每次import核验完整HEAD/tree/cleanliness/provider digest，candidate只获得七个Task Finish phase dependency组成的closed façade，不能取得repository/runtime prototype或改写bootstrap provenance。cleanup handler不删除载体；cleanup phase先持久化passed，retained finalizer再把`source/`原子移入quarantine、写`revocation.json`并回收残留，最后提交terminal SQLite state。撤销中断与terminal finalize失败继续使用同一run；全部phase已passed后只运行retained finalizer，不重新import provider。CLI entry、registry、Application、repository、migration与Structured Store损坏保持在恢复范围外。
+Task 各阶段通过稳定 Task ID 关联，但保持独立事实和 writer：
 
-`preflight`聚合handoff、ready Environment、完整repository set与adapter readiness，按稳定selector逐项观察Task Contribution。无贡献repository记录为`not-applicable/no-contribution`，不解析remote、不观察远端、不取得lease，也不创建或校验Delivery Carrier；有贡献repository才从retained checkout当前符号分支解析target并核对retained HEAD与remote ref。单值target/remote override只允许唯一有贡献repository，多项有贡献时以歧义诊断fail closed。省略`--agent`时run agent使用Environment adapter。`prepare`在任何push前为全部有贡献repository分别用临时index观察Task Contribution，并在run-owned carrier容器的selector子目录中以最新Delivery Baseline机械应用；`verify`同样要求全部carrier current/equivalent后才进入deliver。clean apply形成commit并记录`deterministic-reuse`；只有本次carrier真实创建commit时才校验冻结消息，baseline HEAD永不充当消息校验对象。Git conflict保留对应baseline carrier并blocked返回Delivery Adaptation。Agent只在该carrier中处理语义兼容；resume核验ownership、baseline ancestry、source/handoff current、cleanliness及Project policy要求的bounded compatibility checks。显式zero-delta adaptation继续要求matching token与`--accept-zero-delta-adaptation`，保持agent-reviewed evidence，不与普通no-contribution混用。handoff漂移时，只有没有carrier、lease、delivery、retained或cleanup事实的preflight-only旧run可以失效；精确因`task-finish.commit-message-mismatch`在prepare terminal failed且能证明从未形成carrier ownership、lease、resume、delivery或后续phase attempt的旧v2 run，也可由相同规范化消息的首次命令退休并创建v3 run。其他旧run保持冻结identity与fail-closed恢复。`deliver`按selector串行取得repository-scoped lease，每项完成push与remote readback后立即checkpoint；后续阻塞时保留已交付事实，resume先证明其仍contained并跳过重复transition，只重建最早未完成repository。target前进时沿用精确path/mode/blob containment、`already-contained`与target-race规则；已交付carrier不再contained时不force push、不回滚其他remote。Workspace repository的runtime activation/Doctor仍按其冻结Task Contribution activation paths执行，非Workspace repository不获得Buildr产品常量。`cleanup`在delivery facts durable后为每个Environment repository重建proof：有贡献项使用carrier contribution proof，无贡献项使用source tree等于original baseline tree的独立no-contribution proof；全部proof由retained Environment manager复核后统一清理所有Task worktree、任务分支和provider evidence，再删除各carrier及空run container。Environment已清理后的崩溃恢复不重跑delivery。只有Development Application报告applicability stale才返回Development rebuild；其他无法证明facts保持blocked。
+```text
+Task Record
+  → Task Environment
+  → Task Development
+       ├── Planning Review
+       ├── Candidate + Formal Verification
+       ├── Completion Review
+       └── immutable Development Handoff
+             ↓ Agent 选择交付策略
+       Git / PR / automatic Finish / Delivery Reconciliation
+             ↓
+          Delivery
 
-Formal Finish成功后，只有安装`buildr-self-bootstrap` Component的Buildr自举Workspace才消费Product CLI的`buildr.task-finish-self-bootstrap-input/v1`稳定投影。Product负责把受支持的内部Result major归一化为唯一Workspace repository、run-owned carrier container、全部repository carriers、activation paths、refs、Workspace repository冻结`leaseTargetIdentity`与恢复事实；runner不解析`buildr.task-finish-result/v2|v3|v4|...`。内部Result演进但自举语义不变时只更新projector；不兼容的自举语义才升级稳定投影major。Runner只按Workspace repository的冻结paths执行package sync、development Buildr Web install、retained Project bridge identity gate与最终Doctor，Service repository不能触发根自举，Workspace无贡献时activation为not-applicable并由Finish cleanup统一清理环境。Runner证明current/foreign container及全部carrier的真实路径、非symlink、containment、唯一性与resume identity后，以Task/run和投影的exact repository-scoped target identity通过retained Product内部driver取得同一target lease；matching complete terminal row与retained Doctor blocked row都可临时持有。旧runner传入`remote:targetBranch`时，只在matching row的冻结repository set唯一命中一个applicable repository时由SQLite owner transaction解析到exact identity；零匹配、多匹配、Workspace/Task/run不匹配或错误exact identity全部fail closed。另一个owner占用相同target时零activation effect停止，不同repository target互不阻塞。每个潜在副作用阶段前刷新并按Task/run与token fencing释放，Product resume清除lease后必须重新获取。每次invocation都在lease内读取latest remote ref；clean retained target只有在冻结Finish `baseRef`是latest remote target祖先、后继链无merge且local/remote精确一致时才用fetch和`merge --ff-only`前进，再把latest published HEAD作为实际activation base并重算plan。普通descendant的作者、工具与`Buildr-Task` trailer不是前置条件；runner记录冻结base、实际activation base和后继commit列表，但不宣称新tree继承旧Content Target、Verification、Completion Review或Candidate。当前run自身创建的successor仍以成对的`Buildr-Finish-Run`与`Buildr-Closeout-Plan` trailer识别幂等恢复。retained Doctor blocked Result落后时，在sync、安装和重启前最多用current token与一次matching target-race新token恢复同一Finish run，所有resume仍返回稳定投影；Delivery Adaptation保留matching Workspace carrier、完整冻结message与可移植Preparation hints，并在除必要fast-forward外零activation effects处停止。再次race或其他不确定结果立即停止，不增加第三次resume、第二次runner、持久counter或queue。push后remote readback只对非零观察做固定小次数重试，不重复push。base不再是远端祖先、未push descendant、merge、dirty tree、remote或identity漂移时停止，不做merge commit/rebase。失败只报告自举激活未完成，不回写Finish或上游事实，也不触碰PATH默认npm CLI。普通用户Workspace不包含或感知该能力，其Finish只保留既有短deliver lease。
+Activation / Environment Cleanup / Diagnostics
+与 Delivery 正交记录，不反向改写已证明的交付事实。
+```
 
-self-bootstrap activation的Development Web连续性不进入Launcher manager或Product Application。runner自带helper先用默认instance secret health冻结`healthy-development | not-running | stale | different-owner`，只有第一种状态在manager切换Launcher后通过retained Project bridge、retained Node和新Launcher identity detached启动原loopback端口，并等待health、验证新PID/source/HEAD/Node。恢复异常时只终止本次spawn PID并阻断后续development entry gate/finalize；已成功切换的Launcher保持绑定delivered retained checkout。该evidence只位于既有`install-local-app`阶段Result，不写SQLite、Receipt或Environment resource。
+Task Development 拥有 Content Target、verification policy、Candidate/generation、gates、推进决定和不可变 Handoff。Task Finish 只消费 current Handoff，不修改研发内容、不生成 Candidate，也不替 Agent 接受风险。
 
-自举runner的命令适配层在任何activation副作用前只读枚举固定Finish carrier根的直接子项，并逐个通过retained Product `task finish inspect`证明owner、Workspace、真实非symlink路径、carrier/resume identity与状态。证明闭合的foreign carrier投影为`isolated-coexisting` observation，只把精确目录作为untracked ignored root；tracked/staged差异仍阻断。cleanup或abandoned occupancy release只按`taskId + runId`给出原owner advisory，不再是当前activation predecessor，也不生成runner retry。只有未知、漂移、重复realpath、inspect失败或identity不可证明条目在target lease、Git、sync、安装、Doctor及resume零副作用前fail closed。该协调层不删除或恢复foreign carrier，不新增Product Application、SQLite、Receipt、queue或跨owner mutation authority。
+自动 Finish 保留 `preflight → prepare → verify → deliver → cleanup` 五阶段：
+
+- `prepare` 在最新 Delivery Baseline 上创建 run-owned 隔离 Delivery Carrier。
+- 机械应用发生冲突时，Agent 只在 carrier 中完成 Delivery Adaptation，然后恢复同一个 run。
+- `deliver` 按 repository 获取短 lease，逐项交付并立即保存 remote readback。
+- `cleanup` 独立证明贡献或无贡献事实后清理 Task Environment 和 carrier。
+- 无法证明 identity、ownership、remote containment 或副作用边界时保留现场并停止。
+
+Agent 也可以选择直接 Git 或 PR。`task finish reconcile` 不创建 carrier、不 push、不接受调用方声明的成功，只根据 current Handoff 和真实 remote 对账 Delivery。
+
+Finish Application 通过统一的 current facts 投影 handoff applicability、repository topology、run/carrier ownership、side effects、remote containment、四类维护结果、recovery disposition、typed blockers、required 安全前置与 available capabilities，供 `run`、`rollover`、`reconcile`、`inspect` 和 Task Entry Snapshot 共同消费；事实模型不替 Agent 选择 Git、PR、重新开发、恢复或放弃策略。Product 首次以 prepare blocked/failed 交接新 carrier 时保存不可刷新的 HEAD、index、worktree 与 untracked 可丢弃性证明；精确 carrier cleanup、remote reconciliation retirement 与显式 local rollover 只由 identity-fenced 封闭原语执行。Local rollover 仅在已知 Task Contribution drift、无 lease/Delivery/Activation/Cleanup 副作用、repository topology 不变且 carrier proof 未漂移时成立，先幂等 cleanup，再以旧 run ID/digest CAS 写入 current Handoff 的新 active run；它不访问 remote，也不执行 Delivery。
+
+`task next` 在 Development 进入 Finish 后只展示上述 typed blockers、安全前置与 available capabilities；兼容 next 提示不承诺唯一正确动作，也不把 Task Entry Snapshot 扩张为全局工作流引擎。
+
+详细行为见 [Task Finish execution specification](../../specs/task-finish-execution/spec.md)、[Task Development specification](../../specs/task-development/spec.md) 和 [Task Delivery/Finish module architecture](../../specs/task-delivery-finish-module-architecture/spec.md)。
+
+## Runtime、构建与分发
+
+### Node 与 TypeScript
+
+- Product checkout 由 `.node-version` 固定 development Node `24.15.0`。
+- npm package 的 Host Node 范围由 `package.json#engines.node` 声明，当前为 `>=24.15.0 <25`。
+- 后端允许 `.mjs` 与仅含可擦除类型语法的 `.ts` 渐进共存，并通过严格 `noEmit` typecheck 约束。
+- 正式 npm package 使用锁定 bundler 将同一模块图冻结为单一 CommonJS Application Payload；tarball 不运行 TypeScript compiler，也不携带开发类型工具链。
+
+### Buildr Web 交接
+
+`buildr-web` 是前端源码 authority，正式构建写入 sibling `buildr/web-dist/`。`buildr` 只消费和托管已提交产物；npm package 不携带 `buildr-web` 源码或 Vite toolchain。
+
+released 与 development Web profile 使用隔离的 Data Root、instance receipt、锁和日志，可以并存。Launcher 只保存已验证的 Host Node、package entry、channel 和端口策略，不复制 Buildr、Node 或前端源码。
+
+### 安装与自举
+
+npm package 是唯一正式 Buildr 安装。机器 PATH 中的 `buildr` 属于 npm installation；development checkout 使用显式 `projects/product/buildr` 入口，不覆盖默认 CLI。
+
+Buildr 自举只在 matching Task Delivery 后，由专用 self-bootstrap runner 使用 retained Product checkout 和 retained Node 编排 sync、Development Web、入口 identity 与 Doctor。Candidate runtime 不能写 retained canonical Workspace SQLite，也不能替代 retained writer。
+
+## 验证与发布边界
+
+验证分成三个目的不同的层次：
+
+| 层次 | 目标 | 主要入口 |
+|------|------|----------|
+| 开发反馈 | 快速证明受影响范围，发现直接回归 | affected / admission / 条件 Browser |
+| Product Candidate | 对冻结源码、平台、Host Node、Task lifecycle 和 package artifact 做闭合验证 | verification registry 与 Candidate gate |
+| 正式发布 | 证明同一 Candidate artifact、发布授权、Registry/GitHub readback 和安装 smoke | protected release transaction |
+
+Project `preparation.yml` 描述已知环境准备配方，`verification.yml` 描述可执行验证能力。Task Environment 保存实际准备结果，Task Verification 只从 matching terminal execution evidence 提炼 current Result；两者不复制对方 authority。
+
+Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.mjs`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，raw TypeScript和Buildr test-only provider不发布。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
+
+Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 artifact。正式发布不重新构建 Application Payload 或重新 `npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
+
+Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md)。
+
+## 跨模块不变量
+
+1. **一个事实只有一个 owner。** CLI、HTTP、Doctor、Overview 和 Agent Skill 只能调用或投影，不复制 writer。
+2. **就绪度绑定具体动作。** `ready`、`blocked` 和 `attention` 只描述具体 consumer 的具体 action，不形成 Workspace 或 Agent 的全局许可。
+3. **只读入口不产生隐式副作用。** GET、inspect 和 Doctor 不执行 migration、Git、环境准备、恢复或清理。
+4. **源码、投影和本机状态分离。** Workspace 源资产可长期治理；runtime projection 可重建；SQLite、receipt、carrier 和 instance state 保持本机或临时边界。
+5. **身份和副作用必须可证明。** 写入、交付、清理和外部 mutation 必须证明目标 identity、path、ownership、authority 和当前性；不能证明时保留现场。
+6. **Buildr 不替 Agent 做专业决策。** Buildr 提供事实、安全边界和操作原语；Agent 选择 Git、PR、恢复、重新开发或放弃等策略。
+7. **规范、当前认知和历史分层。** Specs 定义行为，knowledge 解释当前实现，Change 记录本次设计，archive 只保留历史来源。
+
+门禁分类的完整说明见 [门禁分类与有界审计](governance-gate-taxonomy.md)。
+
+## 深入阅读
+
+| 想了解的问题 | 继续阅读 |
+|--------------|----------|
+| 产品角色、领域模型和产品边界 | [产品架构](product.md) |
+| Buildr Service 工程目录与模块分层 | [服务分层与模块组织](../../../docs/architecture/service-architecture.md) |
+| Buildr Service 详细接口、数据和运行事实 | [Buildr Service](../services/buildr.md) |
+| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md) |
+| Buildr Web 前端源码、构建和消费边界 | [Buildr Web Frontend Service](../services/buildr-web.md) |
+| OpenSpec 从提案到归档的跨模块流程 | [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md) |
+| npm Candidate、发布与安装事实链 | [Buildr npm 发布流程](../flows/open-source-release.md) |
+| Project Daily Progress 的写入与展示 | [项目每日演进](../flows/project-daily-progress.md) |
+| Task Finish 的规范性行为 | [Task Finish execution specification](../../specs/task-finish-execution/spec.md) |
+| 人和 Agent 共用的 canonical 名称 | [术语表](../glossary.md) |
+| 文档区域的权威分工 | [Buildr 文档说明](../../../docs/document-index.md) |

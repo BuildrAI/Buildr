@@ -8,14 +8,14 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const projectTestingSkill = read('package/targets/workspace/skills/buildr/project-testing/SKILL.md');
-const testingModel = read('package/targets/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
-const taskVerificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const taskVerificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
-const taskVerificationTemplate = YAML.parse(read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
-const taskTriage = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
+const projectTestingSkill = read('resources/workspace/skills/buildr/project-testing/SKILL.md');
+const testingModel = read('resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
+const taskVerificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
+const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const taskVerificationTemplate = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
+const taskTriage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 
 test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {
   for (const required of [
@@ -91,6 +91,15 @@ test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskVerificationSkill, /不用于设计测试框架[、或]开发测试[\s\S]*project-testing/);
   assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
   assert.match(taskVerificationReference, /一个 Project 入口内部可以拥有多个 Project-specific step/);
+});
+
+test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除普通临时 Workspace', () => {
+  assert.match(buildrSkill, /必须经过 `tools\/development\/run-isolated-workspace-smoke\.mjs`/);
+  assert.match(buildrSkill, /运行 `npm run smoke:workspace`/);
+  assert.match(buildrSkill, /独立设置 Workspace、`BUILDR_APP_DATA_DIR` 与 `BUILDR_PRODUCT_DATA_DIR`/);
+  assert.match(buildrSkill, /成功或失败后统一清理/);
+  assert.match(buildrSkill, /不得用裸 `mktemp` 启动指向默认用户 profile 的 `buildr web`/);
+  assert.match(buildrSkill, /不扩大为对普通临时 Workspace 的自动删除策略/);
 });
 
 test('声明指导不扩展 project verification v2 schema', () => {

@@ -6,8 +6,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { registerDomainsOpenspec } from '../../src/application/domains/openspec.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { registerOpenSpecApplication } from '../../src/task/openspec/application/openspec-application.mjs';
 
 function deltaSpec(statement = '系统 MUST 保持可移植 identity。') {
   return `## ADDED Requirements\n\n### Requirement: Portable delta identity\n${statement}\n\n#### Scenario: works\n- **WHEN** delta 被解析\n- **THEN** identity MUST 可用\n`;
@@ -58,7 +58,11 @@ function diagnosticRuntime(targetRoot) {
     readComponentDefinition: () => ({ upstream: { version: '1.6.0' } }),
     runCommandsCheck: () => ({ commands: [{ id: 'openspec', status: 'ok', version: { current: '1.6.0' }, executablePath: process.execPath }] }),
   };
-  return registerDomainsOpenspec(runtime);
+  return registerOpenSpecApplication(runtime, {
+    projectQuery: {
+      projectDetail: () => ({ project: { code: 'product', source: { type: 'workspace', path: 'projects/product' } } }),
+    },
+  });
 }
 
 test('OpenSpec deltaHash 不包含 checkout 绝对路径', (t) => {

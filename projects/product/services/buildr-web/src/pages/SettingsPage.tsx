@@ -1,20 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd';
-import { api } from '../api';
+import { workspaceApi, type WorkspaceResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 
-type WorkspaceData = {
-  revision: string;
-  rootPath: string;
-  schemaVersion: string;
-  migrationRequired?: boolean;
-  nextActions?: string[];
-  workspace: {
-    id?: string;
-    name: string;
-    description: string;
-  };
-};
+type WorkspaceData = WorkspaceResponse & { revision: string; workspace: WorkspaceResponse['workspace'] & { description: string } };
 
 export function SettingsPage() {
   const { setWorkspace, setBreadcrumbParts } = useAppShell();
@@ -28,7 +17,7 @@ export function SettingsPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await api('/api/v1/workspace') as WorkspaceData;
+        const data = await workspaceApi.read() as WorkspaceData;
         if (cancelled) return;
         setCurrent(data);
         setWorkspace(data);
@@ -52,10 +41,7 @@ export function SettingsPage() {
     if (!current) return;
     setSaveState('正在保存…');
     try {
-      const data = await api('/api/v1/workspace', {
-        method: 'PUT',
-        body: JSON.stringify({ revision: current.revision, name, description }),
-      }) as WorkspaceData;
+      const data = await workspaceApi.update({ revision: current.revision, name, description }) as WorkspaceData;
       setCurrent(data);
       setWorkspace(data);
       setName(data.workspace.name);

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/infrastructure/runtime/adapter-contract.mjs';
-import { parseSkillsManifest } from '../../../src/infrastructure/runtime/skills/manifests.mjs';
-import { skillProjectionOwnershipReceiptTarget } from '../../../src/infrastructure/runtime/skills/projection-files.mjs';
+import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
+import { parseSkillsManifest } from '../../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
+import { skillProjectionOwnershipReceiptTarget } from '../../../src/agent-assets/infrastructure/runtime/skills/projection-files.mjs';
 import { findExecutableOnPath } from '../../../src/infrastructure/process.mjs';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
@@ -165,10 +165,12 @@ async function verifyLifecycle(context) {
   if (adapterId === 'codex' || adapterId === 'claude-code') {
     const renderedFinish = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
-    assert.ok(renderedFinish.includes('Agent不编排阶段、补evidence或设计recovery'));
-    assert.ok(renderedFinish.includes('target前进时先证明carrier ancestry'));
-    assert.ok(renderedFinish.includes('不得手写token、recovery manifest或claimed semantic equivalence'));
-    assert.ok(renderedFinish.includes('原Task source/handoff真实stale时才返回'));
+    assert.ok(renderedFinish.includes('不把 Buildr 自动 Finish 变成唯一通道'));
+    assert.ok(renderedFinish.includes('task finish reconcile'));
+    assert.ok(renderedFinish.includes('交付对账（Delivery Reconciliation）'));
+    assert.ok(renderedFinish.includes('不接受调用方提交“已成功”'));
+    assert.ok(renderedFinish.includes('只有 Delivery 决定业务任务是否已交付'));
+    assert.ok(renderedFinish.includes('Activation、Cleanup、Task 登记或 Buildr 内部派生证据失败只能形成 `attention`'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
   }
 

@@ -8,7 +8,7 @@ import {
   normalizeTaskDevelopmentReceipt,
   normalizeTaskVerificationPolicy,
   taskDevelopmentDigest,
-} from '../../src/domain/task-development/task-development.mjs';
+} from '../../src/task/domain/task-development.mjs';
 
 const sha = (value) => taskDevelopmentDigest(value);
 

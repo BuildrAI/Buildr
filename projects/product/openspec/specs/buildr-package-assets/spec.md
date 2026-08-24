@@ -5,106 +5,13 @@
 定义 Buildr 产品随包资产、package manifest、默认 workspace baseline 和 package check 的边界。
 ## Requirements
 
-### Requirement: 随包资产使用 package manifest
-Buildr MUST 使用产品 root 下的 `package/manifest.yml` 声明产品随包定义、内容资产和交付 target；用户 Workspace 的持久化配置与 registry MUST 由对应 Domain writer 生成，不得作为随包物理源。
-
-#### Scenario: 随包资产边界
-- **WHEN** Buildr 发布产品包或校验 package baseline
-- **THEN** 发布包 MUST 只包含产品 root 内 `package/manifest.yml` 显式声明或引用的产品定义、内容资产和 CLI 运行所需文件
-- **AND** 发布包 MUST NOT 包含用于直接复制为用户状态的 Workspace、Project 或 Service 配置源
-
-#### Scenario: 开发资产引用随包资产
-- **WHEN** Buildr 产品开发需要验证初始化或 runtime baseline
-- **THEN** package manifest MAY 引用产品 root 下的 Rule、Skill、Command collection、Component definition、Agent metadata、文档或其他内容资产
-- **AND** package manifest MUST NOT 以开发仓内的用户态配置文件作为初始化源
-
-#### Scenario: 默认 workspace baseline 源进入 workspace target
-- **WHEN** Buildr 维护默认 workspace baseline
-- **THEN** 默认 workspace 规则、Git ignore 模板、Command collection 和 Workspace Skill 正文等产品内容源 MUST 位于产品 root 下的 `package/targets/workspace/`
-- **AND** `.buildr/workspace.yml`、`projects/manifest.yml`、`rules/manifest.yml`、`skills/manifest.yml`、`commands/manifest.yml` 与 `components/manifest.yml` MUST NOT 位于该 target 或 npm tarball
-
-#### Scenario: 默认 Project 模板源归属 workspace projects 容器
-- **WHEN** Buildr 维护默认 Project baseline 内容
-- **THEN** `AGENTS.md` 等真实 Project 内容模板 MAY 位于产品 root 下的 `package/targets/workspace/projects/`
-- **AND** `capabilities.yml`、`commands.yml` 与 `services/manifest.yml` MUST NOT 作为 Project 模板源或进入 npm tarball
-
-#### Scenario: 随包资产不得引用开发 overlay
-- **WHEN** Buildr 校验 `package/manifest.yml`
-- **THEN** package baseline MUST NOT 引用产品仓根特有规则、私有业务项目、私有组织名、私有路径或用户态配置源
-
-#### Scenario: 通用根规则进入 workspace target 规则源
-- **WHEN** Buildr 维护默认 root 工作规则
-- **THEN** 通用规则 MUST 以产品 root 下 `package/targets/workspace/rules/` 中可独立维护的规则正文作为源
-- **AND** package manifest MUST 显式声明 Rule entry 和允许发布的正文文件，不得发布开发仓的 `rules/manifest.yml`
-
-### Requirement: package manifest 声明发布边界
-Buildr MUST 使用 `package/manifest.yml` 声明产品随包资产 include、内容映射、Builtin/Component 定义、模板变量和禁止内容；用户态配置的 schema、默认值与写入 MUST 由 canonical Domain writer 拥有。
-
-#### Scenario: package check 校验 manifest
-- **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST 校验 manifest include 和内容映射源路径存在、模板变量完整，并报告禁止内容
-- **AND** Buildr MUST 拒绝用户态配置源出现在 `workspaceFiles`、`projectFiles`、`package/targets/workspace/` 或最终发布 inventory
-- **AND** Buildr MUST 报告 `.gitkeep` 占位文件
-
-#### Scenario: package check 校验初始化闭环
-- **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST 在不读取用户态配置模板的前提下于临时目录执行初始化，并验证 `doctor --json` 通过
-
-### Requirement: 初始化从 manifest 映射生成
-Buildr MUST 从 `package/manifest.yml` 的产品声明和内容映射生成默认 root/Project 内容，并 MUST 通过 canonical Domain writer 生成 Workspace、Project 与 Service 的持久化配置。
-
-#### Scenario: 渲染 root baseline
-- **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
-- **THEN** Buildr MUST 使用 manifest `workspaceDirectories` 和 `workspaceFiles` 生成 Rule 正文、Skill 正文、Command collection、Component definition、AGENTS 与 Git 模板等内容资产
-- **AND** Buildr MUST 通过 canonical writer 生成 `.buildr/workspace.yml`、`projects/manifest.yml`、`rules/manifest.yml`、`skills/manifest.yml`、`commands/manifest.yml` 与 `components/manifest.yml`
-- **AND** Builtin 与 Component 条目 MUST 从 package 声明收敛到生成后的 registry
-- **AND** Buildr MUST 直接创建必要空目录，不通过 `.gitkeep` 占位文件表达目录意图
-
-#### Scenario: 已有 root AGENTS 时保留组合入口
-- **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
-- **AND** `<dir>/AGENTS.md` 已经存在
-- **THEN** Buildr MUST NOT 覆盖 `<dir>/AGENTS.md`
-- **AND** Buildr MUST 补齐或修复 Buildr required block
-- **AND** Buildr MUST NOT 生成 `<dir>/AGENTS.workspace.md`
-
-#### Scenario: 新 workspace 仍生成 root AGENTS
-- **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
-- **AND** `<dir>/AGENTS.md` 不存在
-- **THEN** Buildr MUST 将默认 workspace 规则写入 `<dir>/AGENTS.md`
-
-#### Scenario: root baseline 不包含 ASSETS
-- **WHEN** Buildr 生成默认 root baseline
-- **THEN** Buildr MUST NOT 默认生成 `ASSETS.md`
-
-#### Scenario: root AGENTS 提供 Buildr required block
-- **WHEN** Buildr 生成默认 root `AGENTS.md`
-- **THEN** 文件 MUST 包含 Buildr required block并引用 `rules/buildr/core.md`
-- **AND** Buildr workspace 基础模型和硬边界 MUST 由 Buildr Core 承载
-- **AND** 场景化操作流程 MUST 由对应 Skill 承载
-- **AND** 文件 MUST NOT 引用产品仓私有业务项目、私有路径或私有业务规则
-
-#### Scenario: 默认 root baseline 不生成 README
-- **WHEN** Buildr 生成默认 root baseline
-- **THEN** Buildr MUST NOT 默认生成 `README.md`
-
-#### Scenario: 渲染 project baseline
-- **WHEN** Agent 执行 `buildr project create <project>`
-- **THEN** Buildr MUST 使用 manifest `projectDirectories` 和 `projectFiles` 生成 AGENTS 等 Project 内容资产
-- **AND** Buildr MUST 通过 canonical writer 生成缺失的 `capabilities.yml`、`commands.yml` 与 `services/manifest.yml`
-- **AND** `services/manifest.yml` MUST 使用新建 Project 的真实 UUID
-
-#### Scenario: 同步补齐新增配置
-- **WHEN** 当前版本为 Workspace 或 Project 引入新的用户态配置且目标文件缺失
-- **THEN** `buildr sync` 或对应显式 update MUST 通过 canonical writer 生成 schema-valid 的空配置
-- **AND** Buildr MUST NOT 从产品开发配置复制该文件或覆盖已有有效用户内容
-
 ### Requirement: package manifest 声明产品内置 Agent Skills
-Buildr package manifest MUST 显式声明产品随包内置 Agent Skills，并将产品 Skill 定义与用户 Workspace `skills/manifest.yml` 分离。
+在 Agent Assets Contribution 完成前，Buildr 的资源 manifest MUST 显式声明产品随包内置 Agent Skills，并将产品 Skill 定义与用户 Workspace `skills/manifest.yml` 分离；其源 MAY 暂时位于 deferred `package/targets/runtime/skills/<skill-id>/`。
 
 #### Scenario: 声明 agentSkills
 - **WHEN** Buildr 产品包包含内置 Agent Skill
-- **THEN** `package/manifest.yml` MUST 通过专用字段声明 Skill id、源路径和适用 runtime
-- **AND** 产品入口 Buildr Skill 源路径 MUST 位于 `package/targets/runtime/skills/<skill-id>/`
+- **THEN** `resources/manifest.yml` MUST 通过专用字段声明 Skill id、源路径和适用 runtime
+- **AND** 源路径 MUST 位于已登记的 deferred runtime Skill subtree
 
 #### Scenario: agentSkills 不参与 init baseline
 - **WHEN** Agent 执行 `buildr init`
@@ -119,32 +26,8 @@ Buildr package manifest MUST 显式声明产品随包内置 Agent Skills，并�
 
 #### Scenario: package check 校验 bootstrap 入口契约
 - **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST 校验 bootstrap guide 和 Buildr Skill 满足 `package/bootstrap/contract.yml`
-- **AND** bootstrap 契约 MUST 分别约束 guide 的恢复入口、Buildr Skill 的必要章节、生成后 runtime Skill 的 adapter 内容和禁用入口
-- **AND** bootstrap 契约 MUST NOT 要求 bootstrap guide 覆盖 Buildr Skill 的完整资产维护细节
-
-### Requirement: Package 顶层职责必须分离
-Buildr package MUST 将维护说明、产品声明、恢复入口和交付 target 表达为不同职责，并 MUST 排除由用户 Workspace writer 生成的持久化配置。
-
-#### Scenario: Package 维护说明与机器契约
-- **WHEN** 维护者查看 `package/` 顶层
-- **THEN** `package/README.md` MUST 只说明 package 的维护用途
-- **AND** `package/manifest.yml` MUST 是产品定义、内容资产和 source-to-target 映射的机器契约
-
-#### Scenario: Bootstrap 恢复入口
-- **WHEN** Buildr Skill 不可用且 Agent 运行 `buildr bootstrap guide`
-- **THEN** Buildr MUST 从 `package/bootstrap/guide.md` 输出恢复指南
-- **AND** bootstrap 资产 MUST NOT 被当作 workspace target 或 runtime target 物化
-
-#### Scenario: Target 目录只表达交付目的地
-- **WHEN** Buildr 维护 `package/targets/`
-- **THEN** `package/targets/workspace/` MUST 只保存面向 Workspace 的产品内容源，不得保存用户持久化配置源
-- **AND** `package/targets/runtime/` MUST 只保存直接面向 Agent runtime 的交付源
-
-#### Scenario: 旧 package 源路径被拒绝
-- **WHEN** Buildr 校验新版本 package manifest 和活动产品引用
-- **THEN** Buildr MUST NOT 接受 `package/workspace/` 或 `package/agent-skills/` 作为 canonical 源路径
-- **AND** 新版本 npm package MUST NOT 同时发布旧路径兼容副本
+- **THEN** Buildr MUST 从产品源码和正式 docs 校验 bootstrap guide 与 Buildr Skill 恢复契约
+- **AND** MUST NOT 要求已删除的 `package/bootstrap/` 文字资产存在
 
 ### Requirement: package baseline 支持命令行工具清单入口
 Buildr MUST 通过 Commands Domain writer 为默认 Workspace 生成命令行工具清单入口，而不得发布用户态 `commands/manifest.yml` 源。
@@ -400,41 +283,23 @@ Buildr package assets MUST 将 Rule manifest consumption protocol 与通用 Rule
 - **AND** required Core MUST NOT state that Project or Service Rules may own concrete task procedures
 - **AND** reusable task procedures MUST remain available through the corresponding Skills
 
-#### Scenario: Package Core 提供默认提交语言
-- **WHEN** Buildr packages the default Git operations capability
-- **THEN** Conventional Commits generation guidance MUST be provided by the Git operations Skill
-- **AND** required Core MUST define Chinese as the default commit-message language when no more specific convention applies
-- **AND** required Core MUST NOT contain Git commands、type selection or message generation procedures
-
-### Requirement: Core 默认提交语言独立生效
-Buildr package MUST 通过 required Core 提供独立于 Git Ops Skill 生命周期的默认提交语言。
-
-#### Scenario: 初始化默认 workspace
-- **WHEN** Buildr initializes a workspace from the default package
-- **THEN** required Core MUST state that commit-message subject and body use Chinese when no more specific convention applies
-- **AND** it MUST allow code identifiers、paths、scope and proper nouns to retain their original form
-
-#### Scenario: 卸载 Git Ops Skill
-- **WHEN** Git Ops Skill is uninstalled
-- **THEN** the Core commit-language default MUST remain available to Agent rule consumption
-- **AND** Buildr MUST NOT remove or alter Core as a side effect of the Skill lifecycle
-
-#### Scenario: 更具体约定覆盖默认语言
-- **WHEN** Project、Service or repository rules define a more specific commit language
-- **THEN** Agent MUST use the more specific convention instead of the Core default
-
 ### Requirement: 产品验证覆盖提交信息资产边界
-Buildr product verification MUST 防止提交格式与默认语言重新耦合到同一 Skill 生命周期。
+Buildr product verification MUST 防止提交格式与 workspace 默认语言重新耦合到同一 Skill 生命周期。
 
 #### Scenario: 校验 Git Ops 提交格式
 - **WHEN** Buildr validates the packaged Git Operations Skill
 - **THEN** verification MUST confirm the concise Conventional Commits format、supported types、optional scope and breaking-change guidance
-- **AND** verification MUST confirm Git Operations follows Core and more specific conventions without copying the Chinese constraint
+- **AND** verification MUST confirm Git Operations follows the current workspace、Project、Service and repository language conventions without creating a competing language default
 
 #### Scenario: 校验 Core 默认提交语言
 - **WHEN** Buildr validates the default package and a temporary initialized workspace
-- **THEN** verification MUST confirm required Core contains the concise Chinese default and allowed original-form exceptions
-- **AND** verification MUST confirm the Core default remains present when Git Operations is absent
+- **THEN** verification MUST confirm required Core does not own the commit-language default and the rendered workspace `AGENTS.md` contains the concise Chinese default and allowed original-form exceptions
+- **AND** verification MUST confirm the workspace default remains present when Git Operations is absent
+
+#### Scenario: 校验提交消费者组合
+- **WHEN** Buildr validates Git Operations、Task Finish and other packaged commit-producing consumers
+- **THEN** verification MUST confirm each consumer reads the current workspace language convention
+- **AND** verification MUST NOT require Core to own or duplicate the commit-language default
 
 ### Requirement: 产品验证覆盖 task worktree 隔离与证据复用
 Buildr package verification MUST 防止正式 workflow 绕过 Task Environment 直接把 task-worktree 当作环境 authority，也 MUST 防止 change artifacts 双写、合并前污染 retained self-bootstrap Workspace，或让 Git/worktree providers重新拥有 Runtime/依赖、Candidate verification 或 evidence 复用决策。
@@ -1483,12 +1348,12 @@ Buildr package/runtime verification MUST覆盖显式零差异Delivery Adaptation
 - **AND** MUST NOT观察到自动Agent review、伪造diff、重复commit、force push或Task提前完成
 
 ### Requirement: self-bootstrap Development Launcher必须使用独立内部manager
-Buildr自举Workspace的self-bootstrap activation MUST通过retained checkout的development-only Launcher manager安装或刷新`Buildr Web Dev`，并 MUST使用Environment交接且匹配Product精确development Node声明的executable执行该manager。它 MUST NOT调用npm-owned `web launcher`公共命令、传入已退役的公开channel参数、要求npm installation registration，或创建和覆盖npm-owned `Buildr Web` Launcher。安装前存在经过secret health认证且属于development channel的健康默认实例时，activation MUST在安装后通过retained Project bridge以新Launcher identity在同一端口恢复并重新验证该实例；安装前没有该健康实例时 MUST保持按需启动。
+Buildr自举Workspace的self-bootstrap activation MUST通过retained checkout的development-only Launcher manager安装或刷新`Buildr Web Dev`，并 MUST使用Environment交接且匹配Product精确development Node声明的executable执行该manager。它 MUST NOT调用npm-owned `web launcher`公共命令、传入已退役的公开channel参数、要求npm installation registration，或创建和覆盖npm-owned `Buildr Web` Launcher。Development Launcher MUST绑定固定默认端口`4458`。安装前存在经过secret health认证且属于development channel的健康默认实例时，activation MUST在安装后通过retained Project bridge以新Launcher identity恢复到`4458`并重新验证该实例；安装前没有该健康实例时 MUST保持按需启动。
 
 #### Scenario: npm-only交付后激活Development Launcher
 - **WHEN** frozen Task Contribution命中Development Launcher安装且公开`web launcher`已收敛为npm installation专用命令
 - **THEN** self-bootstrap closeout MUST直接使用retained精确development Node执行successor checkout内的development-only manager
-- **AND** manager结果 MUST证明channel为development、source checkout为retained successor、Node版本与executable匹配Product声明且commit为delivered successor
+- **AND** manager结果 MUST证明channel为development、source checkout为retained successor、Node版本与executable匹配Product声明、commit为delivered successor且Launcher端口为`4458`
 
 #### Scenario: 公开npm Launcher拒绝development channel
 - **WHEN** 用户或旧consumer向公开`buildr web launcher`传入development channel
@@ -1501,18 +1366,23 @@ Buildr自举Workspace的self-bootstrap activation MUST通过retained checkout的
 
 #### Scenario: 安装前健康Development实例同端口恢复
 - **WHEN** Launcher安装前的默认实例通过instance secret health认证、属于development channel且其loopback端口可证明
-- **THEN** self-bootstrap activation MUST在Launcher更新后通过retained `projects/product/buildr`以精确development Node、新Launcher identity与原端口启动服务
-- **AND** 恢复evidence MUST证明新实例健康、端口未变、source checkout与commit为retained successor，并且新PID不同于已停止实例
+- **THEN** self-bootstrap activation MUST在Launcher更新后通过retained `projects/product/buildr`以精确development Node、新Launcher identity与端口`4458`启动服务
+- **AND** 恢复evidence MUST记录原端口与新端口，并证明新实例健康、当前端口为`4458`、source checkout与commit为retained successor且新PID不同于已停止实例
+
+#### Scenario: 历史随机端口实例迁移
+- **WHEN** 安装前健康Development实例使用历史随机端口且`4458`可绑定
+- **THEN** self-bootstrap activation MUST通过认证handoff停止旧实例并在`4458`恢复
+- **AND** MUST NOT继续保留随机入口、同时启动第二实例或从端口猜测owner
 
 #### Scenario: 安装前没有健康Development实例
-- **WHEN** 默认实例未运行、记录陈旧或健康实例属于其他channel
+- **WHEN** Development Root中的默认实例未运行、记录陈旧或健康实例属于其他channel
 - **THEN** self-bootstrap activation MUST只完成适用的Launcher安装且不得自动启动Buildr Web Dev
 - **AND** Result MUST明确记录continuity为not-applicable及观测原因
 
 #### Scenario: Development实例恢复失败
-- **WHEN** 同端口启动超时、health认证失败、恢复后的Launcher/source/Node/commit identity不匹配或启动进程提前退出
-- **THEN** self-bootstrap activation MUST回收本次启动且ownership可证明的异常子进程并在Development Launcher阶段fail closed
-- **AND** MUST保留已成功更新的Launcher、报告恢复operation evidence，并且不得继续development entry验证、最终Doctor或same-run Finish resume
+- **WHEN** 固定端口被占用、启动超时、health认证失败、恢复后的Launcher/source/Node/commit identity不匹配或启动进程提前退出
+- **THEN** self-bootstrap activation MUST回收本次启动且ownership可证明的异常子进程并形成Activation Attention
+- **AND** MUST保留已成功交付的代码与已更新Launcher、报告恢复operation evidence、不得停止foreign占用者或回滚Delivery，并且不得继续development entry验证、最终Doctor或same-run Finish resume
 
 ### Requirement: Task Entry Snapshot 必须作为完整 package surface 交付
 Buildr package MUST包含Task Entry Snapshot Application、CLI route、public JSON identity、action-local Skill guidance、reference/current knowledge与focused tests。checkout源码入口、npm package与managed runtime projection MUST对该surface保持一致。
@@ -1552,3 +1422,58 @@ Buildr package MUST维护Task Development、Task Retrospective与Task Planning I
 - **WHEN** 当前runtime缺少required route、受管consumer引用未知route或route未绑定对应runner
 - **THEN** Doctor MUST返回稳定actionable finding并保持只读
 - **AND** MUST NOT通过下载source checkout、改写Skill或伪造route availability来自愈
+
+### Requirement: Parent Plan v2 必须在产品包中一致交付
+Buildr package MUST 原子交付 Parent Plan v2 Domain/Application/CLI JSON contract、Task workflow guidance、Buildr Web 正式构建产物与对应验证。Package/current workspace/candidate 三种入口的 schema、状态语义或 Web assets 不一致时 package check 或适用验证 MUST fail closed。
+
+#### Scenario: package asset 一致性
+- **WHEN** 维护者构建包含 Parent Plan v2 的候选包
+- **THEN** package 中的 CLI schema/example、workflow 指引与 `web-dist` MUST 对 expected/actual binding 使用同一语义
+- **AND** package verification MUST 检测遗漏或旧 v1 writer 指引
+
+### Requirement: Parent Coordination v3 必须原子进入全部交付入口
+Buildr package MUST原子交付v3 Application、CLI、HTTP、Agent Skills、Buildr Web正式构建产物、JSON文档与验证，MUST在development checkout、npm tarball或`web-dist`任一仍引用v2时失败。
+
+#### Scenario: 构建产品候选
+- **WHEN** 维护者验证包含Parent Coordination v3的候选
+- **THEN** package parity MUST证明checkout与npm CLI使用相同v3 identity和字段
+- **AND** web-dist MUST来自已切换v3类型与consumer的Buildr Web源码
+
+### Requirement: 随包 workspace AGENTS 提供默认提交语言
+Buildr package MUST 通过随包 workspace `AGENTS.md` 提供默认 commit-message 语言约定，而不是把该默认值归属于 required Core。
+
+#### Scenario: 初始化或同步默认 workspace
+- **WHEN** Buildr initializes or synchronizes a workspace from the default package
+- **THEN** the rendered workspace `AGENTS.md` MUST state that commit-message subject and body use Chinese when no more specific convention applies
+- **AND** the rule MUST allow code identifiers、paths、scope and proper nouns to retain their original form
+
+#### Scenario: 更具体约定覆盖默认语言
+- **WHEN** Project、Service or repository rules define a more specific commit language
+- **THEN** Agent MUST use the more specific convention instead of the workspace default
+
+#### Scenario: Git Operations 生命周期变化
+- **WHEN** Git Operations is absent、replaced or unavailable
+- **THEN** the workspace commit-language default MUST remain available through `AGENTS.md`
+- **AND** the default MUST NOT depend on the Git Operations Skill lifecycle
+
+### Requirement: resources manifest 声明文件型交付资源
+Buildr MUST 使用 `resources/manifest.yml` 声明 Workspace baseline、Builtin 内容、文件型交付资源和 source-to-target 映射；用户 Workspace 持久化配置与 registry MUST 由对应 Domain writer 生成，不得作为资源物理源。
+
+#### Scenario: 维护默认 Workspace baseline
+- **WHEN** Buildr 维护或发布默认 Workspace 内容
+- **THEN** 内容源 MUST 位于 `resources/workspace/` 并由 `resources/manifest.yml` 显式引用
+- **AND** 用户态 manifest、Project/Service registry 与其他 writer-owned 状态 MUST NOT 进入资源树或发布 inventory
+
+#### Scenario: package check 校验资源 manifest
+- **WHEN** Agent 执行 `buildr package check`
+- **THEN** Buildr MUST 校验 manifest include、source-to-target 映射、模板变量、禁止内容和源路径存在性
+- **AND** MUST NOT 从旧 `package/manifest.yml` 或 `package/targets/workspace/` 回退
+
+### Requirement: 初始化必须从 resources manifest 映射生成
+Buildr MUST 从 `resources/manifest.yml` 的产品声明和内容映射生成默认 root/Project 内容，并 MUST 通过 canonical Domain writer 生成 Workspace、Project 与 Service 的持久化配置。
+
+#### Scenario: 渲染 root baseline
+- **WHEN** Agent 执行 `buildr init --target <dir> --name <name>`
+- **THEN** Buildr MUST 使用 resources manifest 的 Workspace mappings 生成 Rule、Skill、Command、Component、AGENTS 与 Git 模板等内容资产
+- **AND** Buildr MUST 通过 canonical writer 生成全部持久化配置
+- **AND** Buildr MUST NOT 读取旧 package Workspace target

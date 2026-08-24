@@ -16,6 +16,9 @@ export function formatSystemFileTiming(files) {
 export default async function* systemFileTimingReporter(source) {
   const files = [];
   for await (const event of source) {
+    if (['test:stdout', 'test:stderr'].includes(event?.type) && event.data?.message?.includes('[buildr-golden-journey-timing]')) {
+      yield event.data.message;
+    }
     if (!isFileCompletion(event)) continue;
     files.push({
       file: event.data.file,

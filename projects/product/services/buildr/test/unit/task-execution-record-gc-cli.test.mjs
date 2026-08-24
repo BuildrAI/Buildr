@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { parseTaskExecutionRecordGcCli, parseTaskExecutionRecordRecoverCli } from '../../src/interfaces/cli/task-execution-record.mjs';
+import { parseTaskExecutionRecordGcCli, parseTaskExecutionRecordRecoverCli } from '../../src/task/interfaces/cli/task-execution-record.mjs';
 
 test('ExecRecord GC CLI parser只接受closed参数', () => {
   const targetRoot = path.join(os.tmpdir(), 'buildr-task-execution-record-gc', 'workspace');

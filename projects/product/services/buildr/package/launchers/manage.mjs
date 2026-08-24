@@ -6,9 +6,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { buildLauncher } from './build.mjs';
+import { buildLauncher, DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT } from './build.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const PRODUCT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -90,13 +90,13 @@ function ownedLauncher(target, platform, channel) {
 function buildIdentity(platform, channel) {
   assertDevelopmentChannel(channel);
   const checkout = checkoutIdentity();
-  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, runtimeRole: 'development', source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, protocolIdentity: 'buildr.web-protocol/v1', platform, builtAt: new Date().toISOString(), checkout };
+  const identity = { schemaVersion: 'buildr.launcher-identity/v1', version: packageVersion(), channel, runtimeRole: 'development', source: 'checkout', buildId: `${checkout.head.slice(0, 12)}-${checkout.fingerprint}`, buildNumber: String(Date.now()), protocolVersion: 1, protocolIdentity: 'buildr.web-protocol/v1', platform, builtAt: new Date().toISOString(), checkout, webPort: DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT };
   const runtime = developmentRuntime(process.execPath);
   return { ...identity, sourceRoot: PRODUCT_ROOT, workspaceRoot: runtime.workspaceRoot, developmentRuntime: { executable: runtime.executable, version: runtime.version, source: runtime.source, identity: runtime.identity } };
 }
 function validateBundle(bundle, platform, expected) {
   const actual = readIdentity(bundle, platform);
-  if (!actual || actual.buildId !== expected.buildId || actual.channel !== expected.channel) throw new Error('Staged launcher identity validation failed.');
+  if (!actual || actual.buildId !== expected.buildId || actual.channel !== expected.channel || actual.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) throw new Error('Staged launcher identity validation failed.');
   if (!sameFilesystemPath(actual.sourceRoot, expected.sourceRoot) || !sameFilesystemPath(actual.developmentRuntime?.executable, expected.developmentRuntime?.executable) || actual.developmentRuntime?.version !== expected.developmentRuntime?.version || actual.developmentRuntime?.identity !== expected.developmentRuntime?.identity) throw new Error('Staged Development launcher checkout/development runtime identity validation failed.');
   if (!fs.existsSync(actual.sourceRoot) || !fs.existsSync(path.join(actual.sourceRoot, 'bin', 'buildr.mjs')) || !fs.existsSync(path.join(actual.sourceRoot, 'package.json')) || !fs.existsSync(path.join(actual.sourceRoot, 'src')) || !fs.existsSync(path.join(actual.sourceRoot, 'package'))) throw new Error('Staged Development launcher checkout is missing.');
   if (!fs.existsSync(actual.developmentRuntime.executable)) throw new Error('Staged Development launcher host runtime is missing.');
@@ -105,6 +105,7 @@ function validateBundle(bundle, platform, expected) {
 function launcherDiagnostics(identity) {
   if (!identity || identity.channel !== 'development') return [];
   const findings = [];
+  if (identity.webPort !== DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT) findings.push({ code: 'development.web_port_mismatch', message: `Buildr Web Dev Launcher未绑定固定端口 ${DEFAULT_DEVELOPMENT_LAUNCHER_WEB_PORT}。`, suggestion: '重新安装 Development Launcher。' });
   if (!identity.sourceRoot || !path.isAbsolute(identity.sourceRoot) || !fs.existsSync(identity.sourceRoot)) findings.push({ code: 'development.source_missing', message: `Buildr checkout 不存在：${identity.sourceRoot || 'unknown'}`, suggestion: '在保留的Buildr checkout中重新运行 npm run install:development。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'bin', 'buildr.mjs'))) findings.push({ code: 'development.cli_missing', message: `Buildr CLI 不存在：${path.join(identity.sourceRoot, 'bin', 'buildr.mjs')}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });
   else if (!fs.existsSync(path.join(identity.sourceRoot, 'package.json')) || !fs.existsSync(path.join(identity.sourceRoot, 'src')) || !fs.existsSync(path.join(identity.sourceRoot, 'package'))) findings.push({ code: 'development.checkout_invalid', message: `Buildr Service checkout 不完整：${identity.sourceRoot}`, suggestion: '确认当前 checkout 完整后重新安装 launcher。' });

@@ -1,0 +1,29 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: reorganize-buildr-agent-assets-platform
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/reorganize-buildr-agent-assets-platform/brief.md
+    reason: 正式 Change 需要面向维护者概括 Agent Assets 平台迁移范围、风险与验收。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-agent-assets-platform/proposal.md
+      - openspec/changes/reorganize-buildr-agent-assets-platform/design.md
+      - openspec/changes/reorganize-buildr-agent-assets-platform/specs/agent-assets-module-architecture/spec.md
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 服务架构文档需要从目标结构更新为 Agent Assets 实际迁移结构和状态。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-agent-assets-platform/specs/agent-assets-module-architecture/spec.md
+      - docs/architecture/service-architecture.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service current knowledge 需要反映 Agent Assets 一级模块及公开组装边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-agent-assets-platform/design.md
+      - openspec/knowledge/services/buildr.md
+      - openspec/knowledge/architecture/technical.md
+unresolvedItems: []

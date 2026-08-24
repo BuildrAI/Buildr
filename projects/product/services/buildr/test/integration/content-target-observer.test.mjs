@@ -9,7 +9,7 @@ import {
   FILESYSTEM_CONTENT_OBSERVER,
   GIT_CONTENT_OBSERVER,
   observeContentScope,
-} from '../../src/infrastructure/content/content-target-observer.mjs';
+} from '../../src/task/infrastructure/content-target-observer.mjs';
 
 function temporary(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -29,16 +29,16 @@ test('non-Git filesystem identity 与绝对根无关，并忽略 Buildr control 
     fs.writeFileSync(path.join(root, 'guide', 'start.md'), 'portable content\n');
     fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
     fs.writeFileSync(path.join(root, '.buildr', 'receipt.yml'), root);
-    fs.mkdirSync(path.join(root, 'package', 'targets', 'workspace', '.buildr'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml'), 'product content\n');
+    fs.mkdirSync(path.join(root, 'resources', 'workspace', '.buildr'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'resources', 'workspace', '.buildr', 'workspace.yml'), 'product content\n');
   }
   const first = observeContentScope(scope(left));
   const second = observeContentScope(scope(right));
   assert.equal(first.observer, FILESYSTEM_CONTENT_OBSERVER);
   assert.equal(first.identity, second.identity);
-  fs.writeFileSync(path.join(right, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml'), 'changed product content\n');
+  fs.writeFileSync(path.join(right, 'resources', 'workspace', '.buildr', 'workspace.yml'), 'changed product content\n');
   assert.notEqual(observeContentScope(scope(right)).identity, first.identity);
-  fs.writeFileSync(path.join(right, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml'), 'product content\n');
+  fs.writeFileSync(path.join(right, 'resources', 'workspace', '.buildr', 'workspace.yml'), 'product content\n');
   fs.writeFileSync(path.join(right, 'guide', 'start.md'), 'changed content\n');
   assert.notEqual(observeContentScope(scope(right)).identity, first.identity);
 });
@@ -84,7 +84,7 @@ test('Git tracking carrier与Buildr control metadata不改变Content Target iden
 test('Git observer纳入普通嵌套 .buildr 内容并排除OpenSpec Change receipt', (t) => {
   const root = temporary(t, 'buildr-content-git-nested-');
   spawnSync('git', ['init', '-q'], { cwd: root });
-  const productContent = path.join(root, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  const productContent = path.join(root, 'resources', 'workspace', '.buildr', 'workspace.yml');
   const changeReceipt = path.join(root, 'openspec', 'changes', 'demo', '.buildr', 'convergence-receipt.json');
   fs.mkdirSync(path.dirname(productContent), { recursive: true });
   fs.mkdirSync(path.dirname(changeReceipt), { recursive: true });

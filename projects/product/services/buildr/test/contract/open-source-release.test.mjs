@@ -11,9 +11,9 @@ import {
   inspectPackageVersionConsistency,
   inspectTarballFiles,
 } from '../../test/verification/release/open-source-candidate.mjs';
-import { resolveReleaseContract } from '../../scripts/release/release-contract.mjs';
-import { extractReleaseNotes } from '../../scripts/release/release-notes.mjs';
-import { ensureGitHubRelease } from '../../scripts/release/github-release-ensure.mjs';
+import { resolveReleaseContract } from '../../tools/release/release-contract.mjs';
+import { extractReleaseNotes } from '../../tools/release/release-notes.mjs';
+import { ensureGitHubRelease } from '../../tools/release/github-release-ensure.mjs';
 import {
   assertRegistryArtifact,
   assertRegistryTagTransition,
@@ -21,7 +21,7 @@ import {
   registryDistTagsState,
   registryVersionState,
   waitForRegistryRelease,
-} from '../../scripts/release/registry-version-state.mjs';
+} from '../../tools/release/registry-version-state.mjs';
 import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -65,8 +65,8 @@ test('open-source metadata and tarball contracts enforce public identity and inv
     'application-payload.json',
     'installation-origin.json',
     'runtime/buildr.cjs',
-    'payload/product/package/manifest.yml',
-    'payload/product/src/interfaces/local-app/web-dist/index.html',
+    'payload/product/resources/manifest.yml',
+    'payload/product/web-dist/index.html',
   ].map((path) => ({ path }));
   assert.deepEqual(inspectTarballFiles(files), []);
   assert.equal(inspectTarballFiles([...files, { path: 'openspec/spec.md' }]).at(-1).rule, 'tarball.forbidden');
@@ -427,23 +427,23 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.deepEqual(parsed.errors, [], parsed.errors.map((error) => error.message).join('\n'));
   const document = parsed.toJS();
   for (const required of [
-    'workflow_dispatch:', 'release_id:', 'release_context:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
+    'workflow_dispatch:', 'release_id:', 'release_context:', 'context_digest:', 'candidate_run_id:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
     'id-token: write', 'contents: write', 'environment: npm-production',
     'release-authority-oidc-probe.mjs', 'release-convergence.mjs', '--stage pre-tag',
     'release-tag-ensure.mjs preflight', 'release-tag-ensure.mjs ensure',
-    'release-contract.mjs', 'release-notes.mjs', 'application-payload.mjs build',
-    'release-artifact.mjs',
-    'release-transaction-evidence.mjs validate-context', 'release-transaction-evidence.mjs finalize', 'release-transaction-evidence.json',
+    'release-contract.mjs', 'release-notes.mjs',
+    'release-readiness.mjs validate-context', 'release-readiness.mjs evaluate', 'release-transaction-evidence.mjs finalize', 'release-transaction-evidence.json',
     'registry-version-state.mjs', "steps.registry_before.outputs.published != 'true'",
     'trusted-publish.mjs', 'github-release-ensure.mjs',
     'github-release-ensure.mjs preflight',
     'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
     '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
     'contract:', 'candidate:', 'host-node:', 'launcher:', 'release:',
-    'name: npm-candidate-v${{ inputs.version }}',
+    'name: candidate-aggregate', 'name: candidate-package', 'run-id: ${{ inputs.candidate_run_id }}',
+    'releaseContextIdentity(aggregate)',
   ]) assert.equal(workflow.includes(required), true, required);
   assert.deepEqual(Object.keys(document.on), ['workflow_dispatch']);
-  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_tree', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
+  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_run_id', 'candidate_tree', 'context_digest', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
   assert.equal(document.on.push, undefined);
   assert.equal(document.jobs['authority-probe'], undefined);
   const protectedJobs = Object.entries(document.jobs).filter(([, job]) => job.environment !== undefined);
@@ -471,15 +471,15 @@ test('publish workflow uses one dispatch and one protected release transaction',
   assert.equal(downloadIndex < verifierIndex, true);
   for (const binding of [
     'BUILDR_CANDIDATE_TARBALL=',
-    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm/npm-pack.json"',
-    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/npm/release-artifact.json"',
+    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm-pack.json"',
+    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/release-artifact.json"',
   ]) assert.equal(verifierStep.run.includes(binding), true, binding);
   assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
   assert.equal(hostNodeSteps.some((step) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
-  assert.equal(workflow.includes('./scripts/verify-buildr-product'), false);
+  assert.equal(workflow.includes('./test/verification/verify-buildr-product'), false);
   assert.equal(workflow.includes('gh release create'), false);
   for (const retired of [
     'environment: platform-production', 'node-distribution.mjs', 'sea-build.mjs',
@@ -489,11 +489,12 @@ test('publish workflow uses one dispatch and one protected release transaction',
   ]) assert.equal(workflow.includes(retired), false, retired);
   assert.equal((workflow.match(/npm publish/g) || []).length, 0);
   assert.equal((workflow.match(/trusted-publish\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/node scripts\/release\/release-artifact\.mjs/g) || []).length, 1);
-  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 3);
-  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 1);
+  assert.equal((workflow.match(/node tools\/release\/release-artifact\.mjs/g) || []).length, 0);
+  assert.equal((workflow.match(/release-smoke\.mjs/g) || []).length, 2);
+  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 0);
+  assert.equal((workflow.match(/npm pack/g) || []).length, 0);
   assert.equal(workflow.includes('npm-candidate-${{ github.ref_name }}-${{ github.run_attempt }}'), false);
-  assert.equal(workflow.includes('Validate restored bytes or declare the candidate missing'), true);
+  assert.equal(workflow.includes('Validate matching Candidate aggregate and immutable bytes'), true);
   const contract = workflow.indexOf('\n  contract:');
   const candidate = workflow.indexOf('\n  candidate:');
   const hostNode = workflow.indexOf('\n  host-node:');
@@ -565,65 +566,12 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
 });
 
-test('Buildr release Skill fixes release identity, dependency preparation, and tree-gated history bridging', () => {
-  const skill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-release/SKILL.md'), 'utf8');
-  const selfBootstrapSkill = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/SKILL.md'), 'utf8');
+test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
   const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
-  const bridgeSource = fs.readFileSync(path.join(serviceRoot, 'scripts/release/bridge-main-to-dev.mjs'), 'utf8');
-  const preparation = skill.slice(skill.indexOf('## 准备发布'), skill.indexOf('## 发布版本'));
-  const release = skill.slice(skill.indexOf('## 发布版本'), skill.indexOf('## 中断与失败恢复'));
-  const identity = skill.indexOf('tasks/release-<version>');
-  const npmCi = skill.indexOf('`npm ci`');
-  const versionMutation = skill.indexOf('`package.json`');
-  const candidateTree = skill.indexOf('<candidate-tree>');
-  const localCliInstall = skill.indexOf('scripts/install-buildr-cli');
-  const bridge = skill.indexOf('bridge-main-to-dev.mjs');
-  const selfBootstrap = preparation.indexOf('buildr-self-bootstrap-sync');
-  const finish = preparation.indexOf('8. 使用 `task-finish`');
-  const preMain = preparation.indexOf('--stage pre-main');
-  const evidenceBridge = preparation.indexOf('--self-bootstrap-evidence <self-bootstrap-evidence.json>');
-  const postReleaseCleanup = skill.indexOf('必须进入发布后清理检查');
-  for (const [name, value] of Object.entries({ identity, npmCi, versionMutation, candidateTree, localCliInstall, bridge, finish, selfBootstrap, preMain, evidenceBridge, postReleaseCleanup })) {
-    assert.notEqual(value, -1, name);
-  }
-  assert.equal(identity < npmCi, true);
-  assert.equal(npmCi < versionMutation, true);
-  assert.equal(candidateTree < bridge, true);
-  assert.equal(localCliInstall < bridge, true);
-  assert.equal(finish < selfBootstrap, true);
-  assert.equal(selfBootstrap < preMain, true);
-  assert.equal(preMain < evidenceBridge, true);
-  assert.match(selfBootstrapSkill, /descendant merge/);
+  const convergenceSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/release-git-convergence.mjs'), 'utf8');
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
-  assert.match(bridgeSource, /Missing required --self-bootstrap-run/);
-  assert.match(bridgeSource, /Missing required --self-bootstrap-evidence/);
-  assert.match(bridgeSource, /Self-bootstrap closeout evidence does not match current remote dev/);
-  for (const required of [
-    'release-<version>', '<workspace-root>/.worktrees/release-<version>',
-    'origin/main^{tree}', 'origin/dev^{tree}', 'force push', 'tree gate',
-    'release-notes.mjs', 'GitHub Release body', '不是 Latest',
-    'projects/product/buildr version --json', 'projects/product/buildr --help', 'projects/product/buildr doctor --agent <agent>',
-    '不得调用`scripts/install-buildr-cli`', '不得读取、创建、覆盖或要求PATH默认`buildr`绑定checkout',
-    'npm发布身份由候选tarball验证与发布后官方registry精确安装smoke独立证明',
-    '展示待删除 ref、commit', '请求用户明确授权删除',
-    '重新查询远端确认 ref 不存在', '清理 follow-up',
-    '不得把长期保留当作默认结果', '未取得删除授权时必须明确报告待清理项',
-    '只执行一次 `npm pack`', '`npm publish <tarball>`', '`dist.integrity`',
-    'release-transaction-runner.mjs', '只对current`origin/main`dispatch一次`publish.yml`',
-    '本机不得创建或push tag', '唯一`release` job', '不请求第二次发布审批',
-    '新的protected deployment/attempt仍可能按GitHub规则再次要求审批', '不得回退本机token publish',
-    'GitHub Release 使用 ensure 语义', '安装精确 `@buildr-ai/buildr@<version>`',
-    '不删除 tag、不 unpublish、不重复 publish',
-    '`Candidate gate`', '普通发布准备不再无条件本地运行完整`test:candidate`',
-    '重新运行失败作业', '三个Windows高成本shard继续并行',
-    '--self-bootstrap-run <finish-run-id>', '--self-bootstrap-evidence <self-bootstrap-evidence.json>',
-    '绝不先bridge再补跑', 'activation后冻结的候选',
-  ]) assert.equal(skill.includes(required), true, required);
-  assert.equal(preparation.includes('release-transaction-runner.mjs'), false);
-  assert.equal(preparation.includes('--stage post-main'), true);
-  assert.equal(preparation.includes('--authority-evidence'), false);
-  assert.equal(release.includes('release-transaction-runner.mjs'), true);
-  assert.equal(release.includes('release-authority-probe-runner.mjs'), false);
-  assert.equal(release.includes('本机不得创建或push tag'), true);
-  for (const retired of ['npm trust list @buildr-ai/buildr --json', 'npm 11.15+ authenticated maintainer session', 'authenticated authority evidence']) assert.equal(skill.includes(retired), false, retired);
+  assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
+  assert.match(convergenceSource, /published-but-dev-convergence-blocked/);
+  assert.match(convergenceSource, /authorizeRemoteDelete/);
+  assert.doesNotMatch(convergenceSource, /\['merge', '-s', 'ours'|\['push'[^\]]*'--force'|\['reset', '--hard'/);
 });

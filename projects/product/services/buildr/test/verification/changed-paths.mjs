@@ -2,8 +2,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
+import YAML from 'yaml';
 import { normalizeProductPath } from './planner.mjs';
-import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './registry.mjs';
+import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
 
 function git(gitRoot, args, options = {}) {
@@ -36,6 +37,52 @@ export function isVersionOnlyPackageMetadataChange(productPath, baseText, curren
   }
 }
 
+const PACKAGE_PRESENTATION_FIELDS = Object.freeze([
+  'description', 'keywords', 'author', 'contributors', 'homepage', 'bugs', 'license', 'repository', 'funding',
+]);
+
+function withoutPackagePresentationFields(productPath, text) {
+  const value = withoutAllowedVersionFields(productPath, text);
+  if (productPath !== 'package.json') return value;
+  for (const field of PACKAGE_PRESENTATION_FIELDS) delete value[field];
+  return value;
+}
+
+export function isSelectionOnlyPackageMetadataChange(productPath, baseText, currentText) {
+  if (!['package.json', 'package-lock.json'].includes(productPath)) return false;
+  try {
+    return isDeepStrictEqual(
+      withoutPackagePresentationFields(productPath, baseText),
+      withoutPackagePresentationFields(productPath, currentText),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function withoutVerificationPresentationFields(text) {
+  const value = YAML.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('verification.yml must contain a mapping');
+  for (const resource of value.resources ?? []) delete resource.title;
+  for (const capability of value.capabilities ?? []) {
+    delete capability.title;
+    delete capability.proves;
+    if (capability.applicability && typeof capability.applicability === 'object') delete capability.applicability.conditions;
+  }
+  return value;
+}
+
+export function isVerificationDeclarationMetadataOnlyChange(baseText, currentText) {
+  try {
+    return isDeepStrictEqual(
+      withoutVerificationPresentationFields(baseText),
+      withoutVerificationPresentationFields(currentText),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function resolveVerificationBase(gitRoot, requestedBase) {
   const candidates = requestedBase ? [requestedBase] : [];
   if (!requestedBase) {
@@ -58,7 +105,7 @@ export function collectChangedProductPaths(options) {
   const productRoot = fs.realpathSync(path.resolve(options.productRoot));
   const projectRoot = fs.realpathSync(path.resolve(options.projectRoot ?? productRoot));
   if ((options.explicitPaths ?? []).length > 0) {
-    return { base: null, paths: [...new Set(options.explicitPaths.map(normalizeProductPath))].sort(), source: 'explicit', versionOnlyPackagePaths: [] };
+    return { base: null, paths: [...new Set(options.explicitPaths.map(normalizeProductPath))].sort(), source: 'explicit', versionOnlyPackagePaths: [], selectionOnlyPaths: [], selectionReasons: [] };
   }
   const gitRoot = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
   const projectGitRoot = git(projectRoot, ['rev-parse', '--show-toplevel']).trim();
@@ -66,8 +113,12 @@ export function collectChangedProductPaths(options) {
   const productPrefix = git(productRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const projectPrefix = git(projectRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const base = resolveVerificationBase(gitRoot, options.base);
+  const head = options.head ?? 'HEAD';
+  git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]);
   const pathspecs = [projectPrefix || '.', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
-  const commands = [
+  const commands = options.head ? [
+    ['diff', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
+  ] : [
     ['diff', '--name-only', '-z', `${base}...HEAD`, '--', ...pathspecs],
     ['diff', '--cached', '--name-only', '-z', '--', ...pathspecs],
     ['diff', '--name-only', '-z', '--', ...pathspecs],
@@ -89,13 +140,33 @@ export function collectChangedProductPaths(options) {
   }
   const uniquePaths = [...new Set(paths)].sort();
   const versionOnlyPackagePaths = [];
+  const selectionOnlyPaths = [];
+  const selectionReasons = [];
   for (const productPath of uniquePaths.filter((item) => ['package.json', 'package-lock.json'].includes(item))) {
     try {
       const workspacePath = productPrefix ? `${productPrefix}/${productPath}` : productPath;
       const baseText = git(gitRoot, ['show', `${base}:${workspacePath}`]);
-      const currentText = fs.readFileSync(path.join(productRoot, productPath), 'utf8');
-      if (isVersionOnlyPackageMetadataChange(productPath, baseText, currentText)) versionOnlyPackagePaths.push(productPath);
+      const currentText = options.head ? git(gitRoot, ['show', `${head}:${workspacePath}`]) : fs.readFileSync(path.join(productRoot, productPath), 'utf8');
+      if (isVersionOnlyPackageMetadataChange(productPath, baseText, currentText)) {
+        versionOnlyPackagePaths.push(productPath);
+        selectionOnlyPaths.push(productPath);
+        selectionReasons.push({ path: productPath, code: 'version-only-package-metadata' });
+      } else if (isSelectionOnlyPackageMetadataChange(productPath, baseText, currentText)) {
+        selectionOnlyPaths.push(productPath);
+        selectionReasons.push({ path: productPath, code: 'package-presentation-metadata-change' });
+      }
     } catch {}
   }
-  return { base, paths: uniquePaths, source: 'git', versionOnlyPackagePaths };
+  if (uniquePaths.includes('verification.yml')) {
+    try {
+      const workspacePath = productPrefix ? `${productPrefix}/verification.yml` : 'verification.yml';
+      const baseText = git(gitRoot, ['show', `${base}:${workspacePath}`]);
+      const currentText = options.head ? git(gitRoot, ['show', `${head}:${workspacePath}`]) : fs.readFileSync(path.join(productRoot, 'verification.yml'), 'utf8');
+      if (isVerificationDeclarationMetadataOnlyChange(baseText, currentText)) {
+        selectionOnlyPaths.push('verification.yml');
+        selectionReasons.push({ path: 'verification.yml', code: 'verification-presentation-metadata-change' });
+      }
+    } catch {}
+  }
+  return { base, head, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
 }

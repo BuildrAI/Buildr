@@ -47,6 +47,6 @@ test('changed path collector 合并 base diff、staged、unstaged 与 untracked 
 
 test('显式 paths 不读取 Git 且 base 解析失败时 fail closed', () => {
   const explicit = collectChangedProductPaths({ productRoot: process.cwd(), explicitPaths: ['./docs/a.md', 'docs/a.md'] });
-  assert.deepEqual(explicit, { base: null, paths: ['docs/a.md'], source: 'explicit', versionOnlyPackagePaths: [] });
+  assert.deepEqual(explicit, { base: null, paths: ['docs/a.md'], source: 'explicit', versionOnlyPackagePaths: [], selectionOnlyPaths: [], selectionReasons: [] });
   assert.throws(() => resolveVerificationBase(process.cwd(), 'missing-verification-base'), /Unknown Git base/);
 });

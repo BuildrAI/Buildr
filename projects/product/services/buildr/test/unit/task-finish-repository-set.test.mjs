@@ -9,7 +9,7 @@ import {
   taskFinishCarrierSetIdentity,
   taskFinishDeliverySetIdentity,
   taskFinishRepositorySetIdentity,
-} from '../../src/application/task-finish/task-finish-repository-set.mjs';
+} from '../../src/task/application/finish/task-finish-repository-set.mjs';
 
 function contribution(identity, beforeTree, afterTree = beforeTree) {
   return {

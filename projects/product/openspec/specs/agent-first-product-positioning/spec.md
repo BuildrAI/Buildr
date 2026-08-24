@@ -4,6 +4,7 @@
 
 定义 Buildr 对外的 Agent-first 用户模型、组织工作资产、共享工作环境、任务上下文责任边界与多层用户价值表达。
 ## Requirements
+
 ### Requirement: Buildr 采用 Agent-first 用户模型
 Buildr MUST 将 Agent 视为组织工作资产的主要使用者，并 MUST 将人描述为通过 Agent 表达目标、提供业务判断和确认重要决策的一等参与者。Buildr MUST 将组织持续维护的工作资产作为成员进入组织后通过 Agent 开展工作的共同基础，并 MUST 在公开入口用直接语言表达“任何人进入组织都可以从一句自然语言指令开始，由 Agent 准备工作环境并进入任务”。
 
@@ -190,8 +191,8 @@ Buildr 公开 README MUST 将普通用户快速开始从安装延伸到 Workspac
 
 #### Scenario: README 提供两种开始方式
 - **WHEN** README 说明如何使用 Buildr
-- **THEN** MUST 分别说明通过 local app 建立和查看工作范围、通过 Agent 对话完成 onboarding 的路径
-- **AND** MUST 说明 local app 负责认知、低风险维护和交接，Agent 负责理解、执行与验证
+- **THEN** MUST 分别说明通过 Buildr Web 建立和查看工作范围、通过 Agent 对话完成 onboarding 的路径
+- **AND** MUST 说明 Buildr Web 负责认知、低风险维护和交接，Agent 负责理解、执行与验证
 - **AND** 任一路径 MUST NOT 成为另一条路径的强制前置条件
 
 #### Scenario: README 后置技术安装细节
@@ -206,20 +207,20 @@ Buildr 公开 README MUST 将普通用户快速开始从安装延伸到 Workspac
 - **AND** MUST 将 doctor ready 保留为 Agent 判断技术 onboarding 完成的证据
 - **AND** MUST NOT 把只运行安装命令或 init 描述为用户已经会使用 Buildr
 
-### Requirement: 产品说明必须定义 local app 的人机桥梁边界
-Buildr 产品说明 MUST 将 Agent 定义为理解、推理、规划和专业执行入口，将 local app 定义为人的认知与治理入口以及向 Agent 交接 canonical 工作范围的界面；二者 MUST 共享 Workspace 源资产，不得形成两个竞争的任务执行主体。
+### Requirement: 产品说明必须定义 Buildr Web 的人机桥梁边界
+Buildr 产品说明 MUST 将 Agent 定义为理解、推理、规划和专业执行入口，将 Buildr Web 定义为人的认知与治理入口以及向 Agent 交接 canonical 工作范围的界面；二者 MUST 共享 Workspace 源资产，不得形成两个竞争的任务执行主体。
 
-#### Scenario: 产品说明解释 local app 价值
-- **WHEN** README 或产品主说明介绍 local app
-- **THEN** MUST 说明 local app帮助人理解 Workspace、Project、Service、真实状态和低风险 metadata，并生成交给 Agent 的受约束 prompt
+#### Scenario: 产品说明解释 Buildr Web 价值
+- **WHEN** README 或产品主说明介绍 Buildr Web
+- **THEN** MUST 说明 Buildr Web帮助人理解 Workspace、Project、Service、真实状态和低风险 metadata，并生成交给 Agent 的受约束 prompt
 - **AND** MUST 说明真正的 Project/Service 创建、迁移、修复和专业任务由 Agent 在核对边界与授权后执行
 
-#### Scenario: 评审 local app 新能力
-- **WHEN** 产品准备在 local app 增加对话、自动规划、任务执行或 Agent session 管理能力
+#### Scenario: 评审 Buildr Web 新能力
+- **WHEN** 产品准备在 Buildr Web 增加对话、自动规划、任务执行或 Agent session 管理能力
 - **THEN** 设计 MUST 单独证明该能力的长期治理、跨 Agent 复用、确定性约束或可验证诊断价值
 - **AND** 如果能力只是复制 Agent 的通用理解、推理、规划、对话或专业执行，MUST 将其保留给 Agent
 
-#### Scenario: local app 与 Agent 状态一致
-- **WHEN** Agent 修改 Workspace、Project 或 Service 后用户打开 local app
-- **THEN** local app MUST 从同一 source authority 读取最新事实
+#### Scenario: Buildr Web 与 Agent 状态一致
+- **WHEN** Agent 修改 Workspace、Project 或 Service 后用户打开 Buildr Web
+- **THEN** Buildr Web MUST 从同一 source authority 读取最新事实
 - **AND** MUST NOT 依赖独立数据库、聊天记录或页面 onboarding 状态解释 canonical 资源关系

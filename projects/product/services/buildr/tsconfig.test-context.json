@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "allowJs": false,
+    "checkJs": false,
+    "rootDir": "src/infrastructure/testing/context-runtime",
+    "outDir": "package/targets/test-context",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "incremental": false
+  },
+  "include": ["src/infrastructure/testing/context-runtime/**/*.ts"]
+}

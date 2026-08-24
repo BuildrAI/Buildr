@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const PRODUCT_SOURCE_ENTRIES = ['bin', 'src', 'package', 'package.json', 'package-lock.json'];
+const PRODUCT_SOURCE_ENTRIES = ['bin', 'src', 'resources', 'web-dist', 'tools', 'package', 'docs', 'package.json', 'package-lock.json'];
 
 function git(root, args) {
   const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
@@ -15,7 +15,7 @@ function sourceExecutablePaths(sourceRoot) {
   if (output.status !== 0) return [];
   return output.stdout.toString('utf8').split('\0').filter(Boolean).flatMap((record) => {
     const match = /^(\d{6}) [0-9a-f]+ \d\t([\s\S]+)$/u.exec(record);
-    return match?.[1] === '100755' ? [match[2]] : [];
+    return match?.[1] === '100755' && fs.existsSync(path.join(sourceRoot, match[2])) ? [match[2]] : [];
   });
 }
 

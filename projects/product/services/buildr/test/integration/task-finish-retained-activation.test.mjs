@@ -5,9 +5,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { planRetainedTaskFinishActivation } from '../../src/application/task-finish/task-finish-activation.mjs';
-import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { planRetainedTaskFinishActivation } from '../../src/task/application/finish/task-finish-activation.mjs';
+import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
+import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {
@@ -61,7 +61,7 @@ function fixture(t, { contributionPath, contributionContent }) {
   fs.writeFileSync(path.join(seed, 'rules', 'buildr', 'core.md'), 'old managed rule\n');
   fs.mkdirSync(path.join(seed, 'skills', 'example'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'skills', 'example', 'SKILL.md'), 'old skill\n');
-  const packageRule = path.join(seed, 'projects', 'product', 'services', 'buildr', 'package', 'targets', 'workspace', 'rules', 'buildr', 'core.md');
+  const packageRule = path.join(seed, 'projects', 'product', 'services', 'buildr', 'resources', 'workspace', 'rules', 'buildr', 'core.md');
   fs.mkdirSync(path.dirname(packageRule), { recursive: true });
   fs.writeFileSync(packageRule, 'old managed rule\n');
   command(seed, 'git', ['add', '-A']);
@@ -112,37 +112,39 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
   assert.equal(result.output.delivery.finalRemoteRef, data.run.deliveryCarrier.head);
 });
 
-test('render tracked delta fails closed without staging or convergence commit', async (t) => {
+test('render tracked delta becomes activation attention without negating delivery', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'tracked-delta\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'task-finish.render-produced-tracked-delta');
-  assert.deepEqual(result.failure.findings.map((item) => item.path), ['README.md']);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.output.delivery.status, 'delivered');
+  assert.equal(result.output.delivery.activation.status, 'attention');
+  assert.equal(result.output.delivery.activation.code, 'task-finish.render-produced-tracked-delta');
+  assert.deepEqual(result.output.delivery.activation.diagnostic.map((item) => item.path), ['README.md']);
   assert.equal(command(data.retained, 'git', ['diff', '--cached', '--name-only']), '');
 });
 
-test('Doctor failure blocks cleanup without generic sync', async (t) => {
+test('Doctor failure becomes activation attention without negating delivery', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-failure\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.status, 'passed');
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
-  assert.equal(result.output.delivery.status, 'activation-blocked');
+  assert.equal(result.output.delivery.status, 'delivered');
   assert.equal(result.output.delivery.remoteAfterRef, data.run.deliveryCarrier.head);
-  assert.equal(result.output.delivery.activation.doctorCode, 'task-finish.retained-doctor-failed');
-  assert.equal(result.output.delivery.retainedDoctor, 'blocked');
+  assert.equal(result.output.delivery.activation.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.output.delivery.retainedDoctor, 'attention');
 });
 
 test('Doctor compact输出超限保留独立失败分类', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-overflow\n' });
   const result = await data.handlers.deliver({ run: data.run });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.failure.code, 'doctor.output_limit_exceeded');
-  assert.match(result.failure.message, /4194304 bytes/);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.output.delivery.activation.status, 'attention');
+  assert.equal(result.output.delivery.activation.code, 'doctor.output_limit_exceeded');
+  assert.match(result.output.delivery.activation.message, /4194304 bytes/);
 });
 
 test('Buildr package contribution is delivered without generic sync', async (t) => {
-  const contributionPath = 'projects/product/services/buildr/package/targets/workspace/rules/buildr/core.md';
+  const contributionPath = 'projects/product/services/buildr/resources/workspace/rules/buildr/core.md';
   const data = fixture(t, { contributionPath, contributionContent: 'new managed rule\n' });
   const result = await data.handlers.deliver({ run: data.run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));

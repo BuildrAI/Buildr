@@ -5,7 +5,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { inspectTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
-import { verificationSteps } from '../verification/registry.mjs';
+import {
+  assertVerificationContextDispositionCoverage,
+  VERIFICATION_CONTEXT_DISPOSITIONS,
+  VERIFICATION_GOLDEN_CONTEXT_AUDIT,
+} from '../context/dispositions.mjs';
+import { VERIFICATION_DAILY_CORE_EXCLUSIONS, verificationSteps } from '../verification/registry.mjs';
 import { SYSTEM_SUITES, validateSystemSuiteRegistry } from '../verification/system-suites.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -21,7 +26,7 @@ const taskLifecycleContextConsumers = [
 const taskRecordContextConsumers = [
   'task-record-product.test.mjs',
   'task-record-change-resolver.test.mjs',
-  'task-record-local-app.test.mjs',
+  'task-record-buildr-web.test.mjs',
 ];
 const fullIsolationOwners = [
   'project-product.test.mjs',
@@ -47,6 +52,106 @@ function directBoundaryImports(layer) {
 test('Unit 与 Component 不直接穿过真实进程、网络或文件系统边界', () => {
   assert.deepEqual(directBoundaryImports('unit'), []);
   assert.deepEqual(directBoundaryImports('component'), []);
+});
+
+test('每个Verification owner都有唯一且有理由的Context disposition', () => {
+  assert.deepEqual(
+    assertVerificationContextDispositionCoverage(verificationSteps.map((step) => step.id)),
+    { status: 'covered', owners: verificationSteps.length },
+  );
+  assert.equal(Object.keys(VERIFICATION_CONTEXT_DISPOSITIONS).length, verificationSteps.length);
+  for (const step of verificationSteps) {
+    assert.equal(step.contextDisposition, VERIFICATION_CONTEXT_DISPOSITIONS[step.id]);
+    assert.match(step.contextDisposition.mode, /^(?:context-runtime|hybrid|full-lifecycle)$/u);
+    assert.match(step.contextDisposition.reasonCode, /^[a-z][a-z0-9-]+$/u);
+    assert.ok(step.contextDisposition.reason.length >= 20, step.id);
+  }
+  assert.throws(
+    () => assertVerificationContextDispositionCoverage(verificationSteps.slice(1).map((step) => step.id)),
+    /verification_context_disposition_coverage_invalid/,
+  );
+});
+
+test('context-runtime owner的Runtime组装必须来自统一adapter', () => {
+  for (const step of verificationSteps.filter((candidate) => candidate.contextDisposition.mode === 'context-runtime')) {
+    assert.equal(step.executor.type, 'node-context-test', `${step.id} must run in persistent Context Worker Hosts`);
+    const files = step.executor.files ?? [];
+    const sources = files.map((file) => [file, fs.readFileSync(path.join(productRoot, file), 'utf8')]);
+    assert.ok(sources.some(([, source]) => /buildr-node-test\.mjs/u.test(source)), `${step.id} must contain a unified adapter consumer`);
+    for (const [file, source] of sources) {
+      assert.doesNotMatch(source, /\bcreateRuntime\s*\(/u, `${step.id}/${file} must lease the matching Application instead of assembling another Runtime`);
+    }
+  }
+});
+
+test('初始化、迁移、自举、Finish、cleanup、Candidate、tarball与Launcher保持审查后的Context边界', () => {
+  assert.deepEqual(Object.keys(VERIFICATION_GOLDEN_CONTEXT_AUDIT), [
+    'initialization', 'migration', 'selfBootstrap', 'finishApplication', 'finishDelivery', 'cleanup', 'candidate', 'tarball', 'launcher',
+  ]);
+  const byId = new Map(verificationSteps.map((step) => [step.id, step]));
+  for (const [journey, audit] of Object.entries(VERIFICATION_GOLDEN_CONTEXT_AUDIT)) {
+    assert.ok(audit.reason.length >= 40, journey);
+    assert.match(audit.reusableBoundary, /^(?:none|application|artifact-only)$/u, journey);
+    for (const owner of audit.owners) {
+      assert.ok(byId.has(owner), `${journey} references unknown owner ${owner}`);
+      assert.equal(byId.get(owner).contextDisposition.mode, audit.expectedMode, `${journey}/${owner}`);
+    }
+  }
+});
+
+test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () => {
+  const byId = new Map(verificationSteps.map((step) => [step.id, step]));
+  const assertGolden = (id, reasonCode) => {
+    const step = byId.get(id);
+    assert.ok(step, `missing golden owner ${id}`);
+    assert.equal(step.testing.primaryEvidenceOwner, id, `${id} must remain its own primary evidence owner`);
+    assert.equal(step.contextDisposition.mode, 'full-lifecycle', `${id} must retain the real lifecycle`);
+    assert.equal(step.contextDisposition.reasonCode, reasonCode, id);
+  };
+
+  for (const id of [
+    'integration-self-bootstrap',
+    'system-task-finish',
+    'system-task-finish-cli',
+    'system-workspace-lifecycle',
+    'system-worktree-lifecycle',
+    'concurrent-task-acceptance',
+  ]) {
+    assertGolden(id, 'lifecycle-is-primary-evidence');
+    assert.equal(byId.get(id).profiles.includes('core'), true, `${id} must remain in daily Core`);
+  }
+
+  for (const id of [
+    'candidate-tarball',
+    'application-payload-release',
+    'npm-launcher-candidate',
+    'release-tarball-smoke',
+  ]) {
+    assertGolden(id, 'release-artifact-is-primary-evidence');
+    assert.equal(byId.get(id).profiles.includes('candidate'), true, `${id} must remain in Candidate`);
+    assert.equal(byId.get(id).profiles.includes('core'), false, `${id} must stay out of daily Core`);
+    assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS[id], `${id} needs a closed Core exclusion reason`);
+  }
+
+  assertGolden('system-fresh-build', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('system-fresh-build').profiles.includes('candidate'), true);
+  assert.equal(byId.get('system-fresh-build').profiles.includes('core'), false);
+  assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS['system-fresh-build']);
+
+  assertGolden('init-onboarding', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('init-onboarding').profiles.includes('candidate'), true);
+  assert.equal(byId.get('init-onboarding').profiles.includes('core'), false);
+  assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS['init-onboarding']);
+
+  assertGolden('repository-onboarding', 'release-artifact-is-primary-evidence');
+  assert.deepEqual(byId.get('repository-onboarding').profiles, [], 'development checkout onboarding remains affected-only');
+
+  assertGolden('host-node-cli-smoke', 'release-artifact-is-primary-evidence');
+  assert.deepEqual(byId.get('host-node-cli-smoke').profiles, ['host-node']);
+
+  assertGolden('system-windows-platform', 'lifecycle-is-primary-evidence');
+  assert.equal(byId.get('system-windows-platform').selection, 'explicit-only');
+  assert.deepEqual(byId.get('system-windows-platform').developmentRunners, ['windows']);
 });
 
 test('Quick Contract 只保留只读静态契约并拒绝可变环境测试', () => {
@@ -89,18 +194,22 @@ test('Candidate 的网络协议仅使用本机回环 fixture', () => {
 
 test('Task lifecycle System context 只共享不可变基线并保留全生命周期测试的独立 owner', () => {
   const helper = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'task-lifecycle-system-context.mjs'), 'utf8');
+  const contextRuntime = fs.readFileSync(path.join(productRoot, 'test', 'context', 'runtime.mjs'), 'utf8');
+  const provider = fs.readFileSync(path.join(productRoot, 'test', 'context', 'providers', 'task-lifecycle.mjs'), 'utf8');
   const runner = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'system.mjs'), 'utf8');
-  assert.match(helper, /TASK_LIFECYCLE_CONTEXT_ID = 'task-lifecycle\/v1'/);
-  assert.match(helper, /if \(provided\) return inspectTaskLifecycleSystemContext\(provided\)/, 'an invalid suite context must not fall back to a local context');
-  assert.match(helper, /fs\.cpSync\(context\.workspaceRoot, root, \{ recursive: true \}\)/, 'test cases must receive copied sandboxes');
-  assert.match(helper, /actualIdentity !== marker\.identity/, 'shared baseline must be identity checked');
-  assert.match(helper, /runtime\.initBuildr/);
-  assert.match(helper, /runtime\.createProject/);
-  assert.match(helper, /runtime\.createService/);
+  assert.match(helper, /TASK_LIFECYCLE_CONTEXT_ID = TASK_LIFECYCLE_CONTEXT_KEY/);
+  assert.match(helper, /defaultTestContextPool/, 'direct files and inherited runners must use the same Pool contract');
+  assert.match(contextRuntime, /fs\.cpSync\(context\.seedRoot, sandboxRoot, \{ recursive: true \}\)/, 'test cases must receive copied sandboxes');
+  assert.match(contextRuntime, /actualIdentity !== marker\.identity/, 'shared baseline must be identity checked');
+  assert.match(contextRuntime, /test_context_sandbox_alias/);
+  assert.match(provider, /runtime\.initBuildr/);
+  assert.match(provider, /runtime\.createProject/);
+  assert.match(provider, /runtime\.createService/);
   assert.doesNotMatch(helper, /spawnSync/, 'fixture-only setup must not pay public CLI cold starts');
-  assert.match(runner, /prepareTaskLifecycleSystemContext/);
-  assert.match(runner, /\[TASK_LIFECYCLE_CONTEXT_ENV\]: context\.contextRoot/);
-  assert.match(runner, /finally \{[\s\S]*context\.cleanup\(\)/);
+  assert.match(runner, /createTestContextPool/);
+  assert.match(runner, /selectedSuites\.flatMap\(\(suite\) => suite\.contexts/);
+  assert.match(runner, /\[TASK_LIFECYCLE_CONTEXT_ENV\]: taskContext\.contextRoot/);
+  assert.match(runner, /finally \{[\s\S]*contextPool\.cleanup\(\)/);
   assert.match(runner, /--test-reporter=dot/, 'successful System output must stay compact while dot reporter retains failure details');
   assert.match(runner, /--test-reporter-destination=stdout/);
   assert.match(runner, /system-file-timing-reporter\.mjs/);
@@ -120,11 +229,18 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-local-app-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+    'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
   assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1);
+  assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-verification-contracts')?.contexts ?? [], [], 'unrelated System owners must not pay Task Context setup');
+  assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-task-lifecycle')?.contexts, ['task-lifecycle/v1']);
+  const taskDevelopment = verificationSteps.find((step) => step.id === 'integration-task-development');
+  assert.deepEqual(taskDevelopment?.contexts, ['task-lifecycle/v1']);
+  assert.equal(taskDevelopment?.resourceDemand.workers, 4, 'Task Development shards must consume the outer worker grant');
+  assert.equal(taskDevelopment?.executor.type, 'node-context-test', 'Task Development must use persistent Context Worker Hosts');
+  assert.equal(taskDevelopment?.executor.files.filter((file) => file.includes('task-development-application')).length, 4);
 
   for (const file of taskLifecycleContextConsumers) {
     const source = fs.readFileSync(path.join(productRoot, 'test', 'system', file), 'utf8');
@@ -143,7 +259,65 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
 
   assert.throws(
     () => inspectTaskLifecycleSystemContext(path.join(productRoot, 'test', '.missing-task-lifecycle-context')),
-    (error) => error.code === 'system_test_context_root_invalid',
+    (error) => error.code === 'test_context_root_invalid',
     'a missing suite context must fail with a stable context diagnostic',
   );
+});
+
+test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox', () => {
+  const profiles = fs.readFileSync(path.join(productRoot, 'test', 'context', 'profiles.mjs'), 'utf8');
+  const provider = fs.readFileSync(path.join(productRoot, 'test', 'context', 'providers', 'prepared-fixtures.mjs'), 'utf8');
+  const helper = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'prepared-fixtures.mjs'), 'utf8');
+  const suites = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'system-suites.mjs'), 'utf8');
+  const project = fs.readFileSync(path.join(productRoot, 'test', 'system', 'project-product.test.mjs'), 'utf8');
+  const service = fs.readFileSync(path.join(productRoot, 'test', 'system', 'service-product.test.mjs'), 'utf8');
+  const workspace = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'workspace-product-suite.mjs'), 'utf8');
+  const retirement = fs.readFileSync(path.join(productRoot, 'test', 'system', 'package-capability-retirement.test.mjs'), 'utf8');
+  const finish = fs.readFileSync(path.join(productRoot, 'test', 'system', 'task-finish-product-journey.test.mjs'), 'utf8');
+
+  for (const key of ['workspace-foundation/v1', 'project-foundation/v1', 'git-repository/v1']) assert.match(profiles, new RegExp(key.replace('/', '\\/')));
+  assert.match(provider, /runtime\.initBuildr/);
+  assert.match(provider, /runtime\.createProject/);
+  assert.match(provider, /git\.clone-bare/);
+  assert.match(provider, /fs\.cpSync\(context\.seedRoot, sandboxRoot/);
+  assert.match(helper, /defaultTestContextPool\(\)\.acquire/);
+  assert.match(suites, /id: 'system-workspace-lifecycle'[\s\S]*WORKSPACE_FOUNDATION_CONTEXT_KEY[\s\S]*PROJECT_FOUNDATION_CONTEXT_KEY[\s\S]*GIT_REPOSITORY_CONTEXT_KEY/);
+  assert.match(project, /copyPreparedWorkspace/);
+  assert.match(project, /copyPreparedGitRepository/);
+  assert.doesNotMatch(project, /runBuildr\(\['init'/);
+  assert.match(service, /copyPreparedProjectWorkspace/);
+  assert.match(service, /copyPreparedGitRepository/);
+  assert.doesNotMatch(service, /runBuildr\(\['init'/);
+  assert.match(workspace, /selectedSuite === 'manifest-registry' && !options\.freshIdentity/,
+    'manifest cases may reuse a foundation, while identity evidence requests a fresh Workspace');
+  assert.match(retirement, /copyPreparedWorkspace/);
+  assert.doesNotMatch(finish, /prepared-fixtures\.mjs|copyPreparedGitRepository/,
+    'Finish retained/carrier/worktree construction remains primary evidence after the no-benefit trial');
+});
+
+test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {
+  const packageMetadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
+  assert.deepEqual(packageMetadata.exports['./test-context'], {
+    types: './package/targets/test-context/index.d.ts',
+    import: './test-context.mjs',
+    default: './test-context.mjs',
+  });
+  const runtimeRoot = path.join(productRoot, 'src/infrastructure/testing/context-runtime');
+  const publicSource = fs.readdirSync(runtimeRoot).filter((name) => name.endsWith('.ts'))
+    .map((name) => fs.readFileSync(path.join(runtimeRoot, name), 'utf8')).join('\n');
+  assert.match(publicSource, /defineTestContext/);
+  assert.match(publicSource, /test-isolation=none/);
+  assert.doesNotMatch(publicSource, /src\/bootstrap|task-lifecycle|BUILDR_TEST_CONTEXTS|createRuntime\(/,
+    'public Runtime must not depend on Buildr Workspace or Application assembly');
+  const provider = fs.readFileSync(path.join(productRoot, 'test/context/providers/task-application.mjs'), 'utf8');
+  assert.match(provider, /buildrTaskApplicationContext = defineTestContext/);
+  assert.match(provider, /buildrTaskWorkspaceContext = defineTestContext/);
+  assert.match(provider, /parallelSafety: 'exclusive'/);
+  assert.match(provider, /parallelSafety: 'isolated'/);
+  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.mjs'), 'utf8');
+  assert.match(taskTests, /createBuildrContextTest/);
+  assert.match(taskTests, /BUILDR_TASK_TEST_CONTEXTS/);
+  assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');
+  const framework = fs.readFileSync(path.join(productRoot, 'docs/verification-framework.md'), 'utf8');
+  for (const term of ['@buildr-ai/buildr/test-context', 'Worker Host', 'Cache Identity', 'Dirty', 'node-context-test']) assert.match(framework, new RegExp(term));
 });

@@ -373,26 +373,32 @@ Buildr doctor MUST 使用 canonical workspace 必要资产判断 workspace valid
 - **AND** doctor MUST 报告 workspace 未初始化
 
 ### Requirement: doctor 分离兼容成功状态与 readiness
-Buildr doctor MUST 保留 `ok` 的既有无 error 语义，并独立报告 workspace validity、readiness 与 action requirement；聚合 finding MUST 保留其来源 findings 的 actionability，且只有通用 workspace/source 检查或显式 selected runtime 的 actionable finding 能降低当前 readiness。
+Buildr doctor MUST保留`ok`的既有无error语义，并独立报告workspace validity、兼容readiness、action requirement与domain health；每个finding MUST声明domain、scope、affected actions和ownership unit。聚合`health.ready`只表示本次Doctor profile没有actionable finding，MUST NOT被任何consumer解释为通用工作许可。
 
 #### Scenario: Selected runtime 存在 actionable warning
 - **WHEN** doctor 显式选择 runtime，且该 runtime 没有 error 但存在至少一个需要用户行动的 warning
 - **THEN** `ok` MUST 为 true
 - **AND** `health.workspaceValid` MUST 反映 canonical workspace identity
 - **AND** `health.ready` MUST 为 false
+- **AND** Runtime domain health MUST只列出受影响adapter actions
 - **AND** `health.actionRequired` MUST 为 true
-- **AND** `health.actionableCount` MUST 包含该 warning
 
 #### Scenario: workspace 可直接继续工作
-- **WHEN** canonical workspace identity 有效且通用检查及 selected runtime 不存在需要用户行动的 warning 或 error
-- **THEN** `health.workspaceValid` MUST 为 true
-- **AND** `health.ready` MUST 为 true
-- **AND** `health.actionRequired` MUST 为 false
+- **WHEN** canonical workspace identity有效且当前profile不存在需要用户行动的warning或error
+- **THEN** `health.workspaceValid` MUST为true
+- **AND** `health.ready` MUST为true
+- **AND** `health.generalWorkPermitted` MUST为null
+- **AND** `health.actionRequired` MUST为false
 
 #### Scenario: 非行动信息不降低 readiness
 - **WHEN** finding 明确设置 `userActionRequired: false`
 - **THEN** 该 finding MUST NOT 计入 `health.actionableCount`
 - **AND** 该 finding MUST NOT 单独使 `health.ready` 变为 false
+
+#### Scenario: finding提供局部消费事实
+- **WHEN** Doctor生成warning或error finding
+- **THEN** finding MUST包含稳定domain、scope、affectedActions与ownershipUnit
+- **AND** domain health MUST按这些字段投影status、actionableCount与blockedActions
 
 #### Scenario: 聚合全部非行动型 runtime warnings
 - **WHEN** 某个 scope/adapter 的全部 runtime warnings 都明确设置 `userActionRequired: false`
@@ -405,13 +411,13 @@ Buildr doctor MUST 保留 `ok` 的既有无 error 语义，并独立报告 works
 - **WHEN** selected runtime 的某个 scope 同时包含行动型与非行动型 runtime warnings
 - **THEN** 顶层 runtime warning MUST 设置 `userActionRequired: true`
 - **AND** 顶层 finding MUST 保留全部来源 warning codes
-- **AND** `health.actionRequired` MUST 为 true
+- **AND** 只对应Runtime domain与相关actions MUST报告blocked
 
 #### Scenario: 未选中 runtime 聚合混合 warnings
 - **WHEN** 默认 inventory diagnostics 在未选中 runtime 中发现行动型与非行动型 runtime warnings
 - **THEN** 顶层 inventory warning MUST 设置 `userActionRequired: false`
 - **AND** MUST NOT 进入 `repairPlan` 或 `nextSteps`
-- **AND** `health.ready` MUST NOT 因该 runtime 变为 false
+- **AND** 无关domain/action MUST NOT因该runtime blocked
 
 ### Requirement: doctor 声明默认与专项诊断层级
 Buildr doctor MUST 在 Agent-readable 结果中声明默认核心、条件通用和显式专项诊断边界。

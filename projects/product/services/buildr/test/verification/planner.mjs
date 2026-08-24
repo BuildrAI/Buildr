@@ -4,36 +4,213 @@ import {
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
   VERIFICATION_CONCURRENCY,
-  VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_CONTEXT_KEYS,
+  VERIFICATION_DAILY_CORE_EXCLUSIONS,
   VERIFICATION_ENVIRONMENT_FOOTPRINTS,
   VERIFICATION_ENVIRONMENT_ISOLATIONS,
   VERIFICATION_DEVELOPMENT_RUNNERS,
   VERIFICATION_EXECUTION_BOUNDARIES,
   VERIFICATION_EXECUTORS,
-  VERIFICATION_FULL_SCOPE_INPUTS,
-  VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
   VERIFICATION_GROUPS,
-  VERIFICATION_IGNORED_INPUTS,
+  VERIFICATION_ISOLATION_MODES,
+  VERIFICATION_PARALLEL_SAFETY,
   VERIFICATION_PROFILES,
-  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_RESOURCE_CONTRACTS,
+  VERIFICATION_RESOURCE_DEMANDS,
   VERIFICATION_RESET_BURDENS,
+  VERIFICATION_RESET_STRATEGIES,
+  VERIFICATION_SLOW_EVIDENCE_THRESHOLD_MS,
   VERIFICATION_TEST_INTENTS,
   verificationSteps,
 } from './registry.mjs';
+import {
+  VERIFICATION_DELEGATED_INPUTS,
+  VERIFICATION_FULL_SCOPE_AUTHORITIES,
+  VERIFICATION_FULL_SCOPE_INPUTS,
+  VERIFICATION_GOVERNED_REPOSITORY_INPUTS,
+  VERIFICATION_IGNORED_INPUTS,
+  VERIFICATION_PRODUCTION_OWNER_ALLOWLIST,
+  VERIFICATION_SELECTION_METADATA_INPUTS,
+  validateVerificationStepOwnership,
+} from './ownership.mjs';
 
 const PRODUCTION_OWNER_GOVERNED_INPUTS = Object.freeze([
-  'src/application/**/*.mjs',
   'src/infrastructure/**/*.mjs',
+  'src/*/application/**/*.mjs',
+  'src/*/persistence/**/*.mjs',
 ]);
 const PRODUCTION_OWNER_BROAD_STEPS = new Set([
   'unit',
   'candidate-tarball',
   'application-payload-release',
+  'cli-architecture',
 ]);
 const PRODUCTION_OWNER_BOUNDARIES = new Set(['Static', 'Integration', 'System']);
 
 const CANDIDATE_CI_RUNNERS = Object.freeze(['macos', 'windows']);
 const CANDIDATE_CI_PHASES = Object.freeze(['preflight', 'artifact', 'verification']);
+
+export function createVerificationEvidenceMap(steps = verificationSteps, options = {}) {
+  const thresholdMs = options.thresholdMs ?? VERIFICATION_SLOW_EVIDENCE_THRESHOLD_MS;
+  const byId = new Map(steps.map((item) => [item.id, item]));
+  const slowOwners = steps.filter((item) => (
+    item.profiles.includes('core')
+    && ['Integration', 'System'].includes(item.testing?.executionBoundary)
+    && item.testing.targetDurationMs >= thresholdMs
+  ));
+  const includedIds = new Set(slowOwners.map((item) => item.id));
+  for (const item of slowOwners) includedIds.add(item.testing.primaryEvidenceOwner);
+  const entries = [...includedIds].map((id) => {
+    const item = byId.get(id);
+    if (!item) return Object.freeze({ id, missing: true });
+    const primaryEvidenceOwner = item.testing?.primaryEvidenceOwner;
+    const evidence = item.testing?.evidence;
+    return Object.freeze({
+      id,
+      executionBoundary: item.testing?.executionBoundary ?? null,
+      targetDurationMs: item.testing?.targetDurationMs ?? null,
+      publicOutcome: evidence?.publicOutcome ?? null,
+      counterexample: evidence?.counterexample ?? null,
+      retainedBoundary: evidence?.retainedBoundary ?? null,
+      decision: evidence?.decision ?? null,
+      primaryEvidenceOwner,
+      evidenceRole: id === primaryEvidenceOwner ? 'primary' : 'supporting',
+    });
+  });
+  const findings = [];
+  const entryById = new Map(entries.map((item) => [item.id, item]));
+  for (const owner of slowOwners) {
+    const entry = entryById.get(owner.id);
+    if (!entry || entry.missing) findings.push({ step: owner.id, code: 'slow_evidence_owner_missing' });
+    else {
+      for (const field of ['publicOutcome', 'counterexample', 'retainedBoundary', 'decision']) {
+        if (typeof entry[field] !== 'string' || entry[field].trim().length === 0) findings.push({ step: owner.id, code: `slow_evidence_${field}_missing` });
+      }
+    }
+    const primary = entryById.get(owner.testing.primaryEvidenceOwner);
+    if (!primary || primary.missing) findings.push({ step: owner.id, code: 'slow_evidence_primary_owner_missing', value: owner.testing.primaryEvidenceOwner });
+    else if (primary.evidenceRole !== 'primary') findings.push({ step: owner.id, code: 'slow_evidence_primary_owner_not_primary', value: owner.testing.primaryEvidenceOwner });
+  }
+  const primaryClaims = new Map();
+  for (const entry of entries.filter((item) => !item.missing && item.evidenceRole === 'primary')) {
+    primaryClaims.set(entry.primaryEvidenceOwner, [...(primaryClaims.get(entry.primaryEvidenceOwner) ?? []), entry.id]);
+  }
+  for (const owner of new Set(entries.filter((item) => !item.missing).map((item) => item.primaryEvidenceOwner))) {
+    const claims = primaryClaims.get(owner) ?? [];
+    if (claims.length !== 1) findings.push({ step: owner, code: 'slow_evidence_primary_claim_count', value: claims.length });
+  }
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-primary-evidence-map/v1',
+    thresholdMs,
+    ok: findings.length === 0,
+    entries: Object.freeze(entries),
+    findings: Object.freeze(findings),
+  });
+}
+
+export function auditDailyCoreReleaseEvidence(steps = verificationSteps) {
+  const releaseOnly = steps.filter((item) => item.testing?.primaryIntent === 'Delivery / Release');
+  const findings = [];
+  for (const item of releaseOnly) {
+    if (item.profiles.includes('core')) findings.push({ step: item.id, code: 'release_only_step_in_daily_core' });
+    if (item.profiles.includes('candidate') && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, item.id)) {
+      findings.push({ step: item.id, code: 'release_only_candidate_exclusion_missing' });
+    }
+  }
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-release-evidence-audit/v1',
+    ok: findings.length === 0,
+    dailyProfile: 'core',
+    candidateShardPrefixIsDailyProfile: false,
+    releaseOnlyStepIds: Object.freeze(releaseOnly.map((item) => item.id)),
+    findings: Object.freeze(findings),
+  });
+}
+
+export function createVerificationSelectionAudit(plan) {
+  const scopeMappings = (plan.scope?.reasons ?? []).filter((item) => item.code === 'affected-owner');
+  const directMappings = scopeMappings.length > 0 ? scopeMappings : (plan.paths ?? []).flatMap((productPath) => {
+    const owners = (plan.steps ?? [])
+      .filter((item) => (item.reasons ?? []).some((reason) => reason.startsWith(`${productPath} matches `) && !reason.includes('full-scope owner')))
+      .map((item) => item.id);
+    return owners.length === 0 ? [] : [Object.freeze({ code: 'direct-owner', path: productPath, owners: Object.freeze(owners) })];
+  });
+  const directOwnerIds = [...new Set(directMappings.flatMap((item) => item.owners ?? []))];
+  const selectedStepIds = (plan.steps ?? []).map((item) => item.id);
+  const dependencyStepIds = (plan.steps ?? [])
+    .filter((item) => !directOwnerIds.includes(item.id) && (item.reasons ?? []).some((reason) => reason.startsWith('dependency of ')))
+    .map((item) => item.id);
+  const heavySelectedStepIds = (plan.steps ?? [])
+    .filter((item) => ['Integration', 'System'].includes(item.testing?.executionBoundary))
+    .map((item) => item.id);
+  const directHeavyOwnerIds = directOwnerIds.filter((id) => {
+    const boundary = plan.steps?.find((item) => item.id === id)?.testing?.executionBoundary;
+    return ['Integration', 'System'].includes(boundary);
+  });
+  const fullReasons = (plan.scope?.reasons ?? []).filter((item) => item.code !== 'affected-owner');
+  const stepSelections = (plan.steps ?? []).map((item) => {
+    const triggers = [];
+    for (const mapping of directMappings.filter((entry) => entry.owners?.includes(item.id))) {
+      triggers.push(Object.freeze({ kind: 'direct-owner', path: mapping.path }));
+    }
+    if (fullReasons.length > 0 && item.profiles?.includes('core')) {
+      triggers.push(Object.freeze({
+        kind: 'full-scope',
+        reasons: Object.freeze(fullReasons.map((reason) => Object.freeze({
+          code: reason.code,
+          path: reason.path ?? null,
+          pattern: reason.pattern ?? reason.owners?.[0] ?? null,
+          explanation: reason.explanation ?? null,
+        }))),
+      }));
+    }
+    for (const reason of item.reasons ?? []) {
+      const dependency = /^dependency of (.+)$/u.exec(reason);
+      if (dependency) triggers.push(Object.freeze({ kind: 'dependency-closure', parentStepId: dependency[1] }));
+      else if (reason.startsWith('profile ')) triggers.push(Object.freeze({ kind: 'profile', profile: reason.slice('profile '.length) }));
+      else if (reason.startsWith('group ')) triggers.push(Object.freeze({ kind: 'group', group: reason.slice('group '.length) }));
+      else if (reason.startsWith('step ')) triggers.push(Object.freeze({ kind: 'explicit-step', stepId: reason.slice('step '.length) }));
+    }
+    if ((plan.admissionStepIds ?? []).includes(item.id)) triggers.push(Object.freeze({ kind: 'admission' }));
+    return Object.freeze({
+      stepId: item.id,
+      selectionKinds: Object.freeze([...new Set(triggers.map((trigger) => trigger.kind))]),
+      triggers: Object.freeze(triggers),
+      executionBoundary: item.testing?.executionBoundary ?? null,
+      primaryEvidenceOwner: item.testing?.primaryEvidenceOwner ?? null,
+      publicOutcome: item.testing?.evidence?.publicOutcome ?? item.testing?.proves ?? null,
+      targetDurationMs: item.testing?.targetDurationMs ?? null,
+    });
+  });
+  const layerCounts = Object.freeze(Object.fromEntries(
+    ['Static', 'Unit', 'Component', 'Integration', 'System'].map((boundary) => [
+      boundary,
+      stepSelections.filter((item) => item.executionBoundary === boundary).length,
+    ]),
+  ));
+  return Object.freeze({
+    schemaVersion: 'buildr.verification-selection-audit/v1',
+    status: plan.status,
+    scope: plan.scope,
+    changedPathCount: plan.paths?.length ?? 0,
+    directMappings: Object.freeze(directMappings),
+    directOwnerIds: Object.freeze(directOwnerIds),
+    dependencyStepIds: Object.freeze(dependencyStepIds),
+    selectedStepIds: Object.freeze(selectedStepIds),
+    heavySelectedStepIds: Object.freeze(heavySelectedStepIds),
+    stepSelections: Object.freeze(stepSelections),
+    layerCounts,
+    counts: Object.freeze({
+      directOwners: directOwnerIds.length,
+      directHeavyOwners: directHeavyOwnerIds.length,
+      dependencies: dependencyStepIds.length,
+      selectedSteps: selectedStepIds.length,
+      selectedHeavySteps: heavySelectedStepIds.length,
+    }),
+    selectionAmplification: directOwnerIds.length === 0 ? null : selectedStepIds.length / directOwnerIds.length,
+    heavySelectionAmplification: directHeavyOwnerIds.length === 0 ? null : heavySelectedStepIds.length / directHeavyOwnerIds.length,
+  });
+}
 
 export function validateCandidateCiCoverage(
   steps = verificationSteps,
@@ -131,7 +308,7 @@ export function matchesInput(productPath, pattern) {
   return globToRegExp(pattern).test(normalizeProductPath(productPath));
 }
 
-function matchedStepInput(step, productPath) {
+function ownedStepInput(step, productPath) {
   if (step.selection === 'explicit-only') return null;
   const matched = step.inputs.find((pattern) => matchesInput(productPath, pattern));
   if (!matched) return null;
@@ -139,8 +316,16 @@ function matchedStepInput(step, productPath) {
   return matched;
 }
 
+function matchedStepInput(step, productPath) {
+  if (step.testing?.primaryIntent === 'Delivery / Release') return null;
+  return ownedStepInput(step, productPath);
+}
+
 export function validateVerificationRegistry(steps = verificationSteps) {
-  const findings = [];
+  const ownershipValidation = steps === verificationSteps
+    ? validateVerificationStepOwnership(steps.map((item) => item.id))
+    : { findings: [] };
+  const findings = [...ownershipValidation.findings];
   const ids = new Set();
   for (const item of steps) {
     if (!item.id || ids.has(item.id)) findings.push({ step: item.id || '<missing>', code: 'duplicate_or_missing_id' });
@@ -219,21 +404,70 @@ export function validateVerificationRegistry(steps = verificationSteps) {
           findings.push({ step: item.id, code: 'quick_integration_not_isolated', value: forbidden.join(',') || executionEnvironment?.isolation });
         }
       }
+      if (item.admission === true && classification.targetDurationMs > 15000) {
+        findings.push({ step: item.id, code: 'admission_target_too_slow', value: classification.targetDurationMs });
+      }
+      if (item.admission === true && executionEnvironment?.footprints?.includes('workspace-lifecycle')) {
+        findings.push({ step: item.id, code: 'admission_workspace_lifecycle' });
+      }
+      if (item.admission === true && (item.resources?.length ?? 0) > 0) {
+        findings.push({ step: item.id, code: 'admission_resource_claim', value: item.resources.join(',') });
+      }
       if (item.budgetMs != null && item.budgetMs !== classification.targetDurationMs) {
         findings.push({ step: item.id, code: 'testing_target_budget_mismatch', value: item.budgetMs });
       }
     }
     if (!VERIFICATION_EXECUTORS.includes(item.executor?.type)) findings.push({ step: item.id, code: 'unknown_executor', value: item.executor?.type });
-    if (item.executor?.type === 'node-test' && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
+    if (['node-test', 'node-context-test'].includes(item.executor?.type) && (!Array.isArray(item.executor.files) || item.executor.files.length === 0)) {
       findings.push({ step: item.id, code: 'node_test_files_missing' });
-    } else if (item.executor?.type === 'node-test') {
+    } else if (['node-test', 'node-context-test'].includes(item.executor?.type)) {
+      if (item.testing?.primaryEvidenceOwner !== item.id) {
+        findings.push({ step: item.id, code: 'node_test_primary_evidence_owner_mismatch', value: item.testing?.primaryEvidenceOwner });
+      }
       for (const file of item.executor.files) {
         try { normalizeProductPath(file); } catch { findings.push({ step: item.id, code: 'node_test_file_invalid', value: file }); }
       }
     }
     if (!VERIFICATION_CONCURRENCY.classes[item.concurrencyClass]) findings.push({ step: item.id, code: 'unknown_concurrency_class', value: item.concurrencyClass });
+    if (!Array.isArray(item.contexts) || new Set(item.contexts ?? []).size !== (item.contexts?.length ?? -1)) {
+      findings.push({ step: item.id, code: 'invalid_contexts' });
+    } else for (const context of item.contexts) if (!VERIFICATION_CONTEXT_KEYS.includes(context)) {
+      findings.push({ step: item.id, code: 'unknown_context', value: context });
+    }
+    if (!VERIFICATION_ISOLATION_MODES.includes(item.isolationMode)) findings.push({ step: item.id, code: 'invalid_isolation_mode', value: item.isolationMode });
+    if (!VERIFICATION_RESET_STRATEGIES.includes(item.resetStrategy)) findings.push({ step: item.id, code: 'invalid_reset_strategy', value: item.resetStrategy });
+    if (!VERIFICATION_PARALLEL_SAFETY.includes(item.parallelSafety)) findings.push({ step: item.id, code: 'invalid_parallel_safety', value: item.parallelSafety });
+    if (!item.resourceDemand || typeof item.resourceDemand !== 'object' || Array.isArray(item.resourceDemand)) {
+      findings.push({ step: item.id, code: 'invalid_resource_demand' });
+    } else {
+      const demandEntries = Object.entries(item.resourceDemand);
+      if (!Object.hasOwn(item.resourceDemand, 'workers') || !Object.hasOwn(item.resourceDemand, 'processes')) findings.push({ step: item.id, code: 'resource_demand_required_dimension_missing' });
+      for (const [dimension, value] of demandEntries) {
+        if (!VERIFICATION_RESOURCE_DEMANDS.includes(dimension)) findings.push({ step: item.id, code: 'unknown_resource_demand', value: dimension });
+        else if (!Number.isInteger(value) || value < 1) findings.push({ step: item.id, code: 'invalid_resource_demand', value: `${dimension}:${value}` });
+        else if (value > (VERIFICATION_CONCURRENCY.capacities?.[dimension] ?? 0)) findings.push({ step: item.id, code: 'unsatisfied_resource_demand', value: `${dimension}:${value}>${VERIFICATION_CONCURRENCY.capacities?.[dimension] ?? 0}` });
+      }
+    }
     for (const resource of item.resources ?? []) {
-      if (!VERIFICATION_CONCURRENCY.resources?.[resource]) findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
+      if (!VERIFICATION_CONCURRENCY.resources?.[resource]) {
+        findings.push({ step: item.id, code: 'unknown_concurrency_resource', value: resource });
+        continue;
+      }
+      const contract = VERIFICATION_RESOURCE_CONTRACTS[resource];
+      if (!contract) {
+        findings.push({ step: item.id, code: 'resource_contract_missing', value: resource });
+        continue;
+      }
+      const environment = item.testing?.environment;
+      if (contract.requiredFootprints.some((footprint) => !environment?.footprints?.includes(footprint))) {
+        findings.push({ step: item.id, code: 'resource_footprint_mismatch', value: resource });
+      }
+      if (environment?.isolation !== contract.isolation) {
+        findings.push({ step: item.id, code: 'resource_isolation_mismatch', value: resource });
+      }
+      if (!contract.resetBurdens.includes(item.testing?.resetBurden)) {
+        findings.push({ step: item.id, code: 'resource_cleanup_mismatch', value: resource });
+      }
     }
     if (item.schedulingCostMs != null && (!Number.isInteger(item.schedulingCostMs) || item.schedulingCostMs < 1)) {
       findings.push({ step: item.id, code: 'invalid_scheduling_cost', value: item.schedulingCostMs });
@@ -246,6 +480,19 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     }
     for (const profile of item.profiles ?? []) if (!VERIFICATION_PROFILES.includes(profile)) findings.push({ step: item.id, code: 'unknown_profile', value: profile });
     for (const group of item.groups ?? []) if (!VERIFICATION_GROUPS.includes(group)) findings.push({ step: item.id, code: 'unknown_group', value: group });
+  }
+  if (steps === verificationSteps) {
+    const coreIds = new Set(steps.filter((item) => item.profiles.includes('core')).map((item) => item.id));
+    const candidateIds = new Set(steps.filter((item) => item.profiles.includes('candidate')).map((item) => item.id));
+    for (const id of coreIds) if (!candidateIds.has(id)) findings.push({ step: id, code: 'core_step_not_candidate' });
+    for (const [id, reason] of Object.entries(VERIFICATION_DAILY_CORE_EXCLUSIONS)) {
+      if (!candidateIds.has(id)) findings.push({ step: id, code: 'core_exclusion_not_candidate' });
+      if (coreIds.has(id)) findings.push({ step: id, code: 'core_exclusion_in_core' });
+      if (typeof reason !== 'string' || reason.trim().length === 0) findings.push({ step: id, code: 'core_exclusion_reason_missing' });
+    }
+    for (const id of candidateIds) {
+      if (!coreIds.has(id) && !Object.hasOwn(VERIFICATION_DAILY_CORE_EXCLUSIONS, id)) findings.push({ step: id, code: 'candidate_step_core_disposition_missing' });
+    }
   }
   for (const item of steps) for (const dependency of item.dependsOn ?? []) {
     if (!ids.has(dependency)) findings.push({ step: item.id, code: 'unknown_dependency', value: dependency });
@@ -279,6 +526,8 @@ export function validateVerificationRegistry(steps = verificationSteps) {
     visited.add(id);
   };
   for (const item of steps) visit(item.id);
+  findings.push(...createVerificationEvidenceMap(steps).findings);
+  findings.push(...auditDailyCoreReleaseEvidence(steps).findings);
   if (steps === verificationSteps) findings.push(...validateCandidateCiCoverage(steps).findings);
   return { ok: findings.length === 0, findings };
 }
@@ -308,7 +557,7 @@ export function auditVerificationInputCoverage(paths, steps = verificationSteps)
   const unmapped = [];
   for (const rawPath of paths) {
     const productPath = normalizeProductPath(rawPath);
-    const owners = steps.filter((item) => matchedStepInput(item, productPath)).map((item) => item.id);
+    const owners = steps.filter((item) => ownedStepInput(item, productPath)).map((item) => item.id);
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
@@ -384,6 +633,79 @@ function topologicalOrder(selected, steps) {
   return order;
 }
 
+export function estimateVerificationPlan(plan, options = {}) {
+  const concurrency = options.concurrency ?? VERIFICATION_CONCURRENCY;
+  const declaredBudgetMs = options.declaredBudgetMs ?? null;
+  const missingStepBudgets = plan.steps.filter((step) => !Number.isFinite(step.budgetMs) || step.budgetMs < 0).map((step) => step.id);
+  const totalTargetDurationMs = plan.steps.reduce((total, step) => total + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0), 0);
+  const globalCapacity = concurrency.global;
+  const globalCapacityLowerBoundMs = globalCapacity > 0 ? Math.ceil(totalTargetDurationMs / globalCapacity) : Number.POSITIVE_INFINITY;
+  const criticalPaths = new Map();
+  for (const step of plan.steps) {
+    const dependencies = (step.dependsOn ?? []).map((id) => criticalPaths.get(id)).filter(Boolean);
+    const longest = dependencies.sort((left, right) => right.durationMs - left.durationMs)[0] ?? { durationMs: 0, stepIds: [] };
+    criticalPaths.set(step.id, Object.freeze({
+      durationMs: longest.durationMs + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0),
+      stepIds: Object.freeze([...longest.stepIds, step.id]),
+    }));
+  }
+  const dependencyCriticalPath = [...criticalPaths.values()].sort((left, right) => right.durationMs - left.durationMs)[0]
+    ?? Object.freeze({ durationMs: 0, stepIds: Object.freeze([]) });
+  const resourceCapacityLowerBounds = Object.freeze(Object.entries(concurrency.resources ?? {}).map(([resource, capacity]) => {
+    const resourceSteps = plan.steps.filter((step) => (step.resources ?? []).includes(resource));
+    const stepIds = resourceSteps.map((step) => step.id);
+    const targetDurationMs = resourceSteps.reduce((total, step) => total + (Number.isFinite(step.budgetMs) ? step.budgetMs : 0), 0);
+    return Object.freeze({
+      resource,
+      capacity,
+      stepIds: Object.freeze(stepIds),
+      targetDurationMs,
+      lowerBoundMs: capacity > 0 ? Math.ceil(targetDurationMs / capacity) : Number.POSITIVE_INFINITY,
+    });
+  }));
+  const constraints = [
+    Object.freeze({ kind: 'global-capacity', id: 'global', lowerBoundMs: globalCapacityLowerBoundMs, capacity: globalCapacity }),
+    Object.freeze({ kind: 'dependency-critical-path', id: dependencyCriticalPath.stepIds.join(' -> ') || 'none', lowerBoundMs: dependencyCriticalPath.durationMs, stepIds: dependencyCriticalPath.stepIds }),
+    ...resourceCapacityLowerBounds.map((item) => Object.freeze({ kind: 'resource-capacity', id: item.resource, lowerBoundMs: item.lowerBoundMs, capacity: item.capacity, stepIds: item.stepIds })),
+  ];
+  const minimumFeasibleDurationMs = constraints.reduce((maximum, item) => Math.max(maximum, item.lowerBoundMs), 0);
+  const limitingConstraints = Object.freeze(constraints.filter((item) => item.lowerBoundMs === minimumFeasibleDurationMs));
+  const feasible = declaredBudgetMs == null
+    ? null
+    : missingStepBudgets.length === 0 && declaredBudgetMs >= minimumFeasibleDurationMs;
+  return Object.freeze({
+    stepCount: plan.steps.length,
+    totalTargetDurationMs,
+    missingStepBudgets: Object.freeze(missingStepBudgets),
+    globalCapacity: Object.freeze({ capacity: globalCapacity, lowerBoundMs: globalCapacityLowerBoundMs }),
+    dependencyCriticalPath,
+    resourceCapacityLowerBounds,
+    minimumFeasibleDurationMs,
+    limitingConstraints,
+    declaredBudgetMs,
+    feasible,
+  });
+}
+
+export function admitVerificationPlanBudget(plan, options = {}) {
+  const estimate = estimateVerificationPlan(plan, options);
+  if (plan.status === 'blocked' || estimate.feasible !== false) return Object.freeze({ ...plan, estimate });
+  return Object.freeze({
+    ...plan,
+    status: 'blocked',
+    diagnostic: Object.freeze({
+      code: estimate.missingStepBudgets.length > 0 ? 'verification-step-budget-missing' : 'verification-budget-infeasible',
+      message: estimate.missingStepBudgets.length > 0
+        ? 'Verification plan contains executable steps without target budgets.'
+        : `Verification plan lower bound ${estimate.minimumFeasibleDurationMs}ms exceeds declared budget ${estimate.declaredBudgetMs}ms.`,
+      missingStepBudgets: estimate.missingStepBudgets,
+      limitingConstraints: estimate.limitingConstraints,
+      nextActions: Object.freeze(['Adjust the declared budget or the required execution graph before running verification.']),
+    }),
+    estimate,
+  });
+}
+
 export function createVerificationPlan(request = {}, steps = verificationSteps) {
   const validation = validateVerificationRegistry(steps);
   if (!validation.ok) throw new Error(`Invalid verification registry:\n${validation.findings.map((item) => `${item.step}: ${item.code}${item.value ? ` (${item.value})` : ''}`).join('\n')}`);
@@ -392,16 +714,30 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   const reasons = new Map();
   const paths = [...new Set((request.paths ?? []).map(normalizeProductPath))];
   const productionOwnerAudit = auditProductionOwnerCoverage(paths, steps);
-  if (!productionOwnerAudit.ok) {
-    throw new Error(`Production source owner coverage gap:\n${productionOwnerAudit.gaps.map((item) => `- ${item.path}`).join('\n')}`);
-  }
   const profiles = [...new Set(request.profiles ?? [])];
   const groups = [...new Set(request.groups ?? [])];
   const stepIds = [...new Set(request.stepIds ?? [])];
-  const fullScopeExemptPaths = new Set((request.fullScopeExemptPaths ?? []).map(normalizeProductPath));
-  const fullScopeMatches = paths.filter((productPath) => !fullScopeExemptPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_INPUTS
-    .filter((pattern) => matchesInput(productPath, pattern))
-    .map((pattern) => ({ productPath, pattern })));
+  const versionOnlyPackagePaths = new Set((request.versionOnlyPackagePaths ?? []).map(normalizeProductPath));
+  const selectionOnlyPaths = new Set([
+    ...versionOnlyPackagePaths,
+    ...(request.selectionOnlyPaths ?? []).map(normalizeProductPath),
+  ]);
+  const selectionReasons = new Map((request.selectionReasons ?? []).map((item) => [normalizeProductPath(item.path), item.code]));
+  for (const productPath of versionOnlyPackagePaths) {
+    if (!paths.includes(productPath)) throw new Error(`Version-only package path is not part of the changed paths: ${productPath}`);
+    if (!['package.json', 'package-lock.json'].includes(productPath)) throw new Error(`Invalid version-only package path: ${productPath}`);
+  }
+  for (const productPath of selectionOnlyPaths) {
+    if (!paths.includes(productPath)) throw new Error(`Selection-only metadata path is not part of the changed paths: ${productPath}`);
+    if (!VERIFICATION_SELECTION_METADATA_INPUTS.includes(productPath)) throw new Error(`Invalid selection-only metadata path: ${productPath}`);
+  }
+  for (const [productPath, code] of selectionReasons) {
+    if (!selectionOnlyPaths.has(productPath)) throw new Error(`Selection reason path is not classified as selection-only: ${productPath}`);
+    if (typeof code !== 'string' || code.length === 0) throw new Error(`Invalid selection reason code for path: ${productPath}`);
+  }
+  const fullScopeMatches = paths.filter((productPath) => !selectionOnlyPaths.has(productPath)).flatMap((productPath) => VERIFICATION_FULL_SCOPE_AUTHORITIES
+    .filter((authority) => matchesInput(productPath, authority.pattern))
+    .map((authority) => ({ productPath, authority })));
   for (const id of stepIds) {
     if (!byId.has(id)) throw new Error(`Unknown verification step: ${id}`);
     selected.add(id);
@@ -414,16 +750,6 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `profile ${profile}`]);
     }
   }
-  if (fullScopeMatches.length > 0) {
-    for (const item of steps) if (item.profiles.includes('candidate')) {
-      selected.add(item.id);
-      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeMatches.map(({ productPath, pattern }) => (
-        ['package.json', 'package-lock.json'].includes(productPath)
-          ? `${productPath} contains unverified or non-version package metadata changes; matches full-scope owner ${pattern}`
-          : `${productPath} matches full-scope owner ${pattern}`
-      ))]);
-    }
-  }
   for (const group of groups) {
     if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
     for (const item of steps) if (item.groups.includes(group)) {
@@ -433,27 +759,97 @@ export function createVerificationPlan(request = {}, steps = verificationSteps) 
   }
   const unmatchedPaths = [];
   const delegatedPaths = [];
+  const mappedPaths = [];
+  const ignoredPaths = [];
   for (const productPath of paths) {
     const matched = steps.filter((item) => matchedStepInput(item, productPath));
+    const releaseOwners = steps
+      .filter((item) => item.testing?.primaryIntent === 'Delivery / Release' && ownedStepInput(item, productPath))
+      .map((item) => item.id);
     const delegatedOwners = VERIFICATION_DELEGATED_INPUTS
       .filter((item) => item.inputs.some((pattern) => matchesInput(productPath, pattern)))
       .map((item) => item.owner);
-    if (matched.length === 0 && delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
-    else if (matched.length === 0 && !VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) unmatchedPaths.push(productPath);
+    if (matched.length > 0) mappedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(matched.map((item) => item.id)) }));
+    else if (releaseOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(['product.candidate-release']) }));
+    else if (delegatedOwners.length > 0) delegatedPaths.push(Object.freeze({ path: productPath, owners: Object.freeze(delegatedOwners) }));
+    else if (VERIFICATION_IGNORED_INPUTS.some((pattern) => matchesInput(productPath, pattern))) ignoredPaths.push(productPath);
+    else unmatchedPaths.push(productPath);
     for (const item of matched) {
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `${productPath} matches ${matchedStepInput(item, productPath)}`]);
     }
   }
-  if (unmatchedPaths.length > 0) throw new Error(`Unmapped Product paths:\n${unmatchedPaths.map((item) => `- ${item}`).join('\n')}`);
+  const fallbackPaths = [...new Set([...unmatchedPaths, ...productionOwnerAudit.gaps.map((item) => item.path)])].sort();
+  const fullScopeReasons = [
+    ...fullScopeMatches.map(({ productPath, authority }) => ({
+      code: authority.code,
+      path: productPath,
+      pattern: authority.pattern,
+      explanation: authority.explanation,
+      owners: Object.freeze([authority.pattern]),
+      message: `${productPath} matches full-scope owner ${authority.pattern}: ${authority.explanation}`,
+    })),
+  ];
+  if (fullScopeReasons.length > 0) {
+    for (const item of steps) if (item.profiles.includes('core')) {
+      selected.add(item.id);
+      reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason) => reason.message)]);
+    }
+  }
   expandDependencies(selected, byId, reasons);
   const orderedIds = topologicalOrder(selected, steps);
+  const scopeMode = fullScopeReasons.length > 0 || profiles.some((profile) => ['core', 'candidate'].includes(profile))
+    ? 'full'
+    : (mappedPaths.length > 0 || selectionOnlyPaths.size > 0)
+      ? 'affected'
+      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0)
+        ? 'explicit'
+        : 'not-applicable';
+  const scopeReasons = [
+    ...fullScopeReasons.map(({ message: _message, ...reason }) => Object.freeze(reason)),
+    ...(scopeMode === 'affected' ? mappedPaths
+      .filter((item) => !selectionOnlyPaths.has(item.path))
+      .map((item) => Object.freeze({ code: 'affected-owner', path: item.path, owners: item.owners })) : []),
+    ...[...selectionOnlyPaths].map((productPath) => Object.freeze({
+      code: selectionReasons.get(productPath) ?? (versionOnlyPackagePaths.has(productPath) ? 'version-only-package-metadata' : 'selection-metadata-change'),
+      path: productPath,
+      owners: Object.freeze(mappedPaths.find((item) => item.path === productPath)?.owners ?? []),
+    })),
+  ];
+  if (fallbackPaths.length > 0) {
+    return Object.freeze({
+      status: 'blocked',
+      diagnostic: Object.freeze({
+        code: 'verification-owner-gap',
+        message: 'Product changed paths require explicit verification ownership before execution.',
+        unmapped: Object.freeze([...unmatchedPaths].sort()),
+        productionOwnerGaps: productionOwnerAudit.gaps,
+        nextActions: Object.freeze(['Add or repair ownership declarations for every reported path, then regenerate the plan.']),
+      }),
+      paths: Object.freeze(paths),
+      profiles: Object.freeze(profiles),
+      groups: Object.freeze(groups),
+      stepIds: Object.freeze(stepIds),
+      scope: Object.freeze({ mode: 'blocked', reasons: Object.freeze(scopeReasons) }),
+      delegated: Object.freeze(delegatedPaths),
+      ignored: Object.freeze(ignoredPaths),
+      unmapped: Object.freeze(unmatchedPaths),
+      productionOwnerGaps: productionOwnerAudit.gaps,
+      steps: Object.freeze([]),
+    });
+  }
   return Object.freeze({
+    status: 'ready',
+    diagnostic: null,
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
     stepIds: Object.freeze(stepIds),
+    scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),
     delegated: Object.freeze(delegatedPaths),
+    ignored: Object.freeze(ignoredPaths),
+    unmapped: Object.freeze(unmatchedPaths),
+    productionOwnerGaps: productionOwnerAudit.gaps,
     steps: Object.freeze(orderedIds.map((id) => Object.freeze({ ...byId.get(id), reasons: Object.freeze(reasons.get(id) ?? []) }))),
   });
 }

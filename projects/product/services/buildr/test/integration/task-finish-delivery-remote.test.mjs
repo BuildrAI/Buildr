@@ -5,10 +5,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { resolveTaskFinishDeliveryRemote } from '../../src/application/task-finish/task-finish-delivery-remote.mjs';
-import { resolveTaskFinishTargetBranch } from '../../src/application/task-finish/task-finish-delivery-target.mjs';
-import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/application/task-finish/git-task-contribution.mjs';
+import { resolveTaskFinishDeliveryRemote } from '../../src/task/application/finish/task-finish-delivery-remote.mjs';
+import { resolveTaskFinishTargetBranch } from '../../src/task/application/finish/task-finish-delivery-target.mjs';
+import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
+import { createIsolatedGitCarrier, observeGitTaskContribution } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args) {

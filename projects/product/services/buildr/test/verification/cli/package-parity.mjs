@@ -63,7 +63,7 @@ try {
   const packagedRoot = path.join(prefix, 'node_modules', '@buildr-ai', 'buildr');
   assert.equal(fs.existsSync(path.join(packagedRoot, 'src')), false, 'npm artifact must not republish private product source');
   assert.equal(fs.existsSync(path.join(packagedRoot, 'runtime', 'buildr.cjs')), true, 'npm artifact must contain the bundled public runtime');
-  const webDist = path.join(packagedRoot, 'payload', 'product', 'src', 'interfaces', 'local-app', 'web-dist');
+  const webDist = path.join(packagedRoot, 'payload', 'product', 'web-dist');
   for (const relative of ['index.html', 'assets']) assert.ok(fs.existsSync(path.join(webDist, relative)), `packaged Buildr Web dist asset is missing: ${relative}`);
   const distAssets = fs.readdirSync(path.join(webDist, 'assets'));
   assert.ok(distAssets.some((name) => name.endsWith('.js')), 'packaged Buildr Web web-dist must include built JS assets');

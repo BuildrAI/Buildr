@@ -5,8 +5,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-development-driver.mjs');
-const RUNNER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-development-driver-runner.mjs');
+const DRIVER = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-development-driver.mjs');
+const RUNNER = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-development-driver-runner.mjs');
 
 function run(args, expectedStatus = 0) {
   const result = spawnSync(process.execPath, [DRIVER, ...args], { encoding: 'utf8' });
@@ -18,7 +18,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   const global = JSON.parse(run(['--help']).stdout);
   assert.equal(global.schemaVersion, 'buildr.task-development-driver-help/v1');
   assert.equal(global.action, null);
-  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
+  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
   assert.match(global.usage, /--compact \| --profile/);
 
@@ -49,7 +49,7 @@ test('schema与example输出closed input contract', () => {
 test('发现路径在runtime dynamic import前返回', () => {
   const source = fs.readFileSync(RUNNER, 'utf8');
   const discoveryExit = source.indexOf('if (discoveryFlags.length === 1)');
-  const runtimeImport = source.indexOf("await import('../../application/compose-runtime.mjs')");
+  const runtimeImport = source.indexOf("await import('../../../bootstrap/runtime.mjs')");
   assert.equal(discoveryExit >= 0, true);
   assert.equal(runtimeImport > discoveryExit, true);
   const result = run(['policy', '--schema']);

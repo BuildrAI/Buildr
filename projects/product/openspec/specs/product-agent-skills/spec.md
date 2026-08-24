@@ -330,7 +330,7 @@ Buildr Product Skill MUST explain the canonical Project fields, source boundary,
 - **THEN** Skill MUST 引导 Agent 结合当前任务判断，而不是让 Buildr 自动切换分支
 
 ### Requirement: Git Operations 生成精简提交信息
-Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循 Core 和更具体的提交语言约定。
+Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的 Conventional Commits 提交信息规则，并 MUST 遵循当前 workspace、Project、Service 和 repository 的提交语言约定。
 
 #### Scenario: 生成提交主题
 - **WHEN** Agent 为已确认提交范围生成 commit message
@@ -346,11 +346,11 @@ Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的
 
 #### Scenario: 应用提交语言约定
 - **WHEN** Agent 使用 Git Operations 生成 commit message
-- **THEN** Git Operations MUST 遵循 Core 的默认提交语言和当前 scope 的更具体约定
-- **AND** Git Operations MUST NOT 在 Skill 正文中复制 Core 的语言约束
+- **THEN** Git Operations MUST 遵循当前 workspace `AGENTS.md` 的默认提交语言和当前 scope 的更具体约定
+- **AND** Git Operations MUST NOT 在 Skill 正文中创建与 workspace 规则竞争的独立语言默认
 
 #### Scenario: 仓库已有明确格式
-- **WHEN** 项目或仓库规则定义了比 Git Operations 默认格式更具体的提交约定
+- **WHEN** 项目或仓库规则定义了比 workspace 默认格式更具体的提交约定
 - **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
 ### Requirement: 产品入口 Buildr Skill 路由 Task Retrospective
@@ -510,32 +510,6 @@ Task Finish Skill MUST只在retained Finish Result或Execution Record证明exist
 - **THEN** Agent MUST说明版本检查暂不可用
 - **AND** MUST NOT把该结果解释为 Workspace Doctor 失败
 
-### Requirement: Package 必须投射独立 UI Preview Skill
-Buildr package MUST 提供 id 为 `ui-preview` 的 optional workspace Skill，并 MUST 将其作为普通 `skills/buildr/*` 资产同步和投射到支持的 Agent runtime。第一版 MUST NOT 为该 Skill 建立 capability contract、provider binding 或与编码式原型合并的入口。
-
-#### Scenario: Workspace 同步 UI Preview Skill
-- **WHEN** Buildr 将 package 资产同步到支持的 workspace runtime
-- **THEN** `ui-preview` MUST 作为 optional builtin Skill 可被发现
-- **AND** 用户卸载 optional Skill 时 MUST 遵守现有 builtin 卸载与投射语义
-
-#### Scenario: 审查能力边界
-- **WHEN** 维护者检查 `ui-preview` 的 package manifest 与 Skill 正文
-- **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
-- **AND** MUST 明确区别于正式设计、视觉重构和真实前端工程中的编码式原型
-
-### Requirement: UI 相关研发流程必须执行非阻塞 Preview 询问
-Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply contributions MUST 在当前任务可能改变前端 UI 时询问用户是否需要 UI Preview，并 MUST 只在明确确认后路由到 `ui-preview`。询问与产物 MUST NOT 成为 Planning Review、Development、Verification、Finish 或 Task 状态的 gate。
-
-#### Scenario: OpenSpec 方案包含 UI 变化
-- **WHEN** proposal、design 或 delta spec 表明本次 Change 会产生用户可见 UI 变化
-- **THEN** Agent MUST 确认用户是否需要 UI Preview
-- **AND** 明确需要时 MUST 在正式实现前完成现有 UI 调查、预演生成与浏览器验证
-
-#### Scenario: 用户跳过 UI Preview
-- **WHEN** 用户不需要预演或没有明确确认
-- **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
-- **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker
-
 ### Requirement: 产品内置 Skill 必须能发现并执行项目每日演进
 Buildr package MUST 提供可投射的产品 Skill，使 Agent 能发现「展示或生成项目每日演进」意图，并 MUST 引导 Agent：先同步最新代码，再收集目标日期的全部 Git 提交与更改文件，用本机 `git config user.email` 对比作者，总结四问日摘要并判断自己的提交是否关联已有 Task，最后通过 Daily Progress Application/CLI 写入 `.buildr/daily-progress/<project-code>/` 当天文件。该 Skill MUST NOT 让 Buildr 产品在读取路径扫描 Git 或自动撰写摘要，MUST NOT 把每日演进写入 Task Record，MUST NOT 为他人提交挂 Task，也 MUST NOT 要求产品 cron。
 
@@ -548,3 +522,34 @@ Buildr package MUST 提供可投射的产品 Skill，使 Agent 能发现「展�
 - **WHEN** 用户询问每日演进是否自动执行
 - **THEN** Skill MUST 说明这取决于 Agent 宿主定时器
 - **AND** MUST NOT 引导实现 Buildr 产品 cron
+
+### Requirement: Package 必须投射独立 UI Prototype Skill
+Buildr package MUST 提供 id 为 `ui-prototype` 的 optional workspace Skill，并 MUST 将其作为普通 `skills/buildr/*` 资产同步和投射到支持的 Agent runtime。该 Skill MUST NOT 建立 capability contract 或 provider binding；用户在适用 scope 提供同名 Skill 时，MUST 沿用现有 Skill 重载与选择语义替换默认实现。
+
+#### Scenario: Workspace 同步 UI Prototype Skill
+- **WHEN** Buildr 将 package 资产同步到支持的 workspace runtime
+- **THEN** `ui-prototype` MUST 作为 optional builtin Skill 可被发现
+- **AND** 用户卸载或同名重载 optional Skill 时 MUST 遵守现有 builtin 投射与 Skill selection 语义
+
+#### Scenario: 审查能力边界
+- **WHEN** 维护者检查 `ui-prototype` 的 package manifest 与 Skill 正文
+- **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
+- **AND** MUST 明确区别于正式设计、canonical specs 和真实前端工程中的编码式原型
+
+### Requirement: UI 相关研发流程必须路由原型并默认遵循已有原型
+Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply contributions MUST 在当前任务可能改变前端 UI 时询问用户是否需要 UI Prototype，并 MUST 只在明确确认后路由到 selected `ui-prototype`。一旦 Task 已生成原型，后续正式前端实现 MUST 默认读取并按原型的信息架构、布局和交互开发，除非用户明确要求忽略。询问、产物与忽略选择 MUST NOT 成为 Planning Review、Development、Verification、Finish 或 Task 状态的 gate。
+
+#### Scenario: OpenSpec 方案包含 UI 变化
+- **WHEN** proposal、design 或 delta spec 表明本次 Change 会产生用户可见 UI 变化
+- **THEN** Agent MUST 确认用户是否需要 UI Prototype
+- **AND** 明确需要时 MUST 在正式实现前完成现有 UI 调查、一个或多个原型页面生成与浏览器验证
+
+#### Scenario: 已有原型且用户未忽略
+- **WHEN** 正式前端实现开始前已存在当前 Task 的 UI Prototype，且用户没有明确要求忽略
+- **THEN** Agent MUST 读取全部相关原型并按其开发页面与交互
+- **AND** 需要成为正式行为的确认选择 MUST 写入 design、delta specs、Brief 与 tasks
+
+#### Scenario: 用户跳过生成或明确忽略已有原型
+- **WHEN** 用户不需要生成原型、没有明确确认生成，或明确要求忽略已有原型
+- **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
+- **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker

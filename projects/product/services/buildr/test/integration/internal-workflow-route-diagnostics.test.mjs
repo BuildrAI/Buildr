@@ -4,18 +4,18 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createInternalWorkflowRouteDiagnostics } from '../../src/application/doctor/internal-workflow-route-diagnostics.mjs';
-import { inspectRequiredInternalWorkflowRoutes } from '../../src/application/internal-workflow-route-inventory.mjs';
+import { createInternalWorkflowRouteDiagnostics } from '../../src/system/doctor/application/internal-workflow-route-diagnostics.mjs';
+import { inspectRequiredInternalWorkflowRoutes } from '../../src/task/contracts/internal-workflow-route-catalog.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const CONSUMERS = [
-  'package/targets/workspace/skills/buildr/task-development/SKILL.md',
-  'package/targets/workspace/skills/buildr/task-retrospective/SKILL.md',
-  'package/targets/workspace/skills/buildr/task-review/SKILL.md',
-  'package/targets/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
-  'package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
-  'package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
-  'package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
+  'resources/workspace/skills/buildr/task-development/SKILL.md',
+  'resources/workspace/skills/buildr/task-retrospective/SKILL.md',
+  'resources/workspace/skills/buildr/task-review/SKILL.md',
+  'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
+  'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
+  'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
+  'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
 ];
 
 function diagnostics(productRoot) {
@@ -42,8 +42,8 @@ test('Doctor reports a managed consumer that drifts back to a source-only driver
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(SERVICE_ROOT, relative), target);
   }
-  const retrospective = path.join(root, 'package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
-  fs.writeFileSync(retrospective, fs.readFileSync(retrospective, 'utf8').replaceAll('__internal task-retrospective', 'src/interfaces/internal/task-retrospective-driver.mjs'));
+  const retrospective = path.join(root, 'resources/workspace/skills/buildr/task-retrospective/SKILL.md');
+  fs.writeFileSync(retrospective, fs.readFileSync(retrospective, 'utf8').replaceAll('__internal task-retrospective', 'src/task/interfaces/internal/task-retrospective-driver.mjs'));
 
   const result = { findings: [] };
   diagnostics(root).diagnoseInternalWorkflowRoutes(result);

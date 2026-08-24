@@ -6,25 +6,25 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import {
   createIsolatedGitCarrier,
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
   observeGitTaskContribution,
-} from '../../src/application/task-finish/git-task-contribution.mjs';
+} from '../../src/task/application/finish/git-task-contribution.mjs';
 import { gitTaskContributionIdentity } from '../../src/infrastructure/git/git-task-contribution.mjs';
 import {
   createFinishRun,
   writeFinishCompletion,
-} from '../../src/application/task-finish/task-finish-run.mjs';
+} from '../../src/task/application/finish/task-finish-run.mjs';
 import {
   normalizeTaskFinishRepositorySet,
   taskFinishCarrierSetIdentity,
   taskFinishDeliverySetIdentity,
   taskFinishRepositorySetIdentity,
-} from '../../src/application/task-finish/task-finish-repository-set.mjs';
-import { executeRetainedTaskFinishCleanup } from '../../src/interfaces/internal/task-finish-retained-cleanup.mjs';
+} from '../../src/task/application/finish/task-finish-repository-set.mjs';
+import { executeRetainedTaskFinishCleanup } from '../../src/task/interfaces/internal/task-finish-retained-cleanup.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -205,7 +205,7 @@ async function realZeroDeltaCleanupRun(t) {
   const sourceServiceRoot = fileURLToPath(new URL('../..', import.meta.url));
   const targetServiceRoot = path.join(root, 'projects', 'product', 'services', 'buildr');
   fs.mkdirSync(targetServiceRoot, { recursive: true });
-  for (const entry of ['src', 'bin', 'package']) {
+  for (const entry of ['src', 'bin', 'resources', 'package']) {
     fs.cpSync(path.join(sourceServiceRoot, entry), path.join(targetServiceRoot, entry), { recursive: true });
   }
   for (const entry of ['package.json', 'package-lock.json']) {
@@ -225,8 +225,8 @@ async function realZeroDeltaCleanupRun(t) {
   git(root, ['add', '-A']);
   git(root, ['commit', '-m', 'original baseline']);
 
-  const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'compose-runtime.mjs')).href;
-  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'application', 'task-finish', 'task-finish-product-executor.mjs')).href;
+  const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'bootstrap', 'runtime.mjs')).href;
+  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'task', 'application', 'finish', 'task-finish-product-executor.mjs')).href;
   const [{ createRuntime: createRetainedRuntime }, { createTaskFinishProductHandlers }] = await Promise.all([
     import(composeRuntimeUrl),
     import(executorUrl),
@@ -455,7 +455,8 @@ test('real retained cleanup subprocess closes zero-delta Environment and carrier
   const handlers = createTaskFinishProductHandlers({ runtime, root });
   const result = await handlers.cleanup({ run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
-  assert.equal(result.operations.find((item) => item.id === 'cleanup-retained-environment-manager')?.status, 0);
+  const retainedCleanup = result.operations.find((item) => item.id === 'cleanup-retained-environment-manager');
+  assert.equal(retainedCleanup?.status, 0, JSON.stringify(retainedCleanup, null, 2));
   assert.equal(runtime.inspectTaskEnvironment(root, run.identity.task).status, 'cleaned');
   assert.equal(fs.existsSync(carrierRoot), false);
   assert.equal(runtime.inspectTaskRecord(root, run.identity.task).record.status, 'completed');

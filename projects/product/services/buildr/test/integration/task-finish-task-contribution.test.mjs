@@ -7,17 +7,21 @@ import test from 'node:test';
 
 import {
   adoptAgentReviewedGitCarrier,
+  createGitCarrierDisposabilityProof,
   createGitNoContributionProof,
   createIsolatedGitCarrier,
   inspectGitCarrierContainment,
+  inspectGitTaskContributionContainment,
   observeGitTaskContribution,
   removeIsolatedGitCarrier,
+  taskFinishCarrierRoot,
   verifyDeliveredGitTaskContribution,
   verifyGitTaskContributionCarrier,
   verifyGitNoContributionProof,
-} from '../../src/application/task-finish/git-task-contribution.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
-import { registerGitWorktreeProvider } from '../../src/application/worktree/git-worktree-provider.mjs';
+  verifyGitCarrierDisposabilityProof,
+} from '../../src/task/application/finish/git-task-contribution.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
+import { registerGitWorktreeProvider } from '../../src/task/infrastructure/git-worktree-provider.mjs';
 
 function git(root, args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -33,7 +37,7 @@ function repository(t) {
   git(root, ['config', 'user.email', 'buildr@example.com']);
   fs.writeFileSync(path.join(root, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline\n');
-  const packagedWorkspace = path.join(root, 'package', 'targets', 'workspace', '.buildr', 'workspace.yml');
+  const packagedWorkspace = path.join(root, 'resources', 'workspace', '.buildr', 'workspace.yml');
   fs.mkdirSync(path.dirname(packagedWorkspace), { recursive: true });
   fs.writeFileSync(packagedWorkspace, 'legacy product source\n');
   git(root, ['add', '-A']);
@@ -44,6 +48,29 @@ function repository(t) {
   git(taskRoot, ['config', 'user.email', 'buildr@example.com']);
   return { root, taskRoot };
 }
+
+test('carrier disposability proof冻结commit、index、worktree与untracked内容并支持cleanup中断重试', (t) => {
+  const { root } = repository(t);
+  const runId = 'proof-run';
+  const selector = 'workspace';
+  const carrierRoot = taskFinishCarrierRoot(root, runId, selector);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  git(root, ['worktree', 'add', '--detach', carrierRoot, 'HEAD']);
+  fs.writeFileSync(path.join(carrierRoot, 'untracked.txt'), 'initial\n');
+  const carrier = { root: carrierRoot, identity: 'sha256-carrier' };
+  const created = createGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier });
+  assert.equal(created.status, 'proved');
+  assert.equal(verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof }).status, 'unchanged');
+
+  fs.writeFileSync(path.join(carrierRoot, 'untracked.txt'), 'agent changed this\n');
+  const drifted = verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof });
+  assert.equal(drifted.status, 'changed');
+  assert.equal(drifted.code, 'task-finish.carrier-disposability-drift');
+
+  git(root, ['worktree', 'remove', '--force', carrierRoot]);
+  const interruptedRetry = verifyGitCarrierDisposabilityProof({ repositoryRoot: root, workspaceRoot: root, runId, repositorySelector: selector, carrier, proof: created.proof });
+  assert.equal(interruptedRetry.status, 'not-applicable');
+});
 
 test('最新 Delivery Baseline 上干净应用时 Task Contribution identity 保持等价', (t) => {
   const { root, taskRoot } = repository(t);
@@ -91,7 +118,7 @@ test('无 tree delta 时 carrier adapter 不把 baseline HEAD 消息当作本次
 
 test('Task Contribution交付普通嵌套 .buildr 删除并排除OpenSpec Change receipt', (t) => {
   const { root, taskRoot } = repository(t);
-  const packagedWorkspace = 'package/targets/workspace/.buildr/workspace.yml';
+  const packagedWorkspace = 'resources/workspace/.buildr/workspace.yml';
   fs.rmSync(path.join(taskRoot, packagedWorkspace));
   const changeReceipt = path.join(taskRoot, 'openspec', 'changes', 'demo', '.buildr', 'convergence-receipt.json');
   fs.mkdirSync(path.dirname(changeReceipt), { recursive: true });
@@ -180,6 +207,84 @@ test('新 target 保留 carrier 的逐路径结果时形成 exact containment ev
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'contained', expectedRoot: carrier.root }).status, 'removed');
 });
 
+test('外部交付无需Delivery Carrier ancestry即可按Task Contribution重建proof', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'agent delivered meaning\n');
+  fs.rmSync(path.join(taskRoot, 'shared.txt'));
+  git(taskRoot, ['add', '-A']);
+  git(taskRoot, ['commit', '-m', 'task candidate']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: git(root, ['rev-parse', 'HEAD']) });
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'agent delivered meaning\n');
+  fs.rmSync(path.join(root, 'shared.txt'));
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'external PR merge with different commit identity']);
+
+  const contained = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: 'HEAD', taskContribution: contribution });
+  assert.equal(contained.status, 'contained', JSON.stringify(contained, null, 2));
+  assert.equal(contained.taskContributionIdentity, contribution.identity);
+  assert.equal(contained.checkedPaths.every((entry) => entry.exact), true);
+  assert.match(contained.identity, /^sha256-[0-9a-f]{64}$/);
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'later incompatible meaning\n');
+  git(root, ['add', 'feature.txt']);
+  git(root, ['commit', '-m', 'overwrite delivered contribution']);
+  const rejected = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: 'HEAD', taskContribution: contribution });
+  assert.equal(rejected.status, 'not-contained');
+  assert.equal(rejected.code, 'task-finish.task-contribution-path-not-contained');
+});
+
+test('Git provider以外部交付containment proof安全清理非ancestor Task worktree', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'externally delivered meaning\n');
+  git(taskRoot, ['add', 'feature.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  const taskHead = git(taskRoot, ['rev-parse', 'HEAD']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+
+  fs.writeFileSync(path.join(root, 'feature.txt'), 'externally delivered meaning\n');
+  git(root, ['add', 'feature.txt']);
+  git(root, ['commit', '-m', 'merge external delivery']);
+  const targetHead = git(root, ['rev-parse', 'HEAD']);
+  assert.notEqual(spawnSync('git', ['merge-base', '--is-ancestor', taskHead, targetHead], { cwd: root }).status, 0);
+  const containment = inspectGitTaskContributionContainment({ repositoryRoot: root, targetRef: targetHead, taskContribution: contribution });
+  assert.equal(containment.status, 'contained');
+
+  const runtime = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (target, value) => {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
+    },
+    removePath: (target) => fs.rmSync(target, { force: true }),
+  });
+  runtime.writeGitWorktreeEvidence(root, {
+    schemaVersion: 'buildr.git-worktree-evidence/v1',
+    taskId: 'task',
+    workspaceRoot: root,
+    branch: 'codex/task',
+    planDigest: `sha256-${'2'.repeat(64)}`,
+    status: 'ready',
+    repositories: [{
+      selector: 'workspace', entityType: 'workspace', sourcePath: '.', sourceRepository: fs.realpathSync(root),
+      checkoutPath: fs.realpathSync(taskRoot), branch: 'codex/task', startPoint: 'dev', head: taskHead,
+      clean: true, registered: true, remote: null, remoteUrl: null, state: 'ready', diagnostic: null,
+    }],
+    effects: [],
+    updatedAt: new Date().toISOString(),
+  });
+  const result = runtime.cleanupGitWorktrees({
+    workspaceRoot: root,
+    taskId: 'task',
+    integratedRefs: { workspace: targetHead },
+    integratedContributions: { workspace: { ...containment, taskContribution: contribution } },
+  });
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.equal(fs.existsSync(taskRoot), false);
+});
+
 test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 Agent-reviewed adaptation', (t) => {
   const { root, taskRoot } = repository(t);
   fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
@@ -259,6 +364,40 @@ test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptat
   assert.equal(cleanupProof.status, 'equivalent');
   assert.equal(cleanupProof.carrierIdentity, adopted.carrierDeltaIdentity);
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'zero-delta', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('持久化agent-reviewed equivalence可证明精简reconciliation carrier的cleanup', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
+  git(taskRoot, ['add', 'shared.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'conflicting baseline']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const taskContribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'persisted-adaptation', deliveryBaselineHead: baselineHead, taskContribution, message: 'delivery carrier' });
+  fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
+  git(carrier.root, ['add', 'shared.txt']);
+  git(carrier.root, ['commit', '-m', 'delivery carrier']);
+  const head = git(carrier.root, ['rev-parse', 'HEAD']);
+  const tree = git(carrier.root, ['rev-parse', 'HEAD^{tree}']);
+  const proof = {
+    identity: 'sha256-persisted-carrier', head, tree,
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    taskContribution,
+    deliveryEquivalence: {
+      status: 'equivalent',
+      reuseMode: 'agent-reviewed-delivery-adaptation',
+      semanticEquivalence: 'agent-reviewed-not-proven-by-buildr',
+      carrierIdentity: 'sha256-persisted-carrier',
+      taskContributionIdentity: taskContribution.identity,
+    },
+  };
+
+  assert.equal(verifyDeliveredGitTaskContribution({ taskRoot, targetRef: head, proof }).status, 'equivalent');
+  assert.equal(verifyDeliveredGitTaskContribution({ taskRoot, targetRef: head, proof: { ...proof, identity: 'sha256-drifted' } }).code, 'git_worktree_delivery_adaptation_proof_invalid');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'persisted-adaptation', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('Agent-reviewed adaptation改变冻结message时保持blocked', (t) => {

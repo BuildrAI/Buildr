@@ -13,7 +13,18 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const webRoot = path.resolve(productRoot, '../buildr-web');
-const trackedWebDist = path.join(productRoot, 'src/interfaces/local-app/web-dist');
+const trackedWebDist = path.join(productRoot, 'web-dist');
+
+export function inspectLocalWebToolchain(root = webRoot) {
+  const executable = (name) => {
+    const base = path.join(root, 'node_modules', '.bin', name);
+    const candidates = process.platform === 'win32' ? [`${base}.cmd`, base] : [base];
+    return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+  };
+  const tools = { typescript: executable('tsc'), vite: executable('vite') };
+  const missing = Object.entries(tools).filter(([, value]) => !value).map(([name]) => name);
+  return { status: missing.length ? 'blocked' : 'ready', root, tools, missing };
+}
 
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -56,6 +67,13 @@ export function compareWebDistTrees(expectedRoot, actualRoot) {
 }
 
 function defaultBuild(stagingRoot) {
+  const toolchain = inspectLocalWebToolchain(webRoot);
+  if (toolchain.status !== 'ready') {
+    const error = new Error(`Buildr Web local toolchain is not current: ${toolchain.missing.join(', ')}; restore the declared buildr-web preparation recipe before Browser execution.`);
+    error.code = 'web_dist_local_toolchain_missing';
+    error.details = toolchain;
+    throw error;
+  }
   const npmExecPath = process.env.npm_execpath;
   const command = npmExecPath ? process.execPath : (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   const args = [

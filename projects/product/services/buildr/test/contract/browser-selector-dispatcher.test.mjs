@@ -5,7 +5,7 @@ import { parseChangedPaths, selectBrowserSelectors } from '../verification/brows
 import { createVerificationPlan } from '../verification/planner.mjs';
 
 test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
-  const plan = selectBrowserSelectors(['src/interfaces/local-app/http/server.mjs']);
+  const plan = selectBrowserSelectors(['src/web/http/server.mjs']);
   assert.equal(plan.status, 'not-applicable');
   assert.deepEqual(plan.selectors, []);
   assert.match(plan.reasons[0].reason, /HTTP\/API owner/);
@@ -36,7 +36,7 @@ test('Browser dispatcher closes the old zero-selector success for Web package an
 });
 
 test('Browser dispatcher accepts Project-relative Buildr paths', () => {
-  const plan = selectBrowserSelectors(['services/buildr/src/interfaces/local-app/runtime/preview-manager.mjs']);
+  const plan = selectBrowserSelectors(['services/buildr/src/web/application/preview-lifecycle.mjs']);
   assert.equal(plan.status, 'selected');
   assert.deepEqual(plan.selectors, ['shell', 'core']);
 });
@@ -49,7 +49,7 @@ test('Browser dispatcher uses core fallback for unknown web paths and shared rou
 });
 
 test('Browser Smoke and selection mechanism changes choose explicit full selector set', () => {
-  assert.deepEqual(selectBrowserSelectors(['test/browser-smoke/local-app-browser.test.mjs']).selectors, ['all']);
+  assert.deepEqual(selectBrowserSelectors(['test/browser-smoke/buildr-web-browser.test.mjs']).selectors, ['all']);
   assert.deepEqual(selectBrowserSelectors(['test/verification/registry.mjs']).selectors, ['all']);
 });
 
@@ -79,8 +79,8 @@ test('Browser dispatcher rejects malformed or unresolvable changed path input', 
 });
 
 test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', () => {
-  const plan = createVerificationPlan({ paths: ['src/interfaces/local-app/http/server.mjs'] });
+  const plan = createVerificationPlan({ paths: ['src/web/http/server.mjs'] });
   const ids = plan.steps.map((step) => step.id);
-  assert.ok(ids.includes('system-local-app-http'));
+  assert.ok(ids.includes('system-buildr-web-http'));
   assert.equal(ids.includes('system'), false);
 });

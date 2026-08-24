@@ -1,3 +1,10 @@
+import {
+  GIT_REPOSITORY_CONTEXT_KEY,
+  PROJECT_FOUNDATION_CONTEXT_KEY,
+  TASK_LIFECYCLE_CONTEXT_KEY,
+  WORKSPACE_FOUNDATION_CONTEXT_KEY,
+} from '../context/profiles.mjs';
+
 export const SYSTEM_SUITES = Object.freeze([
   Object.freeze({
     id: 'system-verification-admission',
@@ -6,6 +13,7 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 5000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/verification-changed-paths.test.mjs',
       'test/system/verification-run-cli.test.mjs',
@@ -53,6 +61,11 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 45000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([
+      WORKSPACE_FOUNDATION_CONTEXT_KEY,
+      PROJECT_FOUNDATION_CONTEXT_KEY,
+      GIT_REPOSITORY_CONTEXT_KEY,
+    ]),
     files: Object.freeze([
       'test/system/package-capability-retirement.test.mjs',
       'test/system/project-product.test.mjs',
@@ -67,10 +80,11 @@ export const SYSTEM_SUITES = Object.freeze([
     schedulingCostMs: 16000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/task-development-generic-journey.test.mjs',
       'test/system/task-record-change-resolver.test.mjs',
-      'test/system/task-record-local-app.test.mjs',
+      'test/system/task-record-buildr-web.test.mjs',
       'test/system/task-record-product.test.mjs',
       'test/system/task-review-product.test.mjs',
       'test/system/task-verification-product.test.mjs',
@@ -101,15 +115,17 @@ export const SYSTEM_SUITES = Object.freeze([
     ]),
   }),
   Object.freeze({
-    id: 'system-local-app-http',
+    id: 'system-buildr-web-http',
     name: 'System Buildr Web Runtime',
     innerConcurrency: 2,
     schedulingCostMs: 20000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze([]),
+    contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
-      'test/system/local-app-http.test.mjs',
-      'test/system/workspace-local-app-http.test.mjs',
+      'test/system/buildr-web-http.test.mjs',
+      'test/system/task-professional-http-contract.test.mjs',
+      'test/system/workspace-buildr-web-http.test.mjs',
     ]),
   }),
   Object.freeze({
@@ -120,8 +136,9 @@ export const SYSTEM_SUITES = Object.freeze([
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['app-runtime']),
     files: Object.freeze([
-      'test/system/local-app-channel-isolation.test.mjs',
-      'test/system/local-app-launcher.test.mjs',
+      'test/system/development-workspace-smoke-isolation.test.mjs',
+      'test/system/buildr-web-channel-isolation.test.mjs',
+      'test/system/buildr-web-launcher.test.mjs',
       'test/system/workspace-app-process.test.mjs',
     ]),
   }),
@@ -129,7 +146,7 @@ export const SYSTEM_SUITES = Object.freeze([
     id: 'system-task-finish',
     name: 'System Task Finish product journey',
     innerConcurrency: 1,
-    schedulingCostMs: 46000,
+    schedulingCostMs: 120000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
     files: Object.freeze([
@@ -151,9 +168,9 @@ export const SYSTEM_SUITES = Object.freeze([
     id: 'system-fresh-build',
     name: 'System fresh build',
     innerConcurrency: 1,
-    schedulingCostMs: 180000,
-    concurrencyClass: 'exclusive',
-    resources: Object.freeze(['workspace-saturating']),
+    schedulingCostMs: 25000,
+    concurrencyClass: 'workspace-heavy',
+    resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
     files: Object.freeze([
       'test/system/task-environment-fresh-build-web.test.mjs',
     ]),
@@ -165,6 +182,7 @@ export function validateSystemSuiteRegistry(fileNames) {
   const findings = [];
   for (const suite of SYSTEM_SUITES) {
     if (!Number.isInteger(suite.innerConcurrency) || suite.innerConcurrency < 1) findings.push({ code: 'invalid_inner_concurrency', owner: suite.id });
+    if (suite.contexts != null && (!Array.isArray(suite.contexts) || new Set(suite.contexts).size !== suite.contexts.length)) findings.push({ code: 'invalid_contexts', owner: suite.id });
     for (const file of suite.files) {
       if (owners.has(file)) findings.push({ code: 'duplicate_owner', file, owners: [owners.get(file), suite.id] });
       else owners.set(file, suite.id);

@@ -7,7 +7,7 @@ import {
   parseProjectsManifest,
   projectManifestRevision,
   renderProjectsManifest,
-} from '../../src/infrastructure/filesystem/project-manifest-repository.mjs';
+} from '../../src/workspace/persistence/project-manifest-repository.mjs';
 
 const PROJECT_ID = 'd15bde2c-9aab-4ed8-bf43-28a5372ca407';
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
@@ -30,6 +30,12 @@ test('canonical Project Manifest v2 round trip 使用封闭 Domain schema', () =
   assert.match(projectManifestRevision(content), /^sha256-[0-9a-f]{64}$/);
   assert.throws(() => parseProjectsManifest(content.replace('name: Buildr 产品', 'name: Buildr 产品\n    status: active'), { workspaceId: WORKSPACE_ID }), /status is not a supported/);
   assert.throws(() => parseProjectsManifest(content, { workspaceId: '1690214e-82dd-4726-b0bf-6db8c34e8153' }), /must equal the current Workspace id/);
+});
+
+test('canonical Project Manifest保留Attached Root且managed shape不变', () => {
+  const content = renderProjectsManifest({ external: { id: PROJECT_ID, workspaceId: WORKSPACE_ID, code: 'external', name: 'External', description: 'External project', source: { type: 'git', root: 'attached', path: '/repos/external', git: { url: 'https://example.com/external.git', remote: 'origin', integrationBranch: 'dev' } } } });
+  assert.match(content, /root: attached/);
+  assert.equal(parseProjectsManifest(content, { workspaceId: WORKSPACE_ID }).entities.external.source.path, '/repos/external');
 });
 
 test('v1 Project Manifest 只兼容投影并标记 migration', () => {

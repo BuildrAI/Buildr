@@ -1,25 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Tabs } from 'antd';
-import { api } from '../api';
+import { api, workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
 import { ServiceEditModal } from '../components/ServiceEditModal';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../lib/projectDocuments';
 import { serviceTypeLabel, workspaceHref } from '../lib/labels';
 
-type ServiceDetail = {
-  revision: string;
-  migrationRequired?: boolean;
-  nextActions?: string[];
-  project?: { name?: string };
-  service: {
-    code: string;
-    name: string;
-    description?: string;
-    type: string;
-  };
-};
+type ServiceDetail = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
 
 type ServiceDocument = {
   path?: string;
@@ -27,8 +16,6 @@ type ServiceDocument = {
   exists: boolean;
   content: string | null;
 };
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 
 const DOC_TABS = [
   { key: 'README.md', label: 'README.md' },
@@ -88,8 +75,8 @@ export function ServiceDetailPage() {
     void (async () => {
       try {
         const [workspace, detail, readme] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}`) as Promise<ServiceDetail>,
+          workspaceApi.read(),
+          workspaceApi.service(projectCode, serviceCode) as Promise<ServiceDetail>,
           api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}/documents/README.md`) as Promise<ServiceDocument>,
         ]);
         if (cancelled) return;

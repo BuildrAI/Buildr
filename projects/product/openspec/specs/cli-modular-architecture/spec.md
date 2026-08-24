@@ -42,27 +42,28 @@ Buildr MUST 在模块化迁移前后保持现有 public、legacy compatibility �
 - **THEN** CLI MUST 保持既有输出通道、退出状态和无副作用契约
 
 ### Requirement: CLI runtime 模块必须完整发布且不扩大公开 API
-Buildr npm package MUST 包含 `bin/buildr.mjs` 引用的完整 `src/` runtime dependency closure，并 MUST 让 checkout 与 npm 安装入口使用同一命令实现；内部 `src` modules 不得因此成为面向使用者的公开编程 API。
+Buildr npm package MUST 包含 `bin/buildr.mjs` 引用的完整 `src/` runtime dependency closure、运行所需 `resources/`、`web-dist/` 与明确 deferred runtime assets，并 MUST 让 checkout 与 npm 安装入口使用同一命令实现；内部 modules 与资源路径不得因此成为面向使用者的公开编程 API，只有规范和文档明确声明的独立公共 facade 可以成为稳定 package subpath。
 
 #### Scenario: 从 tarball 安装并执行 CLI
-- **WHEN** 维护者构建 tarball 并在不依赖 development checkout 的干净目录安装
-- **THEN** tarball MUST 包含 executable 引用的全部内部 runtime modules
+- **WHEN** 维护者构建 tarball并在不依赖 development checkout 的干净目录安装
+- **THEN** tarball MUST 包含 executable 引用的全部内部 runtime modules 和已声明资源
 - **AND** 安装后的代表性 help、只读、mutation、runtime、package 与 doctor 命令 MUST 与 checkout 入口保持行为等价
-- **AND** 安装后命令 MUST NOT 依赖 `test/`、`scripts/` 或旧 `tools/` 路径
+- **AND** 安装后命令 MUST NOT 依赖 `test/` 或 `tools/`
 
 #### Scenario: 使用者查看 package public surface
 - **WHEN** 使用者检查 package metadata 或公开文档
-- **THEN** package MUST 继续只承诺 `buildr` bin 和已记录的 CLI 产品表面
-- **AND** `src` 内部模块 MUST NOT 被声明为稳定 public exports
+- **THEN** package MUST 继续承诺 `buildr` bin、已记录的 CLI 产品表面和明确声明的独立公共 facade
+- **AND** `@buildr-ai/buildr/test-context` MUST 只通过顶层 facade 暴露已记录的 Node Test Context Runtime API
+- **AND** 内部源码与资源路径以及兼容性 deep subpaths MUST NOT 被描述为稳定 public API
 
 ### Requirement: CLI 架构和 mutation 边界必须由自动验证保护
-Buildr 产品验证 MUST 自动检查 `bin` 薄入口、command 唯一登记、`src` 单向依赖、明确基础设施 owner、关键 facade 职责、npm runtime inventory、产品 verifier 与仓库 verification 边界和直接文件写入边界，并 MUST 在恢复 `tools/`、出现无所有权 shared、反向依赖、漏发运行时文件、验证流程重新内嵌到聚合入口或绕过受管 mutation primitive 时失败。
+Buildr 产品验证 MUST 自动检查 `bin` 薄入口、command 唯一登记、`src` 单向依赖、明确基础设施 owner、关键 facade 职责、npm runtime inventory、根工程生命周期、产品 verifier 与仓库 verification 边界和直接文件写入边界，并 MUST 在 runtime 依赖 `tools/`/`test/`、出现无所有权 shared、未获许可的 legacy package 文件、旧资源/Web dist 引用、漏发运行时文件、验证流程重新内嵌到聚合入口或绕过受管 mutation primitive 时失败。
 
 #### Scenario: 维护者运行产品验证
 - **WHEN** 维护者运行 CLI 架构专项检查或产品完整验证
-- **THEN** verifier MUST 扫描全部发布 `bin/` 与 `src/` runtime modules
-- **AND** verifier MUST 对不符合分层、显式依赖、facade、verifier ownership 或 mutation 白名单的实现返回非零状态和可定位诊断
-- **AND** verifier MUST 对任何 tracked 旧 `tools/` 路径或新无所有权 shared 根失败
+- **THEN** verifier MUST 扫描全部发布 `bin/` 与 `src/` runtime modules及根工程路径 consumer
+- **AND** verifier MUST 对不符合分层、显式依赖、facade、verifier ownership、deferred allowlist 或 mutation 白名单的实现返回非零状态和可定位诊断
+- **AND** verifier MUST 对 runtime 引用 `tools/`/`test/`、旧资源路径或旧 Web dist 路径失败
 
 #### Scenario: package check 聚合发布验证
 - **WHEN** 维护者运行 `buildr package check`
@@ -78,20 +79,6 @@ Buildr 产品验证 MUST 自动检查 `bin` 薄入口、command 唯一登记、`
 - **WHEN** 架构 verifier 检查 package maintenance、doctor、runtime Skill renderer 或 Candidate 聚合入口
 - **THEN** 这些入口 MUST 只承担参数接入、模块组合、兼容导出或场景调度
 - **AND** 具体静态校验、诊断、来源解析、render plan 或长场景实现 MUST 位于职责明确的下层模块
-
-### Requirement: 产品内部实现必须脱离 tools 目录
-Buildr Product MUST 将产品运行实现放入 `src/`、可执行入口放入 `bin/`、仓库 verification 放入 `test/verification/`、维护脚本放入 `scripts/`，并 MUST 在完成迁移后删除 `tools/`。
-
-#### Scenario: 内部文件迁移后发布 npm package
-- **WHEN** 维护者构建并安装 npm tarball
-- **THEN** package runtime inventory MUST 包含安装后 CLI 所需的全部 `bin/` 与 `src/` 路径
-- **AND** package MUST NOT 依赖旧内部文件路径
-- **AND** 公开 `buildr` bin 和已记录 CLI surface MUST 保持兼容
-
-#### Scenario: 内部路径不是公开 API
-- **WHEN** 使用者查看 package metadata 和 CLI 文档
-- **THEN** Buildr MUST 继续只承诺公开 CLI surface
-- **AND** `src/` 内部路径、`test/verification/` 和 `scripts/` MUST NOT 被声明为稳定 package exports
 
 ### Requirement: package maintenance 必须组合独立 verifier
 Buildr package maintenance application MUST 通过职责明确的 verifier modules 组合 package check，且每个 verifier MUST 提供稳定执行入口和结构化的成功或失败结果。
@@ -148,3 +135,16 @@ Buildr fast、affected、changed、Workspace/package selectors 和 Candidate ent
 - **WHEN** 任一 step 缺少 owner、主要意图、执行边界、证明范围、主要证据 owner 或有效目标耗时，或 profile/input 引用了未知运行事实
 - **THEN** registry validation MUST 在启动 verifier 前 fail closed
 - **AND** MUST NOT 根据 step id、目录名或 executor 类型补猜分类
+
+### Requirement: Test Context facade必须闭合公开JS与类型依赖
+`@buildr-ai/buildr/test-context` facade MUST只重导出生成的公共ESM Runtime并通过package exports关联matching types。其运行与声明依赖闭包 MUST不包含Buildr test provider、fixture、verification registry、CLI Application composition或未声明deep import。
+
+#### Scenario: 检查checkout facade
+- **WHEN** 架构verifier解析`test-context.mjs`和package exports
+- **THEN** facade MUST只引用已登记的生成Runtime入口
+- **AND** types condition MUST解析到matching `.d.ts`且不得引用`test/`或raw `.ts`
+
+#### Scenario: 检查正式package facade
+- **WHEN** 唯一Candidate tarball安装到没有development checkout的prefix
+- **THEN** 同一subpath MUST成功完成ESM import与TypeScript consumer编译
+- **AND** internal source path、Buildr provider与兼容wildcard MUST不被描述为公共Test Context API

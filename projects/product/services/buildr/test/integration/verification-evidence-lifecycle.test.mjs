@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle, normalizeVerificationEvidenceLifecycle } from '../../src/application/verification/evidence-lifecycle.mjs';
+import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle, normalizeVerificationEvidenceLifecycle } from '../../src/verification/infrastructure/evidence-lifecycle.mjs';
 
 function summary(runId, evidence) {
   return { schemaVersion: 'buildr.verification-execution/v1', runId, run: { id: runId }, evidenceReference: evidence.summaryPath, evidenceLifecycle: evidence.lifecycle };

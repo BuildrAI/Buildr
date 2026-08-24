@@ -11,7 +11,7 @@ import {
   normalizeDailyProgressDate,
   normalizeDailyProgressDocument,
   normalizeDailyProgressPayload,
-} from '../../src/domain/project-daily-progress/project-daily-progress.mjs';
+} from '../../src/workspace/domain/project-daily-progress.mjs';
 
 function summary() {
   return {

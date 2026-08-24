@@ -4,8 +4,8 @@ import test from 'node:test';
 import {
   activateTaskFinishBootstrapRecovery,
   inspectTaskFinishBootstrapRecoveryQualification,
-} from '../../src/application/task-finish/task-finish-bootstrap-recovery.mjs';
-import { executeFinishRun, finishResult } from '../../src/application/task-finish/task-finish-run.mjs';
+} from '../../src/task/application/finish/task-finish-bootstrap-recovery.mjs';
+import { executeFinishRun, finishResult } from '../../src/task/application/finish/task-finish-run.mjs';
 
 function phase(id, status = 'pending', attempts = 0, failure = null) {
   return {
@@ -43,7 +43,7 @@ function context() {
     capsuleRoot: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule',
     manifestPath: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule/authority.json',
     sourceRoot: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule/source',
-    executorModule: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule/source/projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs',
+    executorModule: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule/source/projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs',
     revocationPath: '/tmp/workspace/.buildr/transient/task-finish/bootstrap-recovery/run/capsule/revocation.json',
     sourceCommit: 'b'.repeat(40), sourceTree: 'c'.repeat(40), executorDigest: 'sha256-executor',
     authorization: { kind: 'explicit-cli-flag', identity: 'sha256-authorization', authorizedAt: '2026-08-14T00:00:02.000Z' },

@@ -2,6 +2,34 @@
 
 本表维护 Buildr Product 的 canonical terminology。规范行为仍以 OpenSpec specs 为准。
 
+## 硬门禁（Hard Gate）
+
+- 定义：仅当继续一个具体动作会破坏真实结果不变量时返回的 `blocked` 分类，例如越权、写错对象、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报。
+- 适用范围：产品设计、Application Result、Skill contract 与迁移审查；每项硬门禁必须明确 action、consumer、invariant、harm、authority、scope、fallback 与 classification。
+- 避免混用：不是推荐流程、工具偏好、内部登记完整性、聚合健康或 Agent 的全局工作许可；无法说明具体 harm 的规则不是硬门禁。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 待处理（Attention）
+
+- 定义：当前结果或可独立核验事实仍成立，但存在需要单独恢复、补登记或跟进的问题。
+- 适用范围：Delivery 后的 Activation/cleanup/diagnostics、内部 receipt/provenance 恢复，以及不撤销已成立专业事实的局部缺口。
+- 避免混用：不是 Hard Gate、失败掩盖或 claimed success；若继续当前动作会造成真实不变量损害，必须 blocked。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 建议（Advice）
+
+- 定义：改善效率、质量或体验的推荐，不构成动作许可，也不否定当前事实。
+- 适用范围：optional capability、推荐工具与非强制工作方式。
+- 避免混用：不是 Attention 或 Hard Gate；不能承载必须恢复的问题，也不能替代授权和验证。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
+## 动作局部就绪（Action-local Readiness）
+
+- 定义：`ready|required|blocked` 对一个具体 consumer 的具体 action 是否具备必要事实的判断。
+- 适用范围：Task Entry、Environment、Verification、Finish、capability routing 与其他专业 Application 的局部入口。
+- 避免混用：不是第四种治理级别，不是 Workspace、Task 或 Agent 的全局许可；局部缺口不得阻止不消费该事实或能力的动作。
+- 来源：canonical `openspec/specs/governance-gate-taxonomy/spec.md`（本 Change convergence 时建立）。
+
 ## CLI 产品表面（CLI Product Surface）
 
 - 定义：Buildr 对每个 CLI command 的可发现性与兼容承诺分类，封闭取值为 `primary`、`agent-machine`、`maintenance`。
@@ -22,6 +50,20 @@
 - 适用范围：Buildr root 与其中的 Project/Service 工作范围。
 - 避免混用：内容位于 Workspace 不表示它已经被 Buildr 治理。
 - 来源：[Workspace current facts](overview.md)
+
+## 受管根（Managed Root）
+
+- 定义：由 Workspace 布局和 registry 关系确定、由 Buildr 在既有 writer authority 内维护的 Project 或 Service source root；v2 source 未声明 `root` 时默认采用该语义。
+- 适用范围：Project 的 `projects/<code>` 与实际 Project root 下 Service 的 `services/<code>`，以及明确要求 Workspace ownership 的 mutation。
+- 避免混用：不是所有 Workspace 内目录的自动所有权声明，也不表示任意 consumer 可以绕过 identity、path、integrity 或安全删除边界。
+- 来源：[Workspace source and local diagnostics specification](../specs/workspace-source-and-local-diagnostics/spec.md)
+
+## 附接根（Attached Root）
+
+- 定义：Project/Service registry 以 `root: attached` 显式登记的机器局部绝对 Git top-level；Buildr 只拥有 registry relation，不因登记取得外部 repository 的内容所有权。
+- 适用范围：复用 Workspace 外已有独立 Git Project/Service，并由统一 source resolver 提供实际位置、ownership 与 Git identity。
+- 避免混用：不是 clone、copy、move、checkout、adopt、repair 或 delete；不可访问或 identity 漂移只影响消费该来源的 action，不建立 Workspace 全局阻断。
+- 来源：[Workspace source and local diagnostics specification](../specs/workspace-source-and-local-diagnostics/spec.md)
 
 ## Workspace Local Data Store
 
@@ -92,14 +134,14 @@
 - 定义：Buildr 通过默认浏览器提供的本机 Web 界面与能力；canonical CLI 入口为 `buildr web`。
 - 适用范围：用户可见界面、CLI 产品表面、文档、Launcher 与诊断建议。
 - 避免混用：不是桌面应用，不是独立远程服务，不拥有第二套数据或业务 writer。
-- 来源：canonical `openspec/specs/local-app-browser-interface/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
+- 来源：canonical `openspec/specs/buildr-web-workspace-application/spec.md`、`openspec/specs/buildr-web-browser-verification/spec.md` 与 `openspec/specs/cli-product-surface/spec.md`。
 
-### 界面预演稿（UI Preview）
+### 界面原型（UI Prototype）
 
-- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个自包含 HTML 呈现本次提案实施后的完整页面参考。
-- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的视觉与交互参考；Buildr Web 只读发现并隔离展示带 `buildr:ui-preview` 标记的页面。
-- 避免混用：不是正式设计稿、生产原型、像素级验收标准、Planning Identity、规范或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。
-- 来源：canonical `openspec/specs/ui-preview/spec.md`（本 Change convergence 时建立）。
+- 定义：Agent 在用户对当前任务明确确认需要后，先调查现有真实界面，再以一个或多个使用模拟数据与本地交互的自包含 HTML 呈现本次提案实施后的完整页面；用户未明确要求忽略时，后续 Agent 默认按原型的信息架构、布局和交互开发。
+- 适用范围：前端 UI 可能变化的 Task、Task 关联 OpenSpec Change、设计对齐，以及正式前端开发前的实施输入；Buildr Web 只读发现、列出并隔离展示带 `buildr:ui-prototype` 标记的多个页面。
+- 避免混用：不是正式设计稿、canonical spec、像素级验收标准、Planning Identity 或 Verification evidence；也不等于在真实前端工程中验证产品与技术方案的编码式原型。需要成为正式行为的选择仍进入 design、delta specs、Brief 与 tasks。
+- 来源：canonical `openspec/specs/ui-prototype/spec.md`。
 
 ### Buildr Web Frontend Service
 
@@ -119,15 +161,36 @@
 
 - 定义：启动 `buildr web` 并打开默认浏览器的平台图形入口；正式显示名为 Buildr Web，开发入口为 Buildr Web Dev。
 - 适用范围：正式npm用户显式运行`buildr web launcher install|status|repair|uninstall`后生成的macOS `.app`或Windows Start Menu shortcut；它精确绑定Host Node、npm package entry、prefix和installation identity并执行`web`。checkout-backed入口另名Buildr Web Dev。
-- 避免混用：它不是 Buildr App，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
-- 来源：canonical `openspec/specs/local-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
+- 避免混用：它不是 Buildr Web，不是独立产品安装或更新渠道，不复制Node/Buildr，也不取得 Workspace 数据所有权。
+- 来源：canonical `openspec/specs/buildr-web-workspace-application/spec.md`与`openspec/specs/npm-cli-package/spec.md`。
 
-### Buildr App
+### 平台启动入口集成（Platform Launcher Integration）
 
-- 定义：为未来真正的 Buildr 桌面应用保留的产品术语；当前尚未实现。
+- 定义：通过macOS `.app` / LaunchServices或Windows shortcut验证已安装Launcher能被操作系统入口唤起的显式专项测试。
+- 适用范围：对应操作系统runner或维护者显式调用；使用隔离Root、no-open与no-notify。
+- 避免混用：不是浏览器使用测试（Browser Use Test），不进入默认affected/full/Candidate，不验证页面DOM交互。
+- 来源：[Buildr Service](services/buildr.md)。
+
+### 浏览器使用测试（Browser Use Test）
+
+- 定义：通过受控浏览器验证Buildr Web页面、DOM交互与用户路径的测试。
+- 适用范围：Browser smoke与changed selector选中的前端验证；可在无界面模式（Headless Mode）中运行。
+- 避免混用：不是平台启动入口集成（Platform Launcher Integration），不以打开默认浏览器或真实用户标签页作为验证手段。
+- 来源：[Buildr Service](services/buildr.md)。
+
+### 无界面模式（Headless Mode）
+
+- 定义：自动化运行不显示默认浏览器、平台GUI或系统通知的执行模式。
+- 适用范围：普通affected/full/Candidate、release smoke与可无头执行的Browser smoke。
+- 避免混用：不表示没有HTTP server、loopback端口或owned子进程；仍必须使用隔离Root并精确清理owned资源。
+- 来源：[Buildr Service](services/buildr.md)。
+
+### Buildr Desktop
+
+- 定义：为未来真正的桌面应用保留的产品术语；当前尚未实现。
 - 适用范围：只用于说明保留边界；当前不是 CLI command、help topic、Launcher 名称或运行时产品。
-- 避免混用：不得用于指称 Buildr Web 或 Buildr Web Launcher，也不为 `buildr app` 建立 alias 或 legacy surface。
-- 来源：canonical `openspec/specs/cli-product-surface/spec.md` 与 `openspec/specs/local-app-browser-interface/spec.md`。
+- 避免混用：不得用于指称 Buildr Web 或 Buildr Web Launcher，也不为桌面应用建立当前 alias 或 legacy surface。
+- 来源：canonical `openspec/specs/cli-product-surface/spec.md` 与 `openspec/specs/buildr-web-workspace-application/spec.md`。
 
 ## Service
 
@@ -135,6 +198,13 @@
 - 适用范围：`projects/<project>/services/<service>/` 或 registry 声明 source。
 - 避免混用：Service repo 不是默认独立 Agent runtime 入口。
 - 来源：[Buildr Service](services/buildr.md)
+
+## 验证准备闭包（Verification Preparation Closure）
+
+- 定义：Formal Verification针对实际selected capabilities，将其声明identity、同Project Preparation Recipe要求、matching Environment Plan/Receipt与runtime invocation identity合并去重后形成的单层、closed执行前置集合。
+- 适用范围：在打开Verification Execution Record、启动进程、Browser或外部资源之前的纯读admission；可恢复的Recipe缺口由Task Environment唯一writer幂等prepare。
+- 避免混用：不是Task scope、Change applicability、Content Target、源码写入授权、测试DAG或通用工作许可；辅助Service准备不表示Task拥有该Service，无关开发、只读调查和明确非正式检查不被该门禁阻塞。
+- 来源：[技术架构](architecture/technical.md)
 
 ## Change
 
@@ -182,12 +252,19 @@
 
 - 定义：目标与持久交付意图已经对齐，并以稳定 Task ID 进入 Buildr 生命周期管理的任务。
 - 适用范围：准备产生代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他可交付持久变化的工作。
-- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务。
+- 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务；Formal Task Record也不是普通编辑、构建或有界测试的通用工作许可。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
+
+## 终态贡献交付对账（Terminal Contribution Delivery Reconciliation）
+
+- 定义：当直接 Child 已 completed 且既有 immutable Development handoff 与 terminal Finish association 能证明真实交付，但原生 Contribution Handoff 因历史编排遗漏而缺失时，由 Task Development 追加的一次性、内容寻址恢复证据。
+- 适用范围：Parent Coordination 对历史终态 Child 的 Contribution delivery 恢复；必须绑定 current Parent Plan、Parent/Child 关系、Candidate/generation、三个 gate、archived Change、完整 Contribution Handoff、reason 与 source。
+- 避免混用：不是 normal Child 的常规 handoff、Task reopen、Parent Plan reconcile、Git 交付声明或通用审计日志；不能仅凭 completed、commit、文件或 canonical specs 建立。
+- 来源：active Change `recover-terminal-child-contribution-delivery`，convergence 后由 canonical Parent/Child Coordination 与 Task Development specs 持有行为语义。
 
 ## 任务入口快照（Task Entry Snapshot）
 
-- 定义：面向Agent启动或继续Formal Task的只读compact projection，按最早硬前置组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity。
+- 定义：面向Agent启动或继续Formal Task的只读compact projection，组合Task Record、matching Task Environment execution projection与保存的Task Development applicability，并返回一个typed next及其action-local capability/provider identity；尚无Development时缺少Environment只形成recommended prepare。
 - 适用范围：`buildr task next <task-id>`与`buildr.task-entry-snapshot/v1`；`required`表示不可安全绕过的authority/identity恢复前置，`recommended`表示用户可按实际情况调整的默认路径。
 - 避免混用：不是任务上下文（Task Context）、Context Window、完整lifecycle DAG、Task Overview、Receipt/Result、writer或第二套状态机；不自动执行next，也不把耗时/调用指标变成gate。
 - 来源：[Task Entry Snapshot specification](../specs/task-entry-snapshot/spec.md)
@@ -261,25 +338,39 @@
 - 避免混用：Evidence不是独立存储类别，也不要求Consumer/Adoption表；authority仍属于被引用的专业事实或执行记录。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
-## Task Finish
+## 任务收尾（Task Finish）
 
-- 定义：消费 current Development Handoff、执行 `preflight → prepare → verify → deliver → cleanup` 的固定五阶段交付收尾 adapter；current run、target lease 与 compact terminal Result 由 Workspace SQLite 持久化。
-- 适用范围：Delivery Carrier、目标推进、远端回读、Environment cleanup、可恢复 blocked/cleanup-pending 状态，以及每次真正执行的首次run/resume在专业副作用前open并retained的独立Finish diagnostics Execution Record。
-- 避免混用：不是 Task Development、Task Verification、Task Record writer 或第二套 Task complete 状态机；`task_finish_current`不保存record identity/history或完整checks/operations/output，Delivery Carrier、target、lease、resume与恢复资源也不转交Execution Record owner。`task complete`只表示所有Finish gates通过后的Task Record terminal status；`.buildr/task-finish`是已退役的旧文件协议，不属于新runtime的输入。
+- 定义：消费current Development Handoff，提供可选五阶段自动交付、外部交付后的Delivery Reconciliation和交付结果投影的能力。
+- 适用范围：Agent选择自动Finish、直接Git或PR后，Buildr验证逐repository Delivery，并独立呈现Activation、Environment Cleanup与Diagnostics。
+- 避免混用：不是正式Task交付的唯一通道，不替Agent选择Git策略，也不因Buildr内部登记、Doctor、cleanup或diagnostics失败否定已确认Delivery。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 交付对账（Delivery Reconciliation）
+
+- 定义：Agent通过Git、PR或其他已授权路径完成交付后，Buildr从current handoff、Task scope、registries、Git topology与真实remote target重建并登记逐repository Delivery evidence的只读核验动作；Environment可复用但不是唯一上下文来源。
+- 适用范围：外部交付、自动Finish内部证明缺失、多repository部分交付续跑与Task terminal登记恢复。
+- 避免混用：不接受claimed success、commit清单或调用方手写proof；不创建Delivery Carrier、不push，也不把路径不重叠当作语义安全。
+- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+
+## 维护状态（Maintenance Status）
+
+- 定义：Delivery之后对Activation、Environment Cleanup与Diagnostics分别记录的`passed | attention | not-applicable`等正交状态。
+- 适用范围：Task已交付但自举、Doctor、worktree cleanup、Execution Record或Task登记仍需Agent处理时。
+- 避免混用：不是Delivery结论或第二套Task lifecycle；maintenance attention不得撤销已确认Delivery。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 ## 任务管理器（Task Manager）
 
 - 定义：`buildr.task-record/v2` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复、激活和维护 Task Record。
 - 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
 - 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Buildr Web 是同一 Application 的人类客户端，不通过 Task Manager 写入。
-- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
+- 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 父任务 / 子任务（Parent Task / Child Task）
 
 - 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
-- 适用范围：协调Task拆分、Buildr Web层级展示与导航，以及Task Manager显式设置、重挂或清除Parent。
-- 避免混用：不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
-- 来源：[Task Record capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-record/v2.md)
+- 适用范围：把可独立形成Candidate、Verification、Completion、不可变Handoff与Delivery的Contribution拆为Child，以及Buildr Web层级展示、导航和Task Manager显式设置、重挂或清除Parent。
+- 避免混用：不是普通调查、编码、测试或Agent并行分工的强制建模方式，也不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
+- 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v2.md)
 
 ## 协调任务（Coordinating Task）
 
@@ -290,30 +381,30 @@
 
 ## 任务环境（Task Environment）
 
-- 定义：某个正式 Task 在当前机器上可执行、可恢复和可清理的实际工作环境，由同一 Task ID、唯一环境回执及其中的实际 checkout/provider/probe facts 确定。
+- 定义：某个正式 Task 的Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据与cleanup authority，由同一Task ID、唯一环境回执及实际checkout/provider/probe facts确定。
 - 适用范围：共享执行根或`.worktrees/<task-id>`checkout、Agent登记的环境准备计划及其显式executable、CLI、Agent runtime投射、动态资源和cleanup。
-- 避免混用：不是 Workspace、保留工作区、Agent runtime 或 Task Record；Git worktree 只是可选 provider，retained Buildr 的实现版本也不是该 Environment 的源码版本。
-- 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
+- 避免混用：不是Workspace、保留工作区、Agent runtime、Task Record或普通工作的通用许可；Git worktree只是可选provider，retained Buildr的实现版本也不是该Environment的源码版本。
+- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
 
 ## 环境准备计划（Environment Preparation Plan）
 
 - 定义：Agent按正式Task完整Project/Service scope从Project Environment Preparation Declaration选择Recipe后，由Application解析并保存的Task级执行快照；Plan v2绑定Declaration与Recipe identity及规范化Step。
 - 适用范围：Task Environment首次准备、幂等恢复、只读漂移检查，以及Receipt中的Declaration/Scope/Recipe/Step审计事实。
 - 避免混用：不是Project长期声明、技术栈注册表、Task Record字段或Verification Result；Agent负责选择“本Task需要什么”，Environment负责解析、安全执行、保存和恢复。
-- 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
+- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
 
 ## 项目环境准备声明（Project Environment Preparation Declaration）
 
 - 定义：Project根可选`preparation.yml`中的长期环境准备事实，使用closed`buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Recipe。
 - 适用范围：团队已知的依赖准备、代码生成、工具初始化等可重复入口；支持只有Project、没有Service的结构，也支持多个Service分别声明。
-- 避免混用：不是Task Plan、Receipt、技术栈自动发现结果或状态store；候选可由Agent只读发现，但长期写入必须经用户授权。
+- 避免混用：不是Task Plan、Receipt、技术栈自动发现结果或状态store；已确认且不改变scope、适用性、requiredness、capability、外部效果、安全例外或authority的routine diff可由专业owner维护，其余长期语义变化仍需用户决定。
 - 来源：[Project Environment Preparation Declaration specification](../specs/project-environment-preparation-declarations/spec.md)
 
 ## 项目声明接入（Project Declaration Intake）
 
 - 定义：面向Project `preparation.yml`与`verification.yml`的无状态Agent编排入口，在注册、首次Task、入口变化、专业gap或显式请求时只读发现候选与差异。
-- 适用范围：确认Project-only或多Service scope、汇总证据与外部诊断、向用户请求精确长期写入授权，并把已授权动作交给各声明owner Skill。
-- 避免混用：不是统一Declaration store/schema/writer、后台扫描器或Task结果；不管理`capabilities.yml`/`commands.yml`，未经用户确认不写长期声明。
+- 适用范围：确认Project-only或多Service scope、汇总证据与外部诊断，把已确认且不改变长期适用性的diff分类为routine maintenance并交给声明owner；scope、适用性、requiredness、capability、外部效果、安全例外或authority变化则请求用户做精确决定。
+- 避免混用：不是统一Declaration store/schema/writer、后台扫描器或Task结果；不管理`capabilities.yml`/`commands.yml`，也不以routine分类绕过证据冲突或真实业务决定。
 - 来源：[Project Declaration Intake specification](../specs/project-declaration-intake/spec.md) 与 [Buildr 项目声明体系](../../docs/architecture/buildr-project-declaration-system.md)
 
 ## 环境准备配方（Environment Preparation Recipe）
@@ -349,7 +440,7 @@
 - 定义：从 canonical retained Workspace 的可信 Buildr source 执行 Task Environment mutation 的 Buildr；Git-backed source 必须对规定实现输入保持 clean。
 - 适用范围：Environment prepare、Task-owned resource register/release 与已授权 cleanup。
 - 避免混用：不是 Task checkout 的版本基础，不拥有 Candidate、Review 或 Verification evidence；candidate Buildr 可只读 inspect，但不能管理自己的 Environment。
-- 来源：[Task Environment capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-environment/v1.md)
+- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
 
 ## 控制器实现指纹（Controller Identity）
 
@@ -370,14 +461,14 @@
 - 定义：`buildr.git-operations/v1` 的 Skill-only 无状态能力，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result。能力名称使用复数 Git Operations；一次具体动作使用单数 Git Operation。
 - 适用范围：直接用户或 Task Finish、Buildr 产品入口等 consumer 已明确 repository、operation、相关 ref、scope 与授权后的 commit、push、组合或其他单次动作。
 - 避免混用：不是 Git 平台、命令教程、Task Finish 编排、Git worktree provider、Application、Receipt 或 transaction；不自行选择动作、目标、顺序、冲突语义或历史改写策略。
-- 来源：[Git Operations capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/git-operations/v1.md)
+- 来源：[Git Operations capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/git-operations/v1.md)
 
 ## Git 工作树提供方（Git worktree provider）
 
 - 定义：`buildr.git-worktree-provider/v1` 的窄 provider，只创建、检查和清理 Git checkout/branch，并保存 repository、HEAD、clean、registration 与 Git effects evidence。
 - 适用范围：Task Environment 需要隔离 Git checkout，或用户明确管理 task worktree 时。
 - 避免混用：不判断 Environment ready，不拥有 Runtime/CLI/依赖、projection、动态资源、恢复或总 cleanup。
-- 来源：[Git worktree provider contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)
+- 来源：[Git worktree provider contract](../../services/buildr/resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)
 
 ## 任务范围 Change 引用解析器（Task-scoped Change Reference Resolver）
 
@@ -423,9 +514,79 @@
 ## 项目测试（Project Testing）
 
 - 定义：面向 Project / Service 的无状态专业指导，帮助 Agent 根据真实技术栈设计测试框架、开发测试并编排反馈；分别判断测试主要意图、执行边界，以及一次编排的成本约束、选择范围和验证目标。
-- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick 成本约束；focus、affected、full 范围；开发目标、冻结 Candidate、Release artifact 验证节点。
-- 避免混用：不是 Task Verification 或测试平台，不创建 Result、Receipt、Application 或 provider contract；Quick、affected/full、Candidate/Release 不是同一层级的测试类型，Candidate 不自动等于 full；System 是执行边界，不自动等于 Acceptance，`focus` 只用于诊断选择；此处 Component 表示组件测试边界，不是 Buildr 受管资产 Component。
+- 适用范围：Development、Acceptance、Static Conformance、Delivery / Release 意图；Static、Unit、Component、Integration、System 边界；Quick 成本约束；focus、affected、full 范围；frozen Task Content / Task Delivery、Product Artifact Candidate与Published Release验证节点。
+- 避免混用：不是Task Verification或测试平台，不创建Result、Receipt、Application或provider contract；证据边界、affected/full选择范围与验证对象/决策节点是三个正交问题；Quick只提供开发反馈，System不自动等于Acceptance，`focus`只用于诊断选择；此处Component表示组件测试边界，不是Buildr受管资产Component。
 - 来源：canonical `openspec/specs/project-testing-guidance/spec.md`（本 Change converge 时建立）
+
+## 验证控制面（Verification Control Plane）
+
+- 定义：Buildr Product测试中由ownership、registry、planner、DAG scheduler与executor组成的test-only编排层，负责affected owner选择、执行图、预算准入、依赖、资源需求与exact grant。
+- 适用范围：`test:changed`、`test:focus`、`test:daily-full`、兼容`test:core`、`test:candidate`及Candidate CI对同一registry的执行投影。
+- 避免混用：不是Task Verification、`verification.yml`通用能力schema、Product runtime scheduler或Task lifecycle authority；不拥有测试fixture内容。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试执行面（Test Execution Plane）
+
+- 定义：验证控制面选定step后，实际组装runner、Test Context、Worker Host、sandbox、进程和cleanup的执行机制；当前测试runner为`node:test`，Context生命周期由公共Node Test Context Runtime拥有。
+- 适用范围：Buildr Product直接测试与registry execution；通过Context lifecycle、step timing和diagnostic输出transient evidence。
+- 避免混用：不是生产Application runtime或Verification Result；Context Runtime也不替代assertion/discovery runner，更换Vitest等runner不会自动改变Context与资源语义。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## Node测试上下文运行时（Node Test Context Runtime）
+
+- 定义：供Node.js测试注册Context definition、按配置与依赖identity缓存state、发放test lease，并管理scope、并发安全、reset、dirty/evict和destroy的runner-independent公共组件。
+- 适用范围：`@buildr-ai/buildr/test-context`公共入口、直接`node:test`文件以及一个或多个持久Worker Host；未来其他runner只能通过adapter复用同一生命周期authority。
+- 避免混用：不是Buildr生产Application Runtime、test runner、Verification Control Plane或全局共享可变环境；Context对象只在单个Host进程内共享。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文定义（Test Context Definition）
+
+- 定义：以稳定`id/version`声明scope、dependency、configuration identity、parallel safety及create/acquire/release/reset/inspect/destroy hooks的closed Context contract。
+- 适用范围：Application/DI state、transaction、snapshot、immutable seed、sandbox或worker-owned service provider。
+- 避免混用：不是test case、fixture数据、changed-path owner或资源grant；使用同名id但不同version会形成不同cache identity。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文缓存身份（Test Context Cache Identity）
+
+- 定义：由definition `id/version`、canonical configuration、source identity、dependency identities和所属scope identity共同派生的稳定SHA-256身份，用于决定一个Worker Host内的Context state能否复用。
+- 适用范围：Context cache命中、配置或源码变化后的cache miss，以及Execution Record中的Context关联。
+- 避免混用：不是Git tree identity、Task Candidate identity或跨Host共享键；matching identity只允许复用，不能证明可变state当前无污染。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文处置（Test Context Disposition）
+
+- 定义：verification registry中每个step对Context采用方式的闭合判断，只取`context-runtime | hybrid | full-lifecycle`并带稳定reason code。
+- 适用范围：说明owner完整使用公共Runtime、只复用前置状态，或因stateless/黄金生命周期边界不接入Context。
+- 避免混用：不是测试profile、execution boundary或性能等级；`full-lifecycle`不自动表示Candidate-only，`hybrid`也不允许共享Git refs、SQLite多连接或可变Workspace。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试上下文污染（Dirty Test Context）
+
+- 定义：test lease显式标记或provider检查确认一个缓存state无法安全reset到可复用状态；Runtime在active leases归还后将其evict并执行destroy。
+- 适用范围：process global、property descriptor、database/filesystem marker或provider identity发生不可恢复漂移时的失败关闭与清理。
+- 避免混用：不是普通cache miss或测试失败的同义词；unexpected污染必须使当前测试可见失败，不能静默重建后记录为passed。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试工作进程宿主（Test Worker Host）
+
+- 定义：由Context-aware runner持久维护的Node进程，在`node:test` non-process isolation下连续执行一组文件并保留本进程的module与Context cache。
+- 适用范围：多个Host并行、每Host文件顺序执行、Host数量受outer worker grant约束。
+- 避免混用：不是单个test case、DAG step或跨进程共享内存；多个Host各自拥有matching Context state。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## Buildr测试上下文（Buildr Test Context）
+
+- 定义：Buildr test-only provider以`<id>/vN`稳定key标识、在一次verification plan内最多prepare一次的只读测试基线；provider marker与完整tree identity共同证明其结构和未污染状态。
+- 适用范围：昂贵且不是当前case主要待证事实的Workspace/领域前置环境跨runner复用；当前首个profile为`task-lifecycle/v1`。
+- 避免混用：不是通用上下文（Context）、Task Context、共享可写Workspace、跨plan缓存或测试分类；使用Context不把Integration/System降为Component。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
+
+## 测试沙箱租约（Test Sandbox Lease）
+
+- 定义：Buildr Test Context Pool为一个worker/case从不可变seed物化的独立可写sandbox及其owner-bound幂等release责任；发放与释放前后检查containment、alias和seed identity。
+- 适用范围：允许并发case复用同一只读Context，同时隔离filesystem、SQLite、Git或Workspace副作用并形成materialize/release timing。
+- 避免混用：不是Execution Resource lease、Task checkout、Git worktree provider或共享Context本身；consumer只能删除自己拥有的sandbox，不能清理outer plan拥有的seed。
+- 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
 
 ## 验证能力声明（Verification Capability Declaration）
 
@@ -446,19 +607,19 @@
 - 定义：面向正式 Task 的专业验证能力，按显式Project、Service所属Project与Change所属Project的有效并集读取declarations、选择并执行适用已有capability；有效并集为空时以唯一workspace coverage gap记录没有验证能力的负向事实，再通过唯一Application维护current Result。
 - 适用范围：明确 target identity 的测试执行、Project/Service/workspace coverage gap 报告、Result 记录与 applicability 检查。
 - 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有 Task Development、Candidate generation、`proceed / blocked` 或 Task 顶层状态。
-- 来源：[Task Verification capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-verification/v3.md)
+- 来源：[Task Verification capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-verification/v3.md)
 
 ## 验证结果（Verification Result）
 
-- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v1` current row，绑定Task、stable Content Target与实际declarations，记录执行能力的精炼事实、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。
-- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按 Content Target/declaration identity 派生 `current / stale / unknown`。Task Finish不直接消费该Result。
-- 避免混用：不是 Execution Evidence、Receipt、history 或状态机；不保存完整输出、Environment Receipt、revision、风险决定、推进决定或 Candidate generation。
+- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v2` current row，绑定Task、current Candidate/generation、stable Content Target与实际declarations，记录从matching terminal Task Execution Records提炼的能力facts、portable evidence identities、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。合法v1 row只作`legacy-unbound`双读。
+- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按Candidate、Content Target与declaration identity派生`current / stale / unknown / legacy-unbound`。Task Finish不直接消费该Result。
+- 避免混用：不是raw Execution Evidence、Receipt、history或状态机；不保存完整输出、Environment Receipt、风险决定、推进决定或Candidate生成权。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 正式验证就绪度（Formal Verification Readiness）
 
-- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据已保存Task Context Change dispositions、Content Target、verification policy与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|unknown`，current knowledge owner对同一tree返回`aligned|not-applicable`后由Agent瞬时汇总为`ready`并直接进入Task Verification。
-- 适用范围：`formalVerificationReadiness`与Task Entry typed next，用于在昂贵正式验证前先暴露明确未稳定事实或路由一次只读current knowledge `inspect`。
+- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据current Task Context、Planning、Content Target、verification policy、Candidate与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|ready`。
+- 适用范围：`formalVerificationReadiness`与Task Entry typed next；current Candidate已冻结且Verification缺失时为ready，consumer把显式Candidate lease交给Task Verification。Current Knowledge不再是固定前置预检。
 - 避免混用：不是Verification Result、Development gate、Receipt、持久preflight authority或通用verification executor门禁；不适用于开发期focused/affected测试、Task外transient verification、Candidate CI或Planning Review前的OpenSpec semantic readiness。
 - 来源：[Task Development specification](../specs/task-development/spec.md)与[OpenSpec Change生命周期](flows/openspec-change-lifecycle.md)。
 
@@ -469,11 +630,18 @@
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
+## 当前认知处置（Current Knowledge Disposition）
+
+- 定义：selected Current Knowledge provider针对current Content Target形成、由Task Development保存的最小完成影响事实，包含tree identity、`aligned|not-applicable|attention|blocked`、portable summary、source identities与bounded unresolved items。
+- 适用范围：实现、Review或Verification前后均可形成；handoff要求其current且非blocked。会导致错误完成结论的authority冲突为blocked，解释性漂移或无关历史债务为attention且保持可交付。
+- 避免混用：不是规范、知识正文、Verification/Review Result、固定研发阶段或通用ready gate；任何knowledge写入改变delivery bytes时仍须重新观察Content Target。
+- 来源：[Current Knowledge Maintenance capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md)
+
 ## Parent Plan
 
-- 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划，只包含outcome、architecture invariants、Contribution Map、dependencies与final acceptance。
+- 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划；v2包含outcome、architecture decisions、结构化Contribution Map与final acceptance，每个Contribution包含priority、title、objective、directions、boundaries、可选expectedChild与dependencies。
 - 适用范围：Parent Planning Review target、Child Contribution binding、显式reconciliation与最终集成验收前置判断。
-- 避免混用：不是OpenSpec delta Change、Child状态/Result副本、实现清单、Markdown checkbox进度或lifecycle authority；普通Child状态变化不改变其bytes或identity。
+- 避免混用：`expectedChild`只是预期形态，不是Task ID、binding或已创建事实；Parent Plan也不是OpenSpec delta Change、Child状态/Result副本、Markdown checkbox进度或lifecycle authority。旧v1只读兼容且保持原identity，只能显式reconcile升级。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
 ## Parent 启动就绪（Parent Startup Readiness）
@@ -486,7 +654,7 @@
 ## Contribution Handoff
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
-- 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；Parent亲自承担的窄Contribution可由Parent current handoff证明。
+- 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；预期Child与Task completed都不能代替真实binding和handoff。
 - 避免混用：不是第二套Result、delivery registry、event/history/audit log，也不能由Task `completed`、代码或canonical specs推断。
 - 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
 
@@ -502,7 +670,7 @@
 - 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；v3保存Environment逻辑引用、最小Task context、planning snapshot、可空Parent Plan/planned Contribution/final acceptance、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发/Contribution handoff snapshots；v1/v2只读归一化为Parent facts absent，不读取或迁移旧YAML。
 - 适用范围：Development inspect/begin/planning/observe/policy/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
 - 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接打开SQLite，只消费Application handoff port。
-- 来源：[Task Development capability contract](../../services/buildr/package/targets/workspace/skills/contracts/buildr/task-development/v2.md)
+- 来源：[Task Development capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-development/v2.md)
 
 ## 研发节点（Development Node）
 
@@ -527,23 +695,44 @@
 
 ## 任务候选（Task Candidate）
 
-- 定义：Task Development在formal Verification facts完整后冻结的Task级交付候选身份与正整数generation；identity只绑定完整Content Target、Task Intent/scope/Change context、verification policy decision和generation。
+- 定义：Task Development在Task Context、Planning disposition、stable Content Target与verification policy明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context、policy identity和generation。Verification、Completion与Current Knowledge随后绑定该Candidate但不改变其identity或generation。
 - 适用范围：Completion Review target、Development decision/handoff和Finish carrier equivalence。
 - 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含 Planning、Verification 或 Completion Result identity。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
-## Product Candidate verification
+## Product Artifact Candidate verification
 
-- 定义：Project Testing为完整产品候选组织的验证目标/编排；Buildr Product当前由`test:candidate`执行完整registry回归。
-- 适用范围：显式完整Project回归、Release前检查或用户要求的full validation。
-- 避免混用：不是 Task Candidate，也不会自动创建 Candidate/generation、Completion Review 或研发交接。
+- 定义：Project Testing针对exact source与唯一候选制品组织的验证目标/编排；Buildr Product由`test:candidate`及其GitHub分布式投影执行完整daily evidence并增加artifact、package、install与compatibility evidence。每个current release HEAD/tree只对应matching Product Artifact Candidate generation和唯一tarball。
+- 适用范围：显式完整Project回归、冻结release source的发布候选门禁或用户要求的full validation。
+- 避免混用：不是Task Candidate或Task Content Target，也不会自动创建Task Candidate/generation、Completion Review或研发交接；changed/affected开发反馈和daily-full都不等于完整Product Artifact Candidate。
 - 来源：[Verification ownership](../../docs/verification-ownership.md)
+
+## 发布集合（Release Collection）
+
+- 定义：由维护者为一个精确package version从指定`dev` baseline创建的唯一`release-<version>`内容集合；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata，不自动追随`dev`。
+- 适用范围：release create/update/freeze/reopen/abandon/cleanup、不可变generation freeze history、Product Candidate source、release→main PR、protected publication和发布后main→dev收敛。
+- 避免混用：不是release Task、Task worktree、Task Candidate、npm dist-tag或GitHub Release；同名branch/ref只是载体，必须同时核验version、baseline、selection chain和HEAD/tree identity。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`。
+
+## 发布选择链（Release Selection Chain）
+
+- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、release-only metadata、generation和不可变历史freeze identity的closed可验证链。
+- 适用范围：release更新审计、Candidate currentness、readiness、transaction context和失败恢复。
+- 避免混用：不是通用Git history、聊天中的commit列表或caller-claimed success；冲突现场、未授权commit和普通`dev`前进不能被静默加入链。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`。
+
+## 发布源身份（Release Source Identity）
+
+- 定义：current release HEAD commit、Git tree和selection chain identity组成的冻结source；下游Product Candidate、tarball、main tree和transaction context必须精确绑定它。
+- 适用范围：Candidate generation、artifact manifest/integrity、release→main tree equality、pre-tag readiness和publish evidence。
+- 避免混用：不是Task Candidate identity、近似branch name、最新`dev`、main commit identity或版本字符串；source任一部分变化都会使旧下游evidence stale。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/product-verification-quality/spec.md`。
 
 ## 交付载体（Delivery Carrier）
 
-- 定义：交付载体（Delivery Carrier）是Task Finish为实际交付承载Task Contribution的commit、branch、tarball、安装包或其他run-owned隔离载体；Git conflict时可先保留最新Delivery Baseline供Agent完成Delivery Adaptation。
-- 适用范围：Finish prepare/deliver与retained transition；当前Buildr自举adapter在run-owned detached Git worktree中形成commit。
-- 避免混用：不是Task Candidate或Development Content Target；Finish不得改写原Task worktree。`agent-reviewed-delivery-adaptation`只表示Agent在carrier完成语义处理并通过适用checks，不表示Buildr确定性证明语义等价。
+- 定义：交付载体（Delivery Carrier）是承载Task Contribution的commit、branch、PR、tarball、安装包或其他交付介质；Buildr自动Finish可创建run-owned隔离carrier，Agent也可选择其他已授权载体。
+- 适用范围：自动Finish prepare/deliver、Agent直接交付与Delivery Reconciliation。
+- 避免混用：不是Task Candidate或Development Content Target，也不是所有Task Delivery的强制前置条件。`agent-reviewed-delivery-adaptation`只表示Agent完成语义处理，不表示Buildr确定性证明语义等价。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 任务贡献（Task Contribution）
@@ -562,9 +751,9 @@
 
 ## 自举激活（Self-bootstrap Activation）
 
-- 定义：Buildr自举Workspace在Formal Task Finish成功后，由`buildr-self-bootstrap` Component只按该Result绑定的冻结Task Contribution paths选择并执行的本机产品收敛动作。
-- 适用范围：去重组合retained package sync、development Buildr Web安装、retained Project bridge identity gate与最终Doctor或same-run resume；只存在于显式安装该Component的Buildr自举Workspace。成功要求Environment retained Node显式验证delivered retained `projects/product/buildr`且最终Workspace Doctor ready；PATH默认`buildr`只属于npm installation。
-- 避免混用：不是Formal Task Finish阶段、通用retained runtime activation、Task Verification、Task Record完成状态或新的workflow authority；源码CLI可运行、`command -v`命中同名命令或`--help`可启动都不能替代默认入口identity证明，失败不得改写已成功的Finish Result、Environment cleanup或上游研发事实。
+- 定义：Buildr自举Workspace取得matching Task delivery result后，由`buildr-self-bootstrap` Component按冻结Task Contribution activation paths执行的本机产品收敛动作。
+- 适用范围：自动Finish或Delivery Reconciliation之后，去重组合retained package sync、development Buildr Web、retained Project bridge identity gate与Doctor。
+- 避免混用：不是Task Delivery、Formal Finish强制阶段、Task Record完成状态或新workflow authority；失败只形成Activation attention，不改写Delivery或上游研发事实。
 - 来源：[Agent task workflow specification](../specs/agent-task-workflows/spec.md)与[Buildr package assets specification](../specs/buildr-package-assets/spec.md)
 
 ## 交付适配（Delivery Adaptation）
@@ -583,7 +772,7 @@
 
 ## 研发交接（Development Handoff）
 
-- 定义：Development Receipt 中 append-only 不可变快照，绑定 Task Candidate、Change dispositions、Planning/Verification/Completion 最小 Result 引用、`proceed` 决定和精确用户风险接受。
+- 定义：Development Receipt中append-only不可变快照，绑定Task Candidate、Change dispositions、Current Knowledge最小disposition、Planning/Verification/Completion最小Result引用、`proceed`决定和精确用户风险接受。
 - 适用范围：Task Finish 的唯一正式输入；上游事实漂移时旧 snapshot 保留但不再 current。
 - 避免混用：不是 Candidate identity、Finish execution plan 或完整 Result history；Finish 不能自行从 Task/Git/Change/Result 拼装研发交接。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
@@ -623,7 +812,7 @@
 - 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
-## Buildr 应用负载（Buildr Application Payload）
+## Buildr 应用负载（Buildr Weblication Payload）
 
 - 定义：一次构建形成的渠道无关、可摘要比较的公共应用内容，包括CLI、Core/Application、Buildr Web HTTP/runtime与正式静态资源、SQLite migrations、package baseline、生产依赖、许可证、版本和协议identity。
 - 适用范围：npm package消费的`buildr.application-payload/v1` manifest及`applicationPayloadDigest`；同一payload内只携带生成Launcher所需图标，不携带已生成入口。
@@ -659,7 +848,7 @@
 - 定义：Buildr同时读取npm的`latest`和`next`，把GA正式版与RC候选版的当前发布头、可更新状态、提示与精确更新命令组合为统一的只读Application结果。
 - 适用范围：`buildr update check`、Doctor非阻断提示、Buildr Web全局提示和Buildr Skill；真正更新只在用户明确选择后由CLI执行。
 - 避免混用：不是自动更新器，不替用户选择版本，也不修改Workspace数据或Agent runtime。
-- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/local-workspace-application/spec.md`。
+- 来源：canonical `openspec/specs/buildr-cli-self-update/spec.md`、`openspec/specs/agent-readable-doctor/spec.md`与`openspec/specs/buildr-web-workspace-application/spec.md`。
 
 ## 发布轨道（Release Track）
 

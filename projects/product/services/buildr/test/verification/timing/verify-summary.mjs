@@ -6,7 +6,7 @@ import process from 'node:process';
 import { collectVerificationSourceIdentity, validateVerificationTimingEvidence } from './evidence.mjs';
 
 const [summaryFile, productRoot = '.', expectedKind = 'candidate'] = process.argv.slice(2);
-if (!summaryFile) throw new Error('Usage: node verify-summary.mjs <timing.json> [productRoot] [candidate|changed]');
+if (!summaryFile) throw new Error('Usage: node verify-summary.mjs <timing.json> [productRoot] [core|candidate|changed]');
 
 const summaryPath = path.resolve(summaryFile);
 const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));

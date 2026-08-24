@@ -116,3 +116,16 @@ export function observeGitTaskContribution({ root, deliveryBaselineHead }) {
     source: { head: sourceHead, tree: sourceTree },
   }));
 }
+
+export function observeGitTaskContributionFromRef({ root, sourceRef, deliveryBaselineHead }) {
+  const sourceHead = requireGitContributionText(root, ['rev-parse', `${sourceRef}^{commit}`], 'Task source ref is unavailable.');
+  const originalBaselineHead = requireGitContributionText(root, ['merge-base', sourceHead, deliveryBaselineHead], 'Task source and Delivery Baseline have no provable Git baseline.');
+  const originalBaselineTree = requireGitContributionText(root, ['rev-parse', `${originalBaselineHead}^{tree}`], 'Original Task baseline tree is unavailable.');
+  const sourceTree = requireGitContributionText(root, ['rev-parse', `${sourceHead}^{tree}`], 'Task source tree is unavailable.');
+  return {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: gitTaskContributionIdentity(root, originalBaselineTree, sourceTree),
+    originalBaseline: { head: originalBaselineHead, tree: originalBaselineTree },
+    source: { head: sourceHead, tree: sourceTree },
+  };
+}

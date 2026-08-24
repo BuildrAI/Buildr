@@ -4,13 +4,14 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
-const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'package/targets/workspace');
+const WORKSPACE_TARGET = path.join(SERVICE_ROOT, 'resources/workspace');
 const read = (relative) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
-const skill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
+const workspaceRule = read('resources/workspace/AGENTS.md');
+const skill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const contractPath = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/git-operations/v1.md');
 const contract = fs.readFileSync(contractPath, 'utf8');
 
@@ -31,11 +32,18 @@ test('Git Operations routing description 精确一致且不扩展完整命令集
   const packaged = packageManifest.builtins.skills.find((item) => item.id === 'git-operations');
   const frontmatter = skill.match(/^---\n[\s\S]*?^description:\s*(.+)$/m)?.[1];
   assert.equal(frontmatter, packaged.description);
-  assert.match(packaged.description, /已明确选择 repository、Git Operation 与相关 ref/);
+  assert.match(packaged.description, /明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）/);
   assert.match(packaged.description, /commit、push、commit\+push/);
   for (const broad of ['checkout', 'reset', 'cherry-pick', 'stash', '删除分支']) {
     assert.equal(packaged.description.includes(broad), false, broad);
   }
+});
+
+test('默认提交语言由随包 workspace AGENTS 提供，Git Operations 不复制 Core 约定', () => {
+  assert.match(workspaceRule, /Git 提交信息默认使用中文/);
+  assert.match(workspaceRule, /更具体作用域的约定优先于本默认规则/);
+  assert.match(skill, /当前 workspace `AGENTS\.md`/);
+  assert.doesNotMatch(skill, /语言遵循 Buildr Core/);
 });
 
 test('Git Operations playbook 覆盖 commit、push 与组合边界', () => {
@@ -82,10 +90,10 @@ test('旧 Git graph 只保留 migration evidence，active manifests 与文件为
   assert.equal(packageManifest.initialSkillBindings.some((item) => legacyCapabilities.has(item.capability)), false);
   assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'git-ops'), false);
   for (const file of [
-    'package/targets/workspace/skills/contracts/buildr/git-single-operation/v1.md',
-    'package/targets/workspace/skills/contracts/buildr/git-task-integration/v1.md',
-    'package/targets/workspace/skills/contracts/buildr/git-workspace-update/v1.md',
-    'package/targets/workspace/skills/buildr/git-ops/SKILL.md',
+    'resources/workspace/skills/contracts/buildr/git-single-operation/v1.md',
+    'resources/workspace/skills/contracts/buildr/git-task-integration/v1.md',
+    'resources/workspace/skills/contracts/buildr/git-workspace-update/v1.md',
+    'resources/workspace/skills/buildr/git-ops/SKILL.md',
   ]) assert.equal(fs.existsSync(path.join(SERVICE_ROOT, file)), false, file);
 
   const replacement = packageManifest.capabilityContracts.find((item) => item.id === 'buildr.git-operations');

@@ -98,10 +98,12 @@ function normalizedSteps(results) {
     ...(result.finishedAt ? { finishedAt: result.finishedAt } : {}),
     ...(result.blockedAt ? { blockedAt: result.blockedAt } : {}),
     ...(result.queueDurationMs == null ? {} : { queueDurationMs: Number(result.queueDurationMs) }),
+    ...(result.scheduling ? { scheduling: result.scheduling } : {}),
     ...(result.resourceCoordination ? { resourceCoordination: result.resourceCoordination } : {}),
     ...(result.failureCode ? { failureCode: result.failureCode } : {}),
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
     ...(result.phases?.length ? { phases: result.phases } : {}),
+    ...(result.testContextRuntime ? { testContextRuntime: result.testContextRuntime } : {}),
   }));
 }
 
@@ -131,6 +133,7 @@ export function createVerificationTimingSummary(options) {
       } : {}),
     },
     summaryPath: path.resolve(options.timingOutput),
+    ...(options.contextLifecycle ? { contextLifecycle: options.contextLifecycle } : {}),
     ...(options.evidenceLifecycle ? { evidenceLifecycle: options.evidenceLifecycle } : {}),
   };
   if (options.totalBudgetMs != null) {

@@ -1,24 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Space, Typography } from 'antd';
-import { api } from '../api';
+import { workspaceApi, type ProjectResponse } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
-type ServiceEditData = {
-  revision: string;
-  migrationRequired?: boolean;
-  nextActions?: string[];
-  service: {
-    code: string;
-    name: string;
-    description: string;
-    type: string;
-    source: { path: string };
-  };
-};
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+type ServiceEditData = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
 
 export function ServiceEditPage() {
   const { projectCode = '', serviceCode = '' } = useParams();
@@ -35,8 +22,8 @@ export function ServiceEditPage() {
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}`) as Promise<ServiceEditData>,
+          workspaceApi.read(),
+          workspaceApi.service(projectCode, serviceCode) as Promise<ServiceEditData>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
@@ -61,14 +48,11 @@ export function ServiceEditPage() {
     const typeInput = form.elements.namedItem('type') as HTMLInputElement;
     setSaveState('正在保存…');
     try {
-      const updated = await api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          revision: current.revision,
-          name: nameInput.value,
-          description: descriptionInput.value,
-          type: typeInput.value,
-        }),
+      const updated = await workspaceApi.updateService(projectCode, serviceCode, {
+        revision: current.revision,
+        name: nameInput.value,
+        description: descriptionInput.value,
+        type: typeInput.value,
       }) as ServiceEditData;
       setCurrent(updated);
       setAlert(updated.migrationRequired ? (updated.nextActions || []).join(' ') : '');

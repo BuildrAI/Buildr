@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compareServiceGit, registerServiceApplication } from '../../src/application/service/service-application.mjs';
+import { compareServiceGit, registerServiceApplication } from '../../src/workspace/application/service-application.mjs';
 
 const service = { source: { type: 'git', git: { url: 'https://example.com/api.git', remote: 'origin', integrationBranch: 'dev' } } };
 

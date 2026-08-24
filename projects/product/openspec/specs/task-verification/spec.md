@@ -5,39 +5,39 @@
 ## Requirements
 
 ### Requirement: Task Verification 必须维护一个 Task-scoped current Result
-Buildr MUST 为每个正式Task在Workspace SQLite中提供至多一份`buildr.task-verification-result/v1` current Result。Result MUST只包含Task/stable Content Target、Project declaration identities、实际执行capability facts、coverage gaps、整体结论与完成时间，并MUST保持可移植值语义但不进入Git。Verification Result MUST NOT绑定或生成Task Candidate。
+Buildr MUST为每个正式Task在Workspace SQLite中提供至多一份current Result。current writer MUST只写`buildr.task-verification-result/v2`，并绑定Task Candidate、stable Content Target、Project declaration identities、实际capability facts、可独立读取的evidence authority、coverage gaps、整体结论与完成时间；reader MUST兼容v1但 MUST把缺少Candidate/evidence绑定的v1 Result标记为legacy-unbound且不得用于新Candidate gate。Result MUST保持可移植值语义但不进入Git，且MUST NOT生成或推进Task Candidate。
 
 #### Scenario: 完整验证形成 current Result
-- **WHEN** Agent已针对Development观察到的明确stable Content Target完成全部选择、执行和事实提炼
-- **THEN** Application MUST写入该Task唯一current Result，且`target.identity` MUST等于Content Target identity
-- **AND** Result MUST NOT包含Candidate/generation、stdout、stderr、临时目录、本机绝对路径、Environment Receipt、resultDigest或applicability
+- **WHEN** Agent选择了与current Candidate精确匹配且可独立读取的terminal Verification Execution Records，并请求Application reconciliation
+- **THEN** Application MUST从authority提炼完整capability facts并原子写入唯一current Result
+- **AND** Result MUST绑定Candidate、Content Target、declarations与每项evidence identity，不得包含stdout、stderr、临时目录、本机绝对路径、Environment Receipt或applicability
 
 #### Scenario: 没有测试能力
 - **WHEN** Task scope内某个目标没有可用声明或适用能力
 - **THEN** Result MUST通过`coverageGaps`如实记录缺口
-- **AND** Verification MUST NOT自动创建测试、脚本或capability declaration
+- **AND** Verification MUST NOT自动创建测试、脚本、capability declaration或伪造evidence authority
 
 #### Scenario: 旧 Verification YAML 存在
-- **WHEN** `.buildr/tasks/<task-id>/verification.yml` 存在、损坏或与SQLite不同
-- **THEN** Application MUST只读取SQLite current Result
-- **AND** MUST NOT迁移、双写、删除或生成兼容YAML
+- **WHEN** `.buildr/tasks/<task-id>/verification.yml`存在、损坏或与SQLite不同，或者SQLite current slot保存合法v1 Result
+- **THEN** Application MUST只读取SQLite current Result，并对v1返回legacy-unbound applicability reason
+- **AND** MUST NOT迁移、回填Candidate/evidence、双写、删除或自动覆盖旧Result
 
 ### Requirement: Result 必须使用关闭且最小的数据模型
-Result MUST绑定非空Content Target `target.identity`和可移植`target.summary`；Project模式的declarations MUST非空且每个declaration MUST绑定Project、相对path与当前content identity或`absent`；仅工作区模式 MAY保存空declarations，但 MUST同时保存空capabilities、唯一`scope: workspace` coverage gap与`not-passed`结论。每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome与至少一个portable fact；结论MUST只使用`passed|not-passed`。
+v2 Result MUST绑定非空Candidate `identity`、正整数`generation`和`contentTargetIdentity`，且target identity MUST等于Candidate content target。Project模式declarations MUST非空并绑定Project、相对path与current content identity或`absent`；仅工作区模式 MAY保存空declarations，但 MUST同时保存空capabilities、唯一`scope: workspace` coverage gap与`not-passed`结论。每个实际capability MUST绑定Project、capability identity、`passed|failed` outcome、至少一个portable fact与closed evidence authority identity；结论MUST只使用`passed|not-passed`。
 
 #### Scenario: 调用方提交 lifecycle authority 字段
-- **WHEN** record输入或持久Result包含Candidate identity/generation、verification policy decision、assurance level、proceed、blocked decision、Task status、revision、history、CAS、execution path或raw output字段
-- **THEN** Application MUST拒绝整个值
+- **WHEN** reconciliation输入提交capability outcome/fact、declaration identity、evidence digest、verification policy decision、proceed、blocked、Task status、history、execution path或raw output字段
+- **THEN** Application MUST拒绝整个值并只允许从matching authority派生这些事实
 - **AND** 原current MUST保持不变
 
 #### Scenario: 完整失败结论
-- **WHEN** 已完成的能力执行产生失败事实且整体结论已经形成
-- **THEN** Agent MAY记录`not-passed` current Result
+- **WHEN** matching terminal authority包含完整失败事实且整体结论已经形成
+- **THEN** Application MUST记录`not-passed` current Result
 - **AND** Result MUST NOT决定是否带风险继续推进
 
 #### Scenario: 仅工作区缺少验证能力
-- **WHEN** current Task的有效Project集合为空且没有适用workspace验证能力
-- **THEN** Result MUST以空declarations、空capabilities、唯一workspace coverage gap与`not-passed`形成完整负向事实
+- **WHEN** current Task有效Project集合为空且没有适用workspace验证能力
+- **THEN** Result MUST以Candidate、空declarations、空capabilities、唯一workspace coverage gap与`not-passed`形成完整负向事实
 - **AND** MUST不自动生成declaration、capability fact、passed结论或风险处置
 
 ### Requirement: Result 必须原子整值替换且失败时保留 current
@@ -334,3 +334,83 @@ Buildr MUST 为每次合法 formal Task Verification request 在启动 capabilit
 - **WHEN** 原调用终端或工具session不可用但formal execution record已经open或terminal
 - **THEN** Agent MUST能通过Task-scoped public list定位record并通过inspect读取current lifecycle或terminal摘要
 - **AND** 恢复读取或默认重复调用 MUST不启动新的verification execution或写Verification Result
+
+### Requirement: Formal Verification执行前必须完成capability准备预检
+Task Verification admission MUST在启动任何capability command、execution record、浏览器、外部系统或coordinated resource前，根据current selected capability declarations计算preparation closure，并与matching Task Environment Plan/Receipt及runtime invocation比较。preflight result MUST绑定selected capability、closure、Plan/Receipt与runtime invocation identities；runner MUST在execution open及首次capability副作用前按expected identities重验。只有结果current且`ready`时runner才能执行；preflight MUST不写Verification Result或直接写Environment store。
+
+#### Scenario: 全部准备current
+- **WHEN** selected capability identities、runtime invocation及所有基础和辅助Recipe prepared identities均匹配
+- **THEN** admission MUST返回`ready`与稳定closure identity
+- **AND** runner MUST使用Receipt execution route启动声明command，不重新解析全局PATH或安装依赖
+
+#### Scenario: 准备闭包缺失
+- **WHEN** selected capability要求的Recipe未进入matching Environment、output缺失或identity漂移
+- **THEN** admission MUST在execution副作用前返回`blocked`、精确gap与由Task Environment消费的closed next action
+- **AND** Task Verification workflow MUST先由Task Environment幂等prepare并重跑admission，不得让Agent手写安装命令
+
+#### Scenario: 声明或外部条件无法恢复
+- **WHEN** capability coverage缺失、declaration引用非法、runtime不兼容、authorization缺失或required external system不可用
+- **THEN** admission MUST分别返回coverage gap、declaration invalid、preparation gap、authorization blocked或external-system unavailable及对应owner方向
+- **AND** 只有声明Recipe可恢复的preparation gap才能生成supplemental Plan Request；MUST不扫描技术栈、回退全局工具、降低required capability或启动昂贵执行
+
+#### Scenario: Preflight后identity发生变化
+- **WHEN** preflight ready后selected capability、closure、Plan/Receipt或runtime invocation identity在execution open或首次副作用前变化
+- **THEN** runner MUST零capability执行返回stale并重新进入admission
+- **AND** MUST不复用旧ready、打开资源waiter或把旧closure关联到新execution
+
+### Requirement: Verification准备闭包必须保持瞬态交接而非Result authority
+Preparation closure、preflight状态、runtime invocation和Environment Receipt引用 MUST只服务当前execution admission；Task Verification Result MUST继续只保存Content Target、declaration identities、portable capability facts、coverage gaps与结论，不得复制机器路径、Recipe Step或Environment状态。
+
+#### Scenario: 正式执行完成并记录Result
+- **WHEN** current preflight ready后capability执行完成且Agent形成完整Verification结论
+- **THEN** Result MUST记录portable capability facts与原declaration identity
+- **AND** MUST不保存closure、runtime executable、node_modules路径或Environment Receipt正文
+
+### Requirement: Formal Verification准备门禁必须允许安全降级
+Preparation preflight MUST只阻止matching Formal Verification execution、current Result与依赖该Result的完成声明，MUST NOT成为日常开发、无关capability、只读调查、focused feedback或非正式检查的通用许可层。Buildr provider、Receipt writer或preflight暂不可用时，Agent MAY继续无关工作与有界非正式检查，但 MUST明确其不是Formal Verification，MUST NOT写current Result或据此声称完成；Buildr恢复后仍 MUST通过Task Environment与current admission建立正式事实。
+
+#### Scenario: Buildr preflight暂时不可用
+- **WHEN** Agent能够从权威源码和工具执行有界检查，但Buildr admission或Environment writer暂时不可用
+- **THEN** Agent MAY继续无关开发、只读诊断或明确标记的非正式检查
+- **AND** Formal Verification runner、Result record与完成声明 MUST保持blocked，直到matching Environment与admission恢复current ready
+
+#### Scenario: 一个selected capability准备blocked
+- **WHEN** selected capability的preparation gap阻止其Formal Verification execution
+- **THEN** admission MUST只阻止依赖该gap的正式执行与结论
+- **AND** MUST不因此阻止无关Task工作或未依赖该Recipe的非正式反馈
+
+### Requirement: Verification reconciliation 必须只消费可独立核验的 execution authority
+Task Verification Application MUST提供`reconcile` action，并只接受当前Workspace中matching Task拥有的terminal `task-verification/verification-execution` record identities。Application MUST独立读取record metadata与受控summary body，核验Task、Candidate、generation、Content Target、Project、declaration、selected capability、target stability、terminal outcome与body integrity，再从checks提炼portable capability facts；任一不匹配或body不可用时 MUST零写入失败。
+
+#### Scenario: matching managed execution
+- **WHEN** terminal record精确绑定current Candidate/target/declaration且每个selected capability有完整passed或failed check
+- **THEN** reconcile MUST按capability提炼outcome与portable facts并保存record/run/invocation/body identities
+- **AND** caller MUST不能覆盖或补充authority中的outcome与facts
+
+#### Scenario: claimed external success
+- **WHEN** caller只提交CI URL、Git ref、文件、聊天摘要、自由文本fact或没有受控producer的evidence bundle
+- **THEN** reconcile MUST拒绝并保持current Result不变
+- **AND** next action MUST要求先由具名producer形成可独立读取的execution authority，而不是把claim包装成Result
+
+#### Scenario: authority target或Candidate不匹配
+- **WHEN** record绑定旧Candidate、旧generation、旧Content Target、不同Task或不同declaration
+- **THEN** reconcile MUST返回类型化stale/mismatch diagnostic并零写入
+- **AND** MUST NOT通过相同Git commit、相同文件存在或Agent声明语义等价来放宽
+
+#### Scenario: authority正文已清理或不完整
+- **WHEN** record body不可用、integrity校验失败、execution仍open/cancelled/unknown或target drift
+- **THEN** reconcile MUST返回evidence-unavailable或incomplete并保留旧current Result
+- **AND** MUST NOT从list摘要、stdout preview或历史Result猜测事实
+
+### Requirement: Formal Verification execution 必须绑定 current Candidate
+带正式Task context的`verification run` MUST在任何capability、resource或process副作用前要求Development consumer提供current Candidate lease，并把Candidate identity/generation与请求Content Target加入invocation identity、Execution Record metadata和summary。runner MUST NOT反向依赖或写入Task Development；Task Verification reconciliation与后续Development inspect MUST独立核验Result绑定的Candidate是否仍current。Task外transient execution MUST不接受Candidate lease，且MUST不能被formal reconciliation采用。
+
+#### Scenario: current Candidate执行
+- **WHEN** consumer从current Development Receipt取得Candidate identity/generation，且run target identity等于该Candidate content target
+- **THEN** runner MUST把Candidate identity/generation写入可独立核验的execution authority并执行selected capabilities
+- **AND** Candidate MUST不因execution outcome改变
+
+#### Scenario: Candidate lease缺失或target不匹配
+- **WHEN** formal run未提交Candidate identity/generation，或请求target不等于consumer持有的Candidate content target
+- **THEN** runner MUST在open Execution Record或启动副作用前返回action-local blocked diagnostic
+- **AND** 无关开发、Task外transient checks与只读调查 MUST不受阻止

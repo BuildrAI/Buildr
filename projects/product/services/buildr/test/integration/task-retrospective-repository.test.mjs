@@ -3,14 +3,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+const test = createBuildrApplicationTest('integration-task-retrospective-repository');
 
-const DRIVER = path.resolve(import.meta.dirname, '../../src/interfaces/internal/task-retrospective-driver.mjs');
+const DRIVER = path.resolve(import.meta.dirname, '../../src/task/interfaces/internal/task-retrospective-driver.mjs');
 
-function fixture(t) {
+function fixture(t, runtimeOverride = null) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, '.buildr', 'asset-review', 'inbox'), { recursive: true });
@@ -19,7 +20,7 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 22222222-2222-4222-8222-222222222222\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const legacy = path.join(root, '.buildr', 'asset-review', 'inbox', 'legacy.md');
   fs.writeFileSync(legacy, 'legacy observation bytes\n');
-  const runtime = createRuntime();
+  const runtime = runtimeOverride ?? t.buildrContexts.application;
   runtime.createTaskRecordPersistence(root, {
     schemaVersion: 'buildr.task-record/v2', taskId: 'demo-task', title: 'Demo', intent: 'Review efficiency',
     scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
@@ -28,7 +29,7 @@ function fixture(t) {
   return { root: fs.realpathSync(root), runtime, legacy };
 }
 
-function isolateLocalAppData(t) {
+function isolateBuildrWebData(t) {
   const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-retrospective-app-data-'));
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = appData;
@@ -194,8 +195,8 @@ test('内部driver以单进程list支持重复Task过滤和正文opt-in', (t) =>
 });
 
 test('Buildr Web只读返回current Result或尚未复盘', async (t) => {
-  const appData = isolateLocalAppData(t);
-  const { root, runtime } = fixture(t);
+  const appData = isolateBuildrWebData(t);
+  const { root, runtime } = fixture(t, createRuntime());
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId } = await instance.ready;

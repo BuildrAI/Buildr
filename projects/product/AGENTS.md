@@ -10,6 +10,8 @@ Agent 在 `product` Project 中的最小运行规则。
 
 所有回复、文档、提案、规格、任务说明和面向用户的文本默认使用中文；代码标识、命令、文件路径、协议字段、第三方专有名词或必须保持原文的格式关键字可以使用英文。
 
+新建或重写文本文件时，文件末尾只保留一个换行符，不保留空白行。该约定只属于 Buildr Product 源码树，不由随包 Core 强加给用户 Workspace。
+
 ## 资产边界
 
 | 对象 | 位置 | 说明 |
@@ -26,18 +28,18 @@ Agent 在 `product` Project 中的最小运行规则。
 
 ## 产品边界
 
-- 产品定位、核心模型、边界和 Roadmap 以 `docs/buildr-product.md` 为准。
+- 随包 [Buildr Core](services/buildr/resources/workspace/rules/buildr/core.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`docs/buildr-product.md` 在该边界内展开产品定位、核心模型和 Roadmap，OpenSpec 继续作为具体可观察行为的规范 authority。
 - Buildr 的主要用户是 Agent；人是一等参与者，主要通过 Agent 表达目标、提供业务判断并确认重要决策。产品能力必须优先从 Agent 如何发现、理解和使用组织工作资产的视角设计，同时保证人可以低门槛参与，不能只提供面向人的操作入口与说明。
 - 产品交互优先支持 Agent 理解用户意图、自主推理下一步并引导用户使用 Buildr；能够由 Agent 判断、解释和推进的工作，不应要求人类用户先掌握 Buildr 的内部模型或命令细节。
 - Buildr 不成为另一个 Agent，也不复制 Agent 的通用理解、推理、规划、对话和专业任务执行能力。新增产品能力必须说明其长期治理、跨 Agent 复用、确定性约束或可验证诊断价值；不具备这些价值时应将工作保留给 Agent，需要复用和治理的专业动作优先沉淀为 Skill 或其他工作方法资产，不得在 Buildr 产品核心中另建推理或任务执行主体。
 - 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
 - Task-scoped OpenSpec Change 是产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更的规范 authority；不得用实现、普通文档或 Rule 替代该 Change。
-- `services/buildr/package/manifest.yml` 声明发布边界；`services/buildr/package/targets/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/package/targets/runtime/` 只放直接安装到 Agent runtime 的源。
-- `services/buildr/package/targets/` 和 `services/buildr/package/bootstrap/` 是发布给用户的内容，修改时必须同时从用户初始化、更新和日常使用 Buildr 的视角审视。
+- `services/buildr/resources/manifest.yml` 声明发布边界；`services/buildr/resources/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/package/targets/runtime/` 只放直接安装到 Agent runtime 的源。
+- `services/buildr/resources/` 是文件型交付资源 authority；`services/buildr/package/` 只允许保留有明确后续 owner 的 Runtime Skill 与 Launcher 行为实现，修改时必须同时核对初始化、更新、安装与发布边界。
 - 未集成的 Product candidate 只能存在于 current Task Environment 允许的 execution roots；不得从 candidate checkout 更新 retained 自举 workspace 或共享 user runtime。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是 Task-scoped current Result 的唯一 authority。Git worktree、命令成功、commit 或 push 均不得替代 current Result，交付声明必须绑定最终 Content Target 和 current declaration identities。
 - Task Finish 只消费 current Development handoff；不得收敛 OpenSpec/current knowledge、发起 Formal Verification 或 Completion Review、接受风险或改写 Development facts。用户说“收尾”不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
 - self-bootstrap activation 只由 root Rule 指定的唯一 owner 执行；Product Rule 不复制其路径分类、安装、CLI identity 或 Doctor 流程。
 - release tag、npm publication、GitHub Release 和其他发布副作用必须单独获得明确授权；`buildr-release` 与 release checklist 是发布流程 owner，本 Rule 不授权或编排发布动作。
-- 私有业务 workspace、私有业务规则和私有服务内容不得进入 `package/`。
+- 私有业务 workspace、私有业务规则和私有服务内容不得进入 `resources/` 或正式发布物。

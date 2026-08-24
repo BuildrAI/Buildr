@@ -6,8 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { registerCommandHelp } from '../../../src/interfaces/cli/help.mjs';
-import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
+import { registerCommandHelp } from '../../../src/bootstrap/cli/help.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -170,7 +170,7 @@ assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
 const finishStatus = run(['task', 'finish', 'status', '--json']);
 assert.equal(finishStatus.status, 2);
 assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
-assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task inspect']);
+assert.deepEqual(JSON.parse(finishStatus.stdout).suggestions, ['task finish run', 'task finish inspect', 'task finish rollover']);
 assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
 
 const omitPrepareAgent = run(['task', 'environment', 'prepare', 'demo', '--json']);

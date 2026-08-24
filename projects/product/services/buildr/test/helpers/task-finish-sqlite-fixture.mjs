@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 export function initializeTaskFinishSqliteWorkspace(root) {
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
@@ -20,6 +20,7 @@ export function createTaskFinishSqliteRuntime(root, task) {
     'acquireTaskFinishTargetLease',
     'discardFailedTaskFinishRunPersistence',
     'finalizeTaskFinishPersistence',
+    'replaceTaskFinishRunPersistence',
     'readTaskFinishCompletionPersistence',
     'readTaskFinishResultsPersistence',
     'readTaskFinishRunPersistence',

@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
 import { validateProductSourceLayout } from './product-source-layout.mjs';
-import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/interfaces/cli/registry.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.mjs';
 
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const projectRoot = path.resolve(productRoot, '../..');
 const sourceRoot = path.join(productRoot, 'src');
 const entry = path.join(productRoot, 'bin', 'buildr.mjs');
+const serviceArchitecture = path.join(projectRoot, 'docs', 'architecture', 'service-architecture.md');
 const problems = [];
 const ignoredProjectRootEntries = new Set([
   '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
@@ -21,6 +22,7 @@ const ignoredProjectRootEntries = new Set([
 problems.push(...validateProductSourceLayout({
   projectEntries: fs.readdirSync(projectRoot).filter((entryName) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
+  packageFiles: listFiles(path.join(productRoot, 'package')).map((file) => path.relative(path.join(productRoot, 'package'), file).split(path.sep).join('/')),
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
 
@@ -41,92 +43,181 @@ function listFiles(root, predicate = () => true) {
   return files;
 }
 
-for (const required of ['bin', 'src', 'test', 'scripts', 'package']) {
+const globalApplicationResiduals = Object.freeze([]);
+const architectureSource = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
+if (!architectureSource) problems.push('missing Service architecture migration ledger');
+for (const residual of globalApplicationResiduals) {
+  const row = architectureSource.split(/\r?\n/u).find((line) => line.includes(`\`${residual}\``));
+  if (!row || !row.includes('| `deferred` |')) problems.push(`global Application residual lacks explicit deferred ledger entry: src/${residual}`);
+}
+for (const retired of ['application/domains/package-assets.mjs', 'application/workspace-operations.mjs']) {
+  if (fs.existsSync(path.join(sourceRoot, retired))) problems.push(`retired global Application path still exists: src/${retired}`);
+}
+for (const file of listFiles(path.join(sourceRoot, 'application'), (item) => /\.(?:mjs|ts)$/u.test(item))) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  const covered = globalApplicationResiduals.some((residual) => residual.endsWith('/') ? relative.startsWith(residual) : relative === residual);
+  if (!covered) problems.push(`global Application production file lacks migration ledger ownership: src/${relative}`);
+}
+for (const retiredRoot of ['domain', 'interfaces']) {
+  for (const file of listFiles(path.join(sourceRoot, retiredRoot), (item) => /\.(?:mjs|ts)$/u.test(item))) {
+    const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+    problems.push(`global ${retiredRoot} production file lacks module ownership: src/${relative}`);
+  }
+}
+
+for (const required of ['bin', 'src', 'resources', 'web-dist', 'test', 'tools', 'docs', 'package']) {
   if (!fs.statSync(path.join(productRoot, required), { throwIfNoEntry: false })?.isDirectory()) {
     problems.push(`missing Product responsibility directory: ${required}/`);
   }
 }
-const legacyDirectoryName = ['to', 'ols'].join('');
-if (fs.existsSync(path.join(productRoot, legacyDirectoryName))) problems.push(`legacy ${legacyDirectoryName} directory must be removed`);
 if (fs.existsSync(path.join(sourceRoot, 'shared'))) problems.push('src/shared/ is not an allowed ownership root');
 
 const entryContent = fs.existsSync(entry) ? fs.readFileSync(entry, 'utf8') : '';
 const entryLines = entryContent.trimEnd().split(/\r?\n/);
 if (!entryContent) problems.push('missing npm executable: bin/buildr.mjs');
 if (entryLines.length > 20) problems.push(`bin/buildr.mjs must remain a thin executable (found ${entryLines.length} lines)`);
-if (!entryContent.includes("from '../src/interfaces/cli/main.mjs'")) problems.push('bin/buildr.mjs must delegate to src/interfaces/cli/main.mjs');
+if (!entryContent.includes("from '../src/bootstrap/cli/main.mjs'")) problems.push('bin/buildr.mjs must delegate to src/bootstrap/cli/main.mjs');
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'interfaces/cli/main.mjs', 'interfaces/cli/registry.mjs', 'interfaces/cli/help.mjs', 'interfaces/cli/task-record.mjs',
-  'interfaces/cli/task-verification.mjs',
-  'interfaces/cli/task-environment.mjs', 'interfaces/cli/git-worktree.mjs',
-  'interfaces/local-app/http/server.mjs', 'interfaces/local-app/runtime/preview-manager.mjs', 'interfaces/local-app/web-dist/index.html',
-  'application/compose-runtime.mjs', 'application/doctor.mjs', 'application/package-maintenance.mjs',
-  'application/workspace/workspace-application.mjs', 'domain/workspace/workspace.mjs',
-  'application/worktree/git-worktree-provider.mjs',
-  'application/task-environment/task-environment-application.mjs',
-  'domain/task-environment/task-environment.mjs', 'infrastructure/filesystem/task-environment-repository.mjs',
-  'application/task-finish/task-finish-application.mjs', 'application/task-finish/task-finish-run.mjs',
-  'application/task-finish/task-finish-product-executor.mjs',
-  'application/task-verification/task-verification-application.mjs', 'domain/task-verification/task-verification.mjs',
-  'infrastructure/sqlite/task-development-repository.mjs', 'infrastructure/sqlite/task-review-repository.mjs',
-  'infrastructure/sqlite/task-verification-repository.mjs',
-  'application/domains/workspace.mjs', 'application/domains/rules.mjs', 'application/domains/skills.mjs',
-  'application/domains/commands.mjs', 'application/domains/components.mjs', 'application/domains/openspec.mjs',
-  'application/domains/runtime.mjs', 'application/json-contracts.mjs',
+  'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
+  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
+  'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
+  'task/interfaces/cli/task-verification.mjs',
+  'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.mjs',
+  'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.mjs',
+  'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
+  'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
+  'web/interfaces/cli/web.mjs',
+  'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
+  'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
+  'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
+  'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
+  'workspace/application/project-daily-progress-application.mjs',
+  'workspace/domain/workspace.mjs', 'workspace/domain/project.mjs', 'workspace/domain/service.mjs',
+  'workspace/domain/project-daily-progress.mjs',
+  'workspace/persistence/workspace-manifest-repository.mjs', 'workspace/persistence/workspace-registry-repository.mjs',
+  'workspace/persistence/project-manifest-repository.mjs', 'workspace/persistence/service-manifest-repository.mjs',
+  'workspace/persistence/project-daily-progress-repository.mjs',
+  'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
+  'workspace/interfaces/http/workspace-http.mjs',
+  'task/infrastructure/git-worktree-provider.mjs',
+  'task/application/task-environment-application.mjs',
+  'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
+  'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
+  'task/application/finish/task-finish-product-executor.mjs',
+  'task/application/task-verification-application.mjs', 'task/domain/task-verification.mjs',
+  'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
+  'task/persistence/task-verification-repository.mjs',
+  'task/module.mjs', 'task/domain/task-record.mjs',
+  'task/domain/task-review.mjs', 'task/application/task-review-application.mjs', 'task/persistence/task-review-repository.mjs',
+  'task/application/task-record-application.mjs', 'task/persistence/task-record-repository.mjs',
+  'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
+  'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
+  'task/interfaces/http/task-lifecycle-core.mjs',
+  'task/interfaces/internal/task-development-driver.mjs', 'task/interfaces/internal/task-planning-identity-driver.mjs',
+  'task/interfaces/internal/workflow-route-router.mjs', 'task/contracts/internal-workflow-route-catalog.mjs',
+  'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
+  'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
+  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
+  'task/openspec/module.mjs', 'task/change/module.mjs', 'task/change/application/change-application.mjs',
+  'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
+  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
-  'infrastructure/filesystem/workspace-manifest-repository.mjs',
-  'infrastructure/runtime/adapter-contract.mjs', 'infrastructure/runtime/render-claude-code.mjs',
-  'application/doctor/scope-diagnostics.mjs', 'application/doctor/service-diagnostics.mjs',
-  'application/doctor/runtime-diagnostics.mjs', 'application/package-maintenance/static-validation.mjs',
-  'application/package-maintenance/smoke-checks.mjs', 'application/package-maintenance/verification-registry.mjs',
-  'application/package-maintenance/output.mjs',
+  'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.mjs',
+  'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
+  'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
+  'system/doctor/application/scope-diagnostics.mjs', 'system/doctor/application/service-diagnostics.mjs',
+  'system/doctor/application/runtime-diagnostics.mjs', 'agent-assets/application/package-maintenance/static-validation.mjs',
+  'agent-assets/application/package-maintenance/smoke-checks.mjs', 'agent-assets/application/package-maintenance/verification-registry.mjs',
+  'agent-assets/application/package-maintenance/output.mjs',
 ];
 for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke = path.join(sourceRoot, 'application/package-maintenance/smoke-checks.mjs');
+const packageSmoke = path.join(sourceRoot, 'agent-assets/application/package-maintenance/smoke-checks.mjs');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
 
-const sourceFiles = listFiles(sourceRoot, (file) => file.endsWith('.mjs'));
+const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
-const layerOf = (relative) => relative.split('/')[0];
-const allowedTargets = {
-  domain: new Set(['domain']),
-  application: new Set(['application', 'domain', 'infrastructure']),
-  infrastructure: new Set(['infrastructure', 'domain']),
-  interfaces: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
+const layerOf = (relative) => {
+  if (relative === 'infrastructure/contracts/public-json.mjs' || relative === 'task/application/finish/git-task-contribution.mjs' || relative === 'task/application/finish/task-finish-delivery-commit.mjs') return 'infrastructure';
+  const parts = relative.split('/');
+  if (parts[0] === 'infrastructure') return 'infrastructure';
+  const moduleOffset = (
+    (parts[0] === 'system' && ['installation', 'doctor', 'publication'].includes(parts[1]))
+    || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
+  ) ? 2 : 1;
+  if (!['task', 'web', 'workspace', 'agent-assets', 'system', 'verification'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
+  return {
+    domain: 'domain',
+    application: 'application',
+    persistence: 'infrastructure',
+    infrastructure: 'infrastructure',
+    interfaces: 'interfaces',
+    http: 'interfaces',
+    contracts: 'domain',
+  }[parts[moduleOffset]] || parts[0];
 };
+const allowedTargets = {
+  bootstrap: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
+  domain: new Set(['domain']),
+  application: new Set(['application', 'domain', 'infrastructure', 'module']),
+  infrastructure: new Set(['infrastructure', 'domain']),
+  interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
+  module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
+};
+const allowedCrossModulePorts = new Set([
+  'agent-assets/module.mjs -> workspace/module.mjs',
+  'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
+  'web/module.mjs -> system/installation/module.mjs',
+  'web/module.mjs -> workspace/module.mjs',
+  'bootstrap/cli/registry.mjs -> task/openspec/module.mjs',
+  'bootstrap/runtime.mjs -> system/publication/module.mjs',
+  'bootstrap/runtime.mjs -> task/openspec/module.mjs',
+  'bootstrap/runtime.mjs -> task/change/module.mjs',
+  'task/openspec/module.mjs -> workspace/module.mjs',
+  'task/change/module.mjs -> task/openspec/module.mjs',
+  'task/change/module.mjs -> workspace/module.mjs',
+  'system/publication/module.mjs -> workspace/module.mjs',
+]);
 
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'application/compose-runtime.mjs') {
+  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime.mjs') {
     problems.push(`wide platform namespace import: src/${relative}`);
   }
-  if (relative !== 'application/compose-runtime.mjs' && /from\s+['"][^'"]*infrastructure\/platform\.mjs['"]/.test(content)) {
+  if (relative !== 'bootstrap/runtime.mjs' && /from\s+['"][^'"]*infrastructure\/platform\.mjs['"]/.test(content)) {
     problems.push(`composition-only platform registry import: src/${relative}`);
   }
   if (/const\s+(register[A-Za-z0-9_]+)\s*=\s*\(\.\.\.args\)\s*=>\s*runtime\.\1\(\.\.\.args\)/.test(content)) {
     problems.push(`unused self-registration forwarding wrapper: src/${relative}`);
   }
-  if (/from\s+['"][^'"]*(?:test\/|scripts\/)/.test(content)) problems.push(`Product runtime imports checkout-only code: src/${relative}`);
+  if (/from\s+['"][^'"]*(?:test\/|tools\/|scripts\/)/.test(content)) problems.push(`Product runtime imports checkout-only code: src/${relative}`);
   const edges = [];
   for (const match of content.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
     const specifier = match[1];
     if (!specifier.startsWith('.')) continue;
-    const target = path.resolve(path.dirname(file), specifier);
+    const requestedTarget = path.resolve(path.dirname(file), specifier);
+    const typescriptSourceTarget = file.endsWith('.ts') && requestedTarget.endsWith('.js')
+      ? `${requestedTarget.slice(0, -3)}.ts`
+      : requestedTarget;
+    const target = fs.existsSync(requestedTarget) ? requestedTarget : typescriptSourceTarget;
     if (!fs.existsSync(target)) problems.push(`src/${relative} imports missing module ${specifier}`);
     if (!target.startsWith(sourceRoot + path.sep)) continue;
     const targetRelative = path.relative(sourceRoot, target).split(path.sep).join('/');
     edges.push(targetRelative);
     const sourceLayer = layerOf(relative);
     const targetLayer = layerOf(targetRelative);
-    if (!allowedTargets[sourceLayer]?.has(targetLayer)) problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
+    if (!allowedTargets[sourceLayer]?.has(targetLayer)
+      && !allowedCrossModulePorts.has(`${relative} -> ${targetRelative}`)) {
+      problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
+    }
   }
   graph.set(relative, edges);
 }
@@ -143,11 +234,29 @@ const visitCycle = (file, stack = []) => {
 };
 for (const file of graph.keys()) visitCycle(file);
 
+const bootstrapRuntimeConsumers = new Set([
+  'bootstrap/cli/registry.mjs',
+  'task/interfaces/internal/task-development-driver-runner.mjs',
+  'task/interfaces/internal/task-finish-maintenance-driver.mjs',
+  'task/interfaces/internal/task-finish-retained-cleanup.mjs',
+  'task/interfaces/internal/task-finish-target-lease-driver.mjs',
+  'task/interfaces/internal/task-planning-identity-driver-runner.mjs',
+  'task/interfaces/internal/task-retrospective-driver.mjs',
+  'web/http/read-worker.mjs',
+]);
+for (const file of sourceFiles) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  const content = fs.readFileSync(file, 'utf8');
+  if (/(?:from\s+|import\()['"][^'"]*bootstrap\/runtime\.mjs/.test(content) && !bootstrapRuntimeConsumers.has(relative)) {
+    problems.push(`new Bootstrap runtime consumer outside the explicit runtime-port baseline: src/${relative}`);
+  }
+}
+
 const facadeLimits = new Map([
-  ['src/infrastructure/runtime/render-claude-code.mjs', 100],
-  ['src/application/doctor.mjs', 250],
-  ['src/application/package-maintenance.mjs', 550],
-  ['scripts/verify-buildr-product-fast', 20],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code.mjs', 100],
+  ['src/system/doctor/application/diagnostics.mjs', 250],
+  ['src/agent-assets/application/package-maintenance.mjs', 550],
+  ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],
 ]);
 for (const [relative, limit] of facadeLimits) {
@@ -157,7 +266,7 @@ for (const [relative, limit] of facadeLimits) {
 }
 
 for (const module of ['arguments.mjs', 'manifests.mjs', 'contributions.mjs', 'sources.mjs', 'render-plan.mjs']) {
-  if (!fs.existsSync(path.join(sourceRoot, 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
+  if (!fs.existsSync(path.join(sourceRoot, 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
 }
 const workspaceVerificationRoot = path.join(productRoot, 'test', 'verification', 'workspace');
 const workspaceVerificationFiles = ['fixture.mjs', 'suites.mjs', 'workspace-lifecycle.mjs', 'ownership-recovery.mjs', 'runtime-reconciliation.mjs'];
@@ -173,7 +282,13 @@ for (const suite of ['workspace-lifecycle', 'ownership-recovery', 'runtime-recon
   }
 }
 const candidateSource = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'candidate.mjs'), 'utf8');
-if (!candidateSource.includes("profiles: ['candidate']")) problems.push('candidate verifier must select the complete candidate profile');
+if (
+  !candidateSource.includes("profile: 'candidate'")
+  || !candidateSource.includes("request.profile === 'daily-full' ? 'core' : request.profile")
+  || !candidateSource.includes('profiles: [registryProfile]')
+) {
+  problems.push('candidate verifier must default to the complete candidate profile while allowing daily-full and the core compatibility lane');
+}
 if (/\b(?:nodeStep|commandStep|runBatch|workspaceSuiteSteps|candidateStepBudget)\b/.test(candidateSource)) {
   problems.push('candidate verifier must not inline step commands, batches, suites, or budgets');
 }
@@ -196,9 +311,23 @@ if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidate
 }
 if (packageJson.scripts?.['test:focus'] !== 'node test/verification/focus.mjs') problems.push('package.json must expose the unified focus selector');
 if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/release-smoke.mjs') problems.push('package.json must retain the cross-platform release smoke entry');
-if (packageJson.exports) problems.push('internal Product modules must not be declared through package exports');
+if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/release/release-smoke.mjs --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
+if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.mjs'))) problems.push('platform Launcher integration module is missing');
+const expectedPackageExports = {
+  './test-context': {
+    types: './package/targets/test-context/index.d.ts',
+    import: './test-context.mjs',
+    default: './test-context.mjs',
+  },
+  './package.json': './package.json',
+  './*': './*',
+};
+if (JSON.stringify(packageJson.exports) !== JSON.stringify(expectedPackageExports)) {
+  problems.push('package exports must expose only the documented Test Context facade and compatibility subpaths');
+}
+if (!packageJson.files?.includes('test-context.mjs')) problems.push('npm package must include the public Test Context facade');
 
-const registry = path.join(sourceRoot, 'interfaces', 'cli', 'registry.mjs');
+const registry = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.mjs');
 if (fs.existsSync(registry)) {
   const source = fs.readFileSync(registry, 'utf8');
   if (!source.includes('COMMAND_REGISTRY')) problems.push('command registry must expose one explicit COMMAND_REGISTRY');
@@ -217,11 +346,27 @@ if (fs.existsSync(registry)) {
   for (const retired of ['openspec audit', 'openspec baseline create', 'openspec check', 'openspec sync-plan', 'openspec sync-apply', 'skills migrate-project-assets']) {
     if (keys.includes(retired)) problems.push(`retired command remains in catalog: ${retired}`);
   }
-  if (!source.includes('registerCommandHelp(runtime, COMMAND_CATALOG)')) problems.push('dispatch and help must consume the same command catalog');
+  if (!source.includes('registerCommandHelp(runtime, commandCatalog)')) problems.push('dispatch and help must consume the same per-runtime command catalog');
+  if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
-const taskRecordApplication = path.join(sourceRoot, 'application', 'task-record', 'task-record-application.mjs');
-const taskRecordInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-record.mjs');
+const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task-record-application.mjs');
+const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.mjs');
+const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.mjs');
+const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
+const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.mjs');
+const legacyRuntimeModule = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
+for (const relative of [
+  'domain/task-record/task-record.mjs',
+  'application/task-record/task-record-application.mjs',
+  'infrastructure/sqlite/task-record-repository.mjs',
+  'interfaces/cli/task-record.mjs',
+]) {
+  if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
+}
+for (const relative of ['task/domain/record', 'task/application/record', 'task/persistence/record']) {
+  if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`redundant Task Record terminal directory must be removed: src/${relative}`);
+}
 if (fs.existsSync(taskRecordApplication)) {
   const source = fs.readFileSync(taskRecordApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskRecordCommand/.test(source)) {
@@ -234,6 +379,123 @@ if (fs.existsSync(taskRecordInterface)) {
     problems.push('Task Record CLI interface must adapt registry actions to the shared Application');
   }
 }
+if (fs.existsSync(taskRecordHttpInterface)) {
+  const source = fs.readFileSync(taskRecordHttpInterface, 'utf8');
+  for (const symbol of ['handleTaskRecordHttpRequest', 'runtime.queryTaskRecordViews', 'runtime.inspectTaskRecordView', 'runtime.updateTaskRecord', 'runtime.completeTaskRecord', 'runtime.abandonTaskRecord']) {
+    if (!source.includes(symbol)) problems.push(`Task Record HTTP interface must own ${symbol}`);
+  }
+}
+if (fs.existsSync(taskRecordModule)) {
+  const source = fs.readFileSync(taskRecordModule, 'utf8');
+  const repositoryIndex = source.indexOf('registerTaskRecordRepository(privateComposition)');
+  const applicationIndex = source.indexOf('registerTaskRecordApplication(privateComposition)');
+  for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_RUNTIME_PORT']) {
+    if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
+  }
+  if (repositoryIndex === -1 || applicationIndex === -1 || repositoryIndex > applicationIndex) problems.push('Task Record module must privately compose repository before application');
+}
+if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
+if (fs.existsSync(bootstrapRuntime)) {
+  const source = fs.readFileSync(bootstrapRuntime, 'utf8');
+  for (const required of ["from '../task/module.mjs'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskRecordModule', '__bootstrapContributions']) {
+    if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
+  }
+  if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
+}
+if (fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module must be removed');
+
+const buildrWebServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
+const buildrWebRouter = path.join(sourceRoot, 'web', 'http', 'router.mjs');
+if (fs.existsSync(buildrWebServer)) {
+  const source = fs.readFileSync(buildrWebServer, 'utf8');
+  const routerSource = fs.existsSync(buildrWebRouter) ? fs.readFileSync(buildrWebRouter, 'utf8') : '';
+  if (/task\/interfaces\/(?:cli|http)|task-(?:record|review)-http/.test(source)) problems.push('Buildr Web HTTP Host must not import Task adapters directly');
+  if (!routerSource.includes('for (const contribution of httpContributions)') || !routerSource.includes('contribution.handle(')) problems.push('Buildr Web HTTP Host must dispatch module HTTP contributions');
+  if (/runtime\.(?:listRegisteredWorkspaces|registerLocalWorkspace|getWorkspace|listProjects|projectDetail|listServices|serviceDetail)\(/.test(source)) problems.push('Buildr Web HTTP Host must not own Workspace Core routes');
+  if (/registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
+}
+
+const workspaceModule = path.join(sourceRoot, 'workspace', 'module.mjs');
+if (!fs.existsSync(workspaceModule)) problems.push('Workspace Core module entry is missing');
+else {
+  const moduleSource = fs.readFileSync(workspaceModule, 'utf8');
+  if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
+    problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
+  }
+  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'registerProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
+    if (!moduleSource.includes(required)) problems.push(`Workspace module must own Daily Progress ${required}`);
+  }
+}
+for (const legacy of [
+  'application/domains/workspace.mjs',
+  'application/project/project-application.mjs',
+  'application/service/service-application.mjs',
+  'application/workspace/workspace-application.mjs',
+  'domain/project/project.mjs',
+  'domain/service/service.mjs',
+  'domain/workspace/workspace.mjs',
+  'infrastructure/filesystem/project-manifest-repository.mjs',
+  'infrastructure/filesystem/service-manifest-repository.mjs',
+  'infrastructure/filesystem/workspace-manifest-repository.mjs',
+  'infrastructure/filesystem/workspace-registry-repository.mjs',
+  'domain/project-daily-progress/project-daily-progress.mjs',
+  'application/project-daily-progress/project-daily-progress-application.mjs',
+  'infrastructure/filesystem/project-daily-progress-store.mjs',
+  'interfaces/cli/project-daily-progress.mjs',
+]) {
+  if (fs.existsSync(path.join(sourceRoot, legacy))) problems.push(`legacy Workspace Core entry must be removed: ${legacy}`);
+}
+
+const webModule = path.join(sourceRoot, 'web', 'module.mjs');
+const webCli = path.join(sourceRoot, 'web', 'interfaces', 'cli', 'web.mjs');
+if (!fs.existsSync(webModule) || !fs.existsSync(webCli)) problems.push('Buildr Web instance lifecycle module entry is missing');
+else {
+  const moduleSource = fs.readFileSync(webModule, 'utf8');
+  const cliSource = fs.readFileSync(webCli, 'utf8');
+  if (!moduleSource.includes("WEB_MODULE_ID = 'web-instance-lifecycle'") || !moduleSource.includes('createWebCliContributions')) problems.push('Buildr Web module must explicitly contribute lifecycle CLI commands');
+  for (const key of ['web preview start', 'web preview list', 'web preview stop', 'web']) {
+    if (!cliSource.includes(`key: "${key}"`)) problems.push(`Buildr Web module is missing CLI contribution: ${key}`);
+  }
+}
+for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
+  if (fs.existsSync(path.join(sourceRoot, 'interfaces', 'local-app', 'runtime', legacy))) problems.push(`legacy Buildr Web lifecycle entry must be removed: ${legacy}`);
+}
+
+const legacyTaskRecordConsumers = new Set([
+  'application/change/change-application.mjs',
+  'change/module.mjs',
+  'change/interfaces/http/change-http.mjs',
+  'workspace/application/project-daily-progress-application.mjs',
+  'task/application/task-development-application.mjs',
+  'task/application/task-entry-snapshot-application.mjs',
+  'task/application/task-environment-application.mjs',
+  'task/application/task-execution-record-application.mjs',
+  'task/application/finish/task-finish-application.mjs',
+  'task/application/finish/task-finish-delivery-terminal.mjs',
+  'task/application/task-planning-identity-application.mjs',
+  'task/application/task-retrospective-application.mjs',
+  'task/application/task-terminal-delivery-application.mjs',
+  'task/application/task-verification-application.mjs',
+  'task/infrastructure/git-worktree-provider.mjs',
+  'task/persistence/task-environment-repository.mjs',
+  'task/persistence/parent-coordination-repository.mjs',
+  'task/persistence/task-development-repository.mjs',
+  'task/persistence/task-execution-record-repository.mjs',
+  'task/persistence/task-finish-repository.mjs',
+  'task/persistence/task-overview-repository.mjs',
+  'task/persistence/task-retrospective-repository.mjs',
+  'task/persistence/task-verification-repository.mjs',
+  'web/http/server.mjs',
+  'web/application/preview-lifecycle.mjs',
+]);
+const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|completeTaskRecordFromFinish|abandonTaskRecord)\(/;
+for (const file of sourceFiles) {
+  const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
+  if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
+  if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
+    problems.push(`new wide Runtime Task Record consumer outside the explicit runtime-port baseline: src/${relative}`);
+  }
+}
 
 const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');
 const taskEnvironmentInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-environment.mjs');
@@ -244,8 +506,8 @@ if (fs.existsSync(taskEnvironmentApplication)) {
   }
 }
 
-const taskReviewApplication = path.join(sourceRoot, 'application', 'task-review', 'task-review-application.mjs');
-const taskReviewInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-review.mjs');
+const taskReviewApplication = path.join(sourceRoot, 'task', 'application', 'task-review-application.mjs');
+const taskReviewInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-review.mjs');
 if (fs.existsSync(taskReviewApplication)) {
   const source = fs.readFileSync(taskReviewApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|taskReviewCommand|parseTaskReviewCli/.test(source)) {
@@ -286,8 +548,8 @@ if (fs.existsSync(taskEnvironmentInterface)) {
   }
 }
 
-const dailyProgressApplication = path.join(sourceRoot, 'application', 'project-daily-progress', 'project-daily-progress-application.mjs');
-const dailyProgressInterface = path.join(sourceRoot, 'interfaces', 'cli', 'project-daily-progress.mjs');
+const dailyProgressApplication = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.mjs');
+const dailyProgressInterface = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.mjs');
 if (fs.existsSync(dailyProgressApplication)) {
   const source = fs.readFileSync(dailyProgressApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
@@ -303,9 +565,12 @@ if (fs.existsSync(dailyProgressInterface)) {
     problems.push('Daily Progress CLI interface must adapt registry actions to the shared Application');
   }
 }
+if ([buildrWebServer, buildrWebRouter].some((file) => fs.existsSync(file) && /inspect(?:Project|Task)DailyProgress/.test(fs.readFileSync(file, 'utf8')))) {
+  problems.push('Buildr Web HTTP Host must not own Daily Progress routes');
+}
 
 const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
-const gitWorktreeInterface = path.join(sourceRoot, 'interfaces', 'cli', 'git-worktree.mjs');
+const gitWorktreeInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'git-worktree.mjs');
 if (fs.existsSync(gitWorktreeProvider)) {
   const source = fs.readFileSync(gitWorktreeProvider, 'utf8');
   if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
@@ -319,15 +584,23 @@ if (fs.existsSync(gitWorktreeInterface)) {
   }
 }
 
-const legacyRootToken = ['to', 'ols/'].join('');
-const currentRoots = ['bin', 'src', 'scripts', 'test', 'docs', 'package'];
+const legacyRootTokens = [
+  'package/' + 'manifest.yml',
+  'package/targets/' + 'workspace',
+  'package/launchers/' + 'assets',
+  ['package', 'bootstrap'].join('/'),
+  'src/web/' + 'web-dist',
+  'scripts/' + 'release',
+  'scripts/' + 'run-development',
+];
+const currentRoots = ['bin', 'src', 'resources', 'web-dist', 'test', 'docs', 'package', 'tools'];
 for (const root of currentRoots) {
   for (const file of listFiles(path.join(productRoot, root), (item) => /\.(?:mjs|js|json|md|yml|yaml)$/.test(item) || !path.extname(item))) {
     const relative = path.relative(productRoot, file).split(path.sep).join('/');
     const content = fs.readFileSync(file, 'utf8');
     const historicalDocumentation = relative.startsWith('docs/archive/');
-    if (content.includes(legacyRootToken) && !relative.startsWith('test/fixtures/') && !historicalDocumentation) {
-      problems.push(`current Product file references legacy tools path: ${relative}`);
+    if (legacyRootTokens.some((token) => content.includes(token)) && !relative.startsWith('test/fixtures/') && !historicalDocumentation) {
+      problems.push(`current Product file references migrated root path: ${relative}`);
     }
   }
 }
@@ -343,8 +616,8 @@ const currentCallers = [
 ];
 for (const file of currentCallers) {
   if (!fs.existsSync(file)) continue;
-  if (fs.readFileSync(file, 'utf8').includes(legacyRootToken)) {
-    problems.push(`current Product caller references legacy tools path: ${path.relative(workspaceRoot, file).split(path.sep).join('/')}`);
+  if (legacyRootTokens.some((token) => fs.readFileSync(file, 'utf8').includes(token))) {
+    problems.push(`current Product caller references migrated root path: ${path.relative(workspaceRoot, file).split(path.sep).join('/')}`);
   }
 }
 
@@ -354,5 +627,5 @@ if (problems.length) {
   for (const problem of problems) console.error(`- ${problem}`);
   if (!reportOnly) process.exit(1);
 } else {
-  console.log('CLI architecture verification passed: bin/src/test/scripts/package ownership, runtime inventory, one-way imports, command registry, and npm boundary.');
+  console.log('CLI architecture verification passed: bin/src/resources/web-dist/test/tools/docs ownership, deferred package allowlist, runtime inventory, one-way imports, command registry, and npm boundary.');
 }

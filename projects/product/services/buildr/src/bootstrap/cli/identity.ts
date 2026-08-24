@@ -1,0 +1,20 @@
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { readCurrentProductIdentity } from '../../system/installation/module.mjs';
+
+export function readCliIdentity() {
+  return readCurrentProductIdentity();
+}
+
+export function isVersionRequest(rawArgs: readonly string[]) {
+  return rawArgs.length === 1 && ['--version', '-V', 'version'].includes(rawArgs[0])
+    || rawArgs.length === 2 && rawArgs[0] === 'version' && rawArgs[1] === '--json';
+}
+
+export function printVersion(rawArgs: readonly string[]) {
+  const identity = readCliIdentity();
+  if (rawArgs.includes('--json')) {
+    console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.version, identity), null, 2));
+    return;
+  }
+  console.log(identity.version);
+}

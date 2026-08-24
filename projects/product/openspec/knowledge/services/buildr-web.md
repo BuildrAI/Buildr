@@ -8,21 +8,25 @@
 
 - 源码根：`projects/product/services/buildr-web/`（`package.json` name：`@buildr-ai/buildr-web`，private）。
 - 开发：`npm run dev`；正式构建：`npm run build`（也可由 `buildr` 的 `npm run build:web` / `dev:web` 委托）。
-- 构建输出：正式构建默认写入 sibling `buildr` 的 `src/interfaces/local-app/web-dist/`（`emptyOutDir: true`）；验证可通过Vite `--outDir`覆盖到临时staging，只用于与tracked产物精确比较，不改变正式输出契约。
+- 构建输出：正式构建默认写入 sibling `buildr` 顶层 `web-dist/`（`emptyOutDir: true`）；验证可通过Vite `--outDir`覆盖到临时staging，只用于与tracked产物精确比较，不改变正式输出契约。
 - OpenSpec 与 verification policy 仍在父级 Product Project；本 Service 通过 Service registry 登记并由 Buildr Web / doctor 可见。
 - 全局壳层为上下结构：顶栏承载品牌、任务/项目/服务/文章导航、工作空间切换、设置、退出与交给 Agent；内容在下方。进入 Workspace 直接打开任务列表；旧开始页路由重定向到 `/tasks`。任务页与项目页宽屏为左列表、右详情；项目编辑入口在详情右上角；服务/文章仍整页切换。壳层读取 sibling `buildr` 的只读Release Awareness API，在顶栏下展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
 
 ## 数据与依赖
 
 - 依赖 React 19、React Router、Vite、TypeScript，以及 Ant Design 5（`antd` + 必要 icons）；UI 方向为柔和产品感，依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本；前端工程自有 `package-lock.json`。
-- 当Task构建或验证Buildr Web前端时，Agent从Task scope、`buildr`的`build:web`委托和Verification能力判断本Service需要准备，并在Task专属Environment Plan中为本Service登记独立Step。npm场景的Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output、Workspace Foundation受管npm作为executable，不从retained checkout或系统PATH借用TypeScript/Vite。
+- 当Formal Verification选择需要Buildr Web源码工具链的capability时，该capability通过`environment.preparation`引用本Service已登记Recipe；Verification admission把它作为辅助准备闭包交给Task Environment，而不把本Service加入Task scope、Change、Content Target或源码写入authority。npm Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output和受管wrapper authority；Browser build在启动Chrome前只接受本root的TypeScript/Vite，不从retained checkout、全局安装或系统PATH借用。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
+- Task list/detail/update/complete/abandon 通过 `src/api/tasks.ts` 的能力级 typed Client消费 sibling `buildr` 从 Task-owned JSON Schema生成的 tracked DTO；低层 `client.ts` 继续只负责 Workspace scope、session/fetch transport并返回`unknown`，业务页面不再手写这五个operation的响应类型或在调用点猜测payload。Buildr Web不安装Ajv、不拥有Schema或Application authority；Schema变化必须先由Buildr生成两端DTO并通过drift check、typecheck、正式build与Task Browser Smoke。
+- Task professional detail/list/update/prompt operations 通过 `src/api/task-professional.ts` 消费 Buildr Service 生成的 tracked DTO；Task Detail 页面与 Execution Records 面板不再直接猜测这些专业 payload。Web 端继续不安装 Ajv、不拥有 Schema 或 Application authority，生成物 drift、typecheck、正式 build 与受影响 Task Browser Smoke 仍是消费侧验收链。
+- Release Awareness、Publication list/detail 与安全退出通过 `src/api/runtimeSystem.ts` 消费 Buildr Service 的 Runtime/System Schema 生成 DTO；`AppLayout` 与 Articles 页面不再保存同一响应的手写类型或调用点 `as` 断言。Publication asset 仍使用同源 binary URL，不进入 JSON client；低层 `client.ts` 继续返回 `unknown`，Buildr Web 不安装 Ajv或取得 Runtime/System Application authority。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表默认 `open` (todo + active)，可单独筛选 todo，并继续以 `retrospectiveState` 筛选复盘处置。Task 详情展示复盘来源，复盘 Tab 保持原始 Markdown 只读并展示后续 Task 实时状态。UI 不创建或激活 Task。
-- Task 详情“预演”Tab 按需读取 sibling `buildr` 的 Task UI Preview metadata，提供明确空态、多个完整页面选择与来源信息。具体 HTML 只从 Task 与不透明页面 ID 的专用响应装入不含 `allow-same-origin` 的 `sandbox="allow-scripts"` iframe；响应头同时强制 opaque-origin CSP sandbox 与离线资源策略。舞台提供「新窗口打开」，用新窗口打开当前页面同一内容 URL；内容不进入主 DOM、不继承 Buildr Web session，也不能联网、提交表单或导航顶层页面。
-- Task Intent 使用受限 Markdown 展示。其 Workspace 相对 `.md` 链接只能解析到 Task scope 内已登记 Project 的 `source.path`，并在页内只读预览文档名称、Workspace 路径和正文。预览内的相对 Markdown 导航继续受同一 Project 边界约束；前端不建立 Task 附件、文档副本或新 writer。
+- Task 详情“原型”Tab 按需读取 sibling `buildr` 的 Task UI Prototype metadata，提供明确空态，并列出、选择和切换多个完整原型页面及其来源。具体 HTML 只从 Task 与不透明页面 ID 的专用响应装入不含 `allow-same-origin` 的 `sandbox="allow-scripts"` iframe；响应头同时强制 opaque-origin CSP sandbox 与离线资源策略。舞台提供「新窗口打开」，用新窗口打开当前页面同一内容 URL；内容不进入主 DOM、不继承 Buildr Web session，也不能联网、提交表单或导航顶层页面。
+- Task、Project与Service文档入口共享Workspace相对Markdown路径规则。Task Intent中的`.md`链接只能解析到Task scope内已登记Project的`source.path`；Project/Service预览内的相对导航继续受同一Project边界约束。界面分别表达“引用已解析”与“正文当前可读取”，正文缺失或读取失败不反向判定引用非法；前端不建立Task附件、文档副本或新writer。
 - 项目详情第三 Tab「每日演进」只读展示当天本机 v2 文件的四问摘要与提交（不展示变更文件列表；`files` 仍可由 CLI inspect 返回），可用日期选择器与前后一天切换日期，并按日/人/任务分组；按任务只聚合已关联的自己的提交。空态明确需要 Agent 收集 Git 后写入，页面无写入控件，打开时不扫描 Git。Task 详情概览不展示每日演进反向关联；生成入口走右上角交给 Agent。
-- Task概览的“父子任务协调”区块直接消费sibling `buildr` Parent Coordination Application read model，先展示startup readiness、next、eligible Contribution的Parent Plan `summary`与稳定`id`、真实blocker及final acceptance进度，再展示全部Contribution disposition、直接Child顶层状态与saved handoff证明；等待依赖直接消费response-only `dependencyBlockers`，Planning Review按`result.conclusion`、`applicability`与`result.completedAt`读取。前端不查询SQLite、不扫描文件系统、不缓存、重算或回写Parent progress；legacy Task只展示absent提示。
+- Task概览按`parent-plan | child | ordinary | legacy`呈现角色化信息：父任务先展示目标、下一步，以及由真实Child与matching Contribution Handoff派生的“已交付、剩余工作、已取代、进行中”四项摘要，再把父任务计划贡献项、顶层`children`中的真实绑定和贡献交接摘要即时组合为“进行中 / 已交付”“可启动”“等待依赖”三组中文迁移进度。桌面端每个Contribution使用“贡献项、实际子任务、贡献交接或依赖、详情入口”四区域横向紧凑行；点击行或详情箭头打开只读右侧抽屉，点击子任务标题则阻止行级交互并复用同一工作空间既有任务详情路由。窄屏将前三个信息区域按原顺序堆叠，详情箭头固定右侧，四项摘要降级为两列且不隐藏Child、交接、下一步行动或阻塞原因。实际子任务显示中文状态和交付证明；只有matching Contribution Handoff可以产生“已交付”以及已交付、剩余工作、已取代、下一步行动摘要，Child `completed`没有交接时明确显示“交付未证明”。等待项直接展示read model给出的依赖与阻塞原因，不在浏览器重算readiness。Child只展示紧凑父任务来源，ordinary与legacy不渲染空协调卡；父任务技术摘要、Change与Task Record默认折叠。页面直接消费sibling `buildr`的`buildr.parent-coordination-result/v3`，从`plan`读取治理摘要、从唯一顶层`contributions`读取工作项、从紧凑方案审查字段读取outcome；不依赖已删除的raw Parent Plan、嵌套Contribution或完整Handoff/Review Result。前端不查询SQLite、不扫描文件系统、不缓存、重算、回写Parent progress，普通进度刷新也不触发Parent Plan reconcile或方案审查失效。
+- 所有Task角色先展示同一Task Overview用户摘要：目标以及相互正交的Delivery、Activation、Cleanup，随后列出局部attention和具名authorization；前端直接消费read model，不从技术字段重算authority、拼装授权token或把maintenance attention降级为Delivery失败。既有Parent Contribution四项摘要、横向进度行、Child导航与详情侧栏保持其已验收布局和交互。
 - Task“证据”页使用一个共享Execution Record浏览器展示全部、Verification与Finish三种只读视图，按需读取detail与manifest声明的限量正文；Verification Result与研发页的Finish区块只提供进入同一浏览器的专业筛选入口，不复制record、Result或Finish current/terminal authority，也不提供locator、cleanup、GC或资源Inventory。
 
 ## 运行与验证

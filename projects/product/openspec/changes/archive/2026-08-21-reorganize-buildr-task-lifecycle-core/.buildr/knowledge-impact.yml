@@ -1,0 +1,30 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: reorganize-buildr-task-lifecycle-core
+operation: inspect
+treeIdentity: working-tree:reorganize-buildr-task-lifecycle-core
+impacts:
+  - type: brief
+    target: openspec/changes/reorganize-buildr-task-lifecycle-core/brief.md
+    reason: 每个正式 Change 需要保持面向人的范围、流程、兼容性与验收入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-task-lifecycle-core/proposal.md
+      - openspec/changes/reorganize-buildr-task-lifecycle-core/design.md
+      - openspec/changes/reorganize-buildr-task-lifecycle-core/specs/task-lifecycle-core-module-architecture/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前文档仍把八项 Task 生命周期核心描述为 legacy runtime 与聚合 persistence，需要在实现收敛后更新真实模块边界和 Finish residual。
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/architecture/technical.md
+      - docs/architecture/service-architecture.md
+      - services/buildr/src/task/module.mjs
+  - type: service
+    target: docs/architecture/service-architecture.md
+    reason: 用户要求把本次迁移内容和剩余边界更新到 Buildr 服务架构文档。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/reorganize-buildr-task-lifecycle-core/proposal.md
+      - openspec/changes/reorganize-buildr-task-lifecycle-core/design.md
+      - services/buildr/src/task/module.mjs
+unresolvedItems: []

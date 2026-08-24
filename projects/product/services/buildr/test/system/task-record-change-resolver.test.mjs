@@ -5,9 +5,9 @@ import path from 'node:path';
 import process from 'node:process';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/task/domain/task-environment-plan.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {
   BUILDR,
@@ -103,7 +103,7 @@ test('安装版 Buildr Web 在 saved Receipt blocked 时仍读取 Task worktree 
   runtime.createTaskRecord(workspaceRoot, { taskId, title: 'Installed reader', intent: '读取候选 Change', projects: ['demo'], services: [], changes: [] });
   const observedAt = new Date().toISOString();
   const planPayload = {
-    schemaVersion: 'buildr.task-environment-plan/v2',
+    schemaVersion: 'buildr.task-environment-plan/v3',
     projects: [{
       project: 'demo',
       source: { kind: 'task-inline', path: null, identity: null },
@@ -114,13 +114,15 @@ test('安装版 Buildr Web 在 saved Receipt blocked 时仍读取 Task worktree 
         recipes: [],
       }],
     }],
+    capabilityPreparation: [],
   };
-  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:demo'] });
+  const plan = normalizeTaskEnvironmentPlan(planPayload, { scopeSelectors: ['project:demo'] });
   runtime.writeTaskEnvironmentPersistence(root, {
-    schemaVersion: 'buildr.task-environment-receipt/v5',
+    schemaVersion: 'buildr.task-environment-receipt/v6',
     taskId,
     workspace: { id: runtime.readWorkspaceRecord(workspaceRoot).workspace.id, root: workspaceRoot },
     controller: { sourceRoot: PRODUCT_ROOT, cliSource: BUILDR, identity: 'sha256-installed-reader-fixture', adapter: 'codex' },
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
     status: 'blocked',
     scopes: [{
       selector: 'project:demo', kind: 'project', project: 'demo', service: null, sourcePath: 'projects/demo', executionRoot: candidateProjectRoot, validationRoot: workspaceRoot, shared: true, provider: null,

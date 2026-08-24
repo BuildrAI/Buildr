@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义终态 Task 的单一当前执行效率复盘、SQLite 所有权、Skill 写入边界和 Local App 只读投影。
+定义终态 Task 的单一当前执行效率复盘、SQLite 所有权、Skill 写入边界和 Buildr Web 只读投影。
 
 ## Requirements
 

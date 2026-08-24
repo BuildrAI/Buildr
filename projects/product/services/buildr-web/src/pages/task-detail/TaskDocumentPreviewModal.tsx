@@ -104,6 +104,9 @@ export function TaskDocumentPreviewModal({ reference, onClose }: Props) {
             {history.length > 1 ? <Button size="small" onClick={goBack}>返回上一文档</Button> : null}
           </div>
           <code id="task-document-preview-path" className="task-document-preview-path">{visibleWorkspacePath}</code>
+          <p id="task-document-preview-resolution" className="task-document-preview-resolution">
+            引用已解析 · {loading ? '正在确认正文' : document?.exists && document.content != null ? '正文当前可读取' : '正文当前不可读取'}
+          </p>
           {message ? <Alert id="task-document-preview-message" type="warning" showIcon message={message} /> : null}
           {loading ? <div className="task-document-preview-loading"><Spin size="small" /> 正在读取文档…</div> : null}
           {!loading && document?.exists && document.content != null ? (

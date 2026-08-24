@@ -28,51 +28,53 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 }
 productionFiles.sort();
 const allowed = new Map([
+  ['src/infrastructure/testing/context-runtime/node-test.mjs', new Set(['defaultNodeTestContextRuntime'])],
+  ['src/infrastructure/testing/context-runtime/node-runner.mjs', new Set(['runHost'])],
   ['src/infrastructure/filesystem/index.mjs', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
-  ['src/infrastructure/filesystem/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
-  ['src/infrastructure/product-launcher/index.mjs', new Set([
+  ['src/workspace/persistence/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
-  ['src/infrastructure/filesystem/task-execution-record-body-store.mjs', new Set([
+  ['src/task/persistence/task-execution-record-body-store.mjs', new Set([
     'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
   ])],
-  ['src/interfaces/local-app/runtime/instance-manager.mjs', new Set([
-    'acquireLocalAppStartLock', 'releaseLocalAppStartLock', 'clearLocalAppInstance',
+  ['src/web/infrastructure/instance-runtime.mjs', new Set([
+    'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
-  ['src/interfaces/cli/main.mjs', new Set(['writeInternalDownload'])],
-  ['src/interfaces/local-app/runtime/preview-manager.mjs', new Set(['clearOwner'])],
-  ['src/application/worktree/worktree-application.mjs', new Set(['writeReceipt'])],
-  ['src/application/task-finish/task-finish-run.mjs', new Set([
+  ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
+  ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],
+  ['src/task/infrastructure/worktree-application.mjs', new Set(['writeReceipt'])],
+  ['src/task/application/finish/task-finish-run.mjs', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],
-  ['src/application/task-finish/task-finish-bootstrap-recovery.mjs', new Set([
+  ['src/task/application/finish/task-finish-bootstrap-recovery.mjs', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/application/task-finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
+  ['src/task/application/finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
   ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
-  ['src/application/verification/resource-coordinator.mjs', new Set([
+  ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
-  ['src/interfaces/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
-  ['src/application/domains/workspace.mjs', new Set(['createProject', 'createService'])],
-  ['src/application/domains/rules.mjs', new Set(['rulesRemoveUnsafe'])],
-  ['src/application/domains/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
-  ['src/application/domains/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
-  ['src/application/domains/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
-  ['src/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],
-  ['src/application/package-maintenance/builtin-lifecycle.mjs', new Set(['builtinUninstallUnsafe'])],
-  ['src/application/package-maintenance/output.mjs', new Set(['buildPackageOutput', 'packageBuild'])],
-  ['src/application/package-maintenance/smoke-checks.mjs', new Set([
+  ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
+  ['src/workspace/interfaces/cli/workspace.mjs', new Set(['createProject', 'createService'])],
+  ['src/agent-assets/application/rules.mjs', new Set(['rulesRemoveUnsafe'])],
+  ['src/agent-assets/application/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
+  ['src/agent-assets/application/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
+  ['src/agent-assets/application/package-maintenance/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
+  ['src/agent-assets/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],
+  ['src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs', new Set(['builtinUninstallUnsafe'])],
+  ['src/agent-assets/application/package-maintenance/output.mjs', new Set(['buildPackageOutput', 'packageBuild'])],
+  ['src/agent-assets/application/package-maintenance/smoke-checks.mjs', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
-  ['src/application/workspace-operations.mjs', new Set(['mutationRecover'])],
-  ['src/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
-  ['src/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
-  ['src/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],
+  ['src/workspace/application/workspace-operations.mjs', new Set(['mutationRecover'])],
+  ['src/agent-assets/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
+  ['src/agent-assets/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],
 ]);
 
 const violations = [];

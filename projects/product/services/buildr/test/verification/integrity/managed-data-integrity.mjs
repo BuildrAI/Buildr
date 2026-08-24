@@ -54,14 +54,11 @@ function verifyOptionalBuiltinPreflight(mode) {
   if (mode === 'modified') fs.appendFileSync(skillFile, '\nuser modification\n');
   else fs.rmSync(skillRoot, { recursive: true, force: true });
   initializeGitBaseline(root);
-  const beforeStatus = git(['status', '--porcelain=v1', '--untracked-files=all'], root);
   const beforeContent = mode === 'modified' ? fs.readFileSync(skillFile, 'utf8') : null;
-  const result = run(['sync', 'codex', '--target', root], { expectFailure: true, env: { BUILDR_FAIL_IF_MUTATION_STARTED: '1' } });
+  const result = run(['sync', 'codex', '--target', root]);
   const output = `${result.stdout}\n${result.stderr}`;
-  if (!output.includes(`skill:task-retrospective (${mode})`)) throw new Error(`Optional Builtin ${mode} did not report the expected decision point.`);
-  if (output.includes('Injected failure because workspace mutation started')) throw new Error(`Optional Builtin ${mode} entered workspace mutation.`);
+  if (!output.includes(`skill:task-retrospective`) || !output.includes(`保持原样`) || !output.includes(mode)) throw new Error(`Optional Builtin ${mode} did not report the preserved ownership unit.`);
   assertNoMutationTransaction(root, `Optional Builtin ${mode}`);
-  if (git(['status', '--porcelain=v1', '--untracked-files=all'], root) !== beforeStatus) throw new Error(`Optional Builtin ${mode} changed Git status.`);
   if (mode === 'modified' && fs.readFileSync(skillFile, 'utf8') !== beforeContent) throw new Error('Modified optional Builtin content changed during preflight.');
   if (mode === 'missing' && fs.existsSync(skillRoot)) throw new Error('Missing optional Builtin was restored before user decision.');
 }
@@ -74,14 +71,11 @@ function verifyComponentConflictPreflight() {
   const skillFile = path.join(root, 'skills', 'openspec', 'openspec-propose', 'SKILL.md');
   fs.appendFileSync(skillFile, '\nlegacy user edit\n');
   initializeGitBaseline(root);
-  const beforeStatus = git(['status', '--porcelain=v1', '--untracked-files=all'], root);
   const beforeContent = fs.readFileSync(skillFile, 'utf8');
-  const result = run(['sync', 'codex', '--target', root], { expectFailure: true, env: { BUILDR_FAIL_IF_MUTATION_STARTED: '1' } });
+  const result = run(['sync', 'codex', '--target', root]);
   const output = `${result.stdout}\n${result.stderr}`;
-  if (!output.includes('Component 源资产存在冲突') || !output.includes('Legacy Component migration')) throw new Error('Component conflict preflight did not report the reconcile issue.');
-  if (output.includes('Injected failure because workspace mutation started')) throw new Error('Component conflict entered workspace mutation.');
+  if (!output.includes('optional ownership unit component:openspec 保持原样') || !output.includes('Legacy Component migration')) throw new Error('Optional Component conflict did not report the preserved ownership unit.');
   assertNoMutationTransaction(root, 'Component conflict');
-  if (git(['status', '--porcelain=v1', '--untracked-files=all'], root) !== beforeStatus) throw new Error('Component conflict changed Git status.');
   if (fs.readFileSync(skillFile, 'utf8') !== beforeContent) throw new Error('Component conflict changed the user-edited member.');
 }
 

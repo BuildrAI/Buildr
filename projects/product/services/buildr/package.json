@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.21",
+  "version": "0.1.0-rc.22",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -25,12 +25,23 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
+  "exports": {
+    "./test-context": {
+      "types": "./package/targets/test-context/index.d.ts",
+      "import": "./test-context.mjs",
+      "default": "./test-context.mjs"
+    },
+    "./package.json": "./package.json",
+    "./*": "./*"
+  },
   "bin": {
     "buildr": "bin/buildr.mjs"
   },
   "files": [
     "LICENSE",
     "bin/buildr.mjs",
+    "test-context.mjs",
+    "package/targets/test-context/",
     "src/",
     "README.md",
     "docs/agent-runtime-adapters.md",
@@ -38,57 +49,79 @@
     "docs/skill-capability-contracts.md",
     "docs/cli-architecture.md",
     "docs/known-limitations.md",
-    "package/README.md",
-    "package/manifest.yml",
-    "package/bootstrap/",
-    "package/targets/"
+    "docs/bootstrap-guide.md",
+    "docs/resources.md",
+    "resources/",
+    "web-dist/",
+    "package/targets/runtime/"
   ],
   "scripts": {
-    "test": "./scripts/verify-buildr-product-fast",
-    "test:fast": "./scripts/verify-buildr-product-fast",
+    "test": "./test/verification/verify-buildr-product-fast",
+    "test:fast": "./test/verification/verify-buildr-product-fast",
     "test:unit": "node --test test/unit/*.test.mjs",
     "test:component": "node --test test/component/*.test.mjs",
     "test:contract": "node --test test/contract/*.test.mjs",
     "test:integration": "node --test test/integration/*.test.mjs",
+    "contracts:generate": "node tools/contracts/task-record-dto.mjs && node tools/contracts/task-professional-dto.mjs && node tools/contracts/runtime-system-dto.mjs",
+    "contracts:check": "node tools/contracts/task-record-dto.mjs --check && node tools/contracts/task-professional-dto.mjs --check && node tools/contracts/runtime-system-dto.mjs --check",
+    "contracts:generate:workspace": "node tools/contracts/workspace-agent-assets-dto.mjs",
+    "contracts:check:workspace": "node tools/contracts/workspace-agent-assets-dto.mjs --check",
+    "contracts:professional:generate": "node tools/contracts/task-professional-dto.mjs",
+    "contracts:professional:check": "node tools/contracts/task-professional-dto.mjs --check",
+    "contracts:generate:runtime-system": "node tools/contracts/runtime-system-dto.mjs",
+    "contracts:check:runtime-system": "node tools/contracts/runtime-system-dto.mjs --check",
+    "test-context:generate": "node tools/testing/test-context-build.mjs generate",
+    "test-context:check": "node tools/testing/test-context-build.mjs check",
+    "typecheck": "npm run test-context:check && tsc --project tsconfig.json",
     "test:system": "node test/verification/system.mjs",
     "test:openspec:convergence": "node --test test/integration/openspec-convergence-transaction.test.mjs test/system/task-finish-cli.test.mjs && node test/verification/openspec/contract.mjs --suite recovery",
-    "build:web": "node scripts/run-development-npm.mjs --prefix ../buildr-web run build",
+    "build:web": "npm run contracts:check && npm run contracts:check:workspace && node tools/development/run-development-npm.mjs --prefix ../buildr-web run build",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "test:web-dist": "node test/verification/web-dist.mjs",
-    "test:browser:smoke": "npm run test:web-dist && node --test test/browser-smoke/*.test.mjs",
+    "test:browser:smoke": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs",
     "test:browser:changed": "node test/verification/browser-selector-dispatcher.mjs --run",
-    "test:browser:core": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs core",
-    "test:browser:shell": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs shell",
-    "test:browser:project": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs project",
-    "test:browser:service": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs service",
-    "test:browser:change": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs change",
-    "test:browser:task": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs task",
-    "test:browser:articles": "npm run test:web-dist && node test/browser-smoke/local-app-browser.test.mjs articles",
+    "test:browser:core": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- core",
+    "test:browser:shell": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- shell",
+    "test:browser:project": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- project",
+    "test:browser:service": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- service",
+    "test:browser:change": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- change",
+    "test:browser:task": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- task",
+    "test:browser:articles": "npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs -- articles",
+    "smoke:workspace": "node tools/development/run-isolated-workspace-smoke.mjs",
     "test:integration:candidate:release": "node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs",
     "coverage:unit": "node test/verification/unit-coverage.mjs",
     "test:changed": "node test/verification/changed.mjs",
+    "test:audit:verification": "node test/verification/audit.mjs",
     "test:focus": "node test/verification/focus.mjs",
     "test:host-node": "node test/verification/host-node.mjs",
-    "test:candidate": "bash scripts/verify-buildr-product",
-    "test:candidate:ci": "bash scripts/verify-buildr-product-ci",
+    "test:daily-full": "bash test/verification/verify-buildr-product-daily-full",
+    "test:core": "bash test/verification/verify-buildr-product-core",
+    "test:candidate": "bash test/verification/verify-buildr-product",
+    "test:candidate:ci": "bash test/verification/verify-buildr-product-ci",
     "test:candidate:host": "node test/verification/candidate-ci.mjs host",
     "test:candidate:aggregate": "node test/verification/candidate-ci.mjs aggregate",
     "test:release": "node test/verification/release/release-smoke.mjs",
-    "install:development": "./scripts/install-buildr-development",
+    "test:launcher-platform": "node test/verification/release/release-smoke.mjs --platform-launcher",
+    "install:development": "./tools/development/install-buildr-development",
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
     "node": ">=24.15.0 <25"
   },
   "dependencies": {
+    "ajv": "8.17.1",
     "yaml": "^2.9.0"
   },
   "bundleDependencies": [
+    "ajv",
     "yaml"
   ],
   "devDependencies": {
     "@fission-ai/openspec": "1.6.0",
+    "@types/node": "24.13.3",
     "esbuild": "0.28.2",
-    "playwright-core": "^1.61.1"
+    "json-schema-to-typescript": "15.0.4",
+    "playwright-core": "^1.61.1",
+    "typescript": "7.0.2"
   }
 }

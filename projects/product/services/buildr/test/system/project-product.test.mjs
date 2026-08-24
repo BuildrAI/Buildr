@@ -7,8 +7,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { copyPreparedGitRepository, copyPreparedWorkspace } from '../helpers/prepared-fixtures.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -28,10 +29,7 @@ function runBuildr(args) {
 }
 
 function initWorkspace(t) {
-  const root = path.join(tempRoot(t), 'workspace');
-  const result = runBuildr(['init', '--target', root, '--name', 'Demo', '--description', 'Demo workspace']);
-  assert.equal(result.status, 0, result.stderr);
-  return root;
+  return copyPreparedWorkspace(t, 'project-product').root;
 }
 
 test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt', (t) => {
@@ -59,7 +57,8 @@ test('Project create 写入 v2 Domain，Application 受控修改并生成 prompt
   assert.match(prompt.prompt, /集成分支：dev/);
   assert.match(prompt.prompt, /不得盲目 checkout、stash 或 relink/);
   assert.match(prompt.prompt, /trigger: project-registered/);
-  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
+  assert.match(prompt.prompt, /routine-maintenance或user-decision-required/);
+  assert.match(prompt.prompt, /改变长期适用性时请求用户确认/);
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
@@ -143,12 +142,7 @@ test('v1 Project registry 读取零写入，显式 migration 原子且幂等', (
 
 test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只实时观察', (t) => {
   const root = initWorkspace(t);
-  const fixture = path.join(tempRoot(t), 'source');
-  fs.mkdirSync(fixture, { recursive: true });
-  assert.equal(run('git', ['init', '-b', 'dev'], fixture).status, 0);
-  fs.writeFileSync(path.join(fixture, 'README.md'), '# demo\n');
-  assert.equal(run('git', ['add', 'README.md'], fixture).status, 0);
-  assert.equal(run('git', ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'init'], fixture).status, 0);
+  const fixture = copyPreparedGitRepository(t, 'project-git-source').attached;
   const url = `file://${fixture}`;
   const result = runBuildr(['project', 'create', 'git-demo', '--target', root, '--repo', url, '--remote', 'origin', '--integration-branch', 'dev', '--name', 'Git Demo', '--description', 'Git project']);
   assert.equal(result.status, 0, result.stderr);
@@ -175,6 +169,33 @@ test('Git Project 保存 integrationBranch，实际 branch 与 dirty 状态只�
   assert.equal(reported.currentBranch, undefined);
   assert.equal(fs.existsSync(path.join(root, 'projects', 'git-demo', 'preparation.yml')), false, 'doctor does not initialize declarations');
   assert.equal(fs.existsSync(path.join(root, 'projects', 'git-demo', 'verification.yml')), false, 'doctor does not initialize declarations');
+});
+
+test('Project attach 登记外部 Git root 且不修改外部内容', (t) => {
+  const root = initWorkspace(t);
+  const { attached } = copyPreparedGitRepository(t, 'project-attach');
+  const before = { head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') };
+
+  const result = runBuildr(['project', 'create', 'external', '--target', root, '--attach', attached, '--name', 'External', '--description', 'External project']);
+  assert.equal(result.status, 0, result.stderr);
+  const detail = createRuntime().projectDetail(root, 'external');
+  assert.equal(detail.project.source.root, 'attached');
+  assert.equal(detail.project.source.path, fs.realpathSync(attached));
+  assert.equal(detail.sourceLocation.ownership, 'external');
+  assert.equal(detail.observed.currentBranch, 'dev');
+  assert.deepEqual({ head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') }, before);
+  assert.equal(fs.existsSync(path.join(attached, 'services', 'manifest.yml')), false);
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'external')), false);
+  const doctor = JSON.parse(runBuildr(['doctor', '--target', root, '--scope', 'projects/external', '--json', '--detail', 'full']).stdout);
+  assert.equal(doctor.projects.find((project) => project.code === 'external').exists, true);
+  assert.equal(doctor.findings.some((finding) => finding.code === 'project.missing'), false);
+  assert.ok(doctor.findings.every((finding) => finding.domain && finding.scope && finding.ownershipUnit && Array.isArray(finding.affectedActions)));
+  assert.equal(doctor.health.generalWorkPermitted, null);
+  assert.ok(Array.isArray(doctor.domainHealth));
+  const duplicate = runBuildr(['project', 'create', 'duplicate', '--target', root, '--attach', attached, '--name', 'Duplicate', '--description', 'Duplicate project']);
+  assert.equal(duplicate.status, 1);
+  assert.match(duplicate.stderr, /already registered/);
+  assert.equal(createRuntime().listProjects(root).projects.length, 1);
 });
 
 test('sync 显式把 v1 Project registry 迁移为 v2', (t) => {

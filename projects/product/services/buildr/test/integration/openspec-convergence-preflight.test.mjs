@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { convergenceDigest } from '../../src/application/openspec/convergence-model.mjs';
-import { runOpenSpecConvergencePreflight } from '../../src/application/openspec/openspec-convergence-preflight.mjs';
+import { convergenceDigest } from '../../src/task/openspec/application/convergence-model.mjs';
+import { runOpenSpecConvergencePreflight } from '../../src/task/openspec/application/openspec-convergence-preflight.mjs';
 
 const executableIdentity = { sourceKind: 'external-declared', reference: 'external:openspec', version: '1.6.0', sha256: 'fixture-executable' };
 const requirement = (title, scenario = 'normal') => `### Requirement: ${title}\n系统 MUST 保持行为。\n\n#### Scenario: ${scenario}\n- **WHEN** 输入有效\n- **THEN** 系统 MUST 成功\n`;

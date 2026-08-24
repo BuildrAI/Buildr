@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: migrate-buildr-workspace-agent-assets-http-contracts
+operation: reconcile
+treeIdentity: sha256-7adf7bcd9cb26ad06ce137c50edf96d779bfc863111d3ab2fa43c93992d61a2f
+impacts:
+  - type: brief
+    target: openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/brief.md
+    reason: 本 Change 横跨 Buildr Service 与 Buildr Web，并改变 HTTP 契约、生成 DTO 与测试入口。
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/proposal.md
+      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/design.md
+      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/workspace-http-contracts/spec.md
+      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/agent-assets-http-contracts/spec.md
+      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/tasks.md
+  - type: technical-architecture
+    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
+    reason: 需要记录模块 HTTP Interfaces、Infrastructure contract mechanism、Application mapping 与 typed Client 的 authority 边界。
+    status: aligned
+    sourceIdentities:
+      - openspec/specs/infrastructure-boundaries/spec.md
+      - openspec/specs/workspace-control-plane-module-architecture/spec.md
+      - openspec/specs/managed-skill-assets/spec.md
+  - type: service
+    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
+    reason: Buildr Service 与 Buildr Web 的 API、生成 DTO、构建和 smoke 验收入口发生变化。
+    status: aligned
+    sourceIdentities:
+      - services/buildr
+      - services/buildr-web
+unresolvedItems: []

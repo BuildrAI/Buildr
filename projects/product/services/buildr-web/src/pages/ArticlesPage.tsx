@@ -1,23 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Empty, List, Tag, Typography } from 'antd';
-import { api } from '../api';
+import { runtimeSystemApi, workspaceApi, type PublicationList } from '../api';
 import { useAppShell } from '../app/AppShellContext';
 import { workspaceHref } from '../lib/labels';
 
 const statusLabel: Record<string, string> = { published: '已发布', planned: '待发布', draft: '草稿' };
-const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'local-app': 'Buildr Web' };
+const platformLabel: Record<string, string> = { mowen: '墨问', wechat: '微信公众号', 'buildr-web': 'Buildr Web', 'local-app': 'Buildr Web' };
 
-type Publication = {
-  id: string;
-  title: string;
-  status: string;
-  kind: string;
-  publishedAt?: string;
-  targets: Array<{ platform: string; status: string }>;
-};
-
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+type Publication = PublicationList['publications'][number];
 
 export function ArticlesPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
@@ -33,8 +24,8 @@ export function ArticlesPage() {
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
-          api('/api/v1/workspace') as Promise<WorkspacePayload>,
-          api('/api/v1/publications') as Promise<{ publications: Publication[]; empty?: boolean }>,
+          workspaceApi.read(),
+          runtimeSystemApi.publications(),
         ]);
         if (cancelled) return;
         setWorkspace(workspace);

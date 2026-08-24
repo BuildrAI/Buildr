@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import process from 'node:process';
-import { reportCliFailure, runCli } from '../src/interfaces/cli/main.mjs';
+import { reportCliFailure, runCli } from '../src/bootstrap/cli/main.mjs';
 
 try {
   await runCli(process.argv);

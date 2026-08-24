@@ -10,13 +10,15 @@ import {
   releaseAuthorityPreflightSchema,
   releaseAuthorityProbeSchema,
   sha256,
-} from '../../scripts/release/release-authority.mjs';
-import { runReleaseAuthorityOidcProbe } from '../../scripts/release/release-authority-oidc-probe.mjs';
-import { containsCredentialMaterial } from '../../scripts/release/release-authority-preflight.mjs';
-import { createReleaseEnvironmentBinding } from '../../scripts/release/release-environment-binding.mjs';
-import { runHostedReleaseTransaction } from '../../scripts/release/release-transaction-runner.mjs';
-import { createReleaseTransactionContext, createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../scripts/release/release-transaction-evidence.mjs';
-import { ensureReleaseTag, inspectReleaseTag } from '../../scripts/release/release-tag-ensure.mjs';
+} from '../../tools/release/release-authority.mjs';
+import { runReleaseAuthorityOidcProbe } from '../../tools/release/release-authority-oidc-probe.mjs';
+import { containsCredentialMaterial } from '../../tools/release/release-authority-preflight.mjs';
+import { createReleaseEnvironmentBinding } from '../../tools/release/release-environment-binding.mjs';
+import { createReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.mjs';
+import { runHostedReleaseTransaction } from '../../tools/release/release-transaction-runner.mjs';
+import { createReleaseContext } from '../../tools/release/release-readiness.mjs';
+import { createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.mjs';
+import { ensureReleaseTag, inspectReleaseTag } from '../../tools/release/release-tag-ensure.mjs';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -32,6 +34,8 @@ const workflow = `on:
     inputs:
       release_id: { required: true, type: string }
       release_context: { required: true, type: string }
+      context_digest: { required: true, type: string }
+      candidate_run_id: { required: true, type: string }
       version: { required: true, type: string }
       source_commit: { required: true, type: string }
       candidate_base: { required: true, type: string }
@@ -47,12 +51,41 @@ jobs:
     environment: npm-production
     permissions: { contents: write, id-token: write }
     steps:
-      - run: node scripts/release/release-authority-oidc-probe.mjs fixture
-      - run: node scripts/release/release-convergence.mjs --stage pre-tag
-      - run: node scripts/release/release-tag-ensure.mjs preflight fixture
-      - run: node scripts/release/release-tag-ensure.mjs ensure fixture
-      - run: node scripts/release/trusted-publish.mjs fixture.tgz
+      - run: node tools/release/release-authority-oidc-probe.mjs fixture
+      - run: node tools/release/release-convergence.mjs --stage pre-tag
+      - run: node tools/release/release-tag-ensure.mjs preflight fixture
+      - run: node tools/release/release-tag-ensure.mjs ensure fixture
+      - run: node tools/release/trusted-publish.mjs fixture.tgz
 `;
+
+const digest = (letter) => `sha256-${letter.repeat(64)}`;
+const gitSha = (letter) => letter.repeat(40);
+
+function completedTaskEvidence(taskId) {
+  const carrierIdentity = digest('7');
+  return {
+    taskId,
+    environment: { taskId, status: 'cleaned', receiptIdentity: digest('2'), receiptDigest: digest('3'), declarationIdentity: digest('4'), executionIdentity: digest('5') },
+    development: { taskId, status: 'current', receiptIdentity: digest('f'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), taskContextIdentity: digest('d'), contributionIdentity: digest('e') },
+    finish: {
+      taskId, status: 'complete', runId: 42, resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: gitSha('8'), sourceTree: gitSha('9'),
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: gitSha('b') }],
+      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
+      activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed',
+    },
+    selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: gitSha('8'), sourceTree: gitSha('9') },
+  };
+}
+
+function readyTaskCorrelation(releaseTask, supportTasks) {
+  return createReleaseTaskEvidenceCorrelation({
+    releaseTask: { ...releaseTask, recordDigest: digest('1') },
+    retrospectiveSources: [],
+    supportTasks: supportTasks.map((task) => ({ ...task, recordDigest: digest('1') })),
+    taskEvidence: [releaseTask, ...supportTasks].map((task) => completedTaskEvidence(task.taskId)),
+    source: { sourceCommit: fixtureCommit, sourceTree: candidateTree, remoteRef: fixtureCommit },
+  });
+}
 
 function hostedEnvironment(sourceCommit = fixtureCommit) {
   return {
@@ -84,13 +117,16 @@ function releaseContext() {
     node: { authority: 'projects/product/.node-version', version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
   };
   environment.identity = `sha256-${sha256(JSON.stringify(environment))}`;
-  return createReleaseTransactionContext({
-    releaseTask: { taskId: environment.taskId, title: 'Release fixture', status: 'completed' },
-    retrospectiveSources: [{ taskId: 'release-0.1.0-rc.20', title: 'Previous release', status: 'completed' }],
-    supportTasks: [{ taskId: 'fix-candidate-core-recursive-cli', title: 'Release repair', status: 'completed' }],
-    candidate: { sourceCommit: candidateSourceCommit, workflow: '.github/workflows/verify.yml', runId: 654, runAttempt: 1, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/654' },
-    convergence: { candidateBase, candidateTree, sourceCommit: fixtureCommit, mainCommit: fixtureCommit, devCommit: 'd'.repeat(40) },
-    environment,
+  return createReleaseContext({
+    selection: { identity: digest('6'), version, branch: `release-${version}`, releaseHead: candidateSourceCommit, releaseTree: candidateTree, generation: 1, status: 'frozen' },
+    release: { version, sourceCommit: candidateSourceCommit, sourceTree: candidateTree },
+    candidate: { workflow: '.github/workflows/verify.yml', runId: 654, runAttempt: 1, runUrl: 'https://github.com/BuildrAI/Buildr/actions/runs/654', sourceCommit: candidateSourceCommit, sourceTree: candidateTree, registryIdentity: digest('7'), aggregateIdentity: digest('8'), status: 'passed' },
+    artifact: { artifactName: 'candidate-package', sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') },
+    convergence: { mainCommit: fixtureCommit, mainTree: candidateTree, devCommit: 'd'.repeat(40), devTree: candidateTree },
+    environment: { identity: environment.identity, status: environment.environmentStatus, taskId: environment.taskId, nodeVersion: environment.node.version, nodeIdentity: environment.node.executionIdentity },
+    node: { authority: environment.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
+    workflow: { path: '.github/workflows/publish.yml', digest: `sha256-${sha256(workflow)}`, repository: 'BuildrAI/Buildr', environment: 'npm-production' },
+    taskCorrelation: { identity: digest('b'), carrierIdentity: digest('c'), status: 'passed', sourceCommit: fixtureCommit, sourceTree: candidateTree, remoteRef: fixtureCommit },
   });
 }
 
@@ -158,7 +194,7 @@ test('hosted OIDC probe CLI creates the nested evidence directory even when bloc
   const repo = probeRepo(t, 'buildr-authority-probe-output-');
   const output = path.join(repo, 'runner-temp', 'authority', 'release-authority.json');
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-authority-oidc-probe.mjs'),
+    path.join(serviceRoot, 'tools', 'release', 'release-authority-oidc-probe.mjs'),
     '--repo', repo,
     '--source-commit', fixtureCommit,
     '--workflow-sha256', sha256(workflow),
@@ -189,11 +225,19 @@ test('release transaction runner dispatches and follows exactly one frozen workf
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
   const context = releaseContext();
-  const result = await runHostedReleaseTransaction({ repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseContext: context, ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {} });
-  assert.equal(result.status, 'passed');
+  const readiness = await runHostedReleaseTransaction({ repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseContext: context, ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {} });
+  assert.equal(readiness.status, 'ready');
+  assert.deepEqual(readiness.effects, []);
+  const unauthorized = await runHostedReleaseTransaction({ action: 'dispatch', repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseContext: context, ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {} });
+  assert.equal(unauthorized.status, 'blocked');
+  assert.equal(unauthorized.findings[0].code, 'publication-authorization-required');
+  assert.deepEqual(unauthorized.effects, []);
+  assert.equal(calls.some((item) => item.startsWith('gh workflow run publish.yml ')), false);
+  const result = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseContext: context, ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {} });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
   assert.equal(result.github.runId, runId);
   assert.equal(calls.filter((item) => item.startsWith('gh workflow run publish.yml ')).length, 1);
-  for (const input of [`release_id=fixture-release-id`, `version=${version}`, `source_commit=${fixtureCommit}`, `candidate_base=${candidateBase}`, `candidate_tree=${candidateTree}`, `workflow_sha256=${sha256(workflow)}`, `release_context=${JSON.stringify(context)}`]) {
+  for (const input of [`release_id=fixture-release-id`, `version=${version}`, `source_commit=${fixtureCommit}`, `candidate_base=${candidateBase}`, `candidate_tree=${candidateTree}`, `workflow_sha256=${sha256(workflow)}`, `context_digest=${context.identity}`, 'candidate_run_id=654', `release_context=${JSON.stringify(context)}`]) {
     assert.equal(calls.some((item) => item.includes(input)), true, input);
   }
   assert.equal(calls.some((item) => item.startsWith('git tag ') || item.startsWith('git push ')), false);
@@ -247,11 +291,44 @@ test('release transaction runner binds preparation inputs to the final frozen so
   const releaseTask = completeTaskRecord('release-fixture', 'Release fixture');
   const supportTask = completeTaskRecord('support-fixture', 'Support fixture');
   const retrospectiveTask = completeTaskRecord('retrospective-fixture', 'Retrospective fixture');
+  const developmentReadModel = (taskId) => ({
+    development: {
+      receiptDigest: digest('f'),
+      receipt: {
+        taskContext: { identity: digest('d') },
+        contentTarget: { identity: digest('c') },
+        candidate: { identity: digest('b'), generation: 2 },
+        handoffs: [{ identity: digest('a'), candidate: { identity: digest('b'), generation: 2, contentTargetIdentity: digest('c') }, contributionHandoff: { identity: digest('e') } }],
+      },
+      applicability: { status: 'candidate-current', handoff: 'current', reasons: [] },
+    },
+    taskId,
+  });
+  const finishReadModel = (taskId) => ({
+    result: {
+      status: 'complete',
+      taskId,
+      runId: 42,
+      identity: {
+        run: digest('6'),
+        handoffIdentity: digest('a'),
+        candidateIdentity: digest('b'),
+        candidateGeneration: 2,
+        contentTargetIdentity: digest('c'),
+        repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: digest('7'), carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', status: 'delivered', finalRemoteRef: gitSha('b') }],
+      },
+      delivery: { status: 'delivered', finalRemoteRef: gitSha('8'), carrierTree: gitSha('9') },
+      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
+      maintenance: { activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed', selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4') } },
+    },
+  });
   const runtime = {
     inspectTaskRecord: (_repo, taskId) => taskId === releaseTask.taskId
-      ? { record: releaseTask, retrospectiveRelations: { sources: [retrospectiveTask] } }
-      : { record: taskId === supportTask.taskId ? supportTask : null, retrospectiveRelations: { sources: [] } },
+      ? { record: releaseTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [retrospectiveTask] } }
+      : { record: taskId === supportTask.taskId ? supportTask : retrospectiveTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [] } },
     inspectTaskEnvironment: () => environmentResult,
+    inspectTaskDevelopment: (_repo, taskId) => developmentReadModel(taskId),
+    inspectTaskFinishReadModel: ({ taskId }) => finishReadModel(taskId),
   };
   const currentRun = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
   const candidateRun = { repository: { full_name: 'BuildrAI/Buildr' }, event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1, html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/654' };
@@ -278,14 +355,24 @@ test('release transaction runner binds preparation inputs to the final frozen so
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
 
-  const result = await runHostedReleaseTransaction({ repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {}, runtime });
+  const result = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, {
+    execute,
+    wait: async () => {},
+    releaseId: 'fixture-release-id',
+    onStatus: () => {},
+    runtime,
+    inspectSelection: () => ({ selectionIdentity: digest('6'), version, branch: `release-${version}`, releaseHead: candidateSourceCommit, releaseTree: candidateTree, generation: 1, status: 'frozen' }),
+    candidateEvidence: {
+      aggregate: { sourceCommit: candidateSourceCommit, registryIdentity: digest('7'), status: 'passed' },
+      manifest: { sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') },
+    },
+  });
 
-  assert.equal(result.status, 'passed');
-  assert.deepEqual(result.context.releaseTask, { taskId: releaseTask.taskId, title: releaseTask.title, status: 'completed' });
-  assert.deepEqual(result.context.supportTasks, [{ taskId: supportTask.taskId, title: supportTask.title, status: 'completed' }]);
-  assert.deepEqual(result.context.retrospectiveSources, [{ taskId: retrospectiveTask.taskId, title: retrospectiveTask.title, status: 'completed' }]);
-  assert.equal(result.context.environment.sourceCommit, fixtureCommit);
-  assert.equal(result.context.environment.inputs['package.json'], `sha256-${sha256(sourceFiles.get('projects/product/services/buildr/package.json'))}`);
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.context.taskCorrelation.status, 'passed');
+  assert.equal(result.context.taskCorrelation.sourceCommit, fixtureCommit);
+  assert.equal(result.context.environment.taskId, releaseTask.taskId);
+  assert.equal(result.context.environment.status, 'cleaned');
   assert.equal(calls.includes(`git show ${candidateBase}:projects/product/services/buildr/package.json`), false);
   assert.equal(calls.includes(`git show ${candidateBase}:projects/product/.node-version`), false);
   assert.equal(calls.filter((item) => item.startsWith('gh workflow run publish.yml ')).length, 1);
@@ -345,7 +432,7 @@ test('release transaction evidence is a closed correlated read model', () => {
   assert.equal(validateReleaseTransactionEvidence(evidence).identity, evidence.identity);
   assert.equal(evidence.release.registryIntegrity, 'sha512-aW50ZWdyaXR5');
   const drifted = structuredClone(evidence);
-  drifted.context.supportTasks[0].title = 'Changed without new identity';
+  drifted.context.selection.version = '0.1.0-rc.99';
   assert.throws(() => validateReleaseTransactionEvidence(drifted), /identity mismatch/u);
   const extended = structuredClone(evidence);
   extended.sidecar = {};
@@ -359,6 +446,30 @@ test('release transaction evidence is a closed correlated read model', () => {
   assert.equal(beforePublicWrite.release.tagCommit, null);
   assert.equal(beforePublicWrite.release.registryPublished, false);
   assert.equal(beforePublicWrite.release.githubRelease, null);
+  assert.equal(beforePublicWrite.attempt.recovery, 'new-attempt');
+  assert.deepEqual(beforePublicWrite.attempt.steps.find((step) => step.id === 'tag'), { id: 'tag', status: 'not-reached' });
+  const afterTagFailure = createReleaseTransactionEvidence({
+    context,
+    publish: evidence.publish,
+    outcome: 'failed',
+    publicFacts: { version, tagCommit: fixtureCommit, npmDistTag: 'next', registryPublished: false, registrySmoke: 'unknown' },
+  });
+  assert.equal(afterTagFailure.attempt.recovery, 'new-attempt');
+  assert.deepEqual(afterTagFailure.attempt.steps.find((step) => step.id === 'npm'), { id: 'npm', status: 'failed' });
+  const conflicted = createReleaseTransactionEvidence({
+    context,
+    publish: evidence.publish,
+    outcome: 'failed',
+    publicFacts: { version, npmDistTag: 'next', registryPublished: true, registryIntegrity: 'sha512-Y29uZmxpY3Q=', conflict: true },
+  });
+  assert.equal(conflicted.attempt.recovery, 'blocked-new-version');
+  const retrying = createReleaseTransactionEvidence({
+    context,
+    publish: evidence.publish,
+    outcome: 'failed',
+    publicFacts: { version, npmDistTag: 'next', registryPublished: false, recoveryClass: 'same-attempt' },
+  });
+  assert.equal(retrying.attempt.recovery, 'same-attempt');
 });
 
 test('release transaction finalizer preserves official Registry integrity in the hosted artifact', (t) => {
@@ -370,7 +481,7 @@ test('release transaction finalizer preserves official Registry integrity in the
   fs.writeFileSync(contextFile, `${JSON.stringify(releaseContext())}\n`);
   fs.writeFileSync(registryFile, `${JSON.stringify({ published: true, integrity: 'sha512-aW50ZWdyaXR5' })}\n`);
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-transaction-evidence.mjs'), 'finalize',
+    path.join(serviceRoot, 'tools', 'release', 'release-transaction-evidence.mjs'), 'finalize',
     '--context', contextFile, '--output', output, '--outcome', 'success',
     '--repository', 'BuildrAI/Buildr', '--workflow', '.github/workflows/publish.yml',
     '--run-id', String(runId), '--run-attempt', String(runAttempt),
@@ -488,7 +599,7 @@ else { process.stderr.write('unexpected gh command: '+key); process.exitCode=1; 
 `, { mode: 0o755 });
   const evidencePath = path.join(root, 'authority-evidence.json');
   const result = spawnSync(process.execPath, [
-    path.join(serviceRoot, 'scripts', 'release', 'release-authority-preflight.mjs'),
+    path.join(serviceRoot, 'tools', 'release', 'release-authority-preflight.mjs'),
     '--repo', repo,
     '--source-commit', sourceCommit,
     '--gh', fakeGh,

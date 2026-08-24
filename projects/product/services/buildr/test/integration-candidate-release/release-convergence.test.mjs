@@ -7,13 +7,12 @@ import test from 'node:test';
 
 // Candidate-only owner: release convergence across real Git histories.
 
-import { bridgeMainToDev } from '../../scripts/release/bridge-main-to-dev.mjs';
-import { checkReleaseConvergence } from '../../scripts/release/release-convergence.mjs';
+import { checkReleaseConvergence } from '../../tools/release/release-convergence.mjs';
 import {
   releaseAuthorityProbeSchema,
   releasePublishAuthority,
   sha256,
-} from '../../scripts/release/release-authority.mjs';
+} from '../../tools/release/release-authority.mjs';
 
 function differentTree(tree) {
   return `${tree.slice(0, -1)}${tree.endsWith('0') ? '1' : '0'}`;
@@ -69,11 +68,16 @@ function fixture() {
   git(seed, 'branch', 'main');
   writeVersion(seed, '0.1.0-rc.5', 'candidate');
   git(seed, 'commit', '-m', 'candidate');
+  const releaseCommit = git(seed, 'rev-parse', 'HEAD');
   const candidateTree = git(seed, 'rev-parse', 'HEAD^{tree}');
+  git(seed, 'branch', 'release-0.1.0-rc.5', releaseCommit);
+  fs.writeFileSync(path.join(seed, 'dev-only.txt'), 'new dev content\n');
+  git(seed, 'add', 'dev-only.txt');
+  git(seed, 'commit', '-m', 'continue dev after release freeze');
   git(seed, 'remote', 'add', 'origin', remote);
-  git(seed, 'push', 'origin', 'dev');
+  git(seed, 'push', 'origin', 'dev', 'release-0.1.0-rc.5');
   git(seed, 'checkout', 'main');
-  git(seed, 'checkout', 'dev', '--', '.');
+  git(seed, 'checkout', 'release-0.1.0-rc.5', '--', '.');
   git(seed, 'commit', '-m', 'squash candidate');
   git(seed, 'push', 'origin', 'main');
   git(root, 'clone', '--branch', 'dev', remote, work);
@@ -82,55 +86,15 @@ function fixture() {
   return { root, seed, work, candidateBase, candidateTree };
 }
 
-function selfBootstrapEvidence(data) {
-  const runId = 'finish-run-release-rc5';
-  const taskId = 'release-0.1.0-rc.5';
-  const devRef = git(data.work, 'rev-parse', 'origin/dev');
-  const evidencePath = path.join(data.root, 'self-bootstrap-closeout.json');
-  const phase = (id, status, outputIdentity = null) => ({
-    id, status, inputIdentity: null, outputIdentity, effects: [], diagnostic: null,
-  });
-  fs.writeFileSync(evidencePath, `${JSON.stringify({
-    schemaVersion: 'buildr.self-bootstrap-closeout-result/v1',
-    status: 'not-applicable',
-    runId,
-    taskId,
-    mode: 'complete',
-    plan: { runId, taskId, remote: 'origin', targetBranch: 'dev', baseRef: devRef },
-    recoveryPlan: null,
-    developmentEntryIdentity: null,
-    phases: [
-      phase('preflight', 'not-applicable'),
-      phase('plan', 'passed', 'sha256-plan'),
-      phase('sync', 'not-applicable'),
-      phase('commit', 'not-applicable'),
-      phase('push', 'not-applicable'),
-      phase('install-local-app', 'not-applicable'),
-      phase('verify-development-entry', 'not-applicable'),
-      phase('finalize', 'not-applicable'),
-    ],
-    effects: [],
-    diagnostic: null,
-  })}\n`);
-  return { selfBootstrapRun: runId, selfBootstrapEvidence: evidencePath };
-}
-
-test('release convergence requires dev candidate before main and ancestry after bridge', (t) => {
+test('release convergence binds the frozen release tree while allowing dev to advance independently', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   const pre = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-main' });
   assert.equal(pre.ok, true);
-  const beforeBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
-  assert.equal(beforeBridge.ok, false);
-  assert.equal(beforeBridge.findings.some((item) => item.code === 'main_not_ancestor_of_dev'), true);
-  bridgeMainToDev({
-    repo: data.work,
-    version: '0.1.0-rc.5',
-    candidateTree: data.candidateTree,
-    ...selfBootstrapEvidence(data),
-  });
-  const afterBridge = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
-  assert.equal(afterBridge.ok, true);
+  assert.notEqual(pre.trees.dev, data.candidateTree);
+  assert.equal(pre.trees.release, data.candidateTree);
+  const afterMain = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'post-main' });
+  assert.equal(afterMain.ok, true);
 
   const missing = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: data.candidateTree, stage: 'pre-tag' });
   assert.equal(missing.ok, false);
@@ -159,17 +123,17 @@ test('release convergence requires dev candidate before main and ancestry after 
   );
 });
 
-test('release convergence rejects stale version, tree and unintegrated release task', (t) => {
+test('release convergence rejects stale release tree and unintegrated release task', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  git(data.work, 'checkout', '-b', 'tasks/release-0.1.0-rc.6', data.candidateBase);
+  git(data.work, 'checkout', '-b', 'tasks/release-0.1.0-rc.5', data.candidateBase);
   fs.writeFileSync(path.join(data.work, 'unintegrated.txt'), 'release\n');
   git(data.work, 'add', '.');
   git(data.work, 'commit', '-m', 'unintegrated release task');
   git(data.work, 'checkout', 'dev');
-  const result = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.6', candidateBase: data.candidateBase, candidateTree: differentTree(data.candidateTree), stage: 'pre-main' });
+  const result = checkReleaseConvergence({ repo: data.work, version: '0.1.0-rc.5', candidateBase: data.candidateBase, candidateTree: differentTree(data.candidateTree), stage: 'pre-main' });
   assert.equal(result.ok, false);
-  for (const code of ['dev_tree_mismatch', 'dev_version_mismatch', 'release_task_not_integrated']) {
+  for (const code of ['release_tree_mismatch', 'release_task_not_integrated']) {
     assert.equal(result.findings.some((item) => item.code === code), true, code);
   }
 });

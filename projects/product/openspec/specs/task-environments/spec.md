@@ -5,27 +5,32 @@
 ## Requirements
 
 ### Requirement: 正式 Task 必须先取得 ready Task Environment
-Buildr MUST 只为已经存在的正式 Task 建立任务环境（Task Environment），并 MUST 在该 Task 首次修改交付物、构建、测试或创建 Task-owned 持久资源前返回真实 `ready` 的环境结果。Task Environment MUST NOT 把环境事实写入 Task Record，也 MUST NOT 成为 Task 外单次操作的强制入口。
+Buildr MUST只为已经存在的正式Task建立任务环境（Task Environment），并 MUST只在当前动作实际消费Buildr-managed checkout、Preparation、runtime projection、Task-owned持久资源、正式环境证据或cleanup authority时要求matching `ready`。Task Environment MUST NOT把环境事实写入Task Record，也 MUST NOT把Formal Task、编辑、构建或有界测试本身变成通用工作许可；Agent选择直接工作时 MUST如实保留未形成Environment/正式Result的事实。
 
 #### Scenario: 正式 Task 首次进入持久交付
-- **WHEN** active Task 即将修改交付物、执行构建/测试或启动持久资源
-- **THEN** Agent MUST 先通过 selected `buildr.task-environment/v1` provider 准备或恢复环境
-- **AND** 环境未返回 `ready` 时 MUST NOT 开始对应持久效果
+- **WHEN** active Task选择由Buildr准备或拥有的checkout、依赖、runtime projection、持久资源或正式环境证据
+- **THEN** Agent MUST先通过selected `buildr.task-environment/v1` provider准备或恢复环境
+- **AND** 环境未返回`ready`时 MUST NOT开始对应受管效果或声称Environment/正式Result成立
+
+#### Scenario: 正式 Task 在明确仓库直接工作
+- **WHEN** Agent已从用户授权、真实repository/ref、owned scope和副作用边界确认可以直接编辑、构建或执行有界测试，且当前动作不请求Buildr准备、占用、持久资源、正式环境证据或cleanup
+- **THEN** 缺少Environment Plan、Receipt或projection MUST只形成可选准备建议，不得成为该直接动作的通用许可 blocker
+- **AND** Agent MUST NOT把直接工作冒充ready Environment、Formal Verification、Candidate、Handoff或可由Buildr自动清理的资源
 
 #### Scenario: Task Record 不存在
-- **WHEN** 调用方请求为未知 Task ID 创建 Environment Receipt
-- **THEN** Task Environment MUST 返回 `blocked` 和创建/恢复 Task Record 的 next action
-- **AND** MUST NOT 创建 checkout、依赖、runtime projection、资源或 Environment Receipt
+- **WHEN** 调用方请求为未知Task ID创建Environment Receipt
+- **THEN** Task Environment MUST返回`blocked`和创建或恢复Task Record的next action
+- **AND** MUST NOT创建checkout、依赖、runtime projection、资源或Environment Receipt
 
 #### Scenario: Task 外有界操作
-- **WHEN** Agent 只执行单次测试、临时服务、API 调用或其他不形成正式 Task 的有界操作
-- **THEN** Task Environment MUST NOT 自动创建 Task 或 Environment Receipt
-- **AND** Agent MUST 按当前用户意图在本次操作中停止或披露临时资源
+- **WHEN** Agent只执行单次测试、临时服务、API调用或其他不形成正式Task的有界操作
+- **THEN** Task Environment MUST NOT自动创建Task或Environment Receipt
+- **AND** Agent MUST按当前用户意图在本次操作中停止或披露临时资源
 
 #### Scenario: 清理后维护 Task 元数据
-- **WHEN** Task Environment 已完成清理，而生命周期 Skill 仍需在 canonical Workspace 写入 Receipt、Result 或复盘材料
-- **THEN** 该 metadata-only 写入 MUST NOT 要求重新准备已清理的 Task Environment
-- **AND** MUST NOT 把 canonical metadata root 误报为新的执行环境
+- **WHEN** Task Environment已完成清理，而生命周期Skill仍需在canonical Workspace写入Receipt、Result或复盘材料
+- **THEN** 该metadata-only写入 MUST NOT要求重新准备已清理的Task Environment
+- **AND** MUST NOT把canonical metadata root误报为新的执行环境
 
 ### Requirement: Task Environment 必须记录实际执行位置而非固定 mode
 Task Environment MUST 记录每个工作范围的实际执行根、任务验证工作区根、共享/占用和 cleanup 事实，并 MUST NOT 用 `in-place / dedicated` 等顶层 mode 代替真实资源。Git MUST NOT 是 Environment Receipt 或 `ready` 的前提；需要 Git 隔离时才 MUST 调用所选 Git worktree provider。
@@ -95,11 +100,12 @@ Buildr MUST以`buildr.git-worktree-provider/v1`表达Git worktree provider，并
 - **AND** identity、ownership、贡献等价或授权不匹配时 MUST零删除失败
 
 ### Requirement: Task Validation Workspace 必须隔离候选 runtime 投射
-Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只投射到 receipt 绑定的任务验证工作区（Task Validation Workspace），并 MUST 在写入前阻止候选 source 更新 retained Workspace、另一个 task worktree 或验证根之外的共享用户 runtime。Environment Receipt MUST 记录 runtime source/projection identity 与 projection probe，但 MUST NOT 保存或声称真实 Agent session adoption evidence。
+Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只投射到 receipt 绑定的任务验证工作区（Task Validation Workspace），并 MUST 使用不执行 Workspace Structured Store migration、Project registry migration、package builtin/Component source sync 的 projection-only 操作准备候选 runtime。Task Environment MUST 在写入前阻止候选 source 更新 retained Workspace、另一个 task worktree 或验证根之外的共享用户 runtime。Environment Receipt MUST 记录 runtime source/projection identity 与 projection probe，但 MUST NOT 保存或声称真实 Agent session adoption evidence。
 
 #### Scenario: 候选投射自身任务验证工作区
-- **WHEN** Buildr 自举候选从 task checkout 向同一 receipt 登记的验证工作区执行 sync/render
-- **THEN** 产品 MUST 允许 workspace-scoped runtime 和验证根内隔离模拟 user destination
+- **WHEN** Buildr 自举候选从 task checkout 向同一 receipt 登记的验证工作区准备 runtime
+- **THEN** 产品 MUST 只投射 workspace-scoped Rule、workspace Skill 与产品入口 Buildr Skill，并允许验证根内隔离模拟 user destination
+- **AND** MUST NOT 执行 Workspace source sync、Structured Store migration 或 Project registry migration
 - **AND** Environment Receipt MUST 更新 source/projection identity 与 projection ready 事实
 
 #### Scenario: 候选尝试更新 retained runtime
@@ -146,22 +152,22 @@ Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只
 - **AND** MUST 只允许产品已登记 provider 的结构化 identity/handle
 
 ### Requirement: Task Environment 必须统一编排安全 cleanup
-Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时，它 MUST只在Task Finish提供每个工作范围的已交付identity与清理资格后停止资源、调用provider cleanup并解除占用；对于隔离Delivery Carrier，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求Finish改写原Task branch以制造ancestor关系。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective。
+Task Environment MUST独占Task级环境cleanup编排和结果。正常完成或交付后清理时，它 MUST只在上层提供每个工作范围的已验证delivery identity与清理资格后停止资源、调用provider cleanup并解除占用；delivery evidence MAY来自自动Finish或独立reconciliation。对于隔离或外部交付，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求特定Finish run、Delivery Carrier或原Task branch ancestry。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective，也 MUST NOT改变Task交付终态。
 
 #### Scenario: 正常完成后清理
-- **WHEN** Finish handoff证明全部工作范围已交付且可清理，资源与provider evidence均匹配
+- **WHEN** delivery evidence证明全部工作范围已交付且可清理，资源与provider evidence均匹配
 - **THEN** Task Environment MUST按资源依赖顺序停止动态资源，再调用各scope provider cleanup并解除共享根占用
 - **AND** Environment Receipt MUST保留removed/retained resources、provider results与最终cleanup status
 
 #### Scenario: 隔离carrier交付后清理原Task worktree
-- **WHEN** Finish提供可独立复算的Task Contribution proof，target ref等于carrier，且当前Task source snapshot未漂移
-- **THEN** Environment MUST允许Git provider以该等价proof确认integrated并清理原Task worktree/branch
-- **AND** MUST不要求原Task branch成为target祖先或修改Candidate generation
+- **WHEN** reconciliation提供可独立复算的Task Contribution proof，目标ref完整包含贡献且当前Task source snapshot未漂移
+- **THEN** Environment MUST允许Git provider确认integrated并清理原Task worktree/branch
+- **AND** MUST不要求交付由Finish Carrier产生或原Task branch成为target祖先
 
 #### Scenario: Finish 请求清理但资源仍阻塞
-- **WHEN** 任一Preview/process/container仍运行、provider identity不匹配、worktree source drift、integrated/contribution proof不成立或其他Task仍占用资源
-- **THEN** cleanup MUST返回`blocked`并保留所有仍用于恢复的环境与carrier内容
-- **AND** Finish MUST只恢复cleanup，不得重跑prepare、verify或deliver
+- **WHEN** 任一资源仍运行、provider identity不匹配、worktree source drift、integrated proof不成立或其他Task仍占用资源
+- **THEN** cleanup MUST返回`blocked`或`attention`并保留仍用于恢复的环境内容
+- **AND** MUST NOT改写Task Record completed或远端delivery evidence
 
 #### Scenario: 用户明确放弃独占 dirty worktree
 - **WHEN** 上层提供明确abandon authorization，关联Change/保留事实已处置，且provider evidence证明dirty worktree全部属于该Task
@@ -180,8 +186,8 @@ Task Environment MUST独占Task级环境cleanup编排和结果。正常完成时
 
 #### Scenario: 清理成功后的最小留痕
 - **WHEN** 全部适用资源已删除或按明确决定安全保留
-- **THEN** Buildr MUST在 `task_environment_current` 保留Task/Workspace identity、完成时间、最终status与最小处置摘要
-- **AND** MUST NOT删除Task Record、Development/Review/Verification/Finish Result或Retrospective
+- **THEN** Buildr MUST在`task_environment_current`保留Task/Workspace identity、完成时间、最终status与最小处置摘要
+- **AND** MUST NOT删除Task Record、Development/Review/Verification/delivery Result或Retrospective
 
 ### Requirement: Task checkout/provider evidence 必须是 Environment 的源码版本基础
 Task Environment MUST以Receipt scopes、actual execution roots和provider evidence表达Task源码版本基础。retained Workspace后续前进 MUST不自动更新或重写Task checkout；`prepare/inspect` MUST按该checkout中的current Plan inputs、outputs、CLI、projection和资源事实判断ready。
@@ -243,27 +249,27 @@ Task Environment mutation MUST 由 canonical retained Workspace 的可信 Enviro
 - **AND** candidate runtime MUST 只作为被测对象或 validation Workspace writer，不得成为 canonical writer
 
 ### Requirement: Task Finish SQLite completion 必须与 Environment cleanup 幂等交接
-Task Environment MUST继续独占Task级资源cleanup；Task Finish MUST在调用Environment cleanup前，将已交付scope identities、carrier/contribution proof与`cleanup_pending` checkpoint持久化到Workspace SQLite。Environment cleanup成功后，Finish MUST以Environment Receipt的current identity恢复并完成自身transient cleanup与terminal transaction，MUST NOT让Environment写Finish表或让Finish直接删除Environment-owned资源。
+Task Environment MUST继续独占Task级资源cleanup；delivery owner MUST在调用Environment cleanup前提供已验证scope identities与carrier/contribution proof。Environment cleanup成功后，自动Finish或Agent MAY继续清理各自owned transient，但Task交付终态不得依赖这些动作。Environment MUST NOT写Finish表，Finish/reconciliation MUST NOT直接删除Environment-owned资源。
 
 #### Scenario: cleanup 前进程退出
-- **WHEN** Finish已经持久化`cleanup_pending`但尚未调用Environment provider
-- **THEN** resume MUST复用同一delivery evidence并调用Task Environment cleanup
-- **AND** MUST NOT重跑prepare、verify、deliver或重新push
+- **WHEN** Task已保存逐scope delivery evidence但尚未调用Environment provider
+- **THEN** Agent MUST能使用同一delivery evidence启动或恢复Task Environment cleanup
+- **AND** MUST NOT重跑远端交付或要求创建Finish run
 
 #### Scenario: Environment cleanup blocked
 - **WHEN** Environment因资源运行、identity漂移、ownership不明或其他Task占用而返回blocked
-- **THEN** Finish MUST保留SQLite current run、精确Environment next action与恢复所需transient data
-- **AND** terminal completion与Task Record completed MUST均不得成立
+- **THEN** Environment MUST保留精确next action与恢复所需资源
+- **AND** Task Record completed与delivery evidence MUST保持不变
 
 #### Scenario: Environment 已 cleaned 后进程退出
-- **WHEN** Environment Receipt已证明同一Task/run cleanup成功，但Finish尚未清理自己的transient data或提交terminal Result
-- **THEN** resume MUST复用Environment结果并只继续Finish-owned剩余动作
+- **WHEN** Environment Receipt已证明同一Task cleanup成功，而Finish或Agent尚有自己的transient待处理
+- **THEN** 后续恢复 MUST只处理调用方owned剩余动作
 - **AND** Environment MUST NOT再次停止资源或调用provider cleanup
 
 #### Scenario: Finish terminal transaction 完成
-- **WHEN** Environment cleanup与Finish-owned transient cleanup均成功，且receipt/run identity匹配
-- **THEN** Finish MUST提交compact completion并完成Task Record terminal transition
-- **AND** Environment Receipt最小留痕 MUST继续存在，不得被Finish SQLite retention删除
+- **WHEN** Environment cleanup成功且identity匹配
+- **THEN** Environment MUST保存最小cleaned留痕并释放其owner资源
+- **AND** 该结果 MUST作为Task详情的独立maintenance fact，而不是Task交付终态前置条件
 
 ### Requirement: Environment Receipt 必须以 Plan 事实作为唯一环境 authority
 Buildr MUST在Workspace SQLite `task_environment_current`中按`task_id`唯一维护经过Domain校验的`buildr.task-environment-receipt/v4`。同一current row MUST独占Plan、逐Service/Step current与prepared facts、scope聚合、`ready / blocked`、执行位置、Runtime/CLI/projection、动态资源、恢复和cleanup；Git/provider evidence与Task Record MUST不竞争这些事实。旧Receipt v2/v3 MUST只兼容读取并在active状态要求显式Agent Plan升级。
@@ -508,3 +514,39 @@ Task Environment Application MUST只把调用方给出的受支持adapter登记�
 - **WHEN** Git provider evidence已记录分支，调用方再次prepare并传入不同`--branch`
 - **THEN** Application MUST返回既有plan mismatch
 - **AND** MUST NOT按新的adapter默认前缀重命名或重建分支
+
+### Requirement: Environment Receipt 必须提供权威runtime invocation
+新Task Environment Receipt MUST从Plan选择的executable authority保存当前机器解析的closed runtime invocation，包括runtime kind、实际executable、版本或内容identity、受控executable search prefix与来源，并 MUST由Task Entry、Preparation和Verification execution route直接消费。Receipt MUST NOT接受或保存任意caller env map、secret、stdin或完整PATH快照。
+
+#### Scenario: Buildr自举使用精确development Node
+- **WHEN** Product Environment已从受管foundation解析精确development Node
+- **THEN** Receipt与compact route MUST向retained controller和candidate execution提供同一runtime invocation
+- **AND** workflow MUST不要求Agent手工转抄`BUILDR_NODE`或机器绝对路径
+
+#### Scenario: 非Node Project
+- **WHEN** Project声明与Recipe没有选择Node runtime或Node-backed wrapper
+- **THEN** Environment MUST不创建Node probe或注入`BUILDR_NODE`
+- **AND** 其runtime invocation MUST只反映该Project真实选择的executable authority
+
+#### Scenario: runtime executable漂移
+- **WHEN** 当前机器runtime executable、version或identity不再匹配prepared invocation
+- **THEN** live inspect MUST只读返回blocked并指出expected与actual identity
+- **AND** prepare MUST按current声明恢复，不得回退PATH中的其他兼容工具
+
+#### Scenario: Workspace外machine executable来自显式authority
+- **WHEN** current Plan通过受管foundation或显式machine executable requirement选择Workspace外的工具
+- **THEN** Receipt MUST记录该authority、机器解析路径与identity
+- **AND** portable Plan、Project declaration与Verification Result MUST不保存该机器绝对路径
+
+### Requirement: Task Environment必须独占capability准备闭包的执行与恢复
+Verification admission产生的closed supplemental Plan Request MUST只能通过Task Environment Application合并、执行和保存到同一current Plan/Receipt。Verification runner、Skill或Agent MUST NOT直接创建依赖输出、写Environment store或建立第二份准备Receipt。
+
+#### Scenario: Admission发现辅助Recipe尚未准备
+- **WHEN** matching Environment基础准备ready，但selected capability要求的辅助Recipe缺失
+- **THEN** Task Environment prepare MUST在同一Environment中执行该Recipe并保存可归因effect
+- **AND** 已current基础Recipe MUST复用且不得重复执行
+
+#### Scenario: 辅助准备失败
+- **WHEN** required辅助Recipe command失败、超时或output不满足声明
+- **THEN** Environment MUST保持blocked并保存capability、scope、Recipe与Step diagnostic
+- **AND** Verification MUST不得启动capability execution或把基础Environment ready冒充完整可执行

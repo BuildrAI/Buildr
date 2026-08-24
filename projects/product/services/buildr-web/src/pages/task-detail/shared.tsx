@@ -1,4 +1,9 @@
 import type { ReactNode } from 'react';
+import type {
+  TaskDetailResponse,
+  TaskRecord,
+  TaskRelationSummary,
+} from '../../api/generated/task-record-http-dto';
 
 export function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -48,41 +53,7 @@ export function diff<T>(
   };
 }
 
-export type TaskRelationSummary = {
-  taskId: string;
-  title: string;
-  status: string;
-};
+export type { TaskRecord, TaskRelationSummary };
+export type TaskDetailData = TaskDetailResponse;
 
-export type TaskRecord = {
-  taskId: string;
-  title: string;
-  intent: string;
-  status: string;
-  parentTaskId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  scope: {
-    projects: string[];
-    services: Array<{ project: string; service: string }>;
-  };
-  changes: Array<{ project: string; change: string }>;
-  retrospectiveSourceTaskIds: string[];
-  result: { summary: string; noChange?: boolean } | null;
-};
-
-export type TaskDetailData = {
-  record: TaskRecord;
-  recordDigest: string;
-  effects: unknown[];
-  taskRelations: {
-    parent: TaskRelationSummary | null;
-    children: TaskRelationSummary[];
-  };
-  retrospectiveRelations: {
-    sources: TaskRelationSummary[];
-    followups: TaskRelationSummary[];
-  };
-};
-
-export type TaskTab = 'overview' | 'preview' | 'development' | 'evidence' | 'retrospective' | 'environment';
+export type TaskTab = 'overview' | 'prototype' | 'development' | 'evidence' | 'retrospective' | 'environment';

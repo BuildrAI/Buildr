@@ -10,7 +10,7 @@ import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
-} from '../../src/infrastructure/product-identity/installation-origin.mjs';
+} from '../../src/system/installation/infrastructure/installation-origin.mjs';
 import { currentProductInvocation, productInvocationArgs } from '../../src/infrastructure/product-invocation/index.mjs';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
 
@@ -59,9 +59,9 @@ function payloadManifest(origin) {
     productionDependencies: [],
     files: [
       'resources/product/package.json',
-      'resources/product/package/manifest.yml',
+      'resources/product/resources/manifest.yml',
       'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
-      'resources/product/src/interfaces/local-app/web-dist/index.html',
+      'resources/product/web-dist/index.html',
       'resources/runtime/read-worker.cjs',
       'runtime/buildr.cjs',
     ].map((file) => ({ path: file, mode: 0o644, size: 0, sha256: '0'.repeat(64) })),

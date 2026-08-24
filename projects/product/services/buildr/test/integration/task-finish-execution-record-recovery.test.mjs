@@ -3,19 +3,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
-
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createTaskFinishDiagnosticsEvidence } from '../../src/application/task-finish/diagnostics-evidence.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
+import { createTaskFinishDiagnosticsEvidence } from '../../src/task/application/finish/diagnostics-evidence.mjs';
 import {
   TASK_FINISH_EXECUTION_RECORD_KIND,
   TASK_FINISH_EXECUTION_RECORD_OWNER,
   TASK_FINISH_EXECUTION_RECORD_PRODUCER,
-} from '../../src/application/task-finish/execution-record.mjs';
-import { createFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+} from '../../src/task/application/finish/execution-record.mjs';
+import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '../../../../../..');
+const test = createBuildrApplicationTest('integration-task-finish-execution-record-recovery');
 
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-record-recovery-'));
@@ -99,7 +98,7 @@ function stoppedEvidence(evidence, status) {
 
 function setup(t, name, { recordTarget = 'sha256-content-target', runTarget = 'sha256-content-target' } = {}) {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const taskId = `recover-${name}`;
   const finishRunId = `${taskId}-finish-run`;
   const invocationId = `${taskId}-invocation`;

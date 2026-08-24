@@ -7,20 +7,20 @@ resources:
     authorization: implicit
 capabilities:
   - id: product.fast
-    title: Buildr Product Fast 验证
+    title: Buildr Product Quick 开发反馈
     scope:
       project: product
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "test"]
+      argv: ["tools/development/run-development-npm", "test"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
       conditions:
-        - 需要快速确认 Product/Buildr 受影响实现与契约
+        - 开发阶段需要低成本确认 Product/Buildr 受影响实现与契约；该结果不作为正式 Task Verification Result
     proves:
-      - 低成本 Unit、Component 与 Static Conformance 通过
+      - 低成本 Unit、Component 与 Static Conformance 开发反馈通过；不证明完整 Task Delivery、Product Artifact Candidate 或 Published Release
     requiredForDelivery: false
     environment:
       requires: [node, npm]
@@ -36,44 +36,85 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:changed", "--", "--base", "origin/dev"]
+      argv: ["tools/development/run-development-npm", "run", "test:changed", "--", "--base", "origin/dev"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
       conditions:
-        - Product 或 Buildr Service 形成冻结的待交付目标
+        - Product 或 Buildr Service 形成 frozen Task Content，准备作出 Task Delivery 决定
+        - 默认选择可信 affected；只有 planner、registry、ownership 或其他关键验证 authority 无法安全局部判断时才以稳定 reason code fail closed 升级 daily-full 或阻断
     proves:
-      - 冻结目标相对 Product 集成分支的 changed paths 均有 owner，且同一 plan 选择的 affected 或 full 证据通过
+      - frozen Task Content 相对 Product 集成分支的 changed paths 均有 owner，且同一 plan 选择的 affected 或必要 daily-full 证据通过
+      - 结果只支持当前 Task Delivery 决定，不表示已经形成 Product Artifact Candidate 或 Published Release
     requiredForDelivery: true
     environment:
       requires: [node, npm, git]
     effects:
-      writes: ["系统临时目录中的验证 fixture、候选 tarball、timing evidence 与 diagnostics"]
+      writes: ["系统临时目录中的验证 fixture、timing evidence 与 diagnostics"]
       externalSystems: []
       authorization: implicit
     resourceClaims: []
   - id: product.full-regression
-    title: Buildr Product 显式完整回归
+    title: Buildr Product 完整日常证据
     scope:
       project: product
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:candidate"]
+      argv: ["tools/development/run-development-npm", "run", "test:daily-full"]
       cwd: services/buildr
     applicability:
       paths: ["**"]
       conditions:
-        - 用户明确要求完整 Product 回归、准备 Release 或独立核验完整回归入口
-        - 显式 Full 交付时只选择本 capability，不同时选择 product.delivery；verification policy 通过 required override 将本能力设为交付必需
+        - 用户明确要求完整 daily-full evidence 或独立核验完整日常回归入口
+        - 高风险 Task Delivery 显式选择 full 时只选择本 capability，不同时选择 product.delivery；verification policy 通过 required override 将本能力设为交付必需
     proves:
-      - Product Project 与 Buildr Service 登记为完整回归主证据的全部步骤通过
-      - Candidate profile 登记的全部 required gate identities 通过一次完整执行计划
+      - Product Project 与 Buildr Service 在唯一 registry 登记的完整日常主证据全部通过
+      - 内部 core compatibility profile 登记的全部 required step identities 通过同一次 daily-full执行计划；不包含Candidate-only或Release-only证据
     requiredForDelivery: false
     environment:
       requires: [node, npm, git]
+      preparation:
+        - project: product
+          service: buildr
+          recipe: buildr.npm-ci
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
     effects:
-      writes: ["系统临时目录中的候选 workspace、tarball、timing evidence 与 diagnostics"]
+      writes: ["系统临时目录中的隔离 workspace、timing evidence 与 diagnostics"]
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []
+  - id: product.candidate
+    title: Buildr Product Artifact Candidate 验证
+    scope:
+      project: product
+      services: []
+    invocation:
+      kind: command
+      argv: ["tools/development/run-development-npm", "run", "test:candidate"]
+      cwd: services/buildr
+    applicability:
+      paths: ["**"]
+      conditions:
+        - Parent 最终集成、Product Artifact Candidate 准备或维护者明确要求验证exact source与唯一候选制品
+        - 本 capability 不与 product.full-regression 重复选择；daily-full结果不得重标记为Candidate artifact evidence
+    proves:
+      - exact source上的完整daily-full evidence与Candidate profile登记的全部required gate identities通过一次完整执行计划
+      - 唯一Product Artifact Candidate tarball、package、Launcher、fresh-install/onboarding与artifact smoke primary evidence完整；不表示Published Release已经成功
+    requiredForDelivery: false
+    environment:
+      requires: [node, npm, git]
+      preparation:
+        - project: product
+          service: buildr
+          recipe: buildr.npm-ci
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
+    effects:
+      writes: ["系统临时目录中的候选 workspace、唯一 tarball、timing evidence 与 diagnostics"]
       externalSystems: []
       authorization: implicit
     resourceClaims: []
@@ -84,10 +125,10 @@ capabilities:
       services: [buildr, buildr-web]
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:browser:changed"]
+      argv: ["tools/development/run-development-npm", "run", "test:browser:changed"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr-web/**", "services/buildr/src/interfaces/local-app/web-dist/**", "services/buildr/src/interfaces/local-app/runtime/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
+      paths: ["services/buildr-web/**", "services/buildr/web-dist/**", "services/buildr/src/web/**", "services/buildr/test/browser-smoke/**", "services/buildr/test/verification/browser-selector-dispatcher.mjs", "services/buildr/test/verification/web-dist.mjs"]
       conditions:
         - Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化
         - 未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths
@@ -100,6 +141,10 @@ capabilities:
     requiredForDelivery: true
     environment:
       requires: [node, npm, chrome]
+      preparation:
+        - project: product
+          service: buildr-web
+          recipe: buildr-web.npm-ci
     effects:
       writes: ["系统临时目录中的隔离 Workspace、Service source 与浏览器 profile"]
       externalSystems: []
@@ -112,10 +157,10 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
+      argv: ["tools/development/run-development-node", "--test", "test/contract/current-knowledge-governance.test.mjs", "test/contract/task-finish-sequencing.test.mjs"]
       cwd: services/buildr
     applicability:
-      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/package/targets/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/resources/workspace/skills/buildr/task-finish/**", "services/buildr/test/contract/**"]
       conditions:
         - Change lifecycle、Change path resolution 或 OpenSpec sync/archive workflow 发生变化
     proves:
@@ -135,10 +180,10 @@ capabilities:
       services: []
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:openspec:convergence"]
+      argv: ["tools/development/run-development-npm", "run", "test:openspec:convergence"]
       cwd: services/buildr
     applicability:
-      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/application/openspec/**", "services/buildr/src/application/domains/openspec.mjs", "services/buildr/src/interfaces/cli/**", "services/buildr/src/application/task-finish/**", "services/buildr/test/verification/openspec/**"]
+      paths: ["openspec/changes/**", "openspec/knowledge/**", "services/buildr/src/task/openspec/**", "services/buildr/src/bootstrap/cli/**", "services/buildr/src/task/application/finish/**", "services/buildr/test/verification/openspec/**"]
       conditions:
         - OpenSpec canonical 写入、恢复、并发 Change、archive 或 checkpoint bootstrap 发生变化
     proves:
@@ -152,22 +197,24 @@ capabilities:
       authorization: implicit
     resourceClaims: []
   - id: product.release-artifact-set
-    title: Buildr npm 正式发布候选与本机 Launcher 验证
+    title: Buildr Release contract 与本机 smoke 验证
     scope:
       project: product
       services: [buildr]
     invocation:
       kind: command
-      argv: ["scripts/run-development-npm", "run", "test:focus", "--", "group:release"]
+      argv: ["tools/development/run-development-npm", "run", "test:focus", "--", "group:release"]
       cwd: services/buildr
     applicability:
-      paths: ["services/buildr/scripts/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
+      paths: ["services/buildr/tools/release/**", "services/buildr/src/**", "services/buildr/package/**", "services/buildr/package.json", "services/buildr/package-lock.json", "services/buildr/test/**", ".github/workflows/publish.yml"]
       conditions:
-        - Application Payload、npm candidate、Host Node、Launcher binding、Registry readback 或发布 workflow 发生变化
+        - Application Payload、Product Artifact Candidate、Host Node、Launcher binding、Registry readback contract 或发布 workflow 发生变化
+        - 本 capability 不执行真实外部发布，不构成正式 Published Release authority
     proves:
       - 同一冻结 Application Payload 只生成一次 npm tarball，并由所有 smoke、publish 与 Registry readback 复用
       - npm 安装使用兼容 Host Node，完整支持 CLI 与按需 Buildr Web
       - 显式安装的 macOS/Windows Launcher 不复制 Node 或 Buildr，精确绑定同一 npm 安装，并在 Node、entry、prefix 或 package identity 漂移时 fail closed
+      - focus结果只证明Release contract/smoke，不冒充matching Candidate后的publish transaction、published install或Registry readback结果
     requiredForDelivery: false
     environment:
       requires: [node, npm, git]

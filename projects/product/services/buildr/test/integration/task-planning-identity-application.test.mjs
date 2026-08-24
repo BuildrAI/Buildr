@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { registerTaskPlanningIdentityApplication } from '../../src/application/task-planning-identity/task-planning-identity-application.mjs';
+import { registerTaskPlanningIdentityApplication } from '../../src/task/application/task-planning-identity-application.mjs';
 
 const proposal = '# Demo\n\n## Why\n\nWhy.\n\n## What Changes\n\nChange.\n\n## Capabilities\n\nCapability.\n\n## Impact\n\nImpact.\n';
 const design = '# Design\n\n## Context\n\nContext.\n\n## Goals / Non-Goals\n\nGoals.\n\n## Decisions\n\nDecision.\n\n## Risks / Trade-offs\n\nRisk.\n';

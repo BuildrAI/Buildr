@@ -1,26 +1,37 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { buildApplicationPayload } from '../../scripts/release/application-payload.mjs';
-import { createNpmPackStaging } from '../../scripts/release/release-artifact.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
+import { createNpmPackStaging } from '../../tools/release/release-artifact.mjs';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../../src/infrastructure/product-identity/installation-registry.mjs';
+} from '../../src/system/installation/infrastructure/installation-registry.mjs';
 import {
   installNpmLauncher,
   npmLauncherStatus,
+  assertCurrentNpmLauncherBinding,
   refreshInstalledNpmLauncher,
   repairNpmLauncher,
   uninstallNpmLauncher,
-} from '../../src/infrastructure/product-launcher/index.mjs';
-import { registerLocalWorkspaceAppInterface } from '../../src/interfaces/local-app/http/server.mjs';
+} from '../../src/system/installation/infrastructure/npm-launcher.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
+import {
+  clearBuildrWebInstance,
+  writeBuildrWebInstance,
+} from '../../src/web/infrastructure/instance-runtime.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
@@ -75,6 +86,51 @@ async function fixture() {
   return { root, prefix, packageRoot, registration: { status: 'installed', entry: enrolled.entry } };
 }
 
+function productIdentityFor(binding) {
+  return {
+    package: binding.package,
+    version: binding.version,
+    protocolIdentity: binding.protocolIdentity,
+    applicationPayloadDigest: binding.applicationPayloadDigest,
+    sourceCommit: binding.sourceCommit,
+    channel: 'npm',
+    runtime: { role: 'host' },
+    installationIdentity: binding.installationOwnershipIdentity,
+  };
+}
+
+async function waitFor(check, { attempts = 160, intervalMs = 50, message = 'condition' } = {}) {
+  for (let index = 0; index < attempts; index += 1) {
+    const value = await check();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`Timed out waiting for ${message}.`);
+}
+
+const LAUNCHER_HANDOFF_ATTEMPTS = 400;
+const LAUNCHER_HANDOFF_TIMEOUT_MS = 20000;
+
+function spawnInstalledWeb(entry, args) {
+  const child = spawn(process.execPath, [entry, 'web', ...args], {
+    env: { ...process.env, BUILDR_LAUNCHER_NO_OPEN: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const output = [];
+  child.stdout.on('data', (chunk) => output.push(String(chunk)));
+  child.stderr.on('data', (chunk) => output.push(String(chunk)));
+  child.output = output;
+  return child;
+}
+
+async function waitForChildExit(child, label) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await Promise.race([
+    once(child, 'exit'),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} did not exit: ${child.output.join('')}`)), LAUNCHER_HANDOFF_TIMEOUT_MS)),
+  ]);
+}
+
 test('macOS npm Launcher is an owned projection and repair refreshes drift without copying product bytes', async () => {
   const value = await fixture();
   const target = path.join(value.root, 'Applications', 'Buildr Web.app');
@@ -94,6 +150,12 @@ test('macOS npm Launcher is an owned projection and repair refreshes drift witho
   assert.match(wrapper, /export PATH="\$\{NODE_BIN\}\$\{PATH:\+:\$\{PATH\}\}"/);
   assert.match(wrapper, /Node identity: executable=\$\{NODE_EXECUTABLE\} version=\$\{NODE_VERSION\} pathHead=\$\{NODE_BIN\}/);
   assert.match(wrapper, /buildr-web-launcher "\$\{LABEL\}" "\$\{NODE\}" "\$\{NODE_BIN\}"/);
+  assert.match(wrapper, /NO_NOTIFY="\$\{BUILDR_LAUNCHER_NO_NOTIFY-\}"/);
+  assert.match(wrapper, /\[ "\$\{NO_NOTIFY\}" = "1" \] && return 0/);
+  assert.match(wrapper, /NO_NOTIFY="\$\{10\}"/);
+  assert.match(wrapper, /export BUILDR_LAUNCHER_NO_NOTIFY="\$\{NO_NOTIFY\}"/);
+  assert.match(wrapper, /if \[ "\$\{NO_NOTIFY\}" != "1" \]; then/);
+  assert.match(wrapper, /"\$\{NO_OPEN\}" "\$\{NO_NOTIFY\}"/);
   assert.doesNotMatch(wrapper, /\/usr\/bin\/nohup/);
   const plist = fs.readFileSync(path.join(target, 'Contents', 'Info.plist'), 'utf8');
   assert.match(plist, /<key>CFBundleIdentifier<\/key><string>ai\.buildr\.web\.npm-launcher\.slot[a-f0-9]{24}<\/string>/);
@@ -219,18 +281,19 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     version: installed.binding.version,
     protocolIdentity: installed.binding.protocolIdentity,
     applicationPayloadDigest: installed.binding.applicationPayloadDigest,
+    sourceCommit: installed.binding.sourceCommit,
     channel: 'npm',
     runtime: { role: 'host' },
     installationIdentity: installed.binding.installationOwnershipIdentity,
   };
   const runtime = createRuntime();
-  registerLocalWorkspaceAppInterface(runtime, { readProductIdentity: () => productIdentity });
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (message) => warnings.push(String(message));
   t.after(() => { console.warn = originalWarn; });
 
-  const started = await runtime.startLocalWorkspaceApp(['--no-open', '--launcher-binding', installed.bindingPath]);
+  const started = await runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]);
   const actualPort = Number(new URL(started.url).port);
   assert.notEqual(actualPort, preferred);
   assert.match(warnings.join('\n'), new RegExp(`首选端口 ${preferred} 已被占用`));
@@ -247,13 +310,145 @@ test('released npm Launcher falls back once from an occupied preferred port whil
   assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json')), false);
 
   await assert.rejects(
-    () => runtime.startLocalWorkspaceApp(['--no-open', '--port', String(preferred)]),
+    () => runtime.startBuildrWeb(['--no-open', '--port', String(preferred)]),
     /EADDRINUSE|address already in use/i,
   );
 });
 
+test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses exact binding and replaces an old same-slot binding', async (t) => {
+  const value = await fixture();
+  const target = path.join(value.root, 'Applications', 'Buildr Web.app');
+  const installed = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
+  const entry = value.registration.entry.entryPath;
+  const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const children = new Set();
+  const launch = (args) => {
+    const child = spawnInstalledWeb(entry, args);
+    children.add(child);
+    child.once('exit', () => children.delete(child));
+    return child;
+  };
+  t.after(() => {
+    for (const child of children) child.kill('SIGTERM');
+  });
+
+  const cli = launch(['--no-open', '--port', '0']);
+  const cliReceipt = await waitFor(() => {
+    if (!fs.existsSync(receiptFile)) return null;
+    const valueAtFile = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    return valueAtFile.pid === cli.pid && !valueAtFile.launcherIdentity ? valueAtFile : null;
+  }, { message: 'foreground CLI receipt' });
+
+  const first = launch(['--no-open', '--launcher-binding', installed.bindingPath]);
+  const second = launch(['--no-open', '--launcher-binding', installed.bindingPath]);
+  const managed = await waitFor(() => {
+    if (!fs.existsSync(receiptFile)) return null;
+    const valueAtFile = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    return valueAtFile.pid !== cliReceipt.pid && valueAtFile.launcherIdentity?.bindingIdentity === installed.binding.bindingIdentity
+      ? valueAtFile
+      : null;
+  }, { attempts: LAUNCHER_HANDOFF_ATTEMPTS, message: 'Launcher-managed replacement receipt' });
+  await waitForChildExit(cli, 'foreground CLI after Launcher handoff');
+  assert.notEqual(managed.pid, cliReceipt.pid);
+  const managedHealth = await fetch(`${managed.url}/api/v1/health`, { headers: { 'x-buildr-instance': managed.secret } }).then((response) => response.json());
+  assert.equal(managedHealth.launcherIdentity.bindingIdentity, installed.binding.bindingIdentity);
+  const managedChild = first.pid === managed.pid ? first : second;
+  const concurrentFollower = managedChild === first ? second : first;
+  await waitForChildExit(concurrentFollower, 'concurrent Launcher follower');
+
+  const exactReuse = launch(['--no-open', '--launcher-binding', installed.bindingPath]);
+  await waitForChildExit(exactReuse, 'exact binding reuse invocation');
+  assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid, managed.pid);
+
+  const updated = repairNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 4317 });
+  assert.notEqual(updated.binding.bindingIdentity, installed.binding.bindingIdentity);
+  assert.equal(updated.binding.launcherOwnershipIdentity, installed.binding.launcherOwnershipIdentity);
+  const replacement = launch(['--no-open', '--launcher-binding', updated.bindingPath]);
+  const replaced = await waitFor(() => {
+    if (!fs.existsSync(receiptFile)) return null;
+    const valueAtFile = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    return valueAtFile.launcherIdentity?.bindingIdentity === updated.binding.bindingIdentity ? valueAtFile : null;
+  }, { message: 'updated same-slot Launcher receipt' });
+  await waitForChildExit(managedChild, 'old same-slot Launcher');
+  assert.notEqual(replaced.pid, managed.pid);
+  const replacedHealth = await fetch(`${replaced.url}/api/v1/health`, { headers: { 'x-buildr-instance': replaced.secret } }).then((response) => response.json());
+  assert.equal(replacedHealth.launcherIdentity.bindingIdentity, updated.binding.bindingIdentity);
+
+  const stopped = await fetch(`${replaced.url}/api/v1/app/quit-instance`, {
+    method: 'POST',
+    headers: { 'x-buildr-instance': replaced.secret },
+  });
+  assert.equal(stopped.status, 202);
+  await waitForChildExit(replacement, 'updated Launcher');
+  assert.equal(fs.existsSync(receiptFile), false);
+});
+
+test('npm Launcher preserves foreign ownership and a non-stopping handoff receipt', async (t) => {
+  const value = await fixture();
+  const target = path.join(value.root, 'Applications', 'Buildr Web.app');
+  const installed = installNpmLauncher({ registration: value.registration, platform: 'darwin', target, port: 0 });
+  const productIdentity = productIdentityFor(installed.binding);
+  const foreignIdentity = { ...productIdentity, installationIdentity: `sha256-${'f'.repeat(64)}` };
+  const foreignRuntime = createRuntime();
+  registerWebInstanceLifecycle(foreignRuntime, { readProductIdentity: () => foreignIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  const foreign = await foreignRuntime.startBuildrWeb(['--no-open', '--port', '0']);
+  const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const foreignReceipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+  const currentRuntime = createRuntime();
+  registerWebInstanceLifecycle(currentRuntime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  await assert.rejects(
+    () => currentRuntime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]),
+    (error) => error.code === 'launcher_handoff_cli_ownership_conflict',
+  );
+  assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).secret, foreignReceipt.secret);
+  assert.equal(await fetch(`${foreign.url}/api/v1/health`, { headers: { 'x-buildr-instance': foreignReceipt.secret } }).then((response) => response.status), 200);
+  await new Promise((resolve) => foreign.server.close(resolve));
+
+  const profile = resolveWebProfile(productIdentity);
+  const fakeSecret = crypto.randomBytes(32).toString('hex');
+  const fake = http.createServer((request, response) => {
+    if (request.url === '/api/v1/health') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(`${JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile })}\n`);
+      return;
+    }
+    if (request.url === '/api/v1/app/quit-instance') {
+      response.writeHead(202, { 'content-type': 'application/json' });
+      response.end('{"status":"stopping"}\n');
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => {
+    fake.once('error', reject);
+    fake.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => { if (fake.listening) fake.close(); });
+  const fakeState = { url: `http://127.0.0.1:${fake.address().port}`, secret: fakeSecret, pid: process.pid, launcherIdentity: null, productIdentity, webProfile: profile };
+  writeBuildrWebInstance(currentRuntime, fakeState);
+  await assert.rejects(
+    () => currentRuntime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]),
+    (error) => error.code === 'launcher_handoff_shutdown_timeout',
+  );
+  assert.equal(JSON.parse(fs.readFileSync(receiptFile, 'utf8')).secret, fakeSecret);
+  clearBuildrWebInstance(fakeState, profile);
+  await new Promise((resolve) => fake.close(resolve));
+});
+
+test('non-Windows foreground Web clears its receipt on SIGHUP', async (t) => {
+  if (process.platform === 'win32') return;
+  const value = await fixture();
+  const receiptFile = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const child = spawnInstalledWeb(value.registration.entry.entryPath, ['--no-open', '--port', '0']);
+  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); });
+  await waitFor(() => fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid : false, { message: 'SIGHUP test receipt' });
+  child.kill('SIGHUP');
+  await waitForChildExit(child, 'SIGHUP Web process');
+  assert.equal(fs.existsSync(receiptFile), false);
+});
+
 test('Windows Launcher PowerShell bridge preserves shortcut and root paths containing spaces', () => {
-  const npmLauncherSource = fs.readFileSync(new URL('../../src/infrastructure/product-launcher/index.mjs', import.meta.url), 'utf8');
+  const npmLauncherSource = fs.readFileSync(new URL('../../src/system/installation/infrastructure/npm-launcher.mjs', import.meta.url), 'utf8');
   const developmentLauncherSource = fs.readFileSync(new URL('../../package/launchers/manage.mjs', import.meta.url), 'utf8');
   for (const source of [npmLauncherSource, developmentLauncherSource]) {
     assert.doesNotMatch(source, /\$args\[[01]\]/);

@@ -8,15 +8,15 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const triageSkill = read('package/targets/workspace/skills/buildr/task-triage/SKILL.md');
-const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
-const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
-const proposeUpstream = read('package/targets/workspace/skills/openspec/openspec-propose/SKILL.md');
-const proposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
-const updateUpstream = read('package/targets/workspace/skills/openspec/openspec-update-change/SKILL.md');
-const updateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
-const openSpecComponent = YAML.parse(read('package/targets/workspace/components/buildr/openspec/component.yml'));
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const triageSkill = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
+const worktreeSkill = read('resources/workspace/skills/buildr/task-worktree/SKILL.md');
+const environmentSkill = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
+const proposeUpstream = read('resources/workspace/skills/openspec/openspec-propose/SKILL.md');
+const proposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const updateUpstream = read('resources/workspace/skills/openspec/openspec-update-change/SKILL.md');
+const updateSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
+const openSpecComponent = YAML.parse(read('resources/workspace/components/buildr/openspec/component.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 
 test('task triage 输出两轴决策、repository set 与 Task Environment 动作', () => {
   for (const required of [
@@ -31,8 +31,8 @@ test('task triage 输出两轴决策、repository set 与 Task Environment 动�
 
   assert.doesNotMatch(triageSkill, /create-board|continue-board|buildr\.task-board-maintenance/);
 
-  assert.match(triageSkill, /首次持久交付写入前取得`ready`、实际execution roots、validation root和执行CLI/);
-  assert.match(triageSkill, /`metadata-only`可以使用共享执行根，不必创建Git worktree/);
+  assert.match(triageSkill, /首次受管效果前取得`ready`、实际execution roots、validation root和执行CLI/);
+  assert.match(triageSkill, /`metadata-only`受管执行可以使用共享执行根/);
   assert.match(triageSkill, /Task Environment：prepare \/ inspect \/ none \/ blocked/);
 });
 

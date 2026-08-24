@@ -1,0 +1,43 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: agent-led-task-finish-recovery
+operation: reconcile
+treeIdentity: implementation-working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/agent-led-task-finish-recovery/brief.md
+    reason: 正式 Change 需要解释 Agent 主导的 Finish 事实、安全原语、策略与结果对账边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/agent-led-task-finish-recovery/proposal.md
+      - openspec/changes/agent-led-task-finish-recovery/design.md
+      - openspec/changes/agent-led-task-finish-recovery/specs/task-finish-execution/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: Task Finish current facts port、安全原语与 Task Entry Snapshot 消费边界发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/agent-led-task-finish-recovery/design.md
+      - openspec/changes/agent-led-task-finish-recovery/specs/task-finish-execution/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service 内 Task Finish Application、read model、CLI 与 Task Entry Snapshot 所有权边界发生变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/agent-led-task-finish-recovery/design.md
+      - openspec/changes/agent-led-task-finish-recovery/specs/task-finish-execution/spec.md
+terminology:
+  status: aligned
+  termsConsulted:
+    - Task Finish
+    - Task Entry Snapshot
+    - Delivery Carrier
+    - Delivery Reconciliation
+    - Task Contribution
+  canonicalTerms: 现有 glossary 已覆盖任务收尾、任务入口快照、交付载体、交付对账与任务贡献；安全原语是实现边界，不新增领域术语
+  changedAssets: []
+  unresolvedConflicts: []
+  sourceIdentities:
+    - openspec/knowledge/glossary.md
+    - openspec/changes/agent-led-task-finish-recovery/design.md
+    - openspec/changes/agent-led-task-finish-recovery/specs/task-finish-execution/spec.md
+unresolvedItems: []

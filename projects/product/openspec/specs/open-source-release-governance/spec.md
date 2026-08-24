@@ -108,27 +108,28 @@ GitHub Release metadata MUST 继续与 tag、target commit、version、notes 和
 - **AND** MUST NOT unpublish、覆盖或发布第二份 bytes
 
 ### Requirement: Release tag 前必须证明发布权威一致
-Buildr MUST 在 release contract 中声明唯一的机器可读发布权威元组，至少包含 provider、GitHub repository、workflow filename、GitHub Environment 与允许的 npm action。候选准备阶段 MUST 只验证该元组、workflow identity 与收敛 source 的静态结构和远端事实，MUST NOT dispatch正式 release workflow、请求真实 npm token exchange或创建 tag。只有维护者明确授权正式发布后，本机 MUST 针对current `origin/main` dispatch一次完整release workflow；该workflow MUST只有一个使用声明Environment的protected release transaction job，并 MUST 在一次审批后以`id-token: write`完成current OIDC token exchange、最终pre-tag convergence、不可移动tag ensure与npm publish。本机maintainer session、`npm trust list`、静态配置或历史provenance MUST NOT替代同一protected transaction内的hosted identity proof。Credential-free evidence MUST绑定source commit、workflow bytes、唯一GitHub run/attempt、目标package与exchange metadata，并 MUST在tag mutation前由同一job消费；任何远端竞争、证据过期或身份漂移 MUST fail closed。
+Buildr MUST在release contract中声明唯一机器可读发布权威元组，至少包含provider、GitHub repository、workflow filename、GitHub Environment与允许的npm action。候选准备阶段 MUST只验证该元组、workflow identity、current `release-<version>`、matching Candidate、唯一tarball、release→main tree与transaction context的静态结构和远端事实，MUST NOT dispatch正式release workflow、请求真实npm token exchange或创建tag。只有维护者明确授权正式发布后，本机 MUST针对同时匹配冻结release tree与current `origin/main`的context dispatch一次完整release workflow；该workflow MUST只有一个使用声明Environment的protected release transaction job，并 MUST在一次审批后以`id-token: write`完成current OIDC token exchange、最终pre-tag convergence、不可移动tag ensure与npm publish。本机maintainer session、`npm trust list`、静态配置或历史provenance MUST NOT替代同一protected transaction内的hosted identity proof。Credential-free evidence MUST绑定release selection、Candidate generation、tarball manifest/integrity、main source、workflow bytes、唯一GitHub run/attempt、目标package与exchange metadata，并 MUST在tag mutation前由同一job消费；任何远端竞争、证据过期或身份漂移 MUST fail closed。
 
 #### Scenario: 候选准备只检查发布结构
 - **WHEN** 维护者要求准备候选版但尚未授权正式发布
-- **THEN** Buildr MUST 完成 dev/main source、version、tree、branch protection、release contract 与 workflow structure convergence
-- **AND** MUST NOT dispatch release workflow、请求 `npm-production`审批、执行npm token exchange或创建tag
+- **THEN** Buildr MUST完成release selection、release HEAD/tree、Candidate、唯一tarball、release→main tree、branch protection、release contract、Task correlation与workflow structure convergence
+- **AND** current `dev`可在release创建后继续前进，readiness MUST NOT要求release自动追随最新`dev`
+- **AND** MUST NOT dispatch release workflow、请求`npm-production`审批、执行npm token exchange或创建tag
 
 #### Scenario: 一次审批启动唯一受保护事务
-- **WHEN** maintainer明确授权正式发布，且workflow的可逆contract/candidate/Host Node/Launcher jobs全部通过
+- **WHEN** maintainer明确授权正式发布，且workflow的可逆contract/context/Candidate/Host Node/Launcher jobs全部通过
 - **THEN** GitHub MUST只为唯一protected release transaction job创建`npm-production`deployment
-- **AND** 该job MUST在同一次approved execution中依次完成hosted OIDC probe、最终pre-tag gate、tag ensure、publish与公开readback
+- **AND** 该job MUST在同一次approved execution中依次完成hosted OIDC probe、最终pre-tag gate、tag ensure、同一tarball publish与公开readback
 - **AND** 其他job MUST NOT声明`npm-production`、`id-token: write`或tag/npm mutation权限
 
 #### Scenario: current 发布权威完全一致
-- **WHEN** protected transaction针对冻结的`main`commit和workflow digest成功以OIDC身份完成npm package token exchange
-- **THEN** probe MUST形成不包含token、绑定current source、workflow、package与同一GitHub run/attempt的hosted evidence
-- **AND** pre-tag convergence MUST只在该evidence仍current、exchange未过期且remote dev/main/candidate identities一致时允许tag ensure
-- **AND** workflow MUST在tag创建后继续使用同一冻结tarball完成publish，不dispatch第二个受保护run
+- **WHEN** protected transaction针对匹配release tree的冻结`main`commit、Candidate、tarball和workflow digest成功以OIDC身份完成npm package token exchange
+- **THEN** probe MUST形成不包含token、绑定current context、source、workflow、package与同一GitHub run/attempt的hosted evidence
+- **AND** pre-tag convergence MUST只在selection、Candidate、artifact、Task correlation、exchange与remote main identities仍current时允许tag ensure
+- **AND** workflow MUST在tag创建后继续使用同一冻结tarball完成publish，不dispatch第二个受保护run或重跑完整Product Candidate
 
 #### Scenario: 权威漂移或无法读取
-- **WHEN** repository owner、workflow、Environment、allowed action、source commit、workflow digest、package、run identity、remote main/dev或candidate tree任一不一致，或OIDC/token exchange任一步不可用
+- **WHEN** repository owner、workflow、Environment、allowed action、release HEAD/tree、Candidate generation、tarball integrity、Task correlation、main source、workflow digest、package、run identity或exchange任一不一致或不可用
 - **THEN** probe或pre-tag gate MUST返回非零并形成明确blocked finding，包含expected与可安全公开的actual/unavailable原因
 - **AND** protected transaction MUST在tag和npm mutation前停止
 - **AND** Buildr MUST NOT把本机npm session、`npm trust list`、历史publish provenance、静态测试或人工checklist勾选伪装成current npm控制面验证
@@ -224,3 +225,49 @@ Buildr MUST以 closed release transaction context/evidence schema关联 source r
 - **WHEN** workflow 在 tag/npm mutation 前失败
 - **THEN** evidence MUST保留已确认的 context、Candidate与publish run facts及失败阶段
 - **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
+
+### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
+Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个受保护release→main收敛PR；merge后`main` tree MUST等于冻结release tree。正式Publication成功后才可执行main→dev收敛；该动作 MUST保留publication期间已经进入`dev`的新内容，并 MUST拒绝`ours`、reset、force push或静默冲突解决。
+
+#### Scenario: release集合进入main
+- **WHEN** current release Candidate与唯一tarball通过且维护者授权收敛
+- **THEN** Buildr MUST只创建一个绑定该release HEAD/tree的受保护release→main PR
+- **AND** squash或其他允许策略产生的main commit identity可以不同，但`origin/main^{tree}` MUST精确等于冻结release tree
+- **AND** tree不一致或PR head漂移 MUST阻止publication
+
+#### Scenario: 发布成功后dev已经前进
+- **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release创建后交付的新内容
+- **THEN** main→dev收敛 MUST保留这些新内容并证明release publication内容已进入current dev
+- **AND** 发生冲突或identity不可证明时 MUST报告`published-but-dev-convergence-blocked`并保留公开发布事实
+- **AND** MUST NOT删除tag、unpublish、force push或用`ours`掩盖内容差异
+
+### Requirement: 受保护发布事务必须消费唯一冻结Context
+Buildr正式publication MUST只由`.github/workflows/publish.yml`的唯一protected transaction执行。Workflow MUST在一次`npm-production`approval内消费与dispatch完全相同的context digest、matching Candidate aggregate与冻结tarball，依次完成hosted OIDC、final pre-tag convergence、tag ensure、npm publish/dist-tag、GitHub Release与Registry readback。
+
+#### Scenario: 显式授权后dispatch
+- **WHEN** 维护者明确授权publication且`dispatch-check`返回frozen ready context
+- **THEN** runner MUST只dispatch一次publish workflow并传入context、context digest与Candidate run/artifact identity
+- **AND** workflow MUST只有一个job声明`npm-production`、`id-token: write`和tag/npm/GitHub mutation权限
+
+#### Scenario: Hosted pre-tag发现漂移
+- **WHEN** protected transaction重新读取的selection、Candidate、artifact、Task correlation、main、workflow或run/attempt identity与冻结context不一致
+- **THEN** transaction MUST在tag/npm/GitHub mutation前失败关闭并形成current attempt finding
+- **AND** MUST NOT重建context、重新pack、dispatch第二workflow或回退本机凭证
+
+### Requirement: 发布失败必须保留不可逆事实与attempt恢复路径
+Protected transaction MUST为current GitHub run/attempt保存逐步evidence，并 MUST从正式Git/npm/GitHub readback记录已经成立的tag、npm version/integrity、dist-tag、GitHub Release与Registry smoke事实。失败Result MUST区分同attempt恢复、明确新attempt恢复和必须新version/人工处理，不得撤销或伪装已成立事实。
+
+#### Scenario: Tag创建后npm失败
+- **WHEN** immutable tag已指向冻结source但npm publish或OIDC exchange失败
+- **THEN** evidence MUST保留tag commit、失败步骤、run/attempt与安全诊断
+- **AND** 恢复 MUST继续消费同一context与tarball并明确是否需要新attempt，MUST NOT删除、移动tag或改用本机token publish
+
+#### Scenario: npm成功后公开readback失败
+- **WHEN** Registry已存在同version且integrity匹配冻结tarball，但dist-tag、GitHub Release或Registry smoke尚未完成
+- **THEN** rerun MUST复用已发布npm事实并只补齐未成立步骤
+- **AND** MUST NOT再次publish、重新pack、unpublish或覆盖相同version
+
+#### Scenario: 已有事实发生冲突
+- **WHEN** existing tag source、Registry integrity或GitHub Release metadata与冻结context不一致
+- **THEN** transaction MUST返回需要人工处理或新version的blocked恢复分类并保留所有事实
+- **AND** MUST NOT自动覆盖、删除、移动或弱化protected environment

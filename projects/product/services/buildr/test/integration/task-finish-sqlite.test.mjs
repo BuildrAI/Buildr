@@ -4,11 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
+import { createFinishRun, executeFinishRun, finishResult } from '../../src/task/application/finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createFinishRun, executeFinishRun, finishResult } from '../../src/application/task-finish/task-finish-run.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
+const test = createBuildrApplicationTest('integration-task-finish-sqlite');
 
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-finish-sqlite-'));
@@ -64,7 +64,7 @@ function repositoryPlan(root, selector, { retainedRoot = root, remote = 'origin'
 
 test('Task Finish current run、lease和completion由Workspace SQLite统一持久化', async (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId: 'sqlite-finish', title: 'SQLite Finish', intent: 'Prove Finish state ownership.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId: 'sqlite-finish-run', identity: identity(root, 'sqlite-finish'), runtime });
   runtime.writeTaskFinishRunPersistence(root, run);
@@ -108,9 +108,101 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   database.close();
 });
 
+test('reconciliation terminal只在failed current run ID与digest精确匹配时原子替换', (t) => {
+  const root = workspace(t);
+  const runtime = t.buildrContexts.application;
+  const task = 'sqlite-recovery-terminal';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove atomic recovery terminal replacement.', projects: [], services: [], changes: [] });
+  const oldRun = createFinishRun({ root, runId: 'sqlite-recovery-old', identity: identity(root, task), runtime });
+  oldRun.status = 'failed';
+  oldRun.updatedAt = new Date().toISOString();
+  runtime.writeTaskFinishRunPersistence(root, oldRun);
+  const frozen = runtime.readTaskFinishRunPersistence(root, { taskId: task });
+
+  const newIdentity = {
+    ...identity(root, task),
+    handoffIdentity: 'sha256-handoff-current',
+    candidateIdentity: 'sha256-candidate-current',
+    candidateGeneration: 2,
+    contentTargetIdentity: 'sha256-content-current',
+  };
+  const terminalRun = createFinishRun({ root, runId: 'sqlite-recovery-current', identity: newIdentity, runtime: { ...runtime, readTaskFinishRunPersistence: () => null } });
+  terminalRun.status = 'complete';
+  terminalRun.completedAt = new Date().toISOString();
+  terminalRun.updatedAt = terminalRun.completedAt;
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v3',
+    runId: terminalRun.runId,
+    task,
+    handoffIdentity: newIdentity.handoffIdentity,
+    candidateIdentity: newIdentity.candidateIdentity,
+    candidateGeneration: newIdentity.candidateGeneration,
+    contentTargetIdentity: newIdentity.contentTargetIdentity,
+    repositorySetIdentity: terminalRun.identity.repositorySetIdentity,
+    status: 'complete',
+    cleanup: { status: 'pending' },
+    association: null,
+  };
+  terminalRun.completion = completion;
+  const result = { ...finishResult(terminalRun), completion };
+
+  assert.throws(() => runtime.finalizeTaskFinishPersistence(root, { run: terminalRun, result, completion }), (error) => error.code === 'task_finish_current_conflict');
+  assert.throws(() => runtime.finalizeTaskFinishPersistence(root, {
+    run: terminalRun,
+    result,
+    completion,
+    supersededCurrent: { runId: oldRun.runId, runDigest: 'sha256-stale-digest' },
+  }), (error) => error.code === 'task_finish_current_conflict');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, oldRun.runId);
+
+  runtime.finalizeTaskFinishPersistence(root, {
+    run: terminalRun,
+    result,
+    completion,
+    supersededCurrent: { runId: oldRun.runId, runDigest: frozen.runDigest },
+  });
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }, { optional: true }), null);
+  const stored = runtime.readTaskFinishCompletionPersistence(root, { taskId: task });
+  assert.equal(stored.runId, terminalRun.runId);
+  assert.equal(stored.completion.handoffIdentity, newIdentity.handoffIdentity);
+});
+
+test('rollover只用旧run ID和digest原子替换为新的active current run', (t) => {
+  const root = workspace(t);
+  const runtime = t.buildrContexts.application;
+  const task = 'sqlite-rollover-current';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove atomic active run rollover.', projects: [], services: [], changes: [] });
+  const oldRun = createFinishRun({ root, runId: 'sqlite-rollover-old', identity: identity(root, task), runtime });
+  oldRun.status = 'failed';
+  oldRun.phases[0] = { ...oldRun.phases[0], status: 'passed', attempts: 1 };
+  oldRun.phases[1] = { ...oldRun.phases[1], status: 'failed', attempts: 1 };
+  runtime.writeTaskFinishRunPersistence(root, oldRun);
+  const frozen = runtime.readTaskFinishRunPersistence(root, { taskId: task });
+  const nextRun = createFinishRun({
+    root,
+    runId: 'sqlite-rollover-next',
+    identity: { ...identity(root, task), handoffIdentity: 'sha256-handoff-2', candidateIdentity: 'sha256-candidate-2', candidateGeneration: 2, contentTargetIdentity: 'sha256-content-2' },
+    runtime: { ...runtime, readTaskFinishRunPersistence: () => null },
+  });
+
+  assert.throws(() => runtime.replaceTaskFinishRunPersistence(root, {
+    run: nextRun,
+    supersededCurrent: { runId: oldRun.runId, runDigest: 'sha256-wrong' },
+  }), (error) => error.code === 'task_finish_current_conflict');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, oldRun.runId);
+
+  const replaced = runtime.replaceTaskFinishRunPersistence(root, {
+    run: nextRun,
+    supersededCurrent: { runId: oldRun.runId, runDigest: frozen.runDigest },
+  });
+  assert.equal(replaced.run.runId, nextRun.runId);
+  assert.equal(replaced.run.status, 'active');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }).run.runId, nextRun.runId);
+});
+
 test('Task Finish current独占完整delivery message且公开result只投影subject与identity', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const task = 'delivery-message-owner';
   runtime.createTaskRecord(root, { taskId: task, title: 'Delivery message owner', intent: 'Prove message ownership.', projects: [], services: [], changes: [] });
   const deliveryCommit = normalizeTaskFinishDeliveryCommit('fix(task-finish): freeze message\n\nprivate body evidence', task);
@@ -132,7 +224,7 @@ test('Task Finish current独占完整delivery message且公开result只投影sub
 
 test('Delivery Adaptation Result临时返回完整冻结message与可移植准备提示', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const task = 'delivery-adaptation-guidance';
   runtime.createTaskRecord(root, { taskId: task, title: 'Delivery adaptation guidance', intent: 'Prove exact adaptation guidance.', projects: [], services: [], changes: [] });
   const deliveryCommit = normalizeTaskFinishDeliveryCommit('fix(task-finish): adapt carrier\n\nprivate rationale', task);
@@ -151,7 +243,7 @@ test('Delivery Adaptation Result临时返回完整冻结message与可移植准�
     adaptationGuidance: {
       preparationHints: {
         schemaVersion: 'buildr.task-finish-preparation-hints/v1',
-        steps: [{ id: 'prepare', cwd: 'projects/product/services/buildr', executable: 'scripts/run-development-npm', args: ['ci'], outputs: [] }],
+        steps: [{ id: 'prepare', cwd: 'projects/product/services/buildr', executable: 'tools/development/run-development-npm', args: ['ci'], outputs: [] }],
         unavailable: [],
       },
     },
@@ -170,7 +262,7 @@ test('Delivery Adaptation Result临时返回完整冻结message与可移植准�
 
 test('target lease使用expiry与token fencing避免旧owner释放新owner', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   for (const taskId of ['lease-owner-a', 'lease-owner-b']) {
     runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove lease fencing.', projects: [], services: [], changes: [] });
   }
@@ -194,13 +286,13 @@ test('target lease使用expiry与token fencing避免旧owner释放新owner', (t)
 
 test('retained内部lease driver以closed schema获取刷新和释放matching owner', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const taskId = 'lease-driver-owner';
   const runId = 'lease-driver-owner-run';
   runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove internal lease driver.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId, identity: identity(root, taskId), runtime });
   runtime.writeTaskFinishRunPersistence(root, run);
-  const driver = fileURLToPath(new URL('../../src/interfaces/internal/task-finish-target-lease-driver.mjs', import.meta.url));
+  const driver = fileURLToPath(new URL('../../src/task/interfaces/internal/task-finish-target-lease-driver.mjs', import.meta.url));
   const invoke = (action, extra = []) => spawnSync(process.execPath, [driver, action, '--task', taskId, '--run', runId, '--target-identity', 'origin:dev', '--target', root, ...extra], { encoding: 'utf8' });
 
   const acquired = invoke('acquire');
@@ -226,7 +318,7 @@ test('retained内部lease driver以closed schema获取刷新和释放matching ow
 test('repository-set lease只对matching owner唯一解析legacy logical target', (t) => {
   const root = workspace(t);
   const foreignRoot = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   for (const taskId of ['repository-lease-unique', 'repository-lease-ambiguous']) {
     runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove repository-scoped lease compatibility.', projects: [], services: [], changes: [] });
   }
@@ -320,7 +412,7 @@ test('repository-set lease只对matching owner唯一解析legacy logical target'
 
 test('terminal Finish row可临时持有自举lease且过期后由新owner接管', async (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   for (const taskId of ['terminal-lease-owner', 'terminal-lease-successor']) {
     runtime.createTaskRecord(root, { taskId, title: taskId, intent: 'Prove terminal activation lease.', projects: [], services: [], changes: [] });
   }
@@ -353,7 +445,7 @@ test('terminal Finish row可临时持有自举lease且过期后由新owner接管
 
 test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId: 'legacy-finish', title: 'Legacy Finish', intent: 'Prove old files are not migrated.', projects: [], services: [], changes: [] });
   const legacyRoot = path.join(root, '.buildr', 'task-finish');
   fs.mkdirSync(path.join(legacyRoot, 'runs'), { recursive: true });
@@ -369,7 +461,7 @@ test('SQLite-only Finish 不迁移旧目录中的 completed 或 blocked 状态',
 
 test('单表拒绝损坏phase JSON且不再暴露per-artifact metadata API', (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId: 'artifact-finish', title: 'Artifact Finish', intent: 'Check transient ownership.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId: 'artifact-finish-run', identity: identity(root, 'artifact-finish'), runtime });
   runtime.writeTaskFinishRunPersistence(root, run);
@@ -389,7 +481,7 @@ test('单表拒绝损坏phase JSON且不再暴露per-artifact metadata API', (t)
 
 test('Task Finish current只保存compact phase与current failure owner facts', async (t) => {
   const root = workspace(t);
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   runtime.createTaskRecord(root, { taskId: 'compact-finish', title: 'Compact Finish', intent: 'Keep attempt diagnostics outside current.', projects: [], services: [], changes: [] });
   const run = createFinishRun({ root, runId: 'compact-finish-run', identity: identity(root, 'compact-finish'), runtime });
   const handlers = {

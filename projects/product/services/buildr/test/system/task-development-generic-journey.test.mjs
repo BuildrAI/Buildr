@@ -6,8 +6,9 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
+import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
 
 function declaration() {
   return {
@@ -101,10 +102,15 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
     overrides: [],
   });
   const targetIdentity = development.development.receipt.contentTarget.identity;
+  development = runtime.freezeTaskDevelopmentCandidate(root, 'publish-guide');
+  assert.equal(development.status, 'frozen');
+  assert.equal(development.development.receipt.generation, 1);
+  const candidate = development.development.receipt.candidate;
 
   const check = spawnSync('sh', ['-c', 'test -s README.md'], { cwd: path.join(root, 'projects', 'docs', 'services', 'guide'), encoding: 'utf8' });
   assert.equal(check.status, 0, check.stderr);
-  runtime.recordTaskVerification(root, 'publish-guide', {
+  recordVerificationResultFromEvidence(runtime, root, 'publish-guide', {
+    candidate,
     targetIdentity,
     targetSummary: 'Portable documentation Content Target',
     capabilities: [{ project: 'docs', capability: 'docs.check', outcome: 'passed', facts: ['The guide documentation is non-empty.'] }],
@@ -114,9 +120,7 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   });
 
   development = runtime.freezeTaskDevelopmentCandidate(root, 'publish-guide');
-  assert.equal(development.status, 'frozen');
-  assert.equal(development.development.receipt.generation, 1);
-  const candidate = development.development.receipt.candidate;
+  assert.equal(development.status, 'unchanged');
   runtime.recordTaskReview(root, 'publish-guide', {
     reviewType: 'completion',
     targetIdentity: candidate.identity,
@@ -125,6 +129,13 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
     uncovered: [],
     findings: [],
     conclusion: { outcome: 'ready', summary: 'The Candidate satisfies the Task intent.' },
+  });
+  runtime.recordTaskDevelopmentKnowledge(root, 'publish-guide', {
+    treeIdentity: candidate.contentTargetIdentity,
+    status: 'aligned',
+    summary: 'Current knowledge matches the documentation Candidate.',
+    sourceIdentities: ['test:task-development-generic-journey'],
+    unresolvedItems: [],
   });
   development = runtime.decideTaskDevelopment(root, 'publish-guide', { outcome: 'proceed', summary: 'All current gates are positive.', risks: [] });
   assert.equal(development.development.receipt.decision.candidateIdentity, candidate.identity);

@@ -5,7 +5,7 @@ import {
   createTaskFinishExecutionRecordFiles,
   publicTaskFinishExecutionRecord,
   taskFinishExecutionRecordOutcome,
-} from '../../src/application/task-finish/execution-record.mjs';
+} from '../../src/task/application/finish/execution-record.mjs';
 
 function run(status = 'blocked') {
   return {

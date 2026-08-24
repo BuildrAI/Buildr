@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntimeDiagnostics } from '../../src/application/doctor/runtime-diagnostics.mjs';
-import { createScopeDiagnostics } from '../../src/application/doctor/scope-diagnostics.mjs';
-import { buildDoctorHealth, buildDoctorRepairPlan } from '../../src/application/doctor/result-model.mjs';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/application/package-maintenance/verification-registry.mjs';
+import { createRuntimeDiagnostics } from '../../src/system/doctor/application/runtime-diagnostics.mjs';
+import { createScopeDiagnostics } from '../../src/system/doctor/application/scope-diagnostics.mjs';
+import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/system/doctor/application/result-model.mjs';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
+import { blockingSyncSourceIssues } from '../../src/agent-assets/application/runtime-projection.mjs';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {
   assert.deepEqual(selectPackageVerifiers().map((item) => item.id), PACKAGE_VERIFIERS.map((item) => item.id));
@@ -90,6 +91,7 @@ test('runtime doctor 聚合 warning 时保留 actionability 与来源摘要', ()
   assert.deepEqual(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: nonActionable.findings }), {
     workspaceValid: true,
     ready: true,
+    generalWorkPermitted: null,
     actionRequired: false,
     actionableCount: 0,
   });
@@ -144,6 +146,7 @@ test('doctor health 分离 ok、workspace validity 与 action requirement', () =
   }), {
     workspaceValid: true,
     ready: true,
+    generalWorkPermitted: null,
     actionRequired: false,
     actionableCount: 0,
   });
@@ -153,9 +156,27 @@ test('doctor health 分离 ok、workspace validity 与 action requirement', () =
   }), {
     workspaceValid: true,
     ready: false,
+    generalWorkPermitted: null,
     actionRequired: true,
     actionableCount: 1,
   });
+});
+
+test('doctor domain health只阻断finding声明的action与ownership unit', () => {
+  assert.deepEqual(buildDoctorDomainHealth([
+    { status: 'warning', code: 'runtime.codex_stale', domain: 'runtime', scope: '.', ownershipUnit: 'runtime:codex', affectedActions: ['render', 'sync'] },
+    { status: 'info', code: 'project.observed', domain: 'project', scope: 'projects/demo', ownershipUnit: 'project:demo', affectedActions: ['inspect'], userActionRequired: false },
+  ]), [
+    { domain: 'project', scope: 'projects/demo', ownershipUnit: 'project:demo', status: 'info', actionableCount: 0, blockedActions: [], findingCodes: ['project.observed'] },
+    { domain: 'runtime', scope: '.', ownershipUnit: 'runtime:codex', status: 'warning', actionableCount: 1, blockedActions: ['render', 'sync'], findingCodes: ['runtime.codex_stale'] },
+  ]);
+});
+
+test('sync source plan只让required Component冲突阻断原子批次', () => {
+  const optional = { id: 'optional', required: false, error: 'foreign owner' };
+  const required = { id: 'core', required: true, error: 'integrity conflict' };
+  assert.deepEqual(blockingSyncSourceIssues({ components: { errors: [optional] }, needsDecision: [{ id: 'optional-rule' }] }), []);
+  assert.deepEqual(blockingSyncSourceIssues({ components: { errors: [optional, required] } }), [required]);
 });
 
 test('doctor repair plan 按根因动作去重并让 error 优先', () => {

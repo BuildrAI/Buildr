@@ -4,12 +4,12 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { parseCapabilityContract } from '../../src/infrastructure/runtime/skills/manifests.mjs';
+import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
 
 const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('Task Retrospective contract/provider/binding保持terminal-only与非门禁边界', () => {
-  const manifest = YAML.parse(read('package/manifest.yml'));
+  const manifest = YAML.parse(read('resources/manifest.yml'));
   const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-retrospective' && item.version === 2);
   assert.ok(contract);
   assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-retrospective');
@@ -21,8 +21,8 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
-  const skill = read('package/targets/workspace/skills/buildr/task-retrospective/SKILL.md');
-  const capabilityContract = read('package/targets/workspace/skills/contracts/buildr/task-retrospective/v2.md');
+  const skill = read('resources/workspace/skills/buildr/task-retrospective/SKILL.md');
+  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-retrospective/v2.md');
   assert.match(skill, /自由Markdown/);
   assert.match(skill, /数值、来源和覆盖范围/);
   assert.match(skill, /部分可得.*不代表完整 Task/);
@@ -54,7 +54,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
 });
 
 test('active package不再发布Task Asset Review', () => {
-  const productManifest = read('package/manifest.yml');
+  const productManifest = read('resources/manifest.yml');
   for (const content of [productManifest]) {
     const parsed = YAML.parse(content);
     const skills = parsed.builtins?.skills || parsed.skills || [];
@@ -65,8 +65,8 @@ test('active package不再发布Task Asset Review', () => {
     assert.equal(bindings.some((item) => item.capability === 'buildr.task-asset-review'), false);
     assert.equal(skills.some((item) => (item.requires || []).some((dependency) => dependency.capability === 'buildr.task-asset-review')), false);
   }
-  const oldSkill = path.resolve('package/targets/workspace/skills/buildr/task-asset-review');
-  const oldContracts = path.resolve('package/targets/workspace/skills/contracts/buildr/task-asset-review');
+  const oldSkill = path.resolve('resources/workspace/skills/buildr/task-asset-review');
+  const oldContracts = path.resolve('resources/workspace/skills/contracts/buildr/task-asset-review');
   assert.equal(fs.existsSync(oldSkill) && fs.readdirSync(oldSkill, { recursive: true }).some((entry) => fs.statSync(path.join(oldSkill, entry)).isFile()), false);
   assert.equal(fs.existsSync(oldContracts) && fs.readdirSync(oldContracts, { recursive: true }).some((entry) => fs.statSync(path.join(oldContracts, entry)).isFile()), false);
 });
@@ -83,5 +83,5 @@ test('Task Retrospective Application是唯一repository writer caller', () => {
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(callers, ['application/task-retrospective/task-retrospective-application.mjs']);
+  assert.deepEqual(callers, ['task/application/task-retrospective-application.mjs']);
 });

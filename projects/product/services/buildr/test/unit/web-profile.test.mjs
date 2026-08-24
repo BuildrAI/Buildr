@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
+import { productDataRoot } from '../../src/infrastructure/filesystem/product-data-root.mjs';
 import {
   assertLauncherWebProfile,
   defaultWebDataRoot,
   oppositeWebProfile,
-  productDataRoot,
   resolveWebProfile,
   webProfileName,
-} from '../../src/infrastructure/product-identity/web-profile.mjs';
+} from '../../src/system/installation/contracts/web-profile.mjs';
 
 const npmIdentity = { channel: 'npm', runtime: { role: 'host' } };
 const developmentIdentity = { channel: 'development', runtime: { role: 'development' } };

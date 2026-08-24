@@ -1,0 +1,15 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: move-commit-language-to-workspace-rule
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Git Operations 的行为边界继续保持 Skill-only，但默认提交语言事实改由随包 workspace AGENTS 提供，需要更新 Service 当前说明。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/buildr-package-assets/spec.md
+      - openspec/specs/product-agent-skills/spec.md
+      - services/buildr/package/targets/workspace/AGENTS.md
+      - services/buildr/package/targets/workspace/skills/buildr/git-operations/SKILL.md
+unresolvedItems: []

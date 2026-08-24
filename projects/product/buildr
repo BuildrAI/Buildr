@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 project_root=$(CDPATH= cd "${0%/*}" && pwd)
-exec "$project_root/services/buildr/scripts/run-development-cli" "$@"
+exec "$project_root/services/buildr/tools/development/run-development-cli" "$@"

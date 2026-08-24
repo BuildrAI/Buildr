@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
@@ -47,7 +47,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
+    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
   ]);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
@@ -253,12 +253,12 @@ test('operation scope 只复用单次action的canonical与owner Application read
     assert.deepEqual(runtime.inspectTaskEnvironment(root, 'operation-scope'), runtime.inspectTaskEnvironment(root, 'operation-scope'));
   });
   assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 3, 'Task Record owner read + Environment owner/repository validation');
+  assert.equal(taskReads, 2, '兼容 Facade 只观察 Environment owner/repository validation；Task 模块内部读取保持私有');
   assert.equal(environmentReads, 1, 'Local Environment inspect 只查询 SQLite Environment current');
 
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
   assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 4);
+  assert.equal(taskReads, 2, '新 operation 中的 Task 模块内部读取也不经过可替换的兼容 Facade');
 
   assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => {
     runtime.assertCanonicalStructuredWorkspace(root);

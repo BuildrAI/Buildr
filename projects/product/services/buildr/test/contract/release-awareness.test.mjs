@@ -13,7 +13,7 @@ function read(relative) {
 
 test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并等待用户选择', () => {
   const skill = read('package/targets/runtime/skills/buildr/SKILL.md');
-  const guide = read('package/bootstrap/guide.md');
+  const guide = read('docs/bootstrap-guide.md');
   for (const content of [skill, guide]) {
     assert.match(content, /buildr update check --json/);
     assert.match(content, /GA 正式版/);
@@ -25,12 +25,14 @@ test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并�
 });
 
 test('CLI 和 Buildr Web 只暴露明确轨道选择，不提供网页 npm 更新写入口', () => {
-  const registry = read('src/interfaces/cli/registry.mjs');
-  const server = read('src/interfaces/local-app/http/server.mjs');
+  const installationCli = read('src/system/installation/interfaces/cli/installation.mjs');
+  const module = read('src/system/installation/module.mjs');
+  const contribution = read('src/system/installation/interfaces/http/release-awareness-http.mjs');
   const appLayout = fs.readFileSync(path.join(webRoot, 'src/app/AppLayout.tsx'), 'utf8');
-  assert.match(registry, /Usage: buildr update \[--track <stable\|candidate>\] \[--json\]/);
-  assert.match(server, /request\.method === 'GET' && pathname === '\/api\/v1\/release-awareness'/);
-  assert.doesNotMatch(server, /request\.method === 'POST' && pathname === '\/api\/v1\/release-awareness'/);
+  assert.match(installationCli, /Usage: buildr update \[--track <stable\|candidate>\] \[--json\]/);
+  assert.match(module, /createReleaseAwarenessHttpContribution\(application\)/);
+  assert.match(contribution, /request\.method !== 'GET' \|\| pathname !== '\/api\/v1\/release-awareness'/);
+  assert.doesNotMatch(contribution, /request\.method === 'POST'/);
   assert.match(appLayout, /data-release-track=\{track\.track\}/);
   assert.match(appLayout, /复制命令/);
   assert.match(appLayout, /交给 Agent/);

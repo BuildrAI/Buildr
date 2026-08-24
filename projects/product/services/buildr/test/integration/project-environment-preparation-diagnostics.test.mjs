@@ -5,7 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createProjectEnvironmentPreparationDiagnostics } from '../../src/application/doctor/project-environment-preparation-diagnostics.mjs';
+import { createProjectEnvironmentPreparationDiagnostics } from '../../src/system/doctor/application/project-environment-preparation-diagnostics.mjs';
+import {
+  normalizeProjectEnvironmentPreparation,
+  parseProjectEnvironmentPreparation,
+} from '../../src/task/module.mjs';
 
 function declaration(service = 'api') {
   return {
@@ -25,6 +29,8 @@ test('Project doctor只读校验Preparation Declaration，缺失不伪造声明'
   fs.writeFileSync(path.join(projectRoot, 'services', 'manifest.yml'), 'schemaVersion: buildr.services/v2\nservices:\n  api:\n    code: api\n');
   const diagnostics = createProjectEnvironmentPreparationDiagnostics({
     addDoctorFinding: (result, status, code, message, details) => result.findings.push({ status, code, message, ...details }),
+    normalizeProjectEnvironmentPreparation,
+    parseProjectEnvironmentPreparation,
   });
   const registry = { projects: { demo: { source: { path: 'projects/demo' } } } };
 

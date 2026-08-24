@@ -23,6 +23,7 @@ test('Task 文档引用使用已登记 Project source.path 解析 Workspace 相�
       projectSourcePath: 'projects/product',
       documentPath: 'docs/architecture/service-architecture.md',
       workspacePath: 'projects/product/docs/architecture/service-architecture.md',
+      resolution: 'resolved',
     },
   );
 });

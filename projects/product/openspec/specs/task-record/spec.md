@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义正式 Task identity、最小 Task Record v1、canonical 路径、共享 Application、Skill/CLI 与 Local App 客户端、产品化创建/读取/更新/结束、三态结果、限定引用与失败边界。
+定义正式 Task identity、最小 Task Record v1、canonical 路径、共享 Application、Skill/CLI 与 Buildr Web 客户端、产品化创建/读取/更新/结束、三态结果、限定引用与失败边界。
 
 ## Requirements
 
@@ -247,22 +247,22 @@ Buildr Web Task 详情 MUST 在用户操作 Parent 字段前避免读取完整 T
 - **AND** 当前 Parent 已终态时页面 MUST 仍保留其只读当前选项，后端 MUST 继续拒绝不合法的新关系或循环
 
 ### Requirement: Formal Finish 正常完成必须复用 Task Record Application
-Task Record Application MUST 提供一个仅供 Formal Task Finish 正常完成路径调用的内部终态动作。该动作 MUST 保持 Task Record Application 为顶层状态唯一 writer，在单个数据库事务中把 active Task 写为 `completed` 与 `result.noChange=false`；MUST 对既有 `completed/noChange=false` 返回零写入的幂等成功；MUST 拒绝覆盖 `completed/noChange=true`、`abandoned` 或损坏记录。该动作 MUST NOT 暴露为新的公共 CLI，也 MUST NOT触发 Finish、Environment cleanup、Parent/Child 状态传播或其他专业动作。
+Task Record Application MUST提供仅供经过验证的Task交付收敛调用的内部终态动作。该动作 MUST保持Task Record Application为顶层状态唯一writer，在单个数据库事务中把active Task写为`completed`与`result.noChange=false`；MUST对既有`completed/noChange=false`返回零写入的幂等成功；MUST拒绝覆盖`completed/noChange=true`、`abandoned`或损坏记录。该动作 MAY由自动Formal Finish或独立delivery reconciliation调用，但 MUST NOT公开为允许调用方声明交付成功的公共setter，也 MUST NOT触发Git交付、Environment cleanup、Parent/Child状态传播或其他专业动作。
 
 #### Scenario: Finish 通过唯一 Application 完成 active Task
-- **WHEN** Task Finish 在完整 cleanup 后提交 active Task 的正常交付终态
-- **THEN** Task Record Application MUST 原子写入 `status: completed`、确定性 summary 与 `noChange: false`
-- **AND** result MUST 返回当前 record、recordDigest 与精确 mutation effects
+- **WHEN** 全部applicable repositories的current Task Contribution已经由真实远端事实证明交付
+- **THEN** Task delivery reconciler MUST通过Task Record Application原子写入`status: completed`、确定性summary与`noChange: false`
+- **AND** result MUST返回当前record、recordDigest与精确mutation effects
 
 #### Scenario: 等价终态零写入
-- **WHEN** 同一 Finish 恢复提交一个已经 `completed/noChange=false` 的 Task
-- **THEN** Task Record Application MUST 返回当前终态与零 mutation effects
-- **AND** MUST NOT 改写 summary、updatedAt 或 Parent/Child 关系
+- **WHEN** 自动Finish或delivery reconciliation提交一个已经`completed/noChange=false`的Task
+- **THEN** Task Record Application MUST返回当前终态与零mutation effects
+- **AND** MUST NOT改写summary、updatedAt或Parent/Child关系
 
 #### Scenario: 冲突终态不可覆盖
-- **WHEN** Finish 提交目标 Task 已经 `completed/noChange=true` 或 `abandoned`
-- **THEN** Task Record Application MUST 返回类型化冲突且 effects 为空
-- **AND** 原 Task Record MUST 保持不变
+- **WHEN** 交付收敛目标Task已经`completed/noChange=true`或`abandoned`
+- **THEN** Task Record Application MUST返回类型化冲突且effects为空
+- **AND** 原Task Record MUST保持不变
 
 ### Requirement: Task Record 必须保持父子顶层状态独立
 Task Record Application MUST继续只保存单Parent关系与各Task自身顶层状态；Contribution、Parent Plan、Child Result/progress和专业handoff MUST NOT进入Task Record，且Child终态 MUST NOT传播Parent终态。
@@ -447,7 +447,7 @@ Buildr Web MUST 在已登记 Workspace 下提供 Task 核心导航、SQLite 轻�
 - **AND** Environment 页签 MAY 继续只读展示最终 cleanup 或 unavailable 事实，且 MUST NOT 提供重开、修改或绕过 Application validator 的入口
 
 ### Requirement: Buildr Web Task API 必须保持 Workspace 写安全边界
-Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路径提供 Workspace-scoped read/limited-write API，并 MUST 在调用 Task Record Application 前解析已登记 Workspace 的真实 canonical root。Task collection GET MUST 只接受封闭 query schema；所有保留的 mutation MUST 复用现有同源、session、JSON、body size、字段白名单和未知字段拒绝边界。Task collection POST 与 activate route MUST NOT 存在。
+Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路径提供 Workspace-scoped read/limited-write API，并 MUST 在调用 Task Record Application 前解析已登记 Workspace 的真实 canonical root。Task collection GET MUST 只接受封闭 query schema；list、detail、update、complete、abandon MUST由 Task HTTP Interfaces 自有的 Draft 2020-12 Schema 与稳定 operation catalog 约束，并 MUST将已验证 Interface DTO 显式映射为既有 Application Query/Command。所有保留的 mutation MUST 复用现有同源、session、JSON、body size、字段白名单和未知字段拒绝边界；`target|root|path`、未知/重复 query、缺少 `expectedRecordDigest`、record conflict、terminal 与 domain error 的既有 code、status 和优先级 MUST保持等价。Task collection POST 与 activate route MUST NOT 存在。
 
 #### Scenario: Task API 使用已登记 Workspace
 - **WHEN** 请求中的 `workspaceId` 已登记、可用且与 canonical Workspace identity 一致
@@ -456,7 +456,7 @@ Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路
 
 #### Scenario: Task list 使用合法 query
 - **WHEN** collection GET 使用 `q`、`project`、`service`、`status`、`hasChildren`、`hasRetrospective` 或 `retrospectiveState`
-- **THEN** HTTP interface MUST 规范化封闭 filter input 并调用 Task Record Application query projection
+- **THEN** HTTP interface MUST 通过 list request Schema 规范化封闭 filter DTO、显式映射并调用 Task Record Application query projection
 - **AND** `status` MUST 只接受 `open|todo|active|completed|abandoned|all`，其他过滤 MUST 保持其既有封闭值与组合语义
 
 #### Scenario: Task API 提交路径或越界字段
@@ -468,6 +468,16 @@ Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路
 - **WHEN** 保留的 mutation 缺少合法 Origin/session、不是允许的 JSON content type、超过 body limit 或 action fields 不完整
 - **THEN** HTTP interface MUST 拒绝请求并保持 Task Record 不变
 - **AND** MUST 返回现有 Buildr Web error envelope 可表达的稳定诊断
+
+#### Scenario: Task API 输入校验不变异
+- **WHEN** mutation body 含可转换但类型错误的值、缺失必填字段或未知字段
+- **THEN** Ajv validator MUST拒绝请求且 MUST NOT转换类型、填默认值或删除字段
+- **AND** Task Record Application writer MUST不被调用
+
+#### Scenario: Task API 返回既有 result family
+- **WHEN** list、detail、update、complete 或 abandon 成功，或 Application 返回 conflict、terminal/domain error
+- **THEN** HTTP response MUST匹配 operation 对应的成功或错误 Schema
+- **AND** Schema/DTO 引入 MUST NOT改变既有公开 payload major、Application、Domain、Persistence、SQLite 或 writer authority
 
 ### Requirement: Buildr Web Task Environment API 必须保持 Workspace 读取安全边界
 Buildr MUST 为 Task 详情提供 Workspace-scoped、只读的 Environment API，并 MUST 在调用 Task Environment Application `inspect` 前解析已登记 Workspace 与真实 Task ID。HTTP interface 与 Web feature MUST NOT 接收 `target/root/path`、直接读取 Environment Receipt/provider evidence 或自行判断 `ready / blocked / cleanup`。
@@ -634,3 +644,11 @@ Task query projection MUST 支持关键词、Project、Service、`open|todo|acti
 - **WHEN** debounce 后的新查询在旧查询完成前发出
 - **THEN** 页面 MUST 显示明确 loading，并 MUST 防止旧响应覆盖新条件结果
 - **AND** 空结果 MUST 区分 Workspace 没有 Task 与当前筛选无结果
+
+### Requirement: Task 交付终态不得被后续维护 attention 撤销
+Task Record的`completed/noChange=false` MUST只表达已验证的任务交付结果。retained activation、Environment cleanup、Finish transient cleanup或diagnostics retention的pending/attention MUST由专业read model独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
+
+#### Scenario: completed Task仍有cleanup attention
+- **WHEN** Task已完成远端交付而Task Environment尚未安全清理
+- **THEN** Task Record MUST保持completed，Task详情 MUST展示独立cleanup attention
+- **AND** Agent MUST能继续处理清理且用户可以查看结果和进行任务复盘

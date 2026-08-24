@@ -27,8 +27,8 @@ function isBrowserOwnedPath(value) {
   const normalized = normalize(value);
   const relative = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
-    || relative.startsWith('src/interfaces/local-app/web-dist/')
-    || relative.startsWith('src/interfaces/local-app/runtime/')
+    || relative.startsWith('web-dist/')
+    || (relative.startsWith('src/web/') && !relative.startsWith('src/web/http/'))
     || relative.startsWith('test/browser-smoke/')
     || relative === 'test/verification/browser-selector-dispatcher.mjs'
     || relative === 'test/verification/web-dist.mjs';
@@ -85,7 +85,7 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Browser verification selection mechanism changed; run the complete selector set.' });
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/http/')) {
+    if (value.startsWith('src/web/http/')) {
       plan.reasons.push({ path: originalValue, selector: null, reason: 'HTTP/API owner; verify through the Buildr Web Runtime/System owner without starting Chrome.' });
       continue;
     }
@@ -95,7 +95,7 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Buildr Web package or build configuration changed; run the complete selector set.' });
       continue;
     }
-    if (originalValue.startsWith('services/buildr-web/src/') || value.startsWith('src/interfaces/local-app/web-dist/')) {
+    if (originalValue.startsWith('services/buildr-web/src/') || value.startsWith('web-dist/')) {
       if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');
@@ -107,13 +107,9 @@ export function selectBrowserSelectors(changedPaths) {
       } else add(plan, 'core', originalValue, 'Unclassified Buildr Web path uses the core smoke fallback.');
       continue;
     }
-    if (value.startsWith('src/interfaces/local-app/runtime/')) {
+    if (value.startsWith('src/web/')) {
       add(plan, 'shell', originalValue, 'Buildr Web bootstrap/runtime changed.');
       add(plan, 'core', originalValue, 'Buildr Web runtime change requires the representative route smoke.');
-      continue;
-    }
-    if (value.startsWith('src/interfaces/local-app/')) {
-      add(plan, 'core', originalValue, 'Unclassified Buildr Web path uses the core smoke fallback.');
       continue;
     }
     plan.reasons.push({ path: originalValue, selector: null, reason: 'Path is outside the Browser capability applicability.' });
@@ -173,8 +169,9 @@ function main() {
     process.exitCode = webDistResult.status ?? 1;
     return;
   }
-  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/local-app-browser.test.mjs');
-  const result = spawnSync(process.execPath, [browserTest, plan.selectors.join(',')], {
+  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.mjs');
+  const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
+  const result = spawnSync(process.execPath, [isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], {
     cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'),
     stdio: 'inherit',
     env: { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) },

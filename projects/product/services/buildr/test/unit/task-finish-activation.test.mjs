@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { planRetainedTaskFinishActivation } from '../../src/application/task-finish/task-finish-activation.mjs';
+import { planRetainedTaskFinishActivation } from '../../src/task/application/finish/task-finish-activation.mjs';
 
 test('Workspace root runtime sources select render-runtime', () => {
   const plan = planRetainedTaskFinishActivation({
     agent: 'codex',
-    changedPaths: ['skills/example/SKILL.md', 'rules/example.md', 'projects/product/services/buildr/package/manifest.yml'],
+    changedPaths: ['skills/example/SKILL.md', 'rules/example.md', 'projects/product/services/buildr/resources/manifest.yml'],
   });
   assert.equal(plan.mode, 'render-runtime');
   assert.deepEqual(plan.matchedPaths, ['rules/example.md', 'skills/example/SKILL.md']);
@@ -35,8 +35,8 @@ test('Project and ordinary code changes select none regardless of Task scope', (
     task: { scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] } },
     changedPaths: [
       'projects/product/task-finish.yml',
-      'projects/product/services/buildr/package/manifest.yml',
-      'projects/product/services/buildr/package/targets/workspace/skills/buildr/task-finish/SKILL.md',
+      'projects/product/services/buildr/resources/manifest.yml',
+      'projects/product/services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md',
     ],
   });
   assert.equal(plan.mode, 'none');

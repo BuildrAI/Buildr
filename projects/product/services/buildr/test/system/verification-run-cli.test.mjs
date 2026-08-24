@@ -149,7 +149,10 @@ test('verification run 对 explicit capability effects 要求精确授权', (t) 
   }));
   let result = runBuildr(runArgs(root, ['demo.explicit']));
   assert.equal(result.status, 2);
-  assert.match(JSON.parse(result.stdout).error.message, /Explicit authorization is required/);
+  const blocked = JSON.parse(result.stdout);
+  assert.match(blocked.error.message, /Explicit authorization is required/);
+  assert.deepEqual(blocked.admission.gaps.map((gap) => [gap.category, gap.owner, gap.recoverable]), [['authorization', 'user-authorization', false]]);
+  assert.equal(blocked.admission.recovery, null);
 
   const args = runArgs(root, ['demo.explicit']);
   args.splice(-1, 0, '--authorize-capability', 'demo.explicit');

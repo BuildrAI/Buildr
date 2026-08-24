@@ -15,7 +15,7 @@ Payload MUST 包含其分发的 Buildr 与生产依赖许可证 inventory。npm 
 - **AND** Node 许可证 MUST 继续由用户安装的 Host Node distribution 负责，不得复制进 Buildr package 冒充 Product Node
 
 ### Requirement: Buildr 必须构建唯一 npm 应用负载
-Buildr release preparation MUST 只构建一次平台无关应用负载，并 MUST 让唯一 npm tarball 消费该冻结 payload。负载 MUST 包含 CLI、Core/Application、SQLite migrations、Buildr Web HTTP/runtime、正式 Web dist、package baseline、运行依赖以及 Buildr version 和 protocol identity；MUST NOT 包含 Node executable、SEA、installer、平台产品、`buildr-web` 源码或 Vite toolchain。
+Buildr release preparation MUST 只构建一次平台无关应用负载，并 MUST 让唯一 npm tarball 消费该冻结 payload。负载 MUST 包含 CLI、Core/Application、SQLite migrations、Buildr Web HTTP/runtime、顶层 `web-dist/`、`resources/`、明确 deferred 的 runtime assets、运行依赖以及 Buildr version 和 protocol identity；MUST NOT 包含 Node executable、SEA、installer、平台产品、checkout-only tools、`buildr-web` 源码或 Vite toolchain。
 
 #### Scenario: 冻结 npm payload
 - **WHEN** release contract 已解析且 payload builder 成功
@@ -24,14 +24,14 @@ Buildr release preparation MUST 只构建一次平台无关应用负载，并 MU
 
 #### Scenario: 前端源码不进入负载
 - **WHEN** verifier 检查 payload inventory
-- **THEN** inventory MUST 包含可直接由 Buildr Web Runtime 托管的正式 `web-dist`
+- **THEN** inventory MUST 包含来自顶层 `web-dist/`、可直接由 Buildr Web Runtime 托管的正式静态产物
 - **AND** MUST NOT 包含 `buildr-web` source、Vite config、前端开发依赖或要求安装后执行 Vite
 
 ### Requirement: npm 应用负载 identity 必须确定且可逐文件证明
-Payload builder MUST 使用排序后的相对路径、文件 mode、size 与 SHA-256 形成 canonical manifest 和 digest，并 MUST 排除时间戳、绝对 checkout path、runner 临时路径及其他构建机器噪音。npm 入口 MUST 在执行业务代码前校验 payload manifest 与可读取的真实资源。
+Payload builder MUST 使用排序后的相对路径、文件 mode、size 与 SHA-256 形成 canonical manifest 和 digest，并 MUST 将 `resources/`、`web-dist/` 和明确 deferred 的 runtime assets 纳入可证明 inventory；MUST 排除时间戳、绝对 checkout path、runner 临时路径、`tools/`、`test/` 及其他构建机器噪音。npm 入口 MUST 在执行业务代码前校验 payload manifest 与可读取的真实资源。
 
 #### Scenario: 相同输入重复构建
-- **WHEN** 同一 commit、锁定依赖和 Web dist 输入重复构建 payload
+- **WHEN** 同一 commit、锁定依赖、resources 与 Web dist 输入重复构建 payload
 - **THEN** 两次输出 MUST 具有相同 canonical manifest bytes 和 `applicationPayloadDigest`
 - **AND** 任一非确定性差异 MUST 由构建验证报告并失败
 

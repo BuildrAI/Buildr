@@ -6,10 +6,10 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/infrastructure/filesystem/workspace-registry-repository.mjs';
-import { registerWorkspaceManagementFence } from '../../src/infrastructure/filesystem/workspace-management-fence.mjs';
-import { resolveWebProfile } from '../../src/infrastructure/product-identity/web-profile.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
+import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.mjs';
+import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const RELEASED = { channel: 'npm', runtime: { role: 'host' } };
 const DEVELOPMENT = { channel: 'development', runtime: { role: 'development' } };
@@ -38,8 +38,8 @@ function workspace(base, name, id = crypto.randomUUID()) {
 
 function runtimeFor(identity, profile, profiles) {
   const runtime = createRuntime();
-  registerWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: profile });
-  registerWorkspaceManagementFence(runtime, { peerProfiles: profiles });
+  registerWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: profile, resolveWebProfile });
+  registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
   return runtime;
 }
 

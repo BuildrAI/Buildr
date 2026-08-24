@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 import { createTaskFinishSqliteRuntime } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function git(root, args) {
@@ -41,7 +41,7 @@ test('full retained Application在Execution Record gate后写同一run并只给c
   git(root, ['init', '-b', 'dev']);
   git(root, ['config', 'user.name', 'Buildr Test']);
   git(root, ['config', 'user.email', 'buildr@example.com']);
-  const provider = 'projects/product/services/buildr/src/application/task-finish/task-finish-product-executor.mjs';
+  const provider = 'projects/product/services/buildr/src/task/application/finish/task-finish-product-executor.mjs';
   write(path.join(root, provider), 'export function createTaskFinishProductHandlers() { throw new Error("retained provider defect"); }\n');
   git(root, ['add', provider]);
   git(root, ['commit', '-m', 'base']);
@@ -119,7 +119,7 @@ export function createTaskFinishProductHandlers({ runtime }) {
   assert.equal(runtime.listTaskExecutionRecords(root, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 2);
 });
 
-test('Execution Record拒绝时不创建bootstrap capsule', async (t) => {
+test('Execution Record拒绝不再掩盖bootstrap recovery自身authority边界', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-bootstrap-record-gate-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const task = 'bootstrap-record-gate';
@@ -155,13 +155,14 @@ test('Execution Record拒绝时不创建bootstrap capsule', async (t) => {
       (error) => error.code === 'task_finish.unknown_parameter',
     );
   }
-  const result = await runtime.taskFinish('run', ['--run', run.runId, '--bootstrap-recovery', '--target', root]);
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.executionRecord.status, 'blocked');
+  await assert.rejects(
+    () => runtime.taskFinish('run', ['--run', run.runId, '--bootstrap-recovery', '--target', root]),
+    (error) => error.code === 'task_finish.bootstrap_recovery_authority_unavailable',
+  );
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'transient', 'task-finish', 'bootstrap-recovery')), false);
 });
 
-test('cleanup已passed后先撤销capsule authority；terminal写入失败仍以同一run恢复', async (t) => {
+test('cleanup已passed后先撤销capsule authority；terminal写入失败不再否定交付完成', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-bootstrap-terminal-resume-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const task = 'bootstrap-terminal-resume';
@@ -185,14 +186,16 @@ test('cleanup已passed后先撤销capsule authority；terminal写入失败仍以
   };
   const revoke = (current) => ({ ...current.bootstrapRecovery, capsule: { revocation: { status: 'revoked' } } });
   const first = await executeFinishRun({ root, run, handlers: {}, runtime, bootstrapRecoveryFinalizer: revoke });
-  assert.equal(first.status, 'cleanup_pending');
+  assert.equal(first.status, 'complete');
   assert.equal(first.bootstrapRecovery.capsule.revocation.status, 'revoked');
-  assert.equal(first.nextAction, 'repeat-task-finish-run-with-bootstrap-recovery-and-resume-token');
+  assert.equal(first.primaryFailure, null);
+  assert.equal(first.resume, null);
+  assert.equal(first.completion.persistence.status, 'attention');
+  assert.equal(first.maintenance.diagnostics, 'attention');
   const persisted = runtime.readTaskFinishRunPersistence(root, { runId: run.runId }).run;
   assert.equal(persisted.runId, run.runId);
   assert.equal(persisted.bootstrapRecovery.capsule.revocation.status, 'revoked');
-  const resumed = await executeFinishRun({ root, run: persisted, handlers: {}, resumeToken: persisted.resume.token, runtime, bootstrapRecoveryFinalizer: revoke });
-  assert.equal(resumed.status, 'complete');
-  assert.equal(resumed.runId, run.runId);
-  assert.equal(terminalAttempts, 2);
+  assert.equal(persisted.status, 'complete');
+  assert.equal(persisted.completion.persistence.status, 'attention');
+  assert.equal(terminalAttempts, 1);
 });

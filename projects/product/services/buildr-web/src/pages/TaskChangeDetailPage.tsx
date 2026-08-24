@@ -15,7 +15,7 @@ type Artifact = {
   capability?: string;
 };
 
-type ChangePayload = {
+export type ChangePayload = {
   name: string;
   brief: Artifact;
   artifacts: {

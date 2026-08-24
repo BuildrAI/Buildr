@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { registerTaskDevelopmentApplication } from '../../src/application/task-development/task-development-application.mjs';
-import { registerTaskFinishApplication } from '../../src/application/task-finish/task-finish-application.mjs';
-import { createTaskFinishProductHandlers } from '../../src/application/task-finish/task-finish-product-executor.mjs';
-import { createFinishRun, executeFinishRun } from '../../src/application/task-finish/task-finish-run.mjs';
-import { normalizeTaskFinishDeliveryCommit } from '../../src/application/task-finish/task-finish-delivery-commit.mjs';
-import { taskDevelopmentDigest } from '../../src/domain/task-development/task-development.mjs';
-import { registerContentTargetObserver } from '../../src/infrastructure/content/content-target-observer.mjs';
+import { registerTaskDevelopmentApplication } from '../../src/task/application/task-development-application.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
+import { createTaskFinishProductHandlers } from '../../src/task/application/finish/task-finish-product-executor.mjs';
+import { createFinishRun, executeFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { normalizeTaskFinishDeliveryCommit } from '../../src/task/application/finish/task-finish-delivery-commit.mjs';
+import { createGitCarrierDisposabilityProof, taskFinishCarrierRoot } from '../../src/task/application/finish/git-task-contribution.mjs';
+import { taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
+import { registerContentTargetObserver } from '../../src/task/infrastructure/content-target-observer.mjs';
 import { createTaskFinishSqliteRuntime, persistTaskFinishRun } from '../helpers/task-finish-sqlite-fixture.mjs';
 
 function command(cwd, executable, args, options = {}) {
@@ -144,7 +146,7 @@ function taskDevelopmentFixture() {
     inspectTaskRecord: (_root, task) => ({ record: taskRecord || { taskId: task, status: 'active', result: null } }),
     completeTaskRecordFromFinish: (_root, task) => {
       if (!taskRecord) taskRecord = { taskId: task, status: 'active', result: null };
-      if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      if (taskRecord.status === 'active') taskRecord = { ...taskRecord, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: [{ type: 'updated', taskId: task }] };
     },
     inspectTaskDevelopment: () => {
@@ -168,7 +170,60 @@ function taskDevelopmentFixture() {
   };
 }
 
-test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢复或carrier事实拒绝换绑', async (t) => {
+const isolatedJourneys = [];
+const processEnvironmentJourneys = [];
+const journeyTiming = new AsyncLocalStorage();
+
+function timedJourney(name, run) {
+  return async (t) => {
+    const timing = { name, startedAt: performance.now(), bodyStartedAt: null, bodyFinishedAt: null };
+    let result;
+    let failure;
+    try {
+      result = await journeyTiming.run(timing, () => run(t));
+    } catch (error) {
+      failure = error;
+    } finally {
+      timing.bodyFinishedAt = performance.now();
+    }
+    t.after(() => {
+      const finishedAt = performance.now();
+      const bodyStartedAt = timing.bodyStartedAt ?? timing.startedAt;
+      const bodyFinishedAt = timing.bodyFinishedAt ?? finishedAt;
+      process.stderr.write(`[buildr-golden-journey-timing] ${JSON.stringify({
+        schemaVersion: 'buildr.golden-journey-timing/v1',
+        owner: 'system-task-finish',
+        journey: name,
+        prepareDurationMs: Math.round(bodyStartedAt - timing.startedAt),
+        bodyDurationMs: Math.round(bodyFinishedAt - bodyStartedAt),
+        waitDurationMs: 0,
+        cleanupDurationMs: Math.round(finishedAt - bodyFinishedAt),
+        totalDurationMs: Math.round(finishedAt - timing.startedAt),
+      })}\n`);
+    });
+    if (failure) throw failure;
+    return result;
+  };
+}
+
+function startJourneyBody() {
+  const timing = journeyTiming.getStore();
+  assert.ok(timing, 'golden journey timing context is required');
+  assert.equal(timing.bodyStartedAt, null, 'golden journey body can only start once');
+  timing.bodyStartedAt = performance.now();
+}
+
+function isolatedJourney(name, run) {
+  assert.doesNotMatch(Function.prototype.toString.call(run), /process\.env/, `${name} mutates process.env and must use processEnvironmentJourney`);
+  isolatedJourneys.push({ name, run: timedJourney(name, run) });
+}
+
+function processEnvironmentJourney(name, run) {
+  assert.match(Function.prototype.toString.call(run), /process\.env/, `${name} does not need the serialized process environment group`);
+  processEnvironmentJourneys.push({ name, run: timedJourney(name, run) });
+}
+
+isolatedJourney('无副作用陈旧run保持兼容；Contribution漂移旧carrier经显式rollover换代', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-stale-run-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -216,6 +271,7 @@ test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
 
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation one', '--target', retained]);
   assert.equal(first.status, 'blocked');
@@ -283,35 +339,53 @@ test('无副作用preflight/prepare陈旧run要求新commit message；prepare恢
   );
 
   const persisted = runtime.readTaskFinishRunPersistence(retained, { taskId: task });
-  persisted.run.deliveryCarrier = { identity: 'sha256-owned-carrier', root: path.join(retained, '.buildr', 'task-finish', 'carriers', third.runId) };
-  persisted.run.status = 'blocked';
+  const plan = persisted.run.identity.repositories[0];
+  const carrierRoot = taskFinishCarrierRoot(retained, third.runId, plan.selector);
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  command(retained, 'git', ['worktree', 'add', '--detach', carrierRoot, 'HEAD']);
+  const carrier = { identity: 'sha256-owned-carrier', root: carrierRoot, head: command(carrierRoot, 'git', ['rev-parse', 'HEAD']) };
+  const proof = createGitCarrierDisposabilityProof({
+    repositoryRoot: plan.taskRoot, workspaceRoot: retained, runId: third.runId, repositorySelector: plan.selector, carrier,
+    handoffIdentity: persisted.run.identity.handoffIdentity, repositoryTopology: plan,
+    prepareFailure: { operation: 'delivery-adaptation', code: 'task-finish.delivery-adaptation-required', status: 'blocked' },
+  });
+  assert.equal(proof.status, 'proved');
+  const driftFailure = { phase: 'prepare', operation: 'task-contribution', check: null, failureClass: 'upstream-candidate-defect', code: 'task-finish.task-contribution-drift-unresolved', status: 'failed', exitCode: null, message: 'Task Contribution changed before prepare.', findings: [], diagnostic: null };
+  persisted.run.status = 'failed';
   persisted.run.phases.find((phase) => phase.id === 'preflight').status = 'passed';
-  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'passed';
+  persisted.run.phases.find((phase) => phase.id === 'preflight').attempts = 1;
+  persisted.run.phases.find((phase) => phase.id === 'prepare').status = 'failed';
   persisted.run.phases.find((phase) => phase.id === 'prepare').attempts = 1;
-  persisted.run.phases.find((phase) => phase.id === 'verify').status = 'passed';
-  persisted.run.phases.find((phase) => phase.id === 'verify').attempts = 1;
-  persisted.run.phases.find((phase) => phase.id === 'deliver').status = 'blocked';
-  persisted.run.phases.find((phase) => phase.id === 'deliver').attempts = 1;
-  persisted.run.primaryFailure = { phase: 'deliver', operation: 'target-transition', failureClass: 'transient-external-condition', code: 'task-finish.target-race', status: 'blocked', exitCode: null, message: 'Target changed.', findings: [], diagnostic: null };
-  persisted.run.resume = { phase: 'deliver', token: 'sha256-deliver-resume', generatedAt: new Date().toISOString(), carrierIdentity: 'sha256-owned-carrier' };
+  persisted.run.phases.find((phase) => phase.id === 'prepare').failure = driftFailure;
+  for (const phaseId of ['verify', 'deliver', 'cleanup']) Object.assign(persisted.run.phases.find((phase) => phase.id === phaseId), { status: 'pending', attempts: 0, failure: null });
+  persisted.run.repositories[0].deliveryCarrier = carrier;
+  persisted.run.repositories[0].carrierDisposability = proof.proof;
+  persisted.run.deliveryCarrier = carrier;
+  persisted.run.carrierDisposability = proof.proof;
+  persisted.run.primaryFailure = driftFailure;
+  persisted.run.resume = null;
   runtime.writeTaskFinishRunPersistence(retained, persisted.run);
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]),
-    (error) => error.code === 'task_finish.current_run_identity_conflict'
-      && error.details?.sideEffectFacts?.includes('carrier'),
+    (error) => error.code === 'task_finish.current_run_identity_conflict',
   );
-  await assert.rejects(
-    runtime.taskFinish('run', ['--run', third.runId, '--resume', 'sha256-deliver-resume', '--target', retained]),
-    (error) => error.code === 'task_finish.current_run_identity_conflict'
-      && error.details?.runId === third.runId,
-  );
+  const facts = runtime.inspectTaskFinishCurrentFacts(retained, task);
+  assert.equal(facts.recovery.disposition, 'stale-run-retirable');
+  const rolloverCapability = facts.availableCapabilities.find((capability) => capability.id === 'finish-rollover');
+  assert.equal(rolloverCapability.status, 'available');
+  const rollover = await runtime.taskFinish('rollover', ['--task', task, '--recovery-token', rolloverCapability.recoveryToken, '--commit-message', 'fix(task-finish): deliver generation four', '--target', retained]);
+  assert.equal(rollover.status, 'active');
+  assert.equal(rollover.identity.candidateGeneration, 4);
+  assert.equal(rollover.rollover.supersededRunId, third.runId);
+  assert.equal(fs.existsSync(carrierRoot), false);
   const retainedCurrent = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  assert.equal(retainedCurrent.runId, third.runId);
-  assert.equal(retainedCurrent.deliveryCarrier.identity, 'sha256-owned-carrier');
+  assert.equal(retainedCurrent.runId, rollover.runId);
+  assert.equal(retainedCurrent.supersededCurrent.runId, third.runId);
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
   assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], command(retained, 'git', ['rev-parse', 'HEAD']));
 });
 
-test('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全替换', async (t) => {
+isolatedJourney('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全替换', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-legacy-mismatch-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -397,6 +471,7 @@ test('旧 v2 无副作用 commit-message mismatch 可由同一首次命令安全
   legacy.primaryFailure = mismatch;
   runtime.writeTaskFinishRunPersistence(retained, legacy);
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
 
   await assert.rejects(
     runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): different message', '--target', retained]),
@@ -426,7 +501,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     prepareTaskRecordPersistence: () => ({ record: taskRecord }),
     completeTaskRecordFromFinish: () => {
       const changed = taskRecord.status === 'active';
-      if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false } };
+      if (changed) taskRecord = { ...taskRecord, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false } };
       return { operation: 'complete', status: 'completed', taskId: task, record: taskRecord, recordDigest: taskDevelopmentDigest(taskRecord), effects: changed ? [{ type: 'updated', taskId: task }] : [] };
     },
     observeTaskVerificationDeclarations: () => workspaceOnly ? [] : [{
@@ -472,6 +547,13 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     ? { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [] }
     : { capabilities: [{ project: 'product', capability: 'product.delivery', required: true }], coverageGaps: [], overrides: [] });
   runtime.freezeTaskDevelopmentCandidate(retained, task, { planningTargetIdentity });
+  runtime.recordTaskDevelopmentKnowledge(retained, task, {
+    treeIdentity: runtime.inspectTaskDevelopment(retained, task).development.receipt.contentTarget.identity,
+    status: 'aligned',
+    summary: 'Task Finish system fixture current knowledge is aligned.',
+    sourceIdentities: ['test:task-finish-product-journey'],
+    unresolvedItems: [],
+  });
   runtime.decideTaskDevelopment(retained, task, {
     outcome: 'proceed', summary: 'Current gates.',
     risks: workspaceOnly ? [{ gate: 'verification', resultDigest: taskDevelopmentDigest(`${task}:verification-result`), scope: 'workspace', summary: 'Workspace coverage gap accepted for this Candidate.', source: 'user:system-regression' }] : [],
@@ -482,7 +564,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
   return runtime;
 }
 
-test('retained Doctor阻塞后经自举后继commit恢复同一run并完成cleanup', async (t) => {
+processEnvironmentJourney('Doctor与内部登记失败不否定交付，reconcile只修复Task终态', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-journey-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -557,6 +639,7 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
     },
   });
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const gateObservation = runtime.inspectTaskDevelopment(retained, task);
   const expectedHandoff = gateObservation.development.receipt.handoffs.at(-1);
   assert.equal(gateObservation.development.applicability.contentTarget, 'current');
@@ -587,83 +670,22 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
     return completeTaskRecordFromFinish(...args);
   };
   const openTaskExecutionRecord = runtime.openTaskExecutionRecord;
-  const retainedHeadBeforeBackpressure = command(retained, 'git', ['rev-parse', 'HEAD']);
   runtime.openTaskExecutionRecord = () => { throw Object.assign(new Error('Injected execution record quota backpressure.'), { code: 'task_execution_record_quota_exceeded', nextAction: 'cleanup eligible execution records' }); };
-  const backpressure = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
-  assert.equal(backpressure.status, 'blocked');
-  assert.equal(backpressure.runId, null);
-  assert.equal(backpressure.executionRecord.status, 'blocked');
-  assert.equal(runtime.readTaskFinishRunPersistence(retained, { taskId: task }, { optional: true }), null);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), retainedHeadBeforeBackpressure);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers')), false);
-  assert.equal(fs.existsSync(environmentRoot), true);
+  const result = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
   runtime.openTaskExecutionRecord = openTaskExecutionRecord;
-  const doctorBlocked = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver journey candidate', '--target', retained]);
-  assert.equal(doctorBlocked.status, 'blocked', JSON.stringify({
-    status: doctorBlocked.status,
-    primaryFailure: doctorBlocked.primaryFailure,
-    delivery: doctorBlocked.delivery,
-    deliverPhase: doctorBlocked.phases.find((phase) => phase.id === 'deliver'),
-  }, null, 2));
-  assert.equal(doctorBlocked.primaryFailure.operation, 'retained-doctor');
-  assert.equal(doctorBlocked.primaryFailure.code, 'task-finish.retained-doctor-failed');
-  assert.equal(doctorBlocked.delivery.status, 'activation-blocked');
-  assert.equal(doctorBlocked.delivery.remoteAfterRef, doctorBlocked.carrier.head);
-  assert.equal(doctorBlocked.delivery.retainedDoctor, 'blocked');
-  assert.deepEqual(doctorBlocked.phases.find((phase) => phase.id === 'deliver').operations, []);
-  assert.equal(doctorBlocked.executionRecord.status, 'retained');
-  const frozenBeforeOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--commit-message', 'fix(task-finish): override frozen message', '--target', retained]),
-    (error) => error.code === 'task_finish.commit_message_override',
-  );
-  const frozenAfterOverride = runtime.readTaskFinishRunPersistence(retained, { taskId: task }).run;
-  assert.equal(frozenAfterOverride.identityDigest, frozenBeforeOverride.identityDigest);
-  assert.equal(frozenAfterOverride.deliveryCommit.identity, frozenBeforeOverride.deliveryCommit.identity);
-  assert.equal(frozenAfterOverride.resume.token, frozenBeforeOverride.resume.token);
-  assert.equal(doctorBlocked.executionRecord.outcome, 'blocked');
-  const firstRecords = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records;
-  assert.equal(firstRecords.length, 1);
-  const firstBodyRoot = path.join(retained, firstRecords[0].body.locator);
-  const firstSummary = JSON.parse(fs.readFileSync(path.join(firstBodyRoot, 'summary.json'), 'utf8'));
-  assert.deepEqual(firstSummary.phases.find((phase) => phase.id === 'deliver').operations.filter((operation) => operation.id === 'deliver-push' || operation.id === 'deliver-target-readback').map((operation) => operation.id), ['deliver-push', 'deliver-target-readback']);
-  const firstBodyText = ['summary.json', 'timeline.json', 'diagnostics.json', 'stdout.txt', 'stderr.txt'].map((name) => fs.readFileSync(path.join(firstBodyRoot, name), 'utf8')).join('\n');
-  assert.equal(firstBodyText.includes(retained), false);
-  assert.equal(firstBodyText.includes(environmentRoot), false);
-  assert.equal(firstBodyText.includes(doctorBlocked.resume.token), false);
-  assert.doesNotMatch(JSON.stringify(firstSummary), /"(?:command|args|cwd|workspaceRoot|environmentRoot|resumeToken)"\s*:/);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'diagnostics', firstRecords[0].runIdentity)), false);
-  assert.equal(fs.existsSync(environmentRoot), true);
-  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
-  await assert.rejects(
-    runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', 'sha256-wrong-resume-token', '--target', retained]),
-    (error) => error.code === 'task_finish.resume_token_mismatch',
-  );
-  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 1);
-
-  fs.unlinkSync(path.join(retained, '.doctor-not-ready'));
-  command(retained, 'git', ['add', '.doctor-not-ready']);
-  command(retained, 'git', ['commit', '-m', 'activate self-bootstrap runtime']);
-  const activationHead = command(retained, 'git', ['rev-parse', 'HEAD']);
-  command(retained, 'git', ['push', 'origin', 'dev']);
-  const cleanupBlocked = await runtime.taskFinish('run', ['--task', task, '--run', doctorBlocked.runId, '--resume', doctorBlocked.resume.token, '--target', retained]);
-  assert.equal(cleanupBlocked.status, 'cleanup_pending');
-  assert.equal(cleanupBlocked.primaryFailure.code, 'task_record_write_failed');
-  assert.equal(cleanupBlocked.delivery.targetDisposition, 'already-contained');
-  assert.equal(cleanupBlocked.delivery.carrierRef, doctorBlocked.carrier.head);
-  assert.equal(cleanupBlocked.delivery.finalRemoteRef, activationHead);
-  assert.equal(cleanupBlocked.executionRecord.status, 'retained');
-  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
-  const sealTaskExecutionRecord = runtime.sealTaskExecutionRecord;
-  runtime.sealTaskExecutionRecord = () => { throw Object.assign(new Error('Injected execution record seal failure.'), { code: 'task_execution_record_seal_injected' }); };
-  const result = await runtime.taskFinish('run', ['--task', task, '--run', cleanupBlocked.runId, '--resume', cleanupBlocked.resume.token, '--target', retained]);
-  runtime.sealTaskExecutionRecord = sealTaskExecutionRecord;
-
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
+  assert.equal(result.delivery.status, 'delivered');
+  assert.equal(result.delivery.activation.status, 'attention');
+  assert.equal(result.delivery.activation.code, 'task-finish.retained-doctor-failed');
+  assert.equal(result.delivery.retainedDoctor, 'attention');
+  assert.equal(result.executionRecord.status, 'attention');
+  assert.equal(result.completion.taskTerminal.status, 'attention');
+  assert.equal(result.completion.taskTerminal.code, 'task_record_write_failed');
+  assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'active');
   assert.deepEqual(result.phases.map(({ id, status }) => [id, status]), [
     ['preflight', 'passed'], ['prepare', 'passed'], ['verify', 'passed'], ['deliver', 'passed'], ['cleanup', 'passed'],
   ]);
-  assert.equal(result.metrics.canonicalCliInvocations, 3);
+  assert.equal(result.metrics.canonicalCliInvocations, 1);
   assert.equal(result.metrics.agentProviderCompletions, 0);
   assert.equal(result.metrics.manualRecoveryManifests, 0);
   assert.equal(result.metrics.formalVerificationExecutions, 0);
@@ -676,15 +698,15 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   assert.deepEqual(result.candidate, { identity: frozen.identity, generation: 1, contentTargetIdentity: frozen.contentTargetIdentity });
   assert.equal(result.identity.remote, 'origin');
   assert.equal(result.identity.targetBranch, 'dev');
-  assert.equal(result.delivery.targetDisposition, 'already-contained');
-  assert.equal(result.delivery.remoteAfterRef, activationHead);
-  assert.equal(result.delivery.finalRemoteRef, activationHead);
+  assert.equal(result.delivery.targetDisposition, 'carrier');
+  assert.equal(result.delivery.remoteAfterRef, result.carrier.head);
+  assert.equal(result.delivery.finalRemoteRef, result.carrier.head);
   assert.equal(result.carrier.deliveryBaseline.head, advancedBaselineHead);
   assert.notEqual(result.carrier.head, candidateHead);
   assert.deepEqual(result.phases.find((phase) => phase.id === 'deliver').operations, []);
   assert.equal(fs.existsSync(environmentRoot), false);
-  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), activationHead);
-  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], activationHead);
+  assert.equal(command(retained, 'git', ['rev-parse', 'HEAD']), result.carrier.head);
+  assert.equal(command(retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], result.carrier.head);
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:.buildr/tracked-metadata.json`]), 'baseline metadata');
   assert.equal(command(retained, 'git', ['show', `${result.carrier.head}:baseline-advance.txt`]), 'new delivery baseline');
   assert.equal(result.carrier.changedPaths.includes('.buildr/tracked-metadata.json'), false);
@@ -694,26 +716,19 @@ test('retained Doctor阻塞后经自举后继commit恢复同一run并完成clean
   const completion = runtime.readTaskFinishCompletionPersistence(retained, { taskId: task }, { optional: false }).completion;
   assert.equal(completion.status, 'complete');
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'task-finish', 'carriers', result.runId)), false);
+  const reconciled = await runtime.taskFinish('reconcile', ['--task', task, '--target', retained]);
+  assert.equal(reconciled.status, 'complete');
+  assert.equal(reconciled.idempotent, true);
+  assert.equal(reconciled.taskCompletion.status, 'completed');
   assert.equal(runtime.inspectTaskRecord(retained, task).record.status, 'completed');
-  assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: 'Formal Task Finish 已完成交付与环境清理。', noChange: false });
-  assert.equal(result.executionRecord.status, 'attention');
-  assert.equal(result.executionRecord.lifecycleStatus, 'open');
-  const finishRecords = runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records;
-  assert.equal(finishRecords.length, 3);
-  assert.equal(new Set(finishRecords.map((record) => record.runIdentity)).size, 3);
-  assert.equal(finishRecords.filter((record) => record.outcome === 'blocked').length, 2);
-  assert.equal(finishRecords.filter((record) => record.outcome === 'running').length, 1);
-  assert.ok(finishRecords.every((record) => record.runIdentity !== result.runId));
-  const openRecord = finishRecords.find((record) => record.lifecycleStatus === 'open');
-  assert.ok(openRecord);
-  assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'diagnostics', openRecord.runIdentity)), true);
+  assert.deepEqual(runtime.inspectTaskRecord(retained, task).record.result, { summary: '任务贡献已验证交付。', noChange: false });
   const noOp = await runtime.taskFinish('run', ['--run', result.runId, '--target', retained]);
   assert.equal(noOp.status, 'complete');
   assert.equal(noOp.executionRecord.status, 'not-opened');
-  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 3);
+  assert.equal(runtime.listTaskExecutionRecords(retained, task, { owner: 'task-finish', kind: 'finish-diagnostics' }).records.length, 0);
 });
 
-test('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
+isolatedJourney('同路径基线冲突保留current Candidate并经显式零差异 Delivery Adaptation恢复交付', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-adaptation-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -786,6 +801,7 @@ test('同路径基线冲突保留current Candidate并经显式零差异 Delivery
     },
   });
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const firstSubject = 'fix(task-finish): deliver adapted journey candidate';
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', firstSubject, '--target', retained]);
 
@@ -799,12 +815,16 @@ test('同路径基线冲突保留current Candidate并经显式零差异 Delivery
   assert.equal(fs.existsSync(environmentRoot), true);
   assert.equal(command(environmentRoot, 'git', ['rev-parse', 'HEAD']), taskHeadBeforeFinish);
   assert.equal(runtime.inspectTaskDevelopment(retained, task).development.applicability.handoff, 'current');
+  const initialCarrierProof = runtime.readTaskFinishRunPersistence(retained, { runId: first.runId }).run.repositories[0].carrierDisposability;
+  assert.match(initialCarrierProof.identity, /^sha256-/);
+  assert.equal(initialCarrierProof.initialPrepareFailure.code, 'task-finish.delivery-adaptation-required');
 
   const carrierHeadBeforeResume = command(first.carrier.root, 'git', ['rev-parse', 'HEAD']);
   const missingConfirmation = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', first.resume.token, '--target', retained]);
   assert.equal(missingConfirmation.status, 'blocked');
   assert.equal(missingConfirmation.primaryFailure.code, 'task-finish.delivery-adaptation-missing');
   assert.equal(command(first.carrier.root, 'git', ['rev-parse', 'HEAD']), carrierHeadBeforeResume);
+  assert.equal(runtime.readTaskFinishRunPersistence(retained, { runId: first.runId }).run.repositories[0].carrierDisposability.identity, initialCarrierProof.identity);
 
   const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');
@@ -852,7 +872,7 @@ test('同路径基线冲突保留current Candidate并经显式零差异 Delivery
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
 });
 
-test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
+processEnvironmentJourney('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-code-only-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const seed = path.join(fixture, 'seed');
@@ -883,10 +903,10 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   const task = 'finish-code-only-task';
   const environmentRoot = path.join(retained, '.worktrees', task);
   command(retained, 'git', ['worktree', 'add', '-b', `codex/${task}`, environmentRoot, 'dev']);
-  const localAppChange = path.join(environmentRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'local-app', 'runtime', 'code-only.mjs');
-  fs.mkdirSync(path.dirname(localAppChange), { recursive: true });
-  fs.writeFileSync(localAppChange, 'export const finishedWithoutChange = true;\n');
-  command(environmentRoot, 'git', ['add', path.relative(environmentRoot, localAppChange)]);
+  const buildrWebChange = path.join(environmentRoot, 'projects', 'product', 'services', 'buildr', 'src', 'interfaces', 'local-app', 'runtime', 'code-only.mjs');
+  fs.mkdirSync(path.dirname(buildrWebChange), { recursive: true });
+  fs.writeFileSync(buildrWebChange, 'export const finishedWithoutChange = true;\n');
+  command(environmentRoot, 'git', ['add', path.relative(environmentRoot, buildrWebChange)]);
   command(environmentRoot, 'git', ['commit', '-m', 'implement code-only candidate']);
 
   const hostileBin = path.join(fixture, 'hostile-bin');
@@ -918,6 +938,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   /* The helper persists the SQLite current run; the executor owns subsequent checkpoints. */
   const handlers = createTaskFinishProductHandlers({ runtime, root: environmentRoot });
   const observedOperations = [];
+  startJourneyBody();
   const result = await executeFinishRun({
     root: retained,
     run,
@@ -956,7 +977,7 @@ test('真实 code-only 候选完成五阶段且不执行任何 OpenSpec 命令',
   assert.equal(result.metrics.formalVerificationExecutions, 0);
 });
 
-test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspace', async (t) => {
+isolatedJourney('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspace', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-multi-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const workspaceSeed = path.join(fixture, 'workspace-seed');
@@ -1062,6 +1083,7 @@ test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspa
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const result = await runtime.taskFinish('run', ['--task', task, '--commit-message', 'fix(task-finish): deliver service contribution', '--target', retained]);
 
   assert.equal(result.status, 'complete', JSON.stringify(result, null, 2));
@@ -1085,7 +1107,7 @@ test('多仓库 Task 只交付有贡献 Service 并统一清理无贡献 Workspa
   assert.equal(fs.existsSync(path.join(retained, '.buildr', 'transient', 'task-finish', 'carriers', result.runId)), false);
 });
 
-test('多贡献 repository 在第二个 target advance 后保存部分交付并从最早未完成处恢复', async (t) => {
+isolatedJourney('多贡献 repository 在第二个 target advance 后保存部分交付并从最早未完成处恢复', async (t) => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-finish-partial-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const createRepository = (name, files) => {
@@ -1198,6 +1220,7 @@ test('多贡献 repository 在第二个 target advance 后保存部分交付并�
     },
   };
   registerTaskFinishApplication(runtime);
+  startJourneyBody();
   const commitMessage = 'fix(task-finish): deliver multiple repositories';
   const first = await runtime.taskFinish('run', ['--task', task, '--commit-message', commitMessage, '--target', workspace.retained]);
 
@@ -1216,8 +1239,12 @@ test('多贡献 repository 在第二个 target advance 后保存部分交付并�
   const secondA = second.repositories.find((repository) => repository.selector === 'service:a');
   const secondB = second.repositories.find((repository) => repository.selector === 'service:b');
   assert.equal(secondA.delivery.status, 'delivered');
-  assert.equal(secondA.delivery.targetDisposition, 'already-contained');
+  assert.equal(secondA.delivery.targetDisposition, 'carrier');
+  assert.equal(secondA.delivery.containment, null);
   assert.equal(secondA.deliveryCarrier.identity, firstA.deliveryCarrier.identity);
+  assert.equal(secondA.deliveryCarrier.head, firstA.deliveryCarrier.head);
+  assert.equal(secondA.deliveryCarrier.preparedAt, firstA.deliveryCarrier.preparedAt);
+  assert.equal(secondA.delivery.finalRemoteRef, firstA.delivery.finalRemoteRef);
   assert.equal(secondB.delivery.status, 'delivered');
   assert.equal(secondB.deliveryCarrier.expectedTargetRef, advancedServiceB);
   assert.equal(command(serviceB.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], secondB.deliveryCarrier.head);
@@ -1225,4 +1252,12 @@ test('多贡献 repository 在第二个 target advance 后保存部分交付并�
   assert.equal(fs.existsSync(serviceATaskRoot), false);
   assert.equal(fs.existsSync(serviceBTaskRoot), false);
   assert.equal(fs.existsSync(path.join(workspace.retained, '.buildr', 'transient', 'task-finish', 'carriers', second.runId)), false);
+});
+
+test('修改进程环境的 Task Finish Journey 保持串行', async (t) => {
+  for (const { name, run } of processEnvironmentJourneys) await t.test(name, run);
+});
+
+test('使用独立临时根的 Task Finish Journey 保持资源隔离', async (t) => {
+  await Promise.all(isolatedJourneys.map(({ name, run }) => t.test(name, run)));
 });

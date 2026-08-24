@@ -1,10 +1,14 @@
 # Buildr 产品架构
 
+随包 [Buildr Core](../../../services/buildr/resources/workspace/rules/buildr/core.md) 是产品设计与用户 Workspace Agent 工作方式共同遵守的核心产品哲学和通用硬边界；本文只在该边界内解释当前产品架构，不建立第二套原则 authority。
+
 ## 用户与协作角色
 
 人通过自然语言表达目标、提供业务判断、授权和确认重要决策；Agent 消费组织工作资产，形成 Task Context 并推进专业工作；Buildr 不成为另一个 Agent，而是治理长期资产与确定性边界。
 
-Buildr 采用宽而薄的治理：硬门禁只保护 authority、目标对象、外部或不可逆副作用、证据真实性与完成结论等结果边界。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可检查、验证并诚实报告，则 Buildr 提供诊断与 Agent 指引，不规定 Agent 或协作者必须采用唯一工作方式，也不阻断无关工作的安全推进。
+Buildr 采用宽而薄的治理：Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。硬门禁只保护 authority、目标对象、外部或不可逆副作用、证据真实性与完成结论等结果边界。缺失的若只是辅助 provenance、推荐流程、工具偏好、Buildr 内部登记或自动化信心，而当前事实仍可从权威来源检查、验证并诚实报告，则 Buildr 提供诊断与 Agent 指引，不规定 Agent 或协作者必须采用唯一工作方式，也不阻断专业工作与其他无关工作的安全推进。
+
+产品治理结果统一区分硬门禁（Hard Gate）、待处理（Attention）与建议（Advice）；`ready|required|blocked` 只表示具体 consumer 的具体 action 是否就绪，不是 Workspace、Task 或 Agent 的全局许可。新增或保留硬门禁必须明确 action、consumer、invariant、harm、authority、scope、fallback 与 classification；无法说明放行会破坏什么结果不变量时，应降级为 attention、advice 或更窄动作的局部前置。完整分类与迁移边界见[门禁分类与有界审计](governance-gate-taxonomy.md)。
 
 ## 核心产品模型
 
@@ -27,7 +31,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Workspace Structured Store：Buildr Local中每个canonical Workspace独立的local-only SQLite，用于索引、关系、聚合和事务；是Task Record、Development、Verification、Planning/Completion Review与Retrospective current records的唯一持久化authority，不属于portable工作资产，也不进入Git或同步。
 - Project：业务事实、OpenSpec、capability/applicability context 和 Service 关系。
 - Service：职责与代码/资产边界。
-- Buildr Web：当前通过默认浏览器使用的本机 Web 界面，由 Buildr Web Frontend Service 交付前端产物、Buildr Web Runtime 同源托管，并可由 Buildr Web Launcher 启动。三者不建立第二个数据或 Application authority；Buildr App 为未来桌面产品保留，当前未实现。
+- Buildr Web：当前通过默认浏览器使用的本机 Web 界面，由 Buildr Web Frontend Service 交付前端产物、Buildr Web Runtime 同源托管，并可由 Buildr Web Launcher 启动。三者不建立第二个数据或 Application authority；Buildr Web 为未来桌面产品保留，当前未实现。
 - Buildr Application Payload 与分发载体：CLI、Core/Application、Buildr Web Runtime和正式静态资源、SQLite migrations、package baseline、生产依赖、版本与协议identity只形成一份公共负载；唯一正式载体是npm package。本机Launcher只是显式安装的图形投射，绑定同一npm安装，不复制Node、Buildr或业务实现。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
@@ -36,12 +40,12 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Environment：正式 Task 的本机执行基础与环境 authority；唯一 Environment Receipt 保存实际执行根、ready/blocked probes、动态资源和 cleanup。它可以组合共享根或 Git worktree provider，但不是 Workspace、Agent runtime 或 Task Record。
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
 - Task Review：一个 `buildr.task-review/v1` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。语义 Skill 执行审查，确定性 Application 是唯一 Result writer；目标适用性由读取时比较派生，Task Record、Environment、Verification、Finish 和 Retrospective 不复制或改写 Review 事实。
-- Task Verification：一个 `buildr.task-verification/v3` capability 按显式Project、Service所属Project与Change所属Project的有效并集读取 verification declarations，执行已有能力并维护一个 Task-scoped current Result。有效并集为空的仅工作区Task用空declarations、唯一workspace coverage gap与`not-passed`表达无验证能力，不自动passed；确定性 Application 独占 Result writer/reader，按 target/declaration identity 派生适用性。
-- Task Development：一个`buildr.task-development@2`capability和唯一Application从首个正式研发动作到Finish handoff维护Development Receipt、planning snapshot、stable Content Target、verification policy、Task Candidate/generation、gate dispositions、推进决定与不可变研发交接。仅工作区policy使用稳定空declarations与唯一workspace gap；gap进入matching current Result前不能freeze，形成负向Result后仍需现有风险授权才能proceed/handoff。它只通过Task Record、Environment、Review、Verification Applications/read models消费专业事实；Buildr Web仅调用同一Application的只读`inspect`投影。
+- Task Verification：一个`buildr.task-verification/v3`capability按有效Project并集读取declarations，针对Development已冻结的Candidate执行已有能力，并只从matching terminal Task Execution Records对账Task-scoped v2 current Result。Result绑定Candidate、Content Target、declarations与closed evidence authority；v1只读兼容但legacy-unbound，claimed success不能成为current事实。仅工作区Task仍用空declarations、唯一workspace coverage gap与`not-passed`表达无验证能力。
+- Task Development：一个`buildr.task-development@2`capability和唯一Application从首个正式研发动作到Finish handoff维护Development Receipt、planning snapshot、stable Content Target、verification policy、Task Candidate/generation、Current Knowledge disposition、gate dispositions、推进决定与不可变研发交接。Candidate在Content Target与policy稳定后先冻结，Verification与Completion随后绑定同一Candidate；Knowledge可前后调用，只有completion-critical`blocked`阻止handoff，`attention`保留但不阻止完成。它只通过各专业Application/read model消费事实，Buildr Web仅调用同一Application的只读`inspect`投影。
 - Task Retrospective：`buildr.task-retrospective/v2` 保留原始 Markdown current Result，处理时基于当前事实重算改进方向。有效方向由 Task Record v2 关联到已有 todo/active Task 或 data-only todo，不建立 action item ID、Change 或执行计划；后续进展只读 Task 当前状态。
-- Task Finish：P0.5保留固定五阶段窄adapter，对仅工作区和Project/Service Task同样只消费当前研发交接（Development Handoff），不解释workspace gap、负向Result或风险授权；Git adapter区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在隔离交付载体（Delivery Carrier）上机械应用并证明delta identity等价。carrier进入retained source后，只按Task Contribution选择`none | render-runtime`：Workspace根Rule、Skill、Component、Command等runtime source变化只render，其他变化none，通用Finish不读取Project/Service配置或执行sync。Workspace专属的交付后维护由Component通过`task-finish@append`组合，不要求通用Skill声明slot，也不进入产品五阶段或Formal Result。目标基线前进不自动使Candidate失效；Change/current knowledge收敛、formal Verification、Completion Review、Candidate generation与风险决定均在进入Finish前完成。
+- Task Finish：消费当前研发交接（Development Handoff），提供可选的五阶段自动交付与外部交付后的对账（delivery reconciliation），不垄断Git或PR路径。Agent选择交付、冲突与恢复策略；Buildr从真实remote target验证每个repository是否包含冻结任务贡献（Task Contribution）并登记Delivery。Delivery、Activation、Environment Cleanup与Diagnostics正交；后三者失败只形成attention，不撤销已确认Delivery。交付载体（Delivery Carrier）仍是自动路径的便利实现，不是所有交付的前置条件。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
-- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。
+- Task workflow：探索、规划、隔离实现、验证、集成和收尾的可组合专业动作。Task Environment、Development、Review、Verification、Git、Finish 与 Retrospective 各自拥有专业事实，通过稳定 Task ID 关联；Parent/Child 只表达 Task 间协调层级，不传播这些专业事实。用户要求创建并准备Parent时，Task Manager只写active Task Record并自动交接Task Development；Agent复用current `task next`依次调用各专业owner，在信息充分时形成Parent Plan并推进到`start-child-contribution`，此后等待用户选择首个Child。
 - Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供独立Board Domain或静态Board writer。既有Task Board/Cockpit HTML只保留历史原文，不是当前Task、进度、证据或协调authority。
 
 ## 产品边界

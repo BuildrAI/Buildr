@@ -7,9 +7,10 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/application/compose-runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/interfaces/local-app/http/server.mjs';
-import { stopPreview } from '../../src/interfaces/local-app/runtime/preview-manager.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { stopPreview } from '../../src/web/application/preview-lifecycle.mjs';
+import { copyPreparedWorkspace } from './prepared-fixtures.mjs';
 
 export function registerWorkspaceProductSuite(selectedSuite) {
 
@@ -24,7 +25,7 @@ function temporaryRoot(t) {
   return root;
 }
 
-function isolateLocalAppData(t, appData) {
+function isolateBuildrWebData(t, appData) {
   const previous = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = appData;
   t.after(() => {
@@ -60,6 +61,17 @@ function initWorkspaceViaCli(t, options = {}) {
 
 function initWorkspace(t, options = {}) {
   if (options.env) return initWorkspaceViaCli(t, options);
+  if (selectedSuite === 'manifest-registry' && !options.freshIdentity) {
+    const root = copyPreparedWorkspace(t, `workspace-${options.name || 'manifest'}`).root;
+    const runtime = createRuntime();
+    const current = runtime.getWorkspace(root);
+    runtime.updateWorkspaceMetadata(root, {
+      revision: current.revision,
+      name: options.name || 'Demo',
+      description: options.description || 'Demo workspace',
+    });
+    return root;
+  }
   const root = path.join(temporaryRoot(t), 'workspace');
   const previousLog = console.log;
   console.log = () => {};
@@ -112,7 +124,7 @@ suiteTest('manifest-registry', 'init 生成 canonical Workspace，并让两个 M
 suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   const broadEntry = '/.buildr/tasks/';
   const preciseEntry = '/.buildr/tasks/*/environment.json';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === broadEntry).length, 1);
   assert.equal(packageGitignore.includes(preciseEntry), false);
 
@@ -144,7 +156,7 @@ suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中
 
 suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 package、init 与 sync 中整体忽略', (t) => {
   const entry = '/.buildr/agent-runtime/';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
 
   const root = initWorkspaceViaCli(t);
@@ -162,7 +174,7 @@ suiteTest('manifest-registry', 'Skill 投射所有权回执 runtime state 在 pa
 
 suiteTest('manifest-registry', '项目每日演进目录在 package、init 与 sync 中整体忽略', (t) => {
   const entry = '/.buildr/daily-progress/';
-  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'targets', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
+  const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === entry).length, 1);
   assert.equal(packageGitignore.includes('/.buildr/'), false);
 
@@ -252,14 +264,15 @@ suiteTest('manifest-registry', 'Getting Started projection 汇总 Workspace 范�
   assert.match(prompt.prompt, /trigger: first-task-scope/);
   assert.match(prompt.prompt, /scope: project:demo/);
   assert.doesNotMatch(prompt.prompt, /service:demo\//);
-  assert.match(prompt.prompt, /未经用户确认不得写入长期声明/);
+  assert.match(prompt.prompt, /routine-maintenance或user-decision-required/);
+  assert.match(prompt.prompt, /改变长期适用性时请求用户确认/);
   assert.equal(prompt.copiedMeansStarted, false);
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'missing', goal: '不应回退' }), (error) => error.code === 'project_not_found');
   assert.throws(() => runtime.generateStartWorkPrompt(root, { projectCode: 'demo', goal: 'x', rootPath: root }), (error) => error.code === 'workspace_start_work_field_forbidden');
 });
 
 suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不在失败时写入 Registry', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'picker-app-data'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'picker-app-data'));
   const runtime = createRuntime();
   const candidate = path.join(temporaryRoot(t), 'not-initialized'); fs.mkdirSync(candidate);
   const result = runtime.inspectLocalWorkspaceCandidate(candidate, runtime.listRegisteredWorkspaces().revision);
@@ -269,9 +282,9 @@ suiteTest('manifest-registry', '目录选择候选以结构化结果恢复，不
 });
 
 suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支持幂等登记、切换、移除和 revision CAS', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data'));
-  const first = initWorkspace(t, { name: 'First' });
-  const second = initWorkspace(t, { name: 'Second' });
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data'));
+  const first = initWorkspace(t, { name: 'First', freshIdentity: true });
+  const second = initWorkspace(t, { name: 'Second', freshIdentity: true });
   const runtime = createRuntime();
 
   let registry = runtime.listRegisteredWorkspaces();
@@ -301,8 +314,8 @@ suiteTest('manifest-registry', '本机 Workspace 登记只保存 root，并支�
 });
 
 suiteTest('manifest-registry', '本机 Workspace 登记隔离不可用 root 并阻止重复 identity', (t) => {
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
-  const first = initWorkspace(t, { name: 'Original' });
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'app-data-conflict'));
+  const first = initWorkspace(t, { name: 'Original', freshIdentity: true });
   const duplicate = path.join(temporaryRoot(t), 'duplicate');
   fs.cpSync(first, duplicate, { recursive: true });
   const runtime = createRuntime();
@@ -375,9 +388,9 @@ suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 iden
   assert.equal(sha256(path.join(conflictRoot, '.buildr', 'workspace.yml')), before);
 });
 
-suiteTest('local-app-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
+suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t) => {
   const root = initWorkspace(t);
-  isolateLocalAppData(t, path.join(temporaryRoot(t), 'local-app-data'));
+  isolateBuildrWebData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime = createRuntime();
   const metadataFile = path.join(root, '.buildr', 'workspace.yml');
   const beforeHash = sha256(metadataFile);
@@ -492,9 +505,9 @@ suiteTest('local-app-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(prompt.copiedMeansCreated, false);
 });
 
-suiteTest('local-app-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
+suiteTest('buildr-web-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t) => {
   const root = initWorkspace(t);
-  const appData = isolateLocalAppData(t, path.join(temporaryRoot(t), 'publication-app-data'));
+  const appData = isolateBuildrWebData(t, path.join(temporaryRoot(t), 'publication-app-data'));
   const created = runBuildr(['project', 'create', 'product', '--target', root, '--name', 'Buildr Product', '--description', '文章测试项目']);
   assert.equal(created.status, 0, created.stderr);
   const publicationRoot = path.join(root, 'projects', 'product', 'docs', 'publications');
@@ -529,9 +542,9 @@ suiteTest('local-app-http', 'Buildr Web 文章入口只读投影项目文章、�
   assert.equal(response.status, 400);
 });
 
-suiteTest('local-app-http', '全局 Buildr Web Runtime 隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
+suiteTest('buildr-web-http', '全局 Buildr Web Runtime 隔离多个 Workspace，并保护 health 与退出操作', async (t) => {
   const base = temporaryRoot(t);
-  isolateLocalAppData(t, path.join(base, 'global-app-data'));
+  isolateBuildrWebData(t, path.join(base, 'global-app-data'));
   const first = initWorkspace(t, { name: 'global-first' });
   const second = initWorkspace(t, { name: 'global-second' });
   const runtime = createRuntime();

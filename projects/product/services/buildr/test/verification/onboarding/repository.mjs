@@ -111,7 +111,7 @@ try {
     capture: true,
   }));
   assert.equal(developmentIdentity.wrapperSchema, null);
-  assert.equal(fs.realpathSync(developmentIdentity.launcher), fs.realpathSync(path.join(copiedService, 'scripts', 'run-development-cli')));
+  assert.equal(fs.realpathSync(developmentIdentity.launcher), fs.realpathSync(path.join(copiedService, 'tools', 'development', 'run-development-cli')));
   assert.equal(fs.realpathSync(developmentIdentity.nodeExecutable), fs.realpathSync(developmentNode));
   runDevelopment(['sync', 'codex', '--target', checkout], { env });
   const synchronizedStatus = run('git', ['status', '--short'], { cwd: checkout, env, capture: true }).trimEnd();

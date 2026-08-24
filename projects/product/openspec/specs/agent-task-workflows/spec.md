@@ -213,79 +213,69 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 - **AND** 后续 Buildr 工作流 MUST 继续通过执行循环中的基线 doctor 检查当前环境
 
 ### Requirement: Buildr 发布准备使用版本化任务环境
-Buildr Product Project 的发布引导 MUST 从目标 package version 派生唯一发布任务 identity，并在新发布 worktree 中先准备 lockfile 定义的依赖，再修改或验证候选内容。
+Buildr Product Project的发布引导 MUST从目标package version派生唯一release Task identity，并通过该Task的ready Environment在独立execution root准备Buildr Service lockfile依赖。Release集合 MUST从维护者指定的精确`dev` baseline创建，Task checkout与`release-<version>` carrier的角色 MUST明确分离；依赖、版本材料、selection、Candidate与public publication不得从调用方自选cwd、旧worktree或会话PATH派生。
 
 #### Scenario: 创建发布任务分支和 worktree
-- **WHEN** Agent 为目标版本 `<version>` 准备 Buildr 候选版或稳定版
-- **THEN** 发布 task id MUST 为 `release-<version>`
-- **AND** 发布任务分支 MUST 为 `tasks/release-<version>`
-- **AND** canonical worktree path MUST 为 `<workspace-root>/.worktrees/release-<version>`
-- **AND** `<version>` MUST 是不带 `v` 前缀的完整 package version
+- **WHEN** Agent为目标版本`<version>`准备Buildr候选版或稳定版
+- **THEN** release Task id MUST为`release-<version>`，`<version>` MUST是不带`v`前缀的完整package version
+- **AND** Task Environment MUST创建或复用该Task唯一checkout，并绑定权威Node、Workspace CLI与Plan/Receipt
+- **AND** release owner MUST从维护者指定且可由current `dev`证明的精确baseline创建唯一`release-<version>`集合
+- **AND** Task worktree branch、release carrier ref和最终remote release branch MUST由read model分别表达，不得仅因同名而互相替代
 
 #### Scenario: 新发布 worktree 先准备依赖
-- **WHEN** Agent 创建了新的 Buildr 发布 worktree
-- **THEN** Agent MUST 在该 worktree 的 `projects/product` 中执行 `npm ci`
-- **AND** `npm ci` MUST 发生在版本文件修改、发布材料修改和候选验证之前
-- **AND** `npm ci` 失败时 Agent MUST 停止发布准备并报告依赖准备阻塞
+- **WHEN** release Task需要修改版本材料、运行本地验证或调用release工具
+- **THEN** Task Environment MUST只接受ready的`service:product/buildr/buildr.npm-ci` recipe
+- **AND** recipe cwd MUST为`projects/product/services/buildr`，package、Service lockfile、declaration、Plan、recipe与exact Node identity MUST匹配
+- **AND** 依赖准备失败或identity漂移时 Agent MUST停止受管发布动作
+- **AND** Agent MUST NOT在Product根运行`npm ci`或从会话PATH猜Node
 
 #### Scenario: 继续已有版本的发布任务
-- **WHEN** `tasks/release-<version>` 和对应 canonical worktree 已存在
-- **THEN** Agent MUST 复用该分支和 worktree
-- **AND** Agent MUST 在依赖缺失或 lockfile 已变时重新执行 `npm ci`
-- **AND** Agent MUST NOT 为同一版本创建第二个发布任务 identity
+- **WHEN** `release-<version>` Task、Environment或release集合已经存在
+- **THEN** Agent MUST通过Task/Environment/release owner read model分别核验并复用matching identity
+- **AND** source baseline、selection chain、version、branch ownership或Environment identity不匹配时 MUST停止并报告唯一恢复方向
+- **AND** Agent MUST NOT为同一版本创建第二Task、第二release集合或第二Candidate source
 
 ### Requirement: squash 发布候选以 tree identity 幂等衔接回 dev
-Buildr Product Project 的发布引导 MUST 在 matching release Task Finish 的 self-bootstrap activation 已完成或确定不适用、activation 后的 `dev` tree 已成为正式候选，并且 `dev -> main` 发布 PR squash merge 后，以该已验证候选的 Git tree identity 为内容门禁，将 squash `main` 的历史幂等衔接回 `dev`。
+Buildr Product Project的发布引导 MUST先把通过完整Candidate的current release tree经唯一受保护release→main PR收敛到`main`，允许squash造成commit identity变化但要求tree完全一致；正式Publication成功后，再以current Git facts将`main`内容安全收敛回`dev`。两次收敛 MUST分别核验identity和授权，并 MUST保留release创建后已经进入`dev`的新内容。
 
 #### Scenario: Finish 后先完成 self-bootstrap activation
-- **WHEN** release Task Finish 已把候选交付到 `dev`
-- **THEN** Agent MUST 在 pre-main convergence、`dev -> main` PR 和任何发布历史衔接之前，以 matching Finish run 调用唯一 `buildr-self-bootstrap-sync` runner
-- **AND** runner MUST 返回同一 run 的 `passed` 或带完整 plan 的 `not-applicable` evidence
-- **AND** Agent MUST 在 activation 后重新读取 `origin/dev` commit/tree，并把该 tree identity 用于后续 pre-main convergence、Candidate gate 与 history bridge
-- **AND** runner blocked、failed、run/ref 不匹配或 evidence 不完整时 Agent MUST 停止发布准备
-- **AND** Agent MUST NOT 先创建 history bridge 再补跑、绕过或放宽 runner
+- **WHEN** 一个被release选择的release/support Task已经通过Finish交付，且其Workspace contribution适用self-bootstrap
+- **THEN** Agent MUST在冻结release Candidate与构造transaction correlation前取得matching runner的`passed`或带完整plan的`not-applicable`结果
+- **AND** correlation MUST核验Task、Finish run、delivered ref、plan、status和result identity
+- **AND** runner blocked、failed或identity不匹配 MUST只阻塞消费该Activation的后续动作，不得改写已成立Delivery
 
 #### Scenario: squash 后候选 tree 完全一致
-- **WHEN** `dev -> main` 发布 PR 已按仓库策略 squash merge
-- **AND** `origin/main^{tree}` 与 activation 后已通过完整验证的 candidate tree identity 相同
-- **AND** `origin/dev^{tree}` 与该 candidate tree identity 相同
-- **AND** history bridge 已验证同一 Finish run 的 self-bootstrap closeout evidence
-- **THEN** Agent MUST 将 `origin/main` 的历史衔接到 `dev`
-- **AND** 衔接 commit MUST 保持与 candidate tree identity 相同的 Git tree
-- **AND** Agent MUST 普通 push `dev` 并确认远端 `dev` 包含该衔接
-- **AND** Agent MUST NOT 仅因 squash commit 或衔接 commit 的 commit identity 不同而重复执行已通过的完整候选验证
+- **WHEN** release→main PR已按仓库策略squash merge
+- **AND** `origin/main^{tree}`与冻结release tree identity相同
+- **THEN** Agent MUST把main source记录为matching publication input
+- **AND** MUST NOT仅因main与release commit identity不同而重复完整Candidate或重建tarball
 
 #### Scenario: self-bootstrap evidence 缺失或不匹配
-- **WHEN** history bridge 没有收到 closeout evidence
-- **OR** evidence schema、status、Finish run、Task、remote、target branch、plan、finalize phase 或推导出的最终 `dev` ref 与当前发布事实不匹配
-- **THEN** bridge MUST 在 merge、commit 和 push 前失败关闭
-- **AND** bridge MUST 保持本地候选与远端 refs 不变
-- **AND** Agent MUST 回到 matching Finish run 的 self-bootstrap activation 诊断，不得把当前 tree 相同冒充 activation 已完成
+- **WHEN** release correlation需要的self-bootstrap result缺失，或schema、Task、Finish run、delivered ref、plan、status与current facts不匹配
+- **THEN** readiness MUST在Candidate/publication实际消费该事实前失败关闭并报告matching owner恢复方向
+- **AND** MUST NOT从聊天、临时stdout、近似Git ancestry或caller摘要推断Activation完成
 
 #### Scenario: main 已是 dev 祖先
-- **WHEN** Agent 准备执行 squash 后历史衔接
-- **AND** matching self-bootstrap closeout evidence 已验证
-- **AND** `origin/main` 已是 `origin/dev` 的祖先
-- **THEN** Agent MUST 将历史衔接视为已完成
-- **AND** Agent MUST NOT 重复创建历史衔接 commit
+- **WHEN** Publication成功后准备main→dev收敛，且current `origin/main`已经是`origin/dev`祖先并能证明published content已包含
+- **THEN** Agent MUST将收敛视为幂等完成
+- **AND** MUST NOT创建无意义merge commit、重复Candidate或重新publish
 
 #### Scenario: squash 结果与已验证候选 tree 不一致
-- **WHEN** `origin/main^{tree}` 或 `origin/dev^{tree}` 与 activation 后记录的 candidate tree identity 不同
-- **THEN** Agent MUST 停止自动历史衔接、push 和后续 tag 动作
-- **AND** Agent MUST 报告实际 tree identity、预期 candidate tree identity 和需要重新评估的 ref
-- **AND** Agent MUST NOT 使用 `ours` merge、force push、reset 或其他历史操作掩盖内容差异
+- **WHEN** `origin/main^{tree}`不等于冻结release tree
+- **THEN** Agent MUST停止publication、push和后续收敛并报告expected/actual identities
+- **AND** MUST NOT使用`ours`、force push、reset或历史重写掩盖内容差异
 
 #### Scenario: 远端 ref 在衔接前发生竞争更新
-- **WHEN** evidence/tree identity 检查后、历史衔接或 push 前 `origin/main` 或 `origin/dev` 不再指向已检查的 ref
-- **THEN** Agent MUST 停止尚未执行的历史衔接和 push
-- **AND** Agent MUST 重新 fetch 并从 self-bootstrap evidence 与 tree identity 门禁开始重新评估
+- **WHEN** identity检查后、release→main merge、publication或main→dev push前任一相关remote ref不再指向已检查值
+- **THEN** Agent MUST停止尚未执行的mutation、重新fetch并从current release/context事实重新评估
+- **AND** Publication已成立时 MUST保持公开事实并在main→dev无法安全继续时报告`published-but-dev-convergence-blocked`
+- **AND** MUST NOT自动解决冲突、force push、删除tag或unpublish
 
 #### Scenario: 发布授权覆盖发布专用历史衔接
-- **WHEN** 用户当前轮次明确要求准备 Buildr 候选版或稳定版
-- **AND** matching self-bootstrap closeout evidence 与历史衔接的 tree identity 门禁已通过
-- **THEN** Buildr Release Skill MAY 自动创建仅衔接 squash `main` 历史且不改变 tree 的 merge commit
-- **AND** 该授权 MUST NOT 扩展为通用 Git Ops 或 Task Finish 的 merge commit 授权
-- **AND** 该授权 MUST NOT 包含 force push、改写共享分支历史或解决内容冲突
+- **WHEN** 用户当前轮次明确授权准备或发布对应版本
+- **THEN** Buildr Release Skill MAY执行本契约明确的release create/update/freeze、受保护PR和已授权收敛动作
+- **AND** 每个remote mutation或远端release branch删除仍 MUST满足各自current identity与授权门禁
+- **AND** 该授权 MUST NOT扩展为通用Git Ops、force push、共享历史改写或自动冲突解决
 
 ### Requirement: task-triage 必须输出正交且有证据的任务决策
 Buildr 的 `task-triage` Skill MUST 先核对任务相关事实，再分别判断语义治理和执行形态；输出 MUST 包含选择、repository set、task environment、最小依据、未决冲突和 next provider/action，并 MUST 只在适用时追加 OpenSpec 或正式 Task 状态。任务进度 MUST 由对话、Task Record、Parent/Child 与各专业公开 read model 表达，不得创建第二份 Board authority。
@@ -662,32 +652,37 @@ Buildr MUST 交付名为 `task-environment` 的 workspace Skill，并 MUST 用�
 - **AND** 适用入口 MUST 保持原有语义
 
 ### Requirement: 正式持久交付必须经过 Task Environment ready 门槛
-Buildr task triage、OpenSpec propose contribution与已知正式执行入口 MUST在首次修改交付物、构建、测试或创建Task-owned持久资源前取得matching `ready` Environment Receipt。采用环境后，planning、实现、Content Target观察、formal Verification与Candidate准备 MUST只发生在receipt允许根。
+Buildr task triage、OpenSpec contribution与正式执行入口 MUST把Task Environment ready门槛限制在实际消费Buildr-managed checkout、Preparation、runtime projection、Task-owned持久资源或正式环境证据的动作。Agent在用户已授权且repository、ref、owned scope与副作用明确时 MAY直接修改、构建或运行有界测试；该路径 MUST不生成或冒充Environment、Development、Review、Verification、Candidate、Finish或cleanup事实。采用受管环境后，planning、实现、Content Target观察、formal Verification与Candidate准备 MUST只发生在Receipt允许根。
 
 #### Scenario: Triage 选择 Change Flow
-- **WHEN** Task Record已建立且即将创建首份预计进入实现的OpenSpec artifact
+- **WHEN** Task Record已建立且即将创建首份预计进入受管实现的OpenSpec artifact
 - **THEN** Agent MUST先通过Task Environment准备或恢复实际执行位置
 - **AND** 只有ready后才 MUST在允许根创建Change artifacts
 
 #### Scenario: 直接命中 OpenSpec propose
-- **WHEN** 用户意图直接命中installed `openspec-propose`且任务预计持久交付
+- **WHEN** 用户意图直接命中installed `openspec-propose`且任务预计形成Buildr-managed持久交付
 - **THEN** contribution MUST在`openspec new change`前核对Task与ready Environment
 - **AND** MUST通过`task-environment`而非直接调用Git provider
 
 #### Scenario: Code-only 实现
-- **WHEN** 正式Task不需要OpenSpec Change但即将修改、构建或测试
-- **THEN** Agent MUST取得同样ready Environment
+- **WHEN** 正式Task不需要OpenSpec Change但选择由Buildr管理checkout、依赖、runtime或正式证据
+- **THEN** Agent MUST取得matching ready Environment
 - **AND** MUST NOT因没有Change而跳过执行根、依赖与资源边界
 
+#### Scenario: Formal Task 中直接工作
+- **WHEN** 用户授权Agent在明确现有repository中直接修改、构建或运行有界测试，且不请求Buildr-managed Environment或正式Result
+- **THEN** task-triage MUST允许该动作按Git、文件ownership和实际副作用边界推进，并把Environment准备保留为recommended选项
+- **AND** MUST NOT创建虚假Receipt、把直接测试写成Formal Verification或把未登记资源交给Environment cleanup
+
 #### Scenario: 只有 lifecycle metadata 写入
-- **WHEN** 已有Task的Environment/Development/Review/Verification/Finish Skill只在canonical Workspace维护自己的receipt/result且不触发新环境效果
+- **WHEN** 已有Task的Environment、Development、Review、Verification、Finish Skill只在canonical Workspace维护自己的Receipt或Result且不触发新环境效果
 - **THEN** workflow MUST NOT为metadata写入重新准备已清理环境
 - **AND** MUST保持各专业writer的canonical metadata authority
 
 #### Scenario: Stable Content Target交给Task Verification
 - **WHEN** Environment中的内容修改、Change convergence、current knowledge与受管生成资产已达到stable target
 - **THEN** Task Development MUST观察完整Content Target并明确verification policy
-- **AND** Task Verification MUST只绑定该Content Target、declarations、execution与evidence，不得拥有Candidate/policy/proceed
+- **AND** Task Verification MUST只绑定该Content Target、declarations、execution与evidence，不得拥有Candidate、policy或proceed
 
 #### Scenario: Candidate 交给 Task Verification
 - **WHEN** 旧consumer尝试把Candidate identity直接交给Task Verification
@@ -1364,16 +1359,21 @@ Buildr 内置任务 Skills MUST 在 Agent 即将写 Change checklist、调用 Op
 - **AND** MUST不把该数值固化为通用产品阈值、Result 字段、gate 或自动缩减验证范围的依据
 
 ### Requirement: Formal Task 启动必须优先使用 compact entry surface
-Buildr内置task-triage与task-development guidance MUST在正式Task创建或恢复后优先读取Task Entry Snapshot，并只加载其current next action所指向的Skill、contract与provider。Agent MUST不把完整capability graph或下游lifecycle Skill列表当作启动依赖表。
+Buildr内置task-triage与task-development guidance MUST在正式Task创建或恢复后优先读取Task Entry Snapshot，并只加载其current next action所指向的Skill、contract与provider。Snapshot MUST把缺少未被当前动作消费的Environment登记表达为`recommended`，只把继续会破坏current Development/Environment identity或产生受管副作用的前置表达为`required`；Agent MUST不把完整capability graph或下游lifecycle Skill列表当作启动依赖表。
 
 #### Scenario: 创建 active Task 后启动
-- **WHEN** Agent刚创建或恢复active formal Task
-- **THEN** Agent MUST立即通过Snapshot确定Environment前置并准备或恢复Environment
-- **AND** MUST不为了未来阶段预读Review、Verification或Finish provider
+- **WHEN** Agent刚创建或恢复active formal Task，尚无Development current且没有matching Environment
+- **THEN** Snapshot MUST返回可选择的Environment准备建议，并允许Agent选择仍满足实际owner contract的直接工作
+- **AND** MUST不把缺少Plan、Receipt或projection报告成Workspace或Task全局不可用
+
+#### Scenario: 当前受管事实依赖 Environment identity
+- **WHEN** Development已绑定matching Environment，或当前动作请求受管checkout、Preparation、正式证据、持久资源、自动Finish或cleanup
+- **THEN** Snapshot或实际owner MUST把Environment identity缺失、漂移或blocked表达为该动作的`required`前置
+- **AND** MUST不允许Agent用cwd、聊天声明或旧Receipt替代current authority
 
 #### Scenario: next action 改变
 - **WHEN** 一次正式动作使Snapshot的typed next发生变化
-- **THEN** Agent MUST按新next加载对应action-local contract/provider
+- **THEN** Agent MUST按新next加载对应action-local contract或provider
 - **AND** 之前未成为next的专业能力 MUST不因完整lifecycle预想而提前加载
 
 ### Requirement: workflow guidance 必须保留用户调整边界
@@ -1536,7 +1536,27 @@ Task Finish Skill 的 `--agent` 只表达 Environment 已登记宿主，不表�
 - **AND** MUST NOT把当前聊天宿主写成 Finish `--agent` 的默认值
 
 ### Requirement: Agent必须按标准Parent启动流程推进到Child之前
-Buildr内置Task workflow Skills MUST将新Parent从Git基线推进到Child前的顺序固定为：激活前Git门禁、Parent activate、matching Environment、Development begin、Parent Plan record、Planning Review、Parent planning refresh与启动就绪回读；MUST在启动就绪后停止Parent普通实现推进，等待用户选择eligible Contribution。
+Buildr内置Task workflow Skills MUST将新Parent从Git基线推进到Child前的顺序固定为：激活前Git门禁、Parent activate、matching Environment、Development begin、Parent Plan record、Planning Review、Parent planning refresh与启动就绪回读。用户目标包含创建、准备、拆分Parent或准备到可启动Child，且active Parent Task Record创建成功后，`task-manager` MUST自动交接`task-development`；`task-development` MUST持续消费current `buildr task next`和Parent Coordination事实，调用每个typed next的专业owner，直到`start-child-contribution`或遇到真实blocker。Skills MUST在启动就绪后停止Parent普通实现推进，等待用户选择eligible Contribution；MUST NOT把Task Record创建成功本身报告为Parent已准备好。
+
+#### Scenario: active Parent创建后自动交接
+- **WHEN** 用户明确要求创建并准备Parent，且`task-manager`成功创建active Task Record
+- **THEN** `task-manager` MUST保留Task Record单一writer边界，并把Task ID、canonical Workspace、scope与已知Parent规划输入交接给`task-development`
+- **AND** Agent MUST继续当前工作，不得仅报告Task Record已创建或要求用户再次发出准备指令
+
+#### Scenario: 已知信息足以形成Parent Plan
+- **WHEN** 用户已提供可明确写入的Parent outcome、architecture decisions、Contribution Map、dependencies、boundaries与final acceptance
+- **THEN** `task-development` MUST在Environment与Development current后记录完整Parent Plan，并继续完成current Planning Review与planning refresh
+- **AND** MUST不重复询问已知事实、创建占位Contribution或把Child状态与实现清单写入Parent Plan
+
+#### Scenario: Parent准备循环消费typed next
+- **WHEN** Parent准备尚未到达Child前停止点，且`buildr task next`返回`prepare`、`begin`、`planning-review`或`refresh-parent-planning`
+- **THEN** Agent MUST调用该next指定的专业owner并在成功后重新读取current next
+- **AND** MUST不跨owner直接写Receipt、Review Result或Parent progress authority
+
+#### Scenario: 只有真实blocker才中断默认准备
+- **WHEN** 当前步骤缺少会改变Parent outcome、Contribution切分、依赖、边界或final acceptance的必要事实，或owner返回blocked并需要用户业务决定或新授权
+- **THEN** Agent MUST停止对应写入并报告最小blocker与唯一下一步
+- **AND** 普通recommended动作、可恢复内部登记缺口或已知信息不得被升级为要求用户重新发起准备的blocker
 
 #### Scenario: coordination-only Parent启动
 - **WHEN** Parent只承担协调且当前不修改、构建或测试交付内容
@@ -1544,9 +1564,9 @@ Buildr内置Task workflow Skills MUST将新Parent从Git基线推进到Child前�
 - **AND** MUST不因此创建独立worktree、执行不需要的依赖安装或跳过Environment authority
 
 #### Scenario: Parent到达Child前停止点
-- **WHEN** Parent Plan、Planning Review和Development planning gate current且启动投影返回eligible Contribution
-- **THEN** Agent MUST报告Parent已可启动Child并停止`observe`、Verification、Candidate和Finish
-- **AND** 后续Child必须由用户选择Contribution后按独立Task流程启动
+- **WHEN** Parent Plan、Planning Review和Development planning gate current且启动投影返回`start-child-contribution`与至少一个eligible Contribution
+- **THEN** Agent MUST报告Parent已准备好、展示可选择的eligible Contributions，并停止`observe`、Verification、Candidate和Finish
+- **AND** 后续Child必须由用户选择Contribution后按独立Task流程启动，Agent MUST NOT自动创建第一个Child
 
 ### Requirement: Agent必须在一对多Child拆分前reconcile Contribution
 一个current Contribution MUST最多绑定一个Child；当真实能力范围需要多个Child独立交付时，Agent MUST先以current Parent Plan identity显式reconcile为多个窄Contribution，再分别创建和绑定Child。
@@ -1586,3 +1606,78 @@ Buildr受管Skills与sidebars在调用Task Development、Task Retrospective或Ta
 - **WHEN** Workspace只安装正式npm artifact且Skill需要调用内部工作流能力
 - **THEN** bundled route MUST从安装产物内完成分派
 - **AND** consumer MUST NOT因`src/interfaces/internal`文件不存在而要求兼容调用或本地源码替代
+
+### Requirement: Agent workflow 必须使用 Parent Plan v2 并分离预计与真实 Child
+Buildr 随包 Task workflow Skills MUST 引导 Agent 让新 Parent 只写 v2；读取 v1 时 MUST 先 inspect 并通过 expected identity 保护的完整 reconcile 显式升级。workflow MUST 把 `expectedChild` 当作说明文本，并 MUST 只在真实 Child Task、Parent relationship 与 Child Development ready 后调用 `bind-child`。
+
+#### Scenario: 规划预计 Child
+- **WHEN** Agent 在 Parent Plan 中描述未来实施单元但尚未启动 Child
+- **THEN** workflow MUST 写 `expectedChild` 并保留 work item unassigned/eligible 计算
+- **AND** MUST 不提前创建 Child、Environment 或 Development binding
+
+#### Scenario: 升级历史 Parent
+- **WHEN** 用户明确要求历史 v1 Parent 采用新结构
+- **THEN** workflow MUST 使用 inspect current identity、完整 v2 临时 input、reconcile、重新 Planning Review 与 refresh-planning
+- **AND** MUST 不直接修改 SQLite 或批量迁移其他 Parent
+
+### Requirement: Agent workflow 必须只使用Parent Coordination v3
+Buildr随包Task Skills MUST引导Agent使用v3 canonical字段取得Plan identity、Contribution实施方向、binding、eligible next与最终验收前置条件，MUST不继续引用已删除v2 alias。
+
+#### Scenario: 从Parent启动Child
+- **WHEN** Agent读取Parent coordination以选择eligible Contribution
+- **THEN** workflow MUST从顶层`contributions`和`startup.next`取得所需事实
+- **AND** MUST从`plan.identity`取得current expected identity
+
+#### Scenario: Parent最终验收
+- **WHEN** Agent判断是否可执行Parent accept
+- **THEN** workflow MUST只使用`prerequisitesSatisfied`与canonical blockers
+- **AND** MUST不读取`finalAcceptanceReady`
+
+### Requirement: Agent必须按release身份链消费专业provider
+Agent MUST按release selection、Task/Environment/Development/Finish/self-bootstrap、Product Candidate、release readiness、protected transaction和Git convergence的owner顺序消费current结果。任一provider暂不可用只阻塞实际消费该事实的受管动作，不得阻止安全只读调查或通过另一个owner补造成功。
+
+#### Scenario: P1实现Child并行开发
+- **WHEN** 发布集合契约Child形成current Contribution Handoff
+- **THEN** selection/provenance、Candidate/artifact与Task correlation三个Child MAY按Parent依赖图并行开发
+- **AND** 每个Child MUST只修改自身owner范围、形成独立Candidate/evidence/handoff并禁止写入其他模块store
+
+### Requirement: Buildr Release必须分离Readiness与Publication授权
+`buildr-release` MUST默认先执行无副作用release readiness并向维护者展示全部findings、hosted deferred checks与next actions。只有维护者对当前frozen context明确授权publication后，Agent才可调用显式dispatch动作；Task完成、Candidate通过、历史发布授权或命令成功 MUST NOT替代本次publication授权。
+
+#### Scenario: 维护者只要求准备或检查
+- **WHEN** 维护者要求准备候选版、检查release或查看是否可发布但未明确授权publication
+- **THEN** Agent MUST停在readiness Result并报告`effects: []`与hosted deferred checks
+- **AND** MUST NOT dispatch workflow、请求`npm-production`approval或执行任何公共mutation
+
+#### Scenario: 维护者明确授权publication
+- **WHEN** 维护者在看到current frozen context后明确要求发布
+- **THEN** Agent MUST把该授权交给唯一dispatch adapter并跟踪同一workflow run/attempt
+- **AND** 不得另行创建tag、调用本机npm publish、dispatch第二workflow或生成第二tarball
+
+#### Scenario: 发布attempt失败
+- **WHEN** hosted transaction返回partial或failed evidence
+- **THEN** Agent MUST先回读current attempt evidence并按`same-attempt`、`new-attempt`或`blocked-new-version`恢复分类解释已成立事实与下一步
+- **AND** MUST NOT把Publication、Delivery、Activation、Environment Cleanup、Diagnostics或dev convergence互相改写
+
+### Requirement: 候选版准备Task必须覆盖完整准备结果并与support交付分离
+Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要求的完整候选版准备结果，并将需要在Candidate前独立完成Development、Verification与Finish的版本材料、测试修复或owner修复建模为窄release support Task。support Task terminal、Task Finish delivery、self-bootstrap activation或单次Candidate运行 MUST NOT单独使release Task completed。
+
+#### Scenario: release材料需要在Candidate前交付
+- **WHEN** package version、CHANGELOG、测试修复或release owner修复必须先进入`dev`并被选择到release集合
+- **THEN** Agent MUST使用scope和intent明确的support Task完成该内容自己的Development、Verification、Finish与适用self-bootstrap
+- **AND** `release-<version>` Task MUST保持active并通过release correlation引用support Task的current owner evidence
+
+#### Scenario: Candidate失败
+- **WHEN** current release source的完整Candidate aggregate失败、缺失或与selection identity不匹配
+- **THEN** release Task MUST保持active或blocked并报告失败run/source和唯一恢复动作
+- **AND** Agent MUST NOT调用release Task Finish/complete、把support delivery当成准备完成或创建第二个同version release集合
+
+#### Scenario: 候选版准备达到授权终点
+- **WHEN** current release selection已冻结、完整Candidate aggregate通过、唯一tarball成立、release→main tree相等且dispatch-check readiness以`effects: []`通过
+- **THEN** release workflow MAY以这些current identities完成`release-<version>`协调Task并报告准备完成
+- **AND** Task completed MUST NOT替代后续对同一frozen publication context的维护者明确授权
+
+#### Scenario: 历史release Task被提前完成
+- **WHEN** 同version release Task已错误completed但其intent对应的Candidate、main收敛或readiness尚未成立
+- **THEN** Agent MUST保留该terminal记录与既有Finish事实，不得直接改写SQLite、伪造Task reopening或重建同名Task
+- **AND** Agent MUST创建明确标识的active recovery Task承载剩余准备，关联旧Task与support facts，并在完成报告中披露该恢复边界

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { compareWebDistTrees, describeWebDistTree, verifyTrackedWebDist } from '../verification/web-dist.mjs';
+import { compareWebDistTrees, describeWebDistTree, inspectLocalWebToolchain, verifyTrackedWebDist } from '../verification/web-dist.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-dist-test-'));
@@ -61,4 +61,18 @@ test('tree comparison distinguishes missing files and entry types', (t) => {
   assert.equal(result.ok, false);
   assert.ok(result.drift.some((entry) => entry.kind === 'type' && entry.path === 'index.html'));
   assert.ok(result.drift.some((entry) => entry.kind === 'missing' && entry.path === 'assets/app.js'));
+});
+
+test('Browser build preflight只接受Buildr Web本地TypeScript和Vite', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-toolchain-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'node_modules', '.bin'), { recursive: true });
+  const missing = inspectLocalWebToolchain(root);
+  assert.equal(missing.status, 'blocked');
+  assert.deepEqual(missing.missing, ['typescript', 'vite']);
+  for (const name of ['tsc', 'vite']) fs.writeFileSync(path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? `${name}.cmd` : name), 'fixture');
+  const ready = inspectLocalWebToolchain(root);
+  assert.equal(ready.status, 'ready');
+  assert.ok(ready.tools.typescript.startsWith(root));
+  assert.ok(ready.tools.vite.startsWith(root));
 });

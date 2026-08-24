@@ -7,17 +7,21 @@
 ## Requirements
 
 ### Requirement: Buildr 自举收尾必须由单一确定性 runner 编排
-Buildr 自举 Workspace MUST由 `buildr-self-bootstrap-sync` Skill 自身携带的单一确定性 runner消费同一Formal Finish run的current或terminal Result，并按固定阶段完成适用的plan、target lease、workspace sync、精确successor commit、普通push、development Buildr Web安装、retained checkout显式开发入口验证与最终Doctor或same-run resume。Runner MUST通过Product只读入口取得Finish Result与`resolvedContext`，并只通过retained Product内部driver协调target lease，MUST NOT直接import Buildr npm package内部Application模块。Runner源码和入口 MUST NOT进入Buildr用户npm package、`package/targets/**`或普通Workspace Skill集合。Runner MUST NOT要求调用方提交frozen paths、动作分类、成功布尔值、recovery manifest或可编辑execution capsule，MUST NOT把这些动作加入Formal Finish五阶段或普通Workspace，也 MUST NOT安装、删除或验证PATH默认development CLI。
+Buildr自举Workspace MUST由`buildr-self-bootstrap-sync` Skill自身携带的单一确定性runner消费matching Task delivery result与冻结Task Contribution paths，并按固定内部阶段完成适用的plan、target lease、workspace sync、精确successor commit、普通push、development Buildr Web安装、retained checkout显式开发入口验证与最终Doctor。Runner MAY消费自动Finish run或独立delivery reconciliation形成的稳定投影；MUST通过Product只读入口取得delivery与resolved context，并只通过retained Product内部driver协调target lease，MUST NOT直接import Buildr npm package内部Application模块。Runner失败 MUST形成activation attention并保留已完成effects，MUST NOT撤销Task交付终态。
 
 #### Scenario: Complete Result进入自举收尾
-- **WHEN** Formal Finish Result为complete且冻结Task Contribution命中至少一个self-bootstrap动作
-- **THEN** Agent MUST启动Skill bundled runner入口并由runner形成去重plan、取得target lease、执行适用阶段和返回结构化结果
-- **AND** Agent MUST只调用一次runner；真实target occupied或Product返回的恢复边界由同一Task自动等待/恢复，不得用foreign carrier存在性形成额外人工调用流程
-- **AND** runner MUST从同一run的Finish Result读取frozen paths、Agent、target branch、remote与final ref
+- **WHEN** Task delivery result已证明Workspace repository交付且冻结Task Contribution命中至少一个self-bootstrap动作
+- **THEN** Agent MUST启动Skill bundled runner并由runner形成去重plan、取得target lease、执行适用阶段和返回结构化结果
+- **AND** Agent MUST只处理当前activation事实，不重复远端Task交付或修改Task terminal
+
+#### Scenario: 激活失败
+- **WHEN** sync、安装、development entry verification或Doctor任一步失败
+- **THEN** runner MUST保留已有effects并返回activation attention与Agent next action
+- **AND** Task delivery与completed终态 MUST保持不变
 
 #### Scenario: 普通Workspace或无匹配动作
 - **WHEN** canonical Workspace没有匹配的`buildr-self-bootstrap` Component，或frozen paths没有命中任何专属动作
-- **THEN** runner MUST返回`not-applicable`且不得获取activation lease或执行sync、Git、Buildr Web安装、开发入口验证、Doctor或Finish resume
+- **THEN** runner MUST返回`not-applicable`且不得获取activation lease或执行sync、Git、Buildr Web安装、开发入口验证或Doctor
 
 #### Scenario: Buildr用户包发布
 - **WHEN** Buildr npm package执行发布内容规划或dry-run
@@ -25,19 +29,35 @@ Buildr 自举 Workspace MUST由 `buildr-self-bootstrap-sync` Skill 自身携带�
 - **AND** 普通用户安装Buildr或初始化Workspace时 MUST不获得`buildr-self-bootstrap-sync` Skill
 
 ### Requirement: Runner 必须保持阶段authority与部分成功事实
-Runner MUST把sync、commit、push、Buildr Web install、development entry verification、Doctor和Finish resume表达为独立阶段结果与effects；一次调用只负责确定性排序和交接，MUST NOT把多项结果伪装成原子transaction或写入新的Receipt、数据库、Task Record、Development、Verification、Finish Result或聚合store。任一阶段blocked时 MUST保留已经发生的effects并停止后续不安全动作。
+
+The self-bootstrap runner MUST remain the sole owner of sync, development Buildr Web continuity, development entry validation, and final Doctor execution. It MUST NOT directly write Finish Result, Task Record, Development, Verification, Review, Environment Receipt, or aggregate-store persistence. After a successful closeout, it MAY invoke the Product-owned Finish maintenance reconciliation command with its structured result; that command remains the sole writer of Finish maintenance projection.
+
+#### Scenario: runner 成功后交给 Product 刷新维护状态
+
+- **WHEN** all applicable self-bootstrap stages and final Doctor pass
+- **THEN** the runner MUST submit the structured closeout result to Product-owned Finish maintenance reconciliation
+- **AND** the runner MUST NOT open or mutate Finish SQLite/JSON persistence itself
+
+#### Scenario: runner 阶段失败保持 Delivery 不变
+
+- **WHEN** any self-bootstrap stage fails
+- **THEN** the runner MUST return `blocked` Activation facts with completed effects and diagnostic
+- **AND** it MUST NOT convert an already delivered Task into an undelivered result
 
 #### Scenario: Commit成功但push失败
+
 - **WHEN** runner已经创建合法successor commit，但普通push被拒绝或远端读回失败
 - **THEN** commit阶段 MUST保持passed并报告本地history effect，push阶段 MUST为blocked并报告remote未完成
 - **AND** runner MUST NOT reset、amend、force push、切换remote/ref或把整体结果报告为零effect
 
 #### Scenario: 安装失败
+
 - **WHEN** sync/Git阶段已经完成而development Buildr Web安装失败
 - **THEN** runner MUST保留已经完成的commit/push/readback事实并停止开发入口验证与finalize
 - **AND** MUST NOT重跑Formal Finish、改写Task终态或回滚已经发布的successor commit
 
 #### Scenario: 显式开发入口验证失败
+
 - **WHEN** sync/Git与适用的Buildr Web安装已经完成，但retained `projects/product/buildr`无法启动或身份不一致
 - **THEN** development entry verification阶段 MUST为blocked并保留前序effects
 - **AND** runner MUST NOT回退到PATH默认`buildr`或进入最终Doctor/Finish resume
@@ -95,7 +115,9 @@ Task Finish Skill MUST在启动canonical `buildr task finish run`后，使用宿
 - **AND** MUST NOT在终态后继续poll
 
 ### Requirement: Runner 必须为并存 Finish carrier 生成 owner-ordered 恢复计划
-Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前，只读枚举固定Finish carrier根的直接子项，并通过现有Product `task finish inspect`入口核对每个候选的owning run。目录名 MUST只作为inspect候选；runner MUST以Finish Result证明run、canonical Workspace、真实非symlink carrier路径、carrier identity、状态与适用resume identity。可证明的foreign carrier MUST作为隔离共存observation返回，并作为精确untracked ignored root参与retained cleanliness；它们的owner cleanup或occupancy release建议 MAY按`taskId + runId`稳定排序，但 MUST不成为当前activation predecessor。Runner MUST不读取其业务内容、删除、修改、替owner恢复资源，也 MUST不写入新的Product Application、Receipt、SQLite row、队列或聚合store。只有任一entry ownership/path/identity不可证明时，当前invocation才 MUST保持blocked且activation effects为空。
+Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前，只读枚举固定Finish carrier根的直接子项，并通过现有Product `task finish inspect`入口核对每个候选的owning run。目录名 MUST只作为inspect候选；runner MUST以Finish Result证明run、canonical Workspace、真实非symlink carrier路径、carrier identity、状态与适用resume identity。可证明的foreign carrier MUST作为隔离共存observation返回，并作为精确untracked ignored root参与retained cleanliness；它们的owner cleanup或occupancy release建议 MAY按`taskId + runId`稳定排序，但 MUST不成为当前activation predecessor。Runner MUST不读取其业务内容、修改、替owner恢复资源，也 MUST不写入新的Product Application、Receipt、SQLite row、队列或聚合store。
+
+唯一允许runner删除foreign run entry的兼容例外是：Product稳定Finish Result已明确把该run全部repository carrier声明为`availability: cleaned`且`root: null`，Workspace repository carrier与集合中的selector/identity/cleaned状态一致，entry是固定受管根下与run精确匹配的真实非symlink直接目录，realpath未越界且目录完全为空。Runner MUST把这种历史残留归类为`stale-empty-container`，使用非递归空目录删除在activation前收敛，并重新枚举inventory；MUST不执行owner resume、不修改owner Result/Task/Environment，也不得把该兼容扩展到任意其他managed metadata或用户目录。只有任一entry ownership/path/identity不可证明，或兼容删除失败时，当前invocation才 MUST保持blocked且activation effects为空。
 
 #### Scenario: 可证明 cleanup_pending carrier 与当前 activation 共存
 - **WHEN** 当前run之外存在一个或多个真实foreign目录，Product Result证明其Workspace/path/carrier identity与matching cleanup resume全部一致
@@ -126,6 +148,16 @@ Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前�
 - **WHEN** foreign Result为doctor-blocked、prepare/deliver blocked、terminal残留或其他不能生成确定性cleanup命令的状态，但owner/path/carrier identity仍可证明
 - **THEN** inventory MUST展示原owner状态并将该目录视为isolated coexisting observation
 - **AND** MUST不猜测跨owner恢复动作，也不得仅因状态不能自动cleanup而阻塞当前activation
+
+#### Scenario: 已清理 Result 遗留精确空 run container
+- **WHEN** foreign Product Result把全部repository carrier声明为`availability: cleaned`且`root: null`，Workspace carrier identity匹配，并且精确run entry是真实、非symlink、未越界且完全为空的目录
+- **THEN** runner MUST将其记录为`stale-empty-container`，以非递归空目录删除收敛并重新枚举inventory
+- **AND** 当前activation MUST继续，且runner MUST不执行owner resume或修改owner Product状态
+
+#### Scenario: 已清理 Result 的 run container 非空或删除失败
+- **WHEN** foreign Result声称carrier已清理，但精确run entry包含任意目录项，或空目录删除因race、权限或其他原因失败
+- **THEN** inventory MUST把该条目标记为`unprovable`并返回精确diagnostic
+- **AND** runner MUST在target lease、Git、sync、安装、Doctor、Finish resume与递归删除零副作用状态停止
 
 #### Scenario: foreign carrier ownership或identity不可证明
 - **WHEN** carrier条目是symlink、越出固定根、realpath重复，Product inspect失败，或Result的schema、run、Workspace、carrier path、carrier identity、适用resume identity任一缺失或不匹配
@@ -181,7 +213,7 @@ Buildr 自举 Workspace 的 bundled runner MUST在任何activation副作用前�
 - **AND** MUST不替owner删除，也不得仅因残留目录阻塞当前activation
 
 ### Requirement: Self-bootstrap activation 必须复用 Task Finish target lease
-Buildr 自举 Workspace 的bundled runner MUST在任何retained target fast-forward、sync、successor commit/push、Development Local App安装或重启、开发入口验证、最终Doctor或same-run Finish resume副作用前，以canonical Workspace、Task/run和稳定self-bootstrap投影中的Workspace repository `leaseTargetIdentity`通过retained Product内部driver获取同一Task Finish target lease。Runner MUST原样使用冻结exact identity，不得由`remote + targetBranch`或本机路径重新计算。matching retained Doctor blocked current row与matching terminal complete row MUST都可作为self-bootstrap owner；terminal row只临时持有lease普通列，不得改变terminal Result、Task状态或重新打开Finish。
+Buildr 自举 Workspace 的bundled runner MUST在任何retained target fast-forward、sync、successor commit/push、Development Buildr Web安装或重启、开发入口验证、最终Doctor或same-run Finish resume副作用前，以canonical Workspace、Task/run和稳定self-bootstrap投影中的Workspace repository `leaseTargetIdentity`通过retained Product内部driver获取同一Task Finish target lease。Runner MUST原样使用冻结exact identity，不得由`remote + targetBranch`或本机路径重新计算。matching retained Doctor blocked current row与matching terminal complete row MUST都可作为self-bootstrap owner；terminal row只临时持有lease普通列，不得改变terminal Result、Task状态或重新打开Finish。
 
 为迁移已存在的run，旧bundled runner仍以`remote:targetBranch`请求时，retained Product MAY仅在matching run的冻结repository set中恰有一个applicable repository命中该逻辑target时解析为其exact identity。零匹配、多匹配、Workspace/Task/run不匹配或错误exact identity MUST在activation副作用前fail closed；新runner MUST不主动使用该兼容路径。
 
@@ -259,3 +291,21 @@ Runner 的普通push成功后 MUST以固定小次数读取remote target。非零
 - **WHEN** successor push已成功但全部有限readback均非零
 - **THEN** push阶段 MUST保持已发生remote effect并以readback blocked停止
 - **AND** 重跑只能依据真实local/remote facts恢复，不得假定push未发生
+
+### Requirement: Self-bootstrap发布关联必须保持Activation单一authority
+`buildr-self-bootstrap-sync` MUST继续只消费Product-owned stable Finish projection并拥有matching retained Activation、development entry验证和最终Doctor closeout。Release correlation MAY读取其closed result/readback identity，但 MUST NOT要求runner保存release selection、Product Candidate、publish、tag或npm事实；Publication与dev convergence也 MUST NOT反向改写runner或Finish Delivery。
+
+#### Scenario: matching self-bootstrap完成
+- **WHEN** release/support Task的matching self-bootstrap runner返回`passed`或带完整plan的`not-applicable`
+- **THEN** release correlation MUST核验Task、Finish run、delivered ref、plan、status和result identity后再引用该事实
+- **AND** MUST NOT从聊天、临时stdout、近似Git ancestry或caller摘要推断Activation成功
+
+#### Scenario: self-bootstrap失败但Delivery已成立
+- **WHEN** runner在sync、Buildr Web install、development entry验证或Doctor阶段blocked/failed
+- **THEN** runner MUST返回Activation/Diagnostics所属的结构化失败并保持Finish Delivery不变
+- **AND** release readiness或publication MUST按当前阶段契约独立决定blocked/attention，不得改写、删除或伪造Delivery
+
+#### Scenario: publication先于后续维护收敛完成
+- **WHEN** 公开Publication已成立而Activation、Environment Cleanup或Diagnostics尚未完成
+- **THEN** 后续owner MUST可按matching identity独立恢复并更新自己的current事实
+- **AND** 恢复结果 MUST NOT重新publish、移动tag、生成第二tarball或反向修改release selection

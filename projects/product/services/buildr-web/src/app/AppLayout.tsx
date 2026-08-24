@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { Button, Drawer, Dropdown, Space, Typography } from 'antd';
 import { CaretDownFilled, PlusOutlined } from '@ant-design/icons';
-import { api, setWorkspaceId } from '../api';
+import { api, runtimeSystemApi, setWorkspaceId, type ReleaseAwareness } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AgentActionDrawer } from './AgentActionDrawer';
 import { confirmModal } from '../lib/confirm';
@@ -25,12 +25,6 @@ type ReleaseTrack = {
   available: boolean;
   installable: boolean;
   shouldNotify?: boolean;
-};
-
-type ReleaseAwareness = {
-  current: { version: string | null };
-  tracks: { stable: ReleaseTrack; candidate: ReleaseTrack };
-  freshness: { status: string };
 };
 
 type WorkspaceEntry = {
@@ -162,7 +156,7 @@ export function AppLayout() {
     const controller = new AbortController();
     void (async () => {
       try {
-        const awareness = await api('/api/v1/release-awareness', { signal: controller.signal }) as ReleaseAwareness;
+        const awareness = await runtimeSystemApi.releaseAwareness(controller.signal);
         if (!controller.signal.aborted) setReleaseAwareness(awareness);
       } catch {
         if (!controller.signal.aborted) setReleaseAwareness(null);
@@ -192,7 +186,7 @@ export function AppLayout() {
       okButtonProps: { danger: true },
     });
     if (!ok) return;
-    await api('/api/v1/app/quit', { method: 'POST', body: '{}' });
+    await runtimeSystemApi.quit();
     setExited(true);
   };
 

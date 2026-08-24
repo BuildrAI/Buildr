@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
-import { api, type ApiError } from '../api';
+import { api, taskProfessionalApi, tasksApi, type ApiError, type TaskExecutionRecordsView } from '../api';
+import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
 import { confirmModal } from '../lib/confirm';
 import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../lib/taskDocumentLinks';
-import { ChangeBriefPanel } from './TaskChangeDetailPage';
+import { ChangeBriefPanel, type ChangePayload } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
 import { DevelopmentTab } from './task-detail/DevelopmentTab';
@@ -16,8 +17,9 @@ import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
+import { TaskOutcomeSummary } from './task-detail/TaskOutcomeSummary';
 import type { ParentCoordinationResult } from './task-detail/parentCoordination';
-import { PreviewTab, type UiPreviewData } from './task-detail/PreviewTab';
+import { PrototypeTab, type UiPrototypeData } from './task-detail/PrototypeTab';
 import {
   diff,
   Fact,
@@ -33,11 +35,11 @@ type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 type BriefState =
   | { kind: 'empty' }
   | { kind: 'missing'; key: string; message: string }
-  | { kind: 'ready'; key: string; change: any };
+  | { kind: 'ready'; key: string; change: ChangePayload };
 
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
-  { id: 'preview', label: '预演' },
+  { id: 'prototype', label: '原型' },
   { id: 'development', label: '研发' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
@@ -59,9 +61,9 @@ export function TaskDetailPage() {
   const [editState, setEditState] = useState('可以修改');
   const [activeTab, setActiveTab] = useState<TaskTab>('overview');
   const [briefs, setBriefs] = useState<BriefState[]>([]);
-  const [previewData, setPreviewData] = useState<UiPreviewData | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [prototypeData, setPrototypeData] = useState<UiPrototypeData | null>(null);
+  const [prototypeLoading, setPrototypeLoading] = useState(false);
+  const [prototypeError, setPrototypeError] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [intent, setIntent] = useState('');
@@ -89,7 +91,7 @@ export function TaskDetailPage() {
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [executionRecordView, setExecutionRecordView] = useState<ExecutionRecordView>('all');
-  const [executionRecordsData, setExecutionRecordsData] = useState<any>(null);
+  const [executionRecordsData, setExecutionRecordsData] = useState<TaskExecutionRecordsView | null>(null);
   const [executionRecordsLoading, setExecutionRecordsLoading] = useState(false);
   const [executionRecordsError, setExecutionRecordsError] = useState<string | null>(null);
   const [retrospectiveData, setRetrospectiveData] = useState<any>(null);
@@ -104,7 +106,7 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const developmentRequestRef = useRef(0);
-  const previewRequestRef = useRef(0);
+  const prototypeRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
   const environmentRequestRef = useRef(0);
@@ -115,6 +117,8 @@ export function TaskDetailPage() {
   const retrospectiveRequestRef = useRef(0);
   const retrospectiveMutationRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
+  const taskReadLifecycleRef = useRef(createTaskReadLifecycle());
+  const focusRefreshRef = useRef<() => void>(() => {});
 
   const applyRecord = useCallback((next: TaskDetailData, workspaceName?: string) => {
     setData(next);
@@ -146,7 +150,9 @@ export function TaskDetailPage() {
     const results = await Promise.all(references.map(async (reference) => {
       const key = `${reference.project}/${reference.change}`;
       try {
-        const detail = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`) as any;
+        const detail = await taskReadLifecycleRef.current.run(taskId, `change:${key}`, (signal) => (
+          api(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(reference.project)}/${encodeURIComponent(reference.change)}`, { signal })
+        )) as { resolution: { workingCopy: { change: ChangePayload } } };
         return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change };
       } catch (err) {
         return {
@@ -160,10 +166,10 @@ export function TaskDetailPage() {
   }, [taskId]);
 
   const refresh = useCallback(async () => {
-    const [workspace, detail] = await Promise.all([
-      api('/api/v1/workspace') as Promise<WorkspacePayload>,
-      api(`/api/v1/tasks/${encodeURIComponent(taskId)}`) as Promise<TaskDetailData>,
-    ]);
+    const [workspace, detail] = await taskReadLifecycleRef.current.run(taskId, 'detail', (signal) => Promise.all([
+      api('/api/v1/workspace', { signal }) as Promise<WorkspacePayload>,
+      tasksApi.detail(taskId, { signal }),
+    ]));
     if (taskIdRef.current !== taskId) return;
     setWorkspace(workspace);
     applyRecord(detail, workspace.workspace.name);
@@ -175,10 +181,12 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setOverviewLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/overview`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'overview', (signal) => (
+        taskProfessionalApi.overview(currentTaskId, { signal })
+      ));
       if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setOverviewData(next);
     } catch (err) {
-      if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setOverviewData({ error: `${(err as ApiError).code || 'task_overview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}` });
       }
     } finally {
@@ -191,10 +199,12 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setCoordinationLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/coordination`) as ParentCoordinationResult;
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'coordination', (signal) => (
+        taskProfessionalApi.coordination(currentTaskId, { signal })
+      )) as ParentCoordinationResult;
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
-      if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setCoordinationData({ diagnostic: { code: (err as ApiError).code || 'parent_coordination_read_failed', message: err instanceof Error ? err.message : '读取失败' } });
       }
     } finally {
@@ -207,12 +217,14 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setDevelopmentLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/development`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'development', (signal) => (
+        taskProfessionalApi.development(currentTaskId, { signal })
+      ));
       if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setDevelopmentData(next);
       }
     } catch (err) {
-      if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setDevelopmentData({
           status: 'unavailable',
           development: null,
@@ -225,21 +237,23 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
-  const refreshPreview = useCallback(async () => {
-    const requestId = ++previewRequestRef.current;
+  const refreshPrototype = useCallback(async () => {
+    const requestId = ++prototypeRequestRef.current;
     const currentTaskId = taskId;
-    setPreviewLoading(true);
-    setPreviewError(null);
+    setPrototypeLoading(true);
+    setPrototypeError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-previews`) as UiPreviewData;
-      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPreviewData(next);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'ui-prototypes', (signal) => (
+        api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/ui-prototypes`, { signal })
+      )) as UiPrototypeData;
+      if (prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPrototypeData(next);
     } catch (err) {
-      if (previewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setPreviewError(`${(err as ApiError).code || 'task_ui_preview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
-        setPreviewData(null);
+      if (!isTaskReadCancelled(err) && prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+        setPrototypeError(`${(err as ApiError).code || 'task_ui_prototype_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
+        setPrototypeData(null);
       }
     } finally {
-      if (previewRequestRef.current === requestId) setPreviewLoading(false);
+      if (prototypeRequestRef.current === requestId) setPrototypeLoading(false);
     }
   }, [taskId]);
 
@@ -248,12 +262,14 @@ export function TaskDetailPage() {
     const currentTaskId = taskId;
     setEnvironmentLoading(true);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/environment`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'environment', (signal) => (
+        taskProfessionalApi.environment(currentTaskId, { signal })
+      ));
       if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setEnvironmentData(next);
       }
     } catch (err) {
-      if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setEnvironmentData({
           status: 'blocked',
           source: 'current-machine',
@@ -275,12 +291,14 @@ export function TaskDetailPage() {
     setReviewLoading(true);
     setReviewError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/reviews`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'reviews', (signal) => (
+        taskProfessionalApi.reviews(currentTaskId, { signal })
+      ));
       if (reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setReviewData(next);
       }
     } catch (err) {
-      if (reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && reviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setReviewError(`${(err as ApiError).code || 'task_review_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
       }
     } finally {
@@ -294,12 +312,14 @@ export function TaskDetailPage() {
     setVerificationLoading(true);
     setVerificationError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/verification`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'verification', (signal) => (
+        taskProfessionalApi.verification(currentTaskId, { signal })
+      ));
       if (verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setVerificationData(next);
       }
     } catch (err) {
-      if (verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && verificationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setVerificationError(`${(err as ApiError).code || 'task_verification_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
       }
     } finally {
@@ -313,10 +333,12 @@ export function TaskDetailPage() {
     setExecutionRecordsLoading(true);
     setExecutionRecordsError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/execution-records?view=${encodeURIComponent(view)}`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, `execution-records:${view}`, (signal) => (
+        taskProfessionalApi.executionRecords(currentTaskId, { view }, { signal })
+      ));
       if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId && executionRecordViewRef.current === view) setExecutionRecordsData(next);
     } catch (err) {
-      if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setExecutionRecordsError(`${(err as ApiError).code || 'task_execution_records_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
         setExecutionRecordsData(null);
       }
@@ -341,12 +363,14 @@ export function TaskDetailPage() {
     setRetrospectiveLoading(true);
     setRetrospectiveError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`);
+      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'retrospective', (signal) => (
+        taskProfessionalApi.retrospective(currentTaskId, { signal })
+      ));
       if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setRetrospectiveData(next);
       }
     } catch (err) {
-      if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
+      if (!isTaskReadCancelled(err) && retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
         setRetrospectiveError(`${(err as ApiError).code || 'task_retrospective_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
         setRetrospectiveData(null);
       }
@@ -363,10 +387,7 @@ export function TaskDetailPage() {
     setRetrospectiveMutating(true);
     setRetrospectiveError(null);
     try {
-      const next = await api(`/api/v1/tasks/${encodeURIComponent(currentTaskId)}/retrospective`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status, note, expectedCurrentDigest: currentDigest }),
-      });
+      const next = await taskProfessionalApi.updateRetrospective(currentTaskId, { status, note, expectedCurrentDigest: currentDigest });
       if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) setRetrospectiveData(next);
     } catch (err) {
       const apiError = err as ApiError;
@@ -391,7 +412,7 @@ export function TaskDetailPage() {
       void refreshCoordination();
     }
     if (tab === 'development') void refreshDevelopment();
-    if (tab === 'preview') void refreshPreview();
+    if (tab === 'prototype') void refreshPrototype();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
@@ -399,7 +420,7 @@ export function TaskDetailPage() {
       void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPreview, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -409,8 +430,8 @@ export function TaskDetailPage() {
     setOverviewData(null);
     setCoordinationData(null);
     setDevelopmentData(null);
-    setPreviewData(null);
-    setPreviewError(null);
+    setPrototypeData(null);
+    setPrototypeError(null);
     setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
@@ -428,7 +449,7 @@ export function TaskDetailPage() {
     projectRegistryRef.current = null;
     setEditState('可以修改');
     developmentRequestRef.current += 1;
-    previewRequestRef.current += 1;
+    prototypeRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
     environmentRequestRef.current += 1;
@@ -438,7 +459,7 @@ export function TaskDetailPage() {
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
-    setPreviewLoading(false);
+    setPrototypeLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
     setEnvironmentLoading(false);
@@ -460,35 +481,38 @@ export function TaskDetailPage() {
     })();
     return () => {
       cancelled = true;
+      taskReadLifecycleRef.current.abortTask(taskId);
     };
   }, [taskId, refresh, refreshOverview, refreshCoordination]);
 
+  focusRefreshRef.current = () => {
+    const tab = activeTabRef.current;
+    if (tab === 'overview') {
+      void refreshOverview();
+      void refreshCoordination();
+    }
+    if (tab === 'development') void refreshDevelopment();
+    if (tab === 'environment') void refreshEnvironment();
+    if (tab === 'evidence') {
+      void refreshReview();
+      void refreshVerification();
+      void refreshExecutionRecords();
+    }
+    if (tab === 'retrospective') void refreshRetrospective();
+  };
+
   useEffect(() => {
-    const onFocus = () => {
-      const tab = activeTabRef.current;
-      if (tab === 'overview') {
-        void refreshOverview();
-        void refreshCoordination();
-      }
-      if (tab === 'development') void refreshDevelopment();
-      if (tab === 'environment') void refreshEnvironment();
-      if (tab === 'evidence') {
-        void refreshReview();
-        void refreshVerification();
-        void refreshExecutionRecords();
-      }
-      if (tab === 'retrospective') void refreshRetrospective();
-    };
+    const onFocus = () => focusRefreshRef.current();
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, []);
 
   const loadParentOptions = async () => {
     const current = dataRef.current;
     if (!current || parentOptionsLoaded || parentOptionsLoading || !['todo', 'active'].includes(current.record.status)) return;
     setParentOptionsLoading(true);
     try {
-      const list = await api('/api/v1/tasks?status=active') as { tasks: Array<{ record: { taskId: string; title: string; status: string } }> };
+      const list = await tasksApi.list({ status: 'active' });
       const record = current.record;
       const options: Array<{ value: string; label: string }> = [{ value: '', label: '无 Parent（独立 Task）' }];
       if (record.parentTaskId && current.taskRelations.parent) {
@@ -564,21 +588,17 @@ export function TaskDetailPage() {
     ));
     const nextParentTaskId = parentTaskId || null;
     try {
-      const updated = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          title,
-          intent,
-          ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }),
-          addProjects: projects.add,
-          removeProjects: projects.remove,
-          addServices: services.add,
-          removeServices: services.remove,
-        }),
-      }) as TaskDetailData;
-      applyRecord(updated);
-      void loadBriefs(updated.record.changes);
+      const updated = await tasksApi.update(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        title,
+        intent,
+        ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }),
+        addProjects: projects.add,
+        removeProjects: projects.remove,
+        addServices: services.add,
+        removeServices: services.remove,
+      });
+      await refresh();
       setEditState(updated.effects.length ? '保存成功' : '内容一致');
       setAlert(null);
       setActionModal(null);
@@ -599,13 +619,10 @@ export function TaskDetailPage() {
     });
     if (!ok) return;
     try {
-      await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          summary: completeSummary,
-          noChange: completeNoChange === 'true',
-        }),
+      await tasksApi.complete(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        summary: completeSummary,
+        noChange: completeNoChange === 'true',
       });
       setActionModal(null);
       await refresh();
@@ -626,12 +643,9 @@ export function TaskDetailPage() {
     });
     if (!ok) return;
     try {
-      await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/abandon`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedRecordDigest: data.recordDigest,
-          reason: abandonReason,
-        }),
+      await tasksApi.abandon(taskId, {
+        expectedRecordDigest: data.recordDigest,
+        reason: abandonReason,
       });
       setActionModal(null);
       await refresh();
@@ -722,6 +736,21 @@ export function TaskDetailPage() {
       </nav>
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
+        <ParentCoordinationPanel
+          data={coordinationData}
+          loading={coordinationLoading}
+          onRefresh={() => { void refreshCoordination(); }}
+          taskHref={(childTaskId) => href(`/tasks/${encodeURIComponent(childTaskId)}`)}
+        />
+        <TaskOutcomeSummary
+          summary={overviewData?.userSummary}
+          loading={overviewLoading}
+          onRefresh={() => { void refreshOverview(); }}
+          onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'development')}
+          onAuthorize={(authorization) => openAgentAction(authorization.owner, { taskId, action: authorization.action, summary: authorization.summary })}
+        />
+        <details className={`task-technical-overview${coordinationData?.mode === 'parent-plan' ? ' parent-mode' : ' ordinary-mode'}`} open={coordinationData?.mode !== 'parent-plan'}>
+          <summary>技术事实、Change 与 Task Record</summary>
         <section className="panel" id="task-professional-overview" aria-live="polite">
           <div className="panel-heading">
             <div>
@@ -741,11 +770,10 @@ export function TaskDetailPage() {
             </dl>
           )}
         </section>
-        <ParentCoordinationPanel data={coordinationData} loading={coordinationLoading} onRefresh={() => { void refreshCoordination(); }} />
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {
-              return <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
+              return coordinationData?.mode === 'parent-plan' ? null : <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
             }
             if (item.kind === 'missing') {
               return <section key={item.key} className="panel brief-missing">{item.message}</section>;
@@ -848,6 +876,7 @@ export function TaskDetailPage() {
             </dl>
           </aside>
         </section>
+        </details>
         <section id="task-terminal-note" className={`empty-state${terminal ? '' : ' hidden'}`}>
           <h2>这是终态任务记录</h2>
           <p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p>
@@ -967,13 +996,13 @@ export function TaskDetailPage() {
         onSelectEvidence={() => selectTab('evidence')}
         onSelectFinishExecutionRecords={() => selectExecutionRecordView('finish')}
       />
-      <PreviewTab
-        active={activeTab === 'preview'}
+      <PrototypeTab
+        active={activeTab === 'prototype'}
         workspaceId={workspaceId}
-        data={previewData}
-        loading={previewLoading}
-        error={previewError}
-        onRefresh={() => { void refreshPreview(); }}
+        data={prototypeData}
+        loading={prototypeLoading}
+        error={prototypeError}
+        onRefresh={() => { void refreshPrototype(); }}
       />
       <EvidenceTab
         active={activeTab === 'evidence'}

@@ -113,22 +113,27 @@ Formal Task runner MUST只在execution record seal已返回retained且正文完�
 - **AND** MUST NOT写current Verification Result、删除未知目录或声称execution evidence已安全保留
 
 ### Requirement: Finish producer 必须把每次 invocation 映射为独立 closed execution record
-Registered Task Finish runner MUST把每次通过调用前校验且真正开始执行的 invocation 映射为一条`task-finish/finish-diagnostics` record。`run_identity` MUST使用执行前生成的独立 Finish invocation identity，`target_identity` MUST使用Development handoff中的stable Content Target identity，`producer` MUST使用稳定registered identity；逻辑`finishRunId`、invocation ordinal、Candidate/handoff、target与Carrier facts MUST进入受控正文而不是新增SQLite列、任意metadata或retry/Consumer关系。
+Registered Task Finish runner MUST为每次真正开始的invocation尽力映射一条`task-finish/finish-diagnostics` record。`run_identity` MUST使用独立Finish invocation identity，`target_identity` MUST使用current Content Target identity，`producer` MUST使用稳定registered identity；逻辑run、Candidate/handoff、target与delivery facts MUST进入受控正文。record open、reservation或seal失败 MUST形成portable `attention`，但 MUST NOT阻止已授权的自动交付或delivery reconciliation，也 MUST NOT成为第二个Task/delivery terminal authority。
 
 #### Scenario: 首次 Finish invocation metadata 映射
-- **WHEN** caller已通过Task、Environment、Development handoff、target/remote与no-op校验并生成Finish invocation identity
-- **THEN** producer MUST以`taskId + task-finish + finish-diagnostics + finishInvocationId`幂等open record并绑定Content Target identity
-- **AND** Finish current run、Carrier、target lease与其他execution side effect MUST只在open成功后创建
+- **WHEN** producer能够为合法Finish invocation预留容量并打开record
+- **THEN** producer MUST幂等绑定Task、owner、kind、invocation和Content Target identity
+- **AND** 后续diagnostics MUST按closed body与retention规则处理
+
+#### Scenario: record 容量不足
+- **WHEN** 新reservation将超过Task-owner或Workspace容量
+- **THEN** Finish producer MUST报告diagnostics attention并继续执行仍满足安全边界的交付或收敛
+- **AND** MUST NOT创建未受控正文、伪造retained record或阻止远端事实登记
 
 #### Scenario: 同一 Finish run 恢复
-- **WHEN** blocked或cleanup-pending Finish run使用matching product resume token再次执行
-- **THEN** resume invocation MUST生成新的Finish invocation identity与独立record，并在正文引用原`finishRunId`和新ordinal
-- **AND** MUST NOT覆盖旧blocked record、自动建立retry/recovered关系或把record identity写入`task_finish_current`
+- **WHEN** blocked或cleanup-pending自动Finish run再次执行
+- **THEN** producer SHOULD为新invocation尝试独立record并在正文引用原run和ordinal
+- **AND** record失败 MUST NOT使原run、delivery evidence或Environment cleanup失效
 
 #### Scenario: invalid或no-op Finish invocation
-- **WHEN** request参数、Task/Environment/handoff、target/remote、resume token不合法，或既有Finish已经complete而本次只返回no-op
-- **THEN** producer MUST NOT打开record、预留quota或创建diagnostics transient
-- **AND** MUST NOT借execution record改变既有Finish current、Carrier、target或terminal facts
+- **WHEN** request参数、Task/handoff或目标不合法，或既有delivery已经幂等成立
+- **THEN** producer MUST NOT要求创建record才能返回诊断或no-op结果
+- **AND** execution record MUST NOT改变既有delivery、Task、target或maintenance facts
 
 ### Requirement: Finish record 正文必须使用 closed invocation diagnostics dictionary
 Finish producer MUST只提交既有closed正文文件名。`summary.json` MUST保存versioned portable invocation/run/ordinal、handoff/Candidate/Content Target、target/Carrier identity、固定phase status/timing、Finish outcome与cleanup disposition；`timeline.json` MUST只保存closed record/run/phase/stop/seal milestones；`diagnostics.json` MUST只保存本invocation的failure、target race、adaptation、Doctor、cleanup与cancellation diagnostics；stdout/stderr MUST按固定phase与operation边界保存。Producer MUST在persistent write前移除transient/Carrier locator、本机root/executable、remote credential、lease/resume/resource token、env、stdin、cwd与raw argv，并 MUST继续由正文Store执行最终redaction和截断。

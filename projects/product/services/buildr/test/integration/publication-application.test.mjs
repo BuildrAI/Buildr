@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { registerPublicationApplication } from '../../src/application/publication/publication-application.mjs';
+import { registerPublicationApplication } from '../../src/system/publication/application/publication-application.mjs';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publications-'));
@@ -19,7 +19,7 @@ function fixture() {
     'kind: product-article',
     'status: published',
     'targets:',
-    '  - platform: mowen',
+    '  - platform: local-app',
     '    status: published',
     '---',
     '',
@@ -32,7 +32,7 @@ function fixture() {
     readProjectRegistryRecord: () => ({ root, projects: { product: { source: { type: 'workspace', path: 'projects/product' } } } }),
     parseYamlDocument: (content) => YAML.parse(content),
   };
-  registerPublicationApplication(runtime);
+  registerPublicationApplication(runtime, { projectQuery: { readProjectRegistryRecord: runtime.readProjectRegistryRecord } });
   return { root, publicationRoot, runtime };
 }
 
@@ -42,7 +42,7 @@ test('Publication Application 只读取固定 Product Project publication root',
   const list = runtime.listPublications(root);
   assert.equal(list.publications.length, 1);
   assert.equal(list.publications[0].id, 'article');
-  assert.equal(list.publications[0].targets[0].platform, 'mowen');
+  assert.equal(list.publications[0].targets[0].platform, 'buildr-web');
   const detail = runtime.publicationDetail(root, 'article');
   assert.match(detail.content, /assets\/cover\.png/);
   assert.equal(runtime.readPublicationAsset(root, 'article', 'assets/cover.png').contentType, 'image/png');

@@ -60,7 +60,7 @@ skills:
     sourceIdentity: package:skills/buildr/git-operations
     source: buildr
     path: buildr/git-operations
-    description: 用户或上游 consumer 已明确选择 repository、Git Operation 与相关 ref，或 Workspace 没有 active Task 且用户要求“收尾”完成当前 Git 交付时使用；需要执行 fetch、commit、push、commit+push、rebase 或检查该动作的授权、安全边界和结果 evidence；不用于选择操作、编排 Task Finish 或扩展完整 Git 命令集。
+    description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
     enabled: true
     required: false
     state: installed
@@ -81,7 +81,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求已有 active formal Task 的“收尾”或交付 current formal Development handoff 时使用；在隔离交付载体（Delivery Carrier）上机械复用或进行交付适配（Delivery Adaptation）、推进 retained target 并清理 Environment，只有 Development applicability stale 才返回 Task Development。
+    description: 用户要求已有正式任务（formal Task）“收尾”或交付当前研发交接（Development handoff）时使用；由智能体（Agent）选择直接 Git/PR、Buildr 自动 Finish 或交付对账（delivery reconciliation），并独立处理激活、环境清理和诊断。
     enabled: true
     required: false
     state: installed
@@ -355,7 +355,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户明确要求创建或查看待办/正式 Task Record、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；不用于普通任务分流、Task Environment 或专业阶段动作。
+    description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；只管理Task Record，用户同时要求准备或拆分Parent时在active记录成功后自动交接task-development，不自行执行Environment或专业阶段动作。
     enabled: true
     required: false
     state: installed
@@ -436,7 +436,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-development
     source: buildr
     path: buildr/task-development
-    description: 正式实现任务从 proposal、design 或直接实现等首个正式研发动作开始，持续维护研发聚合事实、稳定 Content Target、形成 verification policy、编排正式 Verification、冻结 Task Candidate、记录适用门禁与风险决定并生成 Finish handoff 时使用；不用于 Task Record、Environment、测试开发或交付执行。
+    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
     enabled: true
     required: false
     state: installed
@@ -491,24 +491,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: declaration-intake
-  - id: ui-preview
-    assetIdentity: buildr:skill:ui-preview
-    sourceIdentity: package:skills/buildr/ui-preview
-    source: buildr
-    path: buildr/ui-preview
-    description: 用户已明确确认需要在正式前端开发前查看本次提案实施后的完整页面预演时使用；调查现有真实界面，生成并在浏览器验证一个或多个自包含 HTML。未明确确认时不得使用。
-    enabled: true
-    required: false
-    state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
-    runtimePath: ui-preview
   - id: project-daily-progress
     assetIdentity: buildr:skill:project-daily-progress
     sourceIdentity: package:skills/buildr/project-daily-progress
@@ -531,6 +513,24 @@ skills:
       - capability: buildr.git-operations
         version: 1
         mode: optional
+  - id: ui-prototype
+    assetIdentity: buildr:skill:ui-prototype
+    sourceIdentity: package:skills/buildr/ui-prototype
+    source: buildr
+    path: buildr/ui-prototype
+    description: 用户明确需要界面原型时使用；调查现有真实界面，生成并逐页验证一个或多个使用模拟数据与交互的自包含 HTML。已有原型且用户未明确忽略时，后续 Agent 默认按原型开发页面与交互。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: ui-prototype
 contracts:
   - id: buildr.terminology-governance
     version: 1

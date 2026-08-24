@@ -8,27 +8,26 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const contract = read('package/targets/workspace/skills/contracts/buildr/task-verification/v3.md');
-const verificationSkill = read('package/targets/workspace/skills/buildr/task-verification/SKILL.md');
-const verificationReference = read('package/targets/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
-const verificationTemplate = read('package/targets/workspace/skills/buildr/task-verification/templates/project-verification.yml');
-const cliRegistry = read('src/interfaces/cli/registry.mjs');
+const contract = read('resources/workspace/skills/contracts/buildr/task-verification/v3.md');
+const verificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
+const verificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const verificationTemplate = read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml');
+const cliRegistry = read('src/bootstrap/cli/registry.mjs');
 const cliReference = read('docs/cli-reference.md');
 const jsonContracts = read('docs/json-contracts.md');
-const worktreeSkill = read('package/targets/workspace/skills/buildr/task-worktree/SKILL.md');
-const environmentSkill = read('package/targets/workspace/skills/buildr/task-environment/SKILL.md');
-const gitOperationsContract = read('package/targets/workspace/skills/contracts/buildr/git-operations/v1.md');
-const gitOperationsSkill = read('package/targets/workspace/skills/buildr/git-operations/SKILL.md');
-const finishSkill = read('package/targets/workspace/skills/buildr/task-finish/SKILL.md');
-const finishContract = read('package/targets/workspace/skills/contracts/buildr/task-finish/v1.md');
-const finishExecutor = read('src/application/task-finish/task-finish-product-executor.mjs');
-const developmentSkill = read('package/targets/workspace/skills/buildr/task-development/SKILL.md');
-const developmentApplication = read('src/application/task-development/task-development-application.mjs');
-const openSpecProposeSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
-const openSpecUpdateSidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
-const openSpecApplySidebar = read('package/targets/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
+const worktreeSkill = read('resources/workspace/skills/buildr/task-worktree/SKILL.md');
+const environmentSkill = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
+const gitOperationsContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
+const gitOperationsSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
+const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
+const finishExecutor = read('src/task/application/finish/task-finish-product-executor.mjs');
+const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
+const developmentApplication = read('src/task/application/task-development-application.mjs');
+const openSpecProposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
+const openSpecUpdateSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md');
+const openSpecApplySidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
-const packageManifest = YAML.parse(read('package/manifest.yml'));
+const packageManifest = YAML.parse(read('resources/manifest.yml'));
 
 function sourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -49,11 +48,11 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   assert.match(contract, /id: buildr\.task-verification/);
   assert.match(contract, /version: 3/);
   for (const required of [
-    'buildr.project-verification/v2', 'buildr.task-verification-result/v1',
+    'buildr.project-verification/v2', 'buildr.task-verification-result/v2',
     'buildr.task-verification-operation-result/v1', 'transient Execution Evidence',
     '`current`', '`stale`', '`unknown`', '单一SQLite transaction', 'coverage gap',
-    'requiredForDelivery', 'Task Verification Application', '完整替换 current',
-    '不得提交 declaration identity', '不得保存 stdout/stderr',
+    'requiredForDelivery', 'Task Verification Application', '完整替换current',
+    '不得提交capability outcome/facts', '不得保存stdout/stderr',
     'Task progression', '测试命令完整失败可以形成 `not-passed` Result',
     'exact invocation identity', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`',
     '只有显式`--retry`', 'Execution Record readback不得创建、替换或充当current Verification Result',
@@ -63,12 +62,12 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   }
 });
 
-test('默认 provider 使用 v2 declaration、transient execution 与 Application record', () => {
+test('默认 provider 使用 v2 declaration、Candidate-bound execution 与 Application reconciliation', () => {
   for (const required of [
     '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
     'references/project-verification-v2.md', 'buildr.project-verification/v2',
     'buildr task verification inspect <task-id>', 'buildr verification run --project <code>',
-    'buildr task verification record <task-id>', 'buildr.verification-execution/v1',
+    'buildr task verification reconcile <task-id>', 'buildr.verification-execution/v1',
     '--declaration-root <task-environment-root>',
     '不自动创建测试、脚本、CI 或框架', '原子替换', '不得覆盖原 current',
     'Workspace本地current Result', 'buildr verification cleanup --summary <file>',
@@ -97,26 +96,34 @@ test('默认 provider 使用 v2 declaration、transient execution 与 Applicatio
 });
 
 test('Application 是 current Result persistence 的唯一 writer/reader', () => {
-  assert.deepEqual(runtimeCallSites('writeTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
-  assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/application/task-verification/task-verification-application.mjs']);
-  const cli = read('src/interfaces/cli/task-verification.mjs');
-  const server = read('src/interfaces/local-app/http/server.mjs');
+  assert.deepEqual(runtimeCallSites('writeTaskVerificationResultPersistence'), ['src/task/application/task-verification-application.mjs']);
+  assert.deepEqual(runtimeCallSites('readTaskVerificationResultPersistence'), ['src/task/application/task-verification-application.mjs']);
+  const cli = read('src/task/interfaces/cli/task-verification.mjs');
+  const server = read('src/web/http/server.mjs');
+  const router = read('src/web/http/router.mjs');
+  const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
   const taskDetail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const evidenceTab = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   assert.match(cli, /runtime\.inspectTaskVerification/);
   assert.match(cli, /runtime\.recordTaskVerification/);
+  assert.match(cli, /runtime\.reconcileTaskVerification/);
   assert.match(cli, /--declaration-root/);
   assert.doesNotMatch(cli, /inspect: [^\n]*--declaration-root/);
-  assert.match(cli, /operation === 'inspect'\s*\? new Set\(\['--target-identity', '--target', '--json'\]\)/);
+  assert.match(cli, /operation === 'inspect'\s*\? new Set\(\['--candidate-identity', '--candidate-generation', '--target-identity', '--target', '--json'\]\)/);
   assert.doesNotMatch(cli, /node:fs|YAML|writeTaskVerificationResultPersistence/);
-  assert.match(server, /submitTaskRead\(request, response, 'verification', root, taskVerificationMatch\[1\]\)/);
+  assert.match(http, /task-verification\.http/);
+  assert.match(http, /'verification'/);
+  assert.match(server, /createLocalWorkspaceRequestRouter/);
+  assert.match(router, /submitTaskRead: \(operation, taskId/);
   assert.doesNotMatch(server, /recordTaskVerification/);
-  const readWorker = read('src/interfaces/local-app/http/read-worker.mjs');
+  assert.doesNotMatch(router, /recordTaskVerification/);
+  const readWorker = read('src/web/http/read-worker.mjs');
   assert.match(readWorker, /verification:\s*'inspectTaskVerificationView'/);
   assert.doesNotMatch(taskDetail, /node:fs|YAML|recordTaskVerification|writeFileSync/);
   assert.doesNotMatch(evidenceTab, /node:fs|YAML|recordTaskVerification|writeFileSync/);
   assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
+  assert.doesNotMatch(developmentApplication, /runtime\.reconcileTaskVerification/);
   assert.doesNotMatch(finishExecutor, /inspectTaskVerification|recordTaskVerification/);
   assert.doesNotMatch(finishExecutor, /verificationSummary|requiredAssurance|candidate-fingerprint|--level/);
 });
@@ -128,7 +135,7 @@ test('Task Environment、Git provider 与 Task Verification 权限保持解耦',
   assert.match(worktreeSkill, /验证交给 `task-verification`/);
   assert.match(environmentSkill, /候选不能写 retained Workspace、其他 Task worktree 或共享 user runtime/);
   assert.match(verificationSkill, /不拥有 Task Environment/);
-  assert.match(verificationSkill, /不要复制 stdout\/stderr、耗时、临时 evidence path、Environment Receipt/);
+  assert.match(verificationSkill, /不要复制stdout\/stderr、耗时、临时evidence path、Environment Receipt/);
 });
 
 test('Git Operations 只返回操作 facts，不拥有 Verification Result 决策', () => {
@@ -167,22 +174,11 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
 });
 
-test('Task Finish 保持五阶段薄 handoff consumer 且不读取 Verification authority', () => {
-  assert.ok(finishSkill.length >= 1500 && finishSkill.length <= 6000);
-  assert.ok(finishSkill.split('\n').length >= 30 && finishSkill.split('\n').length <= 90);
-  for (const required of [
-    'buildr.task-finish/v1', 'preflight → prepare → verify → deliver → cleanup',
-    'current formal Development handoff', '隔离交付载体（Delivery Carrier）',
-    '任务贡献（Task Contribution）', '交付基线（Delivery Baseline）',
-    'formalVerificationExecutions` 必须为 `0`', '不发起 Task Verification',
-  ]) assert.ok(finishSkill.includes(required), `Finish Skill must include ${required}`);
-  assert.match(finishContract, /Development Application只读确认applicability/);
-  assert.match(finishContract, /formal Verification executions必须为`0`/);
-  assert.match(finishContract, /bounded compatibility checks/);
-  assert.match(finishContract, /不得record Verification Result/);
+test('Task Finish 保持可选五阶段 handoff consumer 且不接管 Verification authority', () => {
+  assert.match(finishContract, /只消费Development handoff/);
+  assert.match(finishContract, /分别投影Delivery、Activation、Environment Cleanup和Diagnostics/);
+  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review/);
   assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
-  assert.doesNotMatch(finishSkill, /--required-assurance|--verification-summary/);
-  assert.doesNotMatch(finishSkill, /current Verification Result|requiredForDelivery|formalVerificationExecutions <= 1/);
 });
 
 test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调用', () => {
@@ -198,9 +194,9 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
   assert.match(openSpecApplySidebar, /Convergence\/archive在Task Development观察stable Content Target/);
   assert.match(openSpecApplySidebar, /change-checklist-incomplete/);
   assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
-  assert.match(developmentSkill, /current knowledge 维护，以及每个关联 Change 的 deterministic convergence\/archive/);
+  assert.match(developmentSkill, /每个关联Change的deterministic convergence\/archive/);
   assert.doesNotMatch(finishExecutor, /openspec|archiveChange|legacyConvergence|openspecConverge/);
-  assert.match(finishSkill, /preflight → prepare → verify → deliver → cleanup/);
+  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review、生成Candidate或收敛OpenSpec Change/);
 });
 
 test('产品入口分别路由 Task Verification、Environment 与 Git provider 意图', () => {

@@ -4,12 +4,12 @@
 
 Buildr 的父子任务模型采用“Parent 协调结果，Child 独立交付变化”的分工：
 
-- Parent Task 是最终 outcome、architecture invariants、Contribution Map、依赖与 final acceptance 的协调 authority。
+- Parent Task 是最终 outcome、architecture decisions、结构化 Contribution Map 与 final acceptance 的协调 authority。
 - Child Task 是一个或多个 Contribution 的独立交付单元，拥有自己的 Environment、窄 OpenSpec Change、Development、Review、Verification 与 Finish。
 - canonical specs 保存已经归档的当前产品契约；同一个具体规范变化同一时间只能由一个 active Change 持有。
 - Child 完成不等于 Parent 完成。Parent 必须显式完成最终集成验收，再走正常 Completion Review、Development handoff 与 Formal Finish。
 
-该模型是 opt-in、forward-compatible 的长期能力。没有 Parent Plan 的历史 Task 保持 `legacy` 模式，不扫描、不回填、不迁移，也不从旧 Change、`tasks.md`、代码或 canonical specs 推断 Contribution。
+该模型是 opt-in、forward-compatible 的长期能力。没有 Parent Plan 的独立 Task 使用 `ordinary` 模式；已有 Child 关系但没有 Plan 的 Parent 使用 `legacy` 模式。两者都不扫描、不回填、不迁移，也不从旧 Change、`tasks.md`、代码或 canonical specs 推断 Contribution。
 
 ## 2. Authority 边界
 
@@ -18,13 +18,13 @@ Buildr 的父子任务模型采用“Parent 协调结果，Child 独立交付变
 | Task identity、顶层 active/completed/abandoned、直接 Parent/Children | Task Record / SQLite `tasks` | Parent Plan、Child Result、专业状态副本 |
 | Parent 协调计划 | Task Development current Receipt 中的 `parentPlan` | Child status、完整 Requirement/delta、字段/migration/file checklist、checkbox进度 |
 | Child planned Contribution | Child Task Development current Receipt 中的 `plannedContributions` | Parent current status、Child delivery结论 |
-| Child/Parent 实际 Contribution 交付 | 既有 immutable Development handoff 中的 `contributionHandoff`，并由 Finish terminal association 证明 Child delivery | 第二套 Result、registry、event/history/audit log |
+| Child/Parent 实际 Contribution 交付 | 正常路径使用immutable Development handoff中的`contributionHandoff`并由Finish terminal association证明；严格终态异常使用独立append-only reconciliation evidence引用同一handoff/association | 改写旧handoff/Finish、第二套progress、event/history/audit log |
 | Parent Planning Review | Task Review planning slot，target 为 Parent Plan identity | Child lifecycle、Verification或Change archive状态 |
 | Parent 最终集成验收 | Parent Task Development current Receipt 中的 `parentAcceptance` | Parent completed状态或自动Finish |
 | 当前规范契约 | canonical OpenSpec specs | active Parent/Child计划副本 |
-| Parent progress | Parent Coordination Application 动态 read model | 物化count、status array、lifecycle cache、progress表 |
+| Parent progress | Parent Coordination Application 基于固定只读projection派生的动态 read model | 物化count、status array、lifecycle cache、progress表 |
 
-所有长期事实仍写入已有 `task_development_current.record_json` 整值 authority。Receipt 写入版本为 `buildr.task-development-receipt/v3`；SQLite table shape和migration ledger不变，因此没有新表、数据迁移或历史 backfill。v1/v2 Receipt只读归一化为 `parentPlan: null`、`plannedContributions: []`、`parentAcceptance: null`。
+正常Development长期事实仍写入`task_development_current.record_json`整值authority。Receipt写入版本为`buildr.task-development-receipt/v3`；v1/v2只读归一化为`parentPlan: null`、`plannedContributions: []`、`parentAcceptance: null`。终态异常恢复单独写入按Child唯一的`terminal_contribution_reconciliations` closed row，因为旧handoff与Finish association必须保持immutable；该表不保存progress、status history或物化disposition，也不做历史backfill。
 
 ## 3. Parent Plan
 
@@ -32,28 +32,29 @@ Parent Plan 是 closed、内容寻址的协调值对象：
 
 ```json
 {
-  "schemaVersion": "buildr.parent-plan/v1",
+  "schemaVersion": "buildr.parent-plan/v2",
   "identity": "sha256-...",
   "outcome": "最终需要形成的整体结果",
-  "architectureInvariants": ["一个事实只有一个authority"],
+  "architectureDecisions": ["一个事实只有一个authority"],
   "contributions": [
     {
       "id": "independent-child-delivery",
-      "summary": "Child可以独立归档窄Change并形成可证明交付",
-      "plannedChildTaskId": "child-task-id"
-    }
-  ],
-  "dependencies": [
-    {
-      "contributionId": "final-integration",
-      "dependsOn": "independent-child-delivery"
+      "priority": "P0-1",
+      "title": "独立交付",
+      "objective": "Child可以独立归档窄Change并形成可证明交付",
+      "directions": ["保持Change范围窄且可独立验收"],
+      "boundaries": ["不以Child completed代替handoff证明"],
+      "expectedChild": "一个聚焦独立交付的Child",
+      "dependencies": []
     }
   ],
   "finalAcceptance": ["全部Contribution已证明delivered或明确superseded"]
 }
 ```
 
-Domain会排序数组、拒绝重复与未知引用、拒绝循环依赖，并从上述协调内容派生identity。Child status、Review/Verification Result、Change lifecycle和实现细节不进入identity，所以普通执行状态变化不会使Parent Planning Review stale。
+`priority`是非空、稳定的展示与排序键（例如`P0-1`），不是固定枚举；`expectedChild`只描述预期形态，不是Task ID、binding或已创建事实。Domain会排序数组、拒绝重复与未知引用、拒绝循环依赖，并从上述协调内容派生identity。Child status、Review/Verification Result、Change lifecycle和实现细节不进入identity，所以普通执行状态变化不会使Parent Planning Review stale。
+
+新写入只接受v2。已保存v1继续按原内容校验原identity，再投影为v2 read model；只有调用方基于current v1 identity显式提交完整v2 `reconcile`才升级，不做SQLite migration或批量backfill。
 
 首次采用使用 `record`；Plan已存在后只能提交current expected identity、完整next Plan和非空reason执行 `reconcile`。reconciliation只更新计划，不自动修改任何Child Task、Change或handoff。
 
@@ -75,7 +76,7 @@ Child 的创建顺序是：
 4. 在Child execution root创建自己的窄Change，完成Planning Review、实现、Verification、Completion Review与Development handoff。
 5. 独立converge/archive Change，经Formal Finish合入最新`dev`。
 
-Parent Plan不是OpenSpec Change；Parent若亲自交付集成代码，可以拥有自己的窄Change，并把对应Contribution的`plannedChildTaskId`设为Parent Task ID。Parent Change不得覆盖所有Child delta。
+Parent Plan不是OpenSpec Change；Parent若需要交付集成代码，可以拥有自己的窄Change，但Contribution的实际承担仍只来自真实Child binding或saved handoff，不能把`expectedChild`写成Task ID来伪造实际承担。Parent Change不得覆盖所有Child delta。
 
 ## 5. Contribution Handoff
 
@@ -101,28 +102,36 @@ Parent Plan不是OpenSpec Change；Parent若亲自交付集成代码，可以拥
 Application要求：
 
 - `parentTaskId`与Task Record Parent一致；Parent自身交付时与自身Task ID一致。
-- `planned`精确匹配已保存binding或Parent Plan中由Parent亲自承担的Contribution。
+- `planned`精确匹配已保存binding；`expectedChild`不参与matching。
 - 全部引用属于current Parent Plan；planned delivery放入`delivered`，越界交付放入`extra`。
 - handoff仍是既有Candidate/gates/decision snapshot的一部分，append-only且immutable。
 
 Child顶层`completed`但没有与Finish completion association匹配的Contribution Handoff时，read model必须返回`unproven`，不能假设原计划已经完整交付。
 
+### 5.1 终态异常恢复
+
+`task parent reconcile-child-delivery`只接受completed、非no-change的直接Child。Task Development Application同时验证active Parent与current Plan identity、Task关系、Development Receipt、matching immutable handoff、Candidate/generation、三个gate、terminal Finish association、archived Change、完整Contribution Handoff及Sibling owner；缺少历史binding时，planned必须由调用方显式给出，不能自动推断。成功后只追加内容寻址reconciliation，不修改Task、Receipt、handoff、Finish或Parent Plan。Parent read model优先使用原生handoff；只有原生缺失且reconciliation仍匹配current Plan与Finish时才消费，并以`delivery.proof.kind = terminal-reconciliation`保留来源。
+
+该能力不是normal Child步骤。active Child仍按Task relation → planned binding → 独立Development/Verification/Review → 同一handoff内Contribution Handoff → Finish交付；不得先省略证据再依赖终态恢复。
+
 ## 6. 派生 read model
 
-`Parent Coordination Application`是唯一组合边界。它通过Task Record、Task Development、Task Review与Task Terminal Delivery Applications读取已保存事实，返回：
+`Parent Coordination Application`是唯一组合边界。它通过专用只读repository，在同一个read-only SQLite connection内以固定2条参数化查询读取当前Task、直接Parent/Children及Task Development、Task Review、Task Environment与Task Finish已保存事实，返回：
 
-- Parent Plan、Parent status、Planning Review与显式final acceptance；
-- 每个直接Child的identity、顶层状态、planned binding、matching handoff与diagnostic；
-- 每个Contribution的`unassigned | planned | delivered | residual | superseded | unproven` disposition；
-- `prerequisitesSatisfied`、blockers与`finalAcceptanceReady`。
+- 紧凑Parent Plan摘要、Parent status、Planning Review摘要与显式final acceptance；
+- 每个直接Child的identity、顶层状态、唯一`boundContributions`、matching delivery摘要与diagnostic；
+- 每个Contribution同时返回预期轴`expected | none`、可执行轴`eligible | waiting-dependency | not-eligible`与实际轴`unassigned | bound | active | delivered | residual | superseded | unproven`；
+- 唯一顶层Contribution Map、`prerequisitesSatisfied`、blockers与`startup.next`。
 
-Application不直接查询SQLite，不在GET/inspect时扫描文件系统，不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
+公开响应固定为`buildr.parent-coordination-result/v3`。它不再返回raw `parentPlan`、`plan.contributions`、`finalAcceptanceReady`、顶层`nextActions`、Child `plannedContributions`或完整`contributionHandoff`，也不重复work item的`expectedChild`。完整Parent Plan、Review Result与Contribution Handoff仍由各自既有authority保存；v3只投影UI、CLI与Agent协调当前动作所需字段。独立Parent startup reader继续用`buildr.parent-startup-readiness/v2`返回专用`dependencyBlockers`。
 
-`prerequisitesSatisfied`只表示全部Contribution已由saved delivery或明确superseded处置。它不改变Parent Task Record。`task parent accept`记录显式最终集成验收后，Parent仍保持active，直到正常Formal Finish完成。
+Repository不建立表、view、cache或writer，查询次数不随Child数量增长；Application不在GET/inspect时调用live Environment provider、逐Child专业Application或扫描文件系统，也不回填历史事实。CLI `task parent ...`、Buildr Web `/api/v1/tasks/:id/coordination`和Agent workflow都消费这一Application；Web层不再拼装自己的进度算法。
+
+三个轴彼此独立：写了`expectedChild`不表示已创建或已绑定；依赖满足也不表示已交付；只有真实Task relation、Development binding和saved handoff改变实际轴。`prerequisitesSatisfied`只表示全部Contribution已由saved delivery或明确superseded处置。它不改变Parent Task Record。`task parent accept`记录显式最终集成验收后，Parent仍保持active，直到正常Formal Finish完成。
 
 ## 7. 范围变化与 reconciliation
 
-Child可以在自己承担的Contribution内细化实现。出现以下任一变化时必须显式reconcile：跨越其他Contribution、提前交付后续Contribution、改变依赖顺序、architecture invariants或final acceptance，或者使未来Child范围缩小/消失。
+Child可以在自己承担的Contribution内细化实现。出现以下任一变化时必须显式reconcile：跨越其他Contribution、提前交付后续Contribution、改变依赖顺序、architecture decisions或final acceptance，或者使未来Child范围缩小/消失。
 
 - 部分覆盖：保留后续Contribution的residual scope；若Child已创建，更新其intent和窄Change，只留下residual。
 - 全部覆盖：Plan表达实际delivery/superseded；未来Child未创建则不再创建，已创建则Task Record `abandon`，不能标记completed。

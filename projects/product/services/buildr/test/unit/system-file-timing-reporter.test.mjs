@@ -28,3 +28,13 @@ test('System file timing 相同耗时按文件名稳定排序', () => {
     { file: '/workspace/a.test.mjs', durationMs: 10, passed: true },
   ]), '[buildr-system-file-timing] scope=transient files=2 slowest-first=a.test.mjs:10ms:passed,z.test.mjs:10ms:passed');
 });
+
+test('System reporter转发黄金journey分段计时并忽略其他测试输出', async () => {
+  const timing = '[buildr-golden-journey-timing] {"schemaVersion":"buildr.golden-journey-timing/v1"}\n';
+  async function* events() {
+    yield { type: 'test:stderr', data: { message: 'ordinary diagnostic\n' } };
+    yield { type: 'test:stderr', data: { message: timing } };
+  }
+
+  assert.equal(await collect(systemFileTimingReporter(events())), `${timing}[buildr-system-file-timing] scope=transient files=0 slowest-first=\n`);
+});

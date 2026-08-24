@@ -21,12 +21,13 @@ Buildr Product Project MUST 在 canonical Service registry（`services/manifest.
 - **AND** Project root MUST NOT 将前端源码工程声明为第二份 package root 与 `buildr` 重叠
 
 ### Requirement: buildr 必须在构建或打包时消费 buildr-web 产物并继续同源托管
-`buildr` Buildr Web HTTP interface MUST 继续通过 loopback 同源托管已纳入 `buildr` 的 Buildr Web 构建产物（现有 `src/interfaces/local-app/web-dist` 或等价可证明路径）。`buildr` 的开发构建、npm pack 或 launcher 构建步骤 MUST 从 `buildr-web` 构建输出复制或同步到该托管路径。运行已安装 npm package、launcher 或仅含 dist 的 checkout 时，主机 MUST NOT 要求 `buildr-web` 源码树存在。
+`buildr` Buildr Web HTTP interface MUST 继续通过 loopback 同源托管已纳入 `buildr` 顶层 `web-dist/` 的 Buildr Web 正式构建产物。`buildr` 的开发构建、npm pack 或 launcher 构建步骤 MUST 从 `buildr-web` 构建输出写入该唯一托管路径。运行已安装 npm package、launcher 或仅含 dist 的 checkout 时，主机 MUST NOT 要求 `buildr-web` 源码树存在。
 
 #### Scenario: 构建交接写入可证明托管路径
 - **WHEN** 维护者执行会产出可发布或可启动 Buildr Web 的 `buildr` 构建/打包步骤
-- **THEN** 步骤 MUST 将 `buildr-web` 的静态构建产物置于 `buildr` 可证明的 web dist 路径
+- **THEN** 步骤 MUST 将 `buildr-web` 的静态构建产物置于 `buildr/web-dist/`
 - **AND** Buildr Web HTTP MUST 能从该路径服务 shell 并注入本机 session meta
+- **AND** 旧 `src/interfaces/local-app/web-dist/` MUST 不存在且不得作为 fallback
 
 #### Scenario: 无 buildr-web 源码仍可打开已打包应用
 - **WHEN** 环境仅有已包含 web dist 的 `buildr` package 或 launcher bundle

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult } from '../../src/domain/task-retrospective/task-retrospective.mjs';
+import { normalizeTaskRetrospectiveDisposition, normalizeTaskRetrospectiveResult } from '../../src/task/domain/task-retrospective.mjs';
 
 const valid = {
   schemaVersion: 'buildr.task-retrospective-result/v1',

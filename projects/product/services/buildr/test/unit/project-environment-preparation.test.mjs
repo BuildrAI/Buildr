@@ -5,7 +5,7 @@ import {
   normalizeProjectEnvironmentPreparation,
   parseProjectEnvironmentPreparation,
   projectEnvironmentPreparationScopeSelector,
-} from '../../src/domain/task-environment/project-environment-preparation.mjs';
+} from '../../src/task/domain/project-environment-preparation.mjs';
 
 const npmStep = {
   id: 'npm-ci', cwd: '.', executable: { kind: 'workspace-foundation', name: 'npm' }, args: ['ci'],

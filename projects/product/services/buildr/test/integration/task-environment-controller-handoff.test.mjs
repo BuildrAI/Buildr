@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { registerTaskEnvironmentApplication } from '../../src/application/task-environment/task-environment-application.mjs';
-import { normalizeTaskEnvironmentPlan, taskEnvironmentPlanDigest } from '../../src/domain/task-environment/task-environment-plan.mjs';
+import { registerTaskEnvironmentApplication } from '../../src/task/application/task-environment-application.mjs';
+import { normalizeTaskEnvironmentPlan } from '../../src/task/domain/task-environment-plan.mjs';
 
 const TASK_ID = 'controller-binding';
 const GIT_PROVIDER = 'buildr.git-worktree-provider/v1';
@@ -27,9 +27,11 @@ function writeController(controllerRoot, marker = 'm1') {
   fs.mkdirSync(path.join(controllerRoot, 'package'), { recursive: true });
   fs.writeFileSync(path.join(controllerRoot, 'src', 'controller.mjs'), `export const controller = '${marker}';\n`);
   fs.writeFileSync(path.join(controllerRoot, 'bin', 'buildr.mjs'), `#!/usr/bin/env node
+import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
-else if (args[0] === 'sync') process.stdout.write('synced\\n');
+else if (args[0] === 'sync') { fs.writeFileSync('candidate-sync-pollution.txt', 'polluted\\n'); process.stdout.write('synced\\n'); }
+else if (args[0] === 'render' && args.includes('--product-skill')) process.stdout.write('rendered product Skill\\n');
 else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
 else process.exitCode = 1;
 `);
@@ -40,7 +42,7 @@ else process.exitCode = 1;
 
 function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
   const planPayload = {
-    schemaVersion: 'buildr.task-environment-plan/v2',
+    schemaVersion: 'buildr.task-environment-plan/v3',
     projects: [{
       project: 'product', source: { kind: 'task-inline', path: null, identity: null },
       scopes: [
@@ -48,8 +50,9 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
         { selector: 'service:product/buildr', disposition: 'not-applicable', reason: 'Controller fixture has no technical preparation Step.', recipes: [] },
       ],
     }],
+    capabilityPreparation: [],
   };
-  const plan = normalizeTaskEnvironmentPlan({ ...planPayload, identity: taskEnvironmentPlanDigest(planPayload) }, { scopeSelectors: ['project:product', 'service:product/buildr'] });
+  const plan = normalizeTaskEnvironmentPlan(planPayload, { scopeSelectors: ['project:product', 'service:product/buildr'] });
   const probes = {
     runtime: { status: 'ready', identity: 'runtime-m1', observedAt: timestamp, diagnostic: null },
     cli: { status: 'ready', identity: 'cli-m1', observedAt: timestamp, diagnostic: null },
@@ -57,10 +60,11 @@ function receipt({ root, controllerRoot, executionRoot, isolated, timestamp }) {
     projection: { status: 'ready', identity: 'projection-m1', observedAt: timestamp, diagnostic: null },
   };
   return {
-    schemaVersion: 'buildr.task-environment-receipt/v5',
+    schemaVersion: 'buildr.task-environment-receipt/v6',
     taskId: TASK_ID,
     workspace: { id: 'workspace-fixture', root },
     controller: { sourceRoot: controllerRoot, cliSource: path.join(controllerRoot, 'bin', 'buildr.mjs'), identity: 'sha256-created-at-m1', adapter: 'codex' },
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
     status: 'ready',
     scopes: [{
       selector: 'workspace', kind: 'workspace', project: null, service: null, sourcePath: '.', executionRoot, validationRoot: executionRoot, shared: !isolated,
@@ -96,9 +100,11 @@ function fixture(t, { withReceipt = true, isolated = withReceipt } = {}) {
   writeController(alternateControllerRoot, 'alternate');
   fs.mkdirSync(path.dirname(productCli), { recursive: true });
   fs.writeFileSync(productCli, `#!/usr/bin/env node
+import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'version') process.stdout.write(JSON.stringify({ version: 'fixture' }) + '\\n');
-else if (args[0] === 'sync') process.stdout.write('synced\\n');
+else if (args[0] === 'sync') { fs.writeFileSync('candidate-sync-pollution.txt', 'polluted\\n'); process.stdout.write('synced\\n'); }
+else if (args[0] === 'render' && args.includes('--product-skill')) process.stdout.write('rendered product Skill\\n');
 else if (args[0] === 'runtime' && args[1] === 'check') process.stdout.write('Projection identity: candidate-projection\\n');
 else process.exitCode = 1;
 `);
@@ -126,7 +132,7 @@ else process.exitCode = 1;
     file: `workspace-sqlite:task-environment/${TASK_ID}`,
     receipt: receipt({ root, controllerRoot, executionRoot: isolated ? taskRoot : root, isolated, timestamp }),
   } : null;
-  const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
+  const calls = { writes: 0, providerPlans: 0, providerMutations: 0, providerCleanups: 0, providerCleanupInput: null, projectionChecks: 0, resourceProbes: 0, resourceCleanups: 0 };
   let retainedProjectionReady = true;
   const providerEvidence = {
     branch: `tasks/${TASK_ID}`,
@@ -176,8 +182,9 @@ else process.exitCode = 1;
       return { status: 'ready', repositories: providerEvidence.repositories, evidencePath: path.join(root, '.git', 'buildr', 'task-worktrees', `${TASK_ID}.json`), effects: [] };
     },
     inspectGitWorktrees: () => ({ status: 'ready', repositories: providerEvidence.repositories, diagnostic: null }),
-    cleanupGitWorktrees: () => {
+    cleanupGitWorktrees: (input) => {
       calls.providerCleanups += 1;
+      calls.providerCleanupInput = input;
       return { status: 'cleaned', effects: [] };
     },
     probeTaskEnvironmentResource: (resource) => {
@@ -240,7 +247,7 @@ else process.exitCode = 1;
   assert.equal(fs.existsSync(path.join(productRoot, 'bin', 'buildr.mjs')), true);
 });
 
-test('retained controller uses candidate CLI to sync and verify a candidate-owned runtime projection', (t) => {
+test('retained controller uses candidate CLI to render and verify a candidate-owned runtime projection without source sync', (t) => {
   const current = fixture(t);
   current.setRetainedProjectionReady(false);
 
@@ -248,6 +255,8 @@ test('retained controller uses candidate CLI to sync and verify a candidate-owne
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.environment.scopes[0].projection.identity, 'candidate-projection');
   assert.equal(prepared.environment.controller.identity, 'sha256-created-at-m1');
+  assert.equal(fs.existsSync(path.join(current.taskRoot, 'candidate-sync-pollution.txt')), false);
+  assert.equal(git(current.taskRoot, ['status', '--short']), '');
 
   const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
   assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
@@ -437,4 +446,97 @@ test('cleanup keeps the existing unauthorized diagnostic persistence behavior', 
   assert.equal(result.diagnostic.code, 'task_environment_cleanup_unauthorized');
   assert.equal(current.calls.writes, 1);
   assert.equal(current.receipt().latest.cleanup.status, 'blocked');
+});
+
+test('completed Task可由持久化交付证据独立授权Environment cleanup', async (t) => {
+  const current = fixture(t);
+  const containment = {
+    schemaVersion: 'buildr.task-delivery-containment-proof/v1',
+    identity: `sha256-${'3'.repeat(64)}`,
+    taskContributionIdentity: `sha256-${'4'.repeat(64)}`,
+    targetRef: current.m1,
+    changedPaths: ['feature.txt'],
+    checkedPaths: [],
+  };
+  const taskContribution = {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: containment.taskContributionIdentity,
+    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
+    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
+  };
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '任务贡献已验证交付。', noChange: false },
+  } });
+  current.runtime.readTaskFinishCompletionPersistence = () => ({
+    status: 'complete',
+    completion: {
+      result: {
+        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
+        repositories: [{
+          selector: 'workspace',
+          taskContribution,
+          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment },
+        }],
+      },
+    },
+  });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.equal(current.calls.providerCleanupInput.integratedRefs.workspace, current.m1);
+  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, { ...containment, taskContribution });
+});
+
+test('completed reconciliation以持久化agent-reviewed equivalence授权Environment cleanup', async (t) => {
+  const current = fixture(t);
+  const taskContribution = {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: `sha256-${'4'.repeat(64)}`,
+    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
+    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
+  };
+  const carrier = {
+    identity: `sha256-${'7'.repeat(64)}`,
+    kind: 'git-isolated-commit',
+    head: current.m1,
+    tree: git(current.root, ['rev-parse', `${current.m1}^{tree}`]),
+    changedPaths: ['feature.txt'],
+  };
+  const equivalence = {
+    status: 'equivalent',
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    semanticEquivalence: 'agent-reviewed-not-proven-by-buildr',
+    carrierIdentity: carrier.identity,
+    taskContributionIdentity: taskContribution.identity,
+  };
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID,
+    status: 'completed',
+    result: { summary: '适配后的任务贡献已验证交付。', noChange: false },
+  } });
+  current.runtime.readTaskFinishCompletionPersistence = () => ({
+    status: 'complete',
+    completion: {
+      result: {
+        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
+        repositories: [{
+          selector: 'workspace', taskContribution, deliveryCarrier: carrier, equivalence,
+          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment: null },
+        }],
+      },
+    },
+  });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, {
+    ...carrier,
+    reuseMode: 'agent-reviewed-delivery-adaptation',
+    taskContribution,
+    deliveryEquivalence: equivalence,
+  });
 });

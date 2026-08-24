@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路径', () => {
-  const application = read('src/application/project-daily-progress/project-daily-progress-application.mjs');
+  const application = read('src/workspace/application/project-daily-progress-application.mjs');
   for (const required of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress', 'inspectTaskRecord', 'readProjectRegistryRecord']) {
     assert.ok(application.includes(required), required);
   }
@@ -17,19 +17,21 @@ test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路
 });
 
 test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON identity', () => {
-  const registry = read('src/interfaces/cli/registry.mjs');
-  const cli = read('src/interfaces/cli/project-daily-progress.mjs');
-  const server = read('src/interfaces/local-app/http/server.mjs');
-  const json = read('src/application/json-contracts.mjs');
-  const skill = read('package/targets/workspace/skills/buildr/project-daily-progress/SKILL.md');
-  const gitignore = read('package/targets/workspace/gitignore');
+  const workspaceModule = read('src/workspace/module.mjs');
+  const cli = read('src/workspace/interfaces/cli/project-daily-progress.mjs');
+  const http = read('src/workspace/interfaces/http/workspace-http.mjs');
+  const json = read('src/infrastructure/contracts/public-json.mjs');
+  const skill = read('resources/workspace/skills/buildr/project-daily-progress/SKILL.md');
+  const gitignore = read('resources/workspace/gitignore');
   for (const command of ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list']) {
-    assert.ok(registry.includes(command), command);
+    assert.ok(workspaceModule.includes(command), command);
   }
-  assert.match(registry, /surface: "agent-machine"/);
+  assert.match(workspaceModule, /surface: 'agent-machine'/);
   for (const method of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress']) {
-    assert.ok(cli.includes(method) || server.includes(method), method);
+    assert.ok(cli.includes(method) || http.includes(method), method);
   }
+  assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
+  assert.equal(read('src/web/http/server.mjs').includes('inspectProjectDailyProgress'), false);
   for (const schema of [
     'buildr.project-daily-progress-record-result/v1',
     'buildr.project-daily-progress-inspect-result/v1',

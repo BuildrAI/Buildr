@@ -11,7 +11,7 @@ recipes:
         cwd: .
         executable:
           kind: project
-          path: services/buildr/scripts/run-development-npm
+          path: services/buildr/tools/development/run-development-npm
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs:
@@ -30,7 +30,7 @@ recipes:
         cwd: .
         executable:
           kind: project
-          path: services/buildr/scripts/run-development-npm
+          path: services/buildr/tools/development/run-development-npm
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs:

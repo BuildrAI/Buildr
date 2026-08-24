@@ -35,7 +35,7 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     }
   });
   const root = path.join(base, 'workspace');
-  const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'package', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
+  const managerStatus = run('git', ['status', '--porcelain', '--', 'bin', 'src', 'resources', 'web-dist', 'tools', 'package', 'docs', 'package.json', 'package-lock.json'], { cwd: serviceRoot });
   const controller = managerStatus.trim()
     ? materializeCleanProductSource(serviceRoot, path.join(base, 'prepared-controller'))
     : { root: serviceRoot, cli: path.join(serviceRoot, 'bin', 'buildr.mjs') };
@@ -47,7 +47,12 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
   const candidateBuildr = path.join(productRoot, 'services', 'buildr');
   const candidateWeb = path.join(productRoot, 'services', 'buildr-web');
   fs.mkdirSync(candidateBuildr, { recursive: true });
-  fs.mkdirSync(path.join(candidateBuildr, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'tools', 'development'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'tools', 'contracts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'infrastructure', 'contracts'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'task', 'interfaces', 'http', 'generated'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'workspace', 'interfaces', 'http', 'generated'), { recursive: true });
+  fs.mkdirSync(path.join(candidateBuildr, 'src', 'agent-assets', 'interfaces', 'http', 'generated'), { recursive: true });
   fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(productRoot, '.node-version'));
   fs.copyFileSync(path.join(serviceRoot, 'package.json'), path.join(candidateBuildr, 'package.json'));
   fs.copyFileSync(path.join(serviceRoot, 'package-lock.json'), path.join(candidateBuildr, 'package-lock.json'));
@@ -60,8 +65,31 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     'run-development-node.cmd',
     'run-development-npm.cmd',
   ]) {
-    fs.copyFileSync(path.join(serviceRoot, 'scripts', script), path.join(candidateBuildr, 'scripts', script));
-    if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'scripts', script), 0o755);
+    fs.copyFileSync(path.join(serviceRoot, 'tools', 'development', script), path.join(candidateBuildr, 'tools', 'development', script));
+    if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'tools', 'development', script), 0o755);
+  }
+  for (const relative of [
+    'tools/contracts/task-record-dto.mjs',
+    'tools/contracts/task-professional-dto.mjs',
+    'tools/contracts/workspace-agent-assets-dto.mjs',
+    'tools/contracts/runtime-system-dto.mjs',
+    'src/infrastructure/contracts/json-schema-validator.mjs',
+    'src/task/interfaces/http/task-record-http-contracts.mjs',
+    'src/task/interfaces/http/generated/task-record-http-dto.ts',
+    'src/task/interfaces/http/task-professional-http-contracts.mjs',
+    'src/task/interfaces/http/generated/task-professional-http-dto.ts',
+    'src/workspace/interfaces/http/workspace-http-contracts.mjs',
+    'src/workspace/interfaces/http/generated/workspace-http-dto.ts',
+    'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
+    'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts',
+    'src/web/http/buildr-web-http-contracts.mjs',
+    'src/web/http/generated/runtime-system-http-dto.ts',
+    'src/system/installation/interfaces/http/release-awareness-http-contracts.mjs',
+    'src/system/publication/interfaces/http/publication-http-contracts.mjs',
+  ]) {
+    const target = path.join(candidateBuildr, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(serviceRoot, relative), target);
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];
@@ -107,7 +135,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
+        executable: { kind: project, path: services/buildr/tools/development/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]
@@ -119,7 +147,7 @@ recipes:
     steps:
       - id: npm-ci
         cwd: .
-        executable: { kind: project, path: services/buildr/scripts/run-development-npm }
+        executable: { kind: project, path: services/buildr/tools/development/run-development-npm }
         args: [ci]
         inputs: [package.json, package-lock.json]
         outputs: [{ path: node_modules, kind: directory }]
@@ -154,7 +182,7 @@ recipes:
   const prepareFinishedAt = Date.now();
   assert.equal(prepared.status, 'ready', JSON.stringify(prepared, null, 2));
   assert.equal(prepared.schemaVersion, 'buildr.task-environment-result/v4');
-  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v5');
+  assert.equal(prepared.environment.schemaVersion, 'buildr.task-environment-receipt/v6');
   assert.equal(prepared.environment.preparationDeclarations[0].source, 'project-declaration');
   assert.equal(prepared.environment.preparationDeclarations[0].status, 'ready');
   assert.deepEqual(prepared.environment.preparationRecipes.map((recipe) => [recipe.scope, recipe.status]), [
@@ -180,12 +208,13 @@ recipes:
   assert.equal(fs.realpathSync(path.join(worktreeWeb, 'node_modules', '.bin', 'vite')).startsWith(worktreeWeb), true);
 
   const managedNpm = prepared.environment.preparationSteps.find((step) => step.scope === 'service:product/buildr').executable;
+  const runtimeInvocation = prepared.environment.runtimeInvocation;
   const systemCommandPaths = process.platform === 'win32'
     ? [process.env.SystemRoot && path.join(process.env.SystemRoot, 'System32'), process.env.SystemRoot].filter(Boolean)
     : ['/usr/bin', '/bin'];
-  const managedPath = [path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
+  const managedPath = [runtimeInvocation.searchPrefix, path.dirname(managedNpm), ...systemCommandPaths].join(path.delimiter);
   const buildWebStartedAt = Date.now();
-  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, PATH: managedPath } });
+  run(managedNpm, ['run', 'build:web'], { cwd: worktreeBuildr, env: { ...process.env, BUILDR_NODE: runtimeInvocation.executable, PATH: managedPath } });
   phase.record('build-web', buildWebStartedAt, Date.now());
-  assert.equal(fs.existsSync(path.join(worktreeBuildr, 'src', 'interfaces', 'local-app', 'web-dist', 'index.html')), true);
+  assert.equal(fs.existsSync(path.join(worktreeBuildr, 'web-dist', 'index.html')), true);
 });

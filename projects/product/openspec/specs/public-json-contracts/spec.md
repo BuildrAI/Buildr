@@ -557,3 +557,49 @@ Buildr 每日演进 CLI 与本机 HTTP 的 `--json` / JSON 响应 MUST 在顶层
 - **WHEN** 已保存文件引用的 Task 在读取时已不存在
 - **THEN** JSON MUST 将该引用标为未解析
 - **AND** MUST NOT 删除文件中的 Task ID
+
+### Requirement: Parent Coordination 必须只发布单一 v3 紧凑结果
+Buildr MUST 让全部 Parent coordination action 与业务错误返回 `buildr.parent-coordination-result/v3`，并 MUST 在同一结果中只保留一份 Plan、work item、binding、next action 与最终验收 readiness 表达。v2 MUST 在本版本终止，不得保留 alias、compatibility adapter 或按入口返回不同 major。
+
+#### Scenario: Agent读取大型Parent
+- **WHEN** Agent通过checkout或npm package运行任一`task parent` action并请求JSON
+- **THEN** payload MUST声明`buildr.parent-coordination-result/v3`
+- **AND** checkout、npm与HTTP MUST返回同一字段语义且不包含v2重复字段
+
+#### Scenario: v2消费者迁移
+- **WHEN** 消费者从v2升级到v3
+- **THEN** migration MUST要求使用`plan`、顶层`contributions`、`prerequisitesSatisfied`、`startup.next`与`boundContributions`
+- **AND** MUST不提供继续请求v2的开关或fallback
+
+### Requirement: 公共 JSON identity 与 envelope 必须有唯一技术 owner
+Buildr MUST 将当前公共 JSON schema identity registry 与 envelope helper 归入 Infrastructure Contracts 的唯一生产 owner；所有现有调用者 MUST复用该 owner，且本次结构迁移 MUST NOT改变任何已登记 identity、payload 字段、stdout/stderr 或退出行为。
+
+#### Scenario: 模块生成既有公开 JSON
+- **WHEN** 任一 CLI、Task、Workspace、System、Verification 或 Agent Assets 模块生成已有 public JSON family
+- **THEN** 模块 MUST从 Infrastructure Contracts 取得相同 schema identity 与 envelope helper
+- **AND** 输出 MUST与迁移前的 schemaVersion、payload 和退出语义等价
+
+#### Scenario: 检查旧全局 Application helper
+- **WHEN** 架构验证扫描 Buildr Service 生产源码
+- **THEN** `src/application/json-contracts.mjs` MUST不存在
+- **AND** 生产代码与验证清单 MUST不再引用该旧路径
+
+#### Scenario: 后续 contract system 保持排除
+- **WHEN** 本 Change 完成
+- **THEN** Buildr MUST NOT因本次迁移引入完整 JSON Schema、Ajv、DTO 自动生成或 typed client
+
+### Requirement: Publication platform 必须新写入 Buildr Web 并兼容读取旧值
+publication platform 的 canonical writer MUST 写入 `buildr-web`；reader MUST 接受 `buildr-web` 与历史 `local-app` 并将两者投影为 Buildr Web。未知值 MUST fail closed。
+
+#### Scenario: 读取历史 publication
+- **WHEN** reader 收到 platform 值 `local-app`
+- **THEN** reader MUST 成功解析并向用户展示 Buildr Web
+
+#### Scenario: 写入当前 publication
+- **WHEN** Buildr 生成或更新 publication target
+- **THEN** payload MUST 使用 `buildr-web`
+- **AND** 不得生成新的 `local-app` canonical payload
+
+#### Scenario: 拒绝未知 platform
+- **WHEN** reader 收到未登记的 platform 值
+- **THEN** 解析 MUST fail closed 并返回稳定诊断

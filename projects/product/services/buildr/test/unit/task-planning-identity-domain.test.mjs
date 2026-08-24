@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createTaskPlanningIdentity } from '../../src/domain/task-planning-identity/task-planning-identity.mjs';
+import { createTaskPlanningIdentity } from '../../src/task/domain/task-planning-identity.mjs';
 
 const proposal = `# Demo
 
