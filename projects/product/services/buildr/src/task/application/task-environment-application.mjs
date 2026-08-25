@@ -121,9 +121,19 @@ export function registerTaskEnvironmentApplication(runtime) {
             deliveryEquivalence: state.equivalence,
           }
         : null;
+      const reconstructedDeterministicProof = state?.deliveryCarrier
+        && state?.taskContribution?.originalBaseline?.head
+        && state.deliveryCarrier.expectedTargetRef === state.taskContribution.originalBaseline.head
+        ? {
+            ...state.deliveryCarrier,
+            reuseMode: 'deterministic-reuse',
+            taskContribution: state.taskContribution,
+            deliveryBaseline: state.taskContribution.originalBaseline,
+          }
+        : null;
       const proof = state?.delivery?.containment?.schemaVersion === 'buildr.task-delivery-containment-proof/v1'
         ? { ...state.delivery.containment, taskContribution: state.taskContribution }
-        : adaptedProof || state?.deliveryCarrier || state?.cleanupProof || null;
+        : adaptedProof || reconstructedDeterministicProof || state?.deliveryCarrier || state?.cleanupProof || null;
       if (!targetRef || !proof) return null;
       deliveries[plan.selector] = targetRef;
       integratedContributions[plan.selector] = proof;

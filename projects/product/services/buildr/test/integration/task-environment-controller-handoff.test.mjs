@@ -525,6 +525,45 @@ test('completed Task可由持久化交付证据独立授权Environment cleanup',
   assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, { ...containment, taskContribution });
 });
 
+test('历史compact terminal从matching original baseline重建deterministic cleanup proof', async (t) => {
+  const current = fixture(t);
+  const baselineTree = git(current.root, ['rev-parse', `${current.m1}^{tree}`]);
+  const taskContribution = {
+    schemaVersion: 'buildr.git-task-contribution/v1',
+    identity: `sha256-${'4'.repeat(64)}`,
+    originalBaseline: { head: current.m1, tree: baselineTree },
+    source: { head: current.m1, tree: baselineTree },
+  };
+  const deliveryCarrier = {
+    identity: `sha256-${'7'.repeat(64)}`,
+    kind: 'git-isolated-commit',
+    head: current.m1,
+    tree: taskContribution.source.tree,
+    expectedTargetRef: current.m1,
+    changedPaths: ['feature.txt'],
+  };
+  current.runtime.readTaskRecordPersistence = () => ({ record: {
+    taskId: TASK_ID, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false },
+  } });
+  current.runtime.readTaskFinishCompletionPersistence = () => ({
+    status: 'complete',
+    completion: { result: {
+      identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
+      repositories: [{ selector: 'workspace', taskContribution, deliveryCarrier, delivery: { status: 'delivered', finalRemoteRef: current.m1 } }],
+    } },
+  });
+
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+
+  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
+  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, {
+    ...deliveryCarrier,
+    reuseMode: 'deterministic-reuse',
+    taskContribution,
+    deliveryBaseline: taskContribution.originalBaseline,
+  });
+});
+
 test('completed reconciliation以持久化agent-reviewed equivalence授权Environment cleanup', async (t) => {
   const current = fixture(t);
   const taskContribution = {
