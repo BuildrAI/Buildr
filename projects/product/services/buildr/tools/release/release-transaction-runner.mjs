@@ -253,6 +253,18 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
     const aggregate = candidateEvidence.aggregate;
     const manifest = candidateEvidence.manifest;
+    const aggregateWorkflow = aggregate?.workflow;
+    const aggregateWorkflowActual = {
+      runId: aggregateWorkflow?.runId == null ? null : String(aggregateWorkflow.runId),
+      aggregateAttempt: Number(aggregateWorkflow?.aggregateAttempt),
+    };
+    const aggregateWorkflowExpected = {
+      runId: String(candidateRunId),
+      aggregateAttempt: Number(candidateRun.run_attempt),
+    };
+    if (JSON.stringify(aggregateWorkflowActual) !== JSON.stringify(aggregateWorkflowExpected)) {
+      throw new Error(`Candidate aggregate workflow identity mismatch: ${JSON.stringify({ expected: aggregateWorkflowExpected, actual: aggregateWorkflowActual })}`);
+    }
     context = createReleaseContext({
       selection: selection.selectionIdentity ? {
         identity: selection.selectionIdentity,

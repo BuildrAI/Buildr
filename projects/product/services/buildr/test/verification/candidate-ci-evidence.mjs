@@ -187,9 +187,19 @@ function evidenceFinding(code, id, detail) {
   return { code, id, detail };
 }
 
-export function aggregateCandidateCiEvidence(evidence, expectedSourceCommit) {
+function workflowAttempt(value) {
+  const attempt = Number(value);
+  return Number.isSafeInteger(attempt) && attempt > 0 ? attempt : null;
+}
+
+export function aggregateCandidateCiEvidence(evidence, expectedSourceCommit, expectedWorkflow = null) {
   const findings = [];
   const registryIdentity = candidateCiRegistryIdentity();
+  const expectedRunId = expectedWorkflow?.runId == null ? null : String(expectedWorkflow.runId);
+  const expectedRunAttempt = workflowAttempt(expectedWorkflow?.runAttempt);
+  if (expectedRunId !== null && expectedRunAttempt === null) {
+    findings.push(evidenceFinding('workflow-aggregate-attempt-invalid', 'Candidate gate', expectedWorkflow?.runAttempt ?? null));
+  }
   const expected = new Map([
     ...CANDIDATE_CI_SHARDS.map((item) => [item.id, { kind: 'shard', runner: item.runner, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
     ...CANDIDATE_CI_HOST_NODE_TUPLES.map((item) => [item.id, { kind: 'host-node', runner: item.runner, primaryStepIds: [], requiresArtifact: true, requestedNode: item.requestedNode }]),
@@ -204,6 +214,7 @@ export function aggregateCandidateCiEvidence(evidence, expectedSourceCommit) {
     else byId.set(item.id, item);
   }
   let artifactIdentity = null;
+  const evidenceAttempts = [];
   for (const [id, expectation] of expected) {
     const item = byId.get(id);
     if (!item) {
@@ -214,6 +225,15 @@ export function aggregateCandidateCiEvidence(evidence, expectedSourceCommit) {
     if (item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
     if (item.sourceCommit !== expectedSourceCommit) findings.push(evidenceFinding('source-mismatch', id, item.sourceCommit));
     if (item.registryIdentity !== registryIdentity) findings.push(evidenceFinding('registry-mismatch', id, item.registryIdentity));
+    if (expectedRunId !== null) {
+      const itemRunId = item.workflow?.runId == null ? null : String(item.workflow.runId);
+      const itemRunAttempt = workflowAttempt(item.workflow?.runAttempt);
+      if (itemRunId === null) findings.push(evidenceFinding('workflow-run-missing', id, null));
+      else if (itemRunId !== expectedRunId) findings.push(evidenceFinding('workflow-run-mismatch', id, itemRunId));
+      if (itemRunAttempt === null) findings.push(evidenceFinding('workflow-attempt-invalid', id, item.workflow?.runAttempt ?? null));
+      else if (expectedRunAttempt !== null && itemRunAttempt > expectedRunAttempt) findings.push(evidenceFinding('workflow-attempt-future', id, itemRunAttempt));
+      if (itemRunId === expectedRunId && itemRunAttempt !== null) evidenceAttempts.push({ id, runAttempt: itemRunAttempt });
+    }
     if (item.status !== 'passed' || item.results.some((result) => result.status !== 'passed')) findings.push(evidenceFinding('result-not-passed', id, item.status));
     if (JSON.stringify(item.primaryStepIds) !== JSON.stringify(expectation.primaryStepIds)) findings.push(evidenceFinding('primary-steps-mismatch', id, item.primaryStepIds));
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
@@ -230,6 +250,11 @@ export function aggregateCandidateCiEvidence(evidence, expectedSourceCommit) {
     sourceCommit: expectedSourceCommit,
     registryIdentity,
     artifact: artifactIdentity,
+    workflow: expectedRunId === null ? null : {
+      runId: expectedRunId,
+      aggregateAttempt: expectedRunAttempt,
+      evidenceAttempts: evidenceAttempts.sort((left, right) => left.id.localeCompare(right.id)),
+    },
     status: findings.length === 0 ? 'passed' : 'failed',
     evidenceIds: [...byId.keys()].sort(),
     findings,

@@ -64,6 +64,9 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /reopen --confirm --reason/);
   assert.match(skill, /support Task terminal、Delivery或Activation都不使release协调Task completed/);
   assert.match(skill, /aggregate失败、缺失或source不匹配时，release协调Task保持active\/blocked/);
+  assert.match(skill, /candidate-failed-shard-retry\.mjs inspect/);
+  assert.match(skill, /rerun --failed/);
+  assert.match(skill, /不得dispatch新的完整run或跨run拼接evidence/);
   assert.match(skill, /全部current前保持active\/blocked，不调用Task Finish或complete/);
   assert.match(skill, /Publication成功后调用`release-git-convergence\.mjs reconcile-dev`/);
   assert.match(skill, /基于current `dev`的release support Task worktree/);

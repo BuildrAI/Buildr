@@ -25,12 +25,13 @@ const artifact = {
   sourceCommit,
 };
 
-function passedEvidence() {
+function passedEvidence(workflow = null) {
   const registryIdentity = candidateCiRegistryIdentity();
   const shards = CANDIDATE_CI_SHARDS.map((shard) => createCandidateCiEvidence({
     kind: 'shard',
     id: shard.id,
     platform: shard.runner === 'macos' ? 'darwin' : 'win32',
+    workflow: workflow ? { ...workflow } : null,
     sourceCommit,
     registryIdentity,
     artifact: shard.requiresArtifact || shard.producesArtifact ? artifact : null,
@@ -45,6 +46,7 @@ function passedEvidence() {
     kind: 'host-node',
     id: tuple.id,
     platform: tuple.runner === 'macos' ? 'darwin' : 'win32',
+    workflow: workflow ? { ...workflow } : null,
     sourceCommit,
     registryIdentity,
     artifact,
@@ -117,6 +119,31 @@ test('Candidate aggregate accepts one current complete evidence set', () => {
   assert.deepEqual(result.findings, []);
   assert.equal(result.evidenceIds.length, CANDIDATE_CI_SHARDS.length + CANDIDATE_CI_HOST_NODE_TUPLES.length);
   assert.deepEqual(result.artifact, artifact);
+});
+
+test('Candidate aggregate accepts mixed attempts from the same workflow run', () => {
+  const runId = '32807422982';
+  const complete = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
+  const retriedId = 'core-package-runtime-release-macos';
+  complete.find((item) => item.id === retriedId).workflow.runAttempt = '2';
+  const result = aggregateCandidateCiEvidence(complete, sourceCommit, { runId, runAttempt: '2', job: 'candidate-gate' });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.workflow.runId, runId);
+  assert.equal(result.workflow.aggregateAttempt, 2);
+  assert.deepEqual(result.workflow.evidenceAttempts.find((item) => item.id === retriedId), { id: retriedId, runAttempt: 2 });
+  assert.ok(result.workflow.evidenceAttempts.some((item) => item.runAttempt === 1));
+});
+
+test('Candidate aggregate rejects cross-run and future-attempt evidence', () => {
+  const runId = '32807422982';
+  const crossRun = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
+  crossRun[0].workflow.runId = '32807924791';
+  assert.ok(aggregateCandidateCiEvidence(crossRun, sourceCommit, { runId, runAttempt: '2' }).findings.some((item) => item.code === 'workflow-run-mismatch'));
+
+  const future = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
+  future[0].workflow.runAttempt = '3';
+  assert.ok(aggregateCandidateCiEvidence(future, sourceCommit, { runId, runAttempt: '2' }).findings.some((item) => item.code === 'workflow-attempt-future'));
+  assert.ok(aggregateCandidateCiEvidence(passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' }), sourceCommit, { runId, runAttempt: null }).findings.some((item) => item.code === 'workflow-aggregate-attempt-invalid'));
 });
 
 test('Candidate shard evidence retains bounded failure diagnostics', () => {
