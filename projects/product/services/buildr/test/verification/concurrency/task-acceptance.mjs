@@ -196,7 +196,7 @@ try {
     'verification', 'run', '--project', 'nested', '--plan', verificationPlans[summary.tasks.indexOf(task)],
     '--target-identity', digest(`target:${task.taskId}`), '--target', task.environmentRoot,
     '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
-    '--environment', task.taskId, '--workspace', workspace, '--json',
+    '--environment', task.taskId, '--workspace', workspace, '--detail', 'full', '--json',
   ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(15_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);

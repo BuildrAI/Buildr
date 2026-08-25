@@ -32,6 +32,8 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /__internal task-retrospective list/);
   assert.match(skill, /默认.*pending.*摘要/);
   assert.match(skill, /--include-report/);
+  assert.match(skill, /--max-bytes <1\.\.1048576>/);
+  assert.match(skill, /262144 UTF-8字节预算/);
   assert.match(skill, /`handled\|no-action` 必须提供非空完整处理意见/);
   assert.match(skill, /digest冲突，重新inspect/);
   assert.match(skill, /完整原始 `reportMarkdown`/);

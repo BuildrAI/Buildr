@@ -38,7 +38,7 @@ function declaredCapability(id, script, overrides = {}) {
 }
 
 function runArgs(root, capabilities) {
-  return ['verification', 'run', '--project', 'demo', ...capabilities.flatMap((id) => ['--capability', id]), '--target-identity', 'target:demo', '--target', root, '--json'];
+  return ['verification', 'run', '--project', 'demo', ...capabilities.flatMap((id) => ['--capability', id]), '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json'];
 }
 
 test('verification plan形成可执行Plan，run拒绝stale declaration', (t) => {
@@ -59,13 +59,13 @@ test('verification plan形成可执行Plan，run拒绝stale declaration', (t) =>
   const planPath = path.join(root, 'plan.json');
   fs.writeFileSync(planPath, JSON.stringify(plan));
 
-  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--json']);
+  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json']);
   assert.equal(execution.status, 0, execution.stderr || execution.stdout);
   assert.equal(JSON.parse(execution.stdout).plan.identity, plan.identity);
 
   declaration.capabilities[0].title = 'Changed declaration';
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(declaration));
-  const stale = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--json']);
+  const stale = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json']);
   assert.equal(stale.status, 2);
   assert.match(JSON.parse(stale.stdout).error.message, /declaration identity is stale/);
 });
@@ -108,6 +108,8 @@ test('verification run help将retry限定为同invocation独立执行', () => {
   assert.match(result.stdout, /active或terminal record/);
   assert.match(result.stdout, /只有显式--retry创建同invocation的独立run\/record/);
   assert.match(result.stdout, /identity输入变化仍创建首次执行/);
+  assert.match(result.stdout, /--detail <compact\|full>/);
+  assert.match(result.stdout, /默认返回buildr\.long-running-operation-summary\/v1/);
 });
 
 test('verification run 并发执行显式 v3 capabilities 并只产生 transient execution evidence', (t) => {
@@ -276,7 +278,11 @@ test('verification run 对无 capability/target 的请求返回单一 JSON envel
   assert.equal(result.status, 2);
   assert.equal(result.stderr, '');
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
+  assert.equal(payload.schemaVersion, 'buildr.long-running-operation-summary/v1');
+  assert.equal(payload.detail, 'compact');
+  assert.equal(payload.terminal, true);
   assert.equal(payload.status, 'failed');
-  assert.equal(payload.error.code, 'verification.invalid_request');
+  assert.equal(payload.primaryFailure.code, 'verification.invalid_request');
+  assert.equal(payload.recovery, null);
+  for (const forbidden of ['checks', 'target', 'project', 'evidenceReference']) assert.equal(Object.hasOwn(payload, forbidden), false, forbidden);
 });

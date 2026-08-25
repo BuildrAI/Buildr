@@ -1155,6 +1155,7 @@ export function createPackageStaticValidator(deps) {
           'buildr task verification reconcile <task-id>',
           'buildr verification run --project <code>',
           'buildr.verification-execution/v1',
+          'buildr.long-running-operation-summary/v1',
           'coverage gap',
           '不自动创建测试、脚本、CI 或框架',
           'Task Verification Application',
