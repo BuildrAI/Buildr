@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fetchRemoteText, remoteTextTimeouts } from '../../../src/infrastructure/network/fetch-remote-text.mjs';
+import { streamRemoteText } from '../../../src/infrastructure/network/stream-remote-text.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -72,7 +73,7 @@ function run(args, options = {}) {
     env: options.env ?? process.env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-    timeout: 10000,
+    timeout: options.timeout ?? 10000,
   });
   if ((options.expected ?? 0) !== result.status) throw new Error(`buildr ${args.join(' ')} returned ${result.status}:\n${result.stderr || result.stdout || result.error?.message}`);
   return result;
@@ -111,17 +112,18 @@ try {
   assert.throws(() => remoteTextTimeouts({ BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '0' }), /must be an integer/);
   assert.throws(() => remoteTextTimeouts({ BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '120001' }), /must be an integer/);
 
+  const inactivityStarted = Date.now();
+  await assert.rejects(
+    streamRemoteText(`${baseUrl}/hang`, 150, 0, { env: offlineEnv, stdout: { write() {} } }),
+    /Remote (?:request|response) inactivity timeout after 150ms/,
+  );
+  assert(Date.now() - inactivityStarted < 5000, 'remote text inactivity timeout was not bounded');
+
   const timeoutEnv = {
     ...offlineEnv,
     BUILDR_REMOTE_SKILL_INACTIVITY_TIMEOUT_MS: '150',
-    BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '1200',
+    BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS: '10000',
   };
-  const started = Date.now();
-  assert.throws(
-    () => fetchRemoteText(`${baseUrl}/hang`, { label: 'timeout fixture', env: timeoutEnv, invocation: directInvocation }),
-    /Remote (?:request|response) inactivity timeout after 150ms/,
-  );
-  assert(Date.now() - started < 5000, 'remote text timeout was not bounded');
 
   const totalTimeoutEnv = {
     ...offlineEnv,
@@ -136,8 +138,9 @@ try {
   fs.mkdirSync(workspace);
   run(['init', '--target', workspace, '--name', 'remote-timeout', '--profile', 'personal']);
   run(['skills', 'add', 'slow-skill', '--resolved-source', `${baseUrl}/hang`, '--scope', '.', '--target', workspace]);
-  const render = run(['skills', 'render', 'codex', '--scope', '.', '--target', workspace], { env: timeoutEnv, expected: 1 });
+  const render = run(['skills', 'render', 'codex', '--scope', '.', '--target', workspace], { env: timeoutEnv, expected: 1, timeout: 15000 });
   assert.match(render.stderr, /Failed to fetch workspace Skill slow-skill/);
+  assert.match(render.stderr, /Remote (?:request|response) inactivity timeout after 150ms/);
   assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'slow-skill')), false);
   console.log('Remote text timeout verification passed.');
 } finally {
