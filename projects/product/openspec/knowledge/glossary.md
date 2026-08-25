@@ -590,10 +590,20 @@
 
 ## 验证能力声明（Verification Capability Declaration）
 
-- 定义：Project 根 `verification.yml` 中由团队确认的现有验证能力目录，使用 closed `buildr.project-verification/v2`，声明 capability identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求和必要的环境/副作用边界。
+- 定义：Project 根 `verification.yml` 中由团队确认的现有测试能力族目录，只使用 closed `buildr.project-verification/v3`，声明scope、proves、evidence、usable targets、discovery、affected/full/provider入口和必要执行边界；一次性选择由内容寻址Verification Plan保存。
 - 适用范围：Task Verification 选择已有 command、脚本、CI wrapper 或 bounded Agent 操作时的 Project policy 输入。
 - 避免混用：不是 Project Testing、测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
+## 验证请求（Verification Request）
+
+- 定义：为一次验证选择冻结Project/Service、Task Delivery或Product Artifact Candidate或Published Release目标、affected/full/release-only范围、changed paths/risks、declaration identities与可信dependency输入的closed内容寻址值。
+- 避免混用：不是执行命令、一次性Agent推理或Result；Request变化必须生成新Plan。
+
+## 验证计划（Verification Plan）
+
+- 定义：由matching Request与current v3声明或稳定provider确定性生成的closed内容寻址值，保存selected items、direct/dependency/full理由、coverage gaps、execution units及request/declaration/provider identities。
+- 避免混用：Plan preview不是execution evidence；provider内部完整DAG、Context cache和未选step不进入公共Plan，正式records必须绑定同一个current Plan。
 
 ## 验证执行证据（Verification Execution Evidence）
 

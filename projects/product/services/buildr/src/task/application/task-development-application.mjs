@@ -294,12 +294,11 @@ export function registerTaskDevelopmentApplication(runtime) {
         source: inputText(item.source, `overrides[${index}].source`),
       };
     });
-    const overrideKeys = new Set(overrides.map((item) => `${item.project}/${item.capability}`));
-    for (const capability of capabilities) {
-      const observation = observationByProject.get(capability.project);
-      const declaration = observation.declaration.capabilities.find((item) => item.id === capability.capability);
-      if (capability.required !== declaration.requiredForDelivery && !overrideKeys.has(`${capability.project}/${capability.capability}`)) {
-        throw taskDevelopmentError('task_development_policy_override_required', `Policy改变declaration requiredForDelivery时必须记录明确override：${capability.project}/${capability.capability}。`, 400, { project: capability.project, capability: capability.capability, declared: declaration.requiredForDelivery, selected: capability.required });
+    for (const item of capabilities) {
+      const declared = observationByProject.get(item.project)?.declaration?.capabilities.find((candidate) => candidate.id === item.capability);
+      const defaultRequired = declared?.usableFor?.includes('task-delivery') === true;
+      if (item.required !== defaultRequired && !overrides.some((override) => override.project === item.project && override.capability === item.capability)) {
+        throw taskDevelopmentError('task_development_policy_override_required', `偏离task-delivery默认选择必须记录override：${item.project}/${item.capability}。`, 409, { project: item.project, capability: item.capability, selected: item.required, defaultRequired });
       }
     }
     const payload = { declarations: declarationValues(observations), capabilities, coverageGaps, overrides };

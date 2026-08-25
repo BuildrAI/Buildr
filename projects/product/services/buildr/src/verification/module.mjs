@@ -1,6 +1,7 @@
 import { registerVerificationApplication } from './application/verification-application.mjs';
 import {
   createProjectVerificationDiagnostics,
+  normalizeProjectVerification,
   parseProjectVerification,
   validateProjectVerification,
 } from './application/project-verification-diagnostics.mjs';
@@ -14,6 +15,7 @@ import {
   createAuthorizedUnknownExecutionRecordFiles,
   loadVerificationExecutionRecordRecovery,
 } from './infrastructure/execution-record-recovery.mjs';
+export { createProductVerificationProvider } from './application/product-verification-provider.mjs';
 
 export const VERIFICATION_MODULE_ID = 'project-verification';
 export const VERIFICATION_APPLICATION = 'project-verification.application';
@@ -29,11 +31,16 @@ export function createVerificationModule(runtime, { taskEnvironmentDeclarationCa
       const projectEnvironmentPreparation = requires[taskEnvironmentDeclarationCapability];
       registerVerificationApplication(runtime, { projectEnvironmentPreparation });
       const application = Object.freeze({
+        verificationPlan: (...args) => runtime.verificationPlan(...args),
         verificationRun: (...args) => runtime.verificationRun(...args),
         verificationCleanup: (...args) => runtime.verificationCleanup(...args),
       });
       const declaration = Object.freeze({
         parseProjectVerification,
+        normalizeProjectVerification: (value, context = {}) => normalizeProjectVerification(value, {
+          ...context,
+          projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,
+        }),
         validateProjectVerification: (value, context = {}) => validateProjectVerification(value, {
           ...context,
           projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,

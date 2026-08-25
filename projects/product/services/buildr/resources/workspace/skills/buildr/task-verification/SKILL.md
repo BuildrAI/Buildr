@@ -7,7 +7,7 @@ description: 用户要求运行已有测试、验证改动、查看 current 验�
 
 本 Skill 是 `buildr.task-verification/v3` 的默认 provider。它只负责两部分：Project 的 Verification Capability Declaration，以及针对正式 Task 目标的 transient Execution + Workspace本地current Result。它不开发测试，不拥有 Task Environment、Task Review、Task Development、Candidate generation、Task progression、风险接受、部署或业务验收。
 
-开始行动时必须读取 `references/project-verification-v2.md`；只有经`declaration-intake`完成只读发现、展示精确diff，并形成`routine-maintenance`结论或取得长期适用性变化的用户授权后，才使用`templates/project-verification.yml`维护长期声明。不得绕过Intake分类、静默扩大scope、改变requiredness或伪造capability。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
+开始行动时必须读取 `references/project-verification-v3.md`；只有经`declaration-intake`完成只读发现、展示精确diff，并形成`routine-maintenance`结论或取得长期适用性变化的用户授权后，才使用`templates/project-verification.yml`维护长期声明。不得绕过Intake分类、静默扩大scope/target或伪造capability。正式 Result 必须通过 Task Verification Application 维护，不能直接读写Workspace SQLite或旧`.buildr/tasks/<task-id>/verification.yml`。
 
 ## 1. 建立验证边界
 
@@ -30,26 +30,26 @@ buildr task verification inspect <task-id> \
   --target-identity <identity> --target <canonical-workspace> --json
 ```
 
-current v2 Result只有在Candidate identity/generation、target与全部declaration identities都`current`时才适用于当前目标。任一当前identity未提供为`unknown`；Candidate、声明缺失/出现、内容、path或Project scope变化为`stale`。合法v1 Result只读兼容并明确显示`legacy-result-candidate-unbound`，不能用于新Candidate gate。不要写回applicability标记或回填旧Result。
+current Result只有在Candidate identity/generation、target与全部declaration identities都`current`时才适用于当前目标。任一当前identity未提供为`unknown`；Candidate、声明缺失/出现、内容、path或Project scope变化为`stale`。合法v1 Result只读兼容并明确显示`legacy-result-candidate-unbound`，不能用于新Candidate gate。不要写回applicability标记或回填旧Result。
 
 当前目标来自ready Task Environment且其中的declaration bytes尚未进入canonical Workspace时，只在`reconcile`（或仅工作区`record`）追加`--declaration-root <task-environment-root>`。Application只在正式写入动作中观察该Task当前ready Environment的精确根目录；`inspect`不接受路径，只比较调用方显式提供的保存identity。本机路径不进入current Result。
 
 ## 2. 读取和维护 Project declaration
 
-`buildr.project-verification/v2` 只登记已经存在的能力：identity、Project/Service scope、command 或 bounded Agent invocation、applicability、proves、是否 delivery required，以及确有需要的 environment/effects/resource claims。
+`buildr.project-verification/v3` 只登记已经存在的能力族：identity、Project/Service scope、proves、evidence、usable targets、discovery、affected/full command/agent/provider invocation，以及确有需要的 environment/effects/resource claims。
 
 - 不存在声明或适用能力时，只记录 `project:<code>` 或 `service:<project>/<service>` coverage gap；不自动创建测试、脚本、CI 或框架。
 - 只有有效Project集合确实为空且没有workspace验证能力时，记录唯一`workspace` coverage gap、空declarations、空capabilities与`not-passed`；不得把Service或Change所属Project伪装成仅工作区，也不得自动passed。
 - 声明无效时停止执行其中的能力，先报告具体字段诊断。
-- `requiredForDelivery` 是 Project policy，不是 Verification 的 proceed/blocked 决定。
-- 不使用 minimal/affected/candidate、maturity、mode、enforcement、dependsOn 或 supersedes。
+- requiredness 由本次 Request/Plan 与 Task Development policy决定；偏离 capability 的 `usableFor` 默认选择必须留下精确 override。
+- 不使用旧 applicability/requiredForDelivery、maturity、mode、enforcement、dependsOn 或 supersedes。
 - `coordinated`/`external` resource 只有被真实能力 claim 时才保留；本地临时文件不建设资源平台。
 
 收到`declaration-intake`的已授权精确handoff后，读取真实 package/POM scripts、CI、AGENTS 和项目文档，只写已确认事实并保留已有稳定 capability id。测试不存在时保持空声明或 coverage gap，不借此任务开发测试。用户仅提出初始化、刷新或gap时先交回Intake，不把发现请求直接当成写入授权。
 
 声明前还必须核对真实测试入口、内部 registry、环境、副作用和可用的近期耗时 evidence；必要且已授权时可以有界运行现有入口取得事实。不得根据 capability id、`fast`、`unit`、目录名或技术栈惯例推断成本与覆盖。
 
-只声明少量、稳定、可独立选择的 capability 接口，不复制每个测试文件或内部 registry step。测试意图、Static/Unit/Component/Integration/System 边界、Quick 成本约束、affected/full 范围、Candidate/Release 验证目标和目标耗时属于 Project Testing 或项目 registry，不进入 `verification.yml` v2。入口命名、成本或分层不合理时报告测试建设 gap，并交给 `project-testing` 或后续实现任务；不要在声明更新中暗中重构测试。
+只声明少量、稳定、可独立选择的 capability family，不复制每个测试文件或内部 registry step。证据边界、usable target、可信 discovery 与 affected/full/provider 入口进入 v3；具体测试清单、DAG、成本和调度仍属于 Project Testing 或项目 registry。入口命名、成本或分层不合理时报告测试建设 gap，并交给 `project-testing` 或后续实现任务；不要在声明更新中暗中重构测试。
 
 ## 3. 选择并执行已有能力
 
@@ -57,13 +57,18 @@ current v2 Result只有在Candidate identity/generation、target与全部declara
 
 计划预览不是 Verification Execution Evidence、Result fact或 capability execution。stable Content Target进入正式Verification后，policy要求的capability仍须实际执行，或按exact invocation语义复用既有正式Execution Record；CLI plan输出、Agent推理和耗时估计都不能替代Task Verification Application的current Result authority。
 
-针对 target 逐项核对 capability 的 Project/Service scope、paths/conditions、environment、effects 和授权：
+先生成并复核 closed Plan，再针对 target 逐项核对 capability 的 Project/Service scope、discovery、usable target、environment、effects 和授权：
 
 - command capability 使用正式 executor：
 
 ```bash
+buildr verification plan --project <code> \
+  --target-kind task-delivery --selection-scope affected \
+  --target-identity <identity> --changed-path <path> \
+  --target <execution-root> --json > <plan-file>
+
 buildr verification run --project <code> \
-  --capability <id> [--capability <id> ...] \
+  --plan <plan-file> \
   --candidate-identity <candidate-identity> --candidate-generation <n> \
   --target-identity <identity> \
   --target <execution-root> \

@@ -11,7 +11,7 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 const projectTestingSkill = read('resources/workspace/skills/buildr/project-testing/SKILL.md');
 const testingModel = read('resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
 const taskVerificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
-const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md');
 const taskVerificationTemplate = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
 const taskTriage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
@@ -52,7 +52,7 @@ test('project-testing 分离测试边界、成本、范围与验证目标', () =
   for (const required of [
     'Node.js 示例', 'Java / Spring 示例', 'Spring context', 'Testcontainers',
     'Browser / Playwright 只是执行手段', '`mixed` 只作为',
-    'ownerScope', 'targetDuration', 'applicability/proves',
+    'ownerScope', 'targetDuration', 'discovery/proves/evidence/usableFor',
   ]) assert.ok(testingModel.includes(required), `testing model must include ${required}`);
 });
 
@@ -90,7 +90,7 @@ test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(buildrSkill, /运行已有测试.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
   assert.match(taskVerificationSkill, /不用于设计测试框架[、或]开发测试[\s\S]*project-testing/);
   assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
-  assert.match(taskVerificationReference, /一个 Project 入口内部可以拥有多个 Project-specific step/);
+  assert.match(taskVerificationReference, /复杂 Product 可使用 provider/);
 });
 
 test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除普通临时 Workspace', () => {
@@ -102,12 +102,12 @@ test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除�
   assert.match(buildrSkill, /不扩大为对普通临时 Workspace 的自动删除策略/);
 });
 
-test('声明指导不扩展 project verification v2 schema', () => {
-  assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v2');
-  assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['capabilities', 'schemaVersion']);
+test('声明指导只使用 project verification v3 capability family schema', () => {
+  assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v3');
+  assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['capabilities', 'resources', 'schemaVersion']);
   const capabilityKeys = Object.keys(taskVerificationTemplate.capabilities[0]).sort();
   for (const forbidden of ['primaryIntent', 'executionBoundary', 'orchestrationScenarios', 'targetDuration', 'primaryEvidenceOwner']) {
     assert.equal(capabilityKeys.includes(forbidden), false, `verification template must not add ${forbidden}`);
   }
-  assert.match(taskVerificationReference, /不要把每个测试文件、step、测试意图、执行边界、Quick 成本约束、affected\/full 范围、Candidate\/Release 验证目标或目标耗时复制进本 schema/);
+  assert.match(taskVerificationReference, /不要写 `applicability`、`requiredForDelivery`、测试文件清单、通用 DAG/);
 });

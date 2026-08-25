@@ -524,7 +524,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-environment/templates/task-environment-plan-request.json => skills/buildr/task-environment/templates/task-environment-plan-request.json copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
-  - resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md => skills/buildr/task-verification/references/project-verification-v2.md copy
+  - resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md => skills/buildr/task-verification/references/project-verification-v3.md copy
   - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - resources/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy

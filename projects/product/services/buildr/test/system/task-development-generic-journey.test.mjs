@@ -12,16 +12,15 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 
 function declaration() {
   return {
-    schemaVersion: 'buildr.project-verification/v2',
+    schemaVersion: 'buildr.project-verification/v3',
     resources: [],
     capabilities: [{
       id: 'docs.check',
       title: 'Documentation check',
       scope: { project: 'docs', services: ['guide'] },
-      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' },
-      applicability: { paths: ['services/guide/**'], conditions: [] },
       proves: ['The guide has non-empty documentation.'],
-      requiredForDelivery: true,
+      evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['services/guide/**'] },
+      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' } },
       environment: { requires: ['sh'] },
       effects: { writes: [], externalSystems: [], authorization: 'implicit' },
       resourceClaims: [],

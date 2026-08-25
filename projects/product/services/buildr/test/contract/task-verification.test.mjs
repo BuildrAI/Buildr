@@ -10,7 +10,7 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 
 const contract = read('resources/workspace/skills/contracts/buildr/task-verification/v3.md');
 const verificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
-const verificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v2.md');
+const verificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md');
 const verificationTemplate = read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml');
 const cliRegistry = read('src/bootstrap/cli/registry.mjs');
 const cliReference = read('docs/cli-reference.md');
@@ -48,10 +48,10 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   assert.match(contract, /id: buildr\.task-verification/);
   assert.match(contract, /version: 3/);
   for (const required of [
-    'buildr.project-verification/v2', 'buildr.task-verification-result/v2',
+    'buildr.project-verification/v3', 'buildr.task-verification-result/v2',
     'buildr.task-verification-operation-result/v1', 'transient Execution Evidence',
     '`current`', '`stale`', '`unknown`', '单一SQLite transaction', 'coverage gap',
-    'requiredForDelivery', 'Task Verification Application', '完整替换current',
+    'Verification Request', 'Task Verification Application', '完整替换current',
     '不得提交capability outcome/facts', '不得保存stdout/stderr',
     'Task progression', '测试命令完整失败可以形成 `not-passed` Result',
     'exact invocation identity', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`',
@@ -62,10 +62,11 @@ test('task-verification v3 contract 只定义 Declaration 与 current Result aut
   }
 });
 
-test('默认 provider 使用 v2 declaration、Candidate-bound execution 与 Application reconciliation', () => {
+test('默认 provider 使用 v3 Plan、Candidate-bound execution 与 Application reconciliation', () => {
   for (const required of [
     '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
-    'references/project-verification-v2.md', 'buildr.project-verification/v2',
+    'references/project-verification-v3.md', 'buildr.project-verification/v3',
+    'buildr verification plan --project <code>',
     'buildr task verification inspect <task-id>', 'buildr verification run --project <code>',
     'buildr task verification reconcile <task-id>', 'buildr.verification-execution/v1',
     '--declaration-root <task-environment-root>',
@@ -78,15 +79,15 @@ test('默认 provider 使用 v2 declaration、Candidate-bound execution 与 Appl
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
   }
-  assert.match(verificationReference, /buildr\.project-verification\/v2/);
-  assert.match(verificationReference, /没有能力时保留空 capabilities 或缺省文件/);
+  assert.match(verificationReference, /buildr\.project-verification\/v3/);
+  assert.match(verificationReference, /空声明或 coverage gap/);
   const template = YAML.parse(verificationTemplate);
-  assert.equal(template.schemaVersion, 'buildr.project-verification/v2');
-  assert.deepEqual(Object.keys(template).sort(), ['capabilities', 'schemaVersion']);
-  assert.equal(template.capabilities[0].requiredForDelivery, false);
-  assert.equal(template.capabilities[0].invocation.kind, 'command');
+  assert.equal(template.schemaVersion, 'buildr.project-verification/v3');
+  assert.deepEqual(Object.keys(template).sort(), ['capabilities', 'resources', 'schemaVersion']);
+  assert.deepEqual(template.capabilities[0].usableFor, ['task-delivery']);
+  assert.equal(template.capabilities[0].invocation.full.kind, 'command');
   assert.equal(template.capabilities[0].scope.project, 'replace-with-project-code');
-  assert.equal(Object.hasOwn(template.capabilities[0], 'resourceClaims'), false);
+  assert.deepEqual(template.capabilities[0].resourceClaims, []);
   for (const surface of [cliRegistry, cliReference]) {
     assert.match(surface, /active或terminal|active优先/);
     assert.match(surface, /--retry/);
@@ -167,7 +168,7 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v2.md')), false);
   assert.equal(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v1.md')), false);
   assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('task-verification/v3.md')));
-  assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v2.md')));
+  assert.ok(packageManifest.workspaceFiles.some((entry) => String(entry).includes('project-verification-v3.md')));
 
   assert.equal(packageManifest.capabilityContracts.find((item) => item.id === 'buildr.task-verification').version, 3);
   assert.equal(packageManifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-verification').version, 3);

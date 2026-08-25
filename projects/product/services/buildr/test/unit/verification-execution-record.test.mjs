@@ -24,7 +24,9 @@ function input(overrides = {}) {
     projectCode: 'demo',
     declarationPath: path.join(root, 'projects/demo/verification.yml'),
     declarationIdentity: 'sha256-declaration',
-    selectedCapabilities: [{ id: 'demo.test', scope: { project: 'demo', services: [] }, proves: ['tests'], requiredForDelivery: true, resourceClaims: [] }],
+    requestIdentity: 'sha256-request',
+    planIdentity: 'sha256-plan',
+    selectedCapabilities: [{ id: 'demo.test', scope: { project: 'demo', services: [] }, evidence: ['unit'], proves: ['tests'], selectedScope: 'affected', resourceClaims: [] }],
     authorizedCapabilities: [],
     authorizedResources: [],
     checks: [{ id: 'demo.test', title: 'test', status: 'passed', exitCode: 0, signal: null, durationMs: 5, queuedAt: '2026-08-09T00:00:00.000Z', startedAt: '2026-08-09T00:00:00.001Z', finishedAt: '2026-08-09T00:00:00.006Z', stdout: 'ok', stderr: '' }],
@@ -48,6 +50,7 @@ test('Verification execution record mapper 只生成受控可移植正文', () =
   assert.deepEqual(files.map((file) => file.name), ['summary.json', 'stdout.txt', 'stderr.txt', 'timeline.json', 'diagnostics.json']);
   const summary = files.find((file) => file.name === 'summary.json').content;
   assert.equal(summary.declaration.path, 'projects/demo/verification.yml');
+  assert.deepEqual(summary.plan, { requestIdentity: 'sha256-request', identity: 'sha256-plan', providerIdentity: null, executionUnits: [] });
   assert.equal(summary.workspaceNode, undefined);
   assert.equal(summary.target.before.root, undefined);
   assert.equal(summary.task.scopes[0].executionRoot, undefined);
@@ -75,6 +78,8 @@ test('Verification invocation identity只绑定Task、target、declaration与规
   assert.notEqual(first, verificationInvocationIdentity({ ...base, declarationIdentity: `sha256-${'b'.repeat(64)}`, selectedCapabilities: ['demo.a', 'demo.b'] }));
   assert.notEqual(first, verificationInvocationIdentity({ ...base, targetIdentity: 'target:other', selectedCapabilities: ['demo.a', 'demo.b'] }));
   assert.notEqual(first, verificationInvocationIdentity({ ...base, selectedCapabilities: ['demo.a'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, planIdentity: 'sha256-plan', requestIdentity: 'sha256-request', selectedCapabilities: ['demo.a', 'demo.b'] }));
+  assert.notEqual(first, verificationInvocationIdentity({ ...base, providerIdentity: 'sha256-provider', selectedCapabilities: ['demo.a', 'demo.b'] }));
 });
 
 test('公开 executionRecord 摘要不泄露 body locator', () => {

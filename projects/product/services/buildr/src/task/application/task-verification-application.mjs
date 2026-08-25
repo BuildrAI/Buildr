@@ -308,6 +308,7 @@ export function registerTaskVerificationApplication(runtime) {
     const observations = observeDeclarations(task, input.declarationRoot);
     const observationByProject = new Map(observations.map((item) => [item.project, item]));
     const capabilities = [];
+    let planBinding = null;
     for (const recordId of input.recordIds) {
       let detail;
       let summary;
@@ -320,6 +321,10 @@ export function registerTaskVerificationApplication(runtime) {
       const record = detail.record;
       if (record.owner !== 'task-verification' || record.kind !== 'verification-execution' || !['passed', 'failed'].includes(record.outcome) || !['retained', 'attention'].includes(record.lifecycleStatus)) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record不是可对账的terminal verification authority：${recordId}。`, 409, { recordId, owner: record.owner, kind: record.kind, outcome: record.outcome, lifecycleStatus: record.lifecycleStatus });
       if (summary.schemaVersion !== 'buildr.verification-execution-record-summary/v1' || summary.task?.id !== taskId) throw taskVerificationError('task_verification_evidence_mismatch', `Execution Record Task或schema不匹配：${recordId}。`, 409, { recordId });
+      if (!summary.plan?.identity || !summary.plan?.requestIdentity) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定Verification Request/Plan：${recordId}。`, 409, { recordId });
+      if (!Array.isArray(summary.plan.executionUnits) || summary.plan.executionUnits.length === 0) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定selected execution unit：${recordId}。`, 409, { recordId });
+      if (!planBinding) planBinding = { identity: summary.plan.identity, requestIdentity: summary.plan.requestIdentity, providerIdentity: summary.plan.providerIdentity || null };
+      else if (planBinding.identity !== summary.plan.identity || planBinding.requestIdentity !== summary.plan.requestIdentity || planBinding.providerIdentity !== (summary.plan.providerIdentity || null)) throw taskVerificationError('task_verification_evidence_plan_mismatch', `Execution Records不属于同一Verification Request/Plan/provider：${recordId}。`, 409, { recordId, expected: planBinding, actual: summary.plan });
       if (summary.candidate?.identity !== input.candidateIdentity || summary.candidate?.generation !== input.candidateGeneration || summary.candidate?.contentTargetIdentity !== input.targetIdentity || summary.target?.identity !== input.targetIdentity) throw taskVerificationError('task_verification_evidence_candidate_mismatch', `Execution Record Candidate或Content Target不匹配：${recordId}。`, 409, { recordId });
       if (summary.target?.stable !== true || summary.target?.drift) throw taskVerificationError('task_verification_evidence_target_drift', `Execution Record target发生漂移：${recordId}。`, 409, { recordId });
       const project = summary.project?.code;

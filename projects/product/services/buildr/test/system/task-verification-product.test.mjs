@@ -33,16 +33,17 @@ function json(args, expected = 0) {
 
 function declaration(proves = 'Demo behavior') {
   return {
-    schemaVersion: 'buildr.project-verification/v2',
+    schemaVersion: 'buildr.project-verification/v3',
     resources: [],
     capabilities: [{
       id: 'demo.unit',
       title: 'Demo unit',
       scope: { project: 'demo', services: [] },
-      invocation: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' },
-      applicability: { paths: ['**'], conditions: [] },
       proves: [proves],
-      requiredForDelivery: true,
+      evidence: ['unit'],
+      usableFor: ['task-delivery'],
+      discovery: { sources: ['**'] },
+      invocation: { affected: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, full: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' } },
       environment: { requires: ['node'] },
       effects: { writes: [], externalSystems: [], authorization: 'implicit' },
       resourceClaims: [],

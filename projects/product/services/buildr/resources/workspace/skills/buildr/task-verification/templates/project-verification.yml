@@ -1,22 +1,30 @@
-schemaVersion: buildr.project-verification/v2
+schemaVersion: buildr.project-verification/v3
+resources: []
 capabilities:
   - id: example.unit
-    title: Replace with an existing Project test capability
+    title: Replace with an existing Project test capability family
     scope:
       project: replace-with-project-code
       services: []
-    invocation:
-      kind: command
-      argv: ["replace-with-existing-test-command"]
-      cwd: .
-    applicability:
-      paths: ["replace-with-applicable-path/**"]
     proves:
       - Replace with the fact this existing capability proves
-    requiredForDelivery: false
-    # environment:
-    #   requires: [node]
-    #   preparation:
-    #     - project: replace-with-project-code
-    #       service: replace-with-registered-service-code
-    #       recipe: replace-with-preparation-recipe-id
+    evidence: [unit]
+    usableFor: [task-delivery]
+    discovery:
+      sources: ["replace-with-applicable-path/**"]
+    invocation:
+      affected:
+        kind: command
+        argv: ["replace-with-existing-affected-test-command"]
+        cwd: .
+      full:
+        kind: command
+        argv: ["replace-with-existing-full-test-command"]
+        cwd: .
+    environment:
+      requires: []
+    effects:
+      writes: []
+      externalSystems: []
+      authorization: implicit
+    resourceClaims: []

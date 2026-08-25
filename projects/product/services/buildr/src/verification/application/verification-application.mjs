@@ -6,7 +6,8 @@ import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import { parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
+import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
+import { assertVerificationPlan, createVerificationPlan, createVerificationRequest } from '../domain/verification-plan.mjs';
 import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
 import { verificationPreparationAdmission } from '../infrastructure/preparation-admission.mjs';
 import { executeVerificationCommand } from '../infrastructure/process-executor.mjs';
@@ -24,6 +25,39 @@ import {
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
+}
+
+const PRODUCT_VERIFICATION_PROVIDER = 'buildr.product-verification/v1';
+const PRODUCT_PROVIDER_IDENTITY_FILES = [
+  'services/buildr/src/verification/application/product-verification-provider.mjs',
+  'services/buildr/src/verification/application/verification-application.mjs',
+  'services/buildr/test/verification/product-provider-entry.mjs',
+  'services/buildr/test/verification/planner.mjs',
+  'services/buildr/test/verification/registry.mjs',
+  'services/buildr/test/verification/ownership.mjs',
+  'services/buildr/test/verification/focus.mjs',
+  'services/buildr/test/verification/plan-runner.mjs',
+];
+
+function productProvider(projectRoot, providerId) {
+  if (providerId !== PRODUCT_VERIFICATION_PROVIDER) throw new Error(`Verification provider is not registered: ${providerId}.`);
+  const sources = PRODUCT_PROVIDER_IDENTITY_FILES.map((relative) => {
+    const file = path.join(projectRoot, relative);
+    if (!fs.existsSync(file)) throw new Error(`Product verification provider source is missing: ${relative}.`);
+    return [relative, digest(fs.readFileSync(file))];
+  });
+  const identity = digest({ providerId, sources });
+  const entry = path.join(projectRoot, 'services/buildr/test/verification/product-provider-entry.mjs');
+  return {
+    id: providerId,
+    identity,
+    plan(input) {
+      const result = spawnSync(process.execPath, [entry], { cwd: projectRoot, input: JSON.stringify({ ...input, providerId, providerIdentity: identity }), encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`Product verification provider failed: ${result.stderr.trim() || `exit ${result.status}`}`);
+      try { return JSON.parse(result.stdout); } catch { throw new Error('Product verification provider returned invalid JSON.'); }
+    },
+  };
 }
 
 function inside(parent, child) {
@@ -255,12 +289,78 @@ export function verificationExecutionIdentityMaterial({ project, declaration, ta
 
 export function registerVerificationApplication(runtime, { projectEnvironmentPreparation } = {}) {
   if (!projectEnvironmentPreparation) throw new Error('Verification Application requires the Task Environment Declaration port.');
+  function verificationPlan(args) {
+    const json = args.includes('--json');
+    const projectCode = runtime.optionValue(args, '--project', null);
+    const targetKind = runtime.optionValue(args, '--target-kind', 'task-delivery');
+    const selectionScope = runtime.optionValue(args, '--selection-scope', 'affected');
+    const targetIdentity = runtime.optionValue(args, '--target-identity', null);
+    const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
+    const servicesInput = optionValues(args, '--service');
+    const changedPaths = optionValues(args, '--changed-path');
+    const risks = optionValues(args, '--risk');
+    const dependencies = optionValues(args, '--dependency').map((value) => {
+      const [from, to, reason, ...extra] = value.split('::');
+      if (!from || !to || !reason || extra.length) throw new Error('--dependency must be <from-capability>::<to-capability>::<reason>.');
+      return { from, to, reason };
+    });
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--service', '--target-kind', '--selection-scope', '--target-identity', '--changed-path', '--risk', '--dependency', '--target', '--json']), new Set(['--json']));
+    if (runtime.positionalArgs(args).length) throw new Error('verification plan does not accept positional arguments.');
+    if (!projectCode) throw new Error('verification plan requires --project <code>.');
+    if (!targetIdentity) throw new Error('verification plan requires --target-identity <identity>.');
+    const registry = runtime.readProjectRegistryPersistence(targetRoot).registry.projects;
+    const project = registry[projectCode];
+    if (!project) throw new Error(`Project is not registered in projects/manifest.yml: ${projectCode}`);
+    const projectRoot = fs.realpathSync(resolveSourceRoot(targetRoot, project.source));
+    const serviceRegistry = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
+    const services = servicesInput.length ? servicesInput : Object.keys(serviceRegistry);
+    for (const service of services) if (!serviceRegistry[service]) throw new Error(`Service is not registered for Project ${projectCode}: ${service}`);
+    const declarationPath = path.join(projectRoot, 'verification.yml');
+    if (!fs.existsSync(declarationPath)) throw admissionError('verification.coverage_gap', `Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`, 'coverage', 'task-verification', { project: projectCode });
+    const declarationContent = fs.readFileSync(declarationPath);
+    const declarationIdentity = digest(declarationContent);
+    const declaration = normalizeProjectVerification(parseProjectVerification(declarationContent.toString('utf8'), declarationPath), { projectCode, services: Object.keys(serviceRegistry) });
+    const request = createVerificationRequest({
+      project: projectCode,
+      services,
+      target: { kind: targetKind, identity: targetIdentity },
+      selection: { scope: selectionScope },
+      changedPaths,
+      risks,
+      declarations: [{ project: projectCode, identity: declarationIdentity }],
+      dependencies,
+    });
+    const providerIds = [...new Set(declaration.capabilities
+      .filter((capability) => capability.usableFor.includes(targetKind))
+      .flatMap((capability) => [capability.invocation.affected, capability.invocation.full])
+      .filter((invocation) => invocation?.kind === 'provider')
+      .map((invocation) => invocation.provider))];
+    if (providerIds.length > 1) throw new Error('Verification Plan cannot combine multiple provider authorities.');
+    const provider = providerIds.length ? productProvider(projectRoot, providerIds[0]) : null;
+    const plan = createVerificationPlan({ request, declaration, provider: provider?.plan });
+    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationPlan, plan);
+    if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else {
+      console.log(`Verification plan: ${plan.status} (${plan.identity})`);
+      console.log(`Selected: ${plan.selectedItems.length}; gaps: ${plan.coverageGaps.length}`);
+    }
+    if (plan.status !== 'ready') process.exitCode = 1;
+    return payload;
+  }
+
   async function verificationRun(args) {
     const json = args.includes('--json');
     const projectCode = runtime.optionValue(args, '--project', null);
     const targetIdentity = runtime.optionValue(args, '--target-identity', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
-    const requestedCapabilities = [...new Set(optionValues(args, '--capability'))];
+    const planPath = runtime.optionValue(args, '--plan', null);
+    const requestedPlan = planPath ? assertVerificationPlan(JSON.parse(fs.readFileSync(path.resolve(planPath), 'utf8'))) : null;
+    let requestedCapabilities = [...new Set(optionValues(args, '--capability'))];
+    if (requestedPlan) {
+      if (requestedCapabilities.length) throw new Error('verification run accepts either --plan or --capability, not both.');
+      if (requestedPlan.status !== 'ready') throw new Error('verification run cannot execute a blocked Verification Plan.');
+      requestedCapabilities = [...new Set(requestedPlan.executionUnits.map((unit) => unit.capability))];
+    }
     const requestedEnvironment = runtime.optionValue(args, '--environment', null);
     const requestedWorkspace = runtime.optionValue(args, '--workspace', null);
     const candidateIdentity = runtime.optionValue(args, '--candidate-identity', null);
@@ -268,19 +368,24 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const authorizedCapabilities = [...new Set(optionValues(args, '--authorize-capability'))];
     const authorizedResources = optionValues(args, '--authorize-resource');
     const concurrency = Number(runtime.optionValue(args, '--concurrency', '4'));
+    const selectionScope = runtime.optionValue(args, '--selection-scope', 'full');
     const retry = args.includes('--retry');
     if (args.includes('--declaration-root')) {
       const error = new Error('--declaration-root 仅用于 buildr task verification record；verification run 与 inspect 都不重新观察 declaration source。');
       error.code = 'verification.run_declaration_root_unsupported';
       throw error;
     }
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--target-identity', '--candidate-identity', '--candidate-generation', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--retry', '--json']), new Set(['--retry', '--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--plan', '--target-identity', '--candidate-identity', '--candidate-generation', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--selection-scope', '--retry', '--json']), new Set(['--retry', '--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
-    if (requestedCapabilities.length === 0) throw new Error('verification run requires at least one --capability <id>.');
+    if (requestedCapabilities.length === 0) throw new Error('verification run requires --plan <file> or at least one --capability <id>.');
     if (!targetIdentity) throw new Error('verification run requires --target-identity <identity>.');
+    if (requestedPlan && requestedPlan.target.identity !== targetIdentity) throw new Error('Verification Plan target identity does not match --target-identity.');
+    if (requestedPlan && requestedPlan.target.kind === 'published-release') throw new Error('Published Release Plan is not executable by the Task verification command runner.');
+    if (!['affected', 'full'].includes(selectionScope)) throw new Error('--selection-scope must be affected or full.');
     const candidateGeneration = candidateGenerationValue === null ? null : Number(candidateGenerationValue);
     if (requestedEnvironment && (!candidateIdentity || !Number.isInteger(candidateGeneration) || candidateGeneration < 1)) throw new Error('Formal verification run requires --candidate-identity <identity> and --candidate-generation <positive-integer>.');
+    if (requestedEnvironment && !requestedPlan) throw new Error('Formal verification run requires a current --plan <file>.');
     if (!requestedEnvironment && (candidateIdentity || candidateGenerationValue !== null)) throw new Error('Candidate binding is only valid with formal --environment/--workspace execution.');
     const candidate = requestedEnvironment ? { identity: candidateIdentity, generation: candidateGeneration, contentTargetIdentity: targetIdentity } : null;
     if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new Error('--concurrency must be an integer from 1 to 32.');
@@ -309,6 +414,14 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       } : {}),
     });
     if (validationErrors.length) throw admissionError('verification.declaration_invalid', `Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`, 'declaration-invalid', 'project-verification-declaration', { project: projectCode });
+    const declarationIdentity = digest(declarationContent);
+    if (requestedPlan && requestedPlan.declarationIdentity !== declarationIdentity) throw new Error('Verification Plan declaration identity is stale.');
+    if (requestedPlan?.providerIdentity) {
+      const providerId = requestedPlan.executionUnits.find((unit) => unit.invocation?.kind === 'provider')?.invocation.provider;
+      if (!providerId) throw new Error('Verification Plan provider identity has no provider execution unit.');
+      assertVerificationPlan(requestedPlan, { providerIdentity: productProvider(projectRoot, providerId).identity });
+    }
+    if (requestedPlan && requestedPlan.selectedItems.some((item) => !requestedCapabilities.includes(item.capability))) throw new Error('Verification Plan selected items do not match its execution units.');
 
     if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Task Environment verification requires --environment <task-id> and --workspace <canonical-workspace> together.');
     const canonicalWorkspace = requestedWorkspace ? path.resolve(requestedWorkspace) : null;
@@ -325,18 +438,30 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const selected = requestedCapabilities.map((id) => {
       const capability = byId.get(id);
       if (!capability) throw admissionError('verification.coverage_gap', `Project verification capability is not declared: ${id}`, 'coverage', 'task-verification', { project: projectCode, capability: id });
-      if (capability.invocation.kind !== 'command') throw new Error(`Project verification capability requires bounded Agent execution and cannot be run by the command runner: ${id}`);
+      const plannedUnit = requestedPlan?.executionUnits.find((unit) => unit.capability === id);
+      const requestedScope = plannedUnit?.scope || selectionScope;
+      const invocation = requestedScope === 'affected' && capability.invocation.affected
+        ? capability.invocation.affected
+        : capability.invocation.full;
+      const resolvedInvocation = invocation.kind === 'provider' && requestedPlan
+        ? {
+            kind: 'command',
+            argv: [process.execPath, 'test/verification/focus.mjs', ...requestedPlan.selectedItems.map((item) => item.id)],
+            cwd: 'services/buildr',
+          }
+        : invocation;
+      if (resolvedInvocation.kind !== 'command') throw new Error(`Project verification capability requires ${invocation.kind} execution and cannot be run by the command runner: ${id}`);
       if (capability.effects?.authorization === 'explicit' && !authorizedCapabilities.includes(id)) throw admissionError('verification.authorization_blocked', `Explicit authorization is required for verification capability effects: ${id}`, 'authorization', 'user-authorization', { project: projectCode, capability: id });
-      const executionCwd = path.resolve(projectRoot, capability.invocation.cwd || '.');
+      const executionCwd = path.resolve(projectRoot, resolvedInvocation.cwd || '.');
       if (!inside(projectRoot, executionCwd) || !fs.existsSync(executionCwd)) throw new Error(`Verification command cwd is unavailable or escapes Project: ${id}`);
       return {
         ...capability,
-        command: { argv: capability.invocation.argv, cwd: capability.invocation.cwd || '.' },
+        selectedScope: requestedScope === 'affected' && capability.invocation.affected ? 'affected' : 'full',
+        command: { argv: resolvedInvocation.argv, cwd: resolvedInvocation.cwd || '.' },
         executionCwd,
       };
     });
 
-    const declarationIdentity = digest(declarationContent);
     let admission = verificationPreparationAdmission({ projectCode, declarationIdentity, selectedCapabilities: selected, context });
     if (admission.status !== 'ready') {
       const error = new Error('Formal Verification preparation preflight is blocked; Task Environment must apply the supplied recovery request before execution.');
@@ -364,6 +489,10 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       declarationIdentity,
       targetIdentity,
       selectedCapabilities: selected,
+      requestIdentity: requestedPlan?.requestIdentity || null,
+      planIdentity: requestedPlan?.identity || null,
+      providerIdentity: requestedPlan?.providerIdentity || null,
+      executionUnitIdentities: requestedPlan?.executionUnits.map((unit) => unit.id) || [],
     }) : null;
     const runId = `verification-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     let openedExecutionRecord = null;
@@ -399,7 +528,8 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
         project: { code: projectCode, root: projectRoot },
         declaration: { path: declarationPath, identity: declarationIdentity },
         environment: { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot },
-        selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
+        plan: requestedPlan ? { identity: requestedPlan.identity, requestIdentity: requestedPlan.requestIdentity, providerIdentity: requestedPlan.providerIdentity } : null,
+        selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, evidence: capability.evidence, proves: capability.proves, selectedScope: capability.selectedScope, resourceClaims: capability.resourceClaims ?? [] })),
         admission,
         authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
         checks: [],
@@ -491,7 +621,8 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       project: { code: projectCode, root: projectRoot },
       declaration: { path: declarationPath, identity: declarationIdentity },
       environment: context ? { taskId: context.taskId, root: context.environmentRoot, workspaceRoot: context.workspaceRoot, scopes: context.scopes.map((scope) => ({ selector: scope.selector, executionRoot: scope.executionRoot, sourceIdentity: scope.cli.identity, projectionIdentity: scope.projection.identity })), allowedExecutionRoots: context.allowedExecutionRoots } : null,
-      selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, proves: capability.proves, requiredForDelivery: capability.requiredForDelivery, resourceClaims: capability.resourceClaims ?? [] })),
+      plan: requestedPlan ? { identity: requestedPlan.identity, requestIdentity: requestedPlan.requestIdentity, providerIdentity: requestedPlan.providerIdentity } : null,
+      selectedCapabilities: selected.map((capability) => ({ id: capability.id, scope: capability.scope, evidence: capability.evidence, proves: capability.proves, selectedScope: capability.selectedScope, resourceClaims: capability.resourceClaims ?? [] })),
       admission,
       authorization: { capabilities: authorizedCapabilities, resources: [...new Set(authorizedResources)] },
       checks,
@@ -535,6 +666,10 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
             projectCode,
             declarationPath,
             declarationIdentity,
+            requestIdentity: requestedPlan?.requestIdentity || null,
+            planIdentity: requestedPlan?.identity || null,
+            providerIdentity: requestedPlan?.providerIdentity || null,
+            executionUnitIdentities: requestedPlan?.executionUnits.map((unit) => unit.id) || [],
             selectedCapabilities: selected,
             authorizedCapabilities,
             authorizedResources,
@@ -635,6 +770,6 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     return payload;
   }
 
-  Object.assign(runtime, { verificationRun: verificationRunCommand, verificationCleanup });
+  Object.assign(runtime, { verificationPlan, verificationRun: verificationRunCommand, verificationCleanup });
   return runtime;
 }
