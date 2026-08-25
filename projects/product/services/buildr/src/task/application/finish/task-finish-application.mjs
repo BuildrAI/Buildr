@@ -574,9 +574,13 @@ export function registerTaskFinishApplication(runtime) {
     if (!task) throw inputError('task_finish.missing_parameter', 'Task Finish reconcile requires --task <task-id>.', 'reconcile');
     const terminal = runtime.readTaskFinishCompletionPersistence?.(root, { taskId: task }, { optional: true });
     if (terminal?.status === 'complete' && terminal.completion?.result) {
-      let taskCompletion = null;
-      try { taskCompletion = runtime.completeTaskRecordFromFinish(root, task); } catch { /* existing delivery remains authoritative */ }
-      return print({ ...terminal.completion.result, completion: terminal.completion, taskCompletion, idempotent: true }, command.args);
+      const stored = terminal.completion.result;
+      const result = reconcileTaskFinishDelivery({
+        runtime,
+        root,
+        entry: { handoff: stored.handoff, identityParts: stored.identity },
+      });
+      return print(result, command.args);
     }
     const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: task }, { optional: true });
     const requestedAgent = optionValue(command.args, '--agent', null);

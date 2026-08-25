@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { observeGitTaskContribution, taskFinishCarrierRoot } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { reconcileTaskFinishDelivery } from '../../src/task/application/finish/task-finish-delivery-reconciliation.mjs';
+import { registerTaskFinishApplication } from '../../src/task/application/finish/task-finish-application.mjs';
 import { normalizeTaskFinishRepositorySet, taskFinishRepositorySetIdentity } from '../../src/task/application/finish/task-finish-repository-set.mjs';
 import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
 
@@ -198,7 +199,7 @@ test('delivery reconciliation从真实远端登记外部交付且不创建Delive
   assert.deepEqual(carrierResult.repositories[0].delivery.activationPaths, ['feature.txt']);
 });
 
-test('terminal reconciliation精确清理错误cleaned投影遗留的当前run carrier', (t) => {
+test('terminal reconciliation入口精确清理错误cleaned投影遗留的当前run carrier', async (t) => {
   const { root, taskRoot, taskContribution } = fixture(t);
   const repositories = normalizeTaskFinishRepositorySet([{
     selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot,
@@ -240,7 +241,8 @@ test('terminal reconciliation精确清理错误cleaned投影遗留的当前run c
   };
   const finishResult = {
     schemaVersion: 'buildr.task-finish-result/v3', status: 'complete',
-    identity: { task: 'reconcile-task', handoffIdentity: handoff.identity, repositorySetIdentity: entry.identityParts.repositorySetIdentity },
+    identity: entry.identityParts,
+    handoff,
     completion,
   };
   let persisted = null;
@@ -248,9 +250,15 @@ test('terminal reconciliation精确清理错误cleaned投影遗留的当前run c
     readTaskFinishCompletionPersistence: () => ({ status: 'complete', completion: { result: finishResult } }),
     writeTaskFinishCompletionPersistence: (_target, value) => { persisted = value; return { file: 'workspace-sqlite:task-finish-completion/reconcile-task' }; },
     completeTaskRecordFromFinish: () => ({ status: 'completed', taskId: 'reconcile-task', record: { status: 'completed', result: { noChange: false } }, effects: [] }),
+    optionValue: (args, name, fallback = null) => {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget: (args) => ({ args, targetRoot: root }),
   };
 
-  const result = reconcileTaskFinishDelivery({ runtime, root, entry });
+  registerTaskFinishApplication(runtime);
+  const result = await runtime.taskFinish('reconcile', ['--task', 'reconcile-task', '--target', root]);
   assert.equal(result.idempotent, true);
   assert.equal(result.carrierCleanup.status, 'cleaned');
   assert.deepEqual(result.carrierCleanup.repositories, [{ selector: 'workspace', status: 'removed', code: null }]);
