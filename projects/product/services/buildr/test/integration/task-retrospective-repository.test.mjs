@@ -137,10 +137,12 @@ test('批量list按current状态有界返回摘要、正文与逐项诊断且零
 
   const pending = runtime.listTaskRetrospectives(root);
   assert.equal(pending.schemaVersion, 'buildr.task-retrospective-list-result/v1');
-  assert.deepEqual(pending.filters, { status: 'pending', taskIds: [], limit: 100, includeReport: false });
+  assert.deepEqual(pending.filters, { status: 'pending', taskIds: [], limit: 100, maxBytes: 262144, includeReport: false });
   assert.deepEqual(pending.items.map((item) => item.task.taskId), ['beta-task', 'demo-task']);
   assert.equal(pending.matchingTaskCount, 2);
   assert.equal(pending.returnedTaskCount, 2);
+  assert.equal(pending.maxBytes, 262144);
+  assert.equal(pending.returnedBytes, Buffer.byteLength(`${JSON.stringify(pending)}\n`, 'utf8'));
   assert.equal(pending.truncated, false);
   assert.equal(Object.hasOwn(pending.items[0].retrospective, 'reportMarkdown'), false);
   assert.deepEqual(pending.items[0].retrospective.followupTasks, []);
@@ -156,8 +158,17 @@ test('批量list按current状态有界返回摘要、正文与逐项诊断且零
   assert.equal(runtime.listTaskRetrospectives(root, { status: 'handled' }).items[0].task.taskId, 'alpha-task');
 
   for (const input of [
-    { status: 'missing' }, { taskIds: ['Invalid Task'] }, { limit: 0 }, { limit: 501 }, { includeReport: 'yes' },
+    { status: 'missing' }, { taskIds: ['Invalid Task'] }, { limit: 0 }, { limit: 501 }, { maxBytes: 0 }, { maxBytes: 1048577 }, { includeReport: 'yes' },
   ]) assert.throws(() => runtime.listTaskRetrospectives(root, input), (error) => error.code?.startsWith('task_retrospective_list_'));
+
+  const reportEnvelope = runtime.listTaskRetrospectives(root, { status: 'all', taskIds: ['alpha-task'] });
+  const reportBounded = runtime.listTaskRetrospectives(root, {
+    status: 'all', taskIds: ['alpha-task'], includeReport: true, maxBytes: reportEnvelope.returnedBytes + 20,
+  });
+  assert.equal(reportBounded.items.length, 1);
+  assert.equal(Object.hasOwn(reportBounded.items[0].retrospective, 'reportMarkdown'), false);
+  assert.equal(reportBounded.truncated, true);
+  assert.ok(reportBounded.returnedBytes <= reportBounded.maxBytes);
 
   const corrupted = runtime.openWorkspaceStructuredStore(root, { writable: true });
   corrupted.database.prepare("UPDATE task_retrospective_current SET result_json = '{}' WHERE task_id = 'beta-task'").run();

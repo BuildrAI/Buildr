@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA = 'buildr.self-bootstrap-recovery-plan/v1';
 export const TASK_FINISH_SELF_BOOTSTRAP_INPUT_SCHEMA = 'buildr.task-finish-self-bootstrap-input/v1';
+export const LONG_RUNNING_OPERATION_SUMMARY_SCHEMA = 'buildr.long-running-operation-summary/v1';
+const LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES = 16 * 1024;
 export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
   'preflight',
   'plan',
@@ -72,6 +74,50 @@ function sameFilesystemPath(left, right) {
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+function compactText(value, maxBytes = 512) {
+  const text = typeof value === 'string' && value ? value : null;
+  if (!text || Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  const suffix = '…';
+  const budget = maxBytes - Buffer.byteLength(suffix, 'utf8');
+  let output = '';
+  let bytes = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character, 'utf8');
+    if (bytes + size > budget) break;
+    output += character;
+    bytes += size;
+  }
+  return `${output}${suffix}`;
+}
+
+export function compactSelfBootstrapCloseout(result) {
+  const status = ['passed', 'blocked', 'not-applicable'].includes(result?.status) ? result.status : 'blocked';
+  const stages = (result?.phases || []).slice(0, 12).map((stage) => ({ id: String(stage.id || 'unknown'), status: String(stage.status || 'unknown') }));
+  const maintenanceEvidence = result?.maintenance?.selfBootstrap || null;
+  const summary = {
+    schemaVersion: LONG_RUNNING_OPERATION_SUMMARY_SCHEMA,
+    operation: 'self-bootstrap.closeout',
+    detail: 'compact',
+    terminal: true,
+    status,
+    taskId: result?.taskId || null,
+    runId: result?.runId || null,
+    resultIdentity: maintenanceEvidence?.resultIdentity || null,
+    stages,
+    primaryFailure: result?.diagnostic ? {
+      stage: (result.phases || []).find((stage) => stage.status === 'blocked')?.id || null,
+      code: result.diagnostic.code || 'self-bootstrap-closeout.failed',
+      message: compactText(result.diagnostic.message),
+    } : null,
+    cleanup: { status: result?.maintenance?.environmentCleanup === 'cleaned' ? 'passed' : result?.maintenance?.environmentCleanup === 'attention' ? 'failed' : 'pending' },
+    output: { maxBytes: LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES, bytes: 0, truncated: Boolean(result?.phases?.some((stage) => stage.operations?.length || stage.effects?.length) || result?.effects?.length) },
+    recovery: result?.taskId && result?.runId ? { owner: 'task-finish', operation: 'inspect', taskId: result.taskId, runId: result.runId, recordId: null } : null,
+  };
+  for (let attempt = 0; attempt < 4; attempt += 1) summary.output.bytes = Buffer.byteLength(`${JSON.stringify(summary)}\n`, 'utf8');
+  if (summary.output.bytes > LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES) throw closeoutError('self-bootstrap-closeout.compact-output-overflow', 'Self-bootstrap compact summary超过固定输出上限。');
+  return summary;
 }
 
 function portable(value) {
@@ -1366,7 +1412,15 @@ export function runSelfBootstrapCloseout({ finishResult, workspaceRoot, nodeExec
       const item = stages.get(id);
       if (item.status === 'pending') markNotApplicable(item, '前序阶段已停止。');
     }
-    return closeoutResult(currentFinishResult, plan, stages, 'blocked', active.diagnostic, developmentEntryIdentity, recoveryPlan);
+    const blocked = closeoutResult(currentFinishResult, plan, stages, 'blocked', active.diagnostic, developmentEntryIdentity, recoveryPlan);
+    if (!plan?.taskId || !plan?.runId) return blocked;
+    try { return persistTerminalResult(blocked); } catch (maintenanceError) {
+      blocked.maintenance = {
+        status: 'attention',
+        diagnostic: { code: maintenanceError.code || 'self-bootstrap-closeout.finish-maintenance-refresh-failed', message: maintenanceError.message },
+      };
+      return blocked;
+    }
   }
 }
 
@@ -1387,7 +1441,7 @@ function commandResultError(code, message, result) {
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--run', '--target', '--node-executable', '--retry-after-foreign-clear']);
+  const allowed = new Set(['--run', '--target', '--node-executable', '--retry-after-foreign-clear', '--detail']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', 'Runner参数必须为成对的option和值。');
   for (let index = 0; index < args.length; index += 2) {
     if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `Unknown option: ${args[index]}`);
@@ -1396,6 +1450,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   const targetRoot = option(args, '--target');
   const nodeExecutable = option(args, '--node-executable');
   const retryAfterForeignClear = option(args, '--retry-after-foreign-clear');
+  const detail = option(args, '--detail') || 'compact';
   if (!runId || !targetRoot || !nodeExecutable) {
     throw closeoutError('self-bootstrap-closeout.arguments-incomplete', 'Usage: node closeout.mjs --run <finish-run-id> --target <canonical-workspace> --node-executable <retained-node>');
   }
@@ -1405,6 +1460,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   if (retryAfterForeignClear !== null && retryAfterForeignClear !== 'true') {
     throw closeoutError('self-bootstrap-closeout.retry-mode-invalid', '--retry-after-foreign-clear只接受true。');
   }
+  if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', '--detail只接受compact或full。');
 
   const root = fs.realpathSync(path.resolve(targetRoot));
   const cli = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');
@@ -1478,14 +1534,18 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
 function main() {
   try {
     const result = runSelfBootstrapCloseoutCommand();
-    console.log(JSON.stringify(result, null, 2));
+    const detail = option(process.argv.slice(2), '--detail') || 'compact';
+    console.log(JSON.stringify(detail === 'full' ? result : compactSelfBootstrapCloseout(result), null, 2));
     if (result.status === 'blocked') process.exitCode = 1;
   } catch (error) {
-    console.error(JSON.stringify({
+    const result = {
       schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA,
       status: 'blocked',
       diagnostic: { code: error.code || 'self-bootstrap-closeout.driver-failed', message: error.message, details: error.details || null },
-    }, null, 2));
+    };
+    let full = false;
+    try { full = option(process.argv.slice(2), '--detail') === 'full'; } catch {}
+    console.error(JSON.stringify(full ? result : compactSelfBootstrapCloseout(result), null, 2));
     process.exitCode = 1;
   }
 }

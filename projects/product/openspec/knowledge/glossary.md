@@ -2,6 +2,13 @@
 
 本表维护 Buildr Product 的 canonical terminology。规范行为仍以 OpenSpec specs 为准。
 
+## 紧凑终端摘要（Compact Terminal Summary）
+
+- 定义：从长流程既有专业authority投影的有界、closed、只读JSON摘要，表达operation、running或terminal truth、关键阶段、primary failure、cleanup、展示边界与唯一结构化recovery pointer。
+- 适用范围：Formal Verification、release transaction与Buildr self-bootstrap的缺省stdout；完整专业Result仍由Execution Record、hosted/output evidence或Finish maintenance持有。
+- 避免混用：不是新的workflow Result、进度事件流或重试许可；stdout丢失、客户端断连、等待超时与`output.truncated`都必须先回读同一owner，不能推断失败或启动替代run。
+- 来源：canonical `openspec/specs/long-running-workflow-observability/spec.md`（本 Change convergence 时建立）。
+
 ## 硬门禁（Hard Gate）
 
 - 定义：仅当继续一个具体动作会破坏真实结果不变量时返回的 `blocked` 分类，例如越权、写错对象、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报。

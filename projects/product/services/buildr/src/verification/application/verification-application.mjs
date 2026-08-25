@@ -5,7 +5,7 @@ import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
 import process from 'node:process';
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, longRunningOperationSummary, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
 import { assertVerificationPlan, createVerificationPlan, createVerificationRequest } from '../domain/verification-plan.mjs';
 import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
@@ -263,6 +263,51 @@ function publicCheck(check) {
   };
 }
 
+function verificationDetail(args, runtime) {
+  const detail = runtime.optionValue(args, '--detail', 'compact');
+  if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
+  return detail;
+}
+
+export function compactVerificationExecution(payload) {
+  const record = payload.executionRecord || null;
+  const active = payload.status === 'active' || record?.lifecycleStatus === 'open';
+  const failureCheck = payload.checks?.find((check) => check.status === 'failed') || null;
+  const error = payload.error || failureCheck?.failureSummary || payload.executionRecord?.diagnostic || null;
+  const cleanupValue = payload.executionRecord?.transientCleanup?.status || payload.evidenceLifecycle?.cleanupStatus || null;
+  const cleanupStatus = cleanupValue === 'removed' || cleanupValue === 'passed'
+    ? 'passed'
+    : cleanupValue === 'failed' || payload.executionRecord?.status === 'attention' ? 'failed' : 'not-applicable';
+  return longRunningOperationSummary({
+    operation: 'verification.run',
+    terminal: !active,
+    status: active ? 'running' : payload.status === 'passed' ? 'passed' : payload.status === 'failed' ? 'failed' : 'unknown',
+    taskId: payload.environment?.taskId || record?.taskId || null,
+    runId: payload.runId || record?.runIdentity || null,
+    resultIdentity: payload.executionIdentity || record?.body?.digest || null,
+    stages: (payload.checks || []).map((check) => ({ id: check.id, status: check.status })),
+    primaryFailure: error ? {
+      stage: failureCheck?.id || null,
+      code: error.code || 'verification.failed',
+      message: error.message || String(error),
+    } : null,
+    cleanup: { status: cleanupStatus },
+    outputTruncated: (payload.checks?.length || 0) > 0 || Boolean(payload.evidenceReference),
+    recovery: record?.recordId ? {
+      owner: 'task-execution-record',
+      operation: 'inspect',
+      taskId: payload.environment?.taskId || record.taskId || null,
+      runId: payload.runId || record.runIdentity || null,
+      recordId: record.recordId,
+    } : null,
+  });
+}
+
+function writeVerificationJson(args, runtime, payload) {
+  const output = verificationDetail(args, runtime) === 'full' ? payload : compactVerificationExecution(payload);
+  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+}
+
 export function verificationExecutionIdentityMaterial({ project, declaration, target, context, observation, checks }) {
   return {
     schemaVersion: PUBLIC_JSON_SCHEMAS.verificationExecution,
@@ -350,6 +395,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
 
   async function verificationRun(args) {
     const json = args.includes('--json');
+    verificationDetail(args, runtime);
     const projectCode = runtime.optionValue(args, '--project', null);
     const targetIdentity = runtime.optionValue(args, '--target-identity', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
@@ -375,7 +421,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       error.code = 'verification.run_declaration_root_unsupported';
       throw error;
     }
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--plan', '--target-identity', '--candidate-identity', '--candidate-generation', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--selection-scope', '--retry', '--json']), new Set(['--retry', '--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--capability', '--plan', '--target-identity', '--candidate-identity', '--candidate-generation', '--target', '--environment', '--workspace', '--authorize-capability', '--authorize-resource', '--concurrency', '--selection-scope', '--retry', '--detail', '--json']), new Set(['--retry', '--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification run does not accept positional arguments.');
     if (!projectCode) throw new Error('verification run requires --project <code>.');
     if (requestedCapabilities.length === 0) throw new Error('verification run requires --plan <file> or at least one --capability <id>.');
@@ -552,7 +598,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
         evidenceLifecycle: null,
         nextActions,
       });
-      if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      if (json) writeVerificationJson(args, runtime, payload);
       else console.log(active
         ? `Verification execution already active: ${record.recordId} (${record.runIdentity})`
         : `Verification execution reused terminal record: ${record.recordId} (${record.outcome}/${record.lifecycleStatus})`);
@@ -717,7 +763,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
         if (fs.existsSync(evidence.lifecycle.cleanupReference)) runtime.atomicWriteFile(evidence.summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
       }
     }
-    if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    if (json) writeVerificationJson(args, runtime, payload);
     else {
       console.log(`Verification execution: ${payload.status}`);
       console.log(`Project: ${projectCode}; capabilities: ${checks.length}; duration: ${durationMs} ms`);
@@ -749,7 +795,9 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
         evidenceLifecycle: null,
         error: { code: error.code || 'verification.invalid_request', message: error.message },
       });
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      let full = false;
+      try { full = args.includes('--detail') && runtime.optionValue(args, '--detail', 'compact') === 'full'; } catch {}
+      process.stdout.write(`${JSON.stringify(full ? payload : compactVerificationExecution(payload), null, 2)}\n`);
       process.exitCode = error.taskExecutionRecordBusiness ? 1 : 2;
       return payload;
     }

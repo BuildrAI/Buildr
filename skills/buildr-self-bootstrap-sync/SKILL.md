@@ -38,10 +38,13 @@ Agent只启动一次bundled runner，不拆分补跑阶段：
 <receipt-node> skills/buildr-self-bootstrap-sync/scripts/closeout.mjs \
   --run <finish-run-id> \
   --target <canonical-workspace> \
-  --node-executable <receipt-node>
+  --node-executable <receipt-node> \
+  --detail compact
 ```
 
 Runner通过retained `projects/product/buildr task finish inspect --detail self-bootstrap --json`读取稳定投影，不解析内部Task Finish Result major，也不导入Product Application模块。
+
+Runner stdout默认返回`buildr.long-running-operation-summary/v1`有界摘要；只有诊断需要时才显式使用`--detail full`读取既有完整Result。摘要中的recovery pointer必须先用于回读同一Finish run，不得把stdout丢失、超时或截断当成重跑授权。
 
 ## Runner边界
 
@@ -68,11 +71,13 @@ Runner必须：
 
 ## 结果与恢复
 
-`buildr.self-bootstrap-closeout-result/v1`分别报告每个阶段、Git/ref、lease、sync/push、Buildr Web、development entry和Doctor事实。
+显式`--detail full`时，`buildr.self-bootstrap-closeout-result/v1`分别报告每个阶段、Git/ref、lease、sync/push、Buildr Web、development entry和Doctor事实。默认compact只投影终态、关键阶段、主失败、cleanup与恢复入口。
 
 - `passed`：适用Activation完成；
 - `not-applicable`：没有Workspace自举动作；
 - `blocked`：Activation需要Agent关注，但Task Delivery保持已交付。
+
+Runner一旦取得matching Task/run identity，必须在返回`passed`、`blocked`或`not-applicable`前刷新Finish maintenance中的self-bootstrap terminal evidence。若maintenance writer自身失败，保留原始主失败并把maintenance标为attention；不得伪造可恢复记录。
 
 失败时固定报告“主任务已交付，自举Workspace激活未完成”，并列出已完成effects、当前identity和精确失败点。Agent依据当前事实决定修复或稍后重试；不得重新运行业务Delivery、重新push已交付repository，或把Activation失败改写为Task未交付。
 
