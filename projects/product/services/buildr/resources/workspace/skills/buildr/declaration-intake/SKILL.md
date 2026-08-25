@@ -35,8 +35,8 @@ Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `insp
 
 任何写入前都先展示精确diff，并按以下closed条件分类：
 
-- `routine-maintenance`：只让声明追上当前用户目标和已登记scope内已经确认的wrapper、lockfile、build/test入口或既有authority；不新增/删除Project或Service scope，不改变applicability/requiredness，不引入capability、外部效果、安全例外，且authority无冲突。Agent可以在当前用户目标授权内直接交给owner维护并验证，无需让用户承担内部声明步骤。
-- `user-decision-required`：新增/删除scope，改变applicability或requiredness，引入新的capability、外部效果或安全例外，或authority证据冲突。必须在写入前请求用户确认精确变化。
+- `routine-maintenance`：只让声明追上当前用户目标和已登记scope内已经确认的wrapper、lockfile、build/test入口或既有authority；不新增/删除Project或Service scope，不改变discovery、usable targets或affected/full/provider边界，不引入capability、外部效果、安全例外，且authority无冲突。Agent可以在当前用户目标授权内直接交给owner维护并验证，无需让用户承担内部声明步骤。
+- `user-decision-required`：新增/删除scope，改变discovery、usable targets或affected/full/provider边界，引入新的capability、外部效果或安全例外，或authority证据冲突。必须在写入前请求用户确认精确变化。
 
 分类与展示至少包含：
 

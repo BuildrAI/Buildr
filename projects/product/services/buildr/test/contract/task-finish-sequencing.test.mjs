@@ -129,7 +129,7 @@ test('Task Development 是 Candidate/handoff 单一 authority，Finish required 
 
 test('Task Verification 只表达 transient execution 与 current Result authority', () => {
   for (const source of [verification, verificationContract]) {
-    for (const phrase of ['buildr.project-verification/v2', 'transient', 'Task Verification Application', 'coverage gap']) assert.ok(source.includes(phrase), phrase);
+    for (const phrase of ['buildr.project-verification/v3', 'transient', 'Task Verification Application', 'coverage gap']) assert.ok(source.includes(phrase), phrase);
     for (const legacy of ['archive-sensitive', 'supersedesEvidence', 'supersessionRelationship', 'requiredAssurance', 'candidateCompleteness']) assert.equal(source.includes(legacy), false, legacy);
   }
 });

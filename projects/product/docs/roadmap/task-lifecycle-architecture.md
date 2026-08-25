@@ -726,7 +726,7 @@ P0.4 交付 Result authority；P0.5 已把正式 consumer 切换为 Task Develop
 
 ### Verification Capability Declaration
 
-每个 Project 可以用根目录 `verification.yml` 声明自身及所属 Service 已经存在的测试验证能力，schema 为 `buildr.project-verification/v2`。Buildr 只引用已有命令、脚本、CI wrapper 或有界 Agent 操作，不根据技术栈发明测试，也不在 Verification 中开发缺失测试。
+每个 Project 可以用根目录 `verification.yml` 声明自身及所属 Service 已存在的测试验证能力族，且只接受 `buildr.project-verification/v3`。Buildr 以Request/Plan选择affected/full command、Agent或provider入口，只引用已有能力，不根据技术栈发明测试，也不在Verification中开发缺失测试。
 
 每项 capability 首版只保留：
 
@@ -737,7 +737,7 @@ P0.4 交付 Result authority；P0.5 已把正式 consumer 切换为 Task Develop
 | invocation | 有界 `command` 的 argv/cwd，或有界 `agent` instructions |
 | applicability | Project-relative path patterns，以及确有需要时的条件说明 |
 | proves | 该能力实际能够证明的事实 |
-| delivery policy | `requiredForDelivery: true / false` |
+| target policy | capability `usableFor` + Request/Plan + explicit Task override |
 | optional boundaries | 确有需要时的 environment、effects、authorization 与 resource claims |
 
 声明是 closed schema。旧 `mode`、`maturity`、`stages`、`enforcement`、`coverage`、`sources`、`dependsOn` 和 `supersedes` 不再读取。声明缺失或没有适用能力时只形成 coverage gap；不得自动创建测试，也不得把 gap 改写成通过。声明存在但无效时 fail closed，不能执行其中能力。

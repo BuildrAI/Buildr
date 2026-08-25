@@ -88,42 +88,18 @@ test('Development Launcher固定端口不改变Task Preview的随机端口与无
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
-test('Product 声明三轴模型、完整日常证据、Artifact Candidate 与单一 Browser 交付能力', () => {
+test('Product live声明在有界自举过渡期保持v2且不冒充高级provider语义', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
-  const delivery = declaration.capabilities.find((capability) => capability.id === 'product.delivery');
-  const fullRegression = declaration.capabilities.find((capability) => capability.id === 'product.full-regression');
-  const candidate = declaration.capabilities.find((capability) => capability.id === 'product.candidate');
+  const provider = declaration.capabilities.find((capability) => capability.id === 'product.verification');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
-  const releaseSet = declaration.capabilities.find((capability) => capability.id === 'product.release-artifact-set');
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
-  assert.equal(fast.title, 'Buildr Product Quick 开发反馈');
-  assert.match(fast.proves[0], /不证明完整 Task Delivery、Product Artifact Candidate 或 Published Release/u);
-  assert.deepEqual(delivery.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:changed', '--', '--base', 'origin/dev'], cwd: 'services/buildr' });
-  assert.equal(delivery.requiredForDelivery, true);
-  assert.deepEqual(delivery.environment.requires, ['node', 'npm', 'git']);
-  assert.deepEqual(delivery.applicability.paths, ['**']);
-  assert.match(delivery.proves.join(' '), /frozen Task Content/u);
-  assert.match(delivery.proves.join(' '), /affected 或必要 daily-full/u);
-  assert.match(delivery.applicability.conditions.join(' '), /稳定 reason code/u);
-  assert.deepEqual(fullRegression.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:daily-full'], cwd: 'services/buildr' });
-  assert.equal(fullRegression.requiredForDelivery, false);
-  assert.deepEqual(fullRegression.environment.requires, ['node', 'npm', 'git']);
-  assert.deepEqual(fullRegression.applicability.paths, ['**']);
-  assert.deepEqual(candidate.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:candidate'], cwd: 'services/buildr' });
-  assert.equal(candidate.requiredForDelivery, false);
-  assert.deepEqual(candidate.environment.requires, ['node', 'npm', 'git']);
-  assert.deepEqual(candidate.applicability.paths, ['**']);
-  assert.equal(fullRegression.title, 'Buildr Product 完整日常证据');
-  assert.match(fullRegression.proves.join(' '), /core compatibility profile/u);
-  assert.equal(candidate.title, 'Buildr Product Artifact Candidate 验证');
-  assert.match(candidate.proves.join(' '), /不表示Published Release已经成功/u);
-  assert.equal(declaration.capabilities.some((capability) => capability.id === 'product.task-affected'), false);
+  assert.equal(fast.requiredForDelivery, false);
+  assert.equal(provider, undefined);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.deepEqual(browser.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
-  assert.equal(browser.requiredForDelivery, true);
   assert.deepEqual(browser.applicability.paths, [
     'services/buildr-web/**',
     'services/buildr/web-dist/**',
@@ -132,17 +108,7 @@ test('Product 声明三轴模型、完整日常证据、Artifact Candidate 与�
     'services/buildr/test/verification/browser-selector-dispatcher.mjs',
     'services/buildr/test/verification/web-dist.mjs',
   ]);
-  assert.deepEqual(browser.applicability.conditions, [
-    'Buildr Web 路由、DOM 交互、Agent Action、package、lockfile、Vite 或 TypeScript 配置发生变化',
-    '未显式提供 BUILDR_CHANGED_PATHS_JSON 时，dispatcher 从 execution root 的 Git verification base 推导 changed paths',
-    '适用输入至少选择一个 Browser selector；非适用输入明确返回 not-applicable，Browser-owned 0 selector 阻塞',
-    'selected Browser 在启动 Chrome 前，将 Buildr Web 构建到系统临时 staging 并与 tracked web-dist 精确比较',
-  ]);
-  assert.deepEqual(browser.proves, [
-    '适用的 changed paths 已执行至少一个稳定 Browser selector，或被明确判定为 not-applicable',
-    '临时 staging build 与 tracked web-dist 精确一致，冻结目标未被改写',
-    'Project、Service、Change 与 Task 页面关键浏览器交互和错误反馈可用',
-  ]);
+  assert.equal(browser.requiredForDelivery, true);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');
@@ -151,15 +117,6 @@ test('Product 声明三轴模型、完整日常证据、Artifact Candidate 与�
   assert.ok(browserDelegation);
   for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
-  assert.deepEqual(releaseSet.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:focus', '--', 'group:release'], cwd: 'services/buildr' });
-  assert.equal(releaseSet.requiredForDelivery, false);
-  assert.equal(releaseSet.title, 'Buildr Release contract 与本机 smoke 验证');
-  assert.match(releaseSet.applicability.conditions.join(' '), /不执行真实外部发布/u);
-  assert.match(releaseSet.proves.join(' '), /不冒充matching Candidate/u);
-  assert.ok(releaseSet.applicability.paths.includes('.github/workflows/publish.yml'));
-  assert.equal(releaseSet.applicability.paths.some((value) => value === '.github/**' || value === '.github/workflows/**'), false);
-  assert.equal(declaration.capabilities.some((capability) => capability.id.startsWith('product.platform-')), false);
-  assert.equal(declaration.resources.some((resource) => resource.id === 'nodejs-release'), false);
   for (const owner of ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke']) {
     assert.ok(verificationSteps.find((step) => step.id === owner).inputs.includes('.github/workflows/publish.yml'), `${owner} must own the governed release workflow`);
   }

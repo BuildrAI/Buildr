@@ -485,6 +485,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "system-verification-admission": {
     "inputs": [
       "test/system/verification-changed-paths.test.mjs",
+      "test/system/product-verification-provider-cli.test.mjs",
       "test/system/verification-run-cli.test.mjs",
       "test/verification/changed*.mjs",
       "test/verification/candidate.mjs",
@@ -493,6 +494,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/verification/dag-scheduler.mjs",
       "test/verification/plan-runner.mjs",
       "test/verification/planner.mjs",
+      "test/verification/product-provider-entry.mjs",
       "test/verification/registry.mjs",
       "src/verification/application/**",
       "test/verification/system-suites.mjs",

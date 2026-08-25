@@ -67,7 +67,6 @@ function withoutVerificationPresentationFields(text) {
   for (const capability of value.capabilities ?? []) {
     delete capability.title;
     delete capability.proves;
-    if (capability.applicability && typeof capability.applicability === 'object') delete capability.applicability.conditions;
   }
   return value;
 }

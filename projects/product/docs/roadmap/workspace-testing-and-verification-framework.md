@@ -141,7 +141,7 @@ Verification Result → 正式事实与结论
 3. 没有适用能力或 owner 不可信时形成 coverage gap，不把 build、lint 或未知测试冒充通过；
 4. Task Delivery、Product Artifact Candidate 与 Published Release 的对象和结论不混用；
 5. 普通 Project 不需要采用 Buildr Product 的 registry、DAG 或 Context Runtime；
-6. 现有 v2 capability 仍可读、可诊断和可执行，新增语义可以渐进提供。
+6. 自举切换期间，现有 v2 capability 只经封闭 adapter 读取、诊断并按 full Task Delivery 执行；它不获得 affected、Candidate、Release 或高级 provider 语义，且由后续依赖 Contribution 负责迁移后删除。
 
 ### 试点事实矩阵
 
@@ -193,37 +193,33 @@ Buildr Product 的 release focus 可以验证 tarball、Launcher、安装与 rea
 
 ## 当前差距与迁移
 
-当前 `buildr.project-verification/v2` 已能声明稳定 capability、scope、invocation、applicability、proves、环境和副作用，但仍以 capability paths 与自然语言 conditions 为主，且指导明确排除证据边界、affected/full 和验证目标。现有 Task Verification 可以执行已选 capability并维护 Execution Record / Result，但没有面向普通 Workspace 的统一能力族发现与 Verification Plan contract。
+v3、Verification Request/Plan、普通 planner 与高级 provider 已完成实现，但 Buildr 自举存在明确的版本边界：retained controller 仍只识别 Product live v2；若 Candidate 先把该声明改为 v3，retained authority 就无法形成正式 Content Target。当前 Child 因此交付一个有界过渡：新 runtime 双读 v2/v3，Product live 声明暂留 v2，Skill、模板和所有新增声明仍只生成 v3。
 
-迁移必须：
+v2 adapter 只做封闭映射：`applicability.paths` 成为 discovery source，单一 invocation 只成为 `full`，`requiredForDelivery: true` 只获得 `task-delivery`，evidence 明确为 `legacy-declared`。它不得推断 affected、Product Artifact Candidate、Published Release 或 provider 能力。合法 v2 产生非阻塞迁移提示，非法 v2 继续阻断。
 
-- 保持 v2 声明可读、可诊断和可执行，不要求所有 Workspace 一次性改写；
-- 先让 Skill 与声明语义对齐，再改变 reader、planner 或 Result consumer；
-- 从真实声明和 Task Execution Record 验证迁移，不用示例配置证明兼容；
-- 保持现有环境、授权、资源、execution dedup、Result current identity 与风险决定边界；
-- 不以架构更清晰冒充验证覆盖或执行时间收益。
+最终删除由 Parent 的依赖 Contribution `migrate-pilots-and-remove-project-verification-v2` 唯一负责，不按日期或“以后再说”决定。只有当前过渡已交付并完成自举、retained controller 支持 v3 且 Doctor ready、Product/Pig/FreshX/Foundation 的受控 live 声明均由各自正式 authority 迁移、gap/affected/dependency/full 证据齐备，并且 active source 扫描除 archive/Git provenance 外无 v2，才允许删除 reader、提示和 Product v2 声明。
 
 ## 后续实现 Change
 
-唯一实现 Change 至少需要修改 `project-testing-guidance`、`project-declaration-intake`、`project-test-capabilities`、`task-verification` 与适用的 Agent workflow requirements，并完成 schema、Skill、reader、plan/run、Execution Record reconciliation、Doctor/diagnostics、v2 compatibility 和五个试点范围。
+首个实现 Change 已完成 v3 schema、Skill、reader、plan/run、Execution Record reconciliation、Doctor/diagnostics 与 Product provider；本次 corrective Change 只负责跨越 retained self-bootstrap 边界。后续唯一迁移/删除 Change 负责四个受控试点声明和 Product live 声明的最终 v3 cutover。
 
 实现 Change 可以直接采用以下架构决定：
 
 - 保持“验证目标、选择范围、执行证据”三个正交问题；
 - 保持 Capability Family → Request → Plan → Execution Record → Result 的单向 authority；
-- Project 根 `verification.yml` 继续作为第一版兼容入口，具体测试仍由源码与构建配置持有；
+- Project 根 `verification.yml` 继续作为声明入口，具体测试仍由源码与构建配置持有；新增和迁移后的声明只使用 v3；
 - 普通 Workspace 使用通用选择能力，高复杂度 Project 通过统一 provider contract 接入内部 planner；
 - coverage gap、unknown owner 与 full reason 是正式 Plan 输出，不以空选择或 claimed success 代替；
 - Task Delivery、Product Artifact Candidate 与 Published Release 必须绑定不同对象和 matching execution evidence。
 
-以下细节必须由实现 Change 根据 schema、兼容样本和运行证据定稿，本文不预先锁定：
+以下细节继续由后续迁移根据真实运行证据定稿：
 
-- vNext 字段名、枚举和 v2 adapter 的物理实现；
+- 各试点 v3 capability 的精确 evidence、usable target 与 affected/full 入口；
 - 是否以及何时增加 Service 级物理声明文件；
 - 普通 planner 的 module/owner/dependency discovery 优先级；
 - Verification Plan 的持久化、identity 与 current/stale 细节；
 - 高级 provider 的具体 API、资源 lease 与 failure mapping。
 
-实现验收至少要用真实 fixture 或隔离 Workspace 证明：v2 原样可执行、Pig 前端形成 gap、FreshX affected 可解释、Foundation 跨 Project 依赖扩张、unknown owner fail closed、full 不升级 Candidate、Candidate 不冒充 Release、Product provider 不泄漏内部 DAG，以及 Execution Record 与 Result 仍由现有唯一 writer 对账。
+最终迁移验收至少要用真实 fixture 或隔离 Workspace 证明：Pig 前端形成 gap、FreshX affected 可解释、Foundation 跨 Project 依赖扩张、unknown owner fail closed、full 不升级 Candidate、Candidate 不冒充 Release、Product provider 不泄漏内部 DAG，以及 Execution Record 与 Result 仍由现有唯一 writer 对账；完成后 active source 不再保留 v2 reader 或声明。
 
 该 Change 在 proposal、design、delta specs、tasks 与实现同时 apply-ready 前，不得把本文目标投射为当前 Buildr 能力。

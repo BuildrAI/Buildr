@@ -27,6 +27,8 @@ export function recordVerificationResultFromEvidence(runtime, root, taskId, inpu
     });
   }
   const records = [];
+  const requestIdentity = input.requestIdentity || digest({ taskId, candidate, target: input.targetIdentity });
+  const planIdentity = input.planIdentity || digest({ requestIdentity, capabilities: input.capabilities.map((item) => `${item.project}/${item.capability}`).sort() });
   for (const observation of observations) {
     const selected = input.capabilities.filter((item) => item.project === observation.project);
     if (!selected.length) continue;
@@ -53,10 +55,12 @@ export function recordVerificationResultFromEvidence(runtime, root, taskId, inpu
       outcome: checks.every((item) => item.status === 'passed') ? 'passed' : 'failed',
       files: createVerificationExecutionRecordFiles({
         runId: runIdentity, invocationIdentity, context: { taskId, scopes: [] }, candidate,
+        requestIdentity, planIdentity,
+        executionUnitIdentities: selected.map((item) => `${observation.project}/${item.capability}:full`),
         targetRoot: root, targetIdentity: input.targetIdentity, targetStable: true, targetDrift: null,
         before: null, after: null, projectCode: observation.project,
         declarationPath: `${root}/${observation.path}`, declarationIdentity: observation.identity,
-        selectedCapabilities: selected.map((item) => ({ id: item.capability, scope: { project: observation.project, services: [] }, proves: item.facts, requiredForDelivery: true, resourceClaims: [] })),
+        selectedCapabilities: selected.map((item) => ({ id: item.capability, scope: { project: observation.project, services: [] }, evidence: ['unit'], proves: item.facts, selectedScope: 'full', resourceClaims: [] })),
         authorizedCapabilities: [], authorizedResources: [], checks,
         outcome: checks.every((item) => item.status === 'passed') ? 'passed' : 'failed', durationMs: 1,
         startedAt: '2026-08-22T00:00:00.001Z', finishedAt: '2026-08-22T00:00:00.002Z',

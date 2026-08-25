@@ -9,20 +9,24 @@ const PUBLIC_STATUSES = new Set(['not-applicable', 'not-opened', 'active', 'reta
 const MAPPER_FIELDS = new Set([
   'runId', 'executionIdentity', 'invocationIdentity', 'context', 'candidate', 'targetRoot', 'targetIdentity', 'targetStable', 'targetDrift', 'before', 'after',
   'projectCode', 'declarationPath', 'declarationIdentity', 'selectedCapabilities', 'authorizedCapabilities',
-  'authorizedResources', 'checks', 'outcome', 'durationMs', 'startedAt', 'finishedAt', 'diagnostic',
+  'requestIdentity', 'planIdentity', 'providerIdentity', 'executionUnitIdentities', 'authorizedResources', 'checks', 'outcome', 'durationMs', 'startedAt', 'finishedAt', 'diagnostic',
 ]);
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
-export function verificationInvocationIdentity({ taskId, candidate, projectCode, declarationIdentity, targetIdentity, selectedCapabilities }) {
+export function verificationInvocationIdentity({ taskId, candidate, projectCode, declarationIdentity, targetIdentity, selectedCapabilities, requestIdentity = null, planIdentity = null, providerIdentity = null, executionUnitIdentities = [] }) {
   return digest({
     taskId,
     candidate,
     project: projectCode,
     declarationIdentity,
     targetIdentity,
+    requestIdentity,
+    planIdentity,
+    providerIdentity,
+    executionUnitIdentities: [...executionUnitIdentities].sort(),
     capabilities: (selectedCapabilities || []).map((item) => typeof item === 'string' ? item : item.id).sort(),
     invocationKind: 'command',
   });
@@ -115,6 +119,9 @@ export function createVerificationExecutionRecordFiles(input) {
       project: input.projectCode,
       declarationIdentity: input.declarationIdentity,
       targetIdentity: input.targetIdentity,
+      requestIdentity: input.requestIdentity || null,
+      planIdentity: input.planIdentity || null,
+      providerIdentity: input.providerIdentity || null,
       capabilities: (input.selectedCapabilities || []).map((item) => item.id).sort(),
       invocationKind: 'command',
     }),
@@ -129,11 +136,13 @@ export function createVerificationExecutionRecordFiles(input) {
     },
     project: { code: input.projectCode },
     declaration: { path: declarationPath, identity: input.declarationIdentity },
+    plan: { requestIdentity: input.requestIdentity || null, identity: input.planIdentity || null, providerIdentity: input.providerIdentity || null, executionUnits: [...(input.executionUnitIdentities || [])].sort() },
     selectedCapabilities: (input.selectedCapabilities || []).map((capability) => ({
       id: capability.id,
       scope: capability.scope,
+      evidence: capability.evidence || [],
       proves: capability.proves,
-      requiredForDelivery: capability.requiredForDelivery === true,
+      selectedScope: capability.selectedScope || 'full',
       resourceClaims: capability.resourceClaims || [],
     })),
     authorization: {

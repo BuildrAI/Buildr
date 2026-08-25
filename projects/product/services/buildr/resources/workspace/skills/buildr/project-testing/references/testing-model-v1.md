@@ -82,7 +82,7 @@ step
 → executionBoundary
 → environment/effects
 → targetDuration
-→ applicability/proves
+→ discovery/proves/evidence/usableFor
 → primaryEvidenceOwner
 → observableOutcome/cases
 → assertions/counterEvidence

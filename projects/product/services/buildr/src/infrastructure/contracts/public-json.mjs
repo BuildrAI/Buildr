@@ -51,6 +51,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskFinishResult: 'buildr.task-finish-result/v3',
   taskFinishSelfBootstrapInput: 'buildr.task-finish-self-bootstrap-input/v1',
   verificationExecution: 'buildr.verification-execution/v1',
+  verificationPlan: 'buildr.verification-plan/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
 });
 

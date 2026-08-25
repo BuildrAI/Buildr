@@ -24,12 +24,12 @@ const test = createBuildrContextTest({
 
 function writeVerificationDeclaration(root) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2',
+    schemaVersion: 'buildr.project-verification/v3',
     resources: [],
     capabilities: [{
       id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
-      invocation: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' },
-      applicability: { paths: ['**'], conditions: [] }, proves: ['Demo content is readable.'], requiredForDelivery: true,
+      proves: ['Demo content is readable.'], evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
+      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' } },
       environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
     }],
   }));
@@ -40,7 +40,7 @@ function copyFixtureWorkspace(t, name) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
   writeVerificationDeclaration(root);
   fs.writeFileSync(path.join(root, 'projects', 'other', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [],
+    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [],
   }));
   return { base, root };
 }

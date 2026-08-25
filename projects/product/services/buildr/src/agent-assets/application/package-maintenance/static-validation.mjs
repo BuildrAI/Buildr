@@ -1148,8 +1148,9 @@ export function createPackageStaticValidator(deps) {
       if (skill.id === 'task-verification') {
         for (const requiredText of [
           '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
-          'references/project-verification-v2.md',
-          'buildr.project-verification/v2',
+          'references/project-verification-v3.md',
+          'buildr.project-verification/v3',
+          'buildr verification plan --project <code>',
           'buildr task verification inspect <task-id>',
           'buildr task verification reconcile <task-id>',
           'buildr verification run --project <code>',
@@ -1251,7 +1252,7 @@ export function createPackageStaticValidator(deps) {
         for (const forbiddenPolicy of ['fast-forward-only', '默认 rebase 到最新目标分支', '不创建 merge commit']) {
           if (skillContent.includes(forbiddenPolicy)) problems.push(`task-finish must not copy Git provider policy: ${forbiddenPolicy}`);
         }
-        for (const forbiddenAuthority of ['current Verification Result', 'requiredForDelivery', 'formalVerificationExecutions <= 1']) {
+        for (const forbiddenAuthority of ['current Verification Result', 'formalVerificationExecutions <= 1']) {
           if (skillContent.includes(forbiddenAuthority)) problems.push(`task-finish must not retain Verification authority: ${forbiddenAuthority}`);
         }
         if (skillContent.includes('buildr openspec')) problems.push('task-finish source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
@@ -1464,6 +1465,32 @@ export function createPackageStaticValidator(deps) {
     return bootstrapContract;
   }
 
+  function validateProjectVerificationTransition(context) {
+    const { root, problems } = context;
+    const productDeclaration = fs.readFileSync(path.resolve(root, '../..', 'verification.yml'), 'utf8');
+    if (!productDeclaration.startsWith('schemaVersion: buildr.project-verification/v2\n')) {
+      problems.push('Product live verification.yml must remain v2 only for the bounded self-bootstrap transition.');
+    }
+    const reader = fs.readFileSync(path.join(root, 'src/verification/application/project-verification-diagnostics.mjs'), 'utf8');
+    for (const requiredText of [
+      "sourceSchemaVersion: 'buildr.project-verification/v2'",
+      "evidence: ['legacy-declared']",
+      "usableFor: capability.requiredForDelivery ? ['task-delivery'] : []",
+      'project.verification_v2_transition',
+      '不要新增 v2 声明',
+    ]) if (!reader.includes(requiredText)) problems.push(`Bounded Project verification v2 reader must include ${JSON.stringify(requiredText)}.`);
+
+    for (const relative of [
+      'resources/workspace/skills/buildr/task-verification/SKILL.md',
+      'resources/workspace/skills/buildr/task-verification/templates/project-verification.yml',
+      'resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md',
+    ]) {
+      const content = fs.readFileSync(path.join(root, relative), 'utf8');
+      if (content.includes('buildr.project-verification/v2')) problems.push(`${relative} must remain v3-only and must not teach or generate v2.`);
+      if (!content.includes('buildr.project-verification/v3')) problems.push(`${relative} must retain the v3 authoring contract.`);
+    }
+  }
+
   function validatePackageStatic(context) {
     validatePackageMetadata(context);
     validateTaskEnvironmentAuthorityResidue(context);
@@ -1473,6 +1500,7 @@ export function createPackageStaticValidator(deps) {
     validateInternalWorkflowRouteClosure(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
+    validateProjectVerificationTransition(context);
     const skillSourceIds = validatePackageSkills(context);
     validatePackageBuiltins(context, skillSourceIds);
     const bootstrapContract = validatePackageAssets(context);

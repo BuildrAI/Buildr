@@ -67,8 +67,8 @@ test('package presentation metadata stays affected while scripts and dependencie
 });
 
 test('verification presentation metadata stays affected while invocation and environment changes force Full', () => {
-  const base = `schemaVersion: buildr.project-verification/v2\nresources:\n  - id: browser\n    title: Old\ncapabilities:\n  - id: product.delivery\n    title: Old\n    invocation:\n      kind: command\n      argv: [npm, test]\n    proves: [old]\n    applicability:\n      paths: ['**']\n      conditions: [old]\n`;
-  const presentation = base.replaceAll('Old', 'New').replace('proves: [old]', 'proves: [new]').replace('conditions: [old]', 'conditions: [new]');
+  const base = `schemaVersion: buildr.project-verification/v3\nresources:\n  - id: browser\n    title: Old\n    strategy: coordinated\n    capacity: 1\n    authorization: implicit\ncapabilities:\n  - id: product.delivery\n    title: Old\n    scope: { project: product, services: [] }\n    proves: [old]\n    evidence: [unit]\n    usableFor: [task-delivery]\n    discovery: { sources: ['**'] }\n    invocation:\n      affected: { kind: command, argv: [npm, test], cwd: . }\n      full: { kind: command, argv: [npm, test], cwd: . }\n    environment: { requires: [] }\n    effects: { writes: [], externalSystems: [], authorization: implicit }\n    resourceClaims: []\n`;
+  const presentation = base.replaceAll('Old', 'New').replace('proves: [old]', 'proves: [new]');
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, presentation), true);
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, base.replace('argv: [npm, test]', 'argv: [npm, run, test:changed]')), false);
   assert.equal(isVerificationDeclarationMetadataOnlyChange(base, `${base}    environment:\n      requires: [node]\n`), false);
