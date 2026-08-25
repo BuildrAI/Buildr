@@ -336,6 +336,9 @@ export function registerTaskRecordApplication(runtime) {
 
   function updateTaskRecord(targetRoot, taskId, input) {
     const { operations, expectedRecordDigest } = normalizedUpdate(input);
+    const retrospectiveSourceOnly = operations.title === undefined && operations.intent === undefined && operations.parentTaskId === undefined
+      && ['addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges'].every((field) => operations[field].length === 0)
+      && (operations.addRetrospectiveSources.length > 0 || operations.removeRetrospectiveSources.length > 0);
     return mutate(targetRoot, taskId, 'update', { expectedRecordDigest }, (current) => ({
       ...current,
       ...(operations.title === undefined ? {} : { title: operations.title }),
@@ -347,7 +350,7 @@ export function registerTaskRecordApplication(runtime) {
       },
       changes: applyCollection(current.changes, operations.addChanges, operations.removeChanges, (item) => referenceKey(item, 'change'), 'Change references'),
       retrospectiveSourceTaskIds: applyCollection(current.retrospectiveSourceTaskIds, operations.addRetrospectiveSources, operations.removeRetrospectiveSources, (item) => item, 'Retrospective sources'),
-    }), operations.addChanges);
+    }), operations.addChanges, retrospectiveSourceOnly ? ['todo', 'active', 'completed', 'abandoned'] : ['todo', 'active']);
   }
 
   function activateTaskRecord(targetRoot, taskId, input = {}) {
