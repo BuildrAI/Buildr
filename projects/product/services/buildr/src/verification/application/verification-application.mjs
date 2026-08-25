@@ -278,6 +278,9 @@ export function compactVerificationExecution(payload) {
   const cleanupStatus = cleanupValue === 'removed' || cleanupValue === 'passed'
     ? 'passed'
     : cleanupValue === 'failed' || payload.executionRecord?.status === 'attention' ? 'failed' : 'not-applicable';
+  const failureMessage = error?.code === 'verification.preparation_blocked'
+    ? 'Formal Verification preparation is blocked. Rerun the same verification run invocation with --detail full to read admission.recovery.planRequest, then pass that request unchanged to Task Environment.'
+    : error?.message || String(error);
   return longRunningOperationSummary({
     operation: 'verification.run',
     terminal: !active,
@@ -289,7 +292,7 @@ export function compactVerificationExecution(payload) {
     primaryFailure: error ? {
       stage: failureCheck?.id || null,
       code: error.code || 'verification.failed',
-      message: error.message || String(error),
+      message: failureMessage,
     } : null,
     cleanup: { status: cleanupStatus },
     outputTruncated: (payload.checks?.length || 0) > 0 || Boolean(payload.evidenceReference),

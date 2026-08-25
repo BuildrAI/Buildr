@@ -433,6 +433,11 @@ test('saved Contribution Handoff派生delivered/extra/superseded，Parent仍需�
     finalAcceptance: ['Every Contribution is delivered or superseded.', 'The Parent records integration acceptance.'],
   };
   const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan });
+  current.runtime.recordTaskReview(current.root, 'parent-task', {
+    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Current Parent Plan'], uncovered: [], findings: [],
+    conclusion: { outcome: 'ready', summary: 'Parent Plan is ready.' },
+  });
+  current.runtime.refreshParentPlanning(current.root, 'parent-task');
   current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
   current.runtime.completeTaskRecord(current.root, 'child-task', { summary: 'Delivered through Formal Finish fixture.', noChange: false });
   const contributionHandoff = createContributionHandoff({
@@ -453,9 +458,11 @@ test('saved Contribution Handoff派生delivered/extra/superseded，Parent仍需�
   ]);
   assert.equal(inspected.prerequisitesSatisfied, true);
   assert.equal(inspected.parentStatus, 'active');
+  assert.equal(inspected.startup.next.action, 'accept-parent');
   inspected = current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.plan.identity, summary: 'Integrated behavior and all invariants are accepted.' });
   assert.equal(inspected.parentStatus, 'active');
   assert.equal(inspected.parentAcceptance.planIdentity, recorded.plan.identity);
+  assert.equal(inspected.startup.next, null);
   current.runtime.completeTaskRecord(current.root, 'parent-task', { summary: 'Explicit Parent completion after final integration acceptance.', noChange: false });
   assert.equal(current.runtime.inspectTaskRecord(current.root, 'parent-task').record.status, 'completed');
 });

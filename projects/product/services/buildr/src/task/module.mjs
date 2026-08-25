@@ -318,7 +318,7 @@ function taskEnvironmentCliContributions() {
     },
     {
       key: 'task environment plan record', surface: 'agent-machine', summary: '解析Project Preparation Declaration并原子保存当前Task的Plan执行快照，不执行任何准备Step。',
-      help: ['Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]', '', '输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。'],
+      help: ['Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]', '       buildr task environment plan record --schema|--example [--json]', '', '输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。', 'Discovery与实际Plan request定义同源，零Workspace读取且零写入。'],
       match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
       run: (runtime, context) => taskEnvironmentPlanCommand(runtime, 'record', context.args.slice(1)),
     },

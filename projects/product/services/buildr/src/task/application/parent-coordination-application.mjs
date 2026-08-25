@@ -188,6 +188,7 @@ export function registerParentCoordinationApplication(runtime) {
     const reviewCurrent = planningReview?.present && planningReview.applicability === 'current';
     const reviewReady = reviewCurrent && planningReview.result?.conclusion?.outcome === 'ready';
     const gateCurrent = Boolean(reviewReady && planningGate?.applicability === 'current' && planningGate.targetIdentity === plan.identity && planningGate.resultDigest === planningReview.resultDigest && planningGate.outcome === 'ready');
+    const acceptanceCurrent = receipt?.parentAcceptance?.planIdentity === plan.identity;
     const checks = {
       task: task.record.status === 'active' ? 'ready' : 'blocked', environment: execution?.ready ? 'ready' : 'blocked', development: receipt ? 'ready' : 'blocked', parentPlan: 'ready',
       planningReview: reviewReady ? 'ready' : reviewCurrent ? 'changes-required' : planningReview?.present ? 'stale' : 'missing', planningGate: gateCurrent ? 'ready' : 'missing',
@@ -206,7 +207,8 @@ export function registerParentCoordinationApplication(runtime) {
     else if (checks.planningReview !== 'ready') next = { mode: 'recommended', owner: 'task-review', action: 'planning-review', summary: '对current Parent Plan完成Planning Review。' };
     else if (checks.planningGate !== 'ready') next = { mode: 'recommended', owner: 'task-development', action: 'refresh-parent-planning', summary: '消费current Parent Planning Review并刷新Development planning gate。' };
     else if (eligibleContributions.length) next = { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: eligibleContributions, summary: '选择一个依赖已满足的Contribution并启动独立Child Task。' };
-    else if (progress.prerequisitesSatisfied) next = { mode: 'recommended', owner: 'task-development', action: 'accept-parent', summary: '全部Contribution已有明确处置；执行Parent最终集成验收。' };
+    else if (progress.prerequisitesSatisfied && !acceptanceCurrent) next = { mode: 'recommended', owner: 'task-development', action: 'accept-parent', summary: '全部Contribution已有明确处置；执行Parent最终集成验收。' };
+    else if (progress.prerequisitesSatisfied) next = null;
     else next = { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: '当前没有可启动Contribution；等待既有Child handoff或显式reconcile。' };
     return { status: gateCurrent && (eligibleContributions.length || progress.prerequisitesSatisfied) ? 'ready' : 'blocked', checks, blockers, eligibleContributions, next };
   }

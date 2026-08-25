@@ -46,6 +46,7 @@ test('CLI、Buildr Web与Agent共用Parent Coordination Application和单一publ
   assert.match(worker, /coordination:\s*'inspectParentCoordination'/);
   assert.match(json, /buildr\.parent-coordination-result\/v3/);
   for (const phrase of ['Parent Plan', 'Contribution Handoff', 'task parent bind-child', '不自动完成Parent']) assert.ok(skill.includes(phrase), phrase);
+  for (const phrase of ['Acceptance绑定current Parent Plan后', '重读顶层`task next`', '不得再次执行`accept-parent`', '不得在Skill或Parent coordination中硬编码Finish']) assert.ok(skill.includes(phrase), phrase);
   for (const phrase of [
     'Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入',
     '操作系统临时目录',

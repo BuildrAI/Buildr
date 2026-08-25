@@ -61,3 +61,21 @@ test('matching active Verification投影running并指向同一Execution Record',
   });
   assert.equal(JSON.stringify(summary).includes('/private/environment'), false);
 });
+
+test('pre-admission preparation blocked保持null recovery并指向同一invocation full详情', () => {
+  const summary = compactVerificationExecution({
+    schemaVersion: 'buildr.verification-execution/v1',
+    status: 'failed',
+    checks: [],
+    executionRecord: null,
+    admission: { recovery: { planRequest: { schemaVersion: 'buildr.task-environment-plan-request/v1' } } },
+    error: { code: 'verification.preparation_blocked', message: 'Preparation is missing.' },
+  });
+
+  assert.equal(summary.primaryFailure.code, 'verification.preparation_blocked');
+  assert.match(summary.primaryFailure.message, /same verification run invocation with --detail full/u);
+  assert.match(summary.primaryFailure.message, /admission\.recovery\.planRequest/u);
+  assert.equal(summary.recovery, null);
+  assert.equal(JSON.stringify(summary).includes('planRequest'), true);
+  assert.equal(summary.admission, undefined);
+});

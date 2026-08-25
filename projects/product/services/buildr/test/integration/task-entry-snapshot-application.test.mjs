@@ -210,6 +210,23 @@ test('Parent Task Entry覆盖Planning Review、eligible Child与dependency wait�
   }
 });
 
+test('current Parent Acceptance后Parent startup不遮蔽Development typed next', (t) => {
+  const parentPlan = { identity: `sha256-${'8'.repeat(64)}` };
+  const developmentNext = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop final Parent integration.' };
+  const parentStartup = {
+    schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', status: 'ready', taskId, mode: 'parent-plan',
+    checks: { task: 'ready', environment: 'ready', development: 'ready', parentPlan: 'ready', planningReview: 'ready', planningGate: 'ready' },
+    blockers: [], eligibleContributions: [], next: null, effects: [],
+  };
+  const current = fixture(t, { development: development(developmentNext, { receipt: { parentPlan, parentAcceptance: { planIdentity: parentPlan.identity } } }), parentStartup });
+
+  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+  assert.equal(result.next.action, 'develop-and-observe');
+  assert.equal(result.next.owner, 'agent');
+  assert.equal(result.parent.status, 'ready');
+  assert.equal(current.calls.parent, 1);
+});
+
 test('ordinary Task不读取Parent Coordination', (t) => {
   const current = fixture(t, { development: development({ mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' }) });
   const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);

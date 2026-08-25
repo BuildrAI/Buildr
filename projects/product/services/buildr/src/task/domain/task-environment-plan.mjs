@@ -6,6 +6,67 @@ export const LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA_V2 = 'buildr.task-environment-p
 export const LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA = 'buildr.task-environment-plan/v1';
 export const TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA = 'buildr.task-environment-plan-request/v1';
 
+const DISCOVERY_TEXT = Object.freeze({ type: 'string', minLength: 1 });
+const DISCOVERY_IDENTIFIER = Object.freeze({ type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' });
+const DISCOVERY_EXECUTABLE = Object.freeze({
+  type: 'object', additionalProperties: false, required: ['kind'],
+  properties: {
+    kind: { type: 'string', enum: ['workspace-foundation', 'project', 'service', 'absolute'] },
+    name: DISCOVERY_IDENTIFIER,
+    path: DISCOVERY_TEXT,
+  },
+});
+const DISCOVERY_STEP = Object.freeze({
+  type: 'object', additionalProperties: false,
+  required: ['id', 'cwd', 'executable', 'args', 'inputs', 'outputs', 'required', 'timeoutMs'],
+  properties: {
+    id: DISCOVERY_IDENTIFIER,
+    cwd: DISCOVERY_TEXT,
+    executable: DISCOVERY_EXECUTABLE,
+    args: { type: 'array', items: { type: 'string' } },
+    inputs: { type: 'array', items: DISCOVERY_TEXT },
+    outputs: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['path', 'kind'], properties: { path: DISCOVERY_TEXT, kind: { type: 'string', enum: ['file', 'directory', 'executable'] } } } },
+    required: { type: 'boolean' },
+    timeoutMs: { type: 'integer', minimum: 1000, maximum: 1800000 },
+  },
+});
+const DISCOVERY_RECIPE = Object.freeze({
+  type: 'object', additionalProperties: false,
+  required: ['id', 'title', 'required', 'steps'],
+  properties: { id: DISCOVERY_IDENTIFIER, title: { type: ['string', 'null'], minLength: 1 }, required: { type: 'boolean' }, steps: { type: 'array', minItems: 1, items: DISCOVERY_STEP } },
+});
+
+export const TASK_ENVIRONMENT_PLAN_REQUEST_INPUT_SCHEMA = Object.freeze({
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object', additionalProperties: false, required: ['schemaVersion', 'projects'],
+  properties: {
+    schemaVersion: { const: TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA },
+    notApplicableReason: DISCOVERY_TEXT,
+    projects: {
+      type: 'array', items: {
+        type: 'object', additionalProperties: false, required: ['project', 'source', 'scopes'],
+        properties: {
+          project: DISCOVERY_IDENTIFIER,
+          source: { type: 'object', additionalProperties: false, required: ['kind'], properties: { kind: { type: 'string', enum: ['project-declaration', 'task-inline'] }, identity: DISCOVERY_TEXT } },
+          scopes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['selector', 'disposition', 'reason'], properties: { selector: DISCOVERY_TEXT, disposition: { type: 'string', enum: ['required', 'not-applicable'] }, reason: DISCOVERY_TEXT, recipeIds: { type: 'array', items: DISCOVERY_IDENTIFIER }, recipes: { type: 'array', items: DISCOVERY_RECIPE } } } },
+        },
+      },
+    },
+    auxiliaryPreparation: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['capability', 'capabilityIdentity', 'project', 'selector', 'recipe'], properties: { capability: DISCOVERY_IDENTIFIER, capabilityIdentity: DISCOVERY_TEXT, project: DISCOVERY_IDENTIFIER, selector: DISCOVERY_TEXT, recipe: DISCOVERY_IDENTIFIER } } },
+  },
+  description: 'Closed static input schema. Task scope coverage, declaration identity, recipe ownership and other current runtime constraints are validated by Task Environment Application.',
+});
+
+export const TASK_ENVIRONMENT_PLAN_REQUEST_EXAMPLE = Object.freeze({
+  schemaVersion: TASK_ENVIRONMENT_PLAN_REQUEST_SCHEMA,
+  projects: [{
+    project: 'product',
+    source: { kind: 'project-declaration', identity: 'sha256-current-preparation-declaration' },
+    scopes: [{ selector: 'service:product/buildr', disposition: 'required', reason: 'Buildr service dependencies are required.', recipeIds: ['buildr.npm-ci'] }],
+  }],
+  auxiliaryPreparation: [],
+});
+
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SELECTOR = /^service:[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const EXECUTABLE_KINDS = new Set(['workspace-foundation', 'project', 'service', 'absolute']);
