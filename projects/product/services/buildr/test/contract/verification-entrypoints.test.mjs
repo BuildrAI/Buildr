@@ -88,19 +88,28 @@ test('Development Launcher固定端口不改变Task Preview的随机端口与无
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
-test('Product live声明在有界自举过渡期保持v2且不冒充高级provider语义', () => {
+test('Product live声明采用v3高级provider并保留独立Browser能力', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
   const provider = declaration.capabilities.find((capability) => capability.id === 'product.verification');
   const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
-  assert.equal(declaration.schemaVersion, 'buildr.project-verification/v2');
+  assert.equal(declaration.schemaVersion, 'buildr.project-verification/v3');
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
-  assert.equal(fast.requiredForDelivery, false);
-  assert.equal(provider, undefined);
+  assert.equal(fast, undefined);
+  assert.deepEqual(provider.scope, { project: 'product', services: [] });
+  assert.deepEqual(provider.evidence, ['static', 'unit', 'component', 'integration', 'system']);
+  assert.deepEqual(provider.usableFor, ['task-delivery', 'product-candidate', 'published-release']);
+  assert.deepEqual(provider.invocation, {
+    affected: { kind: 'provider', provider: 'buildr.product-verification/v1' },
+    full: { kind: 'provider', provider: 'buildr.product-verification/v1' },
+  });
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
-  assert.deepEqual(browser.invocation, { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' });
-  assert.deepEqual(browser.applicability.paths, [
+  assert.deepEqual(browser.invocation, {
+    affected: { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' },
+    full: { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' },
+  });
+  assert.deepEqual(browser.discovery.sources, [
     'services/buildr-web/**',
     'services/buildr/web-dist/**',
     'services/buildr/src/web/**',
@@ -108,14 +117,14 @@ test('Product live声明在有界自举过渡期保持v2且不冒充高级provid
     'services/buildr/test/verification/browser-selector-dispatcher.mjs',
     'services/buildr/test/verification/web-dist.mjs',
   ]);
-  assert.equal(browser.requiredForDelivery, true);
+  assert.deepEqual(browser.usableFor, ['task-delivery']);
   assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
   assert.deepEqual(browser.effects.externalSystems, []);
   assert.equal(browser.effects.authorization, 'implicit');
   assert.deepEqual(browser.resourceClaims, ['browser']);
   const browserDelegation = VERIFICATION_DELEGATED_INPUTS.find((item) => item.owner === 'product.browser-smoke');
   assert.ok(browserDelegation);
-  for (const input of browserDelegation.inputs) assert.ok(browser.applicability.paths.includes(`services/buildr/${input}`));
+  for (const input of browserDelegation.inputs) assert.ok(browser.discovery.sources.includes(`services/buildr/${input}`));
   assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
   for (const owner of ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke']) {
     assert.ok(verificationSteps.find((step) => step.id === owner).inputs.includes('.github/workflows/publish.yml'), `${owner} must own the governed release workflow`);

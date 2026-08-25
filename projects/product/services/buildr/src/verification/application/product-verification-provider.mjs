@@ -8,6 +8,22 @@ function evidenceBoundary(step) {
   return String(step.testing?.executionBoundary || 'System').toLowerCase();
 }
 
+function globRegex(pattern) {
+  let source = '^';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '*' && pattern[index + 1] === '*') { source += '.*'; index += 1; }
+    else if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else source += char.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+  }
+  return new RegExp(`${source}$`);
+}
+
+function matchesSource(changedPath, source) {
+  return globRegex(source).test(changedPath) || changedPath === source || changedPath.startsWith(`${source.replace(/\/$/, '')}/`);
+}
+
 function selectionFromAudit(entry, internalPlan, request) {
   const dependency = entry.triggers?.find((trigger) => trigger.kind === 'dependency-closure');
   const direct = entry.triggers?.find((trigger) => trigger.kind === 'direct-owner');
@@ -35,7 +51,7 @@ export function createProductVerificationProvider({ providerId = 'buildr.product
       const internalPlan = createInternalPlan(internalRequest);
       const audit = createSelectionAudit(internalPlan);
       const stepById = new Map((internalPlan.steps || []).map((step) => [step.id, step]));
-      const selectedItems = (audit.stepSelections || []).map((entry) => {
+      const providerSelectedItems = (audit.stepSelections || []).map((entry) => {
         const step = stepById.get(entry.stepId);
         const selection = selectionFromAudit(entry, internalPlan, request);
         return {
@@ -46,18 +62,47 @@ export function createProductVerificationProvider({ providerId = 'buildr.product
           selection,
         };
       });
+      const independentItems = declaration.capabilities
+        .filter((item) => item.id !== capability.id
+          && item.usableFor.includes(request.target.kind)
+          && (item.scope.services.length === 0 || item.scope.services.some((service) => request.services.includes(service))))
+        .flatMap((item) => {
+          const trigger = request.changedPaths.find((changedPath) => item.discovery.sources.some((source) => matchesSource(changedPath, source)));
+          if (!trigger) return [];
+          const wantsAffected = request.selection.scope === 'affected';
+          const invocation = wantsAffected && item.invocation.affected ? item.invocation.affected : item.invocation.full;
+          if (invocation.kind === 'provider') return [];
+          const scope = wantsAffected && item.invocation.affected ? 'affected' : 'full';
+          const selection = {
+            kind: scope === 'affected' ? 'direct' : 'full',
+            reasonCode: scope === 'affected' ? 'discovery-source-match' : 'affected-entry-unavailable',
+            trigger,
+            parent: null,
+            scope,
+          };
+          const executionUnit = {
+            id: `${item.id}:${scope}`,
+            capability: item.id,
+            scope,
+            invocation: { ...invocation, ...(invocation.argv ? { argv: [...invocation.argv] } : {}), ...(invocation.instructions ? { instructions: [...invocation.instructions] } : {}) },
+            resourceClaims: [...(item.resourceClaims || [])],
+          };
+          return [{ id: item.id, capability: item.id, evidence: [...item.evidence], proves: [...item.proves], selection, executionUnit }];
+        })
+        .sort((left, right) => left.id.localeCompare(right.id));
+      const selectedItems = [...providerSelectedItems, ...independentItems];
       const coverageGaps = internalPlan.status === 'blocked'
         ? [{ scope: 'provider', code: internalPlan.diagnostic?.code || 'provider-blocked', summary: internalPlan.diagnostic?.message || 'Product verification provider is blocked.' }]
         : [];
       const fullReasons = selectedItems.filter((item) => item.selection.kind === 'full').map((item) => ({ code: item.selection.reasonCode, trigger: item.selection.trigger }));
       const executionUnit = {
-        id: `${capability.id}:${digest(selectedItems.map((item) => item.id))}`,
+        id: `${capability.id}:${digest(providerSelectedItems.map((item) => item.id))}`,
         capability: capability.id,
-        scope: selectedItems.some((item) => item.selection.scope === 'full') ? 'full' : 'affected',
+        scope: providerSelectedItems.some((item) => item.selection.scope === 'full') ? 'full' : 'affected',
         invocation: { kind: 'provider', provider: providerId },
         resourceClaims: [...new Set((internalPlan.steps || []).flatMap((step) => step.resources || []))].sort(),
       };
-      for (const item of selectedItems) item.executionUnit = executionUnit;
+      for (const item of providerSelectedItems) item.executionUnit = executionUnit;
       const material = {
         schemaVersion: 'buildr.verification-plan/v1',
         requestIdentity: request.identity,
@@ -66,7 +111,10 @@ export function createProductVerificationProvider({ providerId = 'buildr.product
         target: request.target,
         selection: request.selection,
         selectedItems,
-        executionUnits: selectedItems.length ? [executionUnit] : [],
+        executionUnits: [
+          ...(providerSelectedItems.length ? [executionUnit] : []),
+          ...independentItems.map((item) => item.executionUnit),
+        ],
         fullReasons: [...new Map(fullReasons.map((item) => [JSON.stringify(item), item])).values()],
         coverageGaps,
         status: coverageGaps.length ? 'blocked' : 'ready',

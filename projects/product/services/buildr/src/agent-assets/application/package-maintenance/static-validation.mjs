@@ -1468,8 +1468,8 @@ export function createPackageStaticValidator(deps) {
   function validateProjectVerificationTransition(context) {
     const { root, problems } = context;
     const productDeclaration = fs.readFileSync(path.resolve(root, '../..', 'verification.yml'), 'utf8');
-    if (!productDeclaration.startsWith('schemaVersion: buildr.project-verification/v2\n')) {
-      problems.push('Product live verification.yml must remain v2 only for the bounded self-bootstrap transition.');
+    if (!productDeclaration.startsWith('schemaVersion: buildr.project-verification/v3\n')) {
+      problems.push('Product live verification.yml must use the v3 authoring contract.');
     }
     const reader = fs.readFileSync(path.join(root, 'src/verification/application/project-verification-diagnostics.mjs'), 'utf8');
     for (const requiredText of [
@@ -1477,8 +1477,9 @@ export function createPackageStaticValidator(deps) {
       "evidence: ['legacy-declared']",
       "usableFor: capability.requiredForDelivery ? ['task-delivery'] : []",
       'project.verification_v2_transition',
-      '不要新增 v2 声明',
-    ]) if (!reader.includes(requiredText)) problems.push(`Bounded Project verification v2 reader must include ${JSON.stringify(requiredText)}.`);
+      '现有声明可继续使用',
+      '新声明不要使用 v2',
+    ]) if (!reader.includes(requiredText)) problems.push(`Project verification v2 compatibility reader must include ${JSON.stringify(requiredText)}.`);
 
     for (const relative of [
       'resources/workspace/skills/buildr/task-verification/SKILL.md',

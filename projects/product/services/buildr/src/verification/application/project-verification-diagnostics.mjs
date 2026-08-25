@@ -335,7 +335,7 @@ function validateLegacyEffects(effects, capabilityLabel, errors) {
 export function validateProjectVerification(value, context = {}) {
   if (value?.schemaVersion === 'buildr.project-verification/v3') return validateProjectVerificationV3(value, context);
   if (value?.schemaVersion === 'buildr.project-verification/v2') return validateProjectVerificationV2(value, context);
-  return ['verification.schemaVersion must be buildr.project-verification/v3 or buildr.project-verification/v2 during the bounded self-bootstrap transition.'];
+  return ['verification.schemaVersion must be buildr.project-verification/v3 or the supported legacy buildr.project-verification/v2 schema.'];
 }
 
 export function normalizeProjectVerification(value, context = {}) {
@@ -464,10 +464,10 @@ export function createProjectVerificationDiagnostics({
         projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,
       });
       result.projectVerification.push({ project: projectName, path: relativePath, valid: errors.length === 0, capabilityCount: Array.isArray(declaration.capabilities) ? declaration.capabilities.length : 0 });
-      if (errors.length === 0 && declaration.schemaVersion === 'buildr.project-verification/v2') addDoctorFinding(result, 'info', 'project.verification_v2_transition', 'Project verification.yml 正在使用有界自举过渡期的 v2 声明。', {
+      if (errors.length === 0 && declaration.schemaVersion === 'buildr.project-verification/v2') addDoctorFinding(result, 'info', 'project.verification_v2_transition', 'Project verification.yml 正在使用受支持但能力受限的 v2 兼容声明。', {
         path: relativePath,
         userActionRequired: false,
-        suggestion: '等待 retained controller 支持 v3 且迁移 Contribution 启动后，将受控声明迁移到 buildr.project-verification/v3；不要新增 v2 声明。',
+        suggestion: '现有声明可继续使用；建议迁移到 buildr.project-verification/v3 以获得 evidence、affected、Product Candidate、Published Release 和 provider 能力。新声明不要使用 v2。',
       });
       for (const message of errors) addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
         path: relativePath,

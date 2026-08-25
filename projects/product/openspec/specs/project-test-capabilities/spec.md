@@ -79,15 +79,15 @@ Capability preparation references MUST只形成“该capability执行前所需Re
 
 ### Requirement: Project v3 必须声明稳定 Test Capability Families
 
-已登记 Project SHOULD在根目录提供 closed `buildr.project-verification/v3` `verification.yml`。每项 v3 capability MUST具有唯一 id、Project/Service scope、非空 proves、非空 evidence、非空 usable targets、可信 discovery sources、full invocation 与可选 affected invocation。过渡 runtime MAY只读接受closed v2 declaration以完成Buildr self-bootstrap，但 MUST将它标记为待迁移输入，不得把它作为新声明作者模型。
+已登记 Project SHOULD在根目录提供 closed `buildr.project-verification/v3` `verification.yml`。每项 v3 capability MUST具有唯一 id、Project/Service scope、非空 proves、非空 evidence、非空 usable targets、可信 discovery sources、full invocation 与可选 affected invocation。新声明、Skills、templates、references和示例 MUST只使用v3；runtime MUST长期只读接受closed v2 declaration作为legacy compatibility输入，但 MUST将其规范化到统一内部模型并标记为能力受限，不得把v2作为新声明作者模型或继续扩展其schema。
 
 #### Scenario: v2 声明进入 v3-only runtime
 
-- **WHEN** retained/self-bootstrap过渡期读取合法 `buildr.project-verification/v2`
+- **WHEN** runtime读取合法 `buildr.project-verification/v2`
 - **THEN** MUST严格校验旧closed shape并规范化为Plan输入
 - **AND** MUST只把`requiredForDelivery: true`映射为`task-delivery`
-- **AND** MUST把单一invocation作为full入口，不得虚构affected入口
-- **AND** MUST以`legacy-declared`保留未知evidence边界并给出迁移notice
+- **AND** MUST把单一invocation作为full入口，不得虚构affected或provider入口
+- **AND** MUST以`legacy-declared`保留未知evidence边界并给出非阻塞迁移notice
 
 #### Scenario: 声明普通能力族
 
@@ -99,6 +99,13 @@ Capability preparation references MUST只形成“该capability执行前所需Re
 
 - **WHEN** v2 capability请求`product-candidate`或`published-release`
 - **THEN** MUST不自动选择该capability并形成明确coverage gap
+- **AND** runtime MUST不以长期兼容为理由向v2回填v3-only语义
+
+#### Scenario: 新声明请求使用v2
+
+- **WHEN** Agent创建、刷新或示例化Project verification declaration
+- **THEN** Skill、template与reference MUST只生成或指导closed v3
+- **AND** MUST不提供v2 writer、v2 template或新增v2 capability的迁移反向入口
 
 ### Requirement: Capability invocation 必须区分 affected、full 与高级 provider
 每项 capability MUST提供可执行 full 入口，并 MAY提供可信 affected 入口；入口 kind MUST为 `command|agent|provider`。command/agent MUST保持既有有界执行约束；provider MUST引用Task Environment中可解析的稳定 adapter，并只接受/返回 closed Request、Plan 与 execution facts。
@@ -115,13 +122,14 @@ Capability preparation references MUST只形成“该capability执行前所需Re
 
 ### Requirement: Doctor 必须只读校验 v3 declaration
 
-Project没有`verification.yml`时Doctor MUST零finding；文件存在时 MUST只读校验closed v3 schema，或在有界过渡期严格校验closed v2 schema并返回非阻塞migration notice。无效声明 MUST在执行前阻塞，Doctor不得运行测试或改写声明。
+Project没有`verification.yml`时Doctor MUST零finding；文件存在时 MUST只读校验closed v3 schema，或严格校验closed v2 schema并返回非阻塞legacy migration notice。无效声明 MUST在执行前阻塞，Doctor不得运行测试或改写声明。合法v2 notice MUST说明声明仍可使用但缺少v3 affected、evidence target和provider等能力，不得声称v2 reader将在某次Contribution后删除。
 
 #### Scenario: 合法过渡 v2 declaration
 
 - **WHEN** v2 declaration满足旧closed schema
 - **THEN** Doctor MUST报告declaration有效
-- **AND** MUST返回指向v3迁移和已登记删除Contribution的notice
+- **AND** MUST返回指向v3迁移的非阻塞notice，说明v2可继续使用但能力受限
+- **AND** notice MUST不依赖删除日期、删除Contribution或人工记忆
 
 #### Scenario: 非法 v2 declaration
 
