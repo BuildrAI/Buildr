@@ -9,7 +9,7 @@ import {
   removeIsolatedGitCarrier,
   taskFinishCarrierRoot,
 } from './git-task-contribution.mjs';
-import { createFinishRun, finishResult, writeFinishCompletion } from './task-finish-run.mjs';
+import { createFinishRun, finishResult } from './task-finish-run.mjs';
 import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
 import {
   cleanupStaleFinishRunForRetirement,
@@ -278,7 +278,13 @@ function recoverTerminalCarrierCleanup({ runtime, root, entry, completion }) {
       carriers: { status: carrierStatus, repositories: results },
     },
   };
-  if (JSON.stringify(updated) !== JSON.stringify(completion)) writeFinishCompletion({ root, runId: completion.runId, completion: updated, runtime });
+  if (JSON.stringify(updated) !== JSON.stringify(completion)) {
+    runtime.writeTaskFinishTerminalCleanupPersistence(root, {
+      taskId: entry.identityParts.task,
+      runId: completion.runId,
+      cleanup: updated.cleanup,
+    });
+  }
   return { status: carrierStatus, repositories: results, completion: updated };
 }
 

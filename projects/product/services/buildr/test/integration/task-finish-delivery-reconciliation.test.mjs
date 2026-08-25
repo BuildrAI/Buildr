@@ -248,7 +248,7 @@ test('terminal reconciliation入口精确清理错误cleaned投影遗留的当�
   let persisted = null;
   const runtime = {
     readTaskFinishCompletionPersistence: () => ({ status: 'complete', completion: { result: finishResult } }),
-    writeTaskFinishCompletionPersistence: (_target, value) => { persisted = value; return { file: 'workspace-sqlite:task-finish-completion/reconcile-task' }; },
+    writeTaskFinishTerminalCleanupPersistence: (_target, value) => { persisted = value; return { file: 'workspace-sqlite:task-finish-completion/reconcile-task' }; },
     completeTaskRecordFromFinish: () => ({ status: 'completed', taskId: 'reconcile-task', record: { status: 'completed', result: { noChange: false } }, effects: [] }),
     optionValue: (args, name, fallback = null) => {
       const index = args.indexOf(name);
@@ -264,7 +264,7 @@ test('terminal reconciliation入口精确清理错误cleaned投影遗留的当�
   assert.deepEqual(result.carrierCleanup.repositories, [{ selector: 'workspace', status: 'removed', code: null }]);
   assert.equal(fs.existsSync(carrierRoot), false);
   assert.equal(git(root, ['worktree', 'list', '--porcelain']).includes(carrierRoot), false);
-  assert.equal(persisted.result.cleanup.carriers.status, 'cleaned');
+  assert.equal(persisted.cleanup.carriers.status, 'cleaned');
 });
 
 test('无Environment的reconciliation不声称cleanup pending或cleaned', (t) => {

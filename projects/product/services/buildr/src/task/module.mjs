@@ -237,7 +237,7 @@ const TASK_FINISH_PERSISTENCE_METHODS = Object.freeze([
   'taskFinishRunPath', 'taskFinishCompletionPath', 'readTaskFinishRunPersistence',
   'writeTaskFinishRunPersistence', 'discardFailedTaskFinishRunPersistence',
   'readTaskFinishCompletionPersistence', 'writeTaskFinishCompletionPersistence',
-  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence',
+  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence', 'writeTaskFinishTerminalCleanupPersistence',
   'acquireTaskFinishCurrentTargetLease', 'acquireTaskFinishTargetLease',
   'releaseTaskFinishCurrentTargetLease', 'releaseTaskFinishTargetLease',
   'readTaskFinishResultsPersistence', 'inspectTaskFinishPersistence',
