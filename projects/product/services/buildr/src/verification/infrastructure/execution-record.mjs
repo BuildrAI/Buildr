@@ -79,6 +79,12 @@ function portableCheck(check) {
     startedAt: check.startedAt || null,
     finishedAt: check.finishedAt || null,
     queueDurationMs: Math.round(check.queueDurationMs || 0),
+    failureCode: check.failureCode || null,
+    processCleanup: check.processCleanup ? {
+      status: check.processCleanup.status || null,
+      ownership: check.processCleanup.ownership || null,
+      remaining: Array.isArray(check.processCleanup.remaining) ? check.processCleanup.remaining : [],
+    } : null,
     resourceCoordination: portableCoordination(check.resourceCoordination),
   };
 }
@@ -177,6 +183,8 @@ export function createVerificationExecutionRecordFiles(input) {
       status: check.status,
       exitCode: check.exitCode,
       signal: check.signal,
+      failureCode: check.failureCode || null,
+      processCleanup: check.processCleanup ? { status: check.processCleanup.status || null, ownership: check.processCleanup.ownership || null, remaining: check.processCleanup.remaining || [] } : null,
     })),
     targetDrift: input.targetDrift || null,
     diagnostic: input.diagnostic || null,

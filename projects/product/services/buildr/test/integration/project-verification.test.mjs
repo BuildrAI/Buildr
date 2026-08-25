@@ -106,7 +106,7 @@ test('Project verification v2 长期兼容封闭映射为 full-only Task Deliver
   assert.deepEqual(normalized.capabilities[0].usableFor, ['task-delivery']);
   assert.deepEqual(normalized.capabilities[0].discovery.sources, ['package.json', 'services/demo/**']);
   assert.equal(normalized.capabilities[0].invocation.affected, undefined);
-  assert.deepEqual(normalized.capabilities[0].invocation.full, { kind: 'command', argv: ['npm', 'test'], cwd: '.' });
+  assert.deepEqual(normalized.capabilities[0].invocation.full, { kind: 'command', argv: ['npm', 'test'], cwd: '.', timeoutMs: 900_000 });
 
   value.capabilities[0].requiredForDelivery = false;
   assert.deepEqual(normalizeProjectVerification(value, { projectCode: 'demo', services: [] }).capabilities[0].usableFor, []);

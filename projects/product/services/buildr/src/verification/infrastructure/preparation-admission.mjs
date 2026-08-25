@@ -1,14 +1,21 @@
 import crypto from 'node:crypto';
+import { VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS } from '../domain/verification-deadline.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
 export function verificationCapabilityIdentity(capability) {
+  const canonicalInvocation = (value) => value?.kind === 'command'
+    ? { ...value, timeoutMs: value.timeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS }
+    : value;
+  const invocation = capability.invocation && typeof capability.invocation === 'object'
+    ? Object.fromEntries(Object.entries(capability.invocation).map(([key, value]) => [key, canonicalInvocation(value)]))
+    : capability.invocation;
   return digest({
     id: capability.id,
     scope: capability.scope,
-    invocation: capability.invocation,
+    invocation,
     environment: capability.environment || null,
     effects: capability.effects || null,
     resourceClaims: capability.resourceClaims || [],

@@ -1,4 +1,9 @@
 import crypto from 'node:crypto';
+import {
+  VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MAX_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MIN_MS,
+} from './verification-deadline.mjs';
 
 const TARGETS = new Set(['task-delivery', 'product-candidate', 'published-release']);
 const SCOPES = new Set(['affected', 'full', 'release-only']);
@@ -67,7 +72,12 @@ export function createVerificationRequest(input) {
 }
 
 function publicInvocation(invocation) {
-  if (invocation.kind === 'command') return { kind: 'command', argv: [...invocation.argv], cwd: invocation.cwd || '.' };
+  if (invocation.kind === 'command') return {
+    kind: 'command',
+    argv: [...invocation.argv],
+    cwd: invocation.cwd || '.',
+    timeoutMs: invocation.timeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  };
   if (invocation.kind === 'agent') return { kind: 'agent', instructions: [...invocation.instructions] };
   return { kind: 'provider', provider: invocation.provider };
 }
@@ -167,8 +177,13 @@ export function assertVerificationPlan(value, options = {}) {
   }
   for (const [index, unit] of value.executionUnits.entries()) {
     assertKeys(unit, new Set(['id', 'capability', 'scope', 'invocation', 'resourceClaims']), `plan.executionUnits[${index}]`);
-    assertKeys(unit.invocation, new Set(['kind', 'argv', 'cwd', 'instructions', 'provider']), `plan.executionUnits[${index}].invocation`);
+    assertKeys(unit.invocation, new Set(['kind', 'argv', 'cwd', 'instructions', 'provider', 'timeoutMs']), `plan.executionUnits[${index}].invocation`);
     if (!['command', 'agent', 'provider'].includes(unit.invocation?.kind)) throw new Error(`Verification Plan execution unit invocation is invalid: ${unit.id}.`);
+    if (unit.invocation.kind === 'command' && unit.invocation.timeoutMs !== undefined && (!Number.isInteger(unit.invocation.timeoutMs)
+      || unit.invocation.timeoutMs < VERIFICATION_COMMAND_TIMEOUT_MIN_MS
+      || unit.invocation.timeoutMs > VERIFICATION_COMMAND_TIMEOUT_MAX_MS)) {
+      throw new Error(`Verification Plan command timeoutMs is invalid: ${unit.id}.`);
+    }
   }
   const itemIds = new Set(value.selectedItems.flatMap((item) => [item.id, item.capability]));
   for (const unit of value.executionUnits) if (!itemIds.has(unit.capability)) throw new Error(`Verification Plan execution unit references unknown selected item: ${unit.capability}.`);

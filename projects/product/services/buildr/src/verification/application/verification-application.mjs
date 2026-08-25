@@ -11,6 +11,7 @@ import { assertVerificationPlan, createVerificationPlan, createVerificationReque
 import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
 import { verificationPreparationAdmission } from '../infrastructure/preparation-admission.mjs';
 import { executeVerificationCommand } from '../infrastructure/process-executor.mjs';
+import { VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS } from '../domain/verification-deadline.mjs';
 import { createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from '../infrastructure/resource-coordinator.mjs';
 import { cleanupAbsentVerificationEvidence, cleanupVerificationEvidence, createVerificationEvidenceLifecycle } from '../infrastructure/evidence-lifecycle.mjs';
 import {
@@ -145,6 +146,10 @@ function filesystemSnapshot(root) {
     for (const name of fs.readdirSync(current).sort()) {
       const file = path.join(current, name);
       const relative = path.relative(root, file).split(path.sep).join('/');
+      // Workspace-local execution records and transient state are runtime-owned
+      // evidence, not delivery content; their heartbeat/seal writes must not
+      // appear as target drift in a filesystem-backed verification sandbox.
+      if (relative === '.buildr/local' || relative.startsWith('.buildr/local/')) continue;
       const stat = fs.lstatSync(file);
       if (stat.isSymbolicLink()) entries.push([relative, 'symlink', fs.readlinkSync(file)]);
       else if (stat.isDirectory()) {
@@ -231,12 +236,17 @@ function executionCheck(result) {
     queueDurationMs: result.queueDurationMs || 0,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
+    failureCode: result.failureCode || null,
+    processCleanup: result.processCleanup || null,
     resourceCoordination: result.resourceCoordination || null,
   };
 }
 
 function publicFailureSummary(check) {
-  if (check.status !== 'failed') return null;
+  if (check.status === 'passed') return null;
+  if (check.status === 'timed-out') return { code: 'verification.capability_timeout', message: `Capability ${check.id} exceeded its declared deadline.` };
+  if (check.status === 'cancelled') return { code: 'verification.capability_cancelled', message: `Capability ${check.id} was cancelled.` };
+  if (check.failureCode === 'process-cleanup-failed' || check.processCleanup?.status === 'failed') return { code: 'verification.process_cleanup_failed', message: `Capability ${check.id} owned process cleanup failed.` };
   const outcome = check.signal
     ? `signal ${check.signal}`
     : Number.isInteger(check.exitCode) ? `exit code ${check.exitCode}` : 'a non-passing process outcome';
@@ -259,6 +269,8 @@ function publicCheck(check) {
     finishedAt: check.finishedAt,
     queueDurationMs: check.queueDurationMs,
     resourceCoordination: check.resourceCoordination,
+    failureCode: check.failureCode,
+    processCleanup: check.processCleanup,
     failureSummary: publicFailureSummary(check),
   };
 }
@@ -272,7 +284,7 @@ function verificationDetail(args, runtime) {
 export function compactVerificationExecution(payload) {
   const record = payload.executionRecord || null;
   const active = payload.status === 'active' || record?.lifecycleStatus === 'open';
-  const failureCheck = payload.checks?.find((check) => check.status === 'failed') || null;
+  const failureCheck = payload.checks?.find((check) => check.status !== 'passed') || null;
   const error = payload.error || failureCheck?.failureSummary || payload.executionRecord?.diagnostic || null;
   const cleanupValue = payload.executionRecord?.transientCleanup?.status || payload.evidenceLifecycle?.cleanupStatus || null;
   const cleanupStatus = cleanupValue === 'removed' || cleanupValue === 'passed'
@@ -499,6 +511,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
             kind: 'command',
             argv: [process.execPath, 'test/verification/focus.mjs', ...requestedPlan.selectedItems.filter((item) => item.capability === id).map((item) => item.id)],
             cwd: 'services/buildr',
+            timeoutMs: VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
           }
         : invocation;
       if (resolvedInvocation.kind !== 'command') throw new Error(`Project verification capability requires ${invocation.kind} execution and cannot be run by the command runner: ${id}`);
@@ -508,7 +521,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       return {
         ...capability,
         selectedScope: requestedScope === 'affected' && capability.invocation.affected ? 'affected' : 'full',
-        command: { argv: resolvedInvocation.argv, cwd: resolvedInvocation.cwd || '.' },
+        command: { argv: resolvedInvocation.argv, cwd: resolvedInvocation.cwd || '.', timeoutMs: resolvedInvocation.timeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS },
         executionCwd,
       };
     });
@@ -641,11 +654,57 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
         runId,
       },
     });
+    let completedCapabilities = 0;
     const results = await runVerificationCapabilities(selected, {
       concurrency,
       resourceCoordinator: coordinator,
       authorizedResources,
-      execute: (capability, execution) => executeVerificationCommand(capability, { cwd: capability.executionCwd, env: formalExecutionEnvironment(context, execution.resourceEnvironment) }),
+      execute: async (capability, execution) => {
+        const recordId = openedExecutionRecord?.record?.recordId;
+        const updateProgress = (progress) => {
+          if (!recordId || !context) return;
+          try {
+            runtime.updateTaskExecutionRecordProgress(path.resolve(requestedWorkspace), recordId, {
+              runIdentity: runId,
+              invocationIdentity,
+              producer: VERIFICATION_EXECUTION_RECORD_PRODUCER,
+              progress,
+            });
+          } catch {
+            // Progress is diagnostic only; it must never change the command result.
+          }
+        };
+        const startedAtMs = Date.now();
+        const heartbeat = recordId && context ? setInterval(() => updateProgress({
+          capabilityId: capability.id,
+          phase: 'execution',
+          status: 'running',
+          heartbeatAt: new Date().toISOString(),
+          pid: null,
+          processGroupId: null,
+          completed: 0,
+          total: selected.length,
+          lastOutputSummary: `capability ${capability.id} running for ${Date.now() - startedAtMs}ms`,
+          lastOutputBytes: 0,
+        }), 15_000) : null;
+        heartbeat?.unref?.();
+        updateProgress({ capabilityId: capability.id, phase: 'execution', status: 'running', pid: null, processGroupId: null, completed: 0, total: selected.length, lastOutputSummary: `capability ${capability.id} started`, lastOutputBytes: 0 });
+        try {
+          const result = await executeVerificationCommand(capability, {
+            cwd: capability.executionCwd,
+            env: formalExecutionEnvironment(context, execution.resourceEnvironment),
+            onSpawn: ({ pid, processGroupId }) => updateProgress({ capabilityId: capability.id, phase: 'command', status: 'running', pid, processGroupId, completed: 0, total: selected.length, lastOutputSummary: `capability ${capability.id} process started`, lastOutputBytes: 0 }),
+          });
+          const output = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+          const normalizedOutput = output.replace(/\s+/gu, ' ').trim();
+          const summary = normalizedOutput.length > 4096 ? normalizedOutput.slice(-4096) : normalizedOutput;
+          completedCapabilities += 1;
+          updateProgress({ capabilityId: capability.id, phase: 'cleanup', status: result.status, pid: result.process?.pid ?? null, processGroupId: result.process?.processGroupId ?? null, completed: completedCapabilities, total: selected.length, lastOutputSummary: summary || `capability ${capability.id} ${result.status}`, lastOutputDigest: digest(output), lastOutputBytes: Buffer.byteLength(output, 'utf8') });
+          return result;
+        } finally {
+          if (heartbeat) clearInterval(heartbeat);
+        }
+      },
     });
     const after = executionContentObservation(targetRoot);
     const durationMs = Math.round(Number(process.hrtime.bigint() - started) / 1e6);
@@ -681,7 +740,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       timingSource: 'wrapper-measured',
       startedAt,
       finishedAt,
-      failures: checks.filter((check) => check.status === 'failed').map((check) => check.id),
+      failures: checks.filter((check) => check.status !== 'passed').map((check) => check.id),
       executionIdentity,
       invocationIdentity,
       runId,

@@ -147,4 +147,8 @@ Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkou
 ## 局部术语
 
 本 Service 当前不重定义 Project glossary。CLI、runtime adapter、Component、provider、consumer 和 binding 继续使用 [Project canonical terminology](../glossary.md) 及相关 specs 的精确定义。
+
+正式 Verification command execution unit 从 v3 declaration解析显式或兼容默认`timeoutMs`；`process-executor`使用owned process group、observed lineage、TERM→grace→KILL和有界stdio close。check保留timed-out、cancelled与process-cleanup-failed差异，顶层Execution Record outcome保持兼容。open Verification record可由matching producer覆盖保存current-machine progress，单条detail显示capability/phase、heartbeat、PID/PGID和有界输出摘要；terminal seal清除该快照，portable list与closed body不暴露本机运行态。
+
+Browser selector dispatcher通过异步owned phase runner记录web-dist、fixture、browser、assertions与cleanup，并以外层capability deadline兜底回收owned descendants。`concurrent-task-acceptance`真实声明workspace-saturating、task-lifecycle-heavy与app-runtime，Preview启动基于instance/health/resource readiness的有界等待；Full capacity仍为1，资源声明只负责压力节流。
 Task Development 的 current-input discovery 是面向`observe|policy`的 response-only `buildr.task-development-current-input/v1`投影；它复用 current Task/Environment/Receipt/declaration facts，mutation Application 仍是唯一 writer 并重新校验漂移。同一 Formal Verification request 的 broad affected feedback 复用 matching Verification Plan，较窄的 focused feedback 保持 transient。

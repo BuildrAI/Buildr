@@ -49,13 +49,14 @@ function rowToRecord(row) {
       updatedAt: row.updated_at,
     },
     cleanupCode: row.cleanup_code,
+    currentProgress: row.current_progress_json ? JSON.parse(row.current_progress_json) : null,
   });
 }
 
 const SELECT = `SELECT record_id, schema_version, task_id, owner, kind, run_identity, invocation_identity, target_identity, producer,
   outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest,
   stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until,
-  opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at
+  opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at, current_progress_json
   FROM task_execution_records`;
 
 function persisted(root, record) {
@@ -76,18 +77,20 @@ function sameOpenIdentity(left, right) {
     && left.producer === right.producer;
 }
 
+const INSERT_PLACEHOLDERS = Array.from({ length: 30 }, () => '?').join(', ');
+
 function insert(database, record) {
   database.prepare(`INSERT INTO task_execution_records(
     record_id, schema_version, task_id, owner, kind, run_identity, invocation_identity, target_identity, producer,
     outcome, lifecycle_status, resolution_status, body_status, quota_status, body_locator, body_digest,
     stored_size_bytes, original_size_bytes, truncated, redaction_version, reserved_size_bytes, retain_until,
-    opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    opened_at, sealed_at, resolved_at, cleanup_started_at, cleaned_at, cleanup_code, updated_at, current_progress_json
+  ) VALUES (${INSERT_PLACEHOLDERS})`).run(
     record.recordId, record.schemaVersion, record.taskId, record.owner, record.kind, record.runIdentity, record.invocationIdentity, record.targetIdentity, record.producer,
     record.outcome, record.lifecycleStatus, record.resolutionStatus, record.bodyStatus, record.quotaStatus, record.body.locator, record.body.digest,
     record.body.storedSizeBytes, record.body.originalSizeBytes, record.body.truncated ? 1 : 0, record.body.redactionVersion, record.body.reservedSizeBytes,
     record.retention.retainUntil, record.timestamps.openedAt, record.timestamps.sealedAt, record.timestamps.resolvedAt,
-    record.timestamps.cleanupStartedAt, record.timestamps.cleanedAt, record.cleanupCode, record.timestamps.updatedAt,
+    record.timestamps.cleanupStartedAt, record.timestamps.cleanedAt, record.cleanupCode, record.timestamps.updatedAt, record.currentProgress ? JSON.stringify(record.currentProgress) : null,
   );
 }
 

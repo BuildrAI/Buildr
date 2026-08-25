@@ -5,7 +5,7 @@ function bounded(value, limit = 8_192) {
   return text.length <= limit ? text : `${text.slice(0, limit)}\n...[truncated ${text.length - limit} bytes]`;
 }
 
-export function spawnSupervised(command, args, { cwd, env = process.env, owner, timeoutMs = 30_000, outputLimit = 8_192 } = {}) {
+export function spawnSupervised(command, args, { cwd, env = process.env, owner, timeoutMs = 30_000, readiness = null, readinessTimeoutMs = timeoutMs, outputLimit = 8_192 } = {}) {
   const startedAt = Date.now();
   const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.setEncoding('utf8');
@@ -13,12 +13,16 @@ export function spawnSupervised(command, args, { cwd, env = process.env, owner, 
   let stdout = '';
   let stderr = '';
   let timedOut = false;
-  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  let ready = readiness === null;
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+    if (!ready && typeof readiness === 'function') ready = readiness(stdout, stderr);
+  });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
   const timeout = setTimeout(() => {
     timedOut = true;
     child.kill('SIGTERM');
-  }, timeoutMs);
+  }, readiness === null ? timeoutMs : readinessTimeoutMs);
   timeout.unref();
   const completed = new Promise((resolve) => child.once('close', (exitCode, signal) => {
     clearTimeout(timeout);
@@ -33,6 +37,7 @@ export function spawnSupervised(command, args, { cwd, env = process.env, owner, 
       exitCode,
       signal,
       timedOut,
+      ready,
       stdout: bounded(stdout, outputLimit),
       stderr: bounded(stderr, outputLimit),
     });

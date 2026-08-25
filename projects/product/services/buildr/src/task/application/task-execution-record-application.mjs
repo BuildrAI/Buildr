@@ -10,6 +10,7 @@ import {
   recoverTaskExecutionRecordAttention,
   resolveTaskExecutionRecord,
   sealTaskExecutionRecord,
+  updateTaskExecutionRecordProgress,
   taskExecutionRecordError,
 } from '../domain/task-execution-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
@@ -60,7 +61,7 @@ function portableBody(record, { files = null, diagnostic = null } = {}) {
   };
 }
 
-function portableRecord(record, body = portableBody(record)) {
+function portableRecord(record, body = portableBody(record), { includeOpenProgress = false } = {}) {
   return {
     recordId: record.recordId,
     taskId: record.taskId,
@@ -77,6 +78,7 @@ function portableRecord(record, body = portableBody(record)) {
     retention: { retainUntil: record.retention.retainUntil },
     timestamps: { ...record.timestamps },
     cleanupCode: record.cleanupCode,
+    ...(includeOpenProgress && record.lifecycleStatus === 'open' && record.currentProgress ? { openLocalProgress: record.currentProgress } : {}),
   };
 }
 
@@ -248,7 +250,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
         body = portableBody(record, { files: [], diagnostic: safeBodyDiagnostic(error) });
       }
     }
-    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordDetailView, { taskId, record: portableRecord(record, body), diagnostic: null });
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskExecutionRecordDetailView, { taskId, record: portableRecord(record, body, { includeOpenProgress: true }), diagnostic: null });
   }
 
   function inspectTaskExecutionRecordCompactView(targetRoot, taskId, recordId) {
@@ -325,6 +327,18 @@ export function registerTaskExecutionRecordApplication(runtime) {
       } catch {}
       throw error;
     }
+  }
+
+  function updateTaskExecutionRecordProgressOperation(targetRoot, recordId, input) {
+    assertInput(input, new Set(['runIdentity', 'invocationIdentity', 'producer', 'progress']), 'Task Execution Record progress');
+    const persisted = runtime.readTaskExecutionRecordPersistence(targetRoot, recordId);
+    const current = persisted.record;
+    if (current.runIdentity !== input.runIdentity || current.invocationIdentity !== (input.invocationIdentity ?? null) || current.producer !== input.producer) {
+      throw taskExecutionRecordError('task_execution_record_progress_identity_mismatch', 'Progress writer identity与record不一致。', 409, { recordId });
+    }
+    const next = updateTaskExecutionRecordProgress(current, input.progress);
+    const written = runtime.replaceTaskExecutionRecordPersistence(persisted.root, current, next);
+    return result('progress', 'updated', written, [{ type: 'updated', path: written.file }]);
   }
 
   function recoverTaskExecutionRecord(targetRoot, taskId, recordId, input = {}) {
@@ -525,6 +539,7 @@ export function registerTaskExecutionRecordApplication(runtime) {
     inspectTaskExecutionRecordCompactView,
     readTaskExecutionRecordBodyFileView,
     sealTaskExecutionRecord: sealTaskExecutionRecordOperation,
+    updateTaskExecutionRecordProgress: updateTaskExecutionRecordProgressOperation,
     resolveTaskExecutionRecord: resolveTaskExecutionRecordOperation,
     cleanupTaskExecutionRecord,
     gcTaskExecutionRecords,

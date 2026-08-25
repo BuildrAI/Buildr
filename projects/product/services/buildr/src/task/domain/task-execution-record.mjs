@@ -36,6 +36,7 @@ const FAILURE_OUTCOMES = new Set(['failed', 'blocked', 'cancelled', 'unknown']);
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const RECORD_ID = /^[a-z0-9][a-z0-9-]{0,127}$/u;
 const RELATIVE_LOCATOR = /^\.buildr\/local\/task-execution-records\/[a-z0-9-]+\/[a-z0-9][a-z0-9-]{0,127}\/$/u;
+const PROGRESS_SUMMARY_MAX_BYTES = 4096;
 
 export function taskExecutionRecordError(code, message, status = 400, details = undefined, nextAction = undefined) {
   const error = new Error(message);
@@ -93,6 +94,33 @@ function nullableDigest(value, field) {
   return value;
 }
 
+function nullableProgress(value, field = 'currentProgress') {
+  if (value === null || value === undefined) return null;
+  const progress = object(value, field);
+  closed(progress, new Set(['scope', 'capabilityId', 'phase', 'status', 'observedAt', 'heartbeatAt', 'pid', 'processGroupId', 'completed', 'total', 'lastOutputSummary', 'lastOutputDigest', 'lastOutputBytes']), field);
+  if (progress.scope !== 'current-machine') throw taskExecutionRecordError('task_execution_record_progress_scope_invalid', `${field}.scope必须是current-machine。`, 400, { field });
+  const normalized = {
+    scope: 'current-machine',
+    capabilityId: text(progress.capabilityId, `${field}.capabilityId`),
+    phase: text(progress.phase, `${field}.phase`),
+    status: text(progress.status, `${field}.status`),
+    observedAt: timestamp(progress.observedAt, `${field}.observedAt`),
+    heartbeatAt: timestamp(progress.heartbeatAt, `${field}.heartbeatAt`),
+    pid: progress.pid === null || progress.pid === undefined ? null : integer(progress.pid, `${field}.pid`),
+    processGroupId: progress.processGroupId === null || progress.processGroupId === undefined ? null : integer(progress.processGroupId, `${field}.processGroupId`),
+    completed: integer(progress.completed ?? 0, `${field}.completed`),
+    total: integer(progress.total ?? 0, `${field}.total`),
+    lastOutputSummary: progress.lastOutputSummary === null || progress.lastOutputSummary === undefined ? null : text(progress.lastOutputSummary, `${field}.lastOutputSummary`),
+    lastOutputDigest: nullableDigest(progress.lastOutputDigest, `${field}.lastOutputDigest`),
+    lastOutputBytes: integer(progress.lastOutputBytes ?? 0, `${field}.lastOutputBytes`),
+  };
+  if (normalized.lastOutputSummary && Buffer.byteLength(normalized.lastOutputSummary, 'utf8') > PROGRESS_SUMMARY_MAX_BYTES) {
+    throw taskExecutionRecordError('task_execution_record_progress_summary_too_large', `${field}.lastOutputSummary超过${PROGRESS_SUMMARY_MAX_BYTES}字节。`, 400, { field });
+  }
+  if (normalized.total < normalized.completed) throw taskExecutionRecordError('task_execution_record_progress_count_invalid', `${field}.completed不能大于total。`, 400, { field });
+  return normalized;
+}
+
 function recordIdentity(value, field = 'recordId') {
   const normalized = text(value, field);
   if (!RECORD_ID.test(normalized)) throw taskExecutionRecordError('task_execution_record_identity_invalid', `${field} 必须是小写安全标识。`, 400, { field });
@@ -127,7 +155,8 @@ function assertState(record) {
     && record.timestamps.sealedAt === null
     && record.timestamps.cleanupStartedAt === null
     && record.timestamps.cleanedAt === null
-    && record.cleanupCode === null)) {
+    && record.cleanupCode === null
+    && (record.currentProgress === null || record.currentProgress.scope === 'current-machine'))) {
     throw taskExecutionRecordError('task_execution_record_state_invalid', 'open record状态组合不合法。', 409);
   }
   if (terminalBody && !(TERMINAL_OUTCOMES.has(record.outcome)
@@ -140,7 +169,8 @@ function assertState(record) {
     && record.retention.retainUntil !== null
     && record.timestamps.sealedAt !== null
     && record.timestamps.cleanedAt === null
-    && record.cleanupCode === null)) {
+    && record.cleanupCode === null
+    && record.currentProgress === null)) {
     throw taskExecutionRecordError('task_execution_record_state_invalid', `${record.lifecycleStatus} record状态组合不合法。`, 409);
   }
   if (record.lifecycleStatus === 'cleanup_pending' && record.timestamps.cleanupStartedAt === null) {
@@ -158,7 +188,8 @@ function assertState(record) {
     && record.retention.retainUntil !== null
     && record.timestamps.sealedAt !== null
     && record.timestamps.cleanedAt !== null
-    && record.cleanupCode !== null)) {
+    && record.cleanupCode !== null
+    && record.currentProgress === null)) {
     throw taskExecutionRecordError('task_execution_record_state_invalid', 'cleaned record状态组合不合法。', 409);
   }
   if (record.outcome === 'passed' && record.resolutionStatus !== 'not-required') {
@@ -183,7 +214,7 @@ export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, exp
   const record = object(value, 'record');
   closed(record, new Set([
     'schemaVersion', 'recordId', 'taskId', 'owner', 'kind', 'runIdentity', 'invocationIdentity', 'targetIdentity', 'producer',
-    'outcome', 'lifecycleStatus', 'resolutionStatus', 'bodyStatus', 'quotaStatus', 'body', 'retention', 'timestamps', 'cleanupCode',
+    'outcome', 'lifecycleStatus', 'resolutionStatus', 'bodyStatus', 'quotaStatus', 'body', 'retention', 'timestamps', 'cleanupCode', 'currentProgress',
   ]), 'record');
   if (record.schemaVersion !== TASK_EXECUTION_RECORD_SCHEMA) throw taskExecutionRecordError('task_execution_record_schema_unsupported', `schemaVersion必须是${TASK_EXECUTION_RECORD_SCHEMA}。`, 409, { actual: record.schemaVersion });
   const recordId = recordIdentity(record.recordId);
@@ -234,6 +265,7 @@ export function normalizeTaskExecutionRecord(value, { expectedTaskId = null, exp
       updatedAt: timestamp(timestamps.updatedAt, 'timestamps.updatedAt'),
     },
     cleanupCode: nullableText(record.cleanupCode, 'cleanupCode'),
+    currentProgress: nullableProgress(record.currentProgress, 'currentProgress'),
   };
   if (typeof body.truncated !== 'boolean') throw taskExecutionRecordError('task_execution_record_field_invalid', 'body.truncated必须是boolean。', 400, { field: 'body.truncated' });
   if (normalized.body.redactionVersion !== TASK_EXECUTION_RECORD_REDACTION_VERSION) throw taskExecutionRecordError('task_execution_record_redaction_version_invalid', `redactionVersion必须是${TASK_EXECUTION_RECORD_REDACTION_VERSION}。`, 409);
@@ -268,7 +300,14 @@ export function createOpenTaskExecutionRecord({ recordId = `task-exec-${crypto.r
     retention: { retainUntil: null },
     timestamps: { openedAt, sealedAt: null, resolvedAt: null, cleanupStartedAt: null, cleanedAt: null, updatedAt: openedAt },
     cleanupCode: null,
+    currentProgress: null,
   });
+}
+
+export function updateTaskExecutionRecordProgress(record, progress, observedAt = new Date().toISOString()) {
+  const current = normalizeTaskExecutionRecord(record);
+  if (current.lifecycleStatus !== 'open') throw taskExecutionRecordError('task_execution_record_progress_not_open', `只有open record可以更新progress：${current.recordId}。`, 409, { recordId: current.recordId });
+  return normalizeTaskExecutionRecord({ ...current, currentProgress: nullableProgress({ scope: 'current-machine', ...progress, observedAt, heartbeatAt: progress.heartbeatAt || observedAt }, 'currentProgress'), timestamps: { ...current.timestamps, updatedAt: observedAt } });
 }
 
 export function sealTaskExecutionRecord(record, body, outcome, sealedAt = new Date().toISOString(), { attention = false, resolutionStatus = null } = {}) {
@@ -290,6 +329,7 @@ export function sealTaskExecutionRecord(record, body, outcome, sealedAt = new Da
     body: { ...body, redactionVersion: TASK_EXECUTION_RECORD_REDACTION_VERSION, reservedSizeBytes: 0 },
     retention: { retainUntil: addDays(sealedAt, days) },
     timestamps: { ...current.timestamps, sealedAt, resolvedAt: resolved === 'acknowledged' ? sealedAt : null, updatedAt: sealedAt },
+    currentProgress: null,
   });
 }
 

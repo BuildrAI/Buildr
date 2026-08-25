@@ -256,6 +256,8 @@ Product测试执行框架、Context contract、资源模型与新测试接入流
 
 门禁分类的完整说明见 [门禁分类与有界审计](governance-gate-taxonomy.md)。
 
+正式 Verification command 由同一 Plan execution unit解析有界 timeout，runner使用owned process group与observed lineage执行 TERM→grace→KILL和退出确认；open Execution Record只覆盖保存capability/phase/heartbeat/PID/PGID与有界输出摘要，terminal seal清除该快照并保留closed timeline/diagnostics。该运行态不建立事件历史、通用scheduler或第二执行状态表。
+
 ## 深入阅读
 
 | 想了解的问题 | 继续阅读 |

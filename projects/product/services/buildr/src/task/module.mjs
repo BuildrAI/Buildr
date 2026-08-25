@@ -193,7 +193,7 @@ const TASK_ENVIRONMENT_PERSISTENCE_METHODS = Object.freeze([
 const TASK_EXECUTION_RECORD_APPLICATION_METHODS = Object.freeze([
   'openTaskExecutionRecord', 'inspectTaskExecutionRecord', 'listTaskExecutionRecords',
   'listTaskExecutionRecordView', 'inspectTaskExecutionRecordView', 'inspectTaskExecutionRecordCompactView',
-  'readTaskExecutionRecordBodyFileView', 'sealTaskExecutionRecord', 'resolveTaskExecutionRecord',
+  'readTaskExecutionRecordBodyFileView', 'sealTaskExecutionRecord', 'updateTaskExecutionRecordProgress', 'resolveTaskExecutionRecord',
   'cleanupTaskExecutionRecord', 'gcTaskExecutionRecords', 'recoverTaskExecutionRecord',
 ]);
 const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
