@@ -95,3 +95,23 @@ export function createReleaseLifecycle(input) {
     nextActions: findings.length ? ['核验正式远端release ref并完成必需closeout。'] : [],
   };
 }
+
+function orchestrationAction(phase) {
+  if (phase === 'awaiting-publication-authorization' || phase === 'readiness') return 'prepare-dispatch';
+  if (phase === 'publishing') return 'dispatch';
+  if (['published-dev-reconciliation-pending', 'closeout', 'closed'].includes(phase)) return 'closeout';
+  return phase === 'candidate' ? 'candidate' : 'selection';
+}
+
+export function projectReleaseLifecycleOrchestration(lifecycle, timelineIdentity) {
+  if (lifecycle?.schemaVersion !== releaseLifecycleSchema || !DIGEST.test(lifecycle.recoveryIdentity ?? '')) throw new Error('release lifecycle is invalid.');
+  const currentTimeline = required(timelineIdentity, DIGEST, 'timelineIdentity');
+  return {
+    ...lifecycle,
+    orchestration: {
+      action: orchestrationAction(lifecycle.phase),
+      recoveryIdentity: lifecycle.recoveryIdentity,
+      timelineIdentity: currentTimeline,
+    },
+  };
+}

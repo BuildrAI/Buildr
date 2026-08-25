@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createReleaseLifecycle } from '../../tools/release/release-lifecycle.mjs';
+import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from '../../tools/release/release-lifecycle.mjs';
 
 const digest = (letter) => `sha256-${letter.repeat(64)}`;
 
@@ -73,4 +73,19 @@ test('closed lifecycle requires zero intermediate resources and a verified retai
     convergence: { status: 'passed', recoveryIdentity: digest('6') },
     closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: null },
   })), /verified retained formal release ref/u);
+});
+
+test('lifecycle projection binds the current orchestration action and timeline identity', () => {
+  const lifecycle = createReleaseLifecycle(input());
+  const projected = projectReleaseLifecycleOrchestration(lifecycle, digest('a'));
+  assert.deepEqual(projected.orchestration, {
+    action: 'prepare-dispatch',
+    recoveryIdentity: lifecycle.recoveryIdentity,
+    timelineIdentity: digest('a'),
+  });
+  assert.equal(projectReleaseLifecycleOrchestration(createReleaseLifecycle(input({
+    publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
+    convergence: { status: 'passed', recoveryIdentity: digest('6') },
+    closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'retained-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' } },
+  })), digest('b')).orchestration.action, 'closeout');
 });

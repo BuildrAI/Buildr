@@ -7,6 +7,7 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
 const WORKSPACE_ROOT = path.resolve(PRODUCT_ROOT, '../..');
 const CHANGE_ROOTS = [
+  path.join(PRODUCT_ROOT, 'openspec/changes/streamline-release-dispatch-and-closeout'),
   path.join(PRODUCT_ROOT, 'openspec/changes/replace-main-dev-merge-with-dev-provenance-reconciliation'),
   path.join(PRODUCT_ROOT, 'openspec/changes/unify-release-task-lifecycle-and-closeout'),
   path.join(PRODUCT_ROOT, 'openspec/changes/correct-release-preparation-lifecycle'),
@@ -68,11 +69,15 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /rerun --failed/);
   assert.match(skill, /不得dispatch新的完整run或跨run拼接evidence/);
   assert.match(skill, /全部current前保持active\/blocked，不调用Task Finish或complete/);
-  assert.match(skill, /Publication成功后调用`release-git-convergence\.mjs reconcile-dev`/);
+  assert.match(skill, /调用`release-orchestration-runner\.mjs closeout`/);
+  assert.match(skill, /`release-git-convergence\.mjs reconcile-dev`/);
   assert.match(skill, /基于current `dev`的release support Task worktree/);
   assert.match(skill, /awaiting-publication-authorization|等待matching frozen context/);
   assert.match(skill, /codex\/release-main-<version>-g<generation>/);
-  assert.match(skill, /lifecycle返回`closed`/);
+  assert.match(skill, /lifecycle `closed`成立/);
+  assert.match(skill, /release-orchestration-runner\.mjs/);
+  assert.match(skill, /prepare-dispatch/);
+  assert.match(skill, /Release Phase Timeline/);
   assert.doesNotMatch(skill, /创建明确标识的active recovery Task承载剩余准备/);
   assert.doesNotMatch(skill, /bridge-main-to-dev\.mjs/);
   assert.doesNotMatch(skill, /冻结最新`origin\/dev`/);
@@ -92,6 +97,8 @@ test('current knowledge, checklist and architecture use the same release identit
     assert.match(document, /published-but-dev-reconciliation-blocked/);
   }
   for (const term of ['发布集合（Release Collection）', '发布选择链（Release Selection Chain）', '发布源身份（Release Source Identity）', '发布生命周期（Release Lifecycle）', '发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）', '发布中间载体（Release Intermediate Carrier）']) assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
+  assert.match(glossary, /发布阶段时间线（Release Phase Timeline）/);
+  assert.match(checklist, /release-orchestration-runner\.mjs/);
   for (const owner of ['`tools/release`', '`src/system/installation`', '`src/verification`', '`src/task`', 'self-bootstrap runner', 'protected `publish.yml`']) assert.match(architecture, new RegExp(owner.replace(/[/.]/g, '\\$&')));
   assert.match(architecture, /不得直接写对方Persistence、复制专业Result或建立release旁路SQLite store/);
 });

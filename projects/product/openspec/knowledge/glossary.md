@@ -752,6 +752,13 @@
 - 避免混用：不是Task Record新状态、旁路workflow store、聊天进度、support Task或publication授权；Candidate/readiness通过不等于lifecycle closed。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/agent-task-workflows/spec.md`。
 
+## 发布阶段时间线（Release Phase Timeline）
+
+- 定义：从Task、Git/PR、GitHub run/attempt、release owner Result、Environment与Doctor的current时间事实派生的portable closed阶段投影；identity绑定规范化阶段数组，不写Task Record或旁路日志库。
+- 适用范围：selection/freeze、Candidate attempts、release→main、readiness、publication授权、dispatch/Environment approval、Publication、dev reconciliation与closeout的耗时统计和恢复报告；等待分类只使用`machine-execution`、`platform-queue`、`environment-approval`、`human-decision`或`unknown`。
+- 避免混用：不是release lifecycle状态权威、Execution Record、聊天时间线或估算器；Candidate必须按`runId + runAttempt`保留reused evidence原attempt、实际rerun scope与aggregate identity，缺少开始或结束边界时不得补造duration。
+- 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/release-collection-model/spec.md`。
+
 ## 发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）
 
 - 定义：Publication成功后，对matching frozen release selection、正式release/main refs与current remote dev执行的只读幂等核验；证明baseline和全部ordered `sourceDevCommit`仍由current dev包含，不创建main→dev merge或任何dev写入。
