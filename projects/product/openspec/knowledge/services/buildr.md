@@ -147,3 +147,4 @@ Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkou
 ## 局部术语
 
 本 Service 当前不重定义 Project glossary。CLI、runtime adapter、Component、provider、consumer 和 binding 继续使用 [Project canonical terminology](../glossary.md) 及相关 specs 的精确定义。
+Task Development 的 current-input discovery 是面向`observe|policy`的 response-only `buildr.task-development-current-input/v1`投影；它复用 current Task/Environment/Receipt/declaration facts，mutation Application 仍是唯一 writer 并重新校验漂移。同一 Formal Verification request 的 broad affected feedback 复用 matching Verification Plan，较窄的 focused feedback 保持 transient。

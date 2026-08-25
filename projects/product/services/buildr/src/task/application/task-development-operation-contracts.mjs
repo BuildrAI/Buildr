@@ -103,6 +103,13 @@ const contracts = {
     inputSchema: inputSchema(),
     example: {},
   },
+  discover: {
+    summary: '从 current Task、Environment、Receipt 与 declaration facts 生成 observe/policy 的 closed mutation input；只读且不写入任何 lifecycle fact。',
+    inputSchema: inputSchema({
+      action: { type: 'string', enum: ['observe', 'policy'], description: '需要生成输入的 Task Development mutation action。' },
+    }, ['action']),
+    example: { action: 'observe' },
+  },
   begin: {
     summary: '在首个正式研发动作前建立 Development Receipt 与 planning snapshot。',
     inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions', 'planning']),

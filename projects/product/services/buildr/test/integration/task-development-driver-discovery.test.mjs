@@ -18,7 +18,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   const global = JSON.parse(run(['--help']).stdout);
   assert.equal(global.schemaVersion, 'buildr.task-development-driver-help/v1');
   assert.equal(global.action, null);
-  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
+  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'discover', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
   assert.match(global.usage, /--compact \| --profile/);
 
@@ -39,6 +39,10 @@ test('schema与example输出closed input contract', () => {
   assert.equal(example.schemaVersion, 'buildr.task-development-driver-example/v1');
   assert.deepEqual(example.inputJson, { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } });
   assert.deepEqual(JSON.parse(run(['inspect', '--example']).stdout).inputJson, {});
+  const discover = JSON.parse(run(['discover', '--schema']).stdout);
+  assert.deepEqual(discover.inputSchema.required, ['action']);
+  assert.deepEqual(discover.inputSchema.properties.action.enum, ['observe', 'policy']);
+  assert.deepEqual(JSON.parse(run(['discover', '--example']).stdout).inputJson, { action: 'observe' });
 
   const carrier = JSON.parse(run(['carrier', '--schema']).stdout);
   assert.deepEqual(carrier.inputSchema.required, ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']);

@@ -481,6 +481,77 @@ export function registerTaskDevelopmentApplication(runtime) {
     return inspectTaskDevelopmentCurrent(targetRoot, inspectedTask.taskId, { inspectedTask });
   }
 
+  function discoverTaskDevelopmentInput(targetRoot, taskId, input) {
+    assertActionFields('discover', input, 'Task Development discover');
+    assertActionRequiredFields('discover', input, 'Task Development discover');
+    if (!['observe', 'policy'].includes(input.action)) throw taskDevelopmentError('task_development_discovery_action_invalid', 'discover.action 必须是 observe 或 policy。', 400, { field: 'action' });
+    const inspected = task(targetRoot, taskId, { active: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    const execution = environment(targetRoot, taskId);
+    const receipt = persistence.receipt;
+    const context = taskContext(inspected, receipt.taskContext.changes);
+    const facts = {
+      receiptDigest: persistence.receiptDigest,
+      taskContextIdentity: context.identity,
+      planningIdentity: receipt.planning.identity,
+      planningTargetIdentity: receipt.planning.targetIdentity,
+    };
+    if (input.action === 'observe') {
+      return {
+        schemaVersion: 'buildr.task-development-current-input/v1',
+        operation: 'discover',
+        status: 'ready',
+        taskId,
+        action: 'observe',
+        inputJson: {
+          changeDispositions: context.changes,
+          planningTargetIdentity: receipt.planning.targetIdentity,
+        },
+        facts,
+        diagnostic: null,
+        effects: [],
+      };
+    }
+
+    const observations = declarations(targetRoot, taskId, execution.environmentRoot);
+    const policyCurrent = currentPolicy(receipt.verificationPolicy, observations, true);
+    const policyInput = policyCurrent
+      ? {
+          capabilities: receipt.verificationPolicy.capabilities,
+          coverageGaps: receipt.verificationPolicy.coverageGaps,
+          overrides: receipt.verificationPolicy.overrides,
+        }
+      : (() => {
+        const capabilities = [];
+        const coverageGaps = [];
+          if (isWorkspaceOnlyTaskRecord(inspected.record)) {
+            coverageGaps.push({ scope: 'workspace', summary: 'Task 没有 Project/Service scope，当前没有可用的 workspace Verification capability。' });
+          }
+          for (const observation of [...observations].sort((left, right) => left.project.localeCompare(right.project))) {
+            const usable = (observation.declaration?.capabilities || [])
+              .filter((candidate) => candidate.usableFor?.includes('task-delivery') === true)
+              .sort((left, right) => left.id.localeCompare(right.id));
+            if (!usable.length) {
+              coverageGaps.push({ scope: `project:${observation.project}`, summary: `Project ${observation.project} 没有可用于 task-delivery 的 Verification capability。` });
+              continue;
+            }
+            for (const candidate of usable) capabilities.push({ project: observation.project, capability: candidate.id, required: true });
+          }
+          return { capabilities, coverageGaps, overrides: [] };
+        })();
+    return {
+      schemaVersion: 'buildr.task-development-current-input/v1',
+      operation: 'discover',
+      status: 'ready',
+      taskId,
+      action: 'policy',
+      inputJson: policyInput,
+      facts: { ...facts, declarationIdentities: declarationValues(observations), policyDisposition: policyCurrent ? 'current' : 'derived-default' },
+      diagnostic: null,
+      effects: [],
+    };
+  }
+
   function planningMutation(operation, targetRoot, taskId, input) {
     const label = `Task Development ${operation}`;
     assertActionFields(operation, input, label);
@@ -847,6 +918,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   Object.assign(runtime, {
     inspectTaskDevelopment: scoped(inspectTaskDevelopment),
     inspectTaskDevelopmentCurrent: scoped(inspectTaskDevelopmentCurrent),
+    discoverTaskDevelopmentInput: scoped(discoverTaskDevelopmentInput),
     beginTaskDevelopment: scoped(beginTaskDevelopment),
     recordTaskDevelopmentPlanning: scoped(recordTaskDevelopmentPlanning),
     observeTaskDevelopment: scoped(observeTaskDevelopment),

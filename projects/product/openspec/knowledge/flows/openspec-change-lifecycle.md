@@ -37,3 +37,4 @@ P0.4继续提供一个current Task Verification Result、Project declaration v2�
 - Archive 只移动已对齐 Change、Brief 和 sidecar；归档后不补写 glossary 或 current knowledge。
 - Archive后的Development、Review、Verification、Finish、Environment cleanup与Task terminal事实由各自专业authority形成；Task current records只保存在Workspace SQLite，不发布、不进入Git，也不回写`tasks.md`。
 - 逻辑 Task/Change/run 可跨 Agent session 延续，但默认仍是同一用户对话和一个 Task Environment。普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。只有任务本身修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制在真实 Agent host 生效时，才由 Task Verification 验证；P0.2 不内省 Agent host，也不保存 session adoption evidence。
+Development 到 Formal Verification 的交接使用 current-input discovery 生成 closed `observe|policy` mutation input；同一 request 的 broad affected plan 由 Formal Verification 复用，较窄 feedback 保持 transient，不能满足 current Result gate。

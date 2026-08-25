@@ -158,6 +158,31 @@ function workspaceOnlyFixture(t, taskId) {
   return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
 }
 
+test('discover从current facts生成observe/policy closed input且零写入', (t) => {
+  const current = fixture(t, 'current-input-discovery');
+  const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest;
+  const observe = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'observe' });
+  assert.equal(observe.schemaVersion, 'buildr.task-development-current-input/v1');
+  assert.deepEqual(observe.inputJson.changeDispositions, []);
+  assert.equal(observe.inputJson.planningTargetIdentity, current.planningTargetIdentity);
+  assert.deepEqual(observe.effects, []);
+
+  const policy = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'policy' });
+  assert.deepEqual(policy.inputJson, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
+  assert.equal(policy.facts.policyDisposition, 'current');
+  assert.deepEqual(policy.effects, []);
+  assert.equal(current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest, before);
+
+  const workspaceOnly = workspaceOnlyFixture(t, 'current-input-workspace-only');
+  const workspacePolicy = workspaceOnly.runtime.discoverTaskDevelopmentInput(workspaceOnly.root, workspaceOnly.taskId, { action: 'policy' });
+  assert.deepEqual(workspacePolicy.inputJson, {
+    capabilities: [],
+    coverageGaps: [{ scope: 'workspace', summary: 'Task 没有 Project/Service scope，当前没有可用的 workspace Verification capability。' }],
+    overrides: [],
+  });
+  assert.deepEqual(workspacePolicy.effects, []);
+});
+
 test('begin与planning省略完整snapshot时零写入失败关闭', (t) => {
   const current = fixture(t, 'planning-snapshot-required');
   const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId);

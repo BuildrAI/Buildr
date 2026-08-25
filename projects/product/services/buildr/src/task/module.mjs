@@ -211,7 +211,7 @@ const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
 ]);
 const TASK_PLANNING_IDENTITY_APPLICATION_METHODS = Object.freeze(['inspectTaskPlanningIdentity']);
 const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'beginTaskDevelopment',
+  'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'discoverTaskDevelopmentInput', 'beginTaskDevelopment',
   'recordTaskDevelopmentPlanning', 'observeTaskDevelopment', 'recordTaskDevelopmentPolicy',
   'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',

@@ -81,6 +81,11 @@ test('默认 provider 使用 v3 Plan、Candidate-bound execution 与 Application
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
   }
+  assert.match(verificationSkill, /同一 target\/declaration\/capability identities/);
+  assert.match(verificationSkill, /不要因开发阶段和正式阶段切换再启动一轮相同broad affected execution/);
+  assert.match(verificationSkill, /focused feedback保持transient/);
+  assert.match(contract, /broad `Task-affected` feedback/);
+  assert.match(contract, /相同正式request不得因开发\/正式阶段切换重复启动broad execution/);
   assert.match(verificationReference, /buildr\.project-verification\/v3/);
   assert.match(verificationReference, /空声明或 coverage gap/);
   const template = YAML.parse(verificationTemplate);

@@ -75,6 +75,7 @@ export async function runTaskDevelopmentDriver(args, options = {}) {
     const payload = input(args);
     const operations = {
       inspect: () => runtime.inspectTaskDevelopment(targetRoot, taskId),
+      discover: () => runtime.discoverTaskDevelopmentInput(targetRoot, taskId, payload),
       begin: () => runtime.beginTaskDevelopment(targetRoot, taskId, payload),
       planning: () => runtime.recordTaskDevelopmentPlanning(targetRoot, taskId, payload),
       observe: () => runtime.observeTaskDevelopment(targetRoot, taskId, payload),
