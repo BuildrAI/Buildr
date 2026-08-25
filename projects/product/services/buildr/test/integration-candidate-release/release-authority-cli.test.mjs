@@ -288,7 +288,11 @@ test('release transaction runner binds preparation inputs to the final frozen so
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:01:00.000Z',
   });
-  const releaseTask = completeTaskRecord('release-fixture', 'Release fixture');
+  const releaseTask = {
+    ...completeTaskRecord('release-fixture', 'Release fixture'),
+    status: 'active',
+    result: null,
+  };
   const supportTask = completeTaskRecord('support-fixture', 'Support fixture');
   const retrospectiveTask = completeTaskRecord('retrospective-fixture', 'Retrospective fixture');
   const developmentReadModel = (taskId) => ({

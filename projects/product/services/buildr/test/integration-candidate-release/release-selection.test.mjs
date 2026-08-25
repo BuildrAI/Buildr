@@ -173,7 +173,7 @@ test('selection fails closed for baseline drift, dirty worktree and a real cherr
   git(data.repo, 'cherry-pick', '--abort');
 });
 
-test('cleanup is local-only, explicit and refuses remote-tracking release refs', (t) => {
+test('cleanup is local-only, explicit and ignores retained remote-tracking release projections', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5', baseline: data.baseline });
@@ -190,8 +190,8 @@ test('cleanup is local-only, explicit and refuses remote-tracking release refs',
   git(data.repo, 'checkout', 'dev');
   git(data.repo, 'push', 'origin', 'release-0.1.0-rc.6:release-0.1.0-rc.6');
   git(data.repo, 'fetch', 'origin');
-  const remoteBlocked = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', confirm: true });
-  assert.equal(remoteBlocked.status, 'blocked');
-  assert.match(remoteBlocked.diagnostic.message, /remote release ref/i);
-  assert.equal(remoteBlocked.effects.length, 0);
+  const remoteRetained = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', confirm: true });
+  assert.equal(remoteRetained.status, 'passed', JSON.stringify(remoteRetained));
+  assert.equal(git(data.repo, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.6').startsWith(data.baseline), true);
+  assert.equal(cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', confirm: true }).action, 'already-cleaned');
 });

@@ -212,7 +212,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
     const environment = createReleaseEnvironmentBinding({
       task: releaseTask,
-      taskStatus: action === 'dispatch' ? 'completed' : 'active',
+      taskStatus: 'active',
       environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
       repo,
       sourceCommit,
@@ -243,7 +243,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       runtime,
       root: repo,
       releaseTask: options.releaseTask,
-      releaseTaskStatus: action === 'dispatch' ? 'completed' : 'active',
+      releaseTaskStatus: 'active',
       supportTasks: options.supportTasks ?? [],
       retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
