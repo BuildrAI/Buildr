@@ -169,18 +169,18 @@ Buildr release workflow MUST 在公开 mutation 前后读取 npm `latest` 与 `n
 - **AND** MUST NOT把该漂移伪装成本次发布的成功副作用
 
 ### Requirement: Publication 必须从已完成 Task 的权威环境事实重建
-Buildr release preparation MUST消费 matching Task Environment Plan/Receipt 中已验证的 Service preparation declaration、recipe、inputs 与 identity。Task Finish MAY按现有 contract cleanup execution root；后续 publication MUST从冻结 commit、已保存 Environment facts 和同一权威 recipe重建 clean hosted environment，并 MUST NOT在 Product 根或其他未声明 cwd 另行运行依赖准备。
+Buildr release preparation MUST消费matching active release Task Environment Plan/Receipt中已验证的Service preparation declaration、recipe、inputs与identity。等待授权期间Environment MAY保持ready或由owner清理可释放资源；后续publication MUST从冻结commit、已保存Environment facts和同一权威recipe重建clean hosted environment，并 MUST NOT要求提前完成release Task、恢复旧worktree或在Product根及其他未声明cwd另行运行依赖准备。
 
 #### Scenario: Release Task Finish 已清理 worktree
-- **WHEN** 完成的 release Task 仍有可读 cleaned Environment Receipt且 publication 得到明确授权
-- **THEN** release runner MUST验证 plan identity、`service:product/buildr` recipe、Service lockfile inputs 与 source commit
-- **AND** workflow MUST在冻结 Buildr Service root按同一 recipe语义重建依赖
-- **AND** MUST NOT恢复旧 worktree或在 `projects/product` 执行 `npm ci`
+- **WHEN** active release Task已形成current frozen readiness context且publication得到明确授权，无论原execution worktree仍ready或已由owner清理可释放资源
+- **THEN** release runner MUST验证plan identity、`service:product/buildr` recipe、Service lockfile inputs、source commit与同一active Task identity
+- **AND** workflow MUST在冻结Buildr Service root按同一recipe语义重建依赖
+- **AND** MUST NOT完成或重开Task、恢复旧worktree或在`projects/product`执行`npm ci`
 
 #### Scenario: recipe、cwd 或 lockfile 不匹配
-- **WHEN** Environment Receipt 缺少 required recipe、冻结 source缺少 Service lockfile、cwd不是声明的 Service root或 input identity漂移
-- **THEN** release preparation MUST在 dispatch 或 npm mutation 前确定性失败
-- **AND** diagnostic MUST指出 expected selector、recipe、cwd、input 与 actual fact
+- **WHEN** Environment Receipt缺少required recipe、冻结source缺少Service lockfile、cwd不是声明的Service root或input identity漂移
+- **THEN** release preparation MUST在dispatch或npm mutation前确定性失败
+- **AND** diagnostic MUST指出expected selector、recipe、cwd、input与actual fact
 
 ### Requirement: Candidate 与 Release 子进程必须共同冻结 exact Node executable 和 PATH
 Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，development精确版本只约束development checkout入口。
@@ -227,19 +227,24 @@ Buildr MUST以 closed release transaction context/evidence schema关联 source r
 - **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
-Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个受保护release→main收敛PR；merge后`main` tree MUST等于冻结release tree。正式Publication成功后才可执行main→dev收敛；该动作 MUST保留publication期间已经进入`dev`的新内容，并 MUST拒绝`ours`、reset、force push或静默冲突解决。
+Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个generation-scoped受保护release→main收敛PR；merge后`main` tree MUST等于冻结release tree。正式Publication成功后才可执行main→dev收敛；该动作 MUST保留publication期间已经进入`dev`的新内容，以确定性recovery identity报告冲突或remote race，并 MUST在push前证明目标branch policy允许产品拥有的merge commit，拒绝依赖管理员绕过、`ours`、reset、force push或静默冲突解决。
 
 #### Scenario: release集合进入main
 - **WHEN** current release Candidate与唯一tarball通过且维护者授权收敛
-- **THEN** Buildr MUST只创建一个绑定该release HEAD/tree的受保护release→main PR
+- **THEN** Buildr MUST创建或复用一个绑定generation与release HEAD/tree的确定性carrier，并只以该carrier创建唯一受保护release→main PR
 - **AND** squash或其他允许策略产生的main commit identity可以不同，但`origin/main^{tree}` MUST精确等于冻结release tree
-- **AND** tree不一致或PR head漂移 MUST阻止publication
+- **AND** tree不一致、carrier/PR head漂移或ownership不明 MUST阻止publication
 
 #### Scenario: 发布成功后dev已经前进
 - **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release创建后交付的新内容
 - **THEN** main→dev收敛 MUST保留这些新内容并证明release publication内容已进入current dev
-- **AND** 发生冲突或identity不可证明时 MUST报告`published-but-dev-convergence-blocked`并保留公开发布事实
+- **AND** 发生冲突、remote race或identity不可证明时 MUST返回`published-but-dev-convergence-blocked`与同一recovery identity并保留公开发布事实
 - **AND** MUST NOT删除tag、unpublish、force push或用`ours`掩盖内容差异
+
+#### Scenario: dev策略拒绝merge commit
+- **WHEN** current dev branch policy要求线性历史或以其他方式禁止产品将main与dev双亲merge commit普通push到目标ref
+- **THEN** convergence owner MUST在push前返回`published-but-dev-convergence-blocked`与策略finding
+- **AND** MUST NOT依赖管理员绕过、改写dev历史或把push rejection当作暂态成功
 
 ### Requirement: 受保护发布事务必须消费唯一冻结Context
 Buildr正式publication MUST只由`.github/workflows/publish.yml`的唯一protected transaction执行。Workflow MUST在一次`npm-production`approval内消费与dispatch完全相同的context digest、matching Candidate aggregate与冻结tarball，依次完成hosted OIDC、final pre-tag convergence、tag ensure、npm publish/dist-tag、GitHub Release与Registry readback。
@@ -289,3 +294,16 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 - **WHEN** hosted evidence保存terminal failure且完整artifact超过stdout边界
 - **THEN** compact inspect MUST返回 terminal failure、primary failed step、recovery class与 `output.truncated`事实
 - **AND** explicit full MUST从同一run artifact校验后返回完整 portable evidence
+
+### Requirement: 发布完成必须以零中间资源和正式release ref核验为边界
+Buildr MUST在Publication成功后执行幂等closeout，并 MUST把正式远端`release-<version>`作为默认保留的发布事实，把generation carrier、临时convergence worktree、本地release branch、selection lifecycle refs与owned release worktree作为必需清理资源。可选删除正式远端release ref MUST继续要求独立明确授权，但 MUST NOT成为唯一release Task完成门禁。
+
+#### Scenario: 默认保留正式远端release branch
+- **WHEN** publication与main→dev已成立且正式远端release branch精确等于冻结release commit
+- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并清理全部matching中间资源
+- **AND** 未请求正式ref删除 MUST NOT产生blocked或要求新的协调Task
+
+#### Scenario: 中间资源漂移
+- **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership或expected identity无法证明
+- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication与其他已清理事实
+- **AND** MUST NOT删除未知branch、worktree、正式release ref或其他version资源

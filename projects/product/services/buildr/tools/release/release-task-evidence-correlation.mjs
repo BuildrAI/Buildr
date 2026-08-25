@@ -257,7 +257,7 @@ function normalizeTaskEvidence(value, expectedIds, releaseTaskId) {
 
 export function createReleaseTaskEvidenceCorrelation(input) {
   closed(input, new Set(['releaseTask', 'releaseTaskStatus', 'retrospectiveSources', 'supportTasks', 'taskEvidence', 'source']), 'release task evidence correlation input');
-  const releaseTaskStatus = input.releaseTaskStatus || 'completed';
+  const releaseTaskStatus = input.releaseTaskStatus || 'active';
   if (!['active', 'completed'].includes(releaseTaskStatus)) throw new Error('releaseTaskStatus must be active or completed.');
   const releaseTask = taskProjection(input.releaseTask, 'releaseTask', releaseTaskStatus);
   const supportTasks = [...(input.supportTasks || [])].map((item, index) => taskProjection(item, `supportTasks[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
@@ -426,7 +426,7 @@ function runtimeSelfBootstrapProjection(runtime, root, taskId) {
   };
 }
 
-export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, releaseTaskStatus = 'completed', supportTasks = [], retrospectiveSources = [], selfBootstrapResults = {}, source = null }) {
+export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, releaseTaskStatus = 'active', supportTasks = [], retrospectiveSources = [], selfBootstrapResults = {}, source = null }) {
   const taskIds = [releaseTask, ...supportTasks].map((item) => typeof item === 'string' ? item : item.taskId);
   const taskEvidence = taskIds.map((taskId) => ({
     taskId,

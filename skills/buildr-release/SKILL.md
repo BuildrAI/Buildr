@@ -26,7 +26,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 2. release-source Product Candidate：matching release source、Candidate generation、完整required owners与唯一tarball manifest/integrity；
 3. release Task correlation：release/support Tasks、Environment、Development handoff、Finish Delivery和self-bootstrap的closed portable关联；
 4. shared readiness/protected transaction：同一context digest、collect-all findings、effects为空的local检查与唯一publish workflow；
-5. release→main、Publication后main→dev与release branch closeout：tree equality、dev新内容保留和独立cleanup授权。
+5. release→main、Publication后main→dev与release closeout：generation carrier、tree equality、dev新内容保留、零中间资源和正式release ref保留核验。
 
 当前P0 release集合契约与P2 shared readiness/protected transaction已经实现；P1/P3或任一其他owner/read model尚未实现或无法证明current时：
 
@@ -77,10 +77,10 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 6. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。support Task按正式Development/Verification/Finish闭环交付，matching self-bootstrap仍由唯一runner完成，失败不改写Delivery；support Task terminal、Delivery或Activation都不使release协调Task completed。
 7. Freeze current release HEAD/tree与selection chain；任一内容变化使旧freeze、Candidate、artifact、readiness和context stale。
 8. 对该release source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一source SHA/tree、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active/blocked，不得Finish/complete或把support delivery误报为准备完成。
-9. 创建唯一release→main受保护PR。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败只重跑失败job和aggregate。
+9. 为current generation创建或复用唯一`codex/release-main-<version>-g<generation>` carrier，并只以该carrier创建唯一release→main受保护PR；正式远端`release-<version>`不作为PR carrier。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败只重跑失败job和aggregate。
 10. merge后核验`origin/main^{tree}`精确等于冻结release tree。commit identity可因squash不同，tree不一致或remote race立即停止。
 11. 用transaction runner的默认`readiness`动作构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
-12. 只有current selection、Candidate aggregate、唯一tarball、main tree与dispatch-check readiness全部matching时，才完成`release-<version>`协调Task并报告“准备完成，尚未dispatch正式release transaction，尚未创建tag/npm version/GitHub Release，尚未请求`npm-production`审批”，然后停止。Task completed不构成publication授权。
+12. 只有current selection、Candidate aggregate、唯一tarball、main tree与dispatch-check readiness全部matching时，才报告“准备完成，等待matching frozen context的publication授权”，然后停止。`release-<version>`协调Task必须保持active；Task状态、历史授权或readiness通过都不构成publication授权。
 
 ## 6. 发布版本
 
@@ -93,8 +93,9 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 5. 审批后同一job完成OIDC proof、final pre-tag convergence、tag ensure、Registry snapshot、`npm publish <same-tarball>`、双dist-tag/integrity readback、GitHub Release ensure和官方Registry精确安装smoke。
 6. 已存在npm version只在integrity与manifest相同、tag/source/context匹配时复用；否则停止，不unpublish、不覆盖、不重新pack。
 7. 按publish run inspect `release-evidence-*`，核验selection、release/support Tasks、Candidate、main、publish、tag、npm/GitHub Release、Registry smoke与context digest；临时下载立即清理。
-8. Publication成功后才执行main→dev收敛。必须保留release创建后进入dev的新内容；冲突或remote race返回`published-but-dev-convergence-blocked`，不得`ours`、reset、force push或撤销Publication。
-9. Task Environment cleanup与release branch cleanup分别走owner。远端release branch删除必须展示精确ref/commit和公开事实，并再次取得独立授权；未授权时保留并报告follow-up。
+8. Publication成功后才执行main→dev收敛。必须先证明current dev branch policy允许产品拥有的双亲merge commit普通push，并保留release创建后进入dev的新内容；冲突、策略不兼容或remote race返回`published-but-dev-convergence-blocked`与稳定recovery identity，不得`ours`、reset、force push、管理员绕过或撤销Publication。
+9. Task Environment cleanup与release closeout分别走owner。closeout必须保留并核验正式远端`release-<version>`，幂等删除matching generation carrier、本地release branch、selection lifecycle refs、owned worktree与临时资源；ownership或identity不明时fail closed。可选删除正式远端release ref仍需单独授权，但不阻止协调Task完成。
+10. Publication、main→dev与必需closeout全部通过后，lifecycle返回`closed`，此时才以no-change完成唯一`release-<version>`协调Task；不得新建finalize或resume协调Task。
 
 RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告`next`现状，不擅自删除或移动非目标tag。
 
@@ -102,14 +103,14 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 
 - release内容变化：旧Candidate/artifact/readiness/context全部stale，形成新generation和唯一tarball，不拼接旧evidence。
 - frozen Candidate失败且需要选择新的dev修复：先从GitHub、Git tag、npm官方registry、GitHub Release和protected workflow回读目标version的全部公开/不可逆事实；只有证明尚无tag、npm version、GitHub Release且protected transaction未开始公共mutation，维护者才可独立授权selection `reopen --confirm --reason <text>`。reopen只保留immutable freeze history并释放current frozen ref，不隐含update/push；随后逐commit `cherry-pick -x`、重新freeze、普通push并对新SHA运行完整Candidate。任何公开事实已存在时停止并选择新version，不接受caller布尔值或历史stdout代替证明。
-- 同version release协调Task已被提前completed但准备intent尚未满足：保留terminal Task与既有Finish审计事实，不直接改SQLite、不伪造reopen或重建同名Task；创建明确标识的active recovery Task承载剩余准备，并在correlation与完成报告中同时披露旧Task、support facts和恢复边界。
+- 同version release协调Task在本模型生效前已被提前completed：保留terminal Task与既有Finish审计事实，不直接改SQLite、不伪造reopen或把旧记录迁移成current；这是历史异常，不是后续version的正常恢复模板。新version必须始终使用唯一active协调Task直到lifecycle closed。
 - selection冲突：保持pre-operation identity和冲突现场，停止后续选择/remote/public mutation；只在维护者作出新决定后恢复。
 - release→main tree不一致或remote race：停止publication，不用历史形状、`ours`、reset或force push掩盖。
 - protected transaction失败：先读取terminal run/attempt与逐步evidence，按`same-attempt`、`new-attempt`或`blocked-new-version`解释恢复；已创建tag时保留tag和同context事实，不删除tag后重发。
 - npm version已存在：先比较official registry integrity与manifest；一致才恢复后续readback，不一致fail closed。
 - GitHub Release已存在：核对tag target、notes、prerelease/Latest；一致才复用，不自动覆盖。
 - publish或Release成功但smoke/网络失败：保留不可逆事实，从同一context/readback恢复，不重复publish。
-- Publication成功但main→dev、Activation、Environment Cleanup、Diagnostics或remote release branch cleanup失败：分别报告owner状态，不撤销Delivery/Publication。
+- Publication成功但main→dev、Activation、Environment Cleanup、Diagnostics或必需closeout失败：保持同一active协调Task，按lifecycle recovery identity恢复对应owner，不撤销Delivery/Publication、不重跑Candidate或创建resume Task。
 - 发布后发现产品问题：RC发布新prerelease，GA发布patch，必要时deprecate或明确移动dist-tag；不默认unpublish。
 
 ## 8. 完成报告
@@ -121,7 +122,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 - release/support Tasks、Environment、Development/Finish/self-bootstrap correlation与各正交状态；
 - release→main PR、main commit/tree、publication context/run/approval、tag/npm/dist-tags/GitHub Release/Registry smoke；
 - post-publish main→dev结果和`published-but-dev-convergence-blocked`等独立attention；
-- local Task Environment与local/remote release branch cleanup事实、独立删除授权和未完成follow-up；
+- local Task Environment、generation carrier、本地selection/worktree资源、正式远端release ref保留核验和可选删除授权事实；
 - 当前缺失owner/read model或迁移Contribution；未齐备时明确`release-model-implementation-incomplete`。
 
 不要把“PR已创建”“tag已推送”“workflow已启动”单独视为完成；也不要因后续维护失败撤销已经成立的Delivery或Publication。

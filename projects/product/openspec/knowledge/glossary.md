@@ -745,6 +745,20 @@
 - 避免混用：不是Task Candidate identity、近似branch name、最新`dev`、main commit identity或版本字符串；source任一部分变化都会使旧下游evidence stale。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/product-verification-quality/spec.md`。
 
+## 发布生命周期（Release Lifecycle）
+
+- 定义：从current selection、Candidate、readiness、Publication、main→dev与closeout owner facts派生的version-scoped只读阶段模型；稳定recovery identity绑定version、唯一协调Task、selection generation/identity、frozen context与适用publish run。
+- 适用范围：同一`release-<version>` Task从selection持续active到必需closeout完成、等待publication授权、发布后收敛恢复与最终no-change完成。
+- 避免混用：不是Task Record新状态、旁路workflow store、聊天进度、support Task或publication授权；Candidate/readiness通过不等于lifecycle closed。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/agent-task-workflows/spec.md`。
+
+## 发布中间载体（Release Intermediate Carrier）
+
+- 定义：Release Git owner按selection generation创建的确定性`codex/release-main-<version>-g<generation>` branch，用于承载冻结release source并作为唯一release→main PR head；main tree等价后属于必需closeout资源。
+- 适用范围：generation隔离、受保护release→main PR、carrier identity/ownership核验和幂等删除。
+- 避免混用：不是正式远端`release-<version>`发布事实、Delivery Carrier、release Task、tag或npm artifact；不得复用旧generation carrier，正式release ref默认保留并核验。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/open-source-release-governance/spec.md`。
+
 ## 交付载体（Delivery Carrier）
 
 - 定义：交付载体（Delivery Carrier）是承载Task Contribution的commit、branch、PR、tarball、安装包或其他交付介质；Buildr自动Finish可创建run-owned隔离carrier，Agent也可选择其他已授权载体。

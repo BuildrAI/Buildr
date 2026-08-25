@@ -35,7 +35,7 @@ function entry(taskId, overrides = {}) {
 
 function correlation(overrides = {}) {
   return createReleaseTaskEvidenceCorrelation({
-    releaseTask: task('release-1.0.0'),
+    releaseTask: { ...task('release-1.0.0'), status: 'active' },
     supportTasks: [task('support-1')],
     retrospectiveSources: [task('retro-1')],
     taskEvidence: [entry('release-1.0.0'), entry('support-1')],
@@ -70,10 +70,10 @@ test('preparation correlation keeps the release coordination Task active without
   assert.equal(result.entries.find((item) => item.taskId === 'release-1.0.0').finish.status, 'unknown');
 });
 
-test('publication correlation still requires the release coordination Task to be completed', () => {
+test('publication correlation requires the release coordination Task to remain active', () => {
   assert.throws(
-    () => correlation({ releaseTask: { ...task('release-1.0.0'), status: 'active' } }),
-    /releaseTask must be completed/u,
+    () => correlation({ releaseTask: task('release-1.0.0') }),
+    /releaseTask must be active/u,
   );
 });
 
