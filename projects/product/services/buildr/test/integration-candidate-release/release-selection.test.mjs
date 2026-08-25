@@ -77,6 +77,26 @@ test('release selection creates from exact dev baseline and reconstructs ordered
   assert.equal(inspected.selectionIdentity.startsWith('sha256-'), true);
 });
 
+test('selection update fails closed when the caller workspace is not the release target', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+
+  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.8', baseline: data.baseline, devRef: 'dev' });
+  const releaseHeadBefore = git(data.repo, 'rev-parse', 'refs/heads/release-0.1.0-rc.8');
+  git(data.repo, 'checkout', 'dev');
+  const devHeadBefore = git(data.repo, 'rev-parse', 'HEAD');
+
+  const blocked = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.8', source: data.sourceA, devRef: 'dev' });
+
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'release_selection_target_mismatch');
+  assert.deepEqual(blocked.effects, []);
+  assert.equal(blocked.diagnostic.details.expectedBranch, 'release-0.1.0-rc.8');
+  assert.equal(blocked.diagnostic.details.actualBranch, 'dev');
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), devHeadBefore);
+  assert.equal(git(data.repo, 'rev-parse', 'refs/heads/release-0.1.0-rc.8'), releaseHeadBefore);
+});
+
 test('freeze is idempotent, direct update stays blocked, and explicit reopen allows a new generation', (t) => {
   const data = fixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));

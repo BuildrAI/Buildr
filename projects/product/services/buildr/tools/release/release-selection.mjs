@@ -263,6 +263,20 @@ export function selectReleaseCommit(options = {}, dependencies = {}) {
     const repo = path.resolve(options.repo ?? process.cwd());
     const state = readState({ ...options, version }, dependencies);
     assertActive(state, 'update');
+    const currentBranch = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim() || null;
+    const currentHead = resolveCommit('HEAD', repo, dependencies);
+    if (currentBranch !== state.branch || currentHead !== state.releaseHead) {
+      return errorResult('update', version, new Error(`Release selection update requires checkout ${state.branch} at ${state.releaseHead}; current checkout is ${currentBranch ?? 'detached'} at ${currentHead}.`), {
+        code: 'release_selection_target_mismatch',
+        details: {
+          expectedBranch: state.branch,
+          expectedHead: state.releaseHead,
+          actualBranch: currentBranch,
+          actualHead: currentHead,
+        },
+        nextActions: [`切换到 ${state.branch} 并确认 HEAD 为 ${state.releaseHead} 后重试；当前 workspace 不得执行 Release selection update。`],
+      });
+    }
     cleanWorktree(repo, dependencies);
     const source = resolveCommit(options.source, repo, dependencies);
     const devHead = resolveCommit(options.devRef ?? state.devRef, repo, dependencies);
