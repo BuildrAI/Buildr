@@ -83,7 +83,7 @@ function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activa
   const deliveryCommit = isolated.deliveryCommit || publicTaskFinishDeliveryCommit(run.deliveryCommit || legacyTaskFinishDeliveryCommit(run.identity.task));
   const activationPaths = isolated.activationPaths || isolated.changedPaths || [];
   const carrier = {
-    identity: digest({ selector: repository?.selector || 'workspace', head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, deliveryCommitIdentity: deliveryCommit?.identity || null, reuseMode, zeroDelta: isolated.zeroDelta === true, activationPaths, activationPlanIdentity: activationPlan?.identity || null }),
+    identity: digest({ selector: repository?.selector || 'workspace', head: isolated.head, tree: isolated.tree, expectedTargetRef: isolated.deliveryBaseline.head, taskContributionIdentity: isolated.taskContribution.identity, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, contentTargetIdentity: run.identity.contentTargetIdentity, deliveryCommitIdentity: deliveryCommit?.identity || null, reuseMode, zeroDelta: isolated.zeroDelta === true, activationPaths, activationPlanIdentity: activationPlan?.identity || null, pathCoverageIdentity: isolated.pathCoverage?.identity || null }),
     status,
     reuseMode,
     kind: 'git-isolated-commit',
@@ -109,6 +109,7 @@ function deliveryCarrier(run, isolated, { reuseMode, status = 'prepared', activa
   };
   if (isolated.conflict) carrier.adaptation = { status: 'required', reason: isolated.conflict };
   if (isolated.carrierDeltaIdentity) carrier.carrierDeltaIdentity = isolated.carrierDeltaIdentity;
+  if (isolated.pathCoverage) carrier.pathCoverage = isolated.pathCoverage;
   if (isolated.cleanliness) carrier.cleanliness = isolated.cleanliness;
   return carrier;
 }
@@ -247,6 +248,7 @@ function repositoryEquivalence(run, plan, carrier) {
     taskContributionIdentity: carrier.taskContribution.identity,
     deliveryBaselineIdentity: digest(carrier.deliveryBaseline),
     carrierIdentity: carrier.identity,
+    pathCoverageIdentity: carrier.pathCoverage?.identity || null,
     formalVerificationExecutions: 0,
   };
 }
@@ -366,7 +368,7 @@ function phaseFailure(findings, fallbackClass = 'product-execution-failure') {
   };
 }
 
-function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaAdaptation = false }) {
+function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaAdaptation = false, reviewedTargetPaths = [] }) {
   const environmentRoot = path.resolve(root);
 
   function taskEnvironment(run) {
@@ -477,7 +479,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         if (run.deliveryCarrier.deliveryBaseline?.head !== expectedTargetRef) return { status: 'blocked', operations, failure: { operation: 'delivery-baseline', failureClass: 'transient-external-condition', code: 'task-finish.target-race', message: 'Delivery Baseline changed while the isolated carrier awaited adaptation.', findings: [{ expected: run.deliveryCarrier.deliveryBaseline?.head, observed: expectedTargetRef }] } };
         const currentContribution = observeGitTaskContribution({ root: environmentRoot, deliveryBaselineHead: run.deliveryCarrier.taskContribution.originalBaseline.head });
         if (currentContribution.identity !== run.deliveryCarrier.taskContribution.identity || currentContribution.source.tree !== run.deliveryCarrier.taskContribution.source.tree) return { status: 'blocked', operations, failure: { operation: 'task-contribution', failureClass: 'semantic-review-required', code: 'task-finish.task-contribution-drift-unresolved', message: 'Frozen Task Contribution no longer matches the Delivery Adaptation source facts; Development applicability must be inspected before any rebuild.' } };
-        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier, acceptZeroDelta: acceptZeroDeltaAdaptation });
+        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: environmentRoot, carrier: run.deliveryCarrier, acceptZeroDelta: acceptZeroDeltaAdaptation, agentReviewedTargetPaths: reviewedTargetPaths.filter((item) => item.selector === 'workspace') });
         if (adopted.status !== 'adopted') return { status: 'blocked', operations, failure: { operation: 'delivery-adaptation', failureClass: 'semantic-review-required', code: adopted.code || 'task-finish.delivery-adaptation-required', message: 'Delivery Adaptation is not ready for deterministic verification.', findings: [adopted] }, output: { deliveryCarrier: run.deliveryCarrier } };
         const isolated = { ...run.deliveryCarrier, ...adopted, taskContribution: run.deliveryCarrier.taskContribution, deliveryBaseline: run.deliveryCarrier.deliveryBaseline };
         const plan = activationPlan(run, isolated.activationPaths || isolated.changedPaths || run.deliveryCarrier.changedPaths || []);
@@ -486,7 +488,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
           ? await runtime.runTaskFinishCarrierCompatibility({ task: run.identity.task, carrier, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity })
           : { status: 'not-required', checks: [], basis: 'The current Project adapter declares no carrier-specific compatibility checks.' };
         if (!['passed', 'not-required'].includes(compatibilityChecks?.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-compatibility', failureClass: 'semantic-review-required', code: 'task-finish.compatibility-checks-failed', message: 'Project-required Delivery Carrier compatibility checks did not pass.', findings: [compatibilityChecks] }, output: { deliveryCarrier: run.deliveryCarrier } };
-        carrier.adaptation = { status: 'agent-reviewed', zeroDelta: carrier.zeroDelta, compatibilityChecks };
+        carrier.adaptation = { status: 'agent-reviewed', zeroDelta: carrier.zeroDelta, compatibilityChecks, pathCoverage: { identity: carrier.pathCoverage.identity, counts: carrier.pathCoverage.counts } };
         operations.push({ kind: 'product', id: 'adopt-agent-reviewed-delivery-carrier', status: 'passed', carrierRoot: carrier.root });
         operations.push({ kind: 'product', id: 'carrier-compatibility-checks', status: compatibilityChecks.status, checks: compatibilityChecks.checks || [], evidenceIdentity: compatibilityChecks.evidenceIdentity || null });
         const equivalent = developmentCarrier(run).assertion;
@@ -541,7 +543,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
       if (observed.status !== 'equivalent') return { status: 'blocked', failure: { operation: 'carrier-verification', failureClass: 'semantic-review-required', code: observed.code || 'task-finish.carrier-changed', message: 'Delivery Carrier facts cannot be verified.', findings: [observed] } };
       const equivalent = developmentCarrier(run).assertion;
       if (equivalent.status !== 'equivalent') return { status: 'failed', failure: { operation: 'carrier-equivalence', failureClass: 'upstream-candidate-defect', code: 'task-finish.carrier-not-equivalent', message: 'Delivery carrier is no longer content-equivalent to the Development handoff.', diagnostic: equivalent.diagnostic } };
-      const equivalence = { status: 'equivalent', reuseMode: run.deliveryCarrier.reuseMode, semanticEquivalence: run.deliveryCarrier.reuseMode === 'deterministic-reuse' ? 'deterministic-git-identity' : 'agent-reviewed-not-proven-by-buildr', handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, candidateGeneration: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity, taskContributionIdentity: run.deliveryCarrier.taskContribution.identity, deliveryBaselineIdentity: digest(run.deliveryCarrier.deliveryBaseline), carrierIdentity: run.deliveryCarrier.identity, formalVerificationExecutions: 0 };
+      const equivalence = { status: 'equivalent', reuseMode: run.deliveryCarrier.reuseMode, semanticEquivalence: run.deliveryCarrier.reuseMode === 'deterministic-reuse' ? 'deterministic-git-identity' : 'agent-reviewed-not-proven-by-buildr', handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity, candidateGeneration: run.identity.candidateGeneration, contentTargetIdentity: run.identity.contentTargetIdentity, taskContributionIdentity: run.deliveryCarrier.taskContribution.identity, deliveryBaselineIdentity: digest(run.deliveryCarrier.deliveryBaseline), carrierIdentity: run.deliveryCarrier.identity, pathCoverageIdentity: run.deliveryCarrier.pathCoverage?.identity || null, formalVerificationExecutions: 0 };
       return { status: 'passed', inputIdentity: run.deliveryCarrier.identity, outputIdentity: digest(equivalence), output: { equivalence } };
     },
 
@@ -622,6 +624,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
           expectedTargetRef: run.deliveryCarrier.expectedTargetRef,
           observedTargetRef,
           carrierRef: run.deliveryCarrier.head,
+          pathCoverageIdentity: run.deliveryCarrier.pathCoverage?.identity || null,
           remoteAfterRef,
           finalRemoteRef: remoteAfterRef,
           containment,
@@ -705,6 +708,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
         carrierRef: run.deliveryCarrier.head,
         finalRemoteRef,
         taskContributionIdentity: run.deliveryCarrier.taskContribution.identity,
+        pathCoverageIdentity: run.deliveryCarrier.pathCoverage?.identity || null,
         deliveryBaseline: run.deliveryCarrier.deliveryBaseline,
         targetBranch: run.identity.targetBranch,
         status: 'prepared',
@@ -772,7 +776,7 @@ function createLegacyTaskFinishProductHandlers({ runtime, root, acceptZeroDeltaA
   };
 }
 
-function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDeltaAdaptation = false }) {
+function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDeltaAdaptation = false, reviewedTargetPaths = [] }) {
   function taskEnvironment(run) {
     return runtime.resolveTaskEnvironmentExecution(run.identity.workspaceRoot, run.identity.task);
   }
@@ -890,7 +894,7 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
 
       if (state.deliveryCarrier?.reuseMode === 'adaptation-required') {
         if (state.deliveryCarrier.deliveryBaseline?.head !== expectedTargetRef) return { status: 'blocked', operations, failure: multiFailure('delivery-baseline', 'task-finish.target-race', `Delivery Baseline changed for ${plan.selector}.`, plan.selector, { findings: [{ expected: state.deliveryCarrier.deliveryBaseline?.head, observed: expectedTargetRef }] }), output: { repositories } };
-        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: plan.taskRoot, carrier: state.deliveryCarrier, acceptZeroDelta: acceptZeroDeltaAdaptation });
+        const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: plan.taskRoot, carrier: state.deliveryCarrier, acceptZeroDelta: acceptZeroDeltaAdaptation, agentReviewedTargetPaths: reviewedTargetPaths.filter((item) => item.selector === plan.selector) });
         if (adopted.status !== 'adopted') return { status: 'blocked', operations, failure: { operation: 'delivery-adaptation', failureClass: 'semantic-review-required', code: adopted.code || 'task-finish.delivery-adaptation-required', message: `Delivery Adaptation is not ready: ${plan.selector}.`, findings: [{ selector: plan.selector }, adopted] }, output: { repositories } };
         const isolated = { ...state.deliveryCarrier, ...adopted, taskContribution: state.deliveryCarrier.taskContribution, deliveryBaseline: state.deliveryCarrier.deliveryBaseline };
         const activationPlan = repositoryActivationPlan(run, plan, isolated.activationPaths || isolated.changedPaths || []);
@@ -899,7 +903,7 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
           ? await runtime.runTaskFinishCarrierCompatibility({ task: run.identity.task, repository: plan.selector, carrier, handoffIdentity: run.identity.handoffIdentity, candidateIdentity: run.identity.candidateIdentity })
           : { status: 'not-required', checks: [], basis: 'The current Project adapter declares no carrier-specific compatibility checks.' };
         if (!['passed', 'not-required'].includes(compatibilityChecks?.status)) return { status: 'blocked', operations, failure: { operation: 'carrier-compatibility', failureClass: 'semantic-review-required', code: 'task-finish.compatibility-checks-failed', message: `Carrier compatibility checks failed: ${plan.selector}.`, findings: [{ selector: plan.selector }, compatibilityChecks] }, output: { repositories } };
-        carrier.adaptation = { status: 'agent-reviewed', zeroDelta: carrier.zeroDelta, compatibilityChecks };
+        carrier.adaptation = { status: 'agent-reviewed', zeroDelta: carrier.zeroDelta, compatibilityChecks, pathCoverage: { identity: carrier.pathCoverage.identity, counts: carrier.pathCoverage.counts } };
         state.deliveryCarrier = carrier;
         operations.push({ kind: 'product', id: 'adopt-agent-reviewed-delivery-carrier', selector: plan.selector, status: 'passed', carrierRoot: carrier.root });
         continue;
@@ -1093,6 +1097,7 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
           expectedTargetRef: state.deliveryCarrier.expectedTargetRef,
           observedTargetRef,
           carrierRef: state.deliveryCarrier.head,
+          pathCoverageIdentity: state.deliveryCarrier.pathCoverage?.identity || null,
           remoteAfterRef,
           finalRemoteRef: remoteAfterRef,
           containment,
@@ -1163,12 +1168,13 @@ function createRepositorySetTaskFinishProductHandlers({ runtime, acceptZeroDelta
       deliverySetIdentity,
       repositories: run.identity.repositories.map((plan) => {
         const state = repositories.find((repository) => repository.selector === plan.selector);
-        return { selector: plan.selector, disposition: plan.disposition, carrierIdentity: state.deliveryCarrier?.identity || null, carrierRef: state.deliveryCarrier?.head || null, finalRemoteRef: state.delivery?.finalRemoteRef || deliveries[plan.selector], taskContributionIdentity: state.taskContribution.identity };
+        return { selector: plan.selector, disposition: plan.disposition, carrierIdentity: state.deliveryCarrier?.identity || null, carrierRef: state.deliveryCarrier?.head || null, finalRemoteRef: state.delivery?.finalRemoteRef || deliveries[plan.selector], taskContributionIdentity: state.taskContribution.identity, pathCoverageIdentity: state.deliveryCarrier?.pathCoverage?.identity || null };
       }),
       carrierIdentity: applicable.length === 1 ? repositoryState({ repositories }, applicable[0].selector)?.deliveryCarrier?.identity || null : null,
       carrierRef: applicable.length === 1 ? repositoryState({ repositories }, applicable[0].selector)?.deliveryCarrier?.head || null : null,
       finalRemoteRef: applicable.length === 1 ? repositoryState({ repositories }, applicable[0].selector)?.delivery?.finalRemoteRef || null : null,
       taskContributionIdentity: applicable.length === 1 ? repositoryState({ repositories }, applicable[0].selector)?.taskContribution?.identity || null : null,
+      pathCoverageIdentity: applicable.length === 1 ? repositoryState({ repositories }, applicable[0].selector)?.deliveryCarrier?.pathCoverage?.identity || null : null,
       targetBranch: applicable.length === 1 ? applicable[0].targetBranch : null,
       status: 'prepared',
       preparedAt: new Date().toISOString(),

@@ -826,7 +826,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
   assert.equal(command(first.carrier.root, 'git', ['rev-parse', 'HEAD']), carrierHeadBeforeResume);
   assert.equal(runtime.readTaskFinishRunPersistence(retained, { runId: first.runId }).run.repositories[0].carrierDisposability.identity, initialCarrierProof.identity);
 
-  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
+  const compatibilityFailure = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', missingConfirmation.resume.token, '--accept-zero-delta-adaptation', '--reviewed-target-path', 'workspace::shared.txt::The advanced target already provides the reviewed behavior.', '--target', retained]);
   assert.equal(compatibilityFailure.status, 'blocked');
   assert.equal(compatibilityFailure.primaryFailure.code, 'task-finish.compatibility-checks-failed');
   assert.equal(compatibilityFailure.delivery, null);
@@ -835,7 +835,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
 
   compatibilityStatus = 'passed';
   advanceTargetDuringCompatibility = true;
-  const targetRace = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
+  const targetRace = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', compatibilityFailure.resume.token, '--accept-zero-delta-adaptation', '--reviewed-target-path', 'workspace::shared.txt::The advanced target already provides the reviewed behavior.', '--target', retained]);
   assert.equal(targetRace.status, 'blocked');
   assert.equal(targetRace.primaryFailure.code, 'task-finish.target-race');
   assert.equal(targetRace.carrier.zeroDelta, true);
@@ -847,7 +847,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
   assert.equal(renewedAdaptation.primaryFailure.code, 'task-finish.delivery-adaptation-required');
   assert.equal(renewedAdaptation.carrier.deliveryBaseline.head, racedBaselineHead);
 
-  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', renewedAdaptation.resume.token, '--accept-zero-delta-adaptation', '--target', retained]);
+  const second = await runtime.taskFinish('run', ['--task', task, '--run', first.runId, '--resume', renewedAdaptation.resume.token, '--accept-zero-delta-adaptation', '--reviewed-target-path', 'workspace::shared.txt::The renewed target already provides the reviewed behavior.', '--target', retained]);
 
   assert.equal(second.status, 'complete', JSON.stringify(second, null, 2));
   assert.equal(second.reuseMode, 'agent-reviewed-delivery-adaptation');
@@ -858,6 +858,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
   assert.deepEqual(second.carrier.changes, []);
   assert.deepEqual(second.carrier.activationPaths, ['shared.txt']);
   assert.equal(second.carrier.adaptation.compatibilityChecks.status, 'passed');
+  assert.equal(second.carrier.pathCoverage.counts.agentReviewedTarget, 1);
   assert.equal(second.candidate.identity, frozen.identity);
   assert.equal(second.candidate.generation, 1);
   assert.equal(second.metrics.formalVerificationExecutions, 0);

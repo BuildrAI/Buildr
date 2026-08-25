@@ -598,8 +598,9 @@ export function finishResult(run, clock = Date.now) {
   const carrier = clone(projectedState?.deliveryCarrier || run.deliveryCarrier);
   const adaptationGuidance = carrier?.adaptationGuidance || null;
   if (carrier) delete carrier.adaptationGuidance;
+  const adaptationBlocked = run.status === 'blocked' && run.primaryFailure?.operation === 'delivery-adaptation';
   const deliveryAdaptation = run.status === 'blocked'
-    && run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
+    && adaptationBlocked
     && run.deliveryCommit?.message
     ? {
         expectedCommitMessage: run.deliveryCommit.message,
@@ -633,8 +634,10 @@ export function finishResult(run, clock = Date.now) {
       : ['blocked', 'cleanup_pending'].includes(run.status)
       ? (retainedOnlyBootstrapResume
         ? 'repeat-task-finish-run-with-bootstrap-recovery-and-resume-token'
-        : run.primaryFailure?.code === 'task-finish.delivery-adaptation-required'
-        ? 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token'
+        : adaptationBlocked
+        ? (run.primaryFailure?.code === 'task-finish.delivery-adaptation-path-coverage-incomplete'
+          ? 'review-missing-task-contribution-paths-and-repeat-task-finish-run-with-resume-token'
+          : 'adapt-run-owned-delivery-carrier-and-repeat-task-finish-run-with-resume-token')
         : 'repeat-task-finish-run-with-resume-token')
       : run.status === 'complete' ? TASK_RETROSPECTIVE_PROMPT : null,
     reuseMode: projectedState?.equivalence?.reuseMode || projectedState?.deliveryCarrier?.reuseMode || run.equivalence?.reuseMode || run.deliveryCarrier?.reuseMode || null,

@@ -115,6 +115,7 @@ function portableRun(run) {
       tree: carrier.tree || null,
       taskContributionIdentity: carrier.taskContribution?.identity || null,
       deliveryBaselineIdentity: carrier.deliveryBaseline ? digest(carrier.deliveryBaseline) : null,
+      pathCoverageIdentity: carrier.pathCoverage?.identity || null,
     } : null,
     repositorySetIdentity: identity.repositorySetIdentity || null,
     repositories: (run?.repositories || []).map((repository) => ({
@@ -124,6 +125,7 @@ function portableRun(run) {
       carrierIdentity: repository.deliveryCarrier?.identity || null,
       carrierRef: repository.deliveryCarrier?.head || null,
       expectedTargetRef: repository.deliveryCarrier?.expectedTargetRef || null,
+      pathCoverageIdentity: repository.deliveryCarrier?.pathCoverage?.identity || null,
       deliveryStatus: repository.delivery?.status || null,
       finalRemoteRef: repository.delivery?.finalRemoteRef || null,
       targetDisposition: repository.delivery?.targetDisposition || null,

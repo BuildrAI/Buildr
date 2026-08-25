@@ -35,6 +35,7 @@ function canonical(overrides = {}) {
     carrier: {
       identity: 'sha256-carrier', root: '/private/carrier', head: 'abc123', expectedTargetRef: 'base123',
       deliveryBaseline: { head: 'base123' }, checks: [{ secret: true }],
+      pathCoverage: { identity: 'sha256-coverage', counts: { total: 3, targetContained: 1, carrierChanged: 1, agentReviewedTarget: 1, missing: 0 }, agentReviewedTargetPaths: [{ path: 'secret.txt', reason: 'private' }] },
     },
     phases: [
       { id: 'preflight', status: 'passed', attempts: 1, durationMs: 10, checks: [{ code: 'private' }], operations: [{ stdout: 'private' }] },
@@ -69,7 +70,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'currentFacts', 'rollover', 'reuseMode', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'currentFacts', 'rollover', 'reuseMode', 'pathCoverage', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -78,6 +79,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   assert.equal(compact.currentPhase, 'prepare');
   assert.deepEqual(compact.primaryFailure.conflictPaths, ['src/conflict.mjs']);
   assert.equal(compact.refs.carrierIdentity, 'sha256-carrier');
+  assert.deepEqual(compact.pathCoverage, { identity: 'sha256-coverage', counts: { total: 3, targetContained: 1, carrierChanged: 1, agentReviewedTarget: 1, missing: 0 } });
   assert.equal(compact.executionRecord.recordId, 'record-1');
   const serialized = JSON.stringify(compact);
   for (const forbidden of ['/private/', 'checks', 'operations', 'observations', 'stdout', 'stderr', 'equivalence', 'locator']) {
@@ -138,6 +140,14 @@ test('compact Task Finish Result 保留 dirty preflight 与 Delivery Adaptation 
   assert.match(adaptation.deliveryAdaptation.expectedCommitMessage, /Buildr-Task: finish-task/);
   assert.equal(adaptation.deliveryAdaptation.preparationHints.steps[0].args[0], 'ci');
   assert.doesNotMatch(JSON.stringify(adaptation.deliveryAdaptation.preparationHints), /\/private\//);
+
+  const incomplete = compactTaskFinishResult(canonical({
+    primaryFailure: {
+      phase: 'prepare', operation: 'delivery-adaptation', code: 'task-finish.delivery-adaptation-path-coverage-incomplete', status: 'blocked',
+      message: 'Task Contribution paths are missing.', findings: [{ missingPaths: ['feature-03.txt', 'feature-04.txt'] }],
+    },
+  }));
+  assert.deepEqual(incomplete.primaryFailure.conflictPaths, ['feature-03.txt', 'feature-04.txt']);
 });
 
 test('full Task Finish Result 保持canonical对象不变', () => {

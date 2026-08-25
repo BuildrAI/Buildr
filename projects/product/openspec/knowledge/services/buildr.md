@@ -131,6 +131,12 @@ retained canonical Workspace存在metadata-only或其他自动adapter不适用�
 Task Environment 候选集成后，主 Workspace runtime 仍从 retained checkout sync/doctor；未合并 task checkout 不更新主 runtime。sync 只维护当前 SQLite authority 与 runtime assets，不扫描旧 Task Environment receipt 或 `.buildr/tasks/`；Git provider evidence 继续由窄 provider authority 维护。
 
 
+## 验证与交付内容完整性
+
+Product testing以测试侧`HTTP_CONTRACT_FRESH_BUILD_FAMILIES`统一登记HTTP DTO generator、服务端Schema、Buildr DTO与Buildr Web DTO；Contract owner在现有Fast admission中校验family、文件与两端输出闭合，Fresh Build System fixture消费同一inventory并继续以真实`npm ci`和`build:web`持有System evidence。该inventory只属于Product test tooling，不进入npm runtime、Project verification declaration、Task Result或跨invocation cache；Fast静态通过不冒充Fresh Build System证据。
+
+Agent-reviewed Delivery Adaptation在采用carrier前按冻结Task Contribution逐路径闭合：目标tree精确包含、carrier相对Delivery Baseline实际改变，或Agent通过matching run/resume为该repository/path提供非空理由并明确承担语义判断。Buildr只证明路径集合、Git bytes、run/target/carrier identity与coverage identity，不把Agent判断描述为机器语义证明；未知、重复、遗漏或漂移使同一run保持blocked。coverage进入既有carrier/delivery/cleanup proof及compact计数，不新增SQLite表、第二Result或事件历史。自动run受阻时Agent仍可修改run-owned carrier、改走PR或直接Git，随后由Delivery Reconciliation从真实remote重建交付证据。
+
 ## 与 buildr-web 的交接
 
 - `buildr-web` 拥有前端源码；`npm run build:web` / `dev:web` 委托 sibling `../buildr-web`。

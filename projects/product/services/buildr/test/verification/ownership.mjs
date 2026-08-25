@@ -758,6 +758,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "system-fresh-build": {
     "inputs": [
       "test/system/task-environment-fresh-build-web.test.mjs",
+      "test/verification/http-contract-fresh-build-inventory.mjs",
       "src/task/application/task-environment-application.mjs",
       "src/task/domain/project-environment-preparation.mjs",
       "src/task/domain/task-environment*.mjs",

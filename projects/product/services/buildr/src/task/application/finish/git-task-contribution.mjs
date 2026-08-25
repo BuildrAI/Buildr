@@ -62,6 +62,102 @@ function carrierChanges(root, before, after) {
   return { changes, changedPaths: changes.map((change) => change.path) };
 }
 
+function portableContributionPath(value) {
+  const normalized = path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//, '');
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) return null;
+  return normalized;
+}
+
+function exactTreePath(root, tree, change) {
+  const observed = git(root, ['ls-tree', '-z', '--full-tree', tree, '--', change.path]);
+  if (observed.status !== 0) return null;
+  const entry = String(observed.stdout).split('\0').filter(Boolean)[0] || null;
+  const matched = entry ? /^(\d+) (\S+) ([0-9a-f]+)\t(.*)$/.exec(entry) : null;
+  const deleted = change.afterMode === '000000' || /^0+$/.test(change.afterBlob);
+  return deleted
+    ? entry === null
+    : Boolean(matched && matched[1] === change.afterMode && matched[3] === change.afterBlob && matched[4] === change.path);
+}
+
+export function createTaskContributionPathCoverage({ repositoryRoot, taskContribution, deliveryBaselineTree, carrierTree, agentReviewedTargetPaths = [] }) {
+  const beforeTree = taskContribution?.originalBaseline?.tree || null;
+  const sourceTree = taskContribution?.source?.tree || null;
+  if (!beforeTree || !sourceTree || !deliveryBaselineTree || !carrierTree || !taskContribution?.identity) {
+    return { status: 'blocked', code: 'task-finish.delivery-adaptation-path-coverage-input-invalid' };
+  }
+  const observedIdentity = deltaIdentity(repositoryRoot, beforeTree, sourceTree);
+  if (observedIdentity !== taskContribution.identity) {
+    return { status: 'blocked', code: 'task-finish.task-contribution-identity-mismatch', expectedIdentity: taskContribution.identity, observedIdentity };
+  }
+  const contributionChanges = rawChanges(repositoryRoot, beforeTree, sourceTree);
+  if (contributionChanges.length === 0) return { status: 'blocked', code: 'task-finish.task-contribution-empty' };
+  const contributionPaths = contributionChanges.map((item) => item.path);
+  const contributionSet = new Set(contributionPaths);
+  const carrierChangedPaths = carrierChanges(repositoryRoot, deliveryBaselineTree, carrierTree).changedPaths.filter((item) => contributionSet.has(item));
+  const carrierChangedSet = new Set(carrierChangedPaths);
+  const targetContainedPaths = contributionChanges.filter((item) => !carrierChangedSet.has(item.path) && exactTreePath(repositoryRoot, deliveryBaselineTree, item) === true).map((item) => item.path);
+  const targetContainedSet = new Set(targetContainedPaths);
+  const reviewed = [];
+  const reviewedSet = new Set();
+  const invalid = [];
+  for (const item of agentReviewedTargetPaths || []) {
+    const reviewedPath = portableContributionPath(item?.path);
+    const reason = typeof item?.reason === 'string' ? item.reason.trim() : '';
+    if (!reviewedPath || !reason || !contributionSet.has(reviewedPath)) {
+      invalid.push({ path: reviewedPath || null, code: !reviewedPath ? 'path-invalid' : !reason ? 'reason-missing' : 'path-unknown' });
+      continue;
+    }
+    if (reviewedSet.has(reviewedPath) || targetContainedSet.has(reviewedPath) || carrierChangedSet.has(reviewedPath)) {
+      invalid.push({ path: reviewedPath, code: reviewedSet.has(reviewedPath) ? 'path-duplicate' : 'path-already-accounted' });
+      continue;
+    }
+    reviewedSet.add(reviewedPath);
+    reviewed.push({ path: reviewedPath, reason });
+  }
+  if (invalid.length) return { status: 'blocked', code: 'task-finish.delivery-adaptation-path-coverage-invalid', invalidPaths: invalid };
+  reviewed.sort((left, right) => left.path.localeCompare(right.path));
+  const missingPaths = contributionPaths.filter((item) => !targetContainedSet.has(item) && !carrierChangedSet.has(item) && !reviewedSet.has(item));
+  const value = {
+    schemaVersion: 'buildr.task-contribution-path-coverage/v1',
+    taskContributionIdentity: taskContribution.identity,
+    deliveryBaselineTree,
+    carrierTree,
+    contributionPaths,
+    targetContainedPaths,
+    carrierChangedPaths,
+    agentReviewedTargetPaths: reviewed,
+    counts: {
+      total: contributionPaths.length,
+      targetContained: targetContainedPaths.length,
+      carrierChanged: carrierChangedPaths.length,
+      agentReviewedTarget: reviewed.length,
+      missing: missingPaths.length,
+    },
+  };
+  const coverage = { ...value, identity: containmentIdentity(value) };
+  return missingPaths.length
+    ? { status: 'blocked', code: 'task-finish.delivery-adaptation-path-coverage-incomplete', missingPaths, coverage }
+    : { status: 'covered', coverage };
+}
+
+function verifyTaskContributionPathCoverage({ repositoryRoot, carrier }) {
+  const stored = carrier?.pathCoverage;
+  if (stored?.schemaVersion !== 'buildr.task-contribution-path-coverage/v1' || !stored.identity) {
+    return { status: 'stale', code: 'task-finish.delivery-adaptation-path-coverage-missing' };
+  }
+  const current = createTaskContributionPathCoverage({
+    repositoryRoot,
+    taskContribution: carrier.taskContribution,
+    deliveryBaselineTree: carrier.deliveryBaseline?.tree,
+    carrierTree: carrier.tree,
+    agentReviewedTargetPaths: stored.agentReviewedTargetPaths,
+  });
+  if (current.status !== 'covered' || current.coverage.identity !== stored.identity || JSON.stringify(current.coverage) !== JSON.stringify(stored)) {
+    return { status: 'stale', code: current.code || 'task-finish.delivery-adaptation-path-coverage-drift', observed: current };
+  }
+  return { status: 'current', identity: stored.identity, counts: stored.counts };
+}
+
 function taskContributionActivationPaths(repositoryRoot, taskContribution) {
   const before = taskContribution?.originalBaseline?.tree;
   const after = taskContribution?.source?.tree;
@@ -218,7 +314,7 @@ export function inspectGitCarrierContainment({ repositoryRoot, targetRef, carrie
     checkedPaths.push(evidence);
     if (!exact) return { status: 'not-contained', code: 'task-finish.carrier-path-not-contained', carrierRef, targetRef, changedPaths, checkedPaths };
   }
-  const proof = { carrierRef, targetRef, changedPaths, checkedPaths };
+  const proof = { carrierRef, targetRef, changedPaths, checkedPaths, pathCoverageIdentity: carrier.pathCoverage?.identity || null };
   return { status: 'contained', ...proof, identity: containmentIdentity(proof) };
 }
 
@@ -362,6 +458,7 @@ export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, works
     carrierRef,
     targetRef: resolvedTargetRef,
     proof: 'agent-reviewed-zero-delta',
+    pathCoverageIdentity: carrier.pathCoverage.identity,
   };
   return {
     status: 'contained',
@@ -370,6 +467,7 @@ export function inspectAgentReviewedZeroDeltaContainment({ repositoryRoot, works
     carrierRef,
     targetRef: resolvedTargetRef,
     changedPaths: [],
+    pathCoverageIdentity: carrier.pathCoverage.identity,
     identity: containmentIdentity(proof),
   };
 }
@@ -489,7 +587,7 @@ export function createIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
   }
 }
 
-export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZeroDelta = false }) {
+export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZeroDelta = false, agentReviewedTargetPaths = [] }) {
   if (!carrier?.root || !carrierRegistration(repositoryRoot, carrier.root)) return { status: 'blocked', code: 'task-finish.carrier-ownership-unprovable' };
   const baselineHead = carrier.deliveryBaseline?.head;
   const baselineTree = carrier.deliveryBaseline?.tree;
@@ -503,6 +601,8 @@ export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZe
   if (!activationPaths?.length) return { status: 'blocked', code: 'task-finish.task-contribution-unprovable' };
   if (head === baselineHead || tree === baselineTree) {
     if (!zeroDelta || !acceptZeroDelta) return { status: 'blocked', code: 'task-finish.delivery-adaptation-missing', observed: { head, tree } };
+    const coverage = createTaskContributionPathCoverage({ repositoryRoot, taskContribution: carrier.taskContribution, deliveryBaselineTree: baselineTree, carrierTree: tree, agentReviewedTargetPaths });
+    if (coverage.status !== 'covered') return coverage;
     return {
       status: 'adopted',
       head,
@@ -512,6 +612,7 @@ export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZe
       activationPaths,
       zeroDelta: true,
       carrierDeltaIdentity: deltaIdentity(carrier.root, baselineTree, tree),
+      pathCoverage: coverage.coverage,
       cleanliness: { clean: true },
       deliveryCommit: carrier.deliveryCommit || null,
     };
@@ -524,6 +625,8 @@ export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZe
   if (!deliveryCommit.matches) return { status: 'blocked', code: 'task-finish.commit-message-mismatch', observed: { deliveryCommit: publicTaskFinishDeliveryCommit(deliveryCommit.observed) } };
   const { changes, changedPaths } = carrierChanges(carrier.root, baselineHead, head);
   const carrierDeltaIdentity = deltaIdentity(carrier.root, baselineTree, tree);
+  const coverage = createTaskContributionPathCoverage({ repositoryRoot, taskContribution: carrier.taskContribution, deliveryBaselineTree: baselineTree, carrierTree: tree, agentReviewedTargetPaths });
+  if (coverage.status !== 'covered') return coverage;
   return {
     status: 'adopted',
     head,
@@ -533,6 +636,7 @@ export function adoptAgentReviewedGitCarrier({ repositoryRoot, carrier, acceptZe
     activationPaths,
     zeroDelta: false,
     carrierDeltaIdentity,
+    pathCoverage: coverage.coverage,
     cleanliness: { clean: true },
     deliveryCommit: publicTaskFinishDeliveryCommit(deliveryCommit.observed),
   };
@@ -553,7 +657,9 @@ export function verifyGitTaskContributionCarrier({ repositoryRoot, carrier }) {
   const appliedIdentity = deltaIdentity(carrier.root, carrier.deliveryBaseline.tree, tree);
   if (carrier.reuseMode === 'agent-reviewed-delivery-adaptation') {
     if (appliedIdentity !== carrier.carrierDeltaIdentity) return { status: 'stale', code: 'task-finish.delivery-adaptation-drift', observed: { appliedIdentity } };
-    return { status: 'equivalent', appliedIdentity, reuseMode: carrier.reuseMode };
+    const coverage = verifyTaskContributionPathCoverage({ repositoryRoot, carrier });
+    if (coverage.status !== 'current') return coverage;
+    return { status: 'equivalent', appliedIdentity, reuseMode: carrier.reuseMode, pathCoverageIdentity: coverage.identity };
   }
   if (appliedIdentity !== carrier.taskContribution.identity || appliedIdentity !== carrier.taskContribution.appliedIdentity) return { status: 'stale', code: 'task-finish.contribution-not-equivalent', observed: { appliedIdentity } };
   return { status: 'equivalent', appliedIdentity, reuseMode: 'deterministic-reuse' };
@@ -578,6 +684,10 @@ export function verifyDeliveredGitTaskContribution({ taskRoot, targetRef, proof 
     const sourceIdentity = deltaIdentity(taskRoot, proof.taskContribution.originalBaseline.tree, current.tree);
     if (sourceIdentity !== proof.taskContribution.identity) return { status: 'stale', code: 'git_worktree_contribution_source_not_equivalent' };
     if (proof.reuseMode === 'agent-reviewed-delivery-adaptation') {
+      if (proof.pathCoverage) {
+        const coverage = verifyTaskContributionPathCoverage({ repositoryRoot: taskRoot, carrier: proof });
+        if (coverage.status !== 'current') return { status: 'stale', code: 'git_worktree_delivery_adaptation_path_coverage_invalid', observed: coverage };
+      }
       const equivalence = proof.deliveryEquivalence;
       if (equivalence?.status === 'equivalent'
         && equivalence.reuseMode === proof.reuseMode

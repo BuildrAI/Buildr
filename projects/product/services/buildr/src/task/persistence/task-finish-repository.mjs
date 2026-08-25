@@ -87,6 +87,7 @@ function compactResult(result) {
       expectedTargetRef: result.carrier.expectedTargetRef || null,
       targetRef: result.carrier.targetRef || null,
       changedPaths: Array.isArray(result.carrier.changedPaths) ? result.carrier.changedPaths.slice(0, 500) : [],
+      pathCoverage: result.carrier.pathCoverage ? { identity: result.carrier.pathCoverage.identity || null, counts: result.carrier.pathCoverage.counts || null } : null,
     } : null,
     repositories: Array.isArray(result?.repositories) ? result.repositories.map((repository) => ({
       selector: repository.selector,
@@ -100,6 +101,7 @@ function compactResult(result) {
         tree: repository.deliveryCarrier.tree || null,
         expectedTargetRef: repository.deliveryCarrier.expectedTargetRef || null,
         changedPaths: Array.isArray(repository.deliveryCarrier.changedPaths) ? repository.deliveryCarrier.changedPaths.slice(0, 500) : [],
+        pathCoverage: repository.deliveryCarrier.pathCoverage ? { identity: repository.deliveryCarrier.pathCoverage.identity || null, counts: repository.deliveryCarrier.pathCoverage.counts || null } : null,
       } : null,
       equivalence: repository.equivalence || null,
       delivery: repository.delivery || null,

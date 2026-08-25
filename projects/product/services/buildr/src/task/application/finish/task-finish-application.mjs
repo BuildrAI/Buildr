@@ -188,7 +188,7 @@ function markRunSuperseded(run, reason = 'development-handoff') {
 
 function assertArgs(action, args) {
   const allowedByAction = {
-    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--bootstrap-recovery', '--release-occupancy', '--target', '--detail', '--json']),
+    run: new Set(['--run', '--task', '--agent', '--target-branch', '--remote', '--commit-message', '--resume', '--accept-zero-delta-adaptation', '--reviewed-target-path', '--bootstrap-recovery', '--release-occupancy', '--target', '--detail', '--json']),
     reconcile: new Set(['--task', '--agent', '--target-branch', '--remote', '--target', '--detail', '--json']),
     rollover: new Set(['--task', '--agent', '--target-branch', '--remote', '--commit-message', '--recovery-token', '--target', '--detail', '--json']),
     inspect: new Set(['--run', '--target', '--detail', '--json']),
@@ -206,6 +206,26 @@ function assertArgs(action, args) {
     }
     index += 1;
   }
+}
+
+function optionValues(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name) values.push(args[index + 1]);
+  }
+  return values;
+}
+
+function reviewedTargetPaths(args) {
+  return optionValues(args, '--reviewed-target-path').map((value) => {
+    const first = String(value).indexOf('::');
+    const second = first === -1 ? -1 : String(value).indexOf('::', first + 2);
+    const selector = first === -1 ? '' : String(value).slice(0, first).trim();
+    const reviewedPath = second === -1 ? '' : String(value).slice(first + 2, second).trim();
+    const reason = second === -1 ? '' : String(value).slice(second + 2).trim();
+    if (!selector || !reviewedPath || !reason) throw inputError('task_finish.reviewed_target_path_invalid', '--reviewed-target-path must use <repository-selector>::<path>::<non-empty-reason>.', 'run');
+    return { selector, path: reviewedPath, reason };
+  });
 }
 
 function finishInvocationId(task) {
@@ -275,12 +295,13 @@ export function registerTaskFinishApplication(runtime) {
     const resumeToken = optionValue(command.args, '--resume', null);
     const requestedCommitMessage = optionValue(command.args, '--commit-message', null);
     const acceptZeroDeltaAdaptation = command.args.includes('--accept-zero-delta-adaptation');
+    const adaptationReviewedTargetPaths = reviewedTargetPaths(command.args);
     const bootstrapRecoveryRequested = command.args.includes('--bootstrap-recovery');
     const releaseOccupancyRequested = command.args.includes('--release-occupancy');
     const requestedRunId = optionValue(command.args, '--run', null);
     const requestedTaskId = optionValue(command.args, '--task', null);
-    if (releaseOccupancyRequested && (resumeToken || bootstrapRecoveryRequested || acceptZeroDeltaAdaptation)) {
-      throw inputError('task_finish.release_occupancy_mutex', '--release-occupancy cannot be combined with --resume, --bootstrap-recovery, or --accept-zero-delta-adaptation.', 'run');
+    if (releaseOccupancyRequested && (resumeToken || bootstrapRecoveryRequested || acceptZeroDeltaAdaptation || adaptationReviewedTargetPaths.length)) {
+      throw inputError('task_finish.release_occupancy_mutex', '--release-occupancy cannot be combined with --resume, --bootstrap-recovery, --accept-zero-delta-adaptation, or --reviewed-target-path.', 'run');
     }
     if (releaseOccupancyRequested && !requestedRunId) {
       throw inputError('task_finish.release_occupancy_run_required', '--release-occupancy requires an existing --run <run-id>.', 'run');
@@ -293,6 +314,9 @@ export function registerTaskFinishApplication(runtime) {
     }
     if (acceptZeroDeltaAdaptation && (!requestedRunId || !resumeToken)) {
       throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation requires an existing --run and its current --resume token.', 'run');
+    }
+    if (adaptationReviewedTargetPaths.length && (!requestedRunId || !resumeToken)) {
+      throw inputError('task_finish.reviewed_target_path_context_invalid', '--reviewed-target-path requires an existing --run and its current --resume token.', 'run');
     }
     const withReadCompatibility = runtime.withWorkspaceStructuredStoreReadCompatibility
       ? (operation) => runtime.withWorkspaceStructuredStoreReadCompatibility(root, operation)
@@ -311,6 +335,7 @@ export function registerTaskFinishApplication(runtime) {
             const completed = runtime.readTaskFinishCompletionPersistence?.(root, { runId }, { optional: true });
             if (completed?.completion?.result) {
               if (acceptZeroDeltaAdaptation) throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
+              if (adaptationReviewedTargetPaths.length) throw inputError('task_finish.reviewed_target_path_context_invalid', '--reviewed-target-path only applies to a current adaptation-required run.', 'run');
               if (requestedCommitMessage != null) throw inputError('task_finish.commit_message_override', 'An existing Task Finish run does not accept --commit-message.', 'run');
               return { completed: completed.completion.result };
             }
@@ -401,6 +426,9 @@ export function registerTaskFinishApplication(runtime) {
         if (acceptZeroDeltaAdaptation && (finishRun?.status !== 'blocked' || finishRun.deliveryCarrier?.reuseMode !== 'adaptation-required')) {
           throw inputError('task_finish.zero_delta_adaptation_context_invalid', '--accept-zero-delta-adaptation only applies to a current adaptation-required run.', 'run');
         }
+        if (adaptationReviewedTargetPaths.length && (finishRun?.status !== 'blocked' || ![finishRun.deliveryCarrier, ...(finishRun.repositories || []).map((item) => item.deliveryCarrier)].some((carrier) => carrier?.reuseMode === 'adaptation-required'))) {
+          throw inputError('task_finish.reviewed_target_path_context_invalid', '--reviewed-target-path only applies to a current adaptation-required run.', 'run');
+        }
         return { finishRun, identity: finishRun?.identity || null, deliveryCommit: finishRun?.deliveryCommit || null, developmentHandoff: finishRun?.developmentHandoff || null, replaceableStaleRun: null, replacementReason: null };
       });
     const notOpened = publicTaskFinishExecutionRecord('not-opened');
@@ -477,13 +505,13 @@ export function registerTaskFinishApplication(runtime) {
       } else {
         const createTaskFinishProductHandlers = await importTaskFinishBootstrapRecoveryProvider(bootstrapContext);
         const handlerRuntime = createTaskFinishBootstrapRecoveryRuntimeFacade(runtime, bootstrapContext);
-        handlers = createTaskFinishProductHandlers({ runtime: handlerRuntime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+        handlers = createTaskFinishProductHandlers({ runtime: handlerRuntime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation, reviewedTargetPaths: adaptationReviewedTargetPaths });
       }
       finishRun = activateTaskFinishBootstrapRecovery(finishRun, bootstrapContext, persistence);
       runtime.writeTaskFinishRunPersistence(root, finishRun);
     } else {
       const { createTaskFinishProductHandlers } = await import('./task-finish-product-executor.mjs');
-      handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation });
+      handlers = createTaskFinishProductHandlers({ runtime, root: finishRun.identity.environmentRoot, acceptZeroDeltaAdaptation, reviewedTargetPaths: adaptationReviewedTargetPaths });
     }
     const result = await executeFinishRun({
       root,
