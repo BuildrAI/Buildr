@@ -506,7 +506,7 @@ function realTaskDevelopmentFixture({ task, environmentRoot, retained, environme
     },
     observeTaskVerificationDeclarations: () => workspaceOnly ? [] : [{
       project: 'product', path: 'projects/product/verification.yml', identity: declarationIdentity, valid: true,
-      declaration: { capabilities: [{ id: 'product.delivery', requiredForDelivery: true }] },
+      declaration: { capabilities: [{ id: 'product.delivery', usableFor: ['task-delivery'] }] },
     }],
     inspectTaskReview: (_root, _task, options = {}) => ({ slots: {
       planning: {
@@ -587,7 +587,7 @@ processEnvironmentJourney('Doctor与内部登记失败不否定交付，reconcil
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] implementation complete\n');
   fs.writeFileSync(path.join(changeRoot, '.buildr', 'knowledge-impact.yml'), 'schemaVersion: buildr.knowledge-impact/v1\nimpacts: []\nunresolvedItems: []\n');
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v3\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
   command(seed, 'git', ['add', '-f', '.buildr/tracked-metadata.json']);
@@ -743,7 +743,7 @@ isolatedJourney('同路径基线冲突保留current Candidate并经显式零差�
   command(seed, 'git', ['config', 'user.email', 'journey@example.com']);
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   writeExecutable(path.join(seed, 'projects', 'product', 'buildr'), fakeBuildr);
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v3\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'shared.txt'), 'baseline meaning\n');
   command(seed, 'git', ['add', '-A']);
   command(seed, 'git', ['commit', '-m', 'baseline']);
@@ -889,7 +889,7 @@ processEnvironmentJourney('真实 code-only 候选完成五阶段且不执行任
   fs.writeFileSync(path.join(seed, '.gitignore'), '/.buildr/\n/.worktrees/\n');
   writeExecutable(controller, fakeBuildr);
   fs.mkdirSync(path.join(seed, 'projects', 'product'), { recursive: true });
-  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v2\nresources: []\ncapabilities:\n  - id: product.delivery\n');
+  fs.writeFileSync(path.join(seed, 'projects', 'product', 'verification.yml'), 'schemaVersion: buildr.project-verification/v3\nresources: []\ncapabilities:\n  - id: product.delivery\n');
   fs.writeFileSync(path.join(seed, 'README.md'), '# Code-only Task Finish journey\n');
   command(seed, 'git', ['add', '-A']);
   command(seed, 'git', ['commit', '-m', 'baseline']);

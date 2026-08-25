@@ -16,6 +16,7 @@ export const SYSTEM_SUITES = Object.freeze([
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/verification-changed-paths.test.mjs',
+      'test/system/product-verification-provider-cli.test.mjs',
       'test/system/verification-run-cli.test.mjs',
     ]),
   }),

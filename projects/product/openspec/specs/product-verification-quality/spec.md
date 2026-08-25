@@ -1723,3 +1723,63 @@ Changed selection 变更 MUST 通过真实 affected/Full 反例、一次完整 d
 - **WHEN** 任一 verifier 失败并在修复后重跑
 - **THEN** 新执行 MUST 使用独立或已证明清理的 execution state
 - **AND** retained Workspace、其他 Task、Git fixture、端口、进程和用户 profile MUST 保持未污染
+
+### Requirement: Buildr Product 必须通过统一高级 provider 接入 Workspace Plan
+Buildr Product MUST提供稳定provider adapter，把closed Verification Request映射到现有唯一registry/planner并返回统一Plan与execution units。registry MUST继续唯一持有step、dependency、profile、resource、budget、Context和primary owner；公开declaration与Plan MUST NOT复制内部DAG。
+
+#### Scenario: Product affected计划
+- **WHEN** Task Delivery Request使用affected且changed paths有可信owner
+- **THEN** adapter MUST返回direct、dependency与必要full reasons的统一Plan
+- **AND** selected step identities MUST来自真实registry而不是第二份declaration graph
+
+#### Scenario: Product full与Candidate
+- **WHEN** Request分别要求Task Delivery full或Product Artifact Candidate full
+- **THEN** adapter MUST保持daily-full与Candidate-only artifact evidence的既有差异
+- **AND** MUST NOT因通用Plan contract把Candidate或Release-only证据下放到日常full
+
+### Requirement: Product provider 必须保持 Plan 与执行 authority 可审计
+provider MUST为每个selected item返回evidence boundary、proves、selection reason、trigger/parent、execution identity与resource needs；Execution Record MUST绑定matching provider/plan identity。provider MUST NOT写Task Verification Result、改变Task状态或暴露Context内部生命周期。
+
+#### Scenario: registry dependency进入公开Plan
+- **WHEN** 内部DAG因selected owner扩张dependency step
+- **THEN** 公开Plan MUST把该item标记为dependency并引用parent
+- **AND** MUST NOT输出完整DAG、未选step或Context cache结构
+
+#### Scenario: provider identity 漂移
+- **WHEN** registry、planner或adapter identity在Plan后改变
+- **THEN** 旧Plan MUST变为stale并在执行前失败关闭
+- **AND** MUST重新计划而不是沿用旧execution units
+
+### Requirement: Product live声明必须采用v3高级provider边界
+
+Buildr Product live `verification.yml` MUST使用closed `buildr.project-verification/v3`。正式Product registry能力 MUST通过稳定`product.verification` capability和`buildr.product-verification/v1` provider投射统一Request、Plan和execution units；Browser条件能力 MUST保持独立command capability与真实resource/preparation边界。Product declaration MUST不把Quick开发反馈或registry内部step逐项复制为正式capability。
+
+#### Scenario: Product Task Delivery affected
+
+- **WHEN** Product live v3 declaration收到`task-delivery`、`affected` Request与可信changed paths
+- **THEN** `product.verification` provider MUST形成包含direct/dependency选择原因的统一Plan
+- **AND** registry、ownership或planner authority变化 MUST显式升级full或blocked，不得返回空passed
+
+#### Scenario: Product Artifact Candidate full
+
+- **WHEN** Product live v3 declaration收到`product-candidate`、`full` Request
+- **THEN** provider MUST选择完整daily evidence与Candidate artifact evidence并返回provider identity
+- **AND** declaration MUST不复制内部profile membership、DAG、budget或primary owner
+
+#### Scenario: Published Release只形成release-only验证计划
+
+- **WHEN** Product live v3 declaration收到`published-release`、`release-only` Request
+- **THEN** provider MUST只选择已登记release contract/smoke evidence并明确其Plan identity
+- **AND** 该结果 MUST不冒充真实publish transaction、published install或registry readback authority
+
+#### Scenario: Browser capability独立选择
+
+- **WHEN** changed paths命中Buildr Web、tracked web-dist或browser selector authority
+- **THEN** planner MUST选择独立`product.browser-smoke` command capability及browser resource claim
+- **AND** 非Browser Product full或Candidate MUST不因declaration重复而无条件执行第二份Browser graph
+
+#### Scenario: Quick不进入正式usable target
+
+- **WHEN** 维护者审查Product live v3 declaration
+- **THEN** `product.fast`与`test:fast` MUST只保留为开发反馈入口而不成为`task-delivery|product-candidate|published-release` capability
+- **AND** 正式evidence MUST由provider或独立声明能力产生

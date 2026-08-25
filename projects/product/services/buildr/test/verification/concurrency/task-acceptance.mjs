@@ -100,13 +100,13 @@ try {
   const verificationCapability = (id, delayMs, resourceClaims) => ({
     id, title: id,
     scope: { project: 'nested', services: [] },
-    invocation: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' },
-    applicability: { paths: ['**'], conditions: [] }, proves: [id], requiredForDelivery: true,
+    proves: [id], evidence: ['system'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
+    invocation: { affected: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' }, full: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' } },
     environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' },
     resourceClaims,
   });
   fs.writeFileSync(path.join(nestedRoot, 'verification.yml'), `${JSON.stringify({
-    schemaVersion: 'buildr.project-verification/v2',
+    schemaVersion: 'buildr.project-verification/v3',
     resources: [
       { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
     ],
@@ -177,12 +177,26 @@ try {
 
   finishPhase();
   startPhase('verification');
+  const verificationPlans = summary.tasks.map((task) => {
+    const targetIdentity = digest(`target:${task.taskId}`);
+    const planned = spawnSync(task.cliInvocation.command, [
+      ...task.cliInvocation.argsPrefix,
+      'verification', 'plan', '--project', 'nested', '--target-kind', 'task-delivery', '--selection-scope', 'affected',
+      '--target-identity', targetIdentity, '--changed-path', 'README.md', '--target', task.environmentRoot, '--json',
+    ], { cwd: task.repositories[1].checkoutPath, env, encoding: 'utf8', timeout: platformTimeout(10_000) });
+    const plan = requireSuccess(planned, `verification plan ${task.taskId}`);
+    assert.equal(plan.status, 'ready');
+    assert.deepEqual(plan.selectedItems.map((item) => item.id).sort(), ['nested.coordinated', 'nested.parallel-a', 'nested.parallel-b']);
+    const planPath = path.join(task.environmentRoot, `.verification-plan-${task.taskId}.json`);
+    fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
+    return planPath;
+  });
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
-    'verification', 'run', '--project', 'nested', '--capability', 'nested.parallel-a', '--capability', 'nested.parallel-b', '--capability', 'nested.coordinated',
+    'verification', 'run', '--project', 'nested', '--plan', verificationPlans[summary.tasks.indexOf(task)],
     '--target-identity', digest(`target:${task.taskId}`), '--target', task.environmentRoot,
     '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
-    '--environment', task.taskId, '--workspace', workspace, '--json',
+    '--environment', task.taskId, '--workspace', workspace, '--detail', 'full', '--json',
   ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(15_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);

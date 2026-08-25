@@ -140,18 +140,14 @@ Quick是成本约束，affected/full是选择范围，frozen Task Content、Prod
 
 ## 6. Task Verification 如何使用项目测试
 
-Task Verification 不登记内部 executable step，也不为用户设计测试。`verification.yml` 只暴露 8 个稳定能力接口：
+Task Verification 不登记内部 executable step，也不为用户设计测试。Product live `verification.yml` 使用v3，只暴露2个稳定能力接口：
 
 | capability | 调用与证明范围 | 交付要求 |
 | --- | --- | ---: |
-| `product.fast` | `npm run test:fast`；低成本开发反馈 | 否 |
-| `product.delivery` | `test:changed -- --base origin/dev`；同一 plan 的 affected 或必要 full | 是 |
-| `product.full-regression` | `npm run test:daily-full`；完整日常evidence set的全部required owners | 否 |
-| `product.candidate` | `npm run test:candidate`；完整daily evidence、唯一Product Artifact Candidate tarball与artifact primary evidence | 否 |
-| `product.browser-smoke` | Buildr Web paths 适用时运行真实浏览器 Journey | 适用时是 |
-| `product.archive-lifecycle` | Change active/archive 与 Task Development/Finish authority 顺序 | 否 |
-| `product.openspec-convergence-journey` | OpenSpec 写入、恢复、归档与并发收敛 Journey | 否 |
-| `product.release-artifact-set` | 显式发布准备时核验冻结 payload、npm tarball、Host Node、Launcher 与发布物 readback 边界；普通交付不自动执行 | 否 |
+| `product.verification` | `buildr.product-verification/v1`高级provider；按Request从唯一registry投射Task Delivery affected/full、Product Artifact Candidate或release-only contract/smoke evidence | 对所请求目标是 |
+| `product.browser-smoke` | Buildr Web paths适用时独立运行affected selector；显式full使用完整Browser smoke，并持有browser资源与buildr-web preparation | Task Delivery适用时是 |
+
+`npm run test:fast`继续存在，但它只是Quick开发反馈，不属于正式`usableFor`目标。旧v2中的delivery/full/candidate/archive/convergence/release capability不逐项复制到v3；这些真实owner、profile、dependency、budget和执行入口继续由唯一Product registry持有并由高级provider投射。
 
 Agent 的正式验证流程是：
 
@@ -159,9 +155,10 @@ Agent 的正式验证流程是：
 Task scope + changed paths + implementation risk
         ↓ 开发期 Quick / changed / focus
 Development 稳定 Content Target 并固定 verification policy
-        ↓ 执行适用 capability，保存 transient evidence
-记录一个绑定 Content Target 与 declaration identities 的 current Result
-        ↓ Verification facts 完整后冻结 Task Candidate
+        ↓ 冻结Task Candidate并形成matching Verification Plan
+执行适用 capability，保存Execution Record
+        ↓ 从matching records对账Result
+记录一个绑定Candidate、Content Target与declaration identities的current Result
 ```
 
 GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`release-<version> → main`受保护PR和手工dispatch运行绑定current release HEAD/tree的完整Candidate；tag workflow验证并发布同一冻结制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。

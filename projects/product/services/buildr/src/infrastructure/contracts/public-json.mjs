@@ -50,7 +50,9 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskFinishCompactResult: 'buildr.task-finish-compact-result/v1',
   taskFinishResult: 'buildr.task-finish-result/v3',
   taskFinishSelfBootstrapInput: 'buildr.task-finish-self-bootstrap-input/v1',
+  longRunningOperationSummary: 'buildr.long-running-operation-summary/v1',
   verificationExecution: 'buildr.verification-execution/v1',
+  verificationPlan: 'buildr.verification-plan/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
 });
 
@@ -62,4 +64,68 @@ export function withJsonSchema(schemaVersion, payload) {
     throw new Error(`Public JSON payload must be an object: ${schemaVersion}`);
   }
   return { schemaVersion, ...payload };
+}
+
+export const LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES = 16 * 1024;
+export const LONG_RUNNING_OPERATION_SUMMARY_MAX_STAGES = 12;
+
+const LONG_RUNNING_STATUSES = new Set(['running', 'passed', 'blocked', 'failed', 'cancelled', 'unknown', 'not-applicable']);
+const LONG_RUNNING_STAGE_STATUSES = new Set([...LONG_RUNNING_STATUSES, 'pending', 'skipped']);
+
+function nullableString(value) {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function boundedUtf8(value, maxBytes) {
+  const text = nullableString(value);
+  if (!text || Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  const suffix = '…';
+  const budget = maxBytes - Buffer.byteLength(suffix, 'utf8');
+  let output = '';
+  let bytes = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character, 'utf8');
+    if (bytes + size > budget) break;
+    output += character;
+    bytes += size;
+  }
+  return `${output}${suffix}`;
+}
+
+function normalizedStatus(value, allowed, fallback = 'unknown') {
+  return allowed.has(value) ? value : fallback;
+}
+
+function recoveryPointer(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const owner = nullableString(value.owner);
+  const operation = nullableString(value.operation);
+  if (!owner || !operation) return null;
+  return { owner, operation, taskId: nullableString(value.taskId), runId: nullableString(value.runId), recordId: nullableString(value.recordId) };
+}
+
+export function longRunningOperationSummary(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Long-running operation summary input must be an object.');
+  const operation = nullableString(input.operation);
+  if (!operation) throw new Error('Long-running operation summary requires operation.');
+  const stages = (Array.isArray(input.stages) ? input.stages : []).slice(0, LONG_RUNNING_OPERATION_SUMMARY_MAX_STAGES).map((stage) => ({
+    id: nullableString(stage?.id) || 'unknown', status: normalizedStatus(stage?.status, LONG_RUNNING_STAGE_STATUSES),
+  }));
+  const summary = withJsonSchema(PUBLIC_JSON_SCHEMAS.longRunningOperationSummary, {
+    operation, detail: 'compact', terminal: input.terminal === true,
+    status: normalizedStatus(input.status, LONG_RUNNING_STATUSES),
+    taskId: nullableString(input.taskId), runId: nullableString(input.runId), resultIdentity: nullableString(input.resultIdentity), stages,
+    primaryFailure: input.primaryFailure && typeof input.primaryFailure === 'object' ? {
+      stage: nullableString(input.primaryFailure.stage), code: nullableString(input.primaryFailure.code), message: boundedUtf8(input.primaryFailure.message, 512),
+    } : null,
+    cleanup: { status: normalizedStatus(input.cleanup?.status, LONG_RUNNING_STAGE_STATUSES) },
+    output: {
+      maxBytes: LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES, bytes: 0,
+      truncated: input.outputTruncated === true || (Array.isArray(input.stages) && input.stages.length > stages.length),
+    },
+    recovery: recoveryPointer(input.recovery),
+  });
+  for (let attempt = 0; attempt < 4; attempt += 1) summary.output.bytes = Buffer.byteLength(`${JSON.stringify(summary)}\n`, 'utf8');
+  if (summary.output.bytes > LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES) throw new Error('Long-running operation summary exceeded its fixed output boundary.');
+  return summary;
 }

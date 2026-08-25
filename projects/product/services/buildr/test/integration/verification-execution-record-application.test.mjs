@@ -22,10 +22,11 @@ function capability(id, script) {
     id,
     title: id,
     scope: { project: 'demo', services: [] },
-    invocation: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' },
-    applicability: { paths: ['**'], conditions: [] },
     proves: [id],
-    requiredForDelivery: true,
+    evidence: ['unit'],
+    usableFor: ['task-delivery'],
+    discovery: { sources: ['**'] },
+    invocation: { affected: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' }, full: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' } },
     environment: { requires: ['node'] },
     effects: { writes: [], externalSystems: [], authorization: 'implicit' },
     resourceClaims: [],
@@ -49,7 +50,18 @@ function setup(t, name = 'verification-execution-record') {
 }
 
 function declare(projectRoot, capabilities) {
-  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({ schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities }));
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({ schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities }));
+}
+
+function plan(current, id) {
+  const targetIdentity = `target:${id}`;
+  const payload = current.runtime.verificationPlan([
+    '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected',
+    '--target-identity', targetIdentity, '--changed-path', 'src/example.mjs', '--target', current.root,
+  ]);
+  const planPath = path.join(current.root, `.verification-plan-${id.replaceAll(/[^A-Za-z0-9._-]/g, '-')}.json`);
+  fs.writeFileSync(planPath, JSON.stringify(payload));
+  return { planPath, targetIdentity };
 }
 
 async function run(current, id, extra = []) {
@@ -57,8 +69,9 @@ async function run(current, id, extra = []) {
   console.log = () => {};
   process.exitCode = 0;
   try {
+    const planned = plan(current, id);
     return await current.runtime.verificationRun([
-      '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
+      '--project', 'demo', '--plan', planned.planPath, '--target-identity', planned.targetIdentity, '--target', current.root,
       '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
       '--environment', current.taskId, '--workspace', current.root,
       ...extra,
@@ -74,8 +87,9 @@ async function runWithExit(current, id, extra = []) {
   console.log = () => {};
   process.exitCode = 0;
   try {
+    const planned = plan(current, id);
     const payload = await current.runtime.verificationRun([
-      '--project', 'demo', '--capability', id, '--target-identity', `target:${id}`, '--target', current.root,
+      '--project', 'demo', '--plan', planned.planPath, '--target-identity', planned.targetIdentity, '--target', current.root,
       '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
       '--environment', current.taskId, '--workspace', current.root,
       ...extra,
@@ -317,7 +331,8 @@ test('候选 Verification 通过 Receipt 固定的 retained controller 编排 ca
   const payload = await run(current, 'demo.pass');
   assert.equal(payload.status, 'delegated');
   assert.equal(delegated.context.controllerInvocation.sourceRoot, retainedSource);
-  assert.deepEqual(delegated.args.slice(0, 4), ['--project', 'demo', '--capability', 'demo.pass']);
+  assert.deepEqual(delegated.args.slice(0, 3), ['--project', 'demo', '--plan']);
+  assert.match(path.basename(delegated.args[3]), /^\.verification-plan-demo\.pass\.json$/);
   assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 0);
 });
 
@@ -362,8 +377,9 @@ test('quota/backpressure在runner启动前阻塞且不创建transient evidence',
   error.taskExecutionRecordBusiness = true;
   error.nextAction = 'cleanup eligible records';
   current.runtime.openTaskExecutionRecord = () => { throw error; };
+  const planned = plan(current, 'demo.blocked');
   await assert.rejects(() => current.runtime.verificationRun([
-    '--project', 'demo', '--capability', 'demo.blocked', '--target-identity', 'target:blocked', '--target', current.root,
+    '--project', 'demo', '--plan', planned.planPath, '--target-identity', planned.targetIdentity, '--target', current.root,
     '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
     '--environment', current.taskId, '--workspace', current.root,
   ]), (caught) => caught.verificationExecutionRecord.status === 'blocked');

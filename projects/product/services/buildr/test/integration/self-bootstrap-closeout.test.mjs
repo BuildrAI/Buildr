@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import {
   SELF_BOOTSTRAP_RECOVERY_PLAN_SCHEMA,
+  compactSelfBootstrapCloseout,
   createSelfBootstrapCloseoutPlan,
   discoverFinishCarrierEntries,
   runSelfBootstrapCloseout,
@@ -1016,6 +1017,8 @@ test('development entry验证失败保留前序事实，Doctor blocked使用同�
   assert.equal(installFailure.status, 'blocked');
   assert.equal(phase(installFailure, 'verify-development-entry').status, 'blocked');
   assert.equal(phase(installFailure, 'finalize').status, 'not-applicable');
+  assert.equal(phase(installFailure, 'finalize').operations.at(-1).id, 'refresh-finish-maintenance');
+  assert.ok(installFailure.maintenance, 'blocked terminal result must be persisted after Task/run identity is known');
 
   const secondFixture = fixture(t);
   const blocked = doctorBlockedResult(secondFixture.root, secondFixture.baseRef, ['projects/product/services/buildr/src/example.mjs']);
@@ -2072,9 +2075,27 @@ test('Skill runner从每个Agent声明的runtime投射位置启动时不依赖Pr
       assert.equal(result.status, 1);
       assert.equal(result.stdout, '');
       const error = JSON.parse(result.stderr);
-      assert.equal(error.schemaVersion, 'buildr.self-bootstrap-closeout-result/v1');
+      assert.equal(error.schemaVersion, 'buildr.long-running-operation-summary/v1');
+      assert.equal(error.detail, 'compact');
       assert.equal(error.status, 'blocked');
-      assert.equal(error.diagnostic.code, 'self-bootstrap-closeout.arguments-incomplete');
+      assert.equal(error.primaryFailure.code, 'self-bootstrap-closeout.arguments-incomplete');
+      assert.equal(error.recovery, null);
     });
   }
+});
+
+test('self-bootstrap compact只保留阶段与portable recovery', () => {
+  const output = compactSelfBootstrapCloseout({
+    schemaVersion: 'buildr.self-bootstrap-closeout-result/v1',
+    status: 'blocked', taskId: 'demo-task', runId: 'finish-run-1',
+    phases: [{ id: 'sync', status: 'blocked', operations: [{ stdout: 'secret' }], effects: [{ path: '/private' }] }],
+    effects: [{ token: 'secret' }], diagnostic: { code: 'sync.failed', message: 'sync failed', details: { argv: ['secret'] } },
+    maintenance: { environmentCleanup: 'attention', selfBootstrap: { resultIdentity: 'sha256-result' } },
+  });
+  assert.equal(output.schemaVersion, 'buildr.long-running-operation-summary/v1');
+  assert.equal(output.resultIdentity, 'sha256-result');
+  assert.equal(output.primaryFailure.stage, 'sync');
+  assert.equal(output.cleanup.status, 'failed');
+  assert.deepEqual(output.recovery, { owner: 'task-finish', operation: 'inspect', taskId: 'demo-task', runId: 'finish-run-1', recordId: null });
+  for (const forbidden of ['operations', 'effects', 'stdout', '/private', 'argv', 'token']) assert.equal(JSON.stringify(output).includes(forbidden), false, forbidden);
 });

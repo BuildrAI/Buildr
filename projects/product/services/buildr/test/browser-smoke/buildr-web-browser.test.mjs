@@ -173,22 +173,26 @@ function createFixture(root, controllerCli, options = {}) {
   fs.mkdirSync(path.join(projectRoot, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, 'docs', 'task-reference.md'), '# 任务参考资料\n\n普通用户可以直接查看这份文档。\n\n[继续阅读](more.md)\n');
   fs.writeFileSync(path.join(projectRoot, 'docs', 'more.md'), '# 后续资料\n\n同一项目内的相对文档链接也可打开。\n');
-  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), `schemaVersion: buildr.project-verification/v2
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), `schemaVersion: buildr.project-verification/v3
+resources: []
 capabilities:
   - id: demo.browser
     title: Browser smoke
     scope:
       project: demo
       services: [api]
-    invocation:
-      kind: command
-      argv: [node, -e, "void 0"]
-      cwd: .
-    applicability:
-      paths: ["**"]
     proves:
       - Task Verification Result is visible in Buildr Web
-    requiredForDelivery: true
+    evidence: [system]
+    usableFor: [task-delivery]
+    discovery:
+      sources: ["**"]
+    invocation:
+      affected: { kind: command, argv: [node, -e, "void 0"], cwd: . }
+      full: { kind: command, argv: [node, -e, "void 0"], cwd: . }
+    environment: { requires: [node] }
+    effects: { writes: [], externalSystems: [], authorization: implicit }
+    resourceClaims: []
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
   writeUiPrototypeFixtures(projectRoot, 'browser-flow');

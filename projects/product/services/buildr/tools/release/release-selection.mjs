@@ -365,15 +365,16 @@ export function cleanupReleaseSelection(options = {}, dependencies = {}) {
     const branchRef = `refs/heads/${branch}`;
     const currentBranch = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim();
     if (currentBranch === branch) throw new Error(`Cannot cleanup checked-out release branch ${branch}; checkout another branch first.`);
-    const remoteRefs = runGit(['for-each-ref', '--format=%(refname)', `refs/remotes/*/${branch}`], repo, dependencies).stdout.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean);
-    if (remoteRefs.length > 0) throw new Error(`Remote release ref exists (${remoteRefs.join(', ')}); remote cleanup requires independent authorization.`);
-    if (!refExists(branchRef, repo, dependencies)) throw new Error(`Release branch ${branch} does not exist.`);
     const refs = refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).map((entry) => entry.ref);
-    runGit(['branch', '-D', branch], repo, dependencies);
+    const branchExists = refExists(branchRef, repo, dependencies);
+    if (!branchExists && refs.length === 0) {
+      return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'already-cleaned', effects: [], nextActions: [] };
+    }
+    if (branchExists) runGit(['branch', '-D', branch], repo, dependencies);
     for (const ref of refs) runGit(['update-ref', '-d', ref], repo, dependencies);
-    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', effects: [{ type: 'branch-deleted', ref: branchRef }, ...refs.map((ref) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
+    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'cleaned', effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
   } catch (error) {
-    return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', nextActions: ['确认本地 branch 未 checkout、remote ref 已独立处理且传入 --confirm 后重试。'] });
+    return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', nextActions: ['确认本地 branch 未 checkout、资源ownership明确且传入 --confirm 后重试；正式远端release ref由独立owner核验。'] });
   }
 }
 

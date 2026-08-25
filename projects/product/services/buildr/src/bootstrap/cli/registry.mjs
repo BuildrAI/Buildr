@@ -77,17 +77,29 @@ const COMMAND_ROUTES = [
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   {
+    key: "verification plan",
+    surface: "agent-machine",
+    summary: "从 Project verification.yml v3 与冻结目标形成可解释、内容寻址的 Verification Request/Plan；只预览选择，不执行测试或写 Result。",
+    help: [
+      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--json]",
+      "",
+      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。preview 不是 Execution Record 或 Verification Result。"
+    ],
+    match: ({ domain, action }) => domain === 'verification' && action === 'plan',
+    run: (r, c) => r.verificationPlan(c.argv.slice(4)),
+  },
+  {
     key: "verification run",
     surface: "agent-machine",
-    summary: "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；正式 Task execution 会保留受控 execution record。",
+    summary: "读取已登记 Project 的 verification.yml v3，执行current Plan或显式选择的command能力；正式Task execution必须绑定Plan并保留受控Execution Record。",
     help: [
-      "Usage: buildr verification run --project <code> --capability <id> ... --target-identity <identity> [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--retry] [--json]",
+      "Usage: buildr verification run --project <code> (--plan <plan.json> | --capability <id> ...) --target-identity <identity> [--selection-scope <affected|full>] [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--retry] [--detail <compact|full>] [--json]",
       "",
-      "读取已登记 Project 的 verification.yml v2，只执行调用方显式选择的 command capabilities；applicability 选择与 bounded Agent operation 由 task-verification Skill 负责。",
+      "读取v3能力族；Task外允许显式capability执行，正式Task必须消费current Plan。provider或bounded Agent execution不会被command runner伪装执行。",
       "--declaration-root 只属于 task verification record；verification run 与 task verification inspect 都不读取 declaration source。",
       "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；正式 execution 由 Receipt 固定的 retained controller 编排，capability 仍在候选 execution root 执行，候选 runtime 不获得 canonical writer authority。Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
       "effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。",
-      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量；相同Task/target/declaration/capability集合已有active或terminal record时，默认按active优先及openedAt/recordId降序选择latest并零执行返回原record/run identity。只有显式--retry创建同invocation的独立run/record；identity输入变化仍创建首次执行。完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json 返回buildr.verification-execution/v1及portable executionRecord摘要。"
+      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量；相同Task/target/declaration/capability集合已有active或terminal record时，默认按active优先及openedAt/recordId降序选择latest并零执行返回原record/run identity。只有显式--retry创建同invocation的独立run/record；identity输入变化仍创建首次执行。完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json默认返回buildr.long-running-operation-summary/v1紧凑摘要；显式--detail full返回既有buildr.verification-execution/v1。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'run',
     run: (r, c) => r.verificationRun(c.argv.slice(4)),

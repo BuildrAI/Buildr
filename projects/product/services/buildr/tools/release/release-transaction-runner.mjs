@@ -9,6 +9,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.mjs';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 import {
@@ -59,6 +60,8 @@ function parseOptions(argv) {
     if (!key?.startsWith('--') || value === undefined) throw new Error(`Invalid argument: ${key || '<missing>'}`);
     options[key.slice(2)] = value;
   }
+  const detail = options.detail || 'compact';
+  if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
   return {
     action,
     repo: path.resolve(options.repo || workspaceRoot),
@@ -73,10 +76,36 @@ function parseOptions(argv) {
     devCommit: options['dev-commit'] || 'origin/dev',
     ghCommand: options.gh || 'gh',
     output: options.output ? path.resolve(options.output) : null,
+    detail,
     timeoutMs: Number(options['timeout-ms'] || 20 * 60 * 1000),
     publicationAuthorized: options['publication-authorized'] === 'true',
     releaseContext: options['release-context'] ? JSON.parse(fs.readFileSync(path.resolve(options['release-context']), 'utf8')) : null,
   };
+}
+
+export function compactReleaseTransaction(result) {
+  const runId = result.github?.runId || result.evidence?.publish?.runId || null;
+  const taskId = result.context?.environment?.taskId || result.context?.releaseTask?.taskId || null;
+  const failedFinding = result.findings?.find((finding) => finding.severity === 'blocked') || null;
+  const failed = result.error ? { code: 'release.transaction_failed', message: result.error } : failedFinding ? { code: failedFinding.code, message: failedFinding.nextAction || failedFinding.expected } : null;
+  const normalizedStatus = result.status === 'passed' || result.status === 'ready'
+    ? 'passed'
+    : result.status === 'cancelled' ? 'cancelled' : result.status === 'failed' ? 'failed' : 'blocked';
+  return longRunningOperationSummary({
+    operation: `release.transaction.${result.action || 'unknown'}`,
+    terminal: true,
+    status: normalizedStatus,
+    taskId,
+    runId: runId === null ? null : String(runId),
+    resultIdentity: result.evidence?.identity || result.contextIdentity || result.context?.identity || null,
+    stages: result.evidence?.attempt?.steps || (result.findings || []).map((finding) => ({ id: finding.code, status: finding.severity === 'blocked' ? 'blocked' : 'unknown' })),
+    primaryFailure: failed,
+    cleanup: { status: 'not-applicable' },
+    outputTruncated: Boolean(result.context || result.evidence || result.findings?.length),
+    recovery: runId === null ? null : {
+      owner: 'release-transaction-evidence', operation: 'inspect-run', taskId, runId: String(runId), recordId: null,
+    },
+  });
 }
 
 function parseJson(value, label) {
@@ -183,7 +212,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
     const environment = createReleaseEnvironmentBinding({
       task: releaseTask,
-      taskStatus: action === 'dispatch' ? 'completed' : 'active',
+      taskStatus: 'active',
       environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
       repo,
       sourceCommit,
@@ -214,7 +243,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       runtime,
       root: repo,
       releaseTask: options.releaseTask,
-      releaseTaskStatus: action === 'dispatch' ? 'completed' : 'active',
+      releaseTaskStatus: 'active',
       supportTasks: options.supportTasks ?? [],
       retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
@@ -372,11 +401,11 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     options = parseOptions(process.argv.slice(2));
     const result = await runHostedReleaseTransaction(options);
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(options.detail === 'full' ? result : compactReleaseTransaction(result), null, 2)}\n`);
   } catch (error) {
     const result = { schemaVersion: 'buildr.release-transaction-runner/v3', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release readiness输入后重试；只有明确publication授权才能dispatch，且不得本机创建tag或publish。'] };
     if (options?.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
-    process.stderr.write(`${JSON.stringify(result, null, 2)}\n`);
+    process.stderr.write(`${JSON.stringify(options?.detail === 'full' ? result : compactReleaseTransaction(result), null, 2)}\n`);
     process.exitCode = 1;
   }
 }

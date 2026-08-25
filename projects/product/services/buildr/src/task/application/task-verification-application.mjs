@@ -308,6 +308,7 @@ export function registerTaskVerificationApplication(runtime) {
     const observations = observeDeclarations(task, input.declarationRoot);
     const observationByProject = new Map(observations.map((item) => [item.project, item]));
     const capabilities = [];
+    let planBinding = null;
     for (const recordId of input.recordIds) {
       let detail;
       let summary;
@@ -320,6 +321,10 @@ export function registerTaskVerificationApplication(runtime) {
       const record = detail.record;
       if (record.owner !== 'task-verification' || record.kind !== 'verification-execution' || !['passed', 'failed'].includes(record.outcome) || !['retained', 'attention'].includes(record.lifecycleStatus)) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record不是可对账的terminal verification authority：${recordId}。`, 409, { recordId, owner: record.owner, kind: record.kind, outcome: record.outcome, lifecycleStatus: record.lifecycleStatus });
       if (summary.schemaVersion !== 'buildr.verification-execution-record-summary/v1' || summary.task?.id !== taskId) throw taskVerificationError('task_verification_evidence_mismatch', `Execution Record Task或schema不匹配：${recordId}。`, 409, { recordId });
+      if (!summary.plan?.identity || !summary.plan?.requestIdentity) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定Verification Request/Plan：${recordId}。`, 409, { recordId });
+      if (!Array.isArray(summary.plan.executionUnits) || summary.plan.executionUnits.length === 0) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定selected execution unit：${recordId}。`, 409, { recordId });
+      if (!planBinding) planBinding = { identity: summary.plan.identity, requestIdentity: summary.plan.requestIdentity, providerIdentity: summary.plan.providerIdentity || null };
+      else if (planBinding.identity !== summary.plan.identity || planBinding.requestIdentity !== summary.plan.requestIdentity || planBinding.providerIdentity !== (summary.plan.providerIdentity || null)) throw taskVerificationError('task_verification_evidence_plan_mismatch', `Execution Records不属于同一Verification Request/Plan/provider：${recordId}。`, 409, { recordId, expected: planBinding, actual: summary.plan });
       if (summary.candidate?.identity !== input.candidateIdentity || summary.candidate?.generation !== input.candidateGeneration || summary.candidate?.contentTargetIdentity !== input.targetIdentity || summary.target?.identity !== input.targetIdentity) throw taskVerificationError('task_verification_evidence_candidate_mismatch', `Execution Record Candidate或Content Target不匹配：${recordId}。`, 409, { recordId });
       if (summary.target?.stable !== true || summary.target?.drift) throw taskVerificationError('task_verification_evidence_target_drift', `Execution Record target发生漂移：${recordId}。`, 409, { recordId });
       const project = summary.project?.code;
@@ -375,7 +380,7 @@ export function registerTaskVerificationApplication(runtime) {
         '执行要求：',
         '1. 读取并遵循 task-verification Skill 与 selected buildr.task-verification/v3 contract；先 inspect Task 和 existing current Result。',
         '2. 按 Task ID 恢复 ready Task Environment，只在 receipt 允许的 execution roots 工作。',
-        '3. 读取 Task scope 内 Project verification.yml v2，针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
+        '3. 读取 Task scope 内各 Project 当前的 verification.yml，通过 selected Task Verification provider 按其支持的声明契约解析，并针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
         '4. 从Task Development取得current Candidate identity/generation与Content Target lease；正式command runner必须在任何副作用前绑定它，Task外transient run不得伪装formal authority。',
         '5. 只选择matching terminal Task Execution Records，通过Task Verification Application reconcile形成完整replacement；不得提交capability outcome/fact、CI URL、Git ref或聊天摘要作为claimed success。',
         '6. Application独立核验Candidate、target、declarations、body integrity与checks后派生Result；中断、authority不匹配或正文不完整时不得覆盖current。仅工作区gap使用受控record兼容入口。',

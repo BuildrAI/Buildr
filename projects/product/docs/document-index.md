@@ -13,6 +13,7 @@
 | [architecture/buildr-project-declaration-system.md](architecture/buildr-project-declaration-system.md) | Project Preparation/Verification 声明、Declaration Intake、Task 选择、专业 authority 与非 Node 边界 |
 | [architecture/progressive-business-modeling.md](architecture/progressive-business-modeling.md) | 从数据模型、领域模型和业务行为出发渐进推进业务设计的当前共识 |
 | [architecture/service-architecture.md](architecture/service-architecture.md) | Buildr Service 工程目录、业务与产品模块、技术分层、Resources、Tools、Web 宿主与 Bootstrap 的组织共识 |
+| [roadmap/workspace-testing-and-verification-framework.md](roadmap/workspace-testing-and-verification-framework.md) | 已实现的Workspace测试能力、Request/Plan、执行、结果、V2兼容与V3迁移架构说明；规范行为以OpenSpec specs为准 |
 | [roadmap/agent-first-governance-refactoring.md](roadmap/agent-first-governance-refactoring.md) | 智能体优先治理目标、门禁判断、跨模块重构工作包与 Parent 最终验收；尚未实现，不是当前事实或行为契约 |
 | [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |

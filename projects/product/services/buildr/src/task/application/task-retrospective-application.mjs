@@ -7,6 +7,12 @@ export const TASK_RETROSPECTIVE_PROMPT = '是否进行任务复盘？当前将�
 const TASK_RETROSPECTIVE_LIST_STATUSES = Object.freeze(['pending', 'handled', 'no-action', 'all']);
 const TASK_RETROSPECTIVE_LIST_DEFAULT_LIMIT = 100;
 const TASK_RETROSPECTIVE_LIST_MAX_LIMIT = 500;
+export const TASK_RETROSPECTIVE_LIST_DEFAULT_MAX_BYTES = 256 * 1024;
+export const TASK_RETROSPECTIVE_LIST_MAX_BYTES = 1024 * 1024;
+
+function returnedBytes(payload) {
+  return Buffer.byteLength(`${JSON.stringify(payload)}\n`, 'utf8');
+}
 
 function assertInput(input, allowed, label) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRetrospectiveError('task_retrospective_input_invalid', `${label} 必须是对象。`);
@@ -47,7 +53,7 @@ export function registerTaskRetrospectiveApplication(runtime) {
   }
 
   function listTaskRetrospectives(targetRoot, input = {}) {
-    assertInput(input, new Set(['status', 'taskIds', 'limit', 'includeReport']), 'Task Retrospective list');
+    assertInput(input, new Set(['status', 'taskIds', 'limit', 'maxBytes', 'includeReport']), 'Task Retrospective list');
     const status = input.status ?? 'pending';
     if (!TASK_RETROSPECTIVE_LIST_STATUSES.includes(status)) {
       throw taskRetrospectiveError('task_retrospective_list_status_invalid', 'status 只支持 pending、handled、no-action 或 all。', 400, { field: 'status', value: status });
@@ -61,9 +67,22 @@ export function registerTaskRetrospectiveApplication(runtime) {
     if (!Number.isInteger(limit) || limit < 1 || limit > TASK_RETROSPECTIVE_LIST_MAX_LIMIT) {
       throw taskRetrospectiveError('task_retrospective_list_limit_invalid', `limit 必须是 1 到 ${TASK_RETROSPECTIVE_LIST_MAX_LIMIT} 的整数。`, 400, { field: 'limit', value: limit });
     }
+    const maxBytes = input.maxBytes ?? TASK_RETROSPECTIVE_LIST_DEFAULT_MAX_BYTES;
+    if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > TASK_RETROSPECTIVE_LIST_MAX_BYTES) {
+      throw taskRetrospectiveError('task_retrospective_list_max_bytes_invalid', `maxBytes 必须是 1 到 ${TASK_RETROSPECTIVE_LIST_MAX_BYTES} 的整数。`, 400, { field: 'maxBytes', value: maxBytes });
+    }
     const includeReport = input.includeReport ?? false;
     if (typeof includeReport !== 'boolean') {
       throw taskRetrospectiveError('task_retrospective_list_include_report_invalid', 'includeReport 必须是布尔值。', 400, { field: 'includeReport', value: includeReport });
+    }
+    const envelopeProbe = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRetrospectiveListResult, {
+      operation: 'list', status: 'listed', filters: { status, taskIds: normalizedTaskIds, limit, maxBytes, includeReport },
+      matchingTaskCount: Number.MAX_SAFE_INTEGER, returnedTaskCount: 0, maxBytes, returnedBytes: 0, truncated: true,
+      items: [], diagnostic: null, effects: [], nextActions: [],
+    });
+    for (let attempt = 0; attempt < 4; attempt += 1) envelopeProbe.returnedBytes = returnedBytes(envelopeProbe);
+    if (envelopeProbe.returnedBytes > maxBytes) {
+      throw taskRetrospectiveError('task_retrospective_list_max_bytes_too_small', 'maxBytes 无法容纳批量结果 envelope。', 400, { field: 'maxBytes', value: maxBytes, minimumBytes: envelopeProbe.returnedBytes });
     }
 
     const queried = runtime.queryTaskRecordViews(targetRoot, { hasRetrospective: 'yes', retrospectiveState: status });
@@ -71,7 +90,7 @@ export function registerTaskRetrospectiveApplication(runtime) {
     const matching = queried.tasks
       .filter((view) => selectedTaskIds.size === 0 || selectedTaskIds.has(view.record.taskId))
       .sort((left, right) => left.record.taskId.localeCompare(right.record.taskId));
-    const items = matching.slice(0, limit).map((view) => {
+    const candidateItems = matching.slice(0, limit).map((view) => {
       const task = { taskId: view.record.taskId, title: view.record.title, status: view.record.status };
       try {
         const inspected = inspectTaskRetrospective(targetRoot, view.record.taskId);
@@ -82,29 +101,55 @@ export function registerTaskRetrospectiveApplication(runtime) {
           disposition: inspected.slot.disposition,
           followupTasks: inspected.followupTasks,
         };
-        if (includeReport) retrospective.reportMarkdown = inspected.slot.result.reportMarkdown;
-        return { task, retrospective, diagnostic: null };
-      } catch (error) {
         return {
+          base: { task, retrospective, diagnostic: null },
+          reportMarkdown: includeReport ? inspected.slot.result.reportMarkdown : null,
+        };
+      } catch (error) {
+        return { base: {
           task,
           retrospective: null,
           diagnostic: { code: error.code || 'task_retrospective_inspect_failed', message: error.message, details: error.details },
-        };
+        }, reportMarkdown: null };
       }
     });
-
-    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRetrospectiveListResult, {
-      operation: 'list',
-      status: 'listed',
-      filters: { status, taskIds: normalizedTaskIds, limit, includeReport },
-      matchingTaskCount: matching.length,
-      returnedTaskCount: items.length,
-      truncated: matching.length > items.length,
-      items,
-      diagnostic: null,
-      effects: [],
-      nextActions: [],
-    });
+    const items = [];
+    let reportOmitted = false;
+    const output = (nextItems, truncated) => {
+      const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRetrospectiveListResult, {
+        operation: 'list',
+        status: 'listed',
+        filters: { status, taskIds: normalizedTaskIds, limit, maxBytes, includeReport },
+        matchingTaskCount: matching.length,
+        returnedTaskCount: nextItems.length,
+        maxBytes,
+        returnedBytes: 0,
+        truncated,
+        items: nextItems,
+        diagnostic: null,
+        effects: [],
+        nextActions: [],
+      });
+      for (let attempt = 0; attempt < 4; attempt += 1) payload.returnedBytes = returnedBytes(payload);
+      return payload;
+    };
+    for (const candidate of candidateItems) {
+      let item = candidate.base;
+      if (candidate.reportMarkdown !== null) {
+        const withReport = structuredClone(candidate.base);
+        withReport.retrospective.reportMarkdown = candidate.reportMarkdown;
+        if (output([...items, withReport], true).returnedBytes <= maxBytes) item = withReport;
+        else reportOmitted = true;
+      }
+      if (output([...items, item], true).returnedBytes > maxBytes) break;
+      items.push(item);
+    }
+    const truncated = matching.length > items.length || reportOmitted;
+    const result = output(items, truncated);
+    if (result.returnedBytes > maxBytes) {
+      throw taskRetrospectiveError('task_retrospective_list_max_bytes_too_small', 'maxBytes 无法容纳批量结果 envelope。', 400, { field: 'maxBytes', value: maxBytes });
+    }
+    return result;
   }
 
   function recordTaskRetrospective(targetRoot, taskId, input) {

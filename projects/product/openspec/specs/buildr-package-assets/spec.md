@@ -644,32 +644,39 @@ Buildr package MUST 为新 Project 交付空的 Command requirements baseline，
 - **AND** sync 或 migration MUST 能安全补齐空 baseline
 
 ### Requirement: 随包任务验证能力保持完整可组合
-Buildr package MUST 原子交付 `buildr.task-verification/v3` contract、默认 `task-verification` provider、Project `buildr.project-verification/v2` reference/template、Workspace binding、CLI/Application runtime 与全部 supported runtime 投射输入。Package MUST 不再包含 v2 contract、v1 declaration reference、成熟度/三级 assurance/Candidate reuse guidance 或 Task Finish 的独立 verification summary authority。
+Buildr package MUST原子交付`buildr.task-verification/v3` contract、默认`task-verification` provider、Project `buildr.project-verification/v3` reference/template、Workspace binding、CLI/Application runtime、Request/Plan/provider contract与全部supported runtime投射输入。Package authoring surface MUST不包含v2 reference/template、旧成熟度/assurance指导或Task Finish独立verification authority；runtime MUST保留closed v2 declaration reader、schema validation、保守normalizer、Doctor legacy notice与回归fixtures，作为不扩展新语义的历史兼容输入。
 
 #### Scenario: Package 声明 task-verification provider
-- **WHEN** package static validation 读取随包能力声明
-- **THEN** Workspace Skills manifest MUST 声明 installed、enabled 的 `task-verification` provider、`buildr.task-verification/v3` contract 与 binding
-- **AND** package include mapping MUST 只投射 v3 contract 和 Project v2 reference/template
+- **WHEN** package static validation读取随包能力声明
+- **THEN** Workspace Skills manifest MUST声明installed、enabled的`task-verification` provider、`buildr.task-verification/v3` contract与binding
+- **AND** package include mapping MUST只投射v3 declaration reference/template和Plan/provider资料
 
 #### Scenario: Package 交付测试声明资料
-- **WHEN** package static validation 检查 `task-verification` 完整目录
-- **THEN** provider MUST 包含 v2 schema reference 和最小初始化模板
-- **AND** 资料 MUST 只描述 capability identity、Project/Service scope、invocation、applicability、proves、requiredForDelivery 与按需边界
+- **WHEN** package static validation检查`task-verification`完整目录
+- **THEN** provider MUST包含v3 schema reference和最小初始化模板
+- **AND** 资料 MUST描述能力族scope、proves、evidence、targets、discovery、affected/full与按需执行边界，不得索引具体测试
+- **AND** 资料 MUST不指导用户创建或扩展v2声明
+
+#### Scenario: Package 保留 v2 legacy reader
+- **WHEN** package static validation检查Project verification runtime compatibility
+- **THEN** MUST确认closed v2 schema validation、full-only normalization、`legacy-declared` evidence和非阻塞Doctor notice仍由明确runtime owner持有
+- **AND** MUST确认至少一个合法v2 fixture的规划或执行回归与无效v2 blocking回归存在
+- **AND** MUST不要求Product live declaration或新Workspace template继续使用v2
 
 #### Scenario: Runtime 可发现验证入口
-- **WHEN** 临时 Workspace 为任一 supported runtime 完成 sync 或 render
-- **THEN** runtime inventory MUST 包含可发现的 v3 `task-verification` Skill
-- **AND** description MUST 覆盖直接测试、正式 Task current Result、能力声明、实现完成验证与 coverage gap 意图
+- **WHEN** 临时Workspace为任一supported runtime完成sync或render
+- **THEN** runtime inventory MUST包含可发现的v3 `task-verification` Skill
+- **AND** description MUST覆盖Request/Plan、正式Task current Result、能力声明、实现完成验证与coverage gap意图
 
 #### Scenario: Provider contract 组合验证
-- **WHEN** Buildr 运行随包任务 Skills 契约验证
-- **THEN** verifier MUST 覆盖 Result closed schema、atomic replacement、current/stale/unknown、transient execution separation、coverage gap、Buildr Web read-only 和 Finish shared consumer
-- **AND** verifier MUST 确认 provider 不依赖固定 Git/Environment provider id，不拥有 Candidate、proceed/blocked 或 Task status
+- **WHEN** Buildr运行随包任务Skills契约验证
+- **THEN** verifier MUST覆盖v3 declaration、Request/Plan、provider、Execution Record reconciliation、Result currentness、coverage gap与Buildr Web只读边界
+- **AND** verifier MUST确认provider不拥有Candidate、proceed/blocked、Task status或Finish
 
 #### Scenario: 替换默认验证 provider
-- **WHEN** Workspace 安装并绑定兼容的内部 `buildr.task-verification/v3` provider
-- **THEN** consumers MUST 通过 binding 发现 provider 而不修改 consumer Skill
-- **AND** 默认 provider 在不再被选中时 MUST 可安全卸载
+- **WHEN** Workspace安装并绑定兼容的内部`buildr.task-verification/v3` provider
+- **THEN** consumers MUST通过binding发现provider而不修改consumer Skill
+- **AND** 默认provider在不再被选中时 MUST可安全卸载
 
 ### Requirement: 随包 task-worktree guidance 必须简洁且结构化
 Buildr package MUST 以单一 routing description 和结构化正文交付窄 `task-worktree` guidance；description MUST 只匹配明确 Git worktree/本地任务分支意图或 selected Environment provider handoff。正文 MUST 只覆盖 Git plan、创建/复用/检查/保留/清理、evidence、授权与停止条件，并 MUST NOT 声明 Environment 生命周期、Runtime/依赖、session adoption、验证政策或总 cleanup。
@@ -1477,3 +1484,31 @@ Buildr MUST 从 `resources/manifest.yml` 的产品声明和内容映射生成默
 - **THEN** Buildr MUST 使用 resources manifest 的 Workspace mappings 生成 Rule、Skill、Command、Component、AGENTS 与 Git 模板等内容资产
 - **AND** Buildr MUST 通过 canonical writer 生成全部持久化配置
 - **AND** Buildr MUST NOT 读取旧 package Workspace target
+
+### Requirement: Package 必须拒绝 active v2 verification assets
+
+Package static validation MUST继续拒绝v2 Skills、templates、authoring guidance和未登记兼容分支。自举过渡reader及其精确测试 MAY在active package中存在，但 MUST由current canonical requirement与Parent删除Contribution共同拥有；Product live v2 declaration MUST标记为transition input，不得被复制为模板。
+
+#### Scenario: 有界过渡reader进入package
+
+- **WHEN** package包含v2 validator/normalizer和对应拒绝/迁移测试
+- **THEN** static validation MAY通过
+- **AND** Skills、templates和新声明示例 MUST仍只包含v3
+- **AND** current knowledge MUST给出retained controller、live migration和删除门槛
+
+#### Scenario: 无主v2指导重新出现
+
+- **WHEN** Skills、templates、CLI authoring docs或非过渡runtime重新指导创建v2 declaration
+- **THEN** package static validation MUST失败
+
+#### Scenario: v2 template 残留
+
+- **WHEN** package source包含v2 declaration template、reference或未登记reader
+- **THEN** static validation MUST失败并列出精确active path
+- **AND** MUST NOT以archive兼容或历史用户为由继续打包
+
+#### Scenario: archive 保留历史引用
+
+- **WHEN** archived Change中存在v2历史文本且该路径不在package映射
+- **THEN** static validation MUST不把不可修改provenance判为runtime支持
+- **AND** active authoring docs、Skills与templates仍 MUST保持零v2指导

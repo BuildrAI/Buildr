@@ -21,7 +21,7 @@ function optionValues(args, name) {
   return values;
 }
 
-const USAGE = 'Internal usage: buildr __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <count>] [--include-report]\n       buildr __internal task-retrospective <inspect|record|handle> --task <task-id> --target <canonical-workspace> [--report-markdown <text>] [--status <pending|handled|no-action> --note <text> --expected-current-digest <digest>]';
+const USAGE = 'Internal usage: buildr __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <count>] [--max-bytes <bytes>] [--include-report]\n       buildr __internal task-retrospective <inspect|record|handle> --task <task-id> --target <canonical-workspace> [--report-markdown <text>] [--status <pending|handled|no-action> --note <text> --expected-current-digest <digest>]';
 
 export async function runTaskRetrospectiveDriver(args, options = {}) {
   const stdout = options.stdout || ((value) => console.log(value));
@@ -42,6 +42,7 @@ export async function runTaskRetrospectiveDriver(args, options = {}) {
           status: option(args, '--status'),
           taskIds: optionValues(args, '--task'),
           limit: option(args, '--limit') === undefined ? undefined : Number(option(args, '--limit')),
+          maxBytes: option(args, '--max-bytes') === undefined ? undefined : Number(option(args, '--max-bytes')),
           includeReport: args.includes('--include-report'),
         })
       : action === 'inspect'
@@ -53,7 +54,7 @@ export async function runTaskRetrospectiveDriver(args, options = {}) {
               note: option(args, '--note'),
               expectedCurrentDigest: option(args, '--expected-current-digest'),
             });
-    stdout(JSON.stringify(output, null, 2));
+    stdout(action === 'list' ? JSON.stringify(output) : JSON.stringify(output, null, 2));
     return 0;
   } catch (error) {
     stderr(JSON.stringify({

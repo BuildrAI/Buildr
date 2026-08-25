@@ -9,6 +9,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.mjs';
 import { releaseEnvironmentBindingSchema, validateReleaseEnvironmentBinding } from './release-environment-binding.mjs';
 import { releaseContextSchema, validateReleaseContext } from './release-readiness.mjs';
 import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.mjs';
@@ -256,6 +257,25 @@ export async function inspectHostedReleaseTransaction(options, dependencies = {}
   }
 }
 
+export function compactReleaseTransactionInspect(value) {
+  const evidence = value?.evidence || value;
+  const runId = value?.runId || evidence?.publish?.runId || null;
+  const taskId = evidence?.context?.environment?.taskId || evidence?.context?.releaseTask?.taskId || null;
+  return longRunningOperationSummary({
+    operation: 'release.transaction.inspect',
+    terminal: true,
+    status: value?.status === 'passed' || value?.status === 'ready' ? 'passed' : value?.status === 'cancelled' ? 'cancelled' : 'failed',
+    taskId,
+    runId: runId === null ? null : String(runId),
+    resultIdentity: value?.evidenceIdentity || evidence?.identity || null,
+    stages: evidence?.attempt?.steps || [],
+    primaryFailure: value?.status === 'failed' ? { code: 'release.transaction_failed', message: value?.error || 'Release transaction evidence reports failure.' } : null,
+    cleanup: { status: 'not-applicable' },
+    outputTruncated: Boolean(value?.evidence),
+    recovery: runId === null ? null : { owner: 'release-transaction-evidence', operation: 'inspect-run', taskId, runId: String(runId), recordId: null },
+  });
+}
+
 function parseOptions(argv) {
   const [action, ...rest] = argv;
   const options = { action };
@@ -269,8 +289,9 @@ function parseOptions(argv) {
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  let options = null;
   try {
-    const options = parseOptions(process.argv.slice(2));
+    options = parseOptions(process.argv.slice(2));
     let value;
     let resultSchema;
     if (options.action === 'validate-context' && options.input && options.output) {
@@ -327,9 +348,14 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
       fs.renameSync(temporary, output);
     }
-    process.stdout.write(`${JSON.stringify({ schemaVersion: resultSchema, status: 'ready', identity: value.identity })}\n`);
+    const full = options.detail === 'full';
+    const output = options.action === 'inspect-run'
+      ? (full ? value : compactReleaseTransactionInspect(value))
+      : { schemaVersion: resultSchema, status: 'ready', identity: value.identity };
+    process.stdout.write(`${JSON.stringify(output)}\n`);
   } catch (error) {
-    process.stderr.write(`${JSON.stringify({ schemaVersion: releaseTransactionContextSchema, status: 'blocked', error: error.message })}\n`);
+    const blocked = { schemaVersion: releaseTransactionContextSchema, status: 'blocked', error: error.message };
+    process.stderr.write(`${JSON.stringify(options?.detail === 'full' ? blocked : compactReleaseTransactionInspect({ status: 'failed', error: error.message }))}\n`);
     process.exitCode = 1;
   }
 }

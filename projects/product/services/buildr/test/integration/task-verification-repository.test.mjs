@@ -14,7 +14,7 @@ const test = createBuildrApplicationTest('integration-task-verification-reposito
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
 function declaration() {
-  return { schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [{ id: 'demo.unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, invocation: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, applicability: { paths: ['**'], conditions: [] }, proves: ['Demo unit behavior'], requiredForDelivery: true, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
+  return { schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{ id: 'demo.unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, proves: ['Demo unit behavior'], evidence: ['unit'], usableFor: ['task-delivery'], discovery: { sources: ['**'] }, invocation: { affected: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, full: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' } }, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
 }
 function fixture(t, runtime) {
   const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-repository').root);
@@ -57,6 +57,18 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
 
+test('Task Verification生成提示把Project声明版本交给selected provider与contract', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
+  const { prompt } = runtime.generateTaskVerificationPrompt(root, { taskId: 'demo-task', targetIdentity: 'target:one' });
+  assert.match(prompt, /各 Project 当前的 verification\.yml/);
+  assert.match(prompt, /selected Task Verification provider 按其支持的声明契约解析/);
+  assert.match(prompt, /coverage gap/);
+  assert.match(prompt, /Declaration Intake/);
+  assert.doesNotMatch(prompt, /verification\.yml v\d+/);
+  assert.doesNotMatch(prompt, /buildr\.project-verification\/v\d+/);
+});
+
 test('Project Result拒绝claimed facts，Candidate不匹配的authority对账保持原current', (t) => {
   const runtime = t.buildrContexts.application;
   const root = fixture(t, runtime);
@@ -75,6 +87,23 @@ test('Project Result拒绝claimed facts，Candidate不匹配的authority对账�
     targetIdentity: 'target:one', targetSummary: 'Stale Candidate target', recordIds: [recordId], coverageGaps: [], declarationRoot: root,
   }), (error) => error.code === 'task_verification_evidence_candidate_mismatch');
   assert.equal(stored(runtime, root), original);
+});
+
+test('同一次交付对账拒绝混用不同Verification Plan的Execution Records', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
+  const first = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ planIdentity: 'sha256-plan-one' }));
+  const second = recordVerificationResultFromEvidence(runtime, root, 'demo-task', input({ planIdentity: 'sha256-plan-two' }));
+  const candidate = second.slot.result.candidate;
+  assert.throws(() => runtime.reconcileTaskVerification(root, 'demo-task', {
+    candidateIdentity: candidate.identity,
+    candidateGeneration: candidate.generation,
+    targetIdentity: 'target:one',
+    targetSummary: 'Mixed plans must fail',
+    recordIds: [first.slot.result.capabilities[0].evidence.recordId, second.slot.result.capabilities[0].evidence.recordId],
+    coverageGaps: [],
+    declarationRoot: root,
+  }), (error) => error.code === 'task_verification_evidence_plan_mismatch');
 });
 
 test('Verification只从canonical或matching ready Task Environment观察declaration', (t) => {

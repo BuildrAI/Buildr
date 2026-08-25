@@ -2,6 +2,13 @@
 
 本表维护 Buildr Product 的 canonical terminology。规范行为仍以 OpenSpec specs 为准。
 
+## 紧凑终端摘要（Compact Terminal Summary）
+
+- 定义：从长流程既有专业authority投影的有界、closed、只读JSON摘要，表达operation、running或terminal truth、关键阶段、primary failure、cleanup、展示边界与唯一结构化recovery pointer。
+- 适用范围：Formal Verification、release transaction与Buildr self-bootstrap的缺省stdout；完整专业Result仍由Execution Record、hosted/output evidence或Finish maintenance持有。
+- 避免混用：不是新的workflow Result、进度事件流或重试许可；stdout丢失、客户端断连、等待超时与`output.truncated`都必须先回读同一owner，不能推断失败或启动替代run。
+- 来源：canonical `openspec/specs/long-running-workflow-observability/spec.md`（本 Change convergence 时建立）。
+
 ## 硬门禁（Hard Gate）
 
 - 定义：仅当继续一个具体动作会破坏真实结果不变量时返回的 `blocked` 分类，例如越权、写错对象、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报。
@@ -590,10 +597,20 @@
 
 ## 验证能力声明（Verification Capability Declaration）
 
-- 定义：Project 根 `verification.yml` 中由团队确认的现有验证能力目录，使用 closed `buildr.project-verification/v2`，声明 capability identity、Project/Service scope、调用方式、适用条件、能证明的事实、交付要求和必要的环境/副作用边界。
-- 适用范围：Task Verification 选择已有 command、脚本、CI wrapper 或 bounded Agent 操作时的 Project policy 输入。
-- 避免混用：不是 Project Testing、测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
+- 定义：Project 根 `verification.yml` 中由团队确认的现有测试能力族目录；新authoring只使用closed `buildr.project-verification/v3`，声明scope、proves、evidence、usable targets、discovery、affected/full/provider入口和必要执行边界；runtime可把closed legacy v2保守规范化为能力受限输入，一次性选择仍由内容寻址Verification Plan保存。
+- 适用范围：Task Verification选择已有command、脚本、CI wrapper、bounded Agent操作或稳定provider时的Project policy输入；合法v2可继续用于full Task Delivery，但不获得affected、Candidate、Release或provider语义。
+- 避免混用：兼容读取不是v2 authoring承诺，也不是Project Testing、测试框架、通用DAG或Task lifecycle plan；能力缺失只形成coverage gap，不能在Verification中自动开发测试。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
+
+## 验证请求（Verification Request）
+
+- 定义：为一次验证选择冻结Project/Service、Task Delivery或Product Artifact Candidate或Published Release目标、affected/full/release-only范围、changed paths/risks、declaration identities与可信dependency输入的closed内容寻址值。
+- 避免混用：不是执行命令、一次性Agent推理或Result；Request变化必须生成新Plan。
+
+## 验证计划（Verification Plan）
+
+- 定义：由matching Request与current v3声明或稳定provider确定性生成的closed内容寻址值，保存selected items、direct/dependency/full理由、coverage gaps、execution units及request/declaration/provider identities。
+- 避免混用：Plan preview不是execution evidence；provider内部完整DAG、Context cache和未选step不进入公共Plan，正式records必须绑定同一个current Plan。
 
 ## 验证执行证据（Verification Execution Evidence）
 
@@ -727,6 +744,20 @@
 - 适用范围：Candidate generation、artifact manifest/integrity、release→main tree equality、pre-tag readiness和publish evidence。
 - 避免混用：不是Task Candidate identity、近似branch name、最新`dev`、main commit identity或版本字符串；source任一部分变化都会使旧下游evidence stale。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/product-verification-quality/spec.md`。
+
+## 发布生命周期（Release Lifecycle）
+
+- 定义：从current selection、Candidate、readiness、Publication、main→dev与closeout owner facts派生的version-scoped只读阶段模型；稳定recovery identity绑定version、唯一协调Task、selection generation/identity、frozen context与适用publish run。
+- 适用范围：同一`release-<version>` Task从selection持续active到必需closeout完成、等待publication授权、发布后收敛恢复与最终no-change完成。
+- 避免混用：不是Task Record新状态、旁路workflow store、聊天进度、support Task或publication授权；Candidate/readiness通过不等于lifecycle closed。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/agent-task-workflows/spec.md`。
+
+## 发布中间载体（Release Intermediate Carrier）
+
+- 定义：Release Git owner按selection generation创建的确定性`codex/release-main-<version>-g<generation>` branch，用于承载冻结release source并作为唯一release→main PR head；main tree等价后属于必需closeout资源。
+- 适用范围：generation隔离、受保护release→main PR、carrier identity/ownership核验和幂等删除。
+- 避免混用：不是正式远端`release-<version>`发布事实、Delivery Carrier、release Task、tag或npm artifact；不得复用旧generation carrier，正式release ref默认保留并核验。
+- 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/open-source-release-governance/spec.md`。
 
 ## 交付载体（Delivery Carrier）
 

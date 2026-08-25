@@ -125,6 +125,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'installationStatus',
     'launcherStatus',
     'localAppPreview',
+    'longRunningOperationSummary',
     'openspecConverge',
     'openspecConvergenceInspect',
     'openspecConvergencePreflight',
@@ -160,6 +161,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'updateCheck',
     'verificationEvidenceCleanup',
     'verificationExecution',
+    'verificationPlan',
     'version',
   ]);
 });

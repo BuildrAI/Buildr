@@ -25,10 +25,11 @@ function declaredCapability(id, script, overrides = {}) {
     id,
     title: id,
     scope: { project: 'demo', services: [] },
-    invocation: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' },
-    applicability: { paths: ['**'], conditions: [] },
     proves: [id],
-    requiredForDelivery: true,
+    evidence: ['unit'],
+    usableFor: ['task-delivery'],
+    discovery: { sources: ['**'] },
+    invocation: { affected: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' }, full: { kind: 'command', argv: [process.execPath, '-e', script], cwd: '.' } },
     environment: { requires: ['node'] },
     effects: { writes: [], externalSystems: [], authorization: 'implicit' },
     resourceClaims: [],
@@ -37,8 +38,69 @@ function declaredCapability(id, script, overrides = {}) {
 }
 
 function runArgs(root, capabilities) {
-  return ['verification', 'run', '--project', 'demo', ...capabilities.flatMap((id) => ['--capability', id]), '--target-identity', 'target:demo', '--target', root, '--json'];
+  return ['verification', 'run', '--project', 'demo', ...capabilities.flatMap((id) => ['--capability', id]), '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json'];
 }
+
+test('verification plan形成可执行Plan，run拒绝stale declaration', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  const declaration = {
+    schemaVersion: 'buildr.project-verification/v3',
+    resources: [],
+    capabilities: [declaredCapability('demo.plan', 'void 0', { discovery: { sources: ['src/**'] } })],
+  };
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(declaration));
+  const preview = runBuildr(['verification', 'plan', '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:demo', '--changed-path', 'src/index.mjs', '--target', root, '--json']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const plan = JSON.parse(preview.stdout);
+  assert.equal(plan.schemaVersion, 'buildr.verification-plan/v1');
+  assert.equal(plan.status, 'ready');
+  assert.equal(plan.selectedItems[0].selection.kind, 'direct');
+  const planPath = path.join(root, 'plan.json');
+  fs.writeFileSync(planPath, JSON.stringify(plan));
+
+  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json']);
+  assert.equal(execution.status, 0, execution.stderr || execution.stdout);
+  assert.equal(JSON.parse(execution.stdout).plan.identity, plan.identity);
+
+  declaration.capabilities[0].title = 'Changed declaration';
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(declaration));
+  const stale = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json']);
+  assert.equal(stale.status, 2);
+  assert.match(JSON.parse(stale.stdout).error.message, /declaration identity is stale/);
+});
+
+test('legacy v2 declaration仍可形成full-only Plan并执行', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2',
+    resources: [],
+    capabilities: [{
+      id: 'demo.legacy',
+      scope: { project: 'demo', services: [] },
+      invocation: { kind: 'command', argv: [process.execPath, '-e', 'void 0'], cwd: '.' },
+      applicability: { paths: ['src/**'] },
+      proves: ['Legacy declared behavior'],
+      requiredForDelivery: true,
+      environment: { requires: ['node'] },
+      effects: { writes: [], externalSystems: [], authorization: 'implicit' },
+      resourceClaims: [],
+    }],
+  }));
+  const preview = runBuildr(['verification', 'plan', '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:legacy-v2', '--changed-path', 'src/index.mjs', '--target', root, '--json']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const plan = JSON.parse(preview.stdout);
+  assert.equal(plan.providerIdentity, null);
+  assert.deepEqual(plan.selectedItems.map((item) => [item.id, item.evidence, item.selection.scope]), [['demo.legacy', ['legacy-declared'], 'full']]);
+  const planPath = path.join(root, 'legacy-plan.json');
+  fs.writeFileSync(planPath, JSON.stringify(plan));
+  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:legacy-v2', '--target', root, '--detail', 'full', '--json']);
+  assert.equal(execution.status, 0, execution.stderr || execution.stdout);
+  const payload = JSON.parse(execution.stdout);
+  assert.equal(payload.status, 'passed');
+  assert.deepEqual(payload.selectedCapabilities.map((item) => [item.id, item.evidence, item.selectedScope]), [['demo.legacy', ['legacy-declared'], 'full']]);
+});
 
 test('verification run help将retry限定为同invocation独立执行', () => {
   const result = runBuildr(['verification', 'run', '--help']);
@@ -46,13 +108,15 @@ test('verification run help将retry限定为同invocation独立执行', () => {
   assert.match(result.stdout, /active或terminal record/);
   assert.match(result.stdout, /只有显式--retry创建同invocation的独立run\/record/);
   assert.match(result.stdout, /identity输入变化仍创建首次执行/);
+  assert.match(result.stdout, /--detail <compact\|full>/);
+  assert.match(result.stdout, /默认返回buildr\.long-running-operation-summary\/v1/);
 });
 
-test('verification run 并发执行显式 v2 capabilities 并只产生 transient execution evidence', (t) => {
+test('verification run 并发执行显式 v3 capabilities 并只产生 transient execution evidence', (t) => {
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');
   const declaration = {
-    schemaVersion: 'buildr.project-verification/v2',
+    schemaVersion: 'buildr.project-verification/v3',
     resources: [],
     capabilities: [
       declaredCapability('demo.first', 'setTimeout(() => {}, 40)'),
@@ -102,9 +166,9 @@ test('verification runner 直接执行声明中的 executable，不做 Workspace
   fs.chmodSync(fakeNode, 0o755);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [],
+    schemaVersion: 'buildr.project-verification/v3', resources: [],
     capabilities: [declaredCapability('demo.node', 'void 0', {
-      invocation: { kind: 'command', argv: [fakeNode], cwd: '.' },
+      invocation: { full: { kind: 'command', argv: [fakeNode], cwd: '.' } },
     })],
   }));
   const result = runBuildr(runArgs(root, ['demo.node']));
@@ -124,7 +188,7 @@ test('verification run公共JSON不回传capability原始输出', (t) => {
   const projectRoot = path.join(root, 'projects', 'demo');
   const marker = 'verification-public-output-must-not-leak';
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [],
+    schemaVersion: 'buildr.project-verification/v3', resources: [],
     capabilities: [declaredCapability('demo.output', `process.stdout.write(${JSON.stringify(marker.repeat(4096))}); process.stderr.write(${JSON.stringify(marker)}); process.exit(7)`)],
   }));
   const result = runBuildr(runArgs(root, ['demo.output']));
@@ -142,7 +206,7 @@ test('verification run 对 explicit capability effects 要求精确授权', (t) 
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [],
+    schemaVersion: 'buildr.project-verification/v3', resources: [],
     capabilities: [declaredCapability('demo.explicit', 'void 0', {
       effects: { writes: ['approved-output'], externalSystems: [], authorization: 'explicit' },
     })],
@@ -165,7 +229,7 @@ test('verification run 不再提供 caller-managed evidence writer', (t) => {
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [declaredCapability('demo.only', 'void 0')],
+    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [declaredCapability('demo.only', 'void 0')],
   }));
   const output = path.join(root, 'verification-summary.json');
   const args = runArgs(root, ['demo.only']);
@@ -180,7 +244,7 @@ test('verification run rejects declaration-root before starting a capability', (
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [declaredCapability('demo.only', 'require("fs").writeFileSync("started.txt", "no")')],
+    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [declaredCapability('demo.only', 'require("fs").writeFileSync("started.txt", "no")')],
   }));
   const args = runArgs(root, ['demo.only']);
   args.splice(-1, 0, '--declaration-root', root);
@@ -196,7 +260,7 @@ test('verification run reports target drift separately from a passed capability'
   const root = fixture(t);
   const projectRoot = path.join(root, 'projects', 'demo');
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v2', resources: [], capabilities: [declaredCapability('demo.drift', 'require("fs").writeFileSync("drift.txt", "changed")')],
+    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [declaredCapability('demo.drift', 'require("fs").writeFileSync("drift.txt", "changed")')],
   }));
   const result = runBuildr(runArgs(root, ['demo.drift']));
   assert.equal(result.status, 1);
@@ -214,7 +278,11 @@ test('verification run 对无 capability/target 的请求返回单一 JSON envel
   assert.equal(result.status, 2);
   assert.equal(result.stderr, '');
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
+  assert.equal(payload.schemaVersion, 'buildr.long-running-operation-summary/v1');
+  assert.equal(payload.detail, 'compact');
+  assert.equal(payload.terminal, true);
   assert.equal(payload.status, 'failed');
-  assert.equal(payload.error.code, 'verification.invalid_request');
+  assert.equal(payload.primaryFailure.code, 'verification.invalid_request');
+  assert.equal(payload.recovery, null);
+  for (const forbidden of ['checks', 'target', 'project', 'evidenceReference']) assert.equal(Object.hasOwn(payload, forbidden), false, forbidden);
 });
