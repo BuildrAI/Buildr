@@ -9,7 +9,7 @@ test('Node 24 loads the real mjs to ts to mjs CLI identity chain', () => {
   assert.equal(isVersionRequest(['--version']), true);
   assert.equal(isVersionRequest(['version', '--json']), true);
   assert.equal(isVersionRequest(['--help']), false);
-  assert.equal(readCliIdentity().version, '0.1.0-rc.22');
+  assert.equal(readCliIdentity().version, '0.1.0-rc.23');
 
   const result = spawnSync(process.execPath, ['bin/buildr.mjs', 'version', '--json'], {
     encoding: 'utf8',
@@ -18,7 +18,7 @@ test('Node 24 loads the real mjs to ts to mjs CLI identity chain', () => {
   assert.equal(result.status, 0, result.stderr);
   const identity = JSON.parse(result.stdout);
   assert.equal(identity.schemaVersion, 'buildr.version/v1');
-  assert.equal(identity.version, '0.1.0-rc.22');
+  assert.equal(identity.version, '0.1.0-rc.23');
   assert.equal(identity.channel, 'development');
   assert.equal(identity.runtime.executable, process.execPath);
 });
