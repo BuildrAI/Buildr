@@ -13,7 +13,7 @@
 - 必需的 `invocation.full` 与可选 `invocation.affected`，入口为 `command|agent|provider`；
 - `environment`、`effects`、`resourceClaims` 的真实执行边界。
 
-v3 不接受 v2，也没有兼容 reader。不要写 `applicability`、`requiredForDelivery`、测试文件清单、通用 DAG、一次性 Plan 或 Result。
+单个 v3 文件不接受 v2 字段。runtime 另有只读 legacy v2 compatibility reader，但它不属于 authoring contract，也不提供 v2 writer 或 template。新声明不要写 `applicability`、`requiredForDelivery`、测试文件清单、通用 DAG、一次性 Plan 或 Result。
 
 ## Selection and execution
 

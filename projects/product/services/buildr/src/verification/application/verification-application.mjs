@@ -399,21 +399,23 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const declarationPath = path.join(projectRoot, 'verification.yml');
     if (!fs.existsSync(declarationPath)) throw admissionError('verification.coverage_gap', `Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`, 'coverage', 'task-verification', { project: projectCode });
     const declarationContent = fs.readFileSync(declarationPath);
-    const declaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
+    const sourceDeclaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
     const services = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
-    const hasPreparationReferences = declaration.capabilities?.some((capability) => (capability.environment?.preparation || []).length > 0);
+    const hasPreparationReferences = sourceDeclaration.capabilities?.some((capability) => (capability.environment?.preparation || []).length > 0);
     const preparationDeclaration = hasPreparationReferences
       ? readPreparationDeclaration(projectRoot, projectCode, services, projectEnvironmentPreparation)
       : null;
-    const validationErrors = validateProjectVerification(declaration, {
+    const declarationContext = {
       projectCode,
       services: Object.keys(services),
       ...(hasPreparationReferences ? {
         preparationRecipes: (preparationDeclaration?.recipes || []).map((recipe) => [recipe.id, recipe]),
         projectEnvironmentPreparationScopeSelector: projectEnvironmentPreparation.projectEnvironmentPreparationScopeSelector,
       } : {}),
-    });
+    };
+    const validationErrors = validateProjectVerification(sourceDeclaration, declarationContext);
     if (validationErrors.length) throw admissionError('verification.declaration_invalid', `Project verification declaration is invalid:\n- ${validationErrors.join('\n- ')}`, 'declaration-invalid', 'project-verification-declaration', { project: projectCode });
+    const declaration = normalizeProjectVerification(sourceDeclaration, declarationContext);
     const declarationIdentity = digest(declarationContent);
     if (requestedPlan && requestedPlan.declarationIdentity !== declarationIdentity) throw new Error('Verification Plan declaration identity is stale.');
     if (requestedPlan?.providerIdentity) {
@@ -446,7 +448,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
       const resolvedInvocation = invocation.kind === 'provider' && requestedPlan
         ? {
             kind: 'command',
-            argv: [process.execPath, 'test/verification/focus.mjs', ...requestedPlan.selectedItems.map((item) => item.id)],
+            argv: [process.execPath, 'test/verification/focus.mjs', ...requestedPlan.selectedItems.filter((item) => item.capability === id).map((item) => item.id)],
             cwd: 'services/buildr',
           }
         : invocation;

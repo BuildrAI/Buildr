@@ -590,9 +590,9 @@
 
 ## 验证能力声明（Verification Capability Declaration）
 
-- 定义：Project 根 `verification.yml` 中由团队确认的现有测试能力族目录，只使用 closed `buildr.project-verification/v3`，声明scope、proves、evidence、usable targets、discovery、affected/full/provider入口和必要执行边界；一次性选择由内容寻址Verification Plan保存。
-- 适用范围：Task Verification 选择已有 command、脚本、CI wrapper 或 bounded Agent 操作时的 Project policy 输入。
-- 避免混用：不是 Project Testing、测试框架、通用 DAG 或 Task lifecycle plan；能力缺失只形成 coverage gap，不能在 Verification 中自动开发测试。
+- 定义：Project 根 `verification.yml` 中由团队确认的现有测试能力族目录；新authoring只使用closed `buildr.project-verification/v3`，声明scope、proves、evidence、usable targets、discovery、affected/full/provider入口和必要执行边界；runtime可把closed legacy v2保守规范化为能力受限输入，一次性选择仍由内容寻址Verification Plan保存。
+- 适用范围：Task Verification选择已有command、脚本、CI wrapper、bounded Agent操作或稳定provider时的Project policy输入；合法v2可继续用于full Task Delivery，但不获得affected、Candidate、Release或provider语义。
+- 避免混用：兼容读取不是v2 authoring承诺，也不是Project Testing、测试框架、通用DAG或Task lifecycle plan；能力缺失只形成coverage gap，不能在Verification中自动开发测试。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 验证请求（Verification Request）

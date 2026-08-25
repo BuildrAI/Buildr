@@ -644,7 +644,7 @@ Buildr package MUST 为新 Project 交付空的 Command requirements baseline，
 - **AND** sync 或 migration MUST 能安全补齐空 baseline
 
 ### Requirement: 随包任务验证能力保持完整可组合
-Buildr package MUST原子交付`buildr.task-verification/v3` contract、默认`task-verification` provider、Project `buildr.project-verification/v3` reference/template、Workspace binding、CLI/Application runtime、Request/Plan/provider contract与全部supported runtime投射输入。Package MUST不包含v2 declaration reader/reference/template、双版本迁移指导、旧成熟度/assurance指导或Task Finish独立verification authority。
+Buildr package MUST原子交付`buildr.task-verification/v3` contract、默认`task-verification` provider、Project `buildr.project-verification/v3` reference/template、Workspace binding、CLI/Application runtime、Request/Plan/provider contract与全部supported runtime投射输入。Package authoring surface MUST不包含v2 reference/template、旧成熟度/assurance指导或Task Finish独立verification authority；runtime MUST保留closed v2 declaration reader、schema validation、保守normalizer、Doctor legacy notice与回归fixtures，作为不扩展新语义的历史兼容输入。
 
 #### Scenario: Package 声明 task-verification provider
 - **WHEN** package static validation读取随包能力声明
@@ -655,6 +655,13 @@ Buildr package MUST原子交付`buildr.task-verification/v3` contract、默认`t
 - **WHEN** package static validation检查`task-verification`完整目录
 - **THEN** provider MUST包含v3 schema reference和最小初始化模板
 - **AND** 资料 MUST描述能力族scope、proves、evidence、targets、discovery、affected/full与按需执行边界，不得索引具体测试
+- **AND** 资料 MUST不指导用户创建或扩展v2声明
+
+#### Scenario: Package 保留 v2 legacy reader
+- **WHEN** package static validation检查Project verification runtime compatibility
+- **THEN** MUST确认closed v2 schema validation、full-only normalization、`legacy-declared` evidence和非阻塞Doctor notice仍由明确runtime owner持有
+- **AND** MUST确认至少一个合法v2 fixture的规划或执行回归与无效v2 blocking回归存在
+- **AND** MUST不要求Product live declaration或新Workspace template继续使用v2
 
 #### Scenario: Runtime 可发现验证入口
 - **WHEN** 临时Workspace为任一supported runtime完成sync或render

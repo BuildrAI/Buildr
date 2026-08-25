@@ -7,15 +7,23 @@ import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 
 const test = createBuildrApplicationTest('unit-product-verification-provider');
 const declaration = {
-  schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{
+  schemaVersion: 'buildr.project-verification/v3', resources: [{ id: 'browser', strategy: 'coordinated', capacity: 1, authorization: 'implicit' }], capabilities: [{
     id: 'product.verification', title: 'Product verification', scope: { project: 'product', services: [] },
     proves: ['Buildr Product evidence'], evidence: ['system'], usableFor: ['task-delivery', 'product-candidate', 'published-release'], discovery: { sources: ['**'] },
     invocation: { affected: { kind: 'provider', provider: 'buildr.product-verification/v1' }, full: { kind: 'provider', provider: 'buildr.product-verification/v1' } },
     environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
+  }, {
+    id: 'product.browser-smoke', scope: { project: 'product', services: ['buildr', 'buildr-web'] },
+    proves: ['Browser behavior'], evidence: ['system'], usableFor: ['task-delivery'], discovery: { sources: ['services/buildr-web/**'] },
+    invocation: {
+      affected: { kind: 'command', argv: ['npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' },
+      full: { kind: 'command', argv: ['npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' },
+    },
+    environment: { requires: ['chrome'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: ['browser'],
   }],
 };
 function request(targetKind, scope, changedPaths = []) {
-  return createVerificationRequest({ project: 'product', target: { kind: targetKind, identity: `target:${targetKind}` }, selection: { scope }, changedPaths, declarations: [{ project: 'product', identity: 'sha256-declaration' }] });
+  return createVerificationRequest({ project: 'product', services: ['buildr', 'buildr-web'], target: { kind: targetKind, identity: `target:${targetKind}` }, selection: { scope }, changedPaths, declarations: [{ project: 'product', identity: 'sha256-declaration' }] });
 }
 function provider(identity = 'sha256-provider-one') {
   return createProductVerificationProvider({ providerIdentity: identity, createInternalPlan, createSelectionAudit: createVerificationSelectionAudit });
@@ -39,6 +47,17 @@ test('Product provider把内部依赖扩张投射为parent reason', () => {
   const dependency = plan.selectedItems.find((item) => item.selection.kind === 'dependency');
   assert.equal(dependency.id, 'candidate-tarball');
   assert.equal(dependency.selection.parent, 'application-payload-release');
+});
+
+test('Product provider把命中discovery的独立Browser capability组合进同一Plan', () => {
+  const plan = createVerificationPlan({ request: request('task-delivery', 'affected', ['services/buildr-web/src/App.tsx']), declaration, provider: provider().plan });
+  const browser = plan.selectedItems.find((item) => item.capability === 'product.browser-smoke');
+  assert.equal(browser?.selection.kind, 'direct');
+  assert.equal(browser?.selection.scope, 'affected');
+  assert.deepEqual(browser?.executionUnit.invocation.argv, ['npm', 'run', 'test:browser:changed']);
+  assert.deepEqual(browser?.executionUnit.resourceClaims, ['browser']);
+  assert.ok(plan.executionUnits.some((unit) => unit.capability === 'product.verification' && unit.invocation.kind === 'provider'));
+  assert.ok(plan.executionUnits.some((unit) => unit.capability === 'product.browser-smoke' && unit.invocation.kind === 'command'));
 });
 
 test('Product full、Candidate与Published Release保持不同Request对象与选择理由', () => {

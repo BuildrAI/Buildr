@@ -70,6 +70,38 @@ test('verification plan形成可执行Plan，run拒绝stale declaration', (t) =>
   assert.match(JSON.parse(stale.stdout).error.message, /declaration identity is stale/);
 });
 
+test('legacy v2 declaration仍可形成full-only Plan并执行', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v2',
+    resources: [],
+    capabilities: [{
+      id: 'demo.legacy',
+      scope: { project: 'demo', services: [] },
+      invocation: { kind: 'command', argv: [process.execPath, '-e', 'void 0'], cwd: '.' },
+      applicability: { paths: ['src/**'] },
+      proves: ['Legacy declared behavior'],
+      requiredForDelivery: true,
+      environment: { requires: ['node'] },
+      effects: { writes: [], externalSystems: [], authorization: 'implicit' },
+      resourceClaims: [],
+    }],
+  }));
+  const preview = runBuildr(['verification', 'plan', '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:legacy-v2', '--changed-path', 'src/index.mjs', '--target', root, '--json']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const plan = JSON.parse(preview.stdout);
+  assert.equal(plan.providerIdentity, null);
+  assert.deepEqual(plan.selectedItems.map((item) => [item.id, item.evidence, item.selection.scope]), [['demo.legacy', ['legacy-declared'], 'full']]);
+  const planPath = path.join(root, 'legacy-plan.json');
+  fs.writeFileSync(planPath, JSON.stringify(plan));
+  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:legacy-v2', '--target', root, '--json']);
+  assert.equal(execution.status, 0, execution.stderr || execution.stdout);
+  const payload = JSON.parse(execution.stdout);
+  assert.equal(payload.status, 'passed');
+  assert.deepEqual(payload.selectedCapabilities.map((item) => [item.id, item.evidence, item.selectedScope]), [['demo.legacy', ['legacy-declared'], 'full']]);
+});
+
 test('verification run help将retry限定为同invocation独立执行', () => {
   const result = runBuildr(['verification', 'run', '--help']);
   assert.equal(result.status, 0, result.stderr || result.stdout);

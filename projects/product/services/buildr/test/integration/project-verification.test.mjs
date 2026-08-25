@@ -58,7 +58,7 @@ function legacyDeclaration(overrides = {}) {
       title: 'Demo legacy delivery',
       scope: { project: 'demo', services: [] },
       invocation: { kind: 'command', argv: ['npm', 'test'], cwd: '.' },
-      applicability: { paths: ['package.json', 'services/demo/**'], conditions: ['Legacy transition only'] },
+      applicability: { paths: ['package.json', 'services/demo/**'], conditions: ['Legacy compatibility'] },
       proves: ['Legacy declared behavior'],
       requiredForDelivery: true,
       environment: { requires: ['node'] },
@@ -96,7 +96,7 @@ test('Project verification v3 接受 affected/full command、provider 与 bounde
   assert.deepEqual(normalized.resources, []);
 });
 
-test('Project verification v2 在有界过渡期封闭映射为 full-only Task Delivery 能力', () => {
+test('Project verification v2 长期兼容封闭映射为 full-only Task Delivery 能力', () => {
   const value = legacyDeclaration();
   assert.deepEqual(validateProjectVerification(value, { projectCode: 'demo', services: [] }), []);
   const normalized = normalizeProjectVerification(value, { projectCode: 'demo', services: [] });
@@ -202,7 +202,12 @@ test('Project doctor 对声明缺失零 finding，对 v3 静默通过并对有�
   const legacyResult = { findings: [] };
   diagnostics.diagnoseProjectVerification(legacyResult, root, registry);
   assert.equal(legacyResult.projectVerification[0].valid, true);
-  assert.ok(legacyResult.findings.some((finding) => finding.code === 'project.verification_v2_transition' && finding.status === 'info' && finding.userActionRequired === false));
+  const legacyFinding = legacyResult.findings.find((finding) => finding.code === 'project.verification_v2_transition');
+  assert.equal(legacyFinding?.status, 'info');
+  assert.equal(legacyFinding?.userActionRequired, false);
+  assert.match(legacyFinding?.message || '', /受支持但能力受限/u);
+  assert.match(legacyFinding?.suggestion || '', /现有声明可继续使用/u);
+  assert.match(legacyFinding?.suggestion || '', /新声明不要使用 v2/u);
 
   legacy.capabilities[0].affected = { kind: 'command', argv: ['npm', 'test'] };
   fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify(legacy));
