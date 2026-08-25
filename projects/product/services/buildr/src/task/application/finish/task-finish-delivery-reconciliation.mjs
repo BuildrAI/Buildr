@@ -1,12 +1,15 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 import {
   createGitNoContributionProof,
   inspectGitCarrierContainment,
   inspectGitTaskContributionContainment,
+  removeIsolatedGitCarrier,
+  taskFinishCarrierRoot,
 } from './git-task-contribution.mjs';
-import { createFinishRun, finishResult } from './task-finish-run.mjs';
+import { createFinishRun, finishResult, writeFinishCompletion } from './task-finish-run.mjs';
 import { completeTaskDeliveryTerminal } from './task-finish-delivery-terminal.mjs';
 import {
   cleanupStaleFinishRunForRetirement,
@@ -232,6 +235,53 @@ function maintenanceProjection(repositories, diagnosticsStatus = 'not-opened', e
   };
 }
 
+function recoverTerminalCarrierCleanup({ runtime, root, entry, completion }) {
+  if (!completion?.runId || !Array.isArray(completion.repositories)) return { status: 'not-applicable', repositories: [], completion };
+  const planBySelector = new Map((entry.identityParts.repositories || []).map((plan) => [plan.selector, plan]));
+  const results = [];
+  for (const saved of completion.repositories.filter((repository) => repository.disposition === 'applicable' && repository.carrierRef)) {
+    const plan = planBySelector.get(saved.selector);
+    if (!plan) return { status: 'blocked', code: 'task-finish.terminal-carrier-plan-missing', selector: saved.selector, repositories: results, completion };
+    const carrierRoot = taskFinishCarrierRoot(root, completion.runId, saved.selector);
+    if (!fs.existsSync(carrierRoot)) {
+      results.push({ selector: saved.selector, status: 'not-applicable', code: null });
+      continue;
+    }
+    const head = text(carrierRoot, ['rev-parse', 'HEAD^{commit}']);
+    const status = command(carrierRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const message = text(carrierRoot, ['log', '-1', '--format=%B', 'HEAD']);
+    const remote = observeRemote(plan);
+    const contained = remote.status === 'observed'
+      ? command(plan.retainedRoot, ['merge-base', '--is-ancestor', saved.carrierRef, remote.observedTargetRef]).status === 0
+      : false;
+    if (head !== saved.carrierRef || status.status !== 0 || status.stdout.length !== 0
+      || !message?.split('\n').some((line) => line.trim() === `Buildr-Task: ${entry.identityParts.task}`)
+      || !contained) {
+      return {
+        status: 'blocked',
+        code: 'task-finish.terminal-carrier-cleanup-unproven',
+        selector: saved.selector,
+        repositories: results,
+        observed: { head, expectedHead: saved.carrierRef, clean: status.status === 0 && status.stdout.length === 0, taskTrailer: Boolean(message?.includes(`Buildr-Task: ${entry.identityParts.task}`)), remoteStatus: remote.status, contained },
+        completion,
+      };
+    }
+    const cleaned = removeIsolatedGitCarrier({ repositoryRoot: plan.retainedRoot, workspaceRoot: root, runId: completion.runId, repositorySelector: saved.selector, expectedRoot: carrierRoot });
+    results.push({ selector: saved.selector, status: cleaned.status, code: cleaned.code || null });
+    if (!['removed', 'not-applicable'].includes(cleaned.status)) return { status: 'blocked', code: cleaned.code || 'task-finish.terminal-carrier-cleanup-failed', selector: saved.selector, repositories: results, completion };
+  }
+  const carrierStatus = results.every((result) => ['removed', 'not-applicable'].includes(result.status)) ? 'cleaned' : 'attention';
+  const updated = {
+    ...completion,
+    cleanup: {
+      ...(completion.cleanup || {}),
+      carriers: { status: carrierStatus, repositories: results },
+    },
+  };
+  if (JSON.stringify(updated) !== JSON.stringify(completion)) writeFinishCompletion({ root, runId: completion.runId, completion: updated, runtime });
+  return { status: carrierStatus, repositories: results, completion: updated };
+}
+
 export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
   const environmentAvailable = entry.identityParts.environmentAvailable !== false;
   const terminal = runtime.readTaskFinishCompletionPersistence?.(root, { taskId: entry.identityParts.task }, { optional: true });
@@ -241,8 +291,12 @@ export function reconcileTaskFinishDelivery({ runtime, root, entry }) {
       || result.identity?.repositorySetIdentity !== entry.identityParts.repositorySetIdentity) {
       throw reconciliationError('task_finish.reconciliation_terminal_identity_conflict', 'Existing terminal delivery belongs to another handoff or repository set.');
     }
+    const carrierCleanup = recoverTerminalCarrierCleanup({ runtime, root, entry, completion: result.completion });
+    if (carrierCleanup.status === 'blocked') {
+      throw reconciliationError(carrierCleanup.code, 'Existing terminal carrier cleanup could not be proven.', carrierCleanup);
+    }
     const taskCompletion = completeTaskDeliveryTerminal(runtime, root, entry.identityParts.task);
-    return { ...result, completion: terminal.completion, taskCompletion, idempotent: true };
+    return { ...result, completion: { ...terminal.completion, result: { ...result, completion: carrierCleanup.completion } }, taskCompletion, carrierCleanup, idempotent: true };
   }
 
   const current = runtime.readTaskFinishRunPersistence?.(root, { taskId: entry.identityParts.task }, { optional: true });

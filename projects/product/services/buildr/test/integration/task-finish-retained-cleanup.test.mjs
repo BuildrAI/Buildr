@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import {
+  createTaskContributionPathCoverage,
   createIsolatedGitCarrier,
   inspectAgentReviewedZeroDeltaContainment,
   inspectGitCarrierContainment,
@@ -123,7 +124,7 @@ function alreadyContainedRun(t) {
     }],
   };
   const containment = inspectGitCarrierContainment({ repositoryRoot: root, targetRef: finalRemoteRef, carrier: run.deliveryCarrier });
-  assert.equal(containment.status, 'contained');
+  assert.equal(containment.status, 'contained', JSON.stringify(containment));
   run.delivery = {
     status: 'delivered',
     targetDisposition: 'already-contained',
@@ -179,13 +180,21 @@ function zeroDeltaContainedRun(t) {
     carrierDeltaIdentity: gitTaskContributionIdentity(carrierRoot, baselineTree, baselineTree),
     cleanliness: { clean: true },
   };
+  const pathCoverage = createTaskContributionPathCoverage({
+    repositoryRoot: root,
+    taskContribution: run.deliveryCarrier.taskContribution,
+    deliveryBaselineTree: baselineTree,
+    carrierTree: baselineTree,
+  });
+  assert.equal(pathCoverage.status, 'covered');
+  run.deliveryCarrier.pathCoverage = pathCoverage.coverage;
   const containment = inspectAgentReviewedZeroDeltaContainment({
     repositoryRoot: root,
     targetRef: baselineHead,
     carrier: run.deliveryCarrier,
     runId: run.runId,
   });
-  assert.equal(containment.status, 'contained');
+  assert.equal(containment.status, 'contained', JSON.stringify(containment));
   run.delivery = {
     status: 'delivered',
     targetDisposition: 'already-contained',
@@ -310,8 +319,16 @@ async function realZeroDeltaCleanupRun(t) {
     carrierDeltaIdentity: gitTaskContributionIdentity(carrierRoot, baselineTree, baselineTree),
     cleanliness: { clean: true },
   };
+  const pathCoverage = createTaskContributionPathCoverage({
+    repositoryRoot: root,
+    taskContribution: run.deliveryCarrier.taskContribution,
+    deliveryBaselineTree: baselineTree,
+    carrierTree: baselineTree,
+  });
+  assert.equal(pathCoverage.status, 'covered');
+  run.deliveryCarrier.pathCoverage = pathCoverage.coverage;
   const containment = inspectAgentReviewedZeroDeltaContainment({ repositoryRoot: root, targetRef: baselineHead, carrier: run.deliveryCarrier, runId });
-  assert.equal(containment.status, 'contained');
+  assert.equal(containment.status, 'contained', JSON.stringify(containment));
   run.delivery = {
     status: 'delivered',
     targetDisposition: 'already-contained',

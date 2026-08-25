@@ -484,8 +484,14 @@ export function removeIsolatedGitCarrier({ repositoryRoot, workspaceRoot, runId,
   }
   const removed = git(repositoryRoot, ['worktree', 'remove', '--force', target]);
   if (removed.status !== 0) return { status: 'blocked', code: 'task-finish.carrier-cleanup-failed', root: target, diagnostic: String(removed.stderr || removed.stdout).trim() };
+  if (carrierRegistration(repositoryRoot, target) || fs.existsSync(target)) {
+    return { status: 'blocked', code: 'task-finish.carrier-cleanup-readback-failed', root: target };
+  }
   const container = carrierContainer(workspaceRoot, runId);
-  if (repositorySelector && fs.existsSync(container) && fs.readdirSync(container).length === 0) fs.rmdirSync(container);
+  if (repositorySelector && fs.existsSync(container) && fs.readdirSync(container).length === 0) {
+    try { fs.rmdirSync(container); }
+    catch (error) { return { status: 'blocked', code: 'task-finish.carrier-container-cleanup-failed', root: target, container, diagnostic: error.message }; }
+  }
   return { status: 'removed', root: target };
 }
 

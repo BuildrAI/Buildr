@@ -198,6 +198,67 @@ test('delivery reconciliation从真实远端登记外部交付且不创建Delive
   assert.deepEqual(carrierResult.repositories[0].delivery.activationPaths, ['feature.txt']);
 });
 
+test('terminal reconciliation精确清理错误cleaned投影遗留的当前run carrier', (t) => {
+  const { root, taskRoot, taskContribution } = fixture(t);
+  const repositories = normalizeTaskFinishRepositorySet([{
+    selector: 'workspace', sourcePath: '.', retainedRoot: root, taskRoot,
+    environmentBranch: 'codex/reconcile-task', targetBranch: 'dev', remote: 'origin',
+    disposition: 'applicable', reason: null, taskContribution,
+  }]);
+  const handoff = {
+    identity: 'sha256-terminal-handoff',
+    candidate: { identity: 'sha256-terminal-candidate', generation: 1, contentTargetIdentity: 'sha256-terminal-content' },
+    gates: {},
+  };
+  const entry = {
+    handoff,
+    identityParts: {
+      task: 'reconcile-task', handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity,
+      candidateGeneration: 1, contentTargetIdentity: handoff.candidate.contentTargetIdentity, agent: 'codex',
+      targetBranch: 'dev', remote: 'origin', repositories, repositorySetIdentity: taskFinishRepositorySetIdentity(repositories),
+      environmentRoot: taskRoot, workspaceRoot: root, deliveryCommitIdentity: null,
+    },
+  };
+  const runId = 'terminal-carrier-recovery';
+  const carrierRoot = taskFinishCarrierRoot(root, runId, 'workspace');
+  fs.mkdirSync(path.dirname(carrierRoot), { recursive: true });
+  git(root, ['worktree', 'add', '--detach', carrierRoot, 'origin/dev']);
+  git(carrierRoot, ['config', 'user.name', 'Buildr Test']);
+  git(carrierRoot, ['config', 'user.email', 'buildr@example.com']);
+  fs.writeFileSync(path.join(carrierRoot, 'terminal-recovery.txt'), 'delivered\n');
+  git(carrierRoot, ['add', 'terminal-recovery.txt']);
+  git(carrierRoot, ['commit', '-m', 'fixture terminal carrier\n\nBuildr-Task: reconcile-task']);
+  const carrierRef = git(carrierRoot, ['rev-parse', 'HEAD']);
+  git(carrierRoot, ['push', 'origin', 'HEAD:dev']);
+
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v3', runId, task: 'reconcile-task',
+    handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: 1,
+    contentTargetIdentity: handoff.candidate.contentTargetIdentity, repositorySetIdentity: entry.identityParts.repositorySetIdentity,
+    repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-terminal-carrier', carrierRef, finalRemoteRef: carrierRef, taskContributionIdentity: taskContribution.identity }],
+    status: 'complete', cleanup: { status: 'attention' }, maintenance: { delivery: 'delivered', activation: 'attention', environmentCleanup: 'attention', diagnostics: 'not-opened' },
+  };
+  const finishResult = {
+    schemaVersion: 'buildr.task-finish-result/v3', status: 'complete',
+    identity: { task: 'reconcile-task', handoffIdentity: handoff.identity, repositorySetIdentity: entry.identityParts.repositorySetIdentity },
+    completion,
+  };
+  let persisted = null;
+  const runtime = {
+    readTaskFinishCompletionPersistence: () => ({ status: 'complete', completion: { result: finishResult } }),
+    writeTaskFinishCompletionPersistence: (_target, value) => { persisted = value; return { file: 'workspace-sqlite:task-finish-completion/reconcile-task' }; },
+    completeTaskRecordFromFinish: () => ({ status: 'completed', taskId: 'reconcile-task', record: { status: 'completed', result: { noChange: false } }, effects: [] }),
+  };
+
+  const result = reconcileTaskFinishDelivery({ runtime, root, entry });
+  assert.equal(result.idempotent, true);
+  assert.equal(result.carrierCleanup.status, 'cleaned');
+  assert.deepEqual(result.carrierCleanup.repositories, [{ selector: 'workspace', status: 'removed', code: null }]);
+  assert.equal(fs.existsSync(carrierRoot), false);
+  assert.equal(git(root, ['worktree', 'list', '--porcelain']).includes(carrierRoot), false);
+  assert.equal(persisted.result.cleanup.carriers.status, 'cleaned');
+});
+
 test('无Environment的reconciliation不声称cleanup pending或cleaned', (t) => {
   const { root, taskRoot, taskContribution } = fixture(t);
   const repositories = normalizeTaskFinishRepositorySet([{

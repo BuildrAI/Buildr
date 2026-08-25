@@ -366,7 +366,7 @@ test('complete cleanup后carrier root可清理但冻结自举事实保持可投�
   assert.equal(result.selfBootstrap.baseRef, 'final-ref');
 });
 
-test('maintenance已确认cleanup时不会从旧completion快照恢复不存在的carrier root', () => {
+test('Environment maintenance cleaned不替代carrier cleanup evidence', () => {
   const result = selfBootstrapTaskFinishResult(canonical({
     status: 'complete', primaryFailure: null, resume: null,
     maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened' },
@@ -385,8 +385,8 @@ test('maintenance已确认cleanup时不会从旧completion快照恢复不存在�
     },
   }));
 
-  assert.equal(result.workspaceRepository.carrier.root, null);
-  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
+  assert.equal(result.workspaceRepository.carrier.root, '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/workspace-21a3230e0377');
+  assert.equal(result.workspaceRepository.carrier.availability, 'retained');
 });
 
 test('v3 reconciliation carrier缺root时恢复确定性的run-owned repository root', () => {
@@ -409,6 +409,53 @@ test('v3 reconciliation carrier缺root时恢复确定性的run-owned repository 
 
   assert.equal(result.workspaceRepository.carrier.root, '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/workspace-21a3230e0377');
   assert.equal(result.workspaceRepository.carrier.availability, 'retained');
+});
+
+test('cleanup phase passed与Environment attention不把真实carrier投影为cleaned', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    phases: [{ id: 'cleanup', status: 'passed', attempts: 1, durationMs: 10 }],
+    maintenance: { delivery: 'delivered', activation: 'attention', environmentCleanup: 'attention', diagnostics: 'not-opened' },
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-retained-carrier', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete', cleanup: { status: 'attention' },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-retained-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.workspaceRepository.carrier.root, '/private/workspace/.buildr/transient/task-finish/carriers/finish-run/workspace-21a3230e0377');
+  assert.equal(result.workspaceRepository.carrier.availability, 'retained');
+});
+
+test('per-carrier removed evidence允许Environment attention下投影cleaned', () => {
+  const result = selfBootstrapTaskFinishResult(canonical({
+    status: 'complete', primaryFailure: null, resume: null,
+    identity: {
+      ...canonical().identity,
+      repositories: [{ selector: 'workspace', disposition: 'applicable', targetBranch: 'dev', remote: 'origin' }],
+    },
+    repositories: [{
+      selector: 'workspace', disposition: 'applicable',
+      deliveryCarrier: { identity: 'sha256-removed-carrier', activationPaths: ['projects/product/services/buildr/src/example.mjs'] },
+      delivery: { status: 'delivered', remoteAfterRef: 'final-ref', finalRemoteRef: 'final-ref' },
+    }],
+    completion: {
+      status: 'complete',
+      cleanup: { status: 'attention', carriers: { status: 'cleaned', repositories: [{ selector: 'workspace', status: 'removed', code: null }] } },
+      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: 'sha256-removed-carrier', carrierRef: 'final-ref', finalRemoteRef: 'final-ref' }],
+    },
+  }));
+
+  assert.equal(result.workspaceRepository.carrier.root, null);
+  assert.equal(result.workspaceRepository.carrier.availability, 'cleaned');
 });
 
 test('self-bootstrap projector对未知内部major与不完整carrier fail closed', () => {
