@@ -95,7 +95,7 @@ test('legacy v2 declaration仍可形成full-only Plan并执行', (t) => {
   assert.deepEqual(plan.selectedItems.map((item) => [item.id, item.evidence, item.selection.scope]), [['demo.legacy', ['legacy-declared'], 'full']]);
   const planPath = path.join(root, 'legacy-plan.json');
   fs.writeFileSync(planPath, JSON.stringify(plan));
-  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:legacy-v2', '--target', root, '--json']);
+  const execution = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:legacy-v2', '--target', root, '--detail', 'full', '--json']);
   assert.equal(execution.status, 0, execution.stderr || execution.stdout);
   const payload = JSON.parse(execution.stdout);
   assert.equal(payload.status, 'passed');

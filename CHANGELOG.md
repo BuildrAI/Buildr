@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+## 0.1.0-rc.23 - 2026-08-25
+
+- 将 Workspace 验证升级为 `Test Capability Family → Verification Request → Verification Plan → Execution Record → Verification Result` 闭环：Project `verification.yml` 使用 v3 能力族声明，支持 affected/full 选择、command 与高级 provider 执行，并保留 v2 兼容读取以安全完成自举迁移。
+- 优化长流程的可恢复观测：Verification、Release、Task Retrospective 与 self-bootstrap 默认返回有界摘要、周期进度和稳定 recovery pointer，完整专业证据继续由原 owner 保存与回读。
+- 统一 Release Task 生命周期：唯一 `release-<version>` 协调 Task 覆盖 selection、Candidate、唯一 tarball、release→main、readiness、Publication、main→dev 与 closeout，版本材料和候选修复由独立 support Task 交付；冻结集合支持保留历史 generation 后受控 reopen/refreeze。
+- 修复 v3 验证迁移后的声明版本提示硬编码，并加强 release correlation、Environment cleanup 与验证结果恢复的 current identity 边界。
+
 ## 0.1.0-rc.22 - 2026-08-24
 
 - 重构 Buildr 的智能体优先治理与服务架构：收敛 Bootstrap、Task、Workspace、Runtime Host、System Installation、Agent Assets、HTTP contracts 和 TypeScript 执行边界，并让 Core、专业能力与模块依赖保持宽而薄的职责划分。
