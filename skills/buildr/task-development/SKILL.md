@@ -57,7 +57,7 @@ Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：P
 
 Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
 
-所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。随后继续正常Candidate、Completion Review、decision、handoff与Formal Finish。
+所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。Acceptance绑定current Parent Plan后，立即重读顶层`task next`并继续消费Task Development返回的真实typed next；不得再次执行`accept-parent`，也不得在Skill或Parent coordination中硬编码Finish。随后由Development current状态正常推进Candidate、Completion Review、decision、handoff与Formal Finish。
 
 ## 从首个研发动作接入
 

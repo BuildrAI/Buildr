@@ -73,12 +73,13 @@ buildr verification run --project <code> \
   --target-identity <identity> \
   --target <execution-root> \
   --environment <task-id> --workspace <canonical-workspace> \
+  --detail compact \
   --json
 ```
 
-`verification run`只执行已选择的command capability，并返回`buildr.verification-execution/v1`；它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
+`verification run`只执行已选择的command capability；`--json`默认返回有界`buildr.long-running-operation-summary/v1`，只有诊断需要时才显式使用`--detail full`返回既有`buildr.verification-execution/v1`。compact中的recovery pointer必须先用于回读同一Execution Record；stdout丢失、等待超时、展示截断或既有failed都不授权重跑。它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
 
-正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。`verification.preparation_blocked`只在`admission.recovery`存在时提供closed `planRequest`：把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
+正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。pre-admission `verification.preparation_blocked`尚无durable Execution Record时，compact的`recovery`按约束保持null，`primaryFailure`会要求对同一invocation追加`--detail full`读取既有`admission.recovery.planRequest`；这次降级不会启动capability或补造record。取得closed `planRequest`后把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
 
 该门禁只保护Formal Verification execution、Result与完成声明。provider/preflight暂不可用时，可以继续无关开发、只读调查和明确标记的有界非正式检查，但不得写Formal Result或据此声称完成；恢复后仍须通过Task Environment与admission。runner在首次副作用前重验全部binding，漂移时返回preparation drift并保持Execution Record未打开。
 
