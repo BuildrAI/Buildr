@@ -380,7 +380,7 @@ export function registerTaskVerificationApplication(runtime) {
         '执行要求：',
         '1. 读取并遵循 task-verification Skill 与 selected buildr.task-verification/v3 contract；先 inspect Task 和 existing current Result。',
         '2. 按 Task ID 恢复 ready Task Environment，只在 receipt 允许的 execution roots 工作。',
-        '3. 读取 Task scope 内 Project verification.yml v2，针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
+        '3. 读取 Task scope 内各 Project 当前的 verification.yml，通过 selected Task Verification provider 按其支持的声明契约解析，并针对当前目标选择适用的已有 capabilities；没有能力只报告 coverage gap，不开发测试，并以只读 Declaration Intake 候选作为后续 next action。',
         '4. 从Task Development取得current Candidate identity/generation与Content Target lease；正式command runner必须在任何副作用前绑定它，Task外transient run不得伪装formal authority。',
         '5. 只选择matching terminal Task Execution Records，通过Task Verification Application reconcile形成完整replacement；不得提交capability outcome/fact、CI URL、Git ref或聊天摘要作为claimed success。',
         '6. Application独立核验Candidate、target、declarations、body integrity与checks后派生Result；中断、authority不匹配或正文不完整时不得覆盖current。仅工作区gap使用受控record兼容入口。',

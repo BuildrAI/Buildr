@@ -57,6 +57,18 @@ test('Verification current Result只写SQLite并保持target/declaration applica
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
 
+test('Task Verification生成提示把Project声明版本交给selected provider与contract', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
+  const { prompt } = runtime.generateTaskVerificationPrompt(root, { taskId: 'demo-task', targetIdentity: 'target:one' });
+  assert.match(prompt, /各 Project 当前的 verification\.yml/);
+  assert.match(prompt, /selected Task Verification provider 按其支持的声明契约解析/);
+  assert.match(prompt, /coverage gap/);
+  assert.match(prompt, /Declaration Intake/);
+  assert.doesNotMatch(prompt, /verification\.yml v\d+/);
+  assert.doesNotMatch(prompt, /buildr\.project-verification\/v\d+/);
+});
+
 test('Project Result拒绝claimed facts，Candidate不匹配的authority对账保持原current', (t) => {
   const runtime = t.buildrContexts.application;
   const root = fixture(t, runtime);
