@@ -43,6 +43,15 @@ test('readiness phase remains representable before a context digest exists', () 
   assert.equal(lifecycle.status, 'active');
 });
 
+test('passed Publication waits for dev provenance reconciliation before closeout', () => {
+  const lifecycle = createReleaseLifecycle(input({
+    publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
+    convergence: { status: 'published-but-dev-reconciliation-blocked', recoveryIdentity: digest('6') },
+  }));
+  assert.equal(lifecycle.phase, 'published-dev-reconciliation-pending');
+  assert.equal(lifecycle.status, 'active');
+});
+
 test('closed lifecycle requires zero intermediate resources and a verified retained formal release ref', () => {
   const closed = createReleaseLifecycle(input({
     publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },

@@ -36,7 +36,7 @@ function phaseFor(facts) {
   if (facts.readiness.status !== 'ready') return 'readiness';
   if (facts.publication.status === 'not-started') return 'awaiting-publication-authorization';
   if (facts.publication.status !== 'passed') return 'publishing';
-  if (facts.convergence.status !== 'passed') return 'published-convergence-pending';
+  if (facts.convergence.status !== 'passed') return 'published-dev-reconciliation-pending';
   if (facts.closeout.status !== 'passed') return 'closeout';
   return 'closed';
 }
