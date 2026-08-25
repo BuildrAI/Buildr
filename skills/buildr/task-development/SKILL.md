@@ -69,6 +69,14 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。省略顶层`planning`时Application会在任何Receipt写入前失败关闭，Agent应根据专业authority重新形成完整snapshot，而不是猜测旧值。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
 
+在调用`observe`或`policy`前，优先使用同一 retained controller 执行：
+
+```text
+<controller-command> <controller-args-prefix...> __internal task-development discover --task <task-id> --target <canonical-workspace> --input-json '{"action":"observe"}'
+```
+
+`discover`返回`buildr.task-development-current-input/v1`的`inputJson`与来源facts：`observe`输入来自current Receipt的完整Change dispositions与planning target；`policy`在current policy仍适用时保留显式overrides，否则按current declarations的`usableFor: task-delivery`默认能力生成，缺失能力形成typed coverage gap。它只读、不写任何Receipt/Result；读取后仍由`observe|policy` Application对漂移事实fail closed。没有current facts时恢复对应owner，不回退到静态example手工穷举。
+
 正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用`buildr task next`返回的matching retained `environment.controllerInvocation`调用bundled只读resolver：
 
 ```text

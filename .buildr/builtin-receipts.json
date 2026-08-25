@@ -137,11 +137,11 @@
       "type": "skill",
       "id": "task-development",
       "target": "skills/buildr/task-development",
-      "integrity": "sha256-1dc672797b7cd052fb5aad432befc222fdc03b4e907abaa4b29aaa71c9a069e3",
+      "integrity": "sha256-b50782c2aafc12a51aeac8b5d75eed31f717481d3c4698c5dc101b78ce5e0275",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-c679f90109159a95f08e0f6e0b6dc675f8dd7bc5d9aaf58f3f5dc810cf269599"
+          "integrity": "sha256-4492757a69076fd3e56636a0058160dde0e754376ceb1477ce41c3152236da7b"
         }
       ]
     },
@@ -249,11 +249,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-dc7cc967791a98232129d7d7295c7ce781689dccab30a0eb5c38dd01944bbd78",
+      "integrity": "sha256-d2db6d0b69868230e814c7722c9eb91398c61bc9e21db801211afdcf00e17f70",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8c5914d2361de52fe7c6ded116561f1d43db8ad74a0be6e867a1034e2577a0b5"
+          "integrity": "sha256-ddfc7a75e20da40458771308fd8a25924f818ec55028a5ab23a00106d3f6a9e3"
         },
         {
           "path": "references/project-verification-v3.md",
