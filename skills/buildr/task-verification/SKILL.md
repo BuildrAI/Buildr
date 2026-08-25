@@ -103,6 +103,8 @@ latest固定按active优先，再在对应集合使用`opened_at DESC, record_id
 
 完整命令、本机路径、waiting ticket、资源 lease 和 Environment handle 只属于 transient execution evidence。正式 Task Execution Record 只保留可移植摘要、按 capability 分段且受配额/脱敏控制的 stdout/stderr、闭合时间线与诊断；不进入 current Verification Result。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
 
+当单条 open Verification Execution Record 提供 `openLocalProgress` 时，只把它当作同一record的本机最后观察：读取 capability、phase、heartbeat、PID/PGID和有界输出摘要后继续等待或按owner recovery；它不是terminal outcome、Verification Result或retry授权。`timed-out`、`cancelled`与process cleanup failure必须分别报告；只有显式`--retry`才启动同一exact invocation的新run。
+
 ## 4. 从execution authority对账current Result
 
 能力执行完成后，先用Execution Record list/inspect确认所选record为matching Task、Candidate、target与declaration的terminal authority，再一次性reconcile：

@@ -32,6 +32,8 @@ Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策
 
 `run` 按 `preflight → prepare → verify → deliver → cleanup` 尝试自动化；这些阶段不是 Agent 必须遵循的唯一工作方式。出现冲突或远端变化时，Agent 可继续同一 run、处理交付适配（Delivery Adaptation）、改走 PR 或直接 Git。不得手写 resume token、claimed success 或语义等价证明。
 
+Agent-reviewed Delivery Adaptation必须对冻结Task Contribution的每个路径形成唯一处置：目标精确包含、carrier实际改变，或Agent通过matching run/resume使用`--reviewed-target-path <repository-selector>::<path>::<reason>`逐路径确认目标语义承接。Buildr只证明路径集合、Git bytes与identity闭合；逐路径理由仍是Agent判断，不被描述为机器证明。缺失、未知、重复、空理由或陈旧run/target/carrier输入保持同一run blocked。零差异适配仍需`--accept-zero-delta-adaptation`，且不隐式豁免逐路径覆盖。
+
 如果Agent误改原Task worktree并形成新的current Candidate，先重新读取Finish current facts。只有facts明确返回`stale-run-retirable`与available `finish-rollover`能力时，Agent才可显式执行：
 
 `buildr task finish rollover --task <task-id> --recovery-token <facts-token> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
@@ -71,6 +73,7 @@ Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态
 - 需要 force push、覆盖他人提交或改写共享历史；
 - 无法证明 worktree、carrier 或资源属于当前 Task 并可安全删除；
 - 调用方试图伪造交付、语义等价或完成证据。
+- Agent-reviewed carrier没有完整处置Task Contribution的全部路径，或路径覆盖证明已漂移。
 
 Buildr 状态不一致、可重建证明缺失、重复观察已交付 repository、单个 Cleanup 或 Diagnostics 失败，不属于 Delivery 阻断条件。
 
