@@ -1,4 +1,6 @@
 import { performance } from 'node:perf_hooks';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   TASK_DEVELOPMENT_ACTIONS,
@@ -15,6 +17,41 @@ function option(args, name, fallback = undefined) {
   const value = args[index + 1];
   if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
   return value;
+}
+
+function optionValues(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== name) continue;
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for ${name}`);
+    values.push(value);
+    index += 1;
+  }
+  return values;
+}
+
+function formalPlans(args, payload) {
+  const values = optionValues(args, '--plan');
+  if (!values.length) return payload;
+  if (args[0] !== 'discover') throw new Error('--plan is only supported by discover.');
+  if (Object.hasOwn(payload, 'formalPlans')) throw new Error('--plan conflicts with inputJson.formalPlans.');
+  const projects = new Set();
+  const plans = values.map((value) => {
+    const parts = value.split('::');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error('--plan must be <project>::<json-file>.');
+    const [project, fileInput] = parts;
+    if (projects.has(project)) throw new Error(`Duplicate --plan Project: ${project}.`);
+    projects.add(project);
+    const candidate = path.resolve(fileInput);
+    const stat = fs.lstatSync(candidate);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`--plan must reference a regular non-symlink file: ${fileInput}.`);
+    let document;
+    try { document = JSON.parse(fs.readFileSync(candidate, 'utf8')); }
+    catch (error) { throw new Error(`Invalid --plan JSON for ${project}: ${error.message}`); }
+    return { project, document };
+  });
+  return { ...payload, formalPlans: plans };
 }
 
 function input(args) {
@@ -72,7 +109,7 @@ export async function runTaskDevelopmentDriver(args, options = {}) {
     const compositionStartedAt = performance.now();
     const runtime = createRuntime();
     const compositionMs = performance.now() - compositionStartedAt;
-    const payload = input(args);
+    const payload = formalPlans(args, input(args));
     const operations = {
       inspect: () => runtime.inspectTaskDevelopment(targetRoot, taskId),
       discover: () => runtime.discoverTaskDevelopmentInput(targetRoot, taskId, payload),

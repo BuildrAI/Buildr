@@ -75,7 +75,7 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 <controller-command> <controller-args-prefix...> __internal task-development discover --task <task-id> --target <canonical-workspace> --input-json '{"action":"observe"}'
 ```
 
-`discover`返回`buildr.task-development-current-input/v1`的`inputJson`与来源facts：`observe`输入来自current Receipt的完整Change dispositions与planning target；`policy`在current policy仍适用时保留显式overrides，否则按current declarations的`usableFor: task-delivery`默认能力生成，缺失能力形成typed coverage gap。它只读、不写任何Receipt/Result；读取后仍由`observe|policy` Application对漂移事实fail closed。没有current facts时恢复对应owner，不回退到静态example手工穷举。
+`discover`返回`buildr.task-development-current-input/v1`的`inputJson`与来源facts：`observe`输入来自current Receipt的完整Change dispositions与planning target；`policy`在current policy仍适用时保留显式overrides。stable Content Target进入正式验证时，默认先由`task-verification`形成按有效Project完整覆盖的closed Formal Plans，再使用重复`--plan <project>::<json-file>`让Task Verification Application校验Plan、target、declaration与capability并投影selected policy输入、coverage gaps与response-only not-selected摘要。没有Plan的合法降级路径仍按current declarations的`usableFor: task-delivery`默认能力生成policy输入。两种discover都只读、不写任何Receipt/Result；读取后仍由`observe|policy` Application对漂移事实fail closed。没有current facts时恢复对应owner，不回退到静态example手工穷举。
 
 正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用`buildr task next`返回的matching retained `environment.controllerInvocation`调用bundled只读resolver：
 
@@ -99,7 +99,7 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 ## Verification policy 与正式 Verification
 
-根据 Task scope 和 Task Verification Application 返回的 current declarations，形成一份完整 policy：
+根据 Task scope、Task Verification Application返回的current declarations与current closed Formal Plans，形成一份完整 policy：
 
 - 选择当前稳定目标需要的已有 capabilities，并说明 required；
 - 没有能力时记录 Project/Service coverage gap；
@@ -108,7 +108,16 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 有效Project集合必须合并显式Project、Service所属Project与Change所属Project。只有并集为空时才使用仅工作区policy：空declarations、空capabilities、唯一`workspace` coverage gap与空overrides；Service或Change不能因省略`scope.projects`进入该分支。仅工作区Content Target变化后重新形成policy；Project集合或declaration变化时旧policy必须stale。
 
-先在Task Context、Planning、Content Target与policy current时调用freeze形成或复用Candidate。再读取response-only`formalVerificationReadiness`：`ready`时把current Candidate identity/generation与Content Target作为显式lease交给`task-verification`；`blocked`只处理其中明确的Candidate输入漂移；`not-applicable`表示尚未到Candidate或已有matching Verification。readiness不进入Receipt、Result或新sidecar。
+stable Content Target形成后按默认顺序执行：
+
+1. 针对每个有效Project形成并复核closed Formal Verification Plan；只运行较窄focused feedback，不在阶段切换前另启相同broad affected execution。
+2. Plan preview为`action-required`时，把原样`preparation.planRequest`交给Task Environment一次幂等prepare；不手写安装或扩大Task scope。
+3. 使用同一批Plan documents调用`discover policy --plan <project>::<json-file>`，检查selected、not-selected、coverage gaps与必要risk override，再把返回的closed `inputJson`交给policy writer。
+4. Task Context、Planning、Content Target、Environment准备与policy均current后调用freeze形成或复用Candidate；随后把同一Plan文件交给formal run/reconcile。
+
+该顺序是Formal Development的推荐工作流，不自动prepare、policy、freeze或run，也不是普通开发的许可层；Agent仍决定额外风险能力、override、外部授权及是否采用其他满足owner contract的合法路径。Plan、target、declaration或capability identity变化时重新plan，不复用旧preview或execution。
+
+Candidate形成后读取response-only`formalVerificationReadiness`：`ready`时把current Candidate identity/generation与Content Target作为显式lease交给`task-verification`；`blocked`只处理其中明确的Candidate输入漂移；`not-applicable`表示尚未到Candidate或已有matching Verification。readiness不进入Receipt、Result或新sidecar。
 
 该预检只属于正式Task的Development → Formal Verification交接。开发中的focused/affected/unit/integration反馈、Task外transient`verification run`和Candidate CI不读取readiness。Current Knowledge不再是Formal Verification前的固定预检；它只需在handoff前形成绑定current Content Target的最小disposition。
 

@@ -83,6 +83,22 @@ function fixture(t, taskId) {
   return { root, runtime, taskId, planningTargetIdentity, targetIdentity: policy.development.receipt.contentTarget.identity };
 }
 
+function prePolicyFixture(t, taskId) {
+  const { root } = copyFixtureWorkspace(t, 'pre-policy');
+  const runtime = t.buildrContexts.application;
+  runtime.createTaskRecord(root, { taskId, title: 'Plan demo verification', intent: 'Derive policy from a formal plan.', projects: ['demo'], services: [], changes: [] });
+  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true, taskId: currentTask, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
+    scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
+  });
+  pinImmutableTaskRecord(runtime, root, taskId);
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Plan-first flow'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
+  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity, observed };
+}
+
 function changeFixture(t, taskId, initial = { availability: 'available', lifecycle: 'archived' }) {
   const { root } = copyFixtureWorkspace(t, 'change-convergence');
   const runtime = t.buildrContexts.application;
@@ -181,6 +197,36 @@ test('discover从current facts生成observe/policy closed input且零写入', (t
     overrides: [],
   });
   assert.deepEqual(workspacePolicy.effects, []);
+});
+
+test('discover通过Task Verification只读投影Formal Plans且policy前next不先freeze', (t) => {
+  const current = prePolicyFixture(t, 'formal-plan-policy-discovery');
+  assert.equal(current.observed.next.owner, 'task-verification');
+  assert.equal(current.observed.next.action, 'plan-and-derive-policy');
+  const original = current.runtime.deriveTaskVerificationPolicyInput;
+  current.runtime.deriveTaskVerificationPolicyInput = (_root, taskId, input) => {
+    assert.equal(taskId, current.taskId);
+    assert.equal(input.targetIdentity, current.targetIdentity);
+    assert.equal(input.formalPlans[0].project, 'demo');
+    return {
+      inputJson: { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] },
+      selection: {
+        plans: [{ project: 'demo', identity: 'sha256-plan', requestIdentity: 'sha256-request', status: 'ready', declarationIdentity: 'sha256-declaration' }],
+        notSelectedCapabilities: [{ project: 'demo', capability: 'demo.browser', disposition: 'not-selected', reason: 'not-selected-by-plan' }],
+      },
+      nextActions: [],
+    };
+  };
+  try {
+    const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest;
+    const result = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'policy', formalPlans: [{ project: 'demo', document: { schemaVersion: 'buildr.verification-plan/v1' } }] });
+    assert.equal(result.facts.policyDisposition, 'derived-from-formal-plans');
+    assert.equal(result.facts.notSelectedCapabilities[0].capability, 'demo.browser');
+    assert.deepEqual(result.effects, []);
+    assert.equal(current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest, before);
+  } finally {
+    current.runtime.deriveTaskVerificationPolicyInput = original;
+  }
 });
 
 test('begin与planning省略完整snapshot时零写入失败关闭', (t) => {

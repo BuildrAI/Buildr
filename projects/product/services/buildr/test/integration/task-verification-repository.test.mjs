@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import YAML from 'yaml';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
+import { createVerificationPlan, createVerificationRequest } from '../../src/verification/domain/verification-plan.mjs';
 
 const test = createBuildrApplicationTest('integration-task-verification-repository');
 
@@ -31,6 +33,39 @@ function fixture(t, runtime) {
 }
 function input(overrides = {}) { return { targetIdentity: 'target:one', targetSummary: 'Demo delivery target', capabilities: [{ project: 'demo', capability: 'demo.unit', outcome: 'passed', facts: ['unit passed'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Demo verified' }, ...overrides }; }
 function stored(runtime, root) { const opened = runtime.openWorkspaceStructuredStore(root, { writable: false }); try { return opened.database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'demo-task'").get()?.result_json ?? null; } finally { opened.database.close(); } }
+
+test('Formal Plan只读投影selected policy与not-selected disposition', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fixture(t, runtime);
+  const declarationFile = path.join(root, 'projects', 'demo', 'verification.yml');
+  const expanded = declaration();
+  expanded.capabilities.push({ ...structuredClone(expanded.capabilities[0]), id: 'demo.browser', title: 'Demo browser', discovery: { sources: ['web/**'] } });
+  fs.writeFileSync(declarationFile, YAML.stringify(expanded));
+  const declarationIdentity = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(declarationFile)).digest('hex')}`;
+  const plan = createVerificationPlan({
+    request: createVerificationRequest({
+      project: 'demo', services: [], target: { kind: 'task-delivery', identity: 'target:one' }, selection: { scope: 'affected' },
+      changedPaths: ['src/demo.mjs'], risks: [], declarations: [{ project: 'demo', identity: declarationIdentity }], dependencies: [],
+    }),
+    declaration: expanded,
+  });
+  const material = structuredClone(plan);
+  delete material.identity;
+  material.selectedItems = [...material.selectedItems, { ...structuredClone(material.selectedItems[0]), id: 'demo-unit-secondary-item' }];
+  const providerStylePlan = { ...material, identity: `sha256-${crypto.createHash('sha256').update(JSON.stringify(material)).digest('hex')}` };
+  const before = runtime.inspectTaskVerification(root, 'demo-task');
+  const projection = runtime.deriveTaskVerificationPolicyInput(root, 'demo-task', {
+    targetIdentity: 'target:one', formalPlans: [{ project: 'demo', document: providerStylePlan }], declarationRoot: root,
+  });
+  assert.equal(projection.status, 'ready');
+  assert.deepEqual(projection.inputJson, { capabilities: [{ project: 'demo', capability: 'demo.unit', required: true }], coverageGaps: [], overrides: [] });
+  assert.deepEqual(projection.selection.notSelectedCapabilities, [{ project: 'demo', capability: 'demo.browser', disposition: 'not-selected', reason: 'not-selected-by-plan' }]);
+  assert.deepEqual(projection.effects, []);
+  assert.deepEqual(runtime.inspectTaskVerification(root, 'demo-task'), before);
+  assert.throws(() => runtime.deriveTaskVerificationPolicyInput(root, 'demo-task', {
+    targetIdentity: 'target:stale', formalPlans: [{ project: 'demo', document: plan }], declarationRoot: root,
+  }), (error) => error.code === 'task_verification_policy_plan_target_mismatch');
+});
 
 test('Verification current Result只写SQLite并保持target/declaration applicability', (t) => {
   const runtime = t.buildrContexts.application;

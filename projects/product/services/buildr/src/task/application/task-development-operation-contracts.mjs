@@ -42,6 +42,11 @@ const planningGate = closed({
   source: text('明确授权或不适用事实来源。'),
 }, ['disposition', 'summary', 'source']);
 
+const formalPlan = closed({
+  project: text('Task有效Project code。'),
+  document: { type: 'object', description: 'closed buildr.verification-plan/v1或buildr.verification-plan-result/v1 document。' },
+}, ['project', 'document']);
+
 const capability = closed({
   project: text(),
   capability: text(),
@@ -104,9 +109,10 @@ const contracts = {
     example: {},
   },
   discover: {
-    summary: '从 current Task、Environment、Receipt 与 declaration facts 生成 observe/policy 的 closed mutation input；只读且不写入任何 lifecycle fact。',
+    summary: '从 current Task、Environment、Receipt、declaration与可选Formal Plans生成observe/policy的closed mutation input；只读且不写入任何lifecycle fact。',
     inputSchema: inputSchema({
       action: { type: 'string', enum: ['observe', 'policy'], description: '需要生成输入的 Task Development mutation action。' },
+      formalPlans: array(formalPlan, 'policy discovery可选的按有效Project完整覆盖的closed Formal Plan documents。'),
     }, ['action']),
     example: { action: 'observe' },
   },
@@ -236,7 +242,7 @@ export function taskDevelopmentDriverHelp(action = null) {
     schemaVersion: 'buildr.task-development-driver-help/v1',
     action,
     summary: contract.summary,
-    usage: `<controller> __internal task-development ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]`,
+    usage: `<controller> __internal task-development ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>]${action === 'discover' ? ' [--plan <project>::<json-file> ...]' : ''} [--compact | --profile]`,
     discovery: [`${action} --schema`, `${action} --example`],
   };
 }

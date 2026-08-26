@@ -204,7 +204,7 @@ const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
   'cleanupTaskExecutionRecordBody',
 ]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
-  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
+  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'deriveTaskVerificationPolicyInput', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
 ]);
 const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
   'taskVerificationResultPath', 'readTaskVerificationResultPersistence', 'writeTaskVerificationResultPersistence', 'renderTaskVerificationResult',
