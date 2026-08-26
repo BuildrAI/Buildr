@@ -38,6 +38,10 @@ test('task-review 动态审查范围、真实 method，并在中断时不写 Res
   assert.match(skill, /必须形成精确finding并返回`changes-required`/);
   assert.match(skill, /不得用关键词匹配代替语义判断/);
   assert.match(skill, /同名产品能力.*Change-owned action仍可合法保留/);
+  assert.match(skill, /确实跨两个以上lifecycle owner/);
+  assert.match(skill, /实际受影响owner、每个owner保护的结果不变量与未覆盖边界/);
+  assert.match(skill, /不得按关键词生成通用authority map/);
+  assert.match(skill, /单owner、code-only或不相关Task套用固定/);
   assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
 });
 

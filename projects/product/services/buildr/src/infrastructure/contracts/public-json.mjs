@@ -54,6 +54,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   longRunningOperationSummary: 'buildr.long-running-operation-summary/v1',
   verificationExecution: 'buildr.verification-execution/v1',
   verificationPlan: 'buildr.verification-plan/v1',
+  verificationPlanResult: 'buildr.verification-plan-result/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
 });
 

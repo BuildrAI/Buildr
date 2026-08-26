@@ -81,9 +81,9 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "从 Project verification.yml v3 与冻结目标形成可解释、内容寻址的 Verification Request/Plan；只预览选择，不执行测试或写 Result。",
     help: [
-      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--json]",
+      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--json]",
       "",
-      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。preview 不是 Execution Record 或 Verification Result。"
+      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。changed path统一为Project-relative；同时绑定Environment与Workspace时返回只读Preparation preview。preview不是Execution Record、Environment mutation或Verification Result。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'plan',
     run: (r, c) => r.verificationPlan(c.argv.slice(4)),

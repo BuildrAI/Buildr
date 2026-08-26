@@ -77,6 +77,9 @@ test('默认 provider 使用 v3 Plan、Candidate-bound execution 与 Application
     '同一exact invocation独立新执行', '按新identity正常创建首次执行', '不重复播报“未传`--retry`”',
     'buildr.long-running-operation-summary/v1', '--detail full', 'recovery pointer',
     'compact的`recovery`按约束保持null', 'admission.recovery.planRequest', '不会启动capability或补造record',
+    'buildr.verification-plan-result/v1', 'preparation.status: action-required',
+    '在启动run前把`preparation.planRequest`原样交给Task Environment `prepare --plan`',
+    '没有formal Environment的普通plan-only继续返回raw Plan v1',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
@@ -145,6 +148,7 @@ test('Task Environment、Git provider 与 Task Verification 权限保持解耦',
   assert.match(environmentSkill, /task environment plan record --schema\|--example/);
   assert.match(environmentSkill, /与实际normalizer同源/);
   assert.match(environmentSkill, /不得复制第二份schema/);
+  assert.match(environmentSkill, /Formal Verification Plan preview或admission/);
   assert.match(verificationSkill, /不拥有 Task Environment/);
   assert.match(verificationSkill, /不要复制stdout\/stderr、耗时、临时evidence path、Environment Receipt/);
 });

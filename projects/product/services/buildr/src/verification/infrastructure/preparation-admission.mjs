@@ -110,7 +110,7 @@ export function verificationPreparationAdmission({ projectCode, declarationIdent
       changesTaskScope: false,
       blocks: ['formal-verification-execution', 'formal-verification-result', 'completion-claim'],
       doesNotBlock: ['unrelated-development', 'read-only-investigation', 'bounded-informal-checks'],
-      planRequest: recoveryRequest(context, recoverable),
+      planRequest: recoveryRequest(context, uniqueRequirements),
     } : null,
   };
 }

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
 import process from 'node:process';
@@ -7,7 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 
 import { PUBLIC_JSON_SCHEMAS, longRunningOperationSummary, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from './project-verification-diagnostics.mjs';
-import { assertVerificationPlan, createVerificationPlan, createVerificationRequest } from '../domain/verification-plan.mjs';
+import { assertVerificationPlan, assertVerificationPlanDocument, createVerificationPlan, createVerificationPlanResult, createVerificationRequest } from '../domain/verification-plan.mjs';
 import { runVerificationCapabilities } from '../infrastructure/capability-runner.mjs';
 import { verificationPreparationAdmission } from '../infrastructure/preparation-admission.mjs';
 import { executeVerificationCommand } from '../infrastructure/process-executor.mjs';
@@ -74,6 +75,45 @@ function sameFilesystemPath(left, right) {
   return canonical(left) === canonical(right);
 }
 
+function changedPathError(code, message, details) {
+  const error = new Error(message);
+  Object.assign(error, {
+    code,
+    details,
+    usage: 'buildr verification plan --project <code> --target-identity <identity> --changed-path <project-relative-path> [--target <execution-root>] [--json]',
+  });
+  return error;
+}
+
+export function normalizeVerificationChangedPaths({ changedPaths, workspaceRoot, projectRoot, projectCode, projectRoots = [] }) {
+  const workspace = path.resolve(workspaceRoot);
+  const selectedRoot = path.resolve(projectRoot);
+  const prefixes = projectRoots.map((item) => {
+    const relative = path.relative(workspace, path.resolve(item.root)).split(path.sep).join('/');
+    return inside(workspace, item.root) && relative && relative !== '.' ? { project: item.project, prefix: relative } : null;
+  }).filter(Boolean).sort((left, right) => right.prefix.length - left.prefix.length || left.project.localeCompare(right.project));
+  const selectedRelative = path.relative(workspace, selectedRoot).split(path.sep).join('/');
+  const selectedPrefix = inside(workspace, selectedRoot) && selectedRelative && selectedRelative !== '.' ? selectedRelative : null;
+  const details = { project: projectCode, registeredProjectRoot: selectedPrefix, expected: 'Project-relative path' };
+  return [...new Set((changedPaths || []).map((input) => {
+    const source = typeof input === 'string' ? input.trim().replaceAll('\\', '/') : '';
+    if (!source || path.posix.isAbsolute(source) || /^(?:[A-Za-z]:|file:\/\/)/u.test(source) || source.split('/').includes('..')) {
+      throw changedPathError('verification.changed_path_invalid', `Changed path must be relative and remain inside Project ${projectCode}: ${source || '<empty>'}.`, details);
+    }
+    const normalized = path.posix.normalize(source).replace(/^\.\//u, '');
+    if (!normalized || normalized === '.') throw changedPathError('verification.changed_path_invalid', `Changed path must identify content inside Project ${projectCode}.`, details);
+    const matched = prefixes.find((item) => normalized === item.prefix || normalized.startsWith(`${item.prefix}/`));
+    if (matched && matched.project !== projectCode) {
+      throw changedPathError('verification.changed_path_project_mismatch', `Workspace-relative changed path belongs to Project ${matched.project}, not ${projectCode}: ${source}.`, { ...details, observedProject: matched.project });
+    }
+    if (!matched) return normalized;
+    if (!selectedPrefix) throw changedPathError('verification.changed_path_workspace_form_unsupported', `Attached Project ${projectCode} only accepts Project-relative changed paths.`, details);
+    const projectRelative = normalized.slice(selectedPrefix.length).replace(/^\//u, '');
+    if (!projectRelative) throw changedPathError('verification.changed_path_invalid', `Changed path must identify content below Project ${projectCode}.`, details);
+    return projectRelative;
+  }))].sort();
+}
+
 function readPreparationDeclaration(projectRoot, projectCode, services, preparationContract) {
   const declarationPath = path.join(projectRoot, 'preparation.yml');
   if (!fs.existsSync(declarationPath)) return null;
@@ -106,14 +146,14 @@ function admissionError(code, message, category, owner, details = {}) {
   return error;
 }
 
-function runVerificationThroughRetainedController(context, args) {
+function runVerificationActionThroughRetainedController(context, action, args) {
   const invocation = context?.controllerInvocation;
   if (!invocation?.command || !Array.isArray(invocation.argsPrefix)) {
     const error = new Error('Task Environment Receipt 未提供可执行的 retained controller invocation。');
     error.code = 'verification.retained_controller_missing';
     throw error;
   }
-  const result = spawnSync(invocation.command, [...invocation.argsPrefix, 'verification', 'run', ...args], {
+  const result = spawnSync(invocation.command, [...invocation.argsPrefix, 'verification', action, ...args], {
     cwd: context.workspaceRoot,
     encoding: 'utf8',
     env: process.env,
@@ -129,6 +169,26 @@ function runVerificationThroughRetainedController(context, args) {
     const error = new Error('Retained controller 未返回合法 Verification JSON。');
     error.code = 'verification.retained_controller_invalid_output';
     throw error;
+  }
+}
+
+function runVerificationThroughRetainedController(context, args) {
+  return runVerificationActionThroughRetainedController(context, 'run', args);
+}
+
+function withRetainedControllerPlanArgs(args, requestedPlanDocument, execute) {
+  if (!requestedPlanDocument?.result) return execute(args);
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-plan-'));
+  try {
+    const rawPlanPath = path.join(temporaryRoot, 'plan.json');
+    fs.writeFileSync(rawPlanPath, `${JSON.stringify(requestedPlanDocument.plan)}\n`, { encoding: 'utf8', mode: 0o600 });
+    const delegatedArgs = [...args];
+    const planIndex = delegatedArgs.indexOf('--plan');
+    if (planIndex < 0 || !delegatedArgs[planIndex + 1]) throw new Error('Formal Verification envelope delegation requires --plan <file>.');
+    delegatedArgs[planIndex + 1] = rawPlanPath;
+    return execute(delegatedArgs);
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
   }
 }
 
@@ -357,21 +417,27 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const targetIdentity = runtime.optionValue(args, '--target-identity', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
     const servicesInput = optionValues(args, '--service');
-    const changedPaths = optionValues(args, '--changed-path');
+    const changedPathInputs = optionValues(args, '--changed-path');
+    const requestedEnvironment = runtime.optionValue(args, '--environment', null);
+    const requestedWorkspace = runtime.optionValue(args, '--workspace', null);
     const risks = optionValues(args, '--risk');
     const dependencies = optionValues(args, '--dependency').map((value) => {
       const [from, to, reason, ...extra] = value.split('::');
       if (!from || !to || !reason || extra.length) throw new Error('--dependency must be <from-capability>::<to-capability>::<reason>.');
       return { from, to, reason };
     });
-    runtime.assertNoUnknownOptions(args, new Set(['--project', '--service', '--target-kind', '--selection-scope', '--target-identity', '--changed-path', '--risk', '--dependency', '--target', '--json']), new Set(['--json']));
+    runtime.assertNoUnknownOptions(args, new Set(['--project', '--service', '--target-kind', '--selection-scope', '--target-identity', '--changed-path', '--risk', '--dependency', '--target', '--environment', '--workspace', '--json']), new Set(['--json']));
     if (runtime.positionalArgs(args).length) throw new Error('verification plan does not accept positional arguments.');
     if (!projectCode) throw new Error('verification plan requires --project <code>.');
     if (!targetIdentity) throw new Error('verification plan requires --target-identity <identity>.');
+    if (Boolean(requestedEnvironment) !== Boolean(requestedWorkspace)) throw new Error('Formal verification plan requires --environment <task-id> and --workspace <canonical-workspace> together.');
+    if (requestedEnvironment && targetKind !== 'task-delivery') throw new Error('Formal verification plan preview only supports task-delivery targets.');
     const registry = runtime.readProjectRegistryPersistence(targetRoot).registry.projects;
     const project = registry[projectCode];
     if (!project) throw new Error(`Project is not registered in projects/manifest.yml: ${projectCode}`);
     const projectRoot = fs.realpathSync(resolveSourceRoot(targetRoot, project.source));
+    const projectRoots = Object.entries(registry).map(([registeredProject, value]) => ({ project: registeredProject, root: resolveSourceRoot(targetRoot, value.source) }));
+    const changedPaths = normalizeVerificationChangedPaths({ changedPaths: changedPathInputs, workspaceRoot: targetRoot, projectRoot, projectCode, projectRoots });
     const serviceRegistry = runtime.readServiceRegistryPersistence(targetRoot, project, project.workspaceId).registry.services;
     const services = servicesInput.length ? servicesInput : Object.keys(serviceRegistry);
     for (const service of services) if (!serviceRegistry[service]) throw new Error(`Service is not registered for Project ${projectCode}: ${service}`);
@@ -379,7 +445,8 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     if (!fs.existsSync(declarationPath)) throw admissionError('verification.coverage_gap', `Project verification declaration is missing: ${path.relative(targetRoot, declarationPath)}`, 'coverage', 'task-verification', { project: projectCode });
     const declarationContent = fs.readFileSync(declarationPath);
     const declarationIdentity = digest(declarationContent);
-    const declaration = normalizeProjectVerification(parseProjectVerification(declarationContent.toString('utf8'), declarationPath), { projectCode, services: Object.keys(serviceRegistry) });
+    const sourceDeclaration = parseProjectVerification(declarationContent.toString('utf8'), declarationPath);
+    const declaration = normalizeProjectVerification(sourceDeclaration, { projectCode, services: Object.keys(serviceRegistry) });
     const request = createVerificationRequest({
       project: projectCode,
       services,
@@ -398,11 +465,30 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     if (providerIds.length > 1) throw new Error('Verification Plan cannot combine multiple provider authorities.');
     const provider = providerIds.length ? productProvider(projectRoot, providerIds[0]) : null;
     const plan = createVerificationPlan({ request, declaration, provider: provider?.plan });
-    const payload = withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationPlan, plan);
+    let preparation = null;
+    if (requestedEnvironment && sourceDeclaration.schemaVersion === 'buildr.project-verification/v3' && plan.status === 'ready') {
+      const canonicalWorkspace = path.resolve(requestedWorkspace);
+      const context = runtime.withWorkspaceStructuredStoreReadCompatibility(canonicalWorkspace, () => runtime.resolveTaskEnvironmentExecution(canonicalWorkspace, requestedEnvironment));
+      if (!context?.ready) throw new Error(context?.blocked?.message || 'Requested Task Environment binding is not ready.');
+      if (!context.allowedExecutionRoots.some((root) => inside(root, targetRoot))) throw new Error('Verification target is outside the requested Task Environment execution roots.');
+      const selectedIds = new Set(plan.executionUnits.map((unit) => unit.capability));
+      const selectedCapabilities = declaration.capabilities.filter((capability) => selectedIds.has(capability.id));
+      const admission = verificationPreparationAdmission({ projectCode, declarationIdentity, selectedCapabilities, context });
+      preparation = {
+        status: admission.status === 'ready' ? 'ready' : 'action-required',
+        identity: admission.binding.closureIdentity,
+        requirements: admission.requirements,
+        planRequest: admission.recovery?.planRequest || null,
+      };
+    }
+    const payload = requestedEnvironment
+      ? withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationPlanResult, createVerificationPlanResult({ plan, preparation }))
+      : withJsonSchema(PUBLIC_JSON_SCHEMAS.verificationPlan, plan);
     if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
       console.log(`Verification plan: ${plan.status} (${plan.identity})`);
       console.log(`Selected: ${plan.selectedItems.length}; gaps: ${plan.coverageGaps.length}`);
+      if (requestedEnvironment) console.log(`Preparation: ${preparation?.status || 'not-applicable'}`);
     }
     if (plan.status !== 'ready') process.exitCode = 1;
     return payload;
@@ -415,7 +501,8 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     const targetIdentity = runtime.optionValue(args, '--target-identity', null);
     const targetRoot = fs.realpathSync(path.resolve(runtime.optionValue(args, '--target', process.cwd())));
     const planPath = runtime.optionValue(args, '--plan', null);
-    const requestedPlan = planPath ? assertVerificationPlan(JSON.parse(fs.readFileSync(path.resolve(planPath), 'utf8'))) : null;
+    const requestedPlanDocument = planPath ? assertVerificationPlanDocument(JSON.parse(fs.readFileSync(path.resolve(planPath), 'utf8'))) : null;
+    const requestedPlan = requestedPlanDocument?.plan || null;
     let requestedCapabilities = [...new Set(optionValues(args, '--capability'))];
     if (requestedPlan) {
       if (requestedCapabilities.length) throw new Error('verification run accepts either --plan or --capability, not both.');
@@ -495,7 +582,7 @@ export function registerVerificationApplication(runtime, { projectEnvironmentPre
     if (context && !context.allowedExecutionRoots.some((root) => inside(root, targetRoot))) throw new Error('Verification target is outside the requested Task Environment execution roots.');
     if (context?.controllerInvocation?.sourceRoot && !sameFilesystemPath(runtime.productRoot(), context.controllerInvocation.sourceRoot)) {
       const execute = runtime.runVerificationThroughRetainedController || runVerificationThroughRetainedController;
-      return execute(context, args);
+      return withRetainedControllerPlanArgs(args, requestedPlanDocument, (delegatedArgs) => execute(context, delegatedArgs));
     }
     const byId = new Map(declaration.capabilities.map((capability) => [capability.id, capability]));
     const selected = requestedCapabilities.map((id) => {
