@@ -251,6 +251,11 @@ Buildr MUST只对通过完整Product Candidate的current `release-<version>`集�
 - **THEN** reconciliation MUST把该策略视为与只读核验兼容，不得将其报告为发布阻塞
 - **AND** owner MUST以空`effects`完成核验，MUST NOT创建临时merge worktree、commit或push
 
+#### Scenario: dev策略拒绝merge commit
+- **WHEN** current dev branch policy要求线性历史或以其他方式禁止产品将main与dev双亲merge commit普通push到目标ref
+- **THEN** convergence owner MUST在push前返回`published-but-dev-convergence-blocked`与策略finding
+- **AND** MUST NOT依赖管理员绕过、改写dev历史或把push rejection当作暂态成功
+
 ### Requirement: 受保护发布事务必须消费唯一冻结Context
 Buildr正式publication MUST只由`.github/workflows/publish.yml`的唯一protected transaction执行。Workflow MUST在一次`npm-production`approval内消费与dispatch完全相同的context digest、matching Candidate aggregate与冻结tarball，依次完成hosted OIDC、final pre-tag convergence、tag ensure、npm publish/dist-tag、GitHub Release与Registry readback。
 
