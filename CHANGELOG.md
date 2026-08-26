@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+## 0.1.0-rc.24 - 2026-08-26
+
+- 收敛发布准备与收尾编排：发布后改为只读核验 dev 来源，并支持 Candidate 失败分片按同一 run 定点重跑，减少重复执行和跨 run 拼接证据的风险。
+- 加强正式任务交付完整性与收尾准入：补齐 Contribution 路径覆盖、终态载体清理、Environment cleanup 和 retained controller 的可恢复证明。
+- 完善正式验证与任务研发边界：收敛 Verification runtime、Preparation Plan、Task Development discover 与复盘流程的 current identity 和闭包。
+- 调整候选版准备引导：未指定发布基线时先解析最新 `dev` 的精确 commit/tree，展示完整方案并等待确认，确认后固定发布快照。
+
 ## 0.1.0-rc.23 - 2026-08-25
 
 - 将 Workspace 验证升级为 `Test Capability Family → Verification Request → Verification Plan → Execution Record → Verification Result` 闭环：Project `verification.yml` 使用 v3 能力族声明，支持 affected/full 选择、command 与高级 provider 执行，并保留 v2 兼容读取以安全完成自举迁移。
