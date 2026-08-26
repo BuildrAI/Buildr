@@ -16,7 +16,9 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 - `发布候选版|发布稳定版`：只在matching准备事实成立后dispatch唯一protected transaction，跟踪tag/npm/GitHub Release/Registry readback，并在Publication成功后核验frozen release的dev来源。
 - `继续发布|排查发布`：先回读全部owner和公共事实，从可证明中断点继续；不得重复已成功的不可逆步骤。
 
-候选版与稳定版是不同授权。类型、版本、baseline或待选择commit不唯一时停止确认；不得默认稳定版、最新`dev`或全部未发布commit。
+候选版与稳定版是不同授权。用户未指定版本、baseline或待选择commit时，先按当前公开事实形成一份完整的缺省方案并请求确认，不把输入缺失直接转化为让用户手工填写hash。候选版的缺省方案可以沿用当前候选系列递增的下一个RC；dev baseline默认在fetch并回读后固定为current `dev` authority的精确commit/tree；未明确选择的后续dev commits不自动进入release。方案必须展示version、dev ref、baseline SHA/tree、selection policy、预期effects和不会执行的公开副作用。
+
+只有在完整方案已经展示后，用户的“确认”才构成对该方案的授权；如果用户只回复“确认”而上一次消息没有完整方案，Agent必须先完成只读解析并展示方案。确认后将baseline和selection转换为固定identity传给release selection owner，后续不得重新读取移动中的`dev`来改变已确认内容。
 
 ## 2. 发布模型实现就绪门禁
 
@@ -54,7 +56,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 只读检查至少覆盖：
 
 - 目标版本、tag、dist-tag、release notes和package metadata一致；
-- release baseline来自维护者指定且可由current `dev`证明的精确commit/tree；
+- release baseline来自维护者指定，或来自经维护者确认的缺省方案，并且可由current `dev`证明为精确commit/tree；
 - selection chain只含明确选择且带`-x`provenance的dev commits；没有`sourceDevCommit`的release-only metadata必须具有独立可验证的dev回流证据，当前owner不支持时拒绝该entry；release不自动追随dev；
 - current release HEAD/tree与Candidate generation、唯一tarball、release→main PR/main tree和transaction context完全匹配；
 - Hosted Windows、Host Node、Launcher、exact Node/PATH、primary owner、affected/full、bounded scheduling、heartbeat/checkpoint和timing复用现有唯一验证owner；
@@ -69,7 +71,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 准备阶段是正式开发/发布Task，遵循`task-triage`、`task-environment`、`task-development`、`task-verification`、`task-finish`和self-bootstrap唯一runner：
 
-1. 取得维护者确认的`<version>`、精确`<dev-baseline>`和有序待选择dev commits；fetch后重新证明这些commits属于current dev authority。
+1. 对明确指定的`<version>`、精确`<dev-baseline>`和有序待选择dev commits按原值处理；对未指定项先fetch并读取current `dev`，形成包含精确SHA/tree的缺省方案并取得确认，再重新证明确认的commits属于current dev authority。确认后不得把移动中的`dev`当作新的baseline或隐式扩展selection。
 2. 创建或复用唯一`release-<version>`协调Task/Environment。该Task的intent必须覆盖selection、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部current前保持active/blocked，不调用Task Finish或complete。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
 3. 通过release selection owner创建或核验唯一`release-<version>`集合。create不隐含push；同版本identity冲突时停止。
 4. 对维护者明确列出的commit逐个执行selection update；只允许`cherry-pick -x`。冲突立即停止，保留可诊断现场，不自动解决、继续、rebase、reset、force push或直接编辑冒充选择成功。
