@@ -32,6 +32,8 @@ Result 存在但未提供 current target 时 applicability 是 `unknown`；ident
 
 current planning nodes包含OpenSpec Change `tasks.md`时，Planning Review必须逐项语义判断checkbox能否在Change convergence/archive前完成，并把实际checklist写入`reviewed`；无法审查时写入`uncovered`及原因。只能在archive后由Formal Verification、Candidate、Completion Review、Task Finish、Environment cleanup或Task terminal authority完成的checkbox必须形成精确finding并返回`changes-required`，先修订planning artifact。不得用关键词匹配代替语义判断：实现或测试同名产品能力、且能在archive前完成的Change-owned action仍可合法保留。planning不含`tasks.md`时不创建虚假审查对象。
 
+当Task Intent或current planning nodes经语义审查后确实跨两个以上lifecycle owner时，Planning Review另外把实际受影响owner、每个owner保护的结果不变量与未覆盖边界写入现有`reviewed|uncovered|findings`。Owner集合必须来自Agent对current Task、canonical authority与planning artifacts的判断，不得按关键词生成通用authority map，也不得为单owner、code-only或不相关Task套用固定Delivery/Activation/Cleanup/Diagnostics清单。无法覆盖的相关owner写入`uncovered`及真实原因；只有遗漏会放行错误对象写入、证据失真或完成误报时才返回`changes-required`，一般完整性建议只记录finding。
+
 同时维护：
 
 - `reviewed`：至少一个实际完成审阅的可移植逻辑对象；
