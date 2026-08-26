@@ -105,6 +105,21 @@ test('closeout completes every owner in order and emits compact timeline output'
   assert.throws(() => inspectReleaseOrchestration(value, digest('f')), /does not match/u);
 });
 
+test('closeout accepts the official Doctor ok and health.ready contract', async () => {
+  const fixture = closeoutDependencies();
+  const invoke = fixture.dependencies.invokeRetainedController;
+  fixture.dependencies.invokeRetainedController = (controller, args) => {
+    if (args[0] === 'doctor') return { ok: true, health: { ready: true }, findings: [], effects: [], nextActions: [] };
+    return invoke(controller, args);
+  };
+  const value = await runReleaseOrchestration({
+    action: 'closeout', version: '1.0.0-rc.1', releaseTask: 'release-1.0.0-rc.1', publishRunId: 84,
+    repo: '/workspace', canonicalWorkspace: '/workspace', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
+  }, fixture.dependencies);
+  assert.equal(value.status, 'passed');
+  assert.equal(value.lifecycle.phase, 'closed');
+});
+
 test('terminal Task resume continues cleanup without repeating Task completion', async () => {
   const fixture = closeoutDependencies();
   let cleanupAttempts = 0;
