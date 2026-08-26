@@ -11,6 +11,7 @@ import {
   createReleaseSelection,
   freezeReleaseSelection,
   inspectReleaseSelection,
+  reconcileReleaseSelectionWithMain,
   reopenReleaseSelection,
   selectReleaseCommit,
 } from '../../tools/release/release-selection.mjs';
@@ -191,6 +192,67 @@ test('selection fails closed for baseline drift, dirty worktree and a real cherr
   assert.deepEqual(conflict.effects, []);
   assert.equal(conflict.conflict.recovery, 'git cherry-pick --abort');
   git(data.repo, 'cherry-pick', '--abort');
+});
+
+test('main reconciliation creates a new frozen generation with explicit parents and is idempotent', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.9', baseline: data.baseline, devRef: 'dev' });
+  selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.9', source: data.sourceA, devRef: 'dev' });
+  const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev' });
+  git(data.repo, 'branch', 'main', data.baseline);
+  git(data.repo, 'checkout', 'main');
+  fs.writeFileSync(path.join(data.repo, 'main-only.txt'), 'main change\n');
+  git(data.repo, 'add', 'main-only.txt');
+  git(data.repo, 'commit', '-m', 'main-only change');
+  const mainCommit = git(data.repo, 'rev-parse', 'HEAD');
+  git(data.repo, 'push', 'origin', 'main');
+  git(data.repo, 'checkout', 'release-0.1.0-rc.9');
+
+  const reconciled = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Resolve the current main ancestry before release PR.' });
+  assert.equal(reconciled.status, 'passed', JSON.stringify(reconciled));
+  assert.equal(reconciled.action, 'reconciled');
+  assert.equal(reconciled.generation, 2);
+  assert.equal(reconciled.freezeHistory.at(-1).generation, 2);
+  const entry = reconciled.reconciliationChain[0];
+  assert.equal(entry.mainParent, mainCommit);
+  assert.equal(entry.releaseParent, frozen.releaseHead);
+  assert.equal(entry.resultReleaseCommit, reconciled.releaseHead);
+  assert.equal(entry.parents.includes(mainCommit), true);
+  assert.equal(entry.parents.includes(frozen.releaseHead), true);
+  assert.match(entry.reconciliationIdentity, /^sha256-[a-f0-9]{64}$/u);
+  assert.equal(git(data.repo, 'show', '-s', '--format=%B', reconciled.releaseHead).includes(`Buildr-Main-Reconciliation-Main: ${mainCommit}`), true);
+
+  const repeated = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Same reconciliation readback.' });
+  assert.equal(repeated.status, 'passed');
+  assert.equal(repeated.action, 'already-converged');
+  assert.deepEqual(repeated.effects, []);
+  assert.equal(repeated.releaseHead, reconciled.releaseHead);
+});
+
+test('main reconciliation leaves a real conflict for explicit resolution and does not commit it', (t) => {
+  const data = fixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', baseline: data.baseline, devRef: 'dev' });
+  selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.10', source: data.sourceA, devRef: 'dev' });
+  const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev' });
+  git(data.repo, 'branch', 'main', data.baseline);
+  git(data.repo, 'checkout', 'main');
+  fs.writeFileSync(path.join(data.repo, 'selection.txt'), 'main conflicting content\n');
+  git(data.repo, 'commit', '-am', 'main conflicting change');
+  const mainCommit = git(data.repo, 'rev-parse', 'HEAD');
+  git(data.repo, 'push', 'origin', 'main');
+  git(data.repo, 'checkout', 'release-0.1.0-rc.10');
+
+  const blocked = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Expose conflict for review.' });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'release_main_reconciliation_conflict');
+  assert.deepEqual(blocked.effects, []);
+  assert.equal(blocked.conflict.mainParent, mainCommit);
+  assert.deepEqual(blocked.conflict.conflictPaths, ['selection.txt']);
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), frozen.releaseHead);
+  git(data.repo, 'merge', '--abort');
+  assert.equal(inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev' }).status, 'frozen');
 });
 
 test('cleanup is local-only, explicit and ignores retained remote-tracking release projections', (t) => {

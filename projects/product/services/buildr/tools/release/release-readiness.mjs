@@ -41,11 +41,11 @@ export function createReleaseContext(input) {
   closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'environment', 'node', 'workflow', 'taskCorrelation'], 'release context input');
   const value = {
     schemaVersion: releaseContextSchema,
-    selection: optionalProjection(input.selection, ['identity', 'version', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status'], 'selection'),
+    selection: optionalProjection(input.selection, ['identity', 'version', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
     release: optionalProjection(input.release, ['version', 'sourceCommit', 'sourceTree'], 'release'),
     candidate: optionalProjection(input.candidate, ['workflow', 'runId', 'runAttempt', 'runUrl', 'sourceCommit', 'sourceTree', 'registryIdentity', 'aggregateIdentity', 'status'], 'candidate'),
     artifact: optionalProjection(input.artifact, ['artifactName', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'], 'artifact'),
-    convergence: optionalProjection(input.convergence, ['mainCommit', 'mainTree', 'devCommit', 'devTree'], 'convergence'),
+    convergence: optionalProjection(input.convergence, ['mainCommit', 'mainTree', 'devCommit', 'devTree', 'mergeCommit', 'mergeParents', 'mergeMethod', 'reconciliationIdentity'], 'convergence'),
     environment: optionalProjection(input.environment, ['identity', 'status', 'taskId', 'nodeVersion', 'nodeIdentity'], 'environment'),
     node: optionalProjection(input.node, ['authority', 'version', 'executionIdentity'], 'node'),
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
@@ -145,6 +145,14 @@ export function evaluateReleaseReadiness(input) {
     if (context.convergence.mainTree !== context.release.sourceTree) findings.push(finding('main-tree-mismatch', 'git-convergence', context.release.sourceTree, context.convergence.mainTree, '完成release到main的tree-equivalent收敛后重试。'));
     checkSha(findings, context.convergence.mainCommit, 'main-commit', 'git-convergence');
     checkSha(findings, context.convergence.devCommit, 'dev-commit', 'git-convergence');
+  }
+  if (context.selection?.reconciliationIdentity && ['dispatch-check', 'pre-tag'].includes(input.stage)) {
+    if (context.convergence?.reconciliationIdentity !== context.selection.reconciliationIdentity) findings.push(finding('main-reconciliation-identity-mismatch', 'git-convergence', context.selection.reconciliationIdentity, context.convergence?.reconciliationIdentity ?? null, '按current reconciliation identity重建release context。'));
+    if (context.convergence?.mergeMethod !== 'merge') findings.push(finding('main-merge-method-mismatch', 'git-convergence', 'merge', context.convergence?.mergeMethod ?? null, 'release→main必须使用Create a merge commit并重新读取结果。'));
+    const mergeParents = context.convergence?.mergeParents;
+    if (!Array.isArray(mergeParents) || mergeParents.length !== 2) findings.push(finding('main-merge-parents-missing', 'git-convergence', 'exactly two merge parents', mergeParents ?? null, '重新读取main merge commit的两个父提交。'));
+    if (context.convergence?.mergeCommit !== context.convergence?.mainCommit) findings.push(finding('main-merge-commit-mismatch', 'git-convergence', context.convergence?.mainCommit ?? null, context.convergence?.mergeCommit ?? null, '使用current main merge commit重建convergence evidence。'));
+    if (context.release && Array.isArray(mergeParents) && !mergeParents.includes(context.release.sourceCommit)) findings.push(finding('main-merge-release-parent-missing', 'git-convergence', context.release.sourceCommit, mergeParents, '重新读取包含current release source的main merge parents。'));
   }
 
   const ready = findings.length === 0;

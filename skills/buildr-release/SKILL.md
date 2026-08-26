@@ -62,7 +62,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 - Hosted Windows、Host Node、Launcher、exact Node/PATH、primary owner、affected/full、bounded scheduling、heartbeat/checkpoint和timing复用现有唯一验证owner；
 - release/support Task correlation来自current read model，Delivery、Activation、Environment Cleanup、Diagnostics和Publication分别表达；
 - `publish.yml`只有一个依赖可逆门禁的protected job拥有`npm-production`、`contents: write`和`id-token: write`，且一次审批消费同一context和tarball；
-- release→main只有一个受保护PR；squash后main tree等于release tree；
+- release→main只有一个受保护PR；若发生main reconciliation，PR必须使用merge commit并回读两个父提交与reconciliation identity，不能用squash/rebase或tree相等替代；
 - 候选版不误用`latest`，稳定版不误用`next`，RC反馈和已知限制已评估。
 
 输出`ready|blocked|already-published`、current identities、collect-all findings、`effects: []`和唯一下一步。检查不得顺带修复、dispatch或创建ref。
@@ -79,8 +79,9 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 6. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。support Task按正式Development/Verification/Finish闭环交付，matching self-bootstrap仍由唯一runner完成，失败不改写Delivery；support Task terminal、Delivery或Activation都不使release协调Task completed。
 7. Freeze current release HEAD/tree与selection chain；任一内容变化使旧freeze、Candidate、artifact、readiness和context stale。
 8. 对该release source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一source SHA/tree、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active/blocked，不得Finish/complete或把support delivery误报为准备完成。
-9. 为current generation创建或复用唯一`codex/release-main-<version>-g<generation>` carrier，并只以该carrier创建唯一release→main受保护PR；正式远端`release-<version>`不作为PR carrier。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败先以`candidate-failed-shard-retry.mjs inspect --run-id <run-id> --source-commit <release-sha>`核验同一run、bootstrap、失败shard与aggregate终态，取得明确重跑授权后再用同一owner的`retry ... --confirm`执行GitHub `rerun --failed`。新attempt只重跑失败job与aggregate；终态必须回读同一run的新attempt、`Candidate gate`和aggregate workflow identity，不得dispatch新的完整run或跨run拼接evidence。
-10. merge后核验`origin/main^{tree}`精确等于冻结release tree。commit identity可因squash不同，tree不一致或remote race立即停止。
+9. 若current main与冻结release无法直接收敛，先在matching release execution worktree调用`release-selection.mjs reconcile-main --confirm --reason <text>`；该动作只记录main/release父提交并保留冲突现场，禁止自动解决、`ours`、reset、rebase或force push。维护者解决冲突后再次调用同一动作，成功产生新release generation；旧Candidate、artifact、readiness和context全部失效，必须对新release SHA重新运行完整Candidate。
+10. 为current generation创建或复用唯一`codex/release-main-<version>-g<generation>` carrier，并只以该carrier创建唯一release→main受保护PR；正式远端`release-<version>`不作为PR carrier。release PR必须使用GitHub `Create a merge commit`；终态readback必须证明merge commit、两个父提交、当前carrier和main tree。新commit形成新release SHA后必须重新运行完整Candidate；同SHA暂态失败先以`candidate-failed-shard-retry.mjs inspect --run-id <run-id> --source-commit <release-sha>`核验同一run、bootstrap、失败shard与aggregate终态，取得明确重跑授权后再用同一owner的`retry ... --confirm`执行GitHub `rerun --failed`。新attempt只重跑失败job与aggregate；终态必须回读同一run的新attempt、`Candidate gate`和aggregate workflow identity，不得dispatch新的完整run或跨run拼接evidence。
+11. merge后核验`origin/main^{tree}`精确等于当前release tree，并核对main commit的父提交包含current carrier。merge method、tree或remote ref不一致时立即停止。
 11. 调用`tools/release/release-orchestration-runner.mjs prepare-dispatch`，由编排器复用transaction readiness owner构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
 12. 只有current selection、Candidate aggregate、唯一tarball、main tree与dispatch-check readiness全部matching时，编排结果才进入`awaiting-publication-authorization`。报告current orchestration identity、context digest、Release Phase Timeline identity、已成立effects和唯一publication授权请求，然后停止。`release-<version>`协调Task必须保持active；Task状态、历史授权或readiness通过都不构成publication授权。
 

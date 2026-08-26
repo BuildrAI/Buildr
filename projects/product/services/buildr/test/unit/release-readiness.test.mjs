@@ -61,3 +61,31 @@ test('pre-candidate reports missing owner facts without requiring future Candida
   assert.deepEqual(result.findings.map((item) => item.code), ['taskCorrelation-missing']);
   assert.equal(result.frozen, false);
 });
+
+test('reconciled release readiness requires matching merge-commit provenance', () => {
+  const reconciliationIdentity = digest('r');
+  const context = createReleaseContext(input({
+    selection: { ...input().selection, reconciliationIdentity },
+    convergence: {
+      ...input().convergence,
+      mergeCommit: sha('c'),
+      mergeParents: [sha('d'), sha('a')],
+      mergeMethod: 'merge',
+      reconciliationIdentity,
+    },
+  }));
+  const ready = evaluateReleaseReadiness({ stage: 'dispatch-check', context });
+  assert.equal(ready.status, 'ready', JSON.stringify(ready));
+
+  const blocked = evaluateReleaseReadiness({
+    stage: 'dispatch-check',
+    context: createReleaseContext({
+      ...input(),
+      selection: { ...input().selection, reconciliationIdentity },
+      convergence: { ...input().convergence, mergeCommit: sha('c'), mergeParents: [sha('d'), sha('a')], mergeMethod: 'squash', reconciliationIdentity: digest('x') },
+    }),
+  });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.findings.some((item) => item.code === 'main-reconciliation-identity-mismatch'), true);
+  assert.equal(blocked.findings.some((item) => item.code === 'main-merge-method-mismatch'), true);
+});
