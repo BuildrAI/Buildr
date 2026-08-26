@@ -37,6 +37,18 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /`handled\|no-action` 必须提供非空完整处理意见/);
   assert.match(skill, /digest冲突，重新inspect/);
   assert.match(skill, /完整原始 `reportMarkdown`/);
+  assert.match(skill, /有界执行事实图/);
+  assert.match(skill, /Task Record时点与终态.*Development\/Review\/Verification current摘要.*Execution Record\/Finish timing/);
+  assert.match(skill, /已有复盘是本次重新思考的证据之一，不是必须保留的结论/);
+  assert.match(skill, /每次生成或重做复盘都主动判断是否存在确定性流程候选/);
+  assert.match(skill, /closed输入、唯一Owner、明确停止条件、可验证结果与幂等\/有界恢复/);
+  assert.match(skill, /Buildr应该约束Agent不要做错事，而不是要求Agent必须通过Buildr才能做事/);
+  assert.match(skill, /普通动作必须经过Buildr.*唯一合法路径.*通用许可层\/生命周期gate/);
+  assert.match(skill, /Rule.*Skill.*Application\/CLI workflow.*checker\/test/);
+  assert.match(skill, /按实际目标、closed边界和当前实现聚类、合并或丢弃，不按关键词自动聚类/);
+  assert.match(skill, /一人或多人明确接受/);
+  assert.match(skill, /不建立reviewer、票数或approval状态/);
+  assert.match(skill, /候选只授权创建或关联承接Task，不授权直接修改/);
   assert.match(skill, /不生成新 action item ID/);
   assert.match(skill, /create --status todo --retrospective-source/);
   assert.match(skill, /`handled`.*所有有效方向均已有承接 Task/);
@@ -52,6 +64,13 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(capabilityContract, /保持 current disposition，不用旧授权继续写入/);
   assert.match(capabilityContract, /有界批量只读/);
   assert.match(capabilityContract, /不得自动分析、评分或处置/);
+  assert.match(capabilityContract, /主动探索确定性流程候选/);
+  assert.match(capabilityContract, /closed输入、Owner、停止条件、结果证据、可恢复性、预期收益/);
+  assert.match(capabilityContract, /不得把推荐路径变成唯一合法路径、通用许可层或lifecycle gate/);
+  assert.match(capabilityContract, /有界摘要收窄对象.*必要来源逐项inspect/);
+  assert.match(capabilityContract, /不建立approval状态/);
+  assert.match(capabilityContract, /候选确认只授权承接Task effects，不授权直接修改其建议落点/);
+  assert.match(capabilityContract, /不得强制固定候选列表或评分/);
   assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
 });
 
