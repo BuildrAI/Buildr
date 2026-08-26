@@ -434,7 +434,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (applicability.taskContext === 'stale' || applicability.planning === 'stale') return { mode: 'required', owner: 'task-development', action: 'planning', capability: { id: 'buildr.task-development', version: 2 }, summary: '刷新current Task context与完整planning snapshot；专业artifact仍由对应authority维护。' };
     if (!applicability.gates?.planning || reasonCodes.has('planning-missing-or-stale') || reasonCodes.has('planning-changes-required')) return { mode: 'recommended', owner: 'task-review', action: 'planning-review', capability: { id: 'buildr.task-review', version: 1 }, summary: '通过task-review完成current Planning Review，或记录明确的not-applicable/waived disposition。' };
     if (applicability.contentTarget !== 'current') return { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: '完成内容、测试开发与Change收敛后调用observe建立stable Content Target。' };
-    if (applicability.policy !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'policy', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current Task Verification declarations记录verification policy。' };
+    if (applicability.policy !== 'current') return { mode: 'recommended', owner: 'task-verification', action: 'plan-and-derive-policy', capability: { id: 'buildr.task-verification', version: 3 }, summary: '先形成并复核current closed Formal Verification Plan；按Plan完成必要Environment prepare，再通过Task Development discover派生并记录policy。' };
     const verificationReadiness = deriveFormalVerificationReadiness(persistence, applicability);
     if (verificationReadiness?.status === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'stabilize-formal-target', capability: null, summary: '处理Formal Verification readiness中的明确Change、Content Target或policy blocker，再进入正式验证。' };
     if (applicability.candidate !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'freeze', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用freeze形成或复用current Task Candidate；负向Verification仍需后续显式风险决定。' };
@@ -479,6 +479,105 @@ export function registerTaskDevelopmentApplication(runtime) {
   function inspectTaskDevelopment(targetRoot, taskId) {
     const inspectedTask = task(targetRoot, taskId);
     return inspectTaskDevelopmentCurrent(targetRoot, inspectedTask.taskId, { inspectedTask });
+  }
+
+  function discoverTaskDevelopmentInput(targetRoot, taskId, input) {
+    assertActionFields('discover', input, 'Task Development discover');
+    assertActionRequiredFields('discover', input, 'Task Development discover');
+    if (!['observe', 'policy'].includes(input.action)) throw taskDevelopmentError('task_development_discovery_action_invalid', 'discover.action 必须是 observe 或 policy。', 400, { field: 'action' });
+    if (input.action === 'observe' && input.formalPlans !== undefined) throw taskDevelopmentError('task_development_discovery_plans_forbidden', 'formalPlans只适用于policy discovery。', 400, { field: 'formalPlans' });
+    const inspected = task(targetRoot, taskId, { active: true });
+    const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
+    const execution = environment(targetRoot, taskId);
+    const receipt = persistence.receipt;
+    const context = taskContext(inspected, receipt.taskContext.changes);
+    const facts = {
+      receiptDigest: persistence.receiptDigest,
+      taskContextIdentity: context.identity,
+      planningIdentity: receipt.planning.identity,
+      planningTargetIdentity: receipt.planning.targetIdentity,
+    };
+    if (input.action === 'observe') {
+      return {
+        schemaVersion: 'buildr.task-development-current-input/v1',
+        operation: 'discover',
+        status: 'ready',
+        taskId,
+        action: 'observe',
+        inputJson: {
+          changeDispositions: context.changes,
+          planningTargetIdentity: receipt.planning.targetIdentity,
+        },
+        facts,
+        diagnostic: null,
+        effects: [],
+      };
+    }
+
+    if (input.formalPlans !== undefined) {
+      if (!receipt.contentTarget) throw taskDevelopmentError('task_development_content_target_required', 'Plan-derived policy discovery需要stable Content Target。', 409);
+      const projection = runtime.deriveTaskVerificationPolicyInput(targetRoot, taskId, {
+        targetIdentity: receipt.contentTarget.identity,
+        formalPlans: input.formalPlans,
+        declarationRoot: execution.environmentRoot,
+      });
+      return {
+        schemaVersion: 'buildr.task-development-current-input/v1',
+        operation: 'discover',
+        status: 'ready',
+        taskId,
+        action: 'policy',
+        inputJson: projection.inputJson,
+        facts: {
+          ...facts,
+          declarationIdentities: projection.selection.plans.map((item) => ({ project: item.project, identity: item.declarationIdentity })),
+          policyDisposition: 'derived-from-formal-plans',
+          formalPlanIdentities: projection.selection.plans,
+          notSelectedCapabilities: projection.selection.notSelectedCapabilities,
+        },
+        diagnostic: null,
+        effects: [],
+        nextActions: projection.nextActions,
+      };
+    }
+
+    const observations = declarations(targetRoot, taskId, execution.environmentRoot);
+    const policyCurrent = currentPolicy(receipt.verificationPolicy, observations, true);
+    const policyInput = policyCurrent
+      ? {
+          capabilities: receipt.verificationPolicy.capabilities,
+          coverageGaps: receipt.verificationPolicy.coverageGaps,
+          overrides: receipt.verificationPolicy.overrides,
+        }
+      : (() => {
+        const capabilities = [];
+        const coverageGaps = [];
+          if (isWorkspaceOnlyTaskRecord(inspected.record)) {
+            coverageGaps.push({ scope: 'workspace', summary: 'Task 没有 Project/Service scope，当前没有可用的 workspace Verification capability。' });
+          }
+          for (const observation of [...observations].sort((left, right) => left.project.localeCompare(right.project))) {
+            const usable = (observation.declaration?.capabilities || [])
+              .filter((candidate) => candidate.usableFor?.includes('task-delivery') === true)
+              .sort((left, right) => left.id.localeCompare(right.id));
+            if (!usable.length) {
+              coverageGaps.push({ scope: `project:${observation.project}`, summary: `Project ${observation.project} 没有可用于 task-delivery 的 Verification capability。` });
+              continue;
+            }
+            for (const candidate of usable) capabilities.push({ project: observation.project, capability: candidate.id, required: true });
+          }
+          return { capabilities, coverageGaps, overrides: [] };
+        })();
+    return {
+      schemaVersion: 'buildr.task-development-current-input/v1',
+      operation: 'discover',
+      status: 'ready',
+      taskId,
+      action: 'policy',
+      inputJson: policyInput,
+      facts: { ...facts, declarationIdentities: declarationValues(observations), policyDisposition: policyCurrent ? 'current' : 'derived-default' },
+      diagnostic: null,
+      effects: [],
+    };
   }
 
   function planningMutation(operation, targetRoot, taskId, input) {
@@ -847,6 +946,7 @@ export function registerTaskDevelopmentApplication(runtime) {
   Object.assign(runtime, {
     inspectTaskDevelopment: scoped(inspectTaskDevelopment),
     inspectTaskDevelopmentCurrent: scoped(inspectTaskDevelopmentCurrent),
+    discoverTaskDevelopmentInput: scoped(discoverTaskDevelopmentInput),
     beginTaskDevelopment: scoped(beginTaskDevelopment),
     recordTaskDevelopmentPlanning: scoped(recordTaskDevelopmentPlanning),
     observeTaskDevelopment: scoped(observeTaskDevelopment),

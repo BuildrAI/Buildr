@@ -54,6 +54,8 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
   assert.match(skill, /--compact/);
   assert.match(skill, /formalVerificationReadiness/);
+  assert.match(skill, /task-development discover/);
+  assert.match(skill, /buildr\.task-development-current-input\/v1/);
   assert.match(skill, /focused\/affected\/unit\/integration/);
   assert.match(skill, /Task外transient`verification run`和Candidate CI不读取readiness/);
   assert.match(skill, /省略顶层`planning`时Application会在任何Receipt写入前失败关闭/);
@@ -82,6 +84,8 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v2.md');
   assert.match(capabilityContract, /buildr\.task-development-driver-compact\/v1/);
   assert.match(capabilityContract, /response-only Formal Verification readiness/);
+  assert.match(capabilityContract, /discover/);
+  assert.match(capabilityContract, /buildr\.task-development-current-input\/v1/);
   assert.match(capabilityContract, /current Candidate已就绪且Verification缺失报告`ready`/);
   assert.match(capabilityContract, /字段omission不得表示清空、保留、patch或推断/);
 });

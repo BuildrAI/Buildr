@@ -32,6 +32,8 @@ Agent 负责选择 Git、拉取请求（Pull Request, PR）、分支与恢复策
 
 `run` 按 `preflight → prepare → verify → deliver → cleanup` 尝试自动化；这些阶段不是 Agent 必须遵循的唯一工作方式。出现冲突或远端变化时，Agent 可继续同一 run、处理交付适配（Delivery Adaptation）、改走 PR 或直接 Git。不得手写 resume token、claimed success 或语义等价证明。
 
+Agent-reviewed Delivery Adaptation必须对冻结Task Contribution的每个路径形成唯一处置：目标精确包含、carrier实际改变，或Agent通过matching run/resume使用`--reviewed-target-path <repository-selector>::<path>::<reason>`逐路径确认目标语义承接。Buildr只证明路径集合、Git bytes与identity闭合；逐路径理由仍是Agent判断，不被描述为机器证明。缺失、未知、重复、空理由或陈旧run/target/carrier输入保持同一run blocked。零差异适配仍需`--accept-zero-delta-adaptation`，且不隐式豁免逐路径覆盖。
+
 如果Agent误改原Task worktree并形成新的current Candidate，先重新读取Finish current facts。只有facts明确返回`stale-run-retirable`与available `finish-rollover`能力时，Agent才可显式执行：
 
 `buildr task finish rollover --task <task-id> --recovery-token <facts-token> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
@@ -59,8 +61,7 @@ Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每�
 
 环境清理由 Agent 在适当时机独立执行：`buildr task environment cleanup <task-id> --target <canonical-workspace> --json`
 
-Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态。无法证明 worktree 内容已交付、ownership 不明或 source 已漂移时必须保留现场。
-没有current Environment时，Cleanup必须报告`not-applicable`或`attention`，不得声称`cleaned`。
+Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态。无法证明 worktree 内容已交付、ownership 不明或 source 已漂移时必须保留现场；没有current Environment时，Cleanup必须报告`not-applicable`或`attention`，不得声称`cleaned`。
 
 精确 carrier cleanup、旧 run retirement和本地安全rollover只能通过 Buildr 提供的封闭原语执行。原语会重新验证 Task/run/carrier identity、ownership、repository topology、phase、side effects，以及对应路径需要的remote containment或carrier disposability proof，不接受调用方指定任意删除路径；事实不足时保留现场，由 Agent 选择下一策略。
 
@@ -70,7 +71,7 @@ Environment 只消费 Buildr 已持久化的交付证据或明确 abandon 终态
 - repository、branch、remote 或 Task identity 有歧义；
 - 需要 force push、覆盖他人提交或改写共享历史；
 - 无法证明 worktree、carrier 或资源属于当前 Task 并可安全删除；
-- 调用方试图伪造交付、语义等价或完成证据。
+- 调用方试图伪造交付、语义等价或完成证据；Agent-reviewed carrier没有完整处置Task Contribution的全部路径，或路径覆盖证明已漂移。
 
 Buildr 状态不一致、可重建证明缺失、重复观察已交付 repository、单个 Cleanup 或 Diagnostics 失败，不属于 Delivery 阻断条件。
 

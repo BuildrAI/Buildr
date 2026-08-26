@@ -45,10 +45,13 @@ function freezeHistoryRef(version, generation) {
   return `${lifecycleRef(version, 'freezes')}/${generation}`;
 }
 
-function resolveCommit(ref, repo, dependencies) {
+function resolveCommit(ref, repo, dependencies, { allowFailure = false } = {}) {
   const result = runGit(['rev-parse', '--verify', `${ref}^{commit}`], repo, dependencies, { allowFailure: true });
   const commit = result.stdout.trim();
-  if (result.status !== 0 || !SHA.test(commit)) throw new Error(`Git commit is unavailable: ${ref}`);
+  if (result.status !== 0 || !SHA.test(commit)) {
+    if (allowFailure) return null;
+    throw new Error(`Git commit is unavailable: ${ref}`);
+  }
   return commit;
 }
 
@@ -82,6 +85,27 @@ function commitBody(commit, repo, dependencies) {
   return runGit(['show', '-s', '--format=%B', commit], repo, dependencies).stdout;
 }
 
+function commitParents(commit, repo, dependencies) {
+  const values = runGit(['rev-list', '--parents', '-n', '1', commit], repo, dependencies).stdout.trim().split(/\s+/u);
+  return values.slice(1).filter((value) => SHA.test(value));
+}
+
+function trailer(body, name) {
+  const match = body.match(new RegExp(`^${name}:\\s*((?:sha256-)?[0-9a-f]{40,64})\\s*$`, 'imu'));
+  return match?.[1] ?? null;
+}
+
+function mainReconciliationMetadata(commit, repo, dependencies) {
+  const parents = commitParents(commit, repo, dependencies);
+  const body = commitBody(commit, repo, dependencies);
+  const mainParent = trailer(body, 'Buildr-Main-Reconciliation-Main');
+  const releaseParent = trailer(body, 'Buildr-Main-Reconciliation-Release');
+  const resolutionIdentity = trailer(body, 'Buildr-Main-Reconciliation-Resolution');
+  if (parents.length < 2 || !mainParent || !releaseParent || !resolutionIdentity) return null;
+  if (!parents.includes(mainParent) || !parents.includes(releaseParent)) return null;
+  return { parents, mainParent, releaseParent, resolutionIdentity };
+}
+
 function selectionSource(commit, repo, dependencies) {
   const body = commitBody(commit, repo, dependencies);
   const match = body.match(/cherry picked from commit ([0-9a-f]{40})/iu);
@@ -90,12 +114,29 @@ function selectionSource(commit, repo, dependencies) {
 
 function selectionCommits(baseline, branchHead, repo, dependencies) {
   const result = runGit(['rev-list', '--reverse', '--first-parent', `${baseline}..${branchHead}`], repo, dependencies);
-  return result.stdout.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean).map((commit, index) => ({
-    order: index + 1,
-    sourceDevCommit: selectionSource(commit, repo, dependencies),
-    resultReleaseCommit: commit,
-    changedPaths: commitChangedPaths(commit, repo, dependencies),
-  }));
+  const history = result.stdout.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean).map((commit, index) => {
+    const reconciliation = mainReconciliationMetadata(commit, repo, dependencies);
+    if (reconciliation) return {
+      kind: 'main-reconciliation',
+      order: index + 1,
+      sourceDevCommit: null,
+      resultReleaseCommit: commit,
+      changedPaths: commitChangedPaths(commit, repo, dependencies),
+      reconciliationIdentity: digest({ commit, ...reconciliation }),
+      ...reconciliation,
+    };
+    const sourceDevCommit = selectionSource(commit, repo, dependencies);
+    return {
+      kind: sourceDevCommit ? 'selection' : 'invalid',
+      order: index + 1,
+      sourceDevCommit,
+      resultReleaseCommit: commit,
+      changedPaths: commitChangedPaths(commit, repo, dependencies),
+    };
+  });
+  const selectionChain = history.filter((entry) => entry.kind === 'selection').map((entry, index) => ({ ...entry, order: index + 1 }));
+  const reconciliationChain = history.filter((entry) => entry.kind === 'main-reconciliation').map((entry, index) => ({ ...entry, order: index + 1 }));
+  return { history, selectionChain, reconciliationChain };
 }
 
 function refsUnder(prefix, repo, dependencies) {
@@ -109,7 +150,7 @@ function refsUnder(prefix, repo, dependencies) {
     });
 }
 
-function readFreezeHistory(version, selectionChain, devBaseline, repo, dependencies) {
+function readFreezeHistory(version, releaseHistory, devBaseline, repo, dependencies) {
   const prefix = `${lifecycleRef(version, 'freezes')}/`;
   return refsUnder(prefix, repo, dependencies).map(({ ref, commit }) => {
     const suffix = ref.slice(prefix.length);
@@ -117,7 +158,7 @@ function readFreezeHistory(version, selectionChain, devBaseline, repo, dependenc
     if (!Number.isSafeInteger(generation) || generation < 0 || !SHA.test(commit)) {
       return { generation: null, commit, ref, state: 'invalid', tree: null };
     }
-    const expectedCommit = generation === 0 ? devBaseline : selectionChain[generation - 1]?.resultReleaseCommit;
+    const expectedCommit = generation === 0 ? devBaseline : releaseHistory[generation - 1]?.resultReleaseCommit;
     return {
       generation,
       commit,
@@ -144,11 +185,16 @@ function selectionIdentity(model) {
     releaseTree: model.releaseTree,
     generation: model.generation,
     selectionChain: model.selectionChain,
+    reconciliationChain: model.reconciliationChain,
     freeze: model.freeze,
     freezeHistory: model.freezeHistory,
     abandon: model.abandon,
   };
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex')}`;
+}
+
+function digest(value) {
+  return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
 function errorResult(operation, version, error, extra = {}) {
@@ -179,9 +225,11 @@ function readState(options, dependencies) {
   const releaseHead = resolveCommit(`refs/heads/${branch}`, repo, dependencies);
   const frozenAt = refExists(frozenRef, repo, dependencies) ? resolveCommit(frozenRef, repo, dependencies) : null;
   const abandonedAt = refExists(abandonedRef, repo, dependencies) ? resolveCommit(abandonedRef, repo, dependencies) : null;
-  const selectionChain = selectionCommits(devBaseline, releaseHead, repo, dependencies);
-  const invalidSelection = selectionChain.find((entry) => !entry.sourceDevCommit || !ancestor(devBaseline, entry.sourceDevCommit, repo, dependencies) || !ancestor(entry.sourceDevCommit, devHead, repo, dependencies));
-  const freezeHistory = readFreezeHistory(version, selectionChain, devBaseline, repo, dependencies);
+  const releaseHistory = selectionCommits(devBaseline, releaseHead, repo, dependencies);
+  const invalidSelection = releaseHistory.selectionChain.find((entry) => !ancestor(devBaseline, entry.sourceDevCommit, repo, dependencies) || !ancestor(entry.sourceDevCommit, devHead, repo, dependencies));
+  const invalidHistory = releaseHistory.history.find((entry) => entry.kind === 'invalid');
+  const invalidProvenance = invalidSelection ?? invalidHistory;
+  const freezeHistory = readFreezeHistory(version, releaseHistory.history, devBaseline, repo, dependencies);
   const invalidFreeze = freezeHistory.find((entry) => entry.state !== 'valid');
   const freeze = frozenAt ? { state: frozenAt === releaseHead ? 'frozen' : 'stale', commit: frozenAt } : { state: 'open', commit: null };
   const abandon = abandonedAt ? { state: 'abandoned', commit: abandonedAt } : { state: 'active', commit: null };
@@ -195,21 +243,22 @@ function readState(options, dependencies) {
     devBaseline,
     releaseHead,
     releaseTree: treeOf(releaseHead, repo, dependencies),
-    generation: selectionChain.length,
+    generation: releaseHistory.history.length,
     changedPaths: changedPaths(devBaseline, releaseHead, repo, dependencies),
-    selectionChain,
+    selectionChain: releaseHistory.selectionChain,
+    reconciliationChain: releaseHistory.reconciliationChain,
     freezeHistory,
     freeze,
     abandon,
-    status: invalidSelection || invalidFreeze ? 'blocked' : abandon.state === 'abandoned' ? 'abandoned' : freeze.state === 'stale' ? 'stale' : freeze.state === 'frozen' ? 'frozen' : 'ready',
-    integrity: invalidSelection
-      ? { status: 'invalid', code: 'selection_provenance_missing', resultReleaseCommit: invalidSelection.resultReleaseCommit }
+    status: invalidSelection || invalidHistory || invalidFreeze ? 'blocked' : abandon.state === 'abandoned' ? 'abandoned' : freeze.state === 'stale' ? 'stale' : freeze.state === 'frozen' ? 'frozen' : 'ready',
+    integrity: invalidProvenance
+      ? { status: 'invalid', code: 'selection_provenance_missing', resultReleaseCommit: invalidProvenance.resultReleaseCommit }
       : invalidFreeze
         ? { status: 'invalid', code: 'freeze_history_invalid', ref: invalidFreeze.ref, commit: invalidFreeze.commit }
         : { status: 'valid' },
     effects: [],
-    diagnostic: invalidSelection
-      ? { code: 'selection_provenance_invalid', message: `Release commit ${invalidSelection.resultReleaseCommit} has missing or non-current cherry-pick -x provenance.` }
+    diagnostic: invalidProvenance
+      ? { code: 'selection_provenance_invalid', message: `Release commit ${invalidProvenance.resultReleaseCommit} has missing or non-current cherry-pick -x provenance.` }
       : invalidFreeze
         ? { code: 'release_freeze_history_invalid', message: `Release freeze history ref ${invalidFreeze.ref} does not match generation ${invalidFreeze.generation ?? 'unknown'}.` }
         : null,
@@ -263,6 +312,20 @@ export function selectReleaseCommit(options = {}, dependencies = {}) {
     const repo = path.resolve(options.repo ?? process.cwd());
     const state = readState({ ...options, version }, dependencies);
     assertActive(state, 'update');
+    const currentBranch = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim() || null;
+    const currentHead = resolveCommit('HEAD', repo, dependencies);
+    if (currentBranch !== state.branch || currentHead !== state.releaseHead) {
+      return errorResult('update', version, new Error(`Release selection update requires checkout ${state.branch} at ${state.releaseHead}; current checkout is ${currentBranch ?? 'detached'} at ${currentHead}.`), {
+        code: 'release_selection_target_mismatch',
+        details: {
+          expectedBranch: state.branch,
+          expectedHead: state.releaseHead,
+          actualBranch: currentBranch,
+          actualHead: currentHead,
+        },
+        nextActions: [`切换到 ${state.branch} 并确认 HEAD 为 ${state.releaseHead} 后重试；当前 workspace 不得执行 Release selection update。`],
+      });
+    }
     cleanWorktree(repo, dependencies);
     const source = resolveCommit(options.source, repo, dependencies);
     const devHead = resolveCommit(options.devRef ?? state.devRef, repo, dependencies);
@@ -308,6 +371,87 @@ export function freezeReleaseSelection(options = {}, dependencies = {}) {
     return { ...result, operation: 'freeze', status: 'passed', effects: [{ type: 'release-frozen', ref: frozenRef, historyRef, commit: state.releaseHead, generation: state.generation }], nextActions: ['下游 consumer 必须绑定当前 selectionIdentity；reopen或任何 release 内容变化都会使旧Candidate、artifact、readiness与transaction context stale。'] };
   } catch (error) {
     return errorResult('freeze', version, error, { code: 'release_selection_freeze_blocked' });
+  }
+}
+
+export function reconcileReleaseSelectionWithMain(options = {}, dependencies = {}) {
+  const version = options.version;
+  try {
+    if (options.confirm !== true) throw new Error('Main reconciliation requires explicit confirmation.');
+    const reason = String(options.reason ?? '').trim();
+    if (!reason) throw new Error('Main reconciliation requires a non-empty reason.');
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const state = readState(options, dependencies);
+    if (state.status !== 'frozen') throw new Error(`Release ${state.version} must be currently frozen before main reconciliation.`);
+    const currentBranch = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim() || null;
+    const currentHead = resolveCommit('HEAD', repo, dependencies);
+    if (currentBranch !== state.branch || currentHead !== state.releaseHead) throw new Error(`Main reconciliation requires checkout ${state.branch} at ${state.releaseHead}; current checkout is ${currentBranch ?? 'detached'} at ${currentHead}.`);
+    const mainRef = options.mainRef ?? 'origin/main';
+    const mainCommit = resolveCommit(mainRef, repo, dependencies);
+    const previous = state.reconciliationChain.at(-1);
+    if (previous?.mainParent === mainCommit && previous.resultReleaseCommit === state.releaseHead && state.freeze.commit === state.releaseHead) {
+      return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', effects: [], reconciliation: previous, nextActions: ['使用当前 release generation 重新生成 Candidate、artifact 与 readiness。'] };
+    }
+    if (previous) throw new Error(`Release ${state.version} already has a main reconciliation for ${previous.mainParent}; a second reconciliation is not allowed.`);
+
+    const mergeHead = resolveCommit('MERGE_HEAD', repo, dependencies, { allowFailure: true });
+    const mergeInProgress = mergeHead !== null;
+    const releaseParent = state.releaseHead;
+    if (mergeInProgress && mergeHead !== mainCommit) throw new Error(`Existing merge in progress targets ${mergeHead}, not expected current main ${mainCommit}.`);
+    if (!mergeInProgress) {
+      cleanWorktree(repo, dependencies);
+      const merged = runGit(['merge', '--no-ff', '--no-commit', mainRef], repo, dependencies, { allowFailure: true });
+      if (merged.status !== 0) {
+        const paths = runGit(['diff', '--name-only', '--diff-filter=U'], repo, dependencies, { allowFailure: true }).stdout.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean).sort();
+        return errorResult('reconcile-main', version, new Error(`main reconciliation merge of ${mainCommit} into ${releaseParent} requires conflict resolution.`), {
+          code: 'release_main_reconciliation_conflict',
+          details: { mainParent: mainCommit, releaseParent, conflictPaths: paths, stderr: merged.stderr.trim() },
+          conflict: { mainParent: mainCommit, releaseParent, conflictPaths: paths, recovery: '解决冲突后重新调用 reconcile-main；不得使用 ours、reset 或 force push' },
+          nextActions: ['在当前 release execution worktree 由维护者解决列出的语义冲突；解决后保持 MERGE_HEAD，再用同一 reason/confirm 重试。'],
+        });
+      }
+    }
+    const unresolved = runGit(['diff', '--name-only', '--diff-filter=U'], repo, dependencies, { allowFailure: true }).stdout.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean).sort();
+    if (unresolved.length) return errorResult('reconcile-main', version, new Error('Main reconciliation still has unresolved conflict paths.'), {
+      code: 'release_main_reconciliation_unresolved',
+      details: { mainParent: mainCommit, releaseParent, conflictPaths: unresolved },
+      conflict: { mainParent: mainCommit, releaseParent, conflictPaths: unresolved, recovery: '解决全部冲突后重新调用 reconcile-main' },
+      nextActions: ['解决全部冲突并确认 index 无未合并路径；不得直接提交未解决现场。'],
+    });
+    const resolvedTree = runGit(['write-tree'], repo, dependencies).stdout.trim();
+    const resolutionIdentity = digest({ version: state.version, mainParent: mainCommit, releaseParent, resolvedTree, reason });
+    const message = [
+      `Release ${state.version} main reconciliation`,
+      '',
+      reason,
+      '',
+      `Buildr-Main-Reconciliation-Main: ${mainCommit}`,
+      `Buildr-Main-Reconciliation-Release: ${releaseParent}`,
+      `Buildr-Main-Reconciliation-Resolution: ${resolutionIdentity}`,
+    ].join('\n');
+    runGit(['commit', '-m', message], repo, dependencies);
+    const reconciledCommit = resolveCommit('HEAD', repo, dependencies);
+    const parents = commitParents(reconciledCommit, repo, dependencies);
+    if (!parents.includes(mainCommit) || !parents.includes(releaseParent)) throw new Error('Main reconciliation commit does not contain the expected main and release parents.');
+    const newGeneration = state.generation + 1;
+    const frozenRef = lifecycleRef(state.version, 'frozen');
+    const historyRef = freezeHistoryRef(state.version, newGeneration);
+    updateRefs([
+      `create ${historyRef} ${reconciledCommit}`,
+      `update ${frozenRef} ${reconciledCommit} ${state.freeze.commit}`,
+    ], repo, dependencies);
+    const result = readState(options, dependencies);
+    return {
+      ...result,
+      operation: 'reconcile-main',
+      status: 'passed',
+      action: 'reconciled',
+      effects: [{ type: 'main-reconciliation-merge-created', mainParent: mainCommit, releaseParent, resultReleaseCommit: reconciledCommit, generation: newGeneration, resolutionIdentity }],
+      reconciliation: result.reconciliationChain.at(-1),
+      nextActions: ['旧 Candidate、artifact、readiness 与 transaction context 已失效；对新的 release HEAD/tree 重新运行完整 Candidate。'],
+    };
+  } catch (error) {
+    return errorResult('reconcile-main', version, error, { code: 'release_main_reconciliation_blocked' });
   }
 }
 
@@ -391,17 +535,18 @@ function cliOptions(parsed) {
     source: parsed.option('source'),
     reason: parsed.option('reason'),
     confirm: parsed.has('confirm'),
+    mainRef: parsed.option('main-ref', 'origin/main'),
   };
 }
 
 function runCli(argv) {
   const parsed = parseArguments(argv);
   const operation = parsed.positionals[0];
-  if (!['create', 'update', 'inspect', 'freeze', 'reopen', 'abandon', 'cleanup'].includes(operation)) throw new Error('Usage: release-selection.mjs <create|update|inspect|freeze|reopen|abandon|cleanup> --version <version> [--repo <path>] [--dev-ref <ref>] [--baseline <commit>] [--source <commit>] [--reason <text>] [--confirm]');
+  if (!['create', 'update', 'inspect', 'freeze', 'reconcile-main', 'reopen', 'abandon', 'cleanup'].includes(operation)) throw new Error('Usage: release-selection.mjs <create|update|inspect|freeze|reconcile-main|reopen|abandon|cleanup> --version <version> [--repo <path>] [--dev-ref <ref>] [--baseline <commit>] [--source <commit>] [--main-ref <ref>] [--reason <text>] [--confirm]');
   const options = cliOptions(parsed);
   if (operation === 'create' && !options.baseline) throw new Error('Missing required --baseline.');
   if (operation === 'update' && !options.source) throw new Error('Missing required --source.');
-  const result = operation === 'create' ? createReleaseSelection(options) : operation === 'update' ? selectReleaseCommit(options) : operation === 'inspect' ? inspectReleaseSelection(options) : operation === 'freeze' ? freezeReleaseSelection(options) : operation === 'reopen' ? reopenReleaseSelection(options) : operation === 'abandon' ? abandonReleaseSelection(options) : cleanupReleaseSelection(options);
+  const result = operation === 'create' ? createReleaseSelection(options) : operation === 'update' ? selectReleaseCommit(options) : operation === 'inspect' ? inspectReleaseSelection(options) : operation === 'freeze' ? freezeReleaseSelection(options) : operation === 'reconcile-main' ? reconcileReleaseSelectionWithMain(options) : operation === 'reopen' ? reopenReleaseSelection(options) : operation === 'abandon' ? abandonReleaseSelection(options) : cleanupReleaseSelection(options);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status === 'blocked') process.exitCode = 1;
 }

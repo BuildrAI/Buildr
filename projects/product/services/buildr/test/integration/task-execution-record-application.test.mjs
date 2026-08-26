@@ -386,6 +386,31 @@ test('portable view复用同一authority并安全读取限量正文', (t) => {
   });
 });
 
+test('open Verification record exposes bounded current-machine progress and clears it on seal', (t) => {
+  const { root, runtime } = fixture(t);
+  const opened = open(runtime, root, 'record-task', 'progress-run');
+  const progress = {
+    capabilityId: 'product.verification', phase: 'command', status: 'running',
+    pid: 1234, processGroupId: 1234, completed: 1, total: 3,
+    lastOutputSummary: 'browser phase started', lastOutputBytes: 21,
+  };
+  const updated = runtime.updateTaskExecutionRecordProgress(root, opened.record.recordId, {
+    runIdentity: opened.record.runIdentity,
+    invocationIdentity: opened.record.invocationIdentity,
+    producer: opened.record.producer,
+    progress,
+  });
+  assert.equal(updated.record.currentProgress.scope, 'current-machine');
+  const detail = runtime.inspectTaskExecutionRecordView(root, 'record-task', opened.record.recordId);
+  assert.equal(detail.record.openLocalProgress.phase, 'command');
+  assert.equal(detail.record.openLocalProgress.pid, 1234);
+  runtime.sealTaskExecutionRecord(root, opened.record.recordId, {
+    outcome: 'passed', files: [{ name: 'summary.json', content: { status: 'passed' } }],
+  });
+  const retainedDetail = runtime.inspectTaskExecutionRecordView(root, 'record-task', opened.record.recordId);
+  assert.equal('openLocalProgress' in retainedDetail.record, false);
+});
+
 test('metadata seal失败后保留正文并尽力标记attention', (t) => {
   const { root, runtime } = fixture(t);
   const opened = open(runtime, root);

@@ -18,6 +18,7 @@ Task Environment只拥有Buildr-managed checkout、Preparation、runtime project
 ```bash
 buildr task environment prepare <task-id> --agent <adapter> --target <canonical-workspace> --json
 buildr task environment prepare <task-id> --plan <json-file> --agent <adapter> --target <canonical-workspace> --json
+buildr task environment plan record --schema|--example --json
 buildr task environment plan record <task-id> --input <json-file> --target <canonical-workspace> --json
 buildr task environment plan inspect <task-id> --target <canonical-workspace> --json
 buildr task environment inspect <task-id> --target <canonical-workspace> --json
@@ -25,8 +26,8 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 ```
 
 - `--agent`对`prepare`必填，必须写成当前宿主，例如 Cursor 会话写`cursor`、Codex 会话写`codex`。不得省略，也不得假设省略后默认为 Codex。未给`--branch`时默认任务分支为`<adapter>/<task-id>`；显式`--branch`优先。
-- Project可选维护closed `preparation.yml`，长期声明Project-wide或Service-scoped Recipe。Agent读取Task Record的完整Project/Service scope与构建、验证事实，只选择当前Task需要的Recipe，提交`buildr.task-environment-plan-request/v1`；Application解析声明identity并保存`buildr.task-environment-plan/v3`执行快照。没有长期声明时可显式提交`task-inline` Recipe，但不得静默回写Project。
-- Formal Verification admission返回的closed recovery `planRequest`可以带`auxiliaryPreparation`。Agent只能原样交给本Skill的`prepare --plan`；它引用同Project已登记Recipe并绑定capability identity，不进入Task scope、Change、Content Target、allowed execution roots或源码写入authority。不得自行把辅助Service加入Task Record，也不得手写安装命令。
+- Project可选维护closed `preparation.yml`，长期声明Project-wide或Service-scoped Recipe。Agent读取Task Record的完整Project/Service scope与构建、验证事实，并先用`task environment plan record --schema|--example`发现与实际normalizer同源的closed输入；只选择当前Task需要的Recipe，提交`buildr.task-environment-plan-request/v1`。Skill不得复制第二份schema或绕过Application的Task scope、declaration identity与Recipe ownership运行态校验；Application解析声明identity并保存`buildr.task-environment-plan/v3`执行快照。没有长期声明时可显式提交`task-inline` Recipe，但不得静默回写Project。
+- Formal Verification Plan preview或admission返回的closed `planRequest`可以带`auxiliaryPreparation`。Agent只能原样交给本Skill的`prepare --plan`；它引用同Project已登记Recipe并绑定capability identity，不进入Task scope、Change、Content Target、allowed execution roots或源码写入authority。不得自行把辅助Service加入Task Record，也不得手写安装命令。
 - `prepare --plan`可一次完成登记与准备；若Agent必须先检查Task checkout，可先运行无Plan的`prepare`取得受控执行根（结果明确blocked），再运行`plan record`和`prepare`。
 - Plan Request只是CLI的一次性输入，不是Environment资源或长期事实。需要JSON文件时，Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`prepare --plan`或`plan record`成功后必须立即删除。命令失败时，只有仍需用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。
 - Application保存的resolved `buildr.task-environment-plan/v3`与`buildr.task-environment-receipt/v6`是Plan和机器状态authority；v3把Workspace path reference与executable authority分开，并把capability preparation closure与基础Task选择分开，v6保存closed runtime invocation与解析后的机器事实。旧Plan/Receipt只读；显式`prepare --plan`才升级。原始Plan Request不进入SQLite。Environment cleanup只清理Receipt已登记资源与provider-owned执行位置，不扫描或删除调用方临时输入。

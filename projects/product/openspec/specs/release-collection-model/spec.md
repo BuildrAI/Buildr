@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: 发布版本必须由唯一人工选择集合承载
-Buildr MUST为每个目标package version使用唯一`release-<version>`承载人工选择的发布集合。该集合 MUST从维护者指定且可由current `dev`证明的精确baseline commit/tree创建，MUST只包含维护者明确选择的`dev` commits和同版本明确授权的release-only metadata，并 MUST NOT自动追随后续`dev`前进。
+Buildr MUST为每个目标package version使用唯一`release-<version>`承载人工选择的发布集合。该集合 MUST从维护者指定且可由current `dev`证明的精确baseline commit/tree创建，MUST只包含维护者明确选择并以`cherry-pick -x`保留来源的`dev` commits，且 MUST NOT自动追随后续`dev`前进。任何没有`sourceDevCommit`的release-only metadata MUST在进入closeout前具有独立、可验证的dev回流证据；当前owner不支持该证据时 MUST拒绝该entry而非旁路放行。
 
 #### Scenario: 从指定dev baseline创建release
 - **WHEN** 维护者明确要求为`<version>`从某个精确`dev` commit创建发布集合
@@ -19,6 +19,11 @@ Buildr MUST为每个目标package version使用唯一`release-<version>`承载�
 - **WHEN** `dev`在release集合创建后产生新的commit
 - **THEN** current release HEAD/tree和selection chain MUST保持不变
 - **AND** 新commit只有在维护者再次明确选择后才可进入该release集合
+
+#### Scenario: 版本材料或候选修复需要进入release
+- **WHEN** package version、CHANGELOG、README或Candidate修复尚未形成可由current `dev`证明的delivered commit
+- **THEN** Agent MUST先通过窄support Task把改动交付`dev`，再把该source commit以`cherry-pick -x`选择到release
+- **AND** MUST NOT直接在release worktree修改后把整条release历史合并或倒灌`dev`
 
 ### Requirement: Release更新必须保留逐commit provenance并在冲突时停止
 Release owner MUST只对维护者明确列出的`dev` source commits按明确顺序执行带`-x` provenance的最小cherry-pick。每个source、结果release commit、changed paths和顺序 MUST可由closed selection read model重建；冲突、source漂移或授权不足 MUST在后续成功commit、remote update和公共副作用前失败关闭。
@@ -63,7 +68,7 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 - **AND** 未获授权、ref漂移或ownership不可证明时 MUST保留remote ref
 
 ### Requirement: 发布身份链必须只组合current owner facts
-Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publish dev convergence → transaction evidence`作为唯一发布身份链。每个节点 MUST由其专业owner形成current identity或portable read model；下游 MUST只引用最低充分identity/digest，不得复制专业Result正文、caller-claimed success或历史stdout。关联release/support Tasks、Task Environment、Task Development handoff、Task Contribution、Task Finish Delivery、Execution Record与matching self-bootstrap Activation时，release consumer MUST通过唯一组合器形成稳定的release evidence carrier与transaction context identity；该组合器 MUST只保存owner references、identity、digest、status和诊断引用，不得建立旁路SQLite authority或复制专业Result。
+Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。每个节点 MUST由其专业owner形成current identity或portable read model；下游 MUST只引用最低充分identity/digest，不得复制专业Result正文、caller-claimed success或历史stdout。关联release/support Tasks、Task Environment、Task Development handoff、Task Contribution、Task Finish Delivery、Execution Record与matching self-bootstrap Activation时，release consumer MUST通过唯一组合器形成稳定的release evidence carrier与transaction context identity；该组合器 MUST只保存owner references、identity、digest、status和诊断引用，不得建立旁路SQLite authority或复制专业Result。
 
 #### Scenario: release内容变化
 - **WHEN** current release HEAD或tree不等于Candidate、artifact、readiness或transaction context保存的source
@@ -96,7 +101,7 @@ Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree �
 - **AND** 输出 MUST NOT嵌入专业Result正文、完整stdout、attempt history、本地SQLite路径或 caller 提交的完成布尔值
 
 ### Requirement: 发布模块必须保持唯一owner与窄consumer边界
-`tools/release` MUST只拥有release selection、readiness/convergence adapter和checkout-only Git provenance；`system/installation` MUST拥有SemVer、package/version、release track与installation identity；`verification` MUST拥有Product Candidate、verification evidence和唯一tarball；`task` MUST拥有Task/Environment/Development/Verification/Finish/Execution Record/Parent事实；self-bootstrap runner MUST只拥有matching retained Activation与Diagnostics；Bootstrap MUST是唯一composition root；protected publish workflow MUST独占tag、npm、dist-tag、GitHub Release与Registry readback公共mutation。
+`tools/release` MUST只拥有release selection、readiness/convergence adapter、post-publication dev provenance reconciliation和checkout-only Git provenance；`system/installation` MUST拥有SemVer、package/version、release track与installation identity；`verification` MUST拥有Product Candidate、verification evidence和唯一tarball；`task` MUST拥有Task/Environment/Development/Verification/Finish/Execution Record/Parent事实；self-bootstrap runner MUST只拥有matching retained Activation与Diagnostics；Bootstrap MUST是唯一composition root；protected publish workflow MUST独占tag、npm、dist-tag、GitHub Release与Registry readback公共mutation。
 
 #### Scenario: 模块消费其他owner事实
 - **WHEN** release readiness、Candidate或transaction需要其他模块的数据
@@ -104,7 +109,7 @@ Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree �
 - **AND** MUST NOT跨模块直接写persistence、复制业务规则、恢复旧全局入口或建立第二composition root
 
 #### Scenario: 发布后维护部分失败
-- **WHEN** Publication已成立但Activation、Environment Cleanup、Diagnostics、dev convergence或release branch cleanup失败
+- **WHEN** Publication已成立但Activation、Environment Cleanup、Diagnostics、dev provenance reconciliation或release branch cleanup失败
 - **THEN** 系统 MUST保留已成立的Delivery与Publication事实并按失败owner独立报告恢复动作
 - **AND** 任一维护失败 MUST NOT删除tag、unpublish npm、覆盖GitHub Release或反向改写其他owner的成功事实
 
@@ -215,7 +220,7 @@ Buildr MUST让`pre-candidate`、`pre-main`、`dispatch-check`与hosted`pre-tag`�
 - **AND** hosted workflow MUST逐字节消费并重新计算同一digest，不得接受后续重建的近似context
 
 ### Requirement: Release lifecycle 必须维持唯一协调Task与稳定恢复身份
-Buildr MUST从current release owner facts派生version-scoped lifecycle read model，并 MUST让同一`release-<version>`协调Task从selection持续保持active到publication、main→dev与必需closeout完成。阶段与恢复身份 MUST绑定version、Task ID、selection generation/identity、frozen context digest和适用publish run，不得写入Task Record新状态字段或建立旁路workflow store。
+Buildr MUST从current release owner facts派生version-scoped lifecycle read model，并 MUST让同一`release-<version>`协调Task从selection持续保持active到Publication、post-publication dev provenance reconciliation与必需closeout完成。阶段与恢复身份 MUST绑定version、Task ID、selection generation/identity、frozen context digest和适用publish run，不得写入Task Record新状态字段或建立旁路workflow store。
 
 #### Scenario: readiness完成并等待publication授权
 - **WHEN** Candidate、唯一artifact、release→main tree equality与无副作用readiness全部current，但维护者尚未授权publication
@@ -228,7 +233,7 @@ Buildr MUST从current release owner facts派生version-scoped lifecycle read mod
 - **AND** support修复 MAY独立交付，但 MUST NOT成为新的release协调Task
 
 #### Scenario: 必需closeout全部完成
-- **WHEN** publication、main→dev与全部必需本地/中间资源closeout均通过，且正式远端release ref已按默认保留策略精确核验
+- **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按默认保留策略精确核验
 - **THEN** lifecycle MUST返回`closed`并允许Release Skill完成唯一协调Task
 - **AND** 可选的正式远端release ref删除未获授权 MUST NOT阻止Task完成
 
@@ -244,3 +249,39 @@ Release Git owner MUST为每个selection generation使用确定性`codex/release
 - **WHEN** main tree已等于冻结release tree且matching carrier已经删除或仍精确指向expected release commit
 - **THEN** closeout MUST分别返回`already-cleaned`或删除matching carrier并完成remote readback
 - **AND** MUST NOT删除正式release ref、其他generation或ownership不明branch
+
+### Requirement: Release lifecycle必须派生编排与阶段时间线
+Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Environment与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
+
+#### Scenario: 等待publication授权
+- **WHEN** selection、Candidate、main tree与readiness均current且尚无matching Publication
+- **THEN** lifecycle MUST返回`awaiting-publication-authorization`、`prepare-dispatch`形成的context/timeline identity和独立`human-decision`等待阶段
+- **AND** Task或readiness时间戳 MUST NOT被解释为维护者已经授权
+
+#### Scenario: terminal Task但Environment cleanup待恢复
+- **WHEN** release facts已经closed且协调Task已no-change completed，但Environment cleanup或Doctor仍blocked
+- **THEN** orchestration projection MUST保持Publication、reconciliation、Git closeout和Task completion为已通过并把next action指向对应cleanup/Doctor owner
+- **AND** MUST NOT把release lifecycle退回publishing、重开Task或生成新的协调identity
+
+#### Scenario: current generation发生变化
+- **WHEN** selection generation、context digest、Candidate aggregate或Publication run发生变化
+- **THEN** lifecycle MUST生成新的recovery/timeline identity并拒绝旧generation的dispatch授权与closeout组合
+- **AND** 旧Timeline MAY作为外部历史evidence保留，但 MUST NOT成为current lifecycle成功输入
+
+### Requirement: Release selection 必须把 main reconciliation 作为独立 provenance
+Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x` source commits 构建；为解决当前 main 漂移而产生的 merge commit MUST作为独立 reconciliation provenance 记录，MUST NOT伪装成 `sourceDevCommit`，且 MUST绑定前一 frozen selection、main parent、release parent、resolution identity 和新 generation。
+
+#### Scenario: 记录 main reconciliation
+- **WHEN** frozen selection 为了进入当前 main 需要解决冲突并产生 merge commit
+- **THEN** selection read model MUST保留原 baseline 与 ordered source chain
+- **AND** MUST追加独立 reconciliation entry，包含 main parent、release parent、post commit/tree、resolution identity 和 generation
+
+#### Scenario: reconciliation 后继续读取 selection
+- **WHEN** consumer 请求新的 release selection
+- **THEN** owner MUST同时返回 dev selection provenance 与 main reconciliation provenance
+- **AND** MUST拒绝把 reconciliation commit作为可再次 cherry-pick 的 dev source
+
+#### Scenario: reconciliation 失败
+- **WHEN** 冲突未解决、main/ref identity 漂移或目标版本已有公开发布事实
+- **THEN** selection owner MUST返回 fail-closed finding 和 pre-operation identity
+- **AND** MUST不移动 frozen ref、覆盖 release branch 或递增 generation

@@ -203,7 +203,7 @@ function runHostNode(tupleId) {
 function aggregate() {
   const sourceCommit = resolveCandidateSourceCommit(productRoot, expectedSource);
   const evidenceRoot = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
-  const result = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), sourceCommit);
+  const result = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), sourceCommit, workflowIdentity);
   const output = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');

@@ -17,6 +17,8 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，或�
 
 已有Result可以重做并完整替换；没有Result只是“尚未复盘”。同时读取 `disposition` 与 `currentDigest`；不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
 
+在复盘生成前建立一次有界执行事实图，只读取当前runtime可达且与效率、重复、等待、失败恢复或人机协作直接相关的最小事实：Task Record时点与终态、适用的Development/Review/Verification current摘要、相关Execution Record/Finish timing、当前session工具结果，以及已有current `reportMarkdown`。已有复盘是本次重新思考的证据之一，不是必须保留的结论。没有某类事实时标记缺口，不为补齐图谱遍历全部owner、读取完整日志或增加任务消耗；同一事实已在当前上下文可用时不重复回读。该图只存在于Agent任务上下文，不写入Result之外的store、Receipt、history或分析平台。
+
 ## 2. 生成一份自由复盘
 
 只基于当前session/runtime可访问的任务步骤、工具结果和最终事实，重点寻找：
@@ -30,6 +32,19 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，或�
 报告使用自由Markdown，不要求固定标题、评分、分类或结构化建议。Token 数据按证据可见性处理：可信可得时记录数值、来源和覆盖范围；部分可得时明确覆盖的步骤、阶段或调用及其不代表完整 Task；不可得时直接标记缺失，并继续使用耗时、重复尝试、等待、工具调用和人机协作等可观察事实。不得为了补齐 Token 数字回放完整上下文、读取隐藏推理、强制估算、新增采集流程或增加任务消耗；其他精确成本数据不可见时同样写明缺口并区分观察事实与推断。不得声称读取隐藏推理、完整对话、完整工具日志或后台事件。
 
 用户或团队给出的同类任务耗时参考区间，只作为当前任务复杂度下的比较、解释和优化背景；报告应说明适用范围及偏离原因，不把它固化为通用产品阈值、Result字段、gate、pass/fail标准或自动缩减验证范围的依据。
+
+### 确定性流程候选
+
+每次生成或重做复盘都主动判断是否存在确定性流程候选，但报告仍是自由Markdown，不要求固定标题、候选数组或评分。可信候选必须有重复证据，或单次已经造成高成本/高风险，并同时说明：
+
+- closed输入、唯一Owner、明确停止条件、可验证结果与幂等/有界恢复；
+- 哪些机械步骤可由Application、CLI workflow、checker或test确定化；
+- 哪些目标、业务判断、风险取舍和授权仍由人和Agent保留；
+- 预期节省、失败风险、证据局限与建议资产落点。
+
+候选必须通过Core哲学过滤：**Buildr应该约束Agent不要做错事，而不是要求Agent必须通过Buildr才能做事。** 要求普通动作必须经过Buildr、把推荐路径变成唯一合法路径、建立通用许可层/生命周期gate、自动替代专业判断或自动修改Rule/Skill/workflow的方向，不得作为可固化候选；说明违反的authority/判断边界后保留Agent在现有授权与安全边界内直接执行的路径。证据不足、仍依赖业务语义、边界无法闭合或收益不足时，如实保留为普通优化方向或说明没有可信候选，不为填充报告虚构候选。
+
+建议落点由Agent判断：价值观、authority与授权边界进入Rule；可复用的Agent判断方法进入Skill；固定机械顺序和closed变换进入Application/CLI workflow；不变量、跨版本兼容与fail-closed边界进入checker/test。候选只提出建议，不直接修改这些资产。
 
 ## 3. 完整后一次写入
 
@@ -46,12 +61,14 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 用户要求处理多份已有复盘时，先通过一次有界批量只读调用取得默认 `pending` 摘要：
 
 ```text
-<controller-command> <controller-args-prefix...> __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--include-report]
+<controller-command> <controller-args-prefix...> __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--max-bytes <1..1048576>] [--include-report]
 ```
 
-默认最多返回 100 份 pending 摘要且不包含报告正文；先用摘要收窄对象，只在确实需要批量读取原文时显式使用 `--include-report`，个别全文继续使用单 Task `inspect`。`list` 只减少重复 driver 调用，不自动分析、评分、生成方向、创建 Task 或修改 disposition，也不成为后续 mutation 的授权或门禁。
+默认最多返回 100 份 pending 摘要、受 262144 UTF-8字节预算约束且不包含报告正文；先用摘要收窄对象，只在确实需要批量读取原文时显式使用 `--include-report`。正文不能作为完整item落入预算时会被省略并标记`truncated`，个别全文继续使用单 Task `inspect`。`list` 只减少重复 driver 调用，不自动分析、评分、生成方向、创建 Task 或修改 disposition，也不成为后续 mutation 的授权或门禁。
 
 用户要求处理已有复盘时，再对需要判断的对象使用 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Buildr Web 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
+
+处理单份或多份复盘时，对其中的确定性流程候选执行同一语义重评：按实际目标、closed边界和当前实现聚类、合并或丢弃，不按关键词自动聚类，也不把旧候选当作current事实。先用bounded list摘要收窄来源，再逐项inspect必要正文；Application仍只提供事实，分析由Agent完成。重叠候选尽量合并为少量纵向Task，互不相干或不能共享交付结果的方向保持独立。
 
 ### 4.1 先完成只读讨论
 
@@ -61,6 +78,7 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 - 拟 disposition 及完整处置理由；
 - 将复用、创建或关联的目标 Task IDs；
 - 每一项 Task Record 与 Retrospective mutation effect；没有 Task effect 时明确写 none。
+- 每项可信确定性流程候选的来源证据、closed输入、Owner、停止条件、结果/恢复边界、保留给人和Agent的判断、预期收益/风险与Rule/Skill/Application/CLI/checker/test建议落点；没有可信候选时明确说明。
 
 展示后停止写入并等待用户决定。用户继续讨论、要求调整、提出异议、只表示“看看再说”或没有明确接受时，保持 current disposition 和全部 Task Record rows 不变；不得把“处理复盘”推断成 `no-action`、`handled`、`pending` 或创建/关联 Task 的授权。
 
@@ -69,9 +87,9 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 以下任一情况可以进入写入阶段：
 
 1. 用户直接指定了完整 mutation，例如“把这个复盘标记为无需处理，理由是……”，或明确指定 `handled`、处置说明和全部目标 Task effects；完整动作本身就是本次精确 mutation 的明确授权，不再机械要求第二次确认。
-2. 用户明确接受 Agent 刚展示的完整方案，且 disposition、理由、目标 Task IDs 与关系 effects 均未变化。
+2. 一人或多人明确接受 Agent 刚展示的完整方案，且 disposition、理由、确定性流程候选、目标 Task IDs 与关系 effects 均未变化。多人意见不一致或仍在讨论时保持只读，不建立reviewer、票数或approval状态。
 
-授权只覆盖已指定或已展示的精确 effects。表达不完整或含糊时继续保持只读。实际写入前重新 inspect，并复核 current digest、拟 disposition、处置理由、目标 Task 与关系 effects；任一事实或 effect 发生实质变化时旧授权失效，立即停止后续写入、保持 current disposition、重新展示变化后的完整方案并取得新授权。若已有部分已授权 effects 成功，原样报告实际 effects，不回滚、不扩大授权，也不得把部分落地冒充完整处置。
+授权只覆盖已指定或已展示的精确 effects。确认候选只授权创建或关联承接Task，不授权直接修改候选指向的Rule、Skill、Application、CLI、checker或test；这些资产仍由后续Task按当前事实治理。表达不完整或含糊时继续保持只读。实际写入前重新 inspect，并复核 current digest、拟 disposition、处置理由、候选边界、目标 Task 与关系 effects；任一事实或 effect 发生实质变化时旧授权失效，立即停止后续写入、保持 current disposition、重新展示变化后的完整方案并取得新授权。若已有部分已授权 effects 成功，原样报告实际 effects，不回滚、不扩大授权，也不得把部分落地冒充完整处置。
 
 ### 4.3 只执行已授权 effects
 
@@ -96,6 +114,6 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 
 ## 5. 报告边界
 
-向用户返回原始复盘或不可变引用、当前有效性证据、重新拆分方向、丢弃理由、实际承接Task IDs、关系effects、operation status与current digest。todo只表示意向，后续明确启动时再走task-triage和activate。
+向用户返回原始复盘或不可变引用、当前有效性证据、重新拆分方向、确定性流程候选或无候选结论、哲学边界判断、丢弃理由、实际承接Task IDs、关系effects、operation status与current digest。todo只表示意向，后续明确启动时再走task-triage和activate。
 
 本Skill不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁，也不创建空复盘。

@@ -57,6 +57,7 @@ const allowed = new Map([
   ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
+  ['src/verification/application/verification-application.mjs', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/workspace/interfaces/cli/workspace.mjs', new Set(['createProject', 'createService'])],
   ['src/agent-assets/application/rules.mjs', new Set(['rulesRemoveUnsafe'])],

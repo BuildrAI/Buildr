@@ -363,7 +363,8 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   git(taskRoot, ['add', 'shared.txt', 'task-only.txt']);
   git(taskRoot, ['commit', '-m', 'candidate']);
   fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
-  git(root, ['add', 'shared.txt']);
+  fs.writeFileSync(path.join(root, 'task-only.txt'), 'equivalent retained task-only meaning\n');
+  git(root, ['add', 'shared.txt', 'task-only.txt']);
   git(root, ['commit', '-m', 'conflicting baseline']);
   const baselineHead = git(root, ['rev-parse', 'HEAD']);
   const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
@@ -372,17 +373,26 @@ test('Delivery Baseline 与 Task Contribution 冲突时保留隔离 carrier 供 
   assert.equal(carrier.status, 'adaptation-required');
   assert.equal(carrier.conflict.code, 'task-finish.contribution-apply-conflict');
   assert.deepEqual(carrier.activationPaths, ['shared.txt', 'task-only.txt']);
-  assert.deepEqual(carrier.conflict.conflictPaths, ['shared.txt']);
+  assert.deepEqual(carrier.conflict.conflictPaths, ['shared.txt', 'task-only.txt']);
   assert.equal(git(carrier.root, ['status', '--porcelain']), '');
   assert.equal(git(carrier.root, ['show', 'HEAD:shared.txt']), 'baseline meaning');
 
   fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'agent-reviewed compatible meaning\n');
   git(carrier.root, ['add', 'shared.txt']);
   git(carrier.root, ['commit', '-m', 'delivery carrier']);
-  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  const incomplete = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  assert.equal(incomplete.status, 'blocked');
+  assert.equal(incomplete.code, 'task-finish.delivery-adaptation-path-coverage-incomplete');
+  assert.deepEqual(incomplete.missingPaths, ['task-only.txt']);
+  const adopted = adoptAgentReviewedGitCarrier({
+    repositoryRoot: taskRoot,
+    carrier,
+    agentReviewedTargetPaths: [{ path: 'task-only.txt', reason: 'Target already carries the task-only semantics through an equivalent retained implementation.' }],
+  });
   assert.equal(adopted.status, 'adopted');
   assert.equal(adopted.changes[0].beforeMode, '100644');
   assert.equal(adopted.changes[0].afterBlob.length, 40);
+  assert.deepEqual(adopted.pathCoverage.counts, { total: 2, targetContained: 0, carrierChanged: 1, agentReviewedTarget: 1, missing: 0 });
   const adaptedCarrier = { ...carrier, ...adopted, reuseMode: 'agent-reviewed-delivery-adaptation' };
   const verified = verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier: adaptedCarrier });
   assert.equal(verified.status, 'equivalent');
@@ -417,7 +427,10 @@ test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptat
   assert.equal(missingConfirmation.status, 'blocked');
   assert.equal(missingConfirmation.code, 'task-finish.delivery-adaptation-missing');
 
-  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, acceptZeroDelta: true });
+  const incompleteCoverage = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, acceptZeroDelta: true });
+  assert.equal(incompleteCoverage.code, 'task-finish.delivery-adaptation-path-coverage-incomplete');
+  assert.deepEqual(incompleteCoverage.missingPaths, ['shared.txt']);
+  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, acceptZeroDelta: true, agentReviewedTargetPaths: [{ path: 'shared.txt', reason: 'The advanced target already provides the reviewed behavior.' }] });
   assert.equal(adopted.status, 'adopted');
   assert.equal(adopted.zeroDelta, true);
   assert.equal(adopted.head, baselineHead);
@@ -426,6 +439,7 @@ test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptat
   assert.deepEqual(adopted.changes, []);
   assert.deepEqual(adopted.activationPaths, ['shared.txt']);
   assert.equal(adopted.deliveryCommit, carrier.deliveryCommit);
+  assert.equal(adopted.pathCoverage.counts.agentReviewedTarget, 1);
 
   const adaptedCarrier = { ...carrier, ...adopted, reuseMode: 'agent-reviewed-delivery-adaptation' };
   const verified = verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier: adaptedCarrier });
@@ -435,6 +449,63 @@ test('Agent 显式确认时采用 clean baseline carrier 作为零差异 adaptat
   assert.equal(cleanupProof.status, 'equivalent');
   assert.equal(cleanupProof.carrierIdentity, adopted.carrierDeltaIdentity);
   assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'zero-delta', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('Agent-reviewed adaptation拒绝35路径贡献只交付2路径', (t) => {
+  const { root, taskRoot } = repository(t);
+  for (let index = 1; index <= 35; index += 1) fs.writeFileSync(path.join(taskRoot, `feature-${String(index).padStart(2, '0')}.txt`), `task-${index}\n`);
+  git(taskRoot, ['add', '.']);
+  git(taskRoot, ['commit', '-m', 'candidate with 35 paths']);
+  fs.writeFileSync(path.join(root, 'feature-01.txt'), 'conflicting baseline 1\n');
+  fs.writeFileSync(path.join(root, 'feature-02.txt'), 'conflicting baseline 2\n');
+  git(root, ['add', 'feature-01.txt', 'feature-02.txt']);
+  git(root, ['commit', '-m', 'advance two paths']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'partial-35', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+  assert.equal(carrier.status, 'adaptation-required');
+  for (const index of [1, 2]) fs.writeFileSync(path.join(carrier.root, `feature-${String(index).padStart(2, '0')}.txt`), `reviewed-${index}\n`);
+  git(carrier.root, ['add', 'feature-01.txt', 'feature-02.txt']);
+  git(carrier.root, ['commit', '-m', 'delivery carrier']);
+
+  const result = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.code, 'task-finish.delivery-adaptation-path-coverage-incomplete');
+  assert.equal(result.coverage.counts.total, 35);
+  assert.equal(result.coverage.counts.carrierChanged, 2);
+  assert.equal(result.coverage.counts.missing, 33);
+  assert.deepEqual(result.missingPaths.slice(0, 2), ['feature-03.txt', 'feature-04.txt']);
+  const unknown = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, agentReviewedTargetPaths: [{ path: 'unknown.txt', reason: 'reviewed' }] });
+  assert.equal(unknown.code, 'task-finish.delivery-adaptation-path-coverage-invalid');
+  assert.deepEqual(unknown.invalidPaths, [{ path: 'unknown.txt', code: 'path-unknown' }]);
+  const duplicate = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier, agentReviewedTargetPaths: [
+    { path: 'feature-03.txt', reason: 'first review' },
+    { path: 'feature-03.txt', reason: 'duplicate review' },
+  ] });
+  assert.equal(duplicate.code, 'task-finish.delivery-adaptation-path-coverage-invalid');
+  assert.deepEqual(duplicate.invalidPaths, [{ path: 'feature-03.txt', code: 'path-duplicate' }]);
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'partial-35', expectedRoot: carrier.root }).status, 'removed');
+});
+
+test('Agent-reviewed path coverage identity漂移时拒绝carrier proof', (t) => {
+  const { root, taskRoot } = repository(t);
+  fs.writeFileSync(path.join(taskRoot, 'shared.txt'), 'task meaning\n');
+  git(taskRoot, ['add', 'shared.txt']);
+  git(taskRoot, ['commit', '-m', 'candidate']);
+  fs.writeFileSync(path.join(root, 'shared.txt'), 'baseline meaning\n');
+  git(root, ['add', 'shared.txt']);
+  git(root, ['commit', '-m', 'conflicting baseline']);
+  const baselineHead = git(root, ['rev-parse', 'HEAD']);
+  const contribution = observeGitTaskContribution({ root: taskRoot, deliveryBaselineHead: baselineHead });
+  const carrier = createIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'coverage-drift', deliveryBaselineHead: baselineHead, taskContribution: contribution, message: 'delivery carrier' });
+  fs.writeFileSync(path.join(carrier.root, 'shared.txt'), 'reviewed meaning\n');
+  git(carrier.root, ['add', 'shared.txt']);
+  git(carrier.root, ['commit', '-m', 'delivery carrier']);
+  const adopted = adoptAgentReviewedGitCarrier({ repositoryRoot: taskRoot, carrier });
+  const adapted = { ...carrier, ...adopted, reuseMode: 'agent-reviewed-delivery-adaptation' };
+  const drifted = { ...adapted, pathCoverage: { ...adapted.pathCoverage, counts: { ...adapted.pathCoverage.counts, total: 2 } } };
+  assert.equal(verifyGitTaskContributionCarrier({ repositoryRoot: taskRoot, carrier: drifted }).code, 'task-finish.delivery-adaptation-path-coverage-drift');
+  assert.equal(removeIsolatedGitCarrier({ repositoryRoot: taskRoot, workspaceRoot: root, runId: 'coverage-drift', expectedRoot: carrier.root }).status, 'removed');
 });
 
 test('持久化agent-reviewed equivalence可证明精简reconciliation carrier的cleanup', (t) => {

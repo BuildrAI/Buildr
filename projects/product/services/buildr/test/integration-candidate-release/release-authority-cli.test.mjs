@@ -367,7 +367,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     runtime,
     inspectSelection: () => ({ selectionIdentity: digest('6'), version, branch: `release-${version}`, releaseHead: candidateSourceCommit, releaseTree: candidateTree, generation: 1, status: 'frozen' }),
     candidateEvidence: {
-      aggregate: { sourceCommit: candidateSourceCommit, registryIdentity: digest('7'), status: 'passed' },
+      aggregate: { sourceCommit: candidateSourceCommit, registryIdentity: digest('7'), workflow: { runId: '654', aggregateAttempt: 1, evidenceAttempts: [] }, status: 'passed' },
       manifest: { sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') },
     },
   });

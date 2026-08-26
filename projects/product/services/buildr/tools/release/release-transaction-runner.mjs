@@ -116,6 +116,10 @@ function fullCommit(execute, repo, ref) {
   return requiredHash(invoke(execute, 'git', ['rev-parse', ref], repo).trim(), ref);
 }
 
+function commitParents(execute, repo, commit) {
+  return invoke(execute, 'git', ['rev-list', '--parents', '-n', '1', commit], repo).trim().split(/\s+/u).slice(1).filter((value) => /^[a-f0-9]{40}$/u.test(value));
+}
+
 function packageVersionAt(execute, repo, commit) {
   const source = invoke(execute, 'git', ['show', `${commit}:${packagePath}`], repo);
   const metadata = parseJson(source, `git show ${commit}:${packagePath}`);
@@ -250,9 +254,23 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     });
     const inspectSelection = dependencies.inspectSelection ?? inspectReleaseSelection;
     const selection = inspectSelection({ version, repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
+    const mainParents = commitParents(execute, repo, sourceCommit);
+    const reconciliation = selection.reconciliationChain?.at(-1) ?? null;
     const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
     const aggregate = candidateEvidence.aggregate;
     const manifest = candidateEvidence.manifest;
+    const aggregateWorkflow = aggregate?.workflow;
+    const aggregateWorkflowActual = {
+      runId: aggregateWorkflow?.runId == null ? null : String(aggregateWorkflow.runId),
+      aggregateAttempt: Number(aggregateWorkflow?.aggregateAttempt),
+    };
+    const aggregateWorkflowExpected = {
+      runId: String(candidateRunId),
+      aggregateAttempt: Number(candidateRun.run_attempt),
+    };
+    if (JSON.stringify(aggregateWorkflowActual) !== JSON.stringify(aggregateWorkflowExpected)) {
+      throw new Error(`Candidate aggregate workflow identity mismatch: ${JSON.stringify({ expected: aggregateWorkflowExpected, actual: aggregateWorkflowActual })}`);
+    }
     context = createReleaseContext({
       selection: selection.selectionIdentity ? {
         identity: selection.selectionIdentity,
@@ -262,6 +280,7 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
         releaseTree: selection.releaseTree,
         generation: selection.generation,
         status: selection.status,
+        ...(reconciliation ? { reconciliationIdentity: reconciliation.reconciliationIdentity } : {}),
       } : null,
       release: { version, sourceCommit: candidateSourceCommit, sourceTree: candidateSourceTree },
       candidate: {
@@ -284,7 +303,13 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
         integrity: manifest.integrity,
         applicationPayloadDigest: manifest.applicationPayloadDigest,
       },
-      convergence: { mainCommit: sourceCommit, mainTree: actualTree, devCommit, devTree },
+      convergence: {
+        mainCommit: sourceCommit,
+        mainTree: actualTree,
+        devCommit,
+        devTree,
+        ...(reconciliation ? { mergeCommit: sourceCommit, mergeParents: mainParents, mergeMethod: mainParents.length === 2 ? 'merge' : null, reconciliationIdentity: reconciliation.reconciliationIdentity } : {}),
+      },
       environment: { identity: environment.identity, status: environment.environmentStatus, taskId: environment.taskId, nodeVersion: environment.node.version, nodeIdentity: environment.node.executionIdentity },
       node: { authority: environment.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
       workflow: { path: releaseWorkflowPath, digest: `sha256-${workflowSha256}`, repository: releasePublishAuthority.repository, environment: releasePublishAuthority.environment },

@@ -4,7 +4,7 @@ import { selfBootstrapTaskFinishResult } from './task-finish-self-bootstrap-proj
 const DETAILS = new Set(['compact', 'full', 'self-bootstrap']);
 const PHASES = new Set(['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
 const PATH_KEYS = new Set(['path', 'file', 'relativePath']);
-const PATH_LIST_KEYS = new Set(['paths', 'conflictPaths', 'unrelatedPaths']);
+const PATH_LIST_KEYS = new Set(['paths', 'conflictPaths', 'unrelatedPaths', 'missingPaths']);
 
 function compactProjectionError(message, details = null) {
   const error = new Error(message);
@@ -125,6 +125,7 @@ function delivery(value) {
   return {
     status: value.status || null,
     targetDisposition: value.targetDisposition || null,
+    pathCoverageIdentity: value.pathCoverageIdentity || null,
     containment: value.containment ? {
       status: value.containment.status || null,
       identity: value.containment.identity || null,
@@ -145,6 +146,7 @@ function completion(value) {
     status: value.status || null,
     carrierIdentity: value.carrierIdentity || null,
     taskContributionIdentity: value.taskContributionIdentity || null,
+    pathCoverageIdentity: value.pathCoverageIdentity || null,
     cleanup: value.cleanup ? {
       status: value.cleanup.status || null,
       completedAt: value.cleanup.completedAt || null,
@@ -211,6 +213,23 @@ function deliveryAdaptation(value) {
   };
 }
 
+function pathCoverage(result) {
+  const stored = result.carrier?.pathCoverage
+    || (result.repositories || []).map((item) => item.deliveryCarrier?.pathCoverage).find(Boolean)
+    || null;
+  if (!stored) return null;
+  return {
+    identity: stored.identity || null,
+    counts: stored.counts ? {
+      total: stored.counts.total || 0,
+      targetContained: stored.counts.targetContained || 0,
+      carrierChanged: stored.counts.carrierChanged || 0,
+      agentReviewedTarget: stored.counts.agentReviewedTarget || 0,
+      missing: stored.counts.missing || 0,
+    } : null,
+  };
+}
+
 export function compactTaskFinishResult(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw compactProjectionError('Task Finish compact projection requires a canonical Result.');
   if (![PUBLIC_JSON_SCHEMAS.taskFinishResult, 'buildr.task-finish-result/v2'].includes(result.schemaVersion)) throw compactProjectionError('Task Finish compact projection requires a supported canonical Result.', { schemaVersion: result.schemaVersion || null });
@@ -249,6 +268,7 @@ export function compactTaskFinishResult(result) {
       currentReplacement: result.rollover.currentReplacement || null,
     } : null,
     reuseMode: result.reuseMode || null,
+    pathCoverage: pathCoverage(result),
     deliveryAdaptation: deliveryAdaptation(result.deliveryAdaptation),
     refs: refs(result),
     delivery: delivery(result.delivery),

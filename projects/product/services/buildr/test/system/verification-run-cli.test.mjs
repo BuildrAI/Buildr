@@ -56,6 +56,12 @@ test('verification plan形成可执行Plan，run拒绝stale declaration', (t) =>
   assert.equal(plan.schemaVersion, 'buildr.verification-plan/v1');
   assert.equal(plan.status, 'ready');
   assert.equal(plan.selectedItems[0].selection.kind, 'direct');
+  const workspaceRelativePreview = runBuildr(['verification', 'plan', '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:demo', '--changed-path', 'projects/demo/src/index.mjs', '--target', root, '--json']);
+  assert.equal(workspaceRelativePreview.status, 0, workspaceRelativePreview.stderr || workspaceRelativePreview.stdout);
+  const workspaceRelativePlan = JSON.parse(workspaceRelativePreview.stdout);
+  assert.equal(workspaceRelativePlan.identity, plan.identity);
+  assert.equal(workspaceRelativePlan.requestIdentity, plan.requestIdentity);
+  assert.deepEqual(workspaceRelativePlan.selectedItems, plan.selectedItems);
   const planPath = path.join(root, 'plan.json');
   fs.writeFileSync(planPath, JSON.stringify(plan));
 
@@ -68,6 +74,22 @@ test('verification plan形成可执行Plan，run拒绝stale declaration', (t) =>
   const stale = runBuildr(['verification', 'run', '--project', 'demo', '--plan', planPath, '--target-identity', 'target:demo', '--target', root, '--detail', 'full', '--json']);
   assert.equal(stale.status, 2);
   assert.match(JSON.parse(stale.stdout).error.message, /declaration identity is stale/);
+});
+
+test('verification plan拒绝绝对changed path并返回selected Project诊断', (t) => {
+  const root = fixture(t);
+  const projectRoot = path.join(root, 'projects', 'demo');
+  fs.writeFileSync(path.join(projectRoot, 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v3', resources: [],
+    capabilities: [declaredCapability('demo.plan', 'void 0', { discovery: { sources: ['src/**'] } })],
+  }));
+  const result = runBuildr(['verification', 'plan', '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:absolute', '--changed-path', path.join(projectRoot, 'src/index.mjs'), '--target', root, '--json']);
+  assert.equal(result.status, 2);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, 'verification.changed_path_invalid');
+  assert.equal(payload.error.details.project, 'demo');
+  assert.equal(payload.error.details.registeredProjectRoot, 'projects/demo');
+  assert.equal(payload.error.details.expected, 'Project-relative path');
 });
 
 test('legacy v2 declaration仍可形成full-only Plan并执行', (t) => {

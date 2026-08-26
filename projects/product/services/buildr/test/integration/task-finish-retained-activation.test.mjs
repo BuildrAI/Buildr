@@ -97,7 +97,7 @@ function fixture(t, { contributionPath, contributionContent }) {
       controllerInvocation: { command: path.join(retained, 'projects', 'product', 'buildr'), argsPrefix: [], sourceRoot: path.join(retained, 'projects', 'product', 'services', 'buildr') },
     }),
   };
-  return { retained, remote, run: persistedRun, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
+  return { retained, remote, run: persistedRun, runtime, handlers: createTaskFinishProductHandlers({ runtime, root: environmentRoot }) };
 }
 
 test('Workspace Skill contribution renders and never syncs', async (t) => {
@@ -108,6 +108,9 @@ test('Workspace Skill contribution renders and never syncs', async (t) => {
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-render'), true);
   assert.equal(result.operations.some((item) => item.id === 'deliver-retained-sync'), false);
   const doctor = result.operations.find((item) => item.id === 'deliver-retained-doctor');
+  const activationIndex = result.operations.findIndex((item) => item.id === 'activate-workspace-structured-store');
+  const doctorIndex = result.operations.findIndex((item) => item.id === 'deliver-retained-doctor');
+  assert.equal(activationIndex >= 0 && activationIndex < doctorIndex, true);
   assert.deepEqual(doctor.args.slice(0, 3), ['doctor', '--agent', 'codex']);
   assert.equal(result.output.delivery.finalRemoteRef, data.run.deliveryCarrier.head);
 });
@@ -134,6 +137,35 @@ test('Doctor failure becomes activation attention without negating delivery', as
   assert.equal(result.output.delivery.retainedDoctor, 'attention');
 });
 
+test('Structured Store activation失败时不运行最终Doctor且Delivery保持成立', async (t) => {
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'updated skill\n' });
+  let pendingActivation = false;
+  data.runtime.openWorkspaceStructuredStore = (root, options = {}) => {
+    if (options.allowPendingRead === true && options.writable === false) {
+      pendingActivation = true;
+      return {
+        present: true,
+        version: 18,
+        migrationRequired: true,
+        scripts: Array.from({ length: 20 }, (_, version) => ({ version })),
+        database: { close() {} },
+      };
+    }
+    if (pendingActivation && options.writable === true) {
+      pendingActivation = false;
+      throw Object.assign(new Error('migration writer failed'), { code: 'workspace_store_database_failed' });
+    }
+    throw new Error(`unexpected structured-store activation call: ${root} ${JSON.stringify(options)}`);
+  };
+
+  const result = await data.handlers.deliver({ run: data.run });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.output.delivery.status, 'delivered');
+  assert.equal(result.output.delivery.activation.status, 'attention');
+  assert.equal(result.output.delivery.activation.code, 'workspace_store_database_failed');
+  assert.equal(result.operations.some((item) => item.id === 'deliver-retained-doctor'), false);
+});
+
 test('Doctor compact输出超限保留独立失败分类', async (t) => {
   const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'doctor-overflow\n' });
   const result = await data.handlers.deliver({ run: data.run });
@@ -157,4 +189,26 @@ test('Buildr package contribution is delivered without generic sync', async (t) 
   assert.equal(delivery.localAppDelivery, 'not-applicable');
   assert.equal(delivery.finalRemoteRef, delivery.carrierRef);
   assert.equal(command(data.retained, 'git', ['ls-remote', '--heads', 'origin', 'dev']).split(/\s+/)[0], delivery.finalRemoteRef);
+});
+
+test('Environment cleanup attention不跳过Finish-owned carrier removal', async (t) => {
+  const data = fixture(t, { contributionPath: 'skills/example/SKILL.md', contributionContent: 'updated skill\n' });
+  const delivered = await data.handlers.deliver({ run: data.run });
+  assert.equal(delivered.status, 'passed', JSON.stringify(delivered, null, 2));
+  data.run.delivery = delivered.output.delivery;
+  data.run.developmentHandoff = {
+    identity: data.run.identity.handoffIdentity,
+    candidate: { identity: data.run.identity.candidateIdentity, generation: data.run.identity.candidateGeneration },
+    gates: {},
+  };
+  const carrierRoot = data.run.deliveryCarrier.root;
+  assert.equal(fs.existsSync(carrierRoot), true);
+
+  const cleaned = await data.handlers.cleanup({ run: data.run });
+  assert.equal(cleaned.status, 'passed', JSON.stringify(cleaned, null, 2));
+  assert.equal(cleaned.output.completion.cleanup.status, 'attention');
+  assert.equal(cleaned.output.completion.cleanup.carriers.status, 'cleaned');
+  assert.deepEqual(cleaned.output.completion.cleanup.carriers.repositories, [{ selector: 'workspace', status: 'removed', code: null }]);
+  assert.equal(fs.existsSync(carrierRoot), false);
+  assert.equal(command(data.retained, 'git', ['worktree', 'list', '--porcelain']).includes(carrierRoot), false);
 });

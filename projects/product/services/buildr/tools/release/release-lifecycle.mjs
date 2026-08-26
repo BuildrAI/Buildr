@@ -36,7 +36,7 @@ function phaseFor(facts) {
   if (facts.readiness.status !== 'ready') return 'readiness';
   if (facts.publication.status === 'not-started') return 'awaiting-publication-authorization';
   if (facts.publication.status !== 'passed') return 'publishing';
-  if (facts.convergence.status !== 'passed') return 'published-convergence-pending';
+  if (facts.convergence.status !== 'passed') return 'published-dev-reconciliation-pending';
   if (facts.closeout.status !== 'passed') return 'closeout';
   return 'closed';
 }
@@ -93,5 +93,25 @@ export function createReleaseLifecycle(input) {
     findings,
     effects: [],
     nextActions: findings.length ? ['核验正式远端release ref并完成必需closeout。'] : [],
+  };
+}
+
+function orchestrationAction(phase) {
+  if (phase === 'awaiting-publication-authorization' || phase === 'readiness') return 'prepare-dispatch';
+  if (phase === 'publishing') return 'dispatch';
+  if (['published-dev-reconciliation-pending', 'closeout', 'closed'].includes(phase)) return 'closeout';
+  return phase === 'candidate' ? 'candidate' : 'selection';
+}
+
+export function projectReleaseLifecycleOrchestration(lifecycle, timelineIdentity) {
+  if (lifecycle?.schemaVersion !== releaseLifecycleSchema || !DIGEST.test(lifecycle.recoveryIdentity ?? '')) throw new Error('release lifecycle is invalid.');
+  const currentTimeline = required(timelineIdentity, DIGEST, 'timelineIdentity');
+  return {
+    ...lifecycle,
+    orchestration: {
+      action: orchestrationAction(lifecycle.phase),
+      recoveryIdentity: lifecycle.recoveryIdentity,
+      timelineIdentity: currentTimeline,
+    },
   };
 }

@@ -2,14 +2,13 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { cleanupReleaseSelection, inspectReleaseSelection } from './release-selection.mjs';
+import { cleanupReleaseSelection, inspectReleaseSelection, reconcileReleaseSelectionWithMain } from './release-selection.mjs';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 export const releaseGitConvergenceSchema = 'buildr.release-git-convergence/v1';
@@ -72,8 +71,9 @@ function tree(repo, ref, dependencies) {
   return rev(repo, `${ref}^{tree}`, dependencies);
 }
 
-function isAncestor(repo, ancestor, descendant, dependencies) {
-  return git(repo, ['merge-base', '--is-ancestor', ancestor, descendant], dependencies, { allowFailure: true }).status === 0;
+function parents(repo, ref, dependencies) {
+  const values = git(repo, ['rev-list', '--parents', '-n', '1', ref], dependencies).stdout.trim().split(/\s+/u);
+  return values.slice(1).filter((value) => SHA.test(value));
 }
 
 function remoteHeads(repo, remote, branches, dependencies) {
@@ -98,14 +98,14 @@ function result(operation, status, data = {}) {
 }
 
 function blocked(operation, code, message, data = {}) {
-  const blockedStatus = data.status === 'published-but-dev-convergence-blocked'
+  const blockedStatus = data.status === 'published-but-dev-reconciliation-blocked'
     ? data.status
     : 'blocked';
   const { status: _status, diagnostic, nextActions, ...facts } = data;
   return result(operation, blockedStatus, {
     ...facts,
     diagnostic: { code, message, ...(diagnostic?.details ? { details: diagnostic.details } : {}) },
-    nextActions: nextActions ?? ['重新读取current release、main、dev与publication facts后重试；不得ours、reset或force push。'],
+    nextActions: nextActions ?? ['重新读取current frozen selection、release、main、dev与Publication facts后重试；不得写入dev、reset或force push。'],
   });
 }
 
@@ -116,6 +116,7 @@ function releaseSource(context) {
       releaseCommit: context.release?.sourceCommit,
       releaseTree: context.release?.sourceTree,
       mainCommit: context.convergence?.mainCommit,
+      selection: context.selection ?? null,
     };
   }
   return {
@@ -123,6 +124,7 @@ function releaseSource(context) {
     releaseCommit: context.candidate?.sourceCommit,
     releaseTree: context.convergence?.candidateTree,
     mainCommit: context.convergence?.mainCommit,
+    selection: null,
   };
 }
 
@@ -161,22 +163,6 @@ export function inspectDevBranchPolicy(options = {}, dependencies = {}) {
   }
 }
 
-function currentBranchPolicy(options, repo, dev, dependencies) {
-  const inspected = dependencies.inspectBranchPolicy
-    ? dependencies.inspectBranchPolicy({ repo, repository: options.repository ?? 'BuildrAI/Buildr', dev })
-    : inspectDevBranchPolicy({ repo, repository: options.repository, dev, ghCommand: options.ghCommand }, dependencies);
-  if (inspected?.status !== 'ready') return { status: 'blocked', inspected };
-  const observation = inspected.observation;
-  if (observation?.source !== 'github-branch-protection-readback'
-      || observation.branch !== dev
-      || !DIGEST.test(observation.identity ?? '')
-      || typeof observation.requiredLinearHistory !== 'boolean'
-      || typeof observation.allowsMergeCommits !== 'boolean') {
-    return { status: 'blocked', inspected: blocked('inspect-dev-policy', 'dev-branch-policy-observation-invalid', 'Branch policy observation is not a closed current GitHub readback.') };
-  }
-  return { status: 'ready', observation };
-}
-
 export function inspectReleaseToMain(options = {}, dependencies = {}) {
   const operation = 'inspect-main';
   try {
@@ -208,7 +194,8 @@ export function inspectReleaseToMain(options = {}, dependencies = {}) {
       carrierBranch,
       candidate: { commit: candidateCommit, tree: candidateTree, selectionIdentity: selection.selectionIdentity ?? null },
       refs,
-      main: { commit: refs[main], tree: mainTree, disposition: mainDisposition },
+      main: { commit: refs[main], tree: mainTree, disposition: mainDisposition, mergeMethod: null, mergeParents: null },
+      reconciliation: selection.reconciliationChain?.at(-1) ?? null,
       findings,
       nextActions: findings.length ? ['修复current release selection或remote ref漂移后重试。'] : [],
     });
@@ -263,7 +250,7 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
     }
     const prReadback = run(options.ghCommand ?? 'gh', [
       'pr', 'list', '--repo', repository, '--state', 'all', '--base', main, '--head', branch,
-      '--json', 'number,state,headRefOid,headRefName,baseRefName,url,mergedAt',
+      '--json', 'number,state,headRefOid,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeStateStatus',
     ], repo, dependencies);
     const pullRequests = parsePullRequests(prReadback.stdout);
     if (pullRequests.length > 1) return blocked(operation, 'release-main-pr-not-unique', `Expected at most one ${branch}→${main} pull request, found ${pullRequests.length}.`, { ...inspected, pullRequests, effects });
@@ -277,6 +264,22 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
       }
       if (pullRequest.state === 'MERGED' && inspected.main.disposition !== 'tree-equivalent') {
         return blocked(operation, 'release-main-tree-mismatch', 'The merged release→main pull request does not produce a main tree equal to the frozen release tree.', { ...inspected, pullRequests, effects });
+      }
+      if (pullRequest.state === 'MERGED' && inspected.reconciliation) {
+        const mergeCommit = typeof pullRequest.mergeCommit === 'string' ? pullRequest.mergeCommit : pullRequest.mergeCommit?.oid ?? null;
+        const mergeParents = mergeCommit ? parents(repo, mergeCommit, dependencies) : [];
+        if (mergeCommit !== inspected.refs[main] || mergeParents.length !== 2 || !mergeParents.includes(inspected.candidate.commit)) {
+          return blocked(operation, 'release-main-merge-commit-evidence-missing', 'The merged release→main pull request does not prove a merge commit from the current carrier.', {
+            ...inspected,
+            pullRequests,
+            mergeCommit,
+            mergeParents,
+            effects,
+            nextActions: ['重新读取GitHub mergeCommitOid与main父提交关系；squash/rebase结果不能作为发布收敛证据。'],
+          });
+        }
+        inspected.main.mergeMethod = 'merge';
+        inspected.main.mergeParents = mergeParents;
       }
       return result(operation, 'ready', { ...inspected, pullRequest, effects, nextActions: [] });
     }
@@ -299,18 +302,25 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
   }
 }
 
-function cleanupTemporaryWorktree(repo, directory, dependencies) {
-  git(repo, ['worktree', 'remove', '--force', directory], dependencies, { allowFailure: true });
-  const holder = path.dirname(directory);
-  fs.rmSync(directory, { recursive: true, force: true });
-  if (path.basename(directory) === 'worktree' && path.basename(holder).startsWith('buildr-release-dev-convergence-')) {
-    fs.rmSync(holder, { recursive: true, force: true });
+export function reconcileReleaseToMain(options = {}, dependencies = {}) {
+  const operation = 'reconcile-main';
+  try {
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const remote = options.remote ?? 'origin';
+    const resultValue = reconcileReleaseSelectionWithMain({
+      ...options,
+      repo,
+      devRef: options.devRef ?? `${remote}/${options.dev ?? 'dev'}`,
+      mainRef: options.mainRef ?? `${remote}/${options.main ?? 'main'}`,
+    }, dependencies);
+    return { ...resultValue, operation };
+  } catch (error) {
+    return blocked(operation, 'release-main-reconciliation-blocked', error.message);
   }
 }
 
-export function convergePublishedMainToDev(options = {}, dependencies = {}) {
-  const operation = 'converge-dev';
-  let temporary = null;
+export function reconcilePublishedReleaseWithDev(options = {}, dependencies = {}) {
+  const operation = 'reconcile-dev';
   try {
     const repo = path.resolve(options.repo ?? process.cwd());
     const remote = options.remote ?? 'origin';
@@ -319,95 +329,205 @@ export function convergePublishedMainToDev(options = {}, dependencies = {}) {
     const evidence = passedPublication(options.publicationEvidence);
     const source = releaseSource(evidence.context);
     const version = requiredVersion(source.version ?? evidence.release.npmVersion);
+    const branch = branchFor(version);
     const expectedMain = requiredSha(source.mainCommit ?? evidence.publish.headSha, 'publication main commit');
+    const expectedRelease = requiredSha(source.releaseCommit, 'publication release commit');
     const expectedTree = requiredSha(source.releaseTree, 'publication release tree');
-    const refs = remoteHeads(repo, remote, [main, dev], dependencies);
+    const refs = remoteHeads(repo, remote, [branch, main, dev], dependencies);
+    const selection = refs[dev]
+      ? inspectReleaseSelection({ version, repo, devRef: `${remote}/${dev}` }, dependencies)
+      : null;
     const recoveryIdentity = identity({
       operation,
       version,
       publicationEvidence: evidence.identity,
+      selectionIdentity: selection?.selectionIdentity ?? null,
+      expectedRelease,
       expectedMain,
-      mainBefore: refs[main],
-      devBefore: refs[dev],
+      refs,
     });
+    const publicFacts = { status: 'passed', evidenceIdentity: evidence.identity };
     if (refs[main] !== expectedMain) {
       return blocked(operation, 'published-main-ref-drift', 'Publication succeeded, but current main no longer matches the published transaction.', {
-        status: 'published-but-dev-convergence-blocked', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs,
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
       });
     }
     const actualMainTree = tree(repo, refs[main], dependencies);
     if (actualMainTree !== expectedTree) {
       return blocked(operation, 'published-main-tree-mismatch', 'Publication succeeded, but current main tree does not match the frozen release tree.', {
-        status: 'published-but-dev-convergence-blocked', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs, expectedTree, actualMainTree,
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, expectedTree, actualMainTree,
       });
     }
-    if (!refs[dev]) throw new Error(`Remote ${dev} is missing.`);
-    if (isAncestor(repo, refs[main], refs[dev], dependencies)) {
-      return result(operation, 'passed', {
-        action: 'already-converged', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs,
-        convergence: { mainCommit: refs[main], mainTree: actualMainTree, devBefore: refs[dev], devAfter: refs[dev] },
+    if (refs[branch] !== expectedRelease) {
+      return blocked(operation, 'published-release-ref-drift', 'Publication succeeded, but the formal remote release ref does not match the frozen release source.', {
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, expectedRelease,
       });
     }
-    const policyReadback = currentBranchPolicy(options, repo, dev, dependencies);
-    const branchPolicy = policyReadback.observation ?? null;
-    if (policyReadback.status !== 'ready' || branchPolicy.requiredLinearHistory === true || branchPolicy.allowsMergeCommits !== true) {
-      return blocked(operation, 'published-dev-branch-policy-incompatible', 'Publication succeeded, but current dev branch policy does not prove that the owned two-parent merge commit may be pushed normally.', {
-        status: 'published-but-dev-convergence-blocked',
-        version,
-        recoveryIdentity,
-        publication: { status: 'passed', evidenceIdentity: evidence.identity },
-        refs,
-        branchPolicy,
-        policyReadback: policyReadback.inspected ?? null,
-        nextActions: ['读取current dev branch policy；只有明确允许普通merge commit时才能继续，不得使用管理员绕过或改写历史。'],
+    if (!refs[dev]) {
+      return blocked(operation, 'published-dev-ref-missing', `Remote ${dev} is missing.`, {
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
       });
     }
-    const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-dev-convergence-'));
-    temporary = path.join(holder, 'worktree');
-    git(repo, ['worktree', 'add', '--detach', temporary, refs[dev]], dependencies);
-    const merge = git(temporary, ['merge', '--no-ff', '--no-commit', refs[main]], dependencies, { allowFailure: true });
-    if (merge.status !== 0) {
-      const conflicts = git(temporary, ['diff', '--name-only', '--diff-filter=U'], dependencies, { allowFailure: true }).stdout.split(/\r?\n/u).map((item) => item.trim()).filter(Boolean).sort();
-      git(temporary, ['merge', '--abort'], dependencies, { allowFailure: true });
-      cleanupTemporaryWorktree(repo, temporary, dependencies);
-      temporary = null;
-      return blocked(operation, 'published-dev-merge-conflict', 'Publication succeeded, but main cannot be merged into current dev without conflicts.', {
-        status: 'published-but-dev-convergence-blocked', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs,
-        conflictPaths: conflicts,
+    if (!selection || selection.status !== 'frozen' || selection.integrity?.status !== 'valid') {
+      return blocked(operation, 'published-release-selection-invalid', 'Publication succeeded, but the current frozen release selection cannot prove complete dev provenance.', {
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, selection,
+        nextActions: ['恢复并核验current frozen selection；没有sourceDevCommit的内容必须先由support Task交付dev，不能从聊天或release-only标签补造。'],
       });
     }
-    git(temporary, ['-c', 'user.name=Buildr Release', '-c', 'user.email=release@example.com', 'commit', '-m', `chore(release): 收敛 ${version} main 到 dev`], dependencies);
-    const merged = rev(temporary, 'HEAD', dependencies);
-    if (!isAncestor(temporary, refs[dev], merged, dependencies) || !isAncestor(temporary, refs[main], merged, dependencies)) throw new Error('Convergence commit does not preserve both main and dev histories.');
-    dependencies.beforeRemoteRecheck?.({ repo, refs, merged });
-    const live = remoteHeads(repo, remote, [main, dev], dependencies);
-    if (live[main] !== refs[main] || live[dev] !== refs[dev]) {
-      cleanupTemporaryWorktree(repo, temporary, dependencies);
-      temporary = null;
-      return blocked(operation, 'published-convergence-remote-race', 'Publication succeeded, but a related remote ref changed before the dev push.', {
-        status: 'published-but-dev-convergence-blocked', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, expectedRefs: refs, actualRefs: live,
+    const contextSelection = source.selection;
+    const selectionMatches = contextSelection
+      && contextSelection.status === 'frozen'
+      && contextSelection.version === version
+      && contextSelection.identity === selection.selectionIdentity
+      && contextSelection.generation === selection.generation
+      && contextSelection.releaseHead === selection.releaseHead
+      && contextSelection.releaseTree === selection.releaseTree;
+    if (!selectionMatches || selection.releaseHead !== expectedRelease || selection.releaseTree !== expectedTree || selection.devHead !== refs[dev]) {
+      return blocked(operation, 'published-release-selection-drift', 'Publication succeeded, but the current frozen selection does not match the published context or current dev.', {
+        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
+        expectedSelection: contextSelection,
+        actualSelection: {
+          status: selection.status,
+          identity: selection.selectionIdentity,
+          generation: selection.generation,
+          releaseHead: selection.releaseHead,
+          releaseTree: selection.releaseTree,
+          devHead: selection.devHead,
+        },
+        nextActions: ['重新读取matching Publication context和current frozen selection；不得合并main或整条release branch来掩盖identity漂移。'],
       });
     }
-    const push = git(temporary, ['push', remote, `HEAD:refs/heads/${dev}`], dependencies, { allowFailure: true });
-    if (push.status !== 0) {
-      cleanupTemporaryWorktree(repo, temporary, dependencies);
-      temporary = null;
-      return blocked(operation, 'published-dev-push-rejected', 'Publication succeeded, but the normal fast-forward dev push was rejected.', {
-        status: 'published-but-dev-convergence-blocked', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs,
-      });
-    }
-    const after = remoteHeads(repo, remote, [main, dev], dependencies);
-    if (after[dev] !== merged || !isAncestor(repo, after[main], after[dev], dependencies)) throw new Error('Remote dev readback does not prove publication convergence.');
-    cleanupTemporaryWorktree(repo, temporary, dependencies);
-    temporary = null;
+    const sourceCommits = selection.selectionChain.map((entry) => entry.sourceDevCommit);
+    const reconciliationIdentity = identity({
+      operation,
+      version,
+      publicationEvidence: evidence.identity,
+      selectionIdentity: selection.selectionIdentity,
+      mainCommit: refs[main],
+      mainTree: actualMainTree,
+      releaseCommit: refs[branch],
+      devHead: refs[dev],
+      devBaseline: selection.devBaseline,
+      sourceCommits,
+    });
     return result(operation, 'passed', {
-      action: 'merged', version, recoveryIdentity, publication: { status: 'passed', evidenceIdentity: evidence.identity }, refs: after,
-      convergence: { mainCommit: after[main], mainTree: actualMainTree, devBefore: refs[dev], devAfter: after[dev] },
-      effects: [{ type: 'dev-updated', ref: `refs/heads/${dev}`, before: refs[dev], after: after[dev], strategy: 'normal-merge' }],
+      action: 'verified',
+      version,
+      identity: reconciliationIdentity,
+      recoveryIdentity,
+      publication: publicFacts,
+      refs,
+      reconciliation: {
+        status: 'passed',
+        selectionIdentity: selection.selectionIdentity,
+        generation: selection.generation,
+        releaseCommit: selection.releaseHead,
+        releaseTree: selection.releaseTree,
+        mainCommit: refs[main],
+        mainTree: actualMainTree,
+        devHead: refs[dev],
+        devBaseline: selection.devBaseline,
+        sourceCommits,
+      },
     });
   } catch (error) {
-    if (temporary) cleanupTemporaryWorktree(path.resolve(options.repo ?? process.cwd()), temporary, dependencies);
-    return blocked(operation, 'published-dev-convergence-blocked', error.message, { status: 'published-but-dev-convergence-blocked' });
+    return blocked(operation, 'published-dev-reconciliation-blocked', error.message, { status: 'published-but-dev-reconciliation-blocked' });
+  }
+}
+
+export function convergePublishedMainToDev(options = {}, dependencies = {}) {
+  return reconcilePublishedReleaseWithDev(options, dependencies);
+}
+
+function localBranchCommit(repo, branch, dependencies) {
+  const ref = `refs/heads/${branch}`;
+  const check = git(repo, ['show-ref', '--verify', '--hash', ref], dependencies, { allowFailure: true });
+  return check.status === 0 ? requiredSha(check.stdout.trim(), ref) : null;
+}
+
+function releaseOwnedWorktrees(repo, branches, dependencies) {
+  const branchRefs = new Set(branches.map((branch) => `refs/heads/${branch}`));
+  const blocks = git(repo, ['worktree', 'list', '--porcelain'], dependencies).stdout.trim().split(/\n\n/u).filter(Boolean);
+  return blocks.map((block) => Object.fromEntries(block.split(/\r?\n/u).map((line) => {
+    const separator = line.indexOf(' ');
+    return separator === -1 ? [line, true] : [line.slice(0, separator), line.slice(separator + 1)];
+  }))).filter((entry) => branchRefs.has(entry.branch));
+}
+
+export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
+  const operation = 'closeout';
+  try {
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const remote = options.remote ?? 'origin';
+    const version = requiredVersion(options.version);
+    const generation = requiredGeneration(options.generation);
+    const expectedCommit = requiredSha(options.expectedCommit, 'expectedCommit');
+    const formalBranch = branchFor(version);
+    const carrierBranch = releaseCarrierBranchFor(version, generation);
+    const remoteRefs = remoteHeads(repo, remote, [formalBranch, carrierBranch], dependencies);
+    const localFormal = localBranchCommit(repo, formalBranch, dependencies);
+    const localCarrier = localBranchCommit(repo, carrierBranch, dependencies);
+    const ownedWorktrees = releaseOwnedWorktrees(repo, [formalBranch, carrierBranch], dependencies);
+    const findings = [];
+    if (remoteRefs[formalBranch] !== expectedCommit) findings.push({ code: 'formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: remoteRefs[formalBranch] });
+    if (localFormal !== null && localFormal !== expectedCommit) findings.push({ code: 'local-formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: localFormal });
+    if (remoteRefs[carrierBranch] !== null && remoteRefs[carrierBranch] !== expectedCommit) findings.push({ code: 'release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: remoteRefs[carrierBranch] });
+    if (localCarrier !== null && localCarrier !== expectedCommit) findings.push({ code: 'local-release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: localCarrier });
+    for (const worktree of ownedWorktrees) {
+      if (worktree.HEAD !== expectedCommit) findings.push({ code: 'release-worktree-head-drift', path: worktree.worktree, ref: worktree.branch, expected: expectedCommit, actual: worktree.HEAD ?? null });
+    }
+    if (findings.length) return blocked(operation, 'release-closeout-identity-unknown', 'Release closeout found resources whose ownership or identity cannot be proved.', { version, generation, expectedCommit, findings });
+
+    const effects = [];
+    if (ownedWorktrees.length && options.authorizeLocalSelectionCleanup !== true) {
+      return blocked(operation, 'release-worktree-cleanup-authorization-required', 'Removing owned release worktrees requires explicit local closeout authorization.', { version, generation, expectedCommit, ownedWorktrees });
+    }
+    for (const worktree of ownedWorktrees) {
+      if (sameFilesystemPath(worktree.worktree, repo)) return blocked(operation, 'release-worktree-is-execution-root', `Release-owned branch ${worktree.branch} is checked out in the execution root.`, { version, generation, expectedCommit, ownedWorktrees });
+      git(repo, ['worktree', 'remove', '--force', worktree.worktree], dependencies);
+      effects.push({ type: 'release-worktree-removed', path: worktree.worktree, ref: worktree.branch, commit: expectedCommit });
+    }
+    if (remoteRefs[carrierBranch] !== null) {
+      if (options.authorizeCarrierCleanup !== true) {
+        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned carrier ${remote}/${carrierBranch} requires explicit closeout authorization.`, {
+          version, generation, expectedCommit, formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
+        });
+      }
+      git(repo, ['push', remote, `:refs/heads/${carrierBranch}`], dependencies);
+      if (remoteHeads(repo, remote, [carrierBranch], dependencies)[carrierBranch] !== null) throw new Error(`Remote carrier ${carrierBranch} still exists after deletion.`);
+      effects.push({ type: 'remote-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
+    }
+    if (localCarrier !== null) {
+      if (options.authorizeCarrierCleanup !== true) {
+        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned local carrier ${carrierBranch} requires explicit closeout authorization.`, { version, generation, expectedCommit, effects });
+      }
+      const currentBranch = git(repo, ['branch', '--show-current'], dependencies).stdout.trim();
+      if (currentBranch === carrierBranch) return blocked(operation, 'release-carrier-checked-out', `Owned carrier ${carrierBranch} is currently checked out.`, { version, generation, expectedCommit, effects });
+      git(repo, ['branch', '-D', carrierBranch], dependencies);
+      effects.push({ type: 'local-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
+    }
+    if (options.authorizeLocalSelectionCleanup !== true) {
+      return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
+    }
+    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true }, dependencies);
+    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
+    effects.push(...selectionCleanup.effects);
+    const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, carrier: 'absent', selection: 'absent' });
+    return result(operation, 'passed', {
+      action: effects.length ? 'cleaned' : 'already-cleaned',
+      version,
+      generation,
+      expectedCommit,
+      identity: closeoutIdentity,
+      formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
+      resources: {
+        carrier: { ref: `refs/heads/${carrierBranch}`, local: 'absent', remote: 'absent' },
+        selection: { localBranch: 'absent', lifecycleRefs: 'absent' },
+      },
+      effects,
+    });
+  } catch (error) {
+    return blocked(operation, 'release-closeout-blocked', error.message);
   }
 }
 
@@ -566,7 +686,14 @@ function parseArgs(argv) {
     title: options.title,
     body: options.body,
   };
-  if (operation === 'converge-dev' || operation === 'cleanup-remote') return {
+  if (operation === 'reconcile-main') return {
+    ...common,
+    version: options.version,
+    mainRef: options['main-ref'],
+    reason: options.reason,
+    confirm: options.confirm === 'true',
+  };
+  if (operation === 'reconcile-dev' || operation === 'converge-dev' || operation === 'cleanup-remote') return {
     ...common,
     publicationEvidence: readJsonFile(options['publication-evidence']),
     authorizeRemoteDelete: options['authorize-remote-delete'] === 'true',
@@ -581,26 +708,28 @@ function parseArgs(argv) {
     authorizeCarrierCleanup: options['authorize-carrier-cleanup'] === 'true',
     authorizeLocalSelectionCleanup: options['authorize-local-selection-cleanup'] === 'true',
   };
-  throw new Error('Usage: release-git-convergence.mjs <inspect-main|ensure-main-pr|inspect-dev-policy|converge-dev|closeout|cleanup-remote> ...');
+  throw new Error('Usage: release-git-convergence.mjs <reconcile-main|inspect-main|ensure-main-pr|inspect-dev-policy|reconcile-dev|converge-dev|closeout|cleanup-remote> ...');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const operation = process.argv[2];
     const options = parseArgs(process.argv.slice(2));
-    const value = operation === 'inspect-main'
+    const value = operation === 'reconcile-main'
+      ? reconcileReleaseToMain(options)
+      : operation === 'inspect-main'
       ? inspectReleaseToMain(options)
       : operation === 'ensure-main-pr'
         ? ensureReleaseToMainPullRequest(options)
         : operation === 'inspect-dev-policy'
           ? inspectDevBranchPolicy(options)
-        : operation === 'converge-dev'
-          ? convergePublishedMainToDev(options)
+        : operation === 'reconcile-dev' || operation === 'converge-dev'
+          ? reconcilePublishedReleaseWithDev(options)
           : operation === 'closeout'
             ? closeoutReleaseGitResources(options)
             : cleanupRemoteReleaseBranch(options);
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-    if (value.status === 'blocked' || value.status === 'published-but-dev-convergence-blocked') process.exitCode = 1;
+    if (value.status === 'blocked' || value.status === 'published-but-dev-reconciliation-blocked') process.exitCode = 1;
   } catch (error) {
     process.stderr.write(`${JSON.stringify(blocked('unknown', 'release-git-convergence-invalid-input', error.message), null, 2)}\n`);
     process.exitCode = 1;

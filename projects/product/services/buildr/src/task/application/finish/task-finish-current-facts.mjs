@@ -17,13 +17,15 @@ function repositoryFacts(result, readiness) {
         identity: state.deliveryCarrier.identity || null,
         status: state.deliveryCarrier.status || null,
         owned: true,
+        pathCoverage: state.deliveryCarrier.pathCoverage ? { identity: state.deliveryCarrier.pathCoverage.identity || null, counts: state.deliveryCarrier.pathCoverage.counts || null } : null,
       } : null,
       remoteContainment: delivery ? {
         status: delivery.status || 'unknown',
         targetDisposition: delivery.targetDisposition || null,
         observedTargetRef: delivery.finalRemoteRef || delivery.remoteAfterRef || delivery.observedTargetRef || null,
         proofStatus: delivery.containment?.status || (delivery.status === 'delivered' ? 'contained' : null),
-      } : { status: 'unobserved', targetDisposition: null, observedTargetRef: null, proofStatus: null },
+        pathCoverageIdentity: delivery.pathCoverageIdentity || state?.deliveryCarrier?.pathCoverage?.identity || null,
+      } : { status: 'unobserved', targetDisposition: null, observedTargetRef: null, proofStatus: null, pathCoverageIdentity: null },
       cleanupProof: state?.cleanupProof ? { status: 'available' } : null,
     };
   });

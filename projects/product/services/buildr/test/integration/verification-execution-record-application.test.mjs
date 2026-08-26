@@ -169,6 +169,63 @@ test('Formal preparation blocked时在Execution Record和process副作用前返�
   assert.equal(fs.existsSync(marker), false);
 });
 
+test('Formal Plan preview零副作用返回完整request，prepare后同一envelope首次run直接执行', async (t) => {
+  const current = setup(t, 'verification-preparation-preview');
+  const selected = capability('demo.prepared', 'void 0');
+  selected.environment.preparation = [{ project: 'demo', recipe: 'demo.prepare' }];
+  declare(current.projectRoot, [selected]);
+  fs.writeFileSync(path.join(current.projectRoot, 'preparation.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-environment-preparation/v1',
+    recipes: [{
+      id: 'demo.prepare', scope: { kind: 'project' }, required: true,
+      steps: [{ id: 'prepare', cwd: '.', executable: { kind: 'workspace-foundation', name: 'node' }, args: ['prepare.mjs'], inputs: ['prepare.mjs'], outputs: [{ path: '.prepared', kind: 'file' }], required: true, timeoutMs: 10_000 }],
+    }],
+  }));
+  const capabilityIdentity = verificationCapabilityIdentity(selected);
+  let prepared = false;
+  current.runtime.resolveTaskEnvironmentExecution = () => ({
+    ready: true, taskId: current.taskId, environmentRoot: current.root, workspaceRoot: current.root,
+    scopes: [], allowedExecutionRoots: [current.root],
+    preparationPlan: {
+      identity: prepared ? 'sha256-plan-prepared' : 'sha256-plan-base',
+      projects: [{ project: 'demo', source: { kind: 'project-declaration', identity: 'sha256-preparation' }, scopes: [{ selector: 'project:demo', disposition: 'not-applicable', reason: 'No base preparation.', recipes: [] }] }],
+      capabilityPreparation: prepared ? [{ capability: selected.id, capabilityIdentity, project: 'demo', selector: 'project:demo', recipe: { id: 'demo.prepare' } }] : [],
+    },
+    preparationRecipes: prepared ? [{ scope: 'project:demo', recipe: 'demo.prepare', status: 'ready', identity: 'sha256-recipe', preparedIdentity: 'sha256-recipe', diagnostic: null }] : [],
+    receiptIdentity: prepared ? 'sha256-receipt-prepared' : 'sha256-receipt-base',
+    runtimeInvocation: { kind: 'node', executable: process.execPath, version: process.version, identity: 'sha256-runtime', searchPrefix: path.dirname(process.execPath), source: 'stable-controller' },
+    controllerInvocation: { kind: 'stable-controller', command: process.execPath, argsPrefix: ['-e', 'process.exit(99)'], sourceRoot: path.join(current.root, 'retained-product') },
+  });
+  let opens = 0;
+  const originalOpen = current.runtime.openTaskExecutionRecord;
+  current.runtime.openTaskExecutionRecord = (...args) => { opens += 1; return originalOpen(...args); };
+  const planArgs = [
+    '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected', '--target-identity', 'target:preview',
+    '--changed-path', 'projects/demo/src/example.mjs', '--target', current.root,
+    '--environment', current.taskId, '--workspace', current.root,
+  ];
+  const preview = current.runtime.verificationPlan(planArgs);
+  assert.equal(preview.schemaVersion, 'buildr.verification-plan-result/v1');
+  assert.equal(preview.preparation.status, 'action-required');
+  assert.deepEqual(preview.preparation.planRequest.auxiliaryPreparation.map((item) => item.recipe), ['demo.prepare']);
+  assert.equal(opens, 0);
+
+  prepared = true;
+  const ready = current.runtime.verificationPlan(planArgs);
+  assert.equal(ready.preparation.status, 'ready');
+  assert.equal(ready.preparation.planRequest, null);
+  const planPath = path.join(current.root, '.verification-plan-preview.json');
+  fs.writeFileSync(planPath, JSON.stringify(ready));
+  current.runtime.productRoot = () => path.join(current.root, 'retained-product');
+  const execution = await current.runtime.verificationRun([
+    '--project', 'demo', '--plan', planPath, '--target-identity', 'target:preview', '--target', current.root,
+    '--candidate-identity', current.candidateIdentity, '--candidate-generation', '1',
+    '--environment', current.taskId, '--workspace', current.root,
+  ]);
+  assert.equal(execution.status, 'passed');
+  assert.equal(opens, 1);
+});
+
 test('Formal preparation binding在首次副作用前漂移时fail closed', async (t) => {
   const current = setup(t, 'verification-preparation-race');
   const marker = path.join(current.projectRoot, 'must-not-start-race.txt');
@@ -324,15 +381,29 @@ test('候选 Verification 通过 Receipt 固定的 retained controller 编排 ca
   });
   let delegated = null;
   current.runtime.runVerificationThroughRetainedController = (context, args) => {
-    delegated = { context, args };
+    delegated = { context, args, planPath: args[3], plan: JSON.parse(fs.readFileSync(args[3], 'utf8')) };
     return { status: 'delegated' };
   };
 
-  const payload = await run(current, 'demo.pass');
+  const targetIdentity = 'target:demo.pass';
+  const envelope = current.runtime.verificationPlan([
+    '--project', 'demo', '--target-kind', 'task-delivery', '--selection-scope', 'affected',
+    '--target-identity', targetIdentity, '--changed-path', 'src/example.mjs', '--target', current.root,
+    '--environment', current.taskId, '--workspace', current.root,
+  ]);
+  const envelopePath = path.join(current.root, '.verification-plan-envelope.json');
+  fs.writeFileSync(envelopePath, JSON.stringify(envelope));
+  const payload = await current.runtime.verificationRun([
+    '--project', 'demo', '--plan', envelopePath, '--target-identity', targetIdentity, '--target', current.root,
+    '--candidate-identity', current.candidateIdentity, '--candidate-generation', String(current.candidateGeneration),
+    '--environment', current.taskId, '--workspace', current.root,
+  ]);
   assert.equal(payload.status, 'delegated');
   assert.equal(delegated.context.controllerInvocation.sourceRoot, retainedSource);
   assert.deepEqual(delegated.args.slice(0, 3), ['--project', 'demo', '--plan']);
-  assert.match(path.basename(delegated.args[3]), /^\.verification-plan-demo\.pass\.json$/);
+  assert.equal(path.basename(delegated.args[3]), 'plan.json');
+  assert.equal(delegated.plan.schemaVersion, 'buildr.verification-plan/v1');
+  assert.equal(fs.existsSync(delegated.planPath), false);
   assert.equal(current.runtime.listTaskExecutionRecords(current.root, current.taskId).records.length, 0);
 });
 

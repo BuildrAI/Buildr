@@ -270,11 +270,14 @@ try {
       cwd: task.repositories[1].checkoutPath,
       env,
       owner: { taskId: task.taskId, instance },
-      timeoutMs: platformTimeout(10_000),
+      timeoutMs: platformTimeout(60_000),
+      readiness: (stdout) => /"url"\s*:\s*"http:\/\//u.test(stdout),
+      readinessTimeoutMs: platformTimeout(60_000),
     });
   });
   const previewResults = await Promise.all(previewRuns.map((run) => run.completed));
   assert.equal(processesOverlap(previewResults[0], previewResults[1]), true);
+  assert.equal(previewResults.every((result) => result.ready), true);
   for (let index = 0; index < previewResults.length; index += 1) {
     const preview = parseSuccessfulJson(previewResults[index], `preview ${taskIds[index]}`);
     summary.previews.push({ taskId: taskIds[index], instance: previews[index], url: preview.url, port: Number(new URL(preview.url).port), owner: preview.owner, stateRoot: path.join(appData, 'previews', previews[index]) });

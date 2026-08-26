@@ -10,7 +10,7 @@ import {
   taskDevelopmentDriverSchema,
 } from '../../src/task/application/task-development-operation-contracts.mjs';
 
-const expectedActions = ['inspect', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier'];
+const expectedActions = ['inspect', 'discover', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier'];
 
 test('Task Development action contract覆盖全部driver actions并提供closed schema', () => {
   assert.deepEqual(TASK_DEVELOPMENT_ACTIONS, expectedActions);

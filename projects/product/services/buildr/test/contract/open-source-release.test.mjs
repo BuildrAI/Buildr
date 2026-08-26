@@ -571,7 +571,8 @@ test('release convergence and self-bootstrap runner fail closed on unmatched aut
   const convergenceSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/release-git-convergence.mjs'), 'utf8');
   assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
   assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
-  assert.match(convergenceSource, /published-but-dev-convergence-blocked/);
+  assert.match(convergenceSource, /published-but-dev-reconciliation-blocked/);
+  assert.match(convergenceSource, /reconcilePublishedReleaseWithDev/);
   assert.match(convergenceSource, /authorizeRemoteDelete/);
-  assert.doesNotMatch(convergenceSource, /\['merge', '-s', 'ours'|\['push'[^\]]*'--force'|\['reset', '--hard'/);
+  assert.doesNotMatch(convergenceSource, /\['merge'|\['commit'|\['worktree', 'add'|\['reset', '--hard'/);
 });

@@ -18,7 +18,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   const global = JSON.parse(run(['--help']).stdout);
   assert.equal(global.schemaVersion, 'buildr.task-development-driver-help/v1');
   assert.equal(global.action, null);
-  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
+  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'discover', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
   assert.match(global.usage, /--compact \| --profile/);
 
@@ -39,6 +39,12 @@ test('schema与example输出closed input contract', () => {
   assert.equal(example.schemaVersion, 'buildr.task-development-driver-example/v1');
   assert.deepEqual(example.inputJson, { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } });
   assert.deepEqual(JSON.parse(run(['inspect', '--example']).stdout).inputJson, {});
+  const discover = JSON.parse(run(['discover', '--schema']).stdout);
+  assert.deepEqual(discover.inputSchema.required, ['action']);
+  assert.deepEqual(discover.inputSchema.properties.action.enum, ['observe', 'policy']);
+  assert.equal(discover.inputSchema.properties.formalPlans.type, 'array');
+  assert.deepEqual(JSON.parse(run(['discover', '--example']).stdout).inputJson, { action: 'observe' });
+  assert.match(JSON.parse(run(['discover', '--help']).stdout).usage, /--plan <project>::<json-file>/);
 
   const carrier = JSON.parse(run(['carrier', '--schema']).stdout);
   assert.deepEqual(carrier.inputSchema.required, ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']);
@@ -64,4 +70,11 @@ test('未知、缺失或歧义发现请求失败关闭', () => {
     assert.equal(error.schemaVersion, 'buildr.task-development-driver-error/v1');
     assert.equal(error.diagnostic.code, 'task_development_driver_usage_invalid');
   }
+});
+
+test('discover拒绝非法Formal Plan文件映射且不进入Task mutation', () => {
+  const result = run(['discover', '--task', 'missing-task', '--target', '/tmp', '--input-json', '{"action":"policy"}', '--plan', 'invalid'], 1);
+  const error = JSON.parse(result.stderr);
+  assert.equal(error.schemaVersion, 'buildr.task-development-driver-error/v1');
+  assert.match(error.diagnostic.message, /--plan must be <project>::<json-file>/);
 });

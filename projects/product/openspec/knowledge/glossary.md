@@ -726,14 +726,14 @@
 
 ## 发布集合（Release Collection）
 
-- 定义：由维护者为一个精确package version从指定`dev` baseline创建的唯一`release-<version>`内容集合；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit或同版本明确授权的release-only metadata，不自动追随`dev`。
-- 适用范围：release create/update/freeze/reopen/abandon/cleanup、不可变generation freeze history、Product Candidate source、release→main PR、protected publication和发布后main→dev收敛。
+- 定义：由维护者为一个精确package version从指定`dev` baseline创建的唯一`release-<version>`内容集合；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit，不自动追随`dev`。没有`sourceDevCommit`的release-only内容只有在存在独立可验证dev回流证据时才可成立，current owner不支持时拒绝。
+- 适用范围：release create/update/freeze/reopen/abandon/cleanup、不可变generation freeze history、Product Candidate source、release→main PR、protected Publication和发布后dev来源核验。
 - 避免混用：不是release Task、Task worktree、Task Candidate、npm dist-tag或GitHub Release；同名branch/ref只是载体，必须同时核验version、baseline、selection chain和HEAD/tree identity。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`。
 
 ## 发布选择链（Release Selection Chain）
 
-- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、release-only metadata、generation和不可变历史freeze identity的closed可验证链。
+- 定义：从release的精确`dev` baseline开始，按维护者授权顺序记录每个source dev commit、带`-x` provenance的result release commit、generation和不可变历史freeze identity的closed可验证链；无法重建source dev commit的entry为invalid。
 - 适用范围：release更新审计、Candidate currentness、readiness、transaction context和失败恢复。
 - 避免混用：不是通用Git history、聊天中的commit列表或caller-claimed success；冲突现场、未授权commit和普通`dev`前进不能被静默加入链。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`。
@@ -747,10 +747,24 @@
 
 ## 发布生命周期（Release Lifecycle）
 
-- 定义：从current selection、Candidate、readiness、Publication、main→dev与closeout owner facts派生的version-scoped只读阶段模型；稳定recovery identity绑定version、唯一协调Task、selection generation/identity、frozen context与适用publish run。
+- 定义：从current selection、Candidate、readiness、Publication、dev provenance reconciliation与closeout owner facts派生的version-scoped只读阶段模型；稳定recovery identity绑定version、唯一协调Task、selection generation/identity、frozen context与适用publish run。
 - 适用范围：同一`release-<version>` Task从selection持续active到必需closeout完成、等待publication授权、发布后收敛恢复与最终no-change完成。
 - 避免混用：不是Task Record新状态、旁路workflow store、聊天进度、support Task或publication授权；Candidate/readiness通过不等于lifecycle closed。
 - 来源：canonical `openspec/specs/release-collection-model/spec.md`与`openspec/specs/agent-task-workflows/spec.md`。
+
+## 发布阶段时间线（Release Phase Timeline）
+
+- 定义：从Task、Git/PR、GitHub run/attempt、release owner Result、Environment与Doctor的current时间事实派生的portable closed阶段投影；identity绑定规范化阶段数组，不写Task Record或旁路日志库。
+- 适用范围：selection/freeze、Candidate attempts、release→main、readiness、publication授权、dispatch/Environment approval、Publication、dev reconciliation与closeout的耗时统计和恢复报告；等待分类只使用`machine-execution`、`platform-queue`、`environment-approval`、`human-decision`或`unknown`。
+- 避免混用：不是release lifecycle状态权威、Execution Record、聊天时间线或估算器；Candidate必须按`runId + runAttempt`保留reused evidence原attempt、实际rerun scope与aggregate identity，缺少开始或结束边界时不得补造duration。
+- 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/release-collection-model/spec.md`。
+
+## 发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）
+
+- 定义：Publication成功后，对matching frozen release selection、正式release/main refs与current remote dev执行的只读幂等核验；证明baseline和全部ordered `sourceDevCommit`仍由current dev包含，不创建main→dev merge或任何dev写入。
+- 适用范围：`release-git-convergence.mjs reconcile-dev`、release lifecycle的Publication后阶段与closeout前置。
+- 避免混用：不是main→dev convergence、tree equality、branch merge policy、release branch回灌或Task Finish Delivery；通过只证明发布集合的dev来源与identity currentness。
+- 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/release-collection-model/spec.md`。
 
 ## 发布中间载体（Release Intermediate Carrier）
 

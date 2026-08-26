@@ -1,4 +1,9 @@
 import crypto from 'node:crypto';
+import {
+  VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MAX_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MIN_MS,
+} from './verification-deadline.mjs';
 
 const TARGETS = new Set(['task-delivery', 'product-candidate', 'published-release']);
 const SCOPES = new Set(['affected', 'full', 'release-only']);
@@ -67,7 +72,12 @@ export function createVerificationRequest(input) {
 }
 
 function publicInvocation(invocation) {
-  if (invocation.kind === 'command') return { kind: 'command', argv: [...invocation.argv], cwd: invocation.cwd || '.' };
+  if (invocation.kind === 'command') return {
+    kind: 'command',
+    argv: [...invocation.argv],
+    cwd: invocation.cwd || '.',
+    timeoutMs: invocation.timeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  };
   if (invocation.kind === 'agent') return { kind: 'agent', instructions: [...invocation.instructions] };
   return { kind: 'provider', provider: invocation.provider };
 }
@@ -167,8 +177,13 @@ export function assertVerificationPlan(value, options = {}) {
   }
   for (const [index, unit] of value.executionUnits.entries()) {
     assertKeys(unit, new Set(['id', 'capability', 'scope', 'invocation', 'resourceClaims']), `plan.executionUnits[${index}]`);
-    assertKeys(unit.invocation, new Set(['kind', 'argv', 'cwd', 'instructions', 'provider']), `plan.executionUnits[${index}].invocation`);
+    assertKeys(unit.invocation, new Set(['kind', 'argv', 'cwd', 'instructions', 'provider', 'timeoutMs']), `plan.executionUnits[${index}].invocation`);
     if (!['command', 'agent', 'provider'].includes(unit.invocation?.kind)) throw new Error(`Verification Plan execution unit invocation is invalid: ${unit.id}.`);
+    if (unit.invocation.kind === 'command' && unit.invocation.timeoutMs !== undefined && (!Number.isInteger(unit.invocation.timeoutMs)
+      || unit.invocation.timeoutMs < VERIFICATION_COMMAND_TIMEOUT_MIN_MS
+      || unit.invocation.timeoutMs > VERIFICATION_COMMAND_TIMEOUT_MAX_MS)) {
+      throw new Error(`Verification Plan command timeoutMs is invalid: ${unit.id}.`);
+    }
   }
   const itemIds = new Set(value.selectedItems.flatMap((item) => [item.id, item.capability]));
   for (const unit of value.executionUnits) if (!itemIds.has(unit.capability)) throw new Error(`Verification Plan execution unit references unknown selected item: ${unit.capability}.`);
@@ -176,4 +191,48 @@ export function assertVerificationPlan(value, options = {}) {
   if (value.executionUnits.some((unit) => unit.invocation.kind === 'provider') && !value.providerIdentity) throw new Error('Verification Plan provider execution requires providerIdentity.');
   if (options.providerIdentity && value.providerIdentity !== options.providerIdentity) throw new Error('Verification Plan provider identity is stale.');
   return value;
+}
+
+export function createVerificationPlanResult({ plan: inputPlan, preparation = null }) {
+  const plan = assertVerificationPlan(inputPlan);
+  if (preparation !== null) {
+    if (!preparation || typeof preparation !== 'object' || Array.isArray(preparation)) throw new Error('Verification Plan preparation preview must be an object or null.');
+    const keys = new Set(['status', 'identity', 'requirements', 'planRequest']);
+    for (const key of Object.keys(preparation)) if (!keys.has(key)) throw new Error(`Verification Plan preparation.${key} is not supported.`);
+    if (!['ready', 'action-required'].includes(preparation.status)
+      || typeof preparation.identity !== 'string'
+      || !Array.isArray(preparation.requirements)
+      || (preparation.planRequest !== null && (typeof preparation.planRequest !== 'object' || Array.isArray(preparation.planRequest)))) {
+      throw new Error('Verification Plan preparation preview is invalid.');
+    }
+  }
+  const material = {
+    schemaVersion: 'buildr.verification-plan-result/v1',
+    operation: 'plan',
+    status: plan.status,
+    plan,
+    preparation,
+    effects: [],
+    nextActions: preparation?.status === 'action-required'
+      ? ['将preparation.planRequest原样交给Task Environment prepare；成功后使用本Plan result启动verification run。']
+      : [],
+  };
+  return Object.freeze({ ...material, identity: digest(material) });
+}
+
+export function assertVerificationPlanDocument(value, options = {}) {
+  if (value?.schemaVersion === 'buildr.verification-plan/v1') return { plan: assertVerificationPlan(value, options), result: null };
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.schemaVersion !== 'buildr.verification-plan-result/v1') {
+    throw new Error('Verification Plan document must use buildr.verification-plan/v1 or buildr.verification-plan-result/v1.');
+  }
+  const allowed = new Set(['schemaVersion', 'operation', 'status', 'plan', 'preparation', 'effects', 'nextActions', 'identity']);
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`verificationPlanResult.${key} is not supported.`);
+  const { identity, ...material } = value;
+  if (identity !== digest(material) || value.operation !== 'plan' || value.status !== value.plan?.status
+    || !Array.isArray(value.effects) || value.effects.length !== 0 || !Array.isArray(value.nextActions)) {
+    throw new Error('Verification Plan result identity or closed fields are invalid.');
+  }
+  const normalized = createVerificationPlanResult({ plan: assertVerificationPlan(value.plan, options), preparation: value.preparation });
+  if (normalized.identity !== value.identity || JSON.stringify(normalized) !== JSON.stringify(value)) throw new Error('Verification Plan result content is not canonical.');
+  return { plan: value.plan, result: value };
 }

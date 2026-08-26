@@ -76,10 +76,19 @@ test('默认 provider 使用 v3 Plan、Candidate-bound execution 与 Application
     'active优先', '`opened_at DESC, record_id DESC`', '`not-started-existing-terminal`', '显式追加`--retry`',
     '同一exact invocation独立新执行', '按新identity正常创建首次执行', '不重复播报“未传`--retry`”',
     'buildr.long-running-operation-summary/v1', '--detail full', 'recovery pointer',
+    'compact的`recovery`按约束保持null', 'admission.recovery.planRequest', '不会启动capability或补造record',
+    'buildr.verification-plan-result/v1', 'preparation.status: action-required',
+    '在启动run前把`preparation.planRequest`原样交给Task Environment `prepare --plan`',
+    '没有formal Environment的普通plan-only继续返回raw Plan v1',
   ]) assert.ok(verificationSkill.includes(required), `verification Skill must include ${required}`);
   for (const forbidden of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative']) {
     assert.equal(verificationSkill.includes(forbidden), false, `verification Skill must remove ${forbidden}`);
   }
+  assert.match(verificationSkill, /同一 target\/declaration\/capability identities/);
+  assert.match(verificationSkill, /不要因开发阶段和正式阶段切换再启动一轮相同broad affected execution/);
+  assert.match(verificationSkill, /focused feedback保持transient/);
+  assert.match(contract, /broad `Task-affected` feedback/);
+  assert.match(contract, /相同正式request不得因开发\/正式阶段切换重复启动broad execution/);
   assert.match(verificationReference, /buildr\.project-verification\/v3/);
   assert.match(verificationReference, /空声明或 coverage gap/);
   const template = YAML.parse(verificationTemplate);
@@ -136,6 +145,10 @@ test('Task Environment、Git provider 与 Task Verification 权限保持解耦',
   assert.match(worktreeSkill, /不判断 Task 是否 ready/);
   assert.match(worktreeSkill, /验证交给 `task-verification`/);
   assert.match(environmentSkill, /候选不能写 retained Workspace、其他 Task worktree 或共享 user runtime/);
+  assert.match(environmentSkill, /task environment plan record --schema\|--example/);
+  assert.match(environmentSkill, /与实际normalizer同源/);
+  assert.match(environmentSkill, /不得复制第二份schema/);
+  assert.match(environmentSkill, /Formal Verification Plan preview或admission/);
   assert.match(verificationSkill, /不拥有 Task Environment/);
   assert.match(verificationSkill, /不要复制stdout\/stderr、耗时、临时evidence path、Environment Receipt/);
 });

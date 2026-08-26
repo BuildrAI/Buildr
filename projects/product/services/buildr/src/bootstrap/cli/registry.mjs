@@ -81,9 +81,9 @@ const COMMAND_ROUTES = [
     surface: "agent-machine",
     summary: "从 Project verification.yml v3 与冻结目标形成可解释、内容寻址的 Verification Request/Plan；只预览选择，不执行测试或写 Result。",
     help: [
-      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--json]",
+      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--json]",
       "",
-      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。preview 不是 Execution Record 或 Verification Result。"
+      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。changed path统一为Project-relative；同时绑定Environment与Workspace时返回只读Preparation preview。preview不是Execution Record、Environment mutation或Verification Result。"
     ],
     match: ({ domain, action }) => domain === 'verification' && action === 'plan',
     run: (r, c) => r.verificationPlan(c.argv.slice(4)),
@@ -211,6 +211,7 @@ const COMMAND_GROUPS = [
     summary: "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
     help: [
       "Usage: buildr task environment <plan record|plan inspect|prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]",
+      "       buildr task environment plan record --schema|--example [--json]",
       "",
       "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
       "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受可重新验证的Delivery evidence或已持久化的abandon终态。"

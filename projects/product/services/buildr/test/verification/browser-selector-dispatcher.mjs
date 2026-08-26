@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { spawnSync } from 'node:child_process';
+import { executeVerificationCommand } from '../../src/verification/infrastructure/process-executor.mjs';
 
 import { collectChangedProductPaths } from './changed-paths.mjs';
 
@@ -124,7 +124,18 @@ export function selectBrowserSelectors(changedPaths) {
   return plan;
 }
 
-function main() {
+export async function runPhase(id, argv, cwd, timeoutMs, env = process.env) {
+  const startedAt = Date.now();
+  process.stderr.write(`[buildr-verification-phase] ${JSON.stringify({ scope: 'buildr-web-browser', id, status: 'started', startedAt: new Date(startedAt).toISOString() })}\n`);
+  const result = await executeVerificationCommand({ name: id, command: { argv, cwd, timeoutMs } }, { env });
+  const finishedAt = Date.now();
+  process.stdout.write(result.stdout || '');
+  process.stderr.write(result.stderr || '');
+  process.stderr.write(`[buildr-verification-phase] ${JSON.stringify({ scope: 'buildr-web-browser', id, status: result.status === 'passed' ? 'passed' : 'failed', startedAt: new Date(startedAt).toISOString(), finishedAt: new Date(finishedAt).toISOString(), durationMs: finishedAt - startedAt, failureCode: result.failureCode || null })}\n`);
+  return result;
+}
+
+async function main() {
   const args = process.argv.slice(2);
   const full = args.includes('--full');
   const run = args.includes('--run');
@@ -159,25 +170,20 @@ function main() {
   }
   if (!run || plan.status === 'not-applicable') return;
   const webDistVerifier = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'web-dist.mjs');
-  const webDistResult = spawnSync(process.execPath, [webDistVerifier], {
-    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'),
-    stdio: 'inherit',
-    env: process.env,
-  });
-  if (webDistResult.error) throw webDistResult.error;
-  if (webDistResult.status !== 0) {
-    process.exitCode = webDistResult.status ?? 1;
+  const webDistResult = await runPhase('web-dist', [process.execPath, webDistVerifier], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000);
+  if (webDistResult.status !== 'passed') {
+    process.exitCode = webDistResult.exitCode ?? 1;
     return;
   }
   const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.mjs');
   const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
-  const result = spawnSync(process.execPath, [isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], {
-    cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'),
-    stdio: 'inherit',
-    env: { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) },
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exitCode = result.status ?? 1;
+  const result = await runPhase('browser', [process.execPath, isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
+  if (result.status !== 'passed') process.exitCode = result.exitCode ?? 1;
 }
 
-if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) main();
+if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
+  main().catch((error) => {
+    process.stderr.write(`${error.code || 'browser_selector_dispatch_failed'}: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+}

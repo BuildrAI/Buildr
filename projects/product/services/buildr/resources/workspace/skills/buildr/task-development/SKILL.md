@@ -57,7 +57,7 @@ Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：P
 
 Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
 
-所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。随后继续正常Candidate、Completion Review、decision、handoff与Formal Finish。
+所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。Acceptance绑定current Parent Plan后，立即重读顶层`task next`并继续消费Task Development返回的真实typed next；不得再次执行`accept-parent`，也不得在Skill或Parent coordination中硬编码Finish。随后由Development current状态正常推进Candidate、Completion Review、decision、handoff与Formal Finish。
 
 ## 从首个研发动作接入
 
@@ -68,6 +68,14 @@ Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖
 3. 通过Development Application inspect已有Receipt；若缺失，在首个proposal、design、直接实现或其他正式研发动作前调用`begin`，记录完整Change dispositions与current planning snapshot。若Task将绑定OpenSpec变更，必须先有可解析脚手架并完成`add-change`再`begin`；不得先对空变更列表`begin`再绑定同一变更。无变更的任务仍在首个实现前`begin`空列表。`begin|planning`都必须显式提交完整`planning`整值；没有node时提交`{"targetIdentity":null,"nodes":[]}`，不得用字段omission表达清空、保留或patch。
 4. Proposal、design或Project自定义规划artifact形成/改变时调用`planning`，只保存专业authority、portable reference、content identity、disposition与最小summary。不存在的节点不造占位；`not-applicable`说明任务不适用；`waived`必须绑定明确用户/业务授权source。省略顶层`planning`时Application会在任何Receipt写入前失败关闭，Agent应根据专业authority重新形成完整snapshot，而不是猜测旧值。
 5. 通过`task-review`inspect Planning Result。Review可按当前policy不存在、not-applicable或明确waived；存在时必须绑定current planning target。旧Result和handoff snapshot即使stale也不删除或改写。
+
+在调用`observe`或`policy`前，优先使用同一 retained controller 执行：
+
+```text
+<controller-command> <controller-args-prefix...> __internal task-development discover --task <task-id> --target <canonical-workspace> --input-json '{"action":"observe"}'
+```
+
+`discover`返回`buildr.task-development-current-input/v1`的`inputJson`与来源facts：`observe`输入来自current Receipt的完整Change dispositions与planning target；`policy`在current policy仍适用时保留显式overrides。stable Content Target进入正式验证时，默认先由`task-verification`形成按有效Project完整覆盖的closed Formal Plans，再使用重复`--plan <project>::<json-file>`让Task Verification Application校验Plan、target、declaration与capability并投影selected policy输入、coverage gaps与response-only not-selected摘要。没有Plan的合法降级路径仍按current declarations的`usableFor: task-delivery`默认能力生成policy输入。两种discover都只读、不写任何Receipt/Result；读取后仍由`observe|policy` Application对漂移事实fail closed。没有current facts时恢复对应owner，不回退到静态example手工穷举。
 
 正式Task的OpenSpec planning artifacts达到apply-ready后，不再手工摘要文件。使用`buildr task next`返回的matching retained `environment.controllerInvocation`调用bundled只读resolver：
 
@@ -91,7 +99,7 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 ## Verification policy 与正式 Verification
 
-根据 Task scope 和 Task Verification Application 返回的 current declarations，形成一份完整 policy：
+根据 Task scope、Task Verification Application返回的current declarations与current closed Formal Plans，形成一份完整 policy：
 
 - 选择当前稳定目标需要的已有 capabilities，并说明 required；
 - 没有能力时记录 Project/Service coverage gap；
@@ -100,7 +108,16 @@ Finish的Git conflict只证明机械应用失败或需要语义判断，不证�
 
 有效Project集合必须合并显式Project、Service所属Project与Change所属Project。只有并集为空时才使用仅工作区policy：空declarations、空capabilities、唯一`workspace` coverage gap与空overrides；Service或Change不能因省略`scope.projects`进入该分支。仅工作区Content Target变化后重新形成policy；Project集合或declaration变化时旧policy必须stale。
 
-先在Task Context、Planning、Content Target与policy current时调用freeze形成或复用Candidate。再读取response-only`formalVerificationReadiness`：`ready`时把current Candidate identity/generation与Content Target作为显式lease交给`task-verification`；`blocked`只处理其中明确的Candidate输入漂移；`not-applicable`表示尚未到Candidate或已有matching Verification。readiness不进入Receipt、Result或新sidecar。
+stable Content Target形成后按默认顺序执行：
+
+1. 针对每个有效Project形成并复核closed Formal Verification Plan；只运行较窄focused feedback，不在阶段切换前另启相同broad affected execution。
+2. Plan preview为`action-required`时，把原样`preparation.planRequest`交给Task Environment一次幂等prepare；不手写安装或扩大Task scope。
+3. 使用同一批Plan documents调用`discover policy --plan <project>::<json-file>`，检查selected、not-selected、coverage gaps与必要risk override，再把返回的closed `inputJson`交给policy writer。
+4. Task Context、Planning、Content Target、Environment准备与policy均current后调用freeze形成或复用Candidate；随后把同一Plan文件交给formal run/reconcile。
+
+该顺序是Formal Development的推荐工作流，不自动prepare、policy、freeze或run，也不是普通开发的许可层；Agent仍决定额外风险能力、override、外部授权及是否采用其他满足owner contract的合法路径。Plan、target、declaration或capability identity变化时重新plan，不复用旧preview或execution。
+
+Candidate形成后读取response-only`formalVerificationReadiness`：`ready`时把current Candidate identity/generation与Content Target作为显式lease交给`task-verification`；`blocked`只处理其中明确的Candidate输入漂移；`not-applicable`表示尚未到Candidate或已有matching Verification。readiness不进入Receipt、Result或新sidecar。
 
 该预检只属于正式Task的Development → Formal Verification交接。开发中的focused/affected/unit/integration反馈、Task外transient`verification run`和Candidate CI不读取readiness。Current Knowledge不再是Formal Verification前的固定预检；它只需在handoff前形成绑定current Content Target的最小disposition。
 

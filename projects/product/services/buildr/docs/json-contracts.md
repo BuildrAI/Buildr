@@ -29,6 +29,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task environment plan record/inspect` | `buildr.task-environment-plan-result/v2` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
 | 长流程缺省compact（Verification、release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
+| `verification plan`（普通） | `buildr.verification-plan/v1` |
+| `verification plan --environment <task-id> --workspace <canonical-workspace>` | `buildr.verification-plan-result/v1` |
 | `verification run --detail full` | `buildr.verification-execution/v1` |
 | `__internal task-retrospective list` | `buildr.task-retrospective-list-result/v1` |
 | `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
@@ -53,6 +55,8 @@ Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决�
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
 `buildr.long-running-operation-summary/v1`是closed、最多16384 UTF-8字节的只读投影，固定表达operation、compact detail、terminal/status、Task/run/result identity、至多12个关键阶段、primary failure、cleanup、output boundary与至多一个结构化recovery pointer。它不包含完整checks/context/evidence/operations/effects/diagnostics、stdout/stderr、本机路径、raw argv、secret、lease、resume token或正文，也不成为新的Result authority。展示截断与execution failure正交；收到`running`、stdout丢失或等待超时时，consumer先按pointer回读同一owner，不默认重跑。
+
+`buildr.verification-plan-result/v1`是closed formal Plan envelope，包含raw `buildr.verification-plan/v1`、只读`preparation` preview、零`effects`与下一步。`preparation`投影完整selected capability closure；`action-required`时提供closed Task Environment `planRequest`。Preview不执行Recipe、不启动capability、不写Environment/Execution Record，也不构成execution授权；`verification run --plan`接受raw Plan与envelope，并重新验证current declaration、Environment与closure drift。
 
 `buildr.verification-execution/v1`只在`verification run --detail full`显式返回，并继续保存显式 target identity、Project/declaration identity、实际选择的 command capabilities、逐项终态、可选 Task Environment execution binding、精确 capability/resource 授权、资源协调、真实 wall-clock、execution identity 与 transient evidence lifecycle。正式Task run额外返回portable invocation/record/run identity；相同exact invocation已有active时返回`status: active`，没有active但已有terminal时返回原record的passed/failed readback，两者都零执行。terminal full envelope固定`checks: []`、`durationMs: 0`、`timingSource: not-started-existing-terminal`、`executionIdentity: null`且不创建transient evidence。只有显式`--retry`创建同identity独立run，identity输入变化正常执行。完整Result不是 portable Task Result，也不表达固定 assurance、推进决定或 Candidate generation。
 

@@ -73,6 +73,12 @@ export function createProductVerificationProvider({ providerId = 'buildr.product
           const invocation = wantsAffected && item.invocation.affected ? item.invocation.affected : item.invocation.full;
           if (invocation.kind === 'provider') return [];
           const scope = wantsAffected && item.invocation.affected ? 'affected' : 'full';
+          // Browser owns its phase deadlines inside the async runner. Keep the
+          // provider plan readable by the retained controller's older v3
+          // parser; execution still resolves the command default at runtime.
+          const planInvocation = item.id === 'product.browser-smoke' && invocation.kind === 'command'
+            ? Object.fromEntries(Object.entries(invocation).filter(([key]) => key !== 'timeoutMs'))
+            : invocation;
           const selection = {
             kind: scope === 'affected' ? 'direct' : 'full',
             reasonCode: scope === 'affected' ? 'discovery-source-match' : 'affected-entry-unavailable',
@@ -84,7 +90,11 @@ export function createProductVerificationProvider({ providerId = 'buildr.product
             id: `${item.id}:${scope}`,
             capability: item.id,
             scope,
-            invocation: { ...invocation, ...(invocation.argv ? { argv: [...invocation.argv] } : {}), ...(invocation.instructions ? { instructions: [...invocation.instructions] } : {}) },
+            invocation: {
+              ...planInvocation,
+              ...(planInvocation.argv ? { argv: [...planInvocation.argv] } : {}),
+              ...(planInvocation.instructions ? { instructions: [...planInvocation.instructions] } : {}),
+            },
             resourceClaims: [...(item.resourceClaims || [])],
           };
           return [{ id: item.id, capability: item.id, evidence: [...item.evidence], proves: [...item.proves], selection, executionUnit }];

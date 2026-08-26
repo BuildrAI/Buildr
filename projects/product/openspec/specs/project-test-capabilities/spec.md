@@ -147,3 +147,56 @@ Project没有`verification.yml`时Doctor MUST零finding；文件存在时 MUST�
 - **WHEN** v3 declaration包含`applicability`、`requiredForDelivery`或其他不属于v3的字段
 - **THEN** Doctor MUST返回精确closed-schema finding与迁移指引
 - **AND** MUST NOT忽略字段后继续执行
+
+### Requirement: Command invocation 必须解析为声明式执行时限
+Buildr MUST让closed v3 command invocation可声明`timeoutMs`，并 MUST在Verification Plan中为每个command execution unit保存解析后的有界deadline。显式值 MUST为`1000..1800000`毫秒；未声明时 MUST使用确定性兼容默认值。Plan identity MUST包含解析后的deadline，CLI或Agent不得在execution时临时覆盖。
+
+#### Scenario: v3 command显式声明timeout
+- **WHEN** capability的selected command invocation声明合法`timeoutMs`
+- **THEN** Plan execution unit MUST保存同一值并纳入Plan identity
+- **AND** runner MUST以该值作为本次command的wall-clock deadline
+
+#### Scenario: 现有v3 command没有timeout
+- **WHEN** 合法v3 declaration的command invocation没有`timeoutMs`
+- **THEN** normalizer MUST使用产品声明的兼容默认值生成有界execution unit
+- **AND** declaration MUST继续有效，不得因本次扩展成为破坏性迁移
+
+#### Scenario: timeout非法
+- **WHEN** command invocation声明非整数、低于1000或高于1800000的`timeoutMs`
+- **THEN** Doctor与planner MUST在启动command前返回closed-schema诊断
+- **AND** MUST不打开Execution Record、取得resource或启动process
+
+#### Scenario: legacy v2 declaration继续读取
+- **WHEN** runtime读取合法v2 command capability
+- **THEN** compatibility reader MUST使用同一保守默认值形成有界内部execution unit
+- **AND** MUST不向v2 declaration回填`timeoutMs`或扩展v2作者模型
+
+### Requirement: Verification Plan 必须规范化Workspace与Project相对changed path
+Buildr `verification plan` MUST在Request identity与capability selection前，把无歧义的managed Workspace-relative和Project-relative changed path规范化为canonical Project-relative path。Plan、selection reasons、provider input与Browser dispatcher MUST只消费canonical paths；绝对路径、`..`、越界、其他Project前缀或无法唯一归属的输入 MUST在Plan创建前失败关闭，并返回目标Project的registered root与期望路径形式。
+
+#### Scenario: 两种相对根表达同一文件
+- **WHEN** 调用方分别以`services/buildr/src/example.mjs`和registered Workspace前缀下的`projects/product/services/buildr/src/example.mjs`创建同一Project、target与selection的Plan
+- **THEN** 两次Request identity、Plan identity、selected capabilities与selection reasons MUST相同
+
+#### Scenario: changed path指向其他Project或越界
+- **WHEN** Workspace-relative input不属于selected Project，或path包含绝对根与父级逃逸
+- **THEN** Plan mutation MUST在provider与owner selection前blocked
+- **AND** diagnostic MUST返回selected Project、registered source root与canonical Project-relative期望
+
+### Requirement: Formal Plan-only 必须提供只读Preparation preview
+当`verification plan`同时绑定matching formal Task Environment与canonical Workspace时，Buildr MUST在零execution、零Environment mutation和零Execution Record状态返回closed Plan result envelope。Envelope MUST包含原始`buildr.verification-plan/v1`、selected capabilities完整Preparation closure、`ready|action-required`状态、closure identity、全部requirements及适用的closed Task Environment plan request；`verification run --plan` MUST同时接受raw Plan与该envelope，并 MUST重新验证current declaration、Environment与closure，不得信任preview作为execution授权。
+
+#### Scenario: 首次formal Plan发现辅助准备
+- **WHEN** current Task Environment只有基础Buildr Service准备，而Plan选中需要Buildr与Buildr Web Recipe的Product capability
+- **THEN** Plan result MUST以`action-required`返回包含两项requirement的完整plan request
+- **AND** MUST NOT启动capability、执行Recipe、打开Execution Record或写Environment
+
+#### Scenario: Agent先完成preview中的准备
+- **WHEN** Agent把Plan result中的closed plan request原样交给Task Environment且prepare成功，再用同一Plan result启动formal run
+- **THEN** run MUST直接通过preparation admission进入execution或返回其他真实blocker
+- **AND** MUST NOT因正常首次发现再次返回`verification.preparation_blocked`
+
+#### Scenario: 无formal Environment的普通Plan
+- **WHEN** 调用方未同时提供`--environment`与`--workspace`
+- **THEN** CLI MUST继续返回raw `buildr.verification-plan/v1`
+- **AND** MUST不读取或要求Task Environment

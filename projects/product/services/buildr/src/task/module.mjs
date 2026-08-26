@@ -193,7 +193,7 @@ const TASK_ENVIRONMENT_PERSISTENCE_METHODS = Object.freeze([
 const TASK_EXECUTION_RECORD_APPLICATION_METHODS = Object.freeze([
   'openTaskExecutionRecord', 'inspectTaskExecutionRecord', 'listTaskExecutionRecords',
   'listTaskExecutionRecordView', 'inspectTaskExecutionRecordView', 'inspectTaskExecutionRecordCompactView',
-  'readTaskExecutionRecordBodyFileView', 'sealTaskExecutionRecord', 'resolveTaskExecutionRecord',
+  'readTaskExecutionRecordBodyFileView', 'sealTaskExecutionRecord', 'updateTaskExecutionRecordProgress', 'resolveTaskExecutionRecord',
   'cleanupTaskExecutionRecord', 'gcTaskExecutionRecords', 'recoverTaskExecutionRecord',
 ]);
 const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
@@ -204,14 +204,14 @@ const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
   'cleanupTaskExecutionRecordBody',
 ]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
-  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
+  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'deriveTaskVerificationPolicyInput', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
 ]);
 const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
   'taskVerificationResultPath', 'readTaskVerificationResultPersistence', 'writeTaskVerificationResultPersistence', 'renderTaskVerificationResult',
 ]);
 const TASK_PLANNING_IDENTITY_APPLICATION_METHODS = Object.freeze(['inspectTaskPlanningIdentity']);
 const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'beginTaskDevelopment',
+  'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'discoverTaskDevelopmentInput', 'beginTaskDevelopment',
   'recordTaskDevelopmentPlanning', 'observeTaskDevelopment', 'recordTaskDevelopmentPolicy',
   'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
@@ -237,7 +237,7 @@ const TASK_FINISH_PERSISTENCE_METHODS = Object.freeze([
   'taskFinishRunPath', 'taskFinishCompletionPath', 'readTaskFinishRunPersistence',
   'writeTaskFinishRunPersistence', 'discardFailedTaskFinishRunPersistence',
   'readTaskFinishCompletionPersistence', 'writeTaskFinishCompletionPersistence',
-  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence',
+  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence', 'writeTaskFinishTerminalCleanupPersistence',
   'acquireTaskFinishCurrentTargetLease', 'acquireTaskFinishTargetLease',
   'releaseTaskFinishCurrentTargetLease', 'releaseTaskFinishTargetLease',
   'readTaskFinishResultsPersistence', 'inspectTaskFinishPersistence',
@@ -318,7 +318,7 @@ function taskEnvironmentCliContributions() {
     },
     {
       key: 'task environment plan record', surface: 'agent-machine', summary: '解析Project Preparation Declaration并原子保存当前Task的Plan执行快照，不执行任何准备Step。',
-      help: ['Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]', '', '输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。'],
+      help: ['Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]', '       buildr task environment plan record --schema|--example [--json]', '', '输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。', 'Discovery与实际Plan request定义同源，零Workspace读取且零写入。'],
       match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
       run: (runtime, context) => taskEnvironmentPlanCommand(runtime, 'record', context.args.slice(1)),
     },
@@ -461,13 +461,14 @@ export function createTaskFinishCliContributions(application = null) {
       key: 'task finish run', surface: 'agent-machine', summary: '必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。',
       help: [
         'Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]',
-        'Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]',
+        'Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--reviewed-target-path <repository-selector>::<path>::<reason> ...] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]',
         'Bootstrap recovery: buildr task finish run --run <id> [--resume <token>] --bootstrap-recovery --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]',
         'Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]', '',
         '必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。',
         '可选 --agent：省略时使用 Task Environment 已绑定 adapter，不得猜测当前聊天宿主或默认为 Codex；传入值必须与 Environment adapter 一致。',
-        '互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。',
+        '互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation、--reviewed-target-path互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。',
         '零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。',
+        '逐路径适配：--reviewed-target-path只用于已有adaptation-required run的matching resume；每项显式绑定repository selector、Task Contribution path与非空理由。Buildr记录Agent判断但不宣称机器证明语义等价，未处置路径继续blocked。',
         '受控自修复：--bootstrap-recovery只用于已有run在无交付副作用的preflight/prepare Product provider缺陷；必须另行明确授权。retained Application仍是writer，只从冻结clean Task Environment HEAD派生并加载run-owned provider capsule；不接受source/module/tarball/manifest输入。',
         '占用释放：--release-occupancy只用于Task已放弃且该run从未成功交付时，释放run-owned隔离载体占用；不是普通resume、不是作废已推送交付，也不把abandoned Task改成completed。',
         'Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。',

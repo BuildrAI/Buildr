@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
+import { HTTP_CONTRACT_FRESH_BUILD_FILES } from '../verification/http-contract-fresh-build-inventory.mjs';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../verification/timing/phases.mjs';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
@@ -68,28 +69,12 @@ test('fresh Git Task Environment 一次 prepare 安装 buildr/buildr-web 并用�
     fs.copyFileSync(path.join(serviceRoot, 'tools', 'development', script), path.join(candidateBuildr, 'tools', 'development', script));
     if (!script.endsWith('.cmd')) fs.chmodSync(path.join(candidateBuildr, 'tools', 'development', script), 0o755);
   }
-  for (const relative of [
-    'tools/contracts/task-record-dto.mjs',
-    'tools/contracts/task-professional-dto.mjs',
-    'tools/contracts/workspace-agent-assets-dto.mjs',
-    'tools/contracts/runtime-system-dto.mjs',
-    'src/infrastructure/contracts/json-schema-validator.mjs',
-    'src/task/interfaces/http/task-record-http-contracts.mjs',
-    'src/task/interfaces/http/generated/task-record-http-dto.ts',
-    'src/task/interfaces/http/task-professional-http-contracts.mjs',
-    'src/task/interfaces/http/generated/task-professional-http-dto.ts',
-    'src/workspace/interfaces/http/workspace-http-contracts.mjs',
-    'src/workspace/interfaces/http/generated/workspace-http-dto.ts',
-    'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
-    'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts',
-    'src/web/http/buildr-web-http-contracts.mjs',
-    'src/web/http/generated/runtime-system-http-dto.ts',
-    'src/system/installation/interfaces/http/release-awareness-http-contracts.mjs',
-    'src/system/publication/interfaces/http/publication-http-contracts.mjs',
-  ]) {
-    const target = path.join(candidateBuildr, relative);
+  for (const item of HTTP_CONTRACT_FRESH_BUILD_FILES) {
+    const sourceRoot = item.owner === 'buildr' ? serviceRoot : webSourceRoot;
+    const targetRoot = item.owner === 'buildr' ? candidateBuildr : candidateWeb;
+    const target = path.join(targetRoot, item.path);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(path.join(serviceRoot, relative), target);
+    fs.copyFileSync(path.join(sourceRoot, item.path), target);
   }
   fs.cpSync(webSourceRoot, candidateWeb, { recursive: true, filter: (source) => path.basename(source) !== 'node_modules' });
   const workspaceId = /^id:\s*(\S+)\s*$/m.exec(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'))?.[1];

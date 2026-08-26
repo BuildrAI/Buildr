@@ -2,11 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+import {
+  TASK_ENVIRONMENT_PLAN_REQUEST_EXAMPLE,
+  TASK_ENVIRONMENT_PLAN_REQUEST_INPUT_SCHEMA,
+} from '../../domain/task-environment-plan.mjs';
+
 function syntax(operation, message) {
   const usage = operation === 'prepare'
     ? 'buildr task environment prepare <task-id> --agent <adapter> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]'
     : operation === 'plan-record'
-      ? 'buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]'
+      ? 'buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json] | --schema | --example'
       : operation === 'plan-inspect'
         ? 'buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]'
     : `buildr task environment ${operation} <task-id> [--target <canonical-workspace>] [--json]`;
@@ -21,9 +26,9 @@ function parse(operation, args) {
   const allowed = operation === 'prepare'
     ? new Set(['--plan', '--agent', '--branch', '--start-point', '--shared', '--target', '--json'])
     : operation === 'plan-record'
-      ? new Set(['--input', '--target', '--json'])
+      ? new Set(['--input', '--target', '--json', '--schema', '--example'])
     : new Set(['--target', '--json']);
-  const boolean = new Set(['--json', '--shared']);
+  const boolean = new Set(['--json', '--shared', '--schema', '--example']);
   const values = new Map();
   const positions = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -42,6 +47,12 @@ function parse(operation, args) {
       index += 1;
     }
   }
+  const discovery = operation === 'plan-record' && (values.has('--schema') || values.has('--example'));
+  if (discovery) {
+    if (values.has('--schema') && values.has('--example')) throw syntax(operation, 'Discovery accepts exactly one of --schema or --example.');
+    if (positions.length || [...values.keys()].some((name) => !['--schema', '--example', '--json'].includes(name))) throw syntax(operation, 'Discovery accepts only --schema or --example, optionally with --json.');
+    return { taskId: null, targetRoot: null, json: true, discovery: values.has('--schema') ? 'schema' : 'example', plan: null };
+  }
   if (positions.length !== 1) throw syntax(operation, `task environment ${operation} requires exactly one <task-id>.`);
   if (operation === 'prepare' && !values.has('--agent')) throw syntax(operation, '--agent is required.');
   if (operation === 'plan-record' && !values.has('--input')) throw syntax(operation, '--input is required.');
@@ -58,6 +69,7 @@ function parse(operation, args) {
     branch: values.get('--branch') || null,
     startPoint: values.get('--start-point') || null,
     shared: values.get('--shared') === true,
+    discovery: null,
     plan: readJson(operation === 'plan-record' ? '--input' : '--plan'),
   };
 }
@@ -93,6 +105,13 @@ export async function taskEnvironmentCommand(runtime, operation, args) {
 
 export async function taskEnvironmentPlanCommand(runtime, operation, args) {
   const parsed = parse(`plan-${operation}`, args);
+  if (parsed.discovery) {
+    const payload = parsed.discovery === 'schema'
+      ? { schemaVersion: 'buildr.task-environment-plan-request-input-schema/v1', operation: 'discover-schema', status: 'ready', inputSchema: TASK_ENVIRONMENT_PLAN_REQUEST_INPUT_SCHEMA, effects: [] }
+      : { schemaVersion: 'buildr.task-environment-plan-request-example/v1', operation: 'discover-example', status: 'ready', input: TASK_ENVIRONMENT_PLAN_REQUEST_EXAMPLE, effects: [] };
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    return payload;
+  }
   const payload = operation === 'record'
     ? runtime.recordTaskEnvironmentPlan(parsed.targetRoot, parsed.taskId, parsed.plan)
     : runtime.inspectTaskEnvironmentPlan(parsed.targetRoot, parsed.taskId);

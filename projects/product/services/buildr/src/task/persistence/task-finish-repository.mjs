@@ -87,6 +87,7 @@ function compactResult(result) {
       expectedTargetRef: result.carrier.expectedTargetRef || null,
       targetRef: result.carrier.targetRef || null,
       changedPaths: Array.isArray(result.carrier.changedPaths) ? result.carrier.changedPaths.slice(0, 500) : [],
+      pathCoverage: result.carrier.pathCoverage ? { identity: result.carrier.pathCoverage.identity || null, counts: result.carrier.pathCoverage.counts || null } : null,
     } : null,
     repositories: Array.isArray(result?.repositories) ? result.repositories.map((repository) => ({
       selector: repository.selector,
@@ -100,6 +101,7 @@ function compactResult(result) {
         tree: repository.deliveryCarrier.tree || null,
         expectedTargetRef: repository.deliveryCarrier.expectedTargetRef || null,
         changedPaths: Array.isArray(repository.deliveryCarrier.changedPaths) ? repository.deliveryCarrier.changedPaths.slice(0, 500) : [],
+        pathCoverage: repository.deliveryCarrier.pathCoverage ? { identity: repository.deliveryCarrier.pathCoverage.identity || null, counts: repository.deliveryCarrier.pathCoverage.counts || null } : null,
       } : null,
       equivalence: repository.equivalence || null,
       delivery: repository.delivery || null,
@@ -704,6 +706,35 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
+  function writeTaskFinishTerminalCleanupPersistence(targetRoot, { taskId, runId, cleanup }) {
+    if (!taskId || !runId || !cleanup || typeof cleanup !== 'object') throw error('task_finish_terminal_cleanup_identity_invalid', 'Terminal cleanup persistence requires Task, run and cleanup.');
+    let opened;
+    try {
+      opened = open(runtime, targetRoot, true);
+      const database = opened.database;
+      database.exec('BEGIN IMMEDIATE');
+      const current = readCurrentRow(database, { taskId });
+      const decoded = current ? decodeRow(current) : null;
+      if (!current || current.run_id !== runId || decoded?.kind !== 'terminal') {
+        throw error('task_finish_current_conflict', 'Terminal cleanup persistence requires matching terminal Finish state.', 409, { taskId, runId, currentRunId: current?.run_id || null, currentKind: decoded?.kind || null });
+      }
+      const completion = { ...clone(decoded.completion), cleanup: clone(cleanup) };
+      const result = { ...clone(completion.result) };
+      if (!result.completion) throw error('task_finish_terminal_cleanup_result_invalid', 'Terminal Finish Result lacks completion cleanup authority.', 409, { taskId, runId });
+      result.completion = { ...clone(result.completion), cleanup: clone(cleanup) };
+      completion.result = result;
+      const payload = { kind: 'terminal', identityDigest: current.identity_digest, completion: completionDetail(completion) };
+      const record = { ...current, cleanup_status: cleanup.status || null, payload_json: JSON.stringify(payload), updated_at: timestamp() };
+      const written = decodeRow(writeCurrentRow(database, record));
+      database.exec('COMMIT');
+      return { storage: 'workspace-sqlite', file: completionLocator(taskId), taskId, runId, cleanup: clone(written.completion.cleanup), kind: written.kind };
+    } catch (cause) {
+      try { opened?.database?.exec('ROLLBACK'); } catch {}
+      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
+      throw error('task_finish_terminal_cleanup_write_failed', `Terminal Finish cleanup persistence failed: ${cause.message}`, 500, { taskId, runId });
+    } finally { close(opened); }
+  }
+
   function acquireTaskFinishCurrentTargetLease(targetRoot, {
     taskId,
     runId,
@@ -831,6 +862,7 @@ export function registerTaskFinishRepository(runtime) {
     finalizeTaskFinishPersistence,
     replaceTaskFinishRunPersistence,
     writeTaskFinishMaintenancePersistence,
+    writeTaskFinishTerminalCleanupPersistence,
     acquireTaskFinishCurrentTargetLease,
     acquireTaskFinishTargetLease,
     releaseTaskFinishCurrentTargetLease,

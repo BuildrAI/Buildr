@@ -227,21 +227,31 @@ Buildr MUST以 closed release transaction context/evidence schema关联 source r
 - **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
-Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个generation-scoped受保护release→main收敛PR；merge后`main` tree MUST等于冻结release tree。正式Publication成功后才可执行main→dev收敛；该动作 MUST保留publication期间已经进入`dev`的新内容，以确定性recovery identity报告冲突或remote race，并 MUST在push前证明目标branch policy允许产品拥有的merge commit，拒绝依赖管理员绕过、`ours`、reset、force push或静默冲突解决。
+Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个generation-scoped受保护release→main收敛PR；当该release发生main reconciliation时，PR MUST以当前generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于冻结release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。
 
 #### Scenario: release集合进入main
-- **WHEN** current release Candidate与唯一tarball通过且维护者授权收敛
-- **THEN** Buildr MUST创建或复用一个绑定generation与release HEAD/tree的确定性carrier，并只以该carrier创建唯一受保护release→main PR
-- **AND** squash或其他允许策略产生的main commit identity可以不同，但`origin/main^{tree}` MUST精确等于冻结release tree
-- **AND** tree不一致、carrier/PR head漂移或ownership不明 MUST阻止publication
+- **WHEN** current release Candidate与唯一tarball通过、main reconciliation evidence完整且维护者授权收敛
+- **THEN** Buildr MUST创建或复用一个绑定generation、release HEAD/tree和reconciliation identity的确定性carrier，并只以该carrier创建唯一受保护release→main PR
+- **AND** PR MUST以merge commit完成，`origin/main^{tree}` MUST精确等于冻结release tree，且readback MUST证明两个父提交
+- **AND** tree不一致、carrier/PR head漂移、合入方式错误或ownership不明 MUST阻止publication
 
 #### Scenario: 发布成功后dev已经前进
-- **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release创建后交付的新内容
-- **THEN** main→dev收敛 MUST保留这些新内容并证明release publication内容已进入current dev
-- **AND** 发生冲突、remote race或identity不可证明时 MUST返回`published-but-dev-convergence-blocked`与同一recovery identity并保留公开发布事实
-- **AND** MUST NOT删除tag、unpublish、force push或用`ours`掩盖内容差异
+- **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release冻结后交付的新内容
+- **THEN** reconciliation MUST核验Publication context、current frozen selection、正式release ref、published main commit/tree与current remote refs一致
+- **AND** MUST证明selection baseline与每个ordered `sourceDevCommit`均由current `dev`包含，同时保留`dev`当前HEAD与后续内容
+- **AND** MUST NOT要求main成为dev祖先、比较dev与release tree相等或产生任何Git写入effect
+
+#### Scenario: release内容缺少dev来源
+- **WHEN** current selection包含无法重建合法`sourceDevCommit`的entry，或baseline/source不再由current remote `dev`证明
+- **THEN** reconciliation owner MUST返回`published-but-dev-reconciliation-blocked`与稳定recovery identity并保留Publication事实
+- **AND** MUST要求先由独立support Task把内容交付到`dev`并形成可验证来源，MUST NOT接受元数据标签、聊天摘要、管理员绕过或直接release编辑作为成功证据
 
 #### Scenario: dev策略拒绝merge commit
+- **WHEN** current dev branch policy要求线性历史并禁止普通merge commit
+- **THEN** reconciliation MUST把该策略视为与只读核验兼容，不得将其报告为发布阻塞
+- **AND** owner MUST以空`effects`完成核验，MUST NOT创建临时merge worktree、commit或push
+
+#### Scenario: dev策略禁止双亲merge commit普通push
 - **WHEN** current dev branch policy要求线性历史或以其他方式禁止产品将main与dev双亲merge commit普通push到目标ref
 - **THEN** convergence owner MUST在push前返回`published-but-dev-convergence-blocked`与策略finding
 - **AND** MUST NOT依赖管理员绕过、改写dev历史或把push rejection当作暂态成功
@@ -296,14 +306,50 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 - **AND** explicit full MUST从同一run artifact校验后返回完整 portable evidence
 
 ### Requirement: 发布完成必须以零中间资源和正式release ref核验为边界
-Buildr MUST在Publication成功后执行幂等closeout，并 MUST把正式远端`release-<version>`作为默认保留的发布事实，把generation carrier、临时convergence worktree、本地release branch、selection lifecycle refs与owned release worktree作为必需清理资源。可选删除正式远端release ref MUST继续要求独立明确授权，但 MUST NOT成为唯一release Task完成门禁。
+Buildr MUST在Publication成功且post-publication dev provenance reconciliation通过后执行幂等closeout，并 MUST把正式远端`release-<version>`作为默认保留的发布事实，把generation carrier、临时convergence worktree、本地release branch、selection lifecycle refs与owned release worktree作为必需清理资源。可选删除正式远端release ref MUST继续要求独立明确授权，但 MUST NOT成为唯一release Task完成门禁。
 
 #### Scenario: 默认保留正式远端release branch
-- **WHEN** publication与main→dev已成立且正式远端release branch精确等于冻结release commit
+- **WHEN** Publication、matching dev provenance reconciliation已成立且正式远端release branch精确等于冻结release commit
 - **THEN** closeout MUST记录该正式ref为`retained-and-verified`并清理全部matching中间资源
 - **AND** 未请求正式ref删除 MUST NOT产生blocked或要求新的协调Task
 
 #### Scenario: 中间资源漂移
 - **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership或expected identity无法证明
-- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication与其他已清理事实
+- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、reconciliation与其他已清理事实
 - **AND** MUST NOT删除未知branch、worktree、正式release ref或其他version资源
+
+### Requirement: 发布编排必须保留独立owner与授权边界
+Buildr MUST提供`prepare-dispatch`、`dispatch`与`closeout`三个可恢复release orchestration动作。编排器 MUST只消费既有owner Result并按稳定顺序调用其公开入口，不得建立第二持久化状态权威、接受caller成功布尔值、自动取得publication或cleanup授权，或把跨owner调用宣称为原子事务。
+
+#### Scenario: 无副作用准备dispatch
+- **WHEN** 调用方执行`prepare-dispatch`
+- **THEN** 编排器 MUST重新读取merge后current owner facts并返回frozen context digest、approval request与`effects: []`
+- **AND** MUST NOT dispatch workflow、请求Environment approval、创建tag或执行任何closeout mutation
+
+#### Scenario: 显式授权dispatch
+- **WHEN** 调用方对expected current context明确授权publication并执行`dispatch`
+- **THEN** 编排器 MUST重验相同context digest后只调用一次既有protected transaction owner
+- **AND** context漂移或授权缺失 MUST在workflow dispatch前零远端写入失败
+
+#### Scenario: closeout部分失败后恢复
+- **WHEN** hosted evidence、reconciliation、Git closeout、Task completion、Environment cleanup或Doctor中的某一步blocked
+- **THEN** 编排器 MUST停止后续未安全步骤并返回全部已成立effects、blocked owner与唯一resume action
+- **AND** 重试 MUST复用identity一致的已通过步骤，不得回滚或重放Publication与其他已完成mutation
+
+### Requirement: Release Phase Timeline必须可移植且可验证
+Buildr MUST从Task、Git/PR、GitHub run/attempt、release owner Result、Environment与Doctor的current facts生成closed `buildr.release-phase-timeline/v1`。Timeline MUST按稳定顺序表达selection/freeze、Candidate attempts、PR merge、readiness、等待授权、dispatch/approval、Publication、reconciliation与closeout，并为每项保留owner identity、可证明时间边界、status、run/attempt和等待类型；不得保存本机路径、凭证、stdout或估算缺失时间。
+
+#### Scenario: 多次Candidate attempt与成功evidence复用
+- **WHEN** 同一release source通过failed-shard retry形成多个run attempt并复用先前成功shard evidence
+- **THEN** Timeline MUST按`runId + runAttempt`区分attempt，引用每个成功evidence的原attempt、实际rerun scope与最终aggregate identity
+- **AND** MUST NOT把复用evidence记为新执行、把旧generation evidence并入current timeline或只记录最终green run
+
+#### Scenario: 区分执行与等待
+- **WHEN** release经历runner执行、GitHub排队、Environment approval与维护者决定
+- **THEN** Timeline MUST分别使用`machine-execution`、`platform-queue`、`environment-approval`与`human-decision`分类
+- **AND** 缺失开始或结束边界时 MUST记录unknown并省略duration，不得用Task总耗时或Agent估算补齐
+
+#### Scenario: closeout完成
+- **WHEN** Publication、reconciliation、Git closeout、Task no-change completion、Environment cleanup与最终Doctor均成立
+- **THEN** Timeline MUST返回terminal closed、各owner identity与稳定timeline identity
+- **AND** compact output MUST只返回关键阶段、timeline identity与inspect pointer，完整timeline只在显式full中展开

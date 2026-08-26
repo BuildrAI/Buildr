@@ -467,3 +467,91 @@ Application MUST从matching Request、v3 declarations与适用provider形成clos
 - **WHEN** current Plan的required execution units均有matching terminal records
 - **THEN** reconciliation MUST从记录提炼passed/failed facts和coverage gaps
 - **AND** Result MUST保持Task推进、风险接受与Finish authority之外
+
+### Requirement: Development feedback MUST reuse Formal Verification planning without becoming Result evidence
+
+When development needs broad `Task-affected` feedback for a request that will later become Formal Verification, the workflow MUST create or consume the closed `Verification Plan` first and MUST use the same plan as the formal execution input when the target, declaration and capability identities remain equal. `Task-affected` feedback MUST remain transient and MUST NOT be treated as a Formal Verification Result.
+
+#### Scenario: Plan-first formal execution
+
+- **WHEN** a stable Task target needs broad affected feedback and a matching formal request can be planned
+- **THEN** the Agent MUST review the plan before execution and MUST use the matching plan for Formal Verification
+- **AND** the workflow MUST NOT start a second broad affected execution for the same request merely because the phase changed from development to formal verification
+
+#### Scenario: Focused feedback is narrower than the formal plan
+
+- **WHEN** development needs early feedback that is intentionally narrower than the formal plan
+- **THEN** the check MAY run as transient focused feedback
+- **AND** it MUST be clearly marked non-formal and MUST NOT write or satisfy the Formal Verification Result gate
+
+#### Scenario: Feedback is incomplete or fails
+
+- **WHEN** a transient `Task-affected` check fails, is interrupted or has incomplete evidence
+- **THEN** the workflow MUST preserve it as diagnostic feedback only
+- **AND** it MUST NOT reconcile it into current Result or use it to claim Formal Verification completion
+
+#### Scenario: Formal identity changes
+
+- **WHEN** target, declaration identity or selected capability set changes after a preview
+- **THEN** the workflow MUST form the new Formal Verification identity and replan/re-execute as required
+- **AND** it MUST NOT reuse the old preview as evidence for the new identity
+
+### Requirement: 正式 command execution 必须有界收敛 owned process
+Formal Verification command runner MUST按Plan execution unit的deadline启动独立owned process group，跟踪运行期间确认的descendants，并在正常结束、timeout、取消或异常退出后有界收敛stdio与owned processes。runner MUST只终止本次run精确拥有的process group和observed lineage，不得按端口、进程名或Workspace文本清理其他进程。
+
+#### Scenario: command在deadline内完成
+- **WHEN** command及其owned descendants在deadline内完成并关闭stdio
+- **THEN** check MUST记录真实exit、duration与`processCleanup: clean`
+- **AND** Execution Record MUST按既有passed/failed规则terminal seal
+
+#### Scenario: command达到deadline
+- **WHEN** command在Plan deadline到达时仍未terminal
+- **THEN** runner MUST执行TERM、grace、KILL与退出确认并记录check status `timed-out`
+- **AND** overall execution MUST为failed且primary failure明确为capability timeout，不得伪装cancelled或普通exit failure
+
+#### Scenario: execution被显式取消
+- **WHEN** runner收到可捕获取消且能够收敛owned processes
+- **THEN** runner MUST复用同一终止协议并记录check与execution为cancelled
+- **AND** MUST保存已有partial facts并terminal seal，不得自动retry
+
+#### Scenario: owned cleanup失败
+- **WHEN** TERM/KILL后仍有已确认owned process存活或exit无法证明
+- **THEN** check与overall execution MUST返回failed并记录cleanup failure与剩余owned identity
+- **AND** Execution Record lifecycle MAY仅在terminal body、transient cleanup或record维护仍需恢复时另行标记attention
+- **AND** MUST不把command assertion通过报告为完整passed
+
+#### Scenario: 其他Task存在同名或同端口进程
+- **WHEN** 机器上存在未进入本run process group或observed lineage的同名进程
+- **THEN** runner MUST保留该进程
+- **AND** diagnostics MUST只引用本run的ownership evidence
+
+### Requirement: Task Verification 必须提供Formal Plan到policy的只读投影
+Task Verification Application MUST提供只读变换，将按Task有效Project完整覆盖的closed Formal Verification Plan documents与current Task、Content Target及verification declarations对账，生成Task Development policy input和response-only selection disposition。该变换 MUST不写Verification Result、Execution Record、Environment、Development Receipt或其他持久状态。
+
+#### Scenario: selected与not-selected投影
+- **WHEN** current task-delivery Plan选择declaration中的部分capability
+- **THEN** 投影 MUST把selected capability映射为required policy capability，并把其余可用于task-delivery的capability映射为not-selected摘要
+- **AND** not-selected摘要 MUST不伪装成coverage gap、waiver或持久Result
+
+#### Scenario: Plan包含coverage gap
+- **WHEN** closed Plan包含owner、path或Project coverage gap
+- **THEN** 投影 MUST将其收敛为对应Project的portable policy coverage gap并保留可诊断摘要
+- **AND** MUST不静默选择额外能力或把blocked Plan改写为ready
+
+#### Scenario: Plan identity不匹配
+- **WHEN** Plan target不是current Content Target、target kind不是task-delivery、declaration identity陈旧或selected capability不属于current declaration
+- **THEN** 投影 MUST零写入失败
+- **AND** next action MUST要求重新形成current Plan或恢复对应authority
+
+### Requirement: Formal Plan文件输入必须保持有界且不持久化
+内部Task Development driver MUST允许discover policy通过重复`--plan <project>::<file>`读取JSON Plan document，并 MUST把正文仅作为本次Application输入。driver MUST拒绝非法映射、重复Project、非普通文件或与`--input-json`中的Plan集合冲突，且 MUST不保存文件路径或Plan正文。
+
+#### Scenario: driver读取多个Project Plan
+- **WHEN** Agent为每个有效Project提供一个普通JSON Plan文件
+- **THEN** driver MUST按Project装配closed discovery input并返回Application投影
+- **AND** 调用完成后Plan文件生命周期仍由Agent和Verification workflow负责
+
+#### Scenario: 文件输入无效
+- **WHEN** `--plan`不是`<project>::<file>`、文件不可读、JSON非法或Project重复
+- **THEN** driver MUST在Application mutation前返回usage或input diagnostic
+- **AND** MUST不创建或修改任何Task lifecycle事实

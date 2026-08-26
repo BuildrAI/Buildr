@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
+import {
+  VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MAX_MS,
+  VERIFICATION_COMMAND_TIMEOUT_MIN_MS,
+} from '../domain/verification-deadline.mjs';
 
 
 const ROOT_FIELDS = new Set(['schemaVersion', 'resources', 'capabilities']);
@@ -11,7 +16,7 @@ const SCOPE_FIELDS = new Set(['project', 'services']);
 const DISCOVERY_FIELDS = new Set(['sources']);
 const LEGACY_APPLICABILITY_FIELDS = new Set(['paths', 'conditions']);
 const INVOCATION_FIELDS = new Set(['affected', 'full']);
-const INVOCATION_ENTRY_FIELDS = new Set(['kind', 'argv', 'cwd', 'instructions', 'provider']);
+const INVOCATION_ENTRY_FIELDS = new Set(['kind', 'argv', 'cwd', 'instructions', 'provider', 'timeoutMs']);
 const LEGACY_INVOCATION_FIELDS = new Set(['kind', 'argv', 'cwd', 'instructions']);
 const ENVIRONMENT_FIELDS = new Set(['requires', 'preparation']);
 const PREPARATION_REFERENCE_FIELDS = new Set(['project', 'service', 'recipe']);
@@ -143,8 +148,14 @@ function validateProjectVerificationV3(value, context = {}) {
         if (invocation.kind === 'command') {
           strings(invocation.argv, `${invocationLabel}.argv`, errors, { minimum: 1 });
           safeRelative(invocation.cwd ?? '.', `${invocationLabel}.cwd`, errors);
+          if (invocation.timeoutMs !== undefined && (!Number.isInteger(invocation.timeoutMs)
+            || invocation.timeoutMs < VERIFICATION_COMMAND_TIMEOUT_MIN_MS
+            || invocation.timeoutMs > VERIFICATION_COMMAND_TIMEOUT_MAX_MS)) {
+            errors.push(`${invocationLabel}.timeoutMs must be an integer from ${VERIFICATION_COMMAND_TIMEOUT_MIN_MS} to ${VERIFICATION_COMMAND_TIMEOUT_MAX_MS}.`);
+          }
           for (const forbidden of ['instructions', 'provider']) if (invocation[forbidden] !== undefined) errors.push(`${invocationLabel}.${forbidden} is not supported for command invocation.`);
         }
+        if (invocation.kind !== 'command' && invocation.timeoutMs !== undefined) errors.push(`${invocationLabel}.timeoutMs is only supported for command invocation.`);
         if (invocation.kind === 'agent') {
           strings(invocation.instructions, `${invocationLabel}.instructions`, errors, { minimum: 1 });
           for (const forbidden of ['argv', 'cwd', 'provider']) if (invocation[forbidden] !== undefined) errors.push(`${invocationLabel}.${forbidden} is not supported for agent invocation.`);
@@ -400,7 +411,12 @@ export function normalizeProjectVerification(value, context = {}) {
 }
 
 function normalizeInvocation(invocation) {
-  if (invocation.kind === 'command') return { kind: 'command', argv: [...invocation.argv], cwd: invocation.cwd || '.' };
+  if (invocation.kind === 'command') return {
+    kind: 'command',
+    argv: [...invocation.argv],
+    cwd: invocation.cwd || '.',
+    timeoutMs: invocation.timeoutMs ?? VERIFICATION_COMMAND_TIMEOUT_DEFAULT_MS,
+  };
   if (invocation.kind === 'agent') return { kind: 'agent', instructions: [...invocation.instructions] };
   return { kind: 'provider', provider: invocation.provider };
 }

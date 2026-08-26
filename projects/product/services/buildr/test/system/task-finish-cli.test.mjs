@@ -125,6 +125,12 @@ test('canonical run 要求 receipt-bound task environment，帮助区分自动ru
   const invalidZeroDelta = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--accept-zero-delta-adaptation', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(invalidZeroDelta.status, 2, invalidZeroDelta.stderr || invalidZeroDelta.stdout);
   assert.equal(JSON.parse(invalidZeroDelta.stdout).error.code, 'task_finish.zero_delta_adaptation_context_invalid');
+  const invalidReviewedPath = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--reviewed-target-path', 'workspace::feature.txt::reviewed', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(invalidReviewedPath.status, 2, invalidReviewedPath.stderr || invalidReviewedPath.stdout);
+  assert.equal(JSON.parse(invalidReviewedPath.stdout).error.code, 'task_finish.reviewed_target_path_context_invalid');
+  const malformedReviewedPath = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--reviewed-target-path', 'feature.txt', '--target', root, '--json'], { encoding: 'utf8' });
+  assert.equal(malformedReviewedPath.status, 2, malformedReviewedPath.stderr || malformedReviewedPath.stdout);
+  assert.equal(JSON.parse(malformedReviewedPath.stdout).error.code, 'task_finish.reviewed_target_path_invalid');
 
   const created = spawnSync(process.execPath, [cli, 'task', 'create', 'finish-cli-task', '--title', 'Finish CLI Task', '--intent', '验证 Task Environment 门禁', '--target', root, '--json'], { encoding: 'utf8' });
   assert.equal(created.status, 0, created.stderr || created.stdout);
@@ -154,6 +160,8 @@ test('canonical run 要求 receipt-bound task environment，帮助区分自动ru
   assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
   assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
   assert.match(helpText, /--accept-zero-delta-adaptation/);
+  assert.match(helpText, /--reviewed-target-path/);
+  assert.match(helpText, /repository selector、Task Contribution path与非空理由/);
   assert.match(helpText, /--release-occupancy/);
   assert.match(helpText, /compact\|full\|self-bootstrap/);
   assert.match(helpText, /占用释放/);

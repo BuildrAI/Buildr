@@ -8,6 +8,7 @@ import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../d
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { declarationIntakeGapNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { assertVerificationPlanDocument } from '../../verification/domain/verification-plan.mjs';
 
 function digest(value) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex')}`;
@@ -127,6 +128,86 @@ export function registerTaskVerificationApplication(runtime) {
 
   function declarationValues(observations) {
     return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
+  }
+
+  function deriveTaskVerificationPolicyInput(targetRoot, taskId, input) {
+    assertFields(input, new Set(['targetIdentity', 'formalPlans', 'declarationRoot']), 'Task Verification policy projection');
+    const targetIdentity = currentTarget(input.targetIdentity);
+    if (!targetIdentity) throw taskVerificationError('task_verification_policy_target_required', 'Plan-derived policy必须绑定current Content Target。', 400, { field: 'targetIdentity' });
+    if (!Array.isArray(input.formalPlans)) throw taskVerificationError('task_verification_policy_plans_invalid', 'formalPlans必须是数组。', 400, { field: 'formalPlans' });
+    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    if (task.record.status !== 'active') throw taskVerificationError('task_verification_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能派生新的policy输入。`, 409, { status: task.record.status });
+    const observations = observeDeclarations(task, input.declarationRoot);
+    const effectiveProjects = taskRecordEffectiveProjectCodes(task.record);
+    if (isWorkspaceOnlyTaskRecord(task.record)) {
+      if (input.formalPlans.length) throw taskVerificationError('task_verification_policy_workspace_plans_forbidden', '仅工作区Task不能提交Project Formal Plan。', 400);
+      return {
+        schemaVersion: 'buildr.task-verification-policy-input-projection/v1', operation: 'derive-policy', status: 'ready', taskId,
+        targetIdentity,
+        inputJson: { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Task 没有 Project/Service scope，当前没有可用的 workspace Verification capability。' }], overrides: [] },
+        selection: { plans: [], notSelectedCapabilities: [] }, diagnostic: null, effects: [], nextActions: [],
+      };
+    }
+    const byProject = new Map();
+    for (const [index, entry] of input.formalPlans.entries()) {
+      assertFields(entry, new Set(['project', 'document']), `formalPlans[${index}]`);
+      if (typeof entry.project !== 'string' || !entry.project.trim()) throw taskVerificationError('task_verification_policy_plan_project_invalid', `formalPlans[${index}].project必须是非空字符串。`, 400);
+      const project = entry.project.trim();
+      if (byProject.has(project)) throw taskVerificationError('task_verification_policy_plan_project_duplicate', `Formal Plan Project重复：${project}。`, 400, { project });
+      let plan;
+      try { plan = assertVerificationPlanDocument(entry.document).plan; }
+      catch (error) { throw taskVerificationError('task_verification_policy_plan_invalid', `Formal Plan不可用：${project}：${error.message}`, 400, { project }); }
+      byProject.set(project, plan);
+    }
+    const actualProjects = [...byProject.keys()].sort((left, right) => left.localeCompare(right));
+    if (JSON.stringify(actualProjects) !== JSON.stringify(effectiveProjects)) {
+      throw taskVerificationError('task_verification_policy_plan_projects_incomplete', 'Formal Plans必须精确覆盖Task有效Project集合。', 409, { expectedProjects: effectiveProjects, actualProjects });
+    }
+    const observationByProject = new Map(observations.map((item) => [item.project, item]));
+    const capabilities = [];
+    const coverageGaps = [];
+    const notSelectedCapabilities = [];
+    const plans = [];
+    for (const project of effectiveProjects) {
+      const observation = observationByProject.get(project);
+      if (!observation?.valid || !observation.declaration) throw taskVerificationError('task_verification_declaration_invalid', `Project ${project} verification declaration不可用：${observation?.diagnostic || 'missing'}。`, 409, { project, identity: observation?.identity || null });
+      const plan = byProject.get(project);
+      if (plan.target.kind !== 'task-delivery' || plan.target.identity !== targetIdentity) {
+        throw taskVerificationError('task_verification_policy_plan_target_mismatch', `Formal Plan target不匹配：${project}。`, 409, { project, expectedTarget: targetIdentity, actualTarget: plan.target });
+      }
+      if (plan.declarationIdentity !== observation.identity) {
+        throw taskVerificationError('task_verification_policy_plan_declaration_mismatch', `Formal Plan declaration已陈旧：${project}。`, 409, { project, expected: observation.identity, actual: plan.declarationIdentity });
+      }
+      const applicable = (observation.declaration.capabilities || [])
+        .filter((candidate) => candidate.usableFor?.includes('task-delivery') === true)
+        .filter((candidate) => candidate.scope.services.length === 0 || candidate.scope.services.some((service) => task.record.scope.services.some((entry) => entry.project === project && entry.service === service)))
+        .sort((left, right) => left.id.localeCompare(right.id));
+      const applicableById = new Map(applicable.map((candidate) => [candidate.id, candidate]));
+      const selectedIds = new Set();
+      for (const item of plan.selectedItems) {
+        const capability = item.capability;
+        if (!applicableById.has(capability)) throw taskVerificationError('task_verification_policy_plan_capability_mismatch', `Formal Plan选择了current Task不可用的capability：${project}/${capability}。`, 409, { project, capability });
+        if (selectedIds.has(capability)) continue;
+        selectedIds.add(capability);
+        capabilities.push({ project, capability, required: true });
+      }
+      for (const candidate of applicable) {
+        if (!selectedIds.has(candidate.id)) notSelectedCapabilities.push({ project, capability: candidate.id, disposition: 'not-selected', reason: 'not-selected-by-plan' });
+      }
+      for (const gap of plan.coverageGaps) {
+        const detail = [gap.code, gap.path, gap.summary].filter(Boolean).join(' · ');
+        coverageGaps.push({ scope: `project:${project}`, summary: `Formal Plan coverage gap：${detail}` });
+      }
+      if (selectedIds.size === 0 && plan.coverageGaps.length === 0) throw taskVerificationError('task_verification_policy_plan_empty', `Formal Plan既未选择capability也没有coverage gap：${project}。`, 409, { project });
+      plans.push({ project, identity: plan.identity, requestIdentity: plan.requestIdentity, status: plan.status, declarationIdentity: plan.declarationIdentity });
+    }
+    return {
+      schemaVersion: 'buildr.task-verification-policy-input-projection/v1', operation: 'derive-policy', status: 'ready', taskId,
+      targetIdentity,
+      inputJson: { capabilities, coverageGaps, overrides: [] },
+      selection: { plans, notSelectedCapabilities }, diagnostic: null, effects: [],
+      nextActions: coverageGaps.length ? ['保留Plan coverage gap并由Agent决定修复、补充风险能力或在后续Result中如实对账。'] : [],
+    };
   }
 
   function applicability(result, currentTargetIdentity, declarationsInput, candidateInput = undefined) {
@@ -396,6 +477,7 @@ export function registerTaskVerificationApplication(runtime) {
       return observeDeclarations(task, declarationRoot);
     },
     inspectTaskVerification,
+    deriveTaskVerificationPolicyInput,
     recordTaskVerification,
     reconcileTaskVerification,
     generateTaskVerificationPrompt,

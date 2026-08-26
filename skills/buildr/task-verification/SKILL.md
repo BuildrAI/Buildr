@@ -53,9 +53,9 @@ current Result只有在Candidate identity/generation、target与全部declaratio
 
 ## 3. 选择并执行已有能力
 
-在追加 broad transient verification 前，如果 Project registry 或现有命令提供不执行测试的 `plan-only` / `dry-run` affected plan，先消费该计划，核对所选范围、成本、未映射路径与额外风险，再由 Agent结合Task Intent、实际变更、declaration和policy判断是否需要补充反馈。通用Skill不发明或硬编码Project专用命令；Project没有计划入口时，依据现有事实选择范围，不创建planner、不猜命令，也不把缺少preview记为coverage gap。
+在追加 broad transient verification 前，如果 Project registry 或现有命令提供不执行测试的 `plan-only` / `dry-run` affected plan，先消费该计划，核对所选范围、成本、未映射路径与额外风险，再由 Agent结合Task Intent、实际变更、declaration和policy判断是否需要补充反馈。若该计划就是随后同一 target/declaration/capability identities 的Formal Verification request，直接保留并交给正式`verification run --plan`，不要因开发阶段和正式阶段切换再启动一轮相同broad affected execution。通用Skill不发明或硬编码Project专用命令；Project没有计划入口时，依据现有事实选择范围，不创建planner、不猜命令，也不把缺少preview记为coverage gap。
 
-计划预览不是 Verification Execution Evidence、Result fact或 capability execution。stable Content Target进入正式Verification后，policy要求的capability仍须实际执行，或按exact invocation语义复用既有正式Execution Record；CLI plan输出、Agent推理和耗时估计都不能替代Task Verification Application的current Result authority。
+计划预览不是 Verification Execution Evidence、Result fact或 capability execution。stable Content Target进入正式Verification后，policy要求的capability仍须实际执行，或按exact invocation语义复用既有正式Execution Record；仅为早期诊断而运行的较窄focused feedback保持transient，不可`record/reconcile`为Formal Result。target、declaration或capability identities变化时重新形成Formal Plan；CLI plan输出、Agent推理和耗时估计都不能替代Task Verification Application的current Result authority。
 
 先生成并复核 closed Plan，再针对 target 逐项核对 capability 的 Project/Service scope、discovery、usable target、environment、effects 和授权：
 
@@ -65,7 +65,9 @@ current Result只有在Candidate identity/generation、target与全部declaratio
 buildr verification plan --project <code> \
   --target-kind task-delivery --selection-scope affected \
   --target-identity <identity> --changed-path <path> \
-  --target <execution-root> --json > <plan-file>
+  --target <execution-root> \
+  --environment <task-id> --workspace <canonical-workspace> \
+  --json > <plan-file>
 
 buildr verification run --project <code> \
   --plan <plan-file> \
@@ -73,12 +75,26 @@ buildr verification run --project <code> \
   --target-identity <identity> \
   --target <execution-root> \
   --environment <task-id> --workspace <canonical-workspace> \
+  --detail compact \
   --json
 ```
 
-`verification run`只执行已选择的command capability，并返回`buildr.verification-execution/v1`；它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
+正式Plan返回`buildr.verification-plan-result/v1`，其中`plan`仍是closed `buildr.verification-plan/v1`，`preparation`只读投影全部selected capability requirements。`preparation.status: action-required`时，在启动run前把`preparation.planRequest`原样交给Task Environment `prepare --plan`；成功后使用同一Plan result执行run。Preview不执行Recipe、不打开Execution Record，也不构成execution授权；run仍重验current declaration、Environment与closure drift。没有formal Environment的普通plan-only继续返回raw Plan v1。
 
-正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。`verification.preparation_blocked`只在`admission.recovery`存在时提供closed `planRequest`：把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
+stable Content Target的Formal Plans按有效Project全部形成后，使用matching retained controller调用Task Development：
+
+```text
+<controller-command> <controller-args-prefix...> __internal task-development discover \
+  --task <task-id> --target <canonical-workspace> \
+  --input-json '{"action":"policy"}' \
+  --plan <project>::<plan-file> [--plan <project>::<plan-file> ...]
+```
+
+Task Verification Application会重新校验Plan closed identity、task-delivery target、current Content Target、Project/declaration与selected capability，并返回policy writer所需的closed `inputJson`、Plan identities和response-only not-selected摘要；它零写入，不把Plan正文、preparation、not-selected或文件路径保存到Result/Receipt。Project集合缺失/重复或任一identity陈旧时重新plan，不手抄或猜选能力。Plan文件位于操作系统临时目录，只保留到同一Plan完成policy派生和formal run；随后立即删除。无Plan时仍可使用declaration默认policy discovery作为合法降级，但不得把它声称为Plan-derived选择。
+
+`verification run`只执行已选择的command capability；`--json`默认返回有界`buildr.long-running-operation-summary/v1`，只有诊断需要时才显式使用`--detail full`返回既有`buildr.verification-execution/v1`。compact中的recovery pointer必须先用于回读同一Execution Record；stdout丢失、等待超时、展示截断或既有failed都不授权重跑。它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
+
+正式execution先执行低成本、纯读preparation admission。capability可在`environment.preparation`引用同Project `preparation.yml` Recipe；admission绑定selected capability、closure、Plan、Receipt与runtime identities。`ready`后runner才允许open Execution Record或启动进程/Browser/外部资源。Agent忽略preview、或preview后Environment漂移时，pre-admission `verification.preparation_blocked`继续作为安全降级：尚无durable Execution Record时，compact的`recovery`按约束保持null，`primaryFailure`会要求对同一invocation追加`--detail full`读取既有`admission.recovery.planRequest`；这次降级不会启动capability或补造record。取得closed `planRequest`后把它原样交给Task Environment `prepare --plan`，删除临时输入，再重跑同一`verification run`。不要手工运行`npm ci`、猜cwd、设置`BUILDR_NODE`/PATH，或把辅助Service加入Task scope。declaration、authorization、coverage或external resource gap不进入Environment恢复。
 
 该门禁只保护Formal Verification execution、Result与完成声明。provider/preflight暂不可用时，可以继续无关开发、只读调查和明确标记的有界非正式检查，但不得写Formal Result或据此声称完成；恢复后仍须通过Task Environment与admission。runner在首次副作用前重验全部binding，漂移时返回preparation drift并保持Execution Record未打开。
 
@@ -101,6 +117,8 @@ latest固定按active优先，再在对应集合使用`opened_at DESC, record_id
 - coordinated resource 由 runner 通过 owner-bound waiting ticket 公平排队；最早的有效 waiter 优先取得可用容量。取消、timeout、崩溃或过期 ticket 由 coordinator 按 owner/token 与 expiry 精确恢复；Agent 不清空共享队列、不删除其他 waiter/lease，也不通过重复启动 verification 抢占容量。
 
 完整命令、本机路径、waiting ticket、资源 lease 和 Environment handle 只属于 transient execution evidence。正式 Task Execution Record 只保留可移植摘要、按 capability 分段且受配额/脱敏控制的 stdout/stderr、闭合时间线与诊断；不进入 current Verification Result。运行中或暂时无输出时继续等待同一 execution，不启动重复 verifier。整体耗时只从 execution wall-clock 读取，不相加并行检查耗时。
+
+当单条 open Verification Execution Record 提供 `openLocalProgress` 时，只把它当作同一record的本机最后观察：读取 capability、phase、heartbeat、PID/PGID和有界输出摘要后继续等待或按owner recovery；它不是terminal outcome、Verification Result或retry授权。`timed-out`、`cancelled`与process cleanup failure必须分别报告；只有显式`--retry`才启动同一exact invocation的新run。
 
 ## 4. 从execution authority对账current Result
 

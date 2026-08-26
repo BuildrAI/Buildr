@@ -165,6 +165,19 @@ test('reconciliation terminal只在failed current run ID与digest精确匹配时
   const stored = runtime.readTaskFinishCompletionPersistence(root, { taskId: task });
   assert.equal(stored.runId, terminalRun.runId);
   assert.equal(stored.completion.handoffIdentity, newIdentity.handoffIdentity);
+  assert.throws(() => runtime.writeTaskFinishTerminalCleanupPersistence(root, {
+    taskId: task,
+    runId: 'another-run',
+    cleanup: { status: 'cleaned', carriers: { status: 'cleaned', repositories: [] } },
+  }), (error) => error.code === 'task_finish_current_conflict');
+  runtime.writeTaskFinishTerminalCleanupPersistence(root, {
+    taskId: task,
+    runId: terminalRun.runId,
+    cleanup: { status: 'attention', carriers: { status: 'cleaned', repositories: [{ selector: 'workspace', status: 'not-applicable', code: null }] } },
+  });
+  const updated = runtime.readTaskFinishCompletionPersistence(root, { taskId: task }).completion;
+  assert.equal(updated.cleanup.carriers.status, 'cleaned');
+  assert.deepEqual(updated.result.completion.cleanup, updated.cleanup);
 });
 
 test('rollover只用旧run ID和digest原子替换为新的active current run', (t) => {

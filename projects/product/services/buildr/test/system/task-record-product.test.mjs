@@ -37,6 +37,18 @@ test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名
   const human = run(['task', 'complete', 'human-output-task', '--summary', '完成', '--no-change', '--target', root]);
   assert.match(human.stdout, /Task human-output-task completed[\s\S]*Next: 是否进行任务复盘/);
   const terminal = json(['task', 'update', 'abandoned-task', '--title', '不可重开', '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_terminal'); assert.deepEqual(terminal.effects, []);
+  runtime.createTaskRecord(root, { taskId: 'terminal-retro-source', title: '复盘来源', intent: '提供 current 复盘', projects: [], services: [], changes: [] });
+  runtime.completeTaskRecord(root, 'terminal-retro-source', { summary: '来源已完成', noChange: true });
+  runtime.recordTaskRetrospective(root, 'terminal-retro-source', { reportMarkdown: '# 复盘\n\n来源已形成。' });
+  runtime.createTaskRecord(root, { taskId: 'terminal-followup', title: '终态承接', intent: '验证终态关系维护', projects: [], services: [], changes: [] });
+  runtime.completeTaskRecord(root, 'terminal-followup', { summary: '承接已完成', noChange: true });
+  const terminalSourceAdded = runtime.updateTaskRecord(root, 'terminal-followup', { addRetrospectiveSources: ['terminal-retro-source'] });
+  assert.deepEqual(terminalSourceAdded.record.retrospectiveSourceTaskIds, ['terminal-retro-source']);
+  assert.deepEqual(runtime.inspectTaskRetrospective(root, 'terminal-retro-source').followupTasks.map((item) => item.taskId), ['terminal-followup']);
+  const terminalSourceRemoved = runtime.updateTaskRecord(root, 'terminal-followup', { removeRetrospectiveSources: ['terminal-retro-source'] });
+  assert.deepEqual(terminalSourceRemoved.record.retrospectiveSourceTaskIds, []);
+  assert.throws(() => runtime.updateTaskRecord(root, 'terminal-followup', { title: '仍不可改' }), (error) => error.code === 'task_record_terminal');
+  assert.throws(() => runtime.updateTaskRecord(root, 'terminal-followup', { title: '混合更新', addRetrospectiveSources: ['terminal-retro-source'] }), (error) => error.code === 'task_record_terminal');
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_already_exists');
   const syntax = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
 });
