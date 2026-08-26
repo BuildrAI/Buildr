@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { cleanupReleaseSelection, inspectReleaseSelection } from './release-selection.mjs';
+import { cleanupReleaseSelection, inspectReleaseSelection, reconcileReleaseSelectionWithMain } from './release-selection.mjs';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 export const releaseGitConvergenceSchema = 'buildr.release-git-convergence/v1';
@@ -69,6 +69,11 @@ function rev(repo, ref, dependencies) {
 
 function tree(repo, ref, dependencies) {
   return rev(repo, `${ref}^{tree}`, dependencies);
+}
+
+function parents(repo, ref, dependencies) {
+  const values = git(repo, ['rev-list', '--parents', '-n', '1', ref], dependencies).stdout.trim().split(/\s+/u);
+  return values.slice(1).filter((value) => SHA.test(value));
 }
 
 function remoteHeads(repo, remote, branches, dependencies) {
@@ -189,7 +194,8 @@ export function inspectReleaseToMain(options = {}, dependencies = {}) {
       carrierBranch,
       candidate: { commit: candidateCommit, tree: candidateTree, selectionIdentity: selection.selectionIdentity ?? null },
       refs,
-      main: { commit: refs[main], tree: mainTree, disposition: mainDisposition },
+      main: { commit: refs[main], tree: mainTree, disposition: mainDisposition, mergeMethod: null, mergeParents: null },
+      reconciliation: selection.reconciliationChain?.at(-1) ?? null,
       findings,
       nextActions: findings.length ? ['修复current release selection或remote ref漂移后重试。'] : [],
     });
@@ -244,7 +250,7 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
     }
     const prReadback = run(options.ghCommand ?? 'gh', [
       'pr', 'list', '--repo', repository, '--state', 'all', '--base', main, '--head', branch,
-      '--json', 'number,state,headRefOid,headRefName,baseRefName,url,mergedAt',
+      '--json', 'number,state,headRefOid,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeStateStatus',
     ], repo, dependencies);
     const pullRequests = parsePullRequests(prReadback.stdout);
     if (pullRequests.length > 1) return blocked(operation, 'release-main-pr-not-unique', `Expected at most one ${branch}→${main} pull request, found ${pullRequests.length}.`, { ...inspected, pullRequests, effects });
@@ -258,6 +264,22 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
       }
       if (pullRequest.state === 'MERGED' && inspected.main.disposition !== 'tree-equivalent') {
         return blocked(operation, 'release-main-tree-mismatch', 'The merged release→main pull request does not produce a main tree equal to the frozen release tree.', { ...inspected, pullRequests, effects });
+      }
+      if (pullRequest.state === 'MERGED' && inspected.reconciliation) {
+        const mergeCommit = typeof pullRequest.mergeCommit === 'string' ? pullRequest.mergeCommit : pullRequest.mergeCommit?.oid ?? null;
+        const mergeParents = mergeCommit ? parents(repo, mergeCommit, dependencies) : [];
+        if (mergeCommit !== inspected.refs[main] || mergeParents.length !== 2 || !mergeParents.includes(inspected.candidate.commit)) {
+          return blocked(operation, 'release-main-merge-commit-evidence-missing', 'The merged release→main pull request does not prove a merge commit from the current carrier.', {
+            ...inspected,
+            pullRequests,
+            mergeCommit,
+            mergeParents,
+            effects,
+            nextActions: ['重新读取GitHub mergeCommitOid与main父提交关系；squash/rebase结果不能作为发布收敛证据。'],
+          });
+        }
+        inspected.main.mergeMethod = 'merge';
+        inspected.main.mergeParents = mergeParents;
       }
       return result(operation, 'ready', { ...inspected, pullRequest, effects, nextActions: [] });
     }
@@ -277,6 +299,23 @@ export function ensureReleaseToMainPullRequest(options = {}, dependencies = {}) 
     return result(operation, 'ready', { ...inspected, pullRequest: { url: created, state: 'OPEN', headRefOid: inspected.candidate.commit, headRefName: branch, baseRefName: main }, effects, nextActions: [] });
   } catch (error) {
     return blocked(operation, 'release-main-pr-blocked', error.message, { effects: [] });
+  }
+}
+
+export function reconcileReleaseToMain(options = {}, dependencies = {}) {
+  const operation = 'reconcile-main';
+  try {
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const remote = options.remote ?? 'origin';
+    const resultValue = reconcileReleaseSelectionWithMain({
+      ...options,
+      repo,
+      devRef: options.devRef ?? `${remote}/${options.dev ?? 'dev'}`,
+      mainRef: options.mainRef ?? `${remote}/${options.main ?? 'main'}`,
+    }, dependencies);
+    return { ...resultValue, operation };
+  } catch (error) {
+    return blocked(operation, 'release-main-reconciliation-blocked', error.message);
   }
 }
 
@@ -555,6 +594,13 @@ function parseArgs(argv) {
     title: options.title,
     body: options.body,
   };
+  if (operation === 'reconcile-main') return {
+    ...common,
+    version: options.version,
+    mainRef: options['main-ref'],
+    reason: options.reason,
+    confirm: options.confirm === 'true',
+  };
   if (operation === 'reconcile-dev' || operation === 'converge-dev' || operation === 'cleanup-remote') return {
     ...common,
     publicationEvidence: readJsonFile(options['publication-evidence']),
@@ -570,14 +616,16 @@ function parseArgs(argv) {
     authorizeCarrierCleanup: options['authorize-carrier-cleanup'] === 'true',
     authorizeLocalSelectionCleanup: options['authorize-local-selection-cleanup'] === 'true',
   };
-  throw new Error('Usage: release-git-convergence.mjs <inspect-main|ensure-main-pr|inspect-dev-policy|reconcile-dev|converge-dev|closeout|cleanup-remote> ...');
+  throw new Error('Usage: release-git-convergence.mjs <reconcile-main|inspect-main|ensure-main-pr|inspect-dev-policy|reconcile-dev|converge-dev|closeout|cleanup-remote> ...');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const operation = process.argv[2];
     const options = parseArgs(process.argv.slice(2));
-    const value = operation === 'inspect-main'
+    const value = operation === 'reconcile-main'
+      ? reconcileReleaseToMain(options)
+      : operation === 'inspect-main'
       ? inspectReleaseToMain(options)
       : operation === 'ensure-main-pr'
         ? ensureReleaseToMainPullRequest(options)
