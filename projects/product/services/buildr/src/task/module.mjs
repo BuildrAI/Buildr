@@ -451,6 +451,7 @@ export function createTaskFinishCliContributions(application = null) {
       help: [
         'Usage: buildr task finish reconcile --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]', '',
         '从current Development handoff解析交付身份；优先复用Task Environment repository set，缺失或已清理时从Task scope、registries与实际Git topology构造只读上下文，再读取真实远端ref逐仓库验证Task Contribution包含关系。',
+        '若matching completed run仅因terminal query fields持久化校验失败而保留current，reconcile只复用受验证prepared completion原子补写terminal state，不重复观察远端、交付或cleanup。',
         '不接受success、evidence、commit message、run token或手写proof；不会push、force push、改写共享历史或创建Delivery Carrier。',
         '逐repository立即保存已证明Delivery；全部适用repository成立后提交Task交付终态。activation、Environment cleanup与diagnostics独立处理；无current Environment时cleanup不声称cleaned。',
       ],

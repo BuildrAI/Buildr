@@ -230,6 +230,7 @@ function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
 function terminalRecord(run, result, completion) {
   const normalized = assertRun(run);
   const storedResult = compactResult(result);
+  const identityDigest = normalized.identityDigest || digest(normalized.identity);
   const fullCompletion = {
     ...(clone(completion) || {}),
     task: normalized.identity.task,
@@ -245,40 +246,18 @@ function terminalRecord(run, result, completion) {
     completedAt: result?.completedAt || timestamp(),
   };
   const phases = assertPhases(storedResult.phases);
+  const queryFields = terminalQueryFields(fullCompletion, identityDigest);
   return {
     record: {
       task_id: normalized.identity.task,
       run_id: normalized.runId,
       schema_version: CURRENT_SCHEMA,
-      status: 'complete',
-      identity_digest: normalized.identityDigest || digest(normalized.identity),
-      current_phase: 'cleanup',
-      handoff_identity: normalized.identity.handoffIdentity,
-      candidate_identity: normalized.identity.candidateIdentity,
-      candidate_generation: normalized.identity.candidateGeneration,
-      content_target_identity: normalized.identity.contentTargetIdentity,
-      target_branch: normalized.identity.targetBranch,
-      target_remote: normalized.identity.remote || null,
-      carrier_identity: normalized.deliveryCarrier?.identity || fullCompletion.carrierIdentity || null,
-      repository_set_identity: repositorySetIdentity(normalized, storedResult),
-      carrier_set_identity: carrierSetIdentity(normalized, storedResult, fullCompletion),
-      delivery_set_identity: deliverySetIdentity(normalized, storedResult, fullCompletion),
-      ...associationValues(fullCompletion),
-      primary_failure_phase: null,
-      primary_failure_operation: null,
-      primary_failure_class: null,
-      primary_failure_code: null,
-      primary_failure_status: null,
-      primary_failure_exit_code: null,
-      primary_failure_diagnostic_digest: null,
-      resume_phase: null,
-      resume_token: null,
-      cleanup_status: fullCompletion.cleanup?.status || normalized.completion?.cleanup?.status || null,
+      ...queryFields,
       lease_target_identity: null,
       lease_token: null,
       lease_expires_at: null,
       phases_json: JSON.stringify(phases),
-      payload_json: JSON.stringify({ kind: 'terminal', identityDigest: normalized.identityDigest || digest(normalized.identity), completion: completionDetail(fullCompletion) }),
+      payload_json: JSON.stringify({ kind: 'terminal', identityDigest, completion: completionDetail(fullCompletion) }),
       created_at: normalized.createdAt || fullCompletion.completedAt,
       updated_at: timestamp(),
       completed_at: fullCompletion.completedAt,
@@ -309,8 +288,7 @@ function decodeRow(row) {
     const completion = clone(payload.completion);
     completion.result = { ...(completion.result || {}), phases };
     if (row.status !== 'complete' || completion.task !== row.task_id || completion.runId !== row.run_id || completion.status !== 'complete') throw error('task_finish_terminal_payload_mismatch', 'Task Finish terminal普通列与payload不一致。', 500, { taskId: row.task_id, runId: row.run_id });
-    const expected = terminalQueryFields(completion);
-    expected.identity_digest = payload.identityDigest || expected.identity_digest || row.identity_digest;
+    const expected = terminalQueryFields(completion, payload.identityDigest || row.identity_digest);
     assertQueryFields(row, expected);
     return { kind: 'terminal', completion, phases };
   }
@@ -406,18 +384,18 @@ function assertQueryFields(row, expected) {
   if (mismatches.length) throw error('task_finish_current_query_fields_mismatch', `Task Finish current普通列与payload不一致：${mismatches.join(', ')}。`, 500, { taskId: row.task_id, runId: row.run_id, mismatches });
 }
 
-function terminalQueryFields(completion) {
+function terminalQueryFields(completion, identityDigest = null) {
   const result = completion.result || {};
   return {
-    identity_digest: result.identity ? digest(result.identity) : null,
+    identity_digest: identityDigest,
     status: 'complete',
     current_phase: 'cleanup',
     handoff_identity: completion.handoffIdentity,
     candidate_identity: completion.candidateIdentity,
     candidate_generation: completion.candidateGeneration,
     content_target_identity: completion.contentTargetIdentity,
-    target_branch: completion.targetBranch,
-    target_remote: result.identity?.remote || null,
+    target_branch: result.identity?.targetBranch ?? completion.targetBranch ?? null,
+    target_remote: result.identity?.remote ?? null,
     carrier_identity: completion.carrierIdentity || result.carrier?.identity || null,
     repository_set_identity: result.repositorySetIdentity || result.identity?.repositorySetIdentity || null,
     carrier_set_identity: result.carrierSetIdentity || completion.carrierSetIdentity || null,
