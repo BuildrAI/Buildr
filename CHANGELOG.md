@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+## 0.1.0-rc.26 - 2026-08-27
+
+- 以当前 `dev` 快照重新准备候选版，延续 rc.25 已交付的 Task Finish、release identity 与 main reconciliation 收敛。
+- 保持候选版使用 npm `next` 轨道，版本材料与 package/lockfile 元数据一致。
+
 ## 0.1.0-rc.25 - 2026-08-27
 
 - 修复多仓库 Task Finish 终态持久化，并补齐相关运行时接口与集成验证。
