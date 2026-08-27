@@ -352,14 +352,44 @@ function normalizeDecision(value) {
 
 export function createTaskDevelopmentKnowledge(value) {
   const knowledge = object(value, 'currentKnowledge');
-  closed(knowledge, new Set(['identity', 'treeIdentity', 'status', 'summary', 'sourceIdentities', 'unresolvedItems']), 'currentKnowledge');
-  if (!TASK_DEVELOPMENT_KNOWLEDGE_STATUSES.includes(knowledge.status)) throw taskDevelopmentError('task_development_knowledge_status_invalid', 'currentKnowledge.status不受支持。', 400, { status: knowledge.status });
+  closed(knowledge, new Set(['identity', 'treeIdentity', 'status', 'summary', 'sourceIdentities', 'unresolvedItems', 'projects']), 'currentKnowledge');
+  if (knowledge.projects !== undefined && !Array.isArray(knowledge.projects)) throw taskDevelopmentError('task_development_field_invalid', 'currentKnowledge.projects必须是数组。', 400, { field: 'currentKnowledge.projects' });
+  const projects = knowledge.projects === undefined ? null : knowledge.projects.map((value, index) => {
+    const field = `currentKnowledge.projects[${index}]`;
+    const item = object(value, field);
+    closed(item, new Set(['project', 'status', 'summary', 'sourceIdentities', 'unresolvedItems']), field);
+    if (!TASK_DEVELOPMENT_KNOWLEDGE_STATUSES.includes(item.status)) throw taskDevelopmentError('task_development_knowledge_status_invalid', `${field}.status不受支持。`, 400, { status: item.status });
+    const unresolvedItems = uniqueStrings(item.unresolvedItems, `${field}.unresolvedItems`);
+    if (item.status === 'blocked' && unresolvedItems.length === 0) throw taskDevelopmentError('task_development_knowledge_blocker_required', `${field} blocked必须包含unresolvedItems。`, 409);
+    return {
+      project: portableText(item.project, `${field}.project`),
+      status: item.status,
+      summary: portableText(item.summary, `${field}.summary`),
+      sourceIdentities: uniqueStrings(item.sourceIdentities, `${field}.sourceIdentities`),
+      unresolvedItems,
+    };
+  }).sort((left, right) => left.project.localeCompare(right.project));
+  if (projects && new Set(projects.map((item) => item.project)).size !== projects.length) throw taskDevelopmentError('task_development_knowledge_project_duplicate', 'currentKnowledge.projects Project不能重复。', 400);
+  const status = projects
+    ? projects.some((item) => item.status === 'blocked') ? 'blocked'
+      : projects.some((item) => item.status === 'attention') ? 'attention'
+        : projects.some((item) => item.status === 'aligned') ? 'aligned' : 'not-applicable'
+    : knowledge.status;
+  if (!TASK_DEVELOPMENT_KNOWLEDGE_STATUSES.includes(status)) throw taskDevelopmentError('task_development_knowledge_status_invalid', 'currentKnowledge.status不受支持。', 400, { status });
+  const summary = projects ? `${projects.length}个Project Current Knowledge已聚合：${projects.map((item) => `${item.project}=${item.status}`).join('，')}。` : portableText(knowledge.summary, 'currentKnowledge.summary');
+  const sourceIdentities = projects ? [...new Set(projects.flatMap((item) => item.sourceIdentities))].sort() : uniqueStrings(knowledge.sourceIdentities, 'currentKnowledge.sourceIdentities');
+  const unresolvedItems = projects ? [...new Set(projects.flatMap((item) => item.unresolvedItems))].sort() : uniqueStrings(knowledge.unresolvedItems, 'currentKnowledge.unresolvedItems');
+  if (projects && knowledge.status !== undefined && knowledge.status !== status) throw taskDevelopmentError('task_development_knowledge_aggregate_mismatch', 'currentKnowledge.status与Project dispositions聚合不一致。', 409, { expected: status, actual: knowledge.status });
+  if (projects && knowledge.summary !== undefined && knowledge.summary !== summary) throw taskDevelopmentError('task_development_knowledge_aggregate_mismatch', 'currentKnowledge.summary与Project dispositions聚合不一致。', 409);
+  if (projects && knowledge.sourceIdentities !== undefined && JSON.stringify([...knowledge.sourceIdentities].sort()) !== JSON.stringify(sourceIdentities)) throw taskDevelopmentError('task_development_knowledge_aggregate_mismatch', 'currentKnowledge.sourceIdentities与Project dispositions聚合不一致。', 409);
+  if (projects && knowledge.unresolvedItems !== undefined && JSON.stringify([...knowledge.unresolvedItems].sort()) !== JSON.stringify(unresolvedItems)) throw taskDevelopmentError('task_development_knowledge_aggregate_mismatch', 'currentKnowledge.unresolvedItems与Project dispositions聚合不一致。', 409);
   const payload = {
     treeIdentity: digestIdentity(knowledge.treeIdentity, 'currentKnowledge.treeIdentity'),
-    status: knowledge.status,
-    summary: portableText(knowledge.summary, 'currentKnowledge.summary'),
-    sourceIdentities: uniqueStrings(knowledge.sourceIdentities, 'currentKnowledge.sourceIdentities'),
-    unresolvedItems: uniqueStrings(knowledge.unresolvedItems, 'currentKnowledge.unresolvedItems'),
+    status,
+    summary,
+    sourceIdentities,
+    unresolvedItems,
+    ...(projects ? { projects } : {}),
   };
   const identity = taskDevelopmentDigest(payload);
   if (knowledge.identity !== undefined) assertDerivedIdentity(knowledge.identity, identity, 'currentKnowledge.identity');

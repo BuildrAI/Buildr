@@ -112,7 +112,7 @@ stable Content Target形成后按默认顺序执行：
 
 1. 针对每个有效Project形成并复核closed Formal Verification Plan；只运行较窄focused feedback，不在阶段切换前另启相同broad affected execution。
 2. Plan preview为`action-required`时，把原样`preparation.planRequest`交给Task Environment一次幂等prepare；不手写安装或扩大Task scope。
-3. 使用同一批Plan documents调用`discover policy --plan <project>::<json-file>`，检查selected、not-selected、coverage gaps与必要risk override，再把返回的closed `inputJson`交给policy writer。
+3. 使用同一批Plan documents调用`discover policy --plan <project>::<json-file>`；若返回聚合`preparation.planRequest`，先原样交给Task Environment一次prepare并重跑同一批Plan preview/discover。检查selected、not-selected、coverage gaps与必要risk override，再把返回的closed `inputJson`交给policy writer。
 4. Task Context、Planning、Content Target、Environment准备与policy均current后调用freeze形成或复用Candidate；随后把同一Plan文件交给formal run/reconcile。
 
 该顺序是Formal Development的推荐工作流，不自动prepare、policy、freeze或run，也不是普通开发的许可层；Agent仍决定额外风险能力、override、外部授权及是否采用其他满足owner contract的合法路径。Plan、target、declaration或capability identity变化时重新plan，不复用旧preview或execution。
@@ -127,7 +127,7 @@ Candidate形成后读取response-only`formalVerificationReadiness`：`ready`时�
 
 所有Change disposition非pending、每个`converged`由current working copy archived事实证明、planning disposition明确且Content Target与policy current后，即可调用Development Application freeze。freeze不修改内容、不运行命令，只创建或复用current Candidate；Verification、Completion与Current Knowledge都不进入Candidate identity，也不作为首次freeze前置。Change lifecycle、planning、Content、Task context或policy变化会使旧Candidate失效并在下一次freeze递增generation。
 
-Candidate形成后，按实际工作需要形成matching Verification、用`task-review`执行Completion Review，并由Current Knowledge provider形成绑定current Content Target的最小disposition。`blocked`只用于会造成错误完成结论的冲突；`attention`保留portable follow-up但不阻止proceed/handoff。根据current gates记录：
+Candidate形成后，按实际工作需要形成matching Verification、用`task-review`执行Completion Review，并由Current Knowledge provider形成绑定current Content Target的最小disposition。多Project Task逐Project取得Result后一次提交精确Project集合，单Project与仅工作区Task可沿用原聚合输入。`blocked`只用于会造成错误完成结论的冲突；`attention`保留portable follow-up但不阻止proceed/handoff。根据current gates记录：
 
 - `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
 - `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。

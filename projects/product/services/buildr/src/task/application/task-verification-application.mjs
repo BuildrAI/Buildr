@@ -126,9 +126,48 @@ export function registerTaskVerificationApplication(runtime) {
     });
   }
 
-  function declarationValues(observations) {
-    return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
+function declarationValues(observations) {
+  return observations.map(({ project, path: declarationPath, identity }) => ({ project, path: declarationPath, identity }));
+}
+
+function aggregateFormalPlanPreparation(effectiveProjects, byProject) {
+  const documents = effectiveProjects.map((project) => ({ project, result: byProject.get(project)?.result || null }));
+  if (documents.some((entry) => !entry.result?.preparation)) return null;
+  const requirements = [];
+  const baseRequests = [];
+  for (const { project, result } of documents) {
+    const preparation = result.preparation;
+    if (preparation.status === 'action-required' && !preparation.planRequest) throw taskVerificationError('task_verification_policy_preparation_request_missing', `Formal Plan preparation缺少Plan Request：${project}。`, 409, { project });
+    if (preparation.planRequest) {
+      assertFields(preparation.planRequest, new Set(['schemaVersion', 'notApplicableReason', 'projects', 'auxiliaryPreparation']), `formalPlans.${project}.preparation.planRequest`);
+      if (preparation.planRequest.schemaVersion !== 'buildr.task-environment-plan-request/v1' || !Array.isArray(preparation.planRequest.projects)) throw taskVerificationError('task_verification_policy_preparation_request_invalid', `Formal Plan preparation Plan Request不合法：${project}。`, 409, { project });
+      baseRequests.push({ project, request: preparation.planRequest });
+    }
+    for (const [index, requirement] of preparation.requirements.entries()) {
+      assertFields(requirement, new Set(['capability', 'capabilityIdentity', 'project', 'selector', 'recipe']), `formalPlans.${project}.preparation.requirements[${index}]`);
+      if ([requirement.capability, requirement.capabilityIdentity, requirement.project, requirement.selector, requirement.recipe].some((value) => typeof value !== 'string' || !value)) throw taskVerificationError('task_verification_policy_preparation_requirement_invalid', `Formal Plan preparation requirement不合法：${project}/${index}。`, 409, { project, index });
+      if (requirement.project !== project) throw taskVerificationError('task_verification_policy_preparation_requirement_project_mismatch', `Formal Plan preparation requirement Project不匹配：${project}/${requirement.project}。`, 409, { project, actualProject: requirement.project });
+      requirements.push(requirement);
+    }
   }
+  const uniqueRequirements = [...new Map(requirements
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    .map((item) => [`${item.capabilityIdentity}/${item.project}/${item.selector}/${item.recipe}`, item])).values()];
+  if (!baseRequests.length) return { status: 'ready', identity: digest({ projects: effectiveProjects, requirements: uniqueRequirements }), requirements: uniqueRequirements, planRequest: null };
+  const base = baseRequests[0].request;
+  const baseIdentity = JSON.stringify({ projects: base.projects, ...(base.notApplicableReason ? { notApplicableReason: base.notApplicableReason } : {}) });
+  for (const entry of baseRequests.slice(1)) {
+    const actual = JSON.stringify({ projects: entry.request.projects, ...(entry.request.notApplicableReason ? { notApplicableReason: entry.request.notApplicableReason } : {}) });
+    if (actual !== baseIdentity) throw taskVerificationError('task_verification_policy_preparation_base_mismatch', `Formal Plan preparation base scopes不一致：${entry.project}。`, 409, { project: entry.project });
+  }
+  const planRequest = {
+    schemaVersion: 'buildr.task-environment-plan-request/v1',
+    ...(base.notApplicableReason ? { notApplicableReason: base.notApplicableReason } : {}),
+    projects: structuredClone(base.projects),
+    auxiliaryPreparation: uniqueRequirements.map((item) => ({ ...item })),
+  };
+  return { status: 'action-required', identity: digest({ projects: effectiveProjects, requirements: uniqueRequirements, planRequest }), requirements: uniqueRequirements, planRequest };
+}
 
   function deriveTaskVerificationPolicyInput(targetRoot, taskId, input) {
     assertFields(input, new Set(['targetIdentity', 'formalPlans', 'declarationRoot']), 'Task Verification policy projection');
@@ -154,10 +193,10 @@ export function registerTaskVerificationApplication(runtime) {
       if (typeof entry.project !== 'string' || !entry.project.trim()) throw taskVerificationError('task_verification_policy_plan_project_invalid', `formalPlans[${index}].project必须是非空字符串。`, 400);
       const project = entry.project.trim();
       if (byProject.has(project)) throw taskVerificationError('task_verification_policy_plan_project_duplicate', `Formal Plan Project重复：${project}。`, 400, { project });
-      let plan;
-      try { plan = assertVerificationPlanDocument(entry.document).plan; }
+      let document;
+      try { document = assertVerificationPlanDocument(entry.document); }
       catch (error) { throw taskVerificationError('task_verification_policy_plan_invalid', `Formal Plan不可用：${project}：${error.message}`, 400, { project }); }
-      byProject.set(project, plan);
+      byProject.set(project, document);
     }
     const actualProjects = [...byProject.keys()].sort((left, right) => left.localeCompare(right));
     if (JSON.stringify(actualProjects) !== JSON.stringify(effectiveProjects)) {
@@ -171,7 +210,7 @@ export function registerTaskVerificationApplication(runtime) {
     for (const project of effectiveProjects) {
       const observation = observationByProject.get(project);
       if (!observation?.valid || !observation.declaration) throw taskVerificationError('task_verification_declaration_invalid', `Project ${project} verification declaration不可用：${observation?.diagnostic || 'missing'}。`, 409, { project, identity: observation?.identity || null });
-      const plan = byProject.get(project);
+      const plan = byProject.get(project).plan;
       if (plan.target.kind !== 'task-delivery' || plan.target.identity !== targetIdentity) {
         throw taskVerificationError('task_verification_policy_plan_target_mismatch', `Formal Plan target不匹配：${project}。`, 409, { project, expectedTarget: targetIdentity, actualTarget: plan.target });
       }
@@ -201,11 +240,12 @@ export function registerTaskVerificationApplication(runtime) {
       if (selectedIds.size === 0 && plan.coverageGaps.length === 0) throw taskVerificationError('task_verification_policy_plan_empty', `Formal Plan既未选择capability也没有coverage gap：${project}。`, 409, { project });
       plans.push({ project, identity: plan.identity, requestIdentity: plan.requestIdentity, status: plan.status, declarationIdentity: plan.declarationIdentity });
     }
+    const preparation = aggregateFormalPlanPreparation(effectiveProjects, byProject);
     return {
       schemaVersion: 'buildr.task-verification-policy-input-projection/v1', operation: 'derive-policy', status: 'ready', taskId,
       targetIdentity,
       inputJson: { capabilities, coverageGaps, overrides: [] },
-      selection: { plans, notSelectedCapabilities }, diagnostic: null, effects: [],
+      selection: { plans, notSelectedCapabilities }, preparation, diagnostic: null, effects: [],
       nextActions: coverageGaps.length ? ['保留Plan coverage gap并由Agent决定修复、补充风险能力或在后续Result中如实对账。'] : [],
     };
   }
@@ -389,7 +429,8 @@ export function registerTaskVerificationApplication(runtime) {
     const observations = observeDeclarations(task, input.declarationRoot);
     const observationByProject = new Map(observations.map((item) => [item.project, item]));
     const capabilities = [];
-    let planBinding = null;
+    const planBindings = new Map();
+    const recordProjects = new Set();
     for (const recordId of input.recordIds) {
       let detail;
       let summary;
@@ -404,13 +445,18 @@ export function registerTaskVerificationApplication(runtime) {
       if (summary.schemaVersion !== 'buildr.verification-execution-record-summary/v1' || summary.task?.id !== taskId) throw taskVerificationError('task_verification_evidence_mismatch', `Execution Record Task或schema不匹配：${recordId}。`, 409, { recordId });
       if (!summary.plan?.identity || !summary.plan?.requestIdentity) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定Verification Request/Plan：${recordId}。`, 409, { recordId });
       if (!Array.isArray(summary.plan.executionUnits) || summary.plan.executionUnits.length === 0) throw taskVerificationError('task_verification_evidence_plan_missing', `Execution Record未绑定selected execution unit：${recordId}。`, 409, { recordId });
-      if (!planBinding) planBinding = { identity: summary.plan.identity, requestIdentity: summary.plan.requestIdentity, providerIdentity: summary.plan.providerIdentity || null };
-      else if (planBinding.identity !== summary.plan.identity || planBinding.requestIdentity !== summary.plan.requestIdentity || planBinding.providerIdentity !== (summary.plan.providerIdentity || null)) throw taskVerificationError('task_verification_evidence_plan_mismatch', `Execution Records不属于同一Verification Request/Plan/provider：${recordId}。`, 409, { recordId, expected: planBinding, actual: summary.plan });
       if (summary.candidate?.identity !== input.candidateIdentity || summary.candidate?.generation !== input.candidateGeneration || summary.candidate?.contentTargetIdentity !== input.targetIdentity || summary.target?.identity !== input.targetIdentity) throw taskVerificationError('task_verification_evidence_candidate_mismatch', `Execution Record Candidate或Content Target不匹配：${recordId}。`, 409, { recordId });
       if (summary.target?.stable !== true || summary.target?.drift) throw taskVerificationError('task_verification_evidence_target_drift', `Execution Record target发生漂移：${recordId}。`, 409, { recordId });
       const project = summary.project?.code;
       const observation = observationByProject.get(project);
       if (!observation || observation.path !== summary.declaration?.path || observation.identity !== summary.declaration?.identity) throw taskVerificationError('task_verification_evidence_declaration_mismatch', `Execution Record declaration不匹配：${recordId}。`, 409, { recordId, project });
+      const planBinding = { identity: summary.plan.identity, requestIdentity: summary.plan.requestIdentity, providerIdentity: summary.plan.providerIdentity || null };
+      const expectedPlanBinding = planBindings.get(project);
+      if (expectedPlanBinding && (expectedPlanBinding.identity !== planBinding.identity || expectedPlanBinding.requestIdentity !== planBinding.requestIdentity || expectedPlanBinding.providerIdentity !== planBinding.providerIdentity)) {
+        throw taskVerificationError('task_verification_evidence_plan_mismatch', `同一Project的Execution Records不属于同一Verification Request/Plan/provider：${recordId}。`, 409, { recordId, project, expected: expectedPlanBinding, actual: planBinding });
+      }
+      planBindings.set(project, planBinding);
+      recordProjects.add(project);
       const selected = new Map((summary.selectedCapabilities || []).map((item) => [item.id, item]));
       if (!Array.isArray(summary.checks) || summary.checks.length !== selected.size) throw taskVerificationError('task_verification_evidence_incomplete', `Execution Record capability checks不完整：${recordId}。`, 409, { recordId });
       for (const check of summary.checks) {
@@ -425,6 +471,14 @@ export function registerTaskVerificationApplication(runtime) {
       }
     }
     const coverageGaps = input.coverageGaps || [];
+    const coveredProjects = new Set(recordProjects);
+    for (const gap of coverageGaps) {
+      const project = gap.scope?.match(/^project:([^/]+)$/)?.[1];
+      if (project) coveredProjects.add(project);
+    }
+    const effectiveProjects = taskRecordEffectiveProjectCodes(task.record);
+    const missingProjects = effectiveProjects.filter((project) => !coveredProjects.has(project));
+    if (missingProjects.length) throw taskVerificationError('task_verification_evidence_projects_incomplete', 'Execution Records与project coverage gaps必须精确覆盖Task有效Project集合。', 409, { expectedProjects: effectiveProjects, actualProjects: [...coveredProjects].sort((left, right) => left.localeCompare(right)), missingProjects });
     const failed = capabilities.some((item) => item.outcome === 'failed') || coverageGaps.length > 0;
     const draft = normalizeTaskVerificationResult({
       schemaVersion: 'buildr.task-verification-result/v2',

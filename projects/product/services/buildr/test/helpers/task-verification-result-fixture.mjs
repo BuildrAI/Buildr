@@ -68,6 +68,7 @@ export function recordVerificationResultFromEvidence(runtime, root, taskId, inpu
     });
     records.push(opened.record.recordId);
   }
+  if (input.reconcile === false) return { records, candidate };
   return runtime.reconcileTaskVerification(root, taskId, {
     candidateIdentity: candidate.identity,
     candidateGeneration: candidate.generation,

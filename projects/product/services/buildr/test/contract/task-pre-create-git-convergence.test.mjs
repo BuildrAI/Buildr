@@ -12,22 +12,22 @@ const gitContract = read('resources/workspace/skills/contracts/buildr/git-operat
 const taskManager = read('resources/workspace/skills/buildr/task-manager/SKILL.md');
 const environment = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
 
-test('task-triage 在新正式 Task create 前按统一 dev 顺序消费 Git Operations', () => {
+test('task-triage 在新正式 Task create 前按逐repository权威基线消费 Git Operations', () => {
   for (const required of [
     '只有即将创建 active Task 或把 todo 激活为 active 时执行本门禁',
-    '当前符号分支恰为 `dev`',
-    'upstream 恰为 `origin/dev`',
-    '先为全部 repositories 逐一选择独立 `fetch` operation',
-    '全部 fetch 成功后重新核验',
-    '明确选择 `rebase` operation',
+    '解析integration branch、remote与matching upstream',
+    '不得猜测`dev`或复制Workspace目标',
+    '先为全部repositories逐一选择独立`fetch` operation',
+    '全部fetch成功后重新核验',
+    '明确选择`rebase` operation',
     '`rebase --abort`',
-    '已经在其他 repository 成功的 fetch/rebase 不反向回滚',
-    'Workspace transition check',
-    '才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`',
+    '已经在其他repository成功的fetch/rebase不反向回滚',
+    'workspace transition约束',
+    '才调用selected `buildr.task-record/v2` provider的active `create`或`activate`',
   ]) assert.ok(triage.includes(required), required);
 
-  assert.match(triage, /不 checkout、不 stash\/autostash、不猜其他 branch\/remote/);
-  assert.match(triage, /Task Record Application、Buildr Web 与 Task Environment 不获得任何Git mutation/);
+  assert.match(triage, /不checkout、不stash\/autostash、不猜其他branch\/remote/);
+  assert.match(triage, /Task Record Application、Buildr Web与Task Environment不获得任何Git mutation/);
   assert.match(triage, /Git 基线：converged \/ none \/ blocked/);
   assert.match(triage, /todo create.*不执行/);
 });

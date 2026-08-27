@@ -202,3 +202,42 @@ test('reconcile在Environment缺失时从handoff、Task scope与Git topology解�
   assert.equal(ambiguous.identityParts, null);
   assert.ok(ambiguous.gaps.delivery.some((item) => item.code === 'task_finish.remote_unavailable'));
 });
+
+test('ready shared Environment只为reconcile从handoff scope恢复repository context', (t) => {
+  const root = makeGitRoot(t, { remotes: true });
+  const taskRoot = path.join(root, '.worktrees', 'shared-task');
+  fs.appendFileSync(path.join(root, '.gitignore'), '/.worktrees/\n');
+  git(root, ['add', '.gitignore']);
+  git(root, ['commit', '-m', 'ignore task worktrees']);
+  git(root, ['push', 'origin', 'dev']);
+  git(root, ['worktree', 'add', '-b', 'codex/shared-task', taskRoot, 'dev']);
+  fs.writeFileSync(path.join(taskRoot, 'feature.txt'), 'shared reconciliation\n');
+  git(taskRoot, ['add', 'feature.txt']);
+  git(taskRoot, ['commit', '-m', 'task source']);
+  const handoff = handoffFixture();
+  const receipt = {
+    candidate: handoff.candidate,
+    gates: handoff.gates,
+    decision: handoff.decision,
+    handoffs: [handoff],
+    contentTarget: { components: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'git', identity: `sha256-${'1'.repeat(64)}` }] },
+  };
+  const runtime = {
+    resolveTaskEnvironmentExecution: () => ({ ready: true, workspaceRoot: root, validationRoot: root, controller: { adapter: 'codex' }, repositories: [] }),
+    inspectTaskDevelopment: () => ({ development: { receipt, applicability: { handoff: 'current' } } }),
+    inspectTaskRecord: () => ({ record: { taskId: 'shared-task', scope: { projects: [], services: [] }, changes: [] } }),
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: {} }),
+    readGitWorktreeEvidence: () => ({ evidence: { repositories: [{ selector: 'workspace', sourcePath: '.', sourceRepository: root, checkoutPath: taskRoot, branch: 'codex/shared-task', remote: 'origin' }] } }),
+  };
+
+  const automatic = observeTaskFinishEntryReadiness({ runtime, root, task: 'shared-task' });
+  assert.equal(automatic.ready, false);
+  assert.ok(automatic.gaps.delivery.some((item) => item.code === 'task_finish.repository_set_missing'));
+
+  const reconciled = observeTaskFinishEntryReadiness({ runtime, root, task: 'shared-task', allowEnvironmentless: true });
+  assert.equal(reconciled.ready, true);
+  assert.equal(reconciled.identityParts.environmentAvailable, true);
+  assert.equal(reconciled.identityParts.contextSource, 'task-environment');
+  assert.equal(reconciled.identityParts.repositories[0].remote, 'origin');
+  assert.equal(reconciled.identityParts.repositories[0].taskRoot, fs.realpathSync(taskRoot));
+});

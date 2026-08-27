@@ -69,6 +69,13 @@ const knowledge = {
   summary: text(),
   sourceIdentities: array(text()),
   unresolvedItems: array(text()),
+  projects: array(closed({
+    project: text('Task有效Project code。'),
+    status: { type: 'string', enum: ['aligned', 'not-applicable', 'attention', 'blocked'] },
+    summary: text(),
+    sourceIdentities: array(text()),
+    unresolvedItems: array(text()),
+  }, ['project', 'status', 'summary', 'sourceIdentities', 'unresolvedItems'])),
 };
 
 const risk = closed({
@@ -149,8 +156,8 @@ const contracts = {
   },
   knowledge: {
     summary: '保存selected Current Knowledge provider针对current Content Target的最小disposition。',
-    inputSchema: inputSchema(knowledge, ['treeIdentity', 'status', 'summary', 'sourceIdentities', 'unresolvedItems']),
-    example: { treeIdentity: 'sha256-<content-target>', status: 'aligned', summary: '<knowledge-summary>', sourceIdentities: [], unresolvedItems: [] },
+    inputSchema: inputSchema(knowledge, ['treeIdentity']),
+    example: { treeIdentity: 'sha256-<content-target>', projects: [{ project: '<project>', status: 'aligned', summary: '<knowledge-summary>', sourceIdentities: [], unresolvedItems: [] }] },
   },
   gate: {
     summary: '记录 planning、verification 或 completion gate 的明确 waiver/not-applicable disposition。',

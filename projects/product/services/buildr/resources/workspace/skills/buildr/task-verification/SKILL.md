@@ -90,7 +90,7 @@ stable Content Target的Formal Plans按有效Project全部形成后，使用matc
   --plan <project>::<plan-file> [--plan <project>::<plan-file> ...]
 ```
 
-Task Verification Application会重新校验Plan closed identity、task-delivery target、current Content Target、Project/declaration与selected capability，并返回policy writer所需的closed `inputJson`、Plan identities和response-only not-selected摘要；它零写入，不把Plan正文、preparation、not-selected或文件路径保存到Result/Receipt。Project集合缺失/重复或任一identity陈旧时重新plan，不手抄或猜选能力。Plan文件位于操作系统临时目录，只保留到同一Plan完成policy派生和formal run；随后立即删除。无Plan时仍可使用declaration默认policy discovery作为合法降级，但不得把它声称为Plan-derived选择。
+Task Verification Application会重新校验Plan closed identity、task-delivery target、current Content Target、Project/declaration与selected capability，并返回policy writer所需的closed `inputJson`、Plan identities和response-only not-selected摘要。全部Project都提供正式Plan result envelope时，投影还会把每份`preparation.requirements`合成精确并集；任一Project为`action-required`时，只把聚合后的`preparation.planRequest`原样交给Task Environment一次prepare，不得依次提交局部Project request相互覆盖。该投影零写入，不把Plan正文、preparation、not-selected或文件路径保存到Result/Receipt。Project集合缺失/重复或任一identity陈旧时重新plan，不手抄或猜选能力。Plan文件位于操作系统临时目录，只保留到同一Plan完成policy派生和formal run；随后立即删除。无Plan时仍可使用declaration默认policy discovery作为合法降级，但不得把它声称为Plan-derived选择。
 
 `verification run`只执行已选择的command capability；`--json`默认返回有界`buildr.long-running-operation-summary/v1`，只有诊断需要时才显式使用`--detail full`返回既有`buildr.verification-execution/v1`。compact中的recovery pointer必须先用于回读同一Execution Record；stdout丢失、等待超时、展示截断或既有failed都不授权重跑。它不接受`--declaration-root`。带matching Task Environment的正式execution必须由Development consumer提交current Candidate lease，并在启动capability前把Candidate加入invocation identity和Task Execution Record；runner不反向读取或写Development。完成后先seal受控、脱敏、有限期正文，再精确清理transient evidence。Task外execution不接受Candidate lease且仍只产生transient evidence。`--declaration-root`只用于Result reconciliation；`inspect`不重新观察声明。
 
@@ -136,6 +136,8 @@ buildr task verification reconcile <task-id> \
 ```
 
 Application独立读取record metadata与受控`summary.json`，核验body integrity、Task、owner/kind、Candidate、generation、target stability、Project、declaration与selected checks，再派生capability outcome、portable facts、evidence identities和整体结论。调用方不得提交或补充capability outcome/fact、evidence digest、declaration identity或claimed external success；任一authority不匹配、正文不可用或执行未terminal时零写入失败。
+
+多Project Task按Project聚合：同一Project的records必须绑定相同Request/Plan/provider，不同Project允许使用各自独立Plan。records与`project:<code>` coverage gaps必须精确覆盖全部有效Project；不得寻找或构造跨Project合并Plan，也不得用其他Project的passed记录替代缺失Project。
 
 仅工作区Result不执行不存在的能力，可用兼容`task verification record`入口提交Candidate、target、唯一workspace gap与`not-passed`；该入口拒绝capability claims及任何Project/Service/Change Task。Project coverage gap随至少一个matching execution authority一起reconcile；没有可执行authority时如实报告尚不能形成formal Result。
 

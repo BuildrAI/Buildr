@@ -9,14 +9,14 @@ import YAML from 'yaml';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';
-import { createVerificationPlan, createVerificationRequest } from '../../src/verification/domain/verification-plan.mjs';
+import { createVerificationPlan, createVerificationPlanResult, createVerificationRequest } from '../../src/verification/domain/verification-plan.mjs';
 
 const test = createBuildrApplicationTest('integration-task-verification-repository');
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-function declaration() {
-  return { schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{ id: 'demo.unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, proves: ['Demo unit behavior'], evidence: ['unit'], usableFor: ['task-delivery'], discovery: { sources: ['**'] }, invocation: { affected: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, full: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' } }, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
+function declaration(project = 'demo', capability = `${project}.unit`) {
+  return { schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{ id: capability, title: `${project} unit`, scope: { project, services: [] }, proves: [`${project} unit behavior`], evidence: ['unit'], usableFor: ['task-delivery'], discovery: { sources: ['**'] }, invocation: { affected: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' }, full: { kind: 'command', argv: ['node', '-e', 'void 0'], cwd: '.' } }, environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [] }] };
 }
 function fixture(t, runtime) {
   const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-repository').root);
@@ -139,6 +139,60 @@ test('同一次交付对账拒绝混用不同Verification Plan的Execution Recor
     coverageGaps: [],
     declarationRoot: root,
   }), (error) => error.code === 'task_verification_evidence_plan_mismatch');
+});
+
+test('多Project Result允许各自Plan并要求records或project gap完整覆盖', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-multi-project').root);
+  const taskId = 'multi-project-verification';
+  runtime.createTaskRecord(root, { taskId, title: 'Multi Project', intent: 'Reconcile independent Project Plans.', projects: ['demo', 'other'], services: [], changes: [] });
+  fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify(declaration('demo', 'demo.unit')));
+  fs.writeFileSync(path.join(root, 'projects', 'other', 'verification.yml'), YAML.stringify(declaration('other', 'other.unit')));
+  const targetIdentity = 'target:multi-project';
+  const demo = recordVerificationResultFromEvidence(runtime, root, taskId, {
+    targetIdentity, targetSummary: 'Multi Project target', planIdentity: 'sha256-demo-plan', requestIdentity: 'sha256-demo-request', reconcile: false,
+    capabilities: [{ project: 'demo', capability: 'demo.unit', outcome: 'passed', facts: ['Demo passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Demo passed.' }, declarationRoot: root,
+  });
+  const other = recordVerificationResultFromEvidence(runtime, root, taskId, {
+    targetIdentity, targetSummary: 'Multi Project target', candidate: demo.candidate, planIdentity: 'sha256-other-plan', requestIdentity: 'sha256-other-request', reconcile: false,
+    capabilities: [{ project: 'other', capability: 'other.unit', outcome: 'passed', facts: ['Other passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Other passed.' }, declarationRoot: root,
+  });
+  const result = runtime.reconcileTaskVerification(root, taskId, {
+    candidateIdentity: demo.candidate.identity, candidateGeneration: demo.candidate.generation,
+    targetIdentity, targetSummary: 'Multi Project target', recordIds: [...demo.records, ...other.records], coverageGaps: [], declarationRoot: root,
+  });
+  assert.equal(result.slot.result.conclusion.outcome, 'passed');
+  assert.deepEqual(result.slot.result.capabilities.map((item) => `${item.project}/${item.capability}`), ['demo/demo.unit', 'other/other.unit']);
+
+  assert.throws(() => runtime.reconcileTaskVerification(root, taskId, {
+    candidateIdentity: demo.candidate.identity, candidateGeneration: demo.candidate.generation,
+    targetIdentity, targetSummary: 'Incomplete Project target', recordIds: demo.records, coverageGaps: [], declarationRoot: root,
+  }), (error) => error.code === 'task_verification_evidence_projects_incomplete' && error.details.missingProjects.includes('other'));
+});
+
+test('多Project Formal Plan policy projection形成一次完整preparation closure', (t) => {
+  const runtime = t.buildrContexts.application;
+  const root = fs.realpathSync(copyTaskLifecycleWorkspace(t, 'task-verification-multi-project-preparation').root);
+  const taskId = 'multi-project-preparation';
+  runtime.createTaskRecord(root, { taskId, title: 'Multi Project Preparation', intent: 'Aggregate Project preparation closures.', projects: ['demo', 'other'], services: [], changes: [] });
+  const declarations = new Map();
+  for (const project of ['demo', 'other']) {
+    const value = declaration(project, `${project}.unit`);
+    const file = path.join(root, 'projects', project, 'verification.yml');
+    fs.writeFileSync(file, YAML.stringify(value));
+    declarations.set(project, { value, identity: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}` });
+  }
+  const baseProjects = ['demo', 'other'].map((project) => ({ project, source: { kind: 'project-declaration', identity: `sha256-${project}-preparation` }, scopes: [{ selector: `project:${project}`, disposition: 'not-applicable', reason: 'No base preparation.' }] }));
+  const documents = ['demo', 'other'].map((project, index) => {
+    const selected = declarations.get(project);
+    const plan = createVerificationPlan({ request: createVerificationRequest({ project, services: [], target: { kind: 'task-delivery', identity: 'target:preparation' }, selection: { scope: 'affected' }, changedPaths: ['src/example.mjs'], risks: [], declarations: [{ project, identity: selected.identity }], dependencies: [] }), declaration: selected.value });
+    const requirement = { capability: `${project}.unit`, capabilityIdentity: `sha256-${project}-capability`, project, selector: `project:${project}`, recipe: `${project}.prepare` };
+    return { project, document: createVerificationPlanResult({ plan, preparation: index === 0 ? { status: 'action-required', identity: `sha256-${project}-closure`, requirements: [requirement], planRequest: { schemaVersion: 'buildr.task-environment-plan-request/v1', projects: baseProjects, auxiliaryPreparation: [requirement] } } : { status: 'ready', identity: `sha256-${project}-closure`, requirements: [requirement], planRequest: null } }) };
+  });
+  const projection = runtime.deriveTaskVerificationPolicyInput(root, taskId, { targetIdentity: 'target:preparation', formalPlans: documents, declarationRoot: root });
+  assert.equal(projection.preparation.status, 'action-required');
+  assert.deepEqual(projection.preparation.planRequest.auxiliaryPreparation.map((item) => item.project), ['demo', 'other']);
+  assert.deepEqual(projection.preparation.planRequest.projects.map((item) => item.project), ['demo', 'other']);
 });
 
 test('Verification只从canonical或matching ready Task Environment观察declaration', (t) => {
