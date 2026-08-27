@@ -531,6 +531,98 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
   }
 }
 
+function localBranchCommit(repo, branch, dependencies) {
+  const ref = `refs/heads/${branch}`;
+  const check = git(repo, ['show-ref', '--verify', '--hash', ref], dependencies, { allowFailure: true });
+  return check.status === 0 ? requiredSha(check.stdout.trim(), ref) : null;
+}
+
+function releaseOwnedWorktrees(repo, branches, dependencies) {
+  const branchRefs = new Set(branches.map((branch) => `refs/heads/${branch}`));
+  const blocks = git(repo, ['worktree', 'list', '--porcelain'], dependencies).stdout.trim().split(/\n\n/u).filter(Boolean);
+  return blocks.map((block) => Object.fromEntries(block.split(/\r?\n/u).map((line) => {
+    const separator = line.indexOf(' ');
+    return separator === -1 ? [line, true] : [line.slice(0, separator), line.slice(separator + 1)];
+  }))).filter((entry) => branchRefs.has(entry.branch));
+}
+
+export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
+  const operation = 'closeout';
+  try {
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const remote = options.remote ?? 'origin';
+    const version = requiredVersion(options.version);
+    const generation = requiredGeneration(options.generation);
+    const expectedCommit = requiredSha(options.expectedCommit, 'expectedCommit');
+    const formalBranch = branchFor(version);
+    const carrierBranch = releaseCarrierBranchFor(version, generation);
+    const remoteRefs = remoteHeads(repo, remote, [formalBranch, carrierBranch], dependencies);
+    const localFormal = localBranchCommit(repo, formalBranch, dependencies);
+    const localCarrier = localBranchCommit(repo, carrierBranch, dependencies);
+    const ownedWorktrees = releaseOwnedWorktrees(repo, [formalBranch, carrierBranch], dependencies);
+    const findings = [];
+    if (remoteRefs[formalBranch] !== expectedCommit) findings.push({ code: 'formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: remoteRefs[formalBranch] });
+    if (localFormal !== null && localFormal !== expectedCommit) findings.push({ code: 'local-formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: localFormal });
+    if (remoteRefs[carrierBranch] !== null && remoteRefs[carrierBranch] !== expectedCommit) findings.push({ code: 'release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: remoteRefs[carrierBranch] });
+    if (localCarrier !== null && localCarrier !== expectedCommit) findings.push({ code: 'local-release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: localCarrier });
+    for (const worktree of ownedWorktrees) {
+      if (worktree.HEAD !== expectedCommit) findings.push({ code: 'release-worktree-head-drift', path: worktree.worktree, ref: worktree.branch, expected: expectedCommit, actual: worktree.HEAD ?? null });
+    }
+    if (findings.length) return blocked(operation, 'release-closeout-identity-unknown', 'Release closeout found resources whose ownership or identity cannot be proved.', { version, generation, expectedCommit, findings });
+
+    const effects = [];
+    if (ownedWorktrees.length && options.authorizeLocalSelectionCleanup !== true) {
+      return blocked(operation, 'release-worktree-cleanup-authorization-required', 'Removing owned release worktrees requires explicit local closeout authorization.', { version, generation, expectedCommit, ownedWorktrees });
+    }
+    for (const worktree of ownedWorktrees) {
+      if (sameFilesystemPath(worktree.worktree, repo)) return blocked(operation, 'release-worktree-is-execution-root', `Release-owned branch ${worktree.branch} is checked out in the execution root.`, { version, generation, expectedCommit, ownedWorktrees });
+      git(repo, ['worktree', 'remove', '--force', worktree.worktree], dependencies);
+      effects.push({ type: 'release-worktree-removed', path: worktree.worktree, ref: worktree.branch, commit: expectedCommit });
+    }
+    if (remoteRefs[carrierBranch] !== null) {
+      if (options.authorizeCarrierCleanup !== true) {
+        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned carrier ${remote}/${carrierBranch} requires explicit closeout authorization.`, {
+          version, generation, expectedCommit, formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
+        });
+      }
+      git(repo, ['push', remote, `:refs/heads/${carrierBranch}`], dependencies);
+      if (remoteHeads(repo, remote, [carrierBranch], dependencies)[carrierBranch] !== null) throw new Error(`Remote carrier ${carrierBranch} still exists after deletion.`);
+      effects.push({ type: 'remote-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
+    }
+    if (localCarrier !== null) {
+      if (options.authorizeCarrierCleanup !== true) {
+        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned local carrier ${carrierBranch} requires explicit closeout authorization.`, { version, generation, expectedCommit, effects });
+      }
+      const currentBranch = git(repo, ['branch', '--show-current'], dependencies).stdout.trim();
+      if (currentBranch === carrierBranch) return blocked(operation, 'release-carrier-checked-out', `Owned carrier ${carrierBranch} is currently checked out.`, { version, generation, expectedCommit, effects });
+      git(repo, ['branch', '-D', carrierBranch], dependencies);
+      effects.push({ type: 'local-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
+    }
+    if (options.authorizeLocalSelectionCleanup !== true) {
+      return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
+    }
+    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true }, dependencies);
+    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
+    effects.push(...selectionCleanup.effects);
+    const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, carrier: 'absent', selection: 'absent' });
+    return result(operation, 'passed', {
+      action: effects.length ? 'cleaned' : 'already-cleaned',
+      version,
+      generation,
+      expectedCommit,
+      identity: closeoutIdentity,
+      formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
+      resources: {
+        carrier: { ref: `refs/heads/${carrierBranch}`, local: 'absent', remote: 'absent' },
+        selection: { localBranch: 'absent', lifecycleRefs: 'absent' },
+      },
+      effects,
+    });
+  } catch (error) {
+    return blocked(operation, 'release-closeout-blocked', error.message);
+  }
+}
+
 export function cleanupRemoteReleaseBranch(options = {}, dependencies = {}) {
   const operation = 'cleanup-remote';
   try {
