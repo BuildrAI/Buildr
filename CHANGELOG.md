@@ -4,7 +4,18 @@
 
 ## Unreleased
 
-## 0.1.0-rc.24 - 2026-08-26
+## 0.1.0-rc.26 - 2026-08-27
+
+- 以当前 `dev` 快照重新准备候选版，延续 rc.25 已交付的 Task Finish、release identity 与 main reconciliation 收敛。
+- 保持候选版使用 npm `next` 轨道，版本材料与 package/lockfile 元数据一致。
+
+## 0.1.0-rc.25 - 2026-08-27
+
+- 修复多仓库 Task Finish 终态持久化，并补齐相关运行时接口与集成验证。
+- 收敛 release、Task Finish 与治理场景的 current identity，修复 Doctor readiness 与归档治理 delta 的误判。
+- 支持 release→main 的 merge commit 收敛，保留 release selection 与 main reconciliation 的独立 provenance。
+
+ ## 0.1.0-rc.24 - 2026-08-26
 
 - 收敛发布准备与收尾编排：发布后改为只读核验 dev 来源，并支持 Candidate 失败分片按同一 run 定点重跑，减少重复执行和跨 run 拼接证据的风险。
 - 加强正式任务交付完整性与收尾准入：补齐 Contribution 路径覆盖、终态载体清理、Environment cleanup 和 retained controller 的可恢复证明。

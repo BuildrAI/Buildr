@@ -108,6 +108,110 @@ test('Task Finish current run、lease和completion由Workspace SQLite统一持�
   database.close();
 });
 
+test('multi-repository terminal persistence统一投影Workspace target且不降级为attention', async (t) => {
+  const root = workspace(t);
+  const runtime = t.buildrContexts.application;
+  const task = 'sqlite-finish-multi-repository';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove multi-repository terminal projection.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({
+    root,
+    runId: `${task}-run`,
+    identity: {
+      ...identity(root, task),
+      targetBranch: null,
+      remote: null,
+      repositories: [
+        repositoryPlan(root, 'service:demo/api', { targetBranch: 'dev-api' }),
+        repositoryPlan(root, 'workspace'),
+      ],
+    },
+    runtime,
+  });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v3',
+    runId: run.runId,
+    task,
+    handoffIdentity: run.identity.handoffIdentity,
+    candidateIdentity: run.identity.candidateIdentity,
+    candidateGeneration: run.identity.candidateGeneration,
+    contentTargetIdentity: run.identity.contentTargetIdentity,
+    repositorySetIdentity: run.identity.repositorySetIdentity,
+    targetBranch: null,
+    status: 'complete',
+    cleanup: { status: 'cleaned' },
+    maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened' },
+    association: null,
+  };
+  const handlers = Object.fromEntries(['preflight', 'prepare', 'verify', 'deliver'].map((phase) => [phase, async () => ({ status: 'passed' })]));
+  handlers.cleanup = async () => ({ status: 'passed', output: { completion } });
+
+  const result = await executeFinishRun({ root, run, handlers, runtime });
+
+  assert.equal(result.status, 'complete');
+  assert.equal(result.identity.targetBranch, 'dev');
+  assert.equal(result.identity.remote, 'origin');
+  assert.equal(result.completion.persistence, undefined);
+  assert.equal(result.maintenance.diagnostics, 'not-opened');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }, { optional: true }), null);
+  const terminal = runtime.readTaskFinishCompletionPersistence(root, { taskId: task });
+  assert.equal(terminal.status, 'complete');
+  const database = runtime.openWorkspaceStructuredStore(root, { writable: false }).database;
+  const row = database.prepare("SELECT target_branch, target_remote, json_extract(payload_json, '$.kind') AS kind FROM task_finish_current WHERE task_id = ?").get(task);
+  assert.deepEqual({ ...row }, { target_branch: 'dev', target_remote: 'origin', kind: 'terminal' });
+  database.close();
+});
+
+test('multi-service terminal persistence在没有Workspace repository时保持顶层target为空', async (t) => {
+  const root = workspace(t);
+  const runtime = t.buildrContexts.application;
+  const task = 'sqlite-finish-multi-service';
+  runtime.createTaskRecord(root, { taskId: task, title: task, intent: 'Prove service-only terminal projection.', projects: [], services: [], changes: [] });
+  const run = createFinishRun({
+    root,
+    runId: `${task}-run`,
+    identity: {
+      ...identity(root, task),
+      targetBranch: null,
+      remote: null,
+      repositories: [
+        repositoryPlan(root, 'service:demo/api', { targetBranch: 'dev-api' }),
+        repositoryPlan(root, 'service:demo/worker', { targetBranch: 'dev-worker' }),
+      ],
+    },
+    runtime,
+  });
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const completion = {
+    schemaVersion: 'buildr.task-finish-completion/v3',
+    runId: run.runId,
+    task,
+    handoffIdentity: run.identity.handoffIdentity,
+    candidateIdentity: run.identity.candidateIdentity,
+    candidateGeneration: run.identity.candidateGeneration,
+    contentTargetIdentity: run.identity.contentTargetIdentity,
+    repositorySetIdentity: run.identity.repositorySetIdentity,
+    targetBranch: null,
+    status: 'complete',
+    cleanup: { status: 'cleaned' },
+    maintenance: { delivery: 'delivered', activation: 'not-applicable', environmentCleanup: 'cleaned', diagnostics: 'not-opened' },
+    association: null,
+  };
+  const handlers = Object.fromEntries(['preflight', 'prepare', 'verify', 'deliver'].map((phase) => [phase, async () => ({ status: 'passed' })]));
+  handlers.cleanup = async () => ({ status: 'passed', output: { completion } });
+
+  const result = await executeFinishRun({ root, run, handlers, runtime });
+
+  assert.equal(result.status, 'complete');
+  assert.equal(result.identity.targetBranch, null);
+  assert.equal(result.identity.remote, null);
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }, { optional: true }), null);
+  const database = runtime.openWorkspaceStructuredStore(root, { writable: false }).database;
+  const row = database.prepare("SELECT target_branch, target_remote, json_extract(payload_json, '$.kind') AS kind FROM task_finish_current WHERE task_id = ?").get(task);
+  assert.deepEqual({ ...row }, { target_branch: null, target_remote: null, kind: 'terminal' });
+  database.close();
+});
+
 test('reconciliation terminal只在failed current run ID与digest精确匹配时原子替换', (t) => {
   const root = workspace(t);
   const runtime = t.buildrContexts.application;

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 
 import { observeTaskFinishEntryReadiness, taskFinishEntryGapsError } from './task-finish-entry-readiness.mjs';
-import { createFinishRun, executeFinishRun, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
+import { createFinishRun, executeFinishRun, finishResult, inspectFinishRun, readTaskFinishResults, resolvedFinishContext, resolveFinishRun } from './task-finish-run.mjs';
 import { releaseFinishOccupancy } from './task-finish-occupancy-release.mjs';
 import { cleanupTaskFinishDiagnosticsEvidence, createTaskFinishDiagnosticsEvidence } from './diagnostics-evidence.mjs';
 import { publicTaskFinishDeliveryCommit } from './task-finish-delivery-commit.mjs';
@@ -590,6 +590,34 @@ export function registerTaskFinishApplication(runtime) {
       && (!requestedAgent || current.run.identity.agent === requestedAgent)
       && (!requestedTargetBranch || current.run.identity.targetBranch === requestedTargetBranch)
       && (!requestedRemote || current.run.identity.remote === requestedRemote);
+    const preparedCompletionMatchesRun = current?.preparedCompletion?.task === current?.run?.identity?.task
+      && current.preparedCompletion.runId === current.run.runId
+      && current.preparedCompletion.handoffIdentity === current.run.identity.handoffIdentity
+      && current.preparedCompletion.candidateIdentity === current.run.identity.candidateIdentity
+      && current.preparedCompletion.candidateGeneration === current.run.identity.candidateGeneration
+      && current.preparedCompletion.contentTargetIdentity === current.run.identity.contentTargetIdentity;
+    const terminalPersistenceMismatch = currentIdentityMatchesRequest
+      && current.run.status === 'complete'
+      && current.run.completion?.status === 'complete'
+      && current.preparedCompletion?.status === 'complete'
+      && preparedCompletionMatchesRun
+      && current.lease == null
+      && current.run.phases.every((phase) => ['passed', 'not-applicable'].includes(phase.status))
+      && current.run.completion?.persistence?.code === 'task_finish_current_query_fields_mismatch';
+    if (terminalPersistenceMismatch) {
+      const recoveredRun = structuredClone(current.run);
+      recoveredRun.completion = structuredClone(current.preparedCompletion);
+      const result = finishResult(recoveredRun);
+      runtime.finalizeTaskFinishPersistence(root, {
+        run: recoveredRun,
+        result,
+        completion: recoveredRun.completion,
+      });
+      return print({
+        ...inspectFinishRun({ root, runId: recoveredRun.runId, runtime }),
+        persistenceRecovered: true,
+      }, command.args);
+    }
     if (currentIdentityMatchesRequest
       && current.run.status === 'complete'
       && current.run.completion?.status === 'complete'

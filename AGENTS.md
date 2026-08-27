@@ -4,6 +4,12 @@
 请读取并遵循 [Buildr Core](rules/buildr/core.md)。
 <!-- buildr:required end -->
 
+## 面向用户的语言与专业术语
+
+- 面向用户的回复、报告、文档和说明必须以中文为主，优先使用稳定的中文名称。
+- 专业术语可以只使用中文；只要保留英语专业术语，每次都必须使用“中文（English Term）”形式，不得单独使用或连续堆叠没有中文解释的英语专业术语。
+- 命令、代码标识、文件路径、协议字段和原始错误等必须保持原文的内容可以使用英文，但其面向用户的标签与周边说明仍必须使用中文。
+
 ## Buildr 自举原则
 
 本 workspace 是 Buildr 用来开发 Buildr 自身的自举 workspace。PATH 中的默认 `buildr` 属于 npm installation，不得由 development checkout 创建、覆盖或要求绑定当前源码。正式自举激活成功时，必须以 Environment retained Node 显式验证本次 delivered retained checkout 的 `projects/product/buildr`，且最终 workspace Doctor 必须 ready。正式 sync、Buildr Web Dev 安装、development entry identity 检查与最终 Doctor 或 Finish resume 只由 `buildr-self-bootstrap-sync` Skill 的唯一 runner 编排；Agent 不得自行拆分、补跑或替代其中步骤。

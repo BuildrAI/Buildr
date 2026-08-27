@@ -199,3 +199,73 @@ test('cleanup已passed后先撤销capsule authority；terminal写入失败不再
   assert.equal(persisted.completion.persistence.status, 'attention');
   assert.equal(terminalAttempts, 1);
 });
+
+test('reconcile只终态化query fields mismatch的completed run且复用prepared completion', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-terminal-persistence-recovery-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const task = 'terminal-persistence-recovery';
+  const runtime = createTaskFinishSqliteRuntime(root, task);
+  Object.assign(runtime, {
+    optionValue(args, name, fallback) {
+      const index = args.indexOf(name);
+      return index === -1 ? fallback : args[index + 1];
+    },
+    withResolvedTarget(args) {
+      const index = args.indexOf('--target');
+      return { args, targetRoot: path.resolve(index === -1 ? root : args[index + 1]) };
+    },
+  });
+  const identity = {
+    task, handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1,
+    contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin',
+    environmentRoot: path.join(root, '.worktrees', task), workspaceRoot: root,
+  };
+  const run = createFinishRun({ root, identity, runId: `${task}-20260827000000-deadbeef`, runtime });
+  run.status = 'complete';
+  run.completedAt = run.updatedAt;
+  for (const phase of run.phases) {
+    phase.status = 'passed';
+    phase.attempts = 1;
+    phase.startedAt = run.createdAt;
+    phase.completedAt = run.completedAt;
+  }
+  runtime.writeTaskFinishRunPersistence(root, run);
+  const preparedCompletion = {
+    schemaVersion: 'buildr.task-finish-completion/v3',
+    runId: run.runId,
+    task,
+    handoffIdentity: run.identity.handoffIdentity,
+    candidateIdentity: run.identity.candidateIdentity,
+    candidateGeneration: run.identity.candidateGeneration,
+    contentTargetIdentity: run.identity.contentTargetIdentity,
+    targetBranch: 'dev',
+    status: 'complete',
+    cleanup: { status: 'cleaned' },
+    maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened' },
+    association: null,
+  };
+  runtime.writeTaskFinishCompletionPersistence(root, { taskId: task, runId: run.runId, result: preparedCompletion, status: 'cleanup_pending' });
+  run.completion = {
+    ...preparedCompletion,
+    maintenance: { ...preparedCompletion.maintenance, diagnostics: 'attention' },
+    persistence: {
+      status: 'attention',
+      code: 'task_finish_current_query_fields_mismatch',
+      message: 'Task Finish current普通列与payload不一致：target_remote。',
+      diagnostic: { taskId: task, runId: run.runId, mismatches: ['target_remote'] },
+    },
+  };
+  runtime.writeTaskFinishRunPersistence(root, run);
+  registerTaskFinishApplication(runtime);
+
+  const result = await runtime.taskFinish('reconcile', ['--task', task, '--target', root]);
+
+  assert.equal(result.status, 'complete');
+  assert.equal(result.persistenceRecovered, true);
+  assert.equal(result.completion.persistence, undefined);
+  assert.equal(result.maintenance.diagnostics, 'not-opened');
+  assert.equal(runtime.readTaskFinishRunPersistence(root, { taskId: task }, { optional: true }), null);
+  const terminal = runtime.readTaskFinishCompletionPersistence(root, { taskId: task });
+  assert.equal(terminal.status, 'complete');
+  assert.equal(terminal.completion.cleanup.status, 'cleaned');
+});
