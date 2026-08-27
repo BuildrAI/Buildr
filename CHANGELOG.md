@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+## 0.1.0-rc.27 - 2026-08-27
+
+- 修复多 Project 正式任务流程：保持单一 Task Content Target、Candidate、Verification Result 与 handoff，同时按 Project 独立形成 Verification Plan、声明和 Execution Record，并完整聚合验证与当前知识结论。
+- 加固 Task Environment 与 Task Finish 的多 Project 恢复边界，避免共享环境或单 Project 证据被误判为完整任务闭环。
+
 ## 0.1.0-rc.26 - 2026-08-27
 
 - 以当前 `dev` 快照重新准备候选版，延续 rc.25 已交付的 Task Finish、release identity 与 main reconciliation 收敛。
