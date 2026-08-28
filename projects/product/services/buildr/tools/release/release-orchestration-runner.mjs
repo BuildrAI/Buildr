@@ -118,6 +118,11 @@ function doctorIsReady(value) {
   return value?.status === 'ready' || (value?.ok === true && value?.health?.ready === true);
 }
 
+function normalizeDoctorResult(value) {
+  if (!doctorIsReady(value) || value?.status === 'ready') return value;
+  return { ...value, status: 'ready' };
+}
+
 function parseControllerOutput(run, label) {
   const source = String(run?.stdout || run?.stderr || '').trim();
   let value = null;
@@ -240,7 +245,7 @@ async function closeout(options, dependencies) {
   steps.push(step('task-environment', 'cleanup', environmentCleanup, environmentCleanup.effects?.length ? 'executed' : 'reused'));
   if (environmentCleanup.status !== 'cleaned') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, environmentCleanup }, steps, environmentCleanup, '恢复Task Environment cleanup后重试。');
 
-  const doctor = invokeRetained(controller, ['doctor', '--target', root, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]);
+  const doctor = normalizeDoctorResult(invokeRetained(controller, ['doctor', '--target', root, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]));
   steps.push(step('doctor', 'inspect', doctor));
   if (!doctorIsReady(doctor)) return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, environmentCleanup, doctor }, steps, doctor, '修复Doctor blocker后以同一closeout恢复。');
   const completedLifecycle = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest, noChange: true } });
