@@ -165,12 +165,15 @@ async function verifyLifecycle(context) {
   if (adapterId === 'codex' || adapterId === 'claude-code') {
     const renderedFinish = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
-    assert.ok(renderedFinish.includes('不把 Buildr 自动 Finish 变成唯一通道'));
+    assert.ok(renderedFinish.includes('完整“收尾/交付”意图'));
+    assert.ok(renderedFinish.includes('正式 Task 路径'));
+    assert.ok(renderedFinish.includes('普通 Git 路径'));
+    assert.ok(renderedFinish.includes('buildr task next'));
     assert.ok(renderedFinish.includes('task finish reconcile'));
-    assert.ok(renderedFinish.includes('交付对账（Delivery Reconciliation）'));
-    assert.ok(renderedFinish.includes('不接受调用方提交“已成功”'));
-    assert.ok(renderedFinish.includes('只有 Delivery 决定业务任务是否已交付'));
-    assert.ok(renderedFinish.includes('Activation、Cleanup、Task 登记或 Buildr 内部派生证据失败只能形成 `attention`'));
+    assert.ok(renderedFinish.includes('不接受调用方声明成功或自制证明'));
+    assert.ok(renderedFinish.includes('只有交付决定任务贡献是否进入目标远端'));
+    assert.ok(renderedFinish.includes('其他结果失败形成 attention，不撤销已确认交付'));
+    assert.ok(renderedFinish.includes('不产生正式生命周期证据'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
   }
 
