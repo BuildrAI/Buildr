@@ -16,6 +16,7 @@ Roadmap 文档不是 Rule、Skill、Agent runtime 资产或当前能力说明，
 
 ## 当前方向资料
 
+- [产研工作平台（Product and Engineering Work Platform）产品与技术架构收敛纲领](product-engineering-work-platform.md)：基于最新 `dev` 记录下一阶段产品目标，以智能体和人为核心用户，维护产研工作资产，让任务管理从可用变得好用，并把智能体执行时长、调用次数和词元消耗（Token Consumption）作为一等产品指标；同时定义通用核心、可选受控能力、产品专用能力与删除方向。
 - [Buildr 智能体优先治理重构纲领](agent-first-governance-refactoring.md)：以“约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事”为统一依据，定义 Workspace、Project、Service、Task、Environment、Development、Verification、Finish、OpenSpec、Doctor、测试与发布的目标边界、工作包和最终验收；由正式 Parent Task 分阶段承接独立 Child Task。
 - [任务生命周期架构讨论与交付跟踪](task-lifecycle-architecture.md)：以正常任务推进过程为主线，记录 Workspace Foundation、Task Triage、Environment、Development、Finish 及辅助能力的目标边界，并通过文末表格跟踪逐模块交付；Task Record与专业current records已收敛到Workspace SQLite，后续按“宽而薄”原则审视既有模块并只处理真实缺口。
 - [Agent 时代的工作基础设施](agent-work-infrastructure.md)：以 Agent 为语义与执行中心，说明 Enterprise、多 Workspace、外部数据源、三类交互界面，以及 OpenHands、ACP、Multica、OpenClacky 等生态能力如何拆分到 Buildr、Agent 和可选运行设施。

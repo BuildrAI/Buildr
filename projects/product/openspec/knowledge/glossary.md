@@ -49,7 +49,7 @@
 - 定义：所有潜在可用于工作的来源，包括 Workspace 文件、数据库、API、网页、聊天、机器状态、用户输入和工具结果。
 - 适用范围：描述 Agent 可能发现信息的全集。
 - 避免混用：不等于 Buildr Workspace，不等于 Buildr 管理范围，也不等于 Context Window。
-- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
+- 来源：[智能体优先（Agent-first）产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
 ## Workspace
 
@@ -109,24 +109,38 @@
 
 ## 上下文（Context）
 
-- 定义：特定工作范围中可供 Agent 发现、选择和使用的候选信息。
-- 适用范围：Work Context、Workspace Context、Project Context、Service Context 都是 Context 的范围限定，不是 v1 并列核心模型。
-- 避免混用：不等于已经加载的模型输入，也不表示其中全部信息由 Buildr 治理。
+- 定义：上下文是一个泛指概念，用于把与某个对象、范围或目标相关的信息放在一起讨论、发现和使用。
+- 适用范围：工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）表示对应领域内全部已知、可访问或可能相关的信息；其中既可以包含 Buildr 治理的工作资产，也可以包含普通文件、代码、依赖、本机状态和外部来源。
+- 避免混用：上下文不是固定存储结构，不等于已经加载到模型请求中的内容，也不表示其中全部信息都由 Buildr 治理。
 - 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
 ## 任务上下文（Task Context）
 
-- 定义：Agent 为完成具体 Task，从工作信息空间中发现、检索、判断、选择、组织和压缩后实际使用的语义工作集。
-- 适用范围：可以包含 Buildr Work Assets、用户目标、数据库/API/网页结果、工具 evidence 和任务中形成的决定。
-- 避免混用：不等于检索结果集合，也不等于一次模型调用的 Context Window。
-- 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
+- 定义：智能体（Agent）为完成具体任务（Task），从工作信息空间及适用的工作空间、项目和服务上下文中发现、检索、判断、选择、组织和压缩后形成的语义工作集。
+- 适用范围：可以包含 Buildr 工作资产（Buildr Work Asset）、用户目标、数据库、应用接口（API）、网页结果、工具证据（Evidence）和任务中形成的决定。
+- 避免混用：不等于某个领域的全部上下文，不等于原始检索结果集合，也不等于某一次模型请求实际携带的全部内容。
+- 来源：[规范变更系统（OpenSpec）变更生命周期](flows/openspec-change-lifecycle.md)
+
+## 请求上下文（Request Context）
+
+- 定义：智能体（Agent）针对某一次模型请求，从当前任务上下文中选取并与系统指令、对话历史等必要输入共同提交给模型的实际内容。
+- 适用范围：同一任务可以发起多次请求，每次请求根据当前步骤携带不同内容；简单语法修复可能只需要目标文件和错误信息，跨多个服务的功能开发可能需要同时携带相关项目、服务、规范、代码和验证信息。
+- 避免混用：不是任务上下文的完整副本，也不是上下文窗口本身；它是实际装入该窗口的内容。
+- 来源：[Buildr 产品（Buildr Product）](../../docs/buildr-product.md)
 
 ## 上下文窗口（Context Window）
 
-- 定义：某一次模型调用实际装入的有限、临时输入，是 Task Context 在某一时刻的有限投影，也可能包含系统指令和对话历史。
-- 适用范围：模型单次推理的技术容量与实际输入。
-- 避免混用：不是 Task Context 本身，不是持久工作资产；长期 Task 可以跨越多个 Context Windows。
-- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
+- 定义：模型单次请求可以承载的有限输入容量和技术容器；请求上下文是实际装入其中的内容。
+- 适用范围：限制一次模型调用能够同时处理的信息量；长期任务可以跨越多个上下文窗口和多次请求。
+- 避免混用：不是泛指的上下文、任务上下文或请求上下文本身，也不是持久工作资产。
+- 来源：[智能体优先（Agent-first）产品定位规范](../specs/agent-first-product-positioning/spec.md)
+
+## 词元（Token）
+
+- 定义：人工智能模型处理文本时使用的基本单位；一个词元可以是一个字、词的一部分、标点或其他文本片段。
+- 适用范围：描述模型输入、输出、上下文窗口容量、使用量和成本。
+- 避免混用：不是登录凭证、访问凭证或恢复凭证等安全令牌；安全领域继续使用“令牌（Token）”。
+- 来源：[Buildr 产品（Buildr Product）](../../docs/buildr-product.md)
 
 ## Project
 
@@ -500,7 +514,7 @@
 
 ## 任务复盘（Task Retrospective）
 
-- 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、token消耗、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
+- 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、词元消耗（Token Consumption）、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
 - 适用范围：Workspace SQLite中按Task ID唯一的current Result；重复复盘完整替换，Buildr Web“复盘”Tab只读展示。
 - 避免混用：不是Task Review、Verification、Development或Finish gate，不采集隐藏推理或完整轨迹，不自动写回Rule/Skill/产品资产。旧Task Asset Review与`.buildr/asset-review/`已退出current能力，数据保持inert。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`（本 Change converge 时建立）
