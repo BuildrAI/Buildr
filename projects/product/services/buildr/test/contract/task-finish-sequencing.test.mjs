@@ -24,7 +24,7 @@ test('Task Finish 保留可选五阶段自动化，同时允许Agent直接交付
   assert.deepEqual(FINISH_PHASES, ['preflight', 'prepare', 'verify', 'deliver', 'cleanup']);
   assert.match(finish, /current Development handoff/);
   assert.match(finish, /--commit-message '<semantic-message>'/);
-  for (const phrase of ['Agent 直接交付', 'task finish reconcile', '四个独立结果', '交付（Delivery）', '激活（Activation）', '环境清理（Environment Cleanup）', '诊断（Diagnostics）', '不得重复推送已交付 repository']) assert.ok(finish.includes(phrase), phrase);
+  for (const phrase of ['正式 Task 路径', '普通 Git 路径', 'buildr task next', 'task finish reconcile', '四个独立结果', '不重复交付已确认仓库', '不产生正式生命周期证据']) assert.ok(finish.includes(phrase), phrase);
   assert.match(finishContract, /该能力不是正式Task交付的唯一执行通道/);
   assert.match(finishContract, /真实remote target/);
   assert.match(finishContract, /状态与proof必须成对持久化/);
@@ -111,9 +111,11 @@ test('宽而薄治理保留自举副作用边界，不把Activation变成Deliver
   for (const forbidden of ['External Successor Adoption', 'Candidate Re-freeze', 'adoption store']) assert.equal(skill.includes(forbidden), false, forbidden);
 });
 
-test('Task Finish指导Agent选择路径，不把自动化细节写成唯一workflow', () => {
-  for (const phrase of ['由 Agent 选择路径', 'Buildr 自动 Finish', 'Agent 直接交付', '这些阶段不是 Agent 必须遵循的唯一工作方式']) assert.ok(finish.includes(phrase), phrase);
-  assert.match(finish, /不把 Buildr 自动 Finish 变成唯一通道/);
+test('Task Finish统一收尾入口，同时保持正式Task与普通Git证据隔离', () => {
+  for (const phrase of ['完整“收尾/交付”意图', '两条路径互斥', 'selected provider', 'Git Operation Result', '不声称 Environment Cleanup']) assert.ok(finish.includes(phrase), phrase);
+  assert.match(finish, /唯一匹配的未结束 Task[\s\S]*没有匹配 Task/);
+  assert.match(finish, /owner 成功后重读 `task next`/);
+  assert.match(finish, /不创建 Task、Development、Review、Verification、Candidate、Finish Result 或 Task terminal status/);
 });
 
 test('Task Development 是 Candidate/handoff 单一 authority，Finish required 依赖它', () => {

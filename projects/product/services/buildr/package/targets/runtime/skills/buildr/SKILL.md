@@ -47,8 +47,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与handoff | `buildr.task-development/v2` selected provider |
-| 对已有active formal Task消费current Development handoff并完成交付 | `buildr.task-finish/v1` selected provider；Agent选择自动Finish或直接Git/PR，外部交付后用reconciliation登记Delivery，Activation、Environment Cleanup与Diagnostics独立处理 |
-| Workspace 没有 active Task 时，用户说“收尾”或等价的当前 Git 交付 | 产品入口解析当前 Git facts 后，将已选定的 fetch、必要时精确 commit、rebase、普通 push 等 operation 交给 `buildr.git-operations/v1`；不创建临时 Task 或 Formal Finish evidence |
+| 用户要求“收尾”“交付”或完成当前工作 | `task-finish` Skill先识别当前范围内匹配的未结束Task；有Task就沿`task next`推进并通过`buildr.task-finish/v1`完成正式交付，没有Task就通过`buildr.git-operations/v1`完成普通Git收尾，两条路径不混用生命周期证据 |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |
@@ -58,8 +57,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为 Buildr 增加新的 Agent runtime adapter | runtime trait intake + OpenSpec change |
 | 采用内部流程、调整工作方式、修改或替换 Skill 行为 | `capability-adaptation` Skill；先识别跨 Skill 稳定依赖边界，再开发、验证和激活 |
 产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。只有某类 Buildr 管理意图命中本 Skill 后，才把对应 capability 作为本次动作的 required dependency；单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关 Buildr 管理动作。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；替换顶层入口时必须由能力适配同时验证 selected provider 的 runtime 可发现性、description 覆盖和触发歧义。Formal Task和Task Environment不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用明确时，Agent可以直接工作，但不得冒充Environment或正式Result。需要Buildr-managed checkout、Preparation、runtime projection、Task-owned资源、正式环境证据或自动Finish时，使用 `buildr task environment prepare <task-id> --agent <agent> --target <canonical-workspace> --json`；`prepare` 确定性完成实际执行位置、Runtime、Workspace CLI、依赖、runtime projection 和真实 probes，重复调用承担恢复。只有结果为 `ready` 才在返回的执行根中继续受管动作。Git worktree 只是可组合 provider；其 evidence 不代表环境 ready。任一 provider 返回 `treeChanged: true` 后，按本 Skill 的 workspace transition 约束，在对应已初始化 Buildr workspace 中针对当前 Agent 和 workspace root 运行 doctor。doctor 指出 workspace sync 是合适修复动作时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后由 Agent 执行 sync 并验证。当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含 Git 更新与 Buildr sync 授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态时停止，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。
-无 active Task 的“收尾”不是 Task Finish 的降级模式，而是直接 Git 收尾。先只读确认 Workspace 中没有 active Task，并解析当前 repository、HEAD 分支、dirty/index、唯一目标 ref、remote 和 push destination；completed/abandoned Task 不得复用。事实唯一时，按 `fetch → 必要时精确 commit → rebase → push` 的已选顺序调用 `git-operations`；ownership 不明、目标歧义、rebase 冲突、共享历史改写或 force push 时 fail closed。直接路径只报告独立 Git Operation Result，不创建 Task、Environment、Verification、Candidate、Finish Result 或 Task terminal status。rebase 成功改变已检出 Buildr Workspace tree 后，按本 Skill 的 workspace transition 约束运行当前 Agent Doctor。
-已有active Task的“收尾”由Agent根据当前repository与协作方式选择自动Finish、直接Git或PR。Buildr不要求业务代码必须经过Delivery Carrier；直接交付后必须由`task finish reconcile`从真实远端验证并登记，不接受claimed success。Doctor、Activation、Environment Cleanup或Diagnostics attention不撤销已确认Delivery。
+完整“收尾/交付”意图由`task-finish`统一解释，产品入口不复制它的Task识别、Git顺序、恢复或清理手册。`task-finish`只把当前分支需要的能力提升为required：匹配未结束Task时渐进消费`task next`并在current handoff后使用`buildr.task-finish/v1`；没有匹配Task时使用`buildr.git-operations/v1`完成直接Git收尾。普通Git路径只报告独立Git Operation Result，不创建Task生命周期证据；正式路径的外部交付必须由`task finish reconcile`从真实远端登记。两条路径都不得自动force push、丢弃改动、改写共享历史或清理ownership不明的资源。
 ## 资产维护
 
 ### Workspace / Organization Root

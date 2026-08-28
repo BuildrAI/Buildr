@@ -91,7 +91,7 @@ sourceIdentities: <paths/specs/tree>
 treeIdentity: <current candidate identity>
 ```
 
-Development聚合时只保存`aligned|not-applicable|attention|blocked`、tree identity、summary、source identities与bounded unresolved items；`updated`后必须重新观察新tree，`unresolved|change-required`按是否会造成错误完成结论转为blocked或先回到Change flow，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
+Development聚合时只保存`aligned|not-applicable|attention|blocked`、tree identity、summary、source identities与bounded unresolved items。多Project Task必须逐Project取得Result并提交精确覆盖全部有效Project的dispositions；不得让一个Project结果代表整个Task。`updated`后必须重新观察新tree，`unresolved|change-required`按是否会造成错误完成结论转为blocked或先回到Change flow，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
 
 ## Guardrails
 

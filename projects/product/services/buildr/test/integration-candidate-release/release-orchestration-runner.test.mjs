@@ -118,6 +118,9 @@ test('closeout accepts the official Doctor ok and health.ready contract', async 
   }, fixture.dependencies);
   assert.equal(value.status, 'passed');
   assert.equal(value.lifecycle.phase, 'closed');
+  assert.equal(value.steps.find((item) => item.owner === 'doctor').status, 'ready');
+  assert.equal(value.timeline.phases.find((item) => item.id === 'doctor').status, 'passed');
+  assert.equal(value.timeline.terminalStatus, 'closed');
 });
 
 test('terminal Task resume continues cleanup without repeating Task completion', async () => {

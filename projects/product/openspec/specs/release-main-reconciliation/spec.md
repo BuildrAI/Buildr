@@ -7,41 +7,57 @@
 ## Requirements
 
 ### Requirement: release 必须支持有证据的一次性 main reconciliation
-Release owner MUST能够针对当前未公开版本的 frozen release selection，读取并固定当前 `main` commit/tree 与 release commit/tree，形成一次性 reconciliation identity。该 identity MUST包含版本、generation、selection identity、main identity、release pre-state、resolution identity 与 post-state，并 MUST区分 dev source provenance 与 main reconciliation provenance。
+Release owner MUST在完整 Product Candidate 前，针对当前未公开版本的 frozen release selection读取并固定current `main` commit/tree、release commit/tree、matching release Task Environment与dev/release provenance，形成一次性 reconciliation identity。Owner MUST先证明current main的产品内容已经由current dev baseline、ordered source commits或既有正式release provenance覆盖；coverage通过时 MUST创建一个以原frozen release与current main为父提交、且tree精确等于pre-reconciliation release tree的历史收敛commit。该identity MUST包含版本、generation、selection identity、Environment binding、main identity、release pre-state、coverage identity、resolution identity与post-state，并 MUST区分dev source provenance与main reconciliation provenance。
 
 #### Scenario: current main 与 release 存在冲突
-- **WHEN** current release candidate 已冻结、目标版本尚未公开，且 release→main carrier 与当前 `main` 无法直接 cleanly converge
-- **THEN** owner MUST返回冲突 paths、main/release pre-state 和可恢复的 reconciliation identity
-- **AND** owner MUST NOT使用 `ours`、reset、rebase、force push 或把未解决现场标记为成功
+- **WHEN** current main不是release祖先，但其正式发布来源可由current dev baseline、ordered source commits或既有release evidence完整证明，且matching release Task Environment current
+- **THEN** owner MUST创建包含release parent与main parent的历史收敛commit，并递增release generation
+- **AND** post-reconciliation tree MUST精确等于pre-reconciliation release tree，新post-state MUST作为后续Candidate的唯一source
+- **AND** owner MUST NOT执行工作树merge、`ours` strategy、reset、rebase或force push
 
 #### Scenario: reconciliation 产生新 release HEAD
-- **WHEN** 维护者明确授权并在隔离 execution worktree 解决冲突
-- **THEN** owner MUST创建一个以 current `main` 与原 frozen release 为父提交的 merge commit
-- **AND** MUST记录两个父提交、resolution identity、post-reconciliation commit/tree，并递增 release generation
-- **AND** MUST将新 post-state 作为后续 Candidate 的唯一 source
+- **WHEN** main coverage已通过，维护者明确授权在matching release Task Environment中形成历史收敛
+- **THEN** owner MUST创建以current main与原frozen release为父提交、tree等于原release tree的commit
+- **AND** MUST记录两个父提交、coverage identity、resolution identity、post-reconciliation commit/tree并递增release generation
+- **AND** MUST将新post-state作为后续Candidate的唯一source
+
+#### Scenario: current main存在未覆盖的独有产品内容
+- **WHEN** 任一main产品commit、changed path或release来源无法由current dev/release provenance完整证明
+- **THEN** owner MUST在Git mutation前返回未覆盖内容、main/release pre-state与稳定coverage finding
+- **AND** MUST要求先通过正式Task把该内容交付dev，MUST NOT把main内容直接merge或复制进release
+
+#### Scenario: execution root不是matching release Environment
+- **WHEN** repo位于retained primary worktree、其他Task worktree，或Environment binding与Task、worktree、branch、HEAD任一不匹配
+- **THEN** owner MUST在Git mutation前失败关闭并返回expected/actual execution identity
+- **AND** MUST NOT切换retained workspace branch、创建merge现场、移动release refs或接受caller声明的matching状态
 
 #### Scenario: reconciliation 输入发生漂移
-- **WHEN** main ref、release ref、selection freeze、generation 或 ownership 在 mutation 前不再等于已检查 identity
-- **THEN** owner MUST停止并返回 structured conflict finding
-- **AND** MUST保留已有 Git/Task/Candidate 事实且 MUST NOT覆盖远端 ref
+- **WHEN** main ref、release ref、selection freeze、generation、Environment binding或ownership在mutation前不再等于已检查identity
+- **THEN** owner MUST停止并返回structured conflict finding
+- **AND** MUST保留已有Git、Task与Candidate历史事实且MUST NOT覆盖远端ref
 
 ### Requirement: reconciliation 必须使下游发布证据按 generation 重建
-当 reconciliation 改变 release commit 或 tree 时，Buildr MUST使旧 Candidate aggregate、tarball、readiness context、carrier 与 release→main PR source 失效，并 MUST从新的 generation 重新创建 matching Candidate、唯一 artifact、readiness 和 carrier。相同输入且 live readback 完全一致时 MUST支持幂等复用。
+Buildr MUST只允许完成current main coverage与历史收敛后的最终release generation进入完整Product Candidate。Reconciliation改变release commit时，即使tree保持不变，也 MUST使旧Candidate aggregate、tarball、readiness context、carrier与release→main PR source失效，并 MUST从新的generation重新创建matching Candidate、唯一artifact、readiness与carrier。相同输入且live readback完全一致时 MUST支持幂等复用。
 
 #### Scenario: reconciliation 后旧 Candidate 仍存在
-- **WHEN** post-reconciliation release commit/tree 与旧 Candidate source 不同
-- **THEN** readiness MUST返回 stale 或 blocked
-- **AND** publication owner MUST拒绝旧 aggregate、旧 tarball 和旧 PR head
+- **WHEN** 历史run或迁移中的Candidate绑定pre-reconciliation release commit
+- **THEN** readiness MUST返回stale或blocked
+- **AND** publication owner MUST拒绝旧aggregate、旧tarball和旧PR head，即使source tree相同
 
 #### Scenario: 新 generation 重新验证
-- **WHEN** 新 release generation 已形成且工作树 clean
-- **THEN** Candidate admission MUST绑定新的 release commit/tree 与 generation
-- **AND** aggregate artifact、readiness context 与 carrier MUST引用同一新 source identity
+- **WHEN** main coverage与历史收敛已通过、新release generation已形成且Environment/worktree clean
+- **THEN** Candidate admission MUST绑定新的release commit/tree与generation
+- **AND** aggregate artifact、readiness context与carrier MUST引用同一最终source identity
+
+#### Scenario: Candidate后main发生漂移
+- **WHEN** current main commit不再等于final source reconciliation绑定的main parent
+- **THEN** readiness MUST使Candidate与carrier stale，并要求重新coverage/reconciliation
+- **AND** MUST NOT在Candidate后直接merge main、沿用旧tarball或只重跑readiness
 
 #### Scenario: 幂等恢复
-- **WHEN** reconciliation 请求的全部输入与已记录 post-state 相同，且 live main/release refs、resolution identity 未漂移
-- **THEN** owner MUST返回既有 reconciliation identity 和 `already-converged` 状态
-- **AND** MUST NOT创建第二个 merge commit 或递增 generation
+- **WHEN** reconciliation请求的全部输入与已记录post-state相同，且live main/release refs、Environment binding、coverage与resolution identity未漂移
+- **THEN** owner MUST返回既有reconciliation identity和`already-converged`状态
+- **AND** MUST NOT创建第二个history commit或递增generation
 
 ### Requirement: release→main PR 必须使用 merge commit 收敛
 对于采用 reconciliation 的 release，发布 owner MUST只创建或复用一个以当前 generation carrier 为 head、以 `main` 为 base 的受保护 PR，并 MUST以 GitHub merge commit 方式完成。squash merge、rebase merge 和未绑定 generation 的直接 merge MUST不满足发布收敛证据。

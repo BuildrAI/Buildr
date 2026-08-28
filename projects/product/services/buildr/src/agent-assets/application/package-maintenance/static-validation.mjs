@@ -1233,16 +1233,17 @@ export function createPackageStaticValidator(deps) {
       if (skill.id === 'task-finish') {
         for (const requiredText of [
           'buildr.task-finish/v1',
+          '完整“收尾/交付”意图',
+          '正式 Task 路径',
+          '普通 Git 路径',
+          'buildr task next',
           'current Development handoff',
           'preflight → prepare → verify → deliver → cleanup',
           '交付适配（Delivery Adaptation）',
-          'Agent 直接交付',
           'task finish reconcile',
-          '交付（Delivery）',
-          '激活（Activation）',
-          '环境清理（Environment Cleanup）',
-          '诊断（Diagnostics）',
-          '不得手写 resume token',
+          '四个独立结果',
+          '不得手写 token',
+          '不产生正式生命周期证据',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-finish Skill must include ${JSON.stringify(requiredText)}.`);
         }
