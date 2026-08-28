@@ -204,6 +204,13 @@ export function observeTaskFinishEntryReadiness({
       pushGap(gaps, gap('delivery', error.code || 'task_finish.reconciliation_context_unavailable', error.message, error.details ? { details: error.details } : {}));
       context = null;
     }
+  } else if (environmentReady && allowEnvironmentless && resolved.current && (context.repositories || []).length === 0) {
+    try {
+      const fallback = resolveTaskFinishReconciliationContext({ runtime, root, task, receipt: resolved.receipt, requestedTargetBranch, requestedRemote });
+      repositories = fallback.repositories;
+    } catch (error) {
+      pushGap(gaps, gap('delivery', error.code || 'task_finish.reconciliation_context_unavailable', error.message, error.details ? { details: error.details } : {}));
+    }
   } else if (environmentReady) {
     repositories = resolveRepositoryPlans({ context, requestedTargetBranch, requestedRemote, gaps });
   }

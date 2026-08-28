@@ -688,6 +688,12 @@ export function registerTaskDevelopmentApplication(runtime) {
     const persistence = runtime.readTaskDevelopmentPersistence(targetRoot, taskId, { optional: false });
     const observed = observeCurrent(targetRoot, taskId, persistence.receipt);
     if (!observed.target || observed.target.identity !== persistence.receipt.contentTarget?.identity || input.treeIdentity !== observed.target.identity) throw taskDevelopmentError('task_development_knowledge_target_mismatch', 'knowledge disposition必须绑定current Content Target。', 409, { expected: observed.target?.identity || null, actual: input.treeIdentity });
+    const effectiveProjects = taskRecordEffectiveProjectCodes(observed.inspected.record);
+    if (effectiveProjects.length > 1 && !Array.isArray(input.projects)) throw taskDevelopmentError('task_development_knowledge_projects_required', '多Project Task的knowledge disposition必须按Project完整提交。', 409, { expectedProjects: effectiveProjects });
+    if (Array.isArray(input.projects)) {
+      const actualProjects = input.projects.map((item) => item?.project).sort((left, right) => String(left).localeCompare(String(right)));
+      if (!same(actualProjects, effectiveProjects)) throw taskDevelopmentError('task_development_knowledge_projects_incomplete', 'Current Knowledge Project dispositions必须精确覆盖Task有效Project集合。', 409, { expectedProjects: effectiveProjects, actualProjects });
+    }
     const currentKnowledge = createTaskDevelopmentKnowledge(input);
     const receipt = normalizeTaskDevelopmentReceipt({ ...persistence.receipt, currentKnowledge, gates: observed.gates, decision: null, updatedAt: now() }, { expectedTaskId: taskId });
     const written = writeDevelopment(targetRoot, taskId, persistence.receipt, receipt);

@@ -48,7 +48,7 @@ Agent 可通过 Git Operations、PR 或其他已授权方式推进代码；每�
 
 `buildr task finish reconcile --task <task-id> --target <canonical-workspace> --detail compact --json`
 
-交付对账（Delivery Reconciliation）不接受调用方提交“已成功”、commit 列表或证明文件。它优先复用current Environment；Environment不存在、已清理或局部不可用时，从current immutable handoff、Task scope、Project/Service registries、实际Git topology以及明确或唯一的remote/target构造只读上下文，不恢复或补造Receipt。它逐repository确认carrier已到达、已被后继包含，或目标tree精确包含任务贡献结果；无法证明时只报告对应repository的事实缺口，并保留其他repository已经登记的Delivery checkpoint。
+交付对账（Delivery Reconciliation）不接受调用方提交“已成功”、commit 列表或证明文件。它优先复用current Environment；Environment不存在、已清理、局部不可用，或ready shared placement没有provider repository set时，从current immutable handoff、Task scope、Project/Service registries、实际Git topology以及明确或唯一的remote/target构造只读delivery context，不恢复或补造Receipt。ready shared Environment仍保留自己的cleanup availability；该fallback不供自动Finish创建carrier。reconciliation逐repository确认carrier已到达、已被后继包含，或目标tree精确包含任务贡献结果；无法证明时只报告对应repository的事实缺口，并保留其他repository已经登记的Delivery checkpoint。
 
 ## 四个独立结果
 

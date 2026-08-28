@@ -21,7 +21,7 @@ Verification Request 冻结 target、selection scope、changed paths/risks 与 d
 
 普通 capability 使用 discovery 选择 affected；缺少可信 affected 入口时显式扩大到 full。未知 owner 失败关闭。复杂 Product 可使用 provider，但 provider 只能投射统一 Plan/Execution facts，不得公开内部 registry DAG、Context cache 或写 Task Result。
 
-正式执行必须使用 matching current Plan；preview 不是 evidence。Execution Record 绑定 Request、Plan、declaration、Candidate、target 与 execution unit，reconciliation 只消费同一 Plan 的 terminal records。
+正式执行必须使用matching current Plan；preview不是evidence。Execution Record绑定Request、Plan、declaration、Candidate、target与execution unit。reconciliation在同一Project内只消费同一Plan的terminal records，不同Project使用各自Plan并按有效Project完整聚合。
 
 ## Maintenance boundary
 

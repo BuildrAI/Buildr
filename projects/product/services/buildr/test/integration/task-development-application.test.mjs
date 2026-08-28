@@ -370,6 +370,96 @@ test('Current Knowledge只让completion-critical blocked阻止handoff，attentio
   assert.equal(result.development.receipt.handoffs.at(-1).knowledge.status, 'attention');
 });
 
+test('多Project Current Knowledge要求精确Project集合并确定性聚合顶层状态', (t) => {
+  const { root } = copyFixtureWorkspace(t, 'multi-project-knowledge');
+  const runtime = t.buildrContexts.application;
+  const taskId = 'multi-project-knowledge';
+  runtime.createTaskRecord(root, { taskId, title: 'Multi Project Knowledge', intent: 'Aggregate Project knowledge dispositions.', projects: ['demo', 'other'], services: [], changes: [] });
+  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true, taskId: currentTask, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
+    scopes: [
+      { selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') },
+      { selector: 'project:other', kind: 'project', sourcePath: 'projects/other', executionRoot: path.join(root, 'projects', 'other') },
+    ],
+  });
+  pinImmutableTaskRecord(runtime, root, taskId);
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Multi Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
+  runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], overrides: [] });
+  const treeIdentity = observed.development.receipt.contentTarget.identity;
+  assert.throws(() => runtime.recordTaskDevelopmentKnowledge(root, taskId, {
+    treeIdentity,
+    projects: [{ project: 'demo', status: 'aligned', summary: 'Demo aligned.', sourceIdentities: ['demo:knowledge'], unresolvedItems: [] }],
+  }), (error) => error.code === 'task_development_knowledge_projects_incomplete' && error.details.expectedProjects.includes('other'));
+
+  const result = runtime.recordTaskDevelopmentKnowledge(root, taskId, {
+    treeIdentity,
+    projects: [
+      { project: 'other', status: 'attention', summary: 'Other has explanatory drift.', sourceIdentities: ['other:knowledge'], unresolvedItems: ['Refresh explanatory note.'] },
+      { project: 'demo', status: 'aligned', summary: 'Demo aligned.', sourceIdentities: ['demo:knowledge'], unresolvedItems: [] },
+    ],
+  });
+  assert.equal(result.development.receipt.currentKnowledge.status, 'attention');
+  assert.deepEqual(result.development.receipt.currentKnowledge.projects.map((item) => item.project), ['demo', 'other']);
+  assert.deepEqual(result.development.receipt.currentKnowledge.sourceIdentities, ['demo:knowledge', 'other:knowledge']);
+});
+
+test('三Project任务从policy、Candidate、独立Plan records推进到完整handoff', (t) => {
+  const { root } = copyFixtureWorkspace(t, 'three-project-golden-flow');
+  const runtime = t.buildrContexts.application;
+  runtime.createProject(['third', '--target', root, '--name', 'Third', '--description', 'Third Project']);
+  fs.writeFileSync(path.join(root, 'projects', 'third', 'README.md'), '# Third\n');
+  fs.writeFileSync(path.join(root, 'projects', 'third', 'verification.yml'), YAML.stringify({
+    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{
+      id: 'third.check', title: 'Third check', scope: { project: 'third', services: [] }, proves: ['Third content is readable.'], evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
+      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' } },
+      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
+    }],
+  }));
+  const taskId = 'three-project-golden-flow';
+  runtime.createTaskRecord(root, { taskId, title: 'Three Project Flow', intent: 'Complete a three Project formal lifecycle.', projects: ['demo', 'other', 'third'], services: [], changes: [] });
+  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
+    ready: true, taskId: currentTask, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root,
+    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
+    scopes: ['demo', 'other', 'third'].map((project) => ({ selector: `project:${project}`, kind: 'project', sourcePath: `projects/${project}`, executionRoot: path.join(root, 'projects', project) })),
+  });
+  pinImmutableTaskRecord(runtime, root, taskId);
+  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Three Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
+  const policy = runtime.recordTaskDevelopmentPolicy(root, taskId, {
+    capabilities: [{ project: 'demo', capability: 'demo.check', required: true }, { project: 'third', capability: 'third.check', required: true }],
+    coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], overrides: [],
+  });
+  const targetIdentity = policy.development.receipt.contentTarget.identity;
+  const frozen = runtime.freezeTaskDevelopmentCandidate(root, taskId);
+  const candidate = frozen.development.receipt.candidate;
+  const demo = recordVerificationResultFromEvidence(runtime, root, taskId, {
+    targetIdentity, targetSummary: 'Three Project target', candidate, planIdentity: 'sha256-demo-plan', requestIdentity: 'sha256-demo-request', reconcile: false,
+    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Demo passed.' }, declarationRoot: root,
+  });
+  const third = recordVerificationResultFromEvidence(runtime, root, taskId, {
+    targetIdentity, targetSummary: 'Three Project target', candidate, planIdentity: 'sha256-third-plan', requestIdentity: 'sha256-third-request', reconcile: false,
+    capabilities: [{ project: 'third', capability: 'third.check', outcome: 'passed', facts: ['Third passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Third passed.' }, declarationRoot: root,
+  });
+  const verification = runtime.reconcileTaskVerification(root, taskId, {
+    candidateIdentity: candidate.identity, candidateGeneration: candidate.generation, targetIdentity, targetSummary: 'Three Project target',
+    recordIds: [...demo.records, ...third.records], coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], declarationRoot: root,
+  });
+  completion({ root, runtime, taskId }, candidate);
+  runtime.recordTaskDevelopmentKnowledge(root, taskId, {
+    treeIdentity: targetIdentity,
+    projects: ['demo', 'other', 'third'].map((project) => ({ project, status: project === 'other' ? 'not-applicable' : 'aligned', summary: `${project} knowledge disposition.`, sourceIdentities: [`${project}:knowledge`], unresolvedItems: [] })),
+  });
+  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'All three Project facts are current and the declared gap is explicitly accepted.', risks: [{ gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'project:other', summary: 'Other has no declared verification capability.', source: 'Three Project golden-flow fixture accepts the explicit policy gap.' }] });
+  const handoff = runtime.createTaskDevelopmentHandoff(root, taskId);
+  assert.equal(handoff.development.applicability.handoff, 'current');
+  assert.equal(handoff.development.receipt.currentKnowledge.projects.length, 3);
+  assert.deepEqual(handoff.development.receipt.verificationPolicy.declarations.map((item) => item.project), ['demo', 'other', 'third']);
+});
+
 test('Service-only、Change-only 与多 Project Task 观察完整 declaration，不能伪装成 workspace-only', (t) => {
   const { root } = copyFixtureWorkspace(t, 'effective-projects');
   const runtime = t.buildrContexts.application;
