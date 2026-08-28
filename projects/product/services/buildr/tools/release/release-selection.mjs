@@ -412,14 +412,13 @@ export function reconcileReleaseSelectionWithMain(options = {}, dependencies = {
     if (previous?.mainParent === mainCommit && previous.resultReleaseCommit === state.releaseHead && state.freeze.commit === state.releaseHead) {
       return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', effects: [], reconciliation: previous, nextActions: ['使用当前 release generation 重新生成 Candidate、artifact 与 readiness。'] };
     }
-    if (previous) throw new Error(`Release ${state.version} already has a main reconciliation for ${previous.mainParent}; a second reconciliation is not allowed.`);
-
     const releaseParent = state.releaseHead;
     cleanWorktree(repo, dependencies);
     if (ancestor(mainCommit, releaseParent, repo, dependencies)) {
       const coverageIdentity = digest({ version: state.version, mainParent: mainCommit, releaseParent, disposition: 'main-ancestor' });
       return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', executionBindingIdentity: executionBinding.identity, effects: [], reconciliation: { mainParent: mainCommit, releaseParent, coverageIdentity, resultReleaseCommit: releaseParent }, nextActions: ['current main已在release历史中；当前frozen generation可作为Candidate最终source。'] };
     }
+    if (previous) throw new Error(`Release ${state.version} already has a main reconciliation for ${previous.mainParent}; current main is not an ancestor, so a second reconciliation requires a new explicit lifecycle design.`);
     const mergeBase = runGit(['merge-base', releaseParent, mainCommit], repo, dependencies).stdout.trim();
     const mainPaths = changedPaths(mergeBase, mainCommit, repo, dependencies).filter(releaseProductPath);
     const releasePaths = new Set(changedPaths(mergeBase, releaseParent, repo, dependencies).filter(releaseProductPath));
