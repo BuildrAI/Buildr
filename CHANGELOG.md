@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+## 0.1.0-rc.28 - 2026-08-28
+
+- 统一正式任务收尾与交付入口，收敛 Task Finish、交付对账与自举 Workspace 激活边界。
+- 修正 Doctor 收尾投影与 Task Triage 预检断言，更新 Buildr Workspace 约定。
+
 ## 0.1.0-rc.27 - 2026-08-27
 
 - 修复多 Project 正式任务流程：保持单一 Task Content Target、Candidate、Verification Result 与 handoff，同时按 Project 独立形成 Verification Plan、声明和 Execution Record，并完整聚合验证与当前知识结论。
