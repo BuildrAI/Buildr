@@ -22,6 +22,9 @@ import {
   selectReleaseCommit,
 } from '../../tools/release/release-selection.mjs';
 import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.mjs';
+import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.mjs';
+
+const digest = (value) => `sha256-${String(value).padStart(64, '0')}`;
 
 function git(cwd, ...args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -45,6 +48,20 @@ function commit(cwd, message, files) {
 function configure(cwd) {
   git(cwd, 'config', 'user.name', 'Buildr Test');
   git(cwd, 'config', 'user.email', 'buildr@example.com');
+}
+
+function releaseWorktree(root, remote, baseline, version = '0.1.0-rc.5') {
+  const controller = path.join(root, 'controller');
+  const work = path.join(root, 'work');
+  git(root, 'clone', '--branch', 'dev', remote, controller);
+  configure(controller);
+  git(controller, 'worktree', 'add', '-b', `codex/release-${version}`, work, baseline);
+  configure(work);
+  const providerEvidence = path.join(root, 'provider.json');
+  fs.writeFileSync(providerEvidence, JSON.stringify({ schemaVersion: 'buildr.git-worktree-evidence/v1', taskId: `release-${version}`, workspaceRoot: controller, branch: `codex/release-${version}`, planDigest: digest('1'), status: 'ready', repositories: [{ selector: 'workspace', checkoutPath: work, branch: `codex/release-${version}` }], effects: [], updatedAt: '2026-08-28T00:00:00.000Z' }));
+  const task = { taskId: `release-${version}`, status: 'active' };
+  const environmentResult = { status: 'ready', taskId: task.taskId, environment: { workspace: { root: controller }, controller: { identity: digest('2') }, runtimeInvocation: { identity: `${digest('3')}:v24.15.0` }, scopes: [{ selector: 'workspace', executionRoot: work, provider: { evidence: providerEvidence } }] } };
+  return { work, binding: () => createReleaseExecutionBinding({ version, task, environmentResult, repo: work }) };
 }
 
 function convergenceFixture() {
@@ -74,18 +91,17 @@ function convergenceFixture() {
   const mainCommit = commit(seed, 'squash release', {});
   git(seed, 'remote', 'add', 'origin', remote);
   git(seed, 'push', 'origin', 'dev', 'main');
-  git(root, 'clone', '--branch', 'dev', remote, work);
-  configure(work);
-  const created = createReleaseSelection({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev', baseline: base });
+  const release = releaseWorktree(root, remote, base);
+  const created = createReleaseSelection({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', baseline: base, executionBinding: release.binding() });
   assert.equal(created.status, 'passed', JSON.stringify(created));
-  const updated = selectReleaseCommit({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev', source: selected });
+  const updated = selectReleaseCommit({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', source: selected, executionBinding: release.binding() });
   assert.equal(updated.status, 'passed', JSON.stringify(updated));
-  const frozen = freezeReleaseSelection({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev' });
+  const frozen = freezeReleaseSelection({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', executionBinding: release.binding() });
   assert.equal(frozen.status, 'passed', JSON.stringify(frozen));
   const releaseCommit = frozen.releaseHead;
   const releaseTree = frozen.releaseTree;
   assert.equal(releaseTree, selectedTree);
-  git(work, 'push', 'origin', `${releaseCommit}:refs/heads/release-0.1.0-rc.5`);
+  git(release.work, 'push', 'origin', `${releaseCommit}:refs/heads/release-0.1.0-rc.5`);
   const context = createReleaseContext({
     selection: {
       identity: frozen.selectionIdentity,
@@ -120,7 +136,7 @@ function convergenceFixture() {
       registrySmoke: 'passed',
     },
   });
-  return { root, remote, seed, work, base, selected, frozen, releaseCommit, releaseTree, mainCommit, devCommit, publicationEvidence };
+  return { root, remote, seed, work: release.work, binding: release.binding, base, selected, frozen, releaseCommit, releaseTree, mainCommit, devCommit, publicationEvidence };
 }
 
 test('release→main creates one PR from the frozen release source after explicit authorization', (t) => {
@@ -138,12 +154,11 @@ test('release→main creates one PR from the frozen release source after explici
   const selected = commit(seed, 'selected', { 'selected.txt': 'selected\n' });
   git(seed, 'remote', 'add', 'origin', remote);
   git(seed, 'push', 'origin', 'dev', 'main');
-  git(root, 'clone', '--branch', 'dev', remote, work);
-  configure(work);
-  const created = createReleaseSelection({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev', baseline: base });
+  const release = releaseWorktree(root, remote, base);
+  const created = createReleaseSelection({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', baseline: base, executionBinding: release.binding() });
   assert.equal(created.status, 'passed');
-  const updated = selectReleaseCommit({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev', source: selected });
-  const frozen = freezeReleaseSelection({ version: '0.1.0-rc.5', repo: work, devRef: 'origin/dev' });
+  const updated = selectReleaseCommit({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', source: selected, executionBinding: release.binding() });
+  const frozen = freezeReleaseSelection({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', executionBinding: release.binding() });
   assert.equal(frozen.status, 'passed');
   const ghCalls = [];
   const dependencies = {
@@ -157,7 +172,7 @@ test('release→main creates one PR from the frozen release source after explici
     },
   };
   const result = ensureReleaseToMainPullRequest({
-    repo: work,
+    repo: release.work,
     version: '0.1.0-rc.5',
     generation: frozen.generation,
     candidateCommit: updated.releaseHead,
@@ -168,12 +183,12 @@ test('release→main creates one PR from the frozen release source after explici
   assert.equal(result.status, 'ready');
   assert.equal(result.pullRequest.url, 'https://github.com/BuildrAI/Buildr/pull/100');
   const carrier = releaseCarrierBranchFor('0.1.0-rc.5', frozen.generation);
-  assert.equal(git(work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5').startsWith(updated.releaseHead), true);
-  assert.equal(git(work, 'ls-remote', 'origin', `refs/heads/${carrier}`).startsWith(updated.releaseHead), true);
+  assert.equal(git(release.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5').startsWith(updated.releaseHead), true);
+  assert.equal(git(release.work, 'ls-remote', 'origin', `refs/heads/${carrier}`).startsWith(updated.releaseHead), true);
   assert.equal(ghCalls.filter((args) => args[1] === 'create').length, 1);
 
   const closed = ensureReleaseToMainPullRequest({
-    repo: work,
+    repo: release.work,
     version: '0.1.0-rc.5',
     generation: frozen.generation,
     candidateCommit: updated.releaseHead,
@@ -301,7 +316,6 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
   });
   assert.equal(waiting.phase, 'awaiting-publication-authorization');
   assert.equal(waiting.releaseTask.taskId, taskId);
-  git(data.work, 'checkout', 'dev');
   const carrier = releaseCarrierBranchFor('0.1.0-rc.5', frozen.generation);
   git(data.work, 'branch', carrier, data.devCommit);
   git(data.work, 'push', 'origin', `${carrier}:${carrier}`);
@@ -312,6 +326,7 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
     expectedCommit: data.releaseCommit,
     authorizeCarrierCleanup: true,
     authorizeLocalSelectionCleanup: true,
+    executionBinding: data.binding(),
   });
   assert.equal(unknown.status, 'blocked');
   assert.equal(unknown.diagnostic.code, 'release-closeout-identity-unknown');
@@ -325,6 +340,7 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
     expectedCommit: data.releaseCommit,
     authorizeCarrierCleanup: true,
     authorizeLocalSelectionCleanup: true,
+    executionBinding: data.binding(),
   });
   assert.equal(first.status, 'passed', JSON.stringify(first));
   assert.equal(first.formalReleaseRef.disposition, 'retained-and-verified');
@@ -337,6 +353,7 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
     expectedCommit: data.releaseCommit,
     authorizeCarrierCleanup: true,
     authorizeLocalSelectionCleanup: true,
+    executionBinding: data.binding(),
   });
   assert.equal(second.status, 'passed', JSON.stringify(second));
   assert.equal(second.action, 'already-cleaned');

@@ -345,6 +345,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     if (key === 'git rev-parse origin/main') return { status: 0, stdout: `${fixtureCommit}\n` };
     if (key === `git rev-parse ${fixtureCommit}^{tree}` || key === `git rev-parse ${candidateSourceCommit}^{tree}` || key === `git rev-parse ${devCommit}^{tree}`) return { status: 0, stdout: `${candidateTree}\n` };
     if (key === 'git rev-parse origin/dev') return { status: 0, stdout: `${devCommit}\n` };
+    if (key === `git rev-list --parents -n 1 ${fixtureCommit}`) return { status: 0, stdout: `${fixtureCommit} ${'f'.repeat(40)} ${candidateSourceCommit}\n` };
     if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package.json`) return { status: 0, stdout: sourceFiles.get('projects/product/services/buildr/package.json') };
     if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package-lock.json`) return { status: 0, stdout: sourceFiles.get('projects/product/services/buildr/package-lock.json') };
     if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: sourceFiles.get('projects/product/.node-version') };
@@ -359,7 +360,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
 
-  const result = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, {
+  const result = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase: candidateSourceCommit, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, {
     execute,
     wait: async () => {},
     releaseId: 'fixture-release-id',

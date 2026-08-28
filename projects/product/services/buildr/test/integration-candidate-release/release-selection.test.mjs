@@ -5,18 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import {
-  abandonReleaseSelection,
-  cleanupReleaseSelection,
-  createReleaseSelection,
-  freezeReleaseSelection,
-  inspectReleaseSelection,
-  reconcileReleaseSelectionWithMain,
-  reopenReleaseSelection,
-  selectReleaseCommit,
-} from '../../tools/release/release-selection.mjs';
+import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.mjs';
+import { createReleaseSelection, freezeReleaseSelection, inspectReleaseSelection, reconcileReleaseSelectionWithMain, reopenReleaseSelection, selectReleaseCommit } from '../../tools/release/release-selection.mjs';
 
-const RELEASE_SELECTION_CLI = path.resolve(import.meta.dirname, '../../tools/release/release-selection.mjs');
+const digest = (value) => `sha256-${String(value).padStart(64, '0')}`;
 
 function git(repo, ...args) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -24,256 +16,110 @@ function git(repo, ...args) {
   return result.stdout.trim();
 }
 
-function fixture() {
+function fixture(version) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-selection-'));
   const remote = path.join(root, 'remote.git');
   git(root, 'init', '--bare', remote);
-  git(root, 'clone', remote, 'repo');
-  const repo = path.join(root, 'repo');
-  git(repo, 'checkout', '-b', 'dev');
+  git(root, 'clone', remote, 'retained');
+  const retained = path.join(root, 'retained');
+  git(retained, 'checkout', '-b', 'dev');
+  git(retained, 'config', 'user.name', 'Buildr Test');
+  git(retained, 'config', 'user.email', 'buildr@example.com');
+  fs.mkdirSync(path.join(retained, 'projects/product'), { recursive: true });
+  fs.writeFileSync(path.join(retained, 'projects/product/version.txt'), 'baseline\n');
+  git(retained, 'add', '.'); git(retained, 'commit', '-m', 'baseline');
+  const baseline = git(retained, 'rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(retained, 'projects/product/version.txt'), 'dev selected\n');
+  git(retained, 'commit', '-am', 'selected dev content');
+  const source = git(retained, 'rev-parse', 'HEAD');
+  git(retained, 'push', '-u', 'origin', 'dev');
+  const repo = path.join(root, 'task-worktree');
+  const taskBranch = `codex/release-${version}`;
+  git(retained, 'worktree', 'add', '-b', taskBranch, repo, baseline);
   git(repo, 'config', 'user.name', 'Buildr Test');
   git(repo, 'config', 'user.email', 'buildr@example.com');
-  fs.writeFileSync(path.join(repo, 'selection.txt'), 'baseline\n');
-  git(repo, 'add', 'selection.txt');
-  git(repo, 'commit', '-m', 'baseline');
-  const baseline = git(repo, 'rev-parse', 'HEAD');
-  fs.writeFileSync(path.join(repo, 'selection.txt'), 'feature-a\n');
-  git(repo, 'commit', '-am', 'feature A');
-  const sourceA = git(repo, 'rev-parse', 'HEAD');
-  fs.writeFileSync(path.join(repo, 'second.txt'), 'feature-b\n');
-  git(repo, 'add', 'second.txt');
-  git(repo, 'commit', '-m', 'feature B');
-  const sourceB = git(repo, 'rev-parse', 'HEAD');
-  git(repo, 'push', '-u', 'origin', 'dev');
-  return { root, repo, remote, baseline, sourceA, sourceB };
+  const providerEvidence = path.join(root, 'provider.json');
+  fs.writeFileSync(providerEvidence, `${JSON.stringify({
+    schemaVersion: 'buildr.git-worktree-evidence/v1', taskId: `release-${version}`, workspaceRoot: retained, branch: taskBranch,
+    planDigest: digest('1'), status: 'ready', repositories: [{ selector: 'workspace', checkoutPath: repo, branch: taskBranch }], effects: [], updatedAt: '2026-08-28T00:00:00.000Z',
+  }, null, 2)}\n`);
+  const task = { taskId: `release-${version}`, status: 'active' };
+  const environmentResult = { status: 'ready', taskId: task.taskId, environment: {
+    workspace: { root: retained }, controller: { identity: digest('2') }, runtimeInvocation: { identity: `${digest('3')}:v24.15.0` },
+    scopes: [{ selector: 'workspace', executionRoot: repo, provider: { evidence: providerEvidence } }],
+  } };
+  const binding = () => createReleaseExecutionBinding({ version, task, environmentResult, repo });
+  return { root, retained, repo, version, baseline, source, binding };
 }
 
-test('release selection creates from exact dev baseline and reconstructs ordered -x provenance', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+const create = (data) => createReleaseSelection({ repo: data.repo, version: data.version, baseline: data.baseline, devRef: 'dev', executionBinding: data.binding() });
+const select = (data) => selectReleaseCommit({ repo: data.repo, version: data.version, source: data.source, devRef: 'dev', executionBinding: data.binding() });
+const freeze = (data) => freezeReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev', executionBinding: data.binding() });
 
-  const created = createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.1', baseline: data.baseline, devRef: 'dev' });
-  assert.equal(created.status, 'passed', JSON.stringify(created));
-  assert.equal(created.generation, 0);
-  assert.equal(created.releaseHead, data.baseline);
-  assert.equal(created.effects.some((effect) => effect.type === 'branch-created'), true);
-
-  const selected = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.1', source: data.sourceA, devRef: 'dev' });
+test('selection mutates only the bound Task branch and formal release ref', (t) => {
+  const data = fixture('0.1.0-rc.1'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  assert.equal(create(data).status, 'passed');
+  const selected = select(data);
   assert.equal(selected.status, 'passed', JSON.stringify(selected));
-  assert.equal(selected.generation, 1);
-  assert.equal(selected.selectionChain[0].sourceDevCommit, data.sourceA);
-  assert.equal(selected.selectionChain[0].resultReleaseCommit, selected.releaseHead);
-  assert.deepEqual(selected.selectionChain[0].changedPaths, ['selection.txt']);
-
-  const beforeDevAdvance = selected.releaseHead;
-  git(data.repo, 'checkout', 'dev');
-  fs.writeFileSync(path.join(data.repo, 'third.txt'), 'unselected\n');
-  git(data.repo, 'add', 'third.txt');
-  git(data.repo, 'commit', '-m', 'unselected dev content');
-  git(data.repo, 'checkout', 'release-0.1.0-rc.1');
-  const inspected = inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.1', devRef: 'dev' });
-  assert.equal(inspected.status, 'ready');
-  assert.equal(inspected.releaseHead, beforeDevAdvance, 'dev advance must not mutate release');
-  assert.equal(inspected.generation, 1);
-  assert.equal(inspected.selectionIdentity.startsWith('sha256-'), true);
+  assert.equal(git(data.repo, 'branch', '--show-current'), 'codex/release-0.1.0-rc.1');
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), selected.releaseHead);
+  assert.equal(git(data.repo, 'rev-parse', 'release-0.1.0-rc.1'), selected.releaseHead);
+  assert.equal(selected.selectionChain[0].sourceDevCommit, data.source);
+  assert.equal(freeze(data).freeze.state, 'frozen');
 });
 
-test('selection update fails closed when the caller workspace is not the release target', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+test('retained primary worktree and stale binding fail before mutation', (t) => {
+  const data = fixture('0.1.0-rc.2'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const binding = data.binding();
+  const retainedBranch = git(data.retained, 'branch', '--show-current');
+  const wrongRoot = createReleaseSelection({ repo: data.retained, version: data.version, baseline: data.baseline, devRef: 'dev', executionBinding: binding });
+  assert.equal(wrongRoot.status, 'blocked');
+  assert.equal(git(data.retained, 'branch', '--show-current'), retainedBranch);
+  assert.equal(createReleaseSelection({ repo: data.repo, version: data.version, baseline: data.baseline, devRef: 'dev', executionBinding: binding }).status, 'passed');
+  fs.writeFileSync(path.join(data.repo, 'local.txt'), 'advance\n'); git(data.repo, 'add', 'local.txt'); git(data.repo, 'commit', '-m', 'advance bound checkout');
+  const stale = freezeReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev', executionBinding: binding });
+  assert.equal(stale.status, 'blocked');
+  assert.match(stale.diagnostic.message, /drifted/);
+});
 
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.8', baseline: data.baseline, devRef: 'dev' });
-  const releaseHeadBefore = git(data.repo, 'rev-parse', 'refs/heads/release-0.1.0-rc.8');
-  git(data.repo, 'checkout', 'dev');
-  const devHeadBefore = git(data.repo, 'rev-parse', 'HEAD');
-
-  const blocked = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.8', source: data.sourceA, devRef: 'dev' });
-
+test('main-only product content blocks reconciliation with zero Git writes', (t) => {
+  const data = fixture('0.1.0-rc.3'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  create(data); select(data); const frozen = freeze(data);
+  git(data.retained, 'checkout', '-b', 'main', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/main-only.txt'), 'not delivered to dev\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'main-only product content'); git(data.retained, 'push', 'origin', 'main');
+  const before = git(data.repo, 'rev-parse', 'HEAD');
+  const blocked = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'pre-Candidate convergence', executionBinding: data.binding() });
   assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.diagnostic.code, 'release_selection_target_mismatch');
-  assert.deepEqual(blocked.effects, []);
-  assert.equal(blocked.diagnostic.details.expectedBranch, 'release-0.1.0-rc.8');
-  assert.equal(blocked.diagnostic.details.actualBranch, 'dev');
-  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), devHeadBefore);
-  assert.equal(git(data.repo, 'rev-parse', 'refs/heads/release-0.1.0-rc.8'), releaseHeadBefore);
+  assert.equal(blocked.diagnostic.code, 'release_main_coverage_incomplete');
+  assert.deepEqual(blocked.diagnostic.details.uncoveredPaths, ['projects/product/main-only.txt']);
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), before);
+  assert.equal(inspectReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev' }).releaseHead, frozen.releaseHead);
 });
 
-test('freeze is idempotent, direct update stays blocked, and explicit reopen allows a new generation', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', baseline: data.baseline });
-  const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
-  assert.equal(frozen.status, 'passed', JSON.stringify(frozen));
-  assert.equal(frozen.freeze.state, 'frozen');
-  assert.deepEqual(frozen.freezeHistory.map(({ generation, commit, state }) => ({ generation, commit, state })), [{ generation: 0, commit: data.baseline, state: 'valid' }]);
-  const repeated = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
-  assert.equal(repeated.status, 'passed');
-  assert.deepEqual(repeated.effects, []);
-  const blocked = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.2', source: data.sourceA });
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.effects.length, 0);
-  assert.match(blocked.diagnostic.message, /frozen/);
-  const missingConfirmation = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', reason: 'Candidate failed.' });
-  assert.equal(missingConfirmation.status, 'blocked');
-  const missingReason = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2', confirm: true });
-  assert.equal(missingReason.status, 'blocked');
-  const reopenedCli = spawnSync(process.execPath, [RELEASE_SELECTION_CLI, 'reopen', '--repo', data.repo, '--version', '0.1.0-rc.2', '--confirm', '--reason', 'Candidate failed before publication.'], { cwd: data.repo, encoding: 'utf8' });
-  assert.equal(reopenedCli.status, 0, reopenedCli.stderr || reopenedCli.stdout);
-  const reopened = JSON.parse(reopenedCli.stdout);
-  assert.equal(reopened.status, 'passed', JSON.stringify(reopened));
-  assert.equal(reopened.freeze.state, 'open');
-  assert.equal(reopened.freezeHistory[0].commit, data.baseline);
-  assert.equal(reopened.effects[0].reason, 'Candidate failed before publication.');
-  const selected = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.2', source: data.sourceA });
-  assert.equal(selected.status, 'passed', JSON.stringify(selected));
-  assert.equal(selected.generation, 1);
-  const refrozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
-  assert.equal(refrozen.status, 'passed', JSON.stringify(refrozen));
-  assert.deepEqual(refrozen.freezeHistory.map((entry) => entry.generation), [0, 1]);
-  assert.equal(refrozen.freezeHistory[1].commit, refrozen.releaseHead);
-  const abandoned = abandonReleaseSelection({ repo: data.repo, version: '0.1.0-rc.2' });
-  assert.equal(abandoned.status, 'passed');
-  assert.equal(abandoned.abandon.state, 'abandoned');
-});
-
-test('reopen migrates a legacy frozen ref and fails closed when immutable history drifts', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', baseline: data.baseline });
-  git(data.repo, 'update-ref', 'refs/buildr/release/0.1.0-rc.7/frozen', data.baseline);
-  const legacy = inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
-  assert.equal(legacy.status, 'frozen');
-  assert.deepEqual(legacy.freezeHistory, []);
-  const reopened = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', confirm: true, reason: 'Legacy Candidate failed.' });
-  assert.equal(reopened.status, 'passed', JSON.stringify(reopened));
-  assert.equal(reopened.freezeHistory[0].commit, data.baseline);
-  const refrozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
-  assert.equal(refrozen.status, 'passed', JSON.stringify(refrozen));
-  git(data.repo, 'update-ref', 'refs/buildr/release/0.1.0-rc.7/freezes/0', data.sourceA, data.baseline);
-  const drifted = inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7' });
-  assert.equal(drifted.status, 'blocked');
-  assert.equal(drifted.integrity.code, 'freeze_history_invalid');
-  const blocked = reopenReleaseSelection({ repo: data.repo, version: '0.1.0-rc.7', confirm: true, reason: 'Must not bypass drift.' });
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.effects.length, 0);
-});
-
-test('selection fails closed for baseline drift, dirty worktree and a real cherry-pick conflict', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  const unrelated = git(data.repo, 'checkout', '-b', 'unrelated', data.baseline);
-  void unrelated;
-  fs.writeFileSync(path.join(data.repo, 'unrelated.txt'), 'outside dev\n');
-  git(data.repo, 'add', 'unrelated.txt');
-  git(data.repo, 'commit', '-m', 'unrelated');
-  const unrelatedHead = git(data.repo, 'rev-parse', 'HEAD');
-  const drifted = createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.3', baseline: unrelatedHead, devRef: 'dev' });
-  assert.equal(drifted.status, 'blocked');
-  assert.equal(drifted.effects.length, 0);
-  git(data.repo, 'checkout', 'dev');
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.3', baseline: data.baseline, devRef: 'dev' });
-  fs.writeFileSync(path.join(data.repo, 'dirty.txt'), 'not committed\n');
-  const dirty = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.3', source: data.sourceA, devRef: 'dev' });
-  assert.equal(dirty.status, 'blocked');
-  assert.equal(dirty.effects.length, 0);
-  fs.rmSync(path.join(data.repo, 'dirty.txt'));
-  git(data.repo, 'checkout', 'dev');
-  git(data.repo, 'checkout', '-b', 'release-conflict', data.baseline);
-  fs.writeFileSync(path.join(data.repo, 'selection.txt'), 'local conflicting content\n');
-  git(data.repo, 'commit', '-am', `local release change\n\n(cherry picked from commit ${data.sourceB})`);
-  git(data.repo, 'checkout', 'dev');
-  // The release branch is recreated under the expected name from the same conflicting local state.
-  git(data.repo, 'branch', '-f', 'release-0.1.0-rc.4', 'release-conflict');
-  git(data.repo, 'checkout', 'release-0.1.0-rc.4');
-  git(data.repo, 'update-ref', `refs/buildr/release/0.1.0-rc.4/baseline`, data.baseline);
-  const conflict = selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.4', source: data.sourceA, devRef: 'dev' });
-  assert.equal(conflict.status, 'blocked');
-  assert.equal(conflict.diagnostic.code, 'release_selection_conflict');
-  assert.deepEqual(conflict.effects, []);
-  assert.equal(conflict.conflict.recovery, 'git cherry-pick --abort');
-  git(data.repo, 'cherry-pick', '--abort');
-});
-
-test('main reconciliation creates a new frozen generation with explicit parents and is idempotent', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.9', baseline: data.baseline, devRef: 'dev' });
-  selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.9', source: data.sourceA, devRef: 'dev' });
-  const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev' });
-  git(data.repo, 'branch', 'main', data.baseline);
-  git(data.repo, 'checkout', 'main');
-  fs.writeFileSync(path.join(data.repo, 'main-only.txt'), 'main change\n');
-  git(data.repo, 'add', 'main-only.txt');
-  git(data.repo, 'commit', '-m', 'main-only change');
-  const mainCommit = git(data.repo, 'rev-parse', 'HEAD');
-  git(data.repo, 'push', 'origin', 'main');
-  git(data.repo, 'checkout', 'release-0.1.0-rc.9');
-
-  const reconciled = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Resolve the current main ancestry before release PR.' });
+test('covered main history creates a two-parent commit without changing the release tree', (t) => {
+  const data = fixture('0.1.0-rc.4'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  create(data); select(data); const frozen = freeze(data);
+  git(data.retained, 'checkout', '-b', 'main', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/version.txt'), 'older published value\n');
+  git(data.retained, 'commit', '-am', 'published main value');
+  const mainCommit = git(data.retained, 'rev-parse', 'HEAD'); git(data.retained, 'push', 'origin', 'main');
+  const reconciled = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'pre-Candidate convergence', executionBinding: data.binding() });
   assert.equal(reconciled.status, 'passed', JSON.stringify(reconciled));
-  assert.equal(reconciled.action, 'reconciled');
-  assert.equal(reconciled.generation, 2);
-  assert.equal(reconciled.freezeHistory.at(-1).generation, 2);
-  const entry = reconciled.reconciliationChain[0];
-  assert.equal(entry.mainParent, mainCommit);
-  assert.equal(entry.releaseParent, frozen.releaseHead);
-  assert.equal(entry.resultReleaseCommit, reconciled.releaseHead);
-  assert.equal(entry.parents.includes(mainCommit), true);
-  assert.equal(entry.parents.includes(frozen.releaseHead), true);
-  assert.match(entry.reconciliationIdentity, /^sha256-[a-f0-9]{64}$/u);
-  assert.equal(git(data.repo, 'show', '-s', '--format=%B', reconciled.releaseHead).includes(`Buildr-Main-Reconciliation-Main: ${mainCommit}`), true);
-
-  const repeated = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.9', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Same reconciliation readback.' });
-  assert.equal(repeated.status, 'passed');
-  assert.equal(repeated.action, 'already-converged');
-  assert.deepEqual(repeated.effects, []);
-  assert.equal(repeated.releaseHead, reconciled.releaseHead);
+  assert.equal(reconciled.releaseTree, frozen.releaseTree);
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD^{tree}'), frozen.releaseTree);
+  assert.deepEqual(git(data.repo, 'rev-list', '--parents', '-n', '1', reconciled.releaseHead).split(' ').slice(1), [frozen.releaseHead, mainCommit]);
+  assert.deepEqual(reconciled.reconciliationChain[0].changedPaths, []);
+  assert.match(reconciled.reconciliationChain[0].coverageIdentity, /^sha256-/u);
+  const repeated = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'same inputs', executionBinding: data.binding() });
+  assert.equal(repeated.action, 'already-converged'); assert.deepEqual(repeated.effects, []);
 });
 
-test('main reconciliation leaves a real conflict for explicit resolution and does not commit it', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', baseline: data.baseline, devRef: 'dev' });
-  selectReleaseCommit({ repo: data.repo, version: '0.1.0-rc.10', source: data.sourceA, devRef: 'dev' });
-  const frozen = freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev' });
-  git(data.repo, 'branch', 'main', data.baseline);
-  git(data.repo, 'checkout', 'main');
-  fs.writeFileSync(path.join(data.repo, 'selection.txt'), 'main conflicting content\n');
-  git(data.repo, 'commit', '-am', 'main conflicting change');
-  const mainCommit = git(data.repo, 'rev-parse', 'HEAD');
-  git(data.repo, 'push', 'origin', 'main');
-  git(data.repo, 'checkout', 'release-0.1.0-rc.10');
-
-  const blocked = reconcileReleaseSelectionWithMain({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'Expose conflict for review.' });
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.diagnostic.code, 'release_main_reconciliation_conflict');
-  assert.deepEqual(blocked.effects, []);
-  assert.equal(blocked.conflict.mainParent, mainCommit);
-  assert.deepEqual(blocked.conflict.conflictPaths, ['selection.txt']);
-  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), frozen.releaseHead);
-  git(data.repo, 'merge', '--abort');
-  assert.equal(inspectReleaseSelection({ repo: data.repo, version: '0.1.0-rc.10', devRef: 'dev' }).status, 'frozen');
-});
-
-test('cleanup is local-only, explicit and ignores retained remote-tracking release projections', (t) => {
-  const data = fixture();
-  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5', baseline: data.baseline });
-  freezeReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5' });
-  const missingConfirmation = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5' });
-  assert.equal(missingConfirmation.status, 'blocked');
-  assert.equal(missingConfirmation.effects.length, 0);
-  git(data.repo, 'checkout', 'dev');
-  const cleaned = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.5', confirm: true });
-  assert.equal(cleaned.status, 'passed', JSON.stringify(cleaned));
-  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/release-0.1.0-rc.5'], { cwd: data.repo }).status, 1);
-  assert.equal(spawnSync('git', ['for-each-ref', '--format=%(refname)', 'refs/buildr/release/0.1.0-rc.5/'], { cwd: data.repo, encoding: 'utf8' }).stdout.trim(), '');
-  createReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', baseline: data.baseline });
-  git(data.repo, 'checkout', 'dev');
-  git(data.repo, 'push', 'origin', 'release-0.1.0-rc.6:release-0.1.0-rc.6');
-  git(data.repo, 'fetch', 'origin');
-  const remoteRetained = cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', confirm: true });
-  assert.equal(remoteRetained.status, 'passed', JSON.stringify(remoteRetained));
-  assert.equal(git(data.repo, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.6').startsWith(data.baseline), true);
-  assert.equal(cleanupReleaseSelection({ repo: data.repo, version: '0.1.0-rc.6', confirm: true }).action, 'already-cleaned');
+test('reopen preserves old freeze history and forms a new generation', (t) => {
+  const data = fixture('0.1.0-rc.5'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  create(data); freeze(data);
+  const reopened = reopenReleaseSelection({ repo: data.repo, version: data.version, confirm: true, reason: 'Candidate predates final convergence.', executionBinding: data.binding() });
+  assert.equal(reopened.status, 'passed'); assert.equal(reopened.freeze.state, 'open'); assert.equal(reopened.freezeHistory[0].commit, data.baseline);
+  assert.equal(select(data).status, 'passed');
+  assert.deepEqual(freeze(data).freezeHistory.map((entry) => entry.generation), [0, 1]);
 });

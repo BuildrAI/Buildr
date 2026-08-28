@@ -255,6 +255,9 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const inspectSelection = dependencies.inspectSelection ?? inspectReleaseSelection;
     const selection = inspectSelection({ version, repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
     const mainParents = commitParents(execute, repo, sourceCommit);
+    if (selection.status !== 'frozen' || selection.releaseHead !== candidateBase) throw new Error(`Candidate base ${candidateBase} does not match current frozen release generation ${selection.releaseHead ?? '<missing>'}.`);
+    if (candidateSourceCommit !== selection.releaseHead) throw new Error(`Candidate run source ${candidateSourceCommit} is stale; current final release source is ${selection.releaseHead}.`);
+    if (mainParents.length !== 2 || !mainParents.includes(selection.releaseHead)) throw new Error(`Current main ${sourceCommit} is not the protected merge commit for final release source ${selection.releaseHead}.`);
     const reconciliation = selection.reconciliationChain?.at(-1) ?? null;
     const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
     const aggregate = candidateEvidence.aggregate;
