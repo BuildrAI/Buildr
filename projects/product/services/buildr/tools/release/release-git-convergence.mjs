@@ -509,7 +509,7 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
     if (options.authorizeLocalSelectionCleanup !== true) {
       return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
     }
-    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true }, dependencies);
+    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, executionBinding: options.executionBinding }, dependencies);
     if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
     effects.push(...selectionCleanup.effects);
     const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, carrier: 'absent', selection: 'absent' });

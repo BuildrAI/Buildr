@@ -1,10 +1,4 @@
-# release-main-reconciliation Specification
-
-## Purpose
-
-定义 release 与当前 main 发生一次性 reconciliation、重建发布 generation、绑定父提交与 resolution provenance，并以受保护 merge commit 完成 release→main 收敛的产品契约。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: release 必须支持有证据的一次性 main reconciliation
 Release owner MUST在完整 Product Candidate 前，针对当前未公开版本的 frozen release selection读取并固定current `main` commit/tree、release commit/tree、matching release Task Environment与dev/release provenance，形成一次性 reconciliation identity。Owner MUST先证明current main的产品内容已经由current dev baseline、ordered source commits或既有正式release provenance覆盖；coverage通过时 MUST创建一个以原frozen release与current main为父提交、且tree精确等于pre-reconciliation release tree的历史收敛commit。该identity MUST包含版本、generation、selection identity、Environment binding、main identity、release pre-state、coverage identity、resolution identity与post-state，并 MUST区分dev source provenance与main reconciliation provenance。
@@ -58,21 +52,3 @@ Buildr MUST只允许完成current main coverage与历史收敛后的最终releas
 - **WHEN** reconciliation请求的全部输入与已记录post-state相同，且live main/release refs、Environment binding、coverage与resolution identity未漂移
 - **THEN** owner MUST返回既有reconciliation identity和`already-converged`状态
 - **AND** MUST NOT创建第二个history commit或递增generation
-
-### Requirement: release→main PR 必须使用 merge commit 收敛
-对于采用 reconciliation 的 release，发布 owner MUST只创建或复用一个以当前 generation carrier 为 head、以 `main` 为 base 的受保护 PR，并 MUST以 GitHub merge commit 方式完成。squash merge、rebase merge 和未绑定 generation 的直接 merge MUST不满足发布收敛证据。
-
-#### Scenario: merge commit 合入 main
-- **WHEN** current Candidate、唯一 artifact、readiness、carrier 和 PR head 均匹配，且维护者授权 release→main 合入
-- **THEN** owner MUST使用 `Create a merge commit` 完成 PR
-- **AND** MUST证明 main commit 有 carrier/release source 与原 main commit 的父关系，且 main tree 等于 current release tree
-
-#### Scenario: PR 使用错误的合入方式
-- **WHEN** release PR 以 squash 或 rebase 完成，或 GitHub readback 无法证明两个父提交关系
-- **THEN** readiness MUST阻止 publication/closeout
-- **AND** owner MUST NOT用 tree 相等替代 merge-commit evidence
-
-#### Scenario: main tree 不一致
-- **WHEN** merge 后 `origin/main^{tree}` 不等于 current release tree
-- **THEN** convergence MUST返回 expected/actual identity mismatch
-- **AND** MUST NOT继续 publication、force push 或重写 main 历史

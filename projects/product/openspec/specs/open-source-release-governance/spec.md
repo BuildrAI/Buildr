@@ -227,13 +227,23 @@ Buildr MUST以 closed release transaction context/evidence schema关联 source r
 - **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
-Buildr MUST只对通过完整Product Candidate的current `release-<version>`集合创建一个generation-scoped受保护release→main收敛PR；当该release发生main reconciliation时，PR MUST以当前generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于冻结release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。
+Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen selection完成current main coverage检查与保持release tree不变的历史收敛，并把该post-reconciliation generation作为唯一final source。Buildr MUST只对通过完整Product Candidate的final generation创建一个generation-scoped受保护release→main收敛PR；PR MUST以current generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于Candidate绑定的frozen release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。
+
+#### Scenario: final release source进入Candidate
+- **WHEN** current selection已freeze、main coverage与历史收敛evidence完整、matching release Environment current
+- **THEN** Buildr MUST先固定post-reconciliation commit/tree/generation，再运行一次完整Product Candidate并形成唯一tarball
+- **AND** Candidate运行后 MUST NOT再把main内容merge进release或改变final source
 
 #### Scenario: release集合进入main
-- **WHEN** current release Candidate与唯一tarball通过、main reconciliation evidence完整且维护者授权收敛
+- **WHEN** final generation的current release Candidate与唯一tarball通过、main reconciliation evidence完整且维护者授权收敛
 - **THEN** Buildr MUST创建或复用一个绑定generation、release HEAD/tree和reconciliation identity的确定性carrier，并只以该carrier创建唯一受保护release→main PR
-- **AND** PR MUST以merge commit完成，`origin/main^{tree}` MUST精确等于冻结release tree，且readback MUST证明两个父提交
-- **AND** tree不一致、carrier/PR head漂移、合入方式错误或ownership不明 MUST阻止publication
+- **AND** PR MUST以merge commit完成，`origin/main^{tree}` MUST精确等于Candidate绑定的frozen release tree，且readback MUST证明两个父提交
+- **AND** tree不一致、main parent漂移、carrier/PR head漂移、合入方式错误或ownership不明 MUST阻止publication
+
+#### Scenario: main在Candidate后前进
+- **WHEN** current `origin/main`不再等于final source绑定的main parent
+- **THEN** Buildr MUST使Candidate、artifact、carrier与readiness stale，并先形成新的coverage/reconciliation generation
+- **AND** MUST对新final source重新运行完整Candidate，MUST NOT把main反向merge进已验证release或复用旧tarball
 
 #### Scenario: 发布成功后dev已经前进
 - **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release冻结后交付的新内容
