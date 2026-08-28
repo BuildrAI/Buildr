@@ -59,7 +59,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
-| 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 均证明当前为 clean `dev`、upstream 为 `origin/dev`；每个 operation 返回 before/after、effects 与 current facts，适用 Workspace transition check ready | 任一前置事实、provider、fetch、rebase、冲突恢复或 Doctor blocked 时不调用 Task Record `create`；报告全部部分 effects，不换策略 |
+| 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 分别证明current integration branch、matching upstream与clean状态；每个 operation 返回before/after、effects与current facts，适用Workspace transition check ready | 任一目标解析、前置事实、provider、fetch、rebase、冲突恢复或Doctor blocked时不调用Task Record `create`；报告全部部分effects，不换策略 |
 | 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Environment、Change或专业placeholder |
 | 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
 | 正式执行位置 | `buildr.task-environment/v1` 的 Plan `record/inspect` 与 Environment `prepare/inspect` | Task ID、canonical Workspace、完整 Task Project/Service scope、Project `preparation.yml`及Agent选择的Recipe；首次受管效果前取得`ready`、实际execution roots、validation root和执行CLI | Declaration/Plan缺失或scope不完整时只阻塞消费Environment authority的动作；不猜技术栈，不回退到cwd或旧Receipt |
@@ -84,16 +84,17 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 
 如果Child真实依赖Parent尚未交付的代码、文档或其他authority，先在Parent Plan中表达依赖并完成前置Contribution；可以先保留Child意向，但必须延后Child Environment prepare。前置贡献完成正式Finish且进入最新`dev`等canonical baseline后，再从收敛后的baseline准备Child Environment。不得通过从Parent worktree派生Child checkout、复制Parent Environment Receipt或提前共享未归档Change绕过该顺序。
 
-### 新正式 Task 创建前收敛统一 dev 基线
+### 新正式 Task 创建前收敛逐 repository 权威基线
 
 只有即将创建 active Task 或把 todo 激活为 active 时执行本门禁；todo create、inspect、已有active继续、纯讨论和只读探索不执行。
 
-1. 以已经解析的完整 repository set 为输入，按 selector 固定顺序逐个核验真实 Git root、当前符号分支恰为 `dev`、upstream 恰为 `origin/dev`、remote/ref 可读、index 与 working tree clean，并且没有 rebase、merge、cherry-pick 等进行中的 Git operation。任一事实不成立时在 tree/history 零写入状态返回 `blocked`；不 checkout、不 stash/autostash、不猜其他 branch/remote。
-2. 读取 optional `buildr.git-operations/v1` binding；在本 create 分支把 ready selected provider 作为 required。先为全部 repositories 逐一选择独立 `fetch` operation，明确 `origin` 与 `dev`，消费每个 Result。任一 fetch blocked 时不执行尚未开始的 rebase，不创建 Task，并报告全部已发生的 remote-ref effects。
-3. 全部 fetch 成功后重新核验 `dev`、`origin/dev` 与 clean 状态，再按同一顺序为每个 repository 明确选择 `rebase` operation，将本地 `dev` rebase 到本次观察的 `origin/dev`。本地已对齐、仅落后或含未 push 且未共享 commit 都使用同一 operation；provider 不自行选择 merge 或 push。
-4. rebase 冲突时，consumer 明确授权 provider 只在 pre-state 已证明 clean 时执行有界 `rebase --abort`。只有 branch、HEAD、index 与 working tree 精确恢复到 pre-rebase facts 才记为 recovered；无论恢复是否成功，本次 Task create 都是 `blocked`。abort 失败或恢复不可证明时保留现场。已经在其他 repository 成功的 fetch/rebase 不反向回滚，必须作为部分 effects 报告。
-5. 任一 rebase 返回 `treeChanged: true` 时，按产品入口 Buildr Skill 的 workspace transition 约束，对相应 Buildr Workspace 执行当前 Agent 的 check；Doctor 或必要收敛未 ready 时不创建 Task。若tree前进来自`origin/dev`上的协作者提交且当前会话不存在绑定同一Workspace、Task、run与delivered ref的matching Formal Finish Result，只能把它归类为普通Workspace update：本地没有协作者Task是正常事实，不得因此查找、恢复或启动`buildr-self-bootstrap-sync`。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理，不用一次sync掩盖。
-6. 只有完整 repository set 的 fetch、rebase、恢复检查与适用 transition check 全部成功，才调用 selected `buildr.task-record/v2` provider 的 active `create` 或 `activate`。任一门禁blocked时todo保持不变。Task Record Application、Buildr Web 与 Task Environment 不获得任何Git mutation或本门禁状态authority。
+1. 以已经解析的完整repository set为输入，按selector固定顺序为每个repository解析integration branch、remote与matching upstream。优先使用Project/Service registry的Git声明；声明缺失时只接受当前符号branch/upstream或用户明确选择形成的唯一事实。无法唯一解析时在tree/history零写入状态返回`blocked`，不得猜测`dev`或复制Workspace目标。
+2. 逐个核验真实Git root、当前符号branch恰为已解析integration branch、upstream恰为matching remote ref、remote/ref可读、index与working tree clean，并且没有rebase、merge、cherry-pick等进行中的Git operation。任一事实不成立时在tree/history零写入状态返回`blocked`；不checkout、不stash/autostash、不猜其他branch/remote。
+3. 读取optional `buildr.git-operations/v1` binding；在本create分支把ready selected provider作为required。先为全部repositories逐一选择独立`fetch` operation，明确各自remote与integration branch，消费每个Result。任一fetch blocked时不执行尚未开始的rebase，不创建Task，并报告全部已发生的remote-ref effects。
+4. 全部fetch成功后重新核验每个local integration branch、matching remote ref与clean状态，再按同一顺序为每个repository明确选择`rebase` operation。本地已对齐、仅落后或含未push且未共享commit都使用同一operation；provider不自行选择merge或push。
+5. rebase冲突时，consumer明确授权provider只在pre-state已证明clean时执行有界`rebase --abort`。只有branch、HEAD、index与working tree精确恢复到pre-rebase facts才记为recovered；无论恢复是否成功，本次Task create都是`blocked`。abort失败或恢复不可证明时保留现场。已经在其他repository成功的fetch/rebase不反向回滚，必须作为部分effects报告。
+6. 任一rebase返回`treeChanged: true`时，按产品入口Buildr Skill的workspace transition约束，对相应Buildr Workspace执行当前Agent的check；Doctor或必要收敛未ready时不创建Task。若tree前进来自matching upstream上的协作者提交且当前会话不存在绑定同一Workspace、Task、run与delivered ref的matching Formal Finish Result，只能把它归类为普通Workspace update：本地没有协作者Task是正常事实，不得因此查找、恢复或启动`buildr-self-bootstrap-sync`。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理，不用一次sync掩盖。
+7. 只有完整repository set的fetch、rebase、恢复检查与适用transition check全部成功，才调用selected `buildr.task-record/v2` provider的active `create`或`activate`。任一门禁blocked时todo保持不变。Task Record Application、Buildr Web与Task Environment不获得任何Git mutation或本门禁状态authority。
 
 上述Workspace update分类只组合本次Git Result、post-transition Doctor与当前会话已有的matching Formal Finish Result，不按commit author推断ownership，也不建立持久状态。只有真实matching Finish Result才能把同一run交给self-bootstrap；普通workspace sync不创建Task、Environment、Verification、Candidate、Finish Result或self-bootstrap evidence。
 
@@ -108,7 +109,7 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 - 语义治理：code-only / spec-maintenance / change-flow / blocked
 - 执行形态：implementation / metadata-only / unknown
 - Repository set：<selectors 或 unresolved>
-- Git 基线：converged / none / blocked（仅新正式 Task create；包含 dev/origin/dev 与部分 effects）
+- Git 基线：converged / none / blocked（仅新正式Task create；包含每个repository的integration branch/upstream与部分effects）
 - Task Record：create / inspect / none / blocked
 - Task Environment：prepare / inspect / none / blocked
 - 事实依据：<最小 authority/evidence>
