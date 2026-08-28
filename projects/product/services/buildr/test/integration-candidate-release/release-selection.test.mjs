@@ -113,6 +113,19 @@ test('covered main history creates a two-parent commit without changing the rele
   assert.match(reconciled.reconciliationChain[0].coverageIdentity, /^sha256-/u);
   const repeated = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'same inputs', executionBinding: data.binding() });
   assert.equal(repeated.action, 'already-converged'); assert.deepEqual(repeated.effects, []);
+
+  git(data.retained, 'checkout', 'dev');
+  fs.writeFileSync(path.join(data.retained, 'projects/product/followup.txt'), 'Candidate follow-up\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'Candidate follow-up');
+  const followup = git(data.retained, 'rev-parse', 'HEAD');
+  const reopened = reopenReleaseSelection({ repo: data.repo, version: data.version, confirm: true, reason: 'Candidate follow-up.', executionBinding: data.binding() });
+  assert.equal(reopened.status, 'passed');
+  assert.equal(selectReleaseCommit({ repo: data.repo, version: data.version, source: followup, devRef: 'dev', executionBinding: data.binding() }).status, 'passed');
+  freeze(data);
+  const resumed = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'main is already covered', executionBinding: data.binding() });
+  assert.equal(resumed.action, 'already-converged');
+  assert.equal(resumed.releaseHead, git(data.repo, 'rev-parse', 'HEAD'));
+  assert.deepEqual(resumed.effects, []);
 });
 
 test('reopen preserves old freeze history and forms a new generation', (t) => {
