@@ -356,18 +356,18 @@ builtins:
     - id: task-finish
       path: resources/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
-      description: 用户要求“收尾”“交付”或完成当前工作时使用；先识别当前范围内匹配的未结束 Buildr Task，有 Task 就沿正式生命周期推进到交付和安全清理，没有 Task 就按普通 Git 完成提交、集成、推送、远端确认和可证明的本地善后。
+      description: 用户要求收尾、交付或完成当前工作时使用；由智能体组合 Git、系统工具和已有 Buildr 接口，完成交付、真实结果登记及安全善后，支持有无任务、单仓多仓。
       required: false
       provides:
         - capability: buildr.task-finish
           version: 1
       requires:
-        - capability: buildr.task-development
+        - capability: buildr.task-record
           version: 2
-          mode: required
+          mode: optional
         - capability: buildr.task-environment
           version: 1
-          mode: required
+          mode: optional
         - capability: buildr.git-operations
           version: 1
           mode: optional

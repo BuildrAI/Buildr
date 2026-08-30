@@ -152,7 +152,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/LICENSE`,
-    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/package/launchers/`])) buildrWeb.push(pathname);
+    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/package/launchers/`])) buildrWeb.push(pathname);
   }
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
@@ -1440,8 +1440,113 @@ function commandResultError(code, message, result) {
   });
 }
 
+// Direct delivery uses Git and the Task Record as inputs, never a fabricated Finish run.
+export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, execute = defaultExecute, environment = process.env }) {
+  const root = fs.realpathSync(path.resolve(workspaceRoot));
+  const phases = [];
+  let active = null;
+  let lock = null;
+  let ownsLock = false;
+  let delivered = false;
+  let successor = null;
+  const result = (status, diagnostic = null) => ({ schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic });
+  const start = (id) => { active = phase(id); phases.push(active); return active; };
+  const read = (args, id) => gitText(execute, root, args, id, active, 'self-bootstrap-closeout.git-observation-failed');
+  const assertHead = (expected) => {
+    if (read(['symbolic-ref', '--quiet', '--short', 'HEAD'], 'current-branch') !== targetBranch || read(['rev-parse', 'HEAD'], 'current-head') !== expected) throw closeoutError('self-bootstrap-closeout.target-drift', '保留分支或提交已变化，停止当前激活动作。');
+  };
+  try {
+    start('preflight');
+    if (!fs.existsSync(path.join(root, 'components/workspace/buildr-self-bootstrap/component.yml'))) return result('not-applicable');
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(taskId || '') || !/^[a-f0-9]{40,64}$/.test(baseRef || '') || !/^[a-f0-9]{40,64}$/.test(deliveredRef || '') || !targetBranch || !remote || !agent) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '需要明确的任务、基线和交付提交、分支、远端及宿主。');
+    if (remote.startsWith('-') || targetBranch.startsWith('-')) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '分支和远端不能是命令选项。');
+    requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
+    if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
+    const task = parseJson(productCommand(execute, root, nodeExecutable, ['task', 'inspect', taskId, '--target', root, '--json'], 'task-inspect', active), 'self-bootstrap-closeout.task-invalid', '无法读取任务。');
+    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || task.record.result?.noChange !== false || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成且有实际交付的产品任务。');
+    const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
+    const actions = classifications(scopedPaths);
+    if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
+    // A short-lived lock belongs to this runner; it is not delivery evidence.
+    const common = read(['rev-parse', '--path-format=absolute', '--git-common-dir'], 'git-common-directory');
+    const lockParent = path.join(common, 'buildr');
+    fs.mkdirSync(lockParent, { recursive: true });
+    lock = path.join(lockParent, 'self-bootstrap-direct.lock');
+    try { fs.mkdirSync(lock); ownsLock = true; fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, taskId, deliveredRef })); }
+    catch { throw closeoutError('self-bootstrap-closeout.activation-busy', '已有自举激活占用；保留现场并核对锁的进程，不自动夺锁。', { lock }); }
+    if (changedPaths(execute, root, active, 'before-activation').length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', '保留工作空间有未提交内容，不能把它们混入激活。');
+    const head = read(['rev-parse', 'HEAD'], 'head');
+    assertHead(head);
+    requirePassed(git(execute, root, ['merge-base', '--is-ancestor', baseRef, deliveredRef], 'base-ancestry', active), 'self-bootstrap-closeout.base-mismatch', '基线不是交付提交的祖先。');
+    requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, head], 'delivery-ancestry', active), 'self-bootstrap-closeout.delivery-mismatch', '当前工作空间不包含交付提交。');
+    const beforeRemote = remoteRef(execute, root, remote, targetBranch, active);
+    requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, beforeRemote], 'remote-containment', active), 'self-bootstrap-closeout.delivery-unconfirmed', '当前远端未证明包含交付提交。');
+    delivered = true;
+    let pendingSuccessor = false;
+    if (head !== beforeRemote) {
+      const parent = read(['rev-parse', 'HEAD^'], 'successor-parent');
+      const message = read(['log', '-1', '--format=%B'], 'successor-message');
+      pendingSuccessor = parent === beforeRemote && message.includes(`Buildr-Activation-Task: ${taskId}`) && message.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
+      if (!pendingSuccessor) throw closeoutError('self-bootstrap-closeout.remote-drift', '保留分支与远端不同，且不是本次激活尚未推送的后继提交。');
+    }
+    markPassed(active, deliveredRef, head);
+    successor = head;
+    if (actions['sync-retained-workspace'].length && !pendingSuccessor) {
+      start('sync'); assertHead(successor);
+      requirePassed(productCommand(execute, root, nodeExecutable, ['sync', agent, '--target', root, '--json'], 'workspace-sync', active), 'self-bootstrap-closeout.sync-failed', '工作空间同步失败；保留已发生变更。');
+      assertHead(successor);
+      const ownedPaths = changedPaths(execute, root, active, 'after-sync');
+      markPassed(active, deliveredRef, successor, [{ type: 'workspace-sync', paths: ownedPaths }]);
+      if (ownedPaths.length) {
+        start('commit'); assertHead(successor);
+        requirePassed(git(execute, root, ['add', '--', ...ownedPaths], 'stage-sync', active), 'self-bootstrap-closeout.stage-failed', '精确暂存同步结果失败。');
+        const staged = zeroList(read(['diff', '--cached', '--name-only', '-z'], 'staged-paths')).sort();
+        if (JSON.stringify(staged) !== JSON.stringify(ownedPaths)) throw closeoutError('self-bootstrap-closeout.scope-drift', '暂存集合发生变化，未创建提交。');
+        const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Task: ${taskId}\nBuildr-Activation-Delivery: ${deliveredRef}`;
+        requirePassed(git(execute, root, ['commit', '-m', message], 'sync-commit', active), 'self-bootstrap-closeout.commit-failed', '同步结果提交失败。');
+        const next = read(['rev-parse', 'HEAD'], 'successor');
+        if (read(['rev-parse', 'HEAD^'], 'parent') !== successor) throw closeoutError('self-bootstrap-closeout.target-drift', '同步提交的父提交不匹配。');
+        markPassed(active, successor, next, [{ type: 'git-commit', paths: ownedPaths, ref: next }]); successor = next;
+      }
+    }
+    if (successor !== beforeRemote) {
+      start('push'); assertHead(successor);
+      const currentRemote = remoteRef(execute, root, remote, targetBranch, active);
+      if (currentRemote !== successor && currentRemote !== beforeRemote) throw closeoutError('self-bootstrap-closeout.remote-drift', '远端已变化，保留本地激活提交。');
+      if (currentRemote !== successor) requirePassed(git(execute, root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], 'sync-push', active), 'self-bootstrap-closeout.push-failed', '同步提交推送失败；重试同一任务和交付提交可继续。');
+      const after = remoteRef(execute, root, remote, targetBranch, active, 'remote-after-push');
+      if (after !== successor) throw closeoutError('self-bootstrap-closeout.remote-readback-mismatch', '推送后远端提交不匹配。');
+      markPassed(active, beforeRemote, after);
+    }
+    if (actions['install-development-buildr-web'].length) {
+      start('install-buildr-web'); assertHead(successor);
+      const continuity = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
+      const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'package/launchers/manage.mjs'), 'install', '--channel', 'development'], root, 'install-development-buildr-web', active);
+      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
+      const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
+      const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult: active });
+      markPassed(active, deliveredRef, successor, [{ type: 'development-web-continuity', status: continuityAfter.status }]);
+    }
+    start('verify-development-entry'); assertHead(successor);
+    const identity = verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, successor, environment, phaseResult: active });
+    markPassed(active, successor, digest(identity));
+    start('finalize'); assertHead(successor);
+    const doctor = developmentEntryCommand(execute, identity, environment, root, ['doctor', '--agent', agent, '--target', root, '--json'], 'final-doctor', active);
+    requirePassed(doctor, 'self-bootstrap-closeout.doctor-failed', '最终诊断命令失败。');
+    const health = parseJson(doctor, 'self-bootstrap-closeout.doctor-invalid', '最终诊断结果无效。');
+    if (health.health?.ready !== true) throw closeoutError('self-bootstrap-closeout.doctor-not-ready', '最终工作空间诊断未就绪。', { findings: health.findings });
+    markPassed(active, successor, successor);
+    return result('passed');
+  } catch (error) {
+    if (active) active.status = 'blocked';
+    return result('blocked', { code: error.code || 'self-bootstrap-closeout.direct-failed', message: error.message, details: error.details || null });
+  } finally {
+    if (ownsLock) { fs.unlinkSync(path.join(lock, 'owner.json')); fs.rmdirSync(lock); }
+  }
+}
+
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--run', '--target', '--node-executable', '--retry-after-foreign-clear', '--detail']);
+  const allowed = new Set(['--run', '--target', '--node-executable', '--retry-after-foreign-clear', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', 'Runner参数必须为成对的option和值。');
   for (let index = 0; index < args.length; index += 2) {
     if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `Unknown option: ${args[index]}`);
@@ -1451,7 +1556,8 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   const nodeExecutable = option(args, '--node-executable');
   const retryAfterForeignClear = option(args, '--retry-after-foreign-clear');
   const detail = option(args, '--detail') || 'compact';
-  if (!runId || !targetRoot || !nodeExecutable) {
+  const taskId = option(args, '--task');
+  if ((!runId && !taskId) || !targetRoot || !nodeExecutable || (runId && taskId)) {
     throw closeoutError('self-bootstrap-closeout.arguments-incomplete', 'Usage: node closeout.mjs --run <finish-run-id> --target <canonical-workspace> --node-executable <retained-node>');
   }
   if (!sameFilesystemPath(actualNodeExecutable, nodeExecutable)) {
@@ -1461,6 +1567,8 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
     throw closeoutError('self-bootstrap-closeout.retry-mode-invalid', '--retry-after-foreign-clear只接受true。');
   }
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', '--detail只接受compact或full。');
+
+  if (taskId) return runDirectSelfBootstrapCloseout({ workspaceRoot: targetRoot, taskId, baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, execute, environment });
 
   const root = fs.realpathSync(path.resolve(targetRoot));
   const cli = path.join(root, SERVICE_ROOT, 'bin', 'buildr.mjs');

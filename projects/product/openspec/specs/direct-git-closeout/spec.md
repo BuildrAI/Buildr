@@ -20,21 +20,6 @@
 - **THEN** 直接Git收尾 MUST将active Task视为不存在
 - **AND** MUST NOT复用历史或无关Task的handoff、Environment、Candidate或Verification evidence
 
-### Requirement: 直接 Git 收尾必须按明确顺序执行
-直接 Git 收尾 MUST 由产品入口选择顺序，并通过 `buildr.git-operations/v1` provider 执行独立 operation；默认顺序为观察与 fetch 目标 ref、必要时精确 commit、rebase 到目标 ref、普通 push 和适用的远端回读。
-
-#### Scenario: dirty 内容完成收尾
-- **WHEN** 当前 dirty 内容全部属于本次收尾 scope，且 repository、目标 ref 与 push destination 唯一
-- **THEN** Agent MUST 只暂存 exact paths 或可可靠分离的 hunks
-- **AND** MUST 在 rebase 前完成精确 commit
-- **AND** MUST 在 commit 后 fetch 目标 ref、rebase 当前分支并执行普通 push
-- **AND** MUST 分别报告 commit、rebase 和 push 的实际 effects
-
-#### Scenario: 工作树含无法分离的无关内容
-- **WHEN** 当前工作树含 scope 外 dirty、scope 外 staged、ownership 不明的 hunk 或需要临时 stash 才能继续
-- **THEN** 直接 Git 收尾 MUST 在零 Git 写入状态 blocked
-- **AND** MUST NOT 自动 stash、reset、覆盖或回滚用户内容
-
 ### Requirement: 直接 Git 收尾必须对目标和历史改写 fail closed
 直接 Git 收尾 MUST 只使用唯一或用户明确选择的目标 ref/remote，并 MUST 禁止未经明确恢复决策的冲突解决、共享历史改写和 force push。
 
@@ -54,19 +39,6 @@
 - **THEN** Agent MUST blocked
 - **AND** MUST NOT force push、改写共享 history 或切换 push 策略
 
-### Requirement: 直接 Git 收尾不得伪造正式生命周期证据
-直接 Git 收尾 MUST 只产生 Git Operation Result，不得修改 Task Record、Development、Review、Verification、Candidate、Task Finish 或 Environment cleanup 状态。
-
-#### Scenario: 直接 Git 交付成功
-- **WHEN** fetch/rebase、commit 和 push 均成功且远端 ref 回读符合预期
-- **THEN** Agent MUST 报告 `Direct Git Delivery` 及每个 operation 的 before/after identity、range 和 effects
-- **AND** MUST NOT 报告 Formal Task Finish、formal Verification 或 Task completed
-
-#### Scenario: rebase 改变已检出 tree
-- **WHEN** 直接 Git 收尾中的 rebase 成功改变已初始化 Buildr Workspace 的 checked-out tree
-- **THEN** Agent MUST 在无未解决冲突后运行当前 Agent 的 Workspace Doctor
-- **AND** Doctor 结果 MUST 与 Git Result 分开报告
-
 ### Requirement: 直接 Git 收尾必须完成可证明的本地善后
 直接Git收尾 MUST在远端回读成功后清理只属于本次交付且可重新证明安全删除的临时资源，并 MUST把未能安全清理的资源作为独立attention保留。
 
@@ -79,3 +51,14 @@
 - **WHEN** 临时资源包含未交付内容、归属不明、被其他工作使用或缺少安全删除证明
 - **THEN** Agent MUST保留现场并报告具体attention
 - **AND** MUST NOT把未执行的清理报告为Environment Cleanup或成功删除
+
+### Requirement: 直接工具交付必须同时支持有无任务
+直接 Git 交付 MUST作为默认收尾方法，不以是否有 Buildr 任务分叉为两套交付流程。没有任务不创建；有任务通过已有应用保存结果。顺序由智能体（Agent）结合事实与授权选择，不强制变基或额外诊断。
+
+#### Scenario: 任务已存在
+- **WHEN** 用户有匹配任务并要求直接 Git 交付
+- **THEN** 智能体 MUST核验仓库、目标、贡献与远端结果，之后保存任务结果，不补造正式验证或收尾记录。
+
+#### Scenario: 任务不存在
+- **WHEN** 用户没有匹配任务
+- **THEN** 智能体 MUST只完成相关工具动作并报告事实，不写任务或环境状态。

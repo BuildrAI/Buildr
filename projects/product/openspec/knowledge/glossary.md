@@ -361,10 +361,10 @@
 
 ## 任务收尾（Task Finish）
 
-- 定义：消费current Development Handoff，提供可选五阶段自动交付、外部交付后的Delivery Reconciliation和交付结果投影的能力。
-- 适用范围：Agent选择自动Finish、直接Git或PR后，Buildr验证逐repository Delivery，并独立呈现Activation、Environment Cleanup与Diagnostics。
-- 避免混用：不是正式Task交付的唯一通道，不替Agent选择Git策略，也不因Buildr内部登记、Doctor、cleanup或diagnostics失败否定已确认Delivery。
-- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+- 定义：智能体（Agent）依据技能（Skill）的方法和边界，组合已有工具完成本轮成果交付、已有任务结果登记及安全善后。
+- 适用范围：工作空间（Workspace）启动的工作，有无正式任务、单仓与多独立仓库。
+- 避免混用：不是固定五阶段执行器，不要求候选或交接。任务完成、远端交付、专项激活和环境清理分别表达真实结果。
+- 来源：[任务收尾](flows/task-closeout.md)、[默认任务工作方式](../specs/agent-task-workflows/spec.md)。
 
 ## 交付对账（Delivery Reconciliation）
 

@@ -48,7 +48,14 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       maintenance: null,
       diagnostics: [],
     };
-    const finishReadModel = runtime.inspectTaskFinishReadModel?.({ root: targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
+    let finishReadModel;
+    try {
+      finishReadModel = runtime.inspectTaskFinishReadModel?.({ root: targetRoot, taskId }) || { state: 'none', result: null, diagnostics: [] };
+    } catch (error) {
+      // A legacy projection cannot revoke the Task Record's independently saved result.
+      if (task.status !== 'completed') throw error;
+      return { ...base, status: task.result?.noChange ? 'completed-no-change' : 'completed', diagnostics: [{ code: error.code || 'task_finish_history_unavailable', message: error.message }] };
+    }
     if (task.status === 'active') {
       if (finishReadModel.state === 'current') {
         const status = finishReadModel.result?.status === 'cleanup_pending' ? 'cleanup-pending' : finishReadModel.result?.status || 'finishing';
@@ -64,7 +71,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const receipt = developmentReadModel?.development?.receipt;
     const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === association?.handoffIdentity) || null;
     if (!terminalResult || !completion || !association || !associationMatches(association, selectedHandoff)) {
-      return { ...base, status: 'completed-unproven', diagnostics: [{ code: 'task_finish_completion_association_missing_or_mismatched', message: 'Task 已完成，但SQLite Finish completion没有与Development handoff匹配的terminal association。' }] };
+      return { ...base, status: 'completed', diagnostics: terminalResult ? [{ code: 'task_finish_completion_association_missing_or_mismatched', message: '任务结果已保存；旧收尾关联不匹配，未采用其机器交付证明。' }] : [] };
     }
     const cleanupSummary = completion.cleanup?.environment?.latest?.cleanup || completion.cleanup?.latest?.cleanup || completion.cleanup || {};
     const cleanupStatus = completion.cleanup?.status || (finishReadModel.state === 'terminal' ? 'cleaned' : 'pending');

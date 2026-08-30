@@ -17,6 +17,7 @@ export function applicabilityLabel(status: string): string {
 export function developmentStatusLabel(status: string): string {
   return ({
     delivered: '已交付',
+    completed: '已完成',
     'completed-no-change': '已完成，无需交付变更',
     'completed-unproven': '已完成，但交付未经证明',
     abandoned: '已放弃',

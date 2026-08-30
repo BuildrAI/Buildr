@@ -700,10 +700,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
     await page.goto(`${workspaceUrl}/tasks/browser-parent`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-parent');
     await page.getByRole('button', { name: '原型', exact: true }).click();
     await page.locator('#task-prototype-empty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-prototype-empty').innerText(), /还没有可查看的界面原型[\s\S]*不会阻塞任务推进/);
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.getByRole('button', { name: '原型', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.ui-prototype-page').length === 2);
     assert.equal(await page.locator('.ui-prototype-page').count(), 2);
@@ -810,14 +812,18 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.locator('#task-table-body tr.ant-table-row').click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     assert.equal(await page.locator('#task-detail-status').innerText(), '进行中');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
+    await page.locator('#task-detail-parent').filter({ hasText: '浏览器协调任务' }).waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
     assert.match(await page.locator('#task-detail-children').innerText(), /页面查看任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-parent');
     await page.locator('.parent-plan-workbench').waitFor({ state: 'visible' });
     assert.match(await page.locator('.parent-summary-strip').innerText(), /已交付[\s\S]*1[\s\S]*剩余工作[\s\S]*1[\s\S]*已取代[\s\S]*1[\s\S]*进行中[\s\S]*1/);
     assert.match(await page.locator('.parent-progress-source').innerText(), /父任务计划 \+ 直接子任务 \+ 贡献交接动态生成[\s\S]*不写回父任务计划/);
@@ -853,10 +859,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await deliveredContribution.getByRole('link', { name: '贡献交付子任务', exact: true }).focus();
     await page.keyboard.press('Enter');
     await page.waitForURL(`${workspaceUrl}/tasks/browser-contribution-delivered`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-contribution-delivered');
     assert.equal(await page.locator('.parent-contribution-drawer').count(), 0, '键盘进入子任务不得同时打开贡献项详情');
     assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*工程根目录布局/);
     await page.locator('.child-parent-source').getByRole('link', { name: '浏览器协调任务', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-parent');
     await page.locator('.parent-governance-details summary').click();
     const governanceFacts = await page.locator('.parent-governance-details').innerText();
     assert.match(governanceFacts, /方案审查[\s\S]*已就绪 · 当前适用/);
@@ -875,9 +883,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.task-technical-overview > summary').click();
     await page.locator('#task-detail-children a').filter({ hasText: '浏览器任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*Task Record 参考切片[\s\S]*进行中/);
     await page.locator('#task-detail-children a').filter({ hasText: '页面查看任务' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
@@ -930,6 +940,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     await page.getByRole('button', { name: '复盘', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
     assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
@@ -949,6 +960,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     await page.locator('#task-document-preview').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-document-preview-path').innerText(), 'projects/demo/docs/task-reference.md');
@@ -979,6 +991,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Task-scoped Change 只读展示');
     await page.locator('.back-link').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
 
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
@@ -1044,12 +1057,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#close-agent-action').click();
 
     await page.goto(`${workspaceUrl}/tasks/browser-stale`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-stale');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
     assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.doesNotMatch(await page.locator('#task-verification-result').innerText(), /已随交付目标/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-delivered`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-delivered');
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已交付');
     assert.equal(await page.locator('#task-development-axes').getByText('交付时快照', { exact: true }).count(), 6);
@@ -1063,12 +1078,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-verification-result .review-slot-card').evaluate((item) => item.getBoundingClientRect().width <= 800), true);
 
     await page.goto(`${workspaceUrl}/tasks/browser-unproven`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-unproven');
     await page.getByRole('button', { name: '研发', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成，但交付未经证明');
-    assert.match(await page.locator('#task-development-terminal').innerText(), /没有找到与 immutable handoff\/Candidate 完整匹配的成功 Finish Result/);
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成');
+    assert.match(await page.locator('#task-development-terminal').innerText(), /任务结果已保存[\s\S]*不要求旧收尾运行证明/);
     assert.equal(await page.locator('#task-development-terminal').evaluate((item) => item.classList.contains('delivered')), false);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.getByRole('button', { name: '环境', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');
     assert.equal(await page.locator('#task-environment-source').innerText(), '当前机器（current-machine）');
@@ -1104,6 +1121,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-intent').innerText(), /页面基于最新记录更新/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-abandon');
     await openTaskActionModal(page, 'task-abandon-action');
     await page.locator('#task-abandon-form').waitFor({ state: 'visible' });
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
@@ -1114,13 +1132,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-detail-status').innerText(), '已放弃');
 
     await page.setViewportSize({ width: 1024, height: 720 });
-    await page.goto(`${workspaceUrl}/tasks/browser-task`); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task'); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent !== '尚未读取');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'local-app-task-development-1024.png');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${workspaceUrl}/tasks/browser-task`); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task'); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);

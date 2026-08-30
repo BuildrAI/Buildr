@@ -119,14 +119,14 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   const noChange = runtimeFor(); noChange.inspectTaskRecord = () => ({ record: { taskId: TASK, status: 'completed', result: { noChange: true } } });
   assert.equal(noChange.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-no-change');
   assert.equal(runtimeFor('abandoned').inspectTaskTerminalDelivery('/workspace', TASK).status, 'abandoned');
-  assert.equal(runtimeFor('completed', null).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
+  assert.equal(runtimeFor('completed', null).inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed');
   const missingAssociation = runtimeFor();
   const readFinish = missingAssociation.inspectTaskFinishReadModel;
   missingAssociation.inspectTaskFinishReadModel = (...args) => { const value = readFinish(...args); delete value.completion.association; return value; };
-  assert.equal(missingAssociation.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
+  assert.equal(missingAssociation.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed');
   const unavailable = runtimeFor('completed', null);
   unavailable.readTaskFinishResults = () => { throw new Error('GET must not scan Finish Result files.'); };
-  assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed-unproven');
+  assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed');
 });
 
 test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
@@ -173,4 +173,19 @@ test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
   assert.equal(verificationReads, 1);
   assert.equal(verificationDevelopmentReads, 1);
   assert.equal(verification.terminal.associations.verification.status, 'verified-at-delivery');
+});
+
+
+test('direct completion needs no Finish association and never invents verified delivery', () => {
+  const runtime = runtimeFor('completed', null);
+  const projection = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
+  assert.equal(projection.status, 'completed');
+  assert.equal(projection.delivered, false);
+  assert.equal(projection.delivery, null);
+  assert.deepEqual(projection.diagnostics, []);
+  runtime.inspectTaskFinishReadModel = () => { throw Object.assign(new Error('old history unavailable'), { code: 'history-unavailable' }); };
+  const degraded = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
+  assert.equal(degraded.status, 'completed');
+  assert.equal(degraded.delivered, false);
+  assert.equal(degraded.diagnostics[0].code, 'history-unavailable');
 });

@@ -12,6 +12,7 @@ import {
   discoverFinishCarrierEntries,
   runSelfBootstrapCloseout,
   runSelfBootstrapCloseoutCommand,
+  runDirectSelfBootstrapCloseout,
 } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import {
   DEFAULT_DEVELOPMENT_WEB_PORT,
@@ -2098,4 +2099,61 @@ test('self-bootstrap compact只保留阶段与portable recovery', () => {
   assert.equal(output.cleanup.status, 'failed');
   assert.deepEqual(output.recovery, { owner: 'task-finish', operation: 'inspect', taskId: 'demo-task', runId: 'finish-run-1', recordId: null });
   for (const forbidden of ['operations', 'effects', 'stdout', '/private', 'argv', 'token']) assert.equal(JSON.stringify(output).includes(forbidden), false, forbidden);
+});
+
+
+function directFixture(t) {
+  const current = fixture(t);
+  fs.appendFileSync(path.join(current.root, 'projects/product/services/buildr/resources/manifest.yml'), '# delivered change\n');
+  git(current.root, 'add', '--', 'projects/product/services/buildr/resources/manifest.yml');
+  git(current.root, 'commit', '-m', 'delivered product');
+  git(current.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(current.root, 'rev-parse', 'HEAD');
+  const taskId = 'direct-closeout';
+  const options = { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { noChange: false, summary: 'Delivered.' }, scope: { projects: ['product'] } } } } };
+  const input = { workspaceRoot: current.root, taskId, baseRef: current.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment };
+  return { ...current, input, options };
+}
+
+test('direct activation uses real Git without Finish and does not repeat a successful push', (t) => {
+  const current = directFixture(t);
+  const calls = [];
+  const perform = executor(current.root, current.options);
+  const execute = (exe, args, context) => { calls.push([exe, ...args]); return perform(exe, args, context); };
+  const first = runDirectSelfBootstrapCloseout({ ...current.input, execute });
+  assert.equal(first.status, 'passed', JSON.stringify(first));
+  assert.equal(first.runId, null);
+  assert.equal(first.delivery.observed, true);
+  assert.equal(calls.some((args) => args.includes('finish') || args.some((arg) => typeof arg === 'string' && arg.endsWith('task-finish-target-lease-driver.mjs'))), false);
+  assert.equal(calls.filter((args) => args[0] === 'git' && args[1] === 'push').length, 1);
+  calls.length = 0;
+  const second = runDirectSelfBootstrapCloseout({ ...current.input, execute });
+  assert.equal(second.status, 'passed', JSON.stringify(second));
+  assert.equal(calls.filter((args) => args[0] === 'git' && args[1] === 'push').length, 0);
+});
+
+test('direct activation resumes only its own committed successor after push failure', (t) => {
+  const current = directFixture(t);
+  const first = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, { ...current.options, failPush: true }) });
+  assert.equal(first.status, 'blocked');
+  assert.equal(first.diagnostic.code, 'self-bootstrap-closeout.push-failed');
+  assert.equal(first.delivery.observed, true);
+  const successor = git(current.root, 'rev-parse', 'HEAD');
+  assert.notEqual(successor, current.input.deliveredRef);
+  const recovered = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, current.options) });
+  assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), successor);
+  assert.equal(recovered.phases.some((stage) => stage.id === 'commit'), false);
+});
+
+test('direct activation preserves dirty work and rejects incomplete Task before mutation', (t) => {
+  const current = directFixture(t);
+  fs.writeFileSync(path.join(current.root, 'user-work.txt'), 'keep me\n');
+  const blocked = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, current.options) });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'self-bootstrap-closeout.workspace-dirty');
+  assert.equal(fs.readFileSync(path.join(current.root, 'user-work.txt'), 'utf8'), 'keep me\n');
+  const noTask = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root) });
+  assert.equal(noTask.diagnostic.code, 'self-bootstrap-closeout.task-not-completed');
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), current.input.deliveredRef);
 });

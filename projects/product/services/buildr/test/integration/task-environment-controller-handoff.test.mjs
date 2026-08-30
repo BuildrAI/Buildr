@@ -468,149 +468,18 @@ test('active到completed no-change的golden lifecycle可受控清理Environment'
   assert.match(current.receipt().latest.cleanup.summary, /无代码变更/);
 });
 
-test('普通completed Task缺少Delivery evidence时仍拒绝cleanup', async (t) => {
+test('completed Task cleanup does not read legacy Finish or prepare the environment', async (t) => {
   const current = fixture(t);
-  current.runtime.readTaskRecordPersistence = () => ({ record: {
-    taskId: TASK_ID,
-    status: 'completed',
-    result: { summary: '声称已有代码交付。', noChange: false },
-  } });
-
-  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
-
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.diagnostic.code, 'task_environment_cleanup_unauthorized');
-  assert.equal(current.calls.providerCleanups, 0);
-});
-
-test('completed Task可由持久化交付证据独立授权Environment cleanup', async (t) => {
-  const current = fixture(t);
-  const containment = {
-    schemaVersion: 'buildr.task-delivery-containment-proof/v1',
-    identity: `sha256-${'3'.repeat(64)}`,
-    taskContributionIdentity: `sha256-${'4'.repeat(64)}`,
-    targetRef: current.m1,
-    changedPaths: ['feature.txt'],
-    checkedPaths: [],
-  };
-  const taskContribution = {
-    schemaVersion: 'buildr.git-task-contribution/v1',
-    identity: containment.taskContributionIdentity,
-    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
-    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
-  };
-  current.runtime.readTaskRecordPersistence = () => ({ record: {
-    taskId: TASK_ID,
-    status: 'completed',
-    result: { summary: '任务贡献已验证交付。', noChange: false },
-  } });
-  current.runtime.readTaskFinishCompletionPersistence = () => ({
-    status: 'complete',
-    completion: {
-      result: {
-        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
-        repositories: [{
-          selector: 'workspace',
-          taskContribution,
-          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment },
-        }],
-      },
-    },
-  });
-
-  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
-
-  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
-  assert.equal(current.calls.providerCleanupInput.integratedRefs.workspace, current.m1);
-  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, { ...containment, taskContribution });
-});
-
-test('历史compact terminal从matching original baseline重建deterministic cleanup proof', async (t) => {
-  const current = fixture(t);
-  const baselineTree = git(current.root, ['rev-parse', `${current.m1}^{tree}`]);
-  const taskContribution = {
-    schemaVersion: 'buildr.git-task-contribution/v1',
-    identity: `sha256-${'4'.repeat(64)}`,
-    originalBaseline: { head: current.m1, tree: baselineTree },
-    source: { head: current.m1, tree: baselineTree },
-  };
-  const deliveryCarrier = {
-    identity: `sha256-${'7'.repeat(64)}`,
-    kind: 'git-isolated-commit',
-    head: current.m1,
-    tree: taskContribution.source.tree,
-    expectedTargetRef: current.m1,
-    changedPaths: ['feature.txt'],
-  };
-  current.runtime.readTaskRecordPersistence = () => ({ record: {
-    taskId: TASK_ID, status: 'completed', result: { summary: '任务贡献已验证交付。', noChange: false },
-  } });
-  current.runtime.readTaskFinishCompletionPersistence = () => ({
-    status: 'complete',
-    completion: { result: {
-      identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
-      repositories: [{ selector: 'workspace', taskContribution, deliveryCarrier, delivery: { status: 'delivered', finalRemoteRef: current.m1 } }],
-    } },
-  });
-
-  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
-
-  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
-  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, {
-    ...deliveryCarrier,
-    reuseMode: 'deterministic-reuse',
-    taskContribution,
-    deliveryBaseline: taskContribution.originalBaseline,
-  });
-});
-
-test('completed reconciliation以持久化agent-reviewed equivalence授权Environment cleanup', async (t) => {
-  const current = fixture(t);
-  const taskContribution = {
-    schemaVersion: 'buildr.git-task-contribution/v1',
-    identity: `sha256-${'4'.repeat(64)}`,
-    originalBaseline: { head: current.m1, tree: `sha256-${'5'.repeat(64)}` },
-    source: { head: current.m1, tree: `sha256-${'6'.repeat(64)}` },
-  };
-  const carrier = {
-    identity: `sha256-${'7'.repeat(64)}`,
-    kind: 'git-isolated-commit',
-    head: current.m1,
-    tree: git(current.root, ['rev-parse', `${current.m1}^{tree}`]),
-    changedPaths: ['feature.txt'],
-  };
-  const equivalence = {
-    status: 'equivalent',
-    reuseMode: 'agent-reviewed-delivery-adaptation',
-    semanticEquivalence: 'agent-reviewed-not-proven-by-buildr',
-    carrierIdentity: carrier.identity,
-    taskContributionIdentity: taskContribution.identity,
-  };
-  current.runtime.readTaskRecordPersistence = () => ({ record: {
-    taskId: TASK_ID,
-    status: 'completed',
-    result: { summary: '适配后的任务贡献已验证交付。', noChange: false },
-  } });
-  current.runtime.readTaskFinishCompletionPersistence = () => ({
-    status: 'complete',
-    completion: {
-      result: {
-        identity: { task: TASK_ID, repositories: [{ selector: 'workspace', disposition: 'applicable' }] },
-        repositories: [{
-          selector: 'workspace', taskContribution, deliveryCarrier: carrier, equivalence,
-          delivery: { status: 'delivered', finalRemoteRef: current.m1, containment: null },
-        }],
-      },
-    },
-  });
-
-  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
-
-  assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
-  assert.deepEqual(current.calls.providerCleanupInput.integratedContributions.workspace, {
-    ...carrier,
-    reuseMode: 'agent-reviewed-delivery-adaptation',
-    taskContribution,
-    deliveryEquivalence: equivalence,
-  });
+  const original = current.runtime.readTaskRecordPersistence();
+  current.runtime.readTaskRecordPersistence = () => ({ record: { ...original.record, status: 'completed', result: { noChange: false, summary: 'Delivered with Git.' } } });
+  current.runtime.readTaskFinishCompletionPersistence = () => { throw new Error('must not read Finish'); };
+  current.runtime.readTaskFinishRunPersistence = () => { throw new Error('must not read Finish'); };
+  const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+  assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned.diagnostic));
+  assert.equal(current.calls.providerCleanupInput.allowCompleted, true);
+  assert.equal(current.calls.providerCleanupInput.allowDirty, false);
+  assert.equal(current.calls.providerMutations, 0);
+  const retried = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
+  assert.equal(retried.status, 'cleaned');
+  assert.equal(current.calls.providerCleanups, 1);
 });

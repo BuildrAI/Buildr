@@ -8,6 +8,7 @@ import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { registerGitWorktreeProvider } from '../../src/task/infrastructure/git-worktree-provider.mjs';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 
 const sourceProductRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -297,3 +298,73 @@ test('prepare 显式 --branch 优先于 adapter 默认前缀', (t) => {
   buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']);
 });
 
+
+
+test('直接完成后的清理只依据实际保留提交，脏内容与未集成提交均保全', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'direct-disposal';
+  const prepared = taskRuntime.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: `codex/${taskId}`, startPoint: 'main', includes: [] });
+  assert.equal(prepared.status, 'ready');
+  const checkout = prepared.repositories[0].checkoutPath;
+  fs.writeFileSync(path.join(checkout, 'closeout-feature.txt'), 'owned work\n');
+  let outcome = taskRuntime.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
+  assert.equal(outcome.status, 'blocked');
+  assert.equal(fs.readFileSync(path.join(checkout, 'closeout-feature.txt'), 'utf8'), 'owned work\n');
+  command(checkout, 'git', ['add', '--', 'closeout-feature.txt']);
+  command(checkout, 'git', ['commit', '-m', 'direct work']);
+  outcome = taskRuntime.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
+  assert.equal(outcome.status, 'blocked');
+  assert.equal(outcome.diagnostic.code, 'git_worktree_not_integrated');
+  assert.equal(fs.existsSync(checkout), true);
+  command(root, 'git', ['merge', '--ff-only', `codex/${taskId}`]);
+  outcome = taskRuntime.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
+  assert.equal(outcome.status, 'cleaned', JSON.stringify(outcome));
+  assert.equal(fs.existsSync(checkout), false);
+  assert.equal(fs.readFileSync(path.join(root, 'closeout-feature.txt'), 'utf8'), 'owned work\n');
+  assert.equal(taskRuntime.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true }).status, 'cleaned');
+});
+
+
+test('多独立仓库在部分集成时保全全部工作树，完整保留后由内到外清理', (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-closeout-multi-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const service = path.join(root, 'projects/demo/services/api');
+  fs.mkdirSync(service, { recursive: true });
+  for (const repo of [root, service]) {
+    command(repo, 'git', ['init', '-b', 'main']);
+    command(repo, 'git', ['config', 'user.name', 'Buildr Test']);
+    command(repo, 'git', ['config', 'user.email', 'test@example.com']);
+    fs.writeFileSync(path.join(repo, '.gitignore'), '.worktrees/\nprojects/\n');
+    fs.writeFileSync(path.join(repo, 'base.txt'), 'base\n');
+    command(repo, 'git', ['add', '--', '.gitignore', 'base.txt']);
+    command(repo, 'git', ['commit', '-m', 'base']);
+  }
+  const provider = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: taskRuntime.atomicWriteJson,
+    removePath: taskRuntime.removePath,
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: { demo: { source: { type: 'workspace', path: 'projects/demo' } } } }),
+    readServiceRegistryRecord: () => ({ services: { api: { source: { type: 'git', path: 'projects/demo/services/api', git: { integrationBranch: 'main' } } } } }),
+  });
+  const taskId = 'multi-closeout';
+  const prepared = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: 'codex/multi-closeout', includes: ['service:demo/api'] });
+  assert.equal(prepared.status, 'ready', JSON.stringify(prepared));
+  assert.equal(prepared.repositories.length, 2);
+  for (const repo of prepared.repositories) {
+    fs.writeFileSync(path.join(repo.checkoutPath, 'result.txt'), repo.selector+'\n');
+    command(repo.checkoutPath, 'git', ['add', '--', 'result.txt']);
+    command(repo.checkoutPath, 'git', ['commit', '-m', 'result']);
+  }
+  command(root, 'git', ['merge', '--ff-only', 'codex/multi-closeout']);
+  const partial = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
+  assert.equal(partial.status, 'blocked');
+  assert.equal(partial.diagnostic.code, 'git_worktree_not_integrated');
+  assert.equal(partial.effects.length, 0);
+  for (const repo of prepared.repositories) assert.equal(fs.existsSync(path.join(repo.checkoutPath, 'result.txt')), true);
+  command(service, 'git', ['merge', '--ff-only', 'codex/multi-closeout']);
+  const completed = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
+  assert.equal(completed.status, 'cleaned', JSON.stringify(completed));
+  assert.equal(fs.existsSync(prepared.repositories[0].checkoutPath), false);
+  assert.equal(fs.readFileSync(path.join(root, 'result.txt'), 'utf8'), 'workspace\n');
+  assert.equal(fs.readFileSync(path.join(service, 'result.txt'), 'utf8'), 'service:demo/api\n');
+});

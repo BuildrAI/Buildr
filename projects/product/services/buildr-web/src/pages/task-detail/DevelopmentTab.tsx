@@ -77,6 +77,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                 </>
               ) : null}
               {terminalStatus === 'completed-no-change' ? <p>Task 明确以 noChange 完成，不要求 Formal Finish Result。</p> : null}
+              {terminalStatus === 'completed' ? <p>任务结果已保存；交付位置与验证说明见任务结果，不要求旧收尾运行证明。</p> : null}
               {terminalStatus === 'completed-unproven' ? <p>没有找到与 immutable handoff/Candidate 完整匹配的成功 Finish Result。</p> : null}
               {terminalStatus === 'abandoned' ? <p>这里只读展示已保存的历史快照，不会恢复 Environment 或 Candidate。</p> : null}
             </>

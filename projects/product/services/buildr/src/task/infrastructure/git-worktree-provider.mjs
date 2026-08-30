@@ -352,7 +352,7 @@ export function registerGitWorktreeProvider(runtime) {
     }
   }
 
-  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, integratedContributions = {}, allowDirty = false, allowNoChange = false }) {
+  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, integratedContributions = {}, allowDirty = false, allowNoChange = false, allowCompleted = false }) {
     const effects = [];
     try {
       const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
@@ -361,6 +361,7 @@ export function registerGitWorktreeProvider(runtime) {
       const checks = [];
       const controlMetadataOnly = new Set();
       const contributionEquivalent = new Set();
+      const retainedTargets = new Map();
       for (const record of stored.evidence.repositories) {
         const checkoutExists = fs.existsSync(record.checkoutPath);
         const identity = checkoutExists ? worktreeIdentity(record.checkoutPath) : null;
@@ -373,7 +374,16 @@ export function registerGitWorktreeProvider(runtime) {
           if (branchHead && branchHead !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_branch_drift', message: `Task checkout 已缺失，且本地任务分支已漂移：${record.selector}。` }, ['保留 evidence 并人工核对 branch ownership。']);
         }
         if (allowNoChange && identity?.head !== record.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_no_change_head_drift', message: `Task 声明 no-change，但 checkout HEAD 已偏离 Environment evidence：${record.selector}。` }, ['保留 checkout，并交付或处置新增提交后重试。']);
-        const integratedRef = allowNoChange ? record.head : integratedRefs[record.selector] || null;
+        // Completion permits checking disposal, not trusting a claimed delivery. Keep all
+        // commits reachable from the actual retained checkout, without guessing a remote.
+        let retainedRef = null;
+        if (allowCompleted) {
+          const retained = worktreeIdentity(record.sourceRepository);
+          if (!retained || retained.branch === record.branch || !retained.branch) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_unavailable', message: `Retained repository needs a non-task branch: ${record.selector}.` }, ['保留工作树，先确认承载成果的保留分支。']);
+          retainedRef = retained.head;
+          retainedTargets.set(record.selector, retained);
+        }
+        const integratedRef = allowNoChange ? record.head : retainedRef || integratedRefs[record.selector] || null;
         const contributionProof = integratedContributions[record.selector] || null;
         const contribution = !allowDirty && integratedRef && contributionProof && checkoutExists
           ? contributionProof.kind === 'no-contribution'
@@ -399,6 +409,11 @@ export function registerGitWorktreeProvider(runtime) {
       }
       const removed = [];
       for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
+        const retainedTarget = retainedTargets.get(record.selector);
+        if (retainedTarget) {
+          const currentTarget = worktreeIdentity(record.sourceRepository);
+          if (!currentTarget || currentTarget.branch !== retainedTarget.branch || currentTarget.head !== retainedTarget.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Retained repository changed before cleanup: ${record.selector}.` }, ['重新核对保留分支和内容包含关系后重试。']);
+        }
         if (record.checkoutExists) {
           const discardControlMetadata = controlMetadataOnly.has(path.resolve(record.checkoutPath));
           const args = ['worktree', 'remove', ...(allowDirty || discardControlMetadata || contributionEquivalent.has(path.resolve(record.checkoutPath)) ? ['--force'] : []), record.checkoutPath];

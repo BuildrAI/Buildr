@@ -7,6 +7,8 @@
 ## Requirements
 
 ### Requirement: Buildr 自举收尾必须由单一确定性 runner 编排
+本条仅约束显式采用旧收尾运行（Finish Run）的专用执行路径；默认技能收尾与直接交付后的自举 MUST NOT依赖该路径或补造其证据。
+
 Buildr自举Workspace MUST由`buildr-self-bootstrap-sync` Skill自身携带的单一确定性runner消费matching Task delivery result与冻结Task Contribution paths，并按固定内部阶段完成适用的plan、target lease、workspace sync、精确successor commit、普通push、development Buildr Web安装、retained checkout显式开发入口验证与最终Doctor。Runner MAY消费自动Finish run或独立delivery reconciliation形成的稳定投影；MUST通过Product只读入口取得delivery与resolved context，并只通过retained Product内部driver协调target lease，MUST NOT直接import Buildr npm package内部Application模块。Runner失败 MUST形成activation attention并保留已完成effects，MUST NOT撤销Task交付终态。
 
 #### Scenario: Complete Result进入自举收尾
@@ -29,6 +31,8 @@ Buildr自举Workspace MUST由`buildr-self-bootstrap-sync` Skill自身携带的�
 - **AND** 普通用户安装Buildr或初始化Workspace时 MUST不获得`buildr-self-bootstrap-sync` Skill
 
 ### Requirement: Runner 必须保持阶段authority与部分成功事实
+本条仅约束显式采用旧收尾运行（Finish Run）的专用执行路径；默认技能收尾与直接交付后的自举 MUST NOT依赖该路径或补造其证据。
+
 
 The self-bootstrap runner MUST remain the sole owner of sync, development Buildr Web continuity, development entry validation, and final Doctor execution. It MUST NOT directly write Finish Result, Task Record, Development, Verification, Review, Environment Receipt, or aggregate-store persistence. After a successful closeout, it MAY invoke the Product-owned Finish maintenance reconciliation command with its structured result; that command remains the sole writer of Finish maintenance projection.
 
@@ -397,3 +401,18 @@ Task Finish MUST 将每个repository的Delivery Carrier cleanup与Task Environme
 #### Scenario: 当前run被错误cleaned投影阻断
 - **WHEN** Finish Result声明carrier cleaned但matching真实carrier仍registered、clean且HEAD已被remote target包含
 - **THEN** owner recovery MUST把它视为当前run的retained carrier，精确删除后允许同一run继续self-bootstrap，而不是报告未知foreign Task
+
+### Requirement: 自举激活必须支持无旧收尾运行的直接交付
+同一自举技能（Skill）脚本 MUST支持以明确任务、基线、已交付提交、目标分支和远端为待核验输入。脚本 MUST重新核验任务与 Git，按真实变化选择同步、精确提交推送、开发应用更新、开发入口验证和最终诊断；MUST不创建虚假收尾运行。
+
+#### Scenario: 直接交付
+- **WHEN** 匹配任务已完成且 Git 证明交付提交在目标远端
+- **THEN** 唯一脚本 MUST执行适用自举动作，不要求候选或交接。
+
+#### Scenario: 输入不匹配
+- **WHEN** 任务、工作空间、基线、提交、目标或远端不能证明一致
+- **THEN** 脚本 MUST在相关副作用前停止并保留原交付结果。
+
+#### Scenario: 激活局部失败
+- **WHEN** 交付已成立但同步、安装或诊断失败
+- **THEN** 脚本 MUST记录已发生动作并返回独立 attention，不撤销完成或重新推送业务内容。

@@ -233,6 +233,7 @@ export function registerTaskEntrySnapshotApplication(runtime) {
     let finishFacts = null;
     try {
       inspected = measured('task-manager', () => runtime.inspectTaskRecord(targetRoot, taskId));
+      if (['completed', 'abandoned'].includes(inspected.record.status)) return finish({ status: 'ready', task: taskSummary(inspected), environment: null, development: null, blockers: [], next: { mode: 'recommended', owner: 'agent', action: 'report', capability: null, route: null, summary: '任务已结束；报告结果，只按实际需要处理剩余资源或复盘，不重启研发或交付。' }, diagnostic: null, effects: [] });
       if (inspected.record.status !== 'active') return finish({ status: 'blocked', task: taskSummary(inspected), environment: null, development: null, blockers: [{ axis: 'task', owner: 'task-manager', code: 'task_entry_task_not_active' }], next: requiredNext('task-manager', 'inspect', { id: 'buildr.task-record', version: 2 }, `Task ${taskId} 已是 ${inspected.record.status}，不能继续正式研发。`), diagnostic: { code: 'task_entry_task_not_active', owner: 'task-manager', message: `Task ${taskId} 不是 active。` }, effects: [] });
 
       execution = measured('task-environment', () => runtime.resolveTaskEnvironmentExecution(targetRoot, taskId));

@@ -30,7 +30,7 @@ description: 用户或上游智能体（Agent）已明确选择仓库（reposito
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
 - workspace update：只有 Buildr Skill 等 consumer 已明确 workspace、upstream、update operation 与授权时才执行；dirty、divergence、冲突、缺失 upstream 或策略不唯一时 `blocked`，不自动 rebase、merge 或继续 sync。
 
-直接Git收尾是Agent选择的复合意图，不是provider自行推断的operation。Agent可按当前事实选择fetch、精确commit、rebase、普通push与远端回读，每一步都保持独立Result。formal Task直接交付后，由Task Finish reconciliation从真实远端登记Delivery；Git Operations不写Task lifecycle evidence。provider不自动stash；rebase冲突、目标歧义、已共享历史或需要force push时停止。
+直接Git收尾是Agent选择的复合意图，不是provider自行推断的operation。Agent可按当前事实选择fetch、精确commit、rebase、普通push与远端回读，每一步都保持独立Result。有匹配任务时，智能体在真实交付后通过任务记录应用保存结果，不要求旧收尾对账；Git Operations自身不写Task lifecycle evidence。provider不自动stash；rebase冲突、目标歧义、已共享历史或需要force push时停止。
 
 本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 

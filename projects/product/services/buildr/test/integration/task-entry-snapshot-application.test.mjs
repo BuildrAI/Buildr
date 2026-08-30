@@ -447,3 +447,16 @@ test('cross-Project provider不一致时targeted route fail closed', (t) => {
   assert.equal('graphs' in result, false);
   assert.equal('candidates' in result, false);
 });
+
+
+test('终态 Task next不重新读取环境或研发门禁', (t) => {
+  for (const status of ['completed', 'abandoned']) {
+    const current = fixture(t, { task: task({ status }) });
+    const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+    assert.equal(result.status, 'ready');
+    assert.equal(result.next.action, 'report');
+    assert.deepEqual(result.blockers, []);
+    assert.equal(current.calls.environment, 0);
+    assert.equal(current.calls.development, 0);
+  }
+});

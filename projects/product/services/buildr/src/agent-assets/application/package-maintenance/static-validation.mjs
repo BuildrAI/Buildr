@@ -1230,35 +1230,6 @@ export function createPackageStaticValidator(deps) {
           // Frontmatter errors are already reported above.
         }
       }
-      if (skill.id === 'task-finish') {
-        for (const requiredText of [
-          'buildr.task-finish/v1',
-          '完整“收尾/交付”意图',
-          '正式 Task 路径',
-          '普通 Git 路径',
-          'buildr task next',
-          'current Development handoff',
-          'preflight → prepare → verify → deliver → cleanup',
-          '交付适配（Delivery Adaptation）',
-          'task finish reconcile',
-          '四个独立结果',
-          '不得手写 token',
-          '不产生正式生命周期证据',
-        ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`task-finish Skill must include ${JSON.stringify(requiredText)}.`);
-        }
-        const lineCount = skillContent.trimEnd().split(/\r?\n/).length;
-        const characterCount = [...skillContent].length;
-        if (lineCount < 40 || lineCount > 80) problems.push(`task-finish Skill must remain thin: expected 40-80 lines, received ${lineCount}.`);
-        if (characterCount < 1500 || characterCount > 6000) problems.push(`task-finish Skill must remain thin: expected 1500-6000 Unicode characters, received ${characterCount}.`);
-        for (const forbiddenPolicy of ['fast-forward-only', '默认 rebase 到最新目标分支', '不创建 merge commit']) {
-          if (skillContent.includes(forbiddenPolicy)) problems.push(`task-finish must not copy Git provider policy: ${forbiddenPolicy}`);
-        }
-        for (const forbiddenAuthority of ['current Verification Result', 'formalVerificationExecutions <= 1']) {
-          if (skillContent.includes(forbiddenAuthority)) problems.push(`task-finish must not retain Verification authority: ${forbiddenAuthority}`);
-        }
-        if (skillContent.includes('buildr openspec')) problems.push('task-finish source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
-      }
       if (skill.id === 'task-retrospective') {
         for (const requiredText of [
           '本 Skill 是 `buildr.task-retrospective/v2` 的默认 provider',

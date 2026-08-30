@@ -1,13 +1,7 @@
-### Buildr自举Workspace激活
+### Buildr 自举工作空间激活
 
-本节只增加Buildr自举Workspace的Activation，不把自动Finish变成唯一Delivery路径。
+本节只适用于 Buildr 自举工作空间。任务已完成且真实 Git 变化命中自举输入时，交给 `buildr-self-bootstrap-sync`，由它唯一执行同步、精确提交推送、开发应用更新、入口检查与最终诊断。
 
-当自动Finish或delivery reconciliation已经形成matching Task delivery result，且Workspace repository的冻结activation paths命中自举动作时，只调用一次`buildr-self-bootstrap-sync`。调用只传run ID、canonical Workspace和Environment retained Node；Skill再只启动一次bundled runner。
+新收尾使用明确任务、基线、交付提交、分支和远端作为待核验输入；不要求旧收尾运行、候选、交接或对账。脚本自行复核当前事实，激活失败只形成独立遗留事项，不撤销交付或重复推送业务内容。环境清理由原资源所有者独立处理。
 
-Runner消费Product CLI的`buildr.task-finish-self-bootstrap-input/v1`稳定投影。reconciliation结果可以没有Delivery Carrier，只要Product已从真实remote target形成Task Contribution containment proof与activation paths。Service repository不能触发Workspace自举；Workspace无贡献时返回`not-applicable`。
-
-Runner负责self-bootstrap target lease、retained sync、精确successor commit、普通push/readback、development Buildr Web、retained Project bridge identity和最终Doctor。它只允许fast-forward，不merge、rebase、stash、reset、force push或共享历史改写，也不修改其他Task carrier。
-
-任何Activation失败都只形成attention并保留已发生effects，不撤销Delivery、不重提业务代码、不重复push、不改写Task、Candidate、Verification、Review或Development handoff。Environment Cleanup由Task Environment依据持久化Delivery evidence独立处理。
-
-没有matching Task delivery result、普通协作者更新或只有Doctor/runtime drift时不调用本Skill，按普通Workspace update处理。历史`doctor-blocked` current run仅作为兼容恢复输入，不再是新Delivery的正常终态。
+普通工作空间、协作者更新或只有诊断漂移，不因本节自动触发自举。旧运行只在明确恢复时使用旧入口。
