@@ -81,7 +81,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求收尾、交付或完成当前工作时使用；由智能体组合 Git、系统工具和已有 Buildr 接口，完成交付、真实结果登记及安全善后，支持有无任务、单仓多仓。
+    description: 用户要求收尾、交付或完成本轮工作后的结束动作时使用；由智能体完成实际成果交付、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
     enabled: true
     required: false
     state: installed
@@ -436,7 +436,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-development
     source: buildr
     path: buildr/task-development
-    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
+    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
     enabled: true
     required: false
     state: installed
