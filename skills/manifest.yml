@@ -531,6 +531,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: ui-prototype
+  - id: agent-first-design
+    assetIdentity: buildr:skill:agent-first-design
+    sourceIdentity: package:skills/buildr/agent-first-design
+    source: buildr
+    path: buildr/agent-first-design
+    description: 用户要求审视产品或系统的职责分工、简化工作流和门禁时使用；依据真实现场判断智能体、技能、工具、接口与应用各自承担什么，并从实践沉淀方法。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: agent-first-design
 contracts:
   - id: buildr.terminology-governance
     version: 1

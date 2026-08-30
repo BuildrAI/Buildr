@@ -3,6 +3,22 @@
   "builtins": [
     {
       "type": "skill",
+      "id": "agent-first-design",
+      "target": "skills/buildr/agent-first-design",
+      "integrity": "sha256-4b4476313609f64a9fd808ccdc36b0fbf94fea7911ac413d7d885314f8680282",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-81b927719c5a3db0dd665ad006423865c4422dcf47b42ca871575a087c7a6da3"
+        },
+        {
+          "path": "references/task-closeout.md",
+          "integrity": "sha256-ae4e33f0c5637a59b7ddfecd73792374b5ed39b35042dce5cfa0e64e6aecf278"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "capability-adaptation",
       "target": "skills/buildr/capability-adaptation",
       "integrity": "sha256-f7bfb68beaf8e1093f06bf1918cef221b9e530bc8f794cbb2d4a5e9b03ff1f92",
