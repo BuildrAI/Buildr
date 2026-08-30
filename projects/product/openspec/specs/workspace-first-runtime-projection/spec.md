@@ -85,7 +85,7 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 
 #### Scenario: Rules 语义索引读取
 - **WHEN** Agent 进入 Buildr workspace scope
-- **THEN** Agent MUST 先读取 applicable `AGENTS.md` 和 `rules/buildr/core.md`
+- **THEN** Agent MUST 先读取 适用的 `AGENTS.md`，其根受管区块包含核心规则
 - **AND** Agent MUST 再读取 `rules/manifest.yml`
 - **AND** Agent MUST 根据用户目标、修改范围、代码语义、workspace context 和 Rule `description` 判断 enabled user Rules 是否与当前任务相关
 - **AND** Agent MUST NOT require `rules/manifest.yml` to contain structured role, path, service, or directory routing tables
@@ -184,7 +184,7 @@ Buildr MUST 将 `AGENTS.md` 定义为 Buildr scope 规则入口，同时允许�
 #### Scenario: 根 AGENTS required block
 - **WHEN** Buildr 初始化或更新 workspace root
 - **THEN** 根 `AGENTS.md` MUST 包含 Buildr required block
-- **AND** required block MUST 引用 `rules/buildr/core.md`
+- **AND** required block MUST 内联随包核心规则正文，并保留区块外用户内容
 
 #### Scenario: Adapter 格式转换
 - **WHEN** 某个 Agent 需要特殊 include 格式

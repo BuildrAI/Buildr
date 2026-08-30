@@ -64,7 +64,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
 - workspace 必须完成 `buildr init`；首次使用且当前 Agent 已确认时，运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、runtime 和最终 doctor。不带 `--agent` 的 init 只初始化源资产。`init --agent` 最终 doctor 通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明 Workspace → Project → Service；没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
-- root `AGENTS.md` 是规则入口，必须包含 Buildr required block 并引用 `rules/buildr/core.md`；`projects/manifest.yml` 是 Project registry。
+- 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过 `rules/manifest.yml` 按需发现，`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ### Project
 
@@ -88,7 +88,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 ### Builtins
 
-- Buildr 内置能力包括 required core Rule、optional Skills 和内置 Command 声明。
+- 核心规则位于根 `AGENTS.md` 受管区块，不是独立内置项；专业规则（Rule）、技能（Skill）和命令（Command）仍由各自清单管理。
 - 只更新 Buildr CLI 自身：先用 `buildr update check --json` 同时读取 GA 正式版与 RC 候选版，用户明确选择后运行 `buildr update --track stable|candidate`。不自动切轨、不自动降级；命令不读取 workspace。
 - 安装或修复当前 CLI 携带的产品入口 Buildr Skill：`buildr skill install <agent> --target <dir>`；“更新 Buildr”或“同步 Buildr”默认在 update 后使用此入口，不扩大为 workspace sync。
 - 同步 workspace 产品源能力并准备当前 Agent runtime：`buildr sync <agent> --target <dir>`。

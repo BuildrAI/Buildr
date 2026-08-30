@@ -8,7 +8,7 @@ export function createPackageSyncPlan({
   targetPathFromBuiltin,
   toPosixRelative,
 }) {
-  function packageBuiltinMutationPaths(targetRoot, manifest = readPackageManifest(), receipts = { builtins: [] }) {
+  function packageBuiltinMutationPaths(targetRoot, manifest = readPackageManifest(), receipts = { builtins: [] }, findings = []) {
     const affected = new Set([
       path.join(targetRoot, 'AGENTS.md'),
       path.join(targetRoot, '.gitattributes'),
@@ -50,6 +50,12 @@ export function createPackageSyncPlan({
       affected.add(target);
       const missingParent = missingAncestorForMutation(targetRoot, path.dirname(target));
       if (missingParent) affected.add(missingParent);
+    }
+    // Only proven-safe retirement targets participate in the write transaction.
+    for (const finding of findings) {
+      if (finding.type === 'rule' && finding.id === 'buildr-core' && finding.status === 'retired') {
+        affected.add(path.join(targetRoot, 'rules/buildr/core.md'));
+      }
     }
     return assertSafeSyncMutationPaths(targetRoot, [...affected]);
   }

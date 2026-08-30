@@ -20,7 +20,7 @@ import { createPackageSmokeChecks } from './package-maintenance/smoke-checks.mjs
 import { createPackageStaticValidator } from './package-maintenance/static-validation.mjs';
 import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.mjs';
 import { createBuiltinReplacement } from './package-maintenance/builtin-replacement.mjs';
-import { retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.mjs';
+import { retireLegacyCoreRule, retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.mjs';
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.mjs';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.mjs';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.mjs';
@@ -144,6 +144,7 @@ export function registerApplicationPackageMaintenance(runtime) {
     }
 
     const rulesManifest = readRulesManifestForWrite(targetRoot);
+    retireLegacyCoreRule({ targetRoot, rulesManifest, receiptByKey, builtinSnapshot, removeReceipt, changed, findings, checkOnly });
     const rulesById = new Map(rulesManifest.rules.map((rule, index) => [rule.id, { rule, index }]));
     for (const builtin of manifest.builtins.rules) {
       if (builtin.component) {
@@ -315,7 +316,7 @@ export function registerApplicationPackageMaintenance(runtime) {
       if (receiptsChanged) changed.push(writeBuiltinReceipts(targetRoot, receipts));
     }
 
-    const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest, receipts) : [];
+    const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest, receipts, findings) : [];
     return { targetRoot, changed: [...new Set(changed)], findings, ...(restoreId ? { restoreOutcomes } : {}), affectedPaths, signature: checkOnly ? builtinSyncPlanSignature(targetRoot, findings, affectedPaths) : null };
   }
 
@@ -409,6 +410,8 @@ export function registerApplicationPackageMaintenance(runtime) {
     runPackageAggregateSmoke,
     validatePackageSupportTools,
   } = createPackageSmokeChecks({
+    renderRulesManifestYaml: runtime.renderRulesManifestYaml,
+    rootRequiredBlockStatus: runtime.rootRequiredBlockStatus,
     BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
     checkClaudeCodeRuntime,

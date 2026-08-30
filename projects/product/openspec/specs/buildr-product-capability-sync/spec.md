@@ -16,7 +16,7 @@ Buildr MUST 在每个 Buildr workspace 中支持由产品管理的 Rules、Skill
 #### Scenario: 内置能力分 required 和 optional
 - **WHEN** Buildr 提供内置 Rules、Skills 或 Commands
 - **THEN** Buildr MUST 支持 `required: true` 和 `required: false`
-- **AND** `rules/buildr/core.md` MUST 是 required Rule 且不可卸载
+- **AND** 根 `AGENTS.md` 受管区块 MUST 是必读入口，不再登记或安装独立 `buildr-core` 规则
 - **AND** optional 内置能力 MUST 支持显式卸载
 
 #### Scenario: 内置能力状态跟踪
@@ -98,13 +98,13 @@ Buildr MUST 通过 sync 支持已有 Buildr workspace 升级到内置能力和 a
 
 #### Scenario: 修复根 AGENTS required block
 - **WHEN** 已有 workspace 的根 `AGENTS.md` 缺少或破坏 Buildr required block
-- **THEN** Buildr sync MUST 恢复 required block，使其引用 `rules/buildr/core.md`
+- **THEN** Buildr sync MUST 恢复 required block，使其正文与随包内联规则一致
 - **AND** Buildr MUST NOT 覆盖 `AGENTS.md` 的用户正文
 
 #### Scenario: 迁入产品 baseline 规则
 - **WHEN** 已有 workspace 使用旧版 package baseline rules
-- **THEN** Buildr sync MUST 能将产品发布的规则迁入 `rules/buildr/` 和 `rules/manifest.yml`
-- **AND** `runtime.md` 的语义 MUST 内化进 `rules/buildr/core.md`
+- **THEN** Buildr sync MUST 将核心规则内联到根 `AGENTS.md`，其他专业规则仍使用通用规则清单
+- **AND** `runtime.md` 的语义 MUST 内化进 根 `AGENTS.md` 受管区块
 
 #### Scenario: MVP 不提供 migrate 命令
 - **WHEN** Buildr 处于本变更的 MVP 实施阶段
@@ -322,3 +322,21 @@ Buildr 的 `sync`、Component reconcile 和其他只需要最终健康门禁的�
 - **WHEN** Doctor 子进程无法启动、被终止或发生非输出超限的执行错误
 - **THEN** consumer MUST 报告子进程执行失败及可用的有界原因
 - **AND** consumer MUST NOT 输出“最终 doctor 未通过”作为唯一根因
+
+### Requirement: 安全退役独立核心规则
+Buildr MUST 通过现有同步与更新路径退役独立核心规则，不新增迁移框架或命令。只有路径、登记归属和安装回执与当前普通文件完整性均匹配时，系统 MUST 自动删除遗留文件及专属登记回执；已不存在的受管文件也 MUST 清除其专属元数据。
+
+#### Scenario: 官方旧文件完整迁移
+- **WHEN** 遗留核心规则与其受管登记和上次安装回执匹配
+- **THEN** 同步 MUST 内联新规则并删除旧文件、专属登记和回执
+- **AND** 重复同步 MUST 幂等
+
+#### Scenario: 已修改或未知归属的旧文件
+- **WHEN** 遗留文件被修改、回执缺失、路径不符或不是安全的普通文件
+- **THEN** 系统 MUST 保留文件并报告局部诊断，不阻塞内联规则与其他安全同步
+- **AND** 能确认是原核心规则的受管登记 MUST 停用其必读与启用状态，避免双重规则权威
+- **AND** 归属不明的登记 MUST 保留，不猜测为 Buildr 可删除资产
+
+#### Scenario: 专业规则仍可用
+- **WHEN** 用户登记、启停、引用或按需读取其他专业规则
+- **THEN** 系统 MUST 保持其原有能力与数据，不因核心规则退役清空规则清单

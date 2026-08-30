@@ -122,7 +122,6 @@ export function createPackageStaticValidator(deps) {
   function validateWorkspaceRulesBaseline(root, problems) {
     const baselinePairs = [
       ['AGENTS.md', 'AGENTS.md'],
-      ['rules/buildr/core.md', 'rules/buildr/core.md'],
     ];
 
     for (const [rootRelative, packageRelative] of baselinePairs) {
@@ -131,7 +130,8 @@ export function createPackageStaticValidator(deps) {
       if (existsFile(rootFile) && existsFile(packageFile)) {
         const rootContent = fs.readFileSync(rootFile, 'utf8');
         const packageContent = fs.readFileSync(packageFile, 'utf8');
-        if (rootContent !== packageContent) {
+        const block = (content) => content.match(/<!-- buildr:required begin -->[\s\S]*?<!-- buildr:required end -->/)?.[0];
+        if (!block(rootContent) || block(rootContent) !== block(packageContent)) {
           problems.push(`Root ${rootRelative} differs from ${RESOURCE_WORKSPACE_ROOT}/${packageRelative}.`);
         }
       }
@@ -906,8 +906,8 @@ export function createPackageStaticValidator(deps) {
         problems.push(`${label}.path does not exist: ${rule.path}`);
       } else files.push(sourceFile);
     }
-    if (!manifest.builtins.rules.some((rule) => rule.id === 'buildr-core' && rule.required === true && rule.target === 'rules/buildr/core.md')) {
-      problems.push('builtins.rules must declare required buildr-core at rules/buildr/core.md.');
+    if (manifest.builtins.rules.some((rule) => rule.id === 'buildr-core')) {
+      problems.push('Independent buildr-core is retired; use the inline AGENTS.md managed block.');
     }
 
     const currentSkillIds = new Set(manifest.builtins.skills.map((skill) => skill.id).filter(Boolean));

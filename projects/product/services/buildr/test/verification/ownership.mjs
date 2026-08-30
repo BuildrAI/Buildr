@@ -473,7 +473,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/development/run-development-npm",
       "tools/development/run-development-npm.mjs",
       "resources/manifest.yml",
-      "resources/workspace/rules/buildr/core.md",
+      "resources/workspace/AGENTS.md",
       "resources/workspace/skills/**",
       "package/targets/runtime/skills/**",
       "skills/buildr-release/**",

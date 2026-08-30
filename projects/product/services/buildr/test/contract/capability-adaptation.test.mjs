@@ -6,7 +6,7 @@ import YAML from 'yaml';
 // These tests own the static contract between packaged assets, manifests, and public guidance.
 const read = (path) => fs.readFileSync(path, 'utf8');
 const packageManifest = YAML.parse(read('resources/manifest.yml'));
-const core = read('resources/workspace/rules/buildr/core.md');
+const core = read('resources/workspace/AGENTS.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const adaptation = read('resources/workspace/skills/buildr/capability-adaptation/SKILL.md');
 const capabilityDocs = read('docs/skill-capability-contracts.md');

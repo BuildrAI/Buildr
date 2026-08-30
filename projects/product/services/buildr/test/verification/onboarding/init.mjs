@@ -43,7 +43,9 @@ try {
   const components = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'components', 'manifest.yml'), 'utf8'));
   assert.match(workspace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   assert.deepEqual(projects, { schemaVersion: 'buildr.projects/v2', projects: {} });
-  assert.equal(rules.rules.some((item) => item.id === 'buildr-core' && item.state === 'installed'), true);
+  assert.equal(rules.rules.some((item) => item.id === 'buildr-core'), false);
+  assert.equal(fs.existsSync(path.join(sourceOnly, 'rules/buildr/core.md')), false);
+  assert.match(fs.readFileSync(path.join(sourceOnly, 'AGENTS.md'), 'utf8'), /以可信完成目标的效率衡量性能/);
   assert.equal(skills.workspaceId, workspace.id);
   assert.equal(skills.skills.some((item) => item.id === 'task-triage' && item.state === 'installed'), true);
   assert.deepEqual(commands, { schemaVersion: 'buildr.commands/v1', commands: [] });

@@ -1,6 +1,6 @@
 # Buildr 产品架构
 
-随包 [Buildr Core](../../../services/buildr/resources/workspace/rules/buildr/core.md) 是产品设计与用户 Workspace Agent 工作方式共同遵守的基础行为契约，集中规定责任与治理、用户沟通、工作资产职责和不可绕过边界；本文只在该契约内解释当前产品架构，不建立第二套原则 authority。
+随包 [工作空间入口](../../../services/buildr/resources/workspace/AGENTS.md) 的受管区块（Managed Block）是唯一核心规则源，包含六条智能体优先原则以及责任、沟通、工作资产职责和不可绕过边界；本文只解释当前产品架构，不复制原则。独立核心规则已退役，专业规则仍通过 `rules/manifest.yml` 登记并按需读取。
 
 ## 用户与协作角色
 

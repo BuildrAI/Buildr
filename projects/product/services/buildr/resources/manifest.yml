@@ -203,12 +203,7 @@ initialSkillBindings:
     version: 2
     provider: current-knowledge-maintenance
 builtins:
-  rules:
-    - id: buildr-core
-      path: resources/workspace/rules/buildr/core.md
-      target: rules/buildr/core.md
-      description: Buildr workspace 基础契约；每次进入 workspace 都必须读取。
-      required: true
+  rules: []
   skills:
     - id: task-triage
       path: resources/workspace/skills/buildr/task-triage
@@ -490,7 +485,6 @@ workspaceFiles:
   - resources/workspace/AGENTS.md => AGENTS.md render
   - resources/workspace/gitattributes => .gitattributes copy
   - resources/workspace/gitignore => .gitignore copy
-  - resources/workspace/rules/buildr/core.md => rules/buildr/core.md copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy

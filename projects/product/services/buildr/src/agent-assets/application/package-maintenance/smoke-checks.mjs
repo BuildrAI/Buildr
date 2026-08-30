@@ -31,6 +31,8 @@ export function createPackageSmokeChecks(deps) {
     parseManifestFileEntry,
     parseProjectsYaml,
     parseRulesManifestYaml,
+    renderRulesManifestYaml,
+    rootRequiredBlockStatus,
     path,
     readSkillManifest,
     renderClaudeCodeRules,
@@ -283,10 +285,14 @@ export function createPackageSmokeChecks(deps) {
       if (claudeBeforeRulesAdd !== null && fs.readFileSync(path.join(tempRoot, 'CLAUDE.md'), 'utf8') !== claudeBeforeRulesAdd) {
         problems.push('rules add must not write Agent runtime output.');
       }
-      const requiredRuleRemove = buildrSelf.spawn(['rules', 'remove', 'buildr-core', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
+      packageCheckRules.rules.push({ id: 'package-required-rule', source: 'buildr', path: 'rules/package-required-rule.md', description: 'required rule fixture', required: true, enabled: true, state: 'installed' });
+      fs.writeFileSync(rulesManifestFile, renderRulesManifestYaml(packageCheckRules), 'utf8');
+      const requiredRuleRemove = buildrSelf.spawn(['rules', 'remove', 'package-required-rule', '--target', tempRoot], { cwd: root, encoding: 'utf8' });
       if (requiredRuleRemove.status === 0 || !requiredRuleRemove.stderr.includes('Required Buildr Rule cannot be removed')) {
         problems.push('rules remove must protect required Buildr Rules.');
       }
+      packageCheckRules.rules = packageCheckRules.rules.filter((rule) => rule.id !== 'package-required-rule');
+      fs.writeFileSync(rulesManifestFile, renderRulesManifestYaml(packageCheckRules), 'utf8');
       buildrSelf.exec(['rules', 'remove', 'package-check-rule', '--keep-file', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       if (!existsFile(packageCheckRuleFile)) {
         problems.push('rules remove --keep-file must keep the Rule source file.');
@@ -463,7 +469,7 @@ export function createPackageSmokeChecks(deps) {
       fs.writeFileSync(existingAgents, '# Existing root entry\n');
       buildrSelf.exec(['init', '--target', compatRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
       const existingContent = fs.readFileSync(existingAgents, 'utf8');
-      if (!existingContent.includes('# Existing root entry') || !existingContent.includes(BUILDR_REQUIRED_BLOCK_START) || !existingContent.includes('rules/buildr/core.md')) {
+      if (!existingContent.includes('# Existing root entry') || !existingContent.includes(BUILDR_REQUIRED_BLOCK_START) || !rootRequiredBlockStatus(compatRoot).valid) {
         problems.push('buildr init must preserve existing root AGENTS.md body and add only the Buildr required block.');
       }
       if (existsFile(path.join(compatRoot, 'AGENTS.workspace.md'))) {

@@ -4,7 +4,7 @@ Agent 在 `product` Project 中的最小运行规则。
 
 ## 项目定位
 
-本文件是 Project scope 规则。开始产品任务时，先遵循 Buildr root `AGENTS.md` 和 Buildr Core，再读取本文件。
+本文件是 Project scope 规则。开始产品任务时，先遵循 Buildr root `AGENTS.md` 中的内联核心规则，再读取本文件。
 
 当前 Project 是 Buildr 自举 workspace 的产品 Project：`projects/product/`。这里维护 Buildr 产品本身，不是用户 workspace。
 
@@ -28,7 +28,7 @@ Agent 在 `product` Project 中的最小运行规则。
 
 ## 产品边界
 
-- 随包 [Buildr Core](services/buildr/resources/workspace/rules/buildr/core.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`docs/buildr-product.md` 在该边界内展开产品定位、核心模型和 Roadmap，OpenSpec 继续作为具体可观察行为的规范 authority。
+- 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`docs/buildr-product.md` 在该边界内展开产品定位、核心模型和 Roadmap，OpenSpec 继续作为具体可观察行为的规范 authority。
 - Buildr 的主要用户是 Agent；人是一等参与者，主要通过 Agent 表达目标、提供业务判断并确认重要决策。产品能力必须优先从 Agent 如何发现、理解和使用组织工作资产的视角设计，同时保证人可以低门槛参与，不能只提供面向人的操作入口与说明。
 - 产品交互优先支持 Agent 理解用户意图、自主推理下一步并引导用户使用 Buildr；能够由 Agent 判断、解释和推进的工作，不应要求人类用户先掌握 Buildr 的内部模型或命令细节。
 - Buildr 不成为另一个 Agent，也不复制 Agent 的通用理解、推理、规划、对话和专业任务执行能力。新增产品能力必须说明其长期治理、跨 Agent 复用、确定性约束或可验证诊断价值；不具备这些价值时应将工作保留给 Agent，需要复用和治理的专业动作优先沉淀为 Skill 或其他工作方法资产，不得在 Buildr 产品核心中另建推理或任务执行主体。

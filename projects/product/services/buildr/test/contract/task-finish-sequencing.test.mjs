@@ -15,7 +15,7 @@ const developmentContract = read('resources/workspace/skills/contracts/buildr/ta
 const verification = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
 const verificationContract = read('resources/workspace/skills/contracts/buildr/task-verification/v3.md');
 const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
-const coreRule = read('resources/workspace/rules/buildr/core.md');
+const coreRule = read('resources/workspace/AGENTS.md');
 const workspaceRule = read('resources/workspace/AGENTS.md');
 const packageManifest = read('resources/manifest.yml');
 const productRule = fs.readFileSync(path.join(productRoot, 'AGENTS.md'), 'utf8');
@@ -94,8 +94,8 @@ test('宽而薄治理保留自举副作用边界，不把Activation变成Deliver
   const runner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
   const projector = read('src/task/application/finish/task-finish-self-bootstrap-projection.mjs');
 
-  assert.match(coreRule, /Buildr 采用宽而薄的治理/);
-  assert.match(coreRule, /越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报/);
+  assert.match(coreRule, /约束局部化，失败影响隔离/);
+  assert.match(coreRule, /越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真、完成误报/);
   assert.match(productRule, /新增或收紧硬门禁.*保护的 authority 或结果不变量.*具体伤害/s);
   assert.match(productRule, /辅助 provenance、推荐流程、工具偏好或自动化信心/);
 

@@ -61,7 +61,7 @@ function fixture(t, { contributionPath, contributionContent }) {
   fs.writeFileSync(path.join(seed, 'rules', 'buildr', 'core.md'), 'old managed rule\n');
   fs.mkdirSync(path.join(seed, 'skills', 'example'), { recursive: true });
   fs.writeFileSync(path.join(seed, 'skills', 'example', 'SKILL.md'), 'old skill\n');
-  const packageRule = path.join(seed, 'projects', 'product', 'services', 'buildr', 'resources', 'workspace', 'rules', 'buildr', 'core.md');
+  const packageRule = path.join(seed, 'projects', 'product', 'services', 'buildr', 'resources', 'workspace', 'AGENTS.md');
   fs.mkdirSync(path.dirname(packageRule), { recursive: true });
   fs.writeFileSync(packageRule, 'old managed rule\n');
   command(seed, 'git', ['add', '-A']);
@@ -176,7 +176,7 @@ test('Doctor compact输出超限保留独立失败分类', async (t) => {
 });
 
 test('Buildr package contribution is delivered without generic sync', async (t) => {
-  const contributionPath = 'projects/product/services/buildr/resources/workspace/rules/buildr/core.md';
+  const contributionPath = 'projects/product/services/buildr/resources/workspace/AGENTS.md';
   const data = fixture(t, { contributionPath, contributionContent: 'new managed rule\n' });
   const result = await data.handlers.deliver({ run: data.run });
   assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));

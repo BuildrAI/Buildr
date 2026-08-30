@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
-const core = fs.readFileSync('resources/workspace/rules/buildr/core.md', 'utf8');
+const core = fs.readFileSync('resources/workspace/AGENTS.md', 'utf8');
 const staticValidation = fs.readFileSync('src/agent-assets/application/package-maintenance/static-validation.mjs', 'utf8');
 
 test('Core 以责任和结果边界约束 Buildr 治理', () => {
@@ -52,8 +52,8 @@ test('Core 明确不可绕过的 Workspace 边界', () => {
   assert.match(core, /当前作用域已选择且可用的能力提供者/);
   assert.match(core, /不得猜测或绕过能力绑定/);
   assert.match(core, /Git 边界必须按实际仓库判断/);
-  assert.match(core, /Buildr 必需引用块（required block）只引用 Buildr 核心规则（Buildr Core）/);
-  assert.match(core, /Buildr 必需规则由 Buildr 管理，不得手工改写/);
+  assert.match(core, /受管区块（Managed Block）内联核心规则/);
+  assert.match(core, /Buildr 受管区块由 Buildr 管理，不得手工改写/);
   assert.doesNotMatch(core, /components\/manifest\.yml|commands\/manifest\.yml|workspace transition check/);
 });
 

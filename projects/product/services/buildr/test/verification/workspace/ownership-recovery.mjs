@@ -19,8 +19,9 @@ try {
 
   const requiredRemoval = runBuildr(['builtin', 'uninstall', 'buildr-core', '--target', fixture.workspace], { allowFailure: true });
   assert.notEqual(requiredRemoval.status, 0);
-  assert.match(requiredRemoval.combined, /Required Buildr builtin cannot be uninstalled/);
-  assert.equal(fs.existsSync(path.join(fixture.workspace, 'rules', 'buildr', 'core.md')), true);
+  assert.match(requiredRemoval.combined, /Buildr builtin not found/);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'rules', 'buildr', 'core.md')), false);
+  assert.match(fs.readFileSync(path.join(fixture.workspace, 'AGENTS.md'), 'utf8'), /以目标驱动协作/);
 
   runBuildr(['builtin', 'uninstall', 'git-operations', '--target', fixture.workspace, '--reason', 'Workspace E2E recovery']);
   assert.equal(fs.existsSync(path.join(fixture.workspace, 'skills', 'buildr', 'git-operations')), false);
