@@ -957,3 +957,10 @@
 - 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。
 - 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。
 - 来源：[Workspace-first runtime projection specification](../specs/workspace-first-runtime-projection/spec.md)
+
+## 收尾与交付（Closeout and Delivery）
+
+- 定义：日常协作中均可表示完成本轮工作后的结束动作，包括成果到位、已有任务登记、安全善后和遗留说明。
+- 适用范围：有无 Buildr 任务、有无 Git 管理的工作。
+- 避免混用：任务完成记录、真实交付、环境激活和资源清理分别成立；日常同义不代表这些事实相同，不自动授权发布或部署。
+- 来源：`task-closeout-orchestration`、`agent-task-workflows` 与 `flows/task-closeout.md`。

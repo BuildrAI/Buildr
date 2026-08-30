@@ -13,7 +13,7 @@ import {
   taskDevelopmentError,
 } from '../domain/task-development.mjs';
 import { PARENT_PLAN_SCHEMA, createContributionHandoff, createParentPlan, normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings, parentCoordinationError, projectParentPlan, validateContributionHandoffAgainstPlan } from '../domain/parent-coordination.mjs';
-import { createTerminalContributionReconciliation, terminalAssociationFromHandoff } from '../domain/terminal-contribution-reconciliation.mjs';
+import { createTerminalContributionReconciliation, taskCompletionIdentity, terminalAssociationFromHandoff } from '../domain/terminal-contribution-reconciliation.mjs';
 import { taskDevelopmentActionFields, taskDevelopmentActionRequiredFields } from './task-development-operation-contracts.mjs';
 import { isWorkspaceOnlyTaskRecord, taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
 
@@ -445,7 +445,7 @@ export function registerTaskDevelopmentApplication(runtime) {
     if (!receipt.decision || receipt.decision.candidateIdentity !== receipt.candidate?.identity) return { mode: 'recommended', owner: 'task-development', action: 'decide', capability: { id: 'buildr.task-development', version: 2 }, summary: '根据current gates记录proceed或blocked；风险接受必须绑定精确Result与明确授权。' };
     if (receipt.decision.outcome === 'blocked') return { mode: 'recommended', owner: 'agent', action: 'remediate-blocker', capability: null, summary: '处理blocked原因并更新对应专业事实；Buildr不会自动推进。' };
     if (applicability.handoff !== 'current') return { mode: 'recommended', owner: 'task-development', action: 'handoff', capability: { id: 'buildr.task-development', version: 2 }, summary: '调用handoff形成immutable Finish handoff。' };
-    return { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'current Finish handoff已就绪；等待明确交付授权后进入task-finish。' };
+    return { mode: 'recommended', owner: 'agent', action: 'report', capability: null, summary: '研发结果已就绪；报告当前成果及限制，收尾由用户目标独立触发。' };
   }
 
   function result(operation, status, taskId, persistence, applicability, effects = [], diagnostic = null, nextActions = null) {
@@ -886,27 +886,25 @@ export function registerTaskDevelopmentApplication(runtime) {
   }
 
   function reconcileTerminalChildContributionDelivery(targetRoot, childTaskId, input) {
-    assertFields(input, new Set(['parentTaskId', 'expectedPlanIdentity', 'contributionHandoff', 'reason', 'source']), 'Terminal Child Contribution reconciliation');
+    assertFields(input, new Set(['parentTaskId', 'expectedPlanIdentity', 'expectedTaskDigest', 'contributionHandoff', 'reason', 'source']), 'Terminal Child Contribution reconciliation');
     const inspected = task(targetRoot, childTaskId, { mutation: true });
     const context = runtime.readTerminalContributionReconciliationContext(targetRoot, childTaskId);
     if (context.child.status !== 'completed' || context.child.resultNoChange) throw parentCoordinationError('terminal_contribution_reconciliation_not_applicable', '恢复只适用于completed且非no-change的Child。', 409, { status: context.child.status, resultNoChange: context.child.resultNoChange });
     if (context.child.parentTaskId !== input.parentTaskId || inspected.record.parentTaskId !== input.parentTaskId) throw parentCoordinationError('terminal_contribution_reconciliation_parent_mismatch', 'Child Task Record的直接Parent与请求不一致。', 409, { recordParentTaskId: context.child.parentTaskId, requestedParentTaskId: input.parentTaskId });
     if (context.parent.status !== 'active') throw parentCoordinationError('terminal_contribution_reconciliation_parent_not_active', '恢复要求Parent Task保持active。', 409, { parentTaskId: input.parentTaskId, status: context.parent.status });
-    if (context.child.developmentJson == null || context.parent.developmentJson == null) throw parentCoordinationError('terminal_contribution_reconciliation_development_missing', 'Child与Parent必须都有Development Receipt。', 409);
-    const childReceipt = normalizeTaskDevelopmentReceipt(JSON.parse(context.child.developmentJson), { expectedTaskId: childTaskId });
+    if (!input.expectedTaskDigest || input.expectedTaskDigest !== context.child.recordDigest) throw parentCoordinationError('terminal_contribution_reconciliation_task_conflict', '子任务版本已变化；重读任务结果后再登记。', 409);
+    if (context.parent.developmentJson == null) throw parentCoordinationError('terminal_contribution_reconciliation_development_missing', '父任务缺少计划记录。', 409);
+    const childReceipt = context.child.developmentJson == null ? null : normalizeTaskDevelopmentReceipt(JSON.parse(context.child.developmentJson), { expectedTaskId: childTaskId });
     const parentReceipt = normalizeTaskDevelopmentReceipt(JSON.parse(context.parent.developmentJson), { expectedTaskId: input.parentTaskId });
+    const nativeHandoff = childReceipt?.handoffs?.find((item) => item.identity === context.child.finish?.completion?.association?.handoffIdentity && item.contributionHandoff);
+    if (nativeHandoff) throw parentCoordinationError('terminal_contribution_reconciliation_not_applicable', '已有明确的历史贡献处置，不能另写竞争结果。', 409);
     const parentPlan = parentReceipt.parentPlan;
-    if (!parentPlan || parentPlan.identity !== input.expectedPlanIdentity) throw parentCoordinationError('parent_plan_conflict', '恢复必须绑定current Parent Plan identity。', 409, { current: parentPlan?.identity || null, expected: input.expectedPlanIdentity });
-    const handoff = matchingTerminalHandoff(context.child, childReceipt);
-    if (handoff.contributionHandoff) throw parentCoordinationError('terminal_contribution_reconciliation_not_applicable', 'matching immutable handoff已有原生Contribution Handoff。', 409, { handoffIdentity: handoff.identity });
-    const unconverged = childReceipt.taskContext.changes.filter((item) => item.disposition !== 'converged');
-    if (unconverged.length) throw parentCoordinationError('terminal_contribution_reconciliation_change_not_converged', 'Child handoff中的全部Change必须已converged。', 409, { changes: unconverged.map((item) => `${item.project}/${item.change}`) });
-    const references = new Map(inspected.changeReferences.map((item) => [`${item.reference.project}/${item.reference.change}`, item]));
-    const unarchived = childReceipt.taskContext.changes.filter((item) => !workingCopyConvergence(references.get(`${item.project}/${item.change}`)).proven);
-    if (unarchived.length) throw parentCoordinationError('terminal_contribution_reconciliation_change_not_archived', 'Task-scoped Change read model必须仍能证明全部Change archived。', 409, { changes: unarchived.map((item) => `${item.project}/${item.change}`) });
+    if (!parentPlan || parentPlan.identity !== input.expectedPlanIdentity) throw parentCoordinationError('parent_plan_conflict', '贡献登记必须绑定当前父计划。', 409, { current: parentPlan?.identity || null, expected: input.expectedPlanIdentity });
+    const unarchived = inspected.changeReferences.filter((item) => !workingCopyConvergence(item).proven);
+    if (unarchived.length) throw parentCoordinationError('terminal_contribution_reconciliation_change_not_archived', '关联规范变更尚未归档，不能确认完成贡献。', 409);
     let contributionHandoff = input.contributionHandoff?.identity ? normalizeContributionHandoff(input.contributionHandoff) : createContributionHandoff(input.contributionHandoff);
     if (contributionHandoff.parentTaskId !== input.parentTaskId) throw parentCoordinationError('terminal_contribution_reconciliation_parent_mismatch', 'Contribution Handoff parentTaskId与请求Parent不一致。', 409);
-    const savedBindings = childReceipt.plannedContributions.filter((item) => item.parentTaskId === input.parentTaskId).map((item) => item.contributionId).sort();
+    const savedBindings = (childReceipt?.plannedContributions || []).filter((item) => item.parentTaskId === input.parentTaskId).map((item) => item.contributionId).sort();
     const expectedPlanned = savedBindings.length ? savedBindings : contributionHandoff.planned;
     contributionHandoff = validateContributionHandoffAgainstPlan(contributionHandoff, parentPlan, expectedPlanned);
     const requestedOwnership = new Set([...contributionHandoff.planned, ...contributionHandoff.delivered, ...contributionHandoff.extra.map((item) => item.contributionId)]);
@@ -916,8 +914,7 @@ export function registerTaskDevelopmentApplication(runtime) {
       childTaskId,
       parentTaskId: input.parentTaskId,
       parentPlanIdentity: parentPlan.identity,
-      finishAssociation: context.child.finish.completion.association,
-      handoff,
+      taskResultIdentity: taskCompletionIdentity(context.child),
       contributionHandoff,
       reason: inputText(input.reason, 'reason'),
       source: inputText(input.source, 'source'),

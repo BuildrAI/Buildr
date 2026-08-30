@@ -143,7 +143,7 @@ export const TASK_TERMINAL_DELIVERY_RUNTIME_PORT = 'task-terminal-delivery.runti
 const APPLICATION_METHODS = Object.freeze([
   'listTaskRecords', 'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
   'createTaskRecord', 'updateTaskRecord', 'activateTaskRecord', 'completeTaskRecord',
-  'completeTaskRecordFromFinish', 'abandonTaskRecord',
+  'abandonTaskRecord',
 ]);
 
 const PERSISTENCE_READ_METHODS = Object.freeze([
@@ -231,13 +231,13 @@ const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview'])
 const TASK_OVERVIEW_PERSISTENCE_METHODS = Object.freeze(['readTaskOverviewPersistence']);
 const TASK_ENTRY_SNAPSHOT_APPLICATION_METHODS = Object.freeze(['inspectTaskEntrySnapshot']);
 const TASK_FINISH_APPLICATION_METHODS = Object.freeze([
-  'taskFinish', 'refreshTaskFinishMaintenance', 'inspectTaskFinishReadModel', 'inspectTaskFinishCurrentFacts', 'readTaskFinishResults',
+  'taskFinish', 'refreshTaskFinishMaintenance', 'inspectTaskFinishReadModel', 'readTaskFinishResults',
 ]);
 const TASK_FINISH_PERSISTENCE_METHODS = Object.freeze([
   'taskFinishRunPath', 'taskFinishCompletionPath', 'readTaskFinishRunPersistence',
-  'writeTaskFinishRunPersistence', 'discardFailedTaskFinishRunPersistence',
-  'readTaskFinishCompletionPersistence', 'writeTaskFinishCompletionPersistence',
-  'finalizeTaskFinishPersistence', 'replaceTaskFinishRunPersistence', 'writeTaskFinishMaintenancePersistence', 'writeTaskFinishTerminalCleanupPersistence',
+
+  'readTaskFinishCompletionPersistence',
+  'writeTaskFinishMaintenancePersistence', 'writeTaskFinishTerminalCleanupPersistence',
   'acquireTaskFinishCurrentTargetLease', 'acquireTaskFinishTargetLease',
   'releaseTaskFinishCurrentTargetLease', 'releaseTaskFinishTargetLease',
   'readTaskFinishResultsPersistence', 'inspectTaskFinishPersistence',
@@ -402,7 +402,7 @@ function parentCoordinationCliContributions() {
     ['reconcile', 'agent-machine', '以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。', ['Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile --schema|--example [--json]'], 'reconcile'],
     ['refresh-planning', 'agent-machine', '复用saved Parent Plan与current ready Planning Review，安全刷新Development planning gate。', ['Usage: buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]'], 'refresh'],
     ['bind-child', 'agent-machine', '把已有Child Development明确绑定到Parent Plan的一个或多个Contribution。', ['Usage: buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]'], 'bind'],
-    ['reconcile-child-delivery', 'agent-machine', '为严格可证明的completed Child追加一次terminal Contribution交付对账；不改写旧handoff或Task。', ['Usage: buildr task parent reconcile-child-delivery <child-task-id> --parent <parent-task-id> --expected-plan <identity> --input <contribution-handoff.json> --reason <text> --source <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile-child-delivery --schema|--example [--json]'], 'reconcile-child-delivery'],
+    ['reconcile-child-delivery', 'agent-machine', '为严格可证明的completed Child追加一次terminal Contribution交付对账；不改写旧handoff或Task。', ['Usage: buildr task parent reconcile-child-delivery <child-task-id> --parent <parent-task-id> --expected-plan <identity> --expected-task <recordDigest> --input <contribution-handoff.json> --reason <text> --source <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile-child-delivery --schema|--example [--json]'], 'reconcile-child-delivery'],
     ['accept', 'agent-machine', '在全部Contribution得到可证明处置后显式记录Parent最终集成验收；不会自动完成Task。', ['Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]'], 'accept'],
   ];
   return Object.freeze(definitions.map(([runtimeId, surface, summary, help, operation]) => Object.freeze({
@@ -435,54 +435,7 @@ export function createTaskFinishCliContributions(application = null) {
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'inspect',
       run: (runtime, context) => invoke(runtime, 'inspect', context.argv.slice(5)),
     }),
-    Object.freeze({
-      key: 'task finish rollover', surface: 'agent-machine', summary: '在Product只读资格证明成立时，精确清理旧prepare carrier并原子创建current Development的新run。',
-      help: [
-        'Usage: buildr task finish rollover --task <task-id> --recovery-token <token> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full>] [--json]', '',
-        '只接受Task Finish current facts投影的当前recovery token；重新验证old run只因Task Contribution drift停在prepare、无lease/Delivery/Activation/Cleanup副作用、repository topology未变、carrier ownership与内容仍匹配初始proof。',
-        '先精确清理run-owned carrier，再以SQLite compare-and-swap将旧blocked/failed current row替换为current Development的新active run；不访问remote证明、不push、不自动执行新run。',
-        '任一资格不成立时保留现场并阻断；cleanup后current row发生并发漂移时报告已发生的cleanup effect，重新inspect后才可重试。',
-      ],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'rollover',
-      run: (runtime, context) => invoke(runtime, 'rollover', context.argv.slice(5)),
-    }),
-    Object.freeze({
-      key: 'task finish reconcile', surface: 'agent-machine', summary: '观察 current Task Contribution 与真实远端结果，收敛由 Agent、PR 或其他已授权路径完成的交付。',
-      help: [
-        'Usage: buildr task finish reconcile --task <task-id> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]', '',
-        '从current Development handoff解析交付身份；优先复用Task Environment repository set，缺失或已清理时从Task scope、registries与实际Git topology构造只读上下文，再读取真实远端ref逐仓库验证Task Contribution包含关系。',
-        '若matching completed run仅因terminal query fields持久化校验失败而保留current，reconcile只复用受验证prepared completion原子补写terminal state，不重复观察远端、交付或cleanup。',
-        '不接受success、evidence、commit message、run token或手写proof；不会push、force push、改写共享历史或创建Delivery Carrier。',
-        '逐repository立即保存已证明Delivery；全部适用repository成立后提交Task交付终态。activation、Environment cleanup与diagnostics独立处理；无current Environment时cleanup不声称cleaned。',
-      ],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'reconcile',
-      run: (runtime, context) => invoke(runtime, 'reconcile', context.argv.slice(5)),
-    }),
-    Object.freeze({
-      key: 'task finish run', surface: 'agent-machine', summary: '必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；resume复用已冻结message。',
-      help: [
-        'Usage: buildr task finish run --task <task-id> --commit-message <message> [--agent <agent>] [--target-branch <branch>] [--remote <name>] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]',
-        'Resume: buildr task finish run --task <task-id> --run <id> --resume <token> [--accept-zero-delta-adaptation] [--reviewed-target-path <repository-selector>::<path>::<reason> ...] [--target <canonical-workspace>] [--detail <compact|full|self-bootstrap>] [--json]',
-        'Bootstrap recovery: buildr task finish run --run <id> [--resume <token>] --bootstrap-recovery --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]',
-        'Occupancy release: buildr task finish run --task <task-id> --run <id> --release-occupancy --target <canonical-workspace> [--detail <compact|full|self-bootstrap>] [--json]', '',
-        '必需参数：首次运行需要 --task、--commit-message、current formal Development handoff 与 ready Task Environment；Agent根据最终内容和仓库约定提供完整message，产品规范化并追加Buildr-Task trailer。target branch 默认使用 retained canonical Workspace 的当前符号分支，Environment startPoint 不提供交付分支 authority。',
-        '可选 --agent：省略时使用 Task Environment 已绑定 adapter，不得猜测当前聊天宿主或默认为 Codex；传入值必须与 Environment adapter 一致。',
-        '互斥参数：已有run/resume不接受--commit-message覆盖；--resume只接受产品为当前blocked run生成的令牌；--release-occupancy与--resume、--bootstrap-recovery、--accept-zero-delta-adaptation、--reviewed-target-path互斥，且必须同时提供--run与--task；不接受--project/--change或调用方Candidate/Result。',
-        '零差异适配：--accept-zero-delta-adaptation只用于已有adaptation-required run的matching resume，表示Agent已审查clean baseline carrier无需新增差异；它不创建commit、不替代resume token，也不表示Buildr证明语义等价。',
-        '逐路径适配：--reviewed-target-path只用于已有adaptation-required run的matching resume；每项显式绑定repository selector、Task Contribution path与非空理由。Buildr记录Agent判断但不宣称机器证明语义等价，未处置路径继续blocked。',
-        '受控自修复：--bootstrap-recovery只用于已有run在无交付副作用的preflight/prepare Product provider缺陷；必须另行明确授权。retained Application仍是writer，只从冻结clean Task Environment HEAD派生并加载run-owned provider capsule；不接受source/module/tarball/manifest输入。',
-        '占用释放：--release-occupancy只用于Task已放弃且该run从未成功交付时，释放run-owned隔离载体占用；不是普通resume、不是作废已推送交付，也不把abandoned Task改成completed。',
-        'Execution surface：Development handoff、Task Environment carrier 执行根、retained canonical Workspace 与产品解析的 delivery remote。',
-        '安全副作用：产品顺序执行 handoff preflight、隔离 Delivery Carrier 的机械复用或 Delivery Adaptation、deliver 和 cleanup；不收敛 Change、不生成 Candidate、不运行 Verification/Review，也不修改 Development Receipt。',
-        '提交信息：新run拒绝缺失、空subject或精确“交付 + 当前Task ID”的占位主题；同一run的prepare、adaptation与resume复用冻结message，公开Result只返回subject和identity。',
-        'deliver使用Environment adapter冻结的run agent尝试retained Doctor；Doctor未ready时保留已完成remote readback并把Activation标记为attention，不撤销Delivery。',
-        '每次真正执行的run/resume尝试打开独立finish-diagnostics Execution Record；open、seal、capacity或transient cleanup失败只形成Diagnostics attention，不阻止安全Delivery。',
-        'JSON输出默认使用closed compact投影；完整phase checks、operations、diagnostics、carrier与completion事实必须显式使用--detail full；跨模块自举只消费--detail self-bootstrap稳定投影。',
-        '新协议不接受 caller evidence、fingerprint、execution plan、repair authorization 或手写 recovery manifest；新客户端不读取、转换或处理旧协议状态。',
-      ],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'finish' && runtimeId === 'run',
-      run: (runtime, context) => invoke(runtime, 'run', context.argv.slice(5)),
-    }),
+
   ]);
 }
 
@@ -583,7 +536,7 @@ export function createTaskRecordCliContributions(application = null) {
     },
     {
       key: 'task complete', surface: 'primary', summary: '完成 todo/active Task；todo 只允许 --no-change。',
-      help: ['Usage: buildr task complete <task-id> --summary <text> [--no-change] [--target <canonical-workspace>] [--json]', '', 'active 可正常完成；todo 只允许 --no-change，否则必须先 activate。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
+      help: ['Usage: buildr task complete <task-id> --summary <text> [--no-change] [--expected-record <recordDigest>] [--target <canonical-workspace>] [--json]', '', 'active 可正常完成；todo 只允许 --no-change，否则必须先 activate。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
       match: ({ domain, action }) => domain === 'task' && action === 'complete',
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'complete', context.argv.slice(4)),
     },
@@ -1011,8 +964,6 @@ export function createTaskFinishModule(runtime) {
     requires: Object.freeze([
       TASK_RECORD_APPLICATION,
       TASK_ENVIRONMENT_APPLICATION,
-      TASK_EXECUTION_RECORD_APPLICATION,
-      TASK_DEVELOPMENT_APPLICATION,
       'workspace.structured-store',
     ]),
     create(requires) {

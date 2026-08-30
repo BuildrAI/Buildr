@@ -159,7 +159,7 @@ Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-loca
 | Project Daily Progress | `.buildr/daily-progress/<project>/<date>.yml` | Daily Progress Application | Git ignored 的本机日事实 |
 | Task Execution Record 正文 | `.buildr/local/task-execution-records/` | Execution Record Application | 有配额、脱敏和清理生命周期 |
 | Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
-| Delivery Carrier | Finish run-owned 隔离目录 | Task Finish | 临时交付与恢复资源 |
+| 历史交付目录 | 旧收尾运行拥有的隔离目录 | 原资源所有者 | 只按归属与内容保全安全处置 |
 | Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
 
 专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；面向页面和 Agent 的 Overview 通过只读查询或 Application projection 组合事实。
@@ -172,7 +172,7 @@ SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不
 
 任务记录保存结果；Git 和外部系统拥有交付事实；环境应用（Application）及资源所有者保护删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
 
-现有研发、审查、正式验证和旧五阶段执行器仍是可单独使用的专业能力。旧执行器的状态和历史证据保留，显式选择它时仍遵守其自身要求；它不再是默认收尾的统一入口。`task next` 仍可指导正式研发，但已结束任务直接返回非阻塞结果，不重新加载研发和环境。
+研发、审查和正式验证仍由各专业能力维护。旧五阶段执行器及写入口已退役，历史读取和必要资源安全能力保留。`task next` 只指导研发，不推荐、批准或恢复收尾；已结束任务不重新加载研发和环境。
 
 ## Runtime、构建与分发
 

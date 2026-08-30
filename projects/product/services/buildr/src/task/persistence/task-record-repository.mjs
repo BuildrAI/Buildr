@@ -45,7 +45,7 @@ function recordValue(row, { projects = [], services = [], changes = [], childTas
   }, { expectedTaskId: row.task_id });
 }
 
-function readRecord(database, taskId) {
+export function readTaskRecordFromDatabase(database, taskId) {
   const row = database.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
   if (!row) return null;
   const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => item.project);
@@ -284,7 +284,7 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable });
       if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
-      const record = readRecord(opened.database, taskId);
+      const record = readTaskRecordFromDatabase(opened.database, taskId);
       if (!record) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
       return persistence(root, record);
     } catch (error) {
@@ -351,11 +351,11 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
       return withTransaction(opened.database, () => {
-        if (readRecord(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
+        if (readTaskRecordFromDatabase(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
         assertParentRelation(opened.database, record.taskId, record.parentTaskId);
         assertRetrospectiveSources(opened.database, record.taskId, record.retrospectiveSourceTaskIds);
         insertRecord(opened.database, record);
-        return persistence(root, readRecord(opened.database, record.taskId));
+        return persistence(root, readTaskRecordFromDatabase(opened.database, record.taskId));
       });
     } catch (error) {
       throw asTaskRecordError(error, '创建');
@@ -370,7 +370,7 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
       return withTransaction(opened.database, () => {
-        const currentRecord = readRecord(opened.database, taskId);
+        const currentRecord = readTaskRecordFromDatabase(opened.database, taskId);
         if (!currentRecord) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
         const current = persistence(root, currentRecord);
         const nextValue = mutator(current);
@@ -380,7 +380,7 @@ export function registerTaskRecordRepository(runtime) {
         if (next.parentTaskId !== currentRecord.parentTaskId) assertParentRelation(opened.database, taskId, next.parentTaskId);
         assertRetrospectiveSources(opened.database, taskId, next.retrospectiveSourceTaskIds);
         replaceRecord(opened.database, next);
-        return persistence(root, readRecord(opened.database, taskId));
+        return persistence(root, readTaskRecordFromDatabase(opened.database, taskId));
       });
     } catch (error) {
       throw asTaskRecordError(error, '修改');

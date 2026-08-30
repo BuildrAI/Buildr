@@ -1,3 +1,4 @@
+import { readTaskRecordFromDatabase } from './task-record-repository.mjs';
 import crypto from 'node:crypto';
 
 import { parentCoordinationError } from '../domain/parent-coordination.mjs';
@@ -25,6 +26,8 @@ function readContext(database, childTaskId) {
   const row = database.prepare(`SELECT
     child.task_id AS child_task_id,
     child.title AS child_title,
+    child.result_summary AS child_result_summary,
+    child.updated_at AS child_updated_at,
     child.status AS child_status,
     child.result_no_change AS child_result_no_change,
     child.parent_task_id AS parent_task_id,
@@ -57,7 +60,10 @@ function readContext(database, childTaskId) {
   const context = {
     child: {
       taskId: row.child_task_id,
+      recordDigest: digest(readTaskRecordFromDatabase(database, row.child_task_id)),
       title: row.child_title,
+      resultSummary: row.child_result_summary,
+      updatedAt: row.child_updated_at,
       status: row.child_status,
       resultNoChange: row.child_result_no_change === 1,
       parentTaskId: row.parent_task_id,

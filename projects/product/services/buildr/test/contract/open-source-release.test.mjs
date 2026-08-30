@@ -569,7 +569,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
 test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
   const selfBootstrapRunner = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
   const convergenceSource = fs.readFileSync(path.join(serviceRoot, 'tools/release/release-git-convergence.mjs'), 'utf8');
-  assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.descendant-merge-unprovable/);
+  assert.match(selfBootstrapRunner, /self-bootstrap-closeout\.remote-drift/);
   assert.match(convergenceSource, /Publication evidence is not a complete passed transaction/);
   assert.match(convergenceSource, /published-but-dev-reconciliation-blocked/);
   assert.match(convergenceSource, /reconcilePublishedReleaseWithDev/);

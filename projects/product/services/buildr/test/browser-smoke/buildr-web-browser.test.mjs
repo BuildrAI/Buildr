@@ -1,3 +1,4 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -307,7 +308,7 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     deliveryCarrier: carrier, equivalence, delivery, completion, resume: null, primaryFailure: null,
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
   };
-  runtime.writeTaskFinishRunPersistence(root, run);
+  legacyFinishRuntime(runtime).writeTaskFinishRunPersistence(root, run);
   const association = {
     schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
     candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
@@ -431,7 +432,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   let forceDevelopmentUnknown = false;
   const resolveTaskEnvironmentExecution = runtime.resolveTaskEnvironmentExecution.bind(runtime);
   runtime.resolveTaskEnvironmentExecution = (targetRoot, taskId) => {
@@ -905,7 +906,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-development-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-development-status').innerText(), '尚未形成研发回执');
     assert.equal(await page.locator('#task-development-detail').isHidden(), true);
-    assert.equal(await page.locator('#task-development-panel button').count(), 2, '研发页提供只读刷新与 Finish 执行记录入口');
+    assert.equal(await page.locator('#task-development-panel button').count(), 1, '无旧收尾记录时研发页只提供刷新');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
@@ -1006,8 +1007,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-development-decision').innerText(), /允许推进/);
     assert.match(await page.locator('#task-development-decision').innerText(), /已接受风险数[\s\S]*0/);
     assert.match(await page.locator('#task-development-handoff').innerText(), /已保存交接数[\s\S]*1/);
-    assert.equal(await page.locator('#task-development-panel button').count(), 5, '研发页只有刷新、三个门禁证据跳转与 Finish 执行记录入口');
-    await page.locator('#task-finish-execution-records-entry').getByRole('button', { name: '查看 Finish 执行记录', exact: true }).click();
+    assert.equal(await page.locator('#task-development-panel button').count(), 4, '没有旧收尾运行时研发页只有刷新和三个证据跳转');
+    assert.equal(await page.locator('#task-finish-execution-records-entry').count(), 0);
+    await page.getByRole('button', { name: '证据', exact: true }).click();
+    await page.locator('#task-execution-record-filter-finish').click();
     await page.locator('#task-execution-record-filter-finish[aria-pressed="true"]').waitFor({ state: 'visible' });
     await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 1);
     assert.match(await page.locator('#task-execution-record-list').innerText(), /Finish · passed/);

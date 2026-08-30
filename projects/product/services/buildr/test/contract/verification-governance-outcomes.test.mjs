@@ -21,11 +21,9 @@ const governanceInvariants = Object.freeze([
   { id: 'development-current-evidence', owner: 'integration-task-development', files: ['test/integration/task-development-application.test.mjs'] },
   { id: 'parent-contribution-read-model', owner: 'integration-task-coordination', files: ['test/integration/parent-coordination-application.test.mjs'] },
   {
-    id: 'automatic-and-reconciled-delivery',
+    id: 'legacy-resource-safety',
     owner: 'integration-task-finish-delivery',
     files: [
-      'test/integration/task-finish-delivery-reconciliation.test.mjs',
-      'test/integration/task-finish-delivery-remote.test.mjs',
       'test/integration/task-finish-retained-cleanup.test.mjs',
     ],
   },

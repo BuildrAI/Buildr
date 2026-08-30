@@ -60,3 +60,16 @@ test('Parent Coordination缺失Task时返回稳定not-found且不写数据库', 
   assert.throws(() => runtime.readParentCoordinationPersistence(root, 'missing-task'), (error) => error.code === 'task_record_not_found' && error.status === 404);
   assert.equal(fs.statSync(file).mtimeMs, before);
 });
+
+test('贡献记录约束升级逐字保留已有历史及唯一关联', (t) => {
+  const { root, runtime } = fixture(t, 1);
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  try {
+    const record = JSON.stringify({ schemaVersion: 'buildr.terminal-contribution-reconciliation/v1', childTaskId: 'child-00', parentTaskId: 'parent-task', parentPlanIdentity: 'plan-old', identity: 'record-old', historical: 'preserve exact bytes' });
+    opened.database.prepare('INSERT INTO terminal_contribution_reconciliations VALUES (?, ?, ?, ?, ?, ?)').run('child-00', 'parent-task', 'plan-old', 'record-old', record, '2026-08-08T00:00:00.000Z');
+    const before = opened.database.prepare('SELECT * FROM terminal_contribution_reconciliations').all();
+    opened.database.exec(fs.readFileSync(path.resolve(import.meta.dirname, '../../src/infrastructure/sqlite/migrations/0020_support_direct_contribution_results.sql'), 'utf8'));
+    assert.deepEqual(opened.database.prepare('SELECT * FROM terminal_contribution_reconciliations').all(), before);
+    assert.throws(() => opened.database.prepare('INSERT INTO terminal_contribution_reconciliations VALUES (?, ?, ?, ?, ?, ?)').run('child-00', 'parent-task', 'plan-old', 'record-other', record, '2026-08-08T00:00:00.000Z'));
+  } finally { opened.database.close(); }
+});

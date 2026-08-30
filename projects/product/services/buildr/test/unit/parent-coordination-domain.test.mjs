@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -106,7 +107,7 @@ test('Contribution Handoff表达planned、delivered、extra、residual、superse
   }), (error) => error.code === 'contribution_handoff_delivered_not_planned');
 });
 
-test('terminal contribution reconciliation identity不含createdAt且拒绝Finish association漂移', () => {
+test('直接贡献处置identity绑定任务结果且不含createdAt', () => {
   const contributionHandoff = createContributionHandoff({
     parentTaskId: 'parent-task', planned: ['application-read-model'], delivered: ['application-read-model'],
     nextAction: 'Continue with the next eligible Contribution.',
@@ -124,10 +125,20 @@ test('terminal contribution reconciliation identity不含createdAt且拒绝Finis
       completion: { status: 'gate-disposition', ...gate },
     },
   };
-  const input = { childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: 'sha256-plan', finishAssociation, handoff, contributionHandoff, reason: 'Recover omitted evidence.', source: 'unit-test' };
+  const input = { childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: 'sha256-plan', taskResultIdentity: 'sha256-result', contributionHandoff, reason: 'Recover omitted evidence.', source: 'unit-test' };
   const first = createTerminalContributionReconciliation({ ...input, createdAt: '2026-08-23T00:00:00.000Z' });
   const replay = createTerminalContributionReconciliation({ ...input, createdAt: '2026-08-23T00:01:00.000Z' });
   assert.equal(first.identity, replay.identity);
   assert.deepEqual(normalizeTerminalContributionReconciliation(first), first);
-  assert.throws(() => createTerminalContributionReconciliation({ ...input, finishAssociation: { ...finishAssociation, candidateGeneration: 2 }, createdAt: '2026-08-23T00:00:00.000Z' }), (error) => error.code === 'terminal_contribution_reconciliation_finish_mismatch');
+  assert.throws(() => normalizeTerminalContributionReconciliation({ ...first, taskResultIdentity: 'sha256-other' }), (error) => error.code === 'terminal_contribution_reconciliation_identity_mismatch');
+  assert.equal(Object.hasOwn(first, 'finishAssociation'), false);
+});
+
+test('历史v1贡献处置仍可读取且拒绝内容身份漂移', () => {
+  const contributionHandoff = createContributionHandoff({ parentTaskId: 'parent-task', planned: ['application-read-model'], delivered: ['application-read-model'], nextAction: '继续验收' });
+  const gate = { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: null, summary: 'Historical gate.', source: 'history' };
+  const payload = { schemaVersion: 'buildr.terminal-contribution-reconciliation/v1', childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: 'sha256-plan', finishAssociation: { handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, gates: { planning: gate, completion: gate, verification: gate } }, contributionHandoff, reason: '历史记录', source: 'history' };
+  const record = { ...payload, identity: `sha256-${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`, createdAt: '2026-08-23T00:00:00.000Z' };
+  assert.equal(normalizeTerminalContributionReconciliation(record).identity, record.identity);
+  assert.throws(() => normalizeTerminalContributionReconciliation({ ...record, reason: 'tampered' }), (error) => error.code === 'terminal_contribution_reconciliation_identity_mismatch');
 });

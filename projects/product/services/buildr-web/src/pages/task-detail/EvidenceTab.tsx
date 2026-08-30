@@ -151,6 +151,8 @@ export function EvidenceTab({
   onRefreshExecutionRecords,
   openAgentAction,
 }: Props) {
+  const reviewDiagnostic = reviewError || reviewData?.diagnostic?.message || null;
+  const verificationDiagnostic = verificationError || verificationData?.diagnostic?.message || null;
   const slot = verificationData?.slot;
   const association = verificationData?.terminal?.associations?.verification;
   const verificationClass = association?.status === 'verified-at-delivery'
@@ -183,8 +185,8 @@ export function EvidenceTab({
               刷新审查结果
             </Button>
           </div>
-          <div id="task-review-diagnostic" className={`environment-diagnostic${reviewError ? '' : ' hidden'}`}>
-            {reviewError || ''}
+          <div id="task-review-diagnostic" className={`environment-diagnostic${reviewDiagnostic ? '' : ' hidden'}`}>
+            {reviewDiagnostic || ''}
           </div>
         </article>
         <div id="task-review-loading" className={`page-loading${reviewLoading ? '' : ' hidden'}`}>
@@ -192,7 +194,7 @@ export function EvidenceTab({
           <p>正在读取审查结果…</p>
         </div>
         <div id="task-review-slots" className="review-slot-grid">
-          {reviewData ? (
+          {reviewData && !reviewData.diagnostic ? (
             <>
               <ReviewSlotCard
                 reviewType="planning"
@@ -229,8 +231,8 @@ export function EvidenceTab({
               </Button>
             </div>
           </div>
-          <div id="task-verification-diagnostic" className={`environment-diagnostic${verificationError ? '' : ' hidden'}`}>
-            {verificationError || ''}
+          <div id="task-verification-diagnostic" className={`environment-diagnostic${verificationDiagnostic ? '' : ' hidden'}`}>
+            {verificationDiagnostic || ''}
           </div>
         </article>
         <div id="task-verification-loading" className={`page-loading${verificationLoading ? '' : ' hidden'}`}>

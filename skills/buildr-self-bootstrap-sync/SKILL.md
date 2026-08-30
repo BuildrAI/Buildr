@@ -22,41 +22,6 @@ description: Buildr自举Workspace取得matching Task delivery result后，用�
 
 默认模式先核验现场并短暂占用自举锁，再按实际变更执行适用的同步、精确提交和普通推送、开发应用更新、显式开发入口检查与最终诊断。已推送内容不重复推送；提交后推送失败可用同一组输入恢复。未提交同步结果、未知锁或身份变化应保留并说明，不自动丢弃或夺锁。
 
-只有旧任务明确恢复旧运行时才使用 `--run <finish-run-id>`；下列旧运行约束仅适用于该显式模式。新收尾不得为了激活制造旧运行。
+旧收尾写入口已退役。本脚本仅接受上述直接交付输入，不再恢复旧收尾运行。已有旧任务的成果、记录和资源保留，依据当前事实核对后再选择适用激活或原资源安全处置。
 
-## 旧运行恢复边界
-
-Runner依次尝试：
-
-```text
-preflight → plan → sync → commit → push → install-buildr-web
-→ verify-development-entry → finalize
-```
-
-这些阶段只约束Buildr自举副作用，不约束Agent必须如何交付代码。
-
-Runner必须：
-
-- 核验canonical Workspace、retained Node、remote/branch、delivered ref与clean tree；
-- 对存在的current/foreign carrier验证非symlink、受控路径、identity与ownership；无carrier的reconciliation结果不得因此失败；
-- 在任何target mutation、sync、安装或Doctor前取得matching Task/run target lease，并按token fencing释放；
-- 只允许fetch与fast-forward，不merge commit、不rebase、不stash、不reset、不force push；
-- 只按冻结activation paths选择sync、development Buildr Web和入口验证动作；
-- 使用retained Node显式验证`projects/product/buildr`的development channel、source commit、package/version与CLI entry；
-- 保留已发生effects，后续阶段失败时停止新的不安全副作用。
-
-多个已证明的foreign carrier可以隔离共存；Runner不得修改或删除其他Task的carrier。identity、path、lease、remote或history无法证明时，在相应副作用前停止。
-
-## 旧运行结果与恢复
-
-显式`--detail full`时，`buildr.self-bootstrap-closeout-result/v1`分别报告每个阶段、Git/ref、lease、sync/push、Buildr Web、development entry和Doctor事实。默认compact只投影终态、关键阶段、主失败、cleanup与恢复入口。
-
-- `passed`：适用Activation完成；
-- `not-applicable`：没有Workspace自举动作；
-- `blocked`：Activation需要Agent关注，但Task Delivery保持已交付。
-
-Runner一旦取得matching Task/run identity，必须在返回`passed`、`blocked`或`not-applicable`前刷新Finish maintenance中的self-bootstrap terminal evidence。若maintenance writer自身失败，保留原始主失败并把maintenance标为attention；不得伪造可恢复记录。
-
-失败时固定报告“主任务已交付，自举Workspace激活未完成”，并列出已完成effects、当前identity和精确失败点。Agent依据当前事实决定修复或稍后重试；不得重新运行业务Delivery、重新push已交付repository，或把Activation失败改写为Task未交付。
-
-Environment Cleanup由Task Environment独立处理，不由本Skill决定Task终态。
+失败时报告已发生动作、具体失败点及当前交付事实；既有成果不重推。环境清理由原环境能力独立处理，不改写任务完成事实。

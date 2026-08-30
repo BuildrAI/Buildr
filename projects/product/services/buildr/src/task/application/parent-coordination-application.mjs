@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 import { createParentPlan, parentCoordinationError, projectParentPlan, validateContributionHandoffAgainstPlan } from '../domain/parent-coordination.mjs';
-import { normalizeTerminalContributionReconciliation, terminalAssociationFromHandoff } from '../domain/terminal-contribution-reconciliation.mjs';
+import { normalizeTerminalContributionReconciliation, taskCompletionIdentity, terminalAssociationFromHandoff } from '../domain/terminal-contribution-reconciliation.mjs';
 import { normalizeTaskDevelopmentReceipt } from '../domain/task-development.mjs';
 import { normalizeTaskReviewResult } from '../domain/task-review.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
@@ -42,6 +42,17 @@ function planningReviewSlot(row, targetIdentity) {
 }
 
 function savedContributionProof(row, receipt, parentTaskId, parentPlan) {
+  if (row.reconciliation_json != null) {
+    try {
+      const record = normalizeTerminalContributionReconciliation(JSON.parse(row.reconciliation_json));
+      if (record.schemaVersion === 'buildr.terminal-contribution-reconciliation/v2') {
+        const current = taskCompletionIdentity({ taskId: row.task_id, parentTaskId: row.parent_task_id, status: row.status, resultSummary: row.result_summary, resultNoChange: row.result_no_change === 1, updatedAt: row.updated_at });
+        if (row.status !== 'completed' || row.result_no_change === 1 || record.childTaskId !== row.task_id || record.parentTaskId !== parentTaskId || record.parentPlanIdentity !== parentPlan?.identity || record.taskResultIdentity !== current) throw parentCoordinationError('terminal_contribution_reconciliation_stale', '贡献处置与当前任务结果、关系或父计划不匹配。', 409);
+        const handoff = validateContributionHandoffAgainstPlan(record.contributionHandoff, parentPlan, record.contributionHandoff.planned);
+        return { handoff, proof: { kind: 'terminal-reconciliation', reconciliationIdentity: record.identity }, diagnostic: null };
+      }
+    } catch (error) { return { handoff: null, proof: null, diagnostic: { code: error.code, message: error.message } }; }
+  }
   if (row.status !== 'completed' || row.result_no_change === 1 || row.finish?.kind !== 'terminal') return { handoff: null, proof: null, diagnostic: null };
   const completion = row.finish.completion;
   const handoff = receipt?.handoffs?.find((item) => item.identity === completion.association?.handoffIdentity) || null;
@@ -337,7 +348,7 @@ export function registerParentCoordinationApplication(runtime) {
   }
 
   function reconcileChildDelivery(targetRoot, childTaskId, input) {
-    assertFields(input, new Set(['parentTaskId', 'expectedPlanIdentity', 'contributionHandoff', 'reason', 'source']), 'Terminal Child Contribution reconciliation');
+    assertFields(input, new Set(['parentTaskId', 'expectedPlanIdentity', 'expectedTaskDigest', 'contributionHandoff', 'reason', 'source']), 'Terminal Child Contribution reconciliation');
     const result = runtime.reconcileTerminalChildContributionDelivery(targetRoot, childTaskId, input);
     return {
       ...inspectParentCoordination(targetRoot, input.parentTaskId),

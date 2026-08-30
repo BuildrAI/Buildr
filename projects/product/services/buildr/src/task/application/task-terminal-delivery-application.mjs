@@ -33,9 +33,20 @@ function associationMatches(association, handoff) {
 }
 
 export function registerTaskTerminalDeliveryApplication(runtime) {
+  function readProfessional(task, owner, read, fallback) {
+    try { return { value: read(), diagnostics: [] }; }
+    catch (error) {
+      if (task.status !== 'completed') throw error;
+      const diagnostic = { owner, code: error.code || 'task_professional_history_unavailable', message: error.message };
+      return { value: { ...fallback, diagnostic }, diagnostics: [diagnostic] };
+    }
+  }
+
   function terminalDeliverySection(targetRoot, taskId, { taskRecord = null, development = null } = {}) {
     const task = taskRecord || runtime.inspectTaskRecord(targetRoot, taskId).record;
-    const developmentReadModel = development || runtime.inspectTaskDevelopment(targetRoot, taskId);
+    const observed = development ? { value: development, diagnostics: [] }
+      : readProfessional(task, 'task-development', () => runtime.inspectTaskDevelopment(targetRoot, taskId), { development: null });
+    const developmentReadModel = observed.value;
     const base = {
       schemaVersion: 'buildr.task-terminal-delivery/v1',
       taskId: task.taskId,
@@ -46,7 +57,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       snapshot: developmentReadModel?.development?.receipt || null,
       associations: { planning: null, completion: null, verification: null },
       maintenance: null,
-      diagnostics: [],
+      diagnostics: observed.diagnostics,
     };
     let finishReadModel;
     try {
@@ -54,12 +65,12 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     } catch (error) {
       // A legacy projection cannot revoke the Task Record's independently saved result.
       if (task.status !== 'completed') throw error;
-      return { ...base, status: task.result?.noChange ? 'completed-no-change' : 'completed', diagnostics: [{ code: error.code || 'task_finish_history_unavailable', message: error.message }] };
+      return { ...base, status: task.result?.noChange ? 'completed-no-change' : 'completed', diagnostics: [...base.diagnostics, { code: error.code || 'task_finish_history_unavailable', message: error.message }] };
     }
     if (task.status === 'active') {
       if (finishReadModel.state === 'current') {
-        const status = finishReadModel.result?.status === 'cleanup_pending' ? 'cleanup-pending' : finishReadModel.result?.status || 'finishing';
-        return { ...base, status, delivery: { runId: finishReadModel.result?.runId || null, phase: finishReadModel.result?.resume?.phase || finishReadModel.result?.phases?.find((item) => ['running', 'blocked', 'failed'].includes(item.status))?.id || null, nextAction: finishReadModel.result?.nextAction || finishReadModel.result?.nextWorkflow || null }, diagnostics: finishReadModel.diagnostics || [] };
+        const status = 'active';
+        return { ...base, status, delivery: { runId: finishReadModel.result?.runId || null, phase: finishReadModel.result?.resume?.phase || finishReadModel.result?.phases?.find((item) => ['running', 'blocked', 'failed'].includes(item.status))?.id || null, nextAction: null }, diagnostics: finishReadModel.diagnostics || [] };
       }
       return base;
     }
@@ -71,7 +82,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const receipt = developmentReadModel?.development?.receipt;
     const selectedHandoff = receipt?.handoffs?.find((item) => item.identity === association?.handoffIdentity) || null;
     if (!terminalResult || !completion || !association || !associationMatches(association, selectedHandoff)) {
-      return { ...base, status: 'completed', diagnostics: terminalResult ? [{ code: 'task_finish_completion_association_missing_or_mismatched', message: '任务结果已保存；旧收尾关联不匹配，未采用其机器交付证明。' }] : [] };
+      return { ...base, status: 'completed', diagnostics: [...base.diagnostics, ...(finishReadModel.diagnostics || []), ...(terminalResult ? [{ code: 'task_finish_completion_association_missing_or_mismatched', message: '任务结果已保存；旧收尾关联不匹配，未采用其机器交付证明。' }] : [])] };
     }
     const cleanupSummary = completion.cleanup?.environment?.latest?.cleanup || completion.cleanup?.latest?.cleanup || completion.cleanup || {};
     const cleanupStatus = completion.cleanup?.status || (finishReadModel.state === 'terminal' ? 'cleaned' : 'pending');
@@ -111,28 +122,31 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
   function inspectTaskTerminalDelivery(targetRoot, taskId) {
     const taskResult = runtime.inspectTaskRecord(targetRoot, taskId);
     const task = taskResult.record;
-    const development = runtime.inspectTaskDevelopment(targetRoot, taskId);
-    const reviews = runtime.inspectTaskReview(targetRoot, taskId);
-    const verification = runtime.inspectTaskVerification(targetRoot, taskId);
-    const projection = baseProjection(task, development, reviews, verification);
-    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task, development });
-    return { ...projection, ...terminal };
+    const development = readProfessional(task, 'task-development', () => runtime.inspectTaskDevelopment(targetRoot, taskId), { development: null });
+    const reviews = readProfessional(task, 'task-review', () => runtime.inspectTaskReview(targetRoot, taskId), { slots: {} });
+    const verification = readProfessional(task, 'task-verification', () => runtime.inspectTaskVerification(targetRoot, taskId), { slot: null });
+    const projection = baseProjection(task, development.value, reviews.value, verification.value);
+    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task, development: development.value });
+    return { ...projection, ...terminal, diagnostics: [...terminal.diagnostics, ...development.diagnostics, ...reviews.diagnostics, ...verification.diagnostics] };
   }
 
   function inspectTaskDevelopmentView(targetRoot, taskId) {
-    const development = runtime.inspectTaskDevelopment(targetRoot, taskId);
-    const terminal = terminalDeliverySection(targetRoot, taskId, { development });
-    return { ...development, terminal };
+    const task = runtime.inspectTaskRecord(targetRoot, taskId).record;
+    const development = readProfessional(task, 'task-development', () => runtime.inspectTaskDevelopment(targetRoot, taskId), { development: null, status: 'unavailable' });
+    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task, development: development.value });
+    return { ...development.value, terminal: { ...terminal, diagnostics: [...terminal.diagnostics, ...development.diagnostics] } };
   }
   function inspectTaskReviewView(targetRoot, taskId) {
-    const reviews = runtime.inspectTaskReview(targetRoot, taskId);
-    const terminal = terminalDeliverySection(targetRoot, taskId);
-    return { ...reviews, terminal };
+    const task = runtime.inspectTaskRecord(targetRoot, taskId).record;
+    const reviews = readProfessional(task, 'task-review', () => runtime.inspectTaskReview(targetRoot, taskId), { slots: {} });
+    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task });
+    return { ...reviews.value, terminal: { ...terminal, diagnostics: [...terminal.diagnostics, ...reviews.diagnostics] } };
   }
   function inspectTaskVerificationView(targetRoot, taskId) {
-    const verification = runtime.inspectTaskVerification(targetRoot, taskId);
-    const terminal = terminalDeliverySection(targetRoot, taskId);
-    return { ...verification, terminal };
+    const task = runtime.inspectTaskRecord(targetRoot, taskId).record;
+    const verification = readProfessional(task, 'task-verification', () => runtime.inspectTaskVerification(targetRoot, taskId), { slot: null });
+    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task });
+    return { ...verification.value, terminal: { ...terminal, diagnostics: [...terminal.diagnostics, ...verification.diagnostics] } };
   }
   Object.assign(runtime, { inspectTaskTerminalDelivery, inspectTaskDevelopmentView, inspectTaskReviewView, inspectTaskVerificationView });
   return runtime;

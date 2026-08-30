@@ -189,3 +189,48 @@ test('direct completion needs no Finish association and never invents verified d
   assert.equal(degraded.delivered, false);
   assert.equal(degraded.diagnostics[0].code, 'history-unavailable');
 });
+
+test('已完成任务隔离每种专业记录损坏且保留未完成任务错误', () => {
+  for (const method of ['inspectTaskDevelopment', 'inspectTaskReview', 'inspectTaskVerification']) {
+    const runtime = runtimeFor('completed', null);
+    runtime[method] = () => { throw Object.assign(new Error('stored record invalid'), { code: 'record-invalid' }); };
+    const result = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.delivered, false);
+    assert.ok(result.diagnostics.some((item) => item.code === 'record-invalid'));
+    const active = runtimeFor('active', null);
+    active[method] = runtime[method];
+    assert.throws(() => active.inspectTaskTerminalDelivery('/workspace', TASK), /stored record invalid/);
+  }
+});
+
+test('审查和验证页不因无关旧研发记录损坏失去完成事实', () => {
+  const runtime = runtimeFor('completed', null);
+  runtime.inspectTaskDevelopment = () => { throw Object.assign(new Error('invalid development'), { code: 'development-invalid' }); };
+  for (const method of ['inspectTaskReviewView', 'inspectTaskVerificationView']) {
+    const result = runtime[method]('/workspace', TASK);
+    assert.equal(result.terminal.status, 'completed');
+    assert.equal(result.terminal.diagnostics[0].code, 'development-invalid');
+  }
+});
+
+test('专业页的自身读取失败明确返回不可用诊断而非伪造未记录', () => {
+  const runtime = runtimeFor('completed', null);
+  runtime.inspectTaskReview = () => { throw Object.assign(new Error('review unavailable'), { code: 'review-unavailable' }); };
+  const review = runtime.inspectTaskReviewView('/workspace', TASK);
+  assert.equal(review.terminal.status, 'completed');
+  assert.equal(review.diagnostic.code, 'review-unavailable');
+  runtime.inspectTaskDevelopment = () => { throw new Error('development unavailable'); };
+  const development = runtime.inspectTaskDevelopmentView('/workspace', TASK);
+  assert.equal(development.status, 'unavailable');
+  assert.equal(development.terminal.status, 'completed');
+});
+
+test('旧收尾阻塞不覆盖进行中任务状态或生成恢复动作', () => {
+  const runtime = runtimeFor('active', null);
+  runtime.inspectTaskFinishReadModel = () => ({ state: 'current', result: { runId: 'legacy', status: 'blocked', nextAction: 'old resume' }, diagnostics: [] });
+  const result = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
+  assert.equal(result.status, 'active');
+  assert.equal(result.delivery.runId, 'legacy');
+  assert.equal(result.delivery.nextAction, null);
+});

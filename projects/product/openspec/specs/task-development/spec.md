@@ -173,29 +173,6 @@ Candidate冻结后，Completion Review MUST 由Task Review Application以`review
 - **THEN** Application MUST清除current decision、判定旧snapshot不再current并返回`task-development`
 - **AND** Finish MUST不得继续消费旧snapshot，Application MUST NOT改写或删除它
 
-### Requirement: Finish carrier 必须由Development证明内容等价
-Task Finish MAY 请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。请求 MUST同时提供冻结run的`handoffIdentity`、`candidateIdentity`、`candidateGeneration`与`contentTargetIdentity`；只有`observed.currentHandoff`存在、四项精确一致、carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST返回`equivalent`。缺少冻结identity、current handoff不存在或任一identity不一致时，Application MUST返回Development handoff失效及具体mismatch，MUST NOT从历史handoffs选择旧identity。
-
-#### Scenario: 只增加delivery commit
-- **WHEN** Finish提供的四项冻结identity全部等于current handoff，且机械提交当前内容但所有scope bytes与逻辑语义未变化
-- **THEN** carrier equivalence MUST通过且Candidate identity保持不变
-- **AND** commit、branch与ref MUST不进入Content Target或Candidate identity
-
-#### Scenario: carrier prepare改变内容
-- **WHEN** rebase、sync、archive、生成或冲突处理改变任一component identity
-- **THEN** equivalence MUST失败并判定current handoff失效
-- **AND** Finish MUST退出到Development重新验证和生成Candidate
-
-#### Scenario: 历史handoff与current handoff不同
-- **WHEN** 请求identity对应历史handoff A，但`observed.currentHandoff`已推进为B
-- **THEN** Application MUST返回handoff identity mismatch并指向Task Development
-- **AND** MUST NOT因历史receipt仍包含A而返回`equivalent`
-
-#### Scenario: carrier assertion缺少冻结identity
-- **WHEN** 调用方未提供四项冻结identity中的任一项
-- **THEN** operation MUST以类型化invalid-input失败
-- **AND** MUST NOT执行carrier observation或返回宽松currentness结论
-
 ### Requirement: Task Development 必须覆盖完整正式研发区间
 Task Development MUST 从 active Task 的首个正式研发动作开始维护研发聚合事实，直到形成 current Finish handoff。Proposal、design、Planning Review、实现收敛、formal Verification 与 Completion Review 等节点 MUST 可按 Task 事实不存在、`not-applicable` 或由明确授权 `waived`；节点存在时 Development MUST 保存其专业 authority、portable reference、identity 与 disposition，不得复制专业内容或 Result 正文。
 
@@ -556,33 +533,22 @@ Development MUST 先建立stable Content Target与verification policy并冻结cu
 - **AND** scoped risk MUST NOT把Verification事实改写为passed或使stale/incomplete Result适用
 
 ### Requirement: Task Development 必须拥有终态 Contribution reconciliation evidence
-Task Development Application MUST作为 terminal contribution reconciliation 的唯一 writer，保存独立于 Development Receipt 与 immutable handoff 的 closed append-only evidence；该evidence MUST引用既有 terminal Finish association与handoff identity，并 MUST NOT修改或替代原Development Receipt、Candidate、gates、decision、handoff或Finish facts。
+已有贡献登记 MUST支持直接完成的子任务；必须明确贡献映射、reason、source、expectedTaskDigest 与当前父计划，校验直接关系、规范归档、结果身份和其他子任务归属。MUST不要求旧候选、收尾关联或Child研发记录；不能仅从completed推断贡献或父任务验收。旧v1证据只读，新v2写同一已有表并保持事务、幂等与冲突保护。
 
 #### Scenario: 写入一次恢复 evidence
-- **WHEN** 严格恢复前置条件全部满足且同一Child尚无reconciliation
-- **THEN** Task Development MUST事务化写入一条内容寻址的reconciliation evidence并写后验证
-- **AND** operation result MUST返回identity、proof source、effects与更新后的Parent Coordination projection
+- **WHEN** 子任务已完成，调用方已核对真实成果并提交完整且当前的贡献处置
+- **THEN** MUST通过既有入口记录并显示贡献判断；相同重放保持不变，父任务仍独立验收
 
 #### Scenario: 写入失败
-- **WHEN** serialization、constraint、busy、post-read、Plan drift、handoff mismatch或ownership validation任一失败
-- **THEN** transaction MUST完整rollback
-- **AND** MUST保留原Development、Finish与reconciliation facts
+- **WHEN** 身份、内容、父计划、任务结果版本或归属存在冲突
+- **THEN** MUST拒绝相关写入或不采用陈旧证据，保留已有结果并报告精确原因
 
 ### Requirement: 终态恢复输入必须由 action contract 发现
-Task Development / Parent Coordination 恢复入口 MUST提供closed机器可读输入schema、示例和CLI帮助，静态schema MUST区分结构约束与运行态Parent Plan、Task、handoff、Finish及ownership校验；发现操作 MUST零Workspace读取和零写入。
+已有贡献登记 MUST支持直接完成的子任务；必须明确贡献映射、reason、source、expectedTaskDigest 与当前父计划，校验直接关系、规范归档、结果身份和其他子任务归属。MUST不要求旧候选、收尾关联或Child研发记录；不能仅从completed推断贡献或父任务验收。旧v1证据只读，新v2写同一已有表并保持事务、幂等与冲突保护。
 
 #### Scenario: 查看恢复schema
-- **WHEN** Agent在没有执行恢复的情况下请求reconcile-child-delivery schema或example
-- **THEN** CLI MUST返回closed Contribution Handoff输入、必需expected Plan、reason与source说明
-- **AND** MUST不compose runtime、不访问SQLite或产生effect
-
-### Requirement: 恢复 evidence 不得成为 normal Child 流程替代
-Task Development workflow MUST继续要求 active Child 在正式 handoff 中提交 Contribution Handoff；terminal reconciliation MUST只作为已完成交付的异常恢复，不得允许Agent预先省略planned binding、Contribution Handoff、Verification、Completion Review或Finish。
-
-#### Scenario: Agent准备正常Child handoff
-- **WHEN** active Child承担Parent Contribution并准备形成current Finish handoff
-- **THEN** Task Development MUST仍要求planned binding与同一immutable handoff内的Contribution Handoff
-- **AND** Skill MUST NOT建议先完成Task再使用terminal reconciliation
+- **WHEN** 只查询输入定义
+- **THEN** MUST返回含任务结果版本的closed输入，不读取工作空间或执行写入
 
 ### Requirement: Parent startup next 不得遮蔽 current Acceptance 后的 Development next
 Parent Coordination startup projection MUST只在仍有协调动作时提供`startup.next`。当 current Parent Acceptance 已绑定 current Parent Plan 且所有 Contribution prerequisites 已满足时，startup MUST不再推荐`accept-parent`；Task Entry composition MUST保留同次 Task Development read model 的真实 typed next，且 MUST不在Parent层推测后续Development action。

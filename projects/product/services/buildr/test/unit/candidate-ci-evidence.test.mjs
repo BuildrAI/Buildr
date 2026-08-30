@@ -95,7 +95,7 @@ test('Windows lifecycle owners are partitioned into bounded semantic shards', ()
     },
     {
       id: 'task-finish-windows',
-      stepIds: ['system-task-finish', 'system-task-finish-cli'],
+      stepIds: ['system-task-finish-cli'],
     },
     {
       id: 'task-development-windows',

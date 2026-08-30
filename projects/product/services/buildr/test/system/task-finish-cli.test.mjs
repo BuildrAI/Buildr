@@ -1,3 +1,4 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -6,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { createFinishRun } from '../helpers/legacy-finish-history.mjs';
 
 const cli = path.resolve('bin/buildr.mjs');
 
@@ -21,7 +22,7 @@ function fixture(t, initialized = false) {
 }
 
 function create(root, runId = 'current-inspect') {
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   runtime.createTaskRecord(root, { taskId: runId, title: 'Finish CLI Task', intent: 'Inspect a SQLite Finish run.', projects: [], services: [], changes: [] });
   const run = createFinishRun({
     root,
@@ -69,7 +70,7 @@ test('task finish inspect 默认compact、显式full/self-bootstrap且文本保�
   assert.equal(selfBootstrapInput.identity.taskId, 'current-inspect');
   assert.equal(selfBootstrapInput.mode, 'ineligible');
   assert.equal('resolvedContext' in selfBootstrapInput, false);
-  assert.equal(text.stdout, 'Task Finish run current-inspect: active\nNext: none\n');
+  assert.match(text.stdout, /旧运行只读保留/);
 });
 
 test('task finish 非法detail在读取run前失败', (t) => {
@@ -113,69 +114,16 @@ test('当前客户端拒绝旧 action 与 caller-authored 协议参数', (t) => 
   }
 });
 
-test('canonical run 要求 receipt-bound task environment，帮助区分自动run、reconcile与inspect', (t) => {
-  const root = fixture(t);
-  const initialized = spawnSync(process.execPath, [cli, 'init', '--target', root, '--name', 'finish-cli', '--description', 'Task Finish CLI fixture', '--profile', 'team'], { encoding: 'utf8' });
-  assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
-
-  const missingTask = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(missingTask.status, 2, missingTask.stderr || missingTask.stdout);
-  assert.equal(JSON.parse(missingTask.stdout).error.code, 'task_finish.missing_parameter');
-
-  const invalidZeroDelta = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--accept-zero-delta-adaptation', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(invalidZeroDelta.status, 2, invalidZeroDelta.stderr || invalidZeroDelta.stdout);
-  assert.equal(JSON.parse(invalidZeroDelta.stdout).error.code, 'task_finish.zero_delta_adaptation_context_invalid');
-  const invalidReviewedPath = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--reviewed-target-path', 'workspace::feature.txt::reviewed', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(invalidReviewedPath.status, 2, invalidReviewedPath.stderr || invalidReviewedPath.stdout);
-  assert.equal(JSON.parse(invalidReviewedPath.stdout).error.code, 'task_finish.reviewed_target_path_context_invalid');
-  const malformedReviewedPath = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--reviewed-target-path', 'feature.txt', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(malformedReviewedPath.status, 2, malformedReviewedPath.stderr || malformedReviewedPath.stdout);
-  assert.equal(JSON.parse(malformedReviewedPath.stdout).error.code, 'task_finish.reviewed_target_path_invalid');
-
-  const created = spawnSync(process.execPath, [cli, 'task', 'create', 'finish-cli-task', '--title', 'Finish CLI Task', '--intent', '验证 Task Environment 门禁', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const rejected = spawnSync(process.execPath, [cli, 'task', 'finish', 'run', '--task', 'finish-cli-task', '--target', root, '--json'], { encoding: 'utf8' });
-  assert.equal(rejected.status, 2, rejected.stderr || rejected.stdout);
-  const rejectedPayload = JSON.parse(rejected.stdout);
-  assert.equal(rejectedPayload.error.code, 'task_finish.entry_gaps');
-  assert.ok(rejectedPayload.error.details.gaps.environment.some((item) => item.code === 'task_environment_snapshot_missing'));
-  assert.ok(rejectedPayload.error.details.gaps.development.some((item) => item.code === 'task_finish.development_handoff_not_current'));
-  assert.equal(rejectedPayload.error.details.nextWorkflow, 'task-development');
-  assert.match(rejectedPayload.suggestions.join('\n'), /task-development/);
-
-  const runHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'run'], { encoding: 'utf8' });
-  const rolloverHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'rollover'], { encoding: 'utf8' });
-  const reconcileHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'reconcile'], { encoding: 'utf8' });
-  const inspectHelp = spawnSync(process.execPath, [cli, 'help', 'task', 'finish', 'inspect'], { encoding: 'utf8' });
-  assert.equal(runHelp.status, 0, runHelp.stderr);
-  assert.equal(rolloverHelp.status, 0, rolloverHelp.stderr);
-  assert.equal(reconcileHelp.status, 0, reconcileHelp.stderr);
-  assert.equal(inspectHelp.status, 0, inspectHelp.stderr);
-  const helpText = `${runHelp.stdout}\n${rolloverHelp.stdout}\n${reconcileHelp.stdout}\n${inspectHelp.stdout}`;
-  assert.match(helpText, /task finish run/);
-  assert.match(helpText, /task finish rollover/);
-  assert.match(helpText, /task finish reconcile/);
-  assert.match(helpText, /task finish inspect/);
-  assert.match(helpText, /不接受success、evidence、commit message、run token或手写proof/);
-  assert.match(helpText, /--task <task-id> --commit-message <message> \[--agent <agent>\]/);
-  assert.match(helpText, /已有run\/resume不接受--commit-message覆盖/);
-  assert.match(helpText, /--accept-zero-delta-adaptation/);
-  assert.match(helpText, /--reviewed-target-path/);
-  assert.match(helpText, /repository selector、Task Contribution path与非空理由/);
-  assert.match(helpText, /--release-occupancy/);
-  assert.match(helpText, /compact\|full\|self-bootstrap/);
-  assert.match(helpText, /占用释放/);
-  assert.match(helpText, /不创建commit、不替代resume token/);
-  assert.match(helpText, /Buildr-Task trailer/);
-  assert.match(helpText, /current formal Development handoff/);
-  assert.match(helpText, /retained canonical Workspace 的当前符号分支/);
-  assert.match(helpText, /省略时使用 Task Environment 已绑定 adapter/);
-  assert.match(helpText, /不得猜测当前聊天宿主或默认为 Codex/);
-  assert.match(helpText, /SQLite compare-and-swap/);
-  assert.match(helpText, /deliver使用Environment adapter冻结的run agent/);
-  assert.doesNotMatch(helpText, /Usage:[^\n]*(?:--project|--change)/);
-  assert.doesNotMatch(helpText, /target branch 默认来自 Git carrier provider start point/);
-  assert.doesNotMatch(helpText, /Usage: buildr task finish (?:advance|recover|cleanup-prepare)\b/);
+test('旧收尾写入口退出公开命令且不改变任务和资源', (t) => {
+  const root = fixture(t, true);
+  const run = create(root);
+  const before = fs.readdirSync(root);
+  for (const action of ['run', 'rollover', 'reconcile']) {
+    const result = spawnSync(process.execPath, [cli, 'task', 'finish', action, '--task', run.identity.task, '--target', root, '--json'], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.equal(JSON.parse(result.stdout).error.code, 'cli.unknown_command');
+  }
+  assert.deepEqual(fs.readdirSync(root), before);
 });
 
 test('已清退的 OpenSpec Legacy 帮助入口不再存在', () => {

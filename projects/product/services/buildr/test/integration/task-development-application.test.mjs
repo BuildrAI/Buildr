@@ -301,7 +301,9 @@ test('Development result按保存事实给出单一建议方向且不自动推�
   assert.equal(result.development.receipt.handoffs.length, 0);
 
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  assert.match(result.nextActions[0], /明确交付授权/);
+  assert.equal(result.next.action, 'report');
+  assert.equal(result.next.owner, 'agent');
+  assert.equal(result.next.command, undefined);
   assert.equal(result.development.applicability.handoff, 'current');
 });
 
@@ -575,7 +577,9 @@ test('handoff-current后working copy不可用时inspect与task next不推荐Fini
   const current = changeFixture(t, 'handoff-working-copy-missing');
   let result = handoffChangeFixture(current);
   assert.equal(result.development.applicability.handoff, 'current');
-  assert.equal(result.next.action, 'finish');
+  assert.equal(result.next.action, 'report');
+  assert.equal(result.next.owner, 'agent');
+  assert.equal(result.next.capability, null);
   const savedHandoffs = result.development.receipt.handoffs;
   const savedObservedAt = result.development.observedAt;
 

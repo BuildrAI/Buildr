@@ -53,33 +53,15 @@ test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名
   const syntax = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
 });
 
-test('Formal Finish 通过 Task Record Application 幂等完成 active Task，并拒绝冲突终态', (t) => {
-  const { root } = fixture(t, 'task-finish-completion');
+test('任务完成只经既有 complete，旧收尾专用完成写入口退出', (t) => {
+  const { root } = fixture(t, 'direct-completion');
   const runtime = createRuntime();
-  runtime.createTaskRecord(root, { taskId: 'finish-task', title: '正常交付', intent: '验证 Finish 终态', projects: [], services: [], changes: [] });
-
-  const completed = runtime.completeTaskRecordFromFinish(root, 'finish-task');
-  assert.equal(completed.operation, 'complete');
-  assert.equal(completed.status, 'completed');
-  assert.deepEqual(completed.record.result, { summary: '任务贡献已验证交付。', noChange: false });
-  assert.deepEqual(completed.effects, [{ type: 'updated', taskId: 'finish-task' }]);
-  assert.match(completed.nextActions[0], /任务复盘/);
-
-  const repeated = runtime.completeTaskRecordFromFinish(root, 'finish-task');
-  assert.equal(repeated.status, 'completed');
-  assert.deepEqual(repeated.effects, []);
-  assert.deepEqual(repeated.record, completed.record);
-  assert.equal(repeated.recordDigest, completed.recordDigest);
-
-  runtime.createTaskRecord(root, { taskId: 'no-change-task', title: '无需交付', intent: '验证 noChange 冲突', projects: [], services: [], changes: [] });
-  const noChange = runtime.completeTaskRecord(root, 'no-change-task', { summary: '无需修改', noChange: true });
-  assert.throws(() => runtime.completeTaskRecordFromFinish(root, 'no-change-task'), (error) => error.code === 'task_record_finish_terminal_conflict');
-  assert.equal(runtime.inspectTaskRecord(root, 'no-change-task').recordDigest, noChange.recordDigest);
-
-  runtime.createTaskRecord(root, { taskId: 'abandoned-finish-task', title: '已放弃', intent: '验证 abandon 冲突', projects: [], services: [], changes: [] });
-  const abandoned = runtime.abandonTaskRecord(root, 'abandoned-finish-task', { reason: '不再交付' });
-  assert.throws(() => runtime.completeTaskRecordFromFinish(root, 'abandoned-finish-task'), (error) => error.code === 'task_record_finish_terminal_conflict');
-  assert.equal(runtime.inspectTaskRecord(root, 'abandoned-finish-task').recordDigest, abandoned.recordDigest);
+  assert.equal(runtime.completeTaskRecordFromFinish, undefined);
+  runtime.createTaskRecord(root, { taskId: 'direct-task', title: '非 Git 成果', intent: '完成业务工作', projects: [], services: [], changes: [] });
+  const completed = runtime.completeTaskRecord(root, 'direct-task', { summary: '业务成果已到位，实际业务结果已核对。', noChange: false });
+  assert.equal(completed.record.status, 'completed');
+  assert.equal(completed.record.result.noChange, false);
+  assert.equal(runtime.inspectTaskTerminalDelivery(root, 'direct-task').status, 'completed');
 });
 
 test('todo 只保存意向与复盘信源，支持多对多关联、open 查询与显式激活', (t) => {
@@ -217,4 +199,17 @@ test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'safe-task', title: '不得覆盖', intent: 'SQLite duplicate', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_already_exists');
   const list = runtime.listTaskRecords(root); assert.equal(list.tasks.some((item) => item.record.taskId === 'safe-task'), true); assert.deepEqual(list.diagnostics, []);
   assert.notDeepEqual(original, current.record);
+});
+
+test('CLI 完成动作沿用观察到的记录摘要并拒绝覆盖并发更新', (t) => {
+  const { root } = fixture(t, 'completion-cas');
+  const runtime = createRuntime();
+  const before = runtime.createTaskRecord(root, { taskId: 'cas-task', title: '旧目标', intent: '初始目标', projects: [], services: [], changes: [] });
+  runtime.updateTaskRecord(root, 'cas-task', { intent: '协作者更新了目标' });
+  const rejected = run(['task', 'complete', 'cas-task', '--summary', '基于旧目标完成', '--expected-record', before.recordDigest, '--target', root, '--json'], 1);
+  assert.notEqual(rejected.status, 0);
+  assert.equal(runtime.inspectTaskRecord(root, 'cas-task').record.status, 'active');
+  const current = runtime.inspectTaskRecord(root, 'cas-task');
+  const completed = json(['task', 'complete', 'cas-task', '--summary', '已核对新目标并完成', '--expected-record', current.recordDigest, '--target', root]);
+  assert.equal(completed.record.status, 'completed');
 });

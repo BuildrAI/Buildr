@@ -1,10 +1,12 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 import { reconcileTaskFinishMaintenance } from '../../src/task/application/finish/task-finish-maintenance.mjs';
-import { createFinishRun, finishResult, inspectFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { finishResult, inspectFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { createFinishRun } from '../helpers/legacy-finish-history.mjs';
 
 const test = createBuildrApplicationTest('integration-task-finish-maintenance');
 
@@ -16,7 +18,7 @@ function fixture(t, taskId) {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Finish maintenance fixture\n');
   fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 123e4567-e89b-42d3-a456-426614174008\nname: Finish maintenance fixture\ndescription: Finish maintenance fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = t.buildrContexts.application;
+  const runtime = legacyFinishRuntime(t.buildrContexts.application);
   runtime.createTaskRecord(root, { taskId, title: 'Finish maintenance fixture', intent: 'Verify maintenance refresh.', projects: [], services: [], changes: [] });
   return { root, runtime };
 }

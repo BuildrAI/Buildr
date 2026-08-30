@@ -1,3 +1,4 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,7 +11,7 @@ import {
   TASK_FINISH_EXECUTION_RECORD_OWNER,
   TASK_FINISH_EXECUTION_RECORD_PRODUCER,
 } from '../../src/task/application/finish/execution-record.mjs';
-import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { createFinishRun } from '../helpers/legacy-finish-history.mjs';
 
 const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '../../../../../..');
@@ -98,7 +99,7 @@ function stoppedEvidence(evidence, status) {
 
 function setup(t, name, { recordTarget = 'sha256-content-target', runTarget = 'sha256-content-target' } = {}) {
   const root = workspace(t);
-  const runtime = t.buildrContexts.application;
+  const runtime = legacyFinishRuntime(t.buildrContexts.application);
   const taskId = `recover-${name}`;
   const finishRunId = `${taskId}-finish-run`;
   const invocationId = `${taskId}-invocation`;

@@ -77,24 +77,37 @@ function deliveredGate(gate, type) {
   return { status: type === 'verification' ? 'verified-at-delivery' : 'adopted-at-delivery', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
 }
 
+export function taskCompletionIdentity(task) {
+  return digest({ taskId: task.taskId, parentTaskId: task.parentTaskId, status: task.status,
+    resultSummary: task.resultSummary, resultNoChange: task.resultNoChange, updatedAt: task.updatedAt });
+}
+
 export function createTerminalContributionReconciliation(input) {
-  const handoff = normalizeContributionHandoff(input.contributionHandoff);
   const payload = {
-    schemaVersion: TERMINAL_CONTRIBUTION_RECONCILIATION_SCHEMA,
-    childTaskId: text(input.childTaskId, 'reconciliation.childTaskId'),
-    parentTaskId: text(input.parentTaskId, 'reconciliation.parentTaskId'),
-    parentPlanIdentity: text(input.parentPlanIdentity, 'reconciliation.parentPlanIdentity'),
-    finishAssociation: terminalAssociationFromHandoff(input.finishAssociation, input.handoff),
-    contributionHandoff: handoff,
-    reason: text(input.reason, 'reconciliation.reason'),
-    source: text(input.source, 'reconciliation.source'),
+    schemaVersion: 'buildr.terminal-contribution-reconciliation/v2',
+    childTaskId: text(input.childTaskId, 'childTaskId'),
+    parentTaskId: text(input.parentTaskId, 'parentTaskId'),
+    parentPlanIdentity: text(input.parentPlanIdentity, 'parentPlanIdentity'),
+    taskResultIdentity: text(input.taskResultIdentity, 'taskResultIdentity'),
+    contributionHandoff: normalizeContributionHandoff(input.contributionHandoff),
+    reason: text(input.reason, 'reason'), source: text(input.source, 'source'),
   };
-  if (handoff.parentTaskId !== payload.parentTaskId) throw parentCoordinationError('terminal_contribution_reconciliation_parent_mismatch', 'Contribution Handoff parentTaskId与恢复Parent不一致。', 409, { handoffParentTaskId: handoff.parentTaskId, parentTaskId: payload.parentTaskId });
-  return normalizeTerminalContributionReconciliation({ ...payload, identity: digest(payload), createdAt: timestamp(input.createdAt, 'reconciliation.createdAt') });
+  return normalizeTerminalContributionReconciliation({ ...payload, identity: digest(payload), createdAt: input.createdAt });
 }
 
 export function normalizeTerminalContributionReconciliation(value) {
   const record = object(value, 'reconciliation');
+  if (record.schemaVersion === 'buildr.terminal-contribution-reconciliation/v2') {
+    closed(record, new Set(['schemaVersion', 'identity', 'childTaskId', 'parentTaskId', 'parentPlanIdentity', 'taskResultIdentity', 'contributionHandoff', 'reason', 'source', 'createdAt']), 'reconciliation');
+    const payload = { schemaVersion: record.schemaVersion,
+      childTaskId: text(record.childTaskId, 'childTaskId'), parentTaskId: text(record.parentTaskId, 'parentTaskId'),
+      parentPlanIdentity: text(record.parentPlanIdentity, 'parentPlanIdentity'), taskResultIdentity: text(record.taskResultIdentity, 'taskResultIdentity'),
+      contributionHandoff: normalizeContributionHandoff(record.contributionHandoff), reason: text(record.reason, 'reason'), source: text(record.source, 'source') };
+    if (payload.contributionHandoff.parentTaskId !== payload.parentTaskId) throw parentCoordinationError('terminal_contribution_reconciliation_parent_mismatch', '贡献处置与父任务不一致。', 409);
+    if (record.identity !== digest(payload)) throw parentCoordinationError('terminal_contribution_reconciliation_identity_mismatch', '贡献处置身份与内容不一致。', 409);
+    return { ...payload, identity: record.identity, createdAt: timestamp(record.createdAt, 'createdAt') };
+  }
+
   closed(record, new Set(['schemaVersion', 'identity', 'childTaskId', 'parentTaskId', 'parentPlanIdentity', 'finishAssociation', 'contributionHandoff', 'reason', 'source', 'createdAt']), 'reconciliation');
   if (record.schemaVersion !== TERMINAL_CONTRIBUTION_RECONCILIATION_SCHEMA) throw parentCoordinationError('terminal_contribution_reconciliation_schema_unsupported', `reconciliation.schemaVersion 必须是 ${TERMINAL_CONTRIBUTION_RECONCILIATION_SCHEMA}。`, 409);
   const handoff = normalizeContributionHandoff(record.contributionHandoff);

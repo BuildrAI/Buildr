@@ -100,19 +100,21 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
           ) : null}
         </div>
       </article>
+      {terminal?.delivery?.runId ? (
       <article id="task-finish-execution-records-entry" className="panel finish-execution-records-entry">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Task Finish</p>
-            <h2>Finish 执行记录</h2>
-            <p className="section-copy">查看每次 Finish invocation 的 diagnostics、失败与恢复记录；这里不替代 current/terminal 交付事实。</p>
+            <h2>历史收尾执行记录</h2>
+            <p className="section-copy">查看旧收尾的诊断和已发生结果；旧执行流程已退役，历史记录不限制本轮收尾。</p>
           </div>
-          <Button onClick={onSelectFinishExecutionRecords}>查看 Finish 执行记录</Button>
+          <Button onClick={onSelectFinishExecutionRecords}>查看历史收尾执行记录</Button>
         </div>
         <dl className="read-facts">
           <Fact label="当前专业事实" value={terminalStatus ? developmentStatusLabel(terminalStatus) : terminal?.status || '尚未形成'} />
         </dl>
       </article>
+      ) : null}
       <div id="task-development-loading" className={`page-loading${loading ? '' : ' hidden'}`}>
         <span className="loader" />
         <p>正在读取研发状态…</p>

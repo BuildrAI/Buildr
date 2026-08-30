@@ -1,6 +1,6 @@
 ---
 name: task-development
-description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
+description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
 ---
 
 # Task Development
@@ -47,17 +47,17 @@ Parent Environment只服务Parent本身。纯协调且在Child前不修改交付
 
 Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
 
-满足独立交付门槛的Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。Child仍拥有独立Environment、窄Change、Planning Review、Verification、Completion Review与Finish；同一个具体规范变化同一时间只能由一个active Change持有。
+满足独立交付门槛的Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。选择受管研发的Child按自身需要维护Environment、窄Change、Planning Review、Verification和Completion Review，收尾独立处理；同一个具体规范变化同一时间只能由一个active Change持有。
 
 Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明，`expectedChild`也不能替代真实Child relation与binding。
 
-只有Child已经completed且非no-change、matching terminal Finish association精确指向不含Contribution Handoff的immutable handoff、全部Change仍为archived，并且用户或治理任务已经明确给出current Parent Plan映射时，才可使用`task parent reconcile-child-delivery`异常恢复。先用`--schema|--example`发现closed输入，再显式提交`--parent`、`--expected-plan`、完整Contribution Handoff、`--reason`与`--source`；不得从Git、代码、文件、canonical specs或completed状态猜测delivery。相同恢复可幂等重放；Plan漂移、handoff/Finish不匹配、已有原生handoff或其他Child owner冲突时停止。该入口不重开Task、不修改旧Receipt/handoff/Finish，也不得被建议为正常Child省略binding或handoff的后补路径。
+Child 直接完成后，若使用专用父计划，通过已有 `task parent reconcile-child-delivery` 显式提交成果与贡献映射、原因、来源、当前父计划身份和 `--expected-task`（来自 `task inspect` 的 `recordDigest`）。登记校验当前结果版本、直接父子关系、贡献归属及规范归档，不要求旧收尾或候选。任务完成状态本身不替代贡献判断或父任务最终验收。
 
 Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：Plan identity与治理摘要取`plan`，工作项取唯一顶层`contributions`，预期Child取`expectation.child`，真实Child binding取`boundContributions`，delivery来源取`delivery.proof.kind`（`native-handoff|terminal-reconciliation`），下一步取`startup.next`。不得期待v2的raw `parentPlan`、`plan.contributions`、顶层`nextActions`、`finalAcceptanceReady`、Child `plannedContributions`或完整Review/Handoff Result；需要完整长期事实时回到对应专业authority，而不是要求Parent Coordination复制。
 
 Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
 
-所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。Acceptance绑定current Parent Plan后，立即重读顶层`task next`并继续消费Task Development返回的真实typed next；不得再次执行`accept-parent`，也不得在Skill或Parent coordination中硬编码Finish。随后由Development current状态正常推进Candidate、Completion Review、decision、handoff与Formal Finish。
+所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。Acceptance绑定current Parent Plan后，立即重读顶层`task next`并继续消费Task Development返回的真实typed next；不得再次执行`accept-parent`，也不得在Skill或Parent coordination中硬编码Finish。随后仅按研发自身需要维护结果；收尾独立触发。
 
 ## 从首个研发动作接入
 
@@ -93,7 +93,7 @@ Development只拥有这些专业事实如何构成当前Task研发过程，不�
 
 检查通过后，向Development Application提交完整Change dispositions并调用`observe`形成Content Target。任一Change仍为`pending`时Application会在Content observation与Receipt写入前失败关闭；先完成Change-owned实现、current knowledge与deterministic convergence/archive，不能为了进入验证把pending伪装成stable。code-only Task提交空数组，明确`not-applicable`继续按原路径工作。观察结果必须只含逻辑selector、相对source path、observer capability与内容identity，不得保存本机路径。Content Target形成前，Receipt状态保持`planning`，不得虚构policy、Candidate或Result。
 
-Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，直接让Finish在run-owned隔离交付载体（Delivery Carrier）处理交付适配（Delivery Adaptation）；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
+Candidate freeze后交付基线（Delivery Baseline）前进时，不要rebase或修改原Task worktree。先只读inspect原Task source snapshot、Task Context、policy与gates；Task Development是Content Target、Candidate、Verification、Completion Review、decision与handoff是否current/stale的唯一authority。原Task source与这些输入未变时，全部facts保持current，由智能体（Agent）按实际 Git 事实选择安全交付方式；不得调用observe覆盖Content Target、重跑正式Verification或递增generation。
 
 Finish的Git conflict只证明机械应用失败或需要语义判断，不证明任务贡献（Task Contribution）已改变。只有Agent确认任务行为、验收目标或原Task source/Task Contribution真实变化时，才调用observe并按本Skill重新Verification、Completion Review、handoff与freeze。无法判断时保持blocked，不交付或伪造复用evidence。
 
@@ -134,10 +134,10 @@ Candidate形成后，按实际工作需要形成matching Verification、用`task
 
 只有current Candidate、三个current gates、非blocked且current的Knowledge disposition和合法proceed decision同时成立时生成正式handoff。Application append immutable snapshot；不得因后续Result刷新、Knowledge更新或新generation改写旧snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
 
-## 交给任务收尾（Task Finish）
+## 研发结果与独立收尾
 
-handoff完成后调用`task-finish`，由Agent选择自动Finish、直接Git、PR或其他已授权Delivery路径。所有路径都消费同一current snapshot；Buildr reconciliation必须把冻结handoff、Candidate、generation、Content Target与Task Contribution提交给Development Application并从真实remote target重建Delivery evidence。Task Finish不得收敛Change、生成Candidate、发起Verification/Completion Review、接受风险或修改Development Receipt。只有Development Application报告真实applicability stale时才回到本Skill；远端前进、自动carrier冲突或Buildr内部登记失败不自动使Development stale。
+本技能（Skill）保存研发路径自身选择的专业事实，不为收尾规定前置交接。研发结果就绪后报告成果及限制；用户要求收尾或交付时，由 `task-finish` 依据当前目标独立组合工具。已有候选或交接是可参考的历史，不要求所有交付路径消费，也不补造收尾运行或对账。
 
 ## 完成证据
 
-报告planning snapshot identity与nodes/dispositions、Content Target identity、policy identity、Verification Result或waiver applicability、Candidate identity/generation、Completion Result或waiver applicability、decision、handoff identity，以及适用的Task Contribution/Delivery Baseline观察与Finish carrier equivalence。不得把Product Candidate verification误报成Task Candidate，也不得把commit/branch/worktree当Candidate。
+只报告实际形成且适用的研发事实；缺失如实说明，不为收尾补造候选或交接。报告planning snapshot identity与nodes/dispositions、Content Target identity、policy identity、Verification Result或waiver applicability、Candidate identity/generation、Completion Result或waiver applicability、decision、handoff identity，以及适用的任务成果和交付目标观察。不得把Product Candidate verification误报成Task Candidate，也不得把commit/branch/worktree当Candidate。

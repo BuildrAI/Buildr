@@ -363,3 +363,14 @@ Buildr MUST从Task、Git/PR、GitHub run/attempt、release owner Result、Enviro
 - **WHEN** Publication、reconciliation、Git closeout、Task no-change completion、Environment cleanup与最终Doctor均成立
 - **THEN** Timeline MUST返回terminal closed、各owner identity与稳定timeline identity
 - **AND** compact output MUST只返回关键阶段、timeline identity与inspect pointer，完整timeline只在显式full中展开
+
+### Requirement: 发布关联必须与旧收尾执行证明解耦
+发布支持任务 MUST以已有完成记录建立关联，MUST不要求旧运行、研发交接或旧自举运行号；发布 MUST继续独立验证冻结源码、候选、唯一产物、目标引用和授权。
+
+#### Scenario: 直接完成支持任务
+- **WHEN** 支持任务已完成但无旧收尾记录
+- **THEN** 关联不因缺旧证据阻塞
+
+#### Scenario: 发布事实不足
+- **WHEN** 支持任务已完成但发布源码或产物证据不匹配
+- **THEN** 发布仍被对应安全检查阻止

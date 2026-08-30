@@ -1,6 +1,6 @@
 # 任务系统现状与依赖审查
 
-> 当前事实核验于 2026-08-30；本版用于看清整体结构和讨论重构顺序。只研究从工作空间（Workspace）启动的场景，包括多项目（Project）、多独立 Git 仓库。不在这里决定模块去留、具体迁移任务或新架构。
+> 第 1—3 节保留 2026-08-30 首次改造前的历史结构，用于理解依赖与改造顺序；现行收尾见下方实现说明。只研究从工作空间（Workspace）启动的场景，包括多项目（Project）、多独立 Git 仓库。不在这里决定模块去留、具体迁移任务或新架构。
 
 **本轮范围已收小：极简收尾重构 + 设计方法沉淀，见第 4 节。** 第 1—3 节用于理解现状，不是本轮新增接口或模块清单。
 
@@ -230,7 +230,7 @@ flowchart BT
 - 收尾技能源文件由 74 行缩为 29 行；这是文件规模变化，不等于已测得耗时或词元（Token）收益。
 - 包静态检查曾要求收尾技能包含旧交接、五阶段等固定文案，且至少 40 行、1500 字符。该检查已从候选实现删除，通用格式、发布资源及能力绑定检查保留。
 - 任务完成与清理已拆开：完成不冒充机器交付证明，删除仍需逐仓核验当前内容保全。真实多独立仓库测试已验证部分集成时保留全部工作树，完整保留后再清理。
-- 新接口、新应用、新交付数据库均为零。旧五阶段执行器仍可显式调用，但默认收尾不生成或消费它的状态；本次没有重写发布与专用父任务计划。
+- 新接口、新应用、新交付数据库均为零。首次改造时旧五阶段执行器仍可显式调用；后续改造已退役其写入口并处理发布与专用父任务计划连接，历史数据保留。
 - 本轮直接收尾实际窗口为 116.022 秒，涵盖精确暂存至推送确认、任务登记、自举与环境清理，不含之前的实现、验证和规范归档。窗口不同，不能与旧例直接计算提升比例。详见 [真实案例](../../services/buildr/resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md)。
 
 ### 最少的实践与交付安排
@@ -242,12 +242,12 @@ flowchart BT
 
 本文继续作为总导航和最小证据入口，随首项改造一起交付；设计技能（Skill）负责完整方法，不在多个文档和规则里重复维护。具体提交推送按后续明确的执行授权进行。
 
-本轮重新梳理了范围，尚未改动规则、技能或应用。低风险且没有任何测试依据时是否允许直接交付，仍是待确认的具体策略，不因“从简从快”自动视为已同意。
+后续 `decouple-task-closeout` 继续移除旧入口和消费者依赖：收尾退出 `task next`、旧执行器退役、结果读取局部隔离，发布和父任务各自核对实际成果。具体检查只保护相应动作，不建立统一验证前置。
 
 <details>
 <summary>首个真实样本：为什么一次收尾用了近 18 分钟</summary>
 
-来源：[内联 Workspace 核心规则并退役 Core Rule 文件](codex://threads/01a050b4-c50a-7e31-9cc4-973460f54114)。收尾请求所在轮次为 `01a050cb-de87-75a2-ade1-95a53ddfe1f7`，工具返回总耗时 `1073302 ms`，约 **17 分 53 秒**。
+来源：内联 Workspace 核心规则并退役 Core Rule 文件（历史会话 `01a050b4-c50a-7e31-9cc4-973460f54114`）。收尾请求所在轮次为 `01a050cb-de87-75a2-ade1-95a53ddfe1f7`，工具返回总耗时 `1073302 ms`，约 **17 分 53 秒**。
 
 以下按事件时间切分，时间均为 Asia/Shanghai。阶段区间包括其中的阅读、判断、命令与等待，不代表整段都在执行某条命令，更不能把未单独计时的部分都叫作浪费。
 
@@ -269,9 +269,9 @@ flowchart BT
 已确认的成本原因与待判断之处：
 
 1. **收尾请求接手了尚未完成的正式准备。** 前一轮只做了有界验证；没有正式候选、交接或已归档变更。用户看到的“已实现，待交付”仍包含后续正式工作。不能把旧测试通过直接冒充当前正式证明，但应审查阶段交界是否把过多工作集中到最后。
-2. **测试选择因一行归属路径修改扩到全范围。** 交付提交 `d0d45f24` 把 `test/verification/ownership.mjs` 中 `resources/workspace/rules/buildr/core.md` 改为 `resources/workspace/AGENTS.md`。该文件又被整体归入 `ownership-authority-change`；规划器因此选入全部 `core` 范围，最终执行 55 项。这是现有保守策略的实际效果，尚不能断言这些检查都可删除。[触发规则](/Users/chenjun/Buildr/projects/product/services/buildr/test/verification/ownership.mjs:1341)；[扩展选择实现](/Users/chenjun/Buildr/projects/product/services/buildr/test/verification/planner.mjs:738)。
+2. **测试选择因一行归属路径修改扩到全范围。** 交付提交 `d0d45f24` 把 `test/verification/ownership.mjs` 中 `resources/workspace/rules/buildr/core.md` 改为 `resources/workspace/AGENTS.md`。该文件又被整体归入 `ownership-authority-change`；规划器因此选入全部 `core` 范围，最终执行 55 项。这是现有保守策略的实际效果，尚不能断言这些检查都可删除。[触发规则](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/test/verification/ownership.mjs#L1341)；[扩展选择实现](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/test/verification/planner.mjs#L738)。
 3. **存在输入与发现成本。** 首次验证计划带服务路径前缀，仅选出 5 项；修正为提供者接受的路径后重规划，再因准备完成重读计划。还出现 Node 版本不符和 `task finish inspect --task` 参数不支持。需要审查接口的路径与身份传递，不把这些尝试归为必要业务工作。
-4. **聚合状态的采用与反复读取值得测量。** 多个研发动作都重新组合环境、内容、声明及专业结果；存在可见阅读和登记往返，但没有足够细的时间跨度把剩余耗时可靠分配给某一个原因。[聚合观察实现](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-development-application.mjs:351)。
+4. **聚合状态的采用与反复读取值得测量。** 多个研发动作都重新组合环境、内容、声明及专业结果；存在可见阅读和登记往返，但没有足够细的时间跨度把剩余耗时可靠分配给某一个原因。[聚合观察实现](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-development-application.mjs#L351)。
 5. **产品内部计时不等于用户等待。** 本例自动收尾内部报告 `coverage=product-complete`、约 59 秒，用户实际等待约 17 分 53 秒。两者都可以是真实数据，但优化必须同时记录覆盖范围，不能只优化其中一个数字。
 
 需要保留的安全约束：对象和版本正确、验证结论真实、目标远端明确、贡献不遗漏、不覆盖他人修改、删除有归属证明、发布另行授权。需要重新审查的流程条件：固定阶段、重复采用、无差别扩大检查、要求同一运行及与当前动作无关的完整环境条件。不能仅凭一个样本宣布全部删除。
@@ -287,15 +287,15 @@ flowchart BT
 
 | 支持的判断 | 文件与行号 |
 |---|---|
-| 研发中心组织专业事实、候选和交接 | [task-development-application.mjs:351](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-development-application.mjs:351)，第 351—418、724—814 行 |
-| 父子进度使用研发、交付与审查事实 | [parent-coordination-application.mjs:44](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/parent-coordination-application.mjs:44)，第 44—63、183—213、290—297 行 |
-| 收尾使用交接和执行环境；可独立重建交付上下文 | [task-finish-entry-readiness.mjs:145](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/finish/task-finish-entry-readiness.mjs:145)，第 145—245 行 |
-| 交付恢复仍可能等待旧目录清理 | [task-finish-delivery-reconciliation.mjs:291](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/finish/task-finish-delivery-reconciliation.mjs:291)，第 291—410 行；[对应测试:489](/Users/chenjun/Buildr/projects/product/services/buildr/test/integration/task-finish-delivery-reconciliation.test.mjs:489)，第 489—521 行 |
-| 环境拥有准备、执行位置和清理 | [task-environment-application.mjs:1312](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-environment-application.mjs:1312)，第 1312—1417 行 |
-| 验证使用候选、声明与执行证据 | [task-verification-application.mjs:423](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-verification-application.mjs:423)，第 423—496 行 |
-| 规范与当前认知衔接研发 | [task-development/SKILL.md:80](/Users/chenjun/Buildr/projects/product/services/buildr/resources/workspace/skills/buildr/task-development/SKILL.md:80)，第 80—94、126—139 行 |
-| 自举和发布关联是外围消费者 | [自举技能:8](/Users/chenjun/Buildr/skills/buildr-self-bootstrap-sync/SKILL.md:8)，第 8—31 行；[release-task-evidence-correlation.mjs:201](/Users/chenjun/Buildr/projects/product/services/buildr/tools/release/release-task-evidence-correlation.mjs:201)，第 201—235 行 |
-| 顶层记录、复盘和界面各有边界 | [task-record-application.mjs:361](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-record-application.mjs:361)，第 361—408 行；[task-retrospective-application.mjs:155](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/application/task-retrospective-application.mjs:155)，第 155—184 行；[task-overview-repository.mjs:7](/Users/chenjun/Buildr/projects/product/services/buildr/src/task/persistence/task-overview-repository.mjs:7)，第 7—58 行 |
+| 研发中心组织专业事实、候选和交接 | [task-development-application.mjs:351](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-development-application.mjs#L351)，第 351—418、724—814 行 |
+| 父子进度使用研发、交付与审查事实 | [parent-coordination-application.mjs:44](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/parent-coordination-application.mjs#L44)，第 44—63、183—213、290—297 行 |
+| 收尾使用交接和执行环境；可独立重建交付上下文 | [task-finish-entry-readiness.mjs:145](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/finish/task-finish-entry-readiness.mjs#L145)，第 145—245 行 |
+| 交付恢复仍可能等待旧目录清理 | [task-finish-delivery-reconciliation.mjs:291](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/finish/task-finish-delivery-reconciliation.mjs#L291)，第 291—410 行；[对应测试:489](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/test/integration/task-finish-delivery-reconciliation.test.mjs#L489)，第 489—521 行 |
+| 环境拥有准备、执行位置和清理 | [task-environment-application.mjs:1312](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-environment-application.mjs#L1312)，第 1312—1417 行 |
+| 验证使用候选、声明与执行证据 | [task-verification-application.mjs:423](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-verification-application.mjs#L423)，第 423—496 行 |
+| 规范与当前认知衔接研发 | [task-development/SKILL.md:80](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/resources/workspace/skills/buildr/task-development/SKILL.md#L80)，第 80—94、126—139 行 |
+| 自举和发布关联是外围消费者 | [自举技能:8](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/skills/buildr-self-bootstrap-sync/SKILL.md#L8)，第 8—31 行；[release-task-evidence-correlation.mjs:201](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/tools/release/release-task-evidence-correlation.mjs#L201)，第 201—235 行 |
+| 顶层记录、复盘和界面各有边界 | [task-record-application.mjs:361](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-record-application.mjs#L361)，第 361—408 行；[task-retrospective-application.mjs:155](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/application/task-retrospective-application.mjs#L155)，第 155—184 行；[task-overview-repository.mjs:7](https://github.com/BuildrAI/Buildr/blob/3ce532f5e7fe12b7e9b9aaa7bbb08c212c3094c9/projects/product/services/buildr/src/task/persistence/task-overview-repository.mjs#L7)，第 7—58 行 |
 
 集鲜本地样本中，两个独立仓库的本地引用已与保存的贡献来源对齐，任务记录仍保存旧收尾阻塞。远端查询超时，未证明当前远端状态，也未执行会写状态的恢复命令。因此它只是问题线索，不是“现版必然无法恢复”的结论。
 

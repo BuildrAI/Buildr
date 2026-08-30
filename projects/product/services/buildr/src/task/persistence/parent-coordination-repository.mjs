@@ -41,6 +41,9 @@ export function registerParentCoordinationRepository(runtime) {
       const childRows = opened.database.prepare(`SELECT
         child.task_id AS child_task_id,
         child.title AS child_title,
+        child.result_summary AS child_result_summary,
+        child.updated_at AS child_updated_at,
+        child.parent_task_id AS child_parent_task_id,
         child.status AS child_status,
         child.result_no_change AS child_result_no_change,
         development.record_json AS development_json,
@@ -58,6 +61,9 @@ export function registerParentCoordinationRepository(runtime) {
         return {
           task_id: row.child_task_id,
           title: row.child_title,
+          result_summary: row.child_result_summary,
+          updated_at: row.child_updated_at,
+          parent_task_id: row.child_parent_task_id,
           status: row.child_status,
           result_no_change: row.child_result_no_change,
           development_json: row.development_json,

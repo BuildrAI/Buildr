@@ -766,7 +766,7 @@ export function TaskDetailPage() {
               <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${overviewData.reviews.completion.gateMatch}` : '尚未记录'} />
               <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${overviewData.verification.gateMatch}` : '尚未记录'} />
               <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
-              <Fact label="交付" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '尚未形成'} />
+              <Fact label="历史交付记录" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '无旧收尾记录'} />
             </dl>
           )}
         </section>

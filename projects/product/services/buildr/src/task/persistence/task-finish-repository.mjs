@@ -185,7 +185,7 @@ function deliverySetIdentity(run, result = null, completion = null) {
   return deliveries.length ? digest(deliveries) : null;
 }
 
-function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
+export function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
   const normalized = assertRun(run);
   const failure = normalized.primaryFailure || null;
   return {
@@ -227,7 +227,7 @@ function currentRecord(run, { preparedCompletion = null, lease = null } = {}) {
   };
 }
 
-function terminalRecord(run, result, completion) {
+export function terminalRecord(run, result, completion) {
   const normalized = assertRun(run);
   const storedResult = compactResult(result);
   const identityDigest = normalized.identityDigest || digest(normalized.identity);
@@ -451,50 +451,6 @@ export function registerTaskFinishRepository(runtime) {
     } finally { close(opened); }
   }
 
-  function writeTaskFinishRunPersistence(targetRoot, run) {
-    const normalized = assertRun(run);
-    let opened;
-    try {
-      opened = open(runtime, targetRoot, true);
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const existing = readCurrentRow(database, { taskId: normalized.identity.task });
-      if (existing && existing.run_id !== normalized.runId) throw error('task_finish_current_conflict', `Task 已有另一个 current Finish run：${existing.run_id}。`, 409, { taskId: normalized.identity.task, currentRunId: existing.run_id, requestedRunId: normalized.runId });
-      const decoded = existing ? decodeRow(existing) : null;
-      if (decoded?.kind === 'terminal') throw error('task_finish_current_terminal_conflict', `Task 已有terminal Finish state：${existing.run_id}。`, 409, { taskId: normalized.identity.task, runId: existing.run_id });
-      const row = writeCurrentRow(database, currentRecord(normalized, { preparedCompletion: decoded?.preparedCompletion || null, lease: leaseFromRow(existing) }));
-      const written = decodeRow(row);
-      database.exec('COMMIT');
-      const serialized = JSON.stringify(written.run);
-      return { root: opened.root, file: runLocator(row.run_id), content: serialized, runDigest: digest(serialized), run: written.run, created: !existing };
-    } catch (cause) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
-      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
-      throw error('task_finish_run_write_failed', `Task Finish current run 写入失败：${cause.message}`, 500, { taskId: normalized.identity.task });
-    } finally { close(opened); }
-  }
-
-  function discardFailedTaskFinishRunPersistence(targetRoot, { taskId, runId }) {
-    if (!taskId || !runId) throw error('task_finish_run_identity_invalid', 'discard failed Finish run requires taskId and runId.');
-    let opened;
-    try {
-      opened = open(runtime, targetRoot, true);
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const current = readCurrentRow(database, { taskId });
-      if (!current) { database.exec('COMMIT'); return { discarded: false, taskId, runId }; }
-      if (current.run_id !== runId) throw error('task_finish_current_conflict', `Task 当前 Finish run 不是待替换 run：${current.run_id}。`, 409, { taskId, currentRunId: current.run_id, requestedRunId: runId });
-      if (current.status !== 'failed' || decodeRow(current).kind !== 'run') throw error('task_finish_run_not_replaceable', `只有failed current run可以被新的Development handoff替换：${current.status}。`, 409, { taskId, runId, status: current.status });
-      database.prepare('DELETE FROM task_finish_current WHERE task_id = ? AND run_id = ?').run(taskId, runId);
-      database.exec('COMMIT');
-      return { discarded: true, taskId, runId };
-    } catch (cause) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
-      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
-      throw error('task_finish_run_discard_failed', `failed Task Finish run 清理失败：${cause.message}`, 500, { taskId, runId });
-    } finally { close(opened); }
-  }
-
   function readTaskFinishCompletionPersistence(targetRoot, { taskId = null, runId = null } = {}, { optional = true } = {}) {
     let opened;
     try {
@@ -511,138 +467,6 @@ export function registerTaskFinishRepository(runtime) {
     } catch (cause) {
       if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
       throw error('task_finish_completion_read_failed', `Task Finish completion 读取失败：${cause.message}`, 500, { taskId, runId });
-    } finally { close(opened); }
-  }
-
-  function writeTaskFinishCompletionPersistence(targetRoot, { taskId, runId, result, status = 'complete' }) {
-    if (!taskId || !runId) throw error('task_finish_completion_identity_invalid', 'Task Finish completion requires taskId and runId.', 400);
-    if (!['complete', 'cleanup_pending'].includes(status)) throw error('task_finish_completion_status_invalid', `Task Finish completion status 不支持：${status}。`, 400);
-    const completion = clone(result);
-    if (completion?.task !== taskId || completion?.runId !== runId) throw error('task_finish_completion_identity_invalid', 'Task Finish completion identity与current run不一致。', 409, { taskId, runId });
-    let opened;
-    try {
-      opened = open(runtime, targetRoot, true);
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const current = readCurrentRow(database, { taskId });
-      const decoded = current ? decodeRow(current) : null;
-      if (!current || decoded?.kind !== 'run' || current.run_id !== runId) throw error('task_finish_current_conflict', 'Task Finish prepared completion缺少matching current run。', 409, { taskId, runId, currentRunId: current?.run_id || null });
-      const row = writeCurrentRow(database, currentRecord(decoded.run, { preparedCompletion: completion, lease: leaseFromRow(current) }));
-      const written = decodeRow(row).preparedCompletion;
-      database.exec('COMMIT');
-      const serialized = JSON.stringify(written);
-      return { root: opened.root, file: completionLocator(taskId), content: serialized, resultDigest: digest(serialized), completion: written, status, runId };
-    } catch (cause) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
-      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
-      throw error('task_finish_completion_write_failed', `Task Finish completion 写入失败：${cause.message}`, 500, { taskId, runId });
-    } finally { close(opened); }
-  }
-
-  function finalizeTaskFinishPersistence(targetRoot, { run, result, completion = null, supersededCurrent = null }) {
-    const normalized = assertRun(run);
-    if (supersededCurrent && (!supersededCurrent.runId || !supersededCurrent.runDigest || supersededCurrent.runId === normalized.runId)) {
-      throw error('task_finish_current_recovery_identity_invalid', 'Task Finish recovery terminal requires a distinct superseded run ID and exact run digest.', 400, {
-        taskId: normalized.identity.task,
-        runId: normalized.runId,
-        supersededRunId: supersededCurrent.runId || null,
-      });
-    }
-    const terminal = terminalRecord(normalized, result, completion);
-    let opened;
-    try {
-      opened = open(runtime, targetRoot, true);
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const current = readCurrentRow(database, { taskId: normalized.identity.task });
-      if (supersededCurrent) {
-        const decoded = current ? decodeRow(current) : null;
-        const currentRunDigest = decoded?.kind === 'run' ? digest(JSON.stringify(decoded.run)) : null;
-        if (!current
-          || current.run_id !== supersededCurrent.runId
-          || decoded?.kind !== 'run'
-          || decoded.run.status !== 'failed'
-          || currentRunDigest !== supersededCurrent.runDigest) {
-          throw error('task_finish_current_conflict', 'Task Finish recovery terminal的superseded current已漂移。', 409, {
-            taskId: normalized.identity.task,
-            runId: normalized.runId,
-            expectedCurrentRunId: supersededCurrent.runId,
-            currentRunId: current?.run_id || null,
-            expectedCurrentRunDigest: supersededCurrent.runDigest,
-            currentRunDigest,
-            currentKind: decoded?.kind || null,
-            currentStatus: decoded?.kind === 'run' ? decoded.run.status : null,
-          });
-        }
-      } else if (current && current.run_id !== normalized.runId) {
-        throw error('task_finish_current_conflict', 'Task Finish terminal state与current run不一致。', 409, { taskId: normalized.identity.task, runId: normalized.runId, currentRunId: current.run_id });
-      }
-      const row = writeCurrentRow(database, terminal.record);
-      const written = decodeRow(row);
-      database.exec('COMMIT');
-      const serialized = JSON.stringify(written.completion);
-      return { root: opened.root, file: completionLocator(normalized.identity.task), content: serialized, resultDigest: digest(serialized), completion: written.completion, status: 'complete', runId: normalized.runId };
-    } catch (cause) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
-      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
-      throw error('task_finish_finalize_failed', `Task Finish terminal persistence finalize 失败：${cause.message}`, 500, { taskId: normalized.identity.task, runId: normalized.runId });
-    } finally { close(opened); }
-  }
-
-  function replaceTaskFinishRunPersistence(targetRoot, { run, supersededCurrent }) {
-    const normalized = assertRun(run);
-    if (normalized.status !== 'active'
-      || !supersededCurrent?.runId
-      || !supersededCurrent?.runDigest
-      || supersededCurrent.runId === normalized.runId) {
-      throw error('task_finish_current_replacement_identity_invalid', 'Task Finish rollover requires a distinct active run and exact superseded current identity.', 400, {
-        taskId: normalized.identity.task,
-        runId: normalized.runId,
-        supersededRunId: supersededCurrent?.runId || null,
-      });
-    }
-    let opened;
-    try {
-      opened = open(runtime, targetRoot, true);
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const current = readCurrentRow(database, { taskId: normalized.identity.task });
-      const decoded = current ? decodeRow(current) : null;
-      const currentRunDigest = decoded?.kind === 'run' ? digest(JSON.stringify(decoded.run)) : null;
-      if (!current
-        || decoded?.kind !== 'run'
-        || current.run_id !== supersededCurrent.runId
-        || !['blocked', 'failed'].includes(decoded.run.status)
-        || currentRunDigest !== supersededCurrent.runDigest
-        || leaseFromRow(current)) {
-        throw error('task_finish_current_conflict', 'Task Finish rollover refused because the superseded current run drifted or owns a lease.', 409, {
-          taskId: normalized.identity.task,
-          runId: normalized.runId,
-          expectedCurrentRunId: supersededCurrent.runId,
-          currentRunId: current?.run_id || null,
-          expectedCurrentRunDigest: supersededCurrent.runDigest,
-          currentRunDigest,
-          currentKind: decoded?.kind || null,
-          currentStatus: decoded?.kind === 'run' ? decoded.run.status : null,
-          leasePresent: Boolean(leaseFromRow(current)),
-        });
-      }
-      const row = writeCurrentRow(database, currentRecord(normalized));
-      const written = decodeRow(row);
-      database.exec('COMMIT');
-      const serialized = JSON.stringify(written.run);
-      return {
-        root: opened.root,
-        file: runLocator(written.run.runId),
-        content: serialized,
-        runDigest: digest(serialized),
-        run: written.run,
-        replaced: { runId: supersededCurrent.runId, runDigest: supersededCurrent.runDigest },
-      };
-    } catch (cause) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
-      if (cause.taskFinishBusiness || cause.structuredStoreBusiness) throw cause;
-      throw error('task_finish_run_replacement_failed', `Task Finish rollover persistence failed: ${cause.message}`, 500, { taskId: normalized.identity.task, runId: normalized.runId });
     } finally { close(opened); }
   }
 
@@ -833,12 +657,7 @@ export function registerTaskFinishRepository(runtime) {
     taskFinishRunPath,
     taskFinishCompletionPath,
     readTaskFinishRunPersistence,
-    writeTaskFinishRunPersistence,
-    discardFailedTaskFinishRunPersistence,
     readTaskFinishCompletionPersistence,
-    writeTaskFinishCompletionPersistence,
-    finalizeTaskFinishPersistence,
-    replaceTaskFinishRunPersistence,
     writeTaskFinishMaintenancePersistence,
     writeTaskFinishTerminalCleanupPersistence,
     acquireTaskFinishCurrentTargetLease,

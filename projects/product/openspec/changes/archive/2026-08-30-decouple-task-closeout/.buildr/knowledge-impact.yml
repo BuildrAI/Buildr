@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: decouple-task-closeout
+operation: reconcile
+treeIdentity: current-worktree
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 已确认六项改造
+    status: aligned
+    sourceIdentities: [user-approved-plan]
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: 收尾脱离旧执行链
+    status: updated
+    sourceIdentities: [decouple-task-closeout-implementation]
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 收尾与交付日常同义和证据区别
+    status: updated
+    sourceIdentities: [decouple-task-closeout-implementation]
+unresolvedItems: []

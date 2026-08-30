@@ -39,8 +39,8 @@ test('Git Operations 实例区分 Agent capability 与产品 Task Finish executo
   assert.match(capabilityDocs, /Resolver 与 readiness/);
   assert.match(capabilityDocs, /Runtime evidence/);
   assert.match(capabilityDocs, /用户替换实现/);
-  assert.match(capabilityDocs, /独立已选Git Operation由同一个`git-operations` provider处理/);
-  assert.match(capabilityDocs, /它不决定 `task-finish\/v1` 产品执行器是否可运行/);
+  assert.match(capabilityDocs, /供明确选择的 Git 动作使用/);
+  assert.match(capabilityDocs, /收尾继续处理其他安全工作/);
 });
 
 test('capability-adaptation 拥有跨 Skill 影响检查，Core 不复制专项流程', () => {

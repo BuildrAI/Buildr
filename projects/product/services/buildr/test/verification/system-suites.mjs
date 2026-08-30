@@ -144,17 +144,6 @@ export const SYSTEM_SUITES = Object.freeze([
     ]),
   }),
   Object.freeze({
-    id: 'system-task-finish',
-    name: 'System Task Finish product journey',
-    innerConcurrency: 1,
-    schedulingCostMs: 120000,
-    concurrencyClass: 'workspace-heavy',
-    resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
-    files: Object.freeze([
-      'test/system/task-finish-product-journey.test.mjs',
-    ]),
-  }),
-  Object.freeze({
     id: 'system-task-finish-cli',
     name: 'System Task Finish CLI journey',
     innerConcurrency: 1,

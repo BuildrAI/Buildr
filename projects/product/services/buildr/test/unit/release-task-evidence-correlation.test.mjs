@@ -46,7 +46,7 @@ function correlation(overrides = {}) {
 
 test('correlates release/support Task evidence into one portable identity', () => {
   const result = correlation();
-  assert.equal(result.schemaVersion, 'buildr.release-task-evidence-correlation/v1');
+  assert.equal(result.schemaVersion, 'buildr.release-task-evidence-correlation/v2');
   assert.equal(result.status, 'passed');
   assert.match(result.identity, /^sha256-[a-f0-9]{64}$/u);
   assert.equal(result.entries.length, 2);
@@ -77,21 +77,19 @@ test('publication correlation requires the release coordination Task to remain a
   );
 });
 
-test('blocks cross-run self-bootstrap evidence without changing Finish delivery', () => {
-  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId: 'support-1', runId: 'finish-run-43', resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity: digest('7'), deliveredRef: sha('8'), sourceTree: sha('9') } })] });
-  assert.equal(result.status, 'blocked');
+test('直接完成的支持任务不要求旧研发、收尾或自举记录', () => {
+  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { environment: null, development: null, finish: null, selfBootstrap: null })] });
+  assert.equal(result.status, 'passed');
   const support = result.entries.find((item) => item.taskId === 'support-1');
-  assert.equal(support.finish.status, 'passed');
-  assert.match(support.findings.map((item) => item.code).join(','), /run|activation|self-bootstrap/u);
+  assert.equal(support.finish.status, 'unknown');
+  assert.deepEqual(support.findings, []);
+  assert.throws(() => correlation({ supportTasks: [{ ...task('support-1'), status: 'active' }] }), /must be completed/);
 });
 
-test('missing self-bootstrap remains unknown while Delivery stays passed', () => {
-  const result = correlation({ taskEvidence: [entry('release-1.0.0'), entry('support-1', { selfBootstrap: null })] });
-  assert.equal(result.status, 'unknown');
-  const support = result.entries.find((item) => item.taskId === 'support-1');
-  assert.equal(support.status, 'unknown');
-  assert.equal(support.finish.status, 'passed');
-  assert.equal(support.finish.deliveryStatus, 'delivered');
+test('支持任务完成不能替代发布环境和实际发布检查', () => {
+  const result = correlation({ taskEvidence: [entry('release-1.0.0', { environment: null }), entry('support-1', { finish: null, development: null, selfBootstrap: null })] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.entries.find((item) => item.taskId === 'release-1.0.0').findings[0].code, 'environment-not-ready');
 });
 
 test('transaction context can carry validated task correlation without copying Finish Result', () => {
