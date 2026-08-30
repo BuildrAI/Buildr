@@ -359,6 +359,52 @@ test('每个既有 migration ledger 版本都可连续升级到当前 schema', (
   }
 });
 
+test('v19 数据库可直接完成任务，升级不绕过版本和状态检查', async (t) => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  for (const scenario of [
+    { name: '正常完成', status: 'active' },
+    { name: '陈旧版本', status: 'active', expectedRecordDigest: 'sha256-stale', error: 'task_record_conflict' },
+    { name: '待办不得报告有改动完成', status: 'todo', error: 'task_record_todo_completion_requires_no_change' },
+    { name: '升级失败保留任务', status: 'active', failMigration: true, error: 'workspace_store_database_failed' },
+  ]) {
+    await t.test(scenario.name, (child) => {
+      const root = workspace(child);
+      const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const database = new DatabaseSync(file);
+      let before;
+      try {
+        for (const migration of migrations.filter((item) => item.version <= 19)) applyWorkspaceSqliteMigration(database, migration);
+        database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+          VALUES ('upgrade-task', 'buildr.task-record/v2', '保留标题', '直接完成旧库任务', ?, NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run(scenario.status);
+        if (scenario.failMigration) database.exec('CREATE TABLE terminal_contribution_reconciliations_next(id TEXT);');
+        before = database.prepare("SELECT * FROM tasks WHERE task_id = 'upgrade-task'").get();
+      } finally { database.close(); }
+
+      const runtime = createRuntime();
+      assert.throws(() => runtime.inspectTaskRecord(root, 'upgrade-task'), (error) => error.code === 'workspace_store_migration_required');
+      const complete = () => runtime.completeTaskRecord(root, 'upgrade-task', {
+        summary: '成果已交付', noChange: false,
+        ...(scenario.expectedRecordDigest ? { expectedRecordDigest: scenario.expectedRecordDigest } : {}),
+      });
+      if (scenario.error) assert.throws(complete, (error) => error.code === scenario.error);
+      else {
+        const result = complete();
+        assert.equal(result.record.status, 'completed');
+        assert.deepEqual(result.record.result, { summary: '成果已交付', noChange: false });
+        assert.equal(runtime.inspectTaskRecord(root, 'upgrade-task').recordDigest, result.recordDigest);
+      }
+      const after = new DatabaseSync(file, { readOnly: true });
+      try {
+        assert.equal(after.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, scenario.failMigration ? 19 : migrations.at(-1).version);
+        const record = after.prepare("SELECT * FROM tasks WHERE task_id = 'upgrade-task'").get();
+        if (scenario.error) assert.deepEqual(record, before);
+        else { assert.equal(record.title, before.title); assert.equal(record.intent, before.intent); }
+      } finally { after.close(); }
+    });
+  }
+});
+
 test('migration loader 拒绝缺口并以原始 package bytes 计算稳定 checksum', (t) => {
   assert.equal(loadWorkspaceSqliteMigrations(), loadWorkspaceSqliteMigrations(), '默认package migrations复用不可变解析结果');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-sqlite-migrations-'));
