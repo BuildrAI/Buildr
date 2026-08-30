@@ -5,11 +5,11 @@
       "type": "skill",
       "id": "agent-first-design",
       "target": "skills/buildr/agent-first-design",
-      "integrity": "sha256-4b4476313609f64a9fd808ccdc36b0fbf94fea7911ac413d7d885314f8680282",
+      "integrity": "sha256-d9976627e4d33f30547b7b623887b373f17f423a21fef9ce7286a4145a91ef7d",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-81b927719c5a3db0dd665ad006423865c4422dcf47b42ca871575a087c7a6da3"
+          "integrity": "sha256-e139eddd5891574886bce455f9e24ec93f983d5516d7d44bb1d996e694305077"
         },
         {
           "path": "references/task-closeout.md",
