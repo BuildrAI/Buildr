@@ -2,18 +2,6 @@
   "schemaVersion": "buildr.builtin-receipts/v1",
   "builtins": [
     {
-      "type": "rule",
-      "id": "buildr-core",
-      "target": "rules/buildr/core.md",
-      "integrity": "sha256-7463ea8c82b036c3784ef2af1c92788d25c1d94bfe270c4e8951f0f2c5ff1f72",
-      "files": [
-        {
-          "path": "core.md",
-          "integrity": "sha256-351f5b46b591660732b5edc348bd7f53406e0e55dce90ffc4e57c7fea1b83cef"
-        }
-      ]
-    },
-    {
       "type": "skill",
       "id": "capability-adaptation",
       "target": "skills/buildr/capability-adaptation",

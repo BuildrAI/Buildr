@@ -1,9 +1,2 @@
 schemaVersion: buildr.rules/v1
-rules:
-  - id: "buildr-core"
-    source: "buildr"
-    path: "rules/buildr/core.md"
-    description: "Buildr workspace 基础契约；每次进入 workspace 都必须读取。"
-    enabled: true
-    required: true
-    state: "installed"
+rules: []
