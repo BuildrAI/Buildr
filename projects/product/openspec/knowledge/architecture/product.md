@@ -1,6 +1,6 @@
 # Buildr 产品架构
 
-随包 [工作空间入口](../../../services/buildr/resources/workspace/AGENTS.md) 的受管区块（Managed Block）是唯一核心规则源，包含六条智能体优先原则以及责任、沟通、工作资产职责和不可绕过边界；本文只解释当前产品架构，不复制原则。独立核心规则已退役，专业规则仍通过 `rules/manifest.yml` 登记并按需读取。
+随包 [工作空间入口](../../../services/buildr/resources/workspace/AGENTS.md) 的受管区块（Managed Block）是唯一核心规则源，包含智能体优先原则及其适用范围，以及责任、沟通、工作资产职责和不可绕过边界；本文只解释当前产品架构，不复制原则。独立核心规则已退役，专业规则仍通过 `rules/manifest.yml` 登记并按需读取。
 
 ## 用户与协作角色
 
@@ -57,4 +57,6 @@ Buildr Local是单机产品形态：SQLite只保存当前机器、当前Workspac
 
 ## 按需设计方法
 
-审视职责分工、简化流程或门禁时，可使用 [智能体优先设计技能](../../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)。完整范式和判断方法在该技能维护，普通开发或收尾不增加必读前置。
+软件引入智能体（Agent）参与产品结果交付时，开始向智能体软件（Agentic Software）演进。相关产品设计及智能体工作系统改造可使用 [智能体优先设计技能](../../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)：根规则保存原则，技能提供职责划分、能力取舍和产物接续的方法。仅使用智能体开发普通业务软件，不自动要求业务产品采用这种架构；渐进引入时只指导相关部分，普通开发或收尾不增加必读前置。
+
+产物（Artifact）涵盖中间成果和最终结果，各入口围绕同一对象、当前版本及变化接续；用户查看成果不必阅读完整执行过程，目标完成仍需验收。代码、Git、文件、数据及外部系统可以各自承载权威事实，无需新建统一产物数据库；这些成果也不自动成为工作资产（Work Asset）。这描述设计方向与边界，不声称当前 Buildr 已实现任意外部成果的实时同步或统一编辑。

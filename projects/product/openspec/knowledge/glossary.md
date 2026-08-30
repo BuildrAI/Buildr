@@ -100,6 +100,20 @@
 - 避免混用：普通 Workspace 文件、临时内容或一次查询结果不会仅因可见或被使用而自动成为 Work Asset。
 - 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
+## 智能体软件（Agentic Software）
+
+- 定义：引入智能体参与理解用户目标、判断或执行工作并交付产品结果的软件；从局部能力开始引入即可逐步演进。
+- 适用范围：智能体参与产品交付的功能及其协作方式，不要求所有功能同时改造。
+- 避免混用：仅使用智能体开发代码，不自动使被开发产品成为智能体软件；原有业务、安全和授权边界继续有效。
+- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)、[随包原则](../../services/buildr/resources/workspace/AGENTS.md)
+
+## 产物（Artifact）
+
+- 定义：工作过程中形成或改变、可供查看和接续的中间成果或最终结果，包括文档、代码、Git 变更、数据记录与外部系统中的实际结果。
+- 适用范围：多入口协作中的共同工作对象，以对应系统的身份、当前版本与可核验事实为准；并不限定为构建生成的文件。
+- 避免混用：成果不因被生成或使用而自动成为工作资产（Work Asset），也不意味着新建统一产物存储；多入口事实一致不等于目标已经验收完成。正式发布制品仍使用各自限定术语。
+- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)、[设计技能](../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)
+
 ## 共享工作环境（Shared Work Environment）
 
 - 定义：Buildr 将 Work Assets、发现入口和 runtime 投射组织后，为 Agent 提供的整体工作体验。

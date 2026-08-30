@@ -356,7 +356,7 @@ builtins:
     - id: agent-first-design
       path: resources/workspace/skills/buildr/agent-first-design
       target: skills/buildr/agent-first-design
-      description: 用户要求审视产品或系统的职责分工、简化工作流和门禁时使用；依据真实现场判断智能体、技能、工具、接口与应用各自承担什么，并从实践沉淀方法。
+      description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
