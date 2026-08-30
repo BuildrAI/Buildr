@@ -553,3 +553,25 @@ Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply cont
 - **WHEN** 用户不需要生成原型、没有明确确认生成，或明确要求忽略已有原型
 - **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
 - **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker
+
+### Requirement: 产品必须提供按需的智能体优先设计技能
+Buildr MUST提供可选 `agent-first-design` 技能（Skill），在用户要求审视产品或系统的职责分工、简化工作流及门禁时提供已确认范式、关系图和判断方法。技能 MUST不成为普通开发或收尾的统一前置，也不引入新规则、评分或审批门禁。
+
+#### Scenario: 审视职责与流程
+- **WHEN** 用户要求判断智能体、技能、工具、接口与应用应该各自负责什么
+- **THEN** 技能 MUST先围绕目标和真实现场选择现有能力，再判断必要的新软件能力，不预建接口清单。
+
+#### Scenario: 普通任务
+- **WHEN** 用户只是执行既有任务或普通收尾
+- **THEN** 既有技能 MUST不强制加载设计技能，也不要求额外评审或结果对象。
+
+### Requirement: 设计方法必须连接真实实践及当前实现说明
+设计技能 MUST保存完整已确认范式，说明技能可沉淀可调整的工作流（Workflow）；案例 MUST区分真实观察、候选建议与限制。收尾的真实参与者与职责 MUST继续由统一实现说明维护，不复制另一份模块权威。
+
+#### Scenario: 引用收尾案例
+- **WHEN** 使用收尾案例解释设计取舍
+- **THEN** 技能 MUST提供实际版本、动作、统计口径和限制，不把不同窗口的时间或未测量词元（Token）声称为优化收益。
+
+#### Scenario: 分发与发现
+- **WHEN** 技能通过既有资源清单安装或同步
+- **THEN** 正文和案例参考 MUST完整投射且可按需读取，无额外接口、应用或数据库。

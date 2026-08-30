@@ -53,3 +53,8 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 Buildr 负责长期治理、跨 Agent 复用、确定性状态变更、完整性保护、诊断和 evidence；Agent 负责理解、检索、选择、组织、推理和执行。具体 `rg`、SQL、API、语义检索或 MCP 是 Agent 可采用的工具，不是 Buildr Context 模型本身。
 
 Buildr Local是单机产品形态：SQLite只保存当前机器、当前Workspace的本地structured data，不同步数据库文件。未来组织协作应由独立Buildr Server或Buildr Cloud持有共享authority、身份与协调事实，而不是把本地SQLite扩展为同步协议。
+
+
+## 按需设计方法
+
+审视职责分工、简化流程或门禁时，可使用 [智能体优先设计技能](../../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)。完整范式和判断方法在该技能维护，普通开发或收尾不增加必读前置。

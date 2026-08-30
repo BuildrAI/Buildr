@@ -102,3 +102,6 @@ buildr task environment cleanup <task-id> --target <workspace> --json
 | 自举技能与唯一脚本 | 工作空间根 `skills/buildr-self-bootstrap-sync/` |
 
 验证来源：任务完成投影、环境控制器、终态查询和真实工作树测试；自举测试使用真实本地 Git 远端，模拟安装与诊断，不能冒充真实桌面应用验收。测试命令和本轮实际结果记录在变更说明中。
+
+
+本次真实交付过程及计量边界见 [极简收尾实践案例](../../../services/buildr/resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md)。设计方法独立按需使用，默认收尾不依赖它。
