@@ -15,6 +15,7 @@
 | [architecture/service-architecture.md](architecture/service-architecture.md) | Buildr Service 工程目录、业务与产品模块、技术分层、Resources、Tools、Web 宿主与 Bootstrap 的组织共识 |
 | [roadmap/workspace-testing-and-verification-framework.md](roadmap/workspace-testing-and-verification-framework.md) | 已实现的Workspace测试能力、Request/Plan、执行、结果、V2兼容与V3迁移架构说明；规范行为以OpenSpec specs为准 |
 | [roadmap/agent-first-governance-refactoring.md](roadmap/agent-first-governance-refactoring.md) | 智能体优先治理目标、门禁判断、跨模块重构工作包与 Parent 最终验收；尚未实现，不是当前事实或行为契约 |
+| [roadmap/task-system-refactoring-discussion.md](roadmap/task-system-refactoring-discussion.md) | 任务系统重构讨论结论、已确认推进方式与未决设想；原则正文只引用随包入口，不作为当前行为契约 |
 | [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |

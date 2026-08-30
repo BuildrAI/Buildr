@@ -16,6 +16,7 @@ Roadmap 文档不是 Rule、Skill、Agent runtime 资产或当前能力说明，
 
 ## 当前方向资料
 
+- [任务系统重构：讨论结论与推进方式](task-system-refactoring-discussion.md)：保留重构动机、已确认的最小原则与渐进推进方法，明确候选模型尚未定案；下一步先形成现状与依赖审查，不直接实施整体重构。
 - [产研工作平台（Product and Engineering Work Platform）产品与技术架构收敛纲领](product-engineering-work-platform.md)：基于最新 `dev` 记录下一阶段产品目标，以智能体和人为核心用户，维护产研工作资产，让任务管理从可用变得好用，并把智能体执行时长、调用次数和词元消耗（Token Consumption）作为一等产品指标；同时定义通用核心、可选受控能力、产品专用能力与删除方向。
 - [Buildr 智能体优先治理重构纲领](agent-first-governance-refactoring.md)：以“约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事”为统一依据，定义 Workspace、Project、Service、Task、Environment、Development、Verification、Finish、OpenSpec、Doctor、测试与发布的目标边界、工作包和最终验收；由正式 Parent Task 分阶段承接独立 Child Task。
 - [任务生命周期架构讨论与交付跟踪](task-lifecycle-architecture.md)：以正常任务推进过程为主线，记录 Workspace Foundation、Task Triage、Environment、Development、Finish 及辅助能力的目标边界，并通过文末表格跟踪逐模块交付；Task Record与专业current records已收敛到Workspace SQLite，后续按“宽而薄”原则审视既有模块并只处理真实缺口。
