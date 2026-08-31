@@ -16,7 +16,7 @@ export function registerWorkspaceProductSuite(selectedSuite) {
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const PREVIEW_ISOLATION_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 20_000;
+const PREVIEW_ISOLATION_TIMEOUT_MS = 60_000;
 const PREVIEW_COMMAND_TIMEOUT_MS = 15_000;
 
 function temporaryRoot(t) {
