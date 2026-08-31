@@ -6,6 +6,7 @@ export type TaskId = string;
 export type TaskResult = null | {
   summary: string;
   noChange?: boolean;
+  parentCompletion?: ParentCompletion;
 };
 export type QualifiedServiceInput = string | QualifiedService;
 
@@ -54,6 +55,7 @@ export interface TaskRecord {
   changes: QualifiedChange[];
   parentTaskId: TaskId | null;
   childTaskIds: TaskId[];
+  isParent?: boolean;
   retrospectiveSourceTaskIds: TaskId[];
   status: 'todo' | 'active' | 'completed' | 'abandoned';
   result: TaskResult;
@@ -67,6 +69,21 @@ export interface QualifiedService {
 export interface QualifiedChange {
   project: string;
   change: string;
+}
+export interface ParentCompletion {
+  expectedSnapshot: string;
+  acceptance: {
+    summary: string;
+    children: {
+      taskId: TaskId;
+      summary: string;
+    }[];
+  };
+  authorization: {
+    source: string;
+    statement: string;
+  };
+  recordedAt?: string;
 }
 export interface TaskRelations {
   parent: TaskRelationSummary | null;
@@ -135,6 +152,7 @@ export interface TaskDetailResponse {
 }
 export interface TaskUpdateRequest {
   expectedRecordDigest: string;
+  isParent?: true;
   title?: string;
   intent?: string;
   parentTaskId?: TaskId | null;
@@ -149,6 +167,7 @@ export interface TaskCompleteRequest {
   expectedRecordDigest: string;
   summary: string;
   noChange: boolean;
+  parentCompletion?: ParentCompletion;
 }
 export interface TaskAbandonRequest {
   expectedRecordDigest: string;

@@ -162,4 +162,19 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   const portable = JSON.stringify(finishAdapter.development.receipt);
   assert.doesNotMatch(portable, /node_modules|npm|OpenSpec|git-worktree|\/private\//i);
   assert.equal(finishAdapter.development.receipt.handoffs[0].candidate.contentTargetIdentity, targetIdentity);
+
+  // Historical parent metadata cannot re-enable a retired acceptance prerequisite.
+  const planPayload = { schemaVersion: 'buildr.parent-plan/v2', outcome: 'Historical goal', architectureDecisions: ['Independent tasks'],
+    contributions: [{ id: 'guide', priority: 'P0', title: 'Guide', objective: 'Publish guide', directions: [], boundaries: [], expectedChild: null, dependencies: [] }], finalAcceptance: ['Review goal'] };
+  const parentPlan = { identity: taskDevelopmentDigest(planPayload), ...planPayload };
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  const historicalReceipt = { ...development.development.receipt, parentPlan, parentAcceptance: null };
+  opened.database.prepare('UPDATE task_development_current SET record_json = ? WHERE task_id = ?').run(JSON.stringify(historicalReceipt), 'publish-guide');
+  opened.database.close();
+  const parentCarrier = runtime.assertTaskDevelopmentCarrier(root, 'publish-guide', frozenIdentity);
+  assert.equal(parentCarrier.status, 'equivalent');
+  assert.deepEqual(parentCarrier.effects, []);
+  assert.deepEqual(parentCarrier.development.receipt.parentPlan, parentPlan);
+  assert.throws(() => runtime.completeTaskRecord(root, 'publish-guide', { summary: 'Guide delivered', noChange: false }), { code: 'parent_completion_authorization_required' });
+
 });

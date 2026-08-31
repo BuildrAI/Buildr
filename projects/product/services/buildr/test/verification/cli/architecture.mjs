@@ -477,7 +477,6 @@ const legacyTaskRecordConsumers = new Set([
   'task/application/task-verification-application.mjs',
   'task/infrastructure/git-worktree-provider.mjs',
   'task/persistence/task-environment-repository.mjs',
-  'task/persistence/parent-coordination-repository.mjs',
   'task/persistence/task-development-repository.mjs',
   'task/persistence/task-execution-record-repository.mjs',
   'task/persistence/task-finish-repository.mjs',

@@ -1,3 +1,4 @@
+import { retiredParentCoordination } from '../../domain/parent-coordination.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { validateTaskProfessionalRequest } from './task-professional-http-contracts.mjs';
 import {
@@ -132,7 +133,7 @@ function blockedParentCoordination(taskId, operation, error) {
   };
 }
 
-export function createParentCoordinationHttpContribution(taskIdSource, application) {
+export function createParentCoordinationHttpContribution(taskIdSource) {
   const pattern = new RegExp(`^/tasks/(${taskIdSource})/coordination$`);
   return Object.freeze({
     id: 'task-parent-coordination.http',
@@ -154,27 +155,7 @@ export function createParentCoordinationHttpContribution(taskIdSource, applicati
       let input = null;
       try {
         input = mapTaskParentCoordinationRequest(validateTaskProfessionalRequest('task-parent-coordination.patch', await readBody(new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason', 'summary']), 'Parent coordination'), 'Parent coordination'));
-        const operationFields = {
-          record: new Set(['operation', 'plan']),
-          reconcile: new Set(['operation', 'expectedPlanIdentity', 'plan', 'reason']),
-          accept: new Set(['operation', 'expectedPlanIdentity', 'summary']),
-        }[input.operation];
-        if (operationFields) {
-          const forbidden = Object.keys(input).find((field) => !operationFields.has(field));
-          if (forbidden) {
-            const error = new Error(`Parent coordination ${input.operation}.${forbidden} 不受支持。`);
-            error.code = 'parent_coordination_field_forbidden';
-            error.status = 400;
-            throw error;
-          }
-        }
-        if (input.operation === 'record') return { status: 200, body: application.recordParentPlan(root, match[1], { plan: input.plan }) };
-        if (input.operation === 'reconcile') return { status: 200, body: application.reconcileParentPlan(root, match[1], { expectedPlanIdentity: input.expectedPlanIdentity, plan: input.plan, reason: input.reason }) };
-        if (input.operation === 'accept') return { status: 200, body: application.acceptParentCoordination(root, match[1], { expectedPlanIdentity: input.expectedPlanIdentity, summary: input.summary }) };
-        const error = new Error('Parent coordination operation必须是record、reconcile或accept。');
-        error.code = 'parent_coordination_operation_invalid';
-        error.status = 400;
-        throw error;
+        retiredParentCoordination();
       } catch (error) {
         return blockedParentCoordination(match[1], input?.operation, error);
       }

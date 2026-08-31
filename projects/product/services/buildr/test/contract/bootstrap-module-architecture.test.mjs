@@ -140,7 +140,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-record',
-    requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer', 'task.parent-coordination-reader'],
+    requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer'],
     provides: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_RECORD_RUNTIME_PORT],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
@@ -217,8 +217,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-parent-coordination',
-    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-environment.application'],
-    provides: ['task-parent-coordination.application', 'task-parent-coordination.persistence-read', 'task-parent-coordination.runtime-port'],
+    requires: ['task-record.application', 'task-record.persistence-read'],
+    provides: ['task-parent-coordination.application', 'task-parent-coordination.runtime-port'],
     contributions: {
       cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept'],
       http: ['task-parent-coordination.http'],

@@ -125,16 +125,23 @@ test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、�
   const mutuallyExclusive = json(['task', 'update', 'child-task', '--parent', 'parent-task', '--clear-parent', '--target', root], 2);
   assert.equal(mutuallyExclusive.error.code, 'task_record_cli.syntax');
 
-  const terminalParent = runtime.completeTaskRecord(root, 'replacement-parent', { summary: '协调结束', noChange: false });
+  const parentEvidence = (id) => ({ expectedRecordDigest: runtime.inspectTaskRecord(root, id).recordDigest, parentCompletion: {
+    expectedSnapshot: runtime.inspectParentCoordination(root, id).completion.snapshotIdentity,
+    acceptance: { summary: '测试整体目标已核对', children: runtime.inspectParentCoordination(root, id).children.map((child) => ({ taskId: child.taskId, summary: '测试成果已处置' })) },
+    authorization: { source: 'test:explicit-user-authorization', statement: `明确完成 ${id}` },
+  } });
+  const terminalParent = runtime.completeTaskRecord(root, 'replacement-parent', { summary: '协调结束', noChange: false, ...parentEvidence('replacement-parent') });
   assert.equal(terminalParent.record.status, 'completed');
   assert.throws(() => runtime.updateTaskRecord(root, 'child-task', { parentTaskId: 'replacement-parent' }), (error) => error.code === 'task_record_parent_terminal');
   runtime.updateTaskRecord(root, 'child-task', { parentTaskId: 'parent-task' });
-  runtime.completeTaskRecord(root, 'parent-task', { summary: 'Parent 独立完成', noChange: false });
+  assert.throws(() => runtime.completeTaskRecord(root, 'parent-task', { summary: '父任务不能提前完成', noChange: false, ...parentEvidence('parent-task') }), { code: 'parent_completion_children_open' });
+  runtime.abandonTaskRecord(root, 'parent-task', { reason: '显式停止协调，保留子任务独立推进' });
   const stillRelated = runtime.inspectTaskRecord(root, 'child-task');
   assert.equal(stillRelated.record.parentTaskId, 'parent-task');
-  assert.equal(stillRelated.taskRelations.parent.status, 'completed');
+  assert.equal(stillRelated.taskRelations.parent.status, 'abandoned');
   runtime.updateTaskRecord(root, 'child-task', { title: '既有关系不阻塞普通更新' });
-  runtime.completeTaskRecord(root, 'child-task', { summary: 'Child 独立完成', noChange: false });
+  runtime.completeTaskRecord(root, 'grandchild-task', { summary: '叶子成果完成', noChange: false });
+  runtime.completeTaskRecord(root, 'child-task', { summary: 'Child 独立完成', noChange: false, ...parentEvidence('child-task') });
   assert.throws(() => runtime.updateTaskRecord(root, 'child-task', { parentTaskId: null }), (error) => error.code === 'task_record_terminal');
   assert.match(replacement.recordDigest, /^sha256-/);
   assert.match(parent.recordDigest, /^sha256-/);
@@ -212,4 +219,22 @@ test('CLI 完成动作沿用观察到的记录摘要并拒绝覆盖并发更新'
   const current = runtime.inspectTaskRecord(root, 'cas-task');
   const completed = json(['task', 'complete', 'cas-task', '--summary', '已核对新目标并完成', '--expected-record', current.recordDigest, '--target', root]);
   assert.equal(completed.record.status, 'completed');
+});
+
+test('CLI parent completion requires an explicit evidence file and preserves the authorization', (t) => {
+  const { root, base } = fixture(t, 'parent-completion-cli');
+  const created = json(['task', 'create', 'explicit-parent', '--parent-task', '--title', '父任务', '--intent', '核对独立整体目标', '--target', root]);
+  assert.equal(created.record.isParent, true);
+  const denied = json(['task', 'complete', 'explicit-parent', '--summary', '尚无授权', '--target', root], 1);
+  assert.equal(denied.diagnostic.code, 'parent_completion_authorization_required');
+  const context = json(['task', 'parent', 'inspect', 'explicit-parent', '--target', root]);
+  const evidence = path.join(base, 'parent-completion.json');
+  fs.writeFileSync(evidence, JSON.stringify({ expectedSnapshot: context.completion.snapshotIdentity,
+    acceptance: { summary: '整体目标已核对', children: [] },
+    authorization: { source: 'test:explicit-parent-user-message', statement: '用户明确授权完成 explicit-parent' } }));
+  const completed = json(['task', 'complete', 'explicit-parent', '--summary', '整体完成', '--expected-record', created.recordDigest, '--parent-completion', evidence, '--target', root]);
+  assert.equal(completed.record.result.parentCompletion.authorization.source, 'test:explicit-parent-user-message');
+  const retired = json(['task', 'parent', 'record', 'explicit-parent', '--target', root], 1);
+  assert.equal(retired.diagnostic.code, 'parent_coordination_action_retired');
+  assert.deepEqual(retired.effects, []);
 });

@@ -398,8 +398,14 @@ test('v19 数据库可直接完成任务，升级不绕过版本和状态检查'
       try {
         assert.equal(after.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, scenario.failMigration ? 19 : migrations.at(-1).version);
         const record = after.prepare("SELECT * FROM tasks WHERE task_id = 'upgrade-task'").get();
-        if (scenario.error) assert.deepEqual(record, before);
-        else { assert.equal(record.title, before.title); assert.equal(record.intent, before.intent); }
+        if (scenario.error) {
+          // Schema upgrades may add columns; a rejected completion must preserve every existing business field.
+          assert.deepEqual(Object.fromEntries(Object.keys(before).map((key) => [key, record[key]])), { ...before });
+          if (!scenario.failMigration) {
+            assert.equal(record.is_parent, 0);
+            assert.equal(record.parent_completion_json, null);
+          }
+        } else { assert.equal(record.title, before.title); assert.equal(record.intent, before.intent); }
       } finally { after.close(); }
     });
   }

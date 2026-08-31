@@ -125,17 +125,43 @@ function normalizeResult(status, value) {
   }
   const result = object(value, 'result');
   if (status === 'completed') {
-    closed(result, new Set(['summary', 'noChange']), 'result');
+    closed(result, new Set(['summary', 'noChange', 'parentCompletion']), 'result');
     if (typeof result.noChange !== 'boolean') throw taskRecordError('task_record_result_invalid', 'completed Task 的 result.noChange 必须是 boolean。', 400, { field: 'result.noChange' });
-    return { summary: nonEmptyText(result.summary, 'result.summary'), noChange: result.noChange };
+    return { summary: nonEmptyText(result.summary, 'result.summary'), noChange: result.noChange,
+      ...(result.parentCompletion === undefined ? {} : { parentCompletion: normalizeParentCompletion(result.parentCompletion, { saved: true }) }) };
   }
   closed(result, new Set(['summary']), 'result');
   return { summary: nonEmptyText(result.summary, 'result.summary') };
 }
 
+export function normalizeParentCompletion(value, { saved = false } = {}) {
+  if (!value) throw taskRecordError('parent_completion_authorization_required', '完成父任务必须提供明确用户授权和总体验收依据。', 409);
+  const input = object(value, 'parentCompletion');
+  closed(input, new Set(['expectedSnapshot', 'acceptance', 'authorization', ...(saved ? ['recordedAt'] : [])]), 'parentCompletion');
+  const acceptance = object(input.acceptance, 'parentCompletion.acceptance');
+  closed(acceptance, new Set(['summary', 'children']), 'parentCompletion.acceptance');
+  if (!Array.isArray(acceptance.children)) throw taskRecordError('parent_completion_children_required', '总体验收必须逐项说明直接子任务的处置。', 400);
+  const children = unique(acceptance.children.map((entry) => {
+    const child = object(entry, 'parentCompletion.acceptance.children');
+    closed(child, new Set(['taskId', 'summary']), 'parentCompletion.acceptance.children');
+    const taskId = optionalTaskId(child.taskId, 'parentCompletion.acceptance.children.taskId');
+    if (!taskId) throw taskRecordError('parent_completion_child_invalid', '验收处置必须指定子任务。');
+    return { taskId, summary: nonEmptyText(child.summary, 'parentCompletion.acceptance.children.summary') };
+  }), (child) => child.taskId, 'parentCompletion.acceptance.children').sort((a, b) => a.taskId.localeCompare(b.taskId));
+  const authorization = object(input.authorization, 'parentCompletion.authorization');
+  closed(authorization, new Set(['source', 'statement']), 'parentCompletion.authorization');
+  return {
+    expectedSnapshot: nonEmptyText(input.expectedSnapshot, 'parentCompletion.expectedSnapshot'),
+    acceptance: { summary: nonEmptyText(acceptance.summary, 'parentCompletion.acceptance.summary'), children },
+    authorization: { source: nonEmptyText(authorization.source, 'parentCompletion.authorization.source'), statement: nonEmptyText(authorization.statement, 'parentCompletion.authorization.statement') },
+    ...(saved ? { recordedAt: timestamp(input.recordedAt, 'parentCompletion.recordedAt') } : {}),
+  };
+}
+
 export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'retrospectiveSourceTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'isParent', 'retrospectiveSourceTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
+  if (record.isParent !== undefined && typeof record.isParent !== 'boolean') throw taskRecordError('task_record_field_invalid', 'isParent 必须是 boolean。');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
   }
@@ -176,6 +202,7 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
     changes,
     parentTaskId: optionalTaskId(record.parentTaskId, 'parentTaskId'),
     childTaskIds: taskIds(record.childTaskIds, 'childTaskIds'),
+    ...(record.isParent === true ? { isParent: true } : {}),
     retrospectiveSourceTaskIds,
     status: record.status,
     result: normalizeResult(record.status, record.result),

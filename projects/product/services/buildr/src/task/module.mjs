@@ -25,9 +25,7 @@ import { registerTaskExecutionRecordRepository } from './persistence/task-execut
 import { registerTaskExecutionRecordBodyStore } from './persistence/task-execution-record-body-store.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.mjs';
 import { registerTaskDevelopmentRepository } from './persistence/task-development-repository.mjs';
-import { registerTerminalContributionReconciliationRepository } from './persistence/terminal-contribution-reconciliation-repository.mjs';
 import { registerTaskFinishRepository } from './persistence/task-finish-repository.mjs';
-import { registerParentCoordinationRepository } from './persistence/parent-coordination-repository.mjs';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
 import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
@@ -123,7 +121,6 @@ export const TASK_DEVELOPMENT_PERSISTENCE_READ = 'task-development.persistence-r
 export const TASK_DEVELOPMENT_RUNTIME_PORT = 'task-development.runtime-port';
 export const PARENT_COORDINATION_MODULE_ID = 'task-parent-coordination';
 export const PARENT_COORDINATION_APPLICATION = 'task-parent-coordination.application';
-export const PARENT_COORDINATION_PERSISTENCE_READ = 'task-parent-coordination.persistence-read';
 export const PARENT_COORDINATION_RUNTIME_PORT = 'task-parent-coordination.runtime-port';
 export const TASK_OVERVIEW_MODULE_ID = 'task-overview';
 export const TASK_OVERVIEW_APPLICATION = 'task-overview.application';
@@ -149,7 +146,7 @@ const APPLICATION_METHODS = Object.freeze([
 const PERSISTENCE_READ_METHODS = Object.freeze([
   'assertCanonicalTaskWorkspace', 'taskRecordDirectory', 'ensureTaskRecordDirectory',
   'readTaskRecordPersistence', 'prepareTaskRecordPersistence', 'listTaskRecordPersistence',
-  'queryTaskRecordViewPersistence', 'readTaskRecordViewPersistence',
+  'queryTaskRecordViewPersistence', 'readTaskRecordViewPersistence', 'readParentTaskContext',
 ]);
 
 const TEST_SUPPORT_METHODS = Object.freeze([
@@ -220,13 +217,11 @@ const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
 ]);
 const TASK_DEVELOPMENT_PERSISTENCE_METHODS = Object.freeze([
   'taskDevelopmentReceiptPath', 'readTaskDevelopmentPersistence', 'writeTaskDevelopmentPersistence', 'renderTaskDevelopmentReceipt',
-  'readTerminalContributionReconciliationContext', 'writeTerminalContributionReconciliationPersistence',
 ]);
 const PARENT_COORDINATION_APPLICATION_METHODS = Object.freeze([
-  'projectParentCoordinationChild', 'inspectParentCoordination', 'inspectParentStartupReadiness',
+  'inspectParentCoordination',
   'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'reconcileChildDelivery', 'acceptParentCoordination',
 ]);
-const PARENT_COORDINATION_PERSISTENCE_METHODS = Object.freeze(['readParentCoordinationPersistence']);
 const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview']);
 const TASK_OVERVIEW_PERSISTENCE_METHODS = Object.freeze(['readTaskOverviewPersistence']);
 const TASK_ENTRY_SNAPSHOT_APPLICATION_METHODS = Object.freeze(['inspectTaskEntrySnapshot']);
@@ -397,13 +392,8 @@ function taskVerificationCliContributions() {
 
 function parentCoordinationCliContributions() {
   const definitions = [
-    ['inspect', 'primary', '只读返回Parent Plan、Child Contribution交付事实与最终验收前置条件；历史Task保持legacy模式。', ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只组合Task Record与已保存专业事实，不扫描文件系统或回填Parent。'], 'inspect'],
-    ['record', 'agent-machine', '为active Parent首次记录closed Parent Plan。', ['Usage: buildr task parent record <task-id> --input <parent-plan.json> [--target <canonical-workspace>] [--json]', '       buildr task parent record --schema|--example [--json]'], 'record'],
-    ['reconcile', 'agent-machine', '以expected Parent Plan identity显式收敛Contribution、依赖或最终验收变化。', ['Usage: buildr task parent reconcile <task-id> --expected-plan <identity> --input <parent-plan.json> --reason <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile --schema|--example [--json]'], 'reconcile'],
-    ['refresh-planning', 'agent-machine', '复用saved Parent Plan与current ready Planning Review，安全刷新Development planning gate。', ['Usage: buildr task parent refresh-planning <task-id> [--target <canonical-workspace>] [--json]'], 'refresh'],
-    ['bind-child', 'agent-machine', '把已有Child Development明确绑定到Parent Plan的一个或多个Contribution。', ['Usage: buildr task parent bind-child <child-task-id> --parent <parent-task-id> --contribution <id> ... [--target <canonical-workspace>] [--json]'], 'bind'],
-    ['reconcile-child-delivery', 'agent-machine', '为严格可证明的completed Child追加一次terminal Contribution交付对账；不改写旧handoff或Task。', ['Usage: buildr task parent reconcile-child-delivery <child-task-id> --parent <parent-task-id> --expected-plan <identity> --expected-task <recordDigest> --input <contribution-handoff.json> --reason <text> --source <text> [--target <canonical-workspace>] [--json]', '       buildr task parent reconcile-child-delivery --schema|--example [--json]'], 'reconcile-child-delivery'],
-    ['accept', 'agent-machine', '在全部Contribution得到可证明处置后显式记录Parent最终集成验收；不会自动完成Task。', ['Usage: buildr task parent accept <task-id> --expected-plan <identity> --summary <text> [--target <canonical-workspace>] [--json]'], 'accept'],
+    ['inspect', 'primary', '查看整体目标、真实子任务结果、完成观察身份和历史父计划。', ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]'], 'inspect'],
+    ...['record', 'reconcile', 'refresh-planning', 'bind-child', 'reconcile-child-delivery', 'accept'].map((action) => [action, 'agent-machine', '已退役：使用已有任务、计划文档和明确完成授权。', [`旧 task parent ${action} 写入口已退役；使用 task parent inspect 查看当前成果。`], action]),
   ];
   return Object.freeze(definitions.map(([runtimeId, surface, summary, help, operation]) => Object.freeze({
     key: `task parent ${runtimeId}`, surface, summary, help,
@@ -415,7 +405,7 @@ function parentCoordinationCliContributions() {
 function taskEntrySnapshotCliContributions() {
   return Object.freeze([Object.freeze({
     key: 'task next', surface: 'agent-machine', summary: '只读返回Formal Task当前最小identity、execution/writer route与唯一required或recommended next action。',
-    help: ['Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]', '', '按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。', '--execution-target只核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。'],
+    help: ['Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]', '', '按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。', '--execution-target对父任务显式选择独立研发检查，并核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。'],
     match: ({ domain, action }) => domain === 'task' && action === 'next',
     run: (runtime, context) => taskEntrySnapshotCommand(runtime, context.argv.slice(4)),
   })]);
@@ -500,7 +490,7 @@ export function createTaskRecordCliContributions(application = null) {
     {
       key: 'task create', surface: 'primary', summary: '创建 active 正式 Task，或以 --status todo 只保存待办意向；复盘来源可重复。',
       help: [
-        'Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--retrospective-source <task-id> ...] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--retrospective-source <task-id> ...] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
         '省略 --status 时创建 active；--status todo 只写 SQLite，拒绝 Change，不创建 Environment、Git 或专业记录。',
         '--retrospective-source 只接受已有 current 复盘的 completed/abandoned Task，可重复且仅保存 source Task ID。',
@@ -519,7 +509,7 @@ export function createTaskRecordCliContributions(application = null) {
     {
       key: 'task update', surface: 'primary', summary: '至少提供一个明确 setter/add/remove；只允许修改 todo 或 active Task。',
       help: [
-        'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--parent <task-id> | --clear-parent] [--add-retrospective-source <task-id> ...] [--remove-retrospective-source <task-id> ...] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--parent-task] [--expected-record <recordDigest>] [--parent <task-id> | --clear-parent] [--add-retrospective-source <task-id> ...] [--remove-retrospective-source <task-id> ...] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
         '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 todo 或 active Task，todo 拒绝 Change。',
         '--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。',
@@ -536,7 +526,7 @@ export function createTaskRecordCliContributions(application = null) {
     },
     {
       key: 'task complete', surface: 'primary', summary: '完成 todo/active Task；todo 只允许 --no-change。',
-      help: ['Usage: buildr task complete <task-id> --summary <text> [--no-change] [--expected-record <recordDigest>] [--target <canonical-workspace>] [--json]', '', 'active 可正常完成；todo 只允许 --no-change，否则必须先 activate。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
+      help: ['Usage: buildr task complete <task-id> --summary <text> [--no-change] [--parent-completion <json-file>] [--expected-record <recordDigest>] [--target <canonical-workspace>] [--json]', '', '父任务必须提供 --parent-completion 与 --expected-record：当前观察、总体验收、逐子任务处置和明确用户授权。', 'active 可正常完成；todo 只允许 --no-change，否则必须先 activate。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
       match: ({ domain, action }) => domain === 'task' && action === 'complete',
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'complete', context.argv.slice(4)),
     },
@@ -583,7 +573,6 @@ function createTaskRecordModule(requires) {
     ...requires['project-service.reader'],
     ...requires['change.resolver'],
     ...requires['workspace.operation-memoizer'],
-    ...requires['task.parent-coordination-reader'],
   };
   registerTaskRecordRepository(privateComposition);
   registerTaskRecordApplication(privateComposition);
@@ -623,7 +612,6 @@ export const TASK_RECORD_MODULE = Object.freeze({
     'project-service.reader',
     'change.resolver',
     'workspace.operation-memoizer',
-    'task.parent-coordination-reader',
   ]),
   create: createTaskRecordModule,
 });
@@ -860,7 +848,6 @@ export function createTaskDevelopmentModule(runtime) {
       Object.defineProperty(composition, 'taskDevelopmentSerialize', { configurable: true, writable: true, value: undefined });
       registerContentTargetObserver(composition);
       registerTaskDevelopmentRepository(composition);
-      registerTerminalContributionReconciliationRepository(composition);
       registerTaskDevelopmentApplication(composition);
       const application = pick(composition, TASK_DEVELOPMENT_APPLICATION_METHODS);
       const persistenceRead = pick(composition, ['taskDevelopmentReceiptPath', 'readTaskDevelopmentPersistence']);
@@ -885,28 +872,20 @@ export function createTaskDevelopmentModule(runtime) {
 export function createParentCoordinationModule(runtime) {
   return Object.freeze({
     id: PARENT_COORDINATION_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_APPLICATION, TASK_DEVELOPMENT_APPLICATION, TASK_REVIEW_APPLICATION, TASK_ENVIRONMENT_APPLICATION]),
+    requires: Object.freeze([TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
-      registerParentCoordinationRepository(composition);
       registerParentCoordinationApplication(composition);
       const application = pick(composition, PARENT_COORDINATION_APPLICATION_METHODS);
-      const persistenceRead = pick(composition, PARENT_COORDINATION_PERSISTENCE_METHODS);
-      const testSupportProperties = {
-        projectParentCoordinationChild: Object.freeze({
-          get: () => composition.projectParentCoordinationChild,
-          set: (value) => { composition.projectParentCoordinationChild = value; },
-        }),
-      };
+      const testSupportProperties = {};
       return Object.freeze({
         provides: {
           [PARENT_COORDINATION_APPLICATION]: application,
-          [PARENT_COORDINATION_PERSISTENCE_READ]: persistenceRead,
-          [PARENT_COORDINATION_RUNTIME_PORT]: runtimePort(pick(composition, [...PARENT_COORDINATION_PERSISTENCE_METHODS, ...PARENT_COORDINATION_APPLICATION_METHODS]), testSupportProperties),
+          [PARENT_COORDINATION_RUNTIME_PORT]: runtimePort(application, testSupportProperties),
         },
         contributions: {
           cli: parentCoordinationCliContributions(),
-          http: [createParentCoordinationHttpContribution(TASK_RECORD_ID_SOURCE, application)],
+          http: [createParentCoordinationHttpContribution(TASK_RECORD_ID_SOURCE)],
         },
       });
     },

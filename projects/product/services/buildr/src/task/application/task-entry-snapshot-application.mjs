@@ -61,8 +61,6 @@ function commandRoute(next, execution, taskId) {
   const controller = execution.controllerInvocation;
   const publicArgs = {
     'planning-review': ['task', 'review', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
-    'refresh-parent-planning': ['task', 'parent', 'refresh-planning', taskId, '--target', execution.workspaceRoot, '--json'],
-    'accept-parent': ['task', 'parent', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
     verify: ['task', 'verification', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
   }[next.action] || null;
   const internalArgs = next.owner === 'task-development' && TASK_DEVELOPMENT_ACTIONS.includes(next.action)
@@ -106,6 +104,15 @@ export function registerTaskEntrySnapshotApplication(runtime) {
       inspected = measured('task-manager', () => runtime.inspectTaskRecord(targetRoot, taskId));
       if (['completed', 'abandoned'].includes(inspected.record.status)) return finish({ status: 'ready', task: taskSummary(inspected), environment: null, development: null, blockers: [], next: { mode: 'recommended', owner: 'agent', action: 'report', capability: null, route: null, summary: '任务已结束；报告结果，只按实际需要处理剩余资源或复盘，不重启研发或交付。' }, diagnostic: null, effects: [] });
       if (inspected.record.status !== 'active') return finish({ status: 'blocked', task: taskSummary(inspected), environment: null, development: null, blockers: [{ axis: 'task', owner: 'task-manager', code: 'task_entry_task_not_active' }], next: requiredNext('task-manager', 'inspect', { id: 'buildr.task-record', version: 2 }, `Task ${taskId} 已是 ${inspected.record.status}，不能继续正式研发。`), diagnostic: { code: 'task_entry_task_not_active', owner: 'task-manager', message: `Task ${taskId} 不是 active。` }, effects: [] });
+
+      const coordination = !options.executionTarget && (inspected.record.isParent || inspected.record.childTaskIds?.length)
+        ? measured('parent-coordination', () => runtime.inspectParentCoordination(targetRoot, taskId)) : null;
+      if (coordination?.isParent && !options.executionTarget) return finish({
+        status: 'ready', task: taskSummary(inspected), environment: null, development: null,
+        parent: coordination, blockers: [], diagnostic: coordination.diagnostic, effects: [],
+        next: { mode: 'recommended', owner: 'agent', action: 'coordinate', capability: null, route: null,
+          summary: '核对整体目标、计划与子任务成果，在授权范围内继续协调或独立研发；完成父任务需单独明确授权。' },
+      });
 
       execution = measured('task-environment', () => runtime.resolveTaskEnvironmentExecution(targetRoot, taskId));
       if (!execution?.ready) {
@@ -159,19 +166,6 @@ export function registerTaskEntrySnapshotApplication(runtime) {
           next = requiredNext('task-development', 'begin', { id: 'buildr.task-development', version: 2 }, 'Environment identity已变化；由Task Development重新绑定matching Environment。');
         } else if (['stale'].includes(developmentResult.development.applicability.taskContext) || ['stale'].includes(developmentResult.development.applicability.planning)) {
           identityBlocker = { axis: 'development', owner: 'task-development', code: 'task_entry_development_identity_stale', message: 'Development保存的direct applicability已标记stale。' };
-        }
-      }
-      if (!identityBlocker && developmentResult.development?.receipt.parentPlan) {
-        const startup = measured('parent-coordination', () => runtime.inspectParentStartupReadiness(targetRoot, taskId, { task: inspected, execution, development: developmentResult }));
-        parent = { mode: startup.mode, status: startup.status, checks: startup.checks, blockers: startup.blockers, eligibleContributions: startup.eligibleContributions };
-        const parentNext = startup.next;
-        if (parentNext) {
-          const capability = {
-            'planning-review': { id: 'buildr.task-review', version: 1 },
-            'refresh-parent-planning': { id: 'buildr.task-development', version: 2 },
-            'accept-parent': { id: 'buildr.task-development', version: 2 },
-          }[parentNext.action] || null;
-          next = { ...parentNext, capability };
         }
       }
       if (next?.capability) {

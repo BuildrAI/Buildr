@@ -1,55 +1,67 @@
 ---
 name: task-manager
-description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；只管理Task Record，用户同时要求准备或拆分Parent时在active记录成功后自动交接task-development，不自行执行Environment或专业阶段动作。
+description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；维护任务记录并指导轻量父子管理；不自行执行研发、环境、验证或交付。
 ---
 
-# Task Manager Skill
+# 任务管理
 
-本 Skill 是 `buildr.task-record/v2` 的默认 provider，只管理 Task 的最小顶层记录、直接 Parent/Child 和复盘来源。`todo` 是已接受但未启动的 data-only 意向，`active` 才进入正式执行。Buildr Web 是同一 Application 的独立人类客户端；Parent Plan、Contribution、复盘正文和专业事实不得复制到 Task Record。
+本技能（Skill）提供 `buildr.task-record/v2`：管理目标、范围、直接父子关系、独立状态、结果及复盘来源。任务记录通过产品动作维护，不直接编辑数据库或旧文件。
 
-Parent/Child只表达真正独立交付的协调层级。普通Agent并行调查、临时分工、同一交付内的局部实现或测试协作不触发本Skill创建Child；只有工作能单独说明目标/scope并形成真实、可独立说明的交付结果时，才建立正式Child关系。
+## 普通任务
 
-## 1. 何时使用
+确认当前工作空间（Workspace）、任务标识、授权范围及真实目标，已有任务先 `task inspect`。`todo` 只保存尚未启动的意向，不执行环境或研发；`active` 表示已开始。子任务只用于可独立说明目标、范围及成果的交付，临时智能体分工不创建子任务。
 
-仅在以下意图使用：
-
-- 用户明确创建、查看、修改、激活、设置或清除 Parent、维护复盘来源、完成或放弃 Task Record；
-- 用户给出 Task ID 要求继续正式任务，需要先恢复 title、intent、scope、Change 引用和顶层状态；
-- `task-triage` 已判断即将进入正式持久交付，并在首次交付写入前要求创建或恢复记录。
-
-不要仅因用户说“任务”就触发。普通任务分流、讨论、只读探索、单次测试、临时服务、只维护已有 metadata，以及 Task Environment、Development、Review、Verification、Git、Finish、Board 或 Retrospective 动作都不由本 Skill 执行。
-
-## 2. 输入与 canonical target
-
-确认 operation、稳定小写 Task ID、canonical Workspace 和明确字段。create 默认 active；只有用户已接受意向但尚未授权执行时使用 `--status todo`。todo 不得带 Change，也不运行 Git、Environment 或专业动作。复盘来源可在 create 或 update 中重复提供，但每个来源必须是已有 current 复盘的 completed/abandoned Task；只保存 source Task ID，不保存行动项或报告副本。activate 仅做 todo-to-active，调用前置门禁由 task-triage 负责。complete 需要 summary 和明确 no-change，todo 只允许 no-change；abandon 需要 reason。
-
-当前位于 task environment 时，只接受上游已确认的 canonical Workspace target；不读取 environment receipt，不扫描父目录，不从 worktree 推断 retained root，也不把 environment identity 写入 Task Record。Buildr Web 已创建或用户按 Task ID 继续时先 inspect，同一记录即为权威来源。
-
-作为 Buildr Web 统一内部文档引用规则在 Task intent 的具体应用：引用已登记 Project 内的 Markdown 文档时，使用具名的 Workspace 相对 Markdown 链接，例如 `[方案名称](projects/<project>/docs/<document>.md)`；不要只写裸路径、本机绝对路径或 `file:` URL。写入后确认 Buildr Web 将其呈现为可点击引用，并区分“链接可解析”与“正文当前可读取”：文档尚只存在于 Task Environment 时应如实说明暂不可预览，不得复制正文到 Task Record 或声称 canonical Project 已包含该文档。
-
-## 3. 执行动作
-
-调用 selected provider 对应的产品命令：
+使用已有动作：
 
 ```text
-buildr task create <task-id> --title <text> --intent <text> [--status todo|active] [--retrospective-source <task-id> ...] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] --target <canonical-workspace> --json
-buildr task inspect <task-id> --target <canonical-workspace> --json
-buildr task update <task-id> [--add-retrospective-source <task-id> ... | --remove-retrospective-source <task-id> ...] [--parent <task-id> | --clear-parent] [set/add/remove flags] --target <canonical-workspace> --json
-buildr task activate <task-id> --target <canonical-workspace> --json
-buildr task complete <task-id> --summary <text> [--no-change] --target <canonical-workspace> --json
-buildr task abandon <task-id> --reason <text> --target <canonical-workspace> --json
+buildr task create <id> --title <text> --intent <text> [--status todo|active] [--parent-task] [--parent <id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] --target <workspace> --json
+buildr task inspect <id> --target <workspace> --json
+buildr task update <id> [--parent-task] [--parent <id>|--clear-parent] [set/add/remove flags] --expected-record <recordDigest> --target <workspace> --json
+buildr task activate <id> --target <workspace> --json
+buildr task complete <id> --summary <text> [--no-change] --expected-record <recordDigest> [--parent-completion <json-file>] --target <workspace> --json
+buildr task abandon <id> --reason <text> --target <workspace> --json
 ```
 
-只提交动作参数，不直接读写 Workspace SQLite 或旧 `.buildr/tasks/<task-id>/task.yml`，不传完整 next state。`open` 只是 todo+active 查询值，不是持久状态。默认值、状态转换、来源校验、去重、系统字段和事务安全全部由 Application 决定。
+任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
 
-## 4. 停止与交接
+写前重读当前版本；冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行 Git、部署、验证或清理。复盘来源仍只引用已有当前复盘的已结束任务，不复制报告。
 
-canonical target、identity、引用或授权不明，provider 不 ready，数据库或记录损坏、已终态、动作冲突或 result 为 blocked 时停止对应 Task Record 动作，保留原状态并报告唯一 next action。不得回退为 Agent 手写 YAML，也不得把专业记录复制进 Task Record。
+## 父子管理
 
-成功后报告 operation、Task ID、status、effects 和必要的 nextActions；不得返回本地数据库路径。`complete|abandon` 成功时，先报告已经成立的终态，再使用长期名称“任务复盘”询问用户是否复盘，并说明当前重点包括 Agent 执行耗时、Token 消耗、重复尝试和人机协作效率；Token 数据仅在 Agent 可取得时记录，缺失不影响复盘。该提示非阻塞，只有用户明确同意后才路由 `task-retrospective`，不得自动执行或改变终态结果。
+人负责整体目标、边界、关键决定与完成授权；智能体（Agent）在这些边界内规划、创建独立子任务、核对成果和持续推进。`--parent-task` 明确创建父任务；`--parent` 指定子任务归属。关联过子任务的父身份保留，不通过移除最后一个子任务取消完成保护。
 
-随后仅按用户意图把工作交给 Triage、Environment 或其他专业 Skill；Task Manager 本身不执行这些阶段，也不自动 commit、push、publication、Finish 或 cleanup。
+用户要求创建并准备父任务时，保存目标后继续整理计划与验收标准。简单计划写入目标说明，复杂计划使用现有可读文档并从目标链接。计划说明分工、依赖、边界、剩余工作与重要决定；不要求专用父计划、贡献绑定、环境或研发回执。读取当前计划和实际成果后，按已有授权决定是否启动子任务；未知的关键目标或授权才询问用户。
 
-active Task Record create或todo activate成功后，若当前用户目标明确包含创建并准备Parent、按总体目标拆分Contribution、准备到可开发状态或准备到可启动Child，不得把Task Record成功当作目标完成。立即把Task ID、canonical Workspace、完整scope，以及当前对话已经明确的Parent outcome、architecture decisions、Contribution directions/boundaries/dependencies与final acceptance交接给`task-development`，由它继续专业准备。交接不进入Task Record Result，不让本Skill调用Environment、Development或Review writer；这些输入仍由各owner校验和保存。
+每个子任务拥有独立目标、范围、结果及按需要选择的研发方式。不得继承父任务的环境、分支、规范变化或验证结论；同一具体规范变化只能有一个活跃变化负责。各仓库按真实边界交付。子任务有依赖时先核对前置成果；软件不替智能体（Agent）证明业务依赖已经满足。
 
-只有用户明确只创建todo、只写Task Record、只修改顶层metadata，或尚未授权启动正式执行时，才在Task Record结果后停止。Parent准备信息不足也先交接；由`task-development`只对会改变Parent目标、Contribution切分、依赖、边界或最终验收的最少问题判断是否形成真实blocker，不要求用户重新发起“准备Parent”。
+用 `task parent inspect <id> --target <workspace> --json` 查看整体目标、直接子任务结果、历史计划及完成观察身份。计划、子任务状态和真实交付是不同事实；不凭数量推断完成百分比，不因一批子任务完成就缩小总体目标。范围变化先核对产物与版本；改变整体目标、授权或验收需用户决定。被替代子任务明确放弃并说明覆盖，不能伪装完成。
+
+## 完成父任务的边界
+
+**完成父任务必须具有明确指向该父任务的用户授权。** 子任务完成、全部子任务终态、总体验收通过、实现授权或仅针对子任务的收尾均不构成授权；不得为获得成功返回自行编造授权来源。嵌套父任务逐层独立，不能递归完成。
+
+先核对当前整体目标、计划与实际成果，准备可审阅的总体验收说明，包括每个直接子任务成果及放弃、替代、遗留的处置。没有明确授权时保留父任务状态，展示已完成内容与尚需用户决定的完成动作；不向用户索取对单个内部步骤的重复确认。
+
+已明确授权时，读取一次当前父子摘要，取得同一观察中的 `recordDigest` 与 `completion.snapshotIdentity`，在系统临时目录构造 `--parent-completion` 输入：
+
+```json
+{
+  "expectedSnapshot": "来自 task parent inspect 的 completion.snapshotIdentity",
+  "acceptance": {
+    "summary": "整体目标、实际成果与验证依据，以及必要遗留的处置",
+    "children": [{"taskId": "child-id", "summary": "该子任务的成果覆盖或放弃处置"}]
+  },
+  "authorization": {
+    "source": "当前用户授权的可回查来源",
+    "statement": "用户明确授权完成指定父任务的原意"
+  }
+}
+```
+
+`children` 精确覆盖当前直接子任务；无子任务时为空数组。来源和原意必须真实，不能把本技能、默认策略、调用成功或智能体自己的总结写成用户授权。把该输入与本次摘要的 `recordDigest` 交给已有完成动作；不为取得同一版本再调用 `task inspect`。冲突、未结束子任务或依据缺失只阻止相关完成；保留已交付成果，重新核对后处理。直接核对完成动作返回的结果及授权依据，删除本次临时输入；仅响应丢失、冲突或相关事实变化时重新读取，不惯例性追加回读。
+
+旧 `task parent record|reconcile|bind-child|refresh-planning|reconcile-child-delivery|accept` 已退役；旧计划和交接仅供历史查看，不补造旧链，也不把历史缺少授权记录解释成已授权。
+
+## 报告
+
+说明实际改变的对象、当前状态、成果与必要遗留；不要把记录成功称为业务交付成功。任务已完整结束时明确报告完成。完成或放弃后可询问是否进行任务复盘，重点包括执行耗时、重复尝试和人机协作效率；词元（Token）数据只记录实际可取得内容。该提示非阻塞，只有用户明确同意后才使用 `task-retrospective`。

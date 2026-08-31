@@ -24,6 +24,7 @@ export function mapTaskListRequest(input: TaskListRequest): TaskListRequest {
 export function mapTaskUpdateRequest(input: TaskUpdateRequest): TaskUpdateRequest {
   return {
     expectedRecordDigest: input.expectedRecordDigest,
+    ...present(input, 'isParent'),
     ...present(input, 'title'),
     ...present(input, 'intent'),
     ...present(input, 'parentTaskId'),
@@ -41,6 +42,7 @@ export function mapTaskCompleteRequest(input: TaskCompleteRequest): TaskComplete
     expectedRecordDigest: input.expectedRecordDigest,
     summary: input.summary,
     noChange: input.noChange,
+    ...present(input, 'parentCompletion'),
   };
 }
 

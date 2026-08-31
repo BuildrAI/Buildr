@@ -32,10 +32,16 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
       { $ref: '#/$defs/QualifiedService' },
     ],
   },
+  ParentCompletion: closed({
+    expectedSnapshot: nonEmptyText,
+    acceptance: closed({ summary: nonEmptyText, children: arrayOf(closed({ taskId: { $ref: '#/$defs/TaskId' }, summary: nonEmptyText }, ['taskId', 'summary'])) }, ['summary', 'children']),
+    authorization: closed({ source: nonEmptyText, statement: nonEmptyText }, ['source', 'statement']),
+    recordedAt: nonEmptyText,
+  }, ['expectedSnapshot', 'acceptance', 'authorization']),
   TaskResult: {
     anyOf: [
       { type: 'null' },
-      closed({ summary: nonEmptyText, noChange: { type: 'boolean' } }, ['summary']),
+      closed({ summary: nonEmptyText, noChange: { type: 'boolean' }, parentCompletion: { $ref: '#/$defs/ParentCompletion' } }, ['summary']),
     ],
   },
   TaskRecord: closed({
@@ -50,6 +56,7 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
     changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
     parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
     childTaskIds: arrayOf({ $ref: '#/$defs/TaskId' }),
+    isParent: { type: 'boolean' },
     retrospectiveSourceTaskIds: arrayOf({ $ref: '#/$defs/TaskId' }),
     status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
     result: { $ref: '#/$defs/TaskResult' },
@@ -138,6 +145,7 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
   updateRequest: schema('update/request', 'TaskUpdateRequest', {
     ...closed({
       expectedRecordDigest: nonEmptyText,
+    isParent: { const: true },
       title: nonEmptyText,
       intent: nonEmptyText,
       parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
@@ -155,6 +163,7 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
     expectedRecordDigest: nonEmptyText,
     summary: nonEmptyText,
     noChange: { type: 'boolean' },
+    parentCompletion: { $ref: '#/$defs/ParentCompletion' },
   }, ['expectedRecordDigest', 'summary', 'noChange']), defs),
   completeResponse: schema('complete/response', 'TaskCompleteResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
   abandonRequest: schema('abandon/request', 'TaskAbandonRequest', closed({

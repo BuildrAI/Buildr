@@ -914,24 +914,6 @@ Buildr-owned OpenSpec propose、update与apply contributions MUST引导Agent只�
 - **THEN** Agent MUST在implementation前修订该checkbox而不是让convergence自动勾选或绕过
 - **AND** Change仍必须在全部真实Change-owned checkbox完成后才能进入convergence
 
-### Requirement: task-manager 必须作为 Parent Task 的薄管理入口
-`task-manager` MUST 只通过 Task Record Application 创建、检查和明确修改 Parent Task 关系，并 MUST 使用 canonical Workspace Task identity。Skill MUST NOT 直接操作 SQLite、构建通用关系图、自动修改 Child lifecycle 或冒充 Task Board writer。
-
-#### Scenario: Agent 创建受 Parent 管理的 Task
-- **WHEN** 用户明确要求一个 Task 管理另一个正式 Task
-- **THEN** Agent MUST 通过 Task Manager create/update 动作保存 Parent relationship
-- **AND** MUST 保持 Parent 与 Child 的 Environment、Development、Review、Verification、Finish 和终态决定独立
-
-#### Scenario: Agent 判断协调 Task 完成
-- **WHEN** Agent 根据 Child 状态与专业 evidence 判断 Parent 整体 Intent 是否满足
-- **THEN** 该语义判断 MUST 通过 Parent 自己的明确 completion summary 或适用专业 Result 表达
-- **AND** MUST NOT 仅因所有 Child terminal 而自动 complete Parent
-
-#### Scenario: 层级不足以表达协调需求
-- **WHEN** 真实需求需要未 Task 化规划、多协调归属、显式依赖条件、排序分组或跨 Task 决策记录
-- **THEN** task-manager MUST 保持 Parent Task 边界并把缺口交回任务分流
-- **AND** MUST NOT 把自由文本或临时推理伪装成新的关系字段
-
 ### Requirement: Workspace 可以通过 Skill Contribution 扩展 Task Finish 后续维护
 Workspace Component MAY通过`task-finish@append`追加Workspace专属维护。Contribution可以在Formal Task Finish成功后执行后续维护，也可以对交付和remote readback已完成、唯一当前失败为retained Doctor且产品提供matching resume token的run覆盖默认停止规则：先执行专属维护，再恢复同一Finish run。Contribution MUST NOT改写产品固定五阶段、伪造Doctor通过、重建Candidate/Verification/Review/decision或创建第二个Finish authority。通用`task-finish` Skill MUST NOT为Workspace专属维护声明命名slot或依赖自举Skill。
 
@@ -1065,22 +1047,6 @@ Buildr MUST 在正式 Task 成功进入 `completed` 或 `abandoned` 终态后，
 - **THEN** 提示 MUST 使用长期名称“任务复盘”
 - **AND** MUST 说明当前重点包括 Agent 执行耗时、Token 消耗、重复尝试和人机协作效率
 - **AND** MUST 说明 Token 数据仅在 Agent 可取得时记录且缺失不影响复盘
-
-### Requirement: Agent 必须按 Parent协调 Child独立交付工作
-Agent workflow MUST先建立/审查Parent Plan，再从Contribution创建绑定Parent但不继承Parent Change/Environment的Child Task；Child MUST从最新dev/canonical specs建立窄Change并独立完成Development/Review/Verification/Finish。
-
-#### Scenario: 从Parent Contribution启动Child
-- **WHEN** 用户选择一个未交付Contribution实施
-- **THEN** Agent MUST创建带Parent关系和planned Contribution binding的Child Task
-- **AND** MUST在Child ready Environment中创建自己的Change
-
-### Requirement: Agent 必须显式 reconcile 范围变化
-Agent发现Child跨Contribution或改变依赖/invariant/acceptance时 MUST暂停将普通状态变化解释为进度，读取saved handoff并显式reconcile Parent Plan；无法证明交付 MUST保持未完成。
-
-#### Scenario: 未来Child仅剩部分范围
-- **WHEN** saved handoff证明未来Child部分范围已被覆盖
-- **THEN** Agent MUST更新未来Child intent与Change只保留residual
-- **AND** MUST重新建立其planning target与适用Review
 
 ### Requirement: OpenSpec workflow 必须消费统一 planning identity resolver
 正式 Task 的 OpenSpec propose、update、apply与converge/archive workflow MUST 在apply-ready后先运行OpenSpec Contract Guard semantic readiness preflight。Preflight current且`ready`后，workflow MUST使用Task Planning Identity Application取得current target与planning nodes，并把同一target交给Task Development和Planning Review；preflight `blocked`时 MUST在resolver、Planning Review和apply前停止，由Agent处理最小语义决定。Agent MUST NOT通过 `shasum`、文件路径列表、mtime、checklist progress、Git ref或手工沿用旧值生成OpenSpec Planning Review target，也 MUST NOT让Planning Review解释或复制preflight逻辑。
@@ -1350,47 +1316,6 @@ Buildr Agent workflow MUST 将已检出 canonical Workspace 因远端协作者�
 - **THEN** 示例 MUST包含必填`--agent <adapter>`
 - **AND** MUST NOT给出省略`--agent`即可成功的prepare命令
 
-### Requirement: Agent必须按标准Parent启动流程推进到Child之前
-Buildr内置Task workflow Skills MUST将新Parent从Git基线推进到Child前的顺序固定为：激活前Git门禁、Parent activate、matching Environment、Development begin、Parent Plan record、Planning Review、Parent planning refresh与启动就绪回读。用户目标包含创建、准备、拆分Parent或准备到可启动Child，且active Parent Task Record创建成功后，`task-manager` MUST自动交接`task-development`；`task-development` MUST持续消费current `buildr task next`和Parent Coordination事实，调用每个typed next的专业owner，直到`start-child-contribution`或遇到真实blocker。Skills MUST在启动就绪后停止Parent普通实现推进，等待用户选择eligible Contribution；MUST NOT把Task Record创建成功本身报告为Parent已准备好。
-
-#### Scenario: active Parent创建后自动交接
-- **WHEN** 用户明确要求创建并准备Parent，且`task-manager`成功创建active Task Record
-- **THEN** `task-manager` MUST保留Task Record单一writer边界，并把Task ID、canonical Workspace、scope与已知Parent规划输入交接给`task-development`
-- **AND** Agent MUST继续当前工作，不得仅报告Task Record已创建或要求用户再次发出准备指令
-
-#### Scenario: 已知信息足以形成Parent Plan
-- **WHEN** 用户已提供可明确写入的Parent outcome、architecture decisions、Contribution Map、dependencies、boundaries与final acceptance
-- **THEN** `task-development` MUST在Environment与Development current后记录完整Parent Plan，并继续完成current Planning Review与planning refresh
-- **AND** MUST不重复询问已知事实、创建占位Contribution或把Child状态与实现清单写入Parent Plan
-
-#### Scenario: Parent准备循环消费typed next
-- **WHEN** Parent准备尚未到达Child前停止点，且`buildr task next`返回`prepare`、`begin`、`planning-review`或`refresh-parent-planning`
-- **THEN** Agent MUST调用该next指定的专业owner并在成功后重新读取current next
-- **AND** MUST不跨owner直接写Receipt、Review Result或Parent progress authority
-
-#### Scenario: 只有真实blocker才中断默认准备
-- **WHEN** 当前步骤缺少会改变Parent outcome、Contribution切分、依赖、边界或final acceptance的必要事实，或owner返回blocked并需要用户业务决定或新授权
-- **THEN** Agent MUST停止对应写入并报告最小blocker与唯一下一步
-- **AND** 普通recommended动作、可恢复内部登记缺口或已知信息不得被升级为要求用户重新发起准备的blocker
-
-#### Scenario: coordination-only Parent启动
-- **WHEN** Parent只承担协调且当前不修改、构建或测试交付内容
-- **THEN** Agent MUST仍准备matching shared Environment，并可对完整Project/Service scope提交有理由的Preparation `not-applicable`
-- **AND** MUST不因此创建独立worktree、执行不需要的依赖安装或跳过Environment authority
-
-#### Scenario: Parent到达Child前停止点
-- **WHEN** Parent Plan、Planning Review和Development planning gate current且启动投影返回`start-child-contribution`与至少一个eligible Contribution
-- **THEN** Agent MUST报告Parent已准备好、展示可选择的eligible Contributions，并停止`observe`、Verification、Candidate和Finish
-- **AND** 后续Child必须由用户选择Contribution后按独立Task流程启动，Agent MUST NOT自动创建第一个Child
-
-### Requirement: Agent必须在一对多Child拆分前reconcile Contribution
-一个current Contribution MUST最多绑定一个Child；当真实能力范围需要多个Child独立交付时，Agent MUST先以current Parent Plan identity显式reconcile为多个窄Contribution，再分别创建和绑定Child。
-
-#### Scenario: 宽Contribution需要多个Child
-- **WHEN** 能力盘点证明一个未分配Contribution需要两个或以上独立Environment、Change或Finish handoff
-- **THEN** Agent MUST在创建第二个Child前reconcile Parent Plan并重新完成Planning Review与refresh
-- **AND** MUST不把同一Contribution同时绑定多个Child或只记录非阻塞聊天约束
-
 ### Requirement: Buildr 工作流门禁必须保持宽而薄
 Buildr required Core MUST 将“宽而薄”定义为通用治理原则：只有继续推进会造成越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报时才关闭式失败；其他可恢复不确定性 MUST 如实报告事实、风险与下一步，并保留 Agent 的安全判断和推进空间。Product scope MUST要求新增硬门禁明确其保护的 authority 或结果不变量及放行造成的具体伤害，MUST NOT仅因缺少辅助 provenance、推荐流程、特定工具身份或统一工作方式而阻断原本可安全检查和继续的工作。
 
@@ -1421,32 +1346,6 @@ Buildr受管Skills与sidebars在调用Task Development、Task Retrospective或Ta
 - **WHEN** Workspace只安装正式npm artifact且Skill需要调用内部工作流能力
 - **THEN** bundled route MUST从安装产物内完成分派
 - **AND** consumer MUST NOT因`src/interfaces/internal`文件不存在而要求兼容调用或本地源码替代
-
-### Requirement: Agent workflow 必须使用 Parent Plan v2 并分离预计与真实 Child
-Buildr 随包 Task workflow Skills MUST 引导 Agent 让新 Parent 只写 v2；读取 v1 时 MUST 先 inspect 并通过 expected identity 保护的完整 reconcile 显式升级。workflow MUST 把 `expectedChild` 当作说明文本，并 MUST 只在真实 Child Task、Parent relationship 与 Child Development ready 后调用 `bind-child`。
-
-#### Scenario: 规划预计 Child
-- **WHEN** Agent 在 Parent Plan 中描述未来实施单元但尚未启动 Child
-- **THEN** workflow MUST 写 `expectedChild` 并保留 work item unassigned/eligible 计算
-- **AND** MUST 不提前创建 Child、Environment 或 Development binding
-
-#### Scenario: 升级历史 Parent
-- **WHEN** 用户明确要求历史 v1 Parent 采用新结构
-- **THEN** workflow MUST 使用 inspect current identity、完整 v2 临时 input、reconcile、重新 Planning Review 与 refresh-planning
-- **AND** MUST 不直接修改 SQLite 或批量迁移其他 Parent
-
-### Requirement: Agent workflow 必须只使用Parent Coordination v3
-Buildr随包Task Skills MUST引导Agent使用v3 canonical字段取得Plan identity、Contribution实施方向、binding、eligible next与最终验收前置条件，MUST不继续引用已删除v2 alias。
-
-#### Scenario: 从Parent启动Child
-- **WHEN** Agent读取Parent coordination以选择eligible Contribution
-- **THEN** workflow MUST从顶层`contributions`和`startup.next`取得所需事实
-- **AND** MUST从`plan.identity`取得current expected identity
-
-#### Scenario: Parent最终验收
-- **WHEN** Agent判断是否可执行Parent accept
-- **THEN** workflow MUST只使用`prerequisitesSatisfied`与canonical blockers
-- **AND** MUST不读取`finalAcceptanceReady`
 
 ### Requirement: Agent必须按release身份链消费专业provider
 Agent MUST按release selection、Task/Environment/Development/Finish/self-bootstrap、Product Candidate、release readiness、protected transaction和Git convergence的owner顺序消费current结果。任一provider暂不可用只阻塞实际消费该事实的受管动作，不得阻止安全只读调查或通过另一个owner补造成功。
@@ -1684,3 +1583,18 @@ Task Verification Skill与Agent workflow MUST把running progress、timed-out、c
 #### Scenario: 部分成功
 - **WHEN** 交付成立但登记或清理失败
 - **THEN** 保留交付，继续安全必要动作，说明遗留
+
+### Requirement: 智能体必须使用轻量父子管理方法
+智能体（Agent）MUST 围绕目标、计划文档和真实子任务结果持续推进，按需要组合任务、文档、Git及专业工具，不重建固定父计划链。父任务完成 MUST 引用当前会话内明确用户授权，不能以子任务授权、实现授权或自己生成的说明替代。
+
+#### Scenario: 创建并准备父任务
+- **WHEN** 用户要求组织多个独立目标
+- **THEN** MUST 维护目标与计划，在已有授权内推进，不强制创建环境、研发记录或专用贡献。
+
+#### Scenario: 完成子任务
+- **WHEN** 用户仅授权一个子任务收尾
+- **THEN** MUST 只处理该子任务，父任务保持独立。
+
+#### Scenario: 技能修改
+- **WHEN** 父子管理入口更新
+- **THEN** MUST 同步 task-manager、task-triage、task-development、task-finish 等实际消费者，不把旧链藏入技能。

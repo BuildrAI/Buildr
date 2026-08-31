@@ -86,25 +86,6 @@ const risk = closed({
   source: text('明确风险接受来源。'),
 }, ['gate', 'resultDigest', 'scope', 'summary', 'source']);
 
-const contributionSummary = closed({ contributionId: text(), summary: text() }, ['contributionId', 'summary']);
-const supersededContribution = closed({
-  contributionId: text(),
-  deliveredByContributionId: text(),
-  reason: text(),
-}, ['contributionId', 'deliveredByContributionId', 'reason']);
-const contributionHandoff = closed({
-  schemaVersion: { type: 'string', const: 'buildr.contribution-handoff/v1' },
-  identity: text('传入已规范化 handoff 时使用的 sha256 identity。'),
-  parentTaskId: text(),
-  planned: array(text()),
-  delivered: array(text()),
-  extra: array(contributionSummary),
-  residual: array(contributionSummary),
-  superseded: array(supersededContribution),
-  affected: array(contributionSummary),
-  nextAction: text(),
-}, ['parentTaskId', 'planned', 'delivered', 'extra', 'residual', 'superseded', 'affected', 'nextAction']);
-
 function inputSchema(properties = {}, required = [], description = RUNTIME_NOTE) {
   return { $schema: JSON_SCHEMA_DRAFT, ...closed(properties, required, description) };
 }
@@ -186,7 +167,7 @@ const contracts = {
   },
   handoff: {
     summary: '为 current Candidate 创建 immutable Finish handoff。',
-    inputSchema: inputSchema({ contributionHandoff }),
+    inputSchema: inputSchema({ contributionHandoff: { description: '旧贡献交接输入已退役；非空输入返回退役说明，不执行研发或写入。' } }),
     example: {},
   },
   carrier: {

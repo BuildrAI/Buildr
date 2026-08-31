@@ -162,4 +162,23 @@ test('五个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Sc
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');
   assertSchema('task-record.list', 'error', response.body);
+  runtime.createTaskRecord(root, { taskId: 'http-parent', title: '父任务', intent: '完整目标', isParent: true });
+  runtime.createTaskRecord(root, { taskId: 'http-child', title: '子任务', intent: '独立成果', parentTaskId: 'http-parent' });
+  runtime.completeTaskRecord(root, 'http-child', { summary: '真实成果已完成', noChange: false });
+  const parentRecord = runtime.inspectTaskRecord(root, 'http-parent');
+  response = await request(`${endpoint}/http-parent/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: parentRecord.recordDigest, summary: '整体完成', noChange: false }) });
+  assert.equal(response.status, 409);
+  assert.equal(response.body.error.code, 'parent_completion_authorization_required');
+  const parentView = (await request(`${endpoint}/http-parent/coordination`)).body;
+  assert.equal(parentView.completion.authorizationRequired, true);
+  response = await request(`${endpoint}/http-parent/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: parentRecord.recordDigest, summary: '整体完成', noChange: false, parentCompletion: {
+    expectedSnapshot: parentView.completion.snapshotIdentity,
+    acceptance: { summary: '整体目标与真实成果已核对', children: [{ taskId: 'http-child', summary: '子任务范围完整覆盖' }] },
+    authorization: { source: 'test:user-confirmation', statement: '用户明确授权完成 http-parent' },
+  } }) });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assertSchema('task-record.complete', 'success', response.body);
+  assert.equal(response.body.record.result.parentCompletion.authorization.source, 'test:user-confirmation');
+  assert.equal(runtime.inspectTaskRecord(root, 'http-child').record.status, 'completed');
+
 });

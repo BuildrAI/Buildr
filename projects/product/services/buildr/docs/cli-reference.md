@@ -49,7 +49,7 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在 canonical Workspace 的 SQLite 中维护 Task Record v2。`create --status todo` 只保存意向，不接受 Change；`activate` 显式转为 active。`--retrospective-source` 及 update add/remove flags 只关联已有 current 复盘的终态来源 Task，不创建行动项。todo 只能以 `--no-change` 完成；todo/active 都可 abandon，终态不可重开。Parent/Child 仍只表达协调层级。 |
 | `buildr task delivery inspect <task-id>` | 仅凭 Task ID 只读返回 `buildr.task-terminal-delivery/v1`。已交付时包含 Finish run ID、final remote ref 与 cleanup 摘要；旧运行仅展示 run ID、历史 phase 和诊断，不生成恢复执行命令；直接完成的任务显示 completed 且不声称机器验证了交付；历史关联不匹配时保留完成记录并给出 diagnostic。该命令不执行 resume、cleanup 或 Finish，不扩展只查询 Task Record 的 `task inspect`，也不替代按 run identity 查询完整明细的 `task finish inspect --run`。 |
 | `buildr task next <task-id>` | 只读返回closed `buildr.task-entry-snapshot/v1`：Task、matching Environment、Development compact identity/applicability、execution roots、retained controller、blockers与唯一typed next。`required`是authority/identity恢复前置，`recommended`可由用户调整；不自动执行、不展开完整capability graph。`--execution-target`只做receipt核验，`--profile`只增加本次调用耗时/owner read事实。 |
-| `buildr task parent inspect\|record\|bind-child\|reconcile\|accept` | 管理opt-in Parent Plan与Contribution协调。新writer只接受`buildr.parent-plan/v2`；旧v1保持原identity双读并通过显式`reconcile`升级。`inspect`以`buildr.parent-coordination-result/v3`返回紧凑Plan摘要、唯一顶层Contribution Map及expected、eligibility、actual三轴；Child delivery和Planning Review只返回协调所需摘要。`bind-child`只接受真实Child Development binding；`accept`只记录显式最终集成验收，不完成Parent。不扫描文件系统、backfill历史Task、复制Child状态或创建progress/lifecycle authority。 |
+| `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|reconcile\|record <task-id>` | 通过Application读取或事务整值维护Workspace SQLite中的current Verification Result。`inspect`可带current Candidate、target与declaration identities做纯值比较。Project/Service任务使用`reconcile`读取matching terminal Task Execution Records，独立核验Candidate、target、declarations、checks与target stability后派生facts；调用方不能提交成功声明。`record`仅兼容真正workspace-only的Candidate-bound负向coverage gap。 |
 | `buildr task finish inspect --run <id>` | 只读查询历史收尾结果；支持 compact、full 与 self-bootstrap 历史投影。旧 run、rollover、reconcile 执行入口已退役。新收尾由 task-finish 技能直接处理真实成果、已有任务记录及安全善后。 |
 
@@ -148,3 +148,5 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 - `BUILDR_REMOTE_SKILL_TOTAL_TIMEOUT_MS`
 
 值必须是 `1..120000` 的整数毫秒。生产环境建议为 resolved source 提供 `sha256-<hex>` integrity。
+
+父任务使用 `task create --parent-task` 或 `task update --parent-task` 明确标记；`--parent <id>` 表示子任务归属。完成父任务时提供 `--expected-record <recordDigest>` 与 `--parent-completion <json-file>`，输入格式由随包 `task-manager` 说明。子任务完成不自动完成父任务。

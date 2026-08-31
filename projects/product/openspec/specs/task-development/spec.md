@@ -287,22 +287,6 @@ Task Development Application MUST 在每个成功的begin、planning、observe�
 - **THEN** inspect MUST返回保存Receipt与稳定unknown/migration diagnostic
 - **AND** MUST NOT在GET中观察Environment、Git、Content Target或declaration补算
 
-### Requirement: Development Receipt 必须承载可选 Parent Plan
-Task Development MUST在按Task唯一的现有SQLite current Receipt中保存可选closed Parent Plan和planned Contribution bindings，使用新Receipt major并将旧major读取为absent-compatible；MUST NOT新增Parent Plan表或backfill历史rows。
-
-#### Scenario: v2 与 v3 Receipt 共存
-- **WHEN** Workspace同时包含没有Parent Plan的旧Receipt和采用Parent Plan的新Receipt
-- **THEN** Application MUST正常读取两者
-- **AND** 只有显式Parent Plan mutation MUST写入新模型
-
-### Requirement: Development Handoff 必须承载实际 Contribution 事实
-Task Development MUST在现有append-only immutable handoff中保存可选Contribution Handoff，并将其纳入handoff identity与Finish terminal association；MUST NOT创建第二Result或delivery registry。
-
-#### Scenario: handoff 记录 extra 和 superseded
-- **WHEN** Child实际交付跨越原planned范围
-- **THEN** handoff MUST分别保存extra、affected与superseded Contribution事实及唯一next action
-- **AND** 后续current变化 MUST NOT改写既有snapshot
-
 ### Requirement: Task Development driver 必须提供同源调用契约发现
 
 Task Development 内部 driver MUST 为每个受支持 action 提供无需 Task 或 Workspace 上下文的 action 级帮助、机器可读输入 schema 与最小输入示例。输入 schema MUST 是 closed JSON object shape，并且 Application 对该 action 的顶层字段白名单 MUST 与 driver 输出读取同一 action contract；发现操作 MUST NOT compose runtime、访问 Workspace、写入 Development Receipt 或产生其他专业副作用。
@@ -501,19 +485,6 @@ Task Development Skill MUST 在内容固定且调用 `observe` 形成 Content Ta
 - **THEN** Task Development MUST NOT 仅为清理存量问题而扩大当前 Task 的 Content Target
 - **AND** Agent MUST 继续对本次新增文件执行完整检查
 
-### Requirement: Development Parent Plan 必须兼容 v1 并以 v2 作为 current writer schema
-Task Development MUST 在同一 `task_development_current.record_json` authority 中 dual-read Parent Plan v1/v2，新建或 reconcile Parent Plan MUST 只保存 v2；Receipt/table schema MUST NOT 因 Parent Plan v2 增加新表、migration、backfill 或第二 writer。
-
-#### Scenario: v1 Receipt current 读取
-- **WHEN** current Development Receipt 包含合法 v1 Parent Plan
-- **THEN** Development inspect MUST 保持 Receipt current 并允许 Parent coordination dual-read
-- **AND** MUST NOT 因 schema 较旧自动改写 Receipt
-
-#### Scenario: v2 Plan 内容变化
-- **WHEN** v2 的 priority、title、objective、directions、boundaries、expected Child、dependencies、architecture decisions 或 final acceptance 改变
-- **THEN** Development planning target MUST 改为新 Plan identity
-- **AND** 旧 planning gate、Candidate 与 handoff MUST 按既有 applicability 规则失效
-
 ### Requirement: Formal Verification 必须绑定 current Candidate
 Development MUST 先建立stable Content Target与verification policy并冻结current Candidate，再由Task Verification workflow针对该Candidate形成current Result。Application MUST通过Task Verification Application inspect证明Candidate、target与declarations current，且policy要求的capability fact或coverage gap完整；Application本身MUST NOT执行formal Verification、写Verification Result或把`not-passed`改写为`passed`。
 
@@ -531,38 +502,6 @@ Development MUST 先建立stable Content Target与verification policy并冻结cu
 - **WHEN** current Result完整但结论为`not-passed`
 - **THEN** Development MAY保持Candidate current，但在没有绑定精确Verification Result digest、范围和授权来源的风险接受时 MUST记录blocked且不得形成handoff
 - **AND** scoped risk MUST NOT把Verification事实改写为passed或使stale/incomplete Result适用
-
-### Requirement: Task Development 必须拥有终态 Contribution reconciliation evidence
-已有贡献登记 MUST支持直接完成的子任务；必须明确贡献映射、reason、source、expectedTaskDigest 与当前父计划，校验直接关系、规范归档、结果身份和其他子任务归属。MUST不要求旧候选、收尾关联或Child研发记录；不能仅从completed推断贡献或父任务验收。旧v1证据只读，新v2写同一已有表并保持事务、幂等与冲突保护。
-
-#### Scenario: 写入一次恢复 evidence
-- **WHEN** 子任务已完成，调用方已核对真实成果并提交完整且当前的贡献处置
-- **THEN** MUST通过既有入口记录并显示贡献判断；相同重放保持不变，父任务仍独立验收
-
-#### Scenario: 写入失败
-- **WHEN** 身份、内容、父计划、任务结果版本或归属存在冲突
-- **THEN** MUST拒绝相关写入或不采用陈旧证据，保留已有结果并报告精确原因
-
-### Requirement: 终态恢复输入必须由 action contract 发现
-已有贡献登记 MUST支持直接完成的子任务；必须明确贡献映射、reason、source、expectedTaskDigest 与当前父计划，校验直接关系、规范归档、结果身份和其他子任务归属。MUST不要求旧候选、收尾关联或Child研发记录；不能仅从completed推断贡献或父任务验收。旧v1证据只读，新v2写同一已有表并保持事务、幂等与冲突保护。
-
-#### Scenario: 查看恢复schema
-- **WHEN** 只查询输入定义
-- **THEN** MUST返回含任务结果版本的closed输入，不读取工作空间或执行写入
-
-### Requirement: Parent startup next 不得遮蔽 current Acceptance 后的 Development next
-Parent Coordination startup projection MUST只在仍有协调动作时提供`startup.next`。当 current Parent Acceptance 已绑定 current Parent Plan 且所有 Contribution prerequisites 已满足时，startup MUST不再推荐`accept-parent`；Task Entry composition MUST保留同次 Task Development read model 的真实 typed next，且 MUST不在Parent层推测后续Development action。
-
-#### Scenario: current Parent Acceptance 后读取 task next
-- **WHEN** Parent Acceptance的`planIdentity`等于current Parent Plan identity，且Parent coordination prerequisites已满足
-- **THEN** Parent startup projection MUST不返回`accept-parent` next
-- **AND** 顶层`task next` MUST返回Task Development当前状态派生的typed next
-- **AND** 读取 MUST不重复写Acceptance、推进Task或改变任何gate
-
-#### Scenario: Acceptance 尚未 current
-- **WHEN** prerequisites已满足但Parent Acceptance缺失或绑定旧Plan identity
-- **THEN** Parent startup projection MUST继续推荐`accept-parent`
-- **AND** Task Entry MUST不越过Parent最终集成验收
 
 ### Requirement: Task Development MUST provide current closed mutation input discovery
 
@@ -650,3 +589,14 @@ Task Candidate MUST继续绑定current verification policy identity，Formal Pla
 - **WHEN** Project Plan identity变化但current Candidate、target、declaration和policy required facts仍由matching terminal authority完整覆盖
 - **THEN** Development MUST只按current Result与policy coverage判断gate
 - **AND** MUST不建立第二Plan store或把Plan identity加入Candidate
+
+### Requirement: 研发必须退出父子协调写入
+研发 MUST 只维护独立研发事实，不再写父计划、贡献绑定或父验收，不要求贡献交接才能交付。历史字段及历史交接 MUST 保留可读，不作为新协调前置。
+
+#### Scenario: 直接协调
+- **WHEN** 父任务维护计划与子任务关系
+- **THEN** MUST 不写研发回执。
+
+#### Scenario: 旧内部动作
+- **WHEN** 调用旧父子研发写动作
+- **THEN** MUST 零写入报告退役。

@@ -292,6 +292,8 @@
 
 ## 终态贡献交付对账（Terminal Contribution Delivery Reconciliation）
 
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
+
 - 定义：当直接 Child 已 completed 且既有 immutable Development handoff 与 terminal Finish association 能证明真实交付，但原生 Contribution Handoff 因历史编排遗漏而缺失时，由 Task Development 追加的一次性、内容寻址恢复证据。
 - 适用范围：Parent Coordination 对历史终态 Child 的 Contribution delivery 恢复；必须绑定 current Parent Plan、Parent/Child 关系、Candidate/generation、三个 gate、archived Change、完整 Contribution Handoff、reason 与 source。
 - 避免混用：不是 normal Child 的常规 handoff、Task reopen、Parent Plan reconcile、Git 交付声明或通用审计日志；不能仅凭 completed、commit、文件或 canonical specs 建立。
@@ -402,10 +404,10 @@
 
 ## 父任务 / 子任务（Parent Task / Child Task）
 
-- 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
-- 适用范围：把可独立形成Candidate、Verification、Completion、不可变Handoff与Delivery的Contribution拆为Child，以及Buildr Web层级展示、导航和Task Manager显式设置、重挂或清除Parent。
-- 避免混用：不是普通调查、编码、测试或Agent并行分工的强制建模方式，也不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
-- 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v2.md)
+- 定义：父任务组织整体目标和独立成果；子任务表达其中可独立交付的目标、范围与结果。一个任务可以同时是父任务和上级的子任务。
+- 适用范围：真实独立交付的协调，计划使用原文档或任务目标说明。
+- 避免混用：不是智能体临时并行分工；子任务完成、总体验收与父任务完成授权相互独立。父任务必须取得明确用户授权才可完成。
+- 来源：[父子管理](flows/parent-child-management.md)
 
 ## 协调任务（Coordinating Task）
 
@@ -684,31 +686,39 @@
 
 ## Parent Plan
 
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
+
 - 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划；v2包含outcome、architecture decisions、结构化Contribution Map与final acceptance，每个Contribution包含priority、title、objective、directions、boundaries、可选expectedChild与dependencies。
 - 适用范围：Parent Planning Review target、Child Contribution binding、显式reconciliation与最终集成验收前置判断。
 - 避免混用：`expectedChild`只是预期形态，不是Task ID、binding或已创建事实；Parent Plan也不是OpenSpec delta Change、Child状态/Result副本、Markdown checkbox进度或lifecycle authority。旧v1只读兼容且保持原identity，只能显式reconcile升级。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Parent 启动就绪（Parent Startup Readiness）
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：Parent Coordination基于current Task、matching Environment、Development、Parent Plan、Planning Review/gate及Contribution依赖派生的response-only启动投影。
 - 适用范围：Parent-aware `task next`在首个Child创建前返回planning-review、refresh-parent-planning、eligible Contribution或依赖等待动作。
 - 避免混用：不是新的Parent lifecycle状态、Receipt字段、自动planner或跨authority事务；它不自动Review、刷新gate、创建Child或准备Child Environment。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Contribution Handoff
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
 - 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；预期Child与Task completed都不能代替真实binding和handoff。
 - 避免混用：不是第二套Result、delivery registry、event/history/audit log，也不能由Task `completed`、代码或canonical specs推断。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Parent reconciliation
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：以current Parent Plan expected identity、完整next Plan和理由执行的显式计划mutation，用于处理越界/提前交付、依赖或验收变化及后续Child residual/superseded scope。
 - 适用范围：新Plan identity形成后重做Parent Planning Review，并由Agent分别更新或abandon受影响Child。
 - 避免混用：不是Child状态同步、自动scope推断、数据库migration或历史backfill；它不自动修改Child Task/Change。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## 研发回执（Development Receipt）
 
