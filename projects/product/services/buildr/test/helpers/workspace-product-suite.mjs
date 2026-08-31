@@ -621,11 +621,26 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
 });
 
 suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t) => {
-  const base = temporaryRoot(t);
-  const appData = path.join(base, 'preview-data');
-  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  const started = [];
   const timings = [];
   let currentPhase = 'setup';
+  let appData;
+  t.after(async () => {
+    const cleanupStartedAt = performance.now();
+    const errors = [];
+    for (const name of started) {
+      try { await stopPreview(name, { dataRoot: appData, caller: null }); } catch (error) {
+        if (error.code !== 'preview_not_found') errors.push(error);
+      }
+    }
+    timings.push(`cleanup=${Math.round(performance.now() - cleanupStartedAt)}ms`);
+    t.diagnostic(`[preview-isolation-timing] current=${currentPhase} ${timings.join(' ')}`);
+    if (errors.length) throw new AggregateError(errors, '预览测试进程清理失败');
+  });
+
+  const base = temporaryRoot(t);
+  appData = path.join(base, 'preview-data');
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
   const measure = async (phase, operation) => {
     currentPhase = phase;
     const startedAt = performance.now();
@@ -638,19 +653,9 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   const runPreviewCommand = (phase, args) => measure(phase, () => runBuildr(args, { env, timeout: APP_COMMAND_TIMEOUT_MS }));
   const first = await measure('workspace-first', () => initGitWorkspace(t, { name: 'preview-first' }));
   const second = await measure('workspace-second', () => initGitWorkspace(t, { name: 'preview-second' }));
-  const started = [];
-  t.after(async () => {
-    const cleanupStartedAt = performance.now();
-    for (const name of started) {
-      try { await stopPreview(name, { dataRoot: appData, caller: null }); } catch { /* assertion path retains diagnostic */ }
-    }
-    timings.push(`cleanup=${Math.round(performance.now() - cleanupStartedAt)}ms`);
-    t.diagnostic(`[preview-isolation-timing] current=${currentPhase} ${timings.join(' ')}`);
-  });
-
+  started.push('first-task');
   const firstStart = await runPreviewCommand('start-first', ['web', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
   assert.equal(firstStart.status, 0, firstStart.stderr);
-  started.push('first-task');
   const firstPreview = JSON.parse(firstStart.stdout);
   assert.equal(firstPreview.status, 'started');
   assert.equal(firstPreview.owner.worktree, first);
@@ -665,9 +670,9 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.match(firstPage, /first-task/);
   assert.match(firstPage, /buildr-preview/);
 
+  started.push('second-task');
   const secondStart = await runPreviewCommand('start-second', ['web', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
   assert.equal(secondStart.status, 0, secondStart.stderr);
-  started.push('second-task');
   const secondPreview = JSON.parse(secondStart.stdout);
   assert.notEqual(secondPreview.url, firstPreview.url);
   assert.equal(secondPreview.owner.worktree, second);

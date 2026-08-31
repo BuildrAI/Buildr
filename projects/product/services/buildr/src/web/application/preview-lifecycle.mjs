@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
+import { performance } from 'node:perf_hooks';
 
 import { buildrWebDataRoot } from '../../workspace/module.mjs';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
@@ -132,14 +133,36 @@ function clearOwner(name, dataRoot) {
   fs.rmSync(previewOwnerPath(name, dataRoot), { force: true });
 }
 
-async function waitForPreview(name, dataRoot, attempts = 80) {
-  for (let index = 0; index < attempts; index += 1) {
+// The deadline covers startup, not the number of probes; failed children stop
+// immediately. Retain the ChildProcess handle so failure cleanup never guesses
+// ownership from a stale PID file or another instance's port.
+async function waitForPreview(name, dataRoot, child, startup, timeoutMs) {
+  const began = performance.now();
+  startup.phase = 'instance-missing';
+  while (performance.now() - began < timeoutMs) {
+    if (startup.spawnError || child.exitCode !== null || child.signalCode !== null) break;
     const instance = readPreviewInstance(name, dataRoot);
-    const healthy = await healthyBuildrWebInstance(instance);
-    if (healthy) return healthy;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    startup.phase = !instance ? 'instance-missing' : instance.pid !== child.pid ? 'instance-pid-mismatch' : 'health-not-ready';
+    const healthy = instance?.pid === child.pid ? await healthyBuildrWebInstance(instance) : null;
+    if (healthy && !startup.spawnError && child.exitCode === null && child.signalCode === null) return healthy;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(0, timeoutMs - (performance.now() - began)))));
   }
+  startup.elapsedMs = Math.round(performance.now() - began);
   return null;
+}
+
+async function reclaimPreviewChild(child, startup) {
+  const exited = () => startup.spawnError || child.exitCode !== null || child.signalCode !== null;
+  if (exited()) return 'already-exited';
+  for (const signal of ['SIGTERM', 'SIGKILL']) {
+    if (!child.kill(signal) && !exited()) throw new Error(`无法发送 ${signal}：${startup.processError?.message || 'child.kill returned false'}`);
+    const deadline = performance.now() + 1000;
+    while (!exited() && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (exited()) return 'terminated';
+  }
+  throw new Error('预览子进程在终止信号后仍未确认退出。');
 }
 
 function requestInstanceShutdown(instance) {
@@ -196,7 +219,7 @@ function taskPreviewResource(owner, instance) {
   };
 }
 
-export async function startPreview(runtime, name, args, { cliPath = process.argv[1], dataRoot = buildrWebDataRoot() } = {}) {
+export async function startPreview(runtime, name, args, { cliPath = process.argv[1], dataRoot = buildrWebDataRoot(), startupTimeoutMs = 10_000 } = {}) {
   const instance = assertPreviewName(name);
   runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
   const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()));
@@ -274,14 +297,33 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
   } finally {
     fs.closeSync(logDescriptor);
   }
+  const startup = { spawnError: null };
+  child.on('error', (error) => {
+    if (!child.pid) startup.spawnError = error;
+    else startup.processError = error;
+  });
   child.unref();
-  const started = await waitForPreview(instance, dataRoot);
+  const started = await waitForPreview(instance, dataRoot, child, startup, startupTimeoutMs);
   if (!started) {
+    const failed = Boolean(startup.spawnError || child.exitCode !== null || child.signalCode !== null);
+    const exitCode = child.exitCode;
+    const signal = child.signalCode;
+    let cleanup;
+    try {
+      cleanup = await reclaimPreviewChild(child, startup);
+      const state = readPreviewInstance(instance, dataRoot);
+      if (state?.pid === child.pid) fs.rmSync(previewInstancePath(instance, dataRoot), { force: true });
+      clearOwner(instance, dataRoot);
+    } catch (error) {
+      cleanup = error.message;
+      writeOwner(runtime, { ...owner, managedProcess: { pid: child.pid, state: 'cleanup-failed' } }, dataRoot);
+    }
     let diagnostic = null;
     try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
-    const error = new Error(`预览实例 ${instance} 未在预期时间内就绪。${diagnostic ? `\n${diagnostic}` : ''}`);
-    error.code = 'preview_start_timeout';
-    error.details = { instance, logFile, diagnostic };
+    const reason = failed ? '启动进程提前退出或无法创建' : '未在预期时间内就绪';
+    const error = new Error(`预览实例 ${instance} ${reason}。pid=${child.pid ?? 'none'} phase=${startup.phase} elapsedMs=${startup.elapsedMs} exitCode=${exitCode} signal=${signal} cleanup=${cleanup}${startup.spawnError ? ` spawnError=${startup.spawnError.message}` : ''}${diagnostic ? `\n${diagnostic}` : ''}`);
+    error.code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
+    error.details = { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode, signal, cleanup, logFile, diagnostic };
     throw error;
   }
   const managedOwner = {
