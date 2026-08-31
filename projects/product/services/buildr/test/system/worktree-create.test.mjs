@@ -356,17 +356,23 @@ test('多独立仓库在部分集成时保全全部工作树，完整保留后�
     command(repo.checkoutPath, 'git', ['commit', '-m', 'result']);
   }
   command(root, 'git', ['merge', '--ff-only', 'codex/multi-closeout']);
+  // Git may check out CRLF on Windows. Cleanup must preserve the actual bytes,
+  // while a separate assertion independently verifies the delivered content.
+  const workspaceResult = fs.readFileSync(path.join(root, 'result.txt'));
+  assert.equal(workspaceResult.toString('utf8').replace(/\r\n/g, '\n'), 'workspace\n');
   const partial = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
   assert.equal(partial.status, 'blocked');
   assert.equal(partial.diagnostic.code, 'git_worktree_not_integrated');
   assert.equal(partial.effects.length, 0);
   for (const repo of prepared.repositories) assert.equal(fs.existsSync(path.join(repo.checkoutPath, 'result.txt')), true);
   command(service, 'git', ['merge', '--ff-only', 'codex/multi-closeout']);
+  const serviceResult = fs.readFileSync(path.join(service, 'result.txt'));
+  assert.equal(serviceResult.toString('utf8').replace(/\r\n/g, '\n'), 'service:demo/api\n');
   const completed = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true });
   assert.equal(completed.status, 'cleaned', JSON.stringify(completed));
   assert.equal(fs.existsSync(prepared.repositories[0].checkoutPath), false);
-  assert.equal(fs.readFileSync(path.join(root, 'result.txt'), 'utf8'), 'workspace\n');
-  assert.equal(fs.readFileSync(path.join(service, 'result.txt'), 'utf8'), 'service:demo/api\n');
+  assert.deepEqual(fs.readFileSync(path.join(root, 'result.txt')), workspaceResult);
+  assert.deepEqual(fs.readFileSync(path.join(service, 'result.txt')), serviceResult);
 });
 
 test('已核验不同提交编号的交付可由环境CLI清理，错误输入和新内容仍保全', (t) => {

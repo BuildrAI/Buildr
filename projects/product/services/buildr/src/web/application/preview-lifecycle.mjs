@@ -312,7 +312,7 @@ export async function startPreview(runtime, name, args, { cliPath = process.argv
     try {
       cleanup = await reclaimPreviewChild(child, startup);
       const state = readPreviewInstance(instance, dataRoot);
-      if (state?.pid === child.pid) fs.rmSync(previewInstancePath(instance, dataRoot), { force: true });
+      if (state?.pid === child.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
       clearOwner(instance, dataRoot);
     } catch (error) {
       cleanup = error.message;

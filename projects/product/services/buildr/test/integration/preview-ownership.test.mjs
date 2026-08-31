@@ -95,7 +95,7 @@ else {
       if (req.method === 'POST') {
         res.writeHead(202).end();
         server.close(() => process.exit(0));
-      } else { res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready' })); }
+      } else { res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: mode === 'unhealthy' ? 'starting' : 'ready' })); }
     });
     server.listen(0, '127.0.0.1', () => {
       fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({
@@ -113,6 +113,7 @@ else {
     currentProductInvocation() { return { command: process.execPath, argsPrefix: [worker] }; },
     productRoot() { return target; },
     atomicWriteJson(file, value) { fs.writeFileSync(file, JSON.stringify(value)); },
+    removePath(file) { fs.rmSync(file, { force: true }); },
   };
   return { target, dataRoot, pidFile, runtime, start(options = {}) {
     return startPreview(runtime, 'demo', ['--target', target, '--no-open'], { dataRoot, ...options });
@@ -172,5 +173,17 @@ test('preview spawn failure is reported without an unhandled child error', async
     assert.equal(error.details.pid, null);
     return true;
   });
+  assert.equal(readPreviewOwner('demo', fixture.dataRoot), null);
+});
+
+test('preview timeout removes only its exited worker instance record when health never becomes ready', { timeout: 15_000 }, async (t) => {
+  const fixture = startupFixture(t, 'unhealthy');
+  await assert.rejects(fixture.start({ startupTimeoutMs: 3000 }), (error) => {
+    assert.equal(error.code, 'preview_start_timeout');
+    assert.equal(error.details.phase, 'health-not-ready');
+    assertProcessExited(error.details.pid);
+    return true;
+  });
+  assert.equal(fs.existsSync(path.join(previewDataRoot('demo', fixture.dataRoot), 'instance.json')), false);
   assert.equal(readPreviewOwner('demo', fixture.dataRoot), null);
 });
