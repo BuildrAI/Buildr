@@ -21,9 +21,10 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/infrastructure/sqlite/task-verification-repository.mjs',
     'src/infrastructure/filesystem/task-environment-repository.mjs',
     'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
+    'src/task/persistence/parent-coordination-repository.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
-    'src/task/persistence/parent-coordination-repository.mjs',
+    'src/task/persistence/task-record-repository.mjs',
     'src/task/persistence/task-development-repository.mjs',
     'src/task/persistence/task-environment-repository.mjs',
     'src/task/persistence/task-execution-record-repository.mjs',
@@ -47,9 +48,10 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
   for (const registration of [
     'registerTaskEnvironmentRepository', 'registerTaskExecutionRecordRepository',
     'registerTaskVerificationRepository', 'registerTaskDevelopmentRepository',
-    'registerParentCoordinationRepository', 'registerTaskOverviewRepository',
+    'registerTaskRecordRepository', 'registerTaskOverviewRepository',
     'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',
   ]) assert.match(taskModule, new RegExp(registration));
+  assert.doesNotMatch(taskModule, /registerParentCoordinationRepository/);
   assert.match(bootstrap, /registerInfrastructure/);
   assert.doesNotMatch(bootstrap, /legacy-runtime-module/);
   assert.doesNotMatch(bootstrap, /registerTaskPersistence|registerTaskEnvironmentRepository|registerTaskDevelopmentRepository/);
