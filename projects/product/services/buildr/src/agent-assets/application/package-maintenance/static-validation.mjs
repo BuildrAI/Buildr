@@ -1,6 +1,18 @@
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
 import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
+// Validate the advertised command contract, not prose or placeholder spelling.
+export function validateTaskRecordSkillCommands(content) {
+  const problems = [];
+  for (const action of ['create', 'inspect', 'update', 'activate', 'complete', 'abandon']) {
+    if (!new RegExp(`\\bbuildr\\s+task\\s+${action}\\b`).test(content)) {
+      problems.push(`task-manager Skill must document "buildr task ${action}".`);
+    }
+  }
+  if (!content.includes('--expected-record')) problems.push('task-manager Skill must document --expected-record for version-checked mutations.');
+  return problems;
+}
+
 export function createPackageStaticValidator(deps) {
   const {
     GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
@@ -1056,21 +1068,7 @@ export function createPackageStaticValidator(deps) {
         }
       }
       if (skill.id === 'task-manager') {
-        for (const requiredText of [
-          '本 Skill 是 `buildr.task-record/v2` 的默认 provider',
-          '`todo` 是已接受但未启动的 data-only 意向',
-          'buildr task activate <task-id>',
-          '--retrospective-source <task-id>',
-          '普通任务分流',
-          '不要仅因用户说“任务”就触发',
-          '不读取 environment receipt',
-          '不从 worktree 推断 retained root',
-          'Buildr Web 是同一 Application 的独立人类客户端',
-          '不直接读写 Workspace SQLite 或旧 `.buildr/tasks/<task-id>/task.yml`',
-          '不自动 commit、push、publication、Finish 或 cleanup',
-        ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`task-manager Skill must include ${JSON.stringify(requiredText)}.`);
-        }
+        problems.push(...validateTaskRecordSkillCommands(skillContent));
         for (const forbiddenText of ['buildr worktree create', 'buildr verification run', 'buildr task finish run', 'git commit', 'git push']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-manager Skill must not execute professional action ${JSON.stringify(forbiddenText)}.`);
         }
@@ -1263,7 +1261,7 @@ export function createPackageStaticValidator(deps) {
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '从 Parent 规划项启动独立 Child Task', '初始不引用Parent Change', 'Child execution root中创建该独立目标自己的窄Change', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
