@@ -56,7 +56,7 @@ jobs:
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-feedback-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+          BUILDR_VERIFICATION_PROFILE: ci
         shell: bash
         run: npm run test:changed -- --base "${{ steps.base.outputs.sha }}"
       - name: Install Buildr Web dependencies
