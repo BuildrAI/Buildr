@@ -14,6 +14,7 @@ function syntax(operation, message) {
       ? 'buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json] | --schema | --example'
       : operation === 'plan-inspect'
         ? 'buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]'
+    : operation === 'cleanup' ? 'buildr task environment cleanup <task-id> [--expected-source <selector>=<commit> --delivered-ref <selector>=<commit>] [--target <canonical-workspace>] [--json]'
     : `buildr task environment ${operation} <task-id> [--target <canonical-workspace>] [--json]`;
   const error = new Error(message);
   error.code = 'task_environment_cli.syntax';
@@ -27,9 +28,10 @@ function parse(operation, args) {
     ? new Set(['--plan', '--agent', '--branch', '--start-point', '--shared', '--target', '--json'])
     : operation === 'plan-record'
       ? new Set(['--input', '--target', '--json', '--schema', '--example'])
-    : new Set(['--target', '--json']);
+    : operation === 'cleanup' ? new Set(['--target', '--json', '--expected-source', '--delivered-ref']) : new Set(['--target', '--json']);
   const boolean = new Set(['--json', '--shared', '--schema', '--example']);
   const values = new Map();
+  const cleanup = { expectedSources: {}, deliveredRefs: {} };
   const positions = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -38,6 +40,16 @@ function parse(operation, args) {
       continue;
     }
     if (!allowed.has(arg)) throw syntax(operation, `Unknown argument: ${arg}`);
+    if (arg === '--expected-source' || arg === '--delivered-ref') {
+      const entry = args[++index];
+      const separator = entry?.indexOf('=') ?? -1;
+      if (separator < 1 || !entry.slice(separator + 1)) throw syntax(operation, `${arg} requires <selector>=<full-commit>.`);
+      const selector = entry.slice(0, separator);
+      const refs = arg === '--expected-source' ? cleanup.expectedSources : cleanup.deliveredRefs;
+      if (Object.hasOwn(refs, selector)) throw syntax(operation, `Duplicate repository selector: ${selector}`);
+      Object.defineProperty(refs, selector, { value: entry.slice(separator + 1), enumerable: true });
+      continue;
+    }
     if (values.has(arg)) throw syntax(operation, `Argument may only be provided once: ${arg}`);
     if (boolean.has(arg)) values.set(arg, true);
     else {
@@ -70,6 +82,7 @@ function parse(operation, args) {
     startPoint: values.get('--start-point') || null,
     shared: values.get('--shared') === true,
     discovery: null,
+    cleanup,
     plan: readJson(operation === 'plan-record' ? '--input' : '--plan'),
   };
 }
@@ -99,7 +112,7 @@ export async function taskEnvironmentCommand(runtime, operation, args) {
       plan: parsed.plan,
     });
   } else if (operation === 'inspect') payload = runtime.inspectTaskEnvironment(parsed.targetRoot, parsed.taskId);
-  else payload = await runtime.cleanupTaskEnvironment(parsed.targetRoot, parsed.taskId);
+  else payload = await runtime.cleanupTaskEnvironment(parsed.targetRoot, parsed.taskId, null, parsed.cleanup);
   return print(payload, parsed.json);
 }
 

@@ -58,7 +58,7 @@ Buildr MUST 使用 `.buildr/workspace.yml` 持久化 Workspace 的 UUID `id`、`
 - **AND** `skills/manifest.yml.workspaceId` MUST equal `.buildr/workspace.yml.id`
 - **AND** `components/manifest.yml` MUST declare `schemaVersion: buildr.components/v1`
 - **AND** `projects/manifest.yml` MUST declare `schemaVersion: buildr.projects/v2`
-- **AND** Buildr MUST create root `AGENTS.md` required block and reference `rules/buildr/core.md`
+- **AND** Buildr MUST create root `AGENTS.md` required block 并内联随包核心规则正文
 - **AND** Buildr MUST be able to render initial Agent runtime for supported adapters
 
 #### Scenario: 初始化 Codex runtime
@@ -230,8 +230,8 @@ Buildr MUST 支持已有 Buildr workspace 兼容内置能力和 adapter render �
 
 #### Scenario: 旧版规则迁入
 - **WHEN** 已有 workspace 使用旧版 package baseline rules
-- **THEN** Buildr MUST 将产品发布规则迁入 `rules/buildr/` 并登记到 `rules/manifest.yml`
-- **AND** Buildr MUST 将旧 `runtime.md` 语义内化进 `rules/buildr/core.md`
+- **THEN** Buildr MUST 将核心规则内联到根 `AGENTS.md`，其他专业规则仍使用通用规则清单
+- **AND** Buildr MUST 将旧 `runtime.md` 语义内化进 根 `AGENTS.md` 受管区块
 
 ### Requirement: 遗留 Practices 内容迁移说明
 Buildr MUST 将遗留 `practices/` 视为用户保留数据，并提供基于内容语义的人工迁移说明。
@@ -287,3 +287,10 @@ Buildr MUST 将 Workspace 定义为 Skill 源资产治理根，并 MUST 将 work
 - **WHEN** workspace 登记多个 Project
 - **THEN** Buildr MUST 将 Project 保持为业务、依赖和能力上下文节点
 - **AND** Buildr MUST NOT 声称 Project 目录能够限制 Skill 的 Agent runtime 可见范围
+
+### Requirement: 核心原则必须区分研发协作与业务产品设计
+随包规则 MUST明确原则约束 Buildr 产品及工作空间中的人机协作；MUST不自动要求被开发业务软件采用智能体优先产品形态；六条已确认原则正文 MUST保留。
+
+#### Scenario: 工作空间更新
+- **WHEN** 传统业务工作空间同步规则
+- **THEN** 协作遵循规则，业务产品设计仍遵循自身目标与约束

@@ -721,14 +721,6 @@ Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只�
 - **THEN** prompt MUST触发Project与该Service的Declaration Intake
 - **AND** MUST不检查或安装未选择Service
 
-### Requirement: Parent coordination 接口必须共享同一 Application
-CLI与Buildr Web MUST调用同一Parent Coordination Application执行inspect、record、reconcile与final acceptance actions；interface MUST NOT直接查询SQLite、扫描文件系统或在GET中回填状态。
-
-#### Scenario: CLI 与 HTTP 读取同一 Parent
-- **WHEN** 两个client读取同一Parent identity
-- **THEN** 两者 MUST返回相同Parent Plan、Child Contribution与prerequisite facts
-- **AND** GET MUST保持零mutation effects
-
 ### Requirement: mutation 必须使用 current identity 并受界面安全保护
 Parent Plan reconciliation与final acceptance mutation MUST使用expected current identity；Buildr Web HTTP MUST另外执行same-origin、session与closed JSON校验。
 
@@ -1361,3 +1353,33 @@ Buildr Web HTTP MUST保留 `server.mjs` 作为唯一 server lifecycle/组装入�
 - **WHEN** 维护者检查非归档的当前源代码和产品文档
 - **THEN** 用户可见产品命名 MUST 统一为 Buildr Web 分层术语
 - **AND** 已批准的 wire、环境、SQLite/persistent compatibility identity MUST 被明确标为内部兼容标识
+
+### Requirement: 独立完成事实必须隔离专业记录异常
+已完成任务的展示 MUST保留任务记录的完成状态；研发、审查、验证或旧收尾记录不可用时 MUST仅报告相关诊断，不伪造机器交付证据。
+
+#### Scenario: 旧研发记录损坏
+- **WHEN** 任务已完成且研发记录无法读取
+- **THEN** 完成结果仍可读，相关专业信息标记不可用
+
+#### Scenario: 无旧证据
+- **WHEN** 完成任务没有候选或收尾运行
+- **THEN** 展示 completed，不声称 delivered
+
+### Requirement: 父任务界面必须展示成果和明确完成确认
+Buildr Web MUST 展示整体目标、计划入口、实际子任务及结果、独立父任务状态和完成依据；父任务完成确认 MUST 展示所观察范围，要求总体验收说明、子任务处置和明确确认，再通过同一任务应用写入。
+
+#### Scenario: 旧父任务
+- **WHEN** 有子任务但没有旧专用计划
+- **THEN** MUST 仍显示子任务结果和父任务完成确认。
+
+#### Scenario: 明确确认
+- **WHEN** 用户阅读当前结果后确认完成父任务
+- **THEN** MUST 提交当前观察身份、验收与界面授权来源；不递归修改子任务。
+
+#### Scenario: 冲突
+- **WHEN** 提交前其他入口改变结果
+- **THEN** MUST 显示冲突并刷新，旧确认不自动重放。
+
+#### Scenario: 历史完成
+- **WHEN** 旧完成结果没有授权依据
+- **THEN** MUST 如实展示历史未记录，不补造授权。

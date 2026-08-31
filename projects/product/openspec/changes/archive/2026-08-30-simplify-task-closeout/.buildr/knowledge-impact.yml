@@ -1,0 +1,51 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: simplify-task-closeout
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: flow
+    target: openspec/knowledge/flows/openspec-change-lifecycle.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+  - type: brief
+    target: openspec/changes/simplify-task-closeout/brief.md
+    reason: 对齐默认收尾和实际职责，标明旧专用执行器边界
+    status: updated
+    sourceIdentities: []
+unresolvedItems: []
+sourceIdentities:
+  - "services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md@sha256-259abda8c4d77fae7d12f125be95acf40292715e05fd319fcc29095e9c8f0f03"
+  - "services/buildr/src/task/application/task-terminal-delivery-application.mjs@sha256-6499135432c324d5e671e17cd3cc3de91aab08950df83c40873ac61e89e89d05"
+  - "services/buildr/src/task/application/task-environment-application.mjs@sha256-c4d1f8a2b70b503c2be7547d5a04c16aba79baf1a048cd18737ea71d23a7694e"
+  - "services/buildr/src/task/infrastructure/git-worktree-provider.mjs@sha256-8a571d86fbb661fb4976cc8ab01249da706e948631d5b143567ab11cf5dc6826"

@@ -68,9 +68,6 @@ function taskRecordDependencies(runtime) {
     'workspace.operation-memoizer': Object.freeze({
       memoizeWorkspaceOperation: (...args) => runtime.memoizeWorkspaceOperation?.(...args),
     }),
-    'task.parent-coordination-reader': Object.freeze({
-      inspectParentCoordination: (...args) => runtime.inspectParentCoordination?.(...args) ?? null,
-    }),
   };
 }
 

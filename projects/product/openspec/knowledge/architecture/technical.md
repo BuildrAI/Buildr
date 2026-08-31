@@ -159,51 +159,20 @@ Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-loca
 | Project Daily Progress | `.buildr/daily-progress/<project>/<date>.yml` | Daily Progress Application | Git ignored 的本机日事实 |
 | Task Execution Record 正文 | `.buildr/local/task-execution-records/` | Execution Record Application | 有配额、脱敏和清理生命周期 |
 | Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
-| Delivery Carrier | Finish run-owned 隔离目录 | Task Finish | 临时交付与恢复资源 |
+| 历史交付目录 | 旧收尾运行拥有的隔离目录 | 原资源所有者 | 只按归属与内容保全安全处置 |
 | Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
 
 专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；面向页面和 Agent 的 Overview 通过只读查询或 Application projection 组合事实。
 
 SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不进入 Git、同步或 Agent runtime。共享团队 authority 属于未来 Server/Cloud 边界，不能通过同步本机数据库实现。
 
-## Task 生命周期与交付
+## 任务收尾与专业能力
 
-Task 各阶段通过稳定 Task ID 关联，但保持独立事实和 writer：
+默认收尾由智能体（Agent）读取收尾技能（Skill），组合 Git、系统工具和已有 Buildr 接口完成目标。完整参与者、调用关系、状态、清理安全与自举边界集中在 [任务收尾](../flows/task-closeout.md)。
 
-```text
-Task Record
-  → Task Environment
-  → Task Development
-       ├── Planning Review
-       ├── Candidate + Formal Verification
-       ├── Completion Review
-       └── immutable Development Handoff
-             ↓ Agent 选择交付策略
-       Git / PR / automatic Finish / Delivery Reconciliation
-             ↓
-          Delivery
+任务记录保存结果；Git 和外部系统拥有交付事实；环境应用（Application）及资源所有者保护删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
 
-Activation / Environment Cleanup / Diagnostics
-与 Delivery 正交记录，不反向改写已证明的交付事实。
-```
-
-Task Development 拥有 Content Target、verification policy、Candidate/generation、gates、推进决定和不可变 Handoff。Task Finish 只消费 current Handoff，不修改研发内容、不生成 Candidate，也不替 Agent 接受风险。
-
-自动 Finish 保留 `preflight → prepare → verify → deliver → cleanup` 五阶段：
-
-- `prepare` 在最新 Delivery Baseline 上创建 run-owned 隔离 Delivery Carrier。
-- 机械应用发生冲突时，Agent 只在 carrier 中完成 Delivery Adaptation，然后恢复同一个 run。
-- `deliver` 按 repository 获取短 lease，逐项交付并立即保存 remote readback。
-- `cleanup` 独立证明贡献或无贡献事实后清理 Task Environment 和 carrier。
-- 无法证明 identity、ownership、remote containment 或副作用边界时保留现场并停止。
-
-Agent 也可以选择直接 Git 或 PR。`task finish reconcile` 不创建 carrier、不 push、不接受调用方声明的成功，只根据 current Handoff 和真实 remote 对账 Delivery。
-
-Finish Application 通过统一的 current facts 投影 handoff applicability、repository topology、run/carrier ownership、side effects、remote containment、四类维护结果、recovery disposition、typed blockers、required 安全前置与 available capabilities，供 `run`、`rollover`、`reconcile`、`inspect` 和 Task Entry Snapshot 共同消费；事实模型不替 Agent 选择 Git、PR、重新开发、恢复或放弃策略。Product 首次以 prepare blocked/failed 交接新 carrier 时保存不可刷新的 HEAD、index、worktree 与 untracked 可丢弃性证明；精确 carrier cleanup、remote reconciliation retirement 与显式 local rollover 只由 identity-fenced 封闭原语执行。Local rollover 仅在已知 Task Contribution drift、无 lease/Delivery/Activation/Cleanup 副作用、repository topology 不变且 carrier proof 未漂移时成立，先幂等 cleanup，再以旧 run ID/digest CAS 写入 current Handoff 的新 active run；它不访问 remote，也不执行 Delivery。
-
-`task next` 在 Development 进入 Finish 后只展示上述 typed blockers、安全前置与 available capabilities；兼容 next 提示不承诺唯一正确动作，也不把 Task Entry Snapshot 扩张为全局工作流引擎。
-
-详细行为见 [Task Finish execution specification](../../specs/task-finish-execution/spec.md)、[Task Development specification](../../specs/task-development/spec.md) 和 [Task Delivery/Finish module architecture](../../specs/task-delivery-finish-module-architecture/spec.md)。
+研发、审查和正式验证仍由各专业能力维护。旧五阶段执行器及写入口已退役，历史读取和必要资源安全能力保留。`task next` 只指导研发，不推荐、批准或恢复收尾；已结束任务不重新加载研发和环境。
 
 ## Runtime、构建与分发
 

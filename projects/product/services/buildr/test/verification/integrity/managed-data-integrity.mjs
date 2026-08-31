@@ -154,10 +154,10 @@ try {
   run(['component', 'check', 'openspec', '--target', workspace, '--json']);
   if (!fs.existsSync(path.join(workspace, 'components', 'buildr', 'openspec', 'component.yml'))) throw new Error('Component rollback lost installed definition.');
 
-  const coreFile = path.join(workspace, 'rules', 'buildr', 'core.md');
+  const coreFile = path.join(workspace, 'skills', 'buildr', 'git-operations', 'SKILL.md');
   const coreBeforeRestore = `${fs.readFileSync(coreFile, 'utf8')}\nuser restore fixture\n`;
   fs.writeFileSync(coreFile, coreBeforeRestore);
-  const rollbackFailure = run(['builtin', 'restore', 'buildr-core', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1', BUILDR_FAULT_MUTATION_RESTORE_REMOVE: '1' } });
+  const rollbackFailure = run(['builtin', 'restore', 'git-operations', '--target', workspace], { expectFailure: true, env: { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1', BUILDR_FAULT_MUTATION_RESTORE_REMOVE: '1' } });
   if (!`${rollbackFailure.stdout}\n${rollbackFailure.stderr}`.includes('Rollback failed')) throw new Error('Injected restore removal failure did not preserve a rollback-failed transaction.');
   const failedTransaction = fs.readdirSync(path.join(workspace, '.buildr', 'mutations'), { withFileTypes: true }).find((entry) => entry.isDirectory());
   if (!failedTransaction) throw new Error('Rollback failure did not preserve its transaction directory.');
@@ -166,7 +166,7 @@ try {
   const repeatedRecover = run(['mutation', 'recover', failedTransaction.name, '--target', workspace]);
   if (!repeatedRecover.stdout.includes('已经恢复')) throw new Error('Repeated mutation recover was not reported as a proven no-op.');
   run(['mutation', 'recover', 'unknown-transaction', '--target', workspace], { expectFailure: true });
-  run(['builtin', 'restore', 'buildr-core', '--target', workspace]);
+  run(['builtin', 'restore', 'git-operations', '--target', workspace]);
 
   const transactionId = 'fixture-transaction';
   const transactionRoot = path.join(workspace, '.buildr', 'mutations', transactionId);

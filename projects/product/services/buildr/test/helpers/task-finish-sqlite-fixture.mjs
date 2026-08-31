@@ -1,8 +1,9 @@
+import { legacyFinishRuntime } from './legacy-finish-history.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createFinishRun } from '../../src/task/application/finish/task-finish-run.mjs';
+import { createFinishRun } from './legacy-finish-history.mjs';
 
 export function initializeTaskFinishSqliteWorkspace(root) {
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
@@ -14,13 +15,11 @@ export function initializeTaskFinishSqliteWorkspace(root) {
 
 export function createTaskFinishSqliteRuntime(root, task) {
   initializeTaskFinishSqliteWorkspace(root);
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   runtime.createTaskRecord(root, { taskId: task, title: `Finish ${task}`, intent: 'SQLite-only Finish fixture.', projects: [], services: [], changes: [] });
   const persistenceMethods = [
     'acquireTaskFinishTargetLease',
-    'discardFailedTaskFinishRunPersistence',
     'finalizeTaskFinishPersistence',
-    'replaceTaskFinishRunPersistence',
     'readTaskFinishCompletionPersistence',
     'readTaskFinishResultsPersistence',
     'readTaskFinishRunPersistence',

@@ -9,7 +9,7 @@ metadata:
 
 # OpenSpec Contract Guard
 
-父子任务场景额外执行单owner检查：同一个具体规范变化在同一时间只能由一个active Change持有。Parent Plan不是delta Change；Parent自己的Change只能覆盖亲自承担的窄集成实现或验收能力，不能复制Child Change。启动Child或Parent reconcile后若发现active delta重叠，先缩窄/放弃对应Change并重新Planning Review，不得依靠归档后的canonical convergence反复rebase重复authority。
+父子任务场景保持单一规范责任：同一个具体规范变化在同一时间只能由一个活跃变更负责。计划文档不复制子任务规范；父任务亲自实现集成能力时才创建自身的窄变更。范围调整后核对实际重叠，不靠重复归档覆盖冲突。
 
 本 Skill 只保留 OpenSpec 1.6 未提供的 Buildr 契约保证：Planning Review前的语义就绪预检、并行 active change 冲突、确定性 expected tree、隔离严格验证、条件式 canonical 写入、写后确认和基于文件事实的断点恢复。
 

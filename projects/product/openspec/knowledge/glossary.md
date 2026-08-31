@@ -49,7 +49,7 @@
 - 定义：所有潜在可用于工作的来源，包括 Workspace 文件、数据库、API、网页、聊天、机器状态、用户输入和工具结果。
 - 适用范围：描述 Agent 可能发现信息的全集。
 - 避免混用：不等于 Buildr Workspace，不等于 Buildr 管理范围，也不等于 Context Window。
-- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
+- 来源：[智能体优先（Agent-first）产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
 ## Workspace
 
@@ -100,6 +100,20 @@
 - 避免混用：普通 Workspace 文件、临时内容或一次查询结果不会仅因可见或被使用而自动成为 Work Asset。
 - 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
+## 智能体软件（Agentic Software）
+
+- 定义：引入智能体参与理解用户目标、判断或执行工作并交付产品结果的软件；从局部能力开始引入即可逐步演进。
+- 适用范围：智能体参与产品交付的功能及其协作方式，不要求所有功能同时改造。
+- 避免混用：仅使用智能体开发代码，不自动使被开发产品成为智能体软件；原有业务、安全和授权边界继续有效。
+- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)、[随包原则](../../services/buildr/resources/workspace/AGENTS.md)
+
+## 产物（Artifact）
+
+- 定义：工作过程中形成或改变、可供查看和接续的中间成果或最终结果，包括文档、代码、Git 变更、数据记录与外部系统中的实际结果。
+- 适用范围：多入口协作中的共同工作对象，以对应系统的身份、当前版本与可核验事实为准；并不限定为构建生成的文件。
+- 避免混用：成果不因被生成或使用而自动成为工作资产（Work Asset），也不意味着新建统一产物存储；多入口事实一致不等于目标已经验收完成。正式发布制品仍使用各自限定术语。
+- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)、[设计技能](../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)
+
 ## 共享工作环境（Shared Work Environment）
 
 - 定义：Buildr 将 Work Assets、发现入口和 runtime 投射组织后，为 Agent 提供的整体工作体验。
@@ -109,24 +123,38 @@
 
 ## 上下文（Context）
 
-- 定义：特定工作范围中可供 Agent 发现、选择和使用的候选信息。
-- 适用范围：Work Context、Workspace Context、Project Context、Service Context 都是 Context 的范围限定，不是 v1 并列核心模型。
-- 避免混用：不等于已经加载的模型输入，也不表示其中全部信息由 Buildr 治理。
+- 定义：上下文是一个泛指概念，用于把与某个对象、范围或目标相关的信息放在一起讨论、发现和使用。
+- 适用范围：工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）表示对应领域内全部已知、可访问或可能相关的信息；其中既可以包含 Buildr 治理的工作资产，也可以包含普通文件、代码、依赖、本机状态和外部来源。
+- 避免混用：上下文不是固定存储结构，不等于已经加载到模型请求中的内容，也不表示其中全部信息都由 Buildr 治理。
 - 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
 
 ## 任务上下文（Task Context）
 
-- 定义：Agent 为完成具体 Task，从工作信息空间中发现、检索、判断、选择、组织和压缩后实际使用的语义工作集。
-- 适用范围：可以包含 Buildr Work Assets、用户目标、数据库/API/网页结果、工具 evidence 和任务中形成的决定。
-- 避免混用：不等于检索结果集合，也不等于一次模型调用的 Context Window。
-- 来源：[OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
+- 定义：智能体（Agent）为完成具体任务（Task），从工作信息空间及适用的工作空间、项目和服务上下文中发现、检索、判断、选择、组织和压缩后形成的语义工作集。
+- 适用范围：可以包含 Buildr 工作资产（Buildr Work Asset）、用户目标、数据库、应用接口（API）、网页结果、工具证据（Evidence）和任务中形成的决定。
+- 避免混用：不等于某个领域的全部上下文，不等于原始检索结果集合，也不等于某一次模型请求实际携带的全部内容。
+- 来源：[规范变更系统（OpenSpec）变更生命周期](flows/openspec-change-lifecycle.md)
+
+## 请求上下文（Request Context）
+
+- 定义：智能体（Agent）针对某一次模型请求，从当前任务上下文中选取并与系统指令、对话历史等必要输入共同提交给模型的实际内容。
+- 适用范围：同一任务可以发起多次请求，每次请求根据当前步骤携带不同内容；简单语法修复可能只需要目标文件和错误信息，跨多个服务的功能开发可能需要同时携带相关项目、服务、规范、代码和验证信息。
+- 避免混用：不是任务上下文的完整副本，也不是上下文窗口本身；它是实际装入该窗口的内容。
+- 来源：[Buildr 产品（Buildr Product）](../../docs/buildr-product.md)
 
 ## 上下文窗口（Context Window）
 
-- 定义：某一次模型调用实际装入的有限、临时输入，是 Task Context 在某一时刻的有限投影，也可能包含系统指令和对话历史。
-- 适用范围：模型单次推理的技术容量与实际输入。
-- 避免混用：不是 Task Context 本身，不是持久工作资产；长期 Task 可以跨越多个 Context Windows。
-- 来源：[Agent-first 产品定位规范](../specs/agent-first-product-positioning/spec.md)
+- 定义：模型单次请求可以承载的有限输入容量和技术容器；请求上下文是实际装入其中的内容。
+- 适用范围：限制一次模型调用能够同时处理的信息量；长期任务可以跨越多个上下文窗口和多次请求。
+- 避免混用：不是泛指的上下文、任务上下文或请求上下文本身，也不是持久工作资产。
+- 来源：[智能体优先（Agent-first）产品定位规范](../specs/agent-first-product-positioning/spec.md)
+
+## 词元（Token）
+
+- 定义：人工智能模型处理文本时使用的基本单位；一个词元可以是一个字、词的一部分、标点或其他文本片段。
+- 适用范围：描述模型输入、输出、上下文窗口容量、使用量和成本。
+- 避免混用：不是登录凭证、访问凭证或恢复凭证等安全令牌；安全领域继续使用“令牌（Token）”。
+- 来源：[Buildr 产品（Buildr Product）](../../docs/buildr-product.md)
 
 ## Project
 
@@ -264,6 +292,8 @@
 
 ## 终态贡献交付对账（Terminal Contribution Delivery Reconciliation）
 
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
+
 - 定义：当直接 Child 已 completed 且既有 immutable Development handoff 与 terminal Finish association 能证明真实交付，但原生 Contribution Handoff 因历史编排遗漏而缺失时，由 Task Development 追加的一次性、内容寻址恢复证据。
 - 适用范围：Parent Coordination 对历史终态 Child 的 Contribution delivery 恢复；必须绑定 current Parent Plan、Parent/Child 关系、Candidate/generation、三个 gate、archived Change、完整 Contribution Handoff、reason 与 source。
 - 避免混用：不是 normal Child 的常规 handoff、Task reopen、Parent Plan reconcile、Git 交付声明或通用审计日志；不能仅凭 completed、commit、文件或 canonical specs 建立。
@@ -347,10 +377,10 @@
 
 ## 任务收尾（Task Finish）
 
-- 定义：消费current Development Handoff，提供可选五阶段自动交付、外部交付后的Delivery Reconciliation和交付结果投影的能力。
-- 适用范围：Agent选择自动Finish、直接Git或PR后，Buildr验证逐repository Delivery，并独立呈现Activation、Environment Cleanup与Diagnostics。
-- 避免混用：不是正式Task交付的唯一通道，不替Agent选择Git策略，也不因Buildr内部登记、Doctor、cleanup或diagnostics失败否定已确认Delivery。
-- 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
+- 定义：智能体（Agent）依据技能（Skill）的方法和边界，组合已有工具完成本轮成果交付、已有任务结果登记及安全善后。
+- 适用范围：工作空间（Workspace）启动的工作，有无正式任务、单仓与多独立仓库。
+- 避免混用：不是固定五阶段执行器，不要求候选或交接。任务完成、远端交付、专项激活和环境清理分别表达真实结果。
+- 来源：[任务收尾](flows/task-closeout.md)、[默认任务工作方式](../specs/agent-task-workflows/spec.md)。
 
 ## 交付对账（Delivery Reconciliation）
 
@@ -374,10 +404,10 @@
 
 ## 父任务 / 子任务（Parent Task / Child Task）
 
-- 定义：同一canonical Workspace内Task Record之间的直接协调层级；每个Child至多一个Parent，一个Parent可有多个直接Children。
-- 适用范围：把可独立形成Candidate、Verification、Completion、不可变Handoff与Delivery的Contribution拆为Child，以及Buildr Web层级展示、导航和Task Manager显式设置、重挂或清除Parent。
-- 避免混用：不是普通调查、编码、测试或Agent并行分工的强制建模方式，也不是依赖、排序、分组、Board membership或生命周期包含关系；Parent/Child的status、Result、Development、Review、Verification、Finish和cleanup相互独立。
-- 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v2.md)
+- 定义：父任务组织整体目标和独立成果；子任务表达其中可独立交付的目标、范围与结果。一个任务可以同时是父任务和上级的子任务。
+- 适用范围：真实独立交付的协调，计划使用原文档或任务目标说明。
+- 避免混用：不是智能体临时并行分工；子任务完成、总体验收与父任务完成授权相互独立。父任务必须取得明确用户授权才可完成。
+- 来源：[父子管理](flows/parent-child-management.md)
 
 ## 协调任务（Coordinating Task）
 
@@ -500,7 +530,7 @@
 
 ## 任务复盘（Task Retrospective）
 
-- 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、token消耗、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
+- 定义：用户明确要求时，Agent面向terminal Task检查自身执行时间、词元消耗（Token Consumption）、重复尝试、人机协作和Buildr workflow/harness成本，并形成一份自由Markdown效率报告。
 - 适用范围：Workspace SQLite中按Task ID唯一的current Result；重复复盘完整替换，Buildr Web“复盘”Tab只读展示。
 - 避免混用：不是Task Review、Verification、Development或Finish gate，不采集隐藏推理或完整轨迹，不自动写回Rule/Skill/产品资产。旧Task Asset Review与`.buildr/asset-review/`已退出current能力，数据保持inert。
 - 来源：canonical `openspec/specs/task-retrospectives/spec.md`（本 Change converge 时建立）
@@ -656,31 +686,39 @@
 
 ## Parent Plan
 
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
+
 - 定义：采用新父子任务协调模型的Parent在唯一Development Receipt中保存的closed、内容寻址协调计划；v2包含outcome、architecture decisions、结构化Contribution Map与final acceptance，每个Contribution包含priority、title、objective、directions、boundaries、可选expectedChild与dependencies。
 - 适用范围：Parent Planning Review target、Child Contribution binding、显式reconciliation与最终集成验收前置判断。
 - 避免混用：`expectedChild`只是预期形态，不是Task ID、binding或已创建事实；Parent Plan也不是OpenSpec delta Change、Child状态/Result副本、Markdown checkbox进度或lifecycle authority。旧v1只读兼容且保持原identity，只能显式reconcile升级。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Parent 启动就绪（Parent Startup Readiness）
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：Parent Coordination基于current Task、matching Environment、Development、Parent Plan、Planning Review/gate及Contribution依赖派生的response-only启动投影。
 - 适用范围：Parent-aware `task next`在首个Child创建前返回planning-review、refresh-parent-planning、eligible Contribution或依赖等待动作。
 - 避免混用：不是新的Parent lifecycle状态、Receipt字段、自动planner或跨authority事务；它不自动Review、刷新gate、创建Child或准备Child Environment。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Contribution Handoff
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：承担Parent Contribution的Task在既有immutable Development handoff中保存的实际交付事实，明确planned、delivered、extra、residual、superseded、affected与唯一next action。
 - 适用范围：Parent Coordination Application只在Child Finish terminal association匹配时据此证明delivery；预期Child与Task completed都不能代替真实binding和handoff。
 - 避免混用：不是第二套Result、delivery registry、event/history/audit log，也不能由Task `completed`、代码或canonical specs推断。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## Parent reconciliation
+
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
 
 - 定义：以current Parent Plan expected identity、完整next Plan和理由执行的显式计划mutation，用于处理越界/提前交付、依赖或验收变化及后续Child residual/superseded scope。
 - 适用范围：新Plan identity形成后重做Parent Planning Review，并由Agent分别更新或abandon受影响Child。
 - 避免混用：不是Child状态同步、自动scope推断、数据库migration或历史backfill；它不自动修改Child Task/Change。
-- 来源：[父子任务协调模型](../../docs/architecture/parent-child-task-coordination-model.md)
+- 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 
 ## 研发回执（Development Receipt）
 
@@ -929,3 +967,10 @@
 - 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。
 - 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。
 - 来源：[Workspace-first runtime projection specification](../specs/workspace-first-runtime-projection/spec.md)
+
+## 收尾与交付（Closeout and Delivery）
+
+- 定义：日常协作中均可表示完成本轮工作后的结束动作，包括成果到位、已有任务登记、安全善后和遗留说明。
+- 适用范围：有无 Buildr 任务、有无 Git 管理的工作。
+- 避免混用：任务完成记录、真实交付、环境激活和资源清理分别成立；日常同义不代表这些事实相同，不自动授权发布或部署。
+- 来源：`task-closeout-orchestration`、`agent-task-workflows` 与 `flows/task-closeout.md`。

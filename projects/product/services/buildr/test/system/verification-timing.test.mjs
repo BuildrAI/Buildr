@@ -475,7 +475,6 @@ test('identified expensive candidate steps have non-blocking target budgets', ()
     'system-runtime-recovery',
     'system-buildr-web-http',
     'system-app-process',
-    'system-task-finish',
     'system-fresh-build',
     'capability-cli-integration',
     'runtime-adapter-parity',

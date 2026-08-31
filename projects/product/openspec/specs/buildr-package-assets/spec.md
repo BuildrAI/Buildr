@@ -256,10 +256,10 @@ Buildr package check 和 product MVP verification MUST 覆盖 recursive `AGENTS.
 - **AND** rendered adapters MUST report their target pattern
 
 ### Requirement: Required Core 暴露 Rule 消费协议
-Buildr package assets MUST 将 Rule manifest consumption protocol 与通用 Rule/Skill 权威边界保留在 required Buildr Core 中，同时 MUST 将 task-triggered professional procedures 和专业状态事实保留在对应 Skills、capability bindings、Applications 或 Project declarations 中。
+Buildr package assets MUST 将 Rule manifest consumption protocol 与通用 Rule/Skill 权威边界保留在 根 `AGENTS.md` 受管区块中（原核心规则，下文沿用 Core 名称），同时 MUST 将 task-triggered professional procedures 和专业状态事实保留在对应 Skills、capability bindings、Applications 或 Project declarations 中。
 
 #### Scenario: Package Core 声明 Rule 状态语义
-- **WHEN** Buildr packages or validates `rules/buildr/core.md`
+- **WHEN** Buildr packages or validates 根 `AGENTS.md` 受管区块
 - **THEN** required Core MUST state that enabled、required and installed Rules are always read
 - **AND** required Core MUST state that enabled optional installed Rules are selected semantically from description and task context
 - **AND** required Core MUST state that disabled or uninstalled Rules do not participate in the task
@@ -1410,19 +1410,6 @@ Buildr package MUST包含Task Entry Snapshot Application、CLI route、public JS
 - **THEN** 既有Task inspect、Environment、Development、retry/resume/cancel、Verification Result、Execution Record与Finish命令 MUST保持原schema和行为
 - **AND** 不得要求持久化migration或回填历史Task
 
-### Requirement: Required Core 明确文本文件 EOF 不变量
-Buildr package assets MUST 在 required Core 中要求所有新建或重写的文本文件于最后一个非空字符后必须且只能保留一个换行符，并 MUST 明确文件末尾不得存在空白行。Core MUST 用 `...\n` 表示正确结果、用 `...\n\n` 表示错误结果，并 MUST 说明该限制只针对文件末尾，不限制正文内部的合理空行。
-
-#### Scenario: Package 校验 Core EOF 正反例
-- **WHEN** Buildr packages or validates `rules/buildr/core.md`
-- **THEN** required Core MUST 同时包含 `...\n` 正例与 `...\n\n` 反例
-- **AND** Core MUST 把约束限定到文件末尾并保留正文内部合理空行
-
-#### Scenario: Agent 新建或重写文本文件
-- **WHEN** Agent 在任意 Buildr Task 中新建或重写文本文件
-- **THEN** Agent MUST 直接生成恰好一个结尾换行符且没有末尾空白行的结果
-- **AND** Agent MUST NOT 将该规则解释为禁止正文内部的合理空行
-
 ### Requirement: Package 必须验证正式工作流内部路由闭环
 Buildr package MUST维护Task Development、Task Retrospective与Task Planning Identity的单一required internal workflow route inventory，并 MUST让CLI分派、受管consumer、package static validation、Doctor与npm installed-layout tests消费一致route identity。每个route MUST在实际npm artifact中可启动；Retrospective writer与Planning Identity reader MUST在安装布局fixture中完成真实Application调用。
 
@@ -1518,3 +1505,21 @@ Package static validation MUST继续拒绝v2 Skills、templates、authoring guid
 - **WHEN** archived Change中存在v2历史文本且该路径不在package映射
 - **THEN** static validation MUST不把不可修改provenance判为runtime支持
 - **AND** active authoring docs、Skills与templates仍 MUST保持零v2指导
+
+### Requirement: 唯一内联核心规则源
+Buildr MUST 只在随包工作空间 `AGENTS.md` 受管区块维护核心规则正文，保留已确认六条智能体优先原则的实质内容，新增以产物为核心组织协作的产品原则，并保留授权、真实事实、用户沟通、工作资产职责及产品边界。实现和适配器 MUST 消费该来源，不复制正文或继续要求独立 Core 文件。规则 MUST 区分智能体参与工作协作与参与产品交付的适用范围；未引入智能体的产品或功能不自动采用智能体优先架构，渐进引入时应用于相关部分。多入口原则 MUST 要求变化可发现、继续相关工作时核对当前事实并显式处理版本冲突；不固定通知技术或要求每次变化立即唤醒智能体。
+
+#### Scenario: 发布与诊断消费同一规则源
+- **WHEN** 初始化、同步、更新或诊断工作空间
+- **THEN** 系统 MUST 使用同一随包区块生成或比较完整正文，而非仅检查旧文件引用
+- **AND** 发布物 MUST NOT 包含独立 `rules/buildr/core.md` 或其专属内置登记
+
+#### Scenario: 工作空间承载普通业务软件
+- **WHEN** 智能体帮助开发未引入智能体交付产品结果的软件
+- **THEN** 规则 MUST 约束智能体的工作协作，但不得仅因开发方式要求业务产品采用智能体优先架构
+- **AND** 既有业务规则、安全及授权边界 MUST 保留
+
+#### Scenario: 多入口接续产物
+- **WHEN** 人或智能体从一个入口修改产物，其他入口继续相关工作
+- **THEN** 规则 MUST 要求变化可被发现，继续判断或修改前核对当前事实，写入时保护已观察版本并显式处理冲突
+- **AND** 规则 MUST 将成果一致与目标验收区分，不把对话或一次执行作为唯一权威

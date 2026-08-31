@@ -1,3 +1,5 @@
+import { ParentCompletionFields } from './task-detail/ParentCompletionFields';
+import { emptyParentCompletionDraft, parentCompletionInput } from './task-detail/parentCoordination';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
@@ -56,6 +58,7 @@ export function TaskDetailPage() {
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
+  const currentCoordination = coordinationData?.taskId === taskId ? coordinationData : null;
   const [pageError, setPageError] = useState<string | null>(null);
   const [alert, setAlert] = useState<{ message: string; error: boolean } | null>(null);
   const [editState, setEditState] = useState('可以修改');
@@ -74,6 +77,9 @@ export function TaskDetailPage() {
   const [parentOptionsLoaded, setParentOptionsLoaded] = useState(false);
   const [parentOptionsLoading, setParentOptionsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [completionSnapshot, setCompletionSnapshot] = useState<ParentCoordinationResult | null>(null);
+  const [completionRecordDigest, setCompletionRecordDigest] = useState('');
+  const [completionDraft, setCompletionDraft] = useState(emptyParentCompletionDraft);
   const [completeSummary, setCompleteSummary] = useState('');
   const [completeNoChange, setCompleteNoChange] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
@@ -609,26 +615,46 @@ export function TaskDetailPage() {
     }
   };
 
+  const openComplete = async () => {
+    if (!data) return;
+    try {
+      const snapshot = await taskProfessionalApi.coordination(taskId) as ParentCoordinationResult;
+      setCompletionSnapshot(snapshot);
+      setCompletionRecordDigest(snapshot.recordDigest || data.recordDigest);
+      setCompletionDraft(emptyParentCompletionDraft());
+      setActionModal('complete');
+    } catch (error) { showMutationError(error as ApiError); }
+  };
+
   const onComplete = async (event: FormEvent) => {
     event.preventDefault();
-    if (!data || !completeNoChange) return;
-    const ok = await confirmModal({
-      title: '确认完成？',
-      content: '确认只把顶层任务记录标记为完成？这不会执行任务收尾（Task Finish）、Git、任务验证或任务环境清理。',
-      okText: '确认完成',
-    });
-    if (!ok) return;
+    if (!data || !completeNoChange || !completionSnapshot) return;
     try {
+      const parentCompletion = completionSnapshot.isParent ? parentCompletionInput(completionSnapshot, completionDraft, taskId) : undefined;
+      const ok = await confirmModal({
+        title: parentCompletion ? '明确授权完成整个父任务？' : '确认完成？',
+        content: parentCompletion ? '确认上述整体目标已完成，并授权更新这个父任务的状态。子任务状态保持不变。' : '只更新任务记录，不执行 Git、验证或环境清理。',
+        okText: parentCompletion ? '授权并完成父任务' : '确认完成',
+      });
+      if (!ok) return;
       await tasksApi.complete(taskId, {
-        expectedRecordDigest: data.recordDigest,
+        expectedRecordDigest: completionRecordDigest,
         summary: completeSummary,
         noChange: completeNoChange === 'true',
+        ...(parentCompletion ? { parentCompletion } : {}),
       });
       setActionModal(null);
       await refresh();
+      await refreshCoordination();
       selectTab('overview');
     } catch (err) {
       showMutationError(err as ApiError);
+      if (['parent_completion_conflict', 'task_record_conflict'].includes((err as ApiError).code || '')) {
+        setCompletionDraft(emptyParentCompletionDraft());
+        setActionModal(null);
+        await refresh();
+        await refreshCoordination();
+      }
     }
   };
 
@@ -726,8 +752,8 @@ export function TaskDetailPage() {
           <Button id="task-edit-action" size="small" onClick={() => setActionModal('edit')}>
             {record.status === 'todo' ? '编辑待办意向' : '编辑进行中的任务'}
           </Button>
-          <Button id="task-complete-action" size="small" onClick={() => setActionModal('complete')}>
-            结束任务
+          <Button id="task-complete-action" size="small" onClick={() => void openComplete()}>
+            {record.isParent ? '完成父任务' : '结束任务'}
           </Button>
           <Button id="task-abandon-action" size="small" danger onClick={() => setActionModal('abandon')}>
             放弃任务
@@ -737,11 +763,12 @@ export function TaskDetailPage() {
 
       <div id="task-overview-panel" className={activeTab === 'overview' ? '' : 'hidden'} data-task-panel="overview">
         <ParentCoordinationPanel
-          data={coordinationData}
+          data={currentCoordination}
           loading={coordinationLoading}
           onRefresh={() => { void refreshCoordination(); }}
           taskHref={(childTaskId) => href(`/tasks/${encodeURIComponent(childTaskId)}`)}
         />
+        {!currentCoordination?.isParent && (
         <TaskOutcomeSummary
           summary={overviewData?.userSummary}
           loading={overviewLoading}
@@ -749,7 +776,8 @@ export function TaskDetailPage() {
           onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'development')}
           onAuthorize={(authorization) => openAgentAction(authorization.owner, { taskId, action: authorization.action, summary: authorization.summary })}
         />
-        <details className={`task-technical-overview${coordinationData?.mode === 'parent-plan' ? ' parent-mode' : ' ordinary-mode'}`} open={coordinationData?.mode !== 'parent-plan'}>
+        )}
+        <details className={`task-technical-overview${currentCoordination?.mode === 'parent' ? ' parent-mode' : ' ordinary-mode'}`} open={!record.isParent}>
           <summary>技术事实、Change 与 Task Record</summary>
         <section className="panel" id="task-professional-overview" aria-live="polite">
           <div className="panel-heading">
@@ -766,14 +794,14 @@ export function TaskDetailPage() {
               <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${overviewData.reviews.completion.gateMatch}` : '尚未记录'} />
               <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${overviewData.verification.gateMatch}` : '尚未记录'} />
               <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
-              <Fact label="交付" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '尚未形成'} />
+              <Fact label="历史交付记录" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '无旧收尾记录'} />
             </dl>
           )}
         </section>
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {
-              return coordinationData?.mode === 'parent-plan' ? null : <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
+              return currentCoordination?.mode === 'parent' ? null : <section key="empty" className="panel">这个任务没有关联 Change，因此没有 Brief 可展示。</section>;
             }
             if (item.kind === 'missing') {
               return <section key={item.key} className="panel brief-missing">{item.message}</section>;
@@ -931,7 +959,7 @@ export function TaskDetailPage() {
       </Modal>
       <TaskDocumentPreviewModal reference={documentReference} onClose={() => setDocumentReference(null)} />
       <Modal
-        title="结束任务"
+        title={completionSnapshot?.isParent ? "完成父任务" : "结束任务"}
         open={actionModal === 'complete'}
         onCancel={() => setActionModal(null)}
         footer={null}
@@ -961,8 +989,9 @@ export function TaskDetailPage() {
                   ]}
             />
           </label>
+          {completionSnapshot?.isParent && <ParentCompletionFields snapshot={completionSnapshot} value={completionDraft} onChange={setCompletionDraft} />}
           <div className="actions">
-            <Button type="default" htmlType="submit">确认完成</Button>
+            <Button type="default" htmlType="submit" disabled={Boolean(completionSnapshot?.isParent && (!completionDraft.confirmed || completionSnapshot.completion?.openChildTaskIds.length))}>确认完成</Button>
           </div>
         </form>
       </Modal>

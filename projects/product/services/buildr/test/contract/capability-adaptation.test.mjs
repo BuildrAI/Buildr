@@ -6,7 +6,7 @@ import YAML from 'yaml';
 // These tests own the static contract between packaged assets, manifests, and public guidance.
 const read = (path) => fs.readFileSync(path, 'utf8');
 const packageManifest = YAML.parse(read('resources/manifest.yml'));
-const core = read('resources/workspace/rules/buildr/core.md');
+const core = read('resources/workspace/AGENTS.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
 const adaptation = read('resources/workspace/skills/buildr/capability-adaptation/SKILL.md');
 const capabilityDocs = read('docs/skill-capability-contracts.md');
@@ -39,8 +39,8 @@ test('Git Operations 实例区分 Agent capability 与产品 Task Finish executo
   assert.match(capabilityDocs, /Resolver 与 readiness/);
   assert.match(capabilityDocs, /Runtime evidence/);
   assert.match(capabilityDocs, /用户替换实现/);
-  assert.match(capabilityDocs, /独立已选Git Operation由同一个`git-operations` provider处理/);
-  assert.match(capabilityDocs, /它不决定 `task-finish\/v1` 产品执行器是否可运行/);
+  assert.match(capabilityDocs, /供明确选择的 Git 动作使用/);
+  assert.match(capabilityDocs, /收尾继续处理其他安全工作/);
 });
 
 test('capability-adaptation 拥有跨 Skill 影响检查，Core 不复制专项流程', () => {

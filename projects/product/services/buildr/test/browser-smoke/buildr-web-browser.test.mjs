@@ -1,3 +1,4 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -307,7 +308,7 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
     deliveryCarrier: carrier, equivalence, delivery, completion, resume: null, primaryFailure: null,
     phases: FINISH_PHASES.map((id) => ({ id, status: 'passed', attempts: 1, startedAt: completedAt, completedAt, durationMs: 0, inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null })),
   };
-  runtime.writeTaskFinishRunPersistence(root, run);
+  legacyFinishRuntime(runtime).writeTaskFinishRunPersistence(root, run);
   const association = {
     schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
     candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
@@ -431,7 +432,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   let forceDevelopmentUnknown = false;
   const resolveTaskEnvironmentExecution = runtime.resolveTaskEnvironmentExecution.bind(runtime);
   runtime.resolveTaskEnvironmentExecution = (targetRoot, taskId) => {
@@ -677,6 +678,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   if (selected('change')) await t.test('Change 详情展示任务关联事实与 OpenSpec 只读内容', async () => {
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.locator('.task-technical-overview').waitFor({ state: 'visible' });
+    if (await page.locator('.task-technical-overview').getAttribute('open') === null) await page.locator('.task-technical-overview > summary').click();
     await unique(page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' }), '任务 Change 关联');
     await page.locator('#task-detail-changes a').filter({ hasText: 'demo/browser-flow' }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
@@ -700,10 +703,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(deliveredCleanup.status, 'cleaned', JSON.stringify(deliveredCleanup, null, 2));
     writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-delivered', deliveredReceipt, deliveredCleanup);
     await page.goto(`${workspaceUrl}/tasks/browser-parent`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-parent');
     await page.getByRole('button', { name: '原型', exact: true }).click();
     await page.locator('#task-prototype-empty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-prototype-empty').innerText(), /还没有可查看的界面原型[\s\S]*不会阻塞任务推进/);
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.getByRole('button', { name: '原型', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.ui-prototype-page').length === 2);
     assert.equal(await page.locator('.ui-prototype-page').count(), 2);
@@ -732,60 +737,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.ui-prototype-page').filter({ hasText: '原型任务详情' }).click();
     await page.frameLocator('#task-prototype-frame').locator('#prototype-detail-heading').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-prototype-title').innerText(), '原型任务详情');
-    runtime.beginTaskDevelopment(workspaceRoot, 'browser-parent', {
-      changeDispositions: [],
-      planning: { targetIdentity: null, nodes: [] },
-      planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Parent Plan 尚未记录。', source: 'browser fixture' },
-    });
-    const parentCoordination = runtime.recordParentPlan(workspaceRoot, 'browser-parent', { plan: {
-      outcome: '完成父任务协调视图的集成验收。',
-      architectureDecisions: ['Parent Coordination 只派生 read model。'],
-      contributions: [
-        { id: 'task-record-reference-slice', priority: 'P0-1 reference slice', title: 'Task Record 参考切片', objective: '完成 Task Record 纵向参考切片重构。', directions: ['保持单一 authority。'], boundaries: ['不复制 Child 状态。'], expectedChild: 'Task Record focused Child', dependencies: [] },
-        { id: 'engineering-root-layout', priority: 'P0-2 independent foundation', title: '工程根目录布局', objective: '收敛工程根目录职责与直接消费者。', directions: ['先识别直接消费者。'], boundaries: ['不扩大到无关服务。'], expectedChild: 'Layout focused Child', dependencies: [] },
-        { id: 'parent-integration', priority: 'P1-1 composition foundation', title: 'Parent 集成', objective: '执行父任务最终集成验收。', directions: ['只集成已证明交付。'], boundaries: ['不从 completed 推断交付。'], expectedChild: null, dependencies: ['task-record-reference-slice', 'engineering-root-layout'] },
-        { id: 'infrastructure-boundaries', priority: 'P1-2 technical mechanisms', title: '通用 Infrastructure 边界', objective: '收敛 SQLite、filesystem、Git、process、network、platform 和 clock 等通用技术机制。', directions: ['保持通用技术能力可独立验证。'], boundaries: ['不引入业务语义或第二 writer。'], expectedChild: 'Infrastructure focused Child', dependencies: ['parent-integration'] },
-        { id: 'task-capability-slices', priority: 'P1-3 task capability slices', title: 'Task 能力单元', objective: '按独立验证的能力单元迁移 Task 模块其余职责。', directions: ['保持 Task Record 与专业 owner 边界。'], boundaries: ['不复制专业 Result。'], expectedChild: 'Task capability Child', dependencies: ['parent-integration'] },
-        { id: 'workspace-capability-slices', priority: 'P1-4 workspace capability slices', title: 'Workspace 管理能力', objective: '迁移 Workspace、Project、Service、Component、Rules 与 Commands 能力单元。', directions: ['保持 workspace authority。'], boundaries: ['不改变公开契约。'], expectedChild: 'Workspace capability Child', dependencies: ['parent-integration'] },
-        { id: 'agent-asset-slices', priority: 'P1-5 agent asset slices', title: 'Agent Assets 能力单元', objective: '迁移 Rule、Skill、Command、Component 与 runtime adapter 能力单元。', directions: ['保持资产治理职责。'], boundaries: ['不改变 runtime authority。'], expectedChild: 'Agent assets Child', dependencies: ['parent-integration'] },
-        { id: 'web-runtime-capabilities', priority: 'P2-1 web runtime capabilities', title: 'Buildr Web Runtime 能力', objective: '迁移 Buildr Web Runtime、HTTP 公共宿主与 web-dist 托管职责。', directions: ['保持同源托管。'], boundaries: ['不接管 buildr-web 前端源码。'], expectedChild: 'Web runtime Child', dependencies: ['parent-integration'] },
-        { id: 'installation-doctor-capabilities', priority: 'P2-2 installation capabilities', title: 'Installation 与 Doctor 能力', objective: '收敛 installation、update、launcher 和 doctor 等 system 能力单元。', directions: ['保持安装和诊断语义。'], boundaries: ['必要时拆成多个 Child。'], expectedChild: 'Installation Child', dependencies: ['parent-integration'] },
-        { id: 'release-packaging-capabilities', priority: 'P2-3 release packaging', title: 'Release 与 Packaging 能力', objective: '收敛 npm package、payload、release artifacts 与正式发布验证入口。', directions: ['保持制品 identity。'], boundaries: ['不改变发布授权。'], expectedChild: 'Release packaging Child', dependencies: ['parent-integration'] },
-      ],
-      finalAcceptance: ['全部 Contribution 已交付或明确替代。'],
-    } });
-    runtime.recordTaskReview(workspaceRoot, 'browser-parent', {
-      reviewType: 'planning', targetIdentity: parentCoordination.plan.identity, method: 'self',
-      reviewed: ['Parent Plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: '父任务计划可推进。' },
-    });
-    runtime.refreshParentPlanning(workspaceRoot, 'browser-parent');
-    const contributionEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-contribution-delivered', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
-    assert.equal(contributionEnvironment.status, 'ready', JSON.stringify(contributionEnvironment, null, 2));
-    const contributionDeliveredReceipt = prepareDevelopmentFixture(
-      runtime,
-      workspaceRoot,
-      'browser-contribution-delivered',
-      { parentTaskId: 'browser-parent', contributionIds: ['engineering-root-layout', 'parent-integration', 'infrastructure-boundaries'] },
-      {
-        parentTaskId: 'browser-parent',
-        planned: ['engineering-root-layout', 'parent-integration', 'infrastructure-boundaries'],
-        delivered: ['engineering-root-layout'],
-        extra: [],
-        residual: [{ contributionId: 'parent-integration', summary: '仍需完成父任务最终集成验收。' }],
-        superseded: [{ contributionId: 'infrastructure-boundaries', deliveredByContributionId: 'engineering-root-layout', reason: '工程根目录切片已经覆盖通用基础边界。' }],
-        affected: [],
-        nextAction: '继续验证父任务集成，并启动剩余能力子任务。',
-      },
-    );
+    // Coordination consumes real task outcomes without a Parent development workflow.
     runtime.completeTaskRecord(workspaceRoot, 'browser-contribution-delivered', { summary: '贡献交付子任务已完成', noChange: false });
-    const contributionDeliveredCleanup = await controllerRuntime.cleanupTaskEnvironment(workspaceRoot, 'browser-contribution-delivered', { type: 'finish', deliveries: { workspace: 'dev' } });
-    assert.equal(contributionDeliveredCleanup.status, 'cleaned', JSON.stringify(contributionDeliveredCleanup, null, 2));
-    writeDeliveredFinishFixture(runtime, workspaceRoot, 'browser-contribution-delivered', contributionDeliveredReceipt, contributionDeliveredCleanup);
-    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Browser fixture uses only saved Buildr Web facts.', steps: [] }] } });
-    assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment, null, 2));
-    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-task', { parentTaskId: 'browser-parent', contributionIds: ['task-record-reference-slice'] });
-    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-unproven', { parentTaskId: 'browser-parent', contributionIds: ['task-capability-slices'] });
-    runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成', noChange: false });
+    runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成，实际交付仍需核对', noChange: false });
+    // This task also has independent development evidence; coordination does not require it.
+    const browserEnvironment = controllerRuntime.prepareTaskEnvironment(workspaceRoot, 'browser-task', { adapter: 'codex', useGit: false, plan: { schemaVersion: 'buildr.task-environment-plan/v1', services: [{ selector: 'service:demo/api', disposition: 'not-applicable', reason: 'Independent development view fixture.', steps: [] }] } });
+    assert.equal(browserEnvironment.status, 'ready', JSON.stringify(browserEnvironment));
+    prepareDevelopmentFixture(runtime, workspaceRoot, 'browser-task');
+
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 8, '默认目录显示全部任务；未完成排在前面');
@@ -810,74 +769,35 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.locator('#task-table-body tr.ant-table-row').click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     assert.equal(await page.locator('#task-detail-status').innerText(), '进行中');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
-    assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
-    assert.match(await page.locator('#task-detail-children').innerText(), /页面查看任务[\s\S]*进行中/);
-    await page.locator('#task-detail-parent a').click();
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
+    await page.locator('#task-parent-coordination').getByRole('link', { name: '浏览器协调任务', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
-    await page.locator('.parent-plan-workbench').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.parent-summary-strip').innerText(), /已交付[\s\S]*1[\s\S]*剩余工作[\s\S]*1[\s\S]*已取代[\s\S]*1[\s\S]*进行中[\s\S]*1/);
-    assert.match(await page.locator('.parent-progress-source').innerText(), /父任务计划 \+ 直接子任务 \+ 贡献交接动态生成[\s\S]*不写回父任务计划/);
-    assert.deepEqual(await page.locator('.parent-progress-group > header h4').allTextContents(), ['进行中 / 已交付', '可启动', '等待依赖']);
-    assert.equal(await page.locator('[data-progress-group="active-delivered"] .parent-progress-row').count(), 5);
-    assert.equal(await page.locator('[data-progress-group="startable"] .parent-progress-row').count(), 0);
-    assert.equal(await page.locator('[data-progress-group="waiting"] .parent-progress-row').count(), 5);
-    const deliveredContribution = page.locator('[data-contribution-id="engineering-root-layout"]');
-    assert.match(await deliveredContribution.innerText(), /工程根目录布局[\s\S]*贡献交付子任务[\s\S]*已完成[\s\S]*交付已证明[\s\S]*已交付[\s\S]*下一步行动/);
-    assert.equal(await deliveredContribution.getByRole('link', { name: '进入子任务 ›', exact: true }).getAttribute('href'), `/workspaces/${initialWorkspaceId}/tasks/browser-contribution-delivered`);
-    assert.match(await page.locator('[data-contribution-id="parent-integration"]').innerText(), /仍有残留[\s\S]*剩余工作[\s\S]*仍需完成父任务最终集成验收/);
-    assert.match(await page.locator('[data-contribution-id="infrastructure-boundaries"]').innerText(), /已替代[\s\S]*已取代[\s\S]*工程根目录切片已经覆盖通用基础边界/);
-    const unprovenContribution = page.locator('[data-contribution-id="task-capability-slices"]');
-    assert.match(await unprovenContribution.innerText(), /交付未经证明子任务[\s\S]*已完成[\s\S]*交付未证明/);
-    assert.equal(await unprovenContribution.locator('.parent-delivery-facts').count(), 0, 'completed 子任务没有交接时不得生成交付摘要');
-    const waitingContribution = page.locator('[data-contribution-id="workspace-capability-slices"]');
-    assert.match(await waitingContribution.innerText(), /等待依赖[\s\S]*阻塞原因[\s\S]*Parent 集成[\s\S]*parent-integration/);
-    const parentLayout = await page.evaluate(() => {
-      const work = document.querySelector('.parent-work-section').getBoundingClientRect();
-      const architecture = document.querySelector('.parent-plan-architecture').getBoundingClientRect();
-      const row = document.querySelector('.parent-progress-row');
-      const regions = [...row.querySelectorAll('[data-progress-region]')].map((item) => item.getBoundingClientRect());
-      return { workBottom: work.bottom, architectureTop: architecture.top, regions: regions.map((item) => ({ left: item.left, top: item.top, height: item.height })) };
-    });
-    assert.ok(parentLayout.workBottom <= parentLayout.architectureTop, '迁移进度不得覆盖后续架构决定区块');
-    assert.ok(parentLayout.regions.every((item) => Math.abs(item.top - parentLayout.regions[0].top) < 2), '桌面端四个语义区域必须处于同一横向带');
-    assert.ok(parentLayout.regions.every((item, index) => index === 0 || item.left >= parentLayout.regions[index - 1].left), '桌面端语义区域保持固定顺序');
-    await deliveredContribution.locator('.parent-progress-open').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'visible' });
-    assert.match(await page.locator('.parent-contribution-drawer').innerText(), /贡献项详情[\s\S]*目标[\s\S]*实现方向[\s\S]*边界[\s\S]*计划依赖[\s\S]*实际子任务与贡献交接/);
-    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
-    await page.locator('.parent-contribution-drawer').waitFor({ state: 'hidden' });
-    await deliveredContribution.getByRole('link', { name: '贡献交付子任务', exact: true }).focus();
-    await page.keyboard.press('Enter');
-    await page.waitForURL(`${workspaceUrl}/tasks/browser-contribution-delivered`);
-    assert.equal(await page.locator('.parent-contribution-drawer').count(), 0, '键盘进入子任务不得同时打开贡献项详情');
-    assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*工程根目录布局/);
-    await page.locator('.child-parent-source').getByRole('link', { name: '浏览器协调任务', exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
-    await page.locator('.parent-governance-details summary').click();
-    const governanceFacts = await page.locator('.parent-governance-details').innerText();
-    assert.match(governanceFacts, /方案审查[\s\S]*已就绪 · 当前适用/);
-    assert.doesNotMatch(governanceFacts, /undefined/);
+    await page.waitForFunction(() => document.getElementById('task-detail-id')?.textContent === 'browser-parent');
+    await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-parent-coordination').innerText(), /整体目标与子任务成果[\s\S]*明确完成授权[\s\S]*贡献交付子任务已完成/);
+    assert.equal(runtime.inspectTaskRecord(workspaceRoot, 'browser-parent').record.status, 'active');
+    await openTaskActionModal(page, 'task-complete-action');
+    await page.locator('#parent-completion-evidence').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#parent-completion-authorized').isChecked(), false);
+    assert.equal(await page.locator('#task-complete-form').getByRole('button', { name: '确认完成', exact: true }).isDisabled(), true);
+    await page.locator('.task-action-modal .ant-modal-close').click();
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    assert.equal(await page.locator('.parent-progress-row').first().evaluate((item) => item.getBoundingClientRect().width <= window.innerWidth), true);
-    const narrowRegions = await page.locator('.parent-progress-row').first().locator('[data-progress-region]:not([data-progress-region="detail"])').evaluateAll((items) => items.map((item) => { const rect = item.getBoundingClientRect(); return { top: rect.top, left: rect.left }; }));
-    assert.ok(narrowRegions.every((item, index) => index === 0 || item.top >= narrowRegions[index - 1].top), '窄屏语义区域按单列顺序排列');
-    const narrowDetail = await page.locator('.parent-progress-row').first().locator('[data-progress-region="detail"]').evaluate((item) => { const row = item.parentElement.getBoundingClientRect(); const detail = item.getBoundingClientRect(); return { rowRight: row.right, detailRight: detail.right, rowTop: row.top, detailTop: detail.top }; });
-    assert.ok(Math.abs(narrowDetail.rowRight - narrowDetail.detailRight) < 2 && Math.abs(narrowDetail.rowTop - narrowDetail.detailTop) < 2, '窄屏详情入口固定在进度行右侧');
-    await page.locator('[data-contribution-id="task-record-reference-slice"] .parent-progress-open').click();
-    assert.match(await page.locator('.parent-contribution-drawer').innerText(), /实现方向[\s\S]*边界[\s\S]*计划依赖/);
-    await page.locator('.parent-contribution-drawer .ant-drawer-close').click();
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.locator('.task-technical-overview > summary').click();
-    await page.locator('#task-detail-children a').filter({ hasText: '浏览器任务' }).click();
+    await page.locator('#task-parent-coordination').getByRole('link', { name: '贡献交付子任务', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-contribution-delivered`);
+    await page.locator('#task-parent-coordination').getByRole('link', { name: '浏览器协调任务', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/browser-parent`);
+    await page.locator('#task-parent-coordination').getByRole('link', { name: '浏览器任务', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
-    assert.match(await page.locator('.child-parent-source').innerText(), /父任务来源[\s\S]*浏览器协调任务[\s\S]*Task Record 参考切片[\s\S]*进行中/);
-    await page.locator('#task-detail-children a').filter({ hasText: '页面查看任务' }).click();
+    await page.locator('#task-parent-coordination').getByRole('link', { name: '页面查看任务', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
@@ -895,7 +815,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-development-empty').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-development-status').innerText(), '尚未形成研发回执');
     assert.equal(await page.locator('#task-development-detail').isHidden(), true);
-    assert.equal(await page.locator('#task-development-panel button').count(), 2, '研发页提供只读刷新与 Finish 执行记录入口');
+    assert.equal(await page.locator('#task-development-panel button').count(), 1, '无旧收尾记录时研发页只提供刷新');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
@@ -930,6 +850,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
     await page.getByRole('button', { name: '复盘', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
     assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
@@ -949,6 +870,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     await page.locator('#task-document-preview').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-document-preview-path').innerText(), 'projects/demo/docs/task-reference.md');
@@ -959,6 +881,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('.task-document-preview-content').innerText(), /同一项目内的相对文档链接也可打开/);
     await page.locator('.task-document-preview-modal .ant-modal-close').click();
     await page.locator('#task-document-preview').waitFor({ state: 'hidden' });
+    if (await page.locator('.task-technical-overview').getAttribute('open') === null) await page.locator('.task-technical-overview > summary').click();
     await openTaskActionModal(page, 'task-edit-action');
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     await page.locator('#task-change-briefs .change-brief-panel').waitFor({ state: 'visible' });
@@ -979,6 +902,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Task-scoped Change 只读展示');
     await page.locator('.back-link').click();
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
 
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
@@ -993,8 +917,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-development-decision').innerText(), /允许推进/);
     assert.match(await page.locator('#task-development-decision').innerText(), /已接受风险数[\s\S]*0/);
     assert.match(await page.locator('#task-development-handoff').innerText(), /已保存交接数[\s\S]*1/);
-    assert.equal(await page.locator('#task-development-panel button').count(), 5, '研发页只有刷新、三个门禁证据跳转与 Finish 执行记录入口');
-    await page.locator('#task-finish-execution-records-entry').getByRole('button', { name: '查看 Finish 执行记录', exact: true }).click();
+    assert.equal(await page.locator('#task-development-panel button').count(), 4, '没有旧收尾运行时研发页只有刷新和三个证据跳转');
+    assert.equal(await page.locator('#task-finish-execution-records-entry').count(), 0);
+    await page.getByRole('button', { name: '证据', exact: true }).click();
+    await page.locator('#task-execution-record-filter-finish').click();
     await page.locator('#task-execution-record-filter-finish[aria-pressed="true"]').waitFor({ state: 'visible' });
     await page.waitForFunction(() => document.querySelectorAll('#task-execution-record-list .execution-record-card').length === 1);
     assert.match(await page.locator('#task-execution-record-list').innerText(), /Finish · passed/);
@@ -1044,12 +970,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#close-agent-action').click();
 
     await page.goto(`${workspaceUrl}/tasks/browser-stale`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-stale');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
     assert.match(await page.locator('#task-verification-result').innerText(), /适用性未知/);
     assert.doesNotMatch(await page.locator('#task-verification-result').innerText(), /已随交付目标/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-delivered`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-delivered');
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已交付');
     assert.equal(await page.locator('#task-development-axes').getByText('交付时快照', { exact: true }).count(), 6);
@@ -1063,12 +991,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-verification-result .review-slot-card').evaluate((item) => item.getBoundingClientRect().width <= 800), true);
 
     await page.goto(`${workspaceUrl}/tasks/browser-unproven`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-unproven');
     await page.getByRole('button', { name: '研发', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成，但交付未经证明');
-    assert.match(await page.locator('#task-development-terminal').innerText(), /没有找到与 immutable handoff\/Candidate 完整匹配的成功 Finish Result/);
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成');
+    assert.match(await page.locator('#task-development-terminal').innerText(), /任务结果已保存[\s\S]*不要求旧收尾运行证明/);
     assert.equal(await page.locator('#task-development-terminal').evaluate((item) => item.classList.contains('delivered')), false);
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');
     await page.getByRole('button', { name: '环境', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-environment-status')?.textContent === '可执行');
     assert.equal(await page.locator('#task-environment-source').innerText(), '当前机器（current-machine）');
@@ -1104,6 +1034,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-intent').innerText(), /页面基于最新记录更新/);
 
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-abandon');
     await openTaskActionModal(page, 'task-abandon-action');
     await page.locator('#task-abandon-form').waitFor({ state: 'visible' });
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
@@ -1114,13 +1045,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-detail-status').innerText(), '已放弃');
 
     await page.setViewportSize({ width: 1024, height: 720 });
-    await page.goto(`${workspaceUrl}/tasks/browser-task`); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task'); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent !== '尚未读取');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'local-app-task-development-1024.png');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${workspaceUrl}/tasks/browser-task`); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
+    await page.goto(`${workspaceUrl}/tasks/browser-task`);
+    await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task'); await page.locator('#task-detail-title').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);

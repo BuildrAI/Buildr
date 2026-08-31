@@ -539,27 +539,33 @@ export function registerWorkspaceInfrastructure(runtime) {
 
   const BUILDR_REQUIRED_BLOCK_START = '<!-- buildr:required begin -->';
   const BUILDR_REQUIRED_BLOCK_END = '<!-- buildr:required end -->';
-  const BUILDR_REQUIRED_BLOCK = [
-    BUILDR_REQUIRED_BLOCK_START,
-    '请读取并遵循 [Buildr Core](rules/buildr/core.md)。',
-    BUILDR_REQUIRED_BLOCK_END,
-    '',
-  ].join('\n');
+  const requiredBlockPattern = () => /<!-- buildr:required begin -->(?:(?!<!-- buildr:required begin -->)[\s\S])*?<!-- buildr:required end -->/g;
+
+  function packageRequiredBlock() {
+    const source = fs.readFileSync(path.join(resourceWorkspaceRoot(), 'AGENTS.md'), 'utf8');
+    const blocks = [...source.matchAll(requiredBlockPattern())];
+    if (blocks.length !== 1) throw new Error('Package AGENTS.md must contain exactly one Buildr required block.');
+    return blocks[0][0];
+  }
 
   function ensureRootRequiredBlock(targetRoot, changed = []) {
     const agentsPath = path.join(targetRoot, 'AGENTS.md');
     const existing = existsFile(agentsPath) ? fs.readFileSync(agentsPath, 'utf8') : '';
-    let next;
-    const start = existing.indexOf(BUILDR_REQUIRED_BLOCK_START);
-    const end = existing.indexOf(BUILDR_REQUIRED_BLOCK_END);
-    if (start !== -1 && end !== -1 && end > start) {
-      const afterEnd = end + BUILDR_REQUIRED_BLOCK_END.length;
-      next = `${existing.slice(0, start)}${BUILDR_REQUIRED_BLOCK.trimEnd()}${existing.slice(afterEnd)}`;
-      if (!next.endsWith('\n')) next += '\n';
-    } else {
-      const suffix = existing.trim() ? `\n${existing.replace(/^\s+/, '')}` : '';
-      next = `${BUILDR_REQUIRED_BLOCK}${suffix}`;
+    const block = packageRequiredBlock();
+    let inserted = false;
+    // Preserve all text outside complete managed spans, including whitespace.
+    // Unpaired markers have no known owned body: strip only the markers.
+    let next = '';
+    let offset = 0;
+    const withoutMarkers = (text) => text.replaceAll(BUILDR_REQUIRED_BLOCK_START, '').replaceAll(BUILDR_REQUIRED_BLOCK_END, '');
+    for (const match of existing.matchAll(requiredBlockPattern())) {
+      next += withoutMarkers(existing.slice(offset, match.index));
+      next += inserted ? '' : block;
+      inserted = true;
+      offset = match.index + match[0].length;
     }
+    next += withoutMarkers(existing.slice(offset));
+    if (!inserted) next = `${block}\n${next}`;
     if (next !== existing) {
       atomicWriteFile(agentsPath, next, 'utf8');
       changed.push('AGENTS.md');
@@ -572,14 +578,12 @@ export function registerWorkspaceInfrastructure(runtime) {
     const agentsPath = path.join(targetRoot, 'AGENTS.md');
     if (!existsFile(agentsPath)) return { exists: false, valid: false, path: 'AGENTS.md' };
     const content = fs.readFileSync(agentsPath, 'utf8');
-    const start = content.indexOf(BUILDR_REQUIRED_BLOCK_START);
-    const end = content.indexOf(BUILDR_REQUIRED_BLOCK_END);
-    const block = start !== -1 && end !== -1 && end > start
-      ? content.slice(start, end + BUILDR_REQUIRED_BLOCK_END.length)
-      : '';
+    const blocks = [...content.matchAll(requiredBlockPattern())];
     return {
       exists: true,
-      valid: block.includes('rules/buildr/core.md'),
+      valid: blocks.length === 1 && blocks[0][0] === packageRequiredBlock()
+        && content.split(BUILDR_REQUIRED_BLOCK_START).length === 2
+        && content.split(BUILDR_REQUIRED_BLOCK_END).length === 2,
       path: 'AGENTS.md',
     };
   }

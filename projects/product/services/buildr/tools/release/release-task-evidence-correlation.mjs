@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA = 'buildr.release-task-evidence-correlation/v1';
+export const RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA = 'buildr.release-task-evidence-correlation/v2';
 
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const TASK = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
@@ -206,21 +206,8 @@ function correlateEntry(entry, expectedTaskId) {
   const finish = normalizeFinish(entry.finish, expectedTaskId, `${expectedTaskId}.finish`);
   const selfBootstrap = normalizeSelfBootstrap(entry.selfBootstrap, expectedTaskId, finish.runId, `${expectedTaskId}.selfBootstrap`);
   const findings = [];
-  if (finish.status === 'unknown' || finish.status === 'blocked') findings.push(finding('task-finish', finish.status === 'unknown' ? 'finish-evidence-missing' : 'finish-evidence-blocked', finish.reason || 'Finish delivery evidence is not current.'));
-  if (development.status !== 'passed') findings.push(finding('task-development', 'development-not-current', development.reason || 'Task Development handoff is not current.'));
-  if (environment.status !== 'passed') findings.push(finding('task-environment', 'environment-not-ready', environment.reason || 'Task Environment evidence is not ready.'));
-  if (selfBootstrap.status === 'unknown') findings.push(finding('self-bootstrap', 'activation-evidence-missing', selfBootstrap.reason || 'Matching self-bootstrap evidence is missing.', 'unknown'));
-  if (selfBootstrap.status === 'blocked') findings.push(finding('self-bootstrap', 'activation-blocked', selfBootstrap.reason || 'Matching self-bootstrap is blocked.'));
-  if (selfBootstrap.runIdMismatch) findings.push(finding('self-bootstrap', 'run-identity-mismatch', 'Self-bootstrap run does not match Finish run.'));
-  if (finish.handoffIdentity && development.handoffIdentity && finish.handoffIdentity !== development.handoffIdentity) findings.push(finding('task-finish', 'handoff-identity-mismatch', 'Finish handoff identity does not match current Development handoff.'));
-  if (finish.candidateIdentity && development.candidateIdentity && finish.candidateIdentity !== development.candidateIdentity) findings.push(finding('task-finish', 'candidate-identity-mismatch', 'Finish Candidate identity does not match current Development Candidate.'));
-  if (finish.candidateGeneration != null && development.candidateGeneration != null && finish.candidateGeneration !== development.candidateGeneration) findings.push(finding('task-finish', 'candidate-generation-mismatch', 'Finish Candidate generation does not match current Development generation.'));
-  if (finish.contentTargetIdentity && development.contentTargetIdentity && finish.contentTargetIdentity !== development.contentTargetIdentity) findings.push(finding('task-finish', 'content-target-mismatch', 'Finish Content Target identity does not match current Development target.'));
-  const finishCarrierIdentities = new Set(finish.repositories.map((repository) => repository.carrierIdentity).filter(Boolean));
-  if (selfBootstrap.carrierIdentity && finishCarrierIdentities.size && !finishCarrierIdentities.has(selfBootstrap.carrierIdentity)) findings.push(finding('self-bootstrap', 'carrier-identity-mismatch', 'Self-bootstrap carrier does not match Finish delivery carrier.'));
-  if (selfBootstrap.deliveredRef && finish.deliveryRef && selfBootstrap.deliveredRef !== finish.deliveryRef) findings.push(finding('self-bootstrap', 'delivered-ref-mismatch', 'Self-bootstrap delivered ref does not match Finish delivery ref.'));
-  if (selfBootstrap.sourceTree && finish.sourceTree && selfBootstrap.sourceTree !== finish.sourceTree) findings.push(finding('self-bootstrap', 'source-tree-mismatch', 'Self-bootstrap source tree does not match Finish source tree.'));
-  const status = findings.some((item) => item.severity === 'blocked') ? 'blocked' : findings.some((item) => item.severity === 'unknown') ? 'unknown' : findings.some((item) => item.severity === 'attention') ? 'attention' : 'passed';
+  const status = 'passed';
+
   return { taskId: expectedTaskId, status, environment, development, finish, selfBootstrap, findings };
 }
 
@@ -287,6 +274,11 @@ export function createReleaseTaskEvidenceCorrelation(input) {
 }
 
 export function validateReleaseTaskEvidenceCorrelation(value) {
+  if (value?.schemaVersion === 'buildr.release-task-evidence-correlation/v1') {
+    const { identity: saved, ...body } = value;
+    if (!DIGEST.test(saved || '') || digest(body) !== saved) throw new Error('Legacy release task correlation identity mismatch.');
+    return value;
+  }
   closed(value, new Set(['schemaVersion', 'status', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'source', 'entries', 'identity']), 'release task evidence correlation');
   if (value.schemaVersion !== RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA || !DIGEST.test(value.identity || '')) throw new Error('Release task evidence correlation schema/identity is invalid.');
   const recreated = createReleaseTaskEvidenceCorrelation({ releaseTask: value.releaseTask, releaseTaskStatus: value.releaseTask.status, retrospectiveSources: value.retrospectiveSources, supportTasks: value.supportTasks, source: value.source, taskEvidence: value.entries.map((entry) => ({
@@ -347,93 +339,13 @@ function runtimeEnvironmentProjection(runtime, root, taskId) {
   } : null;
 }
 
-function runtimeDevelopmentProjection(runtime, root, taskId) {
-  const observed = runtime.inspectTaskDevelopment?.(root, taskId) || null;
-  const development = observed?.development || observed;
-  const receipt = development?.receipt || {};
-  const applicability = development?.applicability || {};
-  const handoff = applicability.handoff === 'current' ? receipt.handoffs?.at(-1) || null : null;
-  return development ? {
-    taskId,
-    status: handoff ? 'current' : applicability.status || 'unknown',
-    receiptIdentity: observed?.development?.receiptDigest || observed?.receiptDigest || null,
-    handoffIdentity: handoff?.identity || null,
-    candidateIdentity: handoff?.candidate?.identity || receipt.candidate?.identity || null,
-    candidateGeneration: handoff?.candidate?.generation ?? receipt.candidate?.generation ?? null,
-    contentTargetIdentity: handoff?.candidate?.contentTargetIdentity || receipt.contentTarget?.identity || null,
-    taskContextIdentity: receipt.taskContext?.identity || null,
-    contributionIdentity: handoff?.contributionHandoff?.identity || null,
-    reason: (applicability.reasons || [])[0]?.code || null,
-    diagnosticRef: null,
-  } : null;
-}
-
-function runtimeFinishProjection(runtime, root, taskId) {
-  const observed = runtime.inspectTaskFinishReadModel?.({ root, taskId }) || null;
-  const result = observed?.result || null;
-  if (!result) return null;
-  const resultIdentity = result.identity?.run || result.resultIdentity || digest(result);
-  const repositories = (result.identity?.repositories || result.repositories || []).map((item) => ({
-    selector: item.selector,
-    disposition: item.disposition,
-    carrierIdentity: item.deliveryCarrier?.identity || item.carrierIdentity || null,
-    carrierRef: item.deliveryCarrier?.head || item.carrierRef || null,
-    remote: item.remote || null,
-    targetBranch: item.targetBranch || null,
-    deliveryStatus: item.delivery?.status || item.status || null,
-    finalRemoteRef: item.delivery?.finalRemoteRef || item.finalRemoteRef || null,
-  }));
-  return {
-    taskId,
-    status: result.status,
-    runId: result.runId || null,
-    resultIdentity,
-    handoffIdentity: result.identity?.handoffIdentity || result.handoff?.identity || null,
-    candidateIdentity: result.identity?.candidateIdentity || result.candidate?.identity || null,
-    candidateGeneration: result.identity?.candidateGeneration || result.candidate?.generation || null,
-    contentTargetIdentity: result.identity?.contentTargetIdentity || result.candidate?.contentTargetIdentity || null,
-    deliveryStatus: result.delivery?.status || (result.status === 'complete' ? 'delivered' : null),
-    deliveryRef: result.delivery?.finalRemoteRef || result.delivery?.remoteAfterRef || null,
-    sourceTree: result.delivery?.carrierTree || result.carrier?.tree || null,
-    repositories,
-    executionRecord: result.executionRecord ? {
-      recordId: result.executionRecord.recordId,
-      identity: result.executionRecord.identity || null,
-      status: result.executionRecord.status,
-      outcome: result.executionRecord.outcome,
-      lifecycleStatus: result.executionRecord.lifecycleStatus,
-      evidenceIdentity: result.executionRecord.evidenceIdentity || null,
-    } : null,
-    activation: result.maintenance?.activation || result.delivery?.activation?.status || null,
-    environmentCleanup: result.maintenance?.environmentCleanup || result.completion?.cleanup?.status || null,
-    diagnostics: result.maintenance?.diagnostics || result.executionRecord?.status || null,
-    diagnosticRef: result.primaryFailure?.code || null,
-  };
-}
-
-function runtimeSelfBootstrapProjection(runtime, root, taskId) {
-  const observed = runtime.inspectTaskFinishReadModel?.({ root, taskId }) || null;
-  const result = observed?.result || null;
-  const evidence = result?.maintenance?.selfBootstrap || null;
-  if (!evidence) return null;
-  return {
-    schemaVersion: evidence.schemaVersion,
-    status: evidence.status,
-    taskId: evidence.taskId || taskId,
-    runId: evidence.runId ?? result.runId ?? null,
-    resultIdentity: evidence.resultIdentity || null,
-    reason: evidence.status === 'blocked' ? 'matching-self-bootstrap-blocked' : null,
-  };
-}
-
-export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, releaseTaskStatus = 'active', supportTasks = [], retrospectiveSources = [], selfBootstrapResults = {}, source = null }) {
+export function createReleaseTaskEvidenceCorrelationFromRuntime({ runtime, root, releaseTask, releaseTaskStatus = 'active', supportTasks = [], retrospectiveSources = [], source = null }) {
   const taskIds = [releaseTask, ...supportTasks].map((item) => typeof item === 'string' ? item : item.taskId);
+  const releaseTaskId = typeof releaseTask === 'string' ? releaseTask : releaseTask.taskId;
   const taskEvidence = taskIds.map((taskId) => ({
     taskId,
-    environment: runtimeEnvironmentProjection(runtime, root, taskId),
-    development: runtimeDevelopmentProjection(runtime, root, taskId),
-    finish: runtimeFinishProjection(runtime, root, taskId),
-    selfBootstrap: selfBootstrapResults[taskId] || runtimeSelfBootstrapProjection(runtime, root, taskId),
+    environment: taskId === releaseTaskId ? runtimeEnvironmentProjection(runtime, root, taskId) : null,
+    development: null, finish: null, selfBootstrap: null,
   }));
   return createReleaseTaskEvidenceCorrelation({
     releaseTask: typeof releaseTask === 'string' ? runtimeTaskProjection(runtime, root, releaseTask) : releaseTask,

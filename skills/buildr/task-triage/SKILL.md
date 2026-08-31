@@ -51,9 +51,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ## 3. 条件化交接
 
-已有或刚创建的active Formal Task优先运行`buildr task next <task-id> --target <canonical-workspace> --json`。它只读组合Task、Environment与Development当前最小事实：`required`表示必须先恢复的authority/identity安全前置，`recommended`只是默认推进建议，用户可以选择其他仍满足对应owner contract的合法动作。只读取Snapshot当前next返回的capability contract与selected provider；不要为发现未来阶段运行Doctor full或预读完整Review、Verification、Finish。Snapshot不自动执行、不替代专业owner写前重验。
+已有或刚创建的active Formal Task优先运行`buildr task next <task-id> --target <canonical-workspace> --json`。它只读组合Task、Environment与Development当前最小事实：`required`表示必须先恢复的authority/identity安全前置，`recommended`只是默认推进建议，用户可以选择其他仍满足对应owner contract的合法动作。只读取Snapshot当前next返回的capability contract与selected provider；不要为发现未来阶段运行Doctor full或预读完整Review、Verification。Snapshot不自动执行、不替代专业owner写前重验。
 
-按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion、Finish 等下游阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
+按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion 等研发阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
 
 用户已经授权实现时，先选择直接工作或Buildr受管正式证据路径。直接工作在真实Git、文件ownership与副作用边界内立即推进并如实报告证据范围；需要OpenSpec managed flow、Development、Formal Verification、Candidate、自动Finish、Task-owned资源或cleanup时，取得matching ready Environment后立即进入proposal或当前首个研发动作。
 
@@ -66,23 +66,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有 Task Record 或 Buildr Web 已创建时先 inspect 并核对 intent/scope，不重复 create，也不重新执行创建前 Git 基线门禁；本次动作仅维护已有生命周期 metadata 时不递归创建新 Task，也不要求重新准备已清理的 Environment。Task Record provider 不可用时不得手写 YAML 代替。其他 provider 不可用时只阻塞对应分支：本 Skill 只选择专业动作；Environment 的准备、恢复和清理由 selected provider 负责。current knowledge provider 不可用时，不得回退为无 evidence 的直接编辑或伪造 Change。
 
-### 创建并默认准备 Parent Task
+### 父子任务
 
-用户要求创建Parent、先做总体架构设计与Contribution拆分、准备子任务，或准备到可开发/可启动Child状态时，先按新正式Task路径完成语义治理、完整repository set、Git基线和active Task Record create。todo或用户明确“只创建记录”仍只写Task Record，不准备Environment；纯查看、顶层metadata更新或尚未授权启动也不进入本流程。
-
-active Parent Task Record创建成功不是Parent准备完成。立即把Task ID、canonical Workspace、完整scope，以及authority source map中已经明确的outcome、architecture decisions、Contribution directions/boundaries/dependencies与final acceptance交接给`task-development`；由它持续准备Environment、Development、Parent Plan、Planning Review与planning refresh。不得先向用户报告“Parent已准备好”，也不得要求用户再次说“继续准备”。
-
-信息已经能够形成完整Parent Plan时直接交接并继续；只有缺失内容会实质改变Parent目标、Contribution切分、依赖、边界或最终验收时，才由`task-development`提出最少问题。Task Triage不复制Parent准备循环、不写Parent Plan/Review/Development Result，也不新增跨authority的`parent start`命令。
-
-### 从 Parent 规划项启动独立 Child Task
-
-当用户准备把active Parent推进到首个Child前，先调用`buildr task next <parent-task-id>`，并严格消费它返回的单一next：缺Environment就准备Parent Environment，缺Development就begin，缺Plan就record，Planning Review未current就审查，Review尚未被Development采用就调用公开的`task parent refresh-planning`。只有next为`start-child-contribution`时，才从`eligibleContributions`选择一个Contribution进入Child创建；不要把其他依赖尚未满足的Contribution当成整体阻塞，也不要为未来Child提前准备Environment。
-
-当用户选择eligible Contribution作为独立 Child Task 实施时，再调用`task parent inspect`读取v3响应：从唯一顶层`contributions`取得priority、title、objective、directions、boundaries、`expectation.child`与dependencies，并结合紧凑Planning Review摘要提取该 Child 的稳定 intent、实际Project/Service scope、边界和验收目标。`expectation.child`只描述预期形态，不是已创建或已绑定事实；真实binding只看Child的`boundContributions`。Parent导引只作为Child启动输入。Parent/Child关系不表达Git继承、Change共享或专业状态传播。legacy Parent不得被自动转换或从旧Change/checkbox推断Contribution。
-
-Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初始不引用Parent Change；`0..N` Change允许此时保持空列表。取得Child自己的matching ready Environment并调用selected `buildr.task-development/v2` provider建立研发事实后，用`task parent bind-child`绑定planned Contributions，才在Child execution root中创建该独立目标自己的窄Change，通过Task Record update添加引用，并刷新Development planning snapshot与适用Planning Review。不得把Parent Change、Parent worktree、branch、Environment Receipt或Development事实复制或继承为Child authority。
-
-如果Child真实依赖Parent尚未交付的代码、文档或其他authority，先在Parent Plan中表达依赖并完成前置Contribution；可以先保留Child意向，但必须延后Child Environment prepare。前置贡献完成正式Finish且进入最新`dev`等canonical baseline后，再从收敛后的baseline准备Child Environment。不得通过从Parent worktree派生Child checkout、复制Parent Environment Receipt或提前共享未归档Change绕过该顺序。
+创建、准备或拆分父任务时使用 `task-manager` 的轻量父子管理方法，记录整体目标并持续整理当前计划。协调不消费环境、研发、专用贡献或审查采用事实；只有任务实际需要受管执行时才使用对应能力。子任务依据独立目标、范围和真实前置成果创建，不继承父任务环境或规范变化。父任务完成必须取得明确指向它的用户授权，不能从子任务完成或收尾推导。
 
 ### 新正式 Task 创建前收敛逐 repository 权威基线
 
@@ -100,7 +86,7 @@ Child Task必须先以`--parent <parent-task-id>`和自身scope创建，且初�
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实。后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再继续 Candidate、Completion Review、decision 与 handoff。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该受管分支不 ready 时只阻塞受管证据，不撤销其他已获授权的直接工作。
+实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实。后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再按所选研发路径维护 Candidate、Completion Review、decision 与 handoff；收尾不依赖这些事实。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该受管分支不 ready 时只阻塞受管证据，不撤销其他已获授权的直接工作。
 
 ## 4. 输出契约
 

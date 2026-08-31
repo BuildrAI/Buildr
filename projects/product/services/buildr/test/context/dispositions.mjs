@@ -64,7 +64,6 @@ const entries = [
     'system-worktree-lifecycle',
     'system-runtime-recovery',
     'system-app-process',
-    'system-task-finish',
     'system-task-finish-cli',
     'system-fresh-build',
     'system-windows-platform',
@@ -133,7 +132,7 @@ export const VERIFICATION_GOLDEN_CONTEXT_AUDIT = Object.freeze({
     'Finish Application core reuses the Application assembly while every case retains its own SQLite, filesystem, CLI, and failure sandbox.',
   ),
   finishDelivery: goldenJourney(
-    ['integration-task-finish-delivery', 'system-task-finish', 'system-task-finish-cli'],
+    ['integration-task-finish-delivery', 'system-task-finish-cli'],
     'full-lifecycle',
     'none',
     'Delivery carrier construction, target transition, retained activation, public CLI, and cleanup are the primary evidence.',

@@ -49,7 +49,7 @@ test('统一 registry 固化 fast、daily-full兼容core与Candidate required ga
   assert.deepEqual(ids(createVerificationPlan({ profiles: ['candidate'] })), [
     'typecheck', 'unit', 'component', 'integration', 'integration-declarations', 'integration-openspec', 'integration-verification', 'integration-runtime', 'integration-release', 'integration-data-store', 'integration-task-environment', 'integration-self-bootstrap',
     'integration-task-read-models', 'integration-task-coordination', 'integration-project-daily-progress', 'integration-task-execution-records', 'integration-task-development', 'integration-task-finish', 'integration-task-finish-delivery', 'contract',
-    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+    'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit', 'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery', 'system-buildr-web-http', 'system-app-process', 'system-task-finish-cli', 'system-fresh-build',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'runtime-adapter-contract',
     'concurrent-task-acceptance', 'candidate-tarball',
     'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate',
@@ -96,7 +96,7 @@ test('日常Core慢owner形成闭合primary evidence map', () => {
     assert.equal(entry.decision, 'retain-primary');
   }
 
-  const owner = verificationSteps.find((step) => step.id === 'system-task-finish');
+  const owner = verificationSteps.find((step) => step.id === 'system-task-lifecycle');
   const invalid = { ...owner, testing: { ...owner.testing, evidence: { ...owner.testing.evidence, counterexample: '' } } };
   const validation = validateVerificationRegistry([invalid]);
   assert.ok(validation.findings.some((finding) => finding.step === owner.id && finding.code === 'slow_evidence_counterexample_missing'));
@@ -181,7 +181,7 @@ test('Project Testing 分类完整且 Quick 只包含低成本非 System step', 
     assert.equal(owner.testing.environment.isolation, 'unique-temporary-root', id);
     assert.equal(owner.testing.environment.footprints.includes('workspace-lifecycle'), false, id);
   }
-  assert.equal(verificationSteps.find((step) => step.id === 'system-task-finish').testing.primaryEvidenceOwner, 'system-task-finish');
+  assert.equal(verificationSteps.some((step) => step.id === 'system-task-finish'), false);
   assert.equal(verificationSteps.some((step) => step.id.startsWith('browser-')), false);
 });
 
@@ -427,8 +427,8 @@ test('领域拆分后的 affected plan 只选择直接重型 owner', () => {
     },
     {
       path: 'src/task/application/finish/task-finish-run.mjs',
-      required: ['integration-task-finish', 'system-task-finish'],
-      excluded: ['integration-task-finish-delivery', 'system-task-finish-cli'],
+      required: ['integration-task-finish', 'system-task-finish-cli'],
+      excluded: ['integration-task-finish-delivery'],
     },
     {
       path: 'src/infrastructure/contracts/public-json.mjs',
@@ -483,13 +483,13 @@ test('OpenSpec 路径只选择真实 owner', () => {
 
 test('Task Finish affected 路径使用有界 Integration/System slice', () => {
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/task/application/finish/task-finish-application.mjs'] })), [
-    'unit', 'integration-task-finish', 'system-task-finish', 'cli-architecture',
+    'unit', 'integration-task-finish', 'system-task-finish-cli', 'cli-architecture',
   ]);
-  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-run.test.mjs'] })), [
+  assert.deepEqual(ids(createVerificationPlan({ paths: ['test/integration/task-finish-sqlite.test.mjs'] })), [
     'integration-task-finish',
   ]);
   assert.deepEqual(ids(createVerificationPlan({ paths: ['src/task/persistence/task-finish-repository.mjs'] })), [
-    'unit', 'integration-task-finish', 'cli-architecture',
+    'unit', 'integration-task-finish', 'system-task-finish-cli', 'cli-architecture',
   ], 'Finish SQLite repository由直接Integration owner主证，不扩张到通用Task System或Release artifact');
   assert.deepEqual(ids(createVerificationPlan({ paths: ['test/system/task-finish-cli.test.mjs'] })), [
     'system-task-finish-cli',
@@ -531,11 +531,11 @@ test('Task Finish 交付组合不会重新扩散到无关重型 owner', () => {
     'resources/workspace/skills/buildr/task-finish/SKILL.md',
     'resources/workspace/skills/contracts/buildr/task-finish/v1.md',
     'src/task/application/finish/task-finish-application.mjs',
-    'test/integration/task-finish-delivery-remote.test.mjs',
-    'test/system/task-finish-product-journey.test.mjs',
+    'test/integration/task-finish-retained-cleanup.test.mjs',
+    'test/system/task-finish-cli.test.mjs',
   ] });
   assert.deepEqual(ids(plan), [
-    'unit', 'integration-task-finish', 'integration-task-finish-delivery', 'contract', 'system-task-finish',
+    'unit', 'integration-task-finish', 'integration-task-finish-delivery', 'contract', 'system-task-finish-cli',
     'cli-architecture', 'openspec-spec-quality', 'openspec-strict', 'openspec-candidate-audit',
     'capability-cli-integration',
     'runtime-skill-projection', 'cli-compatibility', 'docs-quality',

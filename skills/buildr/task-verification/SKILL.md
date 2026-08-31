@@ -147,7 +147,7 @@ Result只回答Candidate、target、采用的declarations、从authority派生�
 
 ## 5. Development consumer 与清理
 
-Task Development 通过同一 Application inspect Result 的 target/declaration applicability，并对照独立 verification policy 检查 required facts 或 coverage gaps。Result 可以是完整的 `not-passed`；是否继续由 Development 记录用户风险决定。Task Finish 不读取、解释、补跑或记录 Result，只消费 formal Development handoff。
+Task Development 通过同一 Application inspect Result 的 target/declaration applicability，并对照独立 verification policy 检查 required facts 或 coverage gaps。Result 可以是完整的 `not-passed`；是否继续由 Development 记录用户风险决定。独立收尾可参考仍适用的实际验证结果，不要求正式研发交接；本技能不因收尾意图自动执行或登记验证。
 
 current Result 形成且没有其他 consumer 后，使用 evidence 返回的精确 summary 清理 transient run：
 

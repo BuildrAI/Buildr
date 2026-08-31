@@ -25,7 +25,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 ## 依据与现状
 
-随包 [Buildr Core](../../services/buildr/resources/workspace/rules/buildr/core.md) 是最高层产品哲学与通用边界。[当前产品架构](../../openspec/knowledge/architecture/product.md) 已经明确：Buildr 采用宽而薄的治理，不成为另一个 Agent，不把推荐流程变成唯一合法路径。
+随包 [内联核心规则](../../services/buildr/resources/workspace/AGENTS.md) 是最高层产品哲学与通用边界。[当前产品架构](../../openspec/knowledge/architecture/product.md) 已经明确：Buildr 采用宽而薄的治理，不成为另一个智能体（Agent），不把推荐流程变成唯一合法路径。
 
 但当前产品仍有一批历史契约和实现沿用“先满足 Buildr 内部流程，才能继续工作”的模型：
 

@@ -6,6 +6,7 @@ export type TaskId = string;
 export type TaskResult = null | {
   summary: string;
   noChange?: boolean;
+  parentCompletion?: ParentCompletion;
 };
 export type QualifiedServiceInput = string | QualifiedService;
 
@@ -54,9 +55,11 @@ export interface TaskRecord {
   changes: QualifiedChange[];
   parentTaskId: TaskId | null;
   childTaskIds: TaskId[];
+  isParent?: boolean;
   retrospectiveSourceTaskIds: TaskId[];
   status: 'todo' | 'active' | 'completed' | 'abandoned';
   result: TaskResult;
+  resultHistory?: TaskResultHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +70,31 @@ export interface QualifiedService {
 export interface QualifiedChange {
   project: string;
   change: string;
+}
+export interface ParentCompletion {
+  expectedSnapshot: string;
+  acceptance: {
+    summary: string;
+    children: {
+      taskId: TaskId;
+      summary: string;
+    }[];
+  };
+  authorization: {
+    source: string;
+    statement: string;
+  };
+  recordedAt?: string;
+}
+export interface TaskResultHistoryEntry {
+  status: 'completed' | 'abandoned';
+  title: string;
+  intent: string;
+  parentTaskId: TaskId | null;
+  result: TaskResult;
+  recordUpdatedAt: string;
+  correctedAt: string;
+  reason: string;
 }
 export interface TaskRelations {
   parent: TaskRelationSummary | null;
@@ -135,6 +163,14 @@ export interface TaskDetailResponse {
 }
 export interface TaskUpdateRequest {
   expectedRecordDigest: string;
+  status?: 'todo' | 'active' | 'completed' | 'abandoned';
+  reason?: string;
+  summary?: string;
+  noChange?: boolean;
+  parentCompletion?: ParentCompletion;
+  addChanges?: QualifiedChange[];
+  removeChanges?: QualifiedChange[];
+  isParent?: true;
   title?: string;
   intent?: string;
   parentTaskId?: TaskId | null;
@@ -149,6 +185,7 @@ export interface TaskCompleteRequest {
   expectedRecordDigest: string;
   summary: string;
   noChange: boolean;
+  parentCompletion?: ParentCompletion;
 }
 export interface TaskAbandonRequest {
   expectedRecordDigest: string;

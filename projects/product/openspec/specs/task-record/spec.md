@@ -77,38 +77,9 @@ Buildr MUST 通过 `create`、`inspect`、`update`、`activate`、`complete` 和
 - **THEN** 两个入口 MUST调用相同 Application action、validator、reference resolver 与 repository
 - **AND** 任一客户端 MUST NOT维护第二套状态转换、默认值、SQL、schema migration 或 database writer
 
-### Requirement: Task 顶层状态与结果必须保持单向语义
-Task Record status MUST 只有 `todo`、`active`、`completed` 和 `abandoned`。`result` 在 todo 或 active 时 MUST 为 `null`，在终态时 MUST 保存简短 summary；completed result MUST 明确 `noChange: true|false`。状态只允许 `todo -> active|completed(noChange=true)|abandoned` 与 `active -> completed|abandoned`，completed 与 abandoned MUST 不可重新打开或继续修改。
-
-#### Scenario: 激活待办 Task
-- **WHEN** Agent 已完成正式 Task 创建前置分流和 Git 基线收敛，并对 todo Task 执行 `activate`
-- **THEN** Buildr MUST 只把状态更新为 `active` 并保留 Task identity、scope 与复盘来源
-- **AND** Application MUST NOT 自行创建 Environment、Change、Git branch 或专业记录
-
-#### Scenario: 正常完成
-- **WHEN** 调用方对 active Task 执行 `complete --summary <text>` 且没有 `--no-change`
-- **THEN** Buildr MUST 写入 `status: completed` 与 `result.noChange: false`
-- **AND** MUST 保留 Task identity、intent、scope、Change references 和复盘来源
-
-#### Scenario: 无变更完成
-- **WHEN** todo 或 active Task 在产生交付变更前确认无需修改，并执行 `complete --summary <text> --no-change`
-- **THEN** Buildr MUST 写入 `status: completed` 与 `result.noChange: true`
-- **AND** MUST NOT 创建或要求 Environment、Development、Candidate、Review、Verification 或 Finish 记录
-
-#### Scenario: todo 尝试声明有变更完成
-- **WHEN** 调用方对 todo Task 执行未带 `--no-change` 的 complete
-- **THEN** Buildr MUST 返回 blocked 并要求先激活或明确无变更完成
-- **AND** MUST 保持记录不变
-
-#### Scenario: 放弃 Task
-- **WHEN** 调用方对 todo 或 active Task 执行 `abandon --reason <text>`
-- **THEN** Buildr MUST 写入 `status: abandoned` 和对应 summary
-- **AND** abandoned result MUST NOT 包含 `noChange` 或伪造完成事实
-
-#### Scenario: 终态再次 mutation
-- **WHEN** 调用方尝试把 active 改回 todo，或对 completed/abandoned Task 执行 update、activate、complete 或 abandon
-- **THEN** Buildr MUST 返回 blocked
-- **AND** MUST 保持当前记录完整不变
+#### Scenario: 更正已有终态业务事实
+- **WHEN** update收到当前版本、明确原因及已结束任务的字段、范围或关系修订
+- **THEN** MUST允许合法修订，并保存被更正的终态上下文，不因原状态已结束而一律拒绝。
 
 ### Requirement: Change 引用必须在当前记录内可解析且无重复
 Task Record MUST 使用 `{project, change}` 限定 OpenSpec Change，并 MUST 继续作为该逻辑关联的唯一可移植 owner。Application MUST 在新增引用时通过共享任务范围 Change 引用解析器（Task-scoped Change Reference Resolver），以 canonical Workspace、Task ID 与限定引用确认任务环境或 retained Project 中的 active/archived Change 当前可解析；MUST 只在当前记录内去重。Task Record MUST NOT 保存 Environment identity、checkout path、branch 或 provenance，Application MUST NOT 直接读取 Environment Receipt。
@@ -204,8 +175,8 @@ Application MUST 在写入前验证 Parent 存在、处于 active、与 Child �
 
 #### Scenario: 终态 Child 修改关系
 - **WHEN** completed 或 abandoned Child 尝试设置或清除 Parent
-- **THEN** Application MUST 按终态不可修改规则拒绝 mutation
-- **AND** 既有 Parent/Child 关系 MUST 保持可读
+- **THEN** Application MUST在提供当前版本与更正原因且关系合法时允许修改，并保留原状态和结果
+- **AND** 原关系 MUST随更正历史保留，其他Task状态 MUST不受影响
 
 ### Requirement: Parent 与 Child 必须保持独立生命周期
 Parent Task 与 Child Task MUST 各自拥有独立 status、result 与专业 lifecycle facts。任一 Task 的 complete、abandon、Verification、Finish 或 cleanup MUST NOT 自动修改另一方，也 MUST NOT 仅因所有 Child 进入终态就自动完成 Parent。
@@ -303,7 +274,7 @@ Buildr MUST 将 `active` 正式 Task 定义为已经对齐、准备产生持久�
 - **THEN** 该 metadata 写入 MUST NOT 递归创建另一份正式 Task
 
 ### Requirement: Task Record v2 必须只保存最小顶层事实与复盘来源
-`buildr.task-record/v2` MUST 使用 closed schema，只保存 `schemaVersion`、`taskId`、`title`、`intent`、Project/Service scope、限定 Change references、可为空的 Parent、`retrospectiveSourceTaskIds`、`status`、`result`、`createdAt` 和 `updatedAt`；未知字段、不支持 schema 或 identity 不一致 MUST 被拒绝。
+`buildr.task-record/v2` MUST 使用 closed schema，只保存 `schemaVersion`、`taskId`、`title`、`intent`、Project/Service scope、限定 Change references、可为空的 Parent、`retrospectiveSourceTaskIds`、`status`、`result`、可选只读`resultHistory`、`createdAt` 和 `updatedAt`；未知字段、不支持 schema 或 identity 不一致 MUST 被拒绝。
 
 #### Scenario: 创建最小 active Task
 - **WHEN** 调用方提供合法 Task ID、title、intent 与可为空的 scope、Change、Parent 和复盘来源集合，且省略 status
@@ -359,7 +330,7 @@ Task Record Application MUST 在 Workspace SQLite 中以多对多关系维护目
 #### Scenario: 修正来源关系
 - **WHEN** 调用方对 todo/active Task 明确增加或移除 source Task ID
 - **THEN** Application MUST 校验 expected record digest 并原子更新关系
-- **AND** completed/abandoned 目标 MUST 保持不可修改
+- **AND** completed/abandoned 目标 MAY通过既有来源关系操作维护引用，MUST保持其状态和结果；其他终态事实修改遵守显式更正规则
 
 ### Requirement: open 必须是非持久化 Task 查询状态
 Task 查询 MUST 接受 `open` 并将其定义为 `todo + active`；MUST NOT 将 open 保存为 Task 状态、缓存集合或第二个 lifecycle authority。
@@ -447,7 +418,7 @@ Buildr Web MUST 在已登记 Workspace 下提供 Task 核心导航、SQLite 轻�
 - **AND** Environment 页签 MAY 继续只读展示最终 cleanup 或 unavailable 事实，且 MUST NOT 提供重开、修改或绕过 Application validator 的入口
 
 ### Requirement: Buildr Web Task API 必须保持 Workspace 写安全边界
-Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路径提供 Workspace-scoped read/limited-write API，并 MUST 在调用 Task Record Application 前解析已登记 Workspace 的真实 canonical root。Task collection GET MUST 只接受封闭 query schema；list、detail、update、complete、abandon MUST由 Task HTTP Interfaces 自有的 Draft 2020-12 Schema 与稳定 operation catalog 约束，并 MUST将已验证 Interface DTO 显式映射为既有 Application Query/Command。所有保留的 mutation MUST 复用现有同源、session、JSON、body size、字段白名单和未知字段拒绝边界；`target|root|path`、未知/重复 query、缺少 `expectedRecordDigest`、record conflict、terminal 与 domain error 的既有 code、status 和优先级 MUST保持等价。Task collection POST 与 activate route MUST NOT 存在。
+Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路径提供 Workspace-scoped read/limited-write API，并 MUST 在调用 Task Record Application 前解析已登记 Workspace 的真实 canonical root。Task collection GET MUST 只接受封闭 query schema；list、detail、update、complete、abandon MUST由 Task HTTP Interfaces 自有的 Draft 2020-12 Schema 与稳定 operation catalog 约束，并 MUST将已验证 Interface DTO 显式映射为既有 Application Query/Command。所有保留的 mutation MUST 复用现有同源、session、JSON、body size、字段白名单和未知字段拒绝边界；`target|root|path`、未知/重复 query、缺少 `expectedRecordDigest`、record conflict与未改动动作的terminal/domain error MUST保持等价；PATCH新增status、reason、summary、noChange、parentCompletion及Change集合操作，MUST复用应用的状态更正与完成检查。Task collection POST 与 activate route MUST NOT 存在。
 
 #### Scenario: Task API 使用已登记 Workspace
 - **WHEN** 请求中的 `workspaceId` 已登记、可用且与 canonical Workspace identity 一致
@@ -646,9 +617,114 @@ Task query projection MUST 支持关键词、Project、Service、`open|todo|acti
 - **AND** 空结果 MUST 区分 Workspace 没有 Task 与当前筛选无结果
 
 ### Requirement: Task 交付终态不得被后续维护 attention 撤销
-Task Record的`completed/noChange=false` MUST只表达已验证的任务交付结果。retained activation、Environment cleanup、Finish transient cleanup或diagnostics retention的pending/attention MUST由专业read model独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
+Task Record的`completed/noChange=false` MUST表达已经完成的任务结果；是否经过机器验证的交付 MUST由独立证据表达。retained activation、Environment cleanup、Finish transient cleanup或diagnostics retention的pending/attention MUST由专业read model独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
 
 #### Scenario: completed Task仍有cleanup attention
 - **WHEN** Task已完成远端交付而Task Environment尚未安全清理
 - **THEN** Task Record MUST保持completed，Task详情 MUST展示独立cleanup attention
 - **AND** Agent MUST能继续处理清理且用户可以查看结果和进行任务复盘
+
+### Requirement: 完成记录必须与机器交付证明分离
+任务应用（Application）MUST复用当前结果字段保存已完成目标的真实摘要，保持对象身份、版本冲突和终态保护。`completed` MUST不被解释为自动验证了远端交付；缺少旧收尾关联 MUST不把正常完成贬为未证明或引导补造关联。
+
+#### Scenario: 直接完成的任务
+- **WHEN** 任务通过现有 complete 动作结束且没有收尾结果
+- **THEN** 完成投影 MUST为 `completed`，保留 `delivered=false`、无机器验证关联，结果摘要由任务记录展示。
+
+#### Scenario: 已有历史证明
+- **WHEN** 任务有可匹配的历史交付关联
+- **THEN** 系统 MUST继续如实展示历史已证明结果，不重写或删除它。
+
+#### Scenario: 内部读取失败
+- **WHEN** 已完成任务的旧收尾结果不可读
+- **THEN** 系统 MUST保留 completed，提供独立诊断而不否定任务记录。
+
+### Requirement: 完成命令必须传递已观察任务版本
+已有 `task complete` MUST支持 `--expected-record <recordDigest>`，通过既有任务记录应用在同一写事务中校验。独立收尾 MUST传入刚观察的摘要；冲突 MUST保留记录，不覆盖新目标。旧自动收尾专用完成写入口 MUST退役。
+
+#### Scenario: 并发更新
+- **WHEN** 智能体观察记录后其他入口更新任务
+- **THEN** 原摘要完成请求 MUST拒绝写入，重读后才能重新判断。
+
+#### Scenario: 摘要匹配
+- **WHEN** 任务结果真实完成且当前摘要匹配
+- **THEN** 原完成动作 MUST保存结果，不创建交接或旧执行记录。
+
+### Requirement: 任务必须保留显式父任务身份
+任务 MUST 支持显式父任务身份，已有直接子任务或旧父计划也按父任务保护；建立子关系时 MUST 保留父身份，解除最后一个子关系不能消除完成保护。历史任务不补造完成授权。
+
+#### Scenario: 尚无子任务
+- **WHEN** 创建显式父任务但尚未拆分
+- **THEN** MUST 在完成时要求父任务完成依据。
+
+#### Scenario: 移除最后子任务
+- **WHEN** 已成为父任务的记录不再具有直接子任务
+- **THEN** MUST 仍保留父身份。
+
+### Requirement: 父任务完成必须校验并保存授权与验收
+父任务完成 MUST 提供非空总体验收说明、精确覆盖直接子任务的处置、明确用户授权来源及原意、已观察任务版本和父子结果观察身份。检查 MUST 在同一写事务内完成；成功 MUST 保存依据和记录时间，失败 MUST 零状态写入。
+
+#### Scenario: 缺少授权
+- **WHEN** 调用完成父任务且未提供明确授权
+- **THEN** MUST 拒绝完成，保留当前状态。
+
+#### Scenario: 当前结果有授权
+- **WHEN** 整体目标通过验收、子任务均终态、处置完整、版本当前且用户明确授权
+- **THEN** MUST 仅完成指定父任务并保存验收、授权来源与观察身份。
+
+#### Scenario: 子任务仍未结束
+- **WHEN** 任一直系子任务仍为 todo 或 active
+- **THEN** MUST 拒绝父任务完成，不自动放弃或完成子任务。
+
+#### Scenario: 观察后发生变化
+- **WHEN** 父子关系、目标、范围或子任务结果在读取后改变
+- **THEN** MUST 拒绝陈旧完成输入并要求重新读取。
+
+#### Scenario: 遗留及替代
+- **WHEN** 某子任务已 abandoned
+- **THEN** MUST 要求总体验收逐项说明其处置，不把 abandoned 等同交付。
+
+#### Scenario: 普通任务
+- **WHEN** 普通任务没有父身份或子任务
+- **THEN** MUST 保持原有完成输入与独立状态。
+
+### Requirement: Task 顶层状态与结果必须保持一致并允许显式更正
+Task Record status MUST 只有 `todo`、`active`、`completed` 和 `abandoned`。`result` 在 todo 或 active 时 MUST 为 `null`，在终态时 MUST 保存简短 summary；completed result MUST 明确 `noChange: true|false`。既有activate、complete和abandon保持原动作边界；update MUST支持四种状态的显式设置，并校验最终记录。状态变化和终态字段更正 MUST绑定已观察版本；终态更正 MUST提供原因并在同一事务保存只读resultHistory。进入completed MUST复用既有完成条件与父任务授权，不得同时改变验收对象；更正已完成父任务的目标或范围时 MUST显式恢复进行中，不能沿用旧完成依据；身份、时间、历史及专业结果 MUST NOT接受直接覆盖。
+
+#### Scenario: 激活待办 Task
+- **WHEN** Agent 已完成正式 Task 创建前置分流和 Git 基线收敛，并对 todo Task 执行 `activate`
+- **THEN** Buildr MUST 只把状态更新为 `active` 并保留 Task identity、scope 与复盘来源
+- **AND** Application MUST NOT 自行创建 Environment、Change、Git branch 或专业记录
+
+#### Scenario: 正常完成
+- **WHEN** 调用方对 active Task 执行 `complete --summary <text>` 且没有 `--no-change`
+- **THEN** Buildr MUST 写入 `status: completed` 与 `result.noChange: false`
+- **AND** MUST 保留 Task identity、intent、scope、Change references 和复盘来源
+
+#### Scenario: 无变更完成
+- **WHEN** todo 或 active Task 在产生交付变更前确认无需修改，并执行 `complete --summary <text> --no-change`
+- **THEN** Buildr MUST 写入 `status: completed` 与 `result.noChange: true`
+- **AND** MUST NOT 创建或要求 Environment、Development、Candidate、Review、Verification 或 Finish 记录
+
+#### Scenario: todo 尝试声明有变更完成
+- **WHEN** 调用方对 todo Task 执行未带 `--no-change` 的 complete
+- **THEN** Buildr MUST 返回 blocked 并要求先激活或明确无变更完成
+- **AND** MUST 保持记录不变
+
+#### Scenario: 放弃 Task
+- **WHEN** 调用方对 todo 或 active Task 执行 `abandon --reason <text>`
+- **THEN** Buildr MUST 写入 `status: abandoned` 和对应 summary
+- **AND** abandoned result MUST NOT 包含 `noChange` 或伪造完成事实
+
+#### Scenario: 终态再次 mutation
+- **WHEN** 调用方通过update显式更正状态或终态事实，且提供当前版本与适用更正原因
+- **THEN** Buildr MUST在同一事务保存被更正的终态事实并更新当前记录，active/todo的当前result恢复为null
+- **AND** MUST保持身份与其他任务状态，旧专用终态动作仍不得隐式重开
+
+#### Scenario: 更新不能绕过完成授权
+- **WHEN** update请求把父任务设置为completed但没有明确用户授权或验收对象变化
+- **THEN** MUST拒绝写入；update与complete共享同一完成安全边界。
+
+#### Scenario: 陈旧或伪造更正
+- **WHEN** 请求版本陈旧、缺少更正原因，或直接写入历史、系统时间和专业证据
+- **THEN** MUST拒绝写入，保留当前记录和历史。

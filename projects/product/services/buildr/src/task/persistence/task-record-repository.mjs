@@ -23,7 +23,8 @@ function asTaskRecordError(error, operation) {
 
 function resultValue(row) {
   if (['todo', 'active'].includes(row.status)) return null;
-  if (row.status === 'completed') return { summary: row.result_summary, noChange: row.result_no_change === 1 };
+  if (row.status === 'completed') return { summary: row.result_summary, noChange: row.result_no_change === 1,
+    ...(row.parent_completion_json == null ? {} : { parentCompletion: JSON.parse(row.parent_completion_json) }) };
   return { summary: row.result_summary };
 }
 
@@ -37,15 +38,17 @@ function recordValue(row, { projects = [], services = [], changes = [], childTas
     changes,
     parentTaskId: row.parent_task_id ?? null,
     childTaskIds,
+    ...(row.is_parent === 1 || childTaskIds.length ? { isParent: true } : {}),
     retrospectiveSourceTaskIds,
     status: row.status,
     result: resultValue(row),
+    resultHistory: JSON.parse(row.result_history_json || '[]'),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }, { expectedTaskId: row.task_id });
 }
 
-function readRecord(database, taskId) {
+export function readTaskRecordFromDatabase(database, taskId) {
   const row = database.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
   if (!row) return null;
   const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => item.project);
@@ -163,12 +166,13 @@ function taskViews(database, rows, root) {
 }
 
 function insertRecord(database, record) {
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     record.taskId, record.schemaVersion, record.title, record.intent, record.status,
     record.result?.summary ?? null, record.status === 'completed' ? Number(record.result.noChange) : null,
-    record.createdAt, record.updatedAt, record.parentTaskId,
+    record.createdAt, record.updatedAt, record.parentTaskId, Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []),
   );
+  if (record.parentTaskId) database.prepare('UPDATE tasks SET is_parent = 1 WHERE task_id = ?').run(record.parentTaskId);
   insertRelations(database, record);
 }
 
@@ -225,10 +229,12 @@ function replaceRetrospectiveSources(database, record) {
 }
 
 function replaceRecord(database, record) {
-  database.prepare(`UPDATE tasks SET schema_version = ?, title = ?, intent = ?, status = ?, result_summary = ?, result_no_change = ?, created_at = ?, updated_at = ?, parent_task_id = ? WHERE task_id = ?`).run(
+  database.prepare(`UPDATE tasks SET schema_version = ?, title = ?, intent = ?, status = ?, result_summary = ?, result_no_change = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ? WHERE task_id = ?`).run(
     record.schemaVersion, record.title, record.intent, record.status, record.result?.summary ?? null,
-    record.status === 'completed' ? Number(record.result.noChange) : null, record.createdAt, record.updatedAt, record.parentTaskId, record.taskId,
+    record.status === 'completed' ? Number(record.result.noChange) : null, record.createdAt, record.updatedAt, record.parentTaskId,
+    Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []), record.taskId,
   );
+  if (record.parentTaskId) database.prepare('UPDATE tasks SET is_parent = 1 WHERE task_id = ?').run(record.parentTaskId);
   for (const table of ['task_projects', 'task_services', 'task_changes']) database.prepare(`DELETE FROM ${table} WHERE task_id = ?`).run(record.taskId);
   insertRelations(database, record, { includeRetrospectiveSources: false });
   replaceRetrospectiveSources(database, record);
@@ -247,6 +253,38 @@ function withTransaction(database, callback) {
 }
 
 export function registerTaskRecordRepository(runtime) {
+  function parentContext(database, root, taskId, record = null) {
+    const parent = record || readTaskRecordFromDatabase(database, taskId);
+    if (!parent) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404);
+    const rows = database.prepare(`SELECT t.*, parent.title AS parent_title, parent.status AS parent_status,
+      (SELECT COUNT(*) FROM tasks child WHERE child.parent_task_id = t.task_id) AS child_task_count
+      FROM tasks t LEFT JOIN tasks parent ON parent.task_id = t.parent_task_id
+      WHERE t.parent_task_id = ? ORDER BY t.task_id`).all(taskId);
+    const children = taskViews(database, rows, root).map((view) => view.record).sort((a, b) => a.taskId.localeCompare(b.taskId));
+    const legacy = database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(taskId);
+    let legacyPlan = null; let diagnostic = null;
+    if (legacy) {
+      try { legacyPlan = JSON.parse(legacy.record_json).parentPlan ?? null; }
+      catch { diagnostic = { code: 'parent_history_unreadable', message: '旧研发记录不可读；任务关系和结果仍可读取。' }; }
+    }
+    const isParent = parent.isParent === true || children.length > 0 || legacyPlan !== null;
+    return { parent, children, isParent, legacyPlan, diagnostic, recordDigest: digestRecord(parent),
+      snapshotIdentity: digestRecord({ parent, children, legacyPlan }) };
+  }
+
+  function readParentTaskContext(targetRoot, taskId) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    let opened;
+    try {
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+      if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404);
+      // One read snapshot: the confirmation must describe a coherent parent/children set.
+      opened.database.exec('BEGIN');
+      const result = parentContext(opened.database, root, taskId);
+      opened.database.exec('COMMIT');
+      return result;
+    } finally { opened?.database?.close(); }
+  }
   function assertCanonicalTaskWorkspace(targetRoot) {
     try { return runtime.assertCanonicalStructuredWorkspace(targetRoot); }
     catch (error) { throw asTaskRecordError(error, 'Workspace 解析'); }
@@ -284,7 +322,7 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable });
       if (!opened.present) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
-      const record = readRecord(opened.database, taskId);
+      const record = readTaskRecordFromDatabase(opened.database, taskId);
       if (!record) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
       return persistence(root, record);
     } catch (error) {
@@ -351,11 +389,11 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
       return withTransaction(opened.database, () => {
-        if (readRecord(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
+        if (readTaskRecordFromDatabase(opened.database, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId }, `运行 buildr task inspect ${record.taskId} 查看现有记录。`);
         assertParentRelation(opened.database, record.taskId, record.parentTaskId);
         assertRetrospectiveSources(opened.database, record.taskId, record.retrospectiveSourceTaskIds);
         insertRecord(opened.database, record);
-        return persistence(root, readRecord(opened.database, record.taskId));
+        return persistence(root, readTaskRecordFromDatabase(opened.database, record.taskId));
       });
     } catch (error) {
       throw asTaskRecordError(error, '创建');
@@ -370,17 +408,17 @@ export function registerTaskRecordRepository(runtime) {
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
       return withTransaction(opened.database, () => {
-        const currentRecord = readRecord(opened.database, taskId);
+        const currentRecord = readTaskRecordFromDatabase(opened.database, taskId);
         if (!currentRecord) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskId}。`, 404, { taskId }, `运行 buildr task create ${taskId} 创建正式 Task Record。`);
         const current = persistence(root, currentRecord);
-        const nextValue = mutator(current);
+        const nextValue = mutator(current, { parentContext: () => parentContext(opened.database, root, taskId, currentRecord) });
         if (!nextValue) return current;
         const next = normalizeTaskRecord(nextValue, { expectedTaskId: taskId });
         if (JSON.stringify(next.childTaskIds) !== JSON.stringify(currentRecord.childTaskIds)) throw taskRecordError('task_record_children_read_only', 'childTaskIds 是由 Child Task 关系派生的只读投影。', 409, { taskId });
         if (next.parentTaskId !== currentRecord.parentTaskId) assertParentRelation(opened.database, taskId, next.parentTaskId);
         assertRetrospectiveSources(opened.database, taskId, next.retrospectiveSourceTaskIds);
         replaceRecord(opened.database, next);
-        return persistence(root, readRecord(opened.database, taskId));
+        return persistence(root, readTaskRecordFromDatabase(opened.database, taskId));
       });
     } catch (error) {
       throw asTaskRecordError(error, '修改');
@@ -394,6 +432,7 @@ export function registerTaskRecordRepository(runtime) {
   }
 
   Object.assign(runtime, {
+    readParentTaskContext,
     assertCanonicalTaskWorkspace,
     taskRecordDirectory,
     ensureTaskRecordDirectory,

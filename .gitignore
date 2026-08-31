@@ -4,6 +4,10 @@
 .cursor/
 .qoder/
 .agents/
+.workbuddy/
+
+# Local generated outputs
+/outputs/
 
 # macOS Finder metadata
 .DS_Store

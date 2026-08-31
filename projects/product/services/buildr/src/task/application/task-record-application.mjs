@@ -1,4 +1,4 @@
-import { normalizeTaskRecord, taskRecordError } from '../domain/task-record.mjs';
+import { normalizeTaskRecord, normalizeParentCompletion, taskRecordError } from '../domain/task-record.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
 import { TASK_RETROSPECTIVE_PROMPT } from './task-retrospective-application.mjs';
 
@@ -232,7 +232,7 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function createTaskRecord(targetRoot, input) {
-    assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes', 'parentTaskId', 'status', 'retrospectiveSourceTaskIds']), 'Task create');
+    assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes', 'parentTaskId', 'isParent', 'status', 'retrospectiveSourceTaskIds']), 'Task create');
     const taskIdValue = taskId(input.taskId, 'taskId');
     const status = input.status ?? 'active';
     if (!['todo', 'active'].includes(status)) throw taskRecordError('task_record_status_invalid', 'Task create status 只支持 todo 或 active。', 400, { field: 'status', value: status });
@@ -249,6 +249,7 @@ export function registerTaskRecordApplication(runtime) {
       changes: array(input.changes, 'changes').map((item, index) => qualified(item, `changes[${index}]`, 'change')),
       parentTaskId: input.parentTaskId === undefined || input.parentTaskId === null ? null : taskId(input.parentTaskId, 'parentTaskId'),
       childTaskIds: [],
+      ...(input.isParent === undefined ? {} : { isParent: input.isParent }),
       retrospectiveSourceTaskIds: uniqueInput(array(input.retrospectiveSourceTaskIds, 'retrospectiveSourceTaskIds').map((item, index) => taskId(item, `retrospectiveSourceTaskIds[${index}]`)), (item) => item, 'retrospectiveSourceTaskIds'),
       status, result: null, createdAt: timestamp, updatedAt: timestamp,
     }, { expectedTaskId: taskIdValue });
@@ -265,8 +266,13 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function normalizedUpdate(input) {
-    assertFields(input, new Set(['expectedRecordDigest', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'addRetrospectiveSources', 'removeRetrospectiveSources']), 'Task update');
+    assertFields(input, new Set(['expectedRecordDigest', 'status', 'reason', 'summary', 'noChange', 'parentCompletion', 'title', 'intent', 'parentTaskId', 'isParent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'addRetrospectiveSources', 'removeRetrospectiveSources']), 'Task update');
+    if (input.isParent !== undefined && input.isParent !== true) throw taskRecordError('task_record_parent_role_permanent', '父任务身份不能清除。');
+    if (input.status !== undefined && !['todo', 'active', 'completed', 'abandoned'].includes(input.status)) throw taskRecordError('task_record_status_invalid', 'status 只支持 todo、active、completed、abandoned。');
+    for (const field of ['summary', 'noChange', 'parentCompletion']) if (input[field] !== undefined && input.status !== 'completed') throw taskRecordError('task_record_field_forbidden', `${field} 只用于明确设置 completed。`);
     const operations = {
+      ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.isParent === true ? { isParent: true } : {}),
       ...(input.title === undefined ? {} : { title: text(input.title, 'title') }),
       ...(input.intent === undefined ? {} : { intent: text(input.intent, 'intent') }),
       ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId === null ? null : taskId(input.parentTaskId, 'parentTaskId') }),
@@ -279,7 +285,7 @@ export function registerTaskRecordApplication(runtime) {
       addRetrospectiveSources: uniqueInput(array(input.addRetrospectiveSources, 'addRetrospectiveSources').map((item, index) => taskId(item, `addRetrospectiveSources[${index}]`)), (item) => item, 'addRetrospectiveSources'),
       removeRetrospectiveSources: uniqueInput(array(input.removeRetrospectiveSources, 'removeRetrospectiveSources').map((item, index) => taskId(item, `removeRetrospectiveSources[${index}]`)), (item) => item, 'removeRetrospectiveSources'),
     };
-    const hasMutation = operations.title !== undefined || operations.intent !== undefined || operations.parentTaskId !== undefined
+    const hasMutation = operations.status !== undefined || operations.isParent === true || operations.title !== undefined || operations.intent !== undefined || operations.parentTaskId !== undefined
       || ['addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'addRetrospectiveSources', 'removeRetrospectiveSources'].some((field) => operations[field].length);
     if (!hasMutation) throw taskRecordError('task_record_update_empty', 'Task update 至少需要一个明确 mutation。', 400, undefined, '提供 title/intent setter 或 scope/change add/remove 操作。');
     for (const [addField, removeField, key] of [['addProjects', 'removeProjects', (item) => item], ['addServices', 'removeServices', (item) => referenceKey(item, 'service')], ['addChanges', 'removeChanges', (item) => referenceKey(item, 'change')], ['addRetrospectiveSources', 'removeRetrospectiveSources', (item) => item]]) {
@@ -312,14 +318,14 @@ export function registerTaskRecordApplication(runtime) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
       let changed = false;
-      const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
+      const written = runtime.mutateTaskRecordPersistence(root, taskId, (current, context) => {
         validateScopeReferences(root, current.record);
         assertExpectedDigest(current, input.expectedRecordDigest);
         if (!allowedStatuses.includes(current.record.status)) {
           const terminal = ['completed', 'abandoned'].includes(current.record.status);
           throw taskRecordError(terminal ? 'task_record_terminal' : 'task_record_status_transition_invalid', `Task ${taskId} 当前为 ${current.record.status}，不能执行 ${operation}。`, 409, { status: current.record.status, operation }, `运行 buildr task inspect ${taskId} 查看当前状态。`);
         }
-        const candidate = normalizeTaskRecord(build(current.record), { expectedTaskId: taskId });
+        const candidate = normalizeTaskRecord(build(current.record, context), { expectedTaskId: taskId });
         validateScopeReferences(root, candidate);
         assertChangeReferencesAvailable(root, taskId, addedChanges);
         const same = JSON.stringify({ ...candidate, updatedAt: current.record.updatedAt }) === JSON.stringify(current.record);
@@ -336,21 +342,44 @@ export function registerTaskRecordApplication(runtime) {
 
   function updateTaskRecord(targetRoot, taskId, input) {
     const { operations, expectedRecordDigest } = normalizedUpdate(input);
-    const retrospectiveSourceOnly = operations.title === undefined && operations.intent === undefined && operations.parentTaskId === undefined
+    const retrospectiveSourceOnly = operations.status === undefined && operations.isParent === undefined && operations.title === undefined && operations.intent === undefined && operations.parentTaskId === undefined
       && ['addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges'].every((field) => operations[field].length === 0)
       && (operations.addRetrospectiveSources.length > 0 || operations.removeRetrospectiveSources.length > 0);
-    return mutate(targetRoot, taskId, 'update', { expectedRecordDigest }, (current) => ({
-      ...current,
-      ...(operations.title === undefined ? {} : { title: operations.title }),
-      ...(operations.intent === undefined ? {} : { intent: operations.intent }),
-      ...(operations.parentTaskId === undefined ? {} : { parentTaskId: operations.parentTaskId }),
-      scope: {
-        projects: applyCollection(current.scope.projects, operations.addProjects, operations.removeProjects, (item) => item, 'Project scope'),
-        services: applyCollection(current.scope.services, operations.addServices, operations.removeServices, (item) => referenceKey(item, 'service'), 'Service scope'),
-      },
-      changes: applyCollection(current.changes, operations.addChanges, operations.removeChanges, (item) => referenceKey(item, 'change'), 'Change references'),
-      retrospectiveSourceTaskIds: applyCollection(current.retrospectiveSourceTaskIds, operations.addRetrospectiveSources, operations.removeRetrospectiveSources, (item) => item, 'Retrospective sources'),
-    }), operations.addChanges, retrospectiveSourceOnly ? ['todo', 'active', 'completed', 'abandoned'] : ['todo', 'active']);
+    return mutate(targetRoot, taskId, 'update', { expectedRecordDigest }, (current, transaction) => {
+      let next = {
+        ...current,
+        ...(operations.isParent === true ? { isParent: true } : {}),
+        ...(operations.title === undefined ? {} : { title: operations.title }),
+        ...(operations.intent === undefined ? {} : { intent: operations.intent }),
+        ...(operations.parentTaskId === undefined ? {} : { parentTaskId: operations.parentTaskId }),
+        scope: {
+          projects: applyCollection(current.scope.projects, operations.addProjects, operations.removeProjects, (item) => item, 'Project scope'),
+          services: applyCollection(current.scope.services, operations.addServices, operations.removeServices, (item) => referenceKey(item, 'service'), 'Service scope'),
+        },
+        changes: applyCollection(current.changes, operations.addChanges, operations.removeChanges, (item) => referenceKey(item, 'change'), 'Change references'),
+        retrospectiveSourceTaskIds: applyCollection(current.retrospectiveSourceTaskIds, operations.addRetrospectiveSources, operations.removeRetrospectiveSources, (item) => item, 'Retrospective sources'),
+      };
+      const metadataChanged = JSON.stringify(next) !== JSON.stringify(current);
+      const terminal = ['completed', 'abandoned'].includes(current.status);
+      const changesState = operations.status !== undefined && (operations.status !== current.status || input.summary !== undefined || input.noChange !== undefined || input.parentCompletion !== undefined || (operations.status === 'abandoned' && input.reason !== undefined));
+      if (changesState || (terminal && metadataChanged && !retrospectiveSourceOnly)) {
+        if (!expectedRecordDigest) throw taskRecordError('task_record_digest_required', '状态或终态事实更正必须提供已观察任务版本。', 409);
+      }
+      if (changesState) {
+        if (operations.status === 'completed') {
+          if (metadataChanged) throw taskRecordError('task_record_completion_context_changed', '请先更新目标、范围或关系，再根据当前事实确认完成。', 409);
+          next = completedRecord(current, transaction, input);
+        } else if (operations.status === 'abandoned') next = { ...next, status: 'abandoned', result: { summary: text(input.reason, 'reason') } };
+        else next = { ...next, status: operations.status, result: null };
+      }
+      if (JSON.stringify(next) === JSON.stringify(current)) return current;
+      if (current.status === 'completed' && next.status === 'completed' && (next.intent !== current.intent || JSON.stringify(next.scope) !== JSON.stringify(current.scope) || JSON.stringify(next.changes) !== JSON.stringify(current.changes)) && (next.isParent || transaction.parentContext().isParent)) throw taskRecordError('task_record_completion_context_changed', '修改已完成父任务的目标或范围时，请显式更正为进行中，再重新验收。', 409);
+      if (terminal && !retrospectiveSourceOnly) {
+        const reason = text(input.reason, 'reason');
+        next.resultHistory = [...(current.resultHistory || []), { status: current.status, title: current.title, intent: current.intent, parentTaskId: current.parentTaskId, result: current.result, recordUpdatedAt: current.updatedAt, correctedAt: nowIso(), reason }];
+      }
+      return next;
+    }, operations.addChanges, ['todo', 'active', 'completed', 'abandoned']);
   }
 
   function activateTaskRecord(targetRoot, taskId, input = {}) {
@@ -359,47 +388,29 @@ export function registerTaskRecordApplication(runtime) {
   }
 
   function completeTaskRecord(targetRoot, taskId, input) {
-    assertFields(input, new Set(['expectedRecordDigest', 'summary', 'noChange']), 'Task complete');
+    assertFields(input, new Set(['expectedRecordDigest', 'summary', 'noChange', 'parentCompletion']), 'Task complete');
     if (typeof input.noChange !== 'boolean') throw taskRecordError('task_record_no_change_required', 'complete 必须明确提供 noChange boolean。', 400, { field: 'noChange' });
-    const current = runtime.readTaskRecordPersistence(targetRoot, taskId);
-    if (current.record.status === 'todo' && input.noChange !== true) throw taskRecordError('task_record_todo_completion_requires_no_change', 'todo Task 只能以 noChange=true 完成；有交付变更时必须先激活。', 409, { taskId }, `先运行 buildr task activate ${taskId}。`);
-    const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(targetRoot, taskId) : null;
-    if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.plan.identity)) throw taskRecordError('parent_final_acceptance_required', '采用Parent Plan的Task必须先完成显式最终集成验收，不能只凭Child状态完成Parent。', 409, { planIdentity: coordination.plan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
-    const summary = text(input.summary, 'summary');
-    return mutate(targetRoot, taskId, 'complete', input, (current) => ({ ...current, status: 'completed', result: { summary, noChange: input.noChange } }));
+    text(input.summary, 'summary');
+    return mutate(targetRoot, taskId, 'complete', input, (current, transaction) => completedRecord(current, transaction, input));
   }
 
-  function completeTaskRecordFromFinish(targetRoot, taskId) {
-    const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
-    try {
-      const coordination = typeof runtime.inspectParentCoordination === 'function' ? runtime.inspectParentCoordination(root, taskId) : null;
-      if (coordination?.mode === 'parent-plan' && (!coordination.parentAcceptance || coordination.parentAcceptance.planIdentity !== coordination.plan.identity)) throw taskRecordError('parent_final_acceptance_required', 'Formal Finish不能在缺少current Parent最终集成验收时完成Task。', 409, { planIdentity: coordination.plan.identity, prerequisitesSatisfied: coordination.prerequisitesSatisfied }, `运行 buildr task parent inspect ${taskId} 检查Contribution前置条件，再执行task parent accept。`);
-      let changed = false;
-      const written = runtime.mutateTaskRecordPersistence(root, taskId, (current) => {
-        validateScopeReferences(root, current.record);
-        if (current.record.status === 'completed' && current.record.result?.noChange === false) return null;
-        if (current.record.status !== 'active') {
-          throw taskRecordError(
-            'task_record_finish_terminal_conflict',
-            `Task ${taskId} 已是与正常 Finish 不兼容的 ${current.record.status} 终态。`,
-            409,
-            { status: current.record.status, result: current.record.result },
-            `运行 buildr task inspect ${taskId} 核对终态与 Finish 交付事实。`,
-          );
-        }
-        changed = true;
-        return normalizeTaskRecord({
-          ...current.record,
-          status: 'completed',
-          result: { summary: TASK_FINISH_COMPLETION_SUMMARY, noChange: false },
-          updatedAt: nowIso(),
-        }, { expectedTaskId: taskId });
-      });
-      return result('complete', 'completed', written, changed ? [effect('updated', taskId)] : []);
-    } catch (error) {
-      if (error.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record Finish completion 失败：${error.message}`, 500, { taskId }, '保留数据库现场并基于同一 Finish run 重试。');
-    }
+  function completedRecord(current, transaction, input) {
+    const taskId = current.taskId;
+    if (typeof input.noChange !== 'boolean') throw taskRecordError('task_record_no_change_required', '完成必须明确提供 noChange boolean。', 400, { field: 'noChange' });
+    const summary = text(input.summary, 'summary');
+    if (current.status === 'todo' && input.noChange !== true) throw taskRecordError('task_record_todo_completion_requires_no_change', 'todo Task 只能以 noChange=true 完成；有交付变更时必须先激活。', 409, { taskId }, `先运行 buildr task activate ${taskId}。`);
+    const context = transaction.parentContext();
+    let parentCompletion;
+    if (context.isParent) {
+      const evidence = normalizeParentCompletion(input.parentCompletion);
+      if (!input.expectedRecordDigest) throw taskRecordError('task_record_digest_required', '完成父任务必须提供已观察任务版本。', 409);
+      if (evidence.expectedSnapshot !== context.snapshotIdentity) throw taskRecordError('parent_completion_conflict', '父任务或子任务的目标、关系、结果已变化，请重新核对并确认。', 409, { currentSnapshot: context.snapshotIdentity });
+      const openChildren = context.children.filter((child) => ['todo', 'active'].includes(child.status));
+      if (openChildren.length) throw taskRecordError('parent_completion_children_open', '仍有未结束子任务，不能完成父任务。', 409, { taskIds: openChildren.map((child) => child.taskId) });
+      if (JSON.stringify(evidence.acceptance.children.map((child) => child.taskId)) !== JSON.stringify(context.children.map((child) => child.taskId))) throw taskRecordError('parent_completion_children_mismatch', '验收处置必须精确覆盖当前直接子任务。', 409);
+      parentCompletion = { ...evidence, recordedAt: nowIso() };
+    } else if (input.parentCompletion !== undefined) throw taskRecordError('parent_completion_not_parent', '普通任务不能提交父任务完成依据。', 409);
+    return { ...current, ...(context.isParent ? { isParent: true } : {}), status: 'completed', result: { summary, noChange: input.noChange, ...(parentCompletion ? { parentCompletion } : {}) } };
   }
 
   function abandonTaskRecord(targetRoot, taskId, input) {
@@ -408,6 +419,6 @@ export function registerTaskRecordApplication(runtime) {
     return mutate(targetRoot, taskId, 'abandon', input, (current) => ({ ...current, status: 'abandoned', result: { summary } }));
   }
 
-  Object.assign(runtime, { listTaskRecords, queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, createTaskRecord, updateTaskRecord, activateTaskRecord, completeTaskRecord, completeTaskRecordFromFinish, abandonTaskRecord });
+  Object.assign(runtime, { listTaskRecords, queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, createTaskRecord, updateTaskRecord, activateTaskRecord, completeTaskRecord, abandonTaskRecord });
   return runtime;
 }

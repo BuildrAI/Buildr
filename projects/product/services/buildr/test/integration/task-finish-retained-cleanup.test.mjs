@@ -1,3 +1,4 @@
+import { legacyFinishRuntime } from '../helpers/legacy-finish-history.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,10 +16,7 @@ import {
   observeGitTaskContribution,
 } from '../../src/task/application/finish/git-task-contribution.mjs';
 import { gitTaskContributionIdentity } from '../../src/infrastructure/git/git-task-contribution.mjs';
-import {
-  createFinishRun,
-  writeFinishCompletion,
-} from '../../src/task/application/finish/task-finish-run.mjs';
+import { createFinishRun, writeFinishCompletion } from '../helpers/legacy-finish-history.mjs';
 import {
   normalizeTaskFinishRepositorySet,
   taskFinishCarrierSetIdentity,
@@ -64,7 +62,7 @@ function readyRun(t) {
   fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Retained cleanup SQLite Test\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 123e4567-e89b-42d3-a456-426614174003\nname: Retained cleanup SQLite Test\ndescription: Retained cleanup SQLite Test\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   runtime.createTaskRecord(root, { taskId: 'finish-task', title: 'Finish Task', intent: 'SQLite-only retained cleanup test.', projects: [], services: [], changes: [] });
   const run = createFinishRun({
     root,
@@ -235,12 +233,8 @@ async function realZeroDeltaCleanupRun(t) {
   git(root, ['commit', '-m', 'original baseline']);
 
   const composeRuntimeUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'bootstrap', 'runtime.mjs')).href;
-  const executorUrl = pathToFileURL(path.join(targetServiceRoot, 'src', 'task', 'application', 'finish', 'task-finish-product-executor.mjs')).href;
-  const [{ createRuntime: createRetainedRuntime }, { createTaskFinishProductHandlers }] = await Promise.all([
-    import(composeRuntimeUrl),
-    import(executorUrl),
-  ]);
-  const runtime = createRetainedRuntime();
+  const { createRuntime: createRetainedRuntime } = await import(composeRuntimeUrl);
+  const runtime = legacyFinishRuntime(createRetainedRuntime());
   const retainedCli = path.join(targetServiceRoot, 'bin', 'buildr.mjs');
   const currentProductInvocation = runtime.currentProductInvocation;
   runtime.currentProductInvocation = (options = {}) => currentProductInvocation({
@@ -369,7 +363,7 @@ async function realZeroDeltaCleanupRun(t) {
     },
     runtime,
   });
-  return { root, run, runtime, carrierRoot, createTaskFinishProductHandlers };
+  return { root, run, runtime, carrierRoot };
 }
 
 test('retained cleanup bootstrap derives Environment authorization from durable Finish facts', async (t) => {
@@ -465,18 +459,6 @@ test('retained cleanup reconstructs the dedicated Agent-reviewed zero-delta proo
   assert.equal(authorization.candidateRef, run.deliveryCarrier.head);
   assert.equal(run.delivery.containment.code, 'task-finish.agent-reviewed-zero-delta-contained');
   assert.equal(run.delivery.containment.proof, 'agent-reviewed-zero-delta');
-});
-
-test('real retained cleanup subprocess closes zero-delta Environment and carrier ownership', async (t) => {
-  const { root, run, runtime, carrierRoot, createTaskFinishProductHandlers } = await realZeroDeltaCleanupRun(t);
-  const handlers = createTaskFinishProductHandlers({ runtime, root });
-  const result = await handlers.cleanup({ run });
-  assert.equal(result.status, 'passed', JSON.stringify(result, null, 2));
-  const retainedCleanup = result.operations.find((item) => item.id === 'cleanup-retained-environment-manager');
-  assert.equal(retainedCleanup?.status, 0, JSON.stringify(retainedCleanup, null, 2));
-  assert.equal(runtime.inspectTaskEnvironment(root, run.identity.task).status, 'cleaned');
-  assert.equal(fs.existsSync(carrierRoot), false);
-  assert.equal(runtime.inspectTaskRecord(root, run.identity.task).record.status, 'completed');
 });
 
 test('retained cleanup rejects zero-delta proof, carrier, baseline and target drift before cleanup', async (t) => {
@@ -600,7 +582,7 @@ test('retained cleanup 从 repository-set run 重建贡献与 no-contribution �
       disposition: 'applicable', reason: null, taskContribution: serviceContribution,
     },
   ]);
-  const runtime = createRuntime();
+  const runtime = legacyFinishRuntime(createRuntime());
   runtime.createTaskRecord(root, { taskId: task, title: 'Multi retained cleanup', intent: 'Reconstruct repository authorization.', projects: [], services: [], changes: [] });
   const run = createFinishRun({
     root,

@@ -55,7 +55,6 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
     'src/task/infrastructure/git-worktree-provider.mjs',
     'src/task/persistence/task-environment-repository.mjs',
     'src/task/application/task-verification-application.mjs',
-    'src/task/application/finish/task-finish-application.mjs',
     'src/web/application/preview-lifecycle.mjs',
     'package/launchers/manage.mjs',
   ];
@@ -123,7 +122,7 @@ test('Task Delivery 与 Finish 只由 Task module 组装', () => {
     runtimeContributions(runtime, 'cli')
       .filter((route) => route.key.startsWith('task finish ') || route.key === 'task delivery inspect')
       .map((route) => route.key),
-    ['task finish inspect', 'task finish rollover', 'task finish reconcile', 'task finish run', 'task delivery inspect'],
+    ['task finish inspect', 'task delivery inspect'],
   );
   assert.equal(fs.existsSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs')), false);
   const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');

@@ -230,7 +230,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'System runtime recovery',
     'System Buildr Web Runtime',
     'System Buildr Web process and preview',
-    'System Task Finish product journey',
     'System Task Finish CLI journey',
     'System fresh build',
     'Concurrent task workflow acceptance',
@@ -273,7 +272,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 13);
+  assert.equal(systemOwners.length, 12);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -292,21 +291,19 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], 1);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], undefined);
   const freshBuild = verificationSteps.find((step) => step.id === 'system-fresh-build');
   assert.equal(freshBuild.schedulingCostMs, 25_000);
   assert.equal(freshBuild.concurrencyClass, 'workspace-heavy');
   assert.deepEqual(freshBuild.resources, ['workspace-saturating', 'task-lifecycle-heavy']);
   assert.deepEqual(Object.fromEntries([
     'integration-task-finish-delivery',
-    'system-task-finish',
     'integration-task-development',
     'integration-task-execution-records',
     'integration-self-bootstrap',
   ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
     'integration-task-finish-delivery': 75_000,
-    'system-task-finish': 120_000,
-    'integration-task-development': 30_000,
+        'integration-task-development': 30_000,
     'integration-task-execution-records': 50_000,
     'integration-self-bootstrap': 50_000,
   });

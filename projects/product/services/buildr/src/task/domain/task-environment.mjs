@@ -486,3 +486,22 @@ export function taskEnvironmentReadModel(receipt) {
     updatedAt: normalized.updatedAt,
   };
 }
+
+// Caller's reviewed delivery, not an application-generated equivalence proof.
+export function normalizeTaskCleanupDelivery(input = {}, selectors = []) {
+  const invalid = (message) => { throw taskEnvironmentError('task_environment_cleanup_delivery_invalid', message, 400); };
+  const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+  if (!object(input) || Object.keys(input).some((key) => !['expectedSources', 'deliveredRefs'].includes(key))) invalid('清理只接受 expectedSources 与 deliveredRefs。');
+  const sources = input.expectedSources ?? {};
+  const targets = input.deliveredRefs ?? {};
+  if (!object(sources) || !object(targets)) invalid('源提交与交付提交必须按仓库提供。');
+  const keys = Object.keys(sources).sort();
+  const targetKeys = Object.keys(targets).sort();
+  if (!keys.length && !targetKeys.length) return {};
+  if (JSON.stringify(keys) !== JSON.stringify(targetKeys) || JSON.stringify(keys) !== JSON.stringify([...new Set(selectors)].sort())) invalid('源提交与交付提交必须成对覆盖本任务全部受管Git仓库，不接受缺失或未知仓库。');
+  const commit = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+  return Object.fromEntries(keys.map((selector) => {
+    if (typeof sources[selector] !== 'string' || typeof targets[selector] !== 'string' || !commit.test(sources[selector]) || !commit.test(targets[selector])) invalid('必须传入已核对的完整提交编号，不接受分支名或缩写。');
+    return [selector, { sourceHead: sources[selector], targetHead: targets[selector] }];
+  }));
+}

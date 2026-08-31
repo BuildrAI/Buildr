@@ -152,6 +152,8 @@ Task Environment MUST 允许候选 Rule、Skill、contract、CLI 和 runtime 只
 - **AND** MUST 只允许产品已登记 provider 的结构化 identity/handle
 
 ### Requirement: Task Environment 必须统一编排安全 cleanup
+本条旧交接和交付证明要求仅约束显式使用旧收尾执行器的路径。默认直接收尾 MUST采用本次新增的独立任务完成与内容保全要求，不得补造旧运行或交接。
+
 Task Environment MUST独占Task级环境cleanup编排和结果。正常完成或交付后清理时，它 MUST只在上层提供每个工作范围的已验证delivery identity与清理资格后停止资源、调用provider cleanup并解除占用；delivery evidence MAY来自自动Finish或独立reconciliation。对于隔离或外部交付，Environment MUST把bounded Task Contribution proof交给Git provider复核，而不是要求特定Finish run、Delivery Carrier或原Task branch ancestry。明确放弃时，它 MAY在上层已经处置关联Change/保留事实且ownership可证明后清理Task-owned dirty资源。Task Environment MUST NOT执行commit、merge、push、远端删除、语义交付判断或Retrospective，也 MUST NOT改变Task交付终态。
 
 #### Scenario: 正常完成后清理
@@ -552,7 +554,7 @@ Verification admission产生的closed supplemental Plan Request MUST只能通过
 - **AND** Verification MUST不得启动capability execution或把基础Environment ready冒充完整可执行
 
 ### Requirement: Completed no-change Task 必须可受控清理 Environment
-Task Environment MUST仅从current Task Record的`completed + noChange=true`终态派生no-change cleanup资格，并 MUST要求Git provider独立证明checkout干净且当前HEAD精确等于Environment evidence冻结的HEAD。Task Record声明 MUST NOT授权删除Environment建立后的新增提交或dirty内容；普通`completed + noChange=false` Task仍 MUST提供可独立复核的Delivery evidence。
+Task Environment MUST仅从current Task Record的`completed + noChange=true`终态派生no-change cleanup资格，并 MUST要求Git provider独立证明checkout干净且当前HEAD精确等于Environment evidence冻结的HEAD。Task Record声明 MUST NOT授权删除Environment建立后的新增提交或dirty内容；普通`completed + noChange=false` Task MUST由Git提供者重新核验保留分支包含关系，不要求旧交付记录。
 
 #### Scenario: 无代码协调Task完成后清理
 - **WHEN** current Task Record为`completed + noChange=true`，checkout保持干净且HEAD等于Environment provider evidence冻结的HEAD
@@ -569,9 +571,11 @@ Task Environment MUST仅从current Task Record的`completed + noChange=true`终�
 
 #### Scenario: 普通completed Task缺少交付证明
 - **WHEN** current Task Record为`completed + noChange=false`且没有可复核Delivery evidence
-- **THEN** Task Environment MUST拒绝cleanup，不得把completed状态当作integrated proof
+- **THEN** Task Environment MUST交由Git提供者检查真实包含关系，只有身份和内容保全成立才清理；不得把completed状态当作integrated proof
 
 ### Requirement: Environment cleanup 必须消费可重建的已交付贡献证明
+本条旧交接和交付证明要求仅约束显式使用旧收尾执行器的路径。默认直接收尾 MUST采用本次新增的独立任务完成与内容保全要求，不得补造旧运行或交接。
+
 Task Environment MUST允许已完成的自动Finish或Delivery Reconciliation提供从冻结Task Contribution、当前Task checkout、delivery carrier/target Git objects与remote containment重建的cleanup proof。旧run缺少新投影字段时，只要provider能独立复算Task source tree、贡献identity与delivered target等价，MUST允许清理精确Task-owned worktree、branch与provider evidence；任一source drift、未知path、remote不包含或identity不匹配仍 MUST fail closed。
 
 #### Scenario: 隔离carrier交付后的历史Task worktree
@@ -588,3 +592,30 @@ Task Environment MUST只拥有Task checkout、Preparation资源与Environment Re
 #### Scenario: 两类cleanup一成一败
 - **WHEN** Environment cleanup与carrier cleanup中只有一个通过
 - **THEN** Finish maintenance MUST分别投影两个真实结果并保留失败owner的唯一恢复动作，不得合并为单一cleaned或blocked结论
+
+### Requirement: 直接完成任务必须能按当前事实安全清理
+已完成任务的环境清理 MUST不要求旧收尾运行或交接。智能体（Agent）MUST先核验实际交付。已有清理入口 MUST允许成对接收逐仓的完整源提交与交付提交，分别使用 `--expected-source` 与 `--delivered-ref`；不得要求新证明文件或旧收尾运行。Git 提供者 MUST核验范围、工作树和分支所有权、源版本未变、无未保存内容，以及交付提交被保留仓库当前非任务分支持有。采用该输入时 MUST NOT再要求原任务提交是目标祖先或机械证明业务等价；输入是调用者的交付核验，不是应用独立证明。无输入时 MAY继续用既有祖先包含检查。其他资源仍由各自所有者清理。
+
+#### Scenario: 无旧收尾证据
+- **WHEN** 任务 completed 且干净受管工作树提交被保留分支持有
+- **THEN** 清理 MUST独立完成，不读取研发候选或要求远端再交付。
+
+#### Scenario: 内容未被保留
+- **WHEN** 工作树脏、没有已核验交付输入且有独有提交、源或目标版本变化、身份不符或保留仓库仍在任务分支
+- **THEN** 清理 MUST保留对应内容并报告原因，不改写任务终态。
+
+#### Scenario: 多仓库
+- **WHEN** 环境含多个独立仓库
+- **THEN** 删除前 MUST逐仓核验清理范围和删除所需事实，输入必须成对覆盖受管Git仓库；缺失或未知范围不得误删其他工作。
+
+#### Scenario: 已清理重试
+- **WHEN** 环境已经清理成功
+- **THEN** 重试 MUST返回既有 cleaned，不重新删除或交付。
+
+#### Scenario: 不同提交编号的完整交付
+- **WHEN** 智能体已核验成果完整交付并提供对应源和交付提交，工作树干净且当前版本匹配
+- **THEN** MUST删除工作树和本地任务分支，不因原提交不在目标历史中保留资源；MUST不删除远端分支。
+
+#### Scenario: 删除前发生变化
+- **WHEN** 核验后源提交、保留目标或工作树状态改变
+- **THEN** MUST拒绝对应删除，分支删除必须绑定已观察提交，不覆盖或删除新工作。

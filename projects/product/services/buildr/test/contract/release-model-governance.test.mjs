@@ -38,7 +38,7 @@ test('release collection contract freezes one manual selection chain and fails c
   assert.match(contract, /codex\/release-main-<version>-g<generation>/);
 });
 
-test('release integrations bind Candidate, Finish and self-bootstrap without taking their authority', () => {
+test('release integrations retain Candidate authority and do not require legacy Finish', () => {
   const release = capabilityContract('open-source-release-governance');
   const verification = capabilityContract('product-verification-quality');
   const finish = capabilityContract('task-finish-execution');
@@ -50,10 +50,10 @@ test('release integrations bind Candidate, Finish and self-bootstrap without tak
   assert.match(release, /只读.*幂等|只读dev provenance reconciliation/s);
   assert.match(verification, /Release模型适配不得重复建设既有验证能力/);
   assert.match(verification, /同一release source SHA\/tree MUST只有一个matching Candidate generation和一个不可变tarball/);
-  assert.match(finish, /Release correlation必须只消费current Finish交付事实/);
-  assert.match(finish, /Delivery、Activation、Environment Cleanup、Diagnostics与Publication MUST保持正交/);
-  assert.match(closeout, /Self-bootstrap发布关联必须保持Activation单一authority/);
-  assert.match(closeout, /MUST NOT重新publish、移动tag、生成第二tarball/);
+  assert.match(release, /发布关联必须与旧收尾执行证明解耦/);
+  assert.match(finish, /旧收尾只允许读取历史/);
+  assert.match(closeout, /自举激活必须支持无旧收尾运行的直接交付/);
+  assert.match(closeout, /不撤销完成或重新推送业务内容/);
 });
 
 test('source release Skill blocks incomplete migration and does not retain the old dev-main recipe', () => {

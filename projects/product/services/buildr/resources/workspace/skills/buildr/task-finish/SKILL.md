@@ -1,74 +1,46 @@
 ---
 name: task-finish
-description: 用户要求“收尾”“交付”或完成当前工作时使用；先识别当前范围内匹配的未结束 Buildr Task，有 Task 就沿正式生命周期推进到交付和安全清理，没有 Task 就按普通 Git 完成提交、集成、推送、远端确认和可证明的本地善后。
+description: 用户要求收尾、交付或完成本轮工作后的结束动作时使用；由智能体完成实际成果交付、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
 ---
 
 # 收尾与交付
 
-本 Skill 是完整“收尾/交付”意图的统一入口，也是 `buildr.task-finish/v1` 的默认 provider。它选择正确路径并持续推进，不合并正式 Task 与普通 Git 的状态和证据。
+日常表达中的“收尾”和“交付”都可以表示本轮工作完成后的结束动作。智能体（Agent）依据目标、现场与已有授权持续推进，直到成果到达约定位置、已有任务结果登记、可安全处理的资源已处理，并交代遗留事项。部署或发布只有明确属于目标且已获授权时才执行。
 
-“收尾/交付”授权当前范围内安全、常规且目标明确的提交、集成、推送、对账和清理；不授权强制推送、丢弃改动、覆盖他人工作、改写共享历史、替用户解决语义冲突或删除归属不明的资源。
+## 按实际对象组合
 
-## 1. 选择路径
+| 现场 | 应完成的工作 |
+|---|---|
+| 有 Buildr 任务，无 Git | 使用实际业务工具交付成果，登记已有任务结果，处理相关资源 |
+| 无 Buildr 任务，有 Git | 按约定提交、集成、普通推送并回读，不补建任务 |
+| 两者都有 | 完成 Git 交付、已有任务登记和相关资源善后 |
+| 两者都没有 | 完成成果本身需要的交付，不制造记录或提交 |
 
-先确认 Workspace、实际仓库集合、用户目标和改动归属，再读取当前范围的 Task 事实。
+先核对目标、实际仓库或业务对象、成果归属、交付位置和授权。已选择的能力提供者继续适用；有匹配任务时用 `task inspect` 读取当前结果与版本，目标完成后用 `task complete --expected-record <recordDigest>` 保存真实摘要和 `noChange`，明确采用刚读到的记录版本，冲突后重读。记录完成不等于机器证明已交付。没有匹配任务就继续实际工作，不补建记录。
 
-- 唯一匹配的未结束 Task：进入正式 Task 路径。匹配必须同时符合仓库集合、Task scope 和用户目标。
-- 没有匹配 Task：进入普通 Git 路径。已完成、已放弃或无关 Task 按不存在处理，不复用其环境、候选、验证、研发交接或收尾证据。
-- 多个 Task 可能匹配，或仓库、范围、目标无法唯一确定：只询问会改变交付对象的最少问题。
+Git 写入前核对真实仓库、分支、远端、暂存及未跟踪内容和完整推送范围，只纳入本轮成果；按约定提交、集成与普通推送，回读实际目标。非 Git 成果检查实际业务结果，不能只看请求成功。已成立的成果不重复交付，多仓分别保留结果。
 
-两条路径互斥。普通 Git 路径不创建临时 Task，也不产生正式生命周期证据。
+## 按需读取
 
-## 2. 正式 Task 路径
+- 上下文中已读且仍适用的规则、技能和入口直接复用；缺失或更新时补读。任务版本及 Git 状态仍在写入前重验。
+- 已知路径和命令直接使用；未知入口先定位文件或查帮助，再读取相关部分。
+- 大结果先提取状态、诊断和必要证据，缺口再展开。截断输出不作完整 JSON 解析，不因输出不全重跑有副作用的动作。
 
-### 推进到研发交接
+## 具体检查
 
-运行 `buildr task next <task-id> --target <canonical-workspace> --json`，只处理它返回的当前动作。`required` 前置由返回的 selected provider 恢复；`recommended` 由 Agent 结合真实目标选择。
+- **写入前：** 对象、版本、归属、授权和实际影响范围明确。
+- **写入后：** 回读交付位置及业务结果，不能把命令成功等同于目标完成。
+- **删除前：** 核验资源归属、未保存内容和成果仍被保留。有受管资源时交给原所有者，无需重新准备完整环境。Git成果已完整核验交付后，向 `task environment cleanup` 成对传递逐仓 `--expected-source <selector>=<完整源提交>` 与 `--delivered-ref <selector>=<完整交付提交>`，继续删除工作树和本地任务分支；输入来自实际Git结果，不建证明文件，不把completed或目标提交存在当作完整交付。清理拒绝源变化或未保存内容时，只核对其具体差异，不重新交付已成立的成果。
+- **内容检查：** 先判断本次集成是否改变已有验证覆盖的内容或相关运行条件。没有改变就复用结果，不因收尾、重新生成提交或提交编号变化追加测试。冲突处理、其他集成修改或已知问题确实影响行为时，只选择覆盖实际影响的最小充分已有检查，并在推进目标分支前执行且通过，再集成推送。选择依据是风险与运行成本，不是测试条数；没有检查过就如实报告。
 
-调用对应专业 owner 并消费结果，本 Skill 不代写环境、研发、审查、验证、候选或风险决定。owner 成功后重读 `task next`，直到形成 current Development handoff、Task 按无变更路径结束，或出现需要新授权、业务判断或外部变化的真实 blocker。同一状态没有变化时停止，不循环调用或伪造进展。
+上述检查保护具体动作。收尾不通过 `task next`，不建立候选、研发交接、旧收尾运行、统一验证记录或新的证明文件；不因一句收尾重跑全量测试、全局诊断或完整审查。需要修正成果时，在授权内完成修正及其相关检查，再交付受影响部分。
 
-### 完成交付
+## 失败与完成
 
-形成 current handoff 后读取 Finish current facts，核对 Task、仓库集合、任务贡献、目标 branch/remote、run/carrier ownership、remote containment、typed blockers 和 available capabilities。
+已知、必要、已获授权且安全的后续动作继续完成，不把可执行工作留作建议。必要成果未交付不能标记整个目标完成；清理或可选激活失败不撤销已交付成果。登记失败只修复或重试登记，不重推业务内容。
 
-适合普通 fast-forward 时可运行：
+保留未知归属、未交付内容、共享缓存、凭证和业务数据。普通收尾不授权强推、丢弃内容、覆盖他人工作、改写共享历史、删除远端分支或替用户选择语义冲突。只有需要扩大授权或业务取舍时提出最小问题。
 
-`buildr task finish run --task <task-id> --commit-message '<semantic-message>' --target <canonical-workspace> --detail compact --json`
+结束时简述成果与位置、检查及限制、已有任务结果、资源已处理或保留的情况。适用的部署、发布、自举由原专业能力独立承担；普通工作空间不触发 Buildr 自举。
 
-`run` 提供 `preflight → prepare → verify → deliver → cleanup` 可选自动化。提交信息遵循当前 workspace `AGENTS.md` 及更具体规则，Task Finish 不翻译或重写提交信息。
-
-也可通过直接 Git、拉取请求或其他已授权方式交付；完成后必须运行：
-
-`buildr task finish reconcile --task <task-id> --target <canonical-workspace> --detail compact --json`
-
-`reconcile`只接受真实远端事实，不接受调用方声明成功或自制证明。多仓库逐项保留结果，部分成功不伪装成原子事务，也不重复交付已确认仓库。
-
-出现 target race、交付适配（Delivery Adaptation）、stale run 或其他恢复状态时，只使用 current facts 返回的同一 run、token 和封闭能力。Agent 审查的适配必须覆盖冻结任务贡献的每个路径；零差异适配仍使用产品要求的显式确认。不得手写 token、claimed success、任意删除路径或语义等价证明。
-
-只有原 Task source、Task Context、planning、policy 或其他候选输入真实变化，才返回 `task-development`。远端前进、carrier 冲突、路径不重叠或 Buildr 内部记录缺失本身不使 handoff stale。
-
-### 完成善后
-
-四个独立结果是交付、激活、环境清理和诊断。只有交付决定任务贡献是否进入目标远端；其他结果失败形成 attention，不撤销已确认交付。
-
-交付成立后执行适用激活，通过 `buildr task environment cleanup <task-id> --target <canonical-workspace> --json` 清理环境，并保留诊断和未解决 attention。Buildr 自举 Workspace 只走运行时追加的唯一自举流程；Task 顶层登记失败时重跑 `reconcile`，不重新提交或推送业务代码。
-
-完成标准：每个仓库的交付已确认，Task 已进入正确终态，激活、环境清理和诊断已完成或留下准确 attention，并且没有仍可安全执行的 current action。
-
-## 3. 普通 Git 路径
-
-确认每个实际仓库的 branch/HEAD、dirty/index、精确 owned scope、目标 ref、remote 和 push destination。事实唯一后，由 Agent 选择符合仓库协作方式的顺序，并把每个已支持的单次操作交给 `buildr.git-operations/v1` selected provider。
-
-通常依次观察和刷新目标 ref，必要时精确暂存并提交，按仓库约定完成 rebase、merge、拉取请求或其他已授权集成，普通 push 后回读 destination ref 和完整 publication range，最后清理只属于本次交付且能证明安全删除的临时 worktree、local branch 或其他资源。
-
-`fetch`、`commit`、`rebase` 和 `push` 保持独立结果。某一步失败时保留已发生 effects，不把组合动作描述为原子事务；内容已在目标远端时不制造空 commit 或重复 push。
-
-本路径只报告 Git Operation Result、远端回读和本地善后。无法证明资源归属或删除安全时保留现场并报告 attention，不声称 Environment Cleanup，也不创建 Task、Development、Review、Verification、Candidate、Finish Result 或 Task terminal status。
-
-完成标准：当前 owned scope 已提交，按目标协作方式完成集成，远端 ref 已回读确认，可安全清理的本次资源已经清理，并且没有未说明的遗留状态。
-
-## 4. 停止与报告
-
-Task、仓库、branch、remote、目标 ref、owned scope 或资源归属不明确，remote 不能证明包含交付内容，current owner 需要新的用户决定，或继续需要破坏性动作时停止并保留现场。
-
-报告先按仓库说明交付或 Git 结果，再说明 Task 终态、激活、环境清理、诊断、本地善后和 attention。只有仍未交付、身份不明或涉及破坏性风险时请求用户决定。
+父任务完成遵守 `task-manager` 的明确授权与总体验收边界。子任务收尾不授权完成父任务；整体目标已核对但尚无明确授权时，报告验收结果并保持父任务状态，不补造授权。

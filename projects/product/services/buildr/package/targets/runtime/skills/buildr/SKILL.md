@@ -47,7 +47,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与handoff | `buildr.task-development/v2` selected provider |
-| 用户要求“收尾”“交付”或完成当前工作 | `task-finish` Skill先识别当前范围内匹配的未结束Task；有Task就沿`task next`推进并通过`buildr.task-finish/v1`完成正式交付，没有Task就通过`buildr.git-operations/v1`完成普通Git收尾，两条路径不混用生命周期证据 |
+| 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
 | 沉淀每次会话必须遵守的约束 | 规则（Rules） |
@@ -57,14 +57,14 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为 Buildr 增加新的 Agent runtime adapter | runtime trait intake + OpenSpec change |
 | 采用内部流程、调整工作方式、修改或替换 Skill 行为 | `capability-adaptation` Skill；先识别跨 Skill 稳定依赖边界，再开发、验证和激活 |
 产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。只有某类 Buildr 管理意图命中本 Skill 后，才把对应 capability 作为本次动作的 required dependency；单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关 Buildr 管理动作。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；替换顶层入口时必须由能力适配同时验证 selected provider 的 runtime 可发现性、description 覆盖和触发歧义。Formal Task和Task Environment不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用明确时，Agent可以直接工作，但不得冒充Environment或正式Result。需要Buildr-managed checkout、Preparation、runtime projection、Task-owned资源、正式环境证据或自动Finish时，使用 `buildr task environment prepare <task-id> --agent <agent> --target <canonical-workspace> --json`；`prepare` 确定性完成实际执行位置、Runtime、Workspace CLI、依赖、runtime projection 和真实 probes，重复调用承担恢复。只有结果为 `ready` 才在返回的执行根中继续受管动作。Git worktree 只是可组合 provider；其 evidence 不代表环境 ready。任一 provider 返回 `treeChanged: true` 后，按本 Skill 的 workspace transition 约束，在对应已初始化 Buildr workspace 中针对当前 Agent 和 workspace root 运行 doctor。doctor 指出 workspace sync 是合适修复动作时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后由 Agent 执行 sync 并验证。当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含 Git 更新与 Buildr sync 授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态时停止，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。
-完整“收尾/交付”意图由`task-finish`统一解释，产品入口不复制它的Task识别、Git顺序、恢复或清理手册。`task-finish`只把当前分支需要的能力提升为required：匹配未结束Task时渐进消费`task next`并在current handoff后使用`buildr.task-finish/v1`；没有匹配Task时使用`buildr.git-operations/v1`完成直接Git收尾。普通Git路径只报告独立Git Operation Result，不创建Task生命周期证据；正式路径的外部交付必须由`task finish reconcile`从真实远端登记。两条路径都不得自动force push、丢弃改动、改写共享历史或清理ownership不明的资源。
+完整收尾意图由 `task-finish` 提供方法和边界。本入口不复制流程，不要求 `task next`、旧收尾运行或对账；应用只保障具体动作的身份、版本和副作用安全。
 ## 资产维护
 
 ### Workspace / Organization Root
 
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
 - workspace 必须完成 `buildr init`；首次使用且当前 Agent 已确认时，运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、runtime 和最终 doctor。不带 `--agent` 的 init 只初始化源资产。`init --agent` 最终 doctor 通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明 Workspace → Project → Service；没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
-- root `AGENTS.md` 是规则入口，必须包含 Buildr required block 并引用 `rules/buildr/core.md`；`projects/manifest.yml` 是 Project registry。
+- 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过 `rules/manifest.yml` 按需发现，`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ### Project
 
@@ -88,7 +88,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 ### Builtins
 
-- Buildr 内置能力包括 required core Rule、optional Skills 和内置 Command 声明。
+- 核心规则位于根 `AGENTS.md` 受管区块，不是独立内置项；专业规则（Rule）、技能（Skill）和命令（Command）仍由各自清单管理。
 - 只更新 Buildr CLI 自身：先用 `buildr update check --json` 同时读取 GA 正式版与 RC 候选版，用户明确选择后运行 `buildr update --track stable|candidate`。不自动切轨、不自动降级；命令不读取 workspace。
 - 安装或修复当前 CLI 携带的产品入口 Buildr Skill：`buildr skill install <agent> --target <dir>`；“更新 Buildr”或“同步 Buildr”默认在 update 后使用此入口，不扩大为 workspace sync。
 - 同步 workspace 产品源能力并准备当前 Agent runtime：`buildr sync <agent> --target <dir>`。

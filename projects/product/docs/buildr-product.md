@@ -28,7 +28,7 @@ Buildr 保存组织长期复用的工作资产，并通过可诊断、可按 Age
 
 Buildr 不是另一个 Agent，也不与 Agent 抢活。Buildr 负责治理和投射工作资产、提供确定性工具与诊断；Agent 负责理解目标、发现相关资产、形成任务上下文并推进任务；人负责目标、业务判断与必要授权。
 
-Buildr 的核心产品哲学是：**Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。** 产品能力和 Workspace 工作资产可以提供事实、指导、安全默认值与恢复建议，但只有放行会造成越权、错误对象写入、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报时才设置硬门禁。Buildr 自身的内部登记、推荐流程或自动化信心不足，不应成为 Agent 推进真实专业工作的通用阻塞点；完整原则以随包 [Buildr Core](../services/buildr/resources/workspace/rules/buildr/core.md) 为准。
+Buildr 的核心产品哲学是：**Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。** 产品能力和 Workspace 工作资产可以提供事实、指导、安全默认值与恢复建议，但只有放行会造成越权、错误对象写入、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报时才设置硬门禁。Buildr 自身的内部登记、推荐流程或自动化信心不足，不应成为 Agent 推进真实专业工作的通用阻塞点；完整原则以随包 [内联核心规则](../services/buildr/resources/workspace/AGENTS.md) 为准。
 
 ## 要解决的问题
 
@@ -42,25 +42,29 @@ Buildr 的核心产品哲学是：**Buildr 应该约束 Agent 不要做错事，
 
 Buildr 把个体员工积累的工作事实和工作方法转化为组织可以共同维护的工作资产，再按 supported Agent runtime 的能力投射必要入口。不同成员和 Agent 可以从同一组织基础开始工作，让个人探索成为可共享、可传承、可持续演进的组织价值。
 
-## 工作信息、工作资产、任务上下文与 Context Window
+## 工作信息、工作资产、上下文与上下文窗口（Context Window）
 
-Buildr 管理的是工作信息空间中适合长期复用的组织工作资产，不是全部工作信息，也不是 Context Window：
+Buildr 管理的是工作信息空间中适合长期复用的组织工作资产，并通过范围、关系、来源和发现入口组织上下文（Context）；它不管理全部工作信息，也不直接填充上下文窗口：
 
 | 概念 | 含义 | 责任主体 |
 |---|---|---|
-| 工作信息空间 | 所有潜在可用于工作的来源，包括 Workspace 文件、数据库、API、网页、聊天、机器状态、用户输入和工具结果 | 多种来源；不等于 Buildr 管理范围 |
-| Workspace | 工作范围、治理根和发现入口，可同时包含受管资产、普通代码、临时文件、依赖和本机配置 | Buildr 维护范围 identity 和受管入口；位于其中不等于被治理 |
-| 工作资产与共享工作环境 | 被明确组织、登记或纳入治理的长期工作事实与工作方法，以及它们经组织和 runtime 投射后形成的整体环境 | Buildr 组织、治理、投射和诊断 |
-| 任务上下文 | Agent 为具体 Task 发现、检索、判断、选择、组织和压缩后实际使用的语义工作集 | Agent 根据任务语义形成；可使用 Buildr 资产和外部授权信息 |
-| Context Window | 某一次模型调用实际装入的有限临时输入，是 Task Context 在该时刻的有限投影 | Agent/runtime 按当前调用选择和加载 |
+| 工作信息空间 | 所有潜在可用于工作的来源，包括工作空间（Workspace）文件、数据库、应用接口（API）、网页、聊天、机器状态、用户输入和工具结果 | 多种来源；不等于 Buildr 管理范围 |
+| 工作空间（Workspace） | 工作范围、治理根和发现入口，可同时包含受管资产、普通代码、临时文件、依赖和本机配置 | Buildr 维护范围身份标识（Identity）和受管入口；位于其中不等于被治理 |
+| 工作资产与共享工作环境 | 被明确组织、登记或纳入治理的长期工作事实与工作方法，以及它们经智能体运行时（Agent Runtime）投射后形成的整体环境 | Buildr 组织、治理、投射和诊断 |
+| 上下文 | 与某个对象、范围或目标相关的信息的泛称；工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）表示对应领域内全部已知、可访问或可能相关的信息 | Buildr 组织受管资产、范围、关系和发现入口；其他来源继续由其原系统负责 |
+| 任务上下文 | 智能体（Agent）为具体任务（Task）发现、检索、判断、选择、组织和压缩后形成的语义工作集 | 智能体根据任务语义形成；可使用 Buildr 资产和外部授权信息 |
+| 请求上下文 | 智能体针对某一次模型请求，从任务上下文中选择并实际提交给模型的内容 | 智能体按当前步骤组织；可以很小，也可以跨多个项目（Project）和服务（Service） |
+| 上下文窗口 | 模型单次请求能够承载的有限输入容量和技术容器 | 智能体及其运行时把本次请求上下文装入该窗口 |
 
-Buildr 不替 Agent 填充 Context Window，也不保证把所有信息都加载进去。它提供可发现、可选择、可使用的组织化资产，让 Agent 有基础形成 Task Context；Agent 也可以通过文件检索、数据库/API 查询、网页、语义检索、MCP 或其他授权来源补充任务信息。具体检索工具不是 Buildr Context 模型的一部分。runtime adapter 只负责发现和投射标准资产，不替 Agent 判断哪些内容与当前任务相关。
+上下文是一个广义概念。工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）描述对应领域的信息空间，不表示这些信息已经全部进入模型请求，也不表示其中全部内容都由 Buildr 治理。项目/服务清单（Project/Service Manifest）等结构化资产可以说明定位、关系和来源，帮助智能体从正确范围检索信息，提高请求上下文的质量。
 
-Context 表示某个工作范围中可供 Agent 发现、选择和使用的候选信息；Workspace Context、Project Context 和 Service Context 是范围限定，不等于已经加载的模型输入。Task Context 是语义工作集，Context Window 是单次调用的技术容器；一个长期 Task 可以跨越多个 Context Windows。
+Buildr 负责组织上下文来源和发现入口，不替智能体判断全部相关性，也不替智能体填充上下文窗口。智能体可以通过文件检索、数据库、应用接口（API）、网页、语义检索、模型上下文协议（Model Context Protocol，MCP）或其他授权来源补充信息，形成任务上下文；再针对当前步骤选择本次请求上下文。具体检索工具不是 Buildr 上下文模型的一部分，智能体运行时适配器（Agent Runtime Adapter）只负责发现和投射标准资产。
+
+简单语法修复可能只需要目标文件和错误信息；涉及三个服务的功能开发，则可能需要同时检索三个服务的定位、关系、规范、代码和验证信息，并把当前步骤最相关的部分放入请求上下文。上下文越完整不必然越好，关键是范围正确、来源可信、关系清楚，并与当前请求相关。
 
 “工作事实”与“工作方法”是对工作资产的公开解释，不是新的存储分类，也不封闭 Buildr 可以治理的资产类型。
 
-组织工作资产是开放概念，不由当前资产类型穷举。未来可以探索 MCP、hooks 或其他形态，但它们只有在独立 change 明确模型、生命周期、安全边界和 runtime 行为后，才是 Buildr 已支持的受管资产；Roadmap 设想不能替代当前事实。
+组织工作资产是开放概念，不由当前资产类型穷举。未来可以探索模型上下文协议（Model Context Protocol，MCP）、钩子（Hook）或其他形态，但它们只有在独立变更（Change）明确模型、生命周期、安全边界和运行时行为后，才是 Buildr 已支持的受管资产；路线图（Roadmap）设想不能替代当前事实。
 
 ## 核心模型
 
@@ -190,7 +194,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - `task-finish` 是完整“收尾/交付”意图的统一 Skill 入口，并继续作为 `buildr.task-finish/v1` 的默认 provider。它先按当前repository set、Task scope和用户目标识别匹配的未结束Task：存在Task时渐进消费`task next`，到达current handoff后选择自动Finish或外部Git/PR交付；没有匹配Task时选择直接Git收尾，只产生独立Git Operation Result。自动`task finish run`继续要求ready Environment并执行`preflight → prepare → verify → deliver → cleanup`；外部正式交付由`task finish reconcile`从current immutable handoff与真实remote逐repository重建Delivery。普通Git路径不创建Task生命周期证据；正式路径的Activation、Environment Cleanup与Diagnostics独立投影，attention或not-applicable不撤销Delivery。Skill不代写Change、Review、Verification、Candidate、Development或Environment专业事实。
   - retained Product phase provider自身若在无交付副作用的preflight/prepare抛出异常并阻塞修复Task，另行明确授权的existing-run `--bootstrap-recovery`仍通过完整retained registry与Application，并只在Execution Record成功open后，从current ready Environment及current Development handoff共同冻结的clean committed checkout建立唯一run-owned capsule。candidate模块只获得执行phase所需的封闭runtime façade；Application、SQLite repository、Execution Record与五阶段仍由retained controller写入。该能力禁止candidate CLI、任意模块路径与临时npm tarball旁路，同一capsule随same-run resume复用；cleanup phase先持久化passed，再由retained finalizer原子移走并撤销可执行source authority，最后执行terminal SQLite finalize。terminal写入失败时只用retained shell恢复同一run，不重新导入provider；隔离残留回收失败只记attention而不重放已成功阶段。入口、registry、Application、repository或migration层损坏不在恢复范围。
 - `git-operations` 是唯一 Skill-only `buildr.git-operations/v1` provider。直接用户或上游 consumer 必须先明确 repository、operation、相关 ref、scope、授权和顺序；provider 只提供精确 staging、commit/push 分离、完整 push range、共享 commit 冻结、前后 identity、最小 Result 和部分失败 fail-closed 语义。它不新增 Application、CLI、Receipt、状态机或 transaction，也不并入独立的 `buildr.git-worktree-provider/v1`。
-- `task-retrospective` 是 `buildr.task-retrospective/v1` 默认 provider。用户明确要求时，Agent 对 `completed|abandoned` Task 的执行时间、token消耗、重复尝试、人机协作和Buildr workflow/harness成本生成一份自由Markdown报告；精确数据不可见时明确数据缺口。Application在Workspace SQLite按Task ID维护唯一current row：Result v1 保持不变，另存 `pending|handled|no-action` 处置状态、说明和时间。重复复盘完整替换报告并回到 `pending`；Agent 和 Buildr Web 均通过 Application 的 current digest 保护处置写入。内部 provider 可按处置状态或显式 Task 集合执行有上限的批量只读检查，默认只返回 pending 摘要，正文需显式请求；它不形成跨任务分析聚合。`handled` 只表示已形成处置判断，需落地的改进另建正式 Task。该能力不采集隐藏推理或完整轨迹，不提供公共CLI、history或评分，也不进入Task terminal、Development、Finish或cleanup门禁。已退役的`.buildr/asset-review/`内容保持原样且不再读取、迁移或删除。
+- `task-retrospective` 是 `buildr.task-retrospective/v1` 默认 provider。用户明确要求时，Agent 对 `completed|abandoned` Task 的执行时间、词元消耗（Token Consumption）、重复尝试、人机协作和Buildr workflow/harness成本生成一份自由Markdown报告；精确数据不可见时明确数据缺口。Application在Workspace SQLite按Task ID维护唯一current row：Result v1 保持不变，另存 `pending|handled|no-action` 处置状态、说明和时间。重复复盘完整替换报告并回到 `pending`；Agent 和 Buildr Web 均通过 Application 的 current digest 保护处置写入。内部 provider 可按处置状态或显式 Task 集合执行有上限的批量只读检查，默认只返回 pending 摘要，正文需显式请求；它不形成跨任务分析聚合。`handled` 只表示已形成处置判断，需落地的改进另建正式 Task。该能力不采集隐藏推理或完整轨迹，不提供公共CLI、history或评分，也不进入Task terminal、Development、Finish或cleanup门禁。已退役的`.buildr/asset-review/`内容保持原样且不再读取、迁移或删除。
 - “收尾”只授权可安全确定的常规动作，不授权 force push、merge commit、远端任务分支删除、丢弃改动、共享分支历史改写或语义冲突决策。
 - 实际自举 workspace 的 sync 是独立状态变更，不作为相同 tree 的第二轮产品验证；若Finish已完成，sync后显式运行指定Agent Doctor；若Finish只被retained Doctor阻塞，则sync后用原run/token恢复，由Product重新运行指定Agent Doctor并在通过后cleanup。`buildr update` 只更新 CLI 来源。
 - 其他 Agent 在存在 adapter 前，不使用 supported fallback adapter；Agent 应读取标准资产或 bootstrap guide 理解边界，并联系 Buildr 作者反馈 adapter 需求。
@@ -221,6 +225,7 @@ Buildr 的数据完整性保护是不可卸载的 CLI core：资产 identity、s
 
 后续产品方向包括：
 
+- 以[产研工作平台（Product and Engineering Work Platform）产品与技术架构收敛纲领](roadmap/product-engineering-work-platform.md)作为下一阶段收敛入口：以智能体和人为核心用户，维护产研工作资产，让任务管理从可用变得好用，并把智能体执行时长、调用次数和词元消耗（Token Consumption）作为一等产品指标；现有能力按通用核心、日常能力、可选受控能力、产品专用能力和删除候选逐步收敛。
 - 以[Agent 时代的工作基础设施](roadmap/agent-work-infrastructure.md)明确长期产品边界：Agent 负责理解任务、选择 Workspace 与资产、形成上下文、自行编排和专业执行；Buildr Application Core 提供 Enterprise、多 Workspace、外部数据源、长期工作资产与可接续共享状态。飞书、Agent 原生界面和 Buildr 界面具有不同的用户价值，彼此的接入与会话承载方式仍待验证；ACP 是未来可研究的 Agent 接入协议，不是上下文编排器。
 - npm-only发布能力：同一Application Payload只生成一次npm tarball，所有Host Node/Launcher smoke、publish和Registry readback复用同一bytes；GitHub Release只保存版本说明且拒绝binary Assets。真实tag、publish与公开readback仍由独立release授权触发。
 - 更多 Agent runtime adapters；每个新增 runtime 仍需独立 change 明确 identity、兼容版本、投射 targets 和 contract tests，不能借用现有 adapter fallback。

@@ -366,6 +366,9 @@ export function registerDomainsRules(runtime) {
     const rulesRoot = path.join(targetRoot, 'rules');
     for (const file of listMarkdownFiles(rulesRoot)) {
       const relative = toPosixRelative(targetRoot, file);
+      // Retired Core is diagnosed by the receipt-aware retirement reader, not
+      // as an installable builtin that sync should restore.
+      if (relative === 'rules/buildr/core.md') continue;
       if (!registeredPaths.has(relative)) {
         addDoctorFinding(result, 'warning', relative.startsWith('rules/buildr/') ? 'rules.buildr_unregistered' : 'rules.unregistered', `规则文件未登记到 rules/manifest.yml：${relative}`, {
           path: relative,

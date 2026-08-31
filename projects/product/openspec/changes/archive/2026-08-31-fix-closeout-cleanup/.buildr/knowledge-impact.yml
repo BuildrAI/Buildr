@@ -1,0 +1,16 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-closeout-cleanup
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 说明已核验交付的清理边界
+    status: aligned
+    sourceIdentities: [proposal.md, design.md]
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: 新清理输入和必要补测顺序
+    status: updated
+    sourceIdentities: [specs/task-environments/spec.md, specs/agent-task-workflows/spec.md]
+unresolvedItems: []

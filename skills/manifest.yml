@@ -81,7 +81,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求“收尾”“交付”或完成当前工作时使用；先识别当前范围内匹配的未结束 Buildr Task，有 Task 就沿正式生命周期推进到交付和安全清理，没有 Task 就按普通 Git 完成提交、集成、推送、远端确认和可证明的本地善后。
+    description: 用户要求收尾、交付或完成本轮工作后的结束动作时使用；由智能体完成实际成果交付、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
     enabled: true
     required: false
     state: installed
@@ -98,12 +98,12 @@ skills:
       - capability: buildr.task-finish
         version: 1
     requires:
-      - capability: buildr.task-development
+      - capability: buildr.task-record
         version: 2
-        mode: required
+        mode: optional
       - capability: buildr.task-environment
         version: 1
-        mode: required
+        mode: optional
       - capability: buildr.git-operations
         version: 1
         mode: optional
@@ -355,7 +355,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；只管理Task Record，用户同时要求准备或拆分Parent时在active记录成功后自动交接task-development，不自行执行Environment或专业阶段动作。
+    description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
     enabled: true
     required: false
     state: installed
@@ -436,7 +436,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-development
     source: buildr
     path: buildr/task-development
-    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
+    description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
     enabled: true
     required: false
     state: installed
@@ -531,6 +531,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: ui-prototype
+  - id: agent-first-design
+    assetIdentity: buildr:skill:agent-first-design
+    sourceIdentity: package:skills/buildr/agent-first-design
+    source: buildr
+    path: buildr/agent-first-design
+    description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: agent-first-design
 contracts:
   - id: buildr.terminology-governance
     version: 1

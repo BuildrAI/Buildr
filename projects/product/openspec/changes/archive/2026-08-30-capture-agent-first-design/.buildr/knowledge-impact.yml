@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: capture-agent-first-design
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 增加按需设计方法入口，不复制原则正文
+    status: updated
+    sourceIdentities: []
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: 链接真实实践及测量口径
+    status: updated
+    sourceIdentities: []
+  - type: brief
+    target: openspec/changes/capture-agent-first-design/brief.md
+    reason: 说明本次方法沉淀范围与边界
+    status: updated
+    sourceIdentities: []
+unresolvedItems: []

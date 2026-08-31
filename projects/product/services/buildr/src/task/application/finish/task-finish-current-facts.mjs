@@ -94,32 +94,6 @@ function occupancyFacts(value) {
   };
 }
 
-function availableCapabilities({ readiness, result, blockers, repositories, recovery }) {
-  const handoffCurrent = Boolean(readiness?.handoff || result?.identity?.handoffIdentity);
-  const carrierOwned = repositories.some((repository) => repository.carrier?.owned);
-  const runStatus = result?.status || null;
-  const entryReady = readiness ? readiness.ready === true : handoffCurrent;
-  const staleCurrentRun = Boolean(recovery && (recovery.mismatches || []).length > 0);
-  const capabilities = [
-    capability('finish-run', 'task-finish', entryReady && !staleCurrentRun ? 'available' : 'blocked', staleCurrentRun
-      ? [{ code: 'task_finish.current_run_identity_conflict', summary: 'A different-identity current Finish run must be resolved before starting another run.' }]
-      : flattenedGaps(readiness)),
-    capability('finish-reconcile', 'task-finish', handoffCurrent ? 'available' : 'blocked', handoffCurrent ? [] : blockers),
-    capability('git-operations', 'git-operations', handoffCurrent ? 'available' : 'blocked', handoffCurrent ? [] : blockers),
-    capability('task-development', 'task-development', 'available'),
-    capability('cleanup-carrier', 'task-finish', carrierOwned ? 'conditional' : 'not-applicable', carrierOwned ? [{ code: 'task_finish.carrier_cleanup_qualification_required', summary: 'Product必须重新证明run/carrier ownership、path containment与无未交付内容。' }] : []),
-    capability('retire-run', 'task-finish', ['blocked', 'failed'].includes(runStatus) ? 'conditional' : 'not-applicable', ['blocked', 'failed'].includes(runStatus) ? [{ code: 'task_finish.run_retirement_qualification_required', summary: 'Product必须重新证明remote containment、delivery前无副作用、topology与carrier cleanup资格。' }] : []),
-    capability('abandon-task', 'task-manager', 'available'),
-  ];
-  capabilities.splice(1, 0, {
-    ...capability('finish-rollover', 'task-finish', recovery?.eligible ? 'available' : 'not-applicable', recovery?.eligible ? [] : (recovery?.blockers || []).map((code) => ({ code: `task_finish.rollover.${code}`, summary: `Safe stale-run rollover requires ${code}.` }))),
-    recoveryToken: recovery?.eligible ? recovery.recoveryToken : null,
-    qualificationIdentity: recovery?.qualificationIdentity || null,
-    usage: 'buildr task finish rollover --task <task-id> --recovery-token <token> --commit-message <message>',
-  });
-  return capabilities;
-}
-
 export function projectTaskFinishCurrentFacts({ taskId, operation = 'inspect', readiness = null, result = null, diagnostics = [], recovery = null }) {
   const repositories = repositoryFacts(result, readiness);
   const staleRecovery = Boolean(recovery && (recovery.mismatches || []).length > 0);
@@ -162,18 +136,11 @@ export function projectTaskFinishCurrentFacts({ taskId, operation = 'inspect', r
     },
     sideEffects,
     maintenance,
-    recovery: recovery ? {
-      disposition: recovery.eligible ? 'stale-run-retirable' : staleRecovery ? 'stale-run-preserved' : 'same-run-current',
-      eligible: recovery.eligible === true,
-      qualificationIdentity: recovery.qualificationIdentity || null,
-      recoveryToken: recovery.eligible ? recovery.recoveryToken : null,
-      blockers: (recovery.blockers || []).map((code) => ({ code: `task_finish.rollover.${code}`, summary: `Safe stale-run rollover requires ${code}.` })),
-      carrierDisposability: (recovery.carrierDisposability || []).map((item) => ({ selector: item.selector, status: item.status, code: item.code || null })),
-    } : null,
+    recovery: null,
     blockers,
-    requiredPrerequisites: requiredPrerequisites(blockers),
-    availableCapabilities: availableCapabilities({ readiness, result, blockers, repositories, recovery }),
-    compatibilityHint: result?.nextAction || result?.nextWorkflow || readiness?.nextWorkflow || null,
+    requiredPrerequisites: [],
+    availableCapabilities: [],
+    compatibilityHint: null,
   };
 }
 

@@ -66,7 +66,6 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-finish-delivery': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Task Finish remote delivery, retained activation, cleanup, and contribution behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-task-finish': testing(PROJECT_OWNER, 'Development', 'System', 120000, 'The complete Task Finish product delivery journey behaves correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish-cli': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Task Finish public CLI journey and result projection behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection and Verification run entry contracts fail closed before heavy verification starts.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
@@ -176,10 +175,6 @@ export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
   'system-app-process': primaryEvidence(
     'A Buildr Web or preview process that crosses channel/profile boundaries or survives owned cleanup must fail.',
     'real child process, port, profile, and process cleanup',
-  ),
-  'system-task-finish': primaryEvidence(
-    'A complete Product delivery journey with mismatched source, remote result, activation, or cleanup must fail.',
-    'complete real Task Finish product delivery journey',
   ),
   'system-task-finish-cli': primaryEvidence(
     'The public Task Finish CLI must reject stale readiness and project the exact terminal result.',
@@ -467,21 +462,13 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-development-driver-discovery.test.mjs',
   ], { schedulingCostMs: 30000, executorType: 'node-context-test', resources: ['workspace-saturating', 'task-lifecycle-heavy'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY], args: ['--test-concurrency=4'] }),
   integrationSlice('integration-task-finish', [
-    'test/integration/task-finish-bootstrap-application.test.mjs',
-    'test/integration/task-finish-bootstrap-capsule.test.mjs',
     'test/integration/task-finish-diagnostics-evidence.test.mjs',
-    'test/integration/task-finish-entry-readiness.test.mjs',
-    'test/integration/task-finish-run.test.mjs',
     'test/integration/task-finish-sqlite.test.mjs',
     'test/integration/task-finish-maintenance.test.mjs',
   ], { schedulingCostMs: 11000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-finish-delivery', [
-    'test/integration/task-finish-delivery-reconciliation.test.mjs',
-    'test/integration/task-finish-delivery-remote.test.mjs',
-    'test/integration/task-finish-retained-activation.test.mjs',
     'test/integration/task-finish-retained-cleanup.test.mjs',
     'test/integration/task-finish-task-contribution.test.mjs',
-    'test/integration/task-finish-occupancy-release.test.mjs',
   ], { schedulingCostMs: 75_000, timeoutMs: 360_000 }),
 ]);
 
@@ -546,7 +533,6 @@ export const verificationSteps = Object.freeze([
     'test/system/buildr-web-launcher.test.mjs',
     'test/system/task-environment-fresh-build-web.test.mjs',
     'test/system/task-finish-cli.test.mjs',
-    'test/system/task-finish-product-journey.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
@@ -743,7 +729,6 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'openspec-convergence-recovery',
   ]),
   candidateShard('task-finish-windows', 'windows', 'verification', [
-    'system-task-finish',
     'system-task-finish-cli',
   ]),
   candidateShard('task-development-windows', 'windows', 'verification', [

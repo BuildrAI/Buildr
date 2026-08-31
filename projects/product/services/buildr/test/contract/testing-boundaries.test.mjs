@@ -32,7 +32,6 @@ const fullIsolationOwners = [
   'project-product.test.mjs',
   'public-json-contracts.test.mjs',
   'service-product.test.mjs',
-  'task-finish-product-journey.test.mjs',
   'workspace-manifest-registry.test.mjs',
   'worktree-create.test.mjs',
 ];
@@ -111,7 +110,6 @@ test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () 
 
   for (const id of [
     'integration-self-bootstrap',
-    'system-task-finish',
     'system-task-finish-cli',
     'system-workspace-lifecycle',
     'system-worktree-lifecycle',
@@ -229,7 +227,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-buildr-web-http', 'system-app-process', 'system-task-finish', 'system-task-finish-cli', 'system-fresh-build',
+    'system-buildr-web-http', 'system-app-process', 'system-task-finish-cli', 'system-fresh-build',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
@@ -273,7 +271,6 @@ test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox
   const service = fs.readFileSync(path.join(productRoot, 'test', 'system', 'service-product.test.mjs'), 'utf8');
   const workspace = fs.readFileSync(path.join(productRoot, 'test', 'helpers', 'workspace-product-suite.mjs'), 'utf8');
   const retirement = fs.readFileSync(path.join(productRoot, 'test', 'system', 'package-capability-retirement.test.mjs'), 'utf8');
-  const finish = fs.readFileSync(path.join(productRoot, 'test', 'system', 'task-finish-product-journey.test.mjs'), 'utf8');
 
   for (const key of ['workspace-foundation/v1', 'project-foundation/v1', 'git-repository/v1']) assert.match(profiles, new RegExp(key.replace('/', '\\/')));
   assert.match(provider, /runtime\.initBuildr/);
@@ -291,8 +288,7 @@ test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox
   assert.match(workspace, /selectedSuite === 'manifest-registry' && !options\.freshIdentity/,
     'manifest cases may reuse a foundation, while identity evidence requests a fresh Workspace');
   assert.match(retirement, /copyPreparedWorkspace/);
-  assert.doesNotMatch(finish, /prepared-fixtures\.mjs|copyPreparedGitRepository/,
-    'Finish retained/carrier/worktree construction remains primary evidence after the no-benefit trial');
+
 });
 
 test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {

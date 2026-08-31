@@ -5,7 +5,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 # Buildr Release
 
-本Skill只编排Buildr自举workspace的产品发布，不作为Buildr内置能力分发。发布事实以current repository、Task/Environment/Development/Finish/self-bootstrap公开read model、GitHub、npm官方registry和实际workflow状态为准，不把示例版本、聊天摘要、checklist勾选或历史stdout当成current authority。
+本Skill只编排Buildr自举workspace的产品发布，不作为Buildr内置能力分发。发布事实以current repository、Task/Environment、发布源码与产物的公开事实、GitHub、npm官方registry和实际workflow状态为准，不把示例版本、聊天摘要、checklist勾选或历史stdout当成current authority。
 
 ## 1. 解析意图与授权
 
@@ -26,7 +26,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 1. release selection/provenance：精确dev baseline、ordered selection chain、release HEAD/tree、freeze history、create/update/freeze/reopen/abandon/cleanup结果；
 2. release-source Product Candidate：matching release source、Candidate generation、完整required owners与唯一tarball manifest/integrity；
-3. release Task correlation：release/support Tasks、Environment、Development handoff、Finish Delivery和self-bootstrap的closed portable关联；
+3. release Task correlation：release/support Tasks 的记录关联与发布 Environment；不要求支持任务旧交接或收尾运行；
 4. shared readiness/protected transaction：同一context digest、collect-all findings、effects为空的local检查与唯一publish workflow；
 5. release→main、Publication后dev provenance reconciliation与release closeout：generation carrier、tree equality、selection的完整dev来源、dev新内容保留、零中间资源和正式release ref保留核验。
 
@@ -46,7 +46,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 3. 使用Git readback核对workspace、worktrees、`dev`、目标`release-<version>`、`main`、remote refs和tags；分别读取commit与tree identity。
 4. 使用npm官方registry读取version、`latest`、`next`与integrity；读取GitHub PR/check/workflow/Environment/Release事实。
 5. 从System Installation version规则和release contract确认version、`v<version>`、RC=`next`、GA=`latest`和唯一`publishAuthority`。
-6. 从各Application/current owner回读Task/Environment/Development/Finish/self-bootstrap/Candidate/artifact/correlation事实；不得直接读取SQLite或复制专业Result。
+6. 从各Application/current owner回读Task/Environment/Candidate/artifact/correlation事实；不得直接读取SQLite或复制专业Result。
 7. 使用release notes提取器确认CHANGELOG存在唯一匹配章节和具体正文。
 
 首次发布必须证明目标npm version、tag和GitHub Release不存在；恢复同一transaction分别核对已有不可逆事实与matching integrity，不把“已存在”直接解释为成功或冲突。
@@ -106,7 +106,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 ## 7. 中断与失败恢复
 
 - release内容变化：旧Candidate/artifact/readiness/context全部stale，形成新generation和唯一tarball，不拼接旧evidence。
-- frozen Candidate失败且需要修复：保持同一release协调Task与selection，先从current `dev`创建或复用窄support Task worktree，在该Task完成Development/Verification/Finish并把修复交付`dev`。同时从GitHub、Git tag、npm官方registry、GitHub Release和protected workflow回读目标version的全部公开/不可逆事实；只有证明尚无tag、npm version、GitHub Release且protected transaction未开始公共mutation，维护者才可独立授权selection `reopen --confirm --reason <text>`。reopen只保留immutable freeze history并释放current frozen ref，不隐含update/push；随后只把matching delivered dev commit逐个`cherry-pick -x`、重新freeze、普通push并对新SHA运行完整Candidate。不得直接在release worktree修复再回灌dev；任何公开事实已存在时停止并选择新version，不接受caller布尔值或历史stdout代替证明。
+- frozen Candidate失败且需要修复：保持同一release协调Task与selection，先从current `dev`创建或复用窄support Task worktree，在该Task完成修复及相关检查并把成果交付`dev`。同时从GitHub、Git tag、npm官方registry、GitHub Release和protected workflow回读目标version的全部公开/不可逆事实；只有证明尚无tag、npm version、GitHub Release且protected transaction未开始公共mutation，维护者才可独立授权selection `reopen --confirm --reason <text>`。reopen只保留immutable freeze history并释放current frozen ref，不隐含update/push；随后只把matching delivered dev commit逐个`cherry-pick -x`、重新freeze、普通push并对新SHA运行完整Candidate。不得直接在release worktree修复再回灌dev；任何公开事实已存在时停止并选择新version，不接受caller布尔值或历史stdout代替证明。
 - 同version release协调Task在本模型生效前已被提前completed：保留terminal Task与既有Finish审计事实，不直接改SQLite、不伪造reopen或把旧记录迁移成current；这是历史异常，不是后续version的正常恢复模板。新version必须始终使用唯一active协调Task直到lifecycle closed。
 - selection冲突：保持pre-operation identity和冲突现场，停止后续选择/remote/public mutation；只在维护者作出新决定后恢复。
 - release→main tree不一致或remote race：停止publication，不用历史形状、`ours`、reset或force push掩盖。
@@ -124,7 +124,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 
 - 类型、version、release identity、dev baseline、selection chain、release HEAD/tree；
 - Candidate generation/source、aggregate、唯一tarball filename与integrity、各shard/timing和重跑范围；
-- release/support Tasks、Environment、Development/Finish/self-bootstrap correlation与各正交状态；
+- release/support Tasks 的记录关联、发布 Environment 与实际发布证据；
 - release→main PR、main commit/tree、publication context/run/approval、tag/npm/dist-tags/GitHub Release/Registry smoke；
 - post-publication dev provenance reconciliation identity、dev baseline/source commits/current dev HEAD和`published-but-dev-reconciliation-blocked`等独立attention；
 - local Task Environment、generation carrier、本地selection/worktree资源、正式远端release ref保留核验和可选删除授权事实；

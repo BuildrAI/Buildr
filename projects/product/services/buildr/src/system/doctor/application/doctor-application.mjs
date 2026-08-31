@@ -187,6 +187,16 @@ export function registerSystemDoctorApplication(runtime) {
         const builtinStatus = syncPackageBuiltins(targetRoot, { checkOnly: true });
         result.builtins.items = builtinStatus.findings;
         for (const finding of builtinStatus.findings.filter((item) => !item.component)) {
+          if (finding.type === 'rule' && finding.id === 'buildr-core') {
+            addDoctorFinding(result, 'warning', 'rules.legacy_core', finding.reason || '独立核心规则已退役，可通过同步清理受管旧文件。', {
+              path: finding.path,
+              suggestion: finding.status === 'retired'
+                ? '运行 buildr sync <agent> 更新入口并清理已确认归属的旧核心规则。'
+                : '核心规则现位于 AGENTS.md。请审阅保留的遗留内容，按需迁到用户规则后再明确删除；不影响其他安全同步。',
+              userActionRequired: false,
+            });
+            continue;
+          }
           if (finding.status === 'installed' || (finding.status === 'uninstalled' && !includeInfo)) continue;
           const status = finding.status === 'uninstalled' ? 'info' : 'warning';
           addDoctorFinding(result, status, `builtin.${finding.status}`, `Buildr builtin ${finding.type}:${finding.id} 状态为 ${finding.status}。`, {

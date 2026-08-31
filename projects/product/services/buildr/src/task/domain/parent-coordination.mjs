@@ -128,14 +128,6 @@ export function normalizeParentPlan(value) {
   throw parentCoordinationError('parent_plan_schema_unsupported', `parentPlan.schemaVersion 必须是 ${LEGACY_PARENT_PLAN_SCHEMA} 或 ${PARENT_PLAN_SCHEMA}。`, 409);
 }
 
-export function createParentPlan(input) {
-  const source = object(input, 'parentPlanInput');
-  closed(source, new Set(['outcome', 'architectureDecisions', 'contributions', 'finalAcceptance']), 'parentPlanInput');
-  const payload = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: source.outcome, architectureDecisions: source.architectureDecisions, contributions: source.contributions, finalAcceptance: source.finalAcceptance };
-  const normalizedForIdentity = { schemaVersion: PARENT_PLAN_SCHEMA, outcome: text(payload.outcome, 'parentPlan.outcome'), architectureDecisions: strings(payload.architectureDecisions, 'parentPlan.architectureDecisions'), contributions: list(payload.contributions, 'parentPlan.contributions', contribution, (item) => item.id).sort((left, right) => `${left.priority}/${left.id}`.localeCompare(`${right.priority}/${right.id}`)), finalAcceptance: strings(payload.finalAcceptance, 'parentPlan.finalAcceptance') };
-  return normalizeParentPlan({ identity: parentCoordinationDigest(normalizedForIdentity), ...normalizedForIdentity });
-}
-
 export function projectParentPlan(value) {
   const plan = normalizeParentPlan(value);
   if (plan.schemaVersion === PARENT_PLAN_SCHEMA) return {
@@ -194,27 +186,6 @@ export function normalizeContributionHandoff(value) {
   return { identity, ...payload };
 }
 
-export function createContributionHandoff(input) {
-  const payload = { schemaVersion: CONTRIBUTION_HANDOFF_SCHEMA, parentTaskId: input.parentTaskId, planned: input.planned || [], delivered: input.delivered || [], extra: input.extra || [], residual: input.residual || [], superseded: input.superseded || [], affected: input.affected || [], nextAction: input.nextAction };
-  const normalized = { schemaVersion: CONTRIBUTION_HANDOFF_SCHEMA, parentTaskId: id(payload.parentTaskId, 'contributionHandoff.parentTaskId'), planned: referenceList(payload.planned, 'contributionHandoff.planned'), delivered: referenceList(payload.delivered, 'contributionHandoff.delivered'), extra: summaryList(payload.extra, 'contributionHandoff.extra'), residual: summaryList(payload.residual, 'contributionHandoff.residual'), superseded: supersededList(payload.superseded, 'contributionHandoff.superseded'), affected: summaryList(payload.affected, 'contributionHandoff.affected'), nextAction: text(payload.nextAction, 'contributionHandoff.nextAction') };
-  return normalizeContributionHandoff({ identity: parentCoordinationDigest(normalized), ...normalized });
-}
-
-export function validateContributionHandoffAgainstPlan(value, planValue, expectedPlannedValues) {
-  const handoff = value.identity ? normalizeContributionHandoff(value) : createContributionHandoff(value);
-  const plan = projectParentPlan(planValue);
-  const expectedPlanned = referenceList(expectedPlannedValues, 'expectedPlanned');
-  if (JSON.stringify(expectedPlanned) !== JSON.stringify(handoff.planned)) throw parentCoordinationError('contribution_handoff_planned_mismatch', 'Contribution Handoff planned必须精确匹配已保存的Contribution binding。', 409, { expected: expectedPlanned, actual: handoff.planned });
-  const known = new Set(plan.contributions.map((item) => item.id));
-  const references = [
-    ...handoff.planned,
-    ...handoff.delivered,
-    ...handoff.extra.map((item) => item.contributionId),
-    ...handoff.residual.map((item) => item.contributionId),
-    ...handoff.superseded.flatMap((item) => [item.contributionId, item.deliveredByContributionId]),
-    ...handoff.affected.map((item) => item.contributionId),
-  ];
-  const unknown = [...new Set(references.filter((id) => !known.has(id)))].sort();
-  if (unknown.length) throw parentCoordinationError('contribution_handoff_unknown_contribution', 'Contribution Handoff只能引用current Parent Plan中的Contribution。', 409, { references: unknown });
-  return handoff;
+export function retiredParentCoordination() {
+  throw parentCoordinationError('parent_coordination_action_retired', '旧父计划、贡献绑定、审查采用和专用验收写入口已退役。使用任务目标、计划文档与真实子任务结果；完成父任务需明确用户授权。', 410, undefined, '使用 task inspect / task update 和计划文档；task parent inspect 查看当前成果与完成观察身份。');
 }

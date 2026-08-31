@@ -177,57 +177,17 @@ test('Development compact只返回current facts并按next加载一个后续capab
   assert.equal(result.next.command.argv.includes('/candidate/buildr.mjs'), false);
 });
 
-test('Parent Task Entry覆盖普通Development next并公开安全的Child前动作', (t) => {
-  const parentPlanIdentity = `sha256-${'8'.repeat(64)}`;
-  const parentStartup = {
-    schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', status: 'blocked', taskId, mode: 'parent-plan',
-    checks: { task: 'ready', environment: 'ready', development: 'ready', parentPlan: 'ready', planningReview: 'ready', planningGate: 'missing' },
-    blockers: [{ axis: 'planning-gate', code: 'parent_startup_review_not_consumed' }], eligibleContributions: [],
-    next: { mode: 'recommended', owner: 'task-development', action: 'refresh-parent-planning', summary: 'Refresh Parent planning.' }, effects: [],
-  };
-  const ordinary = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' };
-  const current = fixture(t, { development: development(ordinary, { receipt: { parentPlan: { identity: parentPlanIdentity } } }), parentStartup });
+test('Parent coordination never requires environment, Review or Development startup', (t) => {
+  const current = fixture(t, { task: task({ isParent: true }) });
+  current.runtime.inspectParentCoordination = () => ({ isParent: true, mode: 'parent', children: [], completion: { authorizationRequired: true } });
+  current.runtime.resolveTaskEnvironmentExecution = () => { throw new Error('coordination must not prepare execution'); };
+  current.runtime.inspectTaskDevelopmentCurrent = () => { throw new Error('coordination must not read Development'); };
   const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.next.action, 'refresh-parent-planning');
-  assert.equal(result.next.capability.id, 'buildr.task-development');
-  assert.deepEqual(result.next.command.argv.slice(-7), ['task', 'parent', 'refresh-planning', taskId, '--target', current.root, '--json']);
-  assert.equal(result.parent.status, 'blocked');
-  assert.equal(result.development.identities.parentPlan, parentPlanIdentity);
-  assert.equal(current.calls.parent, 1);
-});
-
-test('Parent Task Entry覆盖Planning Review、eligible Child与dependency wait且不预读后续owner', (t) => {
-  const parentPlan = { identity: `sha256-${'8'.repeat(64)}` };
-  const cases = [
-    [{ status: 'blocked', checks: {}, blockers: [{ axis: 'planning-review', code: 'parent_startup_review_not_current' }], eligibleContributions: [], next: { mode: 'recommended', owner: 'task-review', action: 'planning-review', summary: 'Review.' } }, 'planning-review', 'buildr.task-review@1'],
-    [{ status: 'ready', checks: {}, blockers: [], eligibleContributions: ['first-child'], next: { mode: 'recommended', owner: 'task-triage', action: 'start-child-contribution', contributionIds: ['first-child'], summary: 'Start Child.' } }, 'start-child-contribution', null],
-    [{ status: 'blocked', checks: {}, blockers: [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete' }], eligibleContributions: [], next: { mode: 'recommended', owner: 'agent', action: 'wait-contribution-dependencies', summary: 'Wait.' } }, 'wait-contribution-dependencies', null],
-  ];
-  for (const [projection, action, capability] of cases) {
-    const parentStartup = { schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', taskId, mode: 'parent-plan', effects: [], ...projection };
-    const current = fixture(t, { development: development({ mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop.' }, { receipt: { parentPlan } }), parentStartup });
-    const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-    assert.equal(result.next.action, action);
-    assert.deepEqual(current.calls.capabilities, capability ? [capability] : []);
-    assert.equal(current.calls.parent, 1);
-  }
-});
-
-test('current Parent Acceptance后Parent startup不遮蔽Development typed next', (t) => {
-  const parentPlan = { identity: `sha256-${'8'.repeat(64)}` };
-  const developmentNext = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop final Parent integration.' };
-  const parentStartup = {
-    schemaVersion: 'buildr.parent-startup-readiness/v2', operation: 'inspect-startup', status: 'ready', taskId, mode: 'parent-plan',
-    checks: { task: 'ready', environment: 'ready', development: 'ready', parentPlan: 'ready', planningReview: 'ready', planningGate: 'ready' },
-    blockers: [], eligibleContributions: [], next: null, effects: [],
-  };
-  const current = fixture(t, { development: development(developmentNext, { receipt: { parentPlan, parentAcceptance: { planIdentity: parentPlan.identity } } }), parentStartup });
-
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.next.action, 'develop-and-observe');
-  assert.equal(result.next.owner, 'agent');
-  assert.equal(result.parent.status, 'ready');
-  assert.equal(current.calls.parent, 1);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.next.action, 'coordinate');
+  assert.equal(result.parent.completion.authorizationRequired, true);
+  assert.equal(result.environment, null);
+  assert.deepEqual(current.calls.capabilities, []);
 });
 
 test('ordinary Task不读取Parent Coordination', (t) => {
@@ -290,12 +250,12 @@ test('profile只增加本次可观察事实且不改变决策', (t) => {
   assert.deepEqual(profile.attempts, { failed: 0, repeated: 0, blocked: 0 });
 });
 
-test('Review、Verification与Finish只在成为next时出现', (t) => {
+test('Review与Verification只在成为next时出现', (t) => {
   const cases = [
     ['buildr.task-review', 1, 'planning-review'],
     ['buildr.current-knowledge-maintenance', 2, 'inspect'],
     ['buildr.task-verification', 3, 'verify'],
-    ['buildr.task-finish', 1, 'finish'],
+
   ];
   for (const [capability, version, action] of cases) {
     const next = { mode: 'recommended', owner: capability.split('.').at(-1), action, capability: { id: capability, version }, summary: action };
@@ -305,119 +265,17 @@ test('Review、Verification与Finish只在成为next时出现', (t) => {
   }
 });
 
-test('Finish成为next时投影blockers与多种可用能力但不替Agent选择策略', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const finishFacts = {
-    schemaVersion: 'buildr.task-finish-current-facts/v1', taskId, operation: 'entry-readiness', source: 'task-finish-application',
-    identity: { handoffIdentity: 'sha256-handoff' }, applicability: { handoff: 'current', finish: 'blocked' }, repositories: [], ownership: { runId: 'run-1', occupancy: null, carrierOwned: true },
-    sideEffects: { carrierOwned: true, deliveryRecorded: false, activationRecorded: false, cleanupRecorded: false, diagnosticsRecorded: false }, maintenance: null,
-    blockers: [{ source: 'finish-run', module: 'finish', code: 'task_finish.unknown_blocker', message: 'Unknown strategy.', selector: null }],
-    requiredPrerequisites: [],
-    availableCapabilities: [
-      { id: 'finish-run', owner: 'task-finish', status: 'available', prerequisites: [] },
-      { id: 'finish-reconcile', owner: 'task-finish', status: 'available', prerequisites: [] },
-      { id: 'git-operations', owner: 'git-operations', status: 'available', prerequisites: [] },
-    ],
-    compatibilityHint: 'repeat-task-finish-run-with-resume-token',
-  };
-  const { root, runtime } = fixture(t, { development: development(next), finishFacts });
+test('研发结果报告不读取旧收尾或建立收尾准入', (t) => {
+  const next = { mode: 'recommended', owner: 'agent', action: 'report', capability: null, summary: '研发结果已就绪。' };
+  const { root, runtime } = fixture(t, { development: development(next) });
+  runtime.inspectTaskFinishCurrentFacts = () => { throw new Error('不应读取旧收尾'); };
+  runtime.listTaskExecutionRecordView = () => { throw new Error('不应建立跨动作收尾准入'); };
   const result = runtime.inspectTaskEntrySnapshot(root, taskId);
   assert.equal(result.status, 'ready');
-  assert.equal(result.next.action, 'finish');
-  assert.deepEqual(result.finish.availableCapabilities.map((item) => item.id), ['finish-run', 'finish-reconcile', 'git-operations']);
-  assert.deepEqual(result.blockers, finishFacts.blockers);
-  assert.equal(result.diagnostic, null);
-});
-
-test('旧current run存在时task next不再生成普通run命令并保留Agent策略选择', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const finishFacts = {
-    schemaVersion: 'buildr.task-finish-current-facts/v1', taskId, operation: 'entry-readiness', source: 'task-finish-application',
-    recovery: { disposition: 'stale-run-retirable', eligible: true, qualificationIdentity: 'sha256-qualification', recoveryToken: 'sha256-token', blockers: [], carrierDisposability: [{ selector: 'workspace', status: 'unchanged', code: null }] },
-    blockers: [], requiredPrerequisites: [], repositories: [], availableCapabilities: [
-      { id: 'finish-run', owner: 'task-finish', status: 'blocked', prerequisites: [{ code: 'task_finish.current_run_identity_conflict' }] },
-      { id: 'finish-rollover', owner: 'task-finish', status: 'available', prerequisites: [], recoveryToken: 'sha256-token' },
-      { id: 'finish-reconcile', owner: 'task-finish', status: 'available', prerequisites: [] },
-      { id: 'git-operations', owner: 'git-operations', status: 'available', prerequisites: [] },
-    ],
-  };
-  const { root, runtime } = fixture(t, { development: development(next), finishFacts });
-  const result = runtime.inspectTaskEntrySnapshot(root, taskId);
-  assert.equal(result.status, 'ready');
-  assert.equal(result.next.action, 'finish-recovery');
+  assert.equal(result.next.action, 'report');
   assert.equal(result.next.command, null);
-  assert.equal(result.finish.availableCapabilities.find((item) => item.id === 'finish-rollover').status, 'available');
-});
-
-test('Finish重型边界返回ready-for-finish准入且不产生effects', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const finishFacts = { blockers: [], requiredPrerequisites: [], availableCapabilities: [] };
-  const current = fixture(t, {
-    closeout: true,
-    task: { ...task(), changeReferences: [{ availability: 'available', workingCopy: { change: { code: 'compact-entry', progress: { exists: true } } } }] },
-    development: development(next, { applicability: { contentTarget: 'current', policy: 'current', handoff: 'current' }, receipt: { contentTarget: { identity: `sha256-${'9'.repeat(64)}` } } }),
-    finishFacts,
-  });
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.closeoutAdmission.status, 'ready-for-finish');
-  assert.equal(result.closeoutAdmission.blockers.length, 0);
-  assert.deepEqual(result.closeoutAdmission.effects, []);
-  assert.deepEqual(result.closeoutAdmission.checks.map((item) => item.axis), ['openspec', 'owner', 'environment', 'target', 'execution-record', 'resources']);
-});
-
-test('准入发现target不current时返回repair-before-finish', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const current = fixture(t, {
-    closeout: true,
-    task: { ...task(), changeReferences: [{ availability: 'available', workingCopy: { change: { code: 'compact-entry', progress: { exists: true } } } }] },
-    development: development(next, { applicability: { contentTarget: 'current', policy: 'current', handoff: 'stale' } }),
-    finishFacts: { blockers: [], requiredPrerequisites: [], availableCapabilities: [] },
-  });
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.closeoutAdmission.status, 'repair-before-finish');
-  assert.equal(result.closeoutAdmission.blockers[0].owner, 'task-development');
-  assert.equal(result.closeoutAdmission.nextAction.action, 'inspect-or-reconcile');
-});
-
-test('已有active Execution Record时准入返回waiting-on-execution且不生成retry', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const current = fixture(t, {
-    closeout: true,
-    executionRecords: [{ recordId: 'run-1', owner: 'task-finish', lifecycleStatus: 'open', outcome: 'running' }],
-    task: { ...task(), changeReferences: [{ availability: 'available', workingCopy: { change: { code: 'compact-entry', progress: { exists: true } } } }] },
-    development: development(next, { applicability: { contentTarget: 'current', policy: 'current', handoff: 'current' } }),
-    finishFacts: { blockers: [], requiredPrerequisites: [], availableCapabilities: [] },
-  });
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.closeoutAdmission.status, 'waiting-on-execution');
-  assert.equal(result.closeoutAdmission.nextAction.action, 'inspect');
-  assert.match(result.closeoutAdmission.nextAction.summary, /不重复启动/);
-  assert.doesNotMatch(JSON.stringify(result.closeoutAdmission), /retry/);
-});
-
-test('Verification所需事实不完整时准入返回repair-before-finish', (t) => {
-  const next = { mode: 'recommended', owner: 'task-verification', action: 'verify-or-reconcile', capability: { id: 'buildr.task-verification', version: 3 }, summary: 'Verify.' };
-  const current = fixture(t, {
-    closeout: true,
-    task: { ...task(), changeReferences: [{ availability: 'available', workingCopy: { change: { code: 'compact-entry', progress: { exists: true } } } }] },
-    development: development(next, { applicability: { contentTarget: 'current', policy: 'current', handoff: 'missing', reasons: [{ axis: 'verification-policy', code: 'required-facts-incomplete', missing: ['demo/browser-smoke'] }] } }),
-  });
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.closeoutAdmission.status, 'repair-before-finish');
-  assert.equal(result.closeoutAdmission.blockers[0].owner, 'task-development');
-});
-
-test('Finish策略未决时准入返回blocked-by-user-decision', (t) => {
-  const next = { mode: 'recommended', owner: 'task-finish', action: 'finish', capability: { id: 'buildr.task-finish', version: 1 }, summary: 'Finish.' };
-  const current = fixture(t, {
-    closeout: true,
-    task: { ...task(), changeReferences: [{ availability: 'available', workingCopy: { change: { code: 'compact-entry', progress: { exists: true } } } }] },
-    development: development(next, { applicability: { contentTarget: 'current', policy: 'current', handoff: 'current' } }),
-    finishFacts: { blockers: [{ module: 'task-finish', code: 'task_finish.strategy_required', message: 'Choose a delivery strategy.' }], requiredPrerequisites: [], availableCapabilities: [] },
-  });
-  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
-  assert.equal(result.closeoutAdmission.status, 'blocked-by-user-decision');
-  assert.equal(result.closeoutAdmission.nextAction.owner, 'task-finish');
+  assert.equal(Object.hasOwn(result, 'finish'), false);
+  assert.equal(Object.hasOwn(result, 'closeoutAdmission'), false);
 });
 
 test('cross-Project provider不一致时targeted route fail closed', (t) => {
@@ -446,4 +304,30 @@ test('cross-Project provider不一致时targeted route fail closed', (t) => {
   assert.equal(result.selectedProvider, null);
   assert.equal('graphs' in result, false);
   assert.equal('candidates' in result, false);
+});
+
+
+test('终态 Task next不重新读取环境或研发门禁', (t) => {
+  for (const status of ['completed', 'abandoned']) {
+    const current = fixture(t, { task: task({ status }) });
+    const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId);
+    assert.equal(result.status, 'ready');
+    assert.equal(result.next.action, 'report');
+    assert.deepEqual(result.blockers, []);
+    assert.equal(current.calls.environment, 0);
+    assert.equal(current.calls.development, 0);
+  }
+});
+
+test('a Parent can explicitly inspect its own independent development execution', (t) => {
+  const next = { mode: 'recommended', owner: 'agent', action: 'develop-and-observe', capability: null, summary: 'Develop independent integration.' };
+  const current = fixture(t, { task: task({ isParent: true }), development: development(next) });
+  current.runtime.inspectParentCoordination = () => { throw new Error('独立研发不得读取父子摘要'); };
+  const result = current.runtime.inspectTaskEntrySnapshot(current.root, taskId, { executionTarget: path.join(current.root, '.worktrees', taskId) });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.next.action, 'develop-and-observe');
+  assert.equal(result.environment.controllerInvocation.kind, 'stable-controller');
+  assert.equal(current.calls.parent, 0, '独立研发不读取未使用的父子摘要');
+  const invalid = current.runtime.inspectTaskEntrySnapshot(current.root, taskId, { executionTarget: path.join(current.root, 'foreign') });
+  assert.equal(invalid.diagnostic.code, 'task_entry_execution_target_mismatch');
 });

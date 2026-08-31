@@ -203,12 +203,7 @@ initialSkillBindings:
     version: 2
     provider: current-knowledge-maintenance
 builtins:
-  rules:
-    - id: buildr-core
-      path: resources/workspace/rules/buildr/core.md
-      target: rules/buildr/core.md
-      description: Buildr workspace 基础契约；每次进入 workspace 都必须读取。
-      required: true
+  rules: []
   skills:
     - id: task-triage
       path: resources/workspace/skills/buildr/task-triage
@@ -247,7 +242,7 @@ builtins:
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
-      description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；只管理Task Record，用户同时要求准备或拆分Parent时在active记录成功后自动交接task-development，不自行执行Environment或专业阶段动作。
+      description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
       required: false
       provides:
         - capability: buildr.task-record
@@ -336,7 +331,7 @@ builtins:
     - id: task-development
       path: resources/workspace/skills/buildr/task-development
       target: skills/buildr/task-development
-      description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与Finish handoff的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
+      description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
       required: false
       provides:
         - capability: buildr.task-development
@@ -358,21 +353,27 @@ builtins:
           version: 2
           mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: agent-first-design
+      path: resources/workspace/skills/buildr/agent-first-design
+      target: skills/buildr/agent-first-design
+      description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
+      required: false
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
       path: resources/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
-      description: 用户要求“收尾”“交付”或完成当前工作时使用；先识别当前范围内匹配的未结束 Buildr Task，有 Task 就沿正式生命周期推进到交付和安全清理，没有 Task 就按普通 Git 完成提交、集成、推送、远端确认和可证明的本地善后。
+      description: 用户要求收尾、交付或完成本轮工作后的结束动作时使用；由智能体完成实际成果交付、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
       required: false
       provides:
         - capability: buildr.task-finish
           version: 1
       requires:
-        - capability: buildr.task-development
+        - capability: buildr.task-record
           version: 2
-          mode: required
+          mode: optional
         - capability: buildr.task-environment
           version: 1
-          mode: required
+          mode: optional
         - capability: buildr.git-operations
           version: 1
           mode: optional
@@ -490,7 +491,6 @@ workspaceFiles:
   - resources/workspace/AGENTS.md => AGENTS.md render
   - resources/workspace/gitattributes => .gitattributes copy
   - resources/workspace/gitignore => .gitignore copy
-  - resources/workspace/rules/buildr/core.md => rules/buildr/core.md copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
@@ -527,6 +527,8 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md => skills/buildr/task-verification/references/project-verification-v3.md copy
   - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - resources/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
+  - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy
+  - resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md => skills/buildr/agent-first-design/references/task-closeout.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy

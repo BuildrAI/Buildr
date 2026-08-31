@@ -105,7 +105,6 @@ const requiredRuntime = [
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
-  'task/application/finish/task-finish-product-executor.mjs',
   'task/application/task-verification-application.mjs', 'task/domain/task-verification.mjs',
   'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
   'task/persistence/task-verification-repository.mjs',
@@ -478,7 +477,6 @@ const legacyTaskRecordConsumers = new Set([
   'task/application/task-verification-application.mjs',
   'task/infrastructure/git-worktree-provider.mjs',
   'task/persistence/task-environment-repository.mjs',
-  'task/persistence/parent-coordination-repository.mjs',
   'task/persistence/task-development-repository.mjs',
   'task/persistence/task-execution-record-repository.mjs',
   'task/persistence/task-finish-repository.mjs',
@@ -488,7 +486,7 @@ const legacyTaskRecordConsumers = new Set([
   'web/http/server.mjs',
   'web/application/preview-lifecycle.mjs',
 ]);
-const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|completeTaskRecordFromFinish|abandonTaskRecord)\(/;
+const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;

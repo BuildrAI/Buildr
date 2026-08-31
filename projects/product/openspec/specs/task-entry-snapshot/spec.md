@@ -78,28 +78,24 @@ Task Entry Snapshot MUST只消费既有 owner read ports，不得新增持久表
 - **THEN** 这些行为 MUST继续使用原有authority、schema与fail-closed边界
 - **AND** Snapshot内容 MUST不被视为写入授权或current Result
 
-### Requirement: Task Entry Snapshot 必须提供Parent-aware next
-当current Development表明Task采用Parent Plan时，Task Entry Snapshot MUST在保持Task、Environment和Development最早硬前置后读取Parent Coordination启动投影，并用Parent-specific recommendation替代普通Task的`develop-and-observe`；legacy Parent与普通Task MUST保持原判定。
+### Requirement: 任务下一步指引不得编排收尾
+Task Entry Snapshot MUST不推荐 task finish 命令，不读取旧收尾执行事实，不输出收尾准入或恢复；研发就绪仅报告已有研发结果。验证执行继续由原验证能力校验。
 
-#### Scenario: Review ready但尚未消费
-- **WHEN** Parent Plan与Planning Review current且ready，但Development planning gate尚未绑定matching Review Result
-- **THEN** Snapshot MUST返回`refresh-parent-planning` recommendation及retained controller route
-- **AND** MUST不返回`develop-and-observe`或要求调用方构造内部Development input
+#### Scenario: 研发完成
+- **WHEN** 研发结果已就绪
+- **THEN** 返回由智能体报告研发结果的建议，不启动或要求收尾
 
-#### Scenario: Parent已具备可启动Contribution
-- **WHEN** Parent启动投影ready且包含至少一个eligible Contribution
-- **THEN** Snapshot MUST返回`start-child-contribution` recommendation与稳定Contribution identities
-- **AND** MUST保持零effects且不把recommendation解释为Child创建授权
+#### Scenario: 已有旧收尾异常
+- **WHEN** 旧收尾记录存在阻塞
+- **THEN** 不读取或传播其收尾阻塞
 
-#### Scenario: 普通Task保持既有next
-- **WHEN** Development不存在Parent Plan或Parent Coordination返回legacy模式
-- **THEN** Snapshot MUST继续使用既有Development typed next
-- **AND** MUST不增加Parent Review或Contribution owner读取
+### Requirement: 父任务指引必须独立于研发准备
+父任务协调指引 MUST 直接读取当前任务和子任务结果，不要求环境或研发记录，不自动执行计划审查、创建子任务或完成父任务。实际研发仍按独立专业能力执行。
 
-### Requirement: Parent startup snapshot 必须忽略预计 Child 字段
-Task Entry Snapshot MUST 复用 Parent Coordination Application 的 actual binding 与 eligibility 事实，MUST NOT 因 v2 `expectedChild` 或 v1 `plannedChildTaskId` 排除未绑定 work item、伪造 Child 或改变 `start-child-contribution` next。
+#### Scenario: 无环境
+- **WHEN** 父任务没有环境记录
+- **THEN** MUST 能返回协调摘要与人工授权边界，不以环境缺失阻塞协调。
 
-#### Scenario: 预计 Child 尚未创建
-- **WHEN** current ready Parent Plan/Review 中唯一依赖满足的 work item 只有 expected Child 文本而没有 actual binding
-- **THEN** snapshot MUST 返回该 work item 为 eligible Contribution
-- **AND** next action MUST 仍为 `start-child-contribution`
+#### Scenario: 子任务结束
+- **WHEN** 子任务全部终态
+- **THEN** MUST 不自动完成父任务或返回已授权结论。

@@ -1,0 +1,16 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: enable-task-record-corrections
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 任务事实更正及历史保留
+    status: aligned
+    sourceIdentities: [proposal.md, design.md]
+  - type: flow
+    target: openspec/knowledge/flows/parent-child-management.md
+    reason: 总目标更正和终态关系调整
+    status: aligned
+    sourceIdentities: [specs/task-record/spec.md]
+unresolvedItems: []

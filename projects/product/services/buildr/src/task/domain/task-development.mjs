@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { createContributionHandoff, normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings } from './parent-coordination.mjs';
+import { normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings } from './parent-coordination.mjs';
 
 export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v3';
 export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS = Object.freeze(['buildr.task-development-receipt/v1', 'buildr.task-development-receipt/v2']);
@@ -436,7 +436,7 @@ export function createTaskFinishHandoff({ candidate, changes, gates, knowledge =
   for (const item of adverse) {
     if (!normalizedDecision.risks.some((risk) => risk.gate === item.gate && risk.resultDigest === item.digest)) throw taskDevelopmentError('task_development_risk_acceptance_required', `proceed 必须显式接受 ${item.gate} gate 风险。`, 409, item);
   }
-  const normalizedContributionHandoff = contributionHandoff === null ? null : (contributionHandoff.identity ? normalizeContributionHandoff(contributionHandoff) : createContributionHandoff(contributionHandoff));
+  const normalizedContributionHandoff = contributionHandoff === null ? null : normalizeContributionHandoff(contributionHandoff);
   const payload = { candidate: normalizedCandidate, changes: normalizedChanges, gates: normalizedGates, ...(normalizedKnowledge ? { knowledge: normalizedKnowledge } : {}), decision: normalizedDecision, ...(normalizedContributionHandoff ? { contributionHandoff: normalizedContributionHandoff } : {}) };
   return { identity: taskDevelopmentDigest(payload), ...payload, createdAt: timestamp(createdAt, 'handoff.createdAt') };
 }

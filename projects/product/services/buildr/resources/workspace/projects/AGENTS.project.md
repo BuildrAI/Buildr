@@ -4,7 +4,7 @@ Agent 在 `{{project}}` Project 中的最小运行规则。
 
 ## 项目定位
 
-本文件是 Project scope 规则。开始项目任务时，先遵循 Buildr root `AGENTS.md` 和 Buildr Core，再读取本文件；进入具体 Service repo 后继续读取该服务仓 `AGENTS.md`。
+本文件是项目作用域（Project Scope）规则。开始项目任务时，先遵循 Buildr 根 `AGENTS.md` 中的内联核心规则，再读取本文件；进入具体服务仓（Service Repository）后继续读取其 `AGENTS.md`。
 
 禁止把其他 Project 的规范直接视为本 Project 事实；可以参考其目录组织和写法，但业务事实必须在本 Project `openspec/` 中独立沉淀。
 

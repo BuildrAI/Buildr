@@ -140,7 +140,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-record',
-    requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer', 'task.parent-coordination-reader'],
+    requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer'],
     provides: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_RECORD_RUNTIME_PORT],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
@@ -217,8 +217,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-parent-coordination',
-    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-environment.application'],
-    provides: ['task-parent-coordination.application', 'task-parent-coordination.persistence-read', 'task-parent-coordination.runtime-port'],
+    requires: ['task-record.application', 'task-record.persistence-read'],
+    provides: ['task-parent-coordination.application', 'task-parent-coordination.runtime-port'],
     contributions: {
       cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept'],
       http: ['task-parent-coordination.http'],
@@ -239,9 +239,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-finish',
-    requires: ['task-record.application', 'task-environment.application', 'task-execution-record.application', 'task-development.application', 'workspace.structured-store'],
+    requires: ['task-record.application', 'task-environment.application', 'workspace.structured-store'],
     provides: [TASK_FINISH_APPLICATION, TASK_FINISH_PERSISTENCE_READ, TASK_FINISH_INTERNAL, TASK_FINISH_RUNTIME_PORT],
-    contributions: { cli: ['task finish inspect', 'task finish rollover', 'task finish reconcile', 'task finish run'], http: [], diagnostics: ['task-finish.diagnostics'] },
+    contributions: { cli: ['task finish inspect'], http: [], diagnostics: ['task-finish.diagnostics'] },
     lifecycle: 'none',
   }, {
     id: 'task-terminal-delivery',
@@ -299,7 +299,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task verification inspect', 'task verification record', 'task verification reconcile',
     'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept',
     'task next',
-    'task finish inspect', 'task finish rollover', 'task finish reconcile', 'task finish run', 'task delivery inspect',
+    'task finish inspect', 'task delivery inspect',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',

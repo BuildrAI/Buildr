@@ -2,514 +2,188 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
-import { spawnSync } from 'node:child_process';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
-import { createContributionHandoff, parentCoordinationDigest } from '../../src/task/domain/parent-coordination.mjs';
-import { createTerminalContributionReconciliation } from '../../src/task/domain/terminal-contribution-reconciliation.mjs';
-import { createTaskCandidate, createTaskDevelopmentPlanning, createTaskFinishHandoff, normalizeTaskContentTarget, normalizeTaskDevelopmentReceipt, normalizeTaskVerificationPolicy, taskDevelopmentDigest } from '../../src/task/domain/task-development.mjs';
 
-const BUILDR = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
 const test = createBuildrApplicationTest('integration-parent-coordination-application');
-
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-parent-coordination-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-parent-light-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.buildr'));
   fs.mkdirSync(path.join(root, 'projects'));
-  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+  fs.writeFileSync(path.join(root, 'projects/manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
-  fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Parent coordination fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
+  fs.writeFileSync(path.join(root, '.buildr/workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Parent coordination fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
-  runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({
-    ready: true,
-    taskId,
-    receiptSchema: 'buildr.task-environment-receipt/v2',
-    workspaceRoot: root,
-    environmentRoot: root,
-    validationRoot: root,
-    scopes: [],
-  });
-  return { root: fs.realpathSync(root), runtime };
+  const create = (taskId, options = {}) => runtime.createTaskRecord(root, { taskId, title: taskId, intent: `Deliver ${taskId}`, projects: [], services: [], changes: [], ...options });
+  const inspect = (taskId) => runtime.inspectTaskRecord(root, taskId);
+  const complete = (taskId, input = {}) => runtime.completeTaskRecord(root, taskId, { summary: 'Observed completed result', noChange: false, ...input });
+  const input = (taskId) => {
+    const view = runtime.inspectParentCoordination(root, taskId);
+    return { expectedRecordDigest: view.recordDigest, parentCompletion: {
+      expectedSnapshot: view.completion.snapshotIdentity,
+      acceptance: { summary: 'The full goal and actual artifacts have been reviewed.', children: view.children.map((child) => ({ taskId: child.taskId, summary: `Reviewed result and disposition: ${child.status}` })) },
+      authorization: { source: 'test-user-message:explicit-parent-completion', statement: `The user explicitly authorizes completing ${taskId}.` },
+    } };
+  };
+  return { root, runtime, create, inspect, complete, input };
 }
 
-function createTasks(current) {
-  current.runtime.createTaskRecord(current.root, { taskId: 'parent-task', title: 'Parent', intent: 'Coordinate final outcome.', projects: [], services: [], changes: [] });
-  current.runtime.createTaskRecord(current.root, { taskId: 'child-task', title: 'Child', intent: 'Deliver one Contribution.', parentTaskId: 'parent-task', projects: [], services: [], changes: [] });
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
-  opened.database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('parent-task', 'ready', '{}', '2026-08-08T00:00:00.000Z')").run();
+test('coordination needs no environment or Development; child completion never completes parent', (t) => {
+  const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
+  assert.equal(f.inspect('parent').record.isParent, true);
+  f.complete('child');
+  const view = f.runtime.inspectParentCoordination(f.root, 'parent');
+  assert.equal(view.recordDigest, f.inspect('parent').recordDigest);
+  assert.equal(view.mode, 'parent'); assert.equal(view.children[0].result.summary, 'Observed completed result');
+  assert.equal(f.runtime.inspectTaskEntrySnapshot(f.root, 'parent').next.action, 'coordinate');
+  assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
+  assert.equal(f.inspect('parent').record.status, 'active');
+});
+
+test('explicit parent with no children needs authorization and records its acceptance', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true });
+  assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
+  const result = f.complete('parent', f.input('parent'));
+  assert.equal(result.record.status, 'completed');
+  assert.equal(result.record.result.parentCompletion.authorization.source, 'test-user-message:explicit-parent-completion');
+  assert.ok(result.record.result.parentCompletion.recordedAt);
+});
+
+test('open children and incomplete dispositions block only parent completion', (t) => {
+  const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
+  assert.throws(() => f.complete('parent', f.input('parent')), { code: 'parent_completion_children_open' });
+  f.complete('child'); const missing = f.input('parent'); missing.parentCompletion.acceptance.children = [];
+  assert.throws(() => f.complete('parent', missing), { code: 'parent_completion_children_mismatch' });
+  assert.equal(f.inspect('child').record.status, 'completed');
+  f.complete('parent', f.input('parent'));
+});
+
+test('result changes after observation are rejected even when parent record digest is unchanged', (t) => {
+  const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
+  const stale = f.input('parent'); f.complete('child');
+  assert.equal(stale.expectedRecordDigest, f.inspect('parent').recordDigest);
+  assert.throws(() => f.complete('parent', stale), { code: 'parent_completion_conflict' });
+  assert.equal(f.inspect('parent').record.status, 'active');
+});
+
+test('relationship changes are rejected and parent identity survives detaching the last child', (t) => {
+  const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
+  const stale = f.input('parent'); f.runtime.updateTaskRecord(f.root, 'child', { parentTaskId: null });
+  assert.equal(f.inspect('parent').record.isParent, true);
+  assert.throws(() => f.complete('parent', stale), { code: 'task_record_conflict' });
+  assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
+});
+
+test('nested parent completion requires separate authorization and leaves ancestors unchanged', (t) => {
+  const f = fixture(t); f.create('root-parent', { isParent: true }); f.create('middle', { parentTaskId: 'root-parent', isParent: true }); f.create('leaf', { parentTaskId: 'middle' });
+  f.complete('leaf'); f.complete('middle', f.input('middle'));
+  assert.equal(f.inspect('root-parent').record.status, 'active');
+  assert.throws(() => f.complete('root-parent'), { code: 'parent_completion_authorization_required' });
+});
+
+test('abandoned child requires explicit disposition and is not rewritten as delivered', (t) => {
+  const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
+  f.runtime.abandonTaskRecord(f.root, 'child', { reason: 'Its goal was covered by the existing artifact.' });
+  const evidence = f.input('parent'); evidence.parentCompletion.acceptance.children[0].summary = 'Covered by reviewed existing artifact; no work remains.';
+  f.complete('parent', evidence); assert.equal(f.inspect('child').record.status, 'abandoned');
+});
+
+test('retired writers perform no writes and corrupt historical records do not hide current results', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true });
+  const before = f.inspect('parent').recordDigest;
+  for (const action of ['recordParentPlan', 'refreshParentPlanning', 'acceptParentCoordination', 'recordTaskParentPlan', 'bindTaskPlannedContributions', 'reconcileTerminalChildContributionDelivery', 'recordTaskParentAcceptance']) {
+    assert.throws(() => f.runtime[action](f.root, 'parent', {}), { code: 'parent_coordination_action_retired' });
+  }
+  assert.throws(() => f.runtime.createTaskDevelopmentHandoff(f.root, 'parent', { contributionHandoff: { retired: true } }), { code: 'parent_coordination_action_retired' });
+  assert.equal(f.inspect('parent').recordDigest, before);
+  const opened = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
+  opened.database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES (?, ?)").run('parent', 'null');
   opened.database.close();
-  current.runtime.beginTaskDevelopment(current.root, 'parent-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Initial coordination planning is not yet recorded.', source: 'test fixture' } });
-  current.runtime.beginTaskDevelopment(current.root, 'child-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Fixture child planning.', source: 'test fixture' } });
-}
-
-function parentPlan() {
-  return {
-    outcome: 'The parent outcome is integrated and explicitly accepted.',
-    architectureDecisions: ['One fact has one authority.', 'Child completion does not complete Parent.'],
-    contributions: [
-      { id: 'child-delivery', priority: 'P0-1', title: 'Child delivery', objective: 'A Child independently delivers its narrow product change.', directions: ['Deliver through a narrow Change.'], boundaries: ['Do not complete Parent.'], expectedChild: 'A focused Child Task', dependencies: [] },
-      { id: 'parent-integration', priority: 'P0-2', title: 'Parent integration', objective: 'The Parent performs explicit final integration acceptance.', directions: ['Integrate proven results.'], boundaries: ['Do not infer delivery from status.'], expectedChild: null, dependencies: ['child-delivery'] },
-    ],
-    finalAcceptance: ['All delivery facts are proven by saved handoffs.', 'Final integration acceptance is explicitly recorded.'],
-  };
-}
-
-function realisticParentPlan(label, contributionCount) {
-  return {
-    outcome: `${label}在单一交付边界内完成，并由Parent显式确认跨Contribution集成结果。`,
-    architectureDecisions: Array.from({ length: 12 }, (_, index) => `${label}架构决定${index + 1}：一个事实只有一个authority，运行时投影不得复制持久化业务状态。`),
-    contributions: Array.from({ length: contributionCount }, (_, index) => ({
-      id: `${label.toLowerCase()}-${index + 1}`,
-      priority: index < 4 ? `P0-${index + 1}` : `P1-${index - 3}`,
-      title: `${label} bounded contribution ${index + 1}`,
-      objective: `交付${label}第${index + 1}个有界能力，并保持Application、CLI、HTTP与Web消费者使用同一公开契约。`,
-      directions: [
-        '从权威持久化事实派生当前状态，避免建立第二份进度或生命周期authority。',
-        '使用聚焦测试覆盖正常、阻塞、历史兼容读取与显式最终验收路径。',
-      ],
-      boundaries: [
-        '不得把Child状态复制进Parent Plan，也不得用Child completed推断Parent完成。',
-        '不得扫描Workspace文件系统来补齐公开响应。',
-      ],
-      expectedChild: `负责${label}工作项${index + 1}的独立Child Task`,
-      dependencies: index === 0 ? [] : [`${label.toLowerCase()}-${index}`],
-    })),
-    finalAcceptance: Array.from({ length: 10 }, (_, index) => `${label}最终验收${index + 1}：所有相关Contribution都有明确交付、残留或替代处置。`),
-  };
-}
-
-function prepareTerminalChildWithoutContribution(current, childTaskId = 'child-task', nativeContributionHandoff = null) {
-  const gate = { disposition: 'not-applicable', targetIdentity: null, summary: 'Terminal recovery fixture gate.', source: 'integration-test' };
-  let candidate;
-  let handoff;
-  let terminalAt;
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
-  try {
-    const row = opened.database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get(childTaskId);
-    const currentReceipt = JSON.parse(row.record_json);
-    terminalAt = currentReceipt.updatedAt;
-    const components = [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', observer: 'integration-test', identity: taskDevelopmentDigest(`${childTaskId}/tree`) }];
-    const contentTarget = normalizeTaskContentTarget({ identity: taskDevelopmentDigest({ components }), components });
-    const policyPayload = { declarations: [], capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Terminal recovery integration fixture.' }], overrides: [] };
-    const verificationPolicy = normalizeTaskVerificationPolicy({ identity: taskDevelopmentDigest(policyPayload), ...policyPayload });
-    candidate = createTaskCandidate({ generation: 1, contentTargetIdentity: contentTarget.identity, taskContextIdentity: currentReceipt.taskContext.identity, policyIdentity: verificationPolicy.identity });
-    const gates = { planning: gate, verification: gate, completion: gate };
-    const decision = { outcome: 'proceed', candidateIdentity: candidate.identity, summary: 'Fixture proceeds.', risks: [] };
-    handoff = createTaskFinishHandoff({ candidate, changes: [], gates, decision, contributionHandoff: nativeContributionHandoff, createdAt: terminalAt });
-    const receipt = normalizeTaskDevelopmentReceipt({ ...currentReceipt, contentTarget, verificationPolicy, generation: 1, candidate, currentKnowledge: null, gates, decision, handoffs: [handoff], updatedAt: terminalAt }, { expectedTaskId: childTaskId });
-    opened.database.prepare('UPDATE task_development_current SET record_json = ? WHERE task_id = ?').run(JSON.stringify(receipt), childTaskId);
-  } finally { opened.database.close(); }
-  current.runtime.completeTaskRecord(current.root, childTaskId, { summary: 'Delivered before Contribution evidence was recorded.', noChange: false });
-  const phases = ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1, startedAt: terminalAt, completedAt: terminalAt, durationMs: 0, inputIdentity: null, outputIdentity: null, failure: null }));
-  const association = {
-    schemaVersion: 'buildr.task-terminal-delivery-associations/v1',
-    handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation,
-    gates: {
-      planning: { status: 'gate-disposition', ...gate },
-      verification: { status: 'gate-disposition', ...gate },
-      completion: { status: 'gate-disposition', ...gate },
-    },
-    observedAt: terminalAt, source: 'integration-test',
-  };
-  const run = {
-    schemaVersion: 'buildr.task-finish-run/v3', runId: `${childTaskId}-terminal-run`, status: 'complete',
-    identity: { task: childTaskId, handoffIdentity: handoff.identity, candidateIdentity: candidate.identity, candidateGeneration: candidate.generation, contentTargetIdentity: candidate.contentTargetIdentity, targetBranch: 'dev', remote: 'origin' },
-    phases, createdAt: terminalAt, updatedAt: terminalAt, completedAt: terminalAt,
-  };
-  current.runtime.finalizeTaskFinishPersistence(current.root, { run, result: { identity: run.identity, phases, completedAt: terminalAt }, completion: { association, completedAt: terminalAt } });
-  return handoff;
-}
-
-test('ordinary Task保持absent，不扫描或自动backfill Parent Plan', (t) => {
-  const current = fixture(t);
-  current.runtime.createTaskRecord(current.root, { taskId: 'legacy-task', title: 'Legacy', intent: 'Remain readable.', projects: [], services: [], changes: [] });
-  const before = current.runtime.inspectTaskRecord(current.root, 'legacy-task').recordDigest;
-  const inspected = current.runtime.inspectParentCoordination(current.root, 'legacy-task');
-  assert.equal(inspected.mode, 'ordinary');
-  assert.equal(inspected.plan, null);
-  assert.equal('parentPlan' in inspected, false);
-  assert.equal(inspected.startup.status, 'not-applicable');
-  assert.equal(inspected.diagnostic, null);
-  assert.equal(current.runtime.inspectTaskRecord(current.root, 'legacy-task').recordDigest, before);
+  const view = f.runtime.inspectParentCoordination(f.root, 'parent');
+  assert.equal(view.isParent, true); assert.equal(view.diagnostic.code, 'parent_history_unreadable');
+  assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
 });
 
-test('已保存v1 Parent Plan保持原identity并经read model双读', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const payload = {
-    schemaVersion: 'buildr.parent-plan/v1', outcome: 'Legacy coordinated outcome.', architectureInvariants: ['Keep the original authority.'],
-    contributions: [{ id: 'child-delivery', summary: 'Legacy Child delivery.', plannedChildTaskId: 'child-task' }], dependencies: [], finalAcceptance: ['Delivery is proven.'],
-  };
-  const legacyPlan = { identity: parentCoordinationDigest(payload), ...payload };
-  assert.throws(() => current.runtime.recordParentPlan(current.root, 'parent-task', { plan: legacyPlan }), (error) => error.code === 'parent_coordination_field_forbidden');
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
-  try {
-    const row = opened.database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get('parent-task');
-    const receipt = JSON.parse(row.record_json);
-    receipt.parentPlan = legacyPlan;
-    receipt.planning = createTaskDevelopmentPlanning({ targetIdentity: legacyPlan.identity, nodes: [{ id: 'parent-plan', kind: 'parent-plan', authority: 'buildr.task-development/v3', reference: 'workspace-sqlite:task-development/parent-task#parent-plan', identity: legacyPlan.identity, disposition: 'current', summary: 'Legacy Parent Plan.', source: null }] });
-    opened.database.prepare('UPDATE task_development_current SET record_json = ? WHERE task_id = ?').run(JSON.stringify(receipt), 'parent-task');
-  } finally { opened.database.close(); }
-  const inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
-  assert.equal(inspected.mode, 'parent-plan');
-  assert.equal('parentPlan' in inspected, false);
-  assert.equal(inspected.plan.identity, legacyPlan.identity);
-  assert.equal(inspected.plan.sourceSchemaVersion, 'buildr.parent-plan/v1');
-  assert.equal(inspected.contributions[0].expectation.child, 'child-task');
-  assert.equal(inspected.contributions[0].actual.status, 'unassigned');
-  const upgraded = current.runtime.reconcileParentPlan(current.root, 'parent-task', {
-    expectedPlanIdentity: legacyPlan.identity, plan: parentPlan(), reason: 'Explicitly upgrade the legacy coordination plan to v2.',
-  });
-  assert.notEqual(upgraded.plan.identity, legacyPlan.identity);
-  assert.equal(upgraded.plan.sourceSchemaVersion, 'buildr.parent-plan/v2');
+test('ordinary task remains independently completable', (t) => {
+  const f = fixture(t); f.create('ordinary'); assert.equal(f.complete('ordinary').record.status, 'completed');
 });
 
-test('Parent Plan record/reconcile公开closed schema与最小example', () => {
-  const schemaRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'record', '--schema', '--json'], { encoding: 'utf8' });
-  assert.equal(schemaRun.status, 0, schemaRun.stderr);
-  const schema = JSON.parse(schemaRun.stdout);
-  assert.equal(schema.schemaVersion, 'buildr.parent-plan-input-schema/v2');
-  assert.equal(schema.inputSchema.additionalProperties, false);
-  assert.deepEqual(schema.inputSchema.required, ['outcome', 'architectureDecisions', 'contributions', 'finalAcceptance']);
-  assert.equal(schema.inputSchema.properties.contributions.maxItems, 128);
-  assert.deepEqual(schema.inputSchema.properties.contributions.items.required, ['id', 'priority', 'title', 'objective', 'directions', 'boundaries', 'dependencies']);
-  assert.equal(schema.inputSchema.properties.contributions.items.properties.dependencies.items.pattern, '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$');
-
-  const exampleRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile', '--example', '--json'], { encoding: 'utf8' });
-  assert.equal(exampleRun.status, 0, exampleRun.stderr);
-  const example = JSON.parse(exampleRun.stdout);
-  assert.equal(example.schemaVersion, 'buildr.parent-plan-input-example/v2');
-  assert.equal(example.parentPlan.contributions.length, 1);
-  assert.equal(example.parentPlan.contributions[0].expectedChild, 'A focused implementation Child');
+test('child identity punctuation does not make an otherwise complete acceptance incomparable', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true });
+  for (const id of ['child-a', 'child.a', 'child_a']) { f.create(id, { parentTaskId: 'parent' }); f.complete(id); }
+  assert.equal(f.complete('parent', f.input('parent')).record.status, 'completed');
+});
+test('legacy Parent Plan remains readable and still requires explicit completion authorization', (t) => {
+  const f = fixture(t); f.create('legacy-parent');
+  const opened = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
+  const historical = JSON.stringify({ parentPlan: { outcome: 'Original goal with no separate modern role' } });
+  opened.database.prepare('INSERT INTO task_development_current(task_id, record_json) VALUES (?, ?)').run('legacy-parent', historical);
+  opened.database.close();
+  const view = f.runtime.inspectParentCoordination(f.root, 'legacy-parent');
+  assert.equal(view.isParent, true);
+  assert.throws(() => f.complete('legacy-parent'), { code: 'parent_completion_authorization_required' });
+  const after = f.runtime.openWorkspaceStructuredStore(f.root, { writable: false });
+  assert.equal(after.database.prepare('SELECT record_json FROM task_development_current WHERE task_id = ?').get('legacy-parent').record_json, historical);
+  after.database.close();
 });
 
-test('terminal Child恢复入口公开closed schema且discovery零Workspace读取', () => {
-  const schemaRun = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile-child-delivery', '--schema', '--json'], { encoding: 'utf8', cwd: os.tmpdir() });
-  assert.equal(schemaRun.status, 0, schemaRun.stderr);
-  const schema = JSON.parse(schemaRun.stdout);
-  assert.equal(schema.schemaVersion, 'buildr.terminal-contribution-reconciliation-input-schema/v1');
-  assert.equal(schema.inputSchema.additionalProperties, false);
-  assert.equal(schema.inputSchema.properties.parentTaskId.pattern, '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$');
-  assert.deepEqual(Object.keys(schema.arguments), ['parent', 'expectedPlan', 'reason', 'source']);
+test('更正父任务保留阶段结果和子任务，update完成仍要求明确授权', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true }); f.create('child', { parentTaskId: 'parent' }); f.complete('child');
+  f.complete('parent', f.input('parent'));
+  const before = f.inspect('parent');
+  const update = (input) => f.runtime.updateTaskRecord(f.root, 'parent', { expectedRecordDigest: f.inspect('parent').recordDigest, ...input });
+  assert.throws(() => update({ status: 'active' }));
+  assert.equal(f.inspect('parent').recordDigest, before.recordDigest);
+  const reopened = update({ status: 'active', intent: 'Continue the entire roadmap', reason: 'User corrects a stage completion' });
+  assert.equal(reopened.record.status, 'active'); assert.equal(reopened.record.result, null);
+  assert.equal(reopened.record.resultHistory[0].intent, before.record.intent);
+  assert.deepEqual(reopened.record.resultHistory[0].result, before.record.result);
+  assert.equal(reopened.record.resultHistory[0].recordUpdatedAt, before.record.updatedAt);
+  assert.equal(f.inspect('child').record.status, 'completed');
+  assert.throws(() => update({ status: 'completed', summary: 'All done', noChange: false }), { code: 'parent_completion_authorization_required' });
+  assert.throws(() => update({ status: 'completed', intent: 'Shrink the goal', summary: 'All done', noChange: false, ...f.input('parent') }), { code: 'task_record_completion_context_changed' });
+  const completed = update({ status: 'completed', summary: 'Full goal accepted', noChange: false, ...f.input('parent') });
+  assert.equal(completed.record.status, 'completed'); assert.equal(completed.record.resultHistory.length, 1);
+  assert.throws(() => update({ intent: 'A different goal', reason: 'Edit' }), { code: 'task_record_completion_context_changed' });
 });
 
-test('completed Child可追加恢复proof并幂等重放，旧handoff与Task保持不变', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  const originalHandoff = prepareTerminalChildWithoutContribution(current);
-  const beforeTask = current.runtime.inspectTaskRecord(current.root, 'child-task');
-  const contributionHandoff = createContributionHandoff({
-    parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'],
-    nextAction: 'Continue with the parent integration Contribution.',
-  });
-  const input = { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Recover the omitted terminal Contribution mapping.', source: 'integration-test' };
-  const inputFile = path.join(current.root, 'contribution-handoff.json');
-  fs.writeFileSync(inputFile, JSON.stringify(contributionHandoff));
-  const cli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'reconcile-child-delivery', 'child-task', '--parent', input.parentTaskId, '--expected-plan', input.expectedPlanIdentity, '--input', inputFile, '--reason', input.reason, '--source', input.source, '--target', current.root, '--json'], { encoding: 'utf8' });
-  assert.equal(cli.status, 0, cli.stderr);
-  const first = JSON.parse(cli.stdout);
-  assert.equal(first.schemaVersion, 'buildr.parent-coordination-result/v3');
-  assert.equal(first.status, 'recorded');
-  assert.equal(first.children[0].proof.kind, 'terminal-reconciliation');
-  assert.equal(first.children[0].delivery.proof.reconciliationIdentity, first.reconciliation.identity);
-  assert.equal(first.contributions.find((item) => item.id === 'child-delivery').actual.status, 'delivered');
-  assert.deepEqual(first.children[0].boundContributions, ['child-delivery']);
-  const replay = current.runtime.reconcileChildDelivery(current.root, 'child-task', input);
-  assert.equal(replay.status, 'unchanged');
-  assert.equal(replay.reconciliation.identity, first.reconciliation.identity);
-  assert.equal(replay.reconciliation.createdAt, first.reconciliation.createdAt);
-  assert.deepEqual(current.runtime.inspectTaskRecord(current.root, 'child-task'), beforeTask);
-  const receipt = current.runtime.inspectTaskDevelopment(current.root, 'child-task').development.receipt;
-  assert.equal(receipt.handoffs[0].identity, originalHandoff.identity);
-  assert.equal(receipt.handoffs[0].contributionHandoff, undefined);
-  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { ...input, reason: 'Different semantic recovery.' }), (error) => error.code === 'terminal_contribution_reconciliation_conflict');
+test('已完成任务可更正父关系，保留成果、旧关系并拒绝并发覆盖和只读字段', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true }); f.create('child'); f.complete('child');
+  const before = f.inspect('child');
+  const input = { expectedRecordDigest: before.recordDigest, parentTaskId: 'parent', reason: 'User groups completed work under the overall goal' };
+  const linked = f.runtime.updateTaskRecord(f.root, 'child', input);
+  assert.equal(linked.record.status, 'completed'); assert.deepEqual(linked.record.result, before.record.result);
+  assert.equal(linked.record.resultHistory[0].parentTaskId, null);
+  assert.deepEqual(f.inspect('parent').record.childTaskIds, ['child']); assert.equal(f.inspect('parent').record.status, 'active');
+  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { ...input, title: 'Stale overwrite' }), { code: 'task_record_conflict' });
+  for (const field of ['taskId', 'resultHistory', 'createdAt', 'result']) assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, title: 'Invalid', [field]: [] }), { code: 'task_record_field_forbidden' });
+  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, parentTaskId: 'child', reason: 'Invalid cycle' }));
+  assert.equal(f.inspect('child').recordDigest, linked.recordDigest);
+  const same = f.runtime.updateTaskRecord(f.root, 'child', { ...input, expectedRecordDigest: linked.recordDigest });
+  assert.deepEqual(same.effects, []); assert.equal(same.record.resultHistory.length, 1);
 });
 
-test('terminal恢复拒绝stale Plan和Sibling owner冲突且零写入', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  current.runtime.createTaskRecord(current.root, { taskId: 'sibling-task', title: 'Sibling', intent: 'Own the planned Contribution.', parentTaskId: 'parent-task', projects: [], services: [], changes: [] });
-  current.runtime.beginTaskDevelopment(current.root, 'sibling-task', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Fixture sibling planning.', source: 'test fixture' } });
-  current.runtime.bindChildContributions(current.root, 'sibling-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  const terminalHandoff = prepareTerminalChildWithoutContribution(current);
-  const contributionHandoff = createContributionHandoff({ parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'], nextAction: 'Continue.' });
-  const context = current.runtime.readTerminalContributionReconciliationContext(current.root, 'child-task');
-  const staleRecord = createTerminalContributionReconciliation({ childTaskId: 'child-task', parentTaskId: 'parent-task', parentPlanIdentity: recorded.plan.identity, finishAssociation: context.child.finish.completion.association, handoff: terminalHandoff, contributionHandoff, reason: 'Exercise rollback.', source: 'integration-test', createdAt: '2026-08-23T00:00:00.000Z' });
-  assert.throws(() => current.runtime.writeTerminalContributionReconciliationPersistence(current.root, staleRecord, 'sha256-stale-context'), (error) => error.code === 'terminal_contribution_reconciliation_context_conflict');
-  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: 'sha256-stale', contributionHandoff, reason: 'Stale.', source: 'integration-test' }), (error) => error.code === 'parent_plan_conflict');
-  assert.throws(() => current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Conflicting.', source: 'integration-test' }), (error) => error.code === 'parent_contribution_owner_conflict');
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: false });
-  try { assert.equal(opened.database.prepare('SELECT COUNT(*) AS count FROM terminal_contribution_reconciliations').get().count, 0); }
-  finally { opened.database.close(); }
+test('统一更新支持四种状态，保留结果一致性和撤回历史', (t) => {
+  const f = fixture(t); f.create('task');
+  const update = (input) => f.runtime.updateTaskRecord(f.root, 'task', { expectedRecordDigest: f.inspect('task').recordDigest, ...input });
+  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'task', { status: 'todo' }), { code: 'task_record_digest_required' });
+  assert.equal(update({ status: 'todo' }).record.status, 'todo');
+  assert.throws(() => update({ status: 'completed', summary: 'Changed', noChange: false }), { code: 'task_record_todo_completion_requires_no_change' });
+  assert.equal(update({ status: 'active' }).record.status, 'active');
+  assert.equal(update({ status: 'completed', summary: 'Delivered', noChange: false }).record.status, 'completed');
+  const abandoned = update({ status: 'abandoned', reason: 'User corrects the disposition' });
+  assert.deepEqual(abandoned.record.result, { summary: 'User corrects the disposition' });
+  assert.equal(abandoned.record.resultHistory[0].result.summary, 'Delivered');
+  const reopened = update({ status: 'active', reason: 'User resumes the work' });
+  assert.equal(reopened.record.resultHistory.length, 2); assert.equal(reopened.record.result, null);
 });
 
-test('terminal恢复接受精确历史binding并拒绝已有原生Contribution Handoff', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  const contributionHandoff = createContributionHandoff({ parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'], nextAction: 'Continue.' });
-  prepareTerminalChildWithoutContribution(current);
-  const recovered = current.runtime.reconcileChildDelivery(current.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: recorded.plan.identity, contributionHandoff, reason: 'Recover the omitted handoff payload.', source: 'integration-test' });
-  assert.equal(recovered.status, 'recorded');
-  assert.equal(recovered.children[0].proof.kind, 'terminal-reconciliation');
-
-  const second = fixture(t);
-  createTasks(second);
-  const secondPlan = second.runtime.recordParentPlan(second.root, 'parent-task', { plan: parentPlan() });
-  second.runtime.bindChildContributions(second.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  prepareTerminalChildWithoutContribution(second, 'child-task', contributionHandoff);
-  assert.throws(() => second.runtime.reconcileChildDelivery(second.root, 'child-task', { parentTaskId: 'parent-task', expectedPlanIdentity: secondPlan.plan.identity, contributionHandoff, reason: 'Must not replace native proof.', source: 'integration-test' }), (error) => error.code === 'terminal_contribution_reconciliation_not_applicable');
-});
-
-test('Parent startup按真实安全顺序推进Review、gate refresh与首个eligible Contribution', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const startupPlan = parentPlan();
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: startupPlan });
-
-  let startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
-  assert.equal(startup.schemaVersion, 'buildr.parent-startup-readiness/v2');
-  assert.equal(startup.status, 'blocked');
-  assert.equal(startup.next.action, 'planning-review');
-
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self',
-    reviewed: ['Parent outcome', 'Architecture invariants', 'Contribution Map', 'Dependencies', 'Final acceptance'],
-    uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Parent Plan is ready.' },
-  });
-  startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
-  assert.equal(startup.next.action, 'refresh-parent-planning');
-
-  const refreshed = current.runtime.refreshParentPlanning(current.root, 'parent-task');
-  assert.equal(refreshed.status, 'refreshed');
-  assert.equal(refreshed.startup.status, 'ready');
-  assert.equal(refreshed.startup.next.action, 'start-child-contribution');
-  assert.deepEqual(refreshed.startup.eligibleContributions, ['child-delivery']);
-  const eligible = refreshed.contributions.find((item) => item.id === 'child-delivery');
-  assert.equal(eligible.expectation.status, 'expected');
-  assert.equal(eligible.actual.status, 'unassigned');
-  assert.equal(eligible.eligibility.status, 'eligible');
-  assert.equal(refreshed.startup.blockers.length, 0);
-  assert.equal('dependencyBlockers' in refreshed.startup, false);
-});
-
-test('Parent planning refresh不接受缺失、stale或changes-required Review', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
-    conclusion: { outcome: 'changes-required', summary: 'Plan must change.' },
-  });
-  assert.throws(() => current.runtime.refreshParentPlanning(current.root, 'parent-task'), (error) => error.code === 'parent_planning_review_not_ready');
-});
-
-test('Parent startup只在没有eligible Contribution时暴露依赖阻塞', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan'], uncovered: [], findings: [],
-    conclusion: { outcome: 'ready', summary: 'Ready.' },
-  });
-  current.runtime.refreshParentPlanning(current.root, 'parent-task');
-  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  const startup = current.runtime.inspectParentStartupReadiness(current.root, 'parent-task');
-  assert.equal(startup.status, 'blocked');
-  assert.equal(startup.next.action, 'wait-contribution-dependencies');
-  assert.deepEqual(startup.dependencyBlockers, [{ contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
-  assert.deepEqual(startup.blockers, [{ axis: 'contribution-dependency', code: 'parent_startup_contribution_dependency_incomplete', contributionId: 'parent-integration', dependsOn: ['child-delivery'] }]);
-});
-
-test('Parent Plan、Child binding与派生进度不复制Child状态，completed Child也不完成Parent', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  let result = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  const planIdentity = result.plan.identity;
-  const planBytes = JSON.stringify(result.plan);
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: planIdentity, method: 'self',
-    reviewed: ['Parent outcome', 'Architecture invariants', 'Contribution Map', 'Dependencies', 'Final acceptance'],
-    uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Coordination plan is ready.' },
-  });
-  result = current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  assert.deepEqual(result.children[0].boundContributions, ['child-delivery']);
-  assert.equal('plannedContributions' in result.children[0], false);
-  assert.equal(result.parentStatus, 'active');
-  const childMode = current.runtime.inspectParentCoordination(current.root, 'child-task');
-  assert.equal(childMode.mode, 'child');
-  assert.equal(childMode.parentSource.taskId, 'parent-task');
-  assert.deepEqual(childMode.parentSource.boundContributions, ['child-delivery']);
-  assert.deepEqual(childMode.parentSource.contributions.map((item) => [item.title, item.bindingStatus]), [['Child delivery', 'active']]);
-
-  current.runtime.completeTaskRecord(current.root, 'child-task', { summary: 'Top-level Child marked completed without a Finish handoff.', noChange: false });
-  result = current.runtime.inspectParentCoordination(current.root, 'parent-task');
-  assert.equal(result.parentStatus, 'active');
-  assert.equal(result.children[0].status, 'completed');
-  assert.equal(result.children[0].deliveryProven, false);
-  assert.equal(result.contributions.find((item) => item.id === 'child-delivery').actual.status, 'unproven');
-  assert.equal(JSON.stringify(result.plan), planBytes);
-  assert.equal('contributions' in result.plan, false);
-  assert.equal('result' in result.planningReview, false);
-  assert.equal(result.planningReview.outcome, 'ready');
-  assert.equal(result.planningReview.applicability, 'current');
-  assert.throws(() => current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: planIdentity, summary: 'Accept.' }), (error) => error.code === 'parent_acceptance_prerequisites_incomplete');
-  assert.throws(() => current.runtime.completeTaskRecord(current.root, 'parent-task', { summary: 'All Children look done.', noChange: false }), (error) => error.code === 'parent_final_acceptance_required');
-
-  const cli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'inspect', 'parent-task', '--target', current.root, '--json'], { encoding: 'utf8' });
-  assert.equal(cli.status, 0, cli.stderr);
-  const publicResult = JSON.parse(cli.stdout);
-  assert.equal(publicResult.schemaVersion, 'buildr.parent-coordination-result/v3');
-  for (const field of ['parentPlan', 'finalAcceptanceReady', 'nextActions']) assert.equal(field in publicResult, false, field);
-  assert.deepEqual(publicResult.contributions, result.contributions);
-  assert.deepEqual(publicResult.children, result.children);
-
-  const inputFile = path.join(current.root, 'parent-plan-input.json');
-  fs.writeFileSync(inputFile, JSON.stringify(parentPlan()));
-  const blockedCli = spawnSync(process.execPath, [BUILDR, 'task', 'parent', 'record', 'parent-task', '--target', current.root, '--input', inputFile, '--json'], { encoding: 'utf8' });
-  assert.equal(blockedCli.status, 1, blockedCli.stderr);
-  const blockedResult = JSON.parse(blockedCli.stdout);
-  assert.equal(blockedResult.schemaVersion, 'buildr.parent-coordination-result/v3');
-  assert.equal(blockedResult.status, 'blocked');
-  assert.equal(blockedResult.diagnostic.code, 'parent_plan_already_exists');
-  assert.equal(typeof blockedResult.diagnostic.nextAction, 'string');
-  assert.equal('nextActions' in blockedResult, false);
-});
-
-test('reconcile使用optimistic identity并且没有新增progress或lifecycle表', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Plan v2'], uncovered: [], findings: [],
-    conclusion: { outcome: 'ready', summary: 'Original plan is ready.' },
-  });
-  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  assert.throws(() => current.runtime.reconcileParentPlan(current.root, 'parent-task', { expectedPlanIdentity: 'sha256-0000000000000000000000000000000000000000000000000000000000000000', plan: parentPlan(), reason: 'Stale writer.' }), (error) => error.code === 'parent_plan_conflict');
-  assert.throws(() => current.runtime.reconcileParentPlan(current.root, 'parent-task', {
-    expectedPlanIdentity: recorded.plan.identity,
-    reason: 'Invalidly erase active Child ownership.',
-    plan: { ...parentPlan(), contributions: parentPlan().contributions.filter((item) => item.id !== 'child-delivery').map((item) => ({ ...item, dependencies: [] })) },
-  }), (error) => error.code === 'parent_plan_referenced_contribution_removed');
-  const reconciled = current.runtime.reconcileParentPlan(current.root, 'parent-task', {
-    expectedPlanIdentity: recorded.plan.identity,
-    reason: 'The integration Contribution now has a clearer expected implementation shape.',
-    plan: { ...parentPlan(), contributions: parentPlan().contributions.map((item) => item.id === 'parent-integration' ? { ...item, expectedChild: 'A focused integration Child' } : item) },
-  });
-  assert.equal(reconciled.status, 'reconciled');
-  assert.notEqual(reconciled.plan.identity, recorded.plan.identity);
-  assert.equal(reconciled.planningReview.applicability, 'stale');
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: reconciled.plan.identity, method: 'self', reviewed: ['Updated Plan v2'], uncovered: [], findings: [],
-    conclusion: { outcome: 'ready', summary: 'Updated plan is ready.' },
-  });
-  const refreshed = current.runtime.refreshParentPlanning(current.root, 'parent-task');
-  assert.equal(refreshed.planningReview.applicability, 'current');
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: false });
-  try {
-    const names = opened.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name);
-    assert.equal(names.some((name) => /parent.*(progress|lifecycle)|coordination_(event|history)|delivery_registry/.test(name)), false);
-  } finally {
-    opened.database.close();
-  }
-});
-
-test('saved Contribution Handoff派生delivered/extra/superseded，Parent仍需显式accept与complete', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const plan = {
-    outcome: 'All coordinated capabilities are integrated.',
-    architectureDecisions: ['Only saved handoffs prove delivery.'],
-    contributions: [
-      { id: 'child-delivery', priority: 'P0-1', title: 'Child delivery', objective: 'Child delivers its planned result.', directions: [], boundaries: [], expectedChild: 'A focused Child', dependencies: [] },
-      { id: 'later-capability', priority: 'P0-2', title: 'Later capability', objective: 'A later capability is also delivered.', directions: [], boundaries: [], expectedChild: null, dependencies: [] },
-      { id: 'future-child-scope', priority: 'P1-1', title: 'Future Child scope', objective: 'A future Child would otherwise deliver this scope.', directions: [], boundaries: [], expectedChild: 'A future Child', dependencies: ['later-capability'] },
-    ],
-    finalAcceptance: ['Every Contribution is delivered or superseded.', 'The Parent records integration acceptance.'],
-  };
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan });
-  current.runtime.recordTaskReview(current.root, 'parent-task', {
-    reviewType: 'planning', targetIdentity: recorded.plan.identity, method: 'self', reviewed: ['Current Parent Plan'], uncovered: [], findings: [],
-    conclusion: { outcome: 'ready', summary: 'Parent Plan is ready.' },
-  });
-  current.runtime.refreshParentPlanning(current.root, 'parent-task');
-  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  current.runtime.completeTaskRecord(current.root, 'child-task', { summary: 'Delivered through Formal Finish fixture.', noChange: false });
-  const contributionHandoff = createContributionHandoff({
-    parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: ['child-delivery'],
-    extra: [{ contributionId: 'later-capability', summary: 'The Child safely delivered this later capability too.' }],
-    superseded: [{ contributionId: 'future-child-scope', deliveredByContributionId: 'later-capability', reason: 'The later capability completely covers the future scope.' }],
-    nextAction: 'Parent owner reconciles future Child creation and records final acceptance.',
-  });
-  const originalProjection = current.runtime.projectParentCoordinationChild;
-  current.runtime.projectParentCoordinationChild = (row, parentTaskId) => {
-    const projected = originalProjection(row, parentTaskId);
-    return row.task_id === 'child-task' ? { ...projected, deliveryProven: true, contributionHandoff } : projected;
-  };
-
-  let inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
-  assert.deepEqual(inspected.contributions.map((item) => [item.id, item.actual.status]), [
-    ['child-delivery', 'delivered'], ['later-capability', 'delivered'], ['future-child-scope', 'superseded'],
-  ]);
-  assert.equal(inspected.prerequisitesSatisfied, true);
-  assert.equal(inspected.parentStatus, 'active');
-  assert.equal(inspected.startup.next.action, 'accept-parent');
-  inspected = current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.plan.identity, summary: 'Integrated behavior and all invariants are accepted.' });
-  assert.equal(inspected.parentStatus, 'active');
-  assert.equal(inspected.parentAcceptance.planIdentity, recorded.plan.identity);
-  assert.equal(inspected.startup.next, null);
-  current.runtime.completeTaskRecord(current.root, 'parent-task', { summary: 'Explicit Parent completion after final integration acceptance.', noChange: false });
-  assert.equal(current.runtime.inspectTaskRecord(current.root, 'parent-task').record.status, 'completed');
-});
-
-test('partial delivery保持residual且不能被Parent final acceptance越过', (t) => {
-  const current = fixture(t);
-  createTasks(current);
-  const recorded = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: parentPlan() });
-  current.runtime.bindChildContributions(current.root, 'child-task', { parentTaskId: 'parent-task', contributionIds: ['child-delivery'] });
-  current.runtime.completeTaskRecord(current.root, 'child-task', { summary: 'Partially delivered through Formal Finish fixture.', noChange: false });
-  const contributionHandoff = createContributionHandoff({
-    parentTaskId: 'parent-task', planned: ['child-delivery'], delivered: [],
-    residual: [{ contributionId: 'child-delivery', summary: 'Only the residual contract work remains in the narrowed Child scope.' }],
-    affected: [{ contributionId: 'parent-integration', summary: 'Integration remains blocked on the residual work.' }],
-    nextAction: 'Update the Child intent and narrow Change to the residual scope only.',
-  });
-  const originalProjection = current.runtime.projectParentCoordinationChild;
-  current.runtime.projectParentCoordinationChild = (row, parentTaskId) => {
-    const projected = originalProjection(row, parentTaskId);
-    return row.task_id === 'child-task' ? { ...projected, deliveryProven: true, contributionHandoff } : projected;
-  };
-  const inspected = current.runtime.inspectParentCoordination(current.root, 'parent-task');
-  assert.equal(inspected.contributions.find((item) => item.id === 'child-delivery').actual.status, 'residual');
-  assert.equal(inspected.prerequisitesSatisfied, false);
-  assert.throws(() => current.runtime.acceptParentCoordination(current.root, 'parent-task', { expectedPlanIdentity: recorded.plan.identity, summary: 'Too early.' }), (error) => error.code === 'parent_acceptance_prerequisites_incomplete');
-});
-
-test('Parent Coordination v3在两类真实规模计划上保持小于25 KiB且至少缩减50%', (t) => {
-  for (const [label, contributionCount] of [['release', 7], ['architecture', 10]]) {
-    const current = fixture(t);
-    createTasks(current);
-    const input = realisticParentPlan(label, contributionCount);
-    const inspected = current.runtime.recordParentPlan(current.root, 'parent-task', { plan: input });
-    const legacyEquivalent = {
-      ...inspected,
-      schemaVersion: 'buildr.parent-coordination-result/v2',
-      parentPlan: { schemaVersion: 'buildr.parent-plan/v2', identity: inspected.plan.identity, ...input },
-      plan: { ...inspected.plan, contributions: input.contributions },
-      contributions: inspected.contributions.map((item) => ({ ...item, expectedChild: item.expectation.child })),
-      children: inspected.children.map((child) => ({ ...child, plannedContributions: child.boundContributions, contributionHandoff: null })),
-      finalAcceptanceReady: inspected.prerequisitesSatisfied,
-      nextActions: inspected.startup.next ? [inspected.startup.next.summary] : [],
-      startup: { ...inspected.startup, dependencyBlockers: [] },
-    };
-    const v3Bytes = Buffer.byteLength(JSON.stringify(inspected));
-    const v2Bytes = Buffer.byteLength(JSON.stringify(legacyEquivalent));
-    assert.ok(v3Bytes <= 25 * 1024, `${label}: ${v3Bytes} B exceeds 25 KiB`);
-    assert.ok(v3Bytes <= v2Bytes * 0.5, `${label}: ${v3Bytes} B is not at least 50% smaller than ${v2Bytes} B`);
-  }
+test('旧父计划尚未标记父身份时，也不能沿用完成状态更换目标', (t) => {
+  const f = fixture(t); f.create('legacy'); f.complete('legacy');
+  const opened = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
+  opened.database.prepare('INSERT INTO task_development_current(task_id, record_json) VALUES (?, ?)').run('legacy', JSON.stringify({ parentPlan: { outcome: 'Historical parent goal' } }));
+  opened.database.close();
+  const before = f.inspect('legacy');
+  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'legacy', { expectedRecordDigest: before.recordDigest, intent: 'A new goal', reason: 'Correction' }), { code: 'task_record_completion_context_changed' });
+  assert.equal(f.inspect('legacy').recordDigest, before.recordDigest);
 });

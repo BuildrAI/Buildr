@@ -69,7 +69,7 @@ integrity:
   - skills/openspec/openspec-apply-change=sha256-2bc0d51408640c259f8b4608b6aa9c5f4dd736ec1a353546157a757f74b3d613
   - skills/openspec/openspec-sync-specs=sha256-c3971fa0e66489c123d9118410c404009148b40e4801d4879924d07655e05925
   - skills/openspec/openspec-archive-change=sha256-71b27be3cccf568fba36589da3ec43dc1c98032bf21b5873ce29f3e593945ca9
-  - skills/buildr/openspec-contract-guard=sha256-6adafed5de751960495114d73212909449b4dc0a93b1a9541c33dc8aad2660c6
+  - skills/buildr/openspec-contract-guard=sha256-0cb01f591bd7d6052401e17aa5e318be3dff92f80f2a43e81f7e1138a46b4902
   - commands/buildr/openspec/manifest.yml=sha256-beb4526c7109ada72b34394e8ce6fe7823cbd4ff695e376da9709e87439fe1b9
   - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-e9c0e2382be125b68f250479f546ba49c25bf892b8ea6442196cd70cb53e106b
   - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-0779b1bacce5560bfe02d03ececf2ca538022e5c39b62cf919bc9beb40da99a0

@@ -20,7 +20,7 @@ const environmentSkill = read('resources/workspace/skills/buildr/task-environmen
 const gitOperationsContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
 const gitOperationsSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
-const finishExecutor = read('src/task/application/finish/task-finish-product-executor.mjs');
+const finishHistory = read('src/task/application/finish/task-finish-application.mjs');
 const developmentSkill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
 const developmentApplication = read('src/task/application/task-development-application.mjs');
 const openSpecProposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
@@ -135,8 +135,8 @@ test('Application 是 current Result persistence 的唯一 writer/reader', () =>
   assert.match(developmentApplication, /runtime\.inspectTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.recordTaskVerification/);
   assert.doesNotMatch(developmentApplication, /runtime\.reconcileTaskVerification/);
-  assert.doesNotMatch(finishExecutor, /inspectTaskVerification|recordTaskVerification/);
-  assert.doesNotMatch(finishExecutor, /verificationSummary|requiredAssurance|candidate-fingerprint|--level/);
+  assert.doesNotMatch(finishHistory, /inspectTaskVerification|recordTaskVerification/);
+  assert.doesNotMatch(finishHistory, /verificationSummary|requiredAssurance|candidate-fingerprint|--level/);
 });
 
 test('Task Environment、Git provider 与 Task Verification 权限保持解耦', () => {
@@ -189,11 +189,9 @@ test('随包 manifest 原子切换 v3 contract、provider、binding 与 referenc
   assert.deepEqual(packageManifest.builtins.skills.find((item) => item.id === 'task-verification').provides, [{ capability: 'buildr.task-verification', version: 3 }]);
 });
 
-test('Task Finish 保持可选五阶段 handoff consumer 且不接管 Verification authority', () => {
-  assert.match(finishContract, /只消费Development handoff/);
-  assert.match(finishContract, /分别投影Delivery、Activation、Environment Cleanup和Diagnostics/);
-  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review/);
-  assert.doesNotMatch(finishContract, /task-verification\/v3|requiredForDelivery/);
+test('独立收尾不要求正式验证或候选交接', () => {
+  assert.match(finishContract, /不要求任务、候选、交接、完整环境或旧收尾运行/);
+  assert.doesNotMatch(finishHistory, /executeFinishRun|createFinishRun|reconcileTaskFinishDelivery/);
 });
 
 test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调用', () => {
@@ -210,8 +208,8 @@ test('OpenSpec convergence 由 Development 前置收敛，Task Finish 不再调�
   assert.match(openSpecApplySidebar, /change-checklist-incomplete/);
   assert.doesNotMatch(openSpecApplySidebar, /Canonical sync\/archive 只由 Task Finish|完整 Candidate|current Task Verification Result/);
   assert.match(developmentSkill, /每个关联Change的deterministic convergence\/archive/);
-  assert.doesNotMatch(finishExecutor, /openspec|archiveChange|legacyConvergence|openspecConverge/);
-  assert.match(finishContract, /不得运行或记录Task Verification\/Task Review、生成Candidate或收敛OpenSpec Change/);
+  assert.doesNotMatch(finishHistory, /openspec|archiveChange|legacyConvergence|openspecConverge/);
+  assert.match(finishContract, /不要求任务、候选、交接、完整环境或旧收尾运行/);
 });
 
 test('产品入口分别路由 Task Verification、Environment 与 Git provider 意图', () => {

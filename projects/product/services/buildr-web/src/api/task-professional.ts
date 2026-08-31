@@ -1,6 +1,5 @@
 import type { ApiClient } from './client';
 import type {
-  CoordinationPatchRequest,
   CoordinationResponse,
   DevelopmentResponse,
   EnvironmentResponse,
@@ -92,9 +91,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
     },
     updateRetrospective(taskId: string, input: RetrospectivePatchRequest): Promise<RetrospectiveResponse> {
       return typed(client(taskPath(taskId, '/retrospective'), { method: 'PATCH', body: JSON.stringify(input) }));
-    },
-    updateCoordination(taskId: string, input: CoordinationPatchRequest): Promise<CoordinationResponse> {
-      return typed(client(taskPath(taskId, '/coordination'), { method: 'PATCH', body: JSON.stringify(input) }));
     },
     reviewPrompt(input: ReviewPromptRequest): Promise<ReviewPromptResponse> {
       return typed(client('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify(input) }));
