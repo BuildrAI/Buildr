@@ -2,10 +2,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
-import YAML from 'yaml';
+import { createRequire } from 'node:module';
 import { normalizeProductPath } from './planner.mjs';
 import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
+
+const require = createRequire(import.meta.url);
 
 function git(gitRoot, args, options = {}) {
   return execFileSync('git', args, { cwd: gitRoot, encoding: options.encoding ?? 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -61,6 +63,9 @@ export function isSelectionOnlyPackageMetadataChange(productPath, baseText, curr
 }
 
 function withoutVerificationPresentationFields(text) {
+  // CI plans run before npm ci. Missing YAML keeps the declaration change
+  // conservative through isVerificationDeclarationMetadataOnlyChange's catch.
+  const YAML = require('yaml');
   const value = YAML.parse(text);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('verification.yml must contain a mapping');
   for (const resource of value.resources ?? []) delete resource.title;

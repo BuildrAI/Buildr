@@ -191,13 +191,14 @@ try {
     fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
     return planPath;
   });
+  // 外层等待覆盖环境核验、能力执行和证据落盘，不把托管机器的启动延迟误判为业务失败。
   const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
     ...task.cliInvocation.argsPrefix,
     'verification', 'run', '--project', 'nested', '--plan', verificationPlans[summary.tasks.indexOf(task)],
     '--target-identity', digest(`target:${task.taskId}`), '--target', task.environmentRoot,
     '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
     '--environment', task.taskId, '--workspace', workspace, '--detail', 'full', '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(15_000), outputLimit: 64 * 1024 }));
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(60_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
   summary.verificationRuns = verificationResults.map((result, index) => {

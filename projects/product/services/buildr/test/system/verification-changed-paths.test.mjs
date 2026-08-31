@@ -4,7 +4,26 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { collectChangedProductPaths, resolveVerificationBase } from '../../test/verification/changed-paths.mjs';
+
+test('依赖安装前可加载 changed path collector，缺少 YAML 时保守处理声明变化', () => {
+  const moduleUrl = pathToFileURL(path.resolve(import.meta.dirname, '../verification/changed-paths.mjs')).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    import { registerHooks } from 'node:module';
+    registerHooks({ resolve(specifier, context, nextResolve) {
+      if (specifier === 'yaml') throw Object.assign(new Error('yaml is not installed'), { code: 'ERR_MODULE_NOT_FOUND' });
+      return nextResolve(specifier, context);
+    } });
+    const collector = await import(${JSON.stringify(moduleUrl)});
+    assert.deepEqual(collector.collectChangedProductPaths({ productRoot: process.cwd(), explicitPaths: ['docs/a.md'] }).paths, ['docs/a.md']);
+    assert.equal(collector.isVersionOnlyPackageMetadataChange('package.json', '{"version":"1.0.0"}', '{"version":"1.0.1"}'), true);
+    assert.equal(collector.isVerificationDeclarationMetadataOnlyChange('capabilities: []', 'capabilities: []'), false);
+    process.stdout.write('ready');
+  `;
+  assert.equal(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }), 'ready');
+});
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

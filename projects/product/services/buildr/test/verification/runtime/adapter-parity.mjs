@@ -164,16 +164,15 @@ async function verifyLifecycle(context) {
 
   if (adapterId === 'codex' || adapterId === 'claude-code') {
     const renderedFinish = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
-    assert.ok(renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
-    assert.ok(renderedFinish.includes('完整“收尾/交付”意图'));
-    assert.ok(renderedFinish.includes('正式 Task 路径'));
-    assert.ok(renderedFinish.includes('普通 Git 路径'));
-    assert.ok(renderedFinish.includes('buildr task next'));
-    assert.ok(renderedFinish.includes('task finish reconcile'));
-    assert.ok(renderedFinish.includes('不接受调用方声明成功或自制证明'));
-    assert.ok(renderedFinish.includes('只有交付决定任务贡献是否进入目标远端'));
-    assert.ok(renderedFinish.includes('其他结果失败形成 attention，不撤销已确认交付'));
-    assert.ok(renderedFinish.includes('不产生正式生命周期证据'));
+    assert.ok(renderedFinish.includes('已有任务结果登记'));
+    assert.ok(renderedFinish.includes('task complete --expected-record <recordDigest>'));
+    assert.ok(renderedFinish.includes('没有匹配任务就继续实际工作，不补建记录'));
+    assert.ok(renderedFinish.includes('不重新交付已成立的成果'));
+    assert.ok(renderedFinish.includes('--expected-source'));
+    assert.ok(renderedFinish.includes('--delivered-ref'));
+    assert.ok(renderedFinish.includes('不建立候选、研发交接、旧收尾运行'));
+    assert.ok(!renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
+    assert.ok(!renderedFinish.includes('task finish reconcile'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
   }
 
