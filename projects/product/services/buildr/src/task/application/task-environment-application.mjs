@@ -7,6 +7,7 @@ import {
   TASK_ENVIRONMENT_RECEIPT_SCHEMA,
   taskEnvironmentError,
   taskEnvironmentReadModel,
+  normalizeTaskCleanupDelivery,
 } from '../domain/task-environment.mjs';
 import {
   LEGACY_TASK_ENVIRONMENT_PLAN_SCHEMA,
@@ -1252,7 +1253,7 @@ export function registerTaskEnvironmentApplication(runtime) {
     return { resource: written.receipt.resources.find((item) => item.id === input.id), path: written.file };
   }
 
-  async function cleanupTaskEnvironment(targetRoot, taskId, authorization = null) {
+  async function cleanupTaskEnvironment(targetRoot, taskId, authorization = null, cleanupDelivery = {}) {
     let root = path.resolve(targetRoot);
     let persistence = null;
     let cleanupAuthorized = false;
@@ -1279,6 +1280,8 @@ export function registerTaskEnvironmentApplication(runtime) {
       const noChange = persistedAuthorization?.type === 'no-change' && authorization === persistedAuthorization;
       const completed = persistedAuthorization?.type === 'completed' && authorization === persistedAuthorization;
       if (!abandon && !finish && !noChange && !completed) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已完成或明确放弃的任务；具体删除安全仍由资源所有者复核。', 409, undefined, '先完成并对账交付、确认 Task 无代码变更，或明确 abandon Task。');
+      const reviewedDelivery = normalizeTaskCleanupDelivery(cleanupDelivery, persistence.receipt.scopes.filter((scope) => scope.provider?.capability === GIT_PROVIDER).map((scope) => scope.selector));
+      if (Object.keys(reviewedDelivery).length && !completed) throw taskEnvironmentError('task_environment_cleanup_unauthorized', '已核验交付输入只用于已完成且有成果交付的任务。', 409);
       cleanupAuthorized = true;
       assertEnvironmentManager(root, persistence.receipt);
       managerAuthorized = true;
@@ -1297,7 +1300,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       }
       const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);
       if (hasGit) {
-        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, integratedRefs: finish ? authorization.deliveries : {}, integratedContributions: finish ? authorization.integratedContributions || {} : {}, allowDirty: abandon, allowNoChange: noChange, allowCompleted: completed });
+        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, integratedRefs: finish ? authorization.deliveries : {}, integratedContributions: finish ? authorization.integratedContributions || {} : {}, allowDirty: abandon, allowNoChange: noChange, allowCompleted: completed, cleanupDelivery });
         effects.push(...provider.effects.map((effect) => ({ ...effect, provider: GIT_PROVIDER })));
         if (provider.status === 'blocked') throw taskEnvironmentError(provider.diagnostic?.code || 'task_environment_provider_cleanup_blocked', provider.diagnostic?.message || 'Git provider cleanup blocked.', 409, provider.diagnostic);
       }

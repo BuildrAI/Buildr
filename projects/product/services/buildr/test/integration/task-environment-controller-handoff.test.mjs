@@ -483,3 +483,18 @@ test('completed Task cleanup does not read legacy Finish or prepare the environm
   assert.equal(retried.status, 'cleaned');
   assert.equal(current.calls.providerCleanups, 1);
 });
+
+test('completed cleanup forwards reviewed source and target without running professional preparation', async (t) => {
+  const current = fixture(t);
+  const original = current.runtime.readTaskRecordPersistence();
+  current.runtime.readTaskRecordPersistence = () => ({ record: { ...original.record, status: 'completed', result: { noChange: false, summary: 'Reviewed delivery.' } } });
+  const input = { expectedSources: { workspace: 'a'.repeat(40) }, deliveredRefs: { workspace: 'b'.repeat(40) } };
+  const missing = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID, null, { expectedSources: input.expectedSources });
+  assert.equal(missing.status, 'blocked');
+  assert.equal(current.calls.providerCleanups, 0);
+  const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID, null, input);
+  assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned.diagnostic));
+  assert.deepEqual(current.calls.providerCleanupInput.cleanupDelivery, input);
+  assert.equal(current.calls.providerMutations, 0);
+  assert.equal(current.calls.providerCleanupInput.allowDirty, false);
+});

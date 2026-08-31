@@ -1574,11 +1574,11 @@ Task Verification Skill与Agent workflow MUST把running progress、timed-out、c
 
 #### Scenario: 已有检查仍适用
 - **WHEN** 内容和检查相关条件未改变
-- **THEN** 复用已有结果，不重跑全量验证
+- **THEN** MUST复用已有结果，不因收尾、生成新提交或提交编号改变而追加验证
 
 #### Scenario: 具体检查缺口
 - **WHEN** 存在相关内容变化或已知错误
-- **THEN** 只检查受影响内容并如实报告，不创建统一门禁
+- **THEN** MUST选择覆盖实际影响的最小充分已有检查；如确需补测，MUST在推进目标分支前执行并通过，再集成推送。不得按测试条数代替风险和执行成本判断，不创建统一门禁
 
 #### Scenario: 部分成功
 - **WHEN** 交付成立但登记或清理失败

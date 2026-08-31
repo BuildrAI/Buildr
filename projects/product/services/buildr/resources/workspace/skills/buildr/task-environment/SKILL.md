@@ -22,7 +22,7 @@ buildr task environment plan record --schema|--example --json
 buildr task environment plan record <task-id> --input <json-file> --target <canonical-workspace> --json
 buildr task environment plan inspect <task-id> --target <canonical-workspace> --json
 buildr task environment inspect <task-id> --target <canonical-workspace> --json
-buildr task environment cleanup <task-id> --target <canonical-workspace> --json
+buildr task environment cleanup <task-id> [--expected-source <selector>=<full-commit> --delivered-ref <selector>=<full-commit>] --target <canonical-workspace> --json
 ```
 
 - `--agent`对`prepare`必填，必须写成当前宿主，例如 Cursor 会话写`cursor`、Codex 会话写`codex`。不得省略，也不得假设省略后默认为 Codex。未给`--branch`时默认任务分支为`<adapter>/<task-id>`；显式`--branch`优先。
@@ -33,7 +33,7 @@ buildr task environment cleanup <task-id> --target <canonical-workspace> --json
 - Application保存的resolved `buildr.task-environment-plan/v3`与`buildr.task-environment-receipt/v6`是Plan和机器状态authority；v3把Workspace path reference与executable authority分开，并把capability preparation closure与基础Task选择分开，v6保存closed runtime invocation与解析后的机器事实。旧Plan/Receipt只读；显式`prepare --plan`才升级。原始Plan Request不进入SQLite。Environment cleanup只清理Receipt已登记资源与provider-owned执行位置，不扫描或删除调用方临时输入。
 - `prepare` 同时承担首次准备和幂等恢复；只重跑输出缺失或 executable/input identity 漂移的 Step，没有单独 `restore`。
 - `inspect`只读重新观察已保存Plan的executable、inputs和outputs；它不执行Step、不创建或修复输出、不回写Receipt。
-- `cleanup`可在任务已完成或明确放弃后执行。已完成任务不要求旧收尾运行：Git 提供者重新核对工作树和分支归属、未保存内容及提交被保留分支持有；不能证明时保留资源。完整环境不必重新 ready，清理结果不证明远端交付，也不改写任务结果。
+- `cleanup`可在任务已完成或明确放弃后执行。已完成任务不要求旧收尾运行：智能体（Agent）已核验完整交付时，成对传递覆盖所有受管Git仓库的 `--expected-source` 与 `--delivered-ref`；必须是已观察的完整提交编号，不接受分支名或缩写。该输入表达调用者的交付核验，不是软件独立证明。Git提供者核对归属、源版本不变、没有未保存内容、交付提交仍由保留分支持有，并删除工作树与本地任务分支，不要求原提交是目标祖先。无输入时仍支持既有祖先包含检查；版本变化或未保存内容只阻止相关删除。完整环境不必重新 ready，清理结果不证明远端交付，也不改写任务结果。
 
 ## 执行边界
 
