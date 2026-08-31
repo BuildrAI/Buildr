@@ -355,7 +355,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户明确要求创建或查看待办/正式 Task Record、创建 Parent Task、更新顶层事实或复盘来源、激活待办、设置 Parent、完成或放弃 Task，或按 Task ID 恢复记录时使用；维护任务记录并指导轻量父子管理；不自行执行研发、环境、验证或交付。
+    description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
     enabled: true
     required: false
     state: installed

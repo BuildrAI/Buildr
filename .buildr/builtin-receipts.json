@@ -193,11 +193,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-1d546415448e90e020898e68e212719b7f5141407e66abd86b97a3001b49b9c8",
+      "integrity": "sha256-ac272cc09bb7ae9092d688a7d28fac9006bea0839022a05d396efa75e67ce126",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a537df00abd40334d65e59948beeb4e925befe8529749c79e8bd9570e05f5ecf"
+          "integrity": "sha256-337add1099536cd5d5127859744109d2b2e98298b73fadbe07c9d36a02b0f045"
         },
         {
           "path": "agents/openai.yaml",
