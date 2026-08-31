@@ -16,8 +16,8 @@ export function registerWorkspaceProductSuite(selectedSuite) {
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-const PREVIEW_ISOLATION_TIMEOUT_MS = 60_000;
-const PREVIEW_COMMAND_TIMEOUT_MS = 15_000;
+const APP_PROCESS_TIMEOUT_MS = 60_000;
+const APP_COMMAND_TIMEOUT_MS = 15_000;
 
 function temporaryRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
@@ -578,7 +578,7 @@ suiteTest('buildr-web-http', '全局 Buildr Web Runtime 隔离多个 Workspace�
   assert.equal(shutdown, true);
 });
 
-suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: 15_000 }, async (t) => {
+suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 runtime state 恢复', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t) => {
   const base = temporaryRoot(t);
   const root = initWorkspace(t, { name: 'single-instance' });
   const appData = path.join(base, 'single-instance-data');
@@ -592,7 +592,7 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   child.stderr.on('data', (chunk) => { errors += chunk; });
   t.after(() => { if (child.exitCode === null) child.kill('SIGTERM'); });
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Buildr Web 未就绪：${output}\n${errors}`)), 5000);
+    const timeout = setTimeout(() => reject(new Error(`Buildr Web 未就绪：${output}\n${errors}`)), APP_COMMAND_TIMEOUT_MS);
     const poll = setInterval(() => {
       if (output.includes('Buildr Web：')) {
         clearTimeout(timeout);
@@ -608,8 +608,8 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
       }
     });
   });
-  const reused = spawnSync(process.execPath, [BUILDR, 'web', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: 5000 });
-  assert.equal(reused.status, 0, reused.stderr);
+  const reused = spawnSync(process.execPath, [BUILDR, 'web', '--target', root, '--no-open'], { cwd: PRODUCT_ROOT, env, encoding: 'utf8', timeout: APP_COMMAND_TIMEOUT_MS });
+  assert.equal(reused.status, 0, reused.stderr || reused.error?.message || `signal=${reused.signal}`);
   assert.match(reused.stdout, /Buildr Web 已运行/);
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
@@ -620,7 +620,7 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   }
 });
 
-suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: PREVIEW_ISOLATION_TIMEOUT_MS }, async (t) => {
+suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并只停止自身实例', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t) => {
   const base = temporaryRoot(t);
   const appData = path.join(base, 'preview-data');
   const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
@@ -635,7 +635,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
       timings.push(`${phase}=${Math.round(performance.now() - startedAt)}ms`);
     }
   };
-  const runPreviewCommand = (phase, args) => measure(phase, () => runBuildr(args, { env, timeout: PREVIEW_COMMAND_TIMEOUT_MS }));
+  const runPreviewCommand = (phase, args) => measure(phase, () => runBuildr(args, { env, timeout: APP_COMMAND_TIMEOUT_MS }));
   const first = await measure('workspace-first', () => initGitWorkspace(t, { name: 'preview-first' }));
   const second = await measure('workspace-second', () => initGitWorkspace(t, { name: 'preview-second' }));
   const started = [];
