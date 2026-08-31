@@ -1,11 +1,11 @@
 ---
 name: task-development
-description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；用户创建或准备Parent时还负责从active Task Record持续准备到可选择首个Child；不用于Task Record、专业内容写入、测试开发或交付执行。
+description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
 ---
 
 # Task Development
 
-本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。Parent coordination另有受控公共CLI/Buildr Web surface，但Development Receipt仍只能由Application写入。不得手写Development Receipt。
+本 Skill 编排`buildr.task-development/v2`。它通过Buildr内部Task Development Application工作；仍没有公共Development CLI，Buildr Web只消费Application `inspect`的只读投影来展示通用Development。父子管理不再由研发应用写入；研发记录仍只能由本应用维护。不得手写Development Receipt。
 
 所有Development内部action必须使用`buildr task next`返回的`environment.controllerInvocation.command + argsPrefix`，再追加`__internal task-development <action> ...`；不得使用Task Environment的candidate `cliInvocation`、resource payload root或checkout中的`src/interfaces/internal`路径写canonical Workspace。
 
@@ -23,41 +23,11 @@ proposal 启动耗时、重复 Skill/authority 读取、重复命令、实现到
 
 日常 Development transition 或状态回读只需要 current identity、applicability 与下一步方向时，优先使用Task Entry Snapshot；直接调试Development owner时可对内部driver显式使用`--compact`。两者都只是response projection，不追加观察或写入，并以同源`formalVerificationReadiness`说明正式验证交接是否尚未到达、存在明确blocker或需要current knowledge即时确认。需要完整Receipt、专业Result引用或handoff snapshot时仍读取默认完整result。typed `next`与legacy `nextActions`来自同一判定；它们不执行动作、不代表授权，也不得越过当前阶段才加载的selected provider。
 
-## Parent Plan 与 Child Contribution
+## 父子任务
 
-正式Child只用于真正独立交付的Contribution：它必须能单独说明目标与scope，并形成自己的Candidate/evidence、immutable Contribution Handoff和真实Delivery。普通并行调查、临时Agent分工、同一Contribution内的局部实现或测试协作不创建Child、不绑定Contribution，也不进入Parent进度事实；Agent可在同一Task内自行编排。不能独立handoff和delivery的工作不得仅因并发人数或目录边界被长期建模。
+父子规划与接续由 `task-manager` 的轻量父子管理方法指导。协调本身不建立环境、研发记录、专用父计划、贡献绑定或交接；本技能只在某个任务实际选择独立研发时使用。旧父计划和交接保留历史读取，不作为新工作的前置。父任务完成须取得明确用户授权，研发或验收结果不能替代。
 
-新建Parent可以显式采用Parent Plan。正常启动顺序是：active Task → matching ready Parent Environment → Development begin → Parent Plan record → current Planning Review → `task parent refresh-planning`消费Review → `task next`返回首个依赖已满足的Contribution。任何一步blocked都只恢复该步的owner事实；不要先创建Child、手工拼Development写入或把非阻塞建议升级成gate。
-
-当`task-manager`或`task-triage`因用户的创建、准备、拆分Parent或准备到可启动Child目标交接active Parent时，本Skill默认连续完成上述准备，不要求用户为每个阶段重新发指令：
-
-1. 先运行`buildr task next <parent-task-id> --target <canonical-workspace> --json`，只执行current typed next或同一次Parent交接明确要求的Plan采用动作。
-2. next为`prepare`时交给`task-environment`；next为`begin`时使用返回的matching retained controller调用Development `begin`。每次成功后立即重读`task next`，不得缓存后续next。
-3. Environment与Development current、但尚未采用Parent Plan时，复用当前对话已明确的规划输入。能够明确写出outcome、architecture decisions、至少一个Contribution的objective/directions/boundaries、dependencies与final acceptance时，直接按v2 schema执行`task parent record`；不重复询问已知事实。只有缺失信息会改变这些协调语义时才提出最少问题，不创建占位Contribution、不猜架构决定，也不把Child状态、Result或实现清单写入Plan。
-4. Plan保存后继续消费typed next：`planning-review`交给`task-review`；`refresh-parent-planning`调用公开`task parent refresh-planning`。owner成功后均重读current next，不跨owner直接写Environment Receipt、Review Result或Parent progress。
-5. 只有current next为`start-child-contribution`且返回至少一个eligible Contribution时，才报告“Parent已准备好，可以选择第一个Child”，列出eligible Contributions并停止。不得继续`observe`、Verification、Candidate、Finish，也不得自动选择或创建Child。
-
-默认准备只在真实blocker处中断：owner返回blocked且需要业务决定或新授权，或缺失事实会实质改变Parent outcome、Contribution切分、依赖、边界或final acceptance。普通recommended动作、可由对应owner恢复的内部登记缺口和当前对话已经提供的信息都不是要求用户重新发起准备的理由；能够安全恢复时继续循环。若Parent Coordination没有eligible Contribution，报告它返回的真实依赖或planning blocker，不得把Task Record created、Plan saved或Review ready单独误报为Parent已经准备好。
-
-Parent Environment只服务Parent本身。纯协调且在Child前不修改交付内容的Parent可以显式采用coordination-only共享执行根；Parent会直接修改代码、文档或其他生产内容时，必须从一开始使用隔离checkout。Child Environment按Child自己的Task scope另行准备，既不继承Parent Receipt，也不因Parent Plan刚建立而提前prepare。若Child依赖Parent尚未进入canonical baseline的真实交付，Parent Plan必须表达该依赖，并等前置Contribution正式交付后再准备Child Environment。
-
-先用`task parent inspect`确认`ordinary|legacy|child|parent-plan`模式；`task parent record|reconcile --schema|--example`是Parent Plan输入的公开发现入口。首次`record`只保存outcome、architecture decisions、结构化Contribution Map与final acceptance。每个Contribution显式包含自由格式priority、title、objective、directions、boundaries、可选expectedChild和dependencies。`expectedChild`只描述预期形态，不是Task ID、binding或已创建事实；预期、可执行性与实际Child事实必须分别判断。Parent Plan不得保存Child状态、Result、完整delta Requirement、字段/migration/file清单或Markdown checkbox进度。只有协调内容实质变化时才用current identity执行`reconcile`；普通Child完成、Verification、Change归档或Finish不得改写Plan。
-
-新writer只接受`buildr.parent-plan/v2`输入。Application对已保存v1按原字段与原identity只读兼容，再投影到current read model；升级必须通过current v1 identity和完整v2输入显式`reconcile`，不得迁移SQLite、批量backfill或在inspect时改写。
-
-Parent Plan JSON只是`task parent record|reconcile --input`的一次性CLI输入，不是Development资源或长期事实。Agent必须在操作系统临时目录创建，不得写入Workspace的`.buildr/local/`、`.buildr/tmp/`、`.buildr/transient/`或其他受管资产目录；`record`或`reconcile`成功后必须立即删除。命令失败时，只有仍需使用同一输入诊断或重试才能暂时保留，并必须报告路径；问题解决、放弃重试或Task终止后立即删除。Application保存的current Parent Plan才是authority；CLI、Task Development和Environment cleanup均不扫描或删除调用方临时输入。
-
-满足独立交付门槛的Child必须先通过Task Record绑定Parent，再建立自己的Development Receipt，并用`task parent bind-child`绑定一个或多个current Contribution。选择受管研发的Child按自身需要维护Environment、窄Change、Planning Review、Verification和Completion Review，收尾独立处理；同一个具体规范变化同一时间只能由一个active Change持有。
-
-Child形成正式handoff时必须提交`contributionHandoff`，完整表达planned、delivered、extra、residual、superseded、affected与唯一`nextAction`。Application要求planned精确匹配已保存binding，全部引用属于current Parent Plan，且parentTaskId与Task Record关系一致；`completed`状态不能替代handoff证明，`expectedChild`也不能替代真实Child relation与binding。
-
-Child 直接完成后，若使用专用父计划，通过已有 `task parent reconcile-child-delivery` 显式提交成果与贡献映射、原因、来源、当前父计划身份和 `--expected-task`（来自 `task inspect` 的 `recordDigest`）。登记校验当前结果版本、直接父子关系、贡献归属及规范归档，不要求旧收尾或候选。任务完成状态本身不替代贡献判断或父任务最终验收。
-
-Agent读取`buildr.parent-coordination-result/v3`时只消费canonical字段：Plan identity与治理摘要取`plan`，工作项取唯一顶层`contributions`，预期Child取`expectation.child`，真实Child binding取`boundContributions`，delivery来源取`delivery.proof.kind`（`native-handoff|terminal-reconciliation`），下一步取`startup.next`。不得期待v2的raw `parentPlan`、`plan.contributions`、顶层`nextActions`、`finalAcceptanceReady`、Child `plannedContributions`或完整Review/Handoff Result；需要完整长期事实时回到对应专业authority，而不是要求Parent Coordination复制。
-
-Child越过其他Contribution、改变依赖/invariant/final acceptance或覆盖未来Child范围时，先根据已保存handoff显式`reconcile` Parent Plan，再分别更新或放弃受影响Child：全部覆盖用Task Record `abandon`并在handoff/Plan中表达superseded，部分覆盖只保留residual intent与窄Change；不得伪装completed，也不得从代码、文件或canonical specs猜测delivery。
-
-所有Contribution得到saved delivery或明确superseded后，`task parent accept`仍只记录显式最终集成验收，不自动完成Parent。Acceptance绑定current Parent Plan后，立即重读顶层`task next`并继续消费Task Development返回的真实typed next；不得再次执行`accept-parent`，也不得在Skill或Parent coordination中硬编码Finish。随后仅按研发自身需要维护结果；收尾独立触发。
+父任务确实需要独立研发时，先按实际需要取得自己的环境，再把环境回执中的 `execution.workdir` 原样传给 `task next --execution-target <path>`，取得该研发路径的控制器与当前事实。没有执行目标时，父任务的 `task next` 只返回协调指引；不要据此猜测控制器或恢复旧父计划。
 
 ## 从首个研发动作接入
 
@@ -132,7 +102,7 @@ Candidate形成后，按实际工作需要形成matching Verification、用`task
 - `blocked`：说明未获接受的风险或仍需处理的问题，不修改Task顶层status；
 - `proceed`：必须绑定current Candidate。Verification not-passed、coverage gap或Completion changes-required时，每项风险都要绑定`verification|completion`、精确Result digest、scope、summary和用户授权source；跳过整个适用gate使用`gate`记录waiver，不伪造Result或混入风险列表。
 
-只有current Candidate、三个current gates、非blocked且current的Knowledge disposition和合法proceed decision同时成立时生成正式handoff。Application append immutable snapshot；不得因后续Result刷新、Knowledge更新或新generation改写旧snapshot。承担Parent Contribution的Task必须同时提供上述Contribution Handoff。
+只有current Candidate、三个current gates、非blocked且current的Knowledge disposition和合法proceed decision同时成立时生成正式handoff。Application append immutable snapshot；不得因后续Result刷新、Knowledge更新或新generation改写旧snapshot。
 
 ## 研发结果与独立收尾
 
