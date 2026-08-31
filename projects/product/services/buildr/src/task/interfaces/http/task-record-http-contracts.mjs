@@ -44,6 +44,11 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
       closed({ summary: nonEmptyText, noChange: { type: 'boolean' }, parentCompletion: { $ref: '#/$defs/ParentCompletion' } }, ['summary']),
     ],
   },
+  TaskResultHistoryEntry: closed({
+    status: { enum: ['completed', 'abandoned'] }, title: nonEmptyText, intent: nonEmptyText,
+    parentTaskId: nullable({ $ref: '#/$defs/TaskId' }), result: { $ref: '#/$defs/TaskResult' },
+    recordUpdatedAt: nonEmptyText, correctedAt: nonEmptyText, reason: nonEmptyText,
+  }, ['status', 'title', 'intent', 'parentTaskId', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']),
   TaskRecord: closed({
     schemaVersion: { const: 'buildr.task-record/v2' },
     taskId: { $ref: '#/$defs/TaskId' },
@@ -60,6 +65,7 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
     retrospectiveSourceTaskIds: arrayOf({ $ref: '#/$defs/TaskId' }),
     status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
     result: { $ref: '#/$defs/TaskResult' },
+    resultHistory: arrayOf({ $ref: '#/$defs/TaskResultHistoryEntry' }),
     createdAt: nonEmptyText,
     updatedAt: nonEmptyText,
   }, ['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'retrospectiveSourceTaskIds', 'status', 'result', 'createdAt', 'updatedAt']),
@@ -145,6 +151,9 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
   updateRequest: schema('update/request', 'TaskUpdateRequest', {
     ...closed({
       expectedRecordDigest: nonEmptyText,
+      status: { enum: ['todo', 'active', 'completed', 'abandoned'] }, reason: nonEmptyText, summary: nonEmptyText,
+      noChange: { type: 'boolean' }, parentCompletion: { $ref: '#/$defs/ParentCompletion' },
+      addChanges: arrayOf({ $ref: '#/$defs/QualifiedChange' }), removeChanges: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
     isParent: { const: true },
       title: nonEmptyText,
       intent: nonEmptyText,

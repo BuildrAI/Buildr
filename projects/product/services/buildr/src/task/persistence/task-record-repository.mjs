@@ -42,6 +42,7 @@ function recordValue(row, { projects = [], services = [], changes = [], childTas
     retrospectiveSourceTaskIds,
     status: row.status,
     result: resultValue(row),
+    resultHistory: JSON.parse(row.result_history_json || '[]'),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }, { expectedTaskId: row.task_id });
@@ -165,11 +166,11 @@ function taskViews(database, rows, root) {
 }
 
 function insertRecord(database, record) {
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id, is_parent, parent_completion_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     record.taskId, record.schemaVersion, record.title, record.intent, record.status,
     record.result?.summary ?? null, record.status === 'completed' ? Number(record.result.noChange) : null,
-    record.createdAt, record.updatedAt, record.parentTaskId, Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null,
+    record.createdAt, record.updatedAt, record.parentTaskId, Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []),
   );
   if (record.parentTaskId) database.prepare('UPDATE tasks SET is_parent = 1 WHERE task_id = ?').run(record.parentTaskId);
   insertRelations(database, record);
@@ -228,10 +229,10 @@ function replaceRetrospectiveSources(database, record) {
 }
 
 function replaceRecord(database, record) {
-  database.prepare(`UPDATE tasks SET schema_version = ?, title = ?, intent = ?, status = ?, result_summary = ?, result_no_change = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ? WHERE task_id = ?`).run(
+  database.prepare(`UPDATE tasks SET schema_version = ?, title = ?, intent = ?, status = ?, result_summary = ?, result_no_change = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ? WHERE task_id = ?`).run(
     record.schemaVersion, record.title, record.intent, record.status, record.result?.summary ?? null,
     record.status === 'completed' ? Number(record.result.noChange) : null, record.createdAt, record.updatedAt, record.parentTaskId,
-    Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, record.taskId,
+    Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []), record.taskId,
   );
   if (record.parentTaskId) database.prepare('UPDATE tasks SET is_parent = 1 WHERE task_id = ?').run(record.parentTaskId);
   for (const table of ['task_projects', 'task_services', 'task_changes']) database.prepare(`DELETE FROM ${table} WHERE task_id = ?`).run(record.taskId);

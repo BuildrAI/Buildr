@@ -59,6 +59,7 @@ export interface TaskRecord {
   retrospectiveSourceTaskIds: TaskId[];
   status: 'todo' | 'active' | 'completed' | 'abandoned';
   result: TaskResult;
+  resultHistory?: TaskResultHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }
@@ -84,6 +85,16 @@ export interface ParentCompletion {
     statement: string;
   };
   recordedAt?: string;
+}
+export interface TaskResultHistoryEntry {
+  status: 'completed' | 'abandoned';
+  title: string;
+  intent: string;
+  parentTaskId: TaskId | null;
+  result: TaskResult;
+  recordUpdatedAt: string;
+  correctedAt: string;
+  reason: string;
 }
 export interface TaskRelations {
   parent: TaskRelationSummary | null;
@@ -152,6 +163,13 @@ export interface TaskDetailResponse {
 }
 export interface TaskUpdateRequest {
   expectedRecordDigest: string;
+  status?: 'todo' | 'active' | 'completed' | 'abandoned';
+  reason?: string;
+  summary?: string;
+  noChange?: boolean;
+  parentCompletion?: ParentCompletion;
+  addChanges?: QualifiedChange[];
+  removeChanges?: QualifiedChange[];
   isParent?: true;
   title?: string;
   intent?: string;

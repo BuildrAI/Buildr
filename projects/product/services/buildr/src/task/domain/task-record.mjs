@@ -158,9 +158,21 @@ export function normalizeParentCompletion(value, { saved = false } = {}) {
   };
 }
 
+function normalizeResultHistory(value = []) {
+  if (!Array.isArray(value)) throw taskRecordError('task_record_history_invalid', 'resultHistory 必须是数组。');
+  return value.map((entry) => {
+    const item = object(entry, 'resultHistory');
+    closed(item, new Set(['status', 'title', 'intent', 'parentTaskId', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']), 'resultHistory');
+    if (!['completed', 'abandoned'].includes(item.status)) throw taskRecordError('task_record_history_invalid', '结果历史只保存被更正的终态。');
+    return { status: item.status, title: nonEmptyText(item.title, 'resultHistory.title'), intent: nonEmptyText(item.intent, 'resultHistory.intent'),
+      parentTaskId: optionalTaskId(item.parentTaskId, 'resultHistory.parentTaskId'), result: normalizeResult(item.status, item.result),
+      recordUpdatedAt: timestamp(item.recordUpdatedAt, 'resultHistory.recordUpdatedAt'), correctedAt: timestamp(item.correctedAt, 'resultHistory.correctedAt'), reason: nonEmptyText(item.reason, 'resultHistory.reason') };
+  });
+}
+
 export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'isParent', 'retrospectiveSourceTaskIds', 'status', 'result', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'isParent', 'retrospectiveSourceTaskIds', 'status', 'result', 'resultHistory', 'createdAt', 'updatedAt']), '');
   if (record.isParent !== undefined && typeof record.isParent !== 'boolean') throw taskRecordError('task_record_field_invalid', 'isParent 必须是 boolean。');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
@@ -186,6 +198,7 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
   if (record.status === 'todo' && changes.length) {
     throw taskRecordError('task_record_todo_change_forbidden', 'todo Task 不能关联 OpenSpec Change；请先激活 Task。', 409, { field: 'changes' });
   }
+  const resultHistory = normalizeResultHistory(record.resultHistory);
   const retrospectiveSourceTaskIds = taskIds(record.retrospectiveSourceTaskIds, 'retrospectiveSourceTaskIds');
   if (retrospectiveSourceTaskIds.includes(taskId)) {
     throw taskRecordError('task_record_retrospective_source_self_reference', 'Task 不能把自己设为复盘来源。', 409, { taskId });
@@ -206,6 +219,7 @@ export function normalizeTaskRecord(value, { expectedTaskId = null } = {}) {
     retrospectiveSourceTaskIds,
     status: record.status,
     result: normalizeResult(record.status, record.result),
+    ...(resultHistory.length ? { resultHistory } : {}),
     createdAt,
     updatedAt,
   };

@@ -22,19 +22,11 @@ export function mapTaskListRequest(input: TaskListRequest): TaskListRequest {
 }
 
 export function mapTaskUpdateRequest(input: TaskUpdateRequest): TaskUpdateRequest {
-  return {
-    expectedRecordDigest: input.expectedRecordDigest,
-    ...present(input, 'isParent'),
-    ...present(input, 'title'),
-    ...present(input, 'intent'),
-    ...present(input, 'parentTaskId'),
-    ...present(input, 'addProjects'),
-    ...present(input, 'removeProjects'),
-    ...present(input, 'addServices'),
-    ...present(input, 'removeServices'),
-    ...present(input, 'addRetrospectiveSources'),
-    ...present(input, 'removeRetrospectiveSources'),
-  };
+  const result: TaskUpdateRequest = { expectedRecordDigest: input.expectedRecordDigest };
+  for (const field of ['isParent', 'status', 'reason', 'summary', 'noChange', 'parentCompletion', 'title', 'intent', 'parentTaskId', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'addRetrospectiveSources', 'removeRetrospectiveSources'] as const) {
+    Object.assign(result, present(input, field));
+  }
+  return result;
 }
 
 export function mapTaskCompleteRequest(input: TaskCompleteRequest): TaskCompleteRequest {

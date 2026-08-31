@@ -251,7 +251,12 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   const latest = (await request(taskEndpoint)).body;
   response = await request(`${taskEndpoint}/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: latest.recordDigest, summary: '页面确认完成', noChange: false }) });
   assert.equal(response.status, 200); assert.equal(response.body.record.status, 'completed');
-  response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: response.body.recordDigest, title: '不可重开' }) }); assert.equal(response.status, 409); assert.equal(response.body.error.code, 'task_record_terminal');
+  const completedSnapshot = response.body;
+  response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: completedSnapshot.recordDigest, title: '缺少更正原因' }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_field_invalid');
+  response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: completedSnapshot.recordDigest, status: 'active', reason: '用户更正阶段完成为整体进行中', intent: '继续整体目标' }) });
+  assert.equal(response.status, 200); assert.equal(response.body.record.status, 'active'); assert.equal(response.body.record.result, null);
+  assert.equal(response.body.record.resultHistory[0].result.summary, '页面确认完成');
+  response = await request(taskEndpoint); assert.equal(response.body.record.resultHistory[0].reason, '用户更正阶段完成为整体进行中');
 
   const other = path.join(base, 'other-workspace'); run(['init', '--target', other, '--name', 'other', '--description', 'other fixture', '--profile', 'team']);
   let registry = runtime.listRegisteredWorkspaces(); registry = runtime.registerLocalWorkspace({ rootPath: other, revision: registry.revision }); const otherId = registry.workspaces.find((item) => item.rootPath === other).workspace.id;
