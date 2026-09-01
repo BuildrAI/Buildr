@@ -13,27 +13,23 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/infrastructure/sqlite/parent-coordination-repository.mjs',
     'src/infrastructure/sqlite/task-development-repository.mjs',
     'src/infrastructure/sqlite/task-environment-repository.mjs',
-    'src/infrastructure/sqlite/task-execution-record-repository.mjs',
     'src/infrastructure/sqlite/task-finish-repository.mjs',
     'src/infrastructure/sqlite/task-overview-repository.mjs',
     'src/infrastructure/sqlite/task-retrospective-repository.mjs',
     'src/infrastructure/sqlite/task-review-repository.mjs',
     'src/infrastructure/sqlite/task-verification-repository.mjs',
     'src/infrastructure/filesystem/task-environment-repository.mjs',
-    'src/infrastructure/filesystem/task-execution-record-body-store.mjs',
     'src/task/persistence/parent-coordination-repository.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
     'src/task/persistence/task-record-repository.mjs',
     'src/task/persistence/task-development-repository.mjs',
     'src/task/persistence/task-environment-repository.mjs',
-    'src/task/persistence/task-execution-record-repository.mjs',
-    'src/task/persistence/task-execution-record-body-store.mjs',
     'src/task/persistence/task-finish-repository.mjs',
     'src/task/persistence/task-overview-repository.mjs',
     'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.mjs',
-    'src/task/persistence/task-verification-repository.mjs',
+    'src/task/persistence/task-verification-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
 });
 
@@ -46,7 +42,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
   assert.match(infrastructure, /registerInfrastructure/);
   assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/index.mjs')), false);
   for (const registration of [
-    'registerTaskEnvironmentRepository', 'registerTaskExecutionRecordRepository',
+    'registerTaskEnvironmentRepository',
     'registerTaskVerificationRepository', 'registerTaskDevelopmentRepository',
     'registerTaskRecordRepository', 'registerTaskOverviewRepository',
     'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',

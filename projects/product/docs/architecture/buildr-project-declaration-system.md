@@ -4,18 +4,18 @@
 
 ## 一句话模型
 
-> Project 长期声明怎么准备、怎么验证；Agent 按本次 Task scope 选择；Environment 与 Verification 分别执行并在各自 authority 留证；Declaration Intake 只负责发现候选和取得长期写入授权。
+> Project长期声明怎么准备环境、有哪些测试体系；Agent按本次Task scope选择；Environment执行准备，Agent直接执行测试；Declaration Intake只负责发现候选和取得长期写入授权。
 
 ## 两类声明
 
 | 声明 | 回答的问题 | 长期文件 | Task 级事实 |
 |---|---|---|---|
 | Project Environment Preparation Declaration | 这个 Project 或 Service 有哪些已知、可重复的环境准备 Recipe | `projects/<project>/preparation.yml` | Environment Plan + Environment Receipt |
-| Project Verification Capability Declaration | 这个 Project 已有哪些可调用、可证明事实的验证能力 | `projects/<project>/verification.yml` | Verification Result；完整执行输出只作 transient evidence |
+| Project测试地图 | 这个Project有哪些稳定测试体系、如何发现和完整执行 | `projects/<project>/verification.yml` | 开发完成后的Task验证报告 |
 
 `preparation.yml` 不是 Environment 状态声明。它只声明准备方法；`ready / blocked`、实际执行根、Step identity 和恢复事实属于 Workspace SQLite 中的 Environment Receipt。
 
-`verification.yml` 也不是测试结果。它只声明已有能力；本次目标执行了什么、得出什么事实，属于 Workspace SQLite 中的 Verification Result。
+`verification.yml`也不是测试结果。它只声明测试体系、发现范围、完整入口和环境要求；本次实际执行了什么、结果和未覆盖项属于Workspace SQLite中的Task验证报告。
 
 ## 总体流程
 
@@ -31,8 +31,8 @@ flowchart TD
     O --> V["verification.yml"]
     P --> EP["Agent 按 Task scope 选择 Recipe"]
     EP --> ER["Environment Plan / Receipt"]
-    V --> VS["Agent 按目标选择 Capability"]
-    VS --> VR["Verification Result"]
+    V --> VS["Agent按任务选择并直接执行测试"]
+    VS --> VR["Task验证报告"]
 ```
 
 Intake 是 Agent 编排入口，不是新的 Application、schema、store 或 writer。两类声明仍独立演进、独立校验、独立消费。
@@ -62,8 +62,8 @@ Discovery 只读取已登记 Project/Service、当前声明、明确 wrapper、l
 | Preparation Recipe | `task-environment` Skill，经用户授权维护 | Project `preparation.yml` |
 | 本次 Task 的 Recipe 选择 | Task Environment Application | Workspace SQLite Environment Plan |
 | 环境执行与恢复事实 | Task Environment Application | Workspace SQLite Environment Receipt |
-| Verification Capability | `task-verification` Skill，经用户授权维护 | Project `verification.yml` |
-| 本次目标的验证事实 | Task Verification Application | Workspace SQLite Verification Result |
+| Project测试地图 | `task-verification` Skill指导Agent，经用户授权维护 | Project `verification.yml` |
+| 开发完成后的验证事实 | Task Verification Application | Workspace SQLite Task验证报告 |
 | 声明候选与 diff | 无持久 authority | 当前 Agent 对话/临时工作上下文 |
 
 Task Record 只保存 Task 的 intent 与 Project/Service scope，不保存声明、Plan、Receipt 或 Result。Buildr Web 只读取各专业 current；GET 不发现、探测、修复或回写声明。

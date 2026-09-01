@@ -156,31 +156,6 @@ function completion(value) {
   };
 }
 
-function executionRecord(value) {
-  if (!value) return null;
-  return {
-    status: value.status || null,
-    recordId: value.recordId || null,
-    outcome: value.outcome || null,
-    lifecycleStatus: value.lifecycleStatus || null,
-    body: value.body ? {
-      digest: value.body.digest || null,
-      storedSizeBytes: value.body.storedSizeBytes || 0,
-      originalSizeBytes: value.body.originalSizeBytes || 0,
-      truncated: value.body.truncated === true,
-    } : null,
-    transientCleanup: value.transientCleanup ? {
-      status: value.transientCleanup.status || null,
-      code: value.transientCleanup.code || null,
-    } : null,
-    diagnostic: value.diagnostic ? {
-      code: value.diagnostic.code || null,
-      message: value.diagnostic.message || null,
-    } : null,
-    nextActions: Array.isArray(value.nextActions) ? [...value.nextActions] : [],
-  };
-}
-
 function maintenance(value) {
   if (!value) return null;
   return {
@@ -308,7 +283,6 @@ export function compactTaskFinishResult(result) {
       updatedAt: result.updatedAt || null,
       completedAt: result.completedAt || null,
     },
-    executionRecord: executionRecord(result.executionRecord),
   });
 }
 

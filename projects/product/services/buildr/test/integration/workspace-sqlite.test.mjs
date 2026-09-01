@@ -39,6 +39,9 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   const root = workspace(t);
   const runtime = createRuntime();
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  const retiredRecords = path.join(root, '.buildr', 'local', 'task-execution-records');
+  fs.mkdirSync(retiredRecords, { recursive: true });
+  fs.writeFileSync(path.join(retiredRecords, 'retired.txt'), 'retired');
   assert.equal(fs.existsSync(file), false);
 
   const migrations = loadWorkspaceSqliteMigrations();
@@ -47,15 +50,15 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_execution_records', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
+    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
   ]);
+  assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
   assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row) => row.name === 'tasks_parent_task_idx'));
   for (const table of ['task_development_current', 'task_verification_current', 'task_review_current', 'task_retrospective_current', 'task_finish_current']) {
     assert.ok(writable.database.prepare(`PRAGMA foreign_key_list(${table})`).all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
   }
-  assert.ok(writable.database.prepare('PRAGMA foreign_key_list(task_execution_records)').all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'NO ACTION'));
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_record_consumers'").get().count, 0);
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
   assert.ok(writable.database.prepare("SELECT name FROM pragma_index_list('task_finish_current')").all().some((row) => row.name === 'task_finish_current_lease_target_idx'));
@@ -507,6 +510,42 @@ test('execution unknown outcome migration保留既有row并扩展单表约束', 
     VALUES ('unknown-terminal', 'buildr.task-execution-record/v1', 'unknown-task', 'task-verification', 'verification-execution', 'run-unknown', ?, 'target', 'test', 'unknown', 'retained', 'acknowledged', 'available', 'charged', '.buildr/local/task-execution-records/task-verification/unknown-terminal/', ?, 10, 10, 0, 'buildr.task-execution-record-redaction/v1', 0, '2026-09-01T00:00:00.000Z', '2026-08-02T00:00:00.000Z', '2026-08-02T00:01:00.000Z', '2026-08-02T00:01:00.000Z', NULL, NULL, NULL, '2026-08-02T00:01:00.000Z')`).run(`sha256-${'b'.repeat(64)}`, `sha256-${'c'.repeat(64)}`);
   assert.equal(database.prepare("SELECT outcome FROM task_execution_records WHERE record_id = 'unknown-terminal'").get().outcome, 'unknown');
   assert.throws(() => database.prepare("UPDATE task_execution_records SET resolution_status = 'pending', resolved_at = NULL WHERE record_id = 'unknown-terminal'").run());
+  database.close();
+});
+
+test('Task Execution Record退役migration删除整张表', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const retirement = migrations.find((migration) => migration.name === '0025_drop_task_execution_records.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_records'").get().count, 1);
+  applyWorkspaceSqliteMigration(database, retirement);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_records'").get().count, 0);
+  database.close();
+});
+
+test('Task Verification报告migration保留真实检查并把无检查的历史passed降为incomplete', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const refactor = migrations.find((migration) => migration.name === '0023_refactor_task_verification_report.sql');
+  const database = new DatabaseSync(':memory:');
+  for (const migration of migrations.filter((item) => item.version < refactor.version)) applyWorkspaceSqliteMigration(database, migration);
+  for (const taskId of ['legacy-passed', 'legacy-empty']) database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES (?, 'buildr.task-record/v2', 'Legacy verification', 'Migrate verification report', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run(taskId);
+  const base = { schemaVersion: 'buildr.task-verification-result/v2', target: { identity: 'sha256-target', summary: 'Legacy target' }, declarations: [], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Legacy passed' }, completedAt: '2026-08-01T01:00:00.000Z' };
+  database.prepare('INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?)').run('legacy-passed', JSON.stringify({ ...base, capabilities: [{ project: 'demo', capability: 'demo-unit', outcome: 'passed', facts: ['Legacy unit passed'] }] }), 'sha256-target', 'passed', base.completedAt);
+  database.prepare('INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?)').run('legacy-empty', JSON.stringify({ ...base, capabilities: [] }), 'sha256-target', 'passed', base.completedAt);
+
+  applyWorkspaceSqliteMigration(database, refactor);
+
+  const passed = JSON.parse(database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'legacy-passed'").get().result_json);
+  assert.equal(passed.conclusion.outcome, 'passed');
+  assert.equal(passed.checks.length, 1);
+  assert.equal(passed.checks[0].mapStatus, 'map-unavailable');
+  assert.ok(passed.gaps.some((gap) => gap.testing === 'legacy-verification-map'));
+  const incomplete = JSON.parse(database.prepare("SELECT result_json FROM task_verification_current WHERE task_id = 'legacy-empty'").get().result_json);
+  assert.equal(incomplete.conclusion.outcome, 'incomplete');
+  assert.equal(incomplete.gaps[0].testing, 'legacy-verification-coverage');
+  assert.equal(database.prepare("SELECT outcome FROM task_verification_current WHERE task_id = 'legacy-empty'").get().outcome, 'incomplete');
   database.close();
 });
 

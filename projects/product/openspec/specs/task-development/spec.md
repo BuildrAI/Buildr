@@ -30,22 +30,27 @@ Buildr MUST 为每个正式 Task 在 Workspace SQLite 中提供至多一份 `bui
 - **AND** MUST NOT 导入、升级、删除或生成兼容 YAML
 
 ### Requirement: Development Receipt 必须使用关闭且最小的数据模型
-Receipt MUST 只包含 `schemaVersion`、`taskId`、Environment Receipt逻辑引用`environment`、`taskContext`、`planning`、可为空的`contentTarget`、`verificationPolicy`、`generation`、`candidate`、`gates`、`decision`、不可变快照数组`handoffs`、`createdAt` 与 `updatedAt`。Receipt MUST NOT 保存 source diff、文件 inventory、命令输出、时长、绝对 execution path、Environment资源/handle、完整 Review/Verification Result、聊天、隐藏推理、完整Candidate history、revision、CAS、锁或租约。
+Receipt MUST只包含`schemaVersion`、`taskId`、Environment逻辑引用`environment`、`taskContext`、`planning`、可为空的`contentTarget`、`generation`、`candidate`、Completion/Planning专业引用、`currentKnowledge`、`decision`、不可变`handoffs`、`createdAt`与`updatedAt`。Receipt MUST NOT保存verification policy、Task Verification Result/Report、verification gate、Formal Plan、Formal Verification Readiness、source diff、命令输出、绝对路径、Environment资源、聊天、隐藏推理、revision、锁或lease。
+
+#### Scenario: 调用方提交Verification字段
+- **WHEN** action input或持久Receipt包含`verificationPolicy`、verification gate、Task Verification digest、Formal Plan或readiness
+- **THEN** Application MUST拒绝新写入值
+- **AND** 历史Receipt MAY只读投影但MUST不再驱动current Development行为
 
 #### Scenario: 调用方提交未知 authority 字段
-- **WHEN** action input 或持久 Receipt 包含 progress、step、attempt、raw evidence、Result body、Git branch/commit、OpenSpec plan、history或其他未知字段
-- **THEN** Application MUST 拒绝整个值并保留原 current value
-- **AND** MUST 返回精确 forbidden field diagnostic
+- **WHEN** action input或持久Receipt包含progress、attempt、raw evidence、Result body、Git状态、Task Verification或其他未知authority字段
+- **THEN** Application MUST拒绝整个值并保留原current
+- **AND** MUST返回精确forbidden field diagnostic
 
 #### Scenario: Content Target尚未形成
 - **WHEN** Receipt只记录proposal、design、review disposition或其他planning facts
-- **THEN** `contentTarget` MUST为null且inspect MUST返回`missing` applicability
-- **AND** Candidate、verification policy、Verification/Completion gate、decision与handoff MUST保持null或空数组
+- **THEN** `contentTarget` MUST为null且inspect MUST返回missing applicability
+- **AND** Candidate、decision与handoff MUST保持null或空数组
 
 #### Scenario: 原子替换中断
 - **WHEN** serialization、SQLite mutation或post-read任一阶段失败
-- **THEN** Repository MUST rollback并保留原 current Receipt与所有 sibling records
-- **AND** MUST NOT 产生部分 row、backup file或兼容 YAML
+- **THEN** Repository MUST rollback并保留原current Receipt与所有sibling records
+- **AND** MUST NOT产生部分row、backup file或兼容YAML
 
 ### Requirement: Task context identity 必须绑定完整 Intent、scope 与 Change context
 Application MUST 从 Task Record Application/persistence authority 取得 Task ID、intent、完整 Project/Service scope与0..N Change references，并结合 Development记录的每个 Change disposition派生可移植 `taskContext.identity`。Identity MUST NOT 绑定Task Record时间戳、本机路径或默认 Product/Service名称。调用方提交`converged` disposition时，Application MUST复用Task Record的Task-scoped Change read model，证明当前working copy存在且lifecycle为`archived`；不得信任调用方summary、路径、retained baseline或文件存在推断convergence。
@@ -92,19 +97,6 @@ Application MUST 从matching ready Task Environment read model取得全部Task s
 - **WHEN** 任一受管source file新增、删除、内容或可执行语义变化
 - **THEN** 重新观察的Content Target MUST 与旧target不同
 - **AND** Application MUST 清除current Candidate、Completion gate与decision，并使既有handoff snapshot不再current但不得改写或删除
-
-### Requirement: Verification policy decision 必须由 Development 独占
-Task Development MUST 记录一个closed verification policy decision，绑定Task scope内当前declaration observations、明确选择的capability identities、是否required及coverage gaps，并派生`verificationPolicy.identity`。Application MUST 通过Task Verification Application取得declaration read model，MUST NOT直接读取verification.yml或Verification Result store，也不得硬编码Product capability。
-
-#### Scenario: Project声明required capability
-- **WHEN** Development选择当前declaration中一个适用capability作为required
-- **THEN** Application MUST 校验Project/Service scope与declaration identity并纳入policy identity
-- **AND** declaration或选择变化 MUST 使旧Verification gate、Candidate与handoff失效
-
-#### Scenario: 没有可用能力
-- **WHEN** 某个scope没有declaration或适用capability
-- **THEN** policy decision MUST 显式记录portable coverage gap
-- **AND** Development MUST NOT创建测试、脚本、declaration或第二verification registry
 
 ### Requirement: Planning Review 必须在Candidate前保持current
 Development MUST 只通过Task Review Application inspect消费Planning Result；若当前policy要求Planning Review，则target为current planning identity且outcome为`ready`的Result MUST在Candidate前成立。Policy判定Planning Review不适用时MUST记录`not-applicable`；用户明确跳过时MUST记录`waived`与授权来源。Development MUST NOT读取Review store、复制findings、替代语义Review或把waiver伪造成Result。
@@ -336,39 +328,6 @@ Task Development consumer为OpenSpec planning登记target时 MUST使用Task Plan
 - **THEN** consumer MUST分别把已有Planning Review视为stale或停止Development推进
 - **AND** MUST NOT以旧target、raw artifact digest或手工摘要满足planning gate
 
-### Requirement: Task Development 必须正式支持仅工作区 verification policy
-Task Development MUST以Task Record中显式Project、Service所属Project与Change所属Project的确定性并集作为有效Project集合。只有该集合为空时，Application MUST允许policy保存空Project declarations，并 MUST要求唯一`scope: workspace` coverage gap、空capabilities与空overrides；有效Project集合非空时 MUST继续要求全部current Project declarations且拒绝workspace gap。
-
-#### Scenario: 真正的workspace-only Task建立policy
-- **WHEN** active Task没有Project、Service或Project-bound Change，matching ready Environment只提供workspace source，且Agent提交唯一workspace coverage gap
-- **THEN** Development MUST形成绑定空declarations与该gap的稳定policy identity
-- **AND** MUST不创建Project、declaration、capability、passed事实或第二authority
-
-#### Scenario: Service或Change不能伪装workspace-only
-- **WHEN** Task省略`scope.projects`但包含Service或Project-bound Change
-- **THEN** Development MUST把所属Project纳入有效Project集合并要求其current declaration observation
-- **AND** 空declarations或workspace coverage gap MUST被拒绝
-
-#### Scenario: workspace policy派生current与stale
-- **WHEN** 保存的workspace policy、Task有效Project集合与Content Target均未变化
-- **THEN** Development MUST通过空declarations的纯值比较保持policy current
-- **AND** Content Target变化 MUST使Candidate和handoff stale，新增Project/Service/Project-bound Change MUST使workspace policy stale并要求新的Project declarations
-
-#### Scenario: workspace gap尚未形成Result
-- **WHEN** workspace policy已记录coverage gap但Task Verification没有绑定同一Content Target、空declarations与workspace gap的current Result
-- **THEN** Candidate freeze MUST blocked并返回Task Verification next action
-- **AND** MUST不把policy gap本身解释为passed Result或合法waiver
-
-#### Scenario: current workspace gap完成负向Verification
-- **WHEN** Task Verification记录matching current `not-passed` Result及workspace gap
-- **THEN** Development MAY在其他前置gate完整时freeze Candidate
-- **AND** `proceed`与handoff仍 MUST绑定精确Verification Result digest、`scope: workspace`和明确授权source的风险接受，或使用现有明确gate disposition
-
-#### Scenario: 旧Receipt保持兼容读取
-- **WHEN** Workspace SQLite包含既有v1/v2/v3 Development Receipt或Project declarations非空的current policy
-- **THEN** repository MUST按原兼容规则读取且 MUST不backfill workspace gap、迁移row或写旧File Store
-- **AND** 新workspace policy MUST继续写入同一Task唯一SQLite current Receipt
-
 ### Requirement: Buildr Web 必须只读投影任务研发 read model
 Buildr Web MUST 为正式 Task 提供只读“研发”视图，并 MUST 通过 Task Development Application `inspect` 展示 Development presence、最近一次正式 Development action 同row保存的适用性、planning nodes/dispositions、Task context、Content Target、verification policy、Candidate/generation、Planning/Verification/Completion gates、decision、明确风险与最近一次 Development handoff。HTTP 与 Web 层 MUST NOT 直接读取或解析 `development.yml`、重新计算 identity/currentness、复制专业 artifact/Result body、提供 Receipt mutation 或注册公共`buildr task development` CLI。`inspect` MUST只查询Development current row与读取terminal facts所需的Task/Finish current rows。
 
@@ -423,49 +382,6 @@ Next actions MUST只根据同一次Application已保存的Receipt与applicabilit
 - **THEN** result MAY返回对应建议动作
 - **AND** Agent MUST仍按selected provider、专业Result与明确授权决定是否执行，指标不得成为gate
 
-### Requirement: Formal Verification readiness 必须在稳定目标交接处只读派生
-Task Development Application MUST在operation Result与compact projection中根据current Task Context、Planning、Content Target、verification policy、Candidate与Verification gate派生response-only `formalVerificationReadiness`，并 MUST区分`not-applicable|blocked|ready`。该摘要 MUST NOT写入Development Receipt、SQLite新slot、Candidate identity、Current Knowledge disposition或专业Result；Task Development MUST NOT解释current knowledge正文或执行Formal Verification。
-
-#### Scenario: Change仍pending时拒绝观察稳定目标
-- **WHEN** `observe`提交的完整Change dispositions中至少一项为`pending`
-- **THEN** Application MUST在Content Target observation与Receipt写入前返回稳定blocked诊断并保留原current Receipt
-- **AND** MUST要求先完成对应Change的实现、checklist与deterministic convergence/archive，不得把pending内容标记为stable target或冻结Candidate
-
-#### Scenario: 无Change或明确不适用
-- **WHEN** code-only或Workspace-only Task提交空Change列表，或者全部关联Change均为可证明的`converged`或明确`not-applicable`
-- **THEN** `observe` MUST继续按现有Content Target规则工作，不得因预检强制创建Change、knowledge sidecar或额外验证能力
-- **AND** 开发期focused/affected反馈与Task外transient verification MUST不消费该readiness
-
-#### Scenario: 已知交接事实尚未稳定
-- **WHEN** Task Context存在pending Change，或Planning、Content Target、verification policy任一已知missing/stale，或Candidate输入已经漂移
-- **THEN** response-only readiness MUST为`blocked`，或在尚未到Candidate交接阶段时为`not-applicable`，并列出Development-owned最小reason code
-- **AND** typed next MUST不把该状态伪装成可直接执行的Formal Verification
-
-#### Scenario: 已知事实就绪但current knowledge需即时确认
-- **WHEN** Change dispositions已处置，Planning、Content Target、policy与Candidate均current，matching Formal Verification仍缺失，但current knowledge disposition尚未形成
-- **THEN** readiness MUST为`ready`并允许consumer把Candidate lease交给Task Verification
-- **AND** Current Knowledge MAY在Verification前后独立形成；readiness MUST不推断provider结论或把knowledge未知持久化为blocked
-
-#### Scenario: 尚未冻结Candidate
-- **WHEN** stable Content Target与policy已经形成但current Candidate尚未冻结
-- **THEN** readiness MUST为`not-applicable`且typed next MUST先指向Candidate freeze
-- **AND** MUST不要求Current Knowledge或Verification先于Candidate形成
-
-#### Scenario: Candidate已就绪且Verification缺失
-- **WHEN** current Candidate、Task Context、Planning、Content Target与policy均current，且matching Formal Verification尚未形成
-- **THEN** readiness MUST为`ready`并允许consumer把Candidate lease交给Task Verification
-- **AND** Current Knowledge disposition MAY在Verification前后形成，不得固定为本次交接前置gate
-
-#### Scenario: Candidate输入已漂移
-- **WHEN** Candidate存在但Task Context、Planning、Content Target或policy任一不再current
-- **THEN** readiness MUST为`blocked`并列出Development-owned最小reason code
-- **AND** MUST不启动Formal Verification或把旧Candidate lease声明为current
-
-#### Scenario: 已有matching Formal Verification
-- **WHEN** Task Development已消费与current Candidate、Content Target、declarations和policy匹配的Verification Result
-- **THEN** readiness MUST为`not-applicable`，后续next继续由Completion、Current Knowledge与decision规则决定
-- **AND** MUST不要求重复Formal Verification或改变Candidate generation
-
 ### Requirement: Task Development 在 Content Target 前检查新增文本文件 EOF
 Task Development Skill MUST 在内容固定且调用 `observe` 形成 Content Target 前，要求 Agent 检查 Task 本次新增的全部文本文件是否满足 required Core 的 EOF 不变量。Git-backed scope 的检查 MUST 覆盖 tracked-added 文件与未忽略的 untracked 文件；该动作 MUST NOT 扩大为未触达存量文件的批量清理。
 
@@ -485,80 +401,6 @@ Task Development Skill MUST 在内容固定且调用 `observe` 形成 Content Ta
 - **THEN** Task Development MUST NOT 仅为清理存量问题而扩大当前 Task 的 Content Target
 - **AND** Agent MUST 继续对本次新增文件执行完整检查
 
-### Requirement: Formal Verification 必须绑定 current Candidate
-Development MUST 先建立stable Content Target与verification policy并冻结current Candidate，再由Task Verification workflow针对该Candidate形成current Result。Application MUST通过Task Verification Application inspect证明Candidate、target与declarations current，且policy要求的capability fact或coverage gap完整；Application本身MUST NOT执行formal Verification、写Verification Result或把`not-passed`改写为`passed`。
-
-#### Scenario: current Result满足policy事实完整性
-- **WHEN** Verification Application返回Result Candidate等于current Candidate、target等于current Content Target、declarations current，且required capability facts或明确coverage gap完整
-- **THEN** Development MAY将Verification gate记为current并继续Completion Review与handoff判断
-- **AND** Candidate value MUST NOT包含Result identity或digest
-
-#### Scenario: Verification仍绑定旧Candidate或Content Target
-- **WHEN** Result Candidate、generation、target或declaration applicability任一为stale/unknown
-- **THEN** Verification gate MUST保持missing或stale并返回Task Verification reconciliation next action
-- **AND** Development MUST NOT改写Result、applicability或伪造passed evidence
-
-#### Scenario: Verification结论not-passed
-- **WHEN** current Result完整但结论为`not-passed`
-- **THEN** Development MAY保持Candidate current，但在没有绑定精确Verification Result digest、范围和授权来源的风险接受时 MUST记录blocked且不得形成handoff
-- **AND** scoped risk MUST NOT把Verification事实改写为passed或使stale/incomplete Result适用
-
-### Requirement: Task Development MUST provide current closed mutation input discovery
-
-Task Development MUST provide a response-only `discover` action for `observe` and `policy`. The action MUST derive a versioned closed `inputJson` from current Task, ready Environment, Development Receipt and Task Verification declaration facts, and MUST NOT write a Development Receipt, applicability observation, Task Record or other professional Result.
-
-#### Scenario: Discover observe input from current Receipt
-
-- **WHEN** an active Task has a matching ready Environment and current Development Receipt
-- **AND** the Agent requests `discover` for `observe`
-- **THEN** the response MUST return `buildr.task-development-current-input/v1` and a closed `inputJson` containing the Receipt's complete Change dispositions and planning target identity
-- **AND** the response MUST include the source Receipt identity and MUST report no write effect
-
-#### Scenario: Discover policy input from current declarations
-
-- **WHEN** an active Task has current Project verification declarations readable through Task Verification
-- **AND** the saved policy is absent or its declaration identities are stale
-- **THEN** the response MUST return every declaration capability usable for `task-delivery` with its default requiredness, a typed Project coverage gap when no such capability exists, and an empty `overrides` array
-- **AND** the returned input MUST satisfy the existing `policy` mutation contract without embedding declaration authority fields
-
-#### Scenario: Reuse an already current policy decision
-
-- **WHEN** the saved policy declaration identities are current
-- **THEN** discovery MUST preserve its capabilities, coverage gaps and explicit overrides in `inputJson`
-- **AND** discovery MUST NOT silently replace a prior explicit policy decision with declaration defaults
-
-#### Scenario: Discovery cannot prove current facts
-
-- **WHEN** Task, Environment, Receipt or declaration facts are missing, stale or invalid
-- **THEN** discovery MUST return a typed blocked diagnostic or fail closed
-- **AND** it MUST NOT synthesize a static example as a substitute for current input or write any lifecycle fact
-
-### Requirement: Task Development 必须在稳定目标后优先消费正式验证计划
-当 Content Target current 且 verification policy 尚未 current 时，Task Development 的推荐下一步 MUST 指向先形成并复核 closed Formal Verification Plan，再从该 Plan 派生 policy 输入；只有 policy current 后才推荐 freeze Candidate。该推荐 MUST保持为可替代工作流，不得自动 prepare、写policy、freeze或执行验证，也不得阻止无关开发与有界非正式反馈。
-
-#### Scenario: 稳定目标尚无policy
-- **WHEN** active Task 的Planning gate与Content Target current，但verification policy missing或stale
-- **THEN** `task next` MUST推荐由Task Verification先执行plan-and-derive-policy
-- **AND** MUST不先推荐freeze或自动执行任何mutation
-
-#### Scenario: Agent选择合法降级路径
-- **WHEN** current Plan暂不可用但Agent仍在既有授权和安全边界内继续无关开发、focused feedback或声明默认policy发现
-- **THEN** Buildr MUST不把Plan-first推荐升级为通用许可门禁
-- **AND** 未形成matching Formal Verification authority前不得声称正式验证完成
-
-### Requirement: Task Development policy discovery 必须消费Task Verification的closed投影
-Task Development discover MUST允许调用方提供按有效Project完整覆盖的closed Formal Verification Plan documents，并 MUST只通过Task Verification Application取得Plan-derived policy input。它 MUST返回selected capabilities、coverage gaps、空默认overrides、response-only not-selected disposition与Plan/declaration identities；MUST不把Plan、preparation或not-selected摘要写入Development Receipt。
-
-#### Scenario: current Plans完整覆盖Task
-- **WHEN** 每个有效Project均提供identity、target、declaration和capability current的task-delivery Plan
-- **THEN** discover MUST返回可直接交给policy writer的closed输入，并把Plan selected capability设为required
-- **AND** MUST确定性列出current declaration中可用于task-delivery但未被Plan选择的capability
-
-#### Scenario: Plan集合不完整或陈旧
-- **WHEN** Project缺失、重复，或任一Plan的closed identity、target、declaration、capability不匹配current facts
-- **THEN** discover MUST零写入失败并返回精确diagnostic
-- **AND** MUST不回退猜测selected capability或静默使用旧policy
-
 ### Requirement: 多Project Current Knowledge必须按Project完整聚合
 Task Development MUST只接受精确覆盖Task有效Project集合的Current Knowledge dispositions。每个Project disposition MUST绑定Project、current Content Target、`aligned|not-applicable|attention|blocked`、summary、source identities与bounded unresolved items；顶层Current Knowledge状态 MUST由完整Project集合确定性派生，且 MUST不复制知识正文。
 
@@ -577,19 +419,6 @@ Task Development MUST只接受精确覆盖Task有效Project集合的Current Know
 - **THEN** Task级Current Knowledge MUST为blocked并阻止handoff
 - **AND** 其他Project aligned MUST保持可见但不得覆盖该blocker
 
-### Requirement: Candidate必须绑定policy而非持久化Formal Plan集合
-Task Candidate MUST继续绑定current verification policy identity，Formal Plan documents与Plan identities MUST保持transient且不得进入Candidate、Development Receipt或Verification Result。Formal execution MUST在各Project Execution Record内绑定Plan；Development MUST通过Result对policy required capabilities与coverage gaps的完整覆盖决定Verification gate是否可用。
-
-#### Scenario: Result缺少policy required fact
-- **WHEN** records均绑定合法Project Plans但Result缺少current policy中的required capability fact
-- **THEN** Development MUST保持Verification coverage incomplete并阻止proceed/handoff
-- **AND** MUST不因Plan本身ready或其他Project通过而满足gate
-
-#### Scenario: 不同Plan产生相同完整policy facts
-- **WHEN** Project Plan identity变化但current Candidate、target、declaration和policy required facts仍由matching terminal authority完整覆盖
-- **THEN** Development MUST只按current Result与policy coverage判断gate
-- **AND** MUST不建立第二Plan store或把Plan identity加入Candidate
-
 ### Requirement: 研发必须退出父子协调写入
 研发 MUST 只维护独立研发事实，不再写父计划、贡献绑定或父验收，不要求贡献交接才能交付。历史字段及历史交接 MUST 保留可读，不作为新协调前置。
 
@@ -600,3 +429,24 @@ Task Candidate MUST继续绑定current verification policy identity，Formal Pla
 #### Scenario: 旧内部动作
 - **WHEN** 调用旧父子研发写动作
 - **THEN** MUST 零写入报告退役。
+
+### Requirement: Task Development必须与Task Verification独立
+Task Development MUST NOT声明、调用或依赖Task Verification Application、Persistence、Skill或capability。Development Receipt、Candidate、gate、decision、handoff、current input discovery与next action MUST NOT包含verification policy、Verification Result/Report digest、Formal Verification Readiness或Task Verification outcome。
+
+#### Scenario: Development形成Candidate和handoff
+- **WHEN** Task Development根据自身Task context、planning、Content Target、Completion Review和Current Knowledge形成Candidate或handoff
+- **THEN** Application MUST不读取Task Verification报告或项目测试地图
+- **AND** Task Verification报告缺失、失败、stale或损坏MUST不阻止Development mutation
+
+#### Scenario: Task Verification报告独立变化
+- **WHEN** Agent新建、替换或使Task Verification报告stale
+- **THEN** Development Receipt、Candidate generation、decision与handoff MUST保持不变
+- **AND** Application MUST不把报告变化投影为Development gate变化
+
+### Requirement: Development current input discovery不得编排任务验证
+Task Development current input discovery MUST只返回Development自身合法mutation所需的current facts。它 MUST NOT接收Formal Plan文件、生成verification policy、调用Task Verification declaration observation或推荐verification run/reconcile。
+
+#### Scenario: Content Target已经稳定
+- **WHEN** current Content Target形成且Development需要下一动作
+- **THEN** next action MAY继续Development自己的Review、Knowledge、Candidate或handoff流程
+- **AND** MUST NOT把Task Verification设为结构性前置；Agent按独立Skill决定何时执行和记录验证

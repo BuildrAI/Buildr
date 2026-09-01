@@ -54,7 +54,7 @@ Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `insp
 - Preparation 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-environment` Skill，使用其 schema、模板和 Doctor 校验；
 - Verification 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-verification` Skill，使用其 schema、模板和 Doctor 校验。
 
-Intake 不直接编辑声明，不合并两个 writer。owner 完成后运行适用 Doctor，并再次只读确认文件、scope 和 identity。声明变化只会让各专业 Task snapshot/Result 按自身契约 stale 或 blocked，不由 Intake 改写 Environment Receipt、Task Plan、Verification Result 或 Task Record。
+Intake不直接编辑声明，不合并两个writer。owner完成后运行适用Doctor，并再次只读确认文件、scope和identity。声明变化只会让各专业Task snapshot或报告按自身契约stale或blocked，不由Intake改写Environment Receipt、Task Plan、任务验证报告或Task Record。
 
 ## 输出
 

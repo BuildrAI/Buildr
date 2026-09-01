@@ -40,13 +40,13 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
 | 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Development、Review、Verification 公开 read model；Buildr Web 动态投影 |
 | 启动或继续已有active Formal Task并确定当前执行根、writer与next action | `buildr task next <task-id> --json`；只加载返回的当前capability/provider，`required`先恢复安全前置，`recommended`可按实际情况调整 |
-| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化、严格恢复终态遗漏的交付证据或记录Parent最终集成验收 | `buildr.task-development/v2` selected provider + `task parent inspect|record|bind-child|reconcile|reconcile-child-delivery|accept`；终态恢复只用于matching Finish异常，progress只由Application动态派生 |
+| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化、严格恢复终态遗漏的交付证据或记录Parent最终集成验收 | `buildr.task-development/v3` selected provider + `task parent inspect|record|bind-child|reconcile|reconcile-child-delivery|accept`；终态恢复只用于matching Finish异常，progress只由Application动态派生 |
 | 记录、查看或处理已结束Task的Agent执行效率复盘 | `buildr.task-retrospective/v2` selected provider；有效方向由todo/active Task承接，不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
-| 运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、初始化/更新验证能力声明，或实现任务到达正式验证节点 | `buildr.task-verification/v3` selected provider；不开发测试 |
+| 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
-| 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与handoff | `buildr.task-development/v2` selected provider |
+| 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、Task Candidate、Completion Review、Current Knowledge与handoff | `buildr.task-development/v3` selected provider；Task Verification独立 |
 | 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
@@ -71,7 +71,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
 - `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
-- Project 可以按需维护可选 `verification.yml`，只接受 closed `buildr.project-verification/v3`，声明既有能力族的Project/Service scope、proves、evidence、usable targets、discovery、affected/full/provider入口及必要执行边界。文件缺失或没有适用能力时只形成 coverage gap；不得复制测试清单、通用 DAG 或借此开发测试。Project也可按需维护可选`preparation.yml`，使用closed `buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Preparation Recipe；Agent按正式Task scope选择Recipe形成Task Plan，文件缺失时只允许显式task-inline选择，不得由Buildr扫描技术栈或静默回写长期声明。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；长期写入必须由用户确认后交给各声明owner Skill。
+- Project可以按需维护可选`verification.yml`，只接受closed`buildr.project-verification/v4`测试地图，声明少量稳定测试体系的Project/Service scope、purpose、sourcePaths、testRoots、完整入口、选择指导与环境要求；不复制具体测试清单、Task计划或运行结果。Agent直接调用项目工具执行测试，开发完成后只通过Task Verification Application保存有意义报告。Project也可按需维护可选`preparation.yml`，使用closed`buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Preparation Recipe；Agent按正式Task scope选择Recipe形成Task Plan。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；长期写入必须由用户确认后交给各声明owner Skill。
 
 ### 遗留 Practices
 

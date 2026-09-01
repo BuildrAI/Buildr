@@ -46,7 +46,7 @@ Product registry 当前有 73 个 executable primary owners；`test:candidate` �
 | --- | --- | --- | --- |
 | 直接层 | `unit`、`component`、`contract`、`integration` | 纯逻辑、有界组装、仓库契约与普通技术边界 | 见上一节；重型 owner 会产生较多 CLI/Git 子进程 |
 | affected slice | `integration-declarations`、`integration-openspec`、`integration-verification`、`integration-runtime`、`integration-release`、`integration-data-store`、`integration-task-environment`、`integration-self-bootstrap` 与 6 个 Task 领域 slice；13 个 `system-*` owner | 领域真实边界、CLI/Workspace 生命周期与公共 Journey | changed plan 使用直接 owner；Candidate 保留全部 primary owner，但 general/System 聚合不再重复领域文件 |
-| admission | `unit`、`component`、`contract`、`cli-architecture`、`openspec-spec-quality`、`openspec-strict`；验证框架适用时再加 `system-verification-admission` | 低成本逻辑/静态门禁，以及 changed-path 与 verification run CLI 的真实入口契约 | 本地 changed/full 合成到同一 DAG；任何重型 step 都等待 admission 通过，单次 execution 不重复 step |
+| admission | `unit`、`component`、`contract`、`cli-architecture`、`openspec-spec-quality`、`openspec-strict`；验证框架适用时再加 `system-verification-admission` | 低成本逻辑/静态门禁和 Project changed-path 选择可信性 | 本地 changed/full 合成到同一 Project DAG；它属于Buildr自身测试实现，不是Task Verification Application |
 | Quick 静态门禁 | `cli-architecture`、`openspec-spec-quality`、`openspec-strict` | CLI 模块结构、canonical spec 质量、OpenSpec strict | Product tree、bundled OpenSpec；只读运行，可与其他低成本 step 并行 |
 | 恢复与验收 | `integration-candidate-recovery`、`concurrent-task-acceptance`、`openspec-contract-fixtures`、`openspec-convergence-recovery` | builtin 恢复、双 Task 组合验收、OpenSpec contract、convergence/recovery | 临时 Git/Workspace；OpenSpec contract 10 case、recovery 5 case，集合互斥；重型步骤受 `workspace-saturating` 限制 |
 | Candidate 静态事实 | `open-source-candidate`、`openspec-candidate-audit`、`managed-mutations`、`package-static`、`docs-quality` | 公共发布材料、Change contract、mutation owner、package inventory、文档质量 | Product tree 或已生成 tarball；无浏览器 |
@@ -78,7 +78,7 @@ Context 与内层并发遵循：
 - `task-lifecycle-heavy` 只由 System 与 Task Development Integration 共同声明，容量为 1。它是已测得的 CPU/process/filesystem 压力节流，不是共享状态锁；OpenSpec recovery、runtime parity 等其他饱和型 owner 仍可在独立临时根上并行；
 - 每个资源 claim 必须命中资源契约要求的 footprint、`unique-temporary-root` 隔离与 lifecycle cleanup，否则 planner 在启动前拒绝。只使用独立临时 Git/CLI fixture 的 Task Environment Integration、Task Finish delivery Integration 与 Release convergence 不再占用 `workspace-saturating`；
 - Candidate DAG 默认按成功样本校准后的粗粒度成本优先启动长 owner；资源或 class 容量不足的 step 不会阻止其他 ready step 填充空闲容量。`critical-path` 模式按“自身调度成本 + 最长后续依赖链成本”排序，同分时优先 fan-out producer；它与 `declaration` 模式只用于受控对照诊断。timing evidence记录实际模式与每步优先级；
-- `system-fresh-build` 使用独立临时 Workspace 和prepared controller，不再占用全局`exclusive`，而是显式声明`workspace-saturating`与`task-lifecycle-heavy`资源。近期成功样本约23–25s，调度成本取25s；Task Finish delivery、System Task Finish、Task Development、execution-record与self-bootstrap等长尾 owner按多次成功样本中位数向上取整，成本仅影响启动顺序，不替代target duration或超时；
+- `system-fresh-build`使用独立临时Workspace和prepared controller；Task Execution Record专属owner已经删除，其余长尾owner按实际样本校准；
 - outer plan 为需要它的 Integration/System owner只准备一次`task-lifecycle/v1`不可变基线，并以closed环境投影跨runner复用；每个case复制独立sandbox，前后tree identity检测seed污染。直接单文件执行使用worker-local等价Pool；初始化、Git/Task Environment、安装、迁移和Finish测试仍自行准备完整环境；
 - `runtime-adapter-parity` 只初始化一次只读 seed，再为每个 adapter 与安全场景复制独立 sandbox，内部最多 3 路；同一 sandbox 内的 mutation、runtime check 和 Doctor 保持串行；
 - System runner 只粗粒度前置已知长 owner，其余保持字母序，并用 dot reporter 压缩成功日志；这不是动态调度器；
@@ -87,7 +87,7 @@ Context 与内层并发遵循：
 - 双 Task acceptance 内部只在事实本身要求并发时启动两路 prepare、invocation、verification、Result record、preview stop 和 Task abandon；只有必须证明 peer preservation 的 Environment cleanup 保持顺序；
 - Browser 通过 Project declaration 的协调资源容量 1 串行，避免多个 Chrome fixture 互相争用。
 
-跨 Task 的 coordinated resource 使用共享 root 中的 owner-bound waiting ticket 排队。ticket 只表达等待资格，lease 继续表达执行容量；可用 slot 只授予容量范围内最早的有效 ticket。ticket 通过 heartbeat 续期，成功、取消和 timeout 只删除匹配 owner/token 的 ticket，崩溃或过期 ticket 可由后续 waiter 有界回收。排队、ticket、lease 和 timing 都是 transient execution evidence，不进入 `verification.yml` 或 current Task Verification Result，也不扩展为通用 scheduler 或优先级平台。
+Buildr Product内部测试仍可为高成本资源使用owner-bound ticket与lease协调容量；这些机制属于Product测试runner，不进入`verification.yml`或current任务验证报告，也不扩展为通用Task Verification scheduler。
 
 因此外层 `global=4` 不等于全机只有 4 个进程。`workspace-saturating` 是压力节流，不是共享状态锁：只有使用不同临时 execution root、并真实穿过完整 Workspace lifecycle 的 verifier 才声明该资源并允许两路并行；受限 CI 可显式选单路 profile。所有 Product tests 默认使用本机隔离临时目录，不要求 Docker、数据库、云服务或真实网络；Browser 例外地要求本机 Chrome/Chromium。
 
@@ -136,7 +136,7 @@ Quick runner 全局最多并发 4 个 step；`unit`、`component`、`contract` �
 
 迁出的 `development-entry`、`task-asset-observation`、候选文件系统、Task Manager 临时 capability graph 与 verification CLI process cases 现在由 `integration` 选择；它们包含真实 CLI/Git/filesystem 或 cleanup。`runtime-adapter-contract` 虽单次耗时较低，但会重复创建和清理临时投射目录，因此保留 changed/focus/Candidate identity 并退出 Quick。
 
-Quick是成本约束，affected/full是选择范围，frozen Task Content、Product Artifact Candidate与Published Release是验证对象或决策节点。它们不是一条混合层级，也不进入Task Verification Result schema。内部Task Candidate identity只冻结Task lifecycle事实，不等于Product Artifact Candidate。
+Quick是成本约束，affected/full是Project测试选择范围，Product Artifact Candidate与Published Release是Buildr自身验证对象。它们不进入Task Verification Report schema；Task Verification Skill只指导Agent使用项目测试地图和现有工具。
 
 ## 6. Task Verification 如何使用项目测试
 
@@ -154,11 +154,11 @@ Agent 的正式验证流程是：
 ```text
 Task scope + changed paths + implementation risk
         ↓ 开发期 Quick / changed / focus
-Development 稳定 Content Target 并固定 verification policy
-        ↓ 冻结Task Candidate并形成matching Verification Plan
-执行适用 capability，保存Execution Record
-        ↓ 从matching records对账Result
-记录一个绑定Candidate、Content Target与declaration identities的current Result
+Agent读取Task、实际改动和Project测试地图
+        ↓ 选择并直接执行已有测试
+形成实际checks、gaps与结论
+        ↓
+保存一个绑定Task内容版本的current验证报告
 ```
 
 GitHub hosted验证只承担独立边界：PR到`dev`运行双平台changed/affected Development feedback；`release-<version> → main`受保护PR和手工dispatch运行绑定current release HEAD/tree的完整Candidate；tag workflow验证并发布同一冻结制品。Formal Finish和self-bootstrap successor直接推送`dev`不自动启动`Verify Buildr`：source commit复用current Task Verification与Finish remote readback，successor复用self-bootstrap runner的精确delta、push readback、development identity与最终Doctor。平台高风险修改需要进入`dev`前的hosted Windows evidence时使用PR到`dev`，不把每次正式交付重新变成GitHub验证。
@@ -169,9 +169,9 @@ GitHub Candidate不是第二套测试registry，而是同一Candidate profile的
 
 本地完整 Candidate 在最终实现树上 46/46 通过，墙钟 189.157s，超过 120s 观察预算。该超限同时说明两件事：120s 是 38-step 历史候选形成的优化目标，已不再是当前 46-step 完整集合的现实预期上界；但当前测试本体也仍有可优化热点，不能只提高预算。最慢 owner 是 System Workspace lifecycle 73.852s、System Task Finish 49.260s、technical boundary integration 40.580s、System runtime recovery 37.817s 和 concurrent task acceptance 30.997s。120s 保持 nonblocking optimization warning；GitHub 发布门禁另以总墙钟、最长 shard、runner minutes 与失败重跑成本评估，后续优先优化 Workspace/Task 长尾后再用新基线校准预算。
 
-Project `verification.yml`仍只声明可由Task Verification选择的稳定本地capability。GitHub job/shard是仓库候选运行策略，不新增Project capability，也不把CI内部job写入portable Task Verification Result。
+Project `verification.yml`只声明稳定测试能力族。GitHub job/shard是仓库候选运行策略，不新增测试族，也不把CI内部job写入任务验证报告。
 
-完整 stdout/stderr、临时路径、环境启动和 timing 属于 transient Execution Evidence；Workspace-local current Result 只保留 Content Target、声明、实际能力事实、coverage gap 和整体结论。target 或 declaration 变化后 Result 派生为 stale。Task Development 与 Buildr Web 复用同一个 Result reader；Task Finish 不读取或发起 Verification。
+完整 stdout/stderr、临时路径和工具session留在项目测试工具现场；Workspace-local Task Verification Report只保存内容版本、测试地图identity、实际checks、gaps和整体结论。内容或地图变化后报告派生为stale；Buildr Web只读同一Application报告。
 
 ## 7. 当前性能根因与本轮结论
 
@@ -228,7 +228,7 @@ P0.5 合入前、最终文档冻结时的干净候选上，Quick 为 6.4 秒，3
 | Task Finish Integration 25.098s | core 预算 20s，delivery Journey 预算 45s |
 | Workspace System 75.853s | Project/Service 55s、Task lifecycle 25s、Worktree 45s |
 | Task Finish System 62.806s | Product Journey 60s、CLI Journey 15s |
-| coordination 5.653s、execution record 16.601s | 保持独立 owner，预算分别校准为 8s、20s |
+| coordination 5.653s | 保持独立owner，预算校准为8s；Execution Record owner删除 |
 | acceptance 32.459s | 保留唯一双 Task 组合事实，预算 40s |
 | capability CLI 29.372s、commands CLI 11.927s | 保留真实 CLI 边界，预算 35s、15s |
 | package workspace 6.822s | 保留 package 安装事实，预算 10s |

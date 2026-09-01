@@ -108,7 +108,7 @@ test('Development repository拒绝不存在Task且不产生orphan row', (t) => {
   opened.database.close();
 });
 
-test('workspace-only Development policy兼容读取，但scope变化后拒绝作为新current写回', (t) => {
+test('历史Development policy仅兼容读取，不再参与Task scope判断', (t) => {
   const { root, runtime } = fixture(t);
   runtime.writeTaskDevelopmentPersistence(root, workspaceReceipt(), observation('developing'));
   assert.deepEqual(runtime.readTaskDevelopmentPersistence(root, 'demo-task').receipt.verificationPolicy.declarations, []);
@@ -119,5 +119,5 @@ test('workspace-only Development policy兼容读取，但scope变化后拒绝作
     updatedAt: '2026-08-04T00:01:00.000Z',
   });
   assert.deepEqual(runtime.readTaskDevelopmentPersistence(root, 'demo-task').receipt.verificationPolicy.declarations, [], 'old self-described policy remains readable');
-  assert.throws(() => runtime.writeTaskDevelopmentPersistence(root, workspaceReceipt(), observation('developing', '2026-08-04T00:01:00.000Z')), (error) => error.code === 'task_development_write_failed' && /有效 Project 集合/.test(error.message));
+  assert.deepEqual(runtime.readTaskDevelopmentPersistence(root, 'demo-task').receipt.verificationPolicy.declarations, [], 'Task scope变化不把历史policy重新解释为current验证要求');
 });

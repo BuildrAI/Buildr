@@ -103,7 +103,7 @@ buildrSkillRequiredText:
   - buildr.git-operations/v1
   - buildr.task-environment/v1
   - buildr.git-worktree-provider/v1
-  - buildr.task-verification/v3
+  - buildr.task-verification/v4
   - components/manifest.yml
   - buildr component install
   - buildr component uninstall

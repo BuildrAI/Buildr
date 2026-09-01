@@ -16,7 +16,7 @@ import {
 test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error schema', () => {
   const ids = TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(ids.length, 14);
+  assert.equal(ids.length, 11);
   for (const operation of TASK_PROFESSIONAL_HTTP_OPERATIONS) {
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.requestSchemaId));
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.successSchemaId));
@@ -30,7 +30,7 @@ test('strict validator 拒绝未知字段、缺失字段和非法类型且不变
   assert.throws(() => validateTaskProfessionalRequest('task-retrospective.patch', input, 'retrospective'), (error) => error.code === 'task_api_field_forbidden');
   assert.deepEqual(input, before);
   assert.throws(() => validateTaskProfessionalRequest('task-retrospective.patch', {}, 'retrospective'), (error) => error.code === 'task_retrospective_digest_required');
-  assert.throws(() => validateTaskProfessionalRequest('task-execution-record.list', { view: 1 }, 'execution records'), (error) => error.code === 'task_execution_record_view_invalid');
+  assert.throws(() => validateTaskProfessionalRequest('task-execution-record.list', {}, 'execution records'), /not registered/);
 });
 
 test('Interface mapping 返回新对象，不把 DTO 原对象传入 Application', () => {

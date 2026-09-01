@@ -7,15 +7,27 @@
 ## Requirements
 
 ### Requirement: Task Execution 与 Verification 必须有清晰的静态 owner
-Buildr SHALL 将 Task lifecycle、Task Environment、Task Verification、Task Execution Record 的 Application/Domain/Persistence 实现归入 `src/task/`，将 Project Verification 的执行、evidence、resource、process 与 declaration parsing 实现归入 Verification owner；System Doctor MUST 只持有 diagnostics 适配，不得成为 Verification declaration parser/validator 的调用源。
+Buildr SHALL将Task lifecycle、Task Environment和Task Verification的Application/Domain/Persistence实现归入`src/task/`，将Project测试地图parser、validator与Application归入Project Verification owner。产品MUST不保留Task Execution Record模块、runtime port或跨模块依赖；System Doctor MUST只消费Project Verification的窄声明诊断能力。
+
+#### Scenario: Task Verification读取测试地图
+- **WHEN** Task Verification保存或inspect报告需要观察相关Project地图identity
+- **THEN** 它MUST依赖Project Verification-owned parser/validator
+- **AND** MUST NOT取得测试执行、Execution Record或资源协调能力
 
 #### Scenario: Verification 解析 declaration
-- **WHEN** Verification application 或 Task Verification 需要读取 `verification.yml`
-- **THEN** 它们 MUST 依赖 Verification-owned parser/validator，且 MUST NOT 从 `system/doctor/application` 导入 parser/validator
+- **WHEN**Project Verification或Task Verification需要读取`verification.yml`
+- **THEN**它们MUST复用Project Verification-owned parser/validator
+- **AND**MUST NOT从System Doctor复制解析语义
 
 #### Scenario: Doctor 生成 diagnostics
-- **WHEN** System Doctor 检查 Project verification declaration
-- **THEN** Doctor MUST 通过 Verification 的窄解析/校验能力生成 diagnostics，且 MUST NOT复制另一套 declaration 校验语义
+- **WHEN**System Doctor检查Project测试地图
+- **THEN**Doctor MUST通过Project Verification窄诊断能力生成findings
+- **AND**MUST NOT成为测试地图writer或Task Verification consumer
+
+#### Scenario: Bootstrap组装Task模块
+- **WHEN** Bootstrap组装Task相关模块
+- **THEN** MUST不登记Task Execution Record descriptor、capability或runtime port
+- **AND** 其他Task能力MUST不依赖已退役模块
 
 ### Requirement: Task Environment 与 Worktree provider 必须保持窄基础设施边界
 Task Environment SHALL 通过 `buildr.git-worktree-provider/v1` 调用 Task infrastructure 中的 Git Worktree provider；provider MUST 只负责 Git plan/checkout/evidence/cleanup，不得拥有 Environment readiness、runtime projection、Verification Result 或 Task lifecycle authority。

@@ -42,27 +42,6 @@ const planningGate = closed({
   source: text('明确授权或不适用事实来源。'),
 }, ['disposition', 'summary', 'source']);
 
-const formalPlan = closed({
-  project: text('Task有效Project code。'),
-  document: { type: 'object', description: 'closed buildr.verification-plan/v1或buildr.verification-plan-result/v1 document。' },
-}, ['project', 'document']);
-
-const capability = closed({
-  project: text(),
-  capability: text(),
-  required: { type: 'boolean' },
-}, ['project', 'capability', 'required']);
-
-const coverageGap = closed({ scope: text('真正仅工作区Task使用workspace；其他Task使用project:<code>或service:<project>/<service>。'), summary: text() }, ['scope', 'summary']);
-const override = closed({
-  project: text(),
-  capability: text(),
-  required: { type: 'boolean' },
-  scope: text(),
-  basis: text(),
-  source: text(),
-}, ['project', 'capability', 'required', 'scope', 'basis', 'source']);
-
 const knowledge = {
   treeIdentity: text('current Content Target identity。'),
   status: { type: 'string', enum: ['aligned', 'not-applicable', 'attention', 'blocked'] },
@@ -79,7 +58,7 @@ const knowledge = {
 };
 
 const risk = closed({
-  gate: { type: 'string', enum: ['verification', 'completion'] },
+  gate: { type: 'string', enum: ['completion'] },
   resultDigest: text('绑定的专业 Result sha256 digest。'),
   scope: text(),
   summary: text(),
@@ -97,10 +76,9 @@ const contracts = {
     example: {},
   },
   discover: {
-    summary: '从 current Task、Environment、Receipt、declaration与可选Formal Plans生成observe/policy的closed mutation input；只读且不写入任何lifecycle fact。',
+    summary: '从current Task、Environment与Receipt生成observe的closed mutation input；只读且不写入任何lifecycle fact。',
     inputSchema: inputSchema({
-      action: { type: 'string', enum: ['observe', 'policy'], description: '需要生成输入的 Task Development mutation action。' },
-      formalPlans: array(formalPlan, 'policy discovery可选的按有效Project完整覆盖的closed Formal Plan documents。'),
+      action: { type: 'string', enum: ['observe'], description: '生成Content Target观察输入。' },
     }, ['action']),
     example: { action: 'observe' },
   },
@@ -122,28 +100,15 @@ const contracts = {
     }, ['changeDispositions']),
     example: { changeDispositions: [], planningTargetIdentity: null },
   },
-  policy: {
-    summary: '记录与 current verification declarations 对齐的验证政策。',
-    inputSchema: inputSchema({
-      capabilities: array(capability),
-      coverageGaps: array(coverageGap),
-      overrides: array(override),
-    }, ['capabilities', 'coverageGaps']),
-    example: {
-      capabilities: [{ project: '<project>', capability: '<capability>', required: true }],
-      coverageGaps: [],
-      overrides: [],
-    },
-  },
   knowledge: {
     summary: '保存selected Current Knowledge provider针对current Content Target的最小disposition。',
     inputSchema: inputSchema(knowledge, ['treeIdentity']),
     example: { treeIdentity: 'sha256-<content-target>', projects: [{ project: '<project>', status: 'aligned', summary: '<knowledge-summary>', sourceIdentities: [], unresolvedItems: [] }] },
   },
   gate: {
-    summary: '记录 planning、verification 或 completion gate 的明确 waiver/not-applicable disposition。',
+    summary: '记录planning或completion gate的明确waiver/not-applicable disposition。',
     inputSchema: inputSchema({
-      gate: { type: 'string', enum: ['planning', 'verification', 'completion'] },
+      gate: { type: 'string', enum: ['planning', 'completion'] },
       disposition: { type: 'string', enum: ['waived', 'not-applicable'] },
       targetIdentity: nullableText(),
       summary: text(),
@@ -230,7 +195,7 @@ export function taskDevelopmentDriverHelp(action = null) {
     schemaVersion: 'buildr.task-development-driver-help/v1',
     action,
     summary: contract.summary,
-    usage: `<controller> __internal task-development ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>]${action === 'discover' ? ' [--plan <project>::<json-file> ...]' : ''} [--compact | --profile]`,
+    usage: `<controller> __internal task-development ${action} --task <task-id> --target <canonical-workspace> [--input-json <json>] [--compact | --profile]`,
     discovery: [`${action} --schema`, `${action} --example`],
   };
 }

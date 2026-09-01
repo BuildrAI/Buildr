@@ -54,7 +54,6 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   const identityConsumers = [
     'src/task/infrastructure/git-worktree-provider.mjs',
     'src/task/persistence/task-environment-repository.mjs',
-    'src/task/application/task-verification-application.mjs',
     'src/web/application/preview-lifecycle.mjs',
     'package/launchers/manage.mjs',
   ];
@@ -79,7 +78,6 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
     'src/web/module.mjs',
     'src/web/application/instance-lifecycle.mjs',
     'src/web/application/preview-lifecycle.mjs',
-    'src/web/application/scheduled-maintenance.mjs',
     'src/web/infrastructure/instance-runtime.mjs',
     'src/web/interfaces/cli/web.mjs',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);

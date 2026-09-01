@@ -6,18 +6,6 @@ export function mapTaskProfessionalReadRequest(input = {}) {
   return Object.freeze({});
 }
 
-export function mapTaskExecutionRecordsRequest(input) {
-  return Object.freeze({ view: input.view });
-}
-
-export function mapTaskExecutionRecordDetailRequest(recordId) {
-  return Object.freeze({ recordId });
-}
-
-export function mapTaskExecutionRecordBodyRequest(recordId, filename) {
-  return Object.freeze({ recordId, filename });
-}
-
 export function mapTaskRetrospectiveRequest(input = {}) {
   return Object.freeze({
     ...present(input, 'status'),
@@ -36,7 +24,7 @@ export function mapTaskReviewPromptRequest(input) {
 }
 
 export function mapTaskVerificationPromptRequest(input) {
-  return Object.freeze({ taskId: input.taskId, ...present(input, 'targetIdentity') });
+  return Object.freeze({ taskId: input.taskId });
 }
 
 export function mapTaskParentCoordinationRequest(input) {

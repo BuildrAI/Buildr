@@ -51,7 +51,7 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Small cross-domain technical boundaries behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project preparation and verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Verification planning, evidence, runtime, resource coordination, and public entrypoints remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
+  'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime, capability, Buildr Web, and Web dist boundaries remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
@@ -60,14 +60,13 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-task-execution-records': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task and Verification execution records preserve metadata, body-store, recovery, and retention boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Task Development, Review, and Verification lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish core bootstrap, run, diagnostics, entry, and SQLite behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-task-finish-delivery': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Task Finish remote delivery, retained activation, cleanup, and contribution behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-finish-cli': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Task Finish public CLI journey and result projection behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection and Verification run entry contracts fail closed before heavy verification starts.', TEST_ENVIRONMENTS.repeatedCli),
+  'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-public-json-contracts': testing(PROJECT_OWNER, 'Static Conformance', 'System', 25000, 'Public JSON outputs remain closed, versioned, and stable through real CLI entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-openspec-contract-audit': testing(PROJECT_OWNER, 'Static Conformance', 'System', 8000, 'OpenSpec public audit remains complete through its real project entrypoint.', TEST_ENVIRONMENTS.repeatedCli),
@@ -127,10 +126,6 @@ export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
   'integration-self-bootstrap': primaryEvidence(
     'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
     'real retained checkout, Git identity, and runtime synchronization',
-  ),
-  'integration-task-execution-records': primaryEvidence(
-    'A truncated body, mismatched metadata identity, failed recovery, or retention leak must be observable.',
-    'real SQLite and filesystem-backed execution record persistence',
   ),
   'integration-task-development': primaryEvidence(
     'A stale planning, Candidate, Review, Verification, or repository identity must block the lifecycle transition.',
@@ -377,7 +372,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-declarations', [
     'test/integration/core-diagnostics-and-package.test.mjs',
     'test/integration/internal-workflow-route-diagnostics.test.mjs',
-    'test/integration/project-verification.test.mjs',
+    'test/integration/project-verification-map.test.ts',
   ], { schedulingCostMs: 1000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-openspec', [
     'test/integration/change-application.test.mjs',
@@ -389,9 +384,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/openspec-projected-validator.test.mjs',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-verification', [
-    'test/integration/verification-entrypoints-cli.test.mjs',
-    'test/integration/verification-evidence-lifecycle.test.mjs',
-    'test/integration/verification-planner.test.mjs',
+    'test/integration/task-verification-report.test.ts',
     'test/integration/verification-resource-coordinator.test.mjs',
     'test/integration/test-context-runtime.test.mjs',
     'test/integration/node-test-context-host.test.mjs',
@@ -444,14 +437,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-project-daily-progress', [
     'test/integration/project-daily-progress-application.test.mjs',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
-  integrationSlice('integration-task-execution-records', [
-    'test/integration/task-execution-record-application.test.mjs',
-    'test/integration/task-execution-record-body-store.test.mjs',
-    'test/integration/task-finish-execution-record-recovery.test.mjs',
-    'test/integration/verification-execution-record-application.test.mjs',
-  ], { schedulingCostMs: 50000, executorType: 'node-context-test', args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-task-development', [
-    'test/integration/task-verification-repository.test.mjs',
     'test/integration/task-development-application-shard-3.test.mjs',
     'test/integration/task-development-application.test.mjs',
     'test/integration/task-development-application-shard-4.test.mjs',
@@ -462,7 +448,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-development-driver-discovery.test.mjs',
   ], { schedulingCostMs: 30000, executorType: 'node-context-test', resources: ['workspace-saturating', 'task-lifecycle-heavy'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY], args: ['--test-concurrency=4'] }),
   integrationSlice('integration-task-finish', [
-    'test/integration/task-finish-diagnostics-evidence.test.mjs',
     'test/integration/task-finish-sqlite.test.mjs',
     'test/integration/task-finish-maintenance.test.mjs',
   ], { schedulingCostMs: 11000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
@@ -497,7 +482,6 @@ export const verificationSteps = Object.freeze([
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
       'integration-project-daily-progress': 'Project daily progress integration slice',
-      'integration-task-execution-records': 'Task execution-record integration slice',
       'integration-task-development': 'Task Development lifecycle integration',
       'integration-task-finish': 'Task Finish core integration slice',
       'integration-task-finish-delivery': 'Task Finish delivery integration slice',
@@ -613,7 +597,6 @@ export const CORE_MACOS_STEP_IDS = Object.freeze([
   'integration-task-read-models',
   'integration-task-coordination',
   'integration-project-daily-progress',
-  'integration-task-execution-records',
   'integration-task-finish',
   'integration-task-finish-delivery',
   'system-verification-contracts',
@@ -646,7 +629,6 @@ export const CORE_MACOS_SHARDS = Object.freeze([
   candidateShard('core-task-lifecycle-macos', 'macos', 'verification', [
     'integration-task-environment',
     'integration-self-bootstrap',
-    'integration-task-execution-records',
     'integration-task-finish',
     'integration-task-finish-delivery',
   ], { requiresArtifact: true }),

@@ -76,46 +76,18 @@ const COMMAND_ROUTES = [
   },
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
-  {
-    key: "verification plan",
-    surface: "agent-machine",
-    summary: "从 Project verification.yml v3 与冻结目标形成可解释、内容寻址的 Verification Request/Plan；只预览选择，不执行测试或写 Result。",
-    help: [
-      "Usage: buildr verification plan --project <code> [--service <code> ...] --target-kind <task-delivery|product-candidate|published-release> --selection-scope <affected|full|release-only> --target-identity <identity> [--changed-path <path> ...] [--risk <code> ...] [--dependency <from>::<to>::<reason> ...] [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--json]",
-      "",
-      "Plan 记录 direct/dependency/full reason、evidence、proves、execution units 与 coverage gaps。changed path统一为Project-relative；同时绑定Environment与Workspace时返回只读Preparation preview。preview不是Execution Record、Environment mutation或Verification Result。"
-    ],
-    match: ({ domain, action }) => domain === 'verification' && action === 'plan',
-    run: (r, c) => r.verificationPlan(c.argv.slice(4)),
-  },
-  {
-    key: "verification run",
-    surface: "agent-machine",
-    summary: "读取已登记 Project 的 verification.yml v3，执行current Plan或显式选择的command能力；正式Task execution必须绑定Plan并保留受控Execution Record。",
-    help: [
-      "Usage: buildr verification run --project <code> (--plan <plan.json> | --capability <id> ...) --target-identity <identity> [--selection-scope <affected|full>] [--target <execution-root>] [--environment <task-id> --workspace <canonical-workspace>] [--authorize-capability <id> ...] [--authorize-resource <id> ...] [--concurrency <n>] [--retry] [--detail <compact|full>] [--json]",
-      "",
-      "读取v3能力族；Task外允许显式capability执行，正式Task必须消费current Plan。provider或bounded Agent execution不会被command runner伪装执行。",
-      "--declaration-root 只属于 task verification record；verification run 与 task verification inspect 都不读取 declaration source。",
-      "采用 Task Environment 时必须同时提供 Task ID 与 canonical Workspace；正式 execution 由 Receipt 固定的 retained controller 编排，capability 仍在候选 execution root 执行，候选 runtime 不获得 canonical writer authority。Environment Application 只交接 scope、执行根、source/projection identity，不读取或写入真实 Agent session 采用证明。",
-      "effects.authorization: explicit 必须逐项 --authorize-capability；显式授权资源必须逐项 --authorize-resource。被实际 claim 的 coordinated 资源通过 Git common-dir lease 跨 Task 排队。该命令不创建任务、调度 Agent 或写 current Result。",
-      "Task外execution只写provider-owned transient evidence。正式Task execution先申请execution record容量；相同Task/target/declaration/capability集合已有active或terminal record时，默认按active优先及openedAt/recordId降序选择latest并零执行返回原record/run identity。只有显式--retry创建同invocation的独立run/record；identity输入变化仍创建首次执行。完成后seal受控正文，再精确清理transient evidence；容量不足时不启动capability。--json默认返回buildr.long-running-operation-summary/v1紧凑摘要；显式--detail full返回既有buildr.verification-execution/v1。"
-    ],
-    match: ({ domain, action }) => domain === 'verification' && action === 'run',
-    run: (r, c) => r.verificationRun(c.argv.slice(4)),
-  },
-  {
-    key: "verification cleanup",
-    surface: "agent-machine",
-    summary: "只清理 buildr.verification-execution/v1 声明的 provider-owned transient run directory；非 transient、identity 不匹配、越界或不可证明的 evidence 一律保留。",
-    help: [
-      "Usage: buildr verification cleanup --summary <file> [--json]",
-      "",
-      "只清理 buildr.verification-execution/v1 声明的 provider-owned transient run directory；非 transient、identity 不匹配、越界或不可证明的 evidence 一律保留。"
-    ],
-    match: ({ domain, action }) => domain === 'verification' && action === 'cleanup',
-    run: (r, c) => r.verificationCleanup(c.argv.slice(4)),
-  },
+  ...['inspect', 'validate', 'update'].map((operation) => ({
+    key: `project verification ${operation}`,
+    surface: 'agent-machine',
+    summary: operation === 'inspect' ? '读取 Project 测试地图。' : operation === 'validate' ? '校验 Agent 形成的 verification.yml 候选。' : '按已观察版本更新 Project 测试地图。',
+    help: [operation === 'inspect'
+      ? 'Usage: buildr project verification inspect <project> [--target <workspace>] [--json]'
+      : operation === 'validate'
+        ? 'Usage: buildr project verification validate <project> --file <candidate.yml> [--target <workspace>] [--json]'
+        : 'Usage: buildr project verification update <project> --file <candidate.yml> --expected-identity <identity|absent> [--target <workspace>] [--json]', '', 'Task Verification Skill 指导 Agent 从真实测试代码、构建脚本、CI 与说明形成候选；Application 只校验和维护测试地图。'],
+    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'verification' && runtimeId === operation,
+    run: (r, c) => r.projectVerificationCommand(operation, c.argv.slice(5)),
+  })),
   TASK_MODULE_COMMAND_SLOT,
   {
     key: "mutation recover",
@@ -154,17 +126,6 @@ const COMMAND_GROUPS = [
       "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
       "",
       "按 Task ID 只读回读 Terminal Delivery；使用 task finish inspect --run 查询完整 Finish run 明细。"
-    ],
-    executable: false,
-  },
-  {
-    key: "task execution-record",
-    surface: "maintenance",
-    summary: "读取Task-scoped Execution Record，或执行Workspace级bounded GC。",
-    help: [
-      "Usage: buildr task execution-record <list|inspect|recover|gc> ...",
-      "",
-      "list/inspect用于只读回查；recover补seal原Verification record或在明确授权后保留unknown；gc执行bounded维护。不提供自动retry、timeout或执行资源cleanup。"
     ],
     executable: false,
   },

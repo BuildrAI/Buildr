@@ -3,10 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination', 'execution-records', 'execution-record-detail', 'execution-record-body']);
-const RECORD_ID_PATTERN = TASK_ID_PATTERN;
-const EXECUTION_RECORD_VIEWS = new Set(['all', 'verification', 'finish']);
-const EXECUTION_RECORD_BODY_FILES = new Set(['summary.json', 'stdout.txt', 'stderr.txt', 'timeline.json', 'diagnostics.json']);
+const OPERATIONS = new Set(['overview', 'development', 'reviews', 'verification', 'coordination']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
@@ -39,17 +36,9 @@ function validateRequest(operation, input) {
     throw readExecutorError('local_app_read_signal_invalid', 'Buildr Web read executor signal 不合法。', 400);
   }
   const allowed = new Set(['targetRoot', 'taskId', 'signal']);
-  if (operation === 'execution-records') allowed.add('view');
-  if (operation === 'execution-record-detail' || operation === 'execution-record-body') allowed.add('recordId');
-  if (operation === 'execution-record-body') allowed.add('filename');
   for (const field of Object.keys(input)) {
     if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Buildr Web read executor 不支持字段：${field}。`, 400, { field });
   }
-  if (operation === 'execution-records' && !EXECUTION_RECORD_VIEWS.has(input.view ?? 'all')) throw readExecutorError('task_execution_record_view_invalid', `execution record view不受支持：${String(input.view)}。`, 400);
-  if ((operation === 'execution-record-detail' || operation === 'execution-record-body') && (typeof input.recordId !== 'string' || !RECORD_ID_PATTERN.test(input.recordId))) {
-    throw readExecutorError('task_execution_record_identity_invalid', 'Execution Record ID 不合法。', 400);
-  }
-  if (operation === 'execution-record-body' && !EXECUTION_RECORD_BODY_FILES.has(input.filename)) throw readExecutorError('task_execution_record_body_name_forbidden', `正文文件名不受支持：${String(input.filename)}。`, 400);
 }
 
 function defaultWorkerFactory() {

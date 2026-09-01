@@ -97,20 +97,15 @@ try {
   const nestedRoot = path.join(workspace, 'projects', 'nested');
   git(nestedRoot, ['config', 'user.email', 'buildr-test@example.com']);
   git(nestedRoot, ['config', 'user.name', 'Buildr Test']);
-  const verificationCapability = (id, delayMs, resourceClaims) => ({
-    id, title: id,
-    scope: { project: 'nested', services: [] },
-    proves: [id], evidence: ['system'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
-    invocation: { affected: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' }, full: { kind: 'command', argv: [process.execPath, '-e', `setTimeout(() => {}, ${delayMs})`], cwd: '.' } },
-    environment: { requires: ['node'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' },
-    resourceClaims,
-  });
   fs.writeFileSync(path.join(nestedRoot, 'verification.yml'), `${JSON.stringify({
-    schemaVersion: 'buildr.project-verification/v3',
-    resources: [
-      { id: 'shared-slot', title: 'Shared slot', strategy: 'coordinated', capacity: 1, authorization: 'implicit' },
-    ],
-    capabilities: [verificationCapability('nested.parallel-a', 80, []), verificationCapability('nested.parallel-b', 80, []), verificationCapability('nested.coordinated', 160, ['shared-slot'])],
+    schemaVersion: 'buildr.project-verification/v4',
+    testing: [{
+      id: 'nested-functional', title: 'Nested functional checks', scope: { project: 'nested', services: [] },
+      purpose: 'Validate the nested repository behavior used by concurrent Task acceptance.',
+      sourcePaths: ['**'], testRoots: ['test/**'],
+      full: { kind: 'command', argv: [process.execPath, '-e', 'setTimeout(() => {}, 160)'], cwd: '.' },
+      selection: ['Run the task-related nested repository checks.'], requirements: ['node'],
+    }],
   }, null, 2)}\n`);
   assert.equal(runBuildr(['sync', 'codex', '--target', workspace]).status, 0);
   commitIfDirty(nestedRoot, 'nested runtime fixture');
@@ -177,89 +172,50 @@ try {
 
   finishPhase();
   startPhase('verification');
-  const verificationPlans = summary.tasks.map((task) => {
-    const targetIdentity = digest(`target:${task.taskId}`);
-    const planned = spawnSync(task.cliInvocation.command, [
-      ...task.cliInvocation.argsPrefix,
-      'verification', 'plan', '--project', 'nested', '--target-kind', 'task-delivery', '--selection-scope', 'affected',
-      '--target-identity', targetIdentity, '--changed-path', 'README.md', '--target', task.environmentRoot, '--json',
-    ], { cwd: task.repositories[1].checkoutPath, env, encoding: 'utf8', timeout: platformTimeout(10_000) });
-    const plan = requireSuccess(planned, `verification plan ${task.taskId}`);
-    assert.equal(plan.status, 'ready');
-    assert.deepEqual(plan.selectedItems.map((item) => item.id).sort(), ['nested.coordinated', 'nested.parallel-a', 'nested.parallel-b']);
-    const planPath = path.join(task.environmentRoot, `.verification-plan-${task.taskId}.json`);
-    fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
-    return planPath;
-  });
-  // 外层等待覆盖环境核验、能力执行和证据落盘，不把托管机器的启动延迟误判为业务失败。
-  const verificationProcesses = summary.tasks.map((task) => spawnSupervised(task.cliInvocation.command, [
-    ...task.cliInvocation.argsPrefix,
-    'verification', 'run', '--project', 'nested', '--plan', verificationPlans[summary.tasks.indexOf(task)],
-    '--target-identity', digest(`target:${task.taskId}`), '--target', task.environmentRoot,
-    '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
-    '--environment', task.taskId, '--workspace', workspace, '--detail', 'full', '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'formal-verification' }, timeoutMs: platformTimeout(60_000), outputLimit: 64 * 1024 }));
+  const verificationProcesses = summary.tasks.map((task) => spawnSupervised(process.execPath, [
+    '-e', 'setTimeout(() => {}, 160)',
+  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'task-related-tests' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }));
   const verificationResults = await Promise.all(verificationProcesses.map((run) => run.completed));
   assert.equal(processesOverlap(verificationResults[0], verificationResults[1]), true);
   summary.verificationRuns = verificationResults.map((result, index) => {
-    const payload = parseSuccessfulJson(result, `verification ${taskIds[index]}`);
-    assert.equal(payload.schemaVersion, 'buildr.verification-execution/v1');
-    assert.match(payload.executionIdentity, /^sha256-/);
-    assert.equal(payload.executionRecord.status, 'retained');
-    assert.equal(payload.executionRecord.outcome, 'passed');
-    assert.equal(payload.executionRecord.lifecycleStatus, 'retained');
-    assert.equal('locator' in payload.executionRecord.body, false);
-    assert.equal(fs.existsSync(payload.evidenceReference), false);
-    return { taskId: taskIds[index], executionIdentity: payload.executionIdentity, executionRecord: payload.executionRecord, environment: payload.environment, durationMs: payload.durationMs, checks: payload.checks };
+    assert.equal(result.exitCode, 0, result.stderr || result.stdout);
+    return { taskId: taskIds[index], durationMs: result.durationMs, startedAt: result.startedAt, finishedAt: result.finishedAt };
   });
-  assert.equal(summary.verificationRuns.every((run) => run.environment.taskId === run.taskId), true);
 
   finishPhase();
   startPhase('verification-result');
-  const recordProcesses = summary.tasks.map((task, index) => spawnSupervised(task.cliInvocation.command, [
-    ...task.cliInvocation.argsPrefix,
-    'task', 'verification', 'reconcile', task.taskId,
-    '--candidate-identity', digest(`candidate:${task.taskId}`), '--candidate-generation', '1',
-    '--target-identity', digest(`target:${task.taskId}`),
-    '--target-summary', `Concurrent acceptance ${task.taskId}`,
-    '--record', summary.verificationRuns[index].executionRecord.recordId,
-    '--declaration-root', task.environmentRoot, '--target', workspace, '--json',
-  ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-result-record' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 }));
+  const recordProcesses = summary.tasks.map((task, index) => {
+    const reportPath = path.join(task.environmentRoot, `.task-verification-report-${task.taskId}.json`);
+    fs.writeFileSync(reportPath, `${JSON.stringify({
+      contentIdentity: digest(`target:${task.taskId}`),
+      contentSummary: `Concurrent acceptance ${task.taskId}`,
+      checks: [{
+        id: 'nested-functional-full', project: 'nested', testing: 'nested-functional', selection: 'task-related',
+        targets: ['nested repository task behavior'], source: 'command', outcome: 'passed',
+        summary: 'Task-related nested functional checks passed.', durationMs: summary.verificationRuns[index].durationMs,
+      }],
+      gaps: [], conclusion: { outcome: 'passed', summary: 'Task-related checks passed.' },
+    }, null, 2)}\n`);
+    return spawnSupervised(task.cliInvocation.command, [
+      ...task.cliInvocation.argsPrefix,
+      'task', 'verification', 'record', task.taskId, '--report', reportPath, '--target', workspace, '--json',
+    ], { cwd: task.repositories[1].checkoutPath, env, owner: { taskId: task.taskId, runId: 'verification-report-record' }, timeoutMs: platformTimeout(10_000), outputLimit: 64 * 1024 });
+  });
   const recordedResults = await Promise.all(recordProcesses.map((run) => run.completed));
   summary.portableResults = recordedResults.map((result, index) => {
     const recorded = parseSuccessfulJson(result, `record verification result ${taskIds[index]}`);
     assert.equal(recorded.status, 'recorded');
     assert.equal(recorded.slot.applicability.status, 'current');
-    return { taskId: taskIds[index], path: recorded.slot.path, resultDigest: recorded.slot.resultDigest, applicability: recorded.slot.applicability.status };
+    return { taskId: taskIds[index], path: recorded.slot.path, reportDigest: recorded.slot.reportDigest, applicability: recorded.slot.applicability.status };
   });
   assert.notEqual(summary.portableResults[0].path, summary.portableResults[1].path);
-  assert.notEqual(summary.portableResults[0].resultDigest, summary.portableResults[1].resultDigest);
+  assert.notEqual(summary.portableResults[0].reportDigest, summary.portableResults[1].reportDigest);
 
   finishPhase();
   startPhase('resource-coordination');
-  const parallelOverlaps = summary.verificationRuns.map((run) => {
-    const first = run.checks.find((check) => check.id === 'nested.parallel-a');
-    const second = run.checks.find((check) => check.id === 'nested.parallel-b');
-    return Date.parse(first.startedAt) < Date.parse(second.finishedAt) && Date.parse(second.startedAt) < Date.parse(first.finishedAt);
-  });
-  assert.equal(parallelOverlaps.every(Boolean), true);
-  const coordinated = summary.verificationRuns.map((run) => run.checks.find((check) => check.id === 'nested.coordinated'));
-  for (const check of coordinated) {
-    assert.equal(check.resourceCoordination.claims.some((claim) => claim.status === 'acquired' && claim.resource === 'shared-slot'), true);
-    assert.equal(check.resourceCoordination.release.some((claim) => claim.status === 'released' && claim.resource === 'shared-slot'), true);
-    summary.cleanup.resources.push(...check.resourceCoordination.release);
-  }
-  const orderedCoordination = [...coordinated].sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
-  assert.equal(Date.parse(orderedCoordination[0].finishedAt) <= Date.parse(orderedCoordination[1].startedAt), true, 'capacity-one coordinated checks must not overlap');
   summary.resourceCoordination = {
-    isolatedParallel: { overlapped: true, owners: taskIds },
-    coordinated: {
-      capacity: 1,
-      firstOwner: orderedCoordination[0].resourceCoordination.claims[0].owner.taskId,
-      secondOwner: orderedCoordination[1].resourceCoordination.claims[0].owner.taskId,
-      secondWaitDurationMs: orderedCoordination[1].resourceCoordination.waitDurationMs,
-      overlapped: false,
-    },
+    directTaskTests: { overlapped: true, owners: taskIds },
+    note: 'Task Verification no longer owns shared execution-resource coordination.',
   };
   finishPhase();
 

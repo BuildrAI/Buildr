@@ -7,8 +7,6 @@ import {
   reviewMethodLabel,
 } from '../../lib/taskLabels';
 import { Fact, TechnicalDetails } from './shared';
-import { ExecutionRecordsPanel, type ExecutionRecordView } from './ExecutionRecordsPanel';
-import type { TaskExecutionRecordsView } from '../../api';
 
 type Props = {
   active: boolean;
@@ -20,14 +18,8 @@ type Props = {
   verificationLoading: boolean;
   reviewError: string | null;
   verificationError: string | null;
-  executionRecordView: ExecutionRecordView;
-  executionRecordsData: TaskExecutionRecordsView | null;
-  executionRecordsLoading: boolean;
-  executionRecordsError: string | null;
   onRefreshReview: () => void;
   onRefreshVerification: () => void;
-  onSelectExecutionRecordView: (view: ExecutionRecordView) => void;
-  onRefreshExecutionRecords: () => void;
   openAgentAction: (action: string, context?: Record<string, unknown>) => void;
 };
 
@@ -141,38 +133,18 @@ export function EvidenceTab({
   verificationLoading,
   reviewError,
   verificationError,
-  executionRecordView,
-  executionRecordsData,
-  executionRecordsLoading,
-  executionRecordsError,
   onRefreshReview,
   onRefreshVerification,
-  onSelectExecutionRecordView,
-  onRefreshExecutionRecords,
   openAgentAction,
 }: Props) {
   const reviewDiagnostic = reviewError || reviewData?.diagnostic?.message || null;
   const verificationDiagnostic = verificationError || verificationData?.diagnostic?.message || null;
   const slot = verificationData?.slot;
-  const association = verificationData?.terminal?.associations?.verification;
-  const verificationClass = association?.status === 'verified-at-delivery'
-    ? 'delivered'
-    : slot?.present ? slot.applicability.status : 'missing';
-  const verificationState = association?.status === 'verified-at-delivery'
-    ? `已随交付目标验证${association.outcome === 'passed' ? '通过' : '未通过'}`
-    : slot?.present ? applicabilityLabel(slot.applicability.status) : '未记录';
+  const verificationClass = slot?.present ? slot.applicability.status : 'missing';
+  const verificationState = slot?.present ? applicabilityLabel(slot.applicability.status) : '未记录';
 
   return (
     <section id="task-evidence-panel" className={active ? '' : 'hidden'} data-task-panel="evidence" aria-live="polite">
-      <ExecutionRecordsPanel
-        taskId={taskId}
-        view={executionRecordView}
-        data={executionRecordsData}
-        loading={executionRecordsLoading}
-        error={executionRecordsError}
-        onSelectView={onSelectExecutionRecordView}
-        onRefresh={onRefreshExecutionRecords}
-      />
       <section id="task-review-panel" className="evidence-section">
         <article className="panel review-summary">
           <div className="panel-heading">
@@ -220,12 +192,11 @@ export function EvidenceTab({
         <article className="panel review-summary">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">可移植的当前事实</p>
-              <h2>验证结果（Verification Result）</h2>
-              <p className="section-copy">这里只读展示一个当前结果；完整命令输出和临时执行证据不进入本页。</p>
+              <p className="eyebrow">开发完成后的验证事实</p>
+              <h2>任务验证报告（Task Verification Report）</h2>
+              <p className="section-copy">Agent 直接调用项目测试工具完成验证后保存有意义报告；开发中的临时测试不进入本页。</p>
             </div>
             <div className="panel-actions">
-              <Button id="task-verification-execution-records" onClick={() => onSelectExecutionRecordView('verification')}>查看 Verification 执行记录</Button>
               <Button id="task-verification-refresh" disabled={verificationLoading} onClick={onRefreshVerification}>
                 刷新验证结果
               </Button>
@@ -244,34 +215,34 @@ export function EvidenceTab({
             <article className={`review-slot-card ${verificationClass}`}>
               <div className="review-slot-heading">
                 <div>
-                  <p className="eyebrow">单一当前槽位</p>
-                  <h3>验证结果（Verification Result）</h3>
+                  <p className="eyebrow">当前报告</p>
+                  <h3>任务验证报告</h3>
                 </div>
                 <span className={`state review-state ${slot.present ? slot.applicability.status : 'missing'}`}>{verificationState}</span>
               </div>
               {!slot.present ? (
-                <div className="review-slot-empty">尚未形成完整结果；不会创建空占位或从当前代码版本（HEAD）推断验证状态。</div>
+                <div className="review-slot-empty">尚未形成开发完成后的验证报告；开发中可以继续按需运行测试。</div>
               ) : (
                 <>
                   <dl className="read-facts review-facts">
-                    <Fact label="目标身份" value={slot.result.target.identity} />
-                    <Fact label="验证目标" value={slot.result.target.summary} />
-                    <Fact label="目标适用性" value={applicabilityLabel(slot.applicability.target.status)} />
-                    <Fact label="声明适用性" value={applicabilityLabel(slot.applicability.declarations.status)} />
-                    <Fact label="完成时间" value={formatDateTime(slot.result.completedAt)} />
-                    <Fact label="结果摘要（resultDigest）" value={slot.resultDigest} />
+                    <Fact label="内容版本" value={slot.report.content.identity} />
+                    <Fact label="验证内容" value={slot.report.content.summary} />
+                    <Fact label="内容适用性" value={applicabilityLabel(slot.applicability.content.status)} />
+                    <Fact label="测试地图适用性" value={applicabilityLabel(slot.applicability.declarations.status)} />
+                    <Fact label="完成时间" value={formatDateTime(slot.report.completedAt)} />
+                    <Fact label="报告摘要（reportDigest）" value={slot.reportDigest} />
                   </dl>
-                  <div className={`review-conclusion ${slot.result.conclusion.outcome}`}>
-                    <strong>{slot.result.conclusion.outcome === 'passed' ? '已通过' : '未通过'}</strong>
-                    <p>{slot.result.conclusion.summary}</p>
+                  <div className={`review-conclusion ${slot.report.conclusion.outcome}`}>
+                    <strong>{slot.report.conclusion.outcome === 'passed' ? '已通过' : slot.report.conclusion.outcome === 'not-passed' ? '未通过' : '未完成'}</strong>
+                    <p>{slot.report.conclusion.summary}</p>
                   </div>
                   <div className="review-evidence-grid">
-                    <ReviewList title="能力声明" values={slot.result.declarations} describe={(item) => `${item.project} · ${item.identity} · ${item.path}`} />
-                    <ReviewList title="实际能力事实" values={slot.result.capabilities} describe={(item) => `${item.project}/${item.capability} · ${capabilityOutcomeLabel(item.outcome)} · ${item.facts.join('；')}`} />
-                    <ReviewList title="覆盖缺口" values={slot.result.coverageGaps} describe={(item) => `${item.scope}：${item.summary}`} />
+                    <ReviewList title="项目测试地图" values={slot.report.declarations} describe={(item) => `${item.project} · ${item.status === 'ready' ? '可用' : item.status === 'absent' ? '缺失' : '无效'} · ${item.identity} · ${item.path}${item.summary ? ` · ${item.summary}` : ''}`} />
+                    <ReviewList title="实际检查" values={slot.report.checks} describe={(item) => `${item.project}/${item.testing} · ${item.mapStatus === 'map-unavailable' ? '地图不可用' : '已声明'} · ${item.selection} · ${capabilityOutcomeLabel(item.outcome)} · ${item.targets.join('、')} · ${item.summary}`} />
+                    <ReviewList title="未覆盖项" values={slot.report.gaps} describe={(item) => `${item.project ? `${item.project}/` : ''}${item.service ? `${item.service}/` : ''}${item.testing}：${item.reason}`} />
                     <ReviewList title="失效原因" values={slot.applicability.reasons} describe={(item) => `${item.code}：${item.message}`} />
                   </div>
-                  <TechnicalDetails value={`${slot.resultDigest} · ${slot.path}`} />
+                  <TechnicalDetails value={`${slot.reportDigest} · ${slot.path}`} />
                 </>
               )}
               <div className="review-slot-actions">

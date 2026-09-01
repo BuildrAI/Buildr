@@ -66,38 +66,6 @@ test('Buildr Web 专业 Task read view 使用默认 bounded Worker executor', as
   assert.equal(body.status, 'missing');
 });
 
-test('Buildr Web Task Execution Record routes提供三种只读view和受限正文', async (t) => {
-  const { base, root } = fixture(t, 'task-local-app-execution-records');
-  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-execution-records'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
-  const writer = createRuntime();
-  writer.createTaskRecord(root, { taskId: 'execution-record-task', title: '执行记录', intent: '验证 Buildr Web execution records', projects: [], services: [], changes: [] });
-  const verification = writer.openTaskExecutionRecord(root, 'execution-record-task', { owner: 'task-verification', kind: 'verification-execution', runIdentity: 'verification-1', targetIdentity: 'target-1', producer: 'system-test' });
-  writer.sealTaskExecutionRecord(root, verification.record.recordId, { outcome: 'failed', files: [{ name: 'stdout.txt', content: 'verification output' }] });
-  const finish = writer.openTaskExecutionRecord(root, 'execution-record-task', { owner: 'task-finish', kind: 'finish-diagnostics', runIdentity: 'finish-1', targetIdentity: 'target-1', producer: 'system-test' });
-  writer.sealTaskExecutionRecord(root, finish.record.recordId, { outcome: 'passed', files: [{ name: 'diagnostics.json', content: { status: 'passed' } }] });
-
-  const instance = createLocalWorkspaceServer(createRuntime(), { targetRoot: root });
-  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
-  const { url, initialWorkspaceId } = await instance.ready;
-  const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/execution-record-task/execution-records`;
-  let response = await fetch(endpoint);
-  let body = await response.json();
-  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(body.schemaVersion, 'buildr.task-execution-record-list-view/v1'); assert.equal(body.view, 'all'); assert.equal(body.records.length, 2);
-  assert.equal(JSON.stringify(body).includes('.buildr/local/task-execution-records'), false);
-  response = await fetch(`${endpoint}?view=verification`); body = await response.json();
-  assert.deepEqual(body.records.map((record) => record.owner), ['task-verification']);
-  response = await fetch(`${endpoint}?view=finish`); body = await response.json();
-  assert.deepEqual(body.records.map((record) => record.owner), ['task-finish']);
-  response = await fetch(`${endpoint}/${verification.record.recordId}`); body = await response.json();
-  assert.equal(body.schemaVersion, 'buildr.task-execution-record-detail-view/v1'); assert.deepEqual(body.record.body.files.map((file) => file.name), ['stdout.txt']);
-  response = await fetch(`${endpoint}/${verification.record.recordId}/body/stdout.txt`); body = await response.json();
-  assert.equal(body.schemaVersion, 'buildr.task-execution-record-body-file/v1'); assert.equal(body.file.content, 'verification output');
-  response = await fetch(`${endpoint}?view=resources`); body = await response.json(); assert.equal(response.status, 400); assert.equal(body.error.code, 'task_execution_record_view_invalid');
-  response = await fetch(`${endpoint}?view=all&path=/tmp/private`); body = await response.json(); assert.equal(response.status, 400); assert.equal(body.error.code, 'target_forbidden');
-  response = await fetch(`${endpoint}/${verification.record.recordId}/body/secret.txt`); body = await response.json(); assert.equal(response.status, 400); assert.equal(body.error.code, 'task_execution_record_body_name_forbidden');
-});
-
 test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
   const { base, root } = fixture(t, 'task-local-app');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -201,15 +169,15 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   assert.equal(terminal.snapshot.generation, 2);
   assert.equal(developmentReads, 1);
   const inspectReview = runtime.inspectTaskReview.bind(runtime);
-  const inspectVerification = runtime.inspectTaskVerification.bind(runtime);
+  const inspectVerification = runtime.inspectTaskVerificationView.bind(runtime);
   let reviewReads = 0;
   let verificationReads = 0;
   runtime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
-  runtime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
+  runtime.inspectTaskVerificationView = (...args) => { verificationReads += 1; return inspectVerification(...args); };
   runtime.inspectTaskTerminalDelivery = () => { throw new Error('Buildr Web Tab 不得调用完整 terminal 聚合器。'); };
   response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
-  response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
-  assert.equal(developmentReads, 3, 'Reviews/Verification 的terminal section各读取一次Development handoff authority');
+  response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal('terminal' in response.body, false, 'Verification GET 不读取或解释Development/Terminal Delivery');
+  assert.equal(developmentReads, 2, '只有Development与Review terminal section读取Development handoff authority');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
   assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');
   response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');

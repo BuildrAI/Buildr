@@ -25,7 +25,6 @@ function entry(taskId, overrides = {}) {
     finish: {
       status: 'complete', taskId, runId: 'finish-run-42', resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: sha('8'), sourceTree: sha('9'),
       repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: sha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: sha('b') }],
-      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
       activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'not-opened',
     },
     selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 'finish-run-42', resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: sha('8'), sourceTree: sha('9') },
@@ -50,7 +49,6 @@ test('correlates release/support Task evidence into one portable identity', () =
   assert.equal(result.status, 'passed');
   assert.match(result.identity, /^sha256-[a-f0-9]{64}$/u);
   assert.equal(result.entries.length, 2);
-  assert.equal(result.entries[0].finish.executionRecord.recordId, 'finish-record-42');
   assert.equal('root' in result.entries[0].finish, false);
   assert.deepEqual(validateReleaseTaskEvidenceCorrelation(result), result);
   assert.equal(inspectReleaseTaskEvidenceCorrelation(result).identity, result.identity);
@@ -109,6 +107,4 @@ test('transaction context can carry validated task correlation without copying F
     taskCorrelation,
   });
   assert.equal(context.taskCorrelation.identity, taskCorrelation.identity);
-  assert.equal('executionRecord' in context.taskCorrelation.entries[0].finish, true);
-  assert.equal('body' in context.taskCorrelation.entries[0].finish.executionRecord, false);
 });

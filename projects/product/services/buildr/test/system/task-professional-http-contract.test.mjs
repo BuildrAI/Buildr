@@ -39,8 +39,6 @@ test('Task professional HTTP routes使用严格请求契约并保持错误边界
   assert.equal(response.status, 400);
   assert.equal(body.error.code, 'task_api_field_forbidden');
 
-  response = await fetch(`${endpoint}/execution-records?view=resources`);
-  body = await response.json();
-  assert.equal(response.status, 400);
-  assert.equal(body.error.code, 'task_execution_record_view_invalid');
+  response = await fetch(`${endpoint}/execution-records`);
+  assert.equal(response.status, 404);
 });

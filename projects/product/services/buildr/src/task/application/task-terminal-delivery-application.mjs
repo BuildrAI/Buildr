@@ -1,4 +1,4 @@
-function baseProjection(task, development, reviews, verification) {
+function baseProjection(task, development, reviews) {
   return {
     schemaVersion: 'buildr.task-terminal-delivery/v1',
     taskId: task.taskId,
@@ -7,29 +7,25 @@ function baseProjection(task, development, reviews, verification) {
     delivered: false,
     delivery: null,
     snapshot: development.development?.receipt || null,
-    associations: { planning: null, completion: null, verification: null },
+    associations: { planning: null, completion: null },
     maintenance: null,
     diagnostics: [],
     development,
     reviews,
-    verification,
   };
 }
 
 function deliveredGate(gate, type) {
   if (!gate) return null;
   if (gate.disposition) return { status: 'gate-disposition', disposition: gate.disposition, targetIdentity: gate.targetIdentity ?? null, summary: gate.summary, source: gate.source };
-  return { status: type === 'verification' ? 'verified-at-delivery' : 'adopted-at-delivery', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
+  return { status: 'adopted-at-delivery', targetIdentity: gate.targetIdentity, resultDigest: gate.resultDigest, outcome: gate.outcome };
 }
 
 function associationMatches(association, handoff) {
   if (!association || !handoff) return false;
   if (association.handoffIdentity !== handoff.identity || association.candidateIdentity !== handoff.candidate?.identity || association.candidateGeneration !== handoff.candidate?.generation) return false;
-  return JSON.stringify(association.gates || {}) === JSON.stringify({
-    planning: deliveredGate(handoff.gates?.planning, 'planning'),
-    completion: deliveredGate(handoff.gates?.completion, 'completion'),
-    verification: deliveredGate(handoff.gates?.verification, 'verification'),
-  });
+  return JSON.stringify(association.gates?.planning || null) === JSON.stringify(deliveredGate(handoff.gates?.planning, 'planning'))
+    && JSON.stringify(association.gates?.completion || null) === JSON.stringify(deliveredGate(handoff.gates?.completion, 'completion'));
 }
 
 export function registerTaskTerminalDeliveryApplication(runtime) {
@@ -55,7 +51,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       delivered: false,
       delivery: null,
       snapshot: developmentReadModel?.development?.receipt || null,
-      associations: { planning: null, completion: null, verification: null },
+      associations: { planning: null, completion: null },
       maintenance: null,
       diagnostics: observed.diagnostics,
     };
@@ -92,7 +88,7 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
         || (terminalResult.delivery?.activation?.status === 'passed' ? 'passed' : terminalResult.delivery?.activation?.status === 'attention' ? 'attention' : 'not-applicable'),
       environmentCleanup: completion.maintenance?.environmentCleanup
         || (cleanupStatus === 'cleaned' ? 'cleaned' : cleanupStatus === 'pending' ? 'pending' : 'attention'),
-      diagnostics: completion.maintenance?.diagnostics || terminalResult.executionRecord?.status || 'not-opened',
+      diagnostics: completion.maintenance?.diagnostics || 'not-applicable',
     };
     return {
       ...base,
@@ -111,10 +107,9 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
       associations: {
         planning: association.gates?.planning || null,
         completion: association.gates?.completion || null,
-        verification: association.gates?.verification || null,
       },
       maintenance,
-      snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, verificationPolicy: receipt.verificationPolicy || null, candidate: selectedHandoff?.candidate || null, currentKnowledge: selectedHandoff?.knowledge || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
+      snapshot: receipt ? { taskContext: receipt.taskContext || null, planning: receipt.planning || null, contentTarget: receipt.contentTarget || null, candidate: selectedHandoff?.candidate || null, currentKnowledge: selectedHandoff?.knowledge || null, handoff: selectedHandoff, decision: selectedHandoff?.decision || null } : null,
       diagnostics: finishReadModel.diagnostics || [],
     };
   }
@@ -124,10 +119,9 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const task = taskResult.record;
     const development = readProfessional(task, 'task-development', () => runtime.inspectTaskDevelopment(targetRoot, taskId), { development: null });
     const reviews = readProfessional(task, 'task-review', () => runtime.inspectTaskReview(targetRoot, taskId), { slots: {} });
-    const verification = readProfessional(task, 'task-verification', () => runtime.inspectTaskVerification(targetRoot, taskId), { slot: null });
-    const projection = baseProjection(task, development.value, reviews.value, verification.value);
+    const projection = baseProjection(task, development.value, reviews.value);
     const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task, development: development.value });
-    return { ...projection, ...terminal, diagnostics: [...terminal.diagnostics, ...development.diagnostics, ...reviews.diagnostics, ...verification.diagnostics] };
+    return { ...projection, ...terminal, diagnostics: [...terminal.diagnostics, ...development.diagnostics, ...reviews.diagnostics] };
   }
 
   function inspectTaskDevelopmentView(targetRoot, taskId) {
@@ -142,12 +136,6 @@ export function registerTaskTerminalDeliveryApplication(runtime) {
     const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task });
     return { ...reviews.value, terminal: { ...terminal, diagnostics: [...terminal.diagnostics, ...reviews.diagnostics] } };
   }
-  function inspectTaskVerificationView(targetRoot, taskId) {
-    const task = runtime.inspectTaskRecord(targetRoot, taskId).record;
-    const verification = readProfessional(task, 'task-verification', () => runtime.inspectTaskVerification(targetRoot, taskId), { slot: null });
-    const terminal = terminalDeliverySection(targetRoot, taskId, { taskRecord: task });
-    return { ...verification.value, terminal: { ...terminal, diagnostics: [...terminal.diagnostics, ...verification.diagnostics] } };
-  }
-  Object.assign(runtime, { inspectTaskTerminalDelivery, inspectTaskDevelopmentView, inspectTaskReviewView, inspectTaskVerificationView });
+  Object.assign(runtime, { inspectTaskTerminalDelivery, inspectTaskDevelopmentView, inspectTaskReviewView });
   return runtime;
 }

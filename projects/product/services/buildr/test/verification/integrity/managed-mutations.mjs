@@ -37,9 +37,6 @@ const allowed = new Map([
   ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
-  ['src/task/persistence/task-execution-record-body-store.mjs', new Set([
-    'syncFile', 'publishTaskExecutionRecordBody', 'cleanupTaskExecutionRecordBody',
-  ])],
   ['src/web/infrastructure/instance-runtime.mjs', new Set([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
@@ -52,7 +49,6 @@ const allowed = new Map([
   ['src/task/application/finish/task-finish-bootstrap-recovery.mjs', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/task/application/finish/diagnostics-evidence.mjs', new Set(['createTaskFinishDiagnosticsEvidence'])],
   ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
   ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',

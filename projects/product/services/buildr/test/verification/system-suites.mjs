@@ -16,8 +16,6 @@ export const SYSTEM_SUITES = Object.freeze([
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/verification-changed-paths.test.mjs',
-      'test/system/product-verification-provider-cli.test.mjs',
-      'test/system/verification-run-cli.test.mjs',
     ]),
   }),
   Object.freeze({
@@ -88,7 +86,7 @@ export const SYSTEM_SUITES = Object.freeze([
       'test/system/task-record-buildr-web.test.mjs',
       'test/system/task-record-product.test.mjs',
       'test/system/task-review-product.test.mjs',
-      'test/system/task-verification-product.test.mjs',
+      'test/system/task-verification-product.test.ts',
     ]),
   }),
   Object.freeze({

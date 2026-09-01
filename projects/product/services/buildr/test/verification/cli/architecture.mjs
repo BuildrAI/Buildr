@@ -83,11 +83,11 @@ const requiredRuntime = [
   'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
-  'task/interfaces/cli/task-verification.mjs',
+  'task/interfaces/cli/task-verification.ts',
   'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.mjs',
   'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.mjs',
   'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
-  'web/application/scheduled-maintenance.mjs', 'web/infrastructure/instance-runtime.mjs',
+  'web/infrastructure/instance-runtime.mjs',
   'web/interfaces/cli/web.mjs',
   'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
   'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
@@ -105,9 +105,9 @@ const requiredRuntime = [
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
-  'task/application/task-verification-application.mjs', 'task/domain/task-verification.mjs',
+  'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
   'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
-  'task/persistence/task-verification-repository.mjs',
+  'task/persistence/task-verification-repository.ts',
   'task/module.mjs', 'task/domain/task-record.mjs',
   'task/domain/task-review.mjs', 'task/application/task-review-application.mjs', 'task/persistence/task-review-repository.mjs',
   'task/application/task-record-application.mjs', 'task/persistence/task-record-repository.mjs',
@@ -151,7 +151,7 @@ const layerOf = (relative) => {
     || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
   ) ? 2 : 1;
   if (!['task', 'web', 'workspace', 'agent-assets', 'system', 'verification'].includes(parts[0]) && moduleOffset === 1) return parts[0];
-  if (parts.length === moduleOffset + 1 && parts[moduleOffset] === 'module.mjs') return 'module';
+  if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return {
     domain: 'domain',
     application: 'application',
@@ -468,21 +468,19 @@ const legacyTaskRecordConsumers = new Set([
   'task/application/task-development-application.mjs',
   'task/application/task-entry-snapshot-application.mjs',
   'task/application/task-environment-application.mjs',
-  'task/application/task-execution-record-application.mjs',
   'task/application/finish/task-finish-application.mjs',
   'task/application/finish/task-finish-delivery-terminal.mjs',
   'task/application/task-planning-identity-application.mjs',
   'task/application/task-retrospective-application.mjs',
   'task/application/task-terminal-delivery-application.mjs',
-  'task/application/task-verification-application.mjs',
+  'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.mjs',
   'task/persistence/task-environment-repository.mjs',
   'task/persistence/task-development-repository.mjs',
-  'task/persistence/task-execution-record-repository.mjs',
   'task/persistence/task-finish-repository.mjs',
   'task/persistence/task-overview-repository.mjs',
   'task/persistence/task-retrospective-repository.mjs',
-  'task/persistence/task-verification-repository.mjs',
+  'task/persistence/task-verification-repository.ts',
   'web/http/server.mjs',
   'web/application/preview-lifecycle.mjs',
 ]);
@@ -522,14 +520,14 @@ if (fs.existsSync(taskReviewInterface)) {
   }
 }
 
-const taskVerificationApplication = path.join(sourceRoot, 'application', 'task-verification', 'task-verification-application.mjs');
-const taskVerificationInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-verification.mjs');
+const taskVerificationApplication = path.join(sourceRoot, 'application', 'task-verification', 'task-verification-application.ts');
+const taskVerificationInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-verification.ts');
 if (fs.existsSync(taskVerificationApplication)) {
   const source = fs.readFileSync(taskVerificationApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|taskVerificationCommand|parseTaskVerificationCli/.test(source)) {
     problems.push('Task Verification Application must not own CLI parsing, output, or process exit state');
   }
-  if (!source.includes('runtime.readTaskVerificationResultPersistence') || !source.includes('runtime.writeTaskVerificationResultPersistence')) {
+  if (!source.includes('runtime.readTaskVerificationReportPersistence') || !source.includes('runtime.writeTaskVerificationReportPersistence')) {
     problems.push('Task Verification Application must remain the shared reader/writer over the narrow repository');
   }
 }

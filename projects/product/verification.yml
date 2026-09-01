@@ -1,81 +1,64 @@
-schemaVersion: buildr.project-verification/v3
-resources:
-  - id: browser
-    title: Local browser capacity
-    strategy: coordinated
-    capacity: 1
-    authorization: implicit
-capabilities:
-  - id: product.verification
-    title: Buildr Product verification provider
+schemaVersion: buildr.project-verification/v4
+testing:
+  - id: buildr-fast
+    title: Buildr 后端低成本完整回归
     scope:
       project: product
-      services: []
-    proves:
-      - Frozen Task Content has the affected or full Buildr Product evidence selected by the authoritative registry
-      - Product Artifact Candidate has complete daily and candidate artifact evidence for the exact source
-      - Published Release requests only select registered release contract and smoke evidence without claiming publish authority
-    evidence: [static, unit, component, integration, system]
-    usableFor: [task-delivery, product-candidate, published-release]
-    discovery:
-      sources: ["**"]
-    invocation:
-      affected:
-        kind: provider
-        provider: buildr.product-verification/v1
-      full:
-        kind: provider
-        provider: buildr.product-verification/v1
-    environment:
-      requires: [node, npm, git]
-      preparation:
-        - project: product
-          service: buildr
-          recipe: buildr.npm-ci
-        - project: product
-          service: buildr-web
-          recipe: buildr-web.npm-ci
-    effects:
-      writes: [system temporary verification workspaces, timing evidence, diagnostics, and candidate artifacts]
-      externalSystems: []
-      authorization: implicit
-    resourceClaims: []
-  - id: product.browser-smoke
-    title: Buildr Web affected browser smoke verification
+      services: [buildr]
+    purpose: 验证类型、单元、组件、契约和低成本静态边界
+    sourcePaths: [services/buildr/src/**, services/buildr/resources/**]
+    testRoots: [services/buildr/test/unit/**, services/buildr/test/component/**, services/buildr/test/contract/**]
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:fast]
+      cwd: services/buildr
+    selection:
+      - 开发中按修改区域选择相关 unit、component 或 contract 文件
+      - 开发完成后运行完整低成本回归
+    requirements: [node, npm]
+  - id: buildr-functional
+    title: Buildr 本地功能与系统测试
+    scope:
+      project: product
+      services: [buildr]
+    purpose: 验证真实 CLI、SQLite、Git、HTTP、文件系统和 Workspace 生命周期
+    sourcePaths: [services/buildr/src/**, services/buildr/resources/**]
+    testRoots: [services/buildr/test/integration/**, services/buildr/test/system/**]
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:integration]
+      cwd: services/buildr
+    selection:
+      - 根据任务修改的 Application、接口、数据和副作用选择相关测试文件
+      - 只有相关功能需要真实系统边界时才运行对应重型测试
+    requirements: [node, npm, git]
+  - id: buildr-web
+    title: Buildr Web 前端构建与 Browser 功能测试
     scope:
       project: product
       services: [buildr, buildr-web]
-    proves:
-      - Applicable Buildr Web changes execute at least one stable Browser selector or return an explicit not-applicable result
-      - The staged Buildr Web build matches tracked web-dist without rewriting frozen content
-      - Critical Project, Service, Change and Task browser interactions remain usable
-    evidence: [system]
-    usableFor: [task-delivery]
-    discovery:
-      sources:
-        - services/buildr-web/**
-        - services/buildr/web-dist/**
-        - services/buildr/src/web/**
-        - services/buildr/test/browser-smoke/**
-        - services/buildr/test/verification/browser-selector-dispatcher.mjs
-        - services/buildr/test/verification/web-dist.mjs
-    invocation:
-      affected:
-        kind: command
-        argv: [tools/development/run-development-npm, run, "test:browser:changed"]
-        cwd: services/buildr
-      full:
-        kind: command
-        argv: [tools/development/run-development-npm, run, "test:browser:smoke"]
-        cwd: services/buildr
-    environment:
-      requires: [node, npm, chrome]
-      preparation:
-        - project: product
-          service: buildr-web
-          recipe: buildr-web.npm-ci
-    effects:
-      writes: [system temporary isolated Workspaces, Service sources, staged web-dist builds, and browser profiles]
-      externalSystems: []
-      authorization: implicit
-    resourceClaims: [browser]
+    purpose: 验证 TypeScript 构建、页面交互和关键任务流程
+    sourcePaths: [services/buildr-web/src/**, services/buildr/src/web/**, services/buildr/web-dist/**]
+    testRoots: [services/buildr/test/browser-smoke/**, services/buildr-web/test/**]
+    full:
+      kind: command
+      argv: [tools/development/run-development-npm, run, test:browser:smoke]
+      cwd: services/buildr
+    selection:
+      - 开发中使用前端 typecheck、build 和受影响页面测试
+      - 开发完成后对任务相关页面运行 Playwright Browser 功能测试
+    requirements: [node, npm, browser]
+  - id: buildr-environment-smoke
+    title: Buildr 已安装环境冒烟
+    scope:
+      project: product
+      services: [buildr, buildr-web]
+    purpose: 在明确需要验证真实安装或发布环境时检查 CLI、Web 和关键入口
+    sourcePaths: [services/buildr/**, services/buildr-web/**]
+    testRoots: [services/buildr/test/verification/host-node/**, services/buildr/test/verification/release/**]
+    full:
+      kind: agent
+      instructions:
+        - 只在当前任务目标包含安装、发布或真实环境采用时执行
+        - 使用对应环境的 CLI、Browser 或 HTTP 工具检查关键入口并保存实际观察
+    requirements: [explicit-target-environment]

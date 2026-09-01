@@ -72,18 +72,12 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   coordinationRequest: schema('coordination/request', 'TaskCoordinationRequest', EMPTY),
   coordinationResponse: schema('coordination/response', 'TaskCoordinationResponse', RESPONSE),
   coordinationPatchRequest: schema('coordination/patch-request', 'TaskCoordinationPatchRequest', PARENT_PATCH),
-  executionRecordsRequest: schema('execution-records/request', 'TaskExecutionRecordsRequest', closed({ view: { enum: ['all', 'verification', 'finish'] } })),
-  executionRecordsResponse: schema('execution-records/response', 'TaskExecutionRecordsResponse', RESPONSE),
-  executionRecordDetailRequest: schema('execution-record-detail/request', 'TaskExecutionRecordDetailRequest', closed({ recordId: TASK_ID }, ['recordId'])),
-  executionRecordDetailResponse: schema('execution-record-detail/response', 'TaskExecutionRecordDetailResponse', RESPONSE),
-  executionRecordBodyRequest: schema('execution-record-body/request', 'TaskExecutionRecordBodyRequest', closed({ recordId: TASK_ID, filename: NON_EMPTY }, ['recordId', 'filename'])),
-  executionRecordBodyResponse: schema('execution-record-body/response', 'TaskExecutionRecordBodyResponse', RESPONSE),
   retrospectiveRequest: schema('retrospective/request', 'TaskRetrospectiveRequest', EMPTY),
   retrospectiveResponse: schema('retrospective/response', 'TaskRetrospectiveResponse', RESPONSE),
   retrospectivePatchRequest: schema('retrospective/patch-request', 'TaskRetrospectivePatchRequest', RETROSPECTIVE_PATCH),
   reviewPromptRequest: schema('review-prompt/request', 'TaskReviewPromptRequest', REVIEW_PROMPT),
   reviewPromptResponse: schema('review-prompt/response', 'TaskReviewPromptResponse', PROMPT_RESPONSE),
-  verificationPromptRequest: schema('verification-prompt/request', 'TaskVerificationPromptRequest', closed({ taskId: TASK_ID, targetIdentity: NON_EMPTY }, ['taskId'])),
+  verificationPromptRequest: schema('verification-prompt/request', 'TaskVerificationPromptRequest', closed({ taskId: TASK_ID }, ['taskId'])),
   verificationPromptResponse: schema('verification-prompt/response', 'TaskVerificationPromptResponse', PROMPT_RESPONSE),
   errorResponse: schema('error/response', 'TaskProfessionalErrorResponse', ERROR),
 });
@@ -105,9 +99,6 @@ export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-verification.detail', 'GET', '/tasks/:taskId/verification', 'verificationRequest', 'verificationResponse'),
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),
   operation('task-parent-coordination.patch', 'PATCH', '/tasks/:taskId/coordination', 'coordinationPatchRequest', 'coordinationResponse'),
-  operation('task-execution-record.list', 'GET', '/tasks/:taskId/execution-records', 'executionRecordsRequest', 'executionRecordsResponse'),
-  operation('task-execution-record.detail', 'GET', '/tasks/:taskId/execution-records/:recordId', 'executionRecordDetailRequest', 'executionRecordDetailResponse'),
-  operation('task-execution-record.body', 'GET', '/tasks/:taskId/execution-records/:recordId/body/:filename', 'executionRecordBodyRequest', 'executionRecordBodyResponse'),
   operation('task-retrospective.detail', 'GET', '/tasks/:taskId/retrospective', 'retrospectiveRequest', 'retrospectiveResponse'),
   operation('task-retrospective.patch', 'PATCH', '/tasks/:taskId/retrospective', 'retrospectivePatchRequest', 'retrospectiveResponse'),
   operation('task-review.prompt', 'POST', '/prompts/task-review', 'reviewPromptRequest', 'reviewPromptResponse'),
@@ -126,7 +117,6 @@ function validationError(operationId, label, errors) {
   const error = new Error(`${label} 请求不符合 HTTP 契约${field ? `：${field}` : ''}。`);
   error.status = 400;
   error.code = item.keyword === 'additionalProperties' ? 'task_api_field_forbidden' : 'task_api_field_invalid';
-  if (operationId === 'task-execution-record.list' && item.keyword === 'enum') error.code = 'task_execution_record_view_invalid';
   if (operationId === 'task-retrospective.patch' && field === 'expectedCurrentDigest') error.code = 'task_retrospective_digest_required';
   if (operationId === 'task-parent-coordination.patch' && field === 'operation') error.code = 'parent_coordination_operation_invalid';
   error.details = { operation: operationId, ...(field ? { field } : {}), keyword: item.keyword || 'schema' };

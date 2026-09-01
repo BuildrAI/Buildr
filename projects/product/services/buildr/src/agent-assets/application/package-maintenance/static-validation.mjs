@@ -333,7 +333,7 @@ export function createPackageStaticValidator(deps) {
       'src/bootstrap/runtime.mjs',
       'src/task/application/task-development-application.mjs',
       'src/task/application/task-review-application.mjs',
-      'src/task/application/task-verification-application.mjs',
+      'src/task/application/task-verification-application.ts',
       'src/task/application/task-environment-application.mjs',
       'src/task/application/task-record-application.mjs',
       'src/task/application/finish/task-finish-product-executor.mjs',
@@ -1145,40 +1145,29 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-verification') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-verification/v3` 的默认 provider',
-          'references/project-verification-v3.md',
-          'buildr.project-verification/v3',
-          'buildr verification plan --project <code>',
+          '`buildr.task-verification/v4`',
+          'buildr.project-verification/v4',
+          'buildr project verification inspect <project>',
+          'buildr project verification validate <project>',
+          'buildr project verification update <project>',
+          'buildr task verification record <task-id>',
           'buildr task verification inspect <task-id>',
-          'buildr task verification reconcile <task-id>',
-          'buildr verification run --project <code>',
-          'buildr.verification-execution/v1',
-          'buildr.long-running-operation-summary/v1',
-          'coverage gap',
-          '不自动创建测试、脚本、CI 或框架',
-          'Task Verification Application',
-          '原子替换',
-          '中断',
-          '不得覆盖原 current',
-          'target identity',
-          'declaration identities',
+          '不列举每个测试文件',
+          'Maven、Gradle、npm、Playwright、Browser、HTTP',
+          'Buildr 不生成计划或统一运行测试',
+          '只有一句“测试通过”不构成有意义报告',
+          '原子整值替换',
           '`current`',
           '`stale`',
           '`unknown`',
-          '不要复制stdout/stderr、耗时、临时evidence path、Environment Receipt',
-          '不要把测试通过等同于业务验收、风险接受、开发完成、Task 完成',
-          '不启动重复 verifier',
-          '不相加并行检查耗时',
-          'buildr verification cleanup --summary <file>',
-          '不用于设计测试框架、开发测试、生成 Candidate 或 Finish',
-          '入口命名、成本或分层不合理时报告测试建设 gap',
+          '不等于业务验收、任务完成、提交、推送、部署或发布',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-verification Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-verification' && entry.version === 3)) {
-          problems.push('task-verification must provide buildr.task-verification/v3.');
+        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-verification' && entry.version === 4)) {
+          problems.push('task-verification must provide buildr.task-verification/v4.');
         }
-        for (const forbiddenText of ['buildr.task-verification/v2', 'buildr.project-verification/v1', 'buildr.verification-run/v1', 'requiredAssurance:', 'mode: augment', 'mode: authoritative', 'provider: task-worktree']) {
+        for (const forbiddenText of ['buildr verification plan', 'buildr verification run', 'task verification reconcile', 'Candidate lease', 'provider: task-worktree']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-verification Skill must not include ${JSON.stringify(forbiddenText)}.`);
         }
       }
@@ -1261,7 +1250,7 @@ export function createPackageStaticValidator(deps) {
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v2` provider', 'selected `buildr.task-verification/v3` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider 不 ready', 'selected `buildr.task-development/v3` provider', 'selected `buildr.task-verification/v4` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
@@ -1445,27 +1434,19 @@ export function createPackageStaticValidator(deps) {
   function validateProjectVerificationTransition(context) {
     const { root, problems } = context;
     const productDeclaration = fs.readFileSync(path.resolve(root, '../..', 'verification.yml'), 'utf8');
-    if (!productDeclaration.startsWith('schemaVersion: buildr.project-verification/v3\n')) {
-      problems.push('Product live verification.yml must use the v3 authoring contract.');
+    if (!productDeclaration.startsWith('schemaVersion: buildr.project-verification/v4\n')) {
+      problems.push('Product live verification.yml must use the v4 testing-map contract.');
     }
-    const reader = fs.readFileSync(path.join(root, 'src/verification/application/project-verification-diagnostics.mjs'), 'utf8');
-    for (const requiredText of [
-      "sourceSchemaVersion: 'buildr.project-verification/v2'",
-      "evidence: ['legacy-declared']",
-      "usableFor: capability.requiredForDelivery ? ['task-delivery'] : []",
-      'project.verification_v2_transition',
-      '现有声明可继续使用',
-      '新声明不要使用 v2',
-    ]) if (!reader.includes(requiredText)) problems.push(`Project verification v2 compatibility reader must include ${JSON.stringify(requiredText)}.`);
+    const reader = fs.readFileSync(path.join(root, 'src/verification/domain/project-verification.ts'), 'utf8');
+    for (const requiredText of ['buildr.project-verification/v4', 'sourcePaths', 'testRoots', 'selection', 'requirements']) if (!reader.includes(requiredText)) problems.push(`Project verification v4 reader must include ${JSON.stringify(requiredText)}.`);
 
     for (const relative of [
       'resources/workspace/skills/buildr/task-verification/SKILL.md',
       'resources/workspace/skills/buildr/task-verification/templates/project-verification.yml',
-      'resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md',
+      'resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md',
     ]) {
       const content = fs.readFileSync(path.join(root, relative), 'utf8');
-      if (content.includes('buildr.project-verification/v2')) problems.push(`${relative} must remain v3-only and must not teach or generate v2.`);
-      if (!content.includes('buildr.project-verification/v3')) problems.push(`${relative} must retain the v3 authoring contract.`);
+      if (!content.includes('buildr.project-verification/v4')) problems.push(`${relative} must retain the v4 testing-map contract.`);
     }
   }
 

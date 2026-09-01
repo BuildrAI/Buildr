@@ -2,9 +2,6 @@ import { retiredParentCoordination } from '../../domain/parent-coordination.mjs'
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
 import { validateTaskProfessionalRequest } from './task-professional-http-contracts.mjs';
 import {
-  mapTaskExecutionRecordBodyRequest,
-  mapTaskExecutionRecordDetailRequest,
-  mapTaskExecutionRecordsRequest,
   mapTaskParentCoordinationRequest,
   mapTaskProfessionalReadRequest,
   mapTaskVerificationPromptRequest,
@@ -55,43 +52,8 @@ export function createTaskVerificationHttpContribution(taskIdSource, application
         throw error;
       }
       authorizeWrite();
-      const body = mapTaskVerificationPromptRequest(validateTaskProfessionalRequest('task-verification.prompt', await readBody(new Set(['taskId', 'targetIdentity']), 'Task Verification prompt'), 'Task Verification prompt'));
+      const body = mapTaskVerificationPromptRequest(validateTaskProfessionalRequest('task-verification.prompt', await readBody(new Set(['taskId']), 'Task Verification prompt'), 'Task Verification prompt'));
       return { status: 200, body: application.generateTaskVerificationPrompt(root, body) };
-    },
-  });
-}
-
-export function createTaskExecutionRecordHttpContribution(taskIdSource) {
-  const list = new RegExp(`^/tasks/(${taskIdSource})/execution-records$`);
-  const detail = new RegExp(`^/tasks/(${taskIdSource})/execution-records/(${taskIdSource})$`);
-  const body = new RegExp(`^/tasks/(${taskIdSource})/execution-records/(${taskIdSource})/body/([^/]+)$`);
-  return Object.freeze({
-    id: 'task-execution-record.http',
-    handle: async ({ request, suffix, searchParams, submitTaskRead }) => {
-      if (request.method !== 'GET') return null;
-      const listMatch = suffix.match(list);
-      if (listMatch) {
-        const fields = [...new Set(searchParams.keys())];
-        if (fields.some((field) => field !== 'view') || searchParams.getAll('view').length > 1) {
-          const error = new Error('Task execution records 只接受一个 view query 参数。');
-          error.code = 'task_api_query_forbidden';
-          error.status = 400;
-          throw error;
-        }
-        const input = mapTaskExecutionRecordsRequest(validateTaskProfessionalRequest('task-execution-record.list', { view: searchParams.get('view') || 'all' }, 'Task execution records'));
-        return { status: 200, body: await submitTaskRead('execution-records', listMatch[1], input) };
-      }
-      const detailMatch = suffix.match(detail);
-      if (detailMatch) {
-        const input = validateTaskProfessionalRequest('task-execution-record.detail', { recordId: detailMatch[2] }, 'Task execution record detail');
-        return { status: 200, body: await submitTaskRead('execution-record-detail', detailMatch[1], mapTaskExecutionRecordDetailRequest(input.recordId)) };
-      }
-      const bodyMatch = suffix.match(body);
-      if (bodyMatch) {
-        const input = validateTaskProfessionalRequest('task-execution-record.body', { recordId: bodyMatch[2], filename: decodeURIComponent(bodyMatch[3]) }, 'Task execution record body');
-        return { status: 200, body: await submitTaskRead('execution-record-body', bodyMatch[1], mapTaskExecutionRecordBodyRequest(input.recordId, input.filename)) };
-      }
-      return null;
     },
   });
 }

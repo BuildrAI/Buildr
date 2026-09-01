@@ -2,7 +2,7 @@
 
 本文描述 Buildr 当前真实使用的验证架构，以及公共 Node.js Test Context Runtime 的设计、API、执行宿主和接入方式。目标不是只让 Buildr 某一组测试变快，而是建立一套后续 Node.js 项目也能沿用的测试执行基础：测试声明所需 Context，Runtime 按配置身份缓存应用组装，Runner 在多个持久 Worker Host 中并行执行，provider 负责隔离、reset 和污染失效。
 
-本文不替代 Project `verification.yml`、Task Verification Result 或正式 Release authority；它说明这些控制面最终如何选择并执行 Product tests。
+本文不替代Project `verification.yml`、任务验证报告或正式Release authority；它只说明Buildr Product自身如何选择并执行产品测试。
 
 ## 1. 总体架构
 
@@ -270,7 +270,6 @@ Task Development Application集合注册两个Context：
 - Task read models；
 - Parent/Task coordination；
 - Project Daily Progress；
-- Task Execution Records；
 - Task Environment repository/Application边界；
 - Task Finish Application core；
 - Task Development Application与Workspace lease。
@@ -387,7 +386,7 @@ changed/affected只选择`Development`、`Acceptance`或`Static Conformance` own
 
 step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty/evict、destroy和wall-clock。阶段同时提供`createDurationMs`、`acquireDurationMs`、`releaseDurationMs`、`waitDurationMs`、`resetDurationMs`与`destroyDurationMs`，使“测试体慢”与“环境组装/争用/恢复慢”可以分开判断。
 
-outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/materialize/release/cleanup。前者证明Host内Application Context复用，后者证明跨runner seed隔离。事件属于runner-owned transient evidence，不进入Project declaration或Task Verification Result。
+outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/materialize/release/cleanup。前者证明Host内Application Context复用，后者证明跨runner seed隔离。事件属于runner-owned transient evidence，不进入Project测试地图或任务验证报告。
 
 ## 15. 新测试接入
 
@@ -418,7 +417,7 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 
 Task Development owner的历史基线约为71.9秒；第一阶段只做seed与手工shard后约40.8秒。迁移到公共Runtime后的独立focus为31.670秒：4个Host、8次Context创建、22次cache hit、15次隔离lease，累计test body为69.202秒，而Workspace materialize/cleanup合计只有0.931秒。
 
-下表保留当时冻结实现树的三轮无外部竞争历史样本。2026-08-24现场plan-only复核显示当前daily-full仍为52 steps，但registry目标工作量已变为1,036秒、全局容量数学下限259秒、预算360秒；当前Product Artifact Candidate为66 steps、目标工作量1,398秒、数学下限349.5秒、预算600秒。历史样本不得替代当前Execution Record。
+下表保留当时冻结实现树的三轮无外部竞争历史样本。历史样本不得替代当前测试工具的实际结果。
 
 | 样本 | Core墙钟 | 累计executor work | 有效并行度 | Task Development | 最慢step |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -446,7 +445,7 @@ affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释
 
 已经实现：公共definition/runtime/npm入口、configuration identity、dependency graph、worker/suite/test scope、shared/exclusive/isolated lease、reset、dirty/evict、逆序destroy、direct-file adapter、多持久Host runner、outer grant约束、Host失败汇总、Buildr Application/Workspace provider、timing summary和package inventory验证。
 
-当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter。当前Git provider使用逐lease复制bare remote与独立clone，不共享可变repository；full-lifecycle owner仍使用默认process isolation。下一步应按Execution Record确认剩余重复成本，再决定增加SQLite snapshot、文件系统COW或直接优化黄金旅程内部实现。完整Finish、自举和cleanup不能用预建Context跳过。
+当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter。后续根据测试runner自身timing和实际瓶颈决定是否增加优化，不建立通用Task Execution Record。
 
 ## 19. 维护不变量
 

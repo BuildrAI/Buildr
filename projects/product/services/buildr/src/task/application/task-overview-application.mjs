@@ -171,7 +171,7 @@ export function registerTaskOverviewApplication(runtime) {
         planning: { ...planning, gateMatch: gateMatch(developmentReceipt?.gates?.planning, planning) },
         completion: { ...completion, gateMatch: gateMatch(developmentReceipt?.gates?.completion, completion) },
       },
-      verification: { ...verification, gateMatch: gateMatch(developmentReceipt?.gates?.verification, verification) },
+      verification,
       environment: { present: row.environment_status != null, status: row.environment_status ?? 'unknown', updatedAt: row.environment_updated_at ?? null },
       finish: {
         current: { present: row.finish_run_id != null && !finishTerminal, runId: !finishTerminal ? row.finish_run_id ?? null : null, status: !finishTerminal ? row.finish_status ?? null : null, phase: !finishTerminal ? row.finish_current_phase ?? null : null, updatedAt: !finishTerminal ? row.finish_updated_at ?? null : null },

@@ -61,7 +61,6 @@ function commandRoute(next, execution, taskId) {
   const controller = execution.controllerInvocation;
   const publicArgs = {
     'planning-review': ['task', 'review', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
-    verify: ['task', 'verification', 'inspect', taskId, '--target', execution.workspaceRoot, '--json'],
   }[next.action] || null;
   const internalArgs = next.owner === 'task-development' && TASK_DEVELOPMENT_ACTIONS.includes(next.action)
     ? ['__internal', 'task-development', next.action, '--task', taskId, '--target', execution.workspaceRoot]

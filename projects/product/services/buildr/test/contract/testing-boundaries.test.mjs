@@ -20,8 +20,7 @@ const forbiddenNodeBoundaries = new Set([
 ]);
 const taskLifecycleContextConsumers = [
   'task-review-product.test.mjs',
-  'task-verification-product.test.mjs',
-  'verification-run-cli.test.mjs',
+  'task-verification-product.test.ts',
 ];
 const taskRecordContextConsumers = [
   'task-record-product.test.mjs',
@@ -218,7 +217,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   assert.match(runner, /--owner/,
     'Candidate must be able to schedule one bounded System owner');
   const systemFiles = fs.readdirSync(path.join(productRoot, 'test', 'system'))
-    .filter((name) => name.endsWith('.test.mjs'))
+    .filter((name) => /\.test\.(?:mjs|ts)$/.test(name))
     .map((name) => `test/system/${name}`).sort();
   const registry = validateSystemSuiteRegistry(systemFiles);
   assert.equal(registry.ok, true, JSON.stringify(registry.findings));

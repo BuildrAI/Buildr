@@ -136,12 +136,6 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskEntrySnapshot',
     'taskEnvironmentPlanResult',
     'taskEnvironmentResult',
-    'taskExecutionRecordBodyFile',
-    'taskExecutionRecordDetailView',
-    'taskExecutionRecordGcResult',
-    'taskExecutionRecordInspectResult',
-    'taskExecutionRecordListView',
-    'taskExecutionRecordRecoverResult',
     'taskFinishCompactResult',
     'taskFinishResult',
     'taskFinishRun',
@@ -157,9 +151,6 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'update',
     'updateCheck',
     'verificationEvidenceCleanup',
-    'verificationExecution',
-    'verificationPlan',
-    'verificationPlanResult',
     'version',
   ]);
 });

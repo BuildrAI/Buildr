@@ -5,7 +5,7 @@
 ## 紧凑终端摘要（Compact Terminal Summary）
 
 - 定义：从长流程既有专业authority投影的有界、closed、只读JSON摘要，表达operation、running或terminal truth、关键阶段、primary failure、cleanup、展示边界与唯一结构化recovery pointer。
-- 适用范围：Formal Verification、release transaction与Buildr self-bootstrap的缺省stdout；完整专业Result仍由Execution Record、hosted/output evidence或Finish maintenance持有。
+- 适用范围：release transaction与Buildr self-bootstrap等长流程的缺省stdout；完整专业Result仍由各自Result、hosted/output evidence或Finish maintenance持有。
 - 避免混用：不是新的workflow Result、进度事件流或重试许可；stdout丢失、客户端断连、等待超时与`output.truncated`都必须先回读同一owner，不能推断失败或启动替代run。
 - 来源：canonical `openspec/specs/long-running-workflow-observability/spec.md`（本 Change convergence 时建立）。
 
@@ -234,13 +234,6 @@
 - 避免混用：Service repo 不是默认独立 Agent runtime 入口。
 - 来源：[Buildr Service](services/buildr.md)
 
-## 验证准备闭包（Verification Preparation Closure）
-
-- 定义：Formal Verification针对实际selected capabilities，将其声明identity、同Project Preparation Recipe要求、matching Environment Plan/Receipt与runtime invocation identity合并去重后形成的单层、closed执行前置集合。
-- 适用范围：在打开Verification Execution Record、启动进程、Browser或外部资源之前的纯读admission；可恢复的Recipe缺口由Task Environment唯一writer幂等prepare。
-- 避免混用：不是Task scope、Change applicability、Content Target、源码写入授权、测试DAG或通用工作许可；辅助Service准备不表示Task拥有该Service，无关开发、只读调查和明确非正式检查不被该门禁阻塞。
-- 来源：[技术架构](architecture/technical.md)
-
 ## Change
 
 - 定义：OpenSpec 管理的一次可实施行为变更，包含 proposal、design、delta specs、tasks，并可带 Buildr Brief 与 workflow sidecars。
@@ -354,25 +347,18 @@
 - 避免混用：不是一次执行的stdout/stderr或可按retention清理的执行记录。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
-## 任务执行记录（Task Execution Record）
-
-- 定义：一次Task专业执行发生了什么的有限期记录；SQLite保存closed metadata，受限Workspace-local目录保存已脱敏正文。
-- 适用范围：v1的Verification execution与Finish diagnostics，以及固定quota、retention、resolution和cleanup状态。
-- 避免混用：不是Current/Terminal Fact、执行资源、通用event/history payload或Consumer/Adoption关系；正式Task command Verification与每次真正执行的Finish invocation均已接producer，但各自专业current与恢复资源仍由原owner管理。
-- 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
-
 ## 执行资源（Execution Resource）
 
 - 定义：执行中实际占用、需要恢复或清理的资源。
 - 适用范围：Environment checkout、Delivery Carrier、worktree、target lease与verification ticket等由原专业owner管理的资源。
-- 避免混用：不是Task Execution Record正文或统一资源表；Inventory只能组合owner提供的最小read model。
+- 避免混用：不是通用执行日志或统一资源表；Inventory只能组合owner提供的最小read model。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
 ## 证据（Evidence）
 
-- 定义：某份专业事实或执行记录能够证明什么的语义角色。
-- 适用范围：Review、Verification、Finish及其他consumer解释已有事实或记录的证明范围。
-- 避免混用：Evidence不是独立存储类别，也不要求Consumer/Adoption表；authority仍属于被引用的专业事实或执行记录。
+- 定义：某份专业事实能够证明什么的语义角色。
+- 适用范围：Review、Verification、Finish及其他consumer解释已有事实的证明范围。
+- 避免混用：Evidence不是独立存储类别；authority仍属于被引用的专业事实。
 - 来源：[Task execution artifacts specification](../specs/task-execution-artifacts/spec.md)
 
 ## 任务收尾（Task Finish）
@@ -392,7 +378,7 @@
 ## 维护状态（Maintenance Status）
 
 - 定义：Delivery之后对Activation、Environment Cleanup与Diagnostics分别记录的`passed | attention | not-applicable`等正交状态。
-- 适用范围：Task已交付但自举、Doctor、worktree cleanup、Execution Record或Task登记仍需Agent处理时。
+- 适用范围：Task已交付但自举、Doctor、worktree cleanup或Task登记仍需Agent处理时。
 - 避免混用：不是Delivery结论或第二套Task lifecycle；maintenance attention不得撤销已确认Delivery。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 ## 任务管理器（Task Manager）
@@ -586,7 +572,7 @@
 ## 测试上下文缓存身份（Test Context Cache Identity）
 
 - 定义：由definition `id/version`、canonical configuration、source identity、dependency identities和所属scope identity共同派生的稳定SHA-256身份，用于决定一个Worker Host内的Context state能否复用。
-- 适用范围：Context cache命中、配置或源码变化后的cache miss，以及Execution Record中的Context关联。
+- 适用范围：Context cache命中，以及配置或源码变化后的cache miss。
 - 避免混用：不是Git tree identity、Task Candidate identity或跨Host共享键；matching identity只允许复用，不能证明可变state当前无污染。
 - 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
 
@@ -625,55 +611,31 @@
 - 避免混用：不是Execution Resource lease、Task checkout、Git worktree provider或共享Context本身；consumer只能删除自己拥有的sandbox，不能清理outer plan拥有的seed。
 - 来源：[Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)
 
-## 验证能力声明（Verification Capability Declaration）
+## 项目测试地图（Project Testing Map）
 
-- 定义：Project 根 `verification.yml` 中由团队确认的现有测试能力族目录；新authoring只使用closed `buildr.project-verification/v3`，声明scope、proves、evidence、usable targets、discovery、affected/full/provider入口和必要执行边界；runtime可把closed legacy v2保守规范化为能力受限输入，一次性选择仍由内容寻址Verification Plan保存。
-- 适用范围：Task Verification选择已有command、脚本、CI wrapper、bounded Agent操作或稳定provider时的Project policy输入；合法v2可继续用于full Task Delivery，但不获得affected、Candidate、Release或provider语义。
-- 避免混用：兼容读取不是v2 authoring承诺，也不是Project Testing、测试框架、通用DAG或Task lifecycle plan；能力缺失只形成coverage gap，不能在Verification中自动开发测试。
-- 来源：[Task Verification specification](../specs/task-verification/spec.md)
-
-## 验证请求（Verification Request）
-
-- 定义：为一次验证选择冻结Project/Service、Task Delivery或Product Artifact Candidate或Published Release目标、affected/full/release-only范围、changed paths/risks、declaration identities与可信dependency输入的closed内容寻址值。
-- 避免混用：不是执行命令、一次性Agent推理或Result；Request变化必须生成新Plan。
-
-## 验证计划（Verification Plan）
-
-- 定义：由matching Request与current v3声明或稳定provider确定性生成的closed内容寻址值，保存selected items、direct/dependency/full理由、coverage gaps、execution units及request/declaration/provider identities。
-- 避免混用：Plan preview不是execution evidence；provider内部完整DAG、Context cache和未选step不进入公共Plan，正式records必须绑定同一个current Plan。
-
-## 验证执行证据（Verification Execution Evidence）
-
-- 定义：一次显式 capability invocation 产生的`buildr.verification-execution/v1`公开执行事实；Task外只对应transient evidence，正式Task还对应一条有限期Task Execution Record。
-- 适用范围：Task Verification提炼current Result之前的本机execution、正式Task受控记录及transient evidence的有界cleanup。
-- 避免混用：不是current Verification Result；Execution Record进入独立SQLite metadata authority但不进入Verification current slot，也不表达Task推进或风险接受。
-- 来源：[Task Verification specification](../specs/task-verification/spec.md)
+- 定义：Project根`verification.yml`中由团队确认的现有测试能力族地图；只使用`buildr.project-verification/v4`，按测试族声明scope、purpose、source paths、test roots、完整入口、可选选择提示和资源要求，不登记每个测试文件。
+- 适用范围：帮助Agent结合Task目标与当前改动，定位已有单元、功能、前端交互和环境冒烟测试。
+- 避免混用：不是测试清单、执行计划、DAG、审批或测试框架；Application不根据地图替Agent选择和执行测试。
+- 来源：[Task Verification capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-verification/v4.md)
 
 ## 任务验证（Task Verification）
 
-- 定义：面向正式 Task 的专业验证能力，按显式Project、Service所属Project与Change所属Project的有效并集读取declarations、选择并执行适用已有capability；有效并集为空时以唯一workspace coverage gap记录没有验证能力的负向事实，再通过唯一Application维护current Result。
-- 适用范围：明确 target identity 的测试执行、Project/Service/workspace coverage gap 报告、Result 记录与 applicability 检查。
+- 定义：面向正式Task开发完成验证的专业能力。Agent读取Task、当前改动和项目测试地图，直接调用项目测试工具，并通过唯一Application保存或查询有意义的完成报告。
+- 适用范围：记录内容版本、实际检查、选择范围、目标、结果、未覆盖项、结论和完成时间，并检查内容或测试地图是否变化。
 - 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有 Task Development、Candidate generation、`proceed / blocked` 或 Task 顶层状态。
-- 来源：[Task Verification capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-verification/v3.md)
+- 来源：[Task Verification capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-verification/v4.md)
 
-## 验证结果（Verification Result）
+## 任务验证报告（Task Verification Report）
 
-- 定义：Workspace SQLite中按Task ID唯一的closed `buildr.task-verification-result/v2` current row，绑定Task、current Candidate/generation、stable Content Target与实际declarations，记录从matching terminal Task Execution Records提炼的能力facts、portable evidence identities、coverage gaps、整体结论和完成时间；真正仅工作区时使用空declarations、空capabilities、唯一workspace gap与`not-passed`。合法v1 row只作`legacy-unbound`双读。
-- 适用范围：CLI、Skill、Buildr Web 与 Task Development 共用的 current verification authority；读取时按Candidate、Content Target与declaration identity派生`current / stale / unknown / legacy-unbound`。Task Finish不直接消费该Result。
-- 避免混用：不是raw Execution Evidence、Receipt、history或状态机；不保存完整输出、Environment Receipt、风险决定、推进决定或Candidate生成权。
+- 定义：Workspace SQLite中按Task ID唯一的`buildr.task-verification-report/v1` current row，绑定Task、内容版本和实际项目测试地图，记录Agent真实执行的检查、选择范围、目标、结果、未覆盖项、整体结论和完成时间。
+- 适用范围：CLI、Skill和Buildr Web共用的current验证事实；读取时根据内容版本与测试地图identity派生`current / stale / unknown`。
+- 避免混用：不是执行日志、测试计划、审批、历史清单或状态机；不保存完整输出、Environment Receipt、风险决定、推进决定或Candidate生成权。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
-
-## 正式验证就绪度（Formal Verification Readiness）
-
-- 定义：Task Development operation/compact Result在Development → Formal Verification交接处，根据current Task Context、Planning、Content Target、verification policy、Candidate与Verification gate派生的response-only摘要；产品值为`not-applicable|blocked|ready`。
-- 适用范围：`formalVerificationReadiness`与Task Entry typed next；current Candidate已冻结且Verification缺失时为ready，consumer把显式Candidate lease交给Task Verification。Current Knowledge不再是固定前置预检。
-- 避免混用：不是Verification Result、Development gate、Receipt、持久preflight authority或通用verification executor门禁；不适用于开发期focused/affected测试、Task外transient verification、Candidate CI或Planning Review前的OpenSpec semantic readiness。
-- 来源：[Task Development specification](../specs/task-development/spec.md)与[OpenSpec Change生命周期](flows/openspec-change-lifecycle.md)。
 
 ## 任务研发（Task Development）
 
-- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、verification policy和专业Result收敛为Task Candidate、推进决定与研发交接的唯一研发聚合authority；仅工作区不是第二种Task authority，只是有效Project集合为空时的受约束policy/Result语义。
-- 适用范围：全研发区间的可选节点引用/currentness、实现收敛、formal Verification编排、Candidate freeze、Completion Review消费、风险/豁免决定和研发交接；Buildr Web可通过Application`inspect`只读展示这些事实。
+- 定义：正式Task从首个proposal、方案或直接实现等研发动作开始，在ready Environment中把planning facts、Task context、stable Content Target、Task Candidate、Completion Review与Current Knowledge收敛为推进决定和研发交接的唯一研发聚合authority。
+- 适用范围：全研发区间的可选节点引用/currentness、实现收敛、Candidate freeze、Completion Review消费、决定和研发交接；Task Verification独立运行和记录，Buildr Web分别读取两个Application。
 - 避免混用：不是 Task Core、通用 planner/状态机、测试执行器、Git 交付器或 Task 顶层状态 writer；通用Development没有公共CLI，Parent coordination只开放受控Application薄接口。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
@@ -722,10 +684,10 @@
 
 ## 研发回执（Development Receipt）
 
-- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；v3保存Environment逻辑引用、最小Task context、planning snapshot、可空Parent Plan/planned Contribution/final acceptance、可空Content Target、verification policy、current Candidate/generation、最小gates/dispositions、decision与不可变研发/Contribution handoff snapshots；v1/v2只读归一化为Parent facts absent，不读取或迁移旧YAML。
-- 适用范围：Development inspect/begin/planning/observe/policy/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
+- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；当前行为保存Environment逻辑引用、最小Task context、planning snapshot、Content Target、current Candidate/generation、Completion Review、decision与不可变研发handoff。旧verification policy与verification gate字段仅兼容读取历史row，新写入清空。
+- 适用范围：Development inspect/begin/planning/observe/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
 - 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接打开SQLite，只消费Application handoff port。
-- 来源：[Task Development capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-development/v2.md)
+- 来源：[Task Development capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-development/v3.md)
 
 ## 研发节点（Development Node）
 
@@ -736,23 +698,23 @@
 
 ## 明确豁免（waived）
 
-- 定义：用户或具备业务授权的来源针对精确planning node或gate target明确允许不执行该节点的研发事实，必须保存summary与authorization source。
-- 适用范围：Task Development planning与Planning/Verification/Completion gate disposition；用于解释为何允许继续Candidate或handoff。
-- 避免混用：不等于not-applicable，不改写Review/Verification Result，不使stale/incomplete evidence变为current，也不自动接受负向Result风险。
+- 定义：用户或具备业务授权的来源针对精确planning node或Planning/Completion target明确允许不执行该项的研发事实，必须保存summary与authorization source。
+- 适用范围：Task Development planning与Planning/Completion disposition；用于解释为何允许继续Candidate或handoff。
+- 避免混用：不等于not-applicable，不改写Review或Task验证报告，也不使stale/incomplete事实变为current。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 内容目标（Content Target）
 
 - 定义：Development完成内容修改、测试开发、current knowledge和Change最终处置后，对ready Environment全部Task scopes的原Task source snapshot形成的稳定deliverable内容聚合identity；不读取retained最新Delivery Baseline。
-- 适用范围：formal Task Verification 的 target，以及 Task Candidate 的内容输入和交付载体（Delivery Carrier）等价核验。
+- 适用范围：Task验证报告的内容版本参考、Task Candidate的内容输入和交付载体（Delivery Carrier）等价核验；Task Verification不从Development读取或租用它。
 - 避免混用：不等于Git HEAD、commit、branch、worktree、Delivery Baseline、Environment、runtime projection、Agent session或Task lifecycle metadata；Git tracking/staging/commit载体和纯基线前进不改变相同任务贡献的Content Target。Workspace 根 `.buildr/daily-progress/` 是本机忽略数据，不进入 Content Target。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 任务候选（Task Candidate）
 
-- 定义：Task Development在Task Context、Planning disposition、stable Content Target与verification policy明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context、policy identity和generation。Verification、Completion与Current Knowledge随后绑定该Candidate但不改变其identity或generation。
+- 定义：Task Development在Task Context、Planning disposition与stable Content Target明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context和generation。Completion与Current Knowledge不改变其identity或generation，Task Verification与Candidate无关。
 - 适用范围：Completion Review target、Development decision/handoff和Finish carrier equivalence。
-- 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含 Planning、Verification 或 Completion Result identity。
+- 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含Planning、Task验证报告或Completion Result identity。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## Product Artifact Candidate verification
@@ -794,7 +756,7 @@
 
 - 定义：从Task、Git/PR、GitHub run/attempt、release owner Result、Environment与Doctor的current时间事实派生的portable closed阶段投影；identity绑定规范化阶段数组，不写Task Record或旁路日志库。
 - 适用范围：selection/freeze、Candidate attempts、release→main、readiness、publication授权、dispatch/Environment approval、Publication、dev reconciliation与closeout的耗时统计和恢复报告；等待分类只使用`machine-execution`、`platform-queue`、`environment-approval`、`human-decision`或`unknown`。
-- 避免混用：不是release lifecycle状态权威、Execution Record、聊天时间线或估算器；Candidate必须按`runId + runAttempt`保留reused evidence原attempt、实际rerun scope与aggregate identity，缺少开始或结束边界时不得补造duration。
+- 避免混用：不是release lifecycle状态权威、聊天时间线或估算器；缺少开始或结束边界时不得补造duration。
 - 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/release-collection-model/spec.md`。
 
 ## 发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）
@@ -822,7 +784,7 @@
 
 - 定义：Git-backed Finish从原任务基线tree到冻结Task source snapshot tree观察到的canonical Git delta，绑定path、mode与before/after blob identities。
 - 适用范围：在最新Delivery Baseline机械创建隔离Delivery Carrier、记录适配来源facts与Environment cleanup独立复算；Development通过原Task source Content Target判断applicability，不消费最新baseline重算该identity。
-- 避免混用：不是Candidate、changed-path列表或语义安全结论；Git clean apply、clean rebase和路径不重叠都不能替代Agent语义核对、identity证明或既有verification policy。
+- 避免混用：不是Candidate、changed-path列表或语义安全结论；Git clean apply、clean rebase和路径不重叠都不能替代Agent语义核对、identity证明或实际验证。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 交付基线（Delivery Baseline）
@@ -843,13 +805,13 @@
 
 - 定义：Task Contribution无法机械应用到最新Delivery Baseline时，Agent只在run-owned隔离Delivery Carrier中完成的语义兼容处理；Buildr随后核验确定性Git、identity、cleanliness与Project policy要求的compatibility check facts。
 - 适用范围：Task Finish同一blocked run的`prepare → verify → deliver → cleanup`恢复；成功结果标记`agent-reviewed-delivery-adaptation`。
-- 避免混用：不是原Task worktree rebase、Candidate修改、formal Verification、Completion Review或Buildr语义等价证明；无法判断时必须保持blocked。
+- 避免混用：不是原Task worktree rebase、Candidate修改、Task验证报告、Completion Review或Buildr语义等价证明；无法判断时必须保持blocked。
 - 来源：[Task Finish execution specification](../specs/task-finish-execution/spec.md)
 
 ## 自修复 Provider 载体（Bootstrap Provider Capsule）
 
 - 定义：retained Task Finish 在已有run满足封闭恢复资格且用户单独授权后，从current ready Task Environment与current Development handoff共同冻结的clean committed checkout派生的run-owned、detached provider source；外置authority manifest绑定run、Candidate/generation、Content Target、source commit/tree与provider digest。
-- 适用范围：只用于恢复`preflight|prepare`的确定`product-phase-provider`异常；Execution Record成功open后创建，后续同run resume复用，cleanup phase持久化passed后由retained finalizer撤销可执行source authority。
+- 适用范围：只用于恢复`preflight|prepare`的确定`product-phase-provider`异常；由Task Finish自身current run证明恢复资格并管理后续清理。
 - 避免混用：不是Delivery Carrier、candidate CLI、npm tarball、任意module/manifest入口、通用sandbox、第二writer或新的Execution Capsule；canonical run与SQLite mutation仍只属于retained Application/repository。
 - 来源：[Task Finish execution 规范](../specs/task-finish-execution/spec.md)
 
@@ -890,9 +852,9 @@
 
 ## 收尾就绪候选（Finish-ready Candidate）
 
-- 定义：已有 current 正式研发交接的 Task Candidate；实现、current knowledge、Change 处置、formal Verification、Completion Review、推进与风险决定均已在 Development 闭合。
+- 定义：已有current正式研发交接的Task Candidate；实现、current knowledge、Change处置、Completion Review与推进决定均已在Development闭合。Task验证报告是独立事实，不构成该候选资格。
 - 适用范围：Task Finish的输入资格与Development/Finish责任边界。
-- 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、运行formal Verification、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
+- 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)
 
 ## Buildr 应用负载（Buildr Weblication Payload）

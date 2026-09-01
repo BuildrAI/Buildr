@@ -28,7 +28,7 @@ function parseArgs(args) {
 
 const request = parseArgs(process.argv.slice(2));
 const discovered = fs.readdirSync(systemRoot)
-  .filter((name) => name.endsWith('.test.mjs'))
+  .filter((name) => /\.test\.(?:mjs|ts)$/.test(name))
   .map((name) => `test/system/${name}`)
   .sort();
 const validation = validateSystemSuiteRegistry(discovered);

@@ -70,7 +70,6 @@ function completedTaskEvidence(taskId) {
     finish: {
       taskId, status: 'complete', runId: 42, resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: gitSha('8'), sourceTree: gitSha('9'),
       repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: gitSha('b') }],
-      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
       activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed',
     },
     selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: gitSha('8'), sourceTree: gitSha('9') },
@@ -322,7 +321,6 @@ test('release transaction runner binds preparation inputs to the final frozen so
         repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: digest('7'), carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', status: 'delivered', finalRemoteRef: gitSha('b') }],
       },
       delivery: { status: 'delivered', finalRemoteRef: gitSha('8'), carrierTree: gitSha('9') },
-      executionRecord: { recordId: 'finish-record-42', identity: digest('0'), status: 'retained', outcome: 'passed', lifecycleStatus: 'retained', evidenceIdentity: digest('1') },
       maintenance: { activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed', selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4') } },
     },
   });

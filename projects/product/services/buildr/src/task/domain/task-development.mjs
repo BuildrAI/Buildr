@@ -306,13 +306,13 @@ function normalizeGates(value) {
   };
 }
 
-export function createTaskCandidate({ generation, contentTargetIdentity, taskContextIdentity, policyIdentity }) {
+export function createTaskCandidate({ generation, contentTargetIdentity, taskContextIdentity, policyIdentity = null }) {
   if (!Number.isInteger(generation) || generation < 1) throw taskDevelopmentError('task_development_generation_invalid', 'Candidate generation 必须是正整数。', 400, { field: 'generation' });
   const payload = {
     generation,
     contentTargetIdentity: digestIdentity(contentTargetIdentity, 'candidate.contentTargetIdentity'),
     taskContextIdentity: digestIdentity(taskContextIdentity, 'candidate.taskContextIdentity'),
-    policyIdentity: digestIdentity(policyIdentity, 'candidate.policyIdentity'),
+    ...(policyIdentity == null ? {} : { policyIdentity: digestIdentity(policyIdentity, 'candidate.policyIdentity') }),
   };
   return { identity: taskDevelopmentDigest(payload), ...payload };
 }
@@ -329,7 +329,7 @@ function normalizeRisk(value, index) {
   const field = `decision.risks[${index}]`;
   const risk = object(value, field);
   closed(risk, new Set(['gate', 'resultDigest', 'scope', 'summary', 'source']), field);
-  if (!['verification', 'completion'].includes(risk.gate)) throw taskDevelopmentError('task_development_risk_gate_invalid', `${field}.gate 必须是 verification 或 completion。`, 400, { field: `${field}.gate` });
+  if (!['verification', 'completion'].includes(risk.gate)) throw taskDevelopmentError('task_development_risk_gate_invalid', `${field}.gate 不受支持。`, 400, { field: `${field}.gate` });
   return {
     gate: risk.gate,
     resultDigest: digestIdentity(risk.resultDigest, `${field}.resultDigest`),
@@ -420,7 +420,7 @@ export function createTaskFinishHandoff({ candidate, changes, gates, knowledge =
   const normalizedDecision = normalizeDecision(decision);
   const normalizedKnowledge = knowledge == null ? null : createTaskDevelopmentKnowledge(knowledge);
   const resolved = (gate, positive) => Boolean(gate) && (gate.disposition === 'waived' || gate.disposition === 'not-applicable' || positive.includes(gate.outcome));
-  if (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.verification, ['passed', 'not-passed']) || !resolved(normalizedGates.completion, ['ready', 'changes-required'])) {
+  if (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.completion, ['ready', 'changes-required'])) {
     throw taskDevelopmentError('task_development_handoff_gates_incomplete', 'Finish handoff 需要 current专业Result或合法not-applicable/waived gate。', 409);
   }
   if (normalizedDecision?.outcome !== 'proceed' || normalizedDecision.candidateIdentity !== normalizedCandidate.identity) throw taskDevelopmentError('task_development_handoff_decision_blocked', 'Finish handoff 需要绑定 current Candidate 的 proceed decision。', 409);
@@ -430,7 +430,6 @@ export function createTaskFinishHandoff({ candidate, changes, gates, knowledge =
     if (!gate || gate.disposition || risk.resultDigest !== gate.resultDigest) throw taskDevelopmentError('task_development_risk_result_mismatch', `风险接受必须绑定current ${risk.gate} Result digest。`, 409, { gate: risk.gate, expected: gate?.resultDigest || null, actual: risk.resultDigest });
   }
   const adverse = [
-    ...(normalizedGates.verification.disposition || normalizedGates.verification.outcome === 'passed' ? [] : [{ gate: 'verification', digest: normalizedGates.verification.resultDigest }]),
     ...(normalizedGates.completion.disposition || normalizedGates.completion.outcome === 'ready' ? [] : [{ gate: 'completion', digest: normalizedGates.completion.resultDigest }]),
   ];
   for (const item of adverse) {
@@ -487,7 +486,7 @@ export function normalizeTaskDevelopmentReceipt(value, { expectedTaskId = null }
   const handoffs = receipt.handoffs.map(normalizeHandoff);
   if (new Set(handoffs.map((item) => item.identity)).size !== handoffs.length) throw taskDevelopmentError('task_development_value_duplicate', 'handoffs identity 不能重复。', 400, { field: 'handoffs' });
   if (candidate && candidate.generation !== receipt.generation) throw taskDevelopmentError('task_development_generation_mismatch', 'current Candidate generation 必须等于 Receipt generation。', 409);
-  if (candidate && (!contentTarget || candidate.contentTargetIdentity !== contentTarget.identity || candidate.taskContextIdentity !== taskContext.identity || candidate.policyIdentity !== verificationPolicy?.identity)) throw taskDevelopmentError('task_development_candidate_inputs_mismatch', 'current Candidate 与 Receipt current inputs 不一致。', 409);
+  if (candidate && (!contentTarget || candidate.contentTargetIdentity !== contentTarget.identity || candidate.taskContextIdentity !== taskContext.identity || (candidate.policyIdentity && candidate.policyIdentity !== verificationPolicy?.identity))) throw taskDevelopmentError('task_development_candidate_inputs_mismatch', 'current Candidate 与 Receipt current inputs 不一致。', 409);
   if (!contentTarget && (verificationPolicy || candidate || currentKnowledge || gates.verification || gates.completion || decision || handoffs.length)) throw taskDevelopmentError('task_development_content_target_required', 'Content Target形成前不能保存policy、Candidate、Current Knowledge、Verification/Completion gate、decision或handoff。', 409);
   if (currentKnowledge && (!contentTarget || currentKnowledge.treeIdentity !== contentTarget.identity)) throw taskDevelopmentError('task_development_knowledge_target_mismatch', 'currentKnowledge必须绑定current Content Target。', 409);
   if (!candidate && gates.completion) throw taskDevelopmentError('task_development_completion_without_candidate', '没有 current Candidate 时不能保存 Completion gate。', 409);

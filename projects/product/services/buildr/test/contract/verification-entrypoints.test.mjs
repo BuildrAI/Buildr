@@ -22,10 +22,10 @@ test('product verification exposes four gates, direct layers, and one focus entr
   const scripts = JSON.parse(read('package.json')).scripts;
   assert.equal(scripts.test, './test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], './test/verification/verify-buildr-product-fast');
-  assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs');
+  assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs test/unit/*.test.ts');
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
-  assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs');
-  assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs');
+  assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs test/contract/*.test.ts');
+  assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs test/integration/*.test.ts');
   assert.equal(scripts.typecheck, 'npm run test-context:check && tsc --project tsconfig.json');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
@@ -88,44 +88,20 @@ test('Development Launcher固定端口不改变Task Preview的随机端口与无
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });
 
-test('Product live声明采用v3高级provider并保留独立Browser能力', () => {
+test('Product live声明采用v4测试地图并保留后端、前端和环境体系', () => {
   const declaration = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
-  const fast = declaration.capabilities.find((capability) => capability.id === 'product.fast');
-  const provider = declaration.capabilities.find((capability) => capability.id === 'product.verification');
-  const browser = declaration.capabilities.find((capability) => capability.id === 'product.browser-smoke');
-  assert.equal(declaration.schemaVersion, 'buildr.project-verification/v3');
+  const fast = declaration.testing.find((item) => item.id === 'buildr-fast');
+  const functional = declaration.testing.find((item) => item.id === 'buildr-functional');
+  const browser = declaration.testing.find((item) => item.id === 'buildr-web');
+  const environment = declaration.testing.find((item) => item.id === 'buildr-environment-smoke');
+  assert.equal(declaration.schemaVersion, 'buildr.project-verification/v4');
   const fastPlan = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
-  assert.equal(fast, undefined);
-  assert.deepEqual(provider.scope, { project: 'product', services: [] });
-  assert.deepEqual(provider.evidence, ['static', 'unit', 'component', 'integration', 'system']);
-  assert.deepEqual(provider.usableFor, ['task-delivery', 'product-candidate', 'published-release']);
-  assert.deepEqual(provider.invocation, {
-    affected: { kind: 'provider', provider: 'buildr.product-verification/v1' },
-    full: { kind: 'provider', provider: 'buildr.product-verification/v1' },
-  });
+  assert.deepEqual(fast.scope, { project: 'product', services: ['buildr'] });
+  assert.deepEqual(functional.testRoots, ['services/buildr/test/integration/**', 'services/buildr/test/system/**']);
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
-  assert.deepEqual(browser.invocation, {
-    affected: { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:changed'], cwd: 'services/buildr' },
-    full: { kind: 'command', argv: ['tools/development/run-development-npm', 'run', 'test:browser:smoke'], cwd: 'services/buildr' },
-  });
-  assert.deepEqual(browser.discovery.sources, [
-    'services/buildr-web/**',
-    'services/buildr/web-dist/**',
-    'services/buildr/src/web/**',
-    'services/buildr/test/browser-smoke/**',
-    'services/buildr/test/verification/browser-selector-dispatcher.mjs',
-    'services/buildr/test/verification/web-dist.mjs',
-  ]);
-  assert.deepEqual(browser.usableFor, ['task-delivery']);
-  assert.deepEqual(browser.environment.requires, ['node', 'npm', 'chrome']);
-  assert.deepEqual(browser.effects.externalSystems, []);
-  assert.equal(browser.effects.authorization, 'implicit');
-  assert.deepEqual(browser.resourceClaims, ['browser']);
-  const browserDelegation = VERIFICATION_DELEGATED_INPUTS.find((item) => item.owner === 'product.browser-smoke');
-  assert.ok(browserDelegation);
-  for (const input of browserDelegation.inputs) assert.ok(browser.discovery.sources.includes(`services/buildr/${input}`));
-  assert.deepEqual(declaration.resources.find((resource) => resource.id === 'browser'), { id: 'browser', title: 'Local browser capacity', strategy: 'coordinated', capacity: 1, authorization: 'implicit' });
+  assert.equal(browser.full.kind, 'command');
+  assert.equal(environment.full.kind, 'agent');
   for (const owner of ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke']) {
     assert.ok(verificationSteps.find((step) => step.id === owner).inputs.includes('.github/workflows/publish.yml'), `${owner} must own the governed release workflow`);
   }
@@ -215,7 +191,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'Self-bootstrap closeout integration slice',
     'Task read-model integration slice',
     'Task coordination integration slice',
-    'Task execution-record integration slice',
     'Task Development lifecycle integration',
     'Task Finish core integration slice',
     'Task Finish delivery integration slice',
@@ -299,12 +274,10 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.deepEqual(Object.fromEntries([
     'integration-task-finish-delivery',
     'integration-task-development',
-    'integration-task-execution-records',
     'integration-self-bootstrap',
   ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
     'integration-task-finish-delivery': 75_000,
         'integration-task-development': 30_000,
-    'integration-task-execution-records': 50_000,
     'integration-self-bootstrap': 50_000,
   });
 });
@@ -478,7 +451,8 @@ test('双任务并发验收输出完整的组合证据并执行归属清理', ()
     'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);
   assert.ok(source.includes('processesOverlap(prepareResults[0], prepareResults[1])'));
-  assert.ok(source.includes("'task', 'verification', 'reconcile'"));
+  assert.ok(source.includes("'task', 'verification', 'record'"));
+  assert.ok(source.includes("'--report', reportPath"));
   assert.equal(source.includes("'task', 'verification', 'inspect'"), false);
   assert.equal(source.includes('taskChangeResolution'), false);
   assert.equal(source.includes('candidate-only'), false);

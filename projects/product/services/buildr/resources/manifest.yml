@@ -90,11 +90,17 @@ capabilityContracts:
     path: resources/workspace/skills/contracts/buildr/task-review/v1.md
     target: skills/contracts/buildr/task-review/v1.md
   - id: buildr.task-verification
-    version: 3
-    description: 执行 Project 已声明的验证能力，并维护 Task-scoped Workspace-local current Verification Result。
-    path: resources/workspace/skills/contracts/buildr/task-verification/v3.md
-    target: skills/contracts/buildr/task-verification/v3.md
+    version: 4
+    description: 维护 Project 测试地图，并保存开发完成后的 Task 验证报告。
+    path: resources/workspace/skills/contracts/buildr/task-verification/v4.md
+    target: skills/contracts/buildr/task-verification/v4.md
     replaces:
+      - id: buildr.task-verification
+        version: 3
+        target: skills/contracts/buildr/task-verification/v3.md
+        integrity: sha256-c16d118fb874347c128c478206abeecaf2ba2ea9597af58bda071e43a1e926d8
+        provider: task-verification
+        description: 执行已声明验证能力并维护Candidate-bound current Result。
       - id: buildr.task-verification
         version: 2
         target: skills/contracts/buildr/task-verification/v2.md
@@ -102,11 +108,17 @@ capabilityContracts:
         provider: task-verification
         description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
   - id: buildr.task-development
-    version: 2
-    description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
-    path: resources/workspace/skills/contracts/buildr/task-development/v2.md
-    target: skills/contracts/buildr/task-development/v2.md
+    version: 3
+    description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate、Completion Review与Current Knowledge，且与Task Verification独立。
+    path: resources/workspace/skills/contracts/buildr/task-development/v3.md
+    target: skills/contracts/buildr/task-development/v3.md
     replaces:
+      - id: buildr.task-development
+        version: 2
+        target: skills/contracts/buildr/task-development/v2.md
+        integrity: sha256-016534858b4438805ef2982e81fde2798a3289533511e0e0e3d72578917ed5d7
+        provider: task-development
+        description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
       - id: buildr.task-development
         version: 1
         target: skills/contracts/buildr/task-development/v1.md
@@ -182,10 +194,10 @@ initialSkillBindings:
     version: 1
     provider: task-review
   - capability: buildr.task-verification
-    version: 3
+    version: 4
     provider: task-verification
   - capability: buildr.task-development
-    version: 2
+    version: 3
     provider: task-development
   - capability: buildr.task-finish
     version: 1
@@ -224,7 +236,7 @@ builtins:
           version: 1
           mode: optional
         - capability: buildr.task-development
-          version: 2
+          version: 3
           mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: declaration-intake
@@ -236,7 +248,7 @@ builtins:
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
-      description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，区分测试成本、affected/full 范围与 Candidate/Release 验证目标，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
+      description: 用户要求为Project或Service设计、梳理或优化测试框架，划分Static、Unit、Component、Integration、System边界，区分测试成本、affected/full范围与Candidate/Release验证目标，或实现功能后开发适量测试时使用；不用于执行正式Task Verification、维护verification.yml或记录任务验证报告。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-manager
@@ -322,20 +334,20 @@ builtins:
     - id: task-verification
       path: resources/workspace/skills/buildr/task-verification
       target: skills/buildr/task-verification
-      description: 用户要求运行已有测试、验证改动、查看 current 验证结果、报告验证耗时、经 Declaration Intake 授权后维护 Project 验证能力声明，或者 Task Development 对稳定 Content Target 到达正式验证节点时使用；不用于设计测试框架、开发测试、生成 Candidate 或 Finish；声明发现交给 Declaration Intake。
+      description: 用户要探查或维护 Project 测试地图，开发中选择已有前后端测试，或开发完成后记录和查看 Task 验证报告时使用。
       required: false
       provides:
         - capability: buildr.task-verification
-          version: 3
+          version: 4
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-development
       path: resources/workspace/skills/buildr/task-development
       target: skills/buildr/task-development
-      description: 正式Task从首个proposal、方案或直接实现等研发动作开始，到稳定Content Target、正式Verification、Task Candidate、Completion Review、风险决定与研发结果报告的全过程使用；不用于Task Record、专业内容写入、测试开发或交付执行。
+      description: 正式Task从首个proposal、方案或直接实现开始，到稳定Content Target、Task Candidate、Completion Review、Current Knowledge、推进决定与研发交接的全过程使用；不用于Task Record、Task Verification、测试执行或交付执行。
       required: false
       provides:
         - capability: buildr.task-development
-          version: 2
+          version: 3
       requires:
         - capability: buildr.task-record
           version: 2
@@ -345,9 +357,6 @@ builtins:
           mode: required
         - capability: buildr.task-review
           version: 1
-          mode: required
-        - capability: buildr.task-verification
-          version: 3
           mode: required
         - capability: buildr.current-knowledge-maintenance
           version: 2
@@ -496,8 +505,8 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-verification/v3.md => skills/contracts/buildr/task-verification/v3.md copy
-  - resources/workspace/skills/contracts/buildr/task-development/v2.md => skills/contracts/buildr/task-development/v2.md copy
+  - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
+  - resources/workspace/skills/contracts/buildr/task-development/v3.md => skills/contracts/buildr/task-development/v3.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
@@ -524,7 +533,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-environment/templates/task-environment-plan-request.json => skills/buildr/task-environment/templates/task-environment-plan-request.json copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
-  - resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md => skills/buildr/task-verification/references/project-verification-v3.md copy
+  - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy
   - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - resources/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
   - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy

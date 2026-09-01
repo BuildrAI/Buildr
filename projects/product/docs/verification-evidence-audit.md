@@ -1,4 +1,6 @@
-# Product 日常验证证据与选择审计
+# Product日常验证证据与选择审计（历史）
+
+> 本文保留Task Execution Record退役前的历史测量，不描述当前产品接口。当前验证结果直接来自Project测试工具和Task Verification Report。
 
 本文记录 `deduplicate-cross-layer-verification-evidence` 对 Buildr Product 日常验证的可复核结论。机器可读事实来自唯一 registry 与 `npm run test:audit:verification`；本文不创建第二套测试、Candidate 或 Release authority。
 
@@ -26,7 +28,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 - 日常 Core 慢 owner primary evidence map；
 - Release-only owner 与日常 `core` profile 的闭合审计。
 
-该入口只读，不运行 verifier，不把 target budget 当作实测。实际 queue、resource wait、prepare/body/cleanup 与 wall-clock 仍以 Execution Record 为准。
+该入口只读，不运行verifier，不把target budget当作实测。当前实际耗时以测试runner本身输出为准。
 
 ## 3. 近期普通任务选择回放
 
@@ -57,7 +59,6 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 | --- | ---: | --- | --- |
 | `integration-task-environment` | 15s | stale controller、preparation或repository handoff必须失败 | filesystem、Git、CLI handoff |
 | `integration-self-bootstrap` | 45s | retained checkout或runtime sync漂移必须失败 | retained checkout、Git identity、runtime sync |
-| `integration-task-execution-records` | 20s | body/metadata/recovery/retention不一致必须失败 | SQLite与filesystem body store |
 | `integration-task-development` | 25s | planning/Candidate/Review/Verification identity漂移必须阻断 | CLI、filesystem、Git、SQLite lifecycle |
 | `integration-task-finish` | 20s | bootstrap/readiness/run/diagnostics/SQLite不一致必须阻断 | Finish CLI与SQLite |
 | `integration-task-finish-delivery` | 75s | remote、activation、occupancy或cleanup ownership缺口必须失败 | Git remote、retained activation、cleanup |
@@ -155,7 +156,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 
 ## 9. affected / Full 选择复核（2026-08-24）
 
-本节使用当前 `origin/dev`、三个 retained 且 body 未截断的正式 Execution Record，以及同一批 frozen changed paths 在本 Change 前后 planner 上的只读回放。历史 Execution Record 没有 step-level selection trace，因此墙钟来自原 record，step、owner、closure 与 Full reason 来自当前 planner 回放；两类事实不混写。
+本节是退役前历史回放；其中原执行记录已随产品能力删除，不再作为current authority。
 
 ### 9.1 近期普通 Task 样本
 
@@ -192,6 +193,6 @@ Unit 的实际粒度是：只要计划选择 `unit` step，就运行完整低成
 
 因此当前正式结论是：在这个近期小样本中，普通 Task 没有无理由进入 Full；唯一升级由 execution graph authority 变更触发。选择规则不是主要瓶颈，剩余成本来自被正确选择的真实 primary owner，尤其是 Finish、self-bootstrap、Workspace/Worktree、进程和 capability/OpenSpec runtime 边界。继续降本必须优化这些 owner 内部的真实准备或主体成本，不能通过放宽 Full、删除证据、缓存被测选择结果或提高全局并发取得。
 
-当前日常完整集合仍为52 steps、1036秒目标工作量、容量4的数学下限259秒；Product Candidate仍为66 steps、1398秒目标工作量、数学下限349.5秒。最近当前树正式 daily-full Execution Record 为 `task-exec-f3035c44-9d33-4413-8315-40e6d1ecbc9a`，capability墙钟427.822秒。Candidate与无外部发布副作用的Release contract/smoke仍须在本 Task 的冻结Content Target上现场执行；未执行前不填入当前基线。
+该轮历史daily-full墙钟为427.822秒；原记录标识与正文已不再属于当前产品。
 
 本Change实现树随后因planner/ownership authority变更运行一次真实changed→Full：52 steps全部通过，总墙钟288.354秒，`product-full-execution`等待2ms，最慢owner为`system-task-finish` 81.083秒。该轮比427.822秒历史正式Full快，但step集合没有变化，且是单次transient开发反馈，不能把差值归因于selection实现；它只证明当前完整daily-full在本轮无竞争机器状态下可执行，并保留了超目标owner的逐项warning。

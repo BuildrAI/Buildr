@@ -251,24 +251,6 @@ Service CLI MUST 使用 `code`、`name`、`description`、`type`、`source` 与 
 - **WHEN** Agent 使用 JSON 输出创建或登记 Service
 - **THEN** 输出 MUST 包含稳定 Domain、registry revision 与 declared/observed 分离结果
 
-### Requirement: Project 验证执行必须成为公开 CLI 表面
-Buildr MUST 将 `buildr verification run` 登记为 public transient execution CLI，要求显式 `--project`、一个或多个 `--capability`、`--target-identity` 与 `--target`，并支持可选 Task Environment context、capability effects/resource authorization、bounded concurrency 与 `--json`。`effects.authorization: explicit` MUST 要求精确 `--authorize-capability <id>`，声明为 explicit 的资源 MUST 要求精确 `--authorize-resource <id>`。execution summary MUST 只写 provider-owned 临时目录，不得提供 caller-managed output writer。根帮助和专题帮助 MUST 说明该命令只执行 Project v2 中已有 command capabilities，不选择语义适用性、不调度 Agent、不创建 Task、不写 current Result。
-
-#### Scenario: 用户查看 verification run 帮助
-- **WHEN** 用户运行 `buildr help verification run`
-- **THEN** 帮助 MUST 展示显式 capability、target identity、可选 Task context 与 transient evidence lifecycle
-- **AND** 帮助 MUST 不出现 affected/candidate level、required assurance、Buildr Product 专用默认测试或 Result writer 暗示
-
-#### Scenario: 参数不足时请求 JSON
-- **WHEN** 调用方缺少 Project、capability、target identity 或必要 Task binding 并请求 `--json`
-- **THEN** 命令 MUST 返回 `buildr.verification-execution/v1` 的机器可读错误并以非零状态退出
-- **AND** stdout MUST 保持单一 JSON 对象且不得混入 worker 文本
-
-#### Scenario: 调用旧 level 参数
-- **WHEN** 调用方传入 `--level`、`--include-advisory` 或 `--candidate-fingerprint`
-- **THEN** CLI MUST 作为 unknown argument 拒绝
-- **AND** MUST NOT 启动 capability 或写 evidence
-
 ### Requirement: Task Finish canonical CLI 必须只有 run 与 inspect
 Buildr CLI MUST只提供`task finish run`和`task finish inspect`：首次`run` MUST只要求`--task <task-id>`，并从matching ready Task Environment与Task Development Application解析current Development Handoff、Candidate/generation和Content Target；`inspect` MUST只读返回canonical run状态。默认target branch MUST来自retained Workspace当前符号分支，显式`--target-branch` MUST与该分支一致；delivery remote MUST来自显式参数、Environment evidence、target branch upstream或唯一configured remote。当前客户端 MUST NOT注册、加载或执行`actions|advance|resume|renew|recover|cleanup-prepare|cleanup-finalize`，也 MUST NOT接受`--project`、`--change`、assurance/Result bytes、caller-authoredCandidate/evidence/fingerprint/execution-plan/recovery参数。
 
@@ -344,34 +326,6 @@ Buildr CLI MUST 公开 `buildr task review inspect <task-id>` 与 `buildr task r
 - **WHEN** 用户运行根帮助、`buildr task --help`、`buildr task review --help` 或具体 action help
 - **THEN** help MUST 说明 CLI 只管理完成 Result、两种类型均可选、record 需要明确 target identity、中断不写入且适用性由 identity 比较派生
 - **AND** help MUST 不把命令描述为 Review engine、Development gate 或 Candidate generator
-
-### Requirement: CLI 必须提供最小 Task Verification Result 管理入口
-Buildr CLI MUST只通过`task verification inspect|record`管理一个Task current Result。`inspect` MUST接受Task ID与可选current target identity，只比较保存值并MUST NOT接受filesystem/declaration path；`record` MUST接受完整target、实际capability facts、coverage gaps和`passed|not-passed` conclusion，并MAY接受matching ready Task Environment根作为`--declaration-root`，但MUST通过Task Verification Application完成ownership、领域校验与持久化。
-
-#### Scenario: inspect current Result
-- **WHEN** Agent调用`buildr task verification inspect <task-id> [--target-identity <identity>] --json`
-- **THEN** stdout MUST返回稳定operation envelope、current Result、digest与保存值applicability
-- **AND** 命令 MUST不接受`--declaration-root`、准备Environment、执行capability或改变任何记录
-
-#### Scenario: record观察Task Environment declaration
-- **WHEN** Agent为尚未集成的target调用record并追加`--declaration-root <task-environment-root>`
-- **THEN** Application MUST证明该root属于当前Task的ready Environment后再观察declaration
-- **AND** 任意其他本机目录 MUST被拒绝且原current不变
-
-#### Scenario: inspect Task Environment declaration
-- **WHEN** Agent为inspect追加`--declaration-root <task-environment-root>`
-- **THEN** CLI MUST在读取任何声明路径前拒绝该参数并指向record action
-- **AND** 原current与Task Environment MUST保持不变
-
-#### Scenario: record 完整 Result
-- **WHEN** Agent为active Task提供完整合法facts与conclusion
-- **THEN** CLI MUST调用Application原子整值替换current
-- **AND** 返回effects MUST只披露created/updated的Workspace SQLite logical locator
-
-#### Scenario: record 不完整
-- **WHEN** target、capability fact、coverage gap或conclusion不能构成完整closed-schema Result
-- **THEN** CLI MUST返回blocked operation result与具体field diagnostic
-- **AND** 原current MUST保持不变
 
 ### Requirement: OpenSpec CLI help 不得恢复 Task Finish 的旧 Change authority
 Buildr CLI MUST 把 `openspec convergence preflight`、`openspec converge` 与 `openspec convergence inspect`描述为当前OpenSpec maintenance入口：preflight只检查尚未开始的收敛语义就绪性，converge是唯一canonical writer，inspect只读取当前事务恢复现场。CLI MUST NOT注册或帮助展示`openspec audit`、`openspec baseline create`或`openspec check`。Task Finish current help MUST明确Change convergence、sync与archive在Development stable Content Target之前完成，且正常Converge成功后不再要求Inspect。
@@ -641,24 +595,6 @@ Buildr CLI MUST 只将 `web` 注册为当前本机 Web 产品的 executable doma
 - **THEN** CLI MUST返回canonical input error与Task Finish run帮助
 - **AND** MUST在Finish phase、carrier、远端与Task终态零副作用状态停止
 
-### Requirement: Agent CLI 必须开放 Task execution record list 与 inspect
-Buildr CLI MUST登记`buildr task execution-record list --task <task-id> [--view all|verification|finish] [--target <canonical-workspace>] [--json]`与`buildr task execution-record inspect --task <task-id> --record <record-id> [--target <canonical-workspace>] [--json]`。两项命令MUST只调用Task Execution Record Application的portable read model，MUST不接受locator、path、owner mutation、resolution、cleanup、retry或任意SQL输入。根帮助和专题帮助MUST说明它们用于在原终端不可用后恢复同一execution事实，且不写Verification Result或Finish current。
-
-#### Scenario: Agent列出Verification records
-- **WHEN** Agent使用Task ID与`--view verification`调用list
-- **THEN** CLI MUST返回该Task的portable Verification records与稳定identity
-- **AND** MUST不列出其他Task记录、读取正文或启动verification
-
-#### Scenario: Agent检查单条record
-- **WHEN** Agent提供matching Task ID与record ID调用inspect
-- **THEN** CLI MUST返回current lifecycle或terminal compact摘要和正文文件入口
-- **AND** record不属于Task时 MUST fail closed且不泄漏实际owner Task
-
-#### Scenario: verification run 显式retry
-- **WHEN** Agent查看`buildr help verification run`
-- **THEN** help MUST说明默认阻止相同active invocation重复执行，`--retry`会创建独立run/record
-- **AND** MUST不把retry描述为恢复、覆盖或采用既有execution
-
 ### Requirement: Task Finish run 必须只把 bootstrap recovery 暴露为显式 existing-run 选项
 
 CLI MAY为现有`task finish run`增加`--bootstrap-recovery`，但MUST NOT增加新的Finish action或pre-registry执行入口。首次使用MUST要求`--run <run-id>`与合格的retained preflight/prepare provider failure；blocked resume MUST同时要求current Product `--resume` token。帮助与结构化诊断MUST把该模式描述为异常的retained-writer provider recovery，而不是通用重试、candidate CLI或alternate writer。
@@ -732,29 +668,6 @@ Buildr CLI MUST让`buildr openspec convergence preflight <change> --project <pro
 - **WHEN** Project、Task execution root、OpenSpec executable或active Change不能安全解析
 - **THEN** CLI MUST在任何持久写入前返回具体diagnostic和matching Environment execution root提示
 - **AND** MUST不扫描或猜测其他worktree
-
-### Requirement: Agent CLI 必须开放 Execution Record 受控恢复
-Buildr CLI MUST登记 `buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]`。命令 MUST只调用 Task Execution Record Application 的 Verification recover action；MUST不接受 outcome、files、locator、owner、producer、retry、timeout、process ID、SQL 或 cleanup shell。
-
-#### Scenario: Agent 自动恢复已完成执行
-- **WHEN** Agent 提供 matching Task、record 与 terminal summary
-- **THEN** CLI MUST补 seal 原 record并输出同一次 recover result
-- **AND** MUST不运行 Verification、创建 record或要求额外用户授权
-
-#### Scenario: CLI 请求 unknown 授权
-- **WHEN** Agent 未提供可验证 summary且未传 `--authorize-unknown-outcome`
-- **THEN** CLI MUST返回 authorization-required 与该授权会终结原 record、使后续普通 invocation 可运行的明确 effects
-- **AND** MUST保持零 mutation
-
-#### Scenario: 明确授权 unknown
-- **WHEN** 用户已授权且 Agent 传入 `--authorize-unknown-outcome`
-- **THEN** CLI MUST处置 matching open Verification record为 unknown并返回 attention
-- **AND** help MUST说明该 flag 不证明原执行结果、不重跑且可能使仍存活 producer 的后续 seal 失败
-
-#### Scenario: 非法恢复输入
-- **WHEN** caller 同时提供 summary 与 unknown 授权，或提交任何未登记 mutation 输入
-- **THEN** CLI MUST在 Application mutation 前拒绝
-- **AND** MUST返回 canonical usage diagnostic
 
 ### Requirement: Task Finish run 必须只把 occupancy 释放暴露为显式 existing-run 选项
 
@@ -851,3 +764,19 @@ Buildr CLI MUST 将 Project 每日演进的 `record`、`inspect` 与 `list` 登�
 #### Scenario: 调用方尝试伪造 no-change cleanup 输入
 - **WHEN** 调用方向public cleanup命令提供no-change claim、provider result、integrated ref或删除路径
 - **THEN** CLI MUST在Application mutation前拒绝未知参数，且 MUST不修改Environment Receipt或Git evidence
+
+### Requirement: Project CLI必须提供测试地图维护入口
+Buildr MUST提供`project verification inspect|validate|update <project>`。`validate`和`update` MUST接收Agent生成的候选文件；`update` MUST要求expected identity并在冲突时零写入。CLI MUST不扫描项目自动生成地图或执行测试。
+
+#### Scenario: 校验候选测试地图
+- **WHEN** Agent调用`project verification validate <project> --file <candidate>`
+- **THEN** CLI MUST只调用Project Verification Application并返回closed diagnostics
+- **AND** 当前`verification.yml` MUST保持不变
+
+### Requirement: Task CLI必须只提供任务验证报告入口
+Buildr MUST只提供`task verification record <task-id> --report <json-file>`与`task verification inspect <task-id> [--content-identity <identity>]`。CLI MUST不提供`verification plan|run|cleanup`或`task verification reconcile`。
+
+#### Scenario: 保存完成报告
+- **WHEN** Agent调用`task verification record`
+- **THEN** CLI MUST只解析报告文件并委托Task Verification Application
+- **AND** MUST不启动测试或创建Execution Record

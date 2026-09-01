@@ -90,9 +90,6 @@ function fixture(t, options = {}) {
     resolveTaskEntryCapabilityRoute: (_root, _projects, capability, version) => { calls.capabilities.push(`${capability}@${version}`); return options.route || route(capability, version); },
   };
   if (options.finishFacts) runtime.inspectTaskFinishCurrentFacts = () => structuredClone(options.finishFacts);
-  if (options.closeout) {
-    runtime.listTaskExecutionRecordView = () => ({ records: structuredClone(options.executionRecords || []) });
-  }
   registerTaskEntrySnapshotApplication(runtime);
   return { root, runtime, calls };
 }
@@ -153,7 +150,7 @@ test('ready Environment直接给出execution root、retained controller与Develo
 });
 
 test('Task Development后续动作均通过retained controller内部driver调用', (t) => {
-  for (const action of ['planning', 'policy', 'freeze', 'decide', 'handoff']) {
+  for (const action of ['planning', 'freeze', 'decide', 'handoff']) {
     const next = { mode: 'recommended', owner: 'task-development', action, capability: { id: 'buildr.task-development', version: 2 }, summary: action };
     const { root, runtime } = fixture(t, { development: development(next) });
     const result = runtime.inspectTaskEntrySnapshot(root, taskId);

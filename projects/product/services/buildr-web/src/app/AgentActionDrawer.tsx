@@ -259,9 +259,8 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     try {
       const result = await taskProfessionalApi.verificationPrompt({
         taskId: String(context.taskId || ''),
-        ...(context.targetIdentity ? { targetIdentity: String(context.targetIdentity) } : {}),
       });
-      showResult(result.prompt, ACTION_LABELS['task-verification'], '验证结果未被修改。');
+      showResult(result.prompt, ACTION_LABELS['task-verification'], '验证报告未被修改。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成指令失败。');
     }
@@ -781,7 +780,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
             <Button type="primary" htmlType="submit">生成验证指令</Button>
           </div>
         </form>
-        {promptResult(ACTION_LABELS['task-verification'], '验证结果未被修改。')}
+        {promptResult(ACTION_LABELS['task-verification'], '验证报告未被修改。')}
       </>
     );
   }

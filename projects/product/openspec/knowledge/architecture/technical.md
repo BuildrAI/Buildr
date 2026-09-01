@@ -85,7 +85,7 @@ services/buildr/
 | 模块 | 拥有的主要职责 | 公开协作边界 |
 |------|----------------|--------------|
 | `workspace/` | Workspace、Project、Service、Project Daily Progress、registry 与 source 解析 | Workspace/Project query、CLI/HTTP/Diagnostic contribution |
-| `task/` | Task Record、Environment、Development、Review、Verification Result、Retrospective、Execution Record、Parent Coordination、Finish | 专业 Application、窄 read/internal capability、CLI/HTTP/Diagnostic contribution |
+| `task/` | Task Record、Environment、Development、Review、任务验证报告、Retrospective、Parent Coordination、Finish | 专业Application、窄read/internal capability、CLI/HTTP/Diagnostic contribution |
 | `agent-assets/` | Rule、Skill、Command、Component、Builtin/package maintenance 和 Agent runtime 投射 | runtime projection、capability binding、CLI contribution |
 | `verification/` | Project verification declaration、capability execution、资源协调和 transient evidence | verification Application 与 execution result |
 | `web/` | Buildr Web 实例、Preview、session、安全、静态文件和本机 HTTP Host | loopback HTTP、业务 HTTP contribution 分发 |
@@ -157,7 +157,6 @@ Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-loca
 | Task current records | `.buildr/local/workspace.sqlite` | 各专业 Application + Repository | Workspace 本机 current facts |
 | SQLite schema | 随 npm package 交付的连续 SQL scripts | SQLite infrastructure migration | 只允许前向迁移 |
 | Project Daily Progress | `.buildr/daily-progress/<project>/<date>.yml` | Daily Progress Application | Git ignored 的本机日事实 |
-| Task Execution Record 正文 | `.buildr/local/task-execution-records/` | Execution Record Application | 有配额、脱敏和清理生命周期 |
 | Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
 | 历史交付目录 | 旧收尾运行拥有的隔离目录 | 原资源所有者 | 只按归属与内容保全安全处置 |
 | Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
@@ -205,9 +204,9 @@ Buildr 自举只在 matching Task Delivery 后，由专用 self-bootstrap runner
 | Product Candidate | 对冻结源码、平台、Host Node、Task lifecycle 和 package artifact 做闭合验证 | verification registry 与 Candidate gate |
 | 正式发布 | 证明同一 Candidate artifact、发布授权、Registry/GitHub readback 和安装 smoke | protected release transaction |
 
-Project `preparation.yml` 描述已知环境准备配方，`verification.yml` 的新增与目标声明只用v3描述稳定测试能力族。runtime长期封闭读取legacy v2并只归一化为full Task Delivery能力；它不推断affected、Candidate、Release或provider语义，合法v2由Doctor给出非阻塞、能力受限的迁移提示。Product live声明使用v3 `product.verification`高级provider与独立Browser能力；外部Workspace在正式版发布安装后由各自authority迁移，兼容reader不依赖人工删除时点。Task Verification从closed Request与current声明/provider形成内容寻址Plan，正式Execution Record绑定matching request/plan/provider/declaration/execution unit后才可提炼current Result；Task Environment保存实际准备结果，两者不复制对方authority。
+Project `preparation.yml` 描述已知环境准备配方，`verification.yml`使用v4测试地图描述稳定测试能力族。地图只登记测试族、适用scope、代码与测试位置、完整入口、选择提示和资源要求，不登记每个测试文件。Agent结合Task目标与当前改动选择并直接调用Maven、npm、Playwright、Browser、HTTP或项目自有runner；Task Verification Application不生成Plan、不执行测试，只保存或查询开发完成后的任务验证报告。Task Environment只保存自身准备结果，两者不复制对方authority。
 
-多Project Task仍只有一个聚合Content Target、Development policy/Candidate、Verification Result与immutable handoff，但每个Project独立拥有Verification Plan、declaration与Execution Record。policy投影从完整Project Plan集合形成一次capability preparation requirements并集；Result reconciliation在Project内要求Plan一致、Project间允许不同Plan，并以records或project coverage gaps精确覆盖有效Project。Current Knowledge同样保存按Project完整覆盖的最小dispositions；Task级状态只由完整集合确定性派生，不让单Project结论代表整个Task。
+多Project Task仍只有一个聚合Content Target和一个任务验证报告。报告保存每个Project实际使用的测试地图identity、检查与gap；Agent负责判断整体覆盖和结论，不让单Project通过代表整个Task。Current Knowledge继续保存按Project完整覆盖的最小dispositions，但不成为Task Verification固定前置。
 
 Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.mjs`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，raw TypeScript和Buildr test-only provider不发布。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
 
@@ -227,7 +226,7 @@ Product测试执行框架、Context contract、资源模型与新测试接入流
 
 门禁分类的完整说明见 [门禁分类与有界审计](governance-gate-taxonomy.md)。
 
-正式 Verification command 由同一 Plan execution unit解析有界 timeout，runner使用owned process group与observed lineage执行 TERM→grace→KILL和退出确认；open Execution Record只覆盖保存capability/phase/heartbeat/PID/PGID与有界输出摘要，terminal seal清除该快照并保留closed timeline/diagnostics。该运行态不建立事件历史、通用scheduler或第二执行状态表。
+Buildr Product自身的测试runner仍属于项目测试架构，可按Project需要管理timeout、process group、资源和测试上下文；它不是Task Verification Application，也不生成Task Verification专属Execution Record。
 
 ## 深入阅读
 

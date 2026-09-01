@@ -11,9 +11,8 @@ const ALLOWED_ENTRY_FIELDS = new Set(['taskId', 'environment', 'development', 'f
 const ALLOWED_TASK_FIELDS = new Set(['taskId', 'title', 'status', 'recordDigest']);
 const ALLOWED_ENVIRONMENT_FIELDS = new Set(['taskId', 'status', 'identity', 'receiptIdentity', 'receiptDigest', 'declarationIdentity', 'executionIdentity', 'reason', 'diagnosticRef']);
 const ALLOWED_DEVELOPMENT_FIELDS = new Set(['taskId', 'status', 'identity', 'receiptIdentity', 'handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'taskContextIdentity', 'contributionIdentity', 'reason', 'diagnosticRef']);
-const ALLOWED_FINISH_FIELDS = new Set(['taskId', 'status', 'runId', 'identity', 'resultIdentity', 'handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'deliveryStatus', 'deliveryRef', 'sourceTree', 'repositories', 'executionRecord', 'activation', 'environmentCleanup', 'diagnostics', 'reason', 'diagnosticRef']);
+const ALLOWED_FINISH_FIELDS = new Set(['taskId', 'status', 'runId', 'identity', 'resultIdentity', 'handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity', 'deliveryStatus', 'deliveryRef', 'sourceTree', 'repositories', 'activation', 'environmentCleanup', 'diagnostics', 'reason', 'diagnosticRef']);
 const ALLOWED_REPOSITORY_FIELDS = new Set(['selector', 'disposition', 'carrierIdentity', 'carrierRef', 'remote', 'targetBranch', 'deliveryStatus', 'finalRemoteRef']);
-const ALLOWED_EXECUTION_FIELDS = new Set(['recordId', 'identity', 'status', 'outcome', 'lifecycleStatus', 'evidenceIdentity']);
 const ALLOWED_SELF_BOOTSTRAP_FIELDS = new Set(['schemaVersion', 'status', 'taskId', 'runId', 'identity', 'resultIdentity', 'activationIdentity', 'planIdentity', 'carrierIdentity', 'deliveredRef', 'sourceTree', 'diagnosticRef', 'reason']);
 
 function closed(value, fields, label) {
@@ -115,19 +114,6 @@ function normalizeDevelopment(value, expectedTaskId, label) {
   };
 }
 
-function normalizeExecution(value, label) {
-  if (!value) return null;
-  closed(value, ALLOWED_EXECUTION_FIELDS, label);
-  return {
-    recordId: optionalText(value.recordId),
-    identity: identity(value.identity, `${label}.identity`),
-    status: optionalText(value.status),
-    outcome: optionalText(value.outcome),
-    lifecycleStatus: optionalText(value.lifecycleStatus),
-    evidenceIdentity: identity(value.evidenceIdentity, `${label}.evidenceIdentity`),
-  };
-}
-
 function normalizeRepositories(value, label) {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
@@ -149,7 +135,7 @@ function normalizeRepositories(value, label) {
 }
 
 function normalizeFinish(value, expectedTaskId, label) {
-  if (!value) return { status: 'unknown', taskId: expectedTaskId, runId: null, identity: null, resultIdentity: null, handoffIdentity: null, candidateIdentity: null, candidateGeneration: null, contentTargetIdentity: null, deliveryStatus: null, deliveryRef: null, sourceTree: null, repositories: [], executionRecord: null, activation: 'unknown', environmentCleanup: 'unknown', diagnostics: 'unknown', reason: 'finish-evidence-missing', diagnosticRef: null };
+  if (!value) return { status: 'unknown', taskId: expectedTaskId, runId: null, identity: null, resultIdentity: null, handoffIdentity: null, candidateIdentity: null, candidateGeneration: null, contentTargetIdentity: null, deliveryStatus: null, deliveryRef: null, sourceTree: null, repositories: [], activation: 'unknown', environmentCleanup: 'unknown', diagnostics: 'unknown', reason: 'finish-evidence-missing', diagnosticRef: null };
   closed(value, ALLOWED_FINISH_FIELDS, label);
   if (value.taskId != null && value.taskId !== expectedTaskId) throw new Error(`${label}.taskId does not match task entry.`);
   const resultIdentity = identity(value.resultIdentity || value.identity, `${label}.resultIdentity`);
@@ -167,7 +153,6 @@ function normalizeFinish(value, expectedTaskId, label) {
     deliveryRef: optionalSha(value.deliveryRef, `${label}.deliveryRef`),
     sourceTree: optionalSha(value.sourceTree, `${label}.sourceTree`),
     repositories: normalizeRepositories(value.repositories, `${label}.repositories`),
-    executionRecord: normalizeExecution(value.executionRecord, `${label}.executionRecord`),
     activation: optionalText(value.activation) || 'unknown',
     environmentCleanup: optionalText(value.environmentCleanup) || 'unknown',
     diagnostics: optionalText(value.diagnostics) || 'unknown',

@@ -7,8 +7,7 @@ import {
   parseProjectEnvironmentPreparation,
   projectEnvironmentPreparationScopeSelector,
 } from './domain/project-environment-preparation.mjs';
-import { registerTaskExecutionRecordApplication } from './application/task-execution-record-application.mjs';
-import { registerTaskVerificationApplication } from './application/task-verification-application.mjs';
+import { registerTaskVerificationApplication } from './application/task-verification-application.ts';
 import { registerTaskPlanningIdentityApplication } from './application/task-planning-identity-application.mjs';
 import { registerTaskDevelopmentApplication } from './application/task-development-application.mjs';
 import { registerContentTargetObserver } from './infrastructure/content-target-observer.mjs';
@@ -21,9 +20,7 @@ import { registerTaskRecordRepository } from './persistence/task-record-reposito
 import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
 import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';
-import { registerTaskExecutionRecordRepository } from './persistence/task-execution-record-repository.mjs';
-import { registerTaskExecutionRecordBodyStore } from './persistence/task-execution-record-body-store.mjs';
-import { registerTaskVerificationRepository } from './persistence/task-verification-repository.mjs';
+import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
 import { registerTaskDevelopmentRepository } from './persistence/task-development-repository.mjs';
 import { registerTaskFinishRepository } from './persistence/task-finish-repository.mjs';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
@@ -32,14 +29,12 @@ import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
 import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
-import { taskVerificationCommand } from './interfaces/cli/task-verification.mjs';
-import { taskExecutionRecordGcCommand, taskExecutionRecordInspectCommand, taskExecutionRecordListCommand, taskExecutionRecordRecoverCommand } from './interfaces/cli/task-execution-record.mjs';
+import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
 import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.mjs';
 import {
   createParentCoordinationHttpContribution,
   createTaskDevelopmentHttpContribution,
   createTaskEnvironmentHttpContribution,
-  createTaskExecutionRecordHttpContribution,
   createTaskOverviewHttpContribution,
   createTaskVerificationHttpContribution,
 } from './interfaces/http/task-lifecycle-core.mjs';
@@ -104,10 +99,6 @@ export const TASK_ENVIRONMENT_PERSISTENCE_READ = 'task-environment.persistence-r
 export const TASK_ENVIRONMENT_RUNTIME_PORT = 'task-environment.runtime-port';
 export const TASK_ENVIRONMENT_DECLARATION = 'task-environment.declaration';
 export const TASK_WORKTREE_PROVIDER = 'task-environment.worktree-provider';
-export const TASK_EXECUTION_RECORD_MODULE_ID = 'task-execution-record';
-export const TASK_EXECUTION_RECORD_APPLICATION = 'task-execution-record.application';
-export const TASK_EXECUTION_RECORD_PERSISTENCE_READ = 'task-execution-record.persistence-read';
-export const TASK_EXECUTION_RECORD_RUNTIME_PORT = 'task-execution-record.runtime-port';
 export const TASK_VERIFICATION_MODULE_ID = 'task-verification';
 export const TASK_VERIFICATION_APPLICATION = 'task-verification.application';
 export const TASK_VERIFICATION_PERSISTENCE_READ = 'task-verification.persistence-read';
@@ -187,29 +178,16 @@ const TASK_ENVIRONMENT_APPLICATION_METHODS = Object.freeze([
 const TASK_ENVIRONMENT_PERSISTENCE_METHODS = Object.freeze([
   'taskEnvironmentPath', 'readTaskEnvironmentPersistence', 'writeTaskEnvironmentPersistence', 'renderTaskEnvironmentReceipt',
 ]);
-const TASK_EXECUTION_RECORD_APPLICATION_METHODS = Object.freeze([
-  'openTaskExecutionRecord', 'inspectTaskExecutionRecord', 'listTaskExecutionRecords',
-  'listTaskExecutionRecordView', 'inspectTaskExecutionRecordView', 'inspectTaskExecutionRecordCompactView',
-  'readTaskExecutionRecordBodyFileView', 'sealTaskExecutionRecord', 'updateTaskExecutionRecordProgress', 'resolveTaskExecutionRecord',
-  'cleanupTaskExecutionRecord', 'gcTaskExecutionRecords', 'recoverTaskExecutionRecord',
-]);
-const TASK_EXECUTION_RECORD_PERSISTENCE_METHODS = Object.freeze([
-  'readTaskExecutionRecordPersistence', 'listTaskExecutionRecordPersistence', 'openTaskExecutionRecordPersistence',
-  'replaceTaskExecutionRecordPersistence', 'taskExecutionRecordRecentRank', 'listTaskExecutionRecordGcCandidates',
-  'deleteTaskExecutionRecordTombstonePersistence', 'taskExecutionRecordBodyFiles', 'publishTaskExecutionRecordBody',
-  'verifyTaskExecutionRecordBody', 'inspectTaskExecutionRecordBody', 'readTaskExecutionRecordBodyFile',
-  'cleanupTaskExecutionRecordBody',
-]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
-  'observeTaskVerificationDeclarations', 'inspectTaskVerification', 'deriveTaskVerificationPolicyInput', 'recordTaskVerification', 'reconcileTaskVerification', 'generateTaskVerificationPrompt',
+  'inspectTaskVerification', 'inspectTaskVerificationView', 'recordTaskVerification', 'generateTaskVerificationPrompt',
 ]);
 const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
-  'taskVerificationResultPath', 'readTaskVerificationResultPersistence', 'writeTaskVerificationResultPersistence', 'renderTaskVerificationResult',
+  'taskVerificationReportPath', 'readTaskVerificationReportPersistence', 'writeTaskVerificationReportPersistence', 'renderTaskVerificationReport',
 ]);
 const TASK_PLANNING_IDENTITY_APPLICATION_METHODS = Object.freeze(['inspectTaskPlanningIdentity']);
 const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
   'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'discoverTaskDevelopmentInput', 'beginTaskDevelopment',
-  'recordTaskDevelopmentPlanning', 'observeTaskDevelopment', 'recordTaskDevelopmentPolicy',
+  'recordTaskDevelopmentPlanning', 'observeTaskDevelopment',
   'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
   'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier', 'recordTaskParentPlan',
@@ -245,7 +223,7 @@ const TASK_FINISH_INTERNAL_METHODS = Object.freeze([
   'refreshTaskFinishMaintenance', 'acquireTaskFinishCurrentTargetLease', 'releaseTaskFinishCurrentTargetLease',
 ]);
 const TASK_TERMINAL_DELIVERY_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskTerminalDelivery', 'inspectTaskDevelopmentView', 'inspectTaskReviewView', 'inspectTaskVerificationView',
+  'inspectTaskTerminalDelivery', 'inspectTaskDevelopmentView', 'inspectTaskReviewView',
 ]);
 
 function pick(source, methods) {
@@ -338,54 +316,19 @@ function taskEnvironmentCliContributions() {
   ].map(Object.freeze));
 }
 
-function taskExecutionRecordCliContributions() {
-  return Object.freeze([
-    {
-      key: 'task execution-record list', surface: 'agent-machine', summary: '按 Task 返回紧凑、可移植的 Execution Record 列表。',
-      help: ['Usage: buildr task execution-record list --task <task-id> [--view <all|verification|finish>] [--target <canonical-workspace>] [--json]', '', '原终端不可用时按Task恢复同一次execution identity；只读取Execution Record，不写Verification Result或Finish current。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'list',
-      run: (runtime, context) => taskExecutionRecordListCommand(runtime, context.argv.slice(5)),
-    },
-    {
-      key: 'task execution-record inspect', surface: 'agent-machine', summary: '按 Task 与 record identity 回读状态、耗时、失败和证据摘要。',
-      help: ['Usage: buildr task execution-record inspect --task <task-id> --record <record-id> [--target <canonical-workspace>] [--json]', '', '回读同一record的lifecycle、timing、failure与evidence摘要；只读且不写Verification Result或Finish current。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'inspect',
-      run: (runtime, context) => taskExecutionRecordInspectCommand(runtime, context.argv.slice(5)),
-    },
-    {
-      key: 'task execution-record gc', surface: 'maintenance', summary: '按固定 retention、resolution 与 recent-count 规则执行 bounded Workspace ExecRecord GC；支持 dry-run，不扫描文件系统或清理执行资源。',
-      help: ['Usage: buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]', '', '按固定 retention、resolution 与 recent-count 规则选择 eligible records，复用单记录 cleanup，并删除到期 cleaned tombstone。', '不接受 Task/owner/path、force、retention override 或 failure disposition；不调用 Workspace Doctor。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'gc',
-      run: (runtime, context) => taskExecutionRecordGcCommand(runtime, context.argv.slice(5)),
-    },
-    {
-      key: 'task execution-record recover', surface: 'agent-machine', summary: '按registered producer的完整终态证据补seal Verification或Task Finish Execution Record。',
-      help: ['Usage: buildr task execution-record recover --task <task-id> --record <record-id> [--summary <file> | --authorize-unknown-outcome] [--target <canonical-workspace>] [--json]', '', '--summary只接受matching Buildr-owned Verification transient summary，或该Finish invocation精确diagnostics summary；补seal原record而不重跑。', 'Task Finish recovery只读核对matching current/terminal Finish authority，不改写Finish current、delivery、Environment或Task terminal，并只清理该invocation evidence。', '--authorize-unknown-outcome仅适用于Verification：它不证明原结果，会终结原record并可能使仍存活producer的后续seal失败；Task Finish必须有terminal evidence。', '不接受outcome、files、locator、owner、producer、retry、timeout、process ID、SQL或cleanup shell。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'execution-record' && runtimeId === 'recover',
-      run: (runtime, context) => taskExecutionRecordRecoverCommand(runtime, context.argv.slice(5)),
-    },
-  ].map(Object.freeze));
-}
-
 function taskVerificationCliContributions() {
   return Object.freeze([
     {
-      key: 'task verification inspect', surface: 'agent-machine', summary: '只读返回单一 current slot、response-only resultDigest 与 target/declaration 派生 applicability；未提供 current target 时 target 轴为 unknown。',
-      help: ['Usage: buildr task verification inspect <task-id> [--target-identity <identity>] [--target <canonical-workspace>] [--json]', '', '只读返回单一 current slot、response-only resultDigest 与 target/declaration 派生 applicability；未提供 current target 时 target 轴为 unknown。'],
+      key: 'task verification inspect', surface: 'agent-machine', summary: '读取开发完成后保存的任务验证报告。',
+      help: ['Usage: buildr task verification inspect <task-id> [--content-identity <identity>] [--target <canonical-workspace>] [--json]', '', '报告包含实际检查、选择范围、结果、未覆盖项和结论；开发过程中的临时测试不进入该报告。'],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'inspect',
       run: (runtime, context) => taskVerificationCommand(runtime, 'inspect', context.argv.slice(5)),
     },
     {
-      key: 'task verification record', surface: 'agent-machine', summary: '只接收完整 current facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。',
-      help: ['Usage: buildr task verification record <task-id> --target-identity <identity> --target-summary <text> [--capability <project>/<capability>::<passed|failed>::<fact> ...] [--coverage-gap <scope>::<summary> ...] --outcome <passed|not-passed> --summary <text> [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]', '', '只接收完整 current facts 并原子整值替换 current；declaration identities 由 Application 从 Task scope 与 Project registry 读取，调用方不能提交。', '完整 stdout/stderr、耗时、临时路径、Environment Receipt、applicability、revision、proceed/blocked 或 Task status 不属于 Result。'],
+      key: 'task verification record', surface: 'agent-machine', summary: '保存一份绑定当前内容版本的有意义任务验证报告。',
+      help: ['Usage: buildr task verification record <task-id> --report <json-file> [--target <canonical-workspace>] [--json]', '', 'Agent 直接调用项目命令、Playwright、Browser 或 HTTP 工具完成验证后提交报告；Application 不生成计划或代跑测试。'],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'record',
       run: (runtime, context) => taskVerificationCommand(runtime, 'record', context.argv.slice(5)),
-    },
-    {
-      key: 'task verification reconcile', surface: 'agent-machine', summary: '从matching terminal Verification Execution Record独立读取并对账current Result，不接受claimed capability facts。',
-      help: ['Usage: buildr task verification reconcile <task-id> --candidate-identity <identity> --candidate-generation <n> --target-identity <identity> --target-summary <text> --record <execution-record-id> ... [--coverage-gap <scope>::<summary> ...] [--declaration-root <task-environment-root>] [--target <canonical-workspace>] [--json]', '', '只从Task-owned terminal execution authority提炼facts；Candidate、target、declaration或body不匹配时零写入。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'verification' && runtimeId === 'reconcile',
-      run: (runtime, context) => taskVerificationCommand(runtime, 'reconcile', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }
@@ -748,48 +691,11 @@ export function createTaskEnvironmentModule(runtime, { agentRuntimeCapability = 
   });
 }
 
-export function createTaskExecutionRecordModule(runtime, { verificationExecutionSupport = null } = {}) {
-  return Object.freeze({
-    id: TASK_EXECUTION_RECORD_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ, ...(verificationExecutionSupport ? [verificationExecutionSupport] : [])]),
-    create(requires) {
-      const composition = taskPrivateComposition(runtime, requires);
-      registerTaskExecutionRecordRepository(composition);
-      registerTaskExecutionRecordBodyStore(composition);
-      registerTaskExecutionRecordApplication(composition);
-      const application = pick(composition, TASK_EXECUTION_RECORD_APPLICATION_METHODS);
-      const persistenceRead = pick(composition, [
-        'readTaskExecutionRecordPersistence', 'listTaskExecutionRecordPersistence',
-        'verifyTaskExecutionRecordBody', 'inspectTaskExecutionRecordBody', 'readTaskExecutionRecordBodyFile',
-      ]);
-      const testSupportProperties = Object.fromEntries([
-        'replaceTaskExecutionRecordPersistence', 'cleanupTaskExecutionRecordBody',
-      ].map((name) => [name, Object.freeze({
-        get: () => composition[name],
-        set: (value) => { composition[name] = value; },
-      })]));
-      return Object.freeze({
-        provides: {
-          [TASK_EXECUTION_RECORD_APPLICATION]: application,
-          [TASK_EXECUTION_RECORD_PERSISTENCE_READ]: persistenceRead,
-          [TASK_EXECUTION_RECORD_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_EXECUTION_RECORD_PERSISTENCE_METHODS, ...TASK_EXECUTION_RECORD_APPLICATION_METHODS]), testSupportProperties),
-        },
-        contributions: {
-          cli: taskExecutionRecordCliContributions(),
-          http: [createTaskExecutionRecordHttpContribution(TASK_RECORD_ID_SOURCE)],
-        },
-      });
-    },
-  });
-}
-
 export function createTaskVerificationModule(runtime, { verificationDeclaration = null } = {}) {
   return Object.freeze({
     id: TASK_VERIFICATION_MODULE_ID,
     requires: Object.freeze([
       TASK_RECORD_PERSISTENCE_READ,
-      TASK_ENVIRONMENT_APPLICATION,
-      TASK_EXECUTION_RECORD_APPLICATION,
       ...(verificationDeclaration ? [verificationDeclaration] : []),
     ]),
     create(requires) {
@@ -798,7 +704,7 @@ export function createTaskVerificationModule(runtime, { verificationDeclaration 
       registerTaskVerificationRepository(composition);
       registerTaskVerificationApplication(composition);
       const application = pick(composition, TASK_VERIFICATION_APPLICATION_METHODS);
-      const persistenceRead = pick(composition, ['taskVerificationResultPath', 'readTaskVerificationResultPersistence']);
+      const persistenceRead = pick(composition, ['taskVerificationReportPath', 'readTaskVerificationReportPersistence']);
       const testSupportProperties = {
         taskVerificationSerialize: Object.freeze({
           get: () => composition.taskVerificationSerialize,
@@ -841,7 +747,7 @@ export function createTaskDevelopmentModule(runtime) {
     id: TASK_DEVELOPMENT_MODULE_ID,
     requires: Object.freeze([
       TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_ENVIRONMENT_APPLICATION,
-      TASK_REVIEW_APPLICATION, TASK_VERIFICATION_APPLICATION, TASK_PLANNING_IDENTITY_APPLICATION,
+      TASK_REVIEW_APPLICATION, TASK_PLANNING_IDENTITY_APPLICATION,
     ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);
@@ -977,7 +883,6 @@ export function createTaskTerminalDeliveryModule(runtime) {
       TASK_RECORD_APPLICATION,
       TASK_DEVELOPMENT_APPLICATION,
       TASK_REVIEW_APPLICATION,
-      TASK_VERIFICATION_APPLICATION,
       TASK_FINISH_APPLICATION,
     ]),
     create(requires) {

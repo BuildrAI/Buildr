@@ -85,10 +85,10 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   const internalVerificationSource = writeSkill(root, 'internal-verification');
   await run([
     'skills', 'add', '--source', internalVerificationSource, '--scope', '.', '--target', root,
-    '--provides', 'buildr.task-verification@3',
+    '--provides', 'buildr.task-verification@4',
   ]);
   assert.equal(manifest(root).bindings.find((item) => item.capability === 'buildr.task-verification').provider, 'task-verification');
-  await run(['skills', 'bind', 'buildr.task-verification@3', '--provider', 'internal-verification', '--scope', '.', '--target', root]);
+  await run(['skills', 'bind', 'buildr.task-verification@4', '--provider', 'internal-verification', '--scope', '.', '--target', root]);
   await run(['builtin', 'uninstall', 'task-verification', '--target', root, '--reason', 'internal replacement']);
   const uninstallGit = await run(['builtin', 'uninstall', 'git-operations', '--target', root, '--reason', 'internal replacement']);
   assert.doesNotMatch(uninstallGit.stdout, /Capability dependency impact（写入前）/, 'unselected builtin must not report a false dependency impact');

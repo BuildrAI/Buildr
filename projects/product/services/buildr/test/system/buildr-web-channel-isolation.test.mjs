@@ -145,7 +145,6 @@ test('released Root中的健康legacy development实例不会被released启动�
   const legacy = createLocalWorkspaceServer(legacyRuntime, {
     productIdentity: developmentIdentity,
     webProfile: developmentProfile,
-    scheduledMaintenanceFactory: () => ({ start() {}, stop() {} }),
   });
   const ready = await legacy.ready;
   t.after(() => new Promise((resolve) => legacy.server.close(resolve)));

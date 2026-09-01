@@ -12,18 +12,13 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 
 function declaration() {
   return {
-    schemaVersion: 'buildr.project-verification/v3',
-    resources: [],
-    capabilities: [{
+    schemaVersion: 'buildr.project-verification/v4',
+    testing: [{
       id: 'docs.check',
       title: 'Documentation check',
       scope: { project: 'docs', services: ['guide'] },
-      proves: ['The guide has non-empty documentation.'],
-      evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['services/guide/**'] },
-      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' } },
-      environment: { requires: ['sh'] },
-      effects: { writes: [], externalSystems: [], authorization: 'implicit' },
-      resourceClaims: [],
+      purpose: 'The guide has non-empty documentation.', sourcePaths: ['services/guide/**'], testRoots: ['services/guide/test/**'],
+      full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: 'services/guide' }, requirements: ['sh'],
     }],
   };
 }
@@ -52,14 +47,9 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
 
   assert.equal(fs.existsSync(path.join(root, '.git')), false);
   const taskContext = runtime.readTaskRecordPersistence(root, 'publish-guide');
-  const declarationContext = runtime.observeTaskVerificationDeclarations(root, 'publish-guide', root);
   runtime.readTaskRecordPersistence = (_targetRoot, taskId) => {
     assert.equal(taskId, 'publish-guide');
     return taskContext;
-  };
-  runtime.observeTaskVerificationDeclarations = (_targetRoot, taskId) => {
-    assert.equal(taskId, 'publish-guide');
-    return declarationContext;
   };
   runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({
     ready: true,
@@ -95,11 +85,6 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   let development = runtime.observeTaskDevelopment(root, 'publish-guide', { changeDispositions: [], planningTargetIdentity });
   assert.equal(development.development.receipt.taskContext.changes.length, 0);
   assert.ok(development.development.receipt.contentTarget.components.every((item) => item.observer === 'buildr.filesystem-content-observer/v1'));
-  development = runtime.recordTaskDevelopmentPolicy(root, 'publish-guide', {
-    capabilities: [{ project: 'docs', capability: 'docs.check', required: true }],
-    coverageGaps: [],
-    overrides: [],
-  });
   const targetIdentity = development.development.receipt.contentTarget.identity;
   development = runtime.freezeTaskDevelopmentCandidate(root, 'publish-guide');
   assert.equal(development.status, 'frozen');
@@ -124,7 +109,7 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
     reviewType: 'completion',
     targetIdentity: candidate.identity,
     method: 'self',
-    reviewed: ['Task Candidate', 'Content Target', 'verification policy and facts'],
+    reviewed: ['Task Candidate', 'Content Target', 'task result'],
     uncovered: [],
     findings: [],
     conclusion: { outcome: 'ready', summary: 'The Candidate satisfies the Task intent.' },

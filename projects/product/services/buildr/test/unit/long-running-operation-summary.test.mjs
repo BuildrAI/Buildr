@@ -5,7 +5,6 @@ import {
   LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES,
   longRunningOperationSummary,
 } from '../../src/infrastructure/contracts/public-json.mjs';
-import { compactVerificationExecution } from '../../src/verification/application/verification-application.mjs';
 
 test('long-running summary 是有界 closed projection', () => {
   const summary = longRunningOperationSummary({
@@ -18,7 +17,7 @@ test('long-running summary 是有界 closed projection', () => {
     stages: Array.from({ length: 20 }, (_, index) => ({ id: `stage-${index}`, status: 'passed', stdout: 'secret' })),
     primaryFailure: { stage: 'tests', code: 'exit-1', message: '失败'.repeat(1_000), diagnostics: ['secret'] },
     cleanup: { status: 'passed', effects: ['secret'] },
-    recovery: { owner: 'task-execution-record', operation: 'inspect', taskId: 'task-1', runId: 'run-1', recordId: 'record-1', token: 'secret' },
+    recovery: { owner: 'release-transaction', operation: 'inspect', taskId: 'task-1', runId: 'run-1', recordId: 'record-1', token: 'secret' },
     checks: ['secret'],
     context: { path: '/private/path' },
   });
@@ -32,7 +31,7 @@ test('long-running summary 是有界 closed projection', () => {
   assert.equal(summary.output.bytes, Buffer.byteLength(`${JSON.stringify(summary)}\n`, 'utf8'));
   assert.ok(summary.output.bytes < LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES);
   assert.deepEqual(summary.recovery, {
-    owner: 'task-execution-record', operation: 'inspect', taskId: 'task-1', runId: 'run-1', recordId: 'record-1',
+    owner: 'release-transaction', operation: 'inspect', taskId: 'task-1', runId: 'run-1', recordId: 'record-1',
   });
   const serialized = JSON.stringify(summary);
   for (const forbidden of ['checks', 'context', 'stdout', 'diagnostics', 'effects', 'token', '/private/path']) assert.equal(serialized.includes(forbidden), false, forbidden);
@@ -43,39 +42,4 @@ test('long-running summary 不伪造 recovery 或非法状态', () => {
   assert.equal(summary.status, 'unknown');
   assert.equal(summary.terminal, false);
   assert.equal(summary.recovery, null);
-});
-
-test('matching active Verification投影running并指向同一Execution Record', () => {
-  const summary = compactVerificationExecution({
-    schemaVersion: 'buildr.verification-execution/v1', status: 'active', runId: 'verification-run-1',
-    environment: { taskId: 'demo-task', root: '/private/environment' }, checks: [],
-    executionRecord: {
-      status: 'active', recordId: 'record-1', runIdentity: 'verification-run-1', lifecycleStatus: 'open',
-      body: null, diagnostic: null,
-    },
-  });
-  assert.equal(summary.terminal, false);
-  assert.equal(summary.status, 'running');
-  assert.deepEqual(summary.recovery, {
-    owner: 'task-execution-record', operation: 'inspect', taskId: 'demo-task', runId: 'verification-run-1', recordId: 'record-1',
-  });
-  assert.equal(JSON.stringify(summary).includes('/private/environment'), false);
-});
-
-test('pre-admission preparation blocked保持null recovery并指向同一invocation full详情', () => {
-  const summary = compactVerificationExecution({
-    schemaVersion: 'buildr.verification-execution/v1',
-    status: 'failed',
-    checks: [],
-    executionRecord: null,
-    admission: { recovery: { planRequest: { schemaVersion: 'buildr.task-environment-plan-request/v1' } } },
-    error: { code: 'verification.preparation_blocked', message: 'Preparation is missing.' },
-  });
-
-  assert.equal(summary.primaryFailure.code, 'verification.preparation_blocked');
-  assert.match(summary.primaryFailure.message, /same verification run invocation with --detail full/u);
-  assert.match(summary.primaryFailure.message, /admission\.recovery\.planRequest/u);
-  assert.equal(summary.recovery, null);
-  assert.equal(JSON.stringify(summary).includes('planRequest'), true);
-  assert.equal(summary.admission, undefined);
 });

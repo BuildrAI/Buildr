@@ -38,7 +38,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /digest冲突，重新inspect/);
   assert.match(skill, /完整原始 `reportMarkdown`/);
   assert.match(skill, /有界执行事实图/);
-  assert.match(skill, /Task Record时点与终态.*Development\/Review\/Verification current摘要.*Execution Record\/Finish timing/);
+  assert.match(skill, /Task Record时点与终态.*Development\/Review\/Verification current摘要.*Finish timing/);
   assert.match(skill, /已有复盘是本次重新思考的证据之一，不是必须保留的结论/);
   assert.match(skill, /每次生成或重做复盘都主动判断是否存在确定性流程候选/);
   assert.match(skill, /closed输入、唯一Owner、明确停止条件、可验证结果与幂等\/有界恢复/);

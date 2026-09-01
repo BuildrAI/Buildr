@@ -32,8 +32,7 @@ import {
 import {
   VERIFICATION_APPLICATION,
   VERIFICATION_DECLARATION,
-  VERIFICATION_EXECUTION_SUPPORT,
-} from '../../src/verification/module.mjs';
+} from '../../src/verification/module.ts';
 import {
   SYSTEM_INSTALLATION_APPLICATION,
   SYSTEM_INSTALLATION_IDENTITY,
@@ -163,19 +162,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'project-verification',
-    requires: [TASK_ENVIRONMENT_DECLARATION],
-    provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION, VERIFICATION_EXECUTION_SUPPORT],
+    requires: [],
+    provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION],
     contributions: { cli: [], http: [], diagnostics: ['project-verification.diagnostics'] },
-    lifecycle: 'none',
-  }, {
-    id: 'task-execution-record',
-    requires: ['task-record.persistence-read', VERIFICATION_EXECUTION_SUPPORT],
-    provides: ['task-execution-record.application', 'task-execution-record.persistence-read', 'task-execution-record.runtime-port'],
-    contributions: {
-      cli: ['task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover'],
-      http: ['task-execution-record.http'],
-      diagnostics: [],
-    },
     lifecycle: 'none',
   }, {
     id: 'task-review',
@@ -199,9 +188,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-verification',
-    requires: ['task-record.persistence-read', 'task-environment.application', 'task-execution-record.application', VERIFICATION_DECLARATION],
+    requires: ['task-record.persistence-read', VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
-    contributions: { cli: ['task verification inspect', 'task verification record', 'task verification reconcile'], http: ['task-verification.http'], diagnostics: [] },
+    contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-planning-identity',
@@ -211,7 +200,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-development',
-    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-review.application', 'task-verification.application', 'task-planning-identity.application'],
+    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-review.application', 'task-planning-identity.application'],
     provides: ['task-development.application', 'task-development.persistence-read', 'task-development.runtime-port'],
     contributions: { cli: [], http: ['task-development.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -245,7 +234,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-terminal-delivery',
-    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-verification.application', 'task-finish.application'],
+    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-finish.application'],
     provides: [TASK_TERMINAL_DELIVERY_APPLICATION, TASK_TERMINAL_DELIVERY_RUNTIME_PORT],
     contributions: { cli: ['task delivery inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
@@ -294,9 +283,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
     'worktree create', 'worktree cleanup', 'worktree inspect',
-    'task execution-record list', 'task execution-record inspect', 'task execution-record gc', 'task execution-record recover',
     'task review inspect', 'task review record',
-    'task verification inspect', 'task verification record', 'task verification reconcile',
+    'task verification inspect', 'task verification record',
     'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept',
     'task next',
     'task finish inspect', 'task delivery inspect',
@@ -306,7 +294,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http', 'task-execution-record.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http',
     'task-review.http', 'task-retrospective.http', 'task-verification.http', 'task-development.http',
     'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
   ]);
@@ -466,14 +454,12 @@ test('Task 生命周期核心只保留模块内扁平技术层', () => {
     'src/domain/parent-coordination/parent-coordination.mjs',
     'src/domain/task-development/task-development.mjs',
     'src/domain/task-environment/task-environment.mjs',
-    'src/domain/task-execution-record/task-execution-record.mjs',
     'src/domain/task-planning-identity/task-planning-identity.mjs',
     'src/domain/task-verification/task-verification.mjs',
     'src/application/parent-coordination/parent-coordination-application.mjs',
     'src/application/task-development/task-development-application.mjs',
     'src/application/task-entry/task-entry-snapshot-application.mjs',
     'src/application/task-environment/task-environment-application.mjs',
-    'src/application/task-execution-record/task-execution-record-application.mjs',
     'src/application/task-overview/task-overview-application.mjs',
     'src/application/task-planning-identity/task-planning-identity-application.mjs',
     'src/application/task-verification/task-verification-application.mjs',

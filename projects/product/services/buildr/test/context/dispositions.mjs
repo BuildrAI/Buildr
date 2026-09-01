@@ -19,7 +19,6 @@ const entries = [
     'integration-task-read-models',
     'integration-task-coordination',
     'integration-project-daily-progress',
-    'integration-task-execution-records',
     'integration-task-environment',
     'integration-task-finish',
   ]),

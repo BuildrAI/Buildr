@@ -28,7 +28,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
-| Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish 与 Terminal Delivery 已迁入 `src/task/`，并由 `task/module.mjs` 显式注册；Bootstrap 只消费正式 runtime port | HTTP Controller 与 Diagnostic Read Model 通过模块 contribution 参与最终组装，不再由公共 Host 直连 Task 内部实现 |
+| Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish与Terminal Delivery由`src/task/`显式注册；Task Execution Record已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
 | Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Task Change、Task OpenSpec、System Publication 与 Project Verification 已由各自模块拥有 |
 | Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
 | System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
@@ -156,7 +156,7 @@ misc/
 
 ## `task` 模块
 
-`task/` 管理 Buildr 的任务及任务生命周期，包括 Task Record、Environment、Development、Review、Verification、Retrospective、Finish、Execution Record 和 Parent Coordination 等能力。
+`task/`管理Task Record、Environment、Development、Review、Verification、Retrospective、Finish和Parent Coordination等能力；不再包含Task Execution Record。
 
 这里的 `task` 是领域或功能模块名称，不只是 `domain/` 层。与 Task 相关的领域模型、应用用例、持久化映射和接口入口都归入 `task/`，再在模块内部按技术职责分层。
 
@@ -192,11 +192,11 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前已经迁移 Task Record、Review、Retrospective、Task 生命周期核心以及 Task Delivery/Finish。生命周期核心包括 Environment、Development、Verification、Execution Record、Planning Identity、Entry Snapshot、Overview 和 Parent Coordination；交付切片包括 Task Finish、Terminal Delivery、Delivery Carrier、Adaptation、Reconciliation、Activation、Cleanup、Maintenance、Finish diagnostics、execution evidence、retained/bootstrap recovery 与 Git delivery contribution。它们由 `task/module.mjs` 以独立 descriptor 组装，对 Bootstrap 只公开命名 Application、窄 Persistence Read/Internal capability、CLI/HTTP/Diagnostic contribution 和正式 runtime port。
+当前Task生命周期核心包括Environment、Development、Verification、Planning Identity、Entry Snapshot、Overview和Parent Coordination；Task Execution Record descriptor、runtime port与相关接口已删除。
 
 Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。Finish 的二十余个私有 Application 协作者集中在 `application/finish/`，Terminal Delivery Application 与单文件 Finish Repository 分别保持为 `application/task-terminal-delivery-application.mjs` 和 `persistence/task-finish-repository.mjs`，CLI 与 maintenance、retained cleanup、target lease driver 位于扁平的 `interfaces/cli/`、`interfaces/internal/`。旧 `src/application/task-finish/`、`src/application/task-terminal-delivery/`、`src/task/persistence/finish/` 和全局 Finish interfaces 不保留转发入口。
 
-`task-finish` descriptor 消费 current Task Development handoff、Task Environment、Execution Record 与 Task Record capability，继续拥有同一 Finish writer、交付副作用和恢复编排；`task-terminal-delivery` descriptor 只组合 Task、Development、Review、Verification 与 Finish read model，保持只读投影 authority。公共 CLI Host 从模块 contribution 取得 `task finish run|reconcile|inspect` 和 `task delivery inspect`，轻量 Finish inspect 仍直接组合同一新路径的 Repository/Application，不建立第二份 writer。通用 Git、进程、文件系统、网络、SQLite、锁和事务机制仍归全局 Infrastructure；迁移未改变公开 CLI、HTTP、JSON、Result/Receipt、SQLite schema、migration 顺序/checksum、远端交付、恢复、激活、清理或 writer authority。
+`task-finish`只消费自身需要的Task、Development与Environment事实并保存Finish Result；不消费或创建Task Execution Record。`task-terminal-delivery`保持只读投影authority。
 
 ## `workspace` 模块
 
@@ -218,9 +218,9 @@ Change、OpenSpec、Publication、Project Verification 和其他 Workspace 范�
 
 ## `verification` 模块
 
-`verification/` 拥有 Project Verification 的 declaration parsing/validation、capability execution、process/resource coordination、transient evidence 与 verification execution-record producer。`verification/application/verification-application.mjs` 是 Project Verification 用例入口，`verification/infrastructure/` 保存执行技术机制；Task Verification、Task Environment 和 Task Execution Record 仍由 `task/` 持有各自的 lifecycle、Result、Receipt 与 persistence authority。System Doctor 只通过 Verification 的 diagnostics adapter 观察 declaration，不再作为 parser/validator owner。
+`verification/`只拥有Project测试地图的parsing、validation与Application；测试执行由Agent调用Project工具，Task Verification报告归`task/`。Task Execution Record已删除。
 
-本轮迁移只改变内部 owner、目录和 import；公开 CLI/HTTP/JSON、Environment Receipt、Execution Record、Worktree evidence、SQLite、事务、锁、cleanup 顺序和 Verification 语义保持不变。完整 HTTP contract system、Ajv、DTO 生成与 typed client 仍属于后续 Change。
+本轮迁移删除Task Execution Record的CLI、HTTP、JSON、SQLite表和本机正文；其他专业authority保持独立。
 
 ## `agent-assets` 模块
 
@@ -691,7 +691,7 @@ current `release-<version>`模型使用以下协作边界；selection、Candidat
 | `tools/release` | 人工selection、Git provenance、readiness/convergence adapter | 输出baseline、selection chain、release HEAD/tree与closed findings |
 | `src/system/installation` | SemVer、package/version、release track、installation identity | 通过Domain/Application公开能力复用版本语义 |
 | `src/verification` | Product Candidate、execution evidence与唯一tarball | 消费精确release source，输出matching Candidate/artifact identity |
-| `src/task` | Task、Environment、Development、Verification、Finish、Execution Record、Parent | 只提供各Application的current read model，不保存release正文 |
+| `src/task` | Task、Environment、Development、Verification、Finish、Parent | 只提供各Application的current read model，不保存release正文 |
 | self-bootstrap runner | matching retained Activation与Diagnostics | 提供closed result/readback，不写Delivery或Publication |
 | Bootstrap | 唯一composition root | 只装配窄requires/provides与接口，不实现发布业务规则 |
 | protected `publish.yml` | tag、npm、dist-tag、GitHub Release、Registry readback | 消费matching context和唯一tarball，输出transaction evidence |
@@ -793,7 +793,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Change | `src/task/change/module.mjs`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
 | OpenSpec convergence | `src/task/openspec/module.mjs`、`src/task/openspec/application/` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
 | Publication | `src/system/publication/module.mjs`、`src/system/publication/application/`、HTTP contribution | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
-| Project Verification | `src/verification/application/`、`src/verification/infrastructure/`，由 Bootstrap 与 Task Verification 消费 | Project capability 选择、execution/evidence/resource coordination 与 declaration parser 归 Verification；Task Verification Result writer 仍归 Task | verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
+| Project Verification | `src/verification/application/`与`src/verification/domain/`，由Bootstrap和Task Verification消费 | 只校验、读取和更新Project测试地图；不选择或执行测试，不维护execution/evidence/resource lifecycle。Task验证报告writer仍归Task模块 | project/task verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
 
 ### 全局生产 residual 最终收敛
 
@@ -801,7 +801,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 | 原职责 | 最终 owner | Verification owner | 处置 |
 |--------|------------|--------------------|------|
-| Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、verification planner integration | `migrated` |
+| Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.mjs` | public-json-contracts system、architecture verification | `migrated` |
 | Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `migrated` |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.mjs` | Git Worktree contract、CLI architecture | `migrated` |

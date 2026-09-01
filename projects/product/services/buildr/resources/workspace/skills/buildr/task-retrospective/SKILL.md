@@ -17,7 +17,7 @@ description: 用户明确要求复盘已完成或已放弃的正式 Task，或�
 
 已有Result可以重做并完整替换；没有Result只是“尚未复盘”。同时读取 `disposition` 与 `currentDigest`；不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
 
-在复盘生成前建立一次有界执行事实图，只读取当前runtime可达且与效率、重复、等待、失败恢复或人机协作直接相关的最小事实：Task Record时点与终态、适用的Development/Review/Verification current摘要、相关Execution Record/Finish timing、当前session工具结果，以及已有current `reportMarkdown`。已有复盘是本次重新思考的证据之一，不是必须保留的结论。没有某类事实时标记缺口，不为补齐图谱遍历全部owner、读取完整日志或增加任务消耗；同一事实已在当前上下文可用时不重复回读。该图只存在于Agent任务上下文，不写入Result之外的store、Receipt、history或分析平台。
+在复盘生成前建立一次有界执行事实图，只读取当前runtime可达且与效率、重复、等待、失败恢复或人机协作直接相关的最小事实：Task Record时点与终态、适用的Development/Review/Verification current摘要、相关Finish timing、当前session工具结果，以及已有current `reportMarkdown`。已有复盘是本次重新思考的证据之一，不是必须保留的结论。没有某类事实时标记缺口，不为补齐图谱遍历全部owner、读取完整日志或增加任务消耗；同一事实已在当前上下文可用时不重复回读。该图只存在于Agent任务上下文，不写入Result之外的store、Receipt、history或分析平台。
 
 ## 2. 生成一份自由复盘
 

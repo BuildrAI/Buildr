@@ -7,12 +7,6 @@ import { createWorkspaceClient } from './workspace';
 import { createAgentAssetsClient } from './agentAssets';
 import { createRuntimeSystemClient } from './runtimeSystem';
 export type { ProjectResponse, WorkspaceResponse } from './workspace';
-export type {
-  TaskExecutionRecordBodyViewResponse,
-  TaskExecutionRecordDetailView,
-  TaskExecutionRecordsView,
-  TaskExecutionRecordView,
-} from './task-professional';
 export type { PublicationDetail, PublicationList, ReleaseAwareness } from './runtimeSystem';
 
 export { createApiClient } from './client';

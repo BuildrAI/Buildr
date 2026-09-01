@@ -26,7 +26,6 @@ import {
   startPreview,
   stopPreview,
 } from './preview-lifecycle.mjs';
-import { createBuildrWebScheduledMaintenance } from './scheduled-maintenance.mjs';
 
 export function registerWebInstanceLifecycle(runtime, options = {}) {
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
@@ -129,7 +128,6 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
     const secret = crypto.randomBytes(32).toString('hex');
     let state = null;
     let instance = null;
-    let scheduledMaintenance = null;
     let fallbackPort = null;
     try {
       const currentRecorded = readBuildrWebInstance(webProfile);
@@ -181,11 +179,6 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
             },
           });
           ready = await instance.ready;
-          if (!previewIdentity) {
-            scheduledMaintenance = (options.scheduledMaintenanceFactory || createBuildrWebScheduledMaintenance)(runtime);
-            scheduledMaintenance.start();
-            instance.server.once('close', () => scheduledMaintenance?.stop());
-          }
           break;
         } catch (error) {
           instance?.server.close();
@@ -232,7 +225,6 @@ export function registerWebInstanceLifecycle(runtime, options = {}) {
       releaseBuildrWebStartLock(startLock);
       if (state) clearBuildrWebInstance(state, webProfile);
       instance?.server.close();
-      scheduledMaintenance?.stop();
       const wrapped = new Error(`Buildr Web 启动失败：${error.message}`, { cause: error });
       wrapped.code = error.code || 'web_start_failed';
       wrapped.status = error.status;

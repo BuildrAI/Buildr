@@ -9,6 +9,7 @@ import { resolveControllerSourceRoot, resolveProductResource } from '../product-
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
 const MIGRATIONS_ROOT = resolveProductResource('product/src/infrastructure/sqlite/migrations');
 const BUSY_TIMEOUT_MS = 5_000;
+const RETIRED_TASK_EXECUTION_RECORDS_PATH = ['.buildr', 'local', 'task-execution-records'];
 let defaultMigrationScripts = null;
 
 function digest(bytes) {
@@ -123,6 +124,27 @@ function configure(database, { writable }) {
   } catch (error) {
     if (error.structuredStoreBusiness) throw error;
     throw sqliteFailure(error);
+  }
+}
+
+function cleanupRetiredTaskExecutionRecords(root) {
+  const target = path.join(root, ...RETIRED_TASK_EXECUTION_RECORDS_PATH);
+  if (!fs.existsSync(target)) return;
+  try {
+    const stat = fs.lstatSync(target);
+    const expected = path.join(fs.realpathSync(root), ...RETIRED_TASK_EXECUTION_RECORDS_PATH);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(target) !== expected) {
+      throw new Error('retired path is not an owned canonical directory');
+    }
+    fs.rmSync(target, { recursive: true, force: false });
+  } catch (error) {
+    throw structuredStoreError(
+      'workspace_store_retired_local_data_cleanup_failed',
+      `已删除Task Execution Record数据库结构，但旧本机正文目录清理失败：${error.message}`,
+      500,
+      { path: RETIRED_TASK_EXECUTION_RECORDS_PATH.join('/') },
+      '检查该目录ownership和权限后重试任意合法structured-store mutation。',
+    );
   }
 }
 
@@ -280,6 +302,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);
         validateAppliedMigrations(database, scripts, { allowPending: false });
+        if (scripts.at(-1)?.name === '0025_drop_task_execution_records.sql') cleanupRetiredTaskExecutionRecords(root);
       }
       return {
         root,

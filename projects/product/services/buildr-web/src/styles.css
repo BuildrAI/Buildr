@@ -1160,67 +1160,6 @@ button.table-action {
   display: none !important;
 }
 
-.execution-record-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.execution-record-card {
-  cursor: pointer;
-}
-
-.execution-record-card-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.execution-record-card-heading span,
-.execution-record-card small {
-  color: var(--soft-muted);
-}
-
-.execution-record-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.execution-record-body {
-  margin-top: 12px;
-}
-
-.execution-record-body-heading {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.execution-record-body pre {
-  max-height: min(48vh, 420px);
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--soft-line);
-  border-radius: 8px;
-  background: #f7f9f8;
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.execution-record-detail-modal .panel-heading {
-  margin-bottom: 12px;
-}
-
 .task-tab-bar {
   display: flex;
   flex-wrap: wrap;

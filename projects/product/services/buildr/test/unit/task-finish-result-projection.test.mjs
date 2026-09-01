@@ -56,12 +56,6 @@ function canonical(overrides = {}) {
     createdAt: '2026-08-13T00:00:00.000Z',
     updatedAt: '2026-08-13T00:00:01.000Z',
     completedAt: null,
-    executionRecord: {
-      status: 'blocked', recordId: 'record-1', outcome: 'blocked', lifecycleStatus: 'open', body: null,
-      transientCleanup: { status: 'retained', code: null, locator: '/private/transient' },
-      diagnostic: { code: 'quota', message: 'Resolve capacity.', details: { locator: '/private/database' } },
-      nextActions: ['resolve-capacity'],
-    },
     ...overrides,
   };
 }
@@ -70,7 +64,7 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   const compact = compactTaskFinishResult(canonical());
   assert.deepEqual(Object.keys(compact), [
     'schemaVersion', 'detail', 'runId', 'identity', 'status', 'currentPhase', 'deliveryCommit', 'phases', 'primaryFailure',
-    'resume', 'nextWorkflow', 'nextAction', 'currentFacts', 'rollover', 'reuseMode', 'pathCoverage', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing', 'executionRecord',
+    'resume', 'nextWorkflow', 'nextAction', 'currentFacts', 'rollover', 'reuseMode', 'pathCoverage', 'deliveryAdaptation', 'refs', 'delivery', 'completion', 'maintenance', 'occupancy', 'bootstrapRecovery', 'metrics', 'timing',
   ]);
   assert.equal(compact.schemaVersion, 'buildr.task-finish-compact-result/v1');
   assert.equal(compact.detail, 'compact');
@@ -80,7 +74,6 @@ test('compact Task Finish Result 使用closed字段并保留恢复事实', () =>
   assert.deepEqual(compact.primaryFailure.conflictPaths, ['src/conflict.mjs']);
   assert.equal(compact.refs.carrierIdentity, 'sha256-carrier');
   assert.deepEqual(compact.pathCoverage, { identity: 'sha256-coverage', counts: { total: 3, targetContained: 1, carrierChanged: 1, agentReviewedTarget: 1, missing: 0 } });
-  assert.equal(compact.executionRecord.recordId, 'record-1');
   const serialized = JSON.stringify(compact);
   for (const forbidden of ['/private/', 'checks', 'operations', 'observations', 'stdout', 'stderr', 'equivalence', 'locator']) {
     assert.equal(serialized.includes(forbidden), false, forbidden);

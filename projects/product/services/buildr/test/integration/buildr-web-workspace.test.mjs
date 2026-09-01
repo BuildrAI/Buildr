@@ -255,13 +255,13 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
   const source = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
   const actions = read('../buildr-web/src/app/AgentActionDrawer.tsx');
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
-  assert.match(source, /验证结果（Verification Result）/);
-  assert.match(source, /目标适用性/);
-  assert.match(source, /声明适用性/);
+  assert.match(source, /任务验证报告（Task Verification Report）/);
+  assert.match(source, /内容适用性/);
+  assert.match(source, /测试地图适用性/);
   assert.match(detail, /taskProfessionalApi\.verification\(currentTaskId, \{ signal \}\)/);
   assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
   assert.match(actions, /taskProfessionalApi\.verificationPrompt\(/);
-  assert.match(actions, /验证结果未被修改/);
+  assert.match(actions, /验证报告未被修改/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
 });
 

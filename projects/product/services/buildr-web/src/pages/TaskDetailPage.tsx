@@ -3,7 +3,7 @@ import { emptyParentCompletionDraft, parentCompletionInput } from './task-detail
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Input, Modal, Select } from 'antd';
-import { api, taskProfessionalApi, tasksApi, type ApiError, type TaskExecutionRecordsView } from '../api';
+import { api, taskProfessionalApi, tasksApi, type ApiError } from '../api';
 import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
 import { MarkdownHost } from '../components/MarkdownHost';
@@ -15,7 +15,6 @@ import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
 import { DevelopmentTab } from './task-detail/DevelopmentTab';
 import { EnvironmentTab } from './task-detail/EnvironmentTab';
 import { EvidenceTab } from './task-detail/EvidenceTab';
-import type { ExecutionRecordView } from './task-detail/ExecutionRecordsPanel';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
@@ -96,10 +95,6 @@ export function TaskDetailPage() {
   const [verificationData, setVerificationData] = useState<any>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
-  const [executionRecordView, setExecutionRecordView] = useState<ExecutionRecordView>('all');
-  const [executionRecordsData, setExecutionRecordsData] = useState<TaskExecutionRecordsView | null>(null);
-  const [executionRecordsLoading, setExecutionRecordsLoading] = useState(false);
-  const [executionRecordsError, setExecutionRecordsError] = useState<string | null>(null);
   const [retrospectiveData, setRetrospectiveData] = useState<any>(null);
   const [retrospectiveLoading, setRetrospectiveLoading] = useState(false);
   const [retrospectiveMutating, setRetrospectiveMutating] = useState(false);
@@ -118,8 +113,6 @@ export function TaskDetailPage() {
   const environmentRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
-  const executionRecordsRequestRef = useRef(0);
-  const executionRecordViewRef = useRef<ExecutionRecordView>('all');
   const retrospectiveRequestRef = useRef(0);
   const retrospectiveMutationRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
@@ -333,36 +326,6 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
-  const refreshExecutionRecords = useCallback(async (view: ExecutionRecordView = executionRecordViewRef.current) => {
-    const requestId = ++executionRecordsRequestRef.current;
-    const currentTaskId = taskId;
-    setExecutionRecordsLoading(true);
-    setExecutionRecordsError(null);
-    try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, `execution-records:${view}`, (signal) => (
-        taskProfessionalApi.executionRecords(currentTaskId, { view }, { signal })
-      ));
-      if (executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId && executionRecordViewRef.current === view) setExecutionRecordsData(next);
-    } catch (err) {
-      if (!isTaskReadCancelled(err) && executionRecordsRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setExecutionRecordsError(`${(err as ApiError).code || 'task_execution_records_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
-        setExecutionRecordsData(null);
-      }
-    } finally {
-      if (executionRecordsRequestRef.current === requestId) setExecutionRecordsLoading(false);
-    }
-  }, [taskId]);
-
-  const selectExecutionRecordView = useCallback((view: ExecutionRecordView) => {
-    executionRecordViewRef.current = view;
-    setExecutionRecordView(view);
-    setActiveTab('evidence');
-    void refreshReview();
-    void refreshVerification();
-    void refreshExecutionRecords(view);
-    window.setTimeout(() => document.getElementById('task-execution-records-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-  }, [refreshExecutionRecords, refreshReview, refreshVerification]);
-
   const refreshRetrospective = useCallback(async () => {
     const requestId = ++retrospectiveRequestRef.current;
     const currentTaskId = taskId;
@@ -423,10 +386,9 @@ export function TaskDetailPage() {
     if (tab === 'evidence') {
       void refreshReview();
       void refreshVerification();
-      void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshExecutionRecords, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -441,10 +403,6 @@ export function TaskDetailPage() {
     setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
-    executionRecordViewRef.current = 'all';
-    setExecutionRecordView('all');
-    setExecutionRecordsData(null);
-    setExecutionRecordsError(null);
     setRetrospectiveData(null);
     setBriefs([]);
     setCompleteSummary('');
@@ -461,7 +419,6 @@ export function TaskDetailPage() {
     environmentRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
-    executionRecordsRequestRef.current += 1;
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
     setDevelopmentLoading(false);
@@ -471,7 +428,6 @@ export function TaskDetailPage() {
     setEnvironmentLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
-    setExecutionRecordsLoading(false);
     setRetrospectiveLoading(false);
     setRetrospectiveMutating(false);
 
@@ -502,7 +458,6 @@ export function TaskDetailPage() {
     if (tab === 'evidence') {
       void refreshReview();
       void refreshVerification();
-      void refreshExecutionRecords();
     }
     if (tab === 'retrospective') void refreshRetrospective();
   };
@@ -1023,7 +978,6 @@ export function TaskDetailPage() {
         loading={developmentLoading}
         onRefresh={() => { void refreshDevelopment(); }}
         onSelectEvidence={() => selectTab('evidence')}
-        onSelectFinishExecutionRecords={() => selectExecutionRecordView('finish')}
       />
       <PrototypeTab
         active={activeTab === 'prototype'}
@@ -1043,14 +997,8 @@ export function TaskDetailPage() {
         verificationLoading={verificationLoading}
         reviewError={reviewError}
         verificationError={verificationError}
-        executionRecordView={executionRecordView}
-        executionRecordsData={executionRecordsData}
-        executionRecordsLoading={executionRecordsLoading}
-        executionRecordsError={executionRecordsError}
         onRefreshReview={() => { void refreshReview(); }}
         onRefreshVerification={() => { void refreshVerification(); }}
-        onSelectExecutionRecordView={selectExecutionRecordView}
-        onRefreshExecutionRecords={() => { void refreshExecutionRecords(); }}
         openAgentAction={openAgentAction}
       />
       <RetrospectiveTab

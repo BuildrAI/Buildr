@@ -18,7 +18,7 @@ test('全局与action帮助无需Task或Workspace', () => {
   const global = JSON.parse(run(['--help']).stdout);
   assert.equal(global.schemaVersion, 'buildr.task-development-driver-help/v1');
   assert.equal(global.action, null);
-  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'discover', 'begin', 'planning', 'observe', 'policy', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
+  assert.deepEqual(global.actions.map((item) => item.action), ['inspect', 'discover', 'begin', 'planning', 'observe', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier']);
   assert.deepEqual(global.discovery, ['--help', '<action> --help', '<action> --schema', '<action> --example']);
   assert.match(global.usage, /--compact \| --profile/);
 
@@ -41,10 +41,9 @@ test('schema与example输出closed input contract', () => {
   assert.deepEqual(JSON.parse(run(['inspect', '--example']).stdout).inputJson, {});
   const discover = JSON.parse(run(['discover', '--schema']).stdout);
   assert.deepEqual(discover.inputSchema.required, ['action']);
-  assert.deepEqual(discover.inputSchema.properties.action.enum, ['observe', 'policy']);
-  assert.equal(discover.inputSchema.properties.formalPlans.type, 'array');
+  assert.deepEqual(discover.inputSchema.properties.action.enum, ['observe']);
   assert.deepEqual(JSON.parse(run(['discover', '--example']).stdout).inputJson, { action: 'observe' });
-  assert.match(JSON.parse(run(['discover', '--help']).stdout).usage, /--plan <project>::<json-file>/);
+  assert.doesNotMatch(JSON.parse(run(['discover', '--help']).stdout).usage, /--plan/);
 
   const carrier = JSON.parse(run(['carrier', '--schema']).stdout);
   assert.deepEqual(carrier.inputSchema.required, ['handoffIdentity', 'candidateIdentity', 'candidateGeneration', 'contentTargetIdentity']);
@@ -58,7 +57,7 @@ test('发现路径在runtime dynamic import前返回', () => {
   const runtimeImport = source.indexOf("await import('../../../bootstrap/runtime.mjs')");
   assert.equal(discoveryExit >= 0, true);
   assert.equal(runtimeImport > discoveryExit, true);
-  const result = run(['policy', '--schema']);
+  const result = run(['observe', '--schema']);
   assert.equal(result.stderr, '');
 });
 
@@ -72,9 +71,9 @@ test('未知、缺失或歧义发现请求失败关闭', () => {
   }
 });
 
-test('discover拒绝非法Formal Plan文件映射且不进入Task mutation', () => {
-  const result = run(['discover', '--task', 'missing-task', '--target', '/tmp', '--input-json', '{"action":"policy"}', '--plan', 'invalid'], 1);
+test('discover拒绝已经退役的Verification plan输入且不进入Task mutation', () => {
+  const result = run(['discover', '--task', 'missing-task', '--target', '/tmp', '--input-json', '{"action":"observe"}', '--plan', 'invalid'], 2);
   const error = JSON.parse(result.stderr);
   assert.equal(error.schemaVersion, 'buildr.task-development-driver-error/v1');
-  assert.match(error.diagnostic.message, /--plan must be <project>::<json-file>/);
+  assert.match(error.diagnostic.message, /--plan 已从 Task Development 退役/);
 });

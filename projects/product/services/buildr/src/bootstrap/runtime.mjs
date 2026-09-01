@@ -15,7 +15,6 @@ import {
   TASK_ENVIRONMENT_RUNTIME_PORT,
   TASK_ENVIRONMENT_DECLARATION,
   TASK_WORKTREE_PROVIDER,
-  TASK_EXECUTION_RECORD_RUNTIME_PORT,
   TASK_VERIFICATION_RUNTIME_PORT,
   TASK_PLANNING_IDENTITY_RUNTIME_PORT,
   TASK_DEVELOPMENT_RUNTIME_PORT,
@@ -26,7 +25,6 @@ import {
   TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
   createTaskEnvironmentModule,
   createWorktreeProviderModule,
-  createTaskExecutionRecordModule,
   createTaskVerificationModule,
   createTaskPlanningIdentityModule,
   createTaskDevelopmentModule,
@@ -47,11 +45,7 @@ import { registerProductInvocation } from '../infrastructure/product-invocation/
 import { createPublicationModule } from '../system/publication/module.mjs';
 import { createOpenSpecModule } from '../task/openspec/module.mjs';
 import { createChangeModule } from '../task/change/module.mjs';
-import {
-  VERIFICATION_DECLARATION,
-  VERIFICATION_EXECUTION_SUPPORT,
-  createVerificationModule,
-} from '../verification/module.mjs';
+import { VERIFICATION_DECLARATION, createVerificationModule } from '../verification/module.ts';
 import * as webProfileContract from '../system/installation/contracts/web-profile.mjs';
 
 const RUNTIME_CONTEXT = new WeakMap();
@@ -145,8 +139,7 @@ export function createRuntime() {
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
     worktreeProviderCapability: TASK_WORKTREE_PROVIDER,
   }), TASK_ENVIRONMENT_RUNTIME_PORT);
-  registry.install(createVerificationModule(runtime, { taskEnvironmentDeclarationCapability: TASK_ENVIRONMENT_DECLARATION }));
-  installTaskRuntimeModule(runtime, registry, createTaskExecutionRecordModule(runtime, { verificationExecutionSupport: VERIFICATION_EXECUTION_SUPPORT }), TASK_EXECUTION_RECORD_RUNTIME_PORT);
+  registry.install(createVerificationModule(runtime));
   installTaskReviewModule(runtime, registry);
   installTaskRetrospectiveModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);

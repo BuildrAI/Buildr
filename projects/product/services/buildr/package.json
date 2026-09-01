@@ -58,10 +58,10 @@
   "scripts": {
     "test": "./test/verification/verify-buildr-product-fast",
     "test:fast": "./test/verification/verify-buildr-product-fast",
-    "test:unit": "node --test test/unit/*.test.mjs",
+    "test:unit": "node --test test/unit/*.test.mjs test/unit/*.test.ts",
     "test:component": "node --test test/component/*.test.mjs",
-    "test:contract": "node --test test/contract/*.test.mjs",
-    "test:integration": "node --test test/integration/*.test.mjs",
+    "test:contract": "node --test test/contract/*.test.mjs test/contract/*.test.ts",
+    "test:integration": "node --test test/integration/*.test.mjs test/integration/*.test.ts",
     "contracts:generate": "node tools/contracts/task-record-dto.mjs && node tools/contracts/task-professional-dto.mjs && node tools/contracts/runtime-system-dto.mjs",
     "contracts:check": "node tools/contracts/task-record-dto.mjs --check && node tools/contracts/task-professional-dto.mjs --check && node tools/contracts/runtime-system-dto.mjs --check",
     "contracts:generate:workspace": "node tools/contracts/workspace-agent-assets-dto.mjs",

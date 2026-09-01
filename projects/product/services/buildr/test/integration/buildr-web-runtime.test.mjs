@@ -76,7 +76,7 @@ test('released与development instance receipt和start lock绑定各自Web profil
   assert.equal(fs.existsSync(buildrWebInstancePath(development)), false);
 });
 
-test('正式 Web 生命周期启动scheduler，Task Preview生命周期完全不创建scheduled maintenance', async (t) => {
+test('正式Web与Task Preview生命周期均不创建后台maintenance scheduler', async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-local-app-maintenance-boundary-'));
   const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
   const previousPreview = process.env.BUILDR_LOCAL_APP_PREVIEW;
@@ -90,44 +90,28 @@ test('正式 Web 生命周期启动scheduler，Task Preview生命周期完全不
     fs.rmSync(base, { recursive: true, force: true });
   });
 
-  let formalCreated = 0;
-  let formalStarted = 0;
-  let formalStopped = 0;
   const formalRuntime = createRuntime();
   registerWebInstanceLifecycle(formalRuntime, {
     readProductIdentity: readCurrentProductIdentity,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
     ensureRegisteredTarget,
-    scheduledMaintenanceFactory: () => {
-      formalCreated += 1;
-      return { start: () => { formalStarted += 1; }, stop: () => { formalStopped += 1; } };
-    },
   });
   const formal = await formalRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  assert.equal(formalCreated, 1);
-  assert.equal(formalStarted, 1);
   await new Promise((resolve) => formal.server.close(resolve));
-  assert.equal(formalStopped, 1);
 
   process.env.BUILDR_LOCAL_APP_PREVIEW = JSON.stringify({
     schemaVersion: 'buildr.local-app-preview/v1',
     instance: 'test-preview',
     worktree: process.cwd(),
   });
-  let previewFactoryCalls = 0;
   const previewRuntime = createRuntime();
   registerWebInstanceLifecycle(previewRuntime, {
     readProductIdentity: readCurrentProductIdentity,
     assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
     createLocalWorkspaceServer,
     ensureRegisteredTarget,
-    scheduledMaintenanceFactory: () => {
-      previewFactoryCalls += 1;
-      throw new Error('Preview must not create scheduled maintenance.');
-    },
   });
   const preview = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  assert.equal(previewFactoryCalls, 0);
   await new Promise((resolve) => preview.server.close(resolve));
 });

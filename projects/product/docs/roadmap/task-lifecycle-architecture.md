@@ -602,7 +602,7 @@ Candidate 由 Development 冻结，不强制等于 Git commit。Finish 可以创
 
 ### Run、Result 与完成
 
-P0.5 不新增 Finish Receipt。Task Finish run/result v2 是一次窄 adapter execution evidence：current run作为唯一恢复owner保存规范化完整message，公开Result只投影subject与identity；成功时记录 handoff/Candidate/Content Target、carrier、目标、retained activation 与 cleanup 事实，失败时记录 terminal phase、真实错误与 `nextWorkflow`。Task Record、Development/Environment Receipt与Execution Record不复制完整message；Finish也不保存或改写 Development decision。
+P0.5不新增Finish Receipt。Task Finish Result保存必要交付、失败、cleanup与恢复事实，不再建立通用Task Execution Record。
 
 Finish 成功只证明 current handoff 已由内容等价 carrier 交付、目标与远端事实匹配、retained runtime 已按适用事实激活且 Environment 已处置。随后由主 Agent 调用 Task Manager `complete`；终态写入失败时只重试该 action，不重跑 Finish。P0.8 如需持久 delivery effects，必须另行以窄 Change 证明需求，迁移必要 active run/history reader，并删除被替代的旧 mutation path；不得预建 Finish Receipt 或通用状态机。
 
@@ -718,95 +718,21 @@ Review Result是canonical Workspace中的本地轻量evidence，不是新的life
 
 ### 定位
 
-> Task Verification 读取 Project 已声明的现有验证能力，执行与明确交付目标相关的检查，并维护一份 Task-scoped current Verification Result。
+> Task Verification是Project测试地图和开发完成后Task验证报告的产品边界，不是测试执行平台。
 
-它只回答“验证目标是什么、用了哪份声明、实际执行了什么、事实结果如何、整体结论是什么、对当前目标是否仍适用”。它不替代 Task Review、Task Environment 或业务验收，不决定风险是否可接受，也不写入 `proceed / blocked`、Task 顶层状态、Development Receipt 或 Candidate generation。
+### Project测试地图
 
-P0.4 交付 Result authority；P0.5 已把正式 consumer 切换为 Task Development。Development 先固定 policy，再请求对稳定 Content Target 的 Formal Verification，并只通过同一 Application reader 判断 target/declarations 与 policy facts 是否 current、完整。Task Finish 不再读取、补做或记录 Verification。
+Project根`verification.yml`使用`buildr.project-verification/v4`，只声明少量稳定测试体系：purpose、Project/Service scope、相关源码范围、测试根、完整command或Agent入口、选择指导和环境要求。它不列举每个测试文件，也不保存Task计划或运行结果。
 
-### Verification Capability Declaration
+Task Verification Skill指导Agent读取真实测试、构建脚本、CI和说明形成候选；Project Verification Application只提供`inspect|validate|update`，不理解项目、不自动生成内容。
 
-每个 Project 可以用根目录 `verification.yml` 声明自身及所属 Service 已存在的测试验证能力族，且只接受 `buildr.project-verification/v3`。Buildr 以Request/Plan选择affected/full command、Agent或provider入口，只引用已有能力，不根据技术栈发明测试，也不在Verification中开发缺失测试。
+### 执行与报告
 
-每项 capability 首版只保留：
+开发过程中，Agent直接调用Maven、npm、Playwright、Browser、HTTP或项目自有runner取得反馈，不写正式Task报告。开发完成后，Agent重新读取Task、实际改动和测试地图，自行选择任务相关测试、受影响Service完整低成本回归及适用环境冒烟，再直接调用工具执行。
 
-| 信息 | 内容 |
-|---|---|
-| identity | Project 内稳定 capability id，可选 title |
-| scope | 明确的 Project 与 Service scope；空 Service 列表表示 Project-wide |
-| invocation | 有界 `command` 的 argv/cwd，或有界 `agent` instructions |
-| applicability | Project-relative path patterns，以及确有需要时的条件说明 |
-| proves | 该能力实际能够证明的事实 |
-| target policy | capability `usableFor` + Request/Plan + explicit Task override |
-| optional boundaries | 确有需要时的 environment、effects、authorization 与 resource claims |
+Task Verification Application只提供`record|inspect`。Workspace SQLite按Task ID保存一份closed`buildr.task-verification-report/v1` current报告，包含Task scope、内容版本、测试地图identity、实际checks、selection、targets、结果、gaps、结论和完成时间。调用方内容版本或测试地图变化时，`inspect`派生`stale`；Application不自动重跑或改写报告。
 
-声明是 closed schema。旧 `mode`、`maturity`、`stages`、`enforcement`、`coverage`、`sources`、`dependsOn` 和 `supersedes` 不再读取。声明缺失或没有适用能力时只形成 coverage gap；不得自动创建测试，也不得把 gap 改写成通过。声明存在但无效时 fail closed，不能执行其中能力。
-
-第一版不固化 `minimal / affected / candidate` 等通用验证层级，不建设通用 DAG、调度器或资源平台。现有 Product DAG 只保留在自身 test harness；production runner 按显式 capability 列表执行。资源协调只在真实 capability 声明 claim 时启用，是 execution 实现细节，不是 lifecycle authority。
-
-### Execution Evidence
-
-`verification run --project <project> --capability <id> --target-identity <identity>` 只执行显式选择的 command capability，并在 provider-owned 临时目录产生 transient `buildr.verification-execution/v1` evidence，不提供 caller-managed output writer。`effects.authorization: explicit` 与 explicit resource 分别要求精确 capability/resource 授权。完整 stdout/stderr、命令、耗时、临时路径、授权、资源获取和诊断都留在 execution evidence，不复制进current Result。
-
-Execution 完成与 Result 发布分开：
-
-- 所有选中能力得到终态事实后，caller 才能提炼完整 Result；
-- 中断、进程未形成终态或 Result 写入失败时，不覆盖 current Result；
-- execution evidence在消费后按现有cleanup边界清理，不作为current authority；
-- Agent invocation 可以形成事实，但 Development/Finish 都不能伪造或代替该专业执行。
-
-### Current Task Verification Result
-
-每个Task在Workspace SQLite中只有一个current Verification row，schema为`buildr.task-verification-result/v1`。
-
-| 字段 | 最小事实 |
-|---|---|
-| Task | `taskId` |
-| target | 明确、opaque 的 Content Target identity 与简短目标说明 |
-| declarations | 实际采用的 Project、声明路径与由 Application 观察得到的声明 identity |
-| capabilities | 实际执行的 Project/capability、`passed / failed` 与精炼事实 |
-| gaps | 没有能力或未覆盖 scope 的 coverage gap |
-| conclusion | `passed / not-passed` |
-| completion | `completedAt` |
-
-Result 不保存 stdout/stderr、临时路径、Environment Receipt、执行资源、用户风险决定、任务推进决定或 Candidate generation。它也不保存 history、持久 revision、局部 patch、merge/CAS 协议。
-
-Task Verification Application 是该 slot 的唯一 writer/reader：
-
-- `record` 从当前 Task 与 Project registry 解析 scope，并自行读取、校验和计算 declaration identity；CLI、Skill 或 caller 不能注入 declaration digest；
-- 每次 record 都校验完整 closed Result，然后用临时文件、rename 和写后回读执行整值原子替换；
-- 序列化、写入、rename 或写后验证失败时回滚到原 current，不能留下半份或覆盖已确认结果；
-- `inspect` 同时返回 stored Result 与派生 applicability，不改写持久文件。
-
-Applicability 只有 `current / stale / unknown`：
-
-- 没有 Result 时为 `unknown`；
-- caller 提供的当前 target identity 与 stored target 不一致时为 `stale`；
-- 当前 Project declaration identity 与 stored identity 不一致、声明缺失或无效时为 `stale`；
-- 两者都匹配时为 `current`。
-
-目标或声明变化不会静默刷新 Result。Service scope 与 capability identity 都按当前 Project declaration 校验；多 Project Task 分别绑定各自 declaration identity。
-
-### 共享 consumer
-
-CLI、`task-verification` Skill、Buildr Web“证据”视图的验证结果区块和 Task Development 都调用同一个 Task Verification Application：
-
-- CLI 提供稳定的 `task verification inspect|record` JSON family；
-- Skill 负责选择已有能力、运行 transient execution、提炼完整 Result，并在不存在能力时报告 coverage gap；
-- Buildr Web 只读投影 current Result 与 applicability，并提供受限 Agent prompt，不建立第二 writer；
-- Task Development 形成 policy、请求 Formal Verification，并只消费绑定当前 Content Target/declarations 且具备全部 policy facts 或 coverage gaps 的 Result。`not-passed`/gap 不阻止 Candidate freeze，但没有精确风险接受时阻止 `proceed`。
-
-Task Verification 不创建 Candidate、不递增 generation、不改 Task 状态，也不保存 `proceed / blocked` 或用户风险决定。Task Finish 只消费研发交接，Formal Verification execution count 为 0。
-
-Application 在 canonical Workspace 写 current Result 后，retained source clean 继续按既定 Workspace Local Data Store 边界排除未 staged 的 `.buildr/**`；源码/文档 dirty 与 staged metadata 仍阻塞。Finish 不 stage、commit、发布、修改或丢弃 metadata，exact owned-path publication 仍由 P0.7 单独实现。
-
-### 副作用与授权
-
-普通本地测试、自然退出的临时文件和隔离 fixture 属于 capability 声明的常规 effects。涉及外部系统、共享环境或持久业务数据时，声明必须显式写明边界并要求 explicit authorization；凭证不进入声明或 Result。Task Environment 继续拥有长期进程、端口和动态资源的准备与清理，Verification 只使用已经授权的有界能力。
-
-### 建设形态
-
-P0.4 保持 **Project declaration + transient execution + current Task Result + 一个 Application authority**。同一 Change 完成旧 v1 声明、固定 assurance、旧 run schema、旧 plan/DAG lifecycle、旧 Finish summary 输入与重复文档的迁移或删除，不留下双 writer、双 schema 或兼容 mutation path。
+Task Verification不生成Plan、不统一执行测试、不创建Execution Record、Candidate或风险授权，也不决定Task完成。Task Development和Task Finish不读取或消费该报告。
 
 ## 任务复盘（Task Retrospective）
 

@@ -11,7 +11,7 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 const projectTestingSkill = read('resources/workspace/skills/buildr/project-testing/SKILL.md');
 const testingModel = read('resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md');
 const taskVerificationSkill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
-const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v3.md');
+const taskVerificationReference = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md');
 const taskVerificationTemplate = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
 const taskTriage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const buildrSkill = read('package/targets/runtime/skills/buildr/SKILL.md');
@@ -76,21 +76,20 @@ test('共享helper改动先检查调用面并运行最低成本兼容canary', ()
   for (const required of [
     '多个action、状态或公共入口复用的validation/helper',
     '枚举真实调用面', '既有错误类型、诊断顺序与公共结果',
-    '`plan-only`/`dry-run` changed-plan reasons', '成本最低的既有canary',
-    '按最低充分原则扩大focused regression', '最终affected Formal Verification',
+    '项目现有changed-plan理由', '成本最低的既有canary',
+    '按最低充分原则扩大focused regression', '开发完成后的任务验证报告',
   ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
-  assert.match(projectTestingSkill, /不能把plan preview或canary结果冒充Task Verification Result/);
-  assert.doesNotMatch(projectTestingSkill, /固定.*分钟|自动.*Formal Verification|跳过.*Formal Verification/);
+  assert.match(projectTestingSkill, /不能把临时canary结果冒充开发完成后的任务验证报告/);
+  assert.doesNotMatch(projectTestingSkill, /固定.*分钟|自动.*Task Verification|跳过.*Task Verification/);
 });
 
 test('测试建设与 Task Verification 路由保持分离', () => {
   assert.match(taskTriage, /测试框架.*`project-testing`/s);
-  assert.match(taskTriage, /selected `buildr\.task-verification\/v3` provider/);
+  assert.match(taskTriage, /selected `buildr\.task-verification\/v4` provider/);
   assert.match(buildrSkill, /开发测试 \| `project-testing` Skill；无 Result、Receipt 或 provider contract/);
-  assert.match(buildrSkill, /运行已有测试.*`buildr\.task-verification\/v3` selected provider；不开发测试/);
-  assert.match(taskVerificationSkill, /不用于设计测试框架[、或]开发测试[\s\S]*project-testing/);
-  assert.match(taskVerificationSkill, /入口命名、成本或分层不合理时报告测试建设 gap/);
-  assert.match(taskVerificationReference, /复杂 Product 可使用 provider/);
+  assert.match(buildrSkill, /Project测试地图.*`buildr\.task-verification\/v4` selected provider/);
+  assert.match(taskVerificationSkill, /不在本技能中生成框架或测试/);
+  assert.match(taskVerificationReference, /不列举每个测试文件/);
 });
 
 test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除普通临时 Workspace', () => {
@@ -102,12 +101,10 @@ test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除�
   assert.match(buildrSkill, /不扩大为对普通临时 Workspace 的自动删除策略/);
 });
 
-test('声明指导只使用 project verification v3 capability family schema', () => {
-  assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v3');
-  assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['capabilities', 'resources', 'schemaVersion']);
-  const capabilityKeys = Object.keys(taskVerificationTemplate.capabilities[0]).sort();
-  for (const forbidden of ['primaryIntent', 'executionBoundary', 'orchestrationScenarios', 'targetDuration', 'primaryEvidenceOwner']) {
-    assert.equal(capabilityKeys.includes(forbidden), false, `verification template must not add ${forbidden}`);
-  }
-  assert.match(taskVerificationReference, /不要写 `applicability`、`requiredForDelivery`、测试文件清单、通用 DAG/);
+test('声明指导只使用 project verification v4 testing map', () => {
+  assert.equal(taskVerificationTemplate.schemaVersion, 'buildr.project-verification/v4');
+  assert.deepEqual(Object.keys(taskVerificationTemplate).sort(), ['schemaVersion', 'testing']);
+  const testingKeys = Object.keys(taskVerificationTemplate.testing[0]).sort();
+  for (const required of ['id', 'scope', 'purpose', 'sourcePaths', 'testRoots', 'full', 'requirements']) assert.equal(testingKeys.includes(required), true, required);
+  assert.match(taskVerificationReference, /不是测试文件清单、执行计划或运行结果/);
 });

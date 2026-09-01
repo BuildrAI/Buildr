@@ -29,10 +29,9 @@ function finishEntry(overrides = {}) {
 function handoff() {
   return {
     identity: ids.handoff,
-    candidate: { identity: ids.candidate, generation: 1, contentTargetIdentity: ids.target, taskContextIdentity: 'sha256-context', policyIdentity: 'sha256-policy' },
+    candidate: { identity: ids.candidate, generation: 1, contentTargetIdentity: ids.target, taskContextIdentity: 'sha256-context' },
     gates: {
       planning: { disposition: 'not-applicable', targetIdentity: ids.plan, summary: '无需独立方案审查。', source: 'change guard' },
-      verification: { resultDigest: ids.result, targetIdentity: ids.target, outcome: 'passed', applicability: 'current' },
       completion: { resultDigest: 'sha256-completion-result', targetIdentity: ids.candidate, outcome: 'ready', applicability: 'current' },
     },
     decision: { outcome: 'proceed', risks: [] },
@@ -45,7 +44,6 @@ function association() {
     gates: {
       planning: { status: 'gate-disposition', disposition: 'not-applicable', targetIdentity: ids.plan, summary: '无需独立方案审查。', source: 'change guard' },
       completion: { status: 'adopted-at-delivery', targetIdentity: ids.candidate, resultDigest: 'sha256-completion-result', outcome: 'ready' },
-      verification: { status: 'verified-at-delivery', targetIdentity: ids.target, resultDigest: ids.result, outcome: 'passed' },
     },
     observedAt: '2026-08-05T00:00:06.000Z', source: 'task-finish-application',
   };
@@ -53,7 +51,7 @@ function association() {
 
 function runtimeFor(status = 'completed', finish = finishEntry()) {
   const immutable = handoff();
-  const receipt = { taskContext: { identity: 'sha256-context' }, planning: { identity: ids.plan, nodes: [] }, contentTarget: { identity: ids.target }, verificationPolicy: { identity: 'sha256-policy' }, candidate: immutable.candidate, handoffs: [immutable] };
+  const receipt = { taskContext: { identity: 'sha256-context' }, planning: { identity: ids.plan, nodes: [] }, contentTarget: { identity: ids.target }, candidate: immutable.candidate, handoffs: [immutable] };
   const runtime = {
     inspectTaskRecord: () => ({ record: { taskId: TASK, status, result: status === 'completed' ? { noChange: false } : null } }),
     inspectTaskDevelopment: () => ({ operation: 'inspect', status: 'inspected', development: { receipt } }),
@@ -61,7 +59,6 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
       planning: { present: false, result: null, resultDigest: null, applicability: null },
       completion: { present: true, resultDigest: 'sha256-completion-result', applicability: 'unknown', result: { targetIdentity: ids.candidate, conclusion: { outcome: 'ready' } } },
     } }),
-    inspectTaskVerification: () => ({ slot: { present: true, resultDigest: ids.result, applicability: { status: 'unknown' }, result: { target: { identity: ids.target }, conclusion: { outcome: 'passed' } } } }),
     inspectTaskFinishReadModel: () => finish ? ({ state: 'terminal', result: finish.result, completion: { ...finish.completion, runId: finish.result.runId, completedAt: finish.result.completedAt, finalRemoteRef: finish.result.delivery.finalRemoteRef, targetBranch: finish.result.identity.targetBranch, cleanup: finish.result.completion.cleanup, association: association() }, diagnostics: [] }) : ({ state: 'none', result: null, completion: null, diagnostics: [] }),
   };
   registerTaskTerminalDeliveryApplication(runtime);
@@ -71,17 +68,14 @@ function runtimeFor(status = 'completed', finish = finishEntry()) {
 test('terminal composer separates delivered snapshot from live applicability', () => {
   const runtime = runtimeFor();
   runtime.inspectTaskReview = () => ({ slots: { planning: { present: false }, completion: { present: true, resultDigest: 'sha256-new-completion', result: { targetIdentity: 'sha256-new-target', conclusion: { outcome: 'changes-required' } } } } });
-  runtime.inspectTaskVerification = () => ({ slot: { present: true, resultDigest: 'sha256-new-verification', result: { target: { identity: 'sha256-new-target' }, conclusion: { outcome: 'failed' } } } });
   const projection = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
   assert.equal(projection.status, 'delivered');
   assert.equal(projection.delivered, true);
   assert.equal(projection.delivery.finalRemoteRef, 'abc123');
   assert.equal(projection.associations.planning.status, 'gate-disposition');
   assert.equal(projection.associations.completion.status, 'adopted-at-delivery');
-  assert.equal(projection.associations.verification.status, 'verified-at-delivery');
   assert.equal(projection.reviews.slots.completion.resultDigest, 'sha256-new-completion');
   assert.equal(projection.associations.completion.resultDigest, 'sha256-completion-result');
-  assert.equal(projection.associations.verification.resultDigest, ids.result);
 });
 
 test('terminal composer does not gate new v2 delivery on deprecated product install fields', () => {
@@ -129,7 +123,7 @@ test('terminal composer covers active, no-change, abandoned, unproven and identi
   assert.equal(unavailable.inspectTaskTerminalDelivery('/workspace', TASK).status, 'completed');
 });
 
-test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
+test('研发与审查Tab只读取自身节点与已写交付关联', () => {
   const assertNoAggregate = (runtime) => {
     runtime.inspectTaskTerminalDelivery = () => { throw new Error('专业 Tab 不得调用完整 terminal 聚合器。'); };
   };
@@ -139,7 +133,6 @@ test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
   const inspectDevelopment = developmentRuntime.inspectTaskDevelopment;
   developmentRuntime.inspectTaskDevelopment = (...args) => { developmentReads += 1; return inspectDevelopment(...args); };
   developmentRuntime.inspectTaskReview = () => { throw new Error('Development Tab 不得读取 Review。'); };
-  developmentRuntime.inspectTaskVerification = () => { throw new Error('Development Tab 不得读取 Verification。'); };
   assertNoAggregate(developmentRuntime);
   const development = developmentRuntime.inspectTaskDevelopmentView('/workspace', TASK);
   assert.equal(developmentReads, 1);
@@ -153,26 +146,12 @@ test('三个专业 Tab 只读取自身节点与已写交付关联', () => {
   let reviewDevelopmentReads = 0;
   const reviewDevelopment = reviewRuntime.inspectTaskDevelopment;
   reviewRuntime.inspectTaskDevelopment = (...args) => { reviewDevelopmentReads += 1; return reviewDevelopment(...args); };
-  reviewRuntime.inspectTaskVerification = () => { throw new Error('Review Tab 不得读取 Verification。'); };
   assertNoAggregate(reviewRuntime);
   const reviews = reviewRuntime.inspectTaskReviewView('/workspace', TASK);
   assert.equal(reviewReads, 1);
   assert.equal(reviewDevelopmentReads, 1);
   assert.equal(reviews.terminal.associations.completion.status, 'adopted-at-delivery');
 
-  const verificationRuntime = runtimeFor();
-  let verificationReads = 0;
-  const inspectVerification = verificationRuntime.inspectTaskVerification;
-  verificationRuntime.inspectTaskVerification = (...args) => { verificationReads += 1; return inspectVerification(...args); };
-  let verificationDevelopmentReads = 0;
-  const verificationDevelopment = verificationRuntime.inspectTaskDevelopment;
-  verificationRuntime.inspectTaskDevelopment = (...args) => { verificationDevelopmentReads += 1; return verificationDevelopment(...args); };
-  verificationRuntime.inspectTaskReview = () => { throw new Error('Verification Tab 不得读取 Review。'); };
-  assertNoAggregate(verificationRuntime);
-  const verification = verificationRuntime.inspectTaskVerificationView('/workspace', TASK);
-  assert.equal(verificationReads, 1);
-  assert.equal(verificationDevelopmentReads, 1);
-  assert.equal(verification.terminal.associations.verification.status, 'verified-at-delivery');
 });
 
 
@@ -191,7 +170,7 @@ test('direct completion needs no Finish association and never invents verified d
 });
 
 test('已完成任务隔离每种专业记录损坏且保留未完成任务错误', () => {
-  for (const method of ['inspectTaskDevelopment', 'inspectTaskReview', 'inspectTaskVerification']) {
+  for (const method of ['inspectTaskDevelopment', 'inspectTaskReview']) {
     const runtime = runtimeFor('completed', null);
     runtime[method] = () => { throw Object.assign(new Error('stored record invalid'), { code: 'record-invalid' }); };
     const result = runtime.inspectTaskTerminalDelivery('/workspace', TASK);
@@ -204,14 +183,12 @@ test('已完成任务隔离每种专业记录损坏且保留未完成任务错�
   }
 });
 
-test('审查和验证页不因无关旧研发记录损坏失去完成事实', () => {
+test('审查页不因无关旧研发记录损坏失去完成事实', () => {
   const runtime = runtimeFor('completed', null);
   runtime.inspectTaskDevelopment = () => { throw Object.assign(new Error('invalid development'), { code: 'development-invalid' }); };
-  for (const method of ['inspectTaskReviewView', 'inspectTaskVerificationView']) {
-    const result = runtime[method]('/workspace', TASK);
-    assert.equal(result.terminal.status, 'completed');
-    assert.equal(result.terminal.diagnostics[0].code, 'development-invalid');
-  }
+  const result = runtime.inspectTaskReviewView('/workspace', TASK);
+  assert.equal(result.terminal.status, 'completed');
+  assert.equal(result.terminal.diagnostics[0].code, 'development-invalid');
 });
 
 test('专业页的自身读取失败明确返回不可用诊断而非伪造未记录', () => {

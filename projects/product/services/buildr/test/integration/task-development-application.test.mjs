@@ -24,13 +24,11 @@ const test = createBuildrContextTest({
 
 function writeVerificationDeclaration(root) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v3',
-    resources: [],
-    capabilities: [{
+    schemaVersion: 'buildr.project-verification/v4',
+    testing: [{
       id: 'demo.check', title: 'Demo check', scope: { project: 'demo', services: [] },
-      proves: ['Demo content is readable.'], evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
-      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' } },
-      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
+      purpose: 'Demo content is readable.', sourcePaths: ['**'], testRoots: ['test/**'],
+      full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' }, requirements: ['sh'],
     }],
   }));
 }
@@ -40,7 +38,7 @@ function copyFixtureWorkspace(t, name) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'README.md'), '# Demo\n');
   writeVerificationDeclaration(root);
   fs.writeFileSync(path.join(root, 'projects', 'other', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [],
+    schemaVersion: 'buildr.project-verification/v4', testing: [],
   }));
   return { base, root };
 }
@@ -78,25 +76,8 @@ function fixture(t, taskId) {
   pinImmutableTaskRecord(runtime, root, taskId);
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
   runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
-  runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  const policy = runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: policy.development.receipt.contentTarget.identity };
-}
-
-function prePolicyFixture(t, taskId) {
-  const { root } = copyFixtureWorkspace(t, 'pre-policy');
-  const runtime = t.buildrContexts.application;
-  runtime.createTaskRecord(root, { taskId, title: 'Plan demo verification', intent: 'Derive policy from a formal plan.', projects: ['demo'], services: [], changes: [] });
-  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
-    ready: true, taskId: currentTask, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root,
-    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
-    scopes: [{ selector: 'project:demo', kind: 'project', sourcePath: 'projects/demo', executionRoot: path.join(root, 'projects', 'demo') }],
-  });
-  pinImmutableTaskRecord(runtime, root, taskId);
-  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Plan-first flow'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
   const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity, observed };
+  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
 }
 
 function changeFixture(t, taskId, initial = { availability: 'available', lifecycle: 'archived' }) {
@@ -133,17 +114,6 @@ function changeFixture(t, taskId, initial = { availability: 'available', lifecyc
   return { root, runtime, taskId, planningTargetIdentity, dispositions, setObserved(value) { observed = value; } };
 }
 
-function recordVerification(current, outcome = 'passed') {
-  return recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
-    targetIdentity: current.targetIdentity,
-    targetSummary: 'Demo Content Target',
-    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: outcome === 'passed' ? 'passed' : 'failed', facts: [outcome === 'passed' ? 'Demo check passed.' : 'Demo check failed.'] }],
-    coverageGaps: [],
-    conclusion: { outcome, summary: outcome === 'passed' ? 'Verified.' : 'Verification found a known failure.' },
-    declarationRoot: current.root,
-  });
-}
-
 function recordKnowledge(current, status = 'aligned') {
   const receipt = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receipt;
   return current.runtime.recordTaskDevelopmentKnowledge(current.root, current.taskId, {
@@ -155,79 +125,7 @@ function recordKnowledge(current, status = 'aligned') {
   });
 }
 
-function workspaceOnlyFixture(t, taskId) {
-  const { root } = copyFixtureWorkspace(t, 'workspace-only');
-  const runtime = t.buildrContexts.application;
-  runtime.createTaskRecord(root, { taskId, title: 'Develop workspace content', intent: 'Deliver a workspace-only formal Task.', projects: [], services: [], changes: [] });
-  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
-    ready: true,
-    taskId: currentTask,
-    receiptSchema: 'buildr.task-environment-receipt/v2',
-    workspaceRoot: root,
-    environmentRoot: root,
-    validationRoot: root,
-    scopes: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: root }],
-  });
-  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Workspace-only Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
-  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
-}
 
-test('discover从current facts生成observe/policy closed input且零写入', (t) => {
-  const current = fixture(t, 'current-input-discovery');
-  const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest;
-  const observe = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'observe' });
-  assert.equal(observe.schemaVersion, 'buildr.task-development-current-input/v1');
-  assert.deepEqual(observe.inputJson.changeDispositions, []);
-  assert.equal(observe.inputJson.planningTargetIdentity, current.planningTargetIdentity);
-  assert.deepEqual(observe.effects, []);
-
-  const policy = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'policy' });
-  assert.deepEqual(policy.inputJson, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  assert.equal(policy.facts.policyDisposition, 'current');
-  assert.deepEqual(policy.effects, []);
-  assert.equal(current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest, before);
-
-  const workspaceOnly = workspaceOnlyFixture(t, 'current-input-workspace-only');
-  const workspacePolicy = workspaceOnly.runtime.discoverTaskDevelopmentInput(workspaceOnly.root, workspaceOnly.taskId, { action: 'policy' });
-  assert.deepEqual(workspacePolicy.inputJson, {
-    capabilities: [],
-    coverageGaps: [{ scope: 'workspace', summary: 'Task 没有 Project/Service scope，当前没有可用的 workspace Verification capability。' }],
-    overrides: [],
-  });
-  assert.deepEqual(workspacePolicy.effects, []);
-});
-
-test('discover通过Task Verification只读投影Formal Plans且policy前next不先freeze', (t) => {
-  const current = prePolicyFixture(t, 'formal-plan-policy-discovery');
-  assert.equal(current.observed.next.owner, 'task-verification');
-  assert.equal(current.observed.next.action, 'plan-and-derive-policy');
-  const original = current.runtime.deriveTaskVerificationPolicyInput;
-  current.runtime.deriveTaskVerificationPolicyInput = (_root, taskId, input) => {
-    assert.equal(taskId, current.taskId);
-    assert.equal(input.targetIdentity, current.targetIdentity);
-    assert.equal(input.formalPlans[0].project, 'demo');
-    return {
-      inputJson: { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] },
-      selection: {
-        plans: [{ project: 'demo', identity: 'sha256-plan', requestIdentity: 'sha256-request', status: 'ready', declarationIdentity: 'sha256-declaration' }],
-        notSelectedCapabilities: [{ project: 'demo', capability: 'demo.browser', disposition: 'not-selected', reason: 'not-selected-by-plan' }],
-      },
-      nextActions: [],
-    };
-  };
-  try {
-    const before = current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest;
-    const result = current.runtime.discoverTaskDevelopmentInput(current.root, current.taskId, { action: 'policy', formalPlans: [{ project: 'demo', document: { schemaVersion: 'buildr.verification-plan/v1' } }] });
-    assert.equal(result.facts.policyDisposition, 'derived-from-formal-plans');
-    assert.equal(result.facts.notSelectedCapabilities[0].capability, 'demo.browser');
-    assert.deepEqual(result.effects, []);
-    assert.equal(current.runtime.inspectTaskDevelopment(current.root, current.taskId).development.receiptDigest, before);
-  } finally {
-    current.runtime.deriveTaskVerificationPolicyInput = original;
-  }
-});
 
 test('begin与planning省略完整snapshot时零写入失败关闭', (t) => {
   const current = fixture(t, 'planning-snapshot-required');
@@ -274,90 +172,39 @@ test('begin在Environment Receipt升级后重绑定最新schema并保留planning
   assert.equal(result.development.receipt.planning.identity, before.planning.identity);
 });
 
-test('Development result按保存事实给出单一建议方向且不自动推进', (t) => {
+test('Development与Task Verification报告保持独立', (t) => {
   const current = fixture(t, 'development-guidance');
   let result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
-  assert.equal(result.nextActions.length, 1);
-  assert.equal(result.formalVerificationReadiness.status, 'not-applicable');
-  assert.equal(result.next.owner, 'task-development');
+  assert.equal(Object.hasOwn(result, 'formalVerificationReadiness'), false);
   assert.equal(result.next.action, 'freeze');
 
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   const candidate = result.development.receipt.candidate;
-  const verification = recordVerification(current);
-  assert.equal(verification.slot.applicability.status, 'current', JSON.stringify(verification.slot, null, 2));
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  assert.equal(result.status, 'unchanged');
-  assert.equal(result.development.applicability.gates.verification?.applicability, 'current', JSON.stringify(result.development, null, 2));
-  assert.match(result.nextActions[0], /task-review/);
-
-  current.runtime.recordTaskReview(current.root, current.taskId, {
-    reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Current Candidate'], uncovered: [], findings: [],
-    conclusion: { outcome: 'ready', summary: 'Ready.' },
-  });
-  recordKnowledge(current);
-  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'All current gates are ready.', risks: [] });
-  assert.match(result.nextActions[0], /handoff/);
-  assert.equal(result.development.receipt.handoffs.length, 0);
-
-  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  assert.equal(result.next.action, 'report');
-  assert.equal(result.next.owner, 'agent');
-  assert.equal(result.next.command, undefined);
-  assert.equal(result.development.applicability.handoff, 'current');
-});
-
-test('workspace-only policy、负向 Verification、风险决定与 handoff 形成完整 current 生命周期', (t) => {
-  const current = workspaceOnlyFixture(t, 'workspace-only-lifecycle');
-  assert.deepEqual(current.runtime.observeTaskVerificationDeclarations(current.root, current.taskId, current.root), []);
-  let result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {
-    capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }], overrides: [],
-  });
-  const policy = result.development.receipt.verificationPolicy;
-  assert.deepEqual(policy.declarations, []);
-  assert.match(policy.identity, /^sha256-/);
-  assert.equal(result.development.applicability.policy, 'current');
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  const candidate = result.development.receipt.candidate;
-  const verification = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
-    candidate,
+  const report = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
     targetIdentity: current.targetIdentity,
-    targetSummary: 'Workspace-only Content Target',
-    capabilities: [],
-    coverageGaps: [{ scope: 'workspace', summary: 'No workspace verification capability.' }],
-    conclusion: { outcome: 'not-passed', summary: 'Workspace coverage gap remains.' },
-    declarationRoot: current.root,
+    targetSummary: 'Demo Content Target',
+    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo check passed.'] }],
+    coverageGaps: [],
+    conclusion: { outcome: 'passed', summary: 'Verified.' },
   });
-  assert.equal(verification.slot.applicability.status, 'current');
-  assert.equal(verification.slot.result.conclusion.outcome, 'not-passed');
-  assert.deepEqual(verification.nextActions, []);
-  assert.equal(candidate.generation, 1);
-  const review = current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Workspace-only Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready with explicit verification risk acceptance.' } });
-  recordKnowledge(current, 'attention');
-  assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Risk missing.', risks: [] }), (error) => error.code === 'task_development_risk_acceptance_required');
-  current.runtime.decideTaskDevelopment(current.root, current.taskId, {
-    outcome: 'proceed', summary: 'Authorized workspace coverage risk.',
-    risks: [{ gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'workspace', summary: 'No workspace verification capability is available.', source: 'user:workspace-only-regression' }],
-  });
-  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  const handoff = result.development.receipt.handoffs.at(-1);
-  assert.equal(result.development.applicability.handoff, 'current');
-  assert.equal(handoff.gates.completion.resultDigest, review.slots.completion.resultDigest);
-  assert.equal(handoff.decision.risks[0].scope, 'workspace');
-
-  fs.appendFileSync(path.join(current.root, 'README.md'), '\nworkspace target changed\n');
-  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
+  assert.equal(report.slot.applicability.status, 'current');
+  result = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(result.development.receipt.candidate.identity, candidate.identity);
   assert.equal(result.development.receipt.verificationPolicy, null);
-  assert.equal(result.development.receipt.candidate, null);
-  assert.deepEqual(result.development.receipt.handoffs, [handoff]);
-  assert.equal(result.development.applicability.handoff, 'stale');
+  assert.equal(result.development.receipt.gates.verification, null);
+
+  completion(current, candidate);
+  recordKnowledge(current);
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Development facts are current.', risks: [] });
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  assert.equal(result.development.applicability.handoff, 'current');
 });
+
 
 test('Current Knowledge只让completion-critical blocked阻止handoff，attention保持可交付', (t) => {
   const current = fixture(t, 'knowledge-disposition');
   let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   const candidate = result.development.receipt.candidate;
-  recordVerification(current);
   completion(current, candidate);
   recordKnowledge(current, 'blocked');
   assert.throws(
@@ -389,7 +236,6 @@ test('多Project Current Knowledge要求精确Project集合并确定性聚合顶
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
   runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Multi Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
   const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], overrides: [] });
   const treeIdentity = observed.development.receipt.contentTarget.identity;
   assert.throws(() => runtime.recordTaskDevelopmentKnowledge(root, taskId, {
     treeIdentity,
@@ -408,81 +254,7 @@ test('多Project Current Knowledge要求精确Project集合并确定性聚合顶
   assert.deepEqual(result.development.receipt.currentKnowledge.sourceIdentities, ['demo:knowledge', 'other:knowledge']);
 });
 
-test('三Project任务从policy、Candidate、独立Plan records推进到完整handoff', (t) => {
-  const { root } = copyFixtureWorkspace(t, 'three-project-golden-flow');
-  const runtime = t.buildrContexts.application;
-  runtime.createProject(['third', '--target', root, '--name', 'Third', '--description', 'Third Project']);
-  fs.writeFileSync(path.join(root, 'projects', 'third', 'README.md'), '# Third\n');
-  fs.writeFileSync(path.join(root, 'projects', 'third', 'verification.yml'), YAML.stringify({
-    schemaVersion: 'buildr.project-verification/v3', resources: [], capabilities: [{
-      id: 'third.check', title: 'Third check', scope: { project: 'third', services: [] }, proves: ['Third content is readable.'], evidence: ['static'], usableFor: ['task-delivery'], discovery: { sources: ['**'] },
-      invocation: { affected: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' }, full: { kind: 'command', argv: ['sh', '-c', 'test -s README.md'], cwd: '.' } },
-      environment: { requires: ['sh'] }, effects: { writes: [], externalSystems: [], authorization: 'implicit' }, resourceClaims: [],
-    }],
-  }));
-  const taskId = 'three-project-golden-flow';
-  runtime.createTaskRecord(root, { taskId, title: 'Three Project Flow', intent: 'Complete a three Project formal lifecycle.', projects: ['demo', 'other', 'third'], services: [], changes: [] });
-  runtime.resolveTaskEnvironmentExecution = (_workspace, currentTask) => ({
-    ready: true, taskId: currentTask, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root,
-    controllerInvocation: { command: process.execPath, argsPrefix: ['/retained/buildr.mjs'], sourceRoot: '/retained/buildr', kind: 'stable-controller' },
-    scopes: ['demo', 'other', 'third'].map((project) => ({ selector: `project:${project}`, kind: 'project', sourcePath: `projects/${project}`, executionRoot: path.join(root, 'projects', project) })),
-  });
-  pinImmutableTaskRecord(runtime, root, taskId);
-  const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Three Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
-  const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  const policy = runtime.recordTaskDevelopmentPolicy(root, taskId, {
-    capabilities: [{ project: 'demo', capability: 'demo.check', required: true }, { project: 'third', capability: 'third.check', required: true }],
-    coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], overrides: [],
-  });
-  const targetIdentity = policy.development.receipt.contentTarget.identity;
-  const frozen = runtime.freezeTaskDevelopmentCandidate(root, taskId);
-  const candidate = frozen.development.receipt.candidate;
-  const demo = recordVerificationResultFromEvidence(runtime, root, taskId, {
-    targetIdentity, targetSummary: 'Three Project target', candidate, planIdentity: 'sha256-demo-plan', requestIdentity: 'sha256-demo-request', reconcile: false,
-    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Demo passed.' }, declarationRoot: root,
-  });
-  const third = recordVerificationResultFromEvidence(runtime, root, taskId, {
-    targetIdentity, targetSummary: 'Three Project target', candidate, planIdentity: 'sha256-third-plan', requestIdentity: 'sha256-third-request', reconcile: false,
-    capabilities: [{ project: 'third', capability: 'third.check', outcome: 'passed', facts: ['Third passed.'] }], coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Third passed.' }, declarationRoot: root,
-  });
-  const verification = runtime.reconcileTaskVerification(root, taskId, {
-    candidateIdentity: candidate.identity, candidateGeneration: candidate.generation, targetIdentity, targetSummary: 'Three Project target',
-    recordIds: [...demo.records, ...third.records], coverageGaps: [{ scope: 'project:other', summary: 'Other has no declared verification capability.' }], declarationRoot: root,
-  });
-  completion({ root, runtime, taskId }, candidate);
-  runtime.recordTaskDevelopmentKnowledge(root, taskId, {
-    treeIdentity: targetIdentity,
-    projects: ['demo', 'other', 'third'].map((project) => ({ project, status: project === 'other' ? 'not-applicable' : 'aligned', summary: `${project} knowledge disposition.`, sourceIdentities: [`${project}:knowledge`], unresolvedItems: [] })),
-  });
-  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'All three Project facts are current and the declared gap is explicitly accepted.', risks: [{ gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'project:other', summary: 'Other has no declared verification capability.', source: 'Three Project golden-flow fixture accepts the explicit policy gap.' }] });
-  const handoff = runtime.createTaskDevelopmentHandoff(root, taskId);
-  assert.equal(handoff.development.applicability.handoff, 'current');
-  assert.equal(handoff.development.receipt.currentKnowledge.projects.length, 3);
-  assert.deepEqual(handoff.development.receipt.verificationPolicy.declarations.map((item) => item.project), ['demo', 'other', 'third']);
-});
 
-test('Service-only、Change-only 与多 Project Task 观察完整 declaration，不能伪装成 workspace-only', (t) => {
-  const { root } = copyFixtureWorkspace(t, 'effective-projects');
-  const runtime = t.buildrContexts.application;
-  runtime.createTaskRecord(root, { taskId: 'service-only', title: 'Service only', intent: 'Observe parent Project declaration.', projects: [], services: ['demo/api'], changes: [] });
-  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'service-only', root).map((item) => item.project), ['demo']);
-  runtime.createTaskRecord(root, { taskId: 'multi-project', title: 'Multi Project', intent: 'Observe all Project declarations.', projects: ['other', 'demo'], services: ['demo/api'], changes: [] });
-  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'multi-project', root).map((item) => item.project), ['demo', 'other']);
-  runtime.createTaskRecordPersistence(root, {
-    schemaVersion: 'buildr.task-record/v2', taskId: 'change-only', title: 'Change only', intent: 'Observe the Change parent Project declaration.',
-    scope: { projects: [], services: [] }, changes: [{ project: 'demo', change: 'declaration-scope' }],
-    parentTaskId: null, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null,
-    createdAt: '2026-08-12T00:00:00.000Z', updatedAt: '2026-08-12T00:00:00.000Z',
-  });
-  assert.deepEqual(runtime.observeTaskVerificationDeclarations(root, 'change-only', root).map((item) => item.project), ['demo']);
-
-  runtime.resolveTaskEnvironmentExecution = () => ({ ready: true, taskId: 'service-only', receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root, scopes: [{ selector: 'workspace', kind: 'workspace', sourcePath: '.', executionRoot: root }, { selector: 'service:demo/api', kind: 'service', sourcePath: '.', executionRoot: root }] });
-  const planningTargetIdentity = taskDevelopmentDigest('service-only:plan');
-  runtime.recordTaskReview(root, 'service-only', { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Service plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
-  runtime.observeTaskDevelopment(root, 'service-only', { changeDispositions: [], planningTargetIdentity });
-  assert.throws(() => runtime.recordTaskDevelopmentPolicy(root, 'service-only', { capabilities: [], coverageGaps: [{ scope: 'workspace', summary: 'Forged workspace gap.' }], overrides: [] }), (error) => error.code === 'task_development_policy_gap_out_of_scope');
-});
 
 test('converged disposition只接受Task working copy archived，retained active不阻塞', (t) => {
   const current = changeFixture(t, 'working-copy-archived');
@@ -518,7 +290,7 @@ test('observe对pending Change零Content observation失败关闭，空Change与n
   assert.ok(result.development.receipt.contentTarget);
   assert.equal(result.development.receipt.taskContext.changes[0].disposition, 'not-applicable');
 
-  const codeOnly = workspaceOnlyFixture(t, 'empty-change-content-target');
+  const codeOnly = fixture(t, 'empty-change-content-target');
   assert.match(codeOnly.targetIdentity, /^sha256-/);
 });
 
@@ -610,10 +382,8 @@ function freezeChangeFixture(current) {
     changeDispositions: current.dispositions,
     planningTargetIdentity: current.planningTargetIdentity,
   });
-  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
   current.targetIdentity = result.development.receipt.contentTarget.identity;
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  recordVerification(current);
   return current.runtime.inspectTaskDevelopment(current.root, current.taskId);
 }
 
@@ -670,15 +440,9 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
   runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Git-backed plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
   let result = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
-  runtime.recordTaskDevelopmentPolicy(root, taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
   const targetIdentity = result.development.receipt.contentTarget.identity;
   result = runtime.freezeTaskDevelopmentCandidate(root, taskId);
   const candidate = result.development.receipt.candidate;
-  recordVerificationResultFromEvidence(runtime, root, taskId, {
-    candidate,
-    targetIdentity, targetSummary: 'Git Task Contribution target', capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Demo check passed.'] }],
-    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Verified.' }, declarationRoot: taskRoot,
-  });
   runtime.recordTaskReview(root, taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Git Task Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
   recordKnowledge({ runtime, root, taskId });
   runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
@@ -686,133 +450,36 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
   return { root, taskRoot, runtime, taskId, planningTargetIdentity, candidate, handoff: result.development.receipt.handoffs.at(-1), targetIdentity };
 }
 
-test('从proposal建立planning Receipt，并以明确waiver完成可选Verification与Completion gate', (t) => {
-  const current = fixture(t, 'planning-first');
-  const opened = current.runtime.openWorkspaceStructuredStore(current.root, { writable: true });
-  opened.database.prepare('DELETE FROM task_development_current WHERE task_id = ?').run(current.taskId);
-  opened.database.close();
-  let result = current.runtime.beginTaskDevelopment(current.root, current.taskId, {
-    changeDispositions: [],
-    planning: { targetIdentity: current.planningTargetIdentity, nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/change/proposal', identity: taskDevelopmentDigest('proposal-v1'), disposition: 'current', summary: 'Proposal current.' }] },
-  });
-  assert.equal(result.status, 'created');
-  assert.equal(result.development.applicability.status, 'planning');
-  assert.equal(result.development.applicability.contentTarget, 'missing');
-  assert.equal(result.development.receipt.contentTarget, null);
-  assert.equal(result.development.receipt.gates.planning.outcome, 'ready');
 
-  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
-  assert.ok(result.development.receipt.contentTarget);
-  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  assert.equal(result.status, 'frozen');
-  const candidate = result.development.receipt.candidate;
-  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: candidate.identity, summary: 'User explicitly waived formal execution for this fixture.', source: 'user:integration-fixture' });
-  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'completion', disposition: 'waived', targetIdentity: candidate.identity, summary: 'User explicitly waived Completion Review for this fixture.', source: 'user:integration-fixture' });
-  recordKnowledge(current);
-  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explicit optional-node waivers are current.', risks: [] });
-  assert.equal(result.development.receipt.decision.outcome, 'proceed');
-  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  assert.equal(result.status, 'ready');
-  assert.equal(result.development.receipt.handoffs[0].gates.verification.disposition, 'waived');
-
-  const firstCandidate = result.development.receipt.candidate;
-  const firstHandoff = result.development.receipt.handoffs[0];
-  const nextPlanningTarget = taskDevelopmentDigest('planning-first:plan-v2');
-  result = current.runtime.recordTaskDevelopmentPlanning(current.root, current.taskId, {
-    changeDispositions: [],
-    planning: { targetIdentity: nextPlanningTarget, nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/change/proposal', identity: taskDevelopmentDigest('proposal-v2'), disposition: 'current', summary: 'Proposal updated.' }] },
-    planningGate: { disposition: 'waived', targetIdentity: nextPlanningTarget, summary: 'The user explicitly accepted the updated plan without another review.', source: 'user:integration-fixture' },
-  });
-  assert.equal(result.development.receipt.candidate, null);
-  assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
-  result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: nextPlanningTarget });
-  result = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, { capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [] });
-  result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  current.runtime.recordTaskDevelopmentGate(current.root, current.taskId, { gate: 'verification', disposition: 'waived', targetIdentity: result.development.receipt.candidate.identity, summary: 'User explicitly waived repeated formal execution for this fixture.', source: 'user:integration-fixture' });
-  assert.equal(result.development.receipt.candidate.generation, firstCandidate.generation + 1);
-  assert.notEqual(result.development.receipt.candidate.identity, firstCandidate.identity);
-  assert.deepEqual(result.development.receipt.handoffs, [firstHandoff]);
-});
-
-test('同一输入刷新 Result 不递增 generation；Content 变化递增且保留旧 handoff snapshot', (t) => {
+test('任务验证报告刷新不递增generation，Content变化才递增', (t) => {
   const current = fixture(t, 'generation-refresh');
-  assert.throws(() => current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {
-    capabilities: [{ project: 'demo', capability: 'demo.check', required: false }], coverageGaps: [], overrides: [],
-  }), (error) => error.code === 'task_development_policy_override_required');
-  let policy = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {
-    capabilities: [{ project: 'demo', capability: 'demo.check', required: false }],
-    coverageGaps: [],
-    overrides: [{ project: 'demo', capability: 'demo.check', required: false, scope: 'project:demo', basis: 'Task only needs advisory facts.', source: 'user:integration-fixture' }],
-  });
-  assert.equal(policy.development.receipt.verificationPolicy.overrides.length, 1);
-  policy = current.runtime.recordTaskDevelopmentPolicy(current.root, current.taskId, {
-    capabilities: [{ project: 'demo', capability: 'demo.check', required: true }], coverageGaps: [], overrides: [],
-  });
-  current.targetIdentity = policy.development.receipt.contentTarget.identity;
   let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   const first = result.development.receipt.candidate;
-  const firstVerification = recordVerification(current);
-  assert.equal(first.generation, 1);
-
-  const replacement = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
-    candidate: first,
-    targetIdentity: current.targetIdentity,
-    targetSummary: 'Demo Content Target',
-    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Replacement facts remain applicable.'] }],
-    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Replacement Result passed.' }, declarationRoot: current.root,
+  const firstReport = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
+    targetIdentity: current.targetIdentity, targetSummary: 'Demo Content Target',
+    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['First report.'] }],
+    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'First report passed.' },
   });
-  assert.notEqual(replacement.slot.resultDigest, firstVerification.slot.resultDigest);
+  const replacement = recordVerificationResultFromEvidence(current.runtime, current.root, current.taskId, {
+    targetIdentity: current.targetIdentity, targetSummary: 'Demo Content Target',
+    capabilities: [{ project: 'demo', capability: 'demo.check', outcome: 'passed', facts: ['Replacement report.'] }],
+    coverageGaps: [], conclusion: { outcome: 'passed', summary: 'Replacement report passed.' },
+  });
+  assert.notEqual(replacement.slot.reportDigest, firstReport.slot.reportDigest);
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
   assert.equal(result.status, 'unchanged');
   assert.equal(result.development.receipt.candidate.identity, first.identity);
   assert.equal(result.development.receipt.generation, 1);
 
-  completion(current, first);
-  recordKnowledge(current);
-  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
-  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  const snapshot = result.development.receipt.handoffs[0];
-
   fs.appendFileSync(path.join(current.root, 'projects', 'demo', 'README.md'), 'Changed content.\n');
   result = current.runtime.observeTaskDevelopment(current.root, current.taskId, { changeDispositions: [], planningTargetIdentity: current.planningTargetIdentity });
   assert.equal(result.development.receipt.candidate, null);
-  assert.deepEqual(result.development.receipt.handoffs, [snapshot]);
   current.targetIdentity = result.development.receipt.contentTarget.identity;
   result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  recordVerification(current);
   assert.equal(result.development.receipt.generation, 2);
   assert.notEqual(result.development.receipt.candidate.identity, first.identity);
-  assert.deepEqual(result.development.receipt.handoffs, [snapshot]);
 });
 
-test('Verification not-passed 与 Completion changes-required 可经精确用户风险接受形成 handoff', (t) => {
-  const current = fixture(t, 'risk-acceptance');
-  let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
-  const candidate = result.development.receipt.candidate;
-  const verification = recordVerification(current, 'not-passed');
-  const review = completion(current, candidate, 'changes-required');
-  recordKnowledge(current);
-  assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Missing risk acceptance.', risks: [] }), (error) => error.code === 'task_development_risk_acceptance_required');
-  assert.throws(() => current.runtime.decideTaskDevelopment(current.root, current.taskId, {
-    outcome: 'proceed', summary: 'Contains a stale risk reference.', risks: [
-      { gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'project:demo', summary: 'Known demo check failure.', source: 'user:integration-fixture' },
-      { gate: 'completion', resultDigest: taskDevelopmentDigest('stale-completion'), scope: 'project:demo', summary: 'Stale completion concern.', source: 'user:integration-fixture' },
-    ],
-  }), (error) => error.code === 'task_development_risk_result_mismatch');
-  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, {
-    outcome: 'proceed',
-    summary: 'User accepts the bounded documentation risk.',
-    risks: [
-      { gate: 'verification', resultDigest: verification.slot.resultDigest, scope: 'project:demo', summary: 'Known demo check failure accepted for this Candidate.', source: 'user:integration-fixture' },
-      { gate: 'completion', resultDigest: review.slots.completion.resultDigest, scope: 'project:demo', summary: 'Known completion concern accepted for this Candidate.', source: 'user:integration-fixture' },
-    ],
-  });
-  assert.equal(result.development.receipt.decision.candidateIdentity, candidate.identity);
-  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
-  assert.equal(result.development.receipt.handoffs[0].candidate.identity, candidate.identity);
-  assert.equal(result.development.receipt.handoffs[0].decision.risks.length, 2);
-});
 
 test('读取只返回最近一次 Development lifecycle snapshot，不重新观察外部内容', (t) => {
   const shared = gitDevelopmentFixture(t, 'baseline-applicability-shared', { sharedPath: true });
@@ -826,7 +493,7 @@ test('读取只返回最近一次 Development lifecycle snapshot，不重新观�
   assert.equal(result.development.applicability.handoff, 'current');
   assert.deepEqual(result.development.applicability.gates, {
     planning: { ...result.development.receipt.gates.planning, applicability: 'current' },
-    verification: { ...result.development.receipt.gates.verification, applicability: 'current' },
+    verification: null,
     completion: { ...result.development.receipt.gates.completion, applicability: 'current' },
   });
   result = shared.runtime.freezeTaskDevelopmentCandidate(shared.root, shared.taskId);

@@ -638,30 +638,6 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **THEN** HTTP interface MUST 在 Application 处理前拒绝请求
 - **AND** MUST 保持 Workspace 源资产和用户级 Registry 零写入
 
-### Requirement: Task 详情必须只读投影 current Verification Result
-本机应用 MUST在Task详情“证据”视图提供“验证结果（Verification Result）”区块，并 MUST通过Task Verification Application inspect展示Result presence、target、declarations、实际capability facts、coverage gaps、结论、resultDigest、record observedAt，以及与Development gate/显式保存identity的匹配关系。页面 MUST不直接读取Result YAML，不得伪造当前target identity，也不得暴露Result writer；GET MUST只查询SQLite专业current rows，不执行declaration、Content Target、Git或Environment observation。
-
-#### Scenario: 查看已有 Result
-- **WHEN** 用户打开Task的“证据”视图
-- **THEN** API MUST返回Application的current read model并设置no-store
-- **AND** 验证结果区块 MUST显示Result保存事实、record observedAt与保存identity的matched/mismatched/unknown关系
-- **AND** GET MUST NOT执行declaration、Git、文件或Environment observation
-
-#### Scenario: Result 不存在
-- **WHEN** Task尚无current Verification Result
-- **THEN** 验证结果区块 MUST显示空状态与“交给Agent验证”的动作
-- **AND** Task Record、Environment、Development、Review与其他视图 MUST正常工作
-
-#### Scenario: lifecycle snapshot 不存在
-- **WHEN** Task有current Verification Result但没有保存Development verification gate
-- **THEN** 验证结果区块 MUST显示已有Result与稳定unknown/not-adopted-yet关系
-- **AND** GET MUST NOT为了补齐关系修改数据库、扫描外部声明或创建Development Receipt
-
-#### Scenario: 尝试直接写 Result API
-- **WHEN** 客户端向Task verification resource发送POST/PUT/PATCH/DELETE
-- **THEN** 本机应用 MUST不提供该路由
-- **AND** Task Record、Environment、Development、Review与已有Result bytes MUST保持不变
-
 ### Requirement: 文章读取必须保护 Workspace 与 publication 资源边界
 
 文章列表、详情和图片资源 API MUST 只接受已登记 Workspace 身份、已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
@@ -728,24 +704,6 @@ Parent Plan reconciliation与final acceptance mutation MUST使用expected curren
 - **WHEN** expected Parent Plan identity与current不一致
 - **THEN** Application MUST返回conflict且零写入
 - **AND** client MUST刷新current read model后再决定
-
-### Requirement: 正式 Local HTTP Server 必须整点调度 ExecRecord GC
-Buildr 正式 Local HTTP Server MUST 在 ready 后注册 Workspace scheduled maintenance：从下一个本地整点开始、之后每个本地整点取得当前 Workspace Registry 快照，并对每个已登记且可用的 canonical Workspace 调用默认 bounded ExecRecord GC。Scheduler MUST单进程防重入、隔离各 Workspace 失败、在 server close 时释放 timer，并 MUST直接调用 Application 而不是启动 CLI 子进程或保存第二份 run history。
-
-#### Scenario: 正式 server 到达整点
-- **WHEN** 非 preview 的 Local HTTP Server 已 ready 且到达下一个本地整点
-- **THEN** scheduler MUST 对当前已登记 Workspace 各执行一次默认 bounded ExecRecord GC
-- **AND** 单个 Workspace 失败 MUST NOT阻止其余 Workspace 或下一整点运行
-
-#### Scenario: 上一批仍在运行
-- **WHEN** 新整点到达时上一轮 scheduled maintenance 尚未完成
-- **THEN** scheduler MUST跳过并发重入
-- **AND** MUST NOT创建第二个 timer worker、GC lease 或持久队列
-
-#### Scenario: server 关闭
-- **WHEN** Local HTTP Server 开始关闭或触发 close
-- **THEN** scheduler MUST取消后续 timer
-- **AND** MUST NOT在 server 终止后启动新的 GC batch
 
 ### Requirement: Task Preview Server 必须禁用 scheduled maintenance
 Buildr Task Preview Server MUST 在创建任何 scheduled maintenance 之前根据显式 preview identity 禁用调度。Preview MUST NOT注册 ExecRecord GC timer、执行 startup GC 或在后台读取/修改 Workspace execution records；该边界 MUST适用于直接 server factory 测试与由 `BUILDR_LOCAL_APP_PREVIEW` 启动的真实 preview。
@@ -858,19 +816,6 @@ Buildr MUST 在用户级 Workspace Registry 为空时提供可理解的首次运
 - **WHEN** 用户选择稍后处理
 - **THEN** Buildr MUST 保持全局应用可退出
 - **AND** MUST NOT 创建虚构 Workspace 或自动扫描磁盘
-
-### Requirement: Buildr Web 必须生成受限 Task Verification Agent prompt
-本机应用 MAY 在 Task“证据”视图的验证结果区块提供 Agent Action 以生成 Task Verification prompt。prompt MUST 绑定正式 Task ID、Task Intent 和可选调用方已知 target identity，指导 Agent 读取 v3 Skill、inspect current Result、恢复 ready Environment、执行适用声明能力，并只在完整结论后通过 Application record；复制 prompt 本身 MUST NOT 等于 recorded。
-
-#### Scenario: 用户请求开始验证
-- **WHEN** 用户从 Task“证据”视图的验证结果区块触发 Agent Action
-- **THEN** prompt MUST明确execution evidence与Workspace-local current Result分离、中断不覆盖和coverage gap边界
-- **AND** Buildr Web MUST 不执行测试、不生成 target identity、不写 Result
-
-#### Scenario: terminal Task 请求新验证
-- **WHEN** Task Record 已是 completed 或 abandoned
-- **THEN** prompt Application MUST fail closed
-- **AND** 已有 Result 仍可只读查看
 
 ### Requirement: Buildr Web Task 视图必须只消费 Workspace structured Task read model
 Buildr Web MUST 继续通过 Task Record Application 列出、查看和维护 Workspace Task，并 MUST 将 SQLite repository 保持为 interface 后的本地 infrastructure。页面和 HTTP interface MUST NOT 读取旧 `task.yml`、打开数据库、执行 SQL、解释 migration ledger 或暴露 database path/table/row id。Buildr Web MUST 先通过已登记 Workspace identity 将请求解析为 root，再由 Task Application 消费该 root 的 structured Task read model；对已经解析 root 的只读调用 MUST NOT 执行 Git/worktree provenance 校验或 `git rev-parse`。Buildr Web 的 Task mutation MUST NOT 添加、移除或以其他方式维护 Change 引用。
@@ -1107,35 +1052,6 @@ Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_cu
 - **WHEN** 写请求来自当前应用 Origin，携带有效 session token、JSON content type、允许大小的请求体和当前 revision
 - **THEN** Buildr MUST 将请求交给对应 Application 用例
 - **AND** Origin 不匹配或缺少有效 session 时 MUST 在 Application mutation 前拒绝
-
-### Requirement: Buildr Web HTTP 必须开放 Task-scoped execution record 只读接口
-Buildr Web HTTP interface MUST 在解析已登记 Workspace 后提供 Task-scoped execution record list、detail 与 body-file GET。List MUST 只接受 closed `view=all|verification|finish`，detail/body MUST 同时验证 record 属于 route Task；所有响应 MUST 使用 `no-store`。HTTP interface MUST 只调用 Task Execution Record Application，MUST NOT 直接查询 SQLite、读取 locator、扫描文件系统或提供 mutation。
-
-#### Scenario: 按 view 查询记录
-- **WHEN** browser 请求 Task execution record list 且 view 合法
-- **THEN** HTTP MUST 返回 Application 的 portable list read model
-- **AND** 未提供 view 时 MUST 使用 `all`
-
-#### Scenario: 查询 detail 与正文
-- **WHEN** browser 请求 Task-scoped record detail 或受支持 filename
-- **THEN** HTTP MUST 通过 Application 验证 Task/record/file identity 后返回 portable JSON
-- **AND** MUST NOT 接受 body、locator 或 path query
-
-#### Scenario: 非法查询参数
-- **WHEN** request 包含未知 view、未知 filename 或额外查询字段
-- **THEN** HTTP MUST 在读取 record body 前返回 closed-input diagnostic
-
-### Requirement: Execution Record 读取必须进入 bounded Buildr Web read executor
-Buildr Web bounded read executor MUST 登记 execution-record list、detail 与 body-file 三项纯读 operation，并 MUST 以 closed Worker message 传递已解析 Workspace root、Task ID 和 operation 所需最小参数。Executor MUST 保持既有固定 Worker/queue 容量、取消和 failure isolation 语义，且 MUST NOT 承载 execution record mutation、cleanup、GC 或 Doctor。
-
-#### Scenario: 正常读取
-- **WHEN** HTTP 提交合法 execution record read operation
-- **THEN** bounded executor MUST 在 Worker runtime 调用同一 Application 并返回其 read model
-
-#### Scenario: 队列饱和或取消
-- **WHEN** executor 队列已满或 request 被取消
-- **THEN** request MUST 使用既有 bounded-read diagnostic 结束
-- **AND** MUST NOT 在 HTTP 主线程回退执行正文读取
 
 ### Requirement: npm Buildr Web Launcher 必须提供显式可恢复 lifecycle
 Buildr MUST 只从 formal npm installation 提供 `buildr web launcher install|status|repair|uninstall`。普通 npm install MUST NOT 修改 Applications、Desktop 或 Start Menu；所有 Launcher mutation MUST 由显式命令或同 ownership npm update 后的受限 refresh 触发。
@@ -1383,3 +1299,24 @@ Buildr Web MUST 展示整体目标、计划入口、实际子任务及结果、�
 #### Scenario: 历史完成
 - **WHEN** 旧完成结果没有授权依据
 - **THEN** MUST 如实展示历史未记录，不补造授权。
+
+### Requirement: Task详情必须只读展示current任务验证报告
+Buildr Web MUST在Task“证据”页展示任务验证报告presence、内容版本、Task scope、测试地图、实际checks、gaps、结论、report digest、完成时间和current/stale/unknown applicability。页面 MUST通过Task Verification Application读取，MUST不从Development gate或Execution Record派生报告。
+
+#### Scenario: 查看已有报告
+- **WHEN**用户打开有current任务验证报告的Task证据页
+- **THEN**页面MUST显示实际测试体系、选择范围、targets、结果、未覆盖项和结论
+- **AND** GET MUST不执行测试、观察Git或修改Task事实
+
+#### Scenario: 报告不存在
+- **WHEN**Task尚无报告
+- **THEN**页面MUST显示“开发完成后交给智能体验证”的空状态
+- **AND**其他Task专业视图MUST正常工作
+
+### Requirement: Buildr Web必须生成独立Task Verification Agent prompt
+证据页Agent Action MUST只提交Task ID并生成指导Agent读取Task、改动、测试地图和项目测试事实、直接执行测试、最后record报告的prompt。Buildr Web MUST不生成测试Plan、target identity、Candidate或报告内容。
+
+#### Scenario: 用户请求开始验证
+- **WHEN**用户触发“交给智能体验证”
+- **THEN**prompt MUST说明开发中的测试不记录、开发完成后才保存有意义报告
+- **AND**复制prompt MUST NOT修改报告

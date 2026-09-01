@@ -9,7 +9,7 @@
 - 源码根：`projects/product/services/buildr-web/`（`package.json` name：`@buildr-ai/buildr-web`，private）。
 - 开发：`npm run dev`；正式构建：`npm run build`（也可由 `buildr` 的 `npm run build:web` / `dev:web` 委托）。
 - 构建输出：正式构建默认写入 sibling `buildr` 顶层 `web-dist/`（`emptyOutDir: true`）；验证可通过Vite `--outDir`覆盖到临时staging，只用于与tracked产物精确比较，不改变正式输出契约。
-- OpenSpec 与 verification policy 仍在父级 Product Project；本 Service 通过 Service registry 登记并由 Buildr Web / doctor 可见。
+- OpenSpec与Project测试地图仍在父级Product Project；本Service通过Service registry登记并由Buildr Web/doctor可见。
 - 全局壳层为上下结构：顶栏承载品牌、任务/项目/服务/文章导航、工作空间切换、设置、退出与交给 Agent；内容在下方。进入 Workspace 直接打开任务列表；旧开始页路由重定向到 `/tasks`。任务页与项目页宽屏为左列表、右详情；项目编辑入口在详情右上角；服务/文章仍整页切换。壳层读取 sibling `buildr` 的只读Release Awareness API，在顶栏下展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
 
 ## 数据与依赖
@@ -18,7 +18,7 @@
 - 当Formal Verification选择需要Buildr Web源码工具链的capability时，该capability通过`environment.preparation`引用本Service已登记Recipe；Verification admission把它作为辅助准备闭包交给Task Environment，而不把本Service加入Task scope、Change、Content Target或源码写入authority。npm Step使用本root的`package.json`/`package-lock.json`作为inputs、worktree-local`node_modules`作为output和受管wrapper authority；Browser build在启动Chrome前只接受本root的TypeScript/Vite，不从retained checkout、全局安装或系统PATH借用。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
 - Task list/detail/update/complete/abandon 通过 `src/api/tasks.ts` 的能力级 typed Client消费 sibling `buildr` 从 Task-owned JSON Schema生成的 tracked DTO；低层 `client.ts` 继续只负责 Workspace scope、session/fetch transport并返回`unknown`，业务页面不再手写这五个operation的响应类型或在调用点猜测payload。Buildr Web不安装Ajv、不拥有Schema或Application authority；Schema变化必须先由Buildr生成两端DTO并通过drift check、typecheck、正式build与Task Browser Smoke。
-- Task professional detail/list/update/prompt operations 通过 `src/api/task-professional.ts` 消费 Buildr Service 生成的 tracked DTO；Task Detail 页面与 Execution Records 面板不再直接猜测这些专业 payload。Web 端继续不安装 Ajv、不拥有 Schema 或 Application authority，生成物 drift、typecheck、正式 build 与受影响 Task Browser Smoke 仍是消费侧验收链。
+- Task professional detail/list/update/prompt operations通过`src/api/task-professional.ts`消费Buildr Service生成的tracked DTO；Task Detail页面不拥有Schema或Application authority，也不再包含Execution Records面板。
 - Release Awareness、Publication list/detail 与安全退出通过 `src/api/runtimeSystem.ts` 消费 Buildr Service 的 Runtime/System Schema 生成 DTO；`AppLayout` 与 Articles 页面不再保存同一响应的手写类型或调用点 `as` 断言。Publication asset 仍使用同源 binary URL，不进入 JSON client；低层 `client.ts` 继续返回 `unknown`，Buildr Web 不安装 Ajv或取得 Runtime/System Application authority。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表默认 `open` (todo + active)，可单独筛选 todo，并继续以 `retrospectiveState` 筛选复盘处置。Task 详情展示复盘来源，复盘 Tab 保持原始 Markdown 只读并展示后续 Task 实时状态。UI 不创建或激活 Task。
@@ -27,7 +27,7 @@
 - 项目详情第三 Tab「每日演进」只读展示当天本机 v2 文件的四问摘要与提交（不展示变更文件列表；`files` 仍可由 CLI inspect 返回），可用日期选择器与前后一天切换日期，并按日/人/任务分组；按任务只聚合已关联的自己的提交。空态明确需要 Agent 收集 Git 后写入，页面无写入控件，打开时不扫描 Git。Task 详情概览不展示每日演进反向关联；生成入口走右上角交给 Agent。
 - 父子管理从任务记录直接读取目标、关系及子任务结果，旧专用计划只读。父任务完成要求当前观察、总体验收、逐项处置与明确用户授权；界面和命令共享同一写入保护。见[父子管理](../flows/parent-child-management.md)。
 - 所有Task角色先展示同一Task Overview用户摘要：目标以及相互正交的Delivery、Activation、Cleanup，随后列出局部attention和具名authorization；前端直接消费read model，不从技术字段重算authority、拼装授权token或把maintenance attention降级为Delivery失败。既有Parent Contribution四项摘要、横向进度行、Child导航与详情侧栏保持其已验收布局和交互。
-- Task“证据”页使用一个共享Execution Record浏览器展示全部、Verification与Finish三种只读视图，按需读取detail与manifest声明的限量正文；Verification Result与研发页的Finish区块只提供进入同一浏览器的专业筛选入口，不复制record、Result或Finish current/terminal authority，也不提供locator、cleanup、GC或资源Inventory。
+- Task“证据”页只展示Review Results与current任务验证报告；Task Execution Record浏览器和相关API已经删除。
 
 ## 运行与验证
 

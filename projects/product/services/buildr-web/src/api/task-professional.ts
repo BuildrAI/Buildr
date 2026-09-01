@@ -3,10 +3,6 @@ import type {
   CoordinationResponse,
   DevelopmentResponse,
   EnvironmentResponse,
-  ExecutionRecordBodyResponse,
-  ExecutionRecordDetailResponse,
-  ExecutionRecordsRequest,
-  ExecutionRecordsResponse,
   OverviewResponse,
   RetrospectivePatchRequest,
   RetrospectiveResponse,
@@ -19,34 +15,6 @@ import type {
 } from './generated/task-professional-http-dto';
 
 type ReadOptions = Pick<RequestInit, 'signal'>;
-
-export type TaskExecutionRecordBodyView = {
-  available: boolean;
-  truncated: boolean;
-  status: string;
-  diagnostic?: { message: string } | null;
-  files?: Array<{ name: string; storedSizeBytes: number; truncated: boolean }>;
-};
-
-export type TaskExecutionRecordView = {
-  recordId: string;
-  owner: string;
-  outcome: string;
-  runIdentity: string;
-  targetIdentity: string;
-  producer: string;
-  lifecycleStatus: string;
-  resolutionStatus: string;
-  timestamps: { openedAt: string; sealedAt?: string | null };
-  retention: { retainUntil: string };
-  body: TaskExecutionRecordBodyView;
-};
-
-export type TaskExecutionRecordsView = ExecutionRecordsResponse & { records: TaskExecutionRecordView[] };
-export type TaskExecutionRecordDetailView = ExecutionRecordDetailResponse & { record: TaskExecutionRecordView };
-export type TaskExecutionRecordBodyViewResponse = ExecutionRecordBodyResponse & {
-  file: { name: string; responseSizeBytes: number; responseTruncated: boolean; content: string };
-};
 
 function typed<T>(request: Promise<unknown>): Promise<T> {
   return request as Promise<T>;
@@ -75,16 +43,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
     },
     coordination(taskId: string, options: ReadOptions = {}): Promise<CoordinationResponse> {
       return typed(client(taskPath(taskId, '/coordination'), options));
-    },
-    executionRecords(taskId: string, input: ExecutionRecordsRequest = {}, options: ReadOptions = {}): Promise<TaskExecutionRecordsView> {
-      const query = input.view ? `?view=${encodeURIComponent(input.view)}` : '';
-      return typed<TaskExecutionRecordsView>(client(`${taskPath(taskId, '/execution-records')}${query}`, options));
-    },
-    executionRecordDetail(taskId: string, recordId: string, options: ReadOptions = {}): Promise<TaskExecutionRecordDetailView> {
-      return typed<TaskExecutionRecordDetailView>(client(taskPath(taskId, `/execution-records/${encodeURIComponent(recordId)}`), options));
-    },
-    executionRecordBody(taskId: string, recordId: string, filename: string, options: ReadOptions = {}): Promise<TaskExecutionRecordBodyViewResponse> {
-      return typed<TaskExecutionRecordBodyViewResponse>(client(taskPath(taskId, `/execution-records/${encodeURIComponent(recordId)}/body/${encodeURIComponent(filename)}`), options));
     },
     retrospective(taskId: string, options: ReadOptions = {}): Promise<RetrospectiveResponse> {
       return typed(client(taskPath(taskId, '/retrospective'), options));

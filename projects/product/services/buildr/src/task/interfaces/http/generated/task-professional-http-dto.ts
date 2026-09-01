@@ -1,7 +1,7 @@
 /* eslint-disable */
 // Generated from Task Professional HTTP JSON Schema. Do not edit.
 // Run: npm run contracts:professional:generate
-// Source Schema Identity: sha256-c37156882dafd356dc658ab1949e139a7b195e4e46e4281d7f333513a7cd20e2
+// Source Schema Identity: sha256-84c672f1fcb770539052fc8bab75331f978bafece475340db70e72d7768506b9
 
 export interface TaskProfessionalHttpDtoProjection {
   overviewRequest: OverviewRequest;
@@ -17,12 +17,6 @@ export interface TaskProfessionalHttpDtoProjection {
   coordinationRequest: CoordinationRequest;
   coordinationResponse: CoordinationResponse;
   coordinationPatchRequest: CoordinationPatchRequest;
-  executionRecordsRequest: ExecutionRecordsRequest;
-  executionRecordsResponse: ExecutionRecordsResponse;
-  executionRecordDetailRequest: ExecutionRecordDetailRequest;
-  executionRecordDetailResponse: ExecutionRecordDetailResponse;
-  executionRecordBodyRequest: ExecutionRecordBodyRequest;
-  executionRecordBodyResponse: ExecutionRecordBodyResponse;
   retrospectiveRequest: RetrospectiveRequest;
   retrospectiveResponse: RetrospectiveResponse;
   retrospectivePatchRequest: RetrospectivePatchRequest;
@@ -65,25 +59,6 @@ export interface CoordinationPatchRequest {
   reason?: string;
   summary?: string;
 }
-export interface ExecutionRecordsRequest {
-  view?: 'all' | 'verification' | 'finish';
-}
-export interface ExecutionRecordsResponse {
-  [k: string]: unknown | undefined;
-}
-export interface ExecutionRecordDetailRequest {
-  recordId: string;
-}
-export interface ExecutionRecordDetailResponse {
-  [k: string]: unknown | undefined;
-}
-export interface ExecutionRecordBodyRequest {
-  recordId: string;
-  filename: string;
-}
-export interface ExecutionRecordBodyResponse {
-  [k: string]: unknown | undefined;
-}
 export interface RetrospectiveRequest {}
 export interface RetrospectiveResponse {
   [k: string]: unknown | undefined;
@@ -105,7 +80,6 @@ export interface ReviewPromptResponse {
 }
 export interface VerificationPromptRequest {
   taskId: string;
-  targetIdentity?: string;
 }
 export interface VerificationPromptResponse {
   prompt: string;

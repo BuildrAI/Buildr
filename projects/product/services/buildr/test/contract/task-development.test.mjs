@@ -19,17 +19,18 @@ test('Task Development 是唯一 Receipt/Candidate/generation/handoff Applicatio
   for (const forbidden of ['readTaskReviewResultPersistence', 'readTaskVerificationResultPersistence', 'writeTaskReviewResultPersistence', 'writeTaskVerificationResultPersistence']) assert.equal(application.includes(forbidden), false, forbidden);
   const writers = fs.readFileSync(path.join(root, 'src/task/application/task-development-application.mjs'), 'utf8').includes('writeTaskDevelopmentPersistence');
   assert.equal(writers, true);
-  assert.match(application, /deriveFormalVerificationReadiness/);
+  assert.doesNotMatch(application, /deriveFormalVerificationReadiness|inspectTaskVerification|observeTaskVerificationDeclarations|recordTaskDevelopmentPolicy/);
   assert.match(application, /task_development_change_pending_for_content_target/);
   assert.match(application, /buildr\.current-knowledge-maintenance[\s\S]*version:\s*2/);
-  const verification = read('src/verification/application/verification-application.mjs');
+  const verification = read('src/task/application/task-verification-application.ts');
   assert.doesNotMatch(verification, /formalVerificationReadiness|current-knowledge-maintenance|change-disposition-pending/);
 });
 
 test('Candidate identity 不包含 Result 或 Delivery Carrier，handoff 才绑定 gates', () => {
   const domain = read('src/task/domain/task-development.mjs');
   const candidateBody = domain.slice(domain.indexOf('export function createTaskCandidate'), domain.indexOf('export function normalizeTaskCandidate'));
-  for (const field of ['generation', 'contentTargetIdentity', 'taskContextIdentity', 'policyIdentity']) assert.ok(candidateBody.includes(field), field);
+  for (const field of ['generation', 'contentTargetIdentity', 'taskContextIdentity']) assert.ok(candidateBody.includes(field), field);
+  assert.match(candidateBody, /policyIdentity = null/);
   for (const forbidden of ['resultDigest', 'planning', 'verification', 'completion', 'commit', 'branch', 'worktree']) assert.equal(candidateBody.includes(forbidden), false, forbidden);
   const handoffBody = domain.slice(domain.indexOf('export function createTaskFinishHandoff'), domain.indexOf('function normalizeHandoff'));
   assert.match(handoffBody, /normalizedGates/);
@@ -52,13 +53,10 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const readWorker = read('src/web/http/read-worker.mjs');
   assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
   assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
-  assert.match(skill, /--compact/);
-  assert.match(skill, /formalVerificationReadiness/);
+  assert.match(skill, /不依赖`buildr\.task-verification` capability/);
   assert.match(skill, /task-development discover/);
-  assert.match(skill, /buildr\.task-development-current-input\/v1/);
-  assert.match(skill, /focused\/affected\/unit\/integration/);
-  assert.match(skill, /Task外transient`verification run`和Candidate CI不读取readiness/);
-  assert.match(skill, /省略顶层`planning`时Application会在任何Receipt写入前失败关闭/);
+  assert.match(skill, /`discover`只生成`observe`/);
+  assert.match(skill, /不依赖`buildr\.task-verification` capability/);
   assert.doesNotMatch(skill, /没有 Buildr Web 专业投影/);
   assert.equal(fs.existsSync(path.join(root, 'src/task/interfaces/internal/task-development-driver.mjs')), true);
   const driverRunner = read('src/task/interfaces/internal/task-development-driver-runner.mjs');
@@ -81,13 +79,11 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const operationContracts = read('src/task/application/task-development-operation-contracts.mjs');
   assert.match(operationContracts, /additionalProperties:\s*false/);
   assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
-  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v2.md');
+  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v3.md');
   assert.match(capabilityContract, /buildr\.task-development-driver-compact\/v1/);
-  assert.match(capabilityContract, /response-only Formal Verification readiness/);
   assert.match(capabilityContract, /discover/);
-  assert.match(capabilityContract, /buildr\.task-development-current-input\/v1/);
-  assert.match(capabilityContract, /current Candidate已就绪且Verification缺失报告`ready`/);
-  assert.match(capabilityContract, /字段omission不得表示清空、保留、patch或推断/);
+  assert.match(capabilityContract, /不依赖Task Verification/);
+  assert.match(capabilityContract, /不依赖Task Verification/);
 });
 
 test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {
@@ -102,9 +98,10 @@ test('Task Development action使用有界operation scope且不直接缓存专业
   assert.doesNotMatch(application, /readTaskReviewResultPersistence|readTaskVerificationResultPersistence|readTaskEnvironmentPersistence/);
 });
 
-test('v2 package声明精确退休v1 contract与binding', () => {
+test('v3 package声明精确退休v2 contract并更新binding', () => {
   const manifest = read('resources/manifest.yml');
-  assert.match(manifest, /id: buildr\.task-development[\s\S]*version: 2[\s\S]*replaces:[\s\S]*id: buildr\.task-development[\s\S]*version: 1[\s\S]*target: skills\/contracts\/buildr\/task-development\/v1\.md[\s\S]*provider: task-development/);
+  assert.match(manifest, /id: buildr\.task-development[\s\S]*version: 3[\s\S]*replaces:[\s\S]*version: 2[\s\S]*target: skills\/contracts\/buildr\/task-development\/v2\.md[\s\S]*provider: task-development/);
+  assert.match(manifest, /capability: buildr\.task-development\n\s+version: 3\n\s+provider: task-development/);
 });
 
 test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测试技术栈', () => {
@@ -119,7 +116,7 @@ test('Task Development 不接管 Project 文本格式约定', () => {
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   const observer = read('src/task/infrastructure/content-target-observer.mjs');
   assert.doesNotMatch(skill, /EOF不变量|末尾空白行|最后一个非空字符/);
-  assert.match(skill, /检查通过后，向Development Application提交完整Change dispositions并调用`observe`/);
+  assert.match(skill, /调用`observe`建立stable Content Target/);
   assert.match(observer, /'--cached', '--others', '--exclude-standard'/);
   assert.doesNotMatch(observer, /trailing-blank-line|missing-final-newline|修正.*EOF/u);
 });

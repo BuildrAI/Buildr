@@ -17,10 +17,9 @@ type Props = {
   loading: boolean;
   onRefresh: () => void;
   onSelectEvidence: () => void;
-  onSelectFinishExecutionRecords: () => void;
 };
 
-export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvidence, onSelectFinishExecutionRecords }: Props) {
+export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvidence }: Props) {
   const development = data?.development;
   const terminal = data?.terminal;
   const applicability = development?.applicability;
@@ -43,7 +42,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
           <div>
             <p className="eyebrow">研发事实</p>
             <h2>任务研发（Task Development）</h2>
-            <p className="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、门禁与最近一次交接；terminal Task 另行展示交付时事实，不伪装实时 currentness。</p>
+            <p className="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、审查与最近一次交接；terminal Task另行展示交付时事实，不伪装实时currentness。</p>
           </div>
           <Button id="task-development-refresh" disabled={loading} onClick={onRefresh}>
             刷新研发状态
@@ -100,21 +99,6 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
           ) : null}
         </div>
       </article>
-      {terminal?.delivery?.runId ? (
-      <article id="task-finish-execution-records-entry" className="panel finish-execution-records-entry">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Task Finish</p>
-            <h2>历史收尾执行记录</h2>
-            <p className="section-copy">查看旧收尾的诊断和已发生结果；旧执行流程已退役，历史记录不限制本轮收尾。</p>
-          </div>
-          <Button onClick={onSelectFinishExecutionRecords}>查看历史收尾执行记录</Button>
-        </div>
-        <dl className="read-facts">
-          <Fact label="当前专业事实" value={terminalStatus ? developmentStatusLabel(terminalStatus) : terminal?.status || '尚未形成'} />
-        </dl>
-      </article>
-      ) : null}
       <div id="task-development-loading" className={`page-loading${loading ? '' : ' hidden'}`}>
         <span className="loader" />
         <p>正在读取研发状态…</p>
@@ -139,7 +123,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                       ? '这些事实随 immutable handoff 被交付采用；它们不是对已清理 Environment 的实时 currentness 判断。'
                       : historical
                         ? '只展示放弃前已保存的研发事实，不重新判断或恢复 Candidate。'
-                        : '分别判断任务上下文、内容目标、验证策略、候选与研发交接是否仍然有效。'}
+                        : '分别判断任务上下文、研发规划、内容目标、候选与研发交接是否仍然有效。'}
                   </p>
                 </div>
               </div>
@@ -148,7 +132,6 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                   ['任务上下文', 'taskContext'],
                   ['研发规划', 'planning'],
                   ['内容目标', 'contentTarget'],
-                  ['验证策略', 'policy'],
                   ['当前候选', 'candidate'],
                   ['研发交接', 'handoff'],
                 ] as const).map(([label, key]) => {
@@ -198,7 +181,6 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                   <Fact label="候选身份" value={receipt.candidate?.identity || '尚未形成'} />
                   <Fact label="任务上下文身份" value={receipt.taskContext.identity} />
                   <Fact label="内容目标身份" value={receipt.contentTarget?.identity || '尚未稳定'} />
-                  <Fact label="验证策略身份" value={receipt.verificationPolicy?.identity || '尚未形成'} />
                 </dl>
               </article>
               <aside className="panel facts-panel">
@@ -216,7 +198,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                       <ul>
                         {receipt.decision.risks.map((risk: any) => (
                           <li key={`${risk.gate}-${risk.scope}-${risk.summary}`}>
-                            {`${risk.gate === 'verification' ? '任务验证' : '完成审查'} · ${risk.scope}：${risk.summary}`}
+                            {`${risk.gate === 'completion' ? '完成审查' : '历史风险'} · ${risk.scope}：${risk.summary}`}
                           </li>
                         ))}
                       </ul>
@@ -228,14 +210,13 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             <section className="panel">
               <div className="panel-heading">
                 <div>
-                  <h2>交付门禁</h2>
-                  <p className="section-copy">方案审查、任务验证和完成审查的当前结果；详情统一进入“证据”。</p>
+                  <h2>研发审查</h2>
+                  <p className="section-copy">方案审查和完成审查的当前结果；任务验证报告在“证据”中独立展示。</p>
                 </div>
               </div>
               <div id="task-development-gates" className="development-gate-grid">
                 {([
                   ['方案审查', delivered ? terminal.snapshot?.handoff?.gates?.planning : applicability?.gates?.planning],
-                  ['任务验证', delivered ? terminal.snapshot?.handoff?.gates?.verification : applicability?.gates?.verification],
                   ['完成审查', delivered ? terminal.snapshot?.handoff?.gates?.completion : applicability?.gates?.completion],
                 ] as const).map(([label, gate]) => {
                   const gateStatus = unknown ? 'unknown' : gate ? 'current' : 'missing';
