@@ -1,6 +1,6 @@
 ---
 name: project-testing
-description: 用户要求为 Project 或 Service 设计、梳理或优化测试框架，划分 Static、Unit、Component、Integration、System 边界，区分测试成本、affected/full 范围与 Candidate/Release 验证目标，或实现功能后开发适量测试时使用；不用于执行正式 Task Verification、维护 verification.yml 或记录 Verification Result。
+description: 用户要求为Project或Service设计、梳理或优化测试框架，划分Static、Unit、Component、Integration、System边界，区分测试成本、affected/full范围与Candidate/Release验证目标，或实现功能后开发适量测试时使用；不用于执行正式Task Verification、维护verification.yml或记录任务验证报告。
 ---
 
 # Project Testing Skill
@@ -57,7 +57,7 @@ Service 负责自身代码、公开技术契约和独立交付物可判定的事
 
 Bug 回归测试说明它捕获的旧错误，并在安全、低成本且可复现时证明测试会在修复前、受控错误实现或移除修复后失败。旧行为无法安全执行时，使用当前失败复现、受控替代实现或精确人工推导作为替代证据并报告 gap；不得为取得红灯证据执行越权或破坏性操作，也不得伪造失败历史。
 
-修改被多个action、状态或公共入口复用的validation/helper时，先枚举真实调用面并核对各入口既有错误类型、诊断顺序与公共结果；再结合已有tests和Project `plan-only`/`dry-run` changed-plan reasons，选择至少一个能区分主要兼容回归、成本最低的既有canary。一个canary不能覆盖已识别的独立公共边界时，按最低充分原则扩大focused regression；不得为固定低耗时遗漏已知路径。该反馈属于Development，不能把plan preview或canary结果冒充Task Verification Result，也不替代最终affected Formal Verification。
+修改被多个action、状态或公共入口复用的validation/helper时，先枚举真实调用面并核对各入口既有错误类型、诊断顺序与公共结果；再结合已有tests和项目现有changed-plan理由，选择至少一个能区分主要兼容回归、成本最低的既有canary。一个canary不能覆盖已识别的独立公共边界时，按最低充分原则扩大focused regression；不得为固定低耗时遗漏已知路径。该反馈属于Development，不能把临时canary结果冒充开发完成后的任务验证报告。
 
 测试涉及文件、数据库、消息、缓存、全局配置或其他状态与副作用时，按风险检查隔离、必要幂等、失败后清理和重复运行。纯逻辑测试不机械承担这些检查。
 

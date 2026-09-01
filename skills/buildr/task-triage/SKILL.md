@@ -86,7 +86,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个 proposal、方案或实现内容前调用 selected `buildr.task-development/v2` provider 的 `begin` 建立研发聚合事实。后续专业 planning artifact 变化时更新 planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用 `project-testing`；它不维护 capability declaration 或 Result。内容、测试和 review 修订完成后仍由 Development 收敛 current knowledge/Change、观察 stable Content Target、形成 policy，并调用 selected `buildr.task-verification/v3` provider 维护 current Task Result，再按所选研发路径维护 Candidate、Completion Review、decision 与 handoff；收尾不依赖这些事实。triage 不接管这些 provider，也不预设 minimal/affected/candidate 层级；Development provider 在该受管分支不 ready 时只阻塞受管证据，不撤销其他已获授权的直接工作。
+实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个proposal、方案或实现内容前调用selected `buildr.task-development/v3` provider的`begin`建立研发聚合事实。后续专业planning artifact变化时更新planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具，不写正式报告；开发完成后独立使用selected `buildr.task-verification/v4` provider，根据Project测试地图完成受影响功能和低成本完整回归，并只保存有意义的Task验证报告，不预设 minimal/affected/candidate 层级。Task Development不消费该报告，triage不把验证报告变成研发或Task完成门禁。
 
 ## 4. 输出契约
 
