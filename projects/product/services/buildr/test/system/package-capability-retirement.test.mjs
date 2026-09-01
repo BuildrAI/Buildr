@@ -46,6 +46,22 @@ function injectLegacyAssetReviewContract(root) {
   return target;
 }
 
+function injectLegacyTaskVerificationV3(root) {
+  const manifestFile = path.join(root, 'skills', 'manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const relative = 'contracts/buildr/task-verification/v3.md';
+  manifest.contracts.push({
+    id: 'buildr.task-verification', version: 3, path: relative,
+    description: '执行 Project 已声明的验证能力，并维护 Task-scoped Workspace-local current Verification Result。',
+  });
+  manifest.bindings.push({ capability: 'buildr.task-verification', version: 3, provider: 'task-verification' });
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
+  const target = path.join(root, 'skills', relative);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', 'legacy-task-verification-contract-v3.md'), target);
+  return target;
+}
+
 function seedMigrationV4(root) {
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -156,6 +172,17 @@ test('sync 接受已登记的历史 Task Asset Review contract 并安全退休',
   const synced = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   assert.equal(fs.existsSync(target), false);
+});
+
+test('sync 接受上一版 Task Verification contract metadata 并安全升级到v4', (t) => {
+  const root = fixtureRoot(t);
+  const legacy = injectLegacyTaskVerificationV3(root);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const manifest = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-verification' && item.version === 3), false);
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-verification' && item.version === 4), true);
+  assert.equal(fs.existsSync(legacy), false);
 });
 
 test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t) => {

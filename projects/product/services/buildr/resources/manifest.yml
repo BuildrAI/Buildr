@@ -100,7 +100,7 @@ capabilityContracts:
         target: skills/contracts/buildr/task-verification/v3.md
         integrity: sha256-c16d118fb874347c128c478206abeecaf2ba2ea9597af58bda071e43a1e926d8
         provider: task-verification
-        description: 执行已声明验证能力并维护Candidate-bound current Result。
+        description: 执行 Project 已声明的验证能力，并维护 Task-scoped Workspace-local current Verification Result。
       - id: buildr.task-verification
         version: 2
         target: skills/contracts/buildr/task-verification/v2.md
