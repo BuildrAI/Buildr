@@ -116,7 +116,9 @@ capabilityContracts:
       - id: buildr.task-development
         version: 2
         target: skills/contracts/buildr/task-development/v2.md
-        integrity: sha256-016534858b4438805ef2982e81fde2798a3289533511e0e0e3d72578917ed5d7
+        integrity: sha256-8f5cdba4290ea6f126acbe209f0c974965a12a764a08a3f86a7abee9a5ec4d09
+        legacyIntegrities:
+          - sha256-016534858b4438805ef2982e81fde2798a3289533511e0e0e3d72578917ed5d7
         provider: task-development
         description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
       - id: buildr.task-development
