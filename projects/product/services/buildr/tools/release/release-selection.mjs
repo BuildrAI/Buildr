@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseArguments, requireOption } from './release-files.mjs';
 import { validateReleaseExecutionBinding } from './release-execution-binding.mjs';
+import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 export const releaseSelectionSchema = 'buildr.release-selection/v1';
 export const releaseSelectionSchemaVersion = releaseSelectionSchema;
@@ -71,6 +72,29 @@ function requireExecutionBinding(options, repo) {
   const binding = validateReleaseExecutionBinding(options.executionBinding, { repo });
   if (binding.version !== options.version) throw new Error(`Release execution binding version ${binding.version} does not match ${options.version}.`);
   return binding;
+}
+
+function requireCleanupAuthority(options, repo, state) {
+  if (options.executionBinding) {
+    const executionBinding = requireExecutionBinding(options, repo);
+    return { kind: 'task-environment', identity: executionBinding.identity };
+  }
+  const evidence = validateReleaseTransactionEvidence(options.publicationEvidence);
+  const context = evidence.context;
+  if (evidence.status !== 'passed'
+      || evidence.release.registryPublished !== true
+      || evidence.release.registrySmoke !== 'passed'
+      || !evidence.release.githubRelease) {
+    throw new Error('Release cleanup requires complete passed Publication evidence.');
+  }
+  if (context.release.version !== options.version
+      || context.selection.version !== options.version
+      || context.selection.status !== 'frozen'
+      || (state && (context.selection.releaseHead !== state.releaseHead
+        || context.selection.generation !== state.generation))) {
+    throw new Error('Publication evidence does not match the current frozen release selection.');
+  }
+  return { kind: 'publication', identity: evidence.identity };
 }
 
 function ancestor(older, newer, repo, dependencies) {
@@ -520,25 +544,44 @@ export function abandonReleaseSelection(options = {}, dependencies = {}) {
   }
 }
 
-export function cleanupReleaseSelection(options = {}, dependencies = {}) {
+export function inspectReleaseSelectionCleanup(options = {}, dependencies = {}) {
   const version = options.version;
   try {
     const required = requiredVersion(version);
-    if (options.confirm !== true) throw new Error('Local release cleanup requires explicit confirmation.');
     const repo = path.resolve(options.repo ?? process.cwd());
-    requireExecutionBinding(options, repo);
     const branch = branchFor(required);
     const branchRef = `refs/heads/${branch}`;
     const currentBranch = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim();
     if (currentBranch === branch) throw new Error(`Cannot cleanup checked-out release branch ${branch}; checkout another branch first.`);
     const refs = refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).map((entry) => entry.ref);
     const branchExists = refExists(branchRef, repo, dependencies);
+    const state = branchExists || refs.length ? readState(options, dependencies) : null;
+    const cleanupAuthority = requireCleanupAuthority(options, repo, state);
+    return { schemaVersion: releaseSelectionSchema, operation: 'inspect-cleanup', version: required, branch, status: 'ready', branchExists, refs, cleanupAuthority, effects: [], nextActions: [] };
+  } catch (error) {
+    return errorResult('inspect-cleanup', version, error, { code: 'release_selection_cleanup_blocked' });
+  }
+}
+
+export function cleanupReleaseSelection(options = {}, dependencies = {}) {
+  const version = options.version;
+  try {
+    const required = requiredVersion(version);
+    if (options.confirm !== true) throw new Error('Local release cleanup requires explicit confirmation.');
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const inspected = inspectReleaseSelectionCleanup(options, dependencies);
+    if (inspected.status !== 'ready') return { ...inspected, operation: 'cleanup' };
+    const branch = inspected.branch;
+    const branchRef = `refs/heads/${branch}`;
+    const refs = inspected.refs;
+    const branchExists = inspected.branchExists;
+    const cleanupAuthority = inspected.cleanupAuthority;
     if (!branchExists && refs.length === 0) {
-      return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'already-cleaned', effects: [], nextActions: [] };
+      return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'already-cleaned', cleanupAuthority, effects: [], nextActions: [] };
     }
     if (branchExists) runGit(['branch', '-D', branch], repo, dependencies);
     for (const ref of refs) runGit(['update-ref', '-d', ref], repo, dependencies);
-    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'cleaned', effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
+    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
   } catch (error) {
     return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', nextActions: ['确认本地 branch 未 checkout、资源ownership明确且传入 --confirm 后重试；正式远端release ref由独立owner核验。'] });
   }

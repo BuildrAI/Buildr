@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { cleanupReleaseSelection, inspectReleaseSelection, reconcileReleaseSelectionWithMain } from './release-selection.mjs';
+import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain } from './release-selection.mjs';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 export const releaseGitConvergenceSchema = 'buildr.release-git-convergence/v1';
@@ -462,6 +462,11 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
     const version = requiredVersion(options.version);
     const generation = requiredGeneration(options.generation);
     const expectedCommit = requiredSha(options.expectedCommit, 'expectedCommit');
+    const publicationEvidence = passedPublication(options.publicationEvidence);
+    const publishedSource = releaseSource(publicationEvidence.context);
+    if (publishedSource.version !== version || publishedSource.releaseCommit !== expectedCommit) {
+      return blocked(operation, 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source.', { version, generation, expectedCommit });
+    }
     const formalBranch = branchFor(version);
     const carrierBranch = releaseCarrierBranchFor(version, generation);
     const remoteRefs = remoteHeads(repo, remote, [formalBranch, carrierBranch], dependencies);
@@ -477,6 +482,11 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
       if (worktree.HEAD !== expectedCommit) findings.push({ code: 'release-worktree-head-drift', path: worktree.worktree, ref: worktree.branch, expected: expectedCommit, actual: worktree.HEAD ?? null });
     }
     if (findings.length) return blocked(operation, 'release-closeout-identity-unknown', 'Release closeout found resources whose ownership or identity cannot be proved.', { version, generation, expectedCommit, findings });
+
+    const selectionCleanupInspection = inspectReleaseSelectionCleanup({ repo, version, publicationEvidence }, dependencies);
+    if (selectionCleanupInspection.status !== 'ready') {
+      return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanupInspection.diagnostic?.message ?? 'Local selection cleanup is not ready.', { version, generation, expectedCommit, selectionCleanupInspection });
+    }
 
     const effects = [];
     if (ownedWorktrees.length && options.authorizeLocalSelectionCleanup !== true) {
@@ -509,7 +519,7 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
     if (options.authorizeLocalSelectionCleanup !== true) {
       return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
     }
-    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, executionBinding: options.executionBinding }, dependencies);
+    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence }, dependencies);
     if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
     effects.push(...selectionCleanup.effects);
     const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, carrier: 'absent', selection: 'absent' });

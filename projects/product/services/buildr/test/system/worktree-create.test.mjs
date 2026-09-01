@@ -416,3 +416,29 @@ test('已核验不同提交编号的交付可由环境CLI清理，错误输入�
   assert.equal(taskRuntime.inspectTaskRecord(root, taskId).record.status, 'completed');
   assert.equal(buildr([...base, ...inputs]).status, 'cleaned');
 });
+
+test('no-change协调任务可用非任务分支持有的精确交付提交清理前进后的工作树', (t) => {
+  const root = fixtureWorkspace(t);
+  const taskId = 'reviewed-no-change-cleanup';
+  createTask(root, taskId);
+  const prepared = buildr(['task', 'environment', 'prepare', taskId, '--plan', noServicePlan(taskId), '--agent', 'codex', '--target', root, '--json']);
+  assert.equal(prepared.status, 'ready');
+  const checkout = prepared.execution.workdir;
+  fs.writeFileSync(path.join(checkout, 'release-result.txt'), 'published release\n');
+  command(checkout, 'git', ['add', '--', 'release-result.txt']);
+  command(checkout, 'git', ['commit', '-m', 'release-owned result']);
+  const source = command(checkout, 'git', ['rev-parse', 'HEAD']).stdout.trim();
+  command(root, 'git', ['branch', 'published-main', source]);
+  taskRuntime.completeTaskRecord(root, taskId, { summary: 'Coordination completed without an independent code contribution.', noChange: true });
+
+  const cleaned = buildr([
+    'task', 'environment', 'cleanup', taskId,
+    '--expected-source', `workspace=${source}`,
+    '--delivered-ref', `workspace=${source}`,
+    '--target', root, '--json',
+  ]);
+  assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned.diagnostic));
+  assert.equal(fs.existsSync(checkout), false);
+  assert.equal(command(root, 'git', ['rev-parse', 'published-main']).stdout.trim(), source);
+  assert.equal(buildr(['task', 'environment', 'cleanup', taskId, '--target', root, '--json']).status, 'cleaned');
+});

@@ -200,6 +200,7 @@ async function closeout(options, dependencies) {
     version: options.version,
     generation,
     expectedCommit,
+    publicationEvidence: evidence,
     authorizeCarrierCleanup: options.authorizeCarrierCleanup === true,
     authorizeLocalSelectionCleanup: options.authorizeLocalSelectionCleanup === true,
   }, dependencies.gitDependencies);
@@ -232,7 +233,7 @@ async function closeout(options, dependencies) {
   let taskCompletion;
   if (taskResult.record.status === 'completed' && taskResult.record.result?.noChange === true) taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
   else if (taskResult.record.status === 'active') {
-    taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--no-change', '--target', root, '--json']);
+    taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--no-change', '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
     taskResult = inspectTask(root, options.releaseTask);
   } else taskCompletion = { status: 'blocked', effects: [], nextActions: [`Release Task状态${taskResult.record.status}不能作为closeout完成事实。`] };
   steps.push(step('task-record', 'complete-no-change', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
@@ -241,7 +242,12 @@ async function closeout(options, dependencies) {
   const currentEnvironment = inspectEnvironment(root, options.releaseTask);
   let environmentCleanup = currentEnvironment.status === 'cleaned'
     ? { status: 'cleaned', effects: [] }
-    : invokeRetained(controller, ['task', 'environment', 'cleanup', options.releaseTask, '--target', root, '--json']);
+    : invokeRetained(controller, [
+      'task', 'environment', 'cleanup', options.releaseTask,
+      '--expected-source', `workspace=${context.release.sourceCommit}`,
+      '--delivered-ref', `workspace=${context.convergence.mainCommit}`,
+      '--target', root, '--json',
+    ]);
   steps.push(step('task-environment', 'cleanup', environmentCleanup, environmentCleanup.effects?.length ? 'executed' : 'reused'));
   if (environmentCleanup.status !== 'cleaned') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, environmentCleanup }, steps, environmentCleanup, '恢复Task Environment cleanup后重试。');
 

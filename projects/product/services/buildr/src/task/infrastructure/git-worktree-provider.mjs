@@ -93,6 +93,13 @@ export function registerGitWorktreeProvider(runtime) {
     return { repository: path.resolve(root.stdout.trim()), branch: branch.stdout.trim(), head: head.stdout.trim(), clean: status.stdout.trim() === '', registered };
   }
 
+  function retainedDeliveryRefs(repository, targetHead, taskBranch) {
+    const result = git(repository, ['for-each-ref', '--contains', targetHead, '--format=%(refname)', 'refs/heads', 'refs/remotes']);
+    if (result.status !== 0) return null;
+    const excluded = new Set([`refs/heads/${taskBranch}`, `refs/remotes/origin/${taskBranch}`]);
+    return result.stdout.split(/\r?\n/u).map((item) => item.trim()).filter((item) => item && !excluded.has(item)).sort();
+  }
+
   function sharedGitDir(repository) {
     const value = gitText(repository, ['rev-parse', '--git-common-dir']);
     if (!value) throw new Error(`Unable to resolve shared Git metadata: ${repository}`);
@@ -382,7 +389,12 @@ export function registerGitWorktreeProvider(runtime) {
         // Capture the retained target for deletion-time version checks.
         // With reviewed input the caller, not this provider, owns delivery assessment.
         let retainedRef = null;
-        if (allowCompleted) {
+        if (reviewedDelivery) {
+          const refs = retainedDeliveryRefs(record.sourceRepository, reviewedDelivery.targetHead, record.branch);
+          if (!refs?.length) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交没有由非任务分支持有：${record.selector}。` });
+          retainedRef = reviewedDelivery.targetHead;
+          retainedTargets.set(record.selector, { kind: 'refs', targetHead: reviewedDelivery.targetHead, refs });
+        } else if (allowCompleted) {
           const retained = worktreeIdentity(record.sourceRepository);
           if (!retained || retained.branch === record.branch || !retained.branch) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_unavailable', message: `Retained repository needs a non-task branch: ${record.selector}.` }, ['保留工作树，先确认承载成果的保留分支。']);
           retainedRef = retained.head;
@@ -390,7 +402,7 @@ export function registerGitWorktreeProvider(runtime) {
         }
         if (reviewedDelivery) {
           const delivered = gitText(record.sourceRepository, ['rev-parse', '--verify', `${reviewedDelivery.targetHead}^{commit}`]);
-          if (delivered !== reviewedDelivery.targetHead || !retainedRef || git(record.sourceRepository, ['merge-base', '--is-ancestor', delivered, retainedRef]).status !== 0) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交不由当前保留分支持有：${record.selector}。` });
+          if (delivered !== reviewedDelivery.targetHead || !retainedRef) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交不由当前保留分支持有：${record.selector}。` });
         }
         const integratedRef = allowNoChange ? record.head : retainedRef || integratedRefs[record.selector] || null;
         const contributionProof = reviewedDelivery ? null : integratedContributions[record.selector] || null;
@@ -420,8 +432,13 @@ export function registerGitWorktreeProvider(runtime) {
       for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
         const retainedTarget = retainedTargets.get(record.selector);
         if (retainedTarget) {
-          const currentTarget = worktreeIdentity(record.sourceRepository);
-          if (!currentTarget || currentTarget.branch !== retainedTarget.branch || currentTarget.head !== retainedTarget.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Retained repository changed before cleanup: ${record.selector}.` }, ['重新核对保留分支和内容包含关系后重试。']);
+          if (retainedTarget.kind === 'refs') {
+            const currentRefs = retainedDeliveryRefs(record.sourceRepository, retainedTarget.targetHead, record.branch);
+            if (!currentRefs || !retainedTarget.refs.some((ref) => currentRefs.includes(ref))) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Delivered target lost its retained ref before cleanup: ${record.selector}.` }, ['重新核对保留引用后重试。']);
+          } else {
+            const currentTarget = worktreeIdentity(record.sourceRepository);
+            if (!currentTarget || currentTarget.branch !== retainedTarget.branch || currentTarget.head !== retainedTarget.head) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_retained_target_drift', message: `Retained repository changed before cleanup: ${record.selector}.` }, ['重新核对保留分支和内容包含关系后重试。']);
+          }
         }
         if (record.reviewedDelivery && record.checkoutExists) {
           const currentSource = worktreeIdentity(record.checkoutPath);
