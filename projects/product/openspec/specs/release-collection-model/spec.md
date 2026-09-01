@@ -139,7 +139,7 @@ Update MUST按调用方给出的单个 source commit 执行 `git cherry-pick -x`
 - **AND** MUST不自动解决、继续选择、reset、rebase、force push 或报告部分成功
 
 ### Requirement: Lifecycle state 必须独立、可重建且 fail closed
-Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref默认保留并核验，本地release branch、全部selection lifecycle refs、owned worktree与generation carrier属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
+Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref和正式远端Tag默认保留并核验；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
 
 #### Scenario: freeze and inspect
 - **WHEN** open集合被要求 freeze
@@ -157,9 +157,19 @@ Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与curren
 - **AND** MUST NOT继续update、移动remote branch、删除历史freeze或自动改变策略
 
 #### Scenario: 正式远端release ref存在时清理本地资源
-- **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，且本地branch、lifecycle refs或owned worktree仍存在
-- **THEN** closeout MUST保留正式远端release ref，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs与owned worktree
+- **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，正式远端Tag与Publication evidence匹配，且本地branch、lifecycle refs、owned worktree或本地同名Tag仍存在
+- **THEN** closeout MUST保留正式远端release ref和正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
 - **AND** remote-tracking projection存在 MUST NOT阻止本地资源清理
+
+#### Scenario: 本地Tag已缺失
+- **WHEN** Publication evidence与正式远端Tag匹配，且本地同名Tag已经不存在
+- **THEN** closeout MUST把本地Tag返回为`already-cleaned`
+- **AND** MUST NOT重复创建、fetch、移动或删除远端Tag
+
+#### Scenario: 本地或远端Tag漂移
+- **WHEN** 正式远端Tag与Publication evidence不匹配，或本地同名Tag存在但与正式远端Tag对象不一致
+- **THEN** closeout MUST在任何本地/中间资源删除前fail closed并报告expected/actual Tag identity
+- **AND** MUST NOT删除、移动或覆盖本地或远端Tag
 
 #### Scenario: abandon and cleanup
 - **WHEN** owner明确abandon一个未发布release集合

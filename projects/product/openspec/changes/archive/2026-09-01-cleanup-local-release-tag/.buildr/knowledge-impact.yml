@@ -1,0 +1,14 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: cleanup-local-release-tag
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 记录本地与远端Tag的收尾边界
+    status: aligned
+    sourceIdentities:
+      - proposal.md
+      - design.md
+      - specs/release-collection-model/spec.md
+unresolvedItems: []

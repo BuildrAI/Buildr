@@ -86,6 +86,25 @@ function remoteHeads(repo, remote, branches, dependencies) {
   return Object.fromEntries(branches.map((branch) => [branch, found.get(`refs/heads/${branch}`) ?? null]));
 }
 
+function remoteTag(repo, remote, tag, dependencies) {
+  const ref = `refs/tags/${tag}`;
+  const result = git(repo, ['ls-remote', '--tags', remote, ref, `${ref}^{}`], dependencies);
+  const entries = new Map(result.stdout.split(/\r?\n/u).filter(Boolean).map((line) => {
+    const [commit, name] = line.trim().split(/\s+/u);
+    return [name, commit];
+  }));
+  const object = entries.get(ref) ?? null;
+  return object ? { ref, object, target: entries.get(`${ref}^{}`) ?? object } : null;
+}
+
+function localTag(repo, tag, dependencies) {
+  const ref = `refs/tags/${tag}`;
+  const object = git(repo, ['rev-parse', '--verify', ref], dependencies, { allowFailure: true });
+  if (object.status !== 0) return null;
+  const target = git(repo, ['rev-parse', '--verify', `${ref}^{}`], dependencies, { allowFailure: true });
+  return target.status === 0 ? { ref, object: object.stdout.trim(), target: target.stdout.trim() } : null;
+}
+
 function result(operation, status, data = {}) {
   return {
     schemaVersion: releaseGitConvergenceSchema,
@@ -468,6 +487,16 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
       return blocked(operation, 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source.', { version, generation, expectedCommit });
     }
     const formalBranch = branchFor(version);
+    const tag = publicationEvidence.release.tag;
+    if (tag !== `v${version}`) return blocked(operation, 'release-closeout-tag-name-mismatch', 'Publication evidence Tag does not match the release version.', { version, generation, expectedCommit, expectedTag: `v${version}`, actualTag: tag });
+    const remoteReleaseTag = remoteTag(repo, remote, tag, dependencies);
+    const localReleaseTag = localTag(repo, tag, dependencies);
+    if (!remoteReleaseTag || remoteReleaseTag.target !== publicationEvidence.release.tagCommit) {
+      return blocked(operation, 'release-closeout-remote-tag-drift', 'Remote Tag does not match Publication evidence.', { version, generation, expectedCommit, tag, expectedTarget: publicationEvidence.release.tagCommit, actual: remoteReleaseTag });
+    }
+    if (localReleaseTag && (localReleaseTag.object !== remoteReleaseTag.object || localReleaseTag.target !== remoteReleaseTag.target)) {
+      return blocked(operation, 'release-closeout-local-tag-drift', 'Local Tag does not match the official remote Tag.', { version, generation, expectedCommit, tag, expected: remoteReleaseTag, actual: localReleaseTag });
+    }
     const carrierBranch = releaseCarrierBranchFor(version, generation);
     const remoteRefs = remoteHeads(repo, remote, [formalBranch, carrierBranch], dependencies);
     const localFormal = localBranchCommit(repo, formalBranch, dependencies);
@@ -522,7 +551,12 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
     const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence }, dependencies);
     if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
     effects.push(...selectionCleanup.effects);
-    const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, carrier: 'absent', selection: 'absent' });
+    if (localReleaseTag) {
+      const deleted = git(repo, ['update-ref', '-d', localReleaseTag.ref, localReleaseTag.object], dependencies, { allowFailure: true });
+      if (deleted.status !== 0) return blocked(operation, 'release-local-tag-cleanup-blocked', 'Local Tag changed before cleanup.', { version, generation, expectedCommit, tag, expected: localReleaseTag, effects });
+      effects.push({ type: 'local-release-tag-deleted', ref: localReleaseTag.ref, object: localReleaseTag.object, target: localReleaseTag.target });
+    }
+    const closeoutIdentity = identity({ version, generation, expectedCommit, formalReleaseRef: expectedCommit, remoteTag: remoteReleaseTag.object, localTag: 'absent', carrier: 'absent', selection: 'absent' });
     return result(operation, 'passed', {
       action: effects.length ? 'cleaned' : 'already-cleaned',
       version,
@@ -530,6 +564,7 @@ export function closeoutReleaseGitResources(options = {}, dependencies = {}) {
       expectedCommit,
       identity: closeoutIdentity,
       formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
+      tag: { ref: remoteReleaseTag.ref, target: remoteReleaseTag.target, object: remoteReleaseTag.object, remote: 'retained-and-verified', local: 'absent' },
       resources: {
         carrier: { ref: `refs/heads/${carrierBranch}`, local: 'absent', remote: 'absent' },
         selection: { localBranch: 'absent', lifecycleRefs: 'absent' },

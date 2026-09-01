@@ -90,8 +90,9 @@ function convergenceFixture() {
   git(seed, 'checkout', 'main');
   git(seed, 'checkout', selected, '--', '.');
   const mainCommit = commit(seed, 'squash release', {});
+  git(seed, 'tag', '-a', 'v0.1.0-rc.5', mainCommit, '-m', 'release 0.1.0-rc.5');
   git(seed, 'remote', 'add', 'origin', remote);
-  git(seed, 'push', 'origin', 'dev', 'main');
+  git(seed, 'push', 'origin', 'dev', 'main', 'refs/tags/v0.1.0-rc.5');
   const release = releaseWorktree(root, remote, base);
   const created = createReleaseSelection({ version: '0.1.0-rc.5', repo: release.work, devRef: 'origin/dev', baseline: base, executionBinding: release.binding() });
   assert.equal(created.status, 'passed', JSON.stringify(created));
@@ -345,6 +346,10 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
   });
   assert.equal(first.status, 'passed', JSON.stringify(first));
   assert.equal(first.formalReleaseRef.disposition, 'retained-and-verified');
+  assert.equal(first.tag.local, 'absent');
+  assert.equal(first.tag.remote, 'retained-and-verified');
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/tags/v0.1.0-rc.5'], { cwd: data.controller }).status, 1);
+  assert.notEqual(git(data.controller, 'ls-remote', 'origin', 'refs/tags/v0.1.0-rc.5'), '');
   assert.equal(git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5').startsWith(data.releaseCommit), true);
   assert.equal(git(data.work, 'ls-remote', 'origin', `refs/heads/${carrier}`), '');
   const second = closeoutReleaseGitResources({
@@ -372,6 +377,29 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
   assert.equal(closed.status, 'passed');
   assert.equal(closed.phase, 'closed');
   assert.equal(closed.releaseTask.taskId, waiting.releaseTask.taskId);
+});
+
+test('本地Tag漂移在任何发布资源删除前阻止closeout', (t) => {
+  const data = convergenceFixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const carrier = releaseCarrierBranchFor('0.1.0-rc.5', data.frozen.generation);
+  git(data.controller, 'branch', carrier, data.releaseCommit);
+  git(data.controller, 'push', 'origin', `${carrier}:${carrier}`);
+  git(data.controller, 'tag', '-f', 'v0.1.0-rc.5', data.base);
+
+  const blocked = closeoutReleaseGitResources({
+    repo: data.controller,
+    version: '0.1.0-rc.5',
+    generation: data.frozen.generation,
+    expectedCommit: data.releaseCommit,
+    authorizeCarrierCleanup: true,
+    authorizeLocalSelectionCleanup: true,
+    publicationEvidence: data.publicationEvidence,
+  });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'release-closeout-local-tag-drift');
+  assert.notEqual(git(data.controller, 'ls-remote', 'origin', `refs/heads/${carrier}`), '');
+  assert.equal(git(data.controller, 'rev-parse', 'release-0.1.0-rc.5'), data.releaseCommit);
 });
 
 test('发布编排真实调用Git closeout并把精确交付映射交给Environment owner', async (t) => {
