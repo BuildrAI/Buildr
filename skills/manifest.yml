@@ -31,9 +31,6 @@ skills:
       - capability: buildr.task-environment
         version: 1
         mode: optional
-      - capability: buildr.task-development
-        version: 4
-        mode: optional
   - id: task-worktree
     assetIdentity: buildr:skill:task-worktree
     sourceIdentity: package:skills/buildr/task-worktree
@@ -397,7 +394,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-review
     source: buildr
     path: buildr/task-review
-    description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、Task Development 门禁或通用代码 Review。
+    description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
     enabled: true
     required: false
     state: installed
@@ -431,37 +428,6 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: project-testing
-  - id: task-development
-    assetIdentity: buildr:skill:task-development
-    sourceIdentity: package:skills/buildr/task-development
-    source: buildr
-    path: buildr/task-development
-    description: 正式Task从首个proposal、方案或直接实现开始，到稳定Content Target、Task Candidate、Current Knowledge、推进决定与研发交接的全过程使用；不用于Task Record、Task Review、Task Verification、测试执行或交付执行。
-    enabled: true
-    required: false
-    state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
-    runtimePath: task-development
-    provides:
-      - capability: buildr.task-development
-        version: 4
-    requires:
-      - capability: buildr.task-record
-        version: 2
-        mode: required
-      - capability: buildr.task-environment
-        version: 1
-        mode: required
-      - capability: buildr.current-knowledge-maintenance
-        version: 2
-        mode: required
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
     description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，foreign清除后可基于latest dev有界重试同run，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
@@ -559,7 +525,7 @@ contracts:
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
-    description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
+    description: 由智能体依据真实现场组合已有工具完成成果交付、已有任务结果登记与安全善后。
   - id: buildr.task-environment
     version: 1
     path: contracts/buildr/task-environment/v1.md
@@ -588,10 +554,6 @@ contracts:
     version: 2
     path: contracts/buildr/task-review/v2.md
     description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
-  - id: buildr.task-development
-    version: 4
-    path: contracts/buildr/task-development/v4.md
-    description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate与Current Knowledge，且与Task Review、Task Verification独立。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
@@ -626,7 +588,4 @@ bindings:
   - capability: buildr.task-review
     version: 2
     provider: task-review
-  - capability: buildr.task-development
-    version: 4
-    provider: task-development
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

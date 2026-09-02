@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、Task Development 门禁或通用代码 Review。
+description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
 ---
 
 # Task Review
@@ -17,11 +17,11 @@ buildr task review inspect <task-id> --target <canonical-workspace> --json
 
 再从真实工作现场取得本次对象及稳定 `subjectIdentity`：
 
-- 方案可以来自当前 OpenSpec artifacts、任务清单、设计文档或其他专业 owner；OpenSpec 可使用 Task Planning Identity resolver，但不是所有方案的强制来源。
-- 完成结果可以是当前代码内容、Git commit/tree、文件产物、部署结果或外部系统结果；不要求先创建 Task Candidate。
+- 方案可以来自当前 OpenSpec artifacts、任务清单、设计文档或其他专业 owner；直接使用当前对象或专业接口已返回的稳定身份。
+- 完成结果可以是当前代码内容、Git commit/tree、文件产物、部署结果或外部系统结果。
 - 实际对象位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root；不要从 cwd 或旧 Review Result 猜测。
 
-Review 是可选证据。Task Development、Task Verification、Task Finish 和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
+Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
 
 ## 2. 动态审查
 
@@ -50,4 +50,4 @@ buildr task review record <task-id> --type <planning|completion> --subject-ident
 
 报告类型、审查对象 identity、method、reviewed/uncovered、findings、结论和写入效果。Application 不判断适用性；以后使用该 Result 时，Agent 必须重新观察对象并自行判断。
 
-本 Skill 不创建 Candidate、Development gate、Verification 报告、Finish run、Parent 决定、Git 提交或通用状态机；Task Retrospective 继续独立处理执行效率与流程改进。
+本 Skill 不创建验证报告、交付记录、Parent 决定、Git 提交或通用状态机；Task Retrospective 继续独立处理执行效率与流程改进。

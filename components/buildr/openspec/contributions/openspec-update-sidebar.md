@@ -1,13 +1,9 @@
 ## Buildr OpenSpec Sidebar
 
-`openspec-update-change` 只修订既有 planning artifacts，不授予实现、同步或归档权限。Task Environment 与 Task Development 是该 consumer 的条件依赖：纯 planning 修订可在 provider 未 ready 时安全降级；若本次修订需要新的实现、构建、测试、资源或执行位置变化，必须停止当前 update，先按正式 Task ID 重新运行 Task Environment `prepare`，取得 matching `ready`、明确 execution roots 与执行 CLI，并取得 matching Development context，随后用 `openspec-apply-change` 进入实现。
+`openspec-update-change` 只修订既有 planning artifacts，不授予实现、同步或归档权限。纯规划修订可以直接使用当前 Change 现场；若需要新的实现、构建、测试、资源或执行位置，先为正式 Task 恢复匹配的 Task Environment，再转入 `openspec-apply-change`。
 
-若修订后首次明确会产生用户可见前端 UI 变化，且当前任务尚未询问，确认用户是否需要界面原型（UI Prototype）。只有用户明确确认后才加载 selected `ui-prototype` Skill；拒绝、未确认或继续任务时不生成、不阻塞 update/apply，也不创建任何 planning 或 lifecycle 占位事实。当前 Task 已有原型且用户未明确要求忽略时，修订必须保持后续 apply 默认读取全部相关原型并按其信息架构、布局和交互开发。
+若修订首次明确会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，后续实现应读取它；原型不是门禁或状态。
 
-仅更新计划时不重复报告 upstream 已解析的 status 或 `changeRoot`。计划修订不得绕过 verification、Buildr baseline/check 或 task-finish 的既有门禁。
+scope、核心流程、影响、验收或 delta requirements 改变时，刷新 `brief.md`、重新执行当前认知 `assess`，并更新 tasks 与 `.buildr/knowledge-impact.yml`。随后运行 strict validation 和 convergence preflight。Agent 直接依据当前 artifacts 与诊断决定如何修订、是否需要重新审查；Application不另存规划快照。
 
-若本次修订改变 scope、核心流程、影响、验收或 delta requirements，读取 required `buildr.current-knowledge-maintenance/v1` binding、contract 和 selected provider，刷新 `brief.md` 并重新执行 `assess`；tasks 与 `.buildr/knowledge-impact.yml` 必须反映修订后的真实影响。Provider unresolved 或 dependency blocked 时停止并报告，不得保留已知陈旧 Brief/evidence。
-
-正式Task中的planning artifact一旦改变，先重新运行strict validation，再从matching Environment Receipt取得`execution.workdir`并运行`buildr openspec convergence preflight <change> --project <project> --target <task-execution-root> --json`。Preflight `blocked`时在apply前停止，由Agent处理active Change依赖或Change artifact语义后重跑strict与preflight；不把诊断改写成Review Result。只有current `ready`时才使用matching `task environment inspect`返回的retained controller调用`__internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>`，不得使用candidate `cliInvocation`或source driver。`resolved`后用返回的`target.identity`和全部`planningNodes`调用selected`buildr.task-development/v4`provider的`planning`；target变化按Development自身事实处理Candidate/handoff，Review是否需要重做由Agent独立判断。Preflight或resolver `blocked`时停止，且不复制正文、不改写Review Result、不回退raw digest。最终converge仍按最新事实重新规划，不消费旧ready。
-
-修订`tasks.md`时保持Change disposition前边界：每个checkbox都必须能在convergence/archive前完成。Formal Development、Task Verification/Candidate、Task Finish、Environment cleanup与Task terminal state属于archive后的Task lifecycle authority，不得作为Change task加入或保留；Task Review也不得作为统一推进门禁。
+`tasks.md` 只保留 Change 收敛前可完成的工作；任务验证、任务收尾、Environment cleanup 与 Task 终态不属于 Change checklist。
