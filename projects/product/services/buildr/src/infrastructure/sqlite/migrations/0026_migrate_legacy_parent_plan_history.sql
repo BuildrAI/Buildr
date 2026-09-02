@@ -9,7 +9,7 @@ INSERT INTO _buildr_parent_plan_history_assertion(valid)
 SELECT 0
 FROM task_development_current
 WHERE json_type(record_json, '$.parentPlan') IS NOT NULL
-  AND json_type(record_json, '$.parentPlan') <> 'object';
+  AND json_type(record_json, '$.parentPlan') NOT IN ('object', 'null');
 
 UPDATE tasks
 SET legacy_parent_plan_json = (

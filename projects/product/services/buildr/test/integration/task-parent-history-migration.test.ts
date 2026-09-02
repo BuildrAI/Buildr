@@ -29,6 +29,7 @@ function insertTask(database: DatabaseSync, taskId: string) {
 test('0026把旧Parent Plan迁入Task-owned历史且保留Development原值', () => {
   const { database, migration } = databaseBeforeParentHistory();
   insertTask(database, 'legacy-parent');
+  insertTask(database, 'null-parent');
   const parentPlan = {
     schemaVersion: 'buildr.parent-plan/v2',
     identity: 'sha256-parent-plan',
@@ -39,6 +40,7 @@ test('0026把旧Parent Plan迁入Task-owned历史且保留Development原值', ()
   };
   const development = JSON.stringify({ schemaVersion: 'buildr.task-development-receipt/v3', parentPlan });
   database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES ('legacy-parent', ?)").run(development);
+  database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES ('null-parent', ?)").run(JSON.stringify({ parentPlan: null }));
 
   applyWorkspaceSqliteMigration(database, migration);
 
@@ -46,6 +48,8 @@ test('0026把旧Parent Plan迁入Task-owned历史且保留Development原值', ()
   assert.deepEqual(JSON.parse(row.legacy_parent_plan_json), parentPlan);
   const developmentRow = database.prepare("SELECT record_json FROM task_development_current WHERE task_id = 'legacy-parent'").get() as { record_json: string };
   assert.equal(developmentRow.record_json, development);
+  const nullRow = database.prepare("SELECT legacy_parent_plan_json FROM tasks WHERE task_id = 'null-parent'").get() as { legacy_parent_plan_json: string | null };
+  assert.equal(nullRow.legacy_parent_plan_json, null);
   database.close();
 });
 
