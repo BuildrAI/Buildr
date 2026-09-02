@@ -1,7 +1,6 @@
 import type { ApiClient } from './client';
 import type {
   CoordinationResponse,
-  EnvironmentResponse,
   OverviewResponse,
   RetrospectivePatchRequest,
   RetrospectiveResponse,
@@ -23,9 +22,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
   return Object.freeze({
     overview(taskId: string, options: ReadOptions = {}): Promise<OverviewResponse> {
       return typed(client(taskPath(taskId, '/overview'), options));
-    },
-    environment(taskId: string, options: ReadOptions = {}): Promise<EnvironmentResponse> {
-      return typed(client(taskPath(taskId, '/environment'), options));
     },
     reviews(taskId: string, options: ReadOptions = {}): Promise<ReviewsResponse> {
       return typed(client(taskPath(taskId, '/reviews'), options));

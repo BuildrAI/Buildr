@@ -53,20 +53,16 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 
 ## 4. 慢 owner primary evidence map
 
-审计阈值为日常 Core 中 target duration ≥15秒且边界为Integration/System。当前27项全部保留自身为唯一primary owner；审计没有发现可在不丢失公共结果的前提下转给低层owner的第二项主证据。这里“保留”不表示实现已经最优，只表示不能删除其公共事实。
+审计阈值为日常 Core 中 target duration ≥15秒且边界为Integration/System。统一Task Environment、Task Development与旧Finish专属owner删除后，剩余owner继续按各自真实边界提供主证据。这里“保留”不表示实现已经最优，只表示不能删除其公共事实。
 
 | owner | target | 唯一公共事实 / 反例焦点 | 必须保留的真实边界 |
 | --- | ---: | --- | --- |
-| `integration-task-environment` | 15s | stale controller、preparation或repository handoff必须失败 | filesystem、Git、CLI handoff |
 | `integration-self-bootstrap` | 45s | retained checkout或runtime sync漂移必须失败 | retained checkout、Git identity、runtime sync |
-| `integration-task-development` | 25s | planning/Candidate/Review/Verification identity漂移必须阻断 | CLI、filesystem、Git、SQLite lifecycle |
-| `integration-task-finish` | 20s | bootstrap/readiness/run/diagnostics/SQLite不一致必须阻断 | Finish CLI与SQLite |
-| `integration-task-finish-delivery` | 75s | remote、activation、occupancy或cleanup ownership缺口必须失败 | Git remote、retained activation、cleanup |
 | `system-verification-contracts` | 15s | 公共run违反scheduling/timing/resource contract必须失败 | public verification/Workspace entrypoint |
 | `system-public-json-contracts` | 25s | CLI JSON开放、无版本或不稳定必须失败 | real CLI serialization |
 | `system-workspace-lifecycle` | 55s | Project/Service/catalog/capability持久结果丢失必须失败 | Workspace、Project、Service、Git |
-| `system-task-lifecycle` | 25s | 公共Task/Change/Development/Review/Verification漂移必须失败 | public Task lifecycle |
-| `system-worktree-lifecycle` | 45s | worktree/ref/repository/cleanup ownership错误必须失败 | real Git worktree与Environment |
+| `system-task-lifecycle` | 25s | 公共Task/Change/Review/Verification漂移必须失败 | public Task lifecycle |
+| `system-worktree-lifecycle` | 45s | worktree/ref/repository/cleanup ownership错误必须失败 | real Git worktree |
 | `system-runtime-recovery` | 30s | target authority或runtime projection漂移必须失败 | install、filesystem projection、recovery process |
 | `system-buildr-web-http` | 15s | session/error/cleanup泄漏必须失败 | loopback HTTP与session cleanup |
 | `system-app-process` | 25s | channel/profile/process cleanup泄漏必须失败 | child process、port、profile |

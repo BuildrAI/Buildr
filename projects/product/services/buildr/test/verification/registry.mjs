@@ -49,18 +49,17 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 5000, 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   component: testing(SERVICE_OWNER, 'Development', 'Component', 3000, 'A bounded Buildr application assembly behaves correctly with fake collaborators.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Small cross-domain technical boundaries behave correctly across real filesystem, Git, or process boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project preparation and verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
+  'integration-declarations': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Project verification declarations preserve diagnostics and package registry boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-openspec': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Change and OpenSpec convergence applications preserve real filesystem and Git boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-verification': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Project testing maps and Task completion reports remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-runtime': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Runtime, capability, Buildr Web, and Web dist boundaries remain coherent.', TEST_ENVIRONMENTS.repeatedCli),
   'integration-release': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Release filesystem and installation identity boundaries remain coherent without publishing.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-data-store': testing(SERVICE_OWNER, 'Development', 'Integration', 5000, 'Workspace SQLite authority, migration, and checkout isolation remain coherent.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-task-environment': testing(SERVICE_OWNER, 'Development', 'Integration', 15000, 'Task Environment planning, preparation, diagnostics, and repository boundaries remain coherent.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-self-bootstrap': testing(SERVICE_OWNER, 'Development', 'Integration', 45000, 'The single self-bootstrap closeout lifecycle preserves retained checkout and runtime synchronization boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
@@ -68,10 +67,9 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'system-openspec-contract-audit': testing(PROJECT_OWNER, 'Static Conformance', 'System', 8000, 'OpenSpec public audit remains complete through its real project entrypoint.', TEST_ENVIRONMENTS.repeatedCli),
   'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 55000, 'Project, Service, Workspace catalog, and package capability journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Task Record, Change, Development, Review, and Verification journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-worktree-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'Real Git Worktree and Task Environment create and cleanup journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-worktree-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'Real Git Worktree create, inspect, and cleanup journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-fresh-build': testing(PROJECT_OWNER, 'Development', 'System', 180000, 'A clean Task Environment performs real dependency installation and Web build.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
   'cli-architecture': testing(SERVICE_OWNER, 'Static Conformance', 'Static', 3000, 'CLI modules and wrappers preserve the declared architecture.', TEST_ENVIRONMENTS.sourceReadOnly),
   'openspec-spec-quality': testing(PROJECT_OWNER, 'Static Conformance', 'Static', 3000, 'Canonical OpenSpec specifications meet Product quality rules.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -115,10 +113,6 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
 });
 
 export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
-  'integration-task-environment': primaryEvidence(
-    'A preparation plan with a stale controller, invalid repository handoff, or leaked diagnostic must be rejected.',
-    'real filesystem, Git repository, and CLI handoff',
-  ),
   'integration-self-bootstrap': primaryEvidence(
     'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
     'real retained checkout, Git identity, and runtime synchronization',
@@ -141,7 +135,7 @@ export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
   ),
   'system-worktree-lifecycle': primaryEvidence(
     'A real worktree create or cleanup that targets the wrong ref, repository, or ownership must fail.',
-    'real Git worktree and Task Environment lifecycle',
+    'real Git worktree lifecycle',
   ),
   'system-runtime-recovery': primaryEvidence(
     'A runtime install or recovery with mismatched target authority or incomplete projection must fail.',
@@ -214,7 +208,6 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS = Object.freeze({
   'package-runtime': 'Validates packaged runtime assets.',
   'cli-package-parity': 'Compares source and packaged CLI behavior.',
   'release-tarball-smoke': 'Runs the installed release tarball smoke journey.',
-  'system-fresh-build': 'Runs a clean dependency installation and Web build Candidate journey.',
   'init-onboarding': 'Runs the complete fresh initialization onboarding journey.',
 });
 
@@ -355,7 +348,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/project-verification-map.test.ts',
   ], { schedulingCostMs: 1000, concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-openspec', [
-    'test/integration/change-application.test.mjs',
+    'test/integration/change-application.test.ts',
     'test/integration/openspec-convergence-preflight.test.mjs',
     'test/integration/openspec-convergence-recovery.test.mjs',
     'test/integration/openspec-convergence-transaction.test.mjs',
@@ -378,7 +371,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/buildr-web-read-executor.test.mjs',
     'test/integration/buildr-web-runtime.test.mjs',
     'test/integration/buildr-web-workspace.test.mjs',
-    'test/integration/preview-ownership.test.mjs',
+    'test/integration/preview-ownership.test.ts',
     'test/integration/runtime-skills.test.mjs',
     'test/integration/task-record-http-contract.test.mjs',
     'test/integration/task-manager-capability-graph.test.mjs',
@@ -394,12 +387,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/workspace-management-fence.test.mjs',
     'test/integration/workspace-sqlite.test.mjs',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
-  integrationSlice('integration-task-environment', [
-    'test/integration/project-environment-preparation-diagnostics.test.mjs',
-    'test/integration/task-environment-controller-handoff.test.mjs',
-    'test/integration/task-environment-preparation-plan.test.mjs',
-    'test/integration/task-environment-repository.test.mjs',
-  ], { schedulingCostMs: 10000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.mjs',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
@@ -438,7 +425,6 @@ export const verificationSteps = Object.freeze([
       'integration-runtime': 'Runtime and Buildr Web integration slice',
       'integration-release': 'Release and installation integration slice',
       'integration-data-store': 'Workspace data-store integration slice',
-      'integration-task-environment': 'Task Environment integration slice',
       'integration-self-bootstrap': 'Self-bootstrap closeout integration slice',
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
@@ -469,7 +455,6 @@ export const verificationSteps = Object.freeze([
   step({ id: 'system-windows-platform', name: 'Windows high-risk system journey slice', executor: { type: 'node-test', files: [
     'test/system/cli-update.test.mjs',
     'test/system/buildr-web-launcher.test.mjs',
-    'test/system/task-environment-fresh-build-web.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.ts',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
@@ -479,7 +464,7 @@ export const verificationSteps = Object.freeze([
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.mjs' }, profiles: ['candidate'], groups: ['runtime'], }),
 
   step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.mjs' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
+  step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.ts' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.mjs' }, profiles: ['host-node'], }),
   step({ id: 'host-node-boundaries', name: 'Host Node sensitive boundaries', executor: { type: 'node-test', files: [
@@ -545,7 +530,6 @@ export const CORE_MACOS_STEP_IDS = Object.freeze([
   'integration-runtime',
   'integration-release',
   'integration-data-store',
-  'integration-task-environment',
   'integration-self-bootstrap',
   'integration-task-read-models',
   'integration-task-coordination',
@@ -578,7 +562,6 @@ export const CORE_MACOS_STEP_IDS = Object.freeze([
 
 export const CORE_MACOS_SHARDS = Object.freeze([
   candidateShard('core-task-lifecycle-macos', 'macos', 'verification', [
-    'integration-task-environment',
     'integration-self-bootstrap',
   ], { requiresArtifact: true }),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
@@ -661,9 +644,6 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
   ]),
   candidateShard('task-concurrent-windows', 'windows', 'verification', [
     'concurrent-task-acceptance',
-  ]),
-  candidateShard('fresh-build-windows', 'windows', 'verification', [
-    'system-fresh-build',
   ]),
 ]);
 

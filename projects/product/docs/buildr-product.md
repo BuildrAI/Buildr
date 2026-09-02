@@ -140,7 +140,7 @@ Buildr 按用途和承诺区分三层 CLI 产品表面：
 | 分类 | 含义 | 可见性 |
 |---|---|---|
 | primary | 普通用户或 Agent 的 workspace onboarding、资产 lifecycle、诊断、修复和 runtime 主路径 | 根帮助主区、主题帮助、主产品文档和 bootstrap canonical 示例 |
-| agent-machine | Agent、Skill和产品Application依赖的低频确定性接口，例如审查结果、任务验证报告、Task Environment与Finish | 根帮助独立分区、完整主题帮助和稳定命令契约 |
+| agent-machine | Agent、Skill和产品Application依赖的低频确定性接口，例如审查结果、任务验证报告与Worktree | 根帮助独立分区、完整主题帮助和稳定命令契约 |
 | maintenance | 产品构建、开发预览和 OpenSpec workflow 编排 | 根帮助维护分区、维护文档、workflow Skills 和产品验证 |
 
 该分类只控制可发现性与兼容承诺，不是权限或安全边界。`agent-machine` 与 `maintenance` 命令仍然可执行并具有 canonical help；具体授权、安全和 effects 继续由对应 Application/Skill contract 决定。
@@ -179,7 +179,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - Cursor、Qoder 与 TRAE 将 `AGENTS.md` 投射为各自可检查的 scoped vendor rule files；TRAE Work 与 WorkBuddy 使用受管 root reference bridge。完整路径、activation、限制和证据状态见 Buildr Service 的 [Agent Runtime Adapters](../services/buildr/docs/agent-runtime-adapters.md)。
 - 默认 `sync` 从 root `.` 递归 reconcile 整个受管理 workspace；扫描跳过符号链接、依赖/build/runtime 目录和未登记的嵌套 Git repo。
 - 正式持久交付以最小Task Record记录意图与scope，但Task Record不是普通编辑、构建或有界测试的通用工作许可。Agent核对真实Git、文件和授权后可以直接工作；需要隔离Git位置时才创建matching Worktree，需要依赖、代码生成或运行入口时直接使用Project/Service声明的真实入口，创建预览等资源时由对应能力保存owner并负责安全关闭。
-- `declaration-intake`统一承接Project/Service注册、首次Task、入口变化、Environment gap、Verification coverage gap及显式初始化/刷新：Agent只读发现`preparation.yml`与`verification.yml`候选或差异，用户确认精确长期写入后再分别交给`task-environment`与`task-verification` owner。Intake不新增store/writer，不管理`capabilities.yml`或`commands.yml`。
+- `declaration-intake`统一承接Project/Service注册、首次Task、准备入口变化、Verification coverage gap及显式初始化/刷新：Agent只读发现`preparation.yml`与`verification.yml`候选或差异。用户确认精确长期写入后，Agent直接维护Project拥有的准备入口；验证声明继续由`task-verification` owner维护。Intake不新增store/writer，不管理`capabilities.yml`或`commands.yml`。
 - Buildr Local 在 `.buildr/local/workspace.sqlite` 保存单机local-only structured data。Task Record、Environment、Verification、Planning/Completion Review与Task Retrospective current records以该数据库为唯一持久化authority；它们共用数据库但保持独立Domain、Application和writer。旧研发与旧收尾current表由连续migration直接删除，不建history或双读。数据库不进入Git、runtime投射或跨机器同步。
 - `.worktrees/` 是多个Task隔离checkout的容器，不是主Workspace、保留工作区或Agent runtime。`task-worktree`只提供`buildr.git-worktree-provider/v1`的checkout/branch/HEAD/clean/registration evidence和具体删除安全；`buildr worktree create|inspect|cleanup`不代表Task或业务成果完成。
 - 正式 Task 的当前协调入口是普通 Task + Parent/Child + Buildr Web 动态投影。Task 顶层记录、Review、Verification与Environment分别由各专业Application/read model提供，consumer不直接访问SQLite，也不维护第二份进度或证据。
@@ -197,7 +197,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - 实际自举 workspace 的 sync 是独立状态变更，不作为相同tree的第二轮产品验证；唯一self-bootstrap runner按当前交付与retained checkout事实执行sync、入口检查和Doctor。`buildr update`只更新CLI来源。
 - 其他 Agent 在存在 adapter 前，不使用 supported fallback adapter；Agent 应读取标准资产或 bootstrap guide 理解边界，并联系 Buildr 作者反馈 adapter 需求。
 
-任务研发聚合、任务规划身份和旧Task Finish Application均已删除；`task_development_current`与`task_finish_current`不再存在。`task complete`只保存顶层Task结果，交付事实由Git、文件、部署或外部系统重新观察，环境清理由Task Environment独立负责。
+任务研发聚合、任务规划身份、旧Task Finish Application与统一Task Environment均已删除；`task_development_current`、`task_finish_current`与`task_environment_current`不再存在。`task complete`只保存顶层Task结果，交付事实由Git、文件、部署或外部系统重新观察；Worktree和预览等资源由各自owner安全清理。
 
 ## MVP 边界
 

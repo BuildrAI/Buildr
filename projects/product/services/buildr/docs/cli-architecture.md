@@ -76,9 +76,9 @@ agent-assets/infrastructure/runtime/render-claude-code.mjs
 
 CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 command catalog。Agent Assets、Task、Workspace、Publication、Change、System Installation、System Doctor 和 Web 的 descriptor 来自各自 module contribution；公共 Host 只负责合并与分发。每个 executable descriptor 同时携带唯一 key、`primary | agent-machine | maintenance` surface、summary、canonical help、match 与 run adapter。dispatch、unknown-command candidates、根帮助分区和 leaf/aggregate topic 都消费同一棵 per-runtime catalog。`buildr web` 的 HTTP Host只遍历Bootstrap传入的HTTP contributions，不直接导入业务 Adapter。新增命令不得在入口直接实现 mutation，也不得建立第二份 registry。
 
-Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Task Environment、Review、任务验证报告、Finish等正式机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
+Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Review、任务验证报告与Worktree等低频机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
 
-Task Record 是参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver与operation memoizer等命名窄依赖，在私有组合对象中创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP/Diagnostic contributions。CLI与HTTP Adapter调用同一Application对象；正式 runtime port 不创建第二store、writer、双读或双写。Task Environment、Review、Verification、Git与Retrospective仍由各自owner持有。
+Task Record 是参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver与operation memoizer等命名窄依赖，在私有组合对象中创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP/Diagnostic contributions。CLI与HTTP Adapter调用同一Application对象；正式 runtime port 不创建第二store、writer、双读或双写。Review、Verification、Worktree、Preview与Retrospective由各自owner持有。
 
 任务研发聚合、任务规划身份和旧Task Finish Application均已删除。Bootstrap不安装这些模块，CLI/HTTP/Web不提供对应入口，SQLite migration删除两张旧current表。任务总览只组合Task Record、Review、Verification和Environment；任务收尾由Agent按Skill直接组合Git、环境及业务工具，不创建交付状态库。
 

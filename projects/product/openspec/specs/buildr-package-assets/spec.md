@@ -301,22 +301,22 @@ Buildr product verification MUST 防止提交格式与 workspace 默认语言重
 - **THEN** verification MUST confirm each consumer reads the current workspace language convention
 - **AND** verification MUST NOT require Core to own or duplicate the commit-language default
 
-### Requirement: 产品验证覆盖 task worktree 隔离与证据复用
-Buildr package verification MUST 防止正式 workflow 绕过 Task Environment 直接把 task-worktree 当作环境 authority，也 MUST 防止 change artifacts 双写、合并前污染 retained self-bootstrap Workspace，或让 Git/worktree providers重新拥有 Runtime/依赖、Candidate verification 或 evidence 复用决策。
+### Requirement: 产品验证覆盖task worktree隔离与证据复用
+Buildr package verification MUST验证task-worktree只拥有Git位置、证据和删除安全，并防止change artifacts双写、合并前污染retained self-bootstrap Workspace，或让Git/worktree providers拥有Runtime、依赖、Candidate verification或evidence复用决策。
 
-#### Scenario: 校验 Change 创建时机
-- **WHEN** Buildr 验证 task-triage、OpenSpec contribution 与随包 Task Environment Skill
-- **THEN** 验证 MUST 确认实现型 OpenSpec Change 在 propose 前取得 matching `ready` Environment Receipt
-- **AND** 采用 Environment 后 artifacts、实现和候选验证 MUST 只有 receipt 允许的写入位置
+#### Scenario: 校验Change写入位置
+- **WHEN** Buildr验证task-triage、OpenSpec contribution与随包Worktree Skill
+- **THEN** 验证 MUST确认实现型OpenSpec Change只写入Agent已核对的Workspace或matching Worktree
+- **AND** 不需要独立位置时 MUST不要求创建Worktree
 
 #### Scenario: 校验 Git provider 只交接 Git 事实
-- **WHEN** Buildr 验证 Product Project 开发规则、task-environment、task-worktree 和 git-operations
+- **WHEN** Buildr 验证Product Project开发规则、task-worktree和git-operations
 - **THEN** 验证 MUST 确认 task-worktree 只提供 repository/checkout/branch/HEAD/clean 与 Git transition evidence
-- **AND** task-environment MUST 独占 Runtime/CLI/依赖、projection、资源、restore 与总 cleanup，Task Verification MUST 独占 Candidate/evidence
+- **AND** Worktree MUST不拥有Runtime、依赖、Preview、Review、Verification或总cleanup
 
 #### Scenario: 校验 Skill 文本没有重复职责
 - **WHEN** Buildr 执行 package 静态验证和任务能力专项测试
-- **THEN** verifier MUST 拒绝 task-worktree 中的 Environment ready、runtime preparation、session adoption 或总 cleanup 说明
+- **THEN** verifier MUST拒绝task-worktree中的runtime preparation、session adoption或总cleanup说明
 - **AND** verifier MUST 拒绝 git-operations/task-worktree 重新声明 Candidate 验证命令、保证级别或 evidence 复用决策
 
 #### Scenario: 候选验证保持 retained Workspace 干净
@@ -651,22 +651,22 @@ Buildr package MUST原子交付`buildr.task-verification/v3` contract、默认`t
 - **AND** 默认provider在不再被选中时 MUST可安全卸载
 
 ### Requirement: 随包 task-worktree guidance 必须简洁且结构化
-Buildr package MUST 以单一 routing description 和结构化正文交付窄 `task-worktree` guidance；description MUST 只匹配明确 Git worktree/本地任务分支意图或 selected Environment provider handoff。正文 MUST 只覆盖 Git plan、创建/复用/检查/保留/清理、evidence、授权与停止条件，并 MUST NOT 声明 Environment 生命周期、Runtime/依赖、session adoption、验证政策或总 cleanup。
+Buildr package MUST 以单一 routing description 和结构化正文交付窄 `task-worktree` guidance；description MUST只匹配明确Git worktree或本地任务分支意图。正文 MUST只覆盖Git plan、创建/复用/检查/保留/清理、evidence、授权与停止条件，并 MUST NOT声明Runtime/依赖、Preview、session adoption、验证政策或总cleanup。
 
 #### Scenario: 静态验证简洁结构
 - **WHEN** Buildr 验证随包 `task-worktree` Skill
 - **THEN** verifier MUST 确认 description 为单句 routing index，且 package/workspace/frontmatter 完全一致
 - **AND** verifier MUST 确认正文只消费/提供 `buildr.git-worktree-provider/v1` 的 Git 事实
 
-#### Scenario: Environment 调用 Git provider
-- **WHEN** selected Task Environment plan 需要创建或复用 worktree
-- **THEN** guidance MUST 要求 provider 返回 repository plan 与真实 Git evidence
-- **AND** MUST 将 Environment `ready`、依赖、runtime projection、动态资源和总 cleanup 留给上游 `task-environment`
+#### Scenario: Agent调用Git provider
+- **WHEN** Agent判断任务需要创建或复用worktree
+- **THEN** guidance MUST要求provider返回repository plan与真实Git evidence
+- **AND** 依赖、runtime projection和动态资源继续由Project或具体能力负责
 
 #### Scenario: 用户只要求 Git worktree 操作
 - **WHEN** 用户明确要求定位、创建、复用、保留或清理特定 task worktree/本地任务分支
 - **THEN** `task-worktree` MUST 披露精确 repository、branch、path、Git effects 与未授权破坏性动作
-- **AND** MUST NOT 自动创建 Task Record、Environment Receipt 或把 provider result 报告为正式执行 ready
+- **AND** MUST NOT自动创建Task Record或把provider result报告为统一执行许可
 
 #### Scenario: capability 拓扑完成破坏性切换
 - **WHEN** Buildr 交付 P0.2 package
@@ -748,7 +748,7 @@ Buildr package verification MUST 区分 Task Review、普通 Change review 与 T
 Task worktree 中新增的 Task Review Skill、CLI、Application 或 runtime assets MUST 只在该任务验证工作区和临时 Workspace 中验证；它们 MUST NOT 写 retained Workspace 的 Review Result、替换正式 runtime 或宣称 selected authority 已切换。只有候选集成、retained source sync/render/doctor 和真实 E2E 成功后，P0.3 authority 才 MUST 被报告为生效。
 
 #### Scenario: 自举候选执行验证
-- **WHEN** candidate CLI/Skill 在 Task Environment 中接受测试
+- **WHEN** candidate CLI/Skill在隔离测试工作根中接受测试
 - **THEN**测试 MUST 使用 task worktree 内 fixture/临时 Workspace 和候选 runtime
 - **AND** retained/peer Task records、Review Results、runtime 与主 checkout MUST 保持不受影响
 
@@ -779,7 +779,7 @@ Buildr package MUST 原子交付一个 `git-operations` workspace Skill、一个
 - **AND** archive 历史 MAY 保留旧事实但 MUST NOT 被 runtime 或 current docs 解析为可用入口
 
 #### Scenario: Worktree provider 保持独立
-- **WHEN** Task Environment 准备 Git checkout
+- **WHEN** Worktree provider准备Git checkout
 - **THEN** `task-worktree` MUST 继续独立 provide `buildr.git-worktree-provider@1`
 - **AND** `git-operations` MUST NOT 接管 worktree create、registration、Environment ready 或 cleanup authority
 
@@ -905,7 +905,7 @@ Buildr package与runtime verification MUST覆盖Task Finish `already-contained` 
 - **AND** runtime/package MUST不存在self-bootstrap slot、隐式dependency、路径分类或executor特判
 
 ### Requirement: Package 必须统一排除 Task 本机目录
-Buildr package、Workspace 初始化与 Workspace sync MUST 统一维护根 `.gitignore` 中的 `/.buildr/tasks/`，使 Task Environment Receipt 与 inert legacy records 保持 Workspace-local。维护 MUST 采用保留用户内容的幂等追加语义，不得借此修改 Git index 或删除旧记录。
+Buildr package、Workspace初始化与Workspace sync MUST统一维护根`.gitignore`中的`/.buildr/tasks/`，使Task本机辅助记录保持Workspace-local。维护 MUST采用保留用户内容的幂等追加语义，不得借此修改Git index或删除旧记录。
 
 #### Scenario: 初始化新 Workspace
 - **WHEN** 用户使用 current package 初始化新的 Workspace
@@ -963,7 +963,7 @@ Buildr package verification MUST 覆盖随包 `task-triage` 在新正式 Task �
 #### Scenario: 成功路径先收敛再创建
 - **WHEN** fixture repository 处于 clean `dev` 且配置 `origin/dev`，并分别覆盖 aligned、behind 与未 push 本地 commit 分叉状态
 - **THEN** verification MUST 证明 task-triage 依次完成 fetch/rebase、适用 transition check，再调用 Task Record create
-- **AND** 创建出的 Task Environment checkout MUST 基于收敛后的 local `dev` identity
+- **AND** 创建出的Task Worktree checkout MUST基于收敛后的local `dev` identity
 
 #### Scenario: 失败路径不创建 Task
 - **WHEN** fixture 覆盖 dirty、错误 branch/upstream、fetch failure、rebase conflict、abort recovery 与 abort failure
@@ -971,8 +971,8 @@ Buildr package verification MUST 覆盖随包 `task-triage` 在新正式 Task �
 - **AND** MUST 证明没有自动 stash、merge、force push、策略切换或把部分成功伪装为零 effect
 
 #### Scenario: 专业 authority 保持分离
-- **WHEN** verifier检查 Task Record CLI/Application、Buildr Web mutation 和 Task Environment provider
-- **THEN** 它们 MUST 保持不执行创建前 fetch/rebase，Task Record schema 与 Environment Receipt MUST 不新增该 Git 编排状态
+- **WHEN** verifier检查Task Record CLI/Application、Buildr Web mutation和Worktree provider
+- **THEN** 它们 MUST保持不执行创建前fetch/rebase，Task Record schema与Worktree evidence MUST不新增该Git编排状态
 - **AND** 创建前收敛 MUST 只存在于 Agent `task-triage` consumer 与 selected Git Operations provider 的组合行为
 
 ### Requirement: Package residual gate 必须退役持久化 Task Lifecycle projection
@@ -1014,14 +1014,6 @@ Buildr package、Workspace 初始化与 Workspace sync MUST 幂等维护根 `.gi
 #### Scenario: 重复 sync
 - **WHEN** Workspace 已含 `/.buildr/agent-runtime/` 并再次运行 sync
 - **THEN** Buildr MUST NOT 生成重复条目或无关 `.gitignore` 改写
-
-### Requirement: Package必须完整交付Environment Preparation Declaration能力
-Buildr package MUST原子交付Preparation Declaration schema/reference/template、Plan Request/Plan/Receipt contracts、`task-environment`与相关consumer guidance、CLI/Application runtime、Doctor和Buildr Web read model。package manifest MUST列出所有新增Skill companion files，runtime投射 MUST不依赖Product checkout外未发布文件。
-
-#### Scenario: package check验证新增资产
-- **WHEN** Agent运行`buildr package check`
-- **THEN** package check MUST验证全部Environment Preparation Declaration companion files存在且受manifest管理
-- **AND** 安装后Workspace MUST能让Agent读取模板、选择Recipe并调用公开CLI
 
 ### Requirement: Package验证必须拒绝重复authority
 Package verification MUST拒绝新增Parent lifecycle/progress/event/history/audit表、`tasks`任意JSON/Child status array、GET filesystem scan、历史backfill/single-Task migration和Parent/Child相同delta双重owner。
@@ -1121,44 +1113,6 @@ Buildr package MUST 让 task-manager frontmatter、package manifest 与 workspac
 - **THEN** package/static verification MUST 失败并报告重复 authority
 - **AND** Web feature MUST 只调用登记的 Workspace Task API 并展示 Application result
 
-### Requirement: Package 必须原子交付 Buildr Web Task Environment authority
-Buildr package MUST原子交付`buildr.task-environment/v1` contract、Task Environment Application、Plan v1/Receipt v4 Domain、`task-environment` Skill、Plan/Environment公共CLI与JSON、v2/v3 compatibility reader、唯一SQLite writer、Task-scoped Change Resolver、Buildr Web saved-current reader/API、Git provider contract、bindings、runtime mappings与迁移验证。任一identity、schema、CLI、source/package/runtime或Buildr Web consumer不一致时package check与doctor MUST fail closed。
-
-#### Scenario: 初始化或同步新 package
-- **WHEN** Buildr初始化或同步包含Task Environment的Workspace
-- **THEN** manifests MUST登记matching contract、provider和bindings
-- **AND** MUST不交付Project dependency declaration parser或package-manager adapter registry
-
-#### Scenario: capability graph 解析
-- **WHEN** doctor解析task-triage、task-environment、task-worktree与task-finish
-- **THEN** graph MUST显示正式workflow消费task-environment，Environment按需消费Git provider
-- **AND** 旧capability、缺失provider、歧义或版本冲突 MUST产生精确诊断
-
-#### Scenario: 公共 Task Environment CLI 完整登记
-- **WHEN** verification检查help、CLI和public JSON registry
-- **THEN** Plan record/inspect及Environment prepare/inspect/cleanup MUST全部出现并匹配各自schema
-- **AND** internal resource/saved-current actions MUST不出现
-
-#### Scenario: Buildr Web只读保存事实
-- **WHEN** checkout或npm tarball Buildr Web读取Environment
-- **THEN** GET MUST通过Application展示v4 Plan/Service/Step facts或legacy diagnostic
-- **AND** MUST不执行Step、文件系统probe或Receipt写入
-
-#### Scenario: 候选package在隔离Workspace证明fresh依赖
-- **WHEN** candidate CLI作为外部controller为fresh fixture携带包含buildr/buildr-web步骤的Agent Plan执行prepare
-- **THEN** 一次prepare MUST产生两个独立Service Step outputs并使`npm run build:web`使用buildr-web lockfile工具成功
-- **AND** 同一机制 MUST能执行非npm fixture step而无需新增技术栈adapter
-
-#### Scenario: 候选 package 在自身验证工作区测试
-- **WHEN** Task worktree候选修改Plan、Receipt、CLI、Skill或Buildr Web assets
-- **THEN** candidate MAY只向receipt绑定验证工作区投射
-- **AND** MUST阻止retained、peer Task与验证根外共享runtime target
-
-#### Scenario: 集成后激活
-- **WHEN** 候选进入retained checkout
-- **THEN** Agent MUST从retained Product source执行适用sync/render/doctor
-- **AND** 只有package/runtime identity一致且专项验证通过后才能报告正式生效
-
 ### Requirement: Buildr 自举 Component 必须统一执行 Buildr Web post-Finish activation
 Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属Skill执行self-bootstrap activation。该Skill MUST只消费同一Finish run中冻结的Task Contribution paths，并 MUST按封闭路径分类去重组合package sync、development Buildr Web install、retained checkout显式开发入口验证与最终Doctor/Finish resume；它 MUST NOT从HEAD、dirty tree、当前diff或时间重新猜测贡献，也 MUST NOT安装、删除或验证PATH默认development CLI。Formal Finish首轮Doctor通过时activation位于complete之后；首轮Doctor blocked时，只有前序delivery/remote evidence、matching resume token和适用动作全部成立，activation才可以先修复retained状态并恢复同一run。
 
@@ -1169,7 +1123,7 @@ Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属
 
 #### Scenario: CLI影响路径
 - **WHEN** complete或Doctor-blocked Finish Result的冻结Task Contribution命中Buildr CLI正式影响路径
-- **THEN** self-bootstrap activation MUST使用Environment Receipt绑定的retained Node显式运行delivered retained checkout的`projects/product/buildr`并验证其identity
+- **THEN** self-bootstrap activation MUST使用matching Task Finish结果与Product声明的retained Node显式运行delivered retained checkout的`projects/product/buildr`并验证其identity
 - **AND** 通用Product executor和self-bootstrap runner MUST观察到development CLI installer调用次数为零
 
 #### Scenario: Buildr Web影响路径
@@ -1206,39 +1160,6 @@ Buildr自举Workspace的`buildr-self-bootstrap` Component MUST通过单一专属
 - **WHEN** 首轮指定Agent Doctor、cleanup与Formal Finish已经成功且至少一个self-bootstrap动作适用
 - **THEN** 专属Skill MUST在post-Finish动作和显式开发入口identity验证后，通过该retained Project bridge显式运行一次最终指定Agent Doctor
 - **AND** 任一动作即使被多条路径命中也 MUST至多执行一次
-
-### Requirement: 产品验证必须覆盖 Buildr Web Environment authority 与清理
-Buildr product verification MUST 覆盖 Task Record gate、共享执行根、单/多 repo Git provider、CLI/依赖准备、runtime projection、Task-scoped Change 解析、Buildr Web Environment inspect、资源登记、串行恢复、Finish cleanup handoff与明确放弃，并 MUST 证明所有正式 consumer 只读写 Workspace SQLite Environment current authority。Environment readiness MUST不包含全局Workspace Node probe。
-
-#### Scenario: checkout 与 npm package 正常路径
-- **WHEN** verifier 分别从 checkout 和 npm tarball 初始化临时 Workspace 并执行正式 Task 环境流程
-- **THEN** 两者 MUST 产生等价的 Task Environment contract/result、SQLite current row、provider evidence 与 ready/cleanup 语义
-- **AND** 只允许 machine path、时间、进程和Project显式executable等真实本机事实不同
-
-#### Scenario: Buildr 自举依赖准备
-- **WHEN** 干净task checkout没有`node_modules`且候选CLI probe失败
-- **THEN** retained stable controller MUST使用Product声明的精确development Node与checkout自己的npm/lockfile完成`npm ci`后重新probe
-- **AND** verifier MUST证明retained/peer `node_modules`未被复用、链接或修改
-
-#### Scenario: 动态资源登记失败
-- **WHEN** preview/dev server 已启动但 Environment writer 拒绝登记
-- **THEN** creator MUST 停止刚创建的 owned process/resource 并返回失败
-- **AND** current row、其他 previews、默认 Buildr Web 与其他任务 MUST 保持不受影响
-
-#### Scenario: Task-scoped Change 与 Buildr Web Environment
-- **WHEN** Change 只存在于 matching Task Environment Project root，且用户打开该 Task 详情
-- **THEN** Task Record reference 与 task-scoped Change detail MUST 返回 candidate provenance，环境页签 MUST 通过 Application `inspect` 返回当前机器的有界 probe
-- **AND** 全局 Change list MUST 保持 retained-only，Web/HTTP MUST 不直接读取 Receipt store 或接受任意 filesystem path
-
-#### Scenario: 正常 Finish 与放弃 cleanup
-- **WHEN** fixture 分别提供已交付 normal handoff、明确 abandon authorization 和 ownership 不明 shared root
-- **THEN** Environment MUST 分别完成安全清理、清理可证明的 Task-owned dirty 资源、对不明 shared content 返回 blocked/retained
-- **AND** Task Finish MUST 不直接调用 worktree cleanup、重复交付或写第二份 cleanup 结论
-
-#### Scenario: 防止文件 authority 回退
-- **WHEN** package/static/runtime verification 发现旧 environment writer、文件 importer、`worktree context/adopt` guidance、adoption receipt、environment-shaped worktree JSON/help 或 consumer direct edge 任一仍可达
-- **THEN** verification MUST 失败并报告具体冲突入口
-- **AND** legacy identity 只 MAY 出现在 OpenSpec archive/history，Buildr runtime、sync 与 package tests MUST NOT保留迁移 reader
 
 ### Requirement: 产品验证必须覆盖 Task Manager package、CLI 与 Buildr Web parity
 Buildr package verification MUST 在 checkout、初始化 Workspace、同步 Workspace、隔离 runtime、Buildr Web browser 与 npm tarball 场景覆盖 contract/Skill、todo/active 状态、来源关系、CLI registry/help、Buildr Web route/API/assets、public JSON、filesystem effect 和失败分支，并 MUST 在任一入口行为漂移时失败。

@@ -300,7 +300,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-concurrent-windows, fresh-build-windows]
+        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-concurrent-windows]
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -317,10 +317,6 @@ jobs:
             projects/product/services/buildr/package-lock.json
             projects/product/services/buildr-web/package-lock.json
       - run: npm ci
-      - name: Prepare Buildr Web dependencies for offline fresh build
-        if: matrix.shard == 'fresh-build-windows'
-        working-directory: projects/product/services/buildr-web
-        run: npm ci --ignore-scripts
       - name: Run Windows Candidate shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}

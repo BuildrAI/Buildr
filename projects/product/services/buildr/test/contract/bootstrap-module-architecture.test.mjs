@@ -20,7 +20,6 @@ import {
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_PERSISTENCE_READ,
-  TASK_ENVIRONMENT_DECLARATION,
   TASK_WORKTREE_PROVIDER,
 } from '../../src/task/module.mjs';
 import {
@@ -123,7 +122,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'task-worktree-provider',
     requires: [],
     provides: [TASK_WORKTREE_PROVIDER],
-    contributions: { cli: [], http: [], diagnostics: [] },
+    contributions: { cli: ['worktree create', 'worktree cleanup', 'worktree inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'change',
@@ -139,19 +138,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
       http: ['task-record.http'],
       diagnostics: ['task-record.diagnostics'],
-    },
-    lifecycle: 'none',
-  }, {
-    id: 'task-environment',
-    requires: ['task-record.persistence-read', AGENT_ASSETS_RUNTIME, TASK_WORKTREE_PROVIDER],
-    provides: ['task-environment.application', 'task-environment.persistence-read', TASK_ENVIRONMENT_DECLARATION, 'task-environment.runtime-port'],
-    contributions: {
-      cli: [
-        'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
-        'worktree create', 'worktree cleanup', 'worktree inspect',
-      ],
-      http: ['task-environment.http'],
-      diagnostics: [],
     },
     lifecycle: 'none',
   }, {
@@ -227,7 +213,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'system-doctor',
-    requires: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, VERIFICATION_DECLARATION, TASK_ENVIRONMENT_DECLARATION, WORKSPACE_QUERY],
+    requires: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, VERIFICATION_DECLARATION, WORKSPACE_QUERY],
     provides: ['system.doctor.application'],
     contributions: { cli: ['doctor'], http: [], diagnostics: [] },
     lifecycle: 'none',
@@ -244,9 +230,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
-    'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
-    'task environment prepare', 'task environment plan record', 'task environment plan inspect', 'task environment inspect', 'task environment cleanup',
     'worktree create', 'worktree cleanup', 'worktree inspect',
+    'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
     'task parent inspect',
@@ -256,7 +241,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http',
     'task-review.http', 'task-retrospective.http', 'task-verification.http',
     'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
   ]);

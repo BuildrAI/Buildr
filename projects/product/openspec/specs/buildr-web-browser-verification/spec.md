@@ -174,7 +174,7 @@ Buildr Web 将主导航从侧栏改为顶栏后，browser smoke 与集成测试 
 
 #### Scenario: Buildr Web本地工具链current
 - **WHEN** Browser capability被selected且matching Environment已准备current `buildr-web` Recipe
-- **THEN** staging build MUST从Task Environment允许的Buildr Web execution root解析项目本地TypeScript与Vite
+- **THEN** staging build MUST从Agent核对的Buildr Web实际工作根解析项目本地TypeScript与Vite
 - **AND** browser preflight通过后才能构建staging dist和启动Chrome
 
 #### Scenario: 只有全局TypeScript可用

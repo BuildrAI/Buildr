@@ -84,7 +84,7 @@ const requiredRuntime = [
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.ts',
-  'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.ts',
+  'task/interfaces/cli/git-worktree.ts',
   'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.ts',
   'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
   'web/infrastructure/instance-runtime.mjs',
@@ -102,8 +102,6 @@ const requiredRuntime = [
   'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
   'workspace/interfaces/http/workspace-http.mjs',
   'task/infrastructure/git-worktree-provider.ts',
-  'task/application/task-environment-application.mjs',
-  'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
   'task/persistence/task-review-repository.ts',
   'task/persistence/task-verification-repository.ts',
@@ -438,8 +436,8 @@ for (const legacy of [
   if (fs.existsSync(path.join(sourceRoot, legacy))) problems.push(`legacy Workspace Core entry must be removed: ${legacy}`);
 }
 
-const webModule = path.join(sourceRoot, 'web', 'module.mjs');
-const webCli = path.join(sourceRoot, 'web', 'interfaces', 'cli', 'web.mjs');
+const webModule = path.join(sourceRoot, 'web', 'module.ts');
+const webCli = path.join(sourceRoot, 'web', 'interfaces', 'cli', 'web.ts');
 if (!fs.existsSync(webModule) || !fs.existsSync(webCli)) problems.push('Buildr Web instance lifecycle module entry is missing');
 else {
   const moduleSource = fs.readFileSync(webModule, 'utf8');
@@ -458,11 +456,9 @@ const legacyTaskRecordConsumers = new Set([
   'change/module.mjs',
   'change/interfaces/http/change-http.mjs',
   'workspace/application/project-daily-progress-application.mjs',
-  'task/application/task-environment-application.mjs',
   'task/application/task-retrospective-application.mjs',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.ts',
-  'task/persistence/task-environment-repository.mjs',
   'task/persistence/task-overview-repository.ts',
   'task/persistence/task-retrospective-repository.mjs',
   'task/persistence/task-verification-repository.ts',
@@ -475,15 +471,6 @@ for (const file of sourceFiles) {
   if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
   if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
     problems.push(`new wide Runtime Task Record consumer outside the explicit runtime-port baseline: src/${relative}`);
-  }
-}
-
-const taskEnvironmentApplication = path.join(sourceRoot, 'application', 'task-environment', 'task-environment-application.mjs');
-const taskEnvironmentInterface = path.join(sourceRoot, 'interfaces', 'cli', 'task-environment.mjs');
-if (fs.existsSync(taskEnvironmentApplication)) {
-  const source = fs.readFileSync(taskEnvironmentApplication, 'utf8');
-  if (/process\.(?:stdout|stderr|exitCode)|taskEnvironmentCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
-    problems.push('Task Environment Application must not own CLI parsing, output, or process exit state');
   }
 }
 
@@ -522,13 +509,6 @@ if (fs.existsSync(taskVerificationInterface)) {
     problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
 }
-if (fs.existsSync(taskEnvironmentInterface)) {
-  const source = fs.readFileSync(taskEnvironmentInterface, 'utf8');
-  if (!source.includes('export async function taskEnvironmentCommand') || !source.includes('runtime.prepareTaskEnvironment')) {
-    problems.push('Task Environment CLI interface must adapt registry actions to the shared Application');
-  }
-}
-
 const dailyProgressApplication = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.mjs');
 const dailyProgressInterface = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.mjs');
 if (fs.existsSync(dailyProgressApplication)) {

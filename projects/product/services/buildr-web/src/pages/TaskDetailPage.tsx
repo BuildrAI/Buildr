@@ -12,7 +12,6 @@ import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocument
 import { ChangeBriefPanel, type ChangePayload } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
-import { EnvironmentTab } from './task-detail/EnvironmentTab';
 import { EvidenceTab } from './task-detail/EvidenceTab';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
@@ -42,7 +41,6 @@ const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'prototype', label: '原型' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
-  { id: 'environment', label: '环境' },
 ];
 
 export function TaskDetailPage() {
@@ -83,8 +81,6 @@ export function TaskDetailPage() {
   const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
   const [documentReference, setDocumentReference] = useState<TaskDocumentReference | null>(null);
 
-  const [environmentData, setEnvironmentData] = useState<any>(null);
-  const [environmentLoading, setEnvironmentLoading] = useState(false);
   const [reviewData, setReviewData] = useState<any>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -105,7 +101,6 @@ export function TaskDetailPage() {
   const prototypeRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
-  const environmentRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
   const retrospectiveRequestRef = useRef(0);
@@ -226,34 +221,6 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
-  const refreshEnvironment = useCallback(async () => {
-    const requestId = ++environmentRequestRef.current;
-    const currentTaskId = taskId;
-    setEnvironmentLoading(true);
-    try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'environment', (signal) => (
-        taskProfessionalApi.environment(currentTaskId, { signal })
-      ));
-      if (environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setEnvironmentData(next);
-      }
-    } catch (err) {
-      if (!isTaskReadCancelled(err) && environmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setEnvironmentData({
-          status: 'blocked',
-          source: 'current-machine',
-          observedAt: new Date().toISOString(),
-          receipt: { available: false, path: '—' },
-          environment: null,
-          diagnostic: { code: (err as ApiError).code || 'environment_read_failed', message: err instanceof Error ? err.message : '读取失败' },
-          nextActions: ['确认任务与当前工作空间后重试。'],
-        });
-      }
-    } finally {
-      if (environmentRequestRef.current === requestId) setEnvironmentLoading(false);
-    }
-  }, [taskId]);
-
   const refreshReview = useCallback(async () => {
     const requestId = ++reviewRequestRef.current;
     const currentTaskId = taskId;
@@ -351,13 +318,12 @@ export function TaskDetailPage() {
       void refreshCoordination();
     }
     if (tab === 'prototype') void refreshPrototype();
-    if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
       void refreshVerification();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshReview, refreshVerification, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -368,7 +334,6 @@ export function TaskDetailPage() {
     setCoordinationData(null);
     setPrototypeData(null);
     setPrototypeError(null);
-    setEnvironmentData(null);
     setReviewData(null);
     setVerificationData(null);
     setRetrospectiveData(null);
@@ -383,7 +348,6 @@ export function TaskDetailPage() {
     prototypeRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
-    environmentRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
     retrospectiveRequestRef.current += 1;
@@ -391,7 +355,6 @@ export function TaskDetailPage() {
     setPrototypeLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
-    setEnvironmentLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
     setRetrospectiveLoading(false);
@@ -419,7 +382,6 @@ export function TaskDetailPage() {
       void refreshOverview();
       void refreshCoordination();
     }
-    if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
       void refreshVerification();
@@ -961,12 +923,6 @@ export function TaskDetailPage() {
         onRefresh={() => { void refreshRetrospective(); }}
         onHandle={(status, note) => { void handleRetrospective(status, note); }}
         taskHref={(relatedTaskId) => href(`/tasks/${encodeURIComponent(relatedTaskId)}`)}
-      />
-      <EnvironmentTab
-        active={activeTab === 'environment'}
-        data={environmentData}
-        loading={environmentLoading}
-        onRefresh={() => { void refreshEnvironment(); }}
       />
     </>
   );

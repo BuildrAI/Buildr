@@ -52,7 +52,7 @@ export function registerOpenSpecApplication(runtime, { projectQuery } = {}) {
     if (!changeRoot.startsWith(`${changesRoot}${path.sep}`) || !existsDirectory(changeRoot)) {
       const error = new Error(`Active OpenSpec change not found in the provided --target: ${change}.`);
       error.code = 'openspec.active_change_not_found';
-      error.nextAction = '从matching Task Environment Receipt读取execution.workdir，并原样作为--target重试；不得把Change复制到canonical Workspace或自动搜索其他worktree。';
+      error.nextAction = '核对Change实际位于当前Workspace还是matching Worktree，并把该真实工作根原样作为--target重试；不得复制Change或自动搜索其他worktree。';
       throw error;
     }
     if (!existsFile(path.join(changeRoot, '.openspec.yaml'))) {

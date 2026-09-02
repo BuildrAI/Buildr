@@ -14,7 +14,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 - 工作空间（Workspace）、项目（Project）与服务（Service）；
 - 规则、技能、命令（Command）、组件（Component）和运行时投射；
-- 正式任务（Formal Task）、任务环境（Task Environment）与父子任务（Parent/Child Task）；
+- 正式任务（Formal Task）、工作树（Worktree）与父子任务（Parent/Child Task）；
 - 任务研发（Task Development）、任务候选（Task Candidate）、任务审查（Task Review）与任务验证（Task Verification）；
 - 任务收尾（Task Finish）、Git/PR 交付、激活（Activation）、清理（Cleanup）和诊断（Diagnostics）；
 - OpenSpec、当前认知（Current Knowledge）与术语治理（Terminology Governance）；
@@ -33,7 +33,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 |---|---|---|
 | Workspace 资产维护 | 默认规则要求 Agent 先使用 Buildr Skill，并通过 manifest-backed CLI 维护源资产 | 工具不可用或自身缺陷会阻止本来安全的资产工作 |
 | Project / Service | Domain 强制固定物理目录，外部仓库必须被物化到 canonical path | Buildr 反向要求用户重组已有仓库和目录 |
-| Task Environment | 正式 Task 在修改、构建、测试前必须取得整体 `ready` | 环境登记问题被扩大为工作许可问题 |
+| 统一Task Environment | 正式 Task 在修改、构建、测试前必须取得整体 `ready` | 已删除；工作位置、准备和资源由独立owner负责 |
 | Task Development | Verification、Candidate、Completion Review 和 handoff 存在固定顺序 | Agent 无法根据风险、成本和上下文选择更优路径 |
 | Task Verification | 内部 Execution Record 容量或重复登记可以阻止验证进程启动 | Buildr 记录能力反向限制真实测试工作 |
 | Doctor | 一个聚合 `ready` 由全部 actionable finding 决定 | 无关模块的 warning/error 可能阻止当前安全动作 |
@@ -53,7 +53,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 ### 唯一写入者不等于唯一工作路径
 
-Buildr 应用（Buildr Application）可以继续作为某类持久结果的唯一写入者，例如正式任务记录（Task Record）、环境回执（Environment Receipt）、验证结果（Verification Result）或交付证据（Delivery Evidence）。其含义是：
+Buildr 应用（Buildr Application）可以继续作为某类持久结果的唯一写入者，例如正式任务记录（Task Record）、验证结果（Verification Result）或具体资源owner记录。其含义是：
 
 - 所有客户端通过同一 Application 校验并登记事实；
 - 不允许页面、Skill 或 Agent 直接修改 SQLite；
@@ -191,20 +191,11 @@ Buildr 登记、展示、诊断和恢复
 
 验收重点：不会从普通对话或临时操作自动创建 Task；不会通过修复接口篡改已成立交付事实。
 
-### 4. Task Environment
+### 4. 工作位置、Project准备与动态资源
 
-目标：Environment 管理 Buildr 实际拥有的执行环境、共享资源和清理责任，不管理 Agent 的工作许可。
+统一Task Environment已经删除。Agent直接使用已确认Workspace，或在需要隔离时调用Worktree；Project/Service拥有真实准备入口；Preview和其他动态资源由创建能力管理owner与释放。
 
-重构方向：
-
-- `ready` 只约束由 Buildr 准备、执行或声明正式证据的环境路径；
-- Agent 在已有明确代码仓中编辑、构建和测试，不以环境回执为普遍前提；
-- Preparation Declaration 是可复用 Recipe，不是所有 Task 的准入材料；
-- 只有请求 Buildr 确定性准备、租约、共享资源、隔离 runtime 或正式环境证据时，才要求完整 Plan；
-- 缺失计划、回执或投射时，返回局部诊断和可选准备路径；
-- cleanup 继续只删除可证明属于该 Task 的资源；无法证明删除安全仍然硬阻断。
-
-验收重点：外部/直接工作不伪装成 Buildr-managed Environment；Buildr-managed resource 仍可恢复和精确清理。
+验收重点：没有统一`ready`、Plan或Receipt；普通工作无环境记录仍可完成；dirty、owner不明或版本漂移时，具体owner继续拒绝删除。
 
 ### 5. Task Development、Candidate、Review 与 Verification
 

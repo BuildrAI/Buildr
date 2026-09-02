@@ -23,7 +23,7 @@ Buildr 已经完成从工作资产管理工具到本机工作平台的建设，�
 | 1. 工作资产原型 | 在集鲜工作空间中使用清单文件（Manifest）管理项目、服务、规则和技能 | 验证了“工作内容和工作方法可以成为长期资产”，但尚未形成独立产品 |
 | 2. Buildr 产品化 | 建立独立工作空间（Workspace）、命令行界面（CLI）和 Buildr 技能；支持初始化、更新、项目/服务管理，并发布到 npm 软件仓库（npm Registry） | Buildr 成为独立产品，能够为不同组织创建和维护工作空间 |
 | 3. 智能体运行时适配 | 将规则、技能和命令投射到不同智能体运行时（Agent Runtime），适配 AGENTS.md、.agents/skills/ 等共同约定 | 同一套工作资产可以被不同智能体发现和使用 |
-| 4. 任务平台建设 | 建设任务记录（Task Record）、任务工作树（Task Worktree）、任务环境（Task Environment）、任务研发（Task Development）、任务验证（Task Verification）、任务收尾（Task Finish）、任务复盘（Task Retrospective）和 Buildr 网页界面 | 任务不再只存在于聊天列表，Buildr 从资产管理工具进入本机工作平台阶段 |
+| 4. 任务平台建设 | 建设任务记录（Task Record）、任务工作树（Task Worktree）、任务验证（Task Verification）、任务收尾（Task Finish）、任务复盘（Task Retrospective）和 Buildr 网页界面；统一Task Environment与Task Development经实践后退役 | 任务不再只存在于聊天列表，Buildr 从资产管理工具进入本机工作平台阶段 |
 | 5. 治理与架构收敛 | 重构 Buildr 核心规则（Buildr Core），确立“约束智能体不要做错事，而不是要求智能体必须通过 Buildr 才能做事”；建立宽而薄治理、模块化单体（Modular Monolith）、本机结构化数据库（SQLite）和结果对账（Reconciliation） | 产品边界和技术分层更加清晰，但任务生命周期和内部协作成本仍然过高 |
 | 6. 当前阶段 | 产品已进入候选发布（Release Candidate）阶段；主要功能已经完整，正式任务、验证、收尾和发布能力较强 | Buildr 进入产品减法和任务系统重构阶段 |
 

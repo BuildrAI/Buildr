@@ -147,7 +147,7 @@ export function registerTaskRecordApplication(runtime) {
   function assertChangeReferencesAvailable(targetRoot, taskId, changes, options = {}) {
     const resolutions = resolveChangeReferences(targetRoot, taskId, changes, options);
     const unavailable = resolutions.find((item) => item.availability !== 'available');
-    if (unavailable) throw taskRecordError('task_record_change_not_found', `OpenSpec Change 不存在或当前不可解析：${unavailable.reference.project}/${unavailable.reference.change}。`, 409, unavailable, '修正 Change 引用，或先在该 Task Environment/retained Project 中创建对应 Change。');
+    if (unavailable) throw taskRecordError('task_record_change_not_found', `OpenSpec Change 不存在或当前不可解析：${unavailable.reference.project}/${unavailable.reference.change}。`, 409, unavailable, '修正Change引用，或先在当前Workspace/matching Worktree Project中创建对应Change。');
     return resolutions;
   }
 

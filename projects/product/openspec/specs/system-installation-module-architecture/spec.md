@@ -43,7 +43,7 @@ System Installation MUST 将安装与更新编排放在 `application/`，将 ori
 #### Scenario: Application Payload 与 npm package
 - **WHEN** Buildr 构建或验证 Application Payload 和 npm candidate tarball
 - **THEN** payload MUST包含并消费同一 installation origin、registry、identity 与 Launcher implementation
-- **AND** development checkout、Task Environment 与 npm package 的适用入口 MUST保持逻辑身份和运行行为等价
+- **AND** development checkout、matching Worktree与npm package的适用入口 MUST保持逻辑身份和运行行为等价
 
 #### Scenario: 旧入口退出
 - **WHEN** System Installation module 的全部直接消费者已迁移并通过验证

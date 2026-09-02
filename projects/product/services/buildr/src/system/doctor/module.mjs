@@ -24,10 +24,9 @@ export function createSystemDoctorModule(runtime, {
   agentRuntimeCapability = null,
   agentCapabilityQuery = null,
   verificationDeclaration = null,
-  taskEnvironmentDeclaration = null,
   workspaceQuery = null,
 } = {}) {
-  const requiredCapabilities = [agentRuntimeCapability, agentCapabilityQuery, verificationDeclaration, taskEnvironmentDeclaration, workspaceQuery].filter(Boolean);
+  const requiredCapabilities = [agentRuntimeCapability, agentCapabilityQuery, verificationDeclaration, workspaceQuery].filter(Boolean);
   return Object.freeze({
     id: SYSTEM_DOCTOR_MODULE_ID,
     requires: Object.freeze(requiredCapabilities),

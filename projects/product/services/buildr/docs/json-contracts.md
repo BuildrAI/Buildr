@@ -25,8 +25,6 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `update check` | `buildr.update-check/v1` |
 | `openspec converge` | `buildr.openspec-convergence/v1` |
 | `openspec convergence inspect` | `buildr.openspec-convergence-inspect/v1` |
-| `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v4` |
-| `task environment plan record/inspect` | `buildr.task-environment-plan-result/v2` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
 | 长流程缺省compact（release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
 | `__internal task-retrospective list` | `buildr.task-retrospective-list-result/v1` |
@@ -40,10 +38,6 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
 Task Finish的canonical Result由SQLite current/terminal authority决定；CLI只在JSON输出边界选择detail。缺省或显式`compact`返回closed投影，只保留Task/run/status、主失败、next action、关键refs、delivery/completion disposition与timing，不包含Task Execution Record摘要。
-
-`buildr.task-environment-result/v4`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含resolved Plan及逐Declaration/Scope/Recipe/Step current与prepared identity、inputs/outputs/required/executed/status/diagnostic；`preparation-step-executed`effect给出本次真实执行。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
-
-`buildr.task-environment-plan-result/v2`统一覆盖Plan`record|inspect`，返回saved Plan v2、Receipt locator、diagnostic、effects与next actions。`record`接收Plan Request，解析当前Task execution root中的Project Declaration，原子替换Plan并将Environment标为blocked但不执行Step；`inspect`只读saved current。
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 

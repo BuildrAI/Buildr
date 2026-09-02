@@ -368,27 +368,6 @@ skills:
     provides:
       - capability: buildr.task-record
         version: 2
-  - id: task-environment
-    assetIdentity: buildr:skill:task-environment
-    sourceIdentity: package:skills/buildr/task-environment
-    source: buildr
-    path: buildr/task-environment
-    description: 正式 Task 需要准备、检查、恢复或清理实际执行环境，或按 Task ID 取得 Environment Receipt 的当前机器事实时使用；不用于任务分流、Task Record、验证结论或 Git 集成。
-    enabled: true
-    required: false
-    state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
-    runtimePath: task-environment
-    provides:
-      - capability: buildr.task-environment
-        version: 1
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:skills/buildr/task-review
@@ -438,7 +417,7 @@ skills:
     sourceIdentity: package:skills/buildr/declaration-intake
     source: buildr
     path: buildr/declaration-intake
-    description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；只读发现 preparation.yml 与 verification.yml 候选，长期写入必须经用户确认并交给各声明 owner Skill。
+    description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
     enabled: true
     required: false
     state: installed
@@ -526,10 +505,6 @@ contracts:
     version: 1
     path: contracts/buildr/task-finish/v1.md
     description: 由智能体依据真实现场组合已有工具完成成果交付、已有任务结果登记与安全善后。
-  - id: buildr.task-environment
-    version: 1
-    path: contracts/buildr/task-environment/v1.md
-    description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
   - id: buildr.git-worktree-provider
     version: 1
     path: contracts/buildr/git-worktree-provider/v1.md
@@ -567,9 +542,6 @@ bindings:
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
-  - capability: buildr.task-environment
-    version: 1
-    provider: task-environment
   - capability: buildr.git-worktree-provider
     version: 1
     provider: task-worktree

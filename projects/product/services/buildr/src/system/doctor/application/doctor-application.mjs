@@ -20,7 +20,6 @@ export function registerSystemDoctorApplication(runtime) {
   const diagnoseSkillsManifestSchemas = (...args) => runtime.diagnoseSkillsManifestSchemas(...args);
   const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
-  const diagnoseProjectEnvironmentPreparation = (...args) => runtime.diagnoseProjectEnvironmentPreparation(...args);
   const diagnoseInternalWorkflowRoutes = (...args) => runtime.diagnoseInternalWorkflowRoutes(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
@@ -152,7 +151,6 @@ export function registerSystemDoctorApplication(runtime) {
     diagnoseLegacyPractices(result, targetRoot, scopes, includeInfo);
     diagnoseHierarchy(result, targetRoot, scopes, registry);
     diagnoseProjectVerification(result, targetRoot, registry);
-    diagnoseProjectEnvironmentPreparation(result, targetRoot, registry);
     diagnoseServices(result, targetRoot, scopes, registry);
     diagnoseSkillsManifestSchemas(result, targetRoot, scopes);
     diagnoseInternalWorkflowRoutes(result);

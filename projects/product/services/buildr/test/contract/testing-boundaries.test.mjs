@@ -24,7 +24,6 @@ const taskLifecycleContextConsumers = [
 ];
 const taskRecordContextConsumers = [
   'task-record-product.test.mjs',
-  'task-record-change-resolver.test.mjs',
   'task-record-buildr-web.test.mjs',
 ];
 const fullIsolationOwners = [
@@ -129,11 +128,6 @@ test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () 
     assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS[id], `${id} needs a closed Core exclusion reason`);
   }
 
-  assertGolden('system-fresh-build', 'lifecycle-is-primary-evidence');
-  assert.equal(byId.get('system-fresh-build').profiles.includes('candidate'), true);
-  assert.equal(byId.get('system-fresh-build').profiles.includes('core'), false);
-  assert.ok(VERIFICATION_DAILY_CORE_EXCLUSIONS['system-fresh-build']);
-
   assertGolden('init-onboarding', 'lifecycle-is-primary-evidence');
   assert.equal(byId.get('init-onboarding').profiles.includes('candidate'), true);
   assert.equal(byId.get('init-onboarding').profiles.includes('core'), false);
@@ -225,7 +219,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-buildr-web-http', 'system-app-process', 'system-fresh-build',
+    'system-buildr-web-http', 'system-app-process',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }

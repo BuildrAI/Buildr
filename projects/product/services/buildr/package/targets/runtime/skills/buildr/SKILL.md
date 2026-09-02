@@ -44,7 +44,6 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 记录、查看或处理已结束Task的Agent执行效率复盘 | `buildr.task-retrospective/v2` selected provider；有效方向由todo/active Task承接，不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
-| 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
 | 从 proposal、方案或直接实现开始完成开发工作 | Agent 直接读取目标、OpenSpec、Git、代码、文件和专业结果，并按适用 Skill 使用现有工具；不创建研发回执 |
 | 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |
@@ -56,7 +55,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 当前 Agent 找不到已声明规则或技能 | Agent runtime 渲染 |
 | 为 Buildr 增加新的 Agent runtime adapter | runtime trait intake + OpenSpec change |
 | 采用内部流程、调整工作方式、修改或替换 Skill 行为 | `capability-adaptation` Skill；先识别跨 Skill 稳定依赖边界，再开发、验证和激活 |
-产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；只有某类 Buildr 管理意图命中后，才把对应 capability 作为本次动作依赖，单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关动作。Formal Task不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用明确时，Agent直接工作；需要隔离Git位置时显式使用`worktree create|inspect`并在返回的真实checkout继续。Project依赖、代码生成和运行入口由Project/Service wrapper、包管理器与构建工具负责。过渡期`task environment`只处理调用方明确要求的旧Environment动作，不作为OpenSpec、Review、Verification或Finish前置。任一provider返回`treeChanged: true`后，按本Skill的workspace transition约束运行当前Agent Doctor。doctor指出workspace sync是适用修复时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后执行一次sync并验证，当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含sync授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少upstream或其他需要用户决策的状态时停止，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。
+产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；只有某类 Buildr 管理意图命中后，才把对应 capability 作为本次动作依赖，单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关动作。Formal Task不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用明确时，Agent直接工作；需要隔离Git位置时显式使用`worktree create|inspect`并在返回的真实checkout继续。Project依赖、代码生成和运行入口由Project/Service wrapper、包管理器与构建工具负责。任一provider返回`treeChanged: true`后，按本Skill的workspace transition约束运行当前Agent Doctor。doctor指出workspace sync是适用修复时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后执行一次sync并验证，当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含sync授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少upstream或其他需要用户决策的状态时停止，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。
 完整收尾意图由 `task-finish` 提供方法和边界。本入口不复制流程；应用只保障具体动作的身份、版本和副作用安全。
 ## 资产维护
 
@@ -71,7 +70,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
 - `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
-- Project可以按需维护可选`verification.yml`，只接受closed`buildr.project-verification/v4`测试地图，声明少量稳定测试体系的Project/Service scope、purpose、sourcePaths、testRoots、完整入口、选择指导与环境要求；不复制具体测试清单、Task计划或运行结果。Agent直接调用项目工具执行测试，开发完成后只通过Task Verification Application保存有意义报告。Project也可按需维护可选`preparation.yml`，使用closed`buildr.project-environment-preparation/v1`声明Project-wide或Service-scoped Preparation Recipe；Agent按正式Task scope选择Recipe形成Task Plan。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；长期写入必须由用户确认后交给各声明owner Skill。
+- Project可以按需维护可选`verification.yml`，只接受closed`buildr.project-verification/v4`测试地图，声明少量稳定测试体系的Project/Service scope、purpose、sourcePaths、testRoots、完整入口、选择指导与环境要求；不复制具体测试清单、Task计划或运行结果。Agent直接调用项目工具执行测试，开发完成后只通过Task Verification Application保存有意义报告。Project也可按需维护可选`preparation.yml`，声明Project-wide或Service-scoped真实准备入口；Agent只在当前动作需要时读取并直接调用，不保存Task Plan或执行状态。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；长期写入必须由用户确认后交给各声明owner。
 
 ### 遗留 Practices
 

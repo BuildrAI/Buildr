@@ -32,9 +32,9 @@ export function createOpenSpecCliContributions(application = null) {
       key: 'openspec converge', surface: 'maintenance',
       summary: '产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。',
       help: [
-        'Usage: buildr openspec converge <change> --project <project> [--target <task-execution-root>] [--json]',
+        'Usage: buildr openspec converge <change> --project <project> [--target <actual-work-root>] [--json]',
         '',
-        '--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。',
+        '--target 使用Agent已核对的当前Workspace或matching Worktree真实根；不会自动搜索或选择其他worktree。',
         '产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。',
       ],
       match: ({ domain, action }) => domain === 'openspec' && action === 'converge',
@@ -44,9 +44,9 @@ export function createOpenSpecCliContributions(application = null) {
       key: 'openspec convergence preflight', surface: 'maintenance',
       summary: '只读检查Change能否按当前delta、canonical、active Changes与executable形成唯一且strict有效的收敛计划。',
       help: [
-        'Usage: buildr openspec convergence preflight <change> --project <project> [--target <task-execution-root>] [--json]',
+        'Usage: buildr openspec convergence preflight <change> --project <project> [--target <actual-work-root>] [--json]',
         '',
-        '--target 使用matching Task Environment Receipt的execution.workdir，不是canonical Workspace；不会自动搜索或选择其他worktree。',
+        '--target 使用Agent已核对的当前Workspace或matching Worktree真实根；不会自动搜索或选择其他worktree。',
         '只读检查当前语义就绪性；不会写canonical、Receipt或archive。ready会在delta、canonical、active Changes或executable变化后失效，最终converge始终重新检查。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',

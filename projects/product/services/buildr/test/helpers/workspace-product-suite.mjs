@@ -123,29 +123,19 @@ suiteTest('manifest-registry', 'init 生成 canonical Workspace，并让两个 M
 
 suiteTest('manifest-registry', 'Task 本机目录在 package、init 与 sync 中整体忽略', (t) => {
   const broadEntry = '/.buildr/tasks/';
-  const preciseEntry = '/.buildr/tasks/*/environment.json';
   const packageGitignore = fs.readFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'gitignore'), 'utf8').split(/\r?\n/);
   assert.equal(packageGitignore.filter((line) => line === broadEntry).length, 1);
-  assert.equal(packageGitignore.includes(preciseEntry), false);
 
   const root = initWorkspaceViaCli(t);
   const gitignore = path.join(root, '.gitignore');
   let lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
   assert.equal(lines.filter((line) => line === broadEntry).length, 1);
-  assert.equal(lines.includes(preciseEntry), false);
 
-  fs.writeFileSync(gitignore, `${lines.filter((line) => line !== broadEntry).join('\n').replace(/\n*$/u, '')}\n${preciseEntry}\ncustom-user-entry\n`);
-  let result = runBuildr(['task', 'create', 'legacy-file', '--title', 'Legacy file', '--intent', 'prove sync ignores retired Task files', '--target', root]);
+  fs.writeFileSync(gitignore, `${lines.filter((line) => line !== broadEntry).join('\n').replace(/\n*$/u, '')}\ncustom-user-entry\n`);
+  let result = runBuildr(['sync', 'codex', '--target', root]);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  const retiredEnvironmentFile = path.join(root, '.buildr', 'tasks', 'legacy-file', 'environment.json');
-  fs.mkdirSync(path.dirname(retiredEnvironmentFile), { recursive: true });
-  fs.writeFileSync(retiredEnvironmentFile, '{invalid retired input\n');
-  result = runBuildr(['sync', 'codex', '--target', root]);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(fs.readFileSync(retiredEnvironmentFile, 'utf8'), '{invalid retired input\n');
   lines = fs.readFileSync(gitignore, 'utf8').split(/\r?\n/);
   assert.equal(lines.filter((line) => line === broadEntry).length, 1);
-  assert.equal(lines.filter((line) => line === preciseEntry).length, 1);
   assert.equal(lines.filter((line) => line === 'custom-user-entry').length, 1);
 
   const afterFirstSync = fs.readFileSync(gitignore, 'utf8');
@@ -662,7 +652,6 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   assert.equal(firstPreview.owner.branch, 'dev');
   assert.equal(firstPreview.owner.dirty, false);
   assert.equal(firstPreview.owner.taskId, null);
-  assert.equal(firstPreview.owner.environmentRoot, first);
   assert.equal(firstPreview.owner.identityMode, 'standalone-checkout');
   assert.equal(firstPreview.owner.repositorySet[0].selector, 'workspace');
   assert.equal(firstPreview.owner.productCheckout, PRODUCT_ROOT);
@@ -680,7 +669,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
 
   const collision = await runPreviewCommand('reject-collision', ['web', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
   assert.notEqual(collision.status, 0);
-  assert.match(collision.stderr, /正由 .* 使用/);
+  assert.match(collision.stderr, /无法证明属于当前 worktree/);
 
   const listed = await runPreviewCommand('list-both', ['web', 'preview', 'list', '--json']);
   assert.equal(listed.status, 0, listed.stderr);
@@ -713,8 +702,8 @@ suiteTest('manifest-registry', 'public CLI 暴露 web 与 init description help'
   assert.match(appHelp.stdout, /只监听 127\.0\.0\.1/);
   const previewHelp = runBuildr(['web', 'preview', 'start', '--help']);
   assert.equal(previewHelp.status, 0, previewHelp.stderr);
-  assert.match(previewHelp.stdout, /Task Environment 的任务验证工作区/);
-  assert.match(previewHelp.stdout, /动态资源/);
+  assert.match(previewHelp.stdout, /Task 的受管 Git Worktree/);
+  assert.match(previewHelp.stdout, /预览能力保存精确 owner/);
   const initHelp = runBuildr(['init', '--help']);
   assert.equal(initHelp.status, 0, initHelp.stderr);
   assert.match(initHelp.stdout, /--description <text>/);

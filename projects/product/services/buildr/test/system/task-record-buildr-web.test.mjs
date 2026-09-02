@@ -181,15 +181,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   const taskAfterRejectedDevelopmentWrite = runtime.inspectTaskRecord(root, 'app-task');
   assert.equal(taskAfterRejectedDevelopmentWrite.recordDigest, taskBeforeRejectedDevelopmentWrite.recordDigest);
   assert.deepEqual(taskAfterRejectedDevelopmentWrite.record, taskBeforeRejectedDevelopmentWrite.record);
-  const inspectEnvironment = runtime.inspectTaskEnvironment;
-  const readEnvironmentPersistence = runtime.readTaskEnvironmentPersistence.bind(runtime);
-  let environmentCurrentReads = 0;
-  runtime.inspectTaskEnvironment = () => { throw new Error('Buildr Web Environment GET 不得执行 live inspect。'); };
-  runtime.readTaskEnvironmentPersistence = (...args) => { environmentCurrentReads += 1; return readEnvironmentPersistence(...args); };
-  response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-environment-result/v4'); assert.equal(response.body.status, 'unavailable'); assert.equal(response.body.source, 'current-machine'); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(environmentCurrentReads, 1, 'Environment GET 通过 owner persistence 读取 current，且不执行 live inspect');
-  runtime.inspectTaskEnvironment = inspectEnvironment;
-  response = await request(`${taskEndpoint}/environment?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
-  response = await request(`${endpoint}/missing-task/environment`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
+  response = await request(`${taskEndpoint}/environment`); assert.equal(response.status, 404, '已删除的Environment接口不保留兼容路由');
   response = await request(`${taskEndpoint}/changes/demo/same-change`); assert.equal(response.status, 200); assert.equal(response.body.resolution.workingCopy.provenance, 'retained-active'); assert.equal(response.body.resolution.workingCopy.change.code, 'same-change');
   response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: staleDigest, title: '页面已更新' }) });
   assert.equal(response.status, 200); assert.equal(response.body.record.title, '页面已更新');

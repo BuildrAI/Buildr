@@ -72,11 +72,11 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 
 #### Scenario: 模块消费其他owner事实
 - **WHEN** release readiness需要任务关联
-- **THEN** consumer MUST调用Task Record与Environment的窄read model并核验真实Git/发布facts
+- **THEN** consumer MUST调用Task Record与Worktree的窄read model并核验真实Git/发布facts
 - **AND** MUST不恢复Development/Finish compatibility role或建立旁路store
 
 #### Scenario: 发布后维护部分失败
-- **WHEN** Publication已成立但Activation、Environment Cleanup、Diagnostics或dev provenance reconciliation失败
+- **WHEN** Publication已成立但Activation、具体资源cleanup、Diagnostics或dev provenance reconciliation失败
 - **THEN** 系统 MUST保留Publication并按失败owner报告恢复动作
 - **AND** MUST不需要或恢复legacy Task Finish Application
 
@@ -228,16 +228,16 @@ Release Git owner MUST为每个selection generation使用确定性`codex/release
 - **AND** MUST NOT删除正式release ref、其他generation或ownership不明branch
 
 ### Requirement: Release lifecycle必须派生编排与阶段时间线
-Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Environment与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
+Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Worktree、Preparation与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
 
 #### Scenario: 等待publication授权
 - **WHEN** selection、Candidate、main tree与readiness均current且尚无matching Publication
 - **THEN** lifecycle MUST返回`awaiting-publication-authorization`、`prepare-dispatch`形成的context/timeline identity和独立`human-decision`等待阶段
 - **AND** Task或readiness时间戳 MUST NOT被解释为维护者已经授权
 
-#### Scenario: terminal Task但Environment cleanup待恢复
-- **WHEN** release facts已经closed且协调Task已no-change completed，但Environment cleanup或Doctor仍blocked
-- **THEN** orchestration projection MUST保持Publication、reconciliation、Git closeout和Task completion为已通过并把next action指向对应cleanup/Doctor owner
+#### Scenario: terminal Task但具体cleanup待恢复
+- **WHEN** release facts已经closed且协调Task已no-change completed，但Worktree、具体资源cleanup或Doctor仍blocked
+- **THEN** orchestration projection MUST保持Publication、reconciliation、Git closeout和Task completion为已通过并把next action指向对应owner
 - **AND** MUST NOT把release lifecycle退回publishing、重开Task或生成新的协调identity
 
 #### Scenario: current generation发生变化
@@ -263,9 +263,9 @@ Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x`
 - **THEN** selection owner MUST返回 fail-closed finding 和 pre-operation identity
 - **AND** MUST不移动 frozen ref、覆盖 release branch 或递增 generation
 
-### Requirement: Release Git mutation 必须绑定matching Task Environment execution root
+### Requirement: Release Git mutation 必须绑定matching Worktree execution root
 
-Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active`release-<version>`Task的provider-owned Worktree中运行。Owner MUST核验canonical Workspace、Task、Worktree evidence、repo root、branch与HEAD；retained primary worktree、caller路径声明或旧Environment Receipt MUST NOT成为执行授权。
+Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active`release-<version>`Task的provider-owned Worktree中运行。Owner MUST核验canonical Workspace、Task、Worktree evidence、repo root、branch与HEAD；retained primary worktree或caller路径声明 MUST NOT成为执行授权。
 
 #### Scenario: matching release execution root
 - **WHEN** active release Task、ready Worktree evidence、release branch与expected HEAD全部匹配
@@ -279,7 +279,7 @@ Release selection、reopen、main coverage/reconciliation与generation carrier�
 
 - **AND** retained branch、index与working tree MUST保持不变
 
-#### Scenario: Environment binding漂移
+#### Scenario: Worktree binding漂移
 - **WHEN** Task、Worktree evidence、branch或HEAD不再匹配closed binding
 - **THEN** owner MUST返回current expected/actual identity与唯一Worktree恢复动作
 - **AND** MUST NOT扫描其他worktree、切换执行root或回退到retained controller checkout执行Git mutation
@@ -293,12 +293,12 @@ Release lifecycle MUST把完成current main coverage与历史收敛后的generat
 - **AND** MUST NOT把相同tree、成功aggregate或已下载tarball解释为final source current
 
 #### Scenario: final source已固定
-- **WHEN** main coverage/reconciliation、selection freeze与Environment binding均current
+- **WHEN** main coverage/reconciliation、selection freeze与Worktree binding均current
 - **THEN** 后续完整Candidate MUST只运行在final commit/tree/generation
 - **AND** Candidate通过后release source MUST保持不可变直到main merge或由main drift显式产生下一generation
 
 ### Requirement: 发布身份链必须只组合当前发布与任务owner事实
-Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。Task correlation MUST只组合release/support Task Record关系、适用Task Environment、真实Git/remote和当前发布owner事实。
+Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。Task correlation MUST只组合release/support Task Record关系、matching Worktree、真实Git/remote和当前发布owner事实。
 
 #### Scenario: 构造发布任务关联
 - **WHEN** release transaction读取Task correlation

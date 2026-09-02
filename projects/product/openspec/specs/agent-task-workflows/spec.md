@@ -19,7 +19,7 @@
 - **AND** Buildr Skill MUST 优先引导 `skills render`、`sync` 或 doctor 指导的修复，而不是把工作流文本复制到 Rules
 
 ### Requirement: 任务工作流必须显式可见
-Buildr task 和 OpenSpec Skills MUST 在改变 task state 前，以及已报告状态发生实质变化时，明确 workflow selection、task environment location、repository set 和当前 OpenSpec change status。
+Buildr task 和 OpenSpec Skills MUST 在改变 task state 前，以及已报告状态发生实质变化时，明确 workflow selection、实际工作位置、repository set 和当前 OpenSpec change status。
 
 #### Scenario: 使用 OpenSpec 前说明 change
 - **WHEN** Agent 决定 create、explore、apply、sync 或 archive OpenSpec change
@@ -33,22 +33,15 @@ Buildr task 和 OpenSpec Skills MUST 在改变 task state 前，以及已报告�
 - **AND** 在可用时，status MUST 汇总 artifact 或 task progress，并明确 next executable action 或 blocking reason
 - **AND** Agent MUST 在首次采用 OpenSpec、状态发生实质变化、工作暂停或完成，或用户询问进度时刷新该 status
 
-#### Scenario: 创建或复用 task environment 前说明位置
-- **WHEN** Agent 决定 create 或 reuse task environment
-- **THEN** Agent MUST 在 task edits 前说明正在创建还是复用 environment
-- **AND** Agent MUST 明确当前 Buildr Workspace root、task id、environment root、任务分支和显式选择的 repository set
+#### Scenario: 创建或复用Worktree前说明位置
+- **WHEN** Agent决定创建或复用独立Worktree
+- **THEN** Agent MUST在task edits前说明实际Workspace root、task id、worktree root、任务分支和repository set
+- **AND** 不需要隔离时 MUST允许直接使用已确认Workspace
 
-#### Scenario: Task environment canonical location
-- **WHEN** Agent 在 Buildr Workspace 中创建 task environment
-- **THEN** 其 canonical root MUST 为 `<workspace-root>/.worktrees/<task-id>`
-- **AND** Agent MUST NOT 静默回退到 `/tmp` 或其他任意位置
-- **AND** 同一 task MUST reuse 其现有 environment
-- **AND** multi-repository task MUST 在同一 environment identity 下使用 registry-qualified repository selectors，MUST NOT 用彼此无关联的 repo-qualified task ids 冒充统一环境
-
-#### Scenario: Task environment lifecycle remains a Skill concern
+#### Scenario: Worktree lifecycle remains a Skill concern
 - **WHEN** Buildr 打包 task worktree guidance
 - **THEN** placement、repository selection、disclosure、reuse、retention 和 cleanup procedures MUST 保留在 task Skills 中
-- **AND** required Core Rule MUST NOT 复制 task environment operation manual
+- **AND** required Core Rule MUST NOT 复制Worktree操作手册
 
 ### Requirement: 发布 worktree 在远端候选确认后默认清理
 Buildr task-worktree guidance MUST 将发布 worktree 与需要持续联调的普通开发 worktree 区分，并在发布目标完成后默认清理不再需要的本地发布环境。
@@ -179,29 +172,6 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 - **THEN** Buildr MUST NOT 声称能够即时感知该操作
 - **AND** 后续 Buildr 工作流 MUST 继续通过执行循环中的基线 doctor 检查当前环境
 
-### Requirement: Buildr 发布准备使用版本化任务环境
-Buildr Product Project的发布引导 MUST从目标package version派生唯一release Task identity，并通过该Task的ready Environment在独立execution root准备Buildr Service lockfile依赖。Release集合 MUST从维护者指定的精确`dev` baseline创建，Task checkout与`release-<version>` carrier的角色 MUST明确分离；依赖、版本材料、selection、Candidate与public publication不得从调用方自选cwd、旧worktree或会话PATH派生。
-
-#### Scenario: 创建发布任务分支和 worktree
-- **WHEN** Agent为目标版本`<version>`准备Buildr候选版或稳定版
-- **THEN** release Task id MUST为`release-<version>`，`<version>` MUST是不带`v`前缀的完整package version
-- **AND** Task Environment MUST创建或复用该Task唯一checkout，并绑定权威Node、Workspace CLI与Plan/Receipt
-- **AND** release owner MUST从维护者指定且可由current `dev`证明的精确baseline创建唯一`release-<version>`集合
-- **AND** Task worktree branch、release carrier ref和最终remote release branch MUST由read model分别表达，不得仅因同名而互相替代
-
-#### Scenario: 新发布 worktree 先准备依赖
-- **WHEN** release Task需要修改版本材料、运行本地验证或调用release工具
-- **THEN** Task Environment MUST只接受ready的`service:product/buildr/buildr.npm-ci` recipe
-- **AND** recipe cwd MUST为`projects/product/services/buildr`，package、Service lockfile、declaration、Plan、recipe与exact Node identity MUST匹配
-- **AND** 依赖准备失败或identity漂移时 Agent MUST停止受管发布动作
-- **AND** Agent MUST NOT在Product根运行`npm ci`或从会话PATH猜Node
-
-#### Scenario: 继续已有版本的发布任务
-- **WHEN** `release-<version>` Task、Environment或release集合已经存在
-- **THEN** Agent MUST通过Task/Environment/release owner read model分别核验并复用matching identity
-- **AND** source baseline、selection chain、version、branch ownership或Environment identity不匹配时 MUST停止并报告唯一恢复方向
-- **AND** Agent MUST NOT为同一版本创建第二Task、第二release集合或第二Candidate source
-
 ### Requirement: squash 发布候选以 tree identity 幂等衔接回 dev
 Buildr Product Project的发布引导 MUST先把通过完整Candidate的current release tree经唯一受保护release→main PR以当前发布策略收敛到`main`；对于发生main reconciliation的release，PR MUST使用merge commit并记录main与release的父提交关系，且要求tree完全一致。正式Publication成功后，再以current frozen selection和remote Git facts核验全部发布内容的dev provenance。两次动作 MUST分别核验identity和授权，且post-publication reconciliation MUST只读、允许`dev`保留release冻结后的新内容并保持线性历史。
 
@@ -327,12 +297,12 @@ Buildr OpenSpec workflow MUST 在 propose/update 阶段 assess，在 apply 阶�
 ### Requirement: 实现型 workflow 必须绑定 task execution context
 Buildr的Task Triage与OpenSpec Skills MUST在写入前核对实际Git checkout、Project/Service registry、owned scope和适用Worktree evidence。workflow MUST NOT要求matching Environment Receipt、统一`ready`、runtime projection或session adoption作为普通proposal、实现、构建、Review、Verification或交付前置。
 
-#### Scenario: Triage 准备 Environment 后在原对话继续
+#### Scenario: Triage选择实际工作位置后在原对话继续
 - **WHEN** triage完成实际工作位置选择，且Agent已证明当前checkout或matching Worktree、branch/ref、dirty与owned scope适合本任务
 - **THEN** workflow MUST在该真实位置继续并重新观察当前文件和Git事实
 - **AND** MUST NOT创建空Environment、Plan或共享根占用记录
 
-#### Scenario: 明确工作目录绑定 Environment
+#### Scenario: 明确工作目录绑定Worktree
 - **WHEN** matching Worktree evidence证明Task、Workspace、repository selector、checkout、branch和registration
 - **THEN** workflow MUST只在对应checkout及其明确Project/Service根内写入
 - **AND** evidence漂移只阻止依赖该位置的动作，不得撤销已成立的Review、Verification或Delivery
@@ -345,7 +315,7 @@ Buildr的Task Triage与OpenSpec Skills MUST在写入前核对实际Git checkout�
 #### Scenario: 只有 retained manager content identity 改变
 - **WHEN** 实际checkout、Worktree evidence与owned scope仍匹配，但retained Buildr源码版本已经前进
 - **THEN** workflow MUST按当前动作重新观察实际工具入口，不得自动改写Task checkout
-- **AND** MUST NOT仅因旧Environment controller identity不同而失效Review、Verification或已成立Delivery
+- **AND** MUST NOT仅因工具版本变化而失效Review、Verification或已成立Delivery
 
 ### Requirement: Workflow 按任务影响验证 adapter activation
 只有任务修改 runtime adapter 的 discovery、loading、activation mode、投射路径或相关 metadata，且专项验收要求证明新机制已激活时，workflow MUST 消费 adapter activation metadata。普通 Rule/Skill 内容、contract 或 description 修改 MUST NOT 触发新 session 门禁；该专项 evidence MUST NOT 阻塞普通 workflow。
@@ -374,7 +344,7 @@ Buildr Product verification runner MUST 为自身启动的 step 建立可识别 
 - **AND** 最终 verification evidence MUST 报告是否存在 cleanup failure
 
 #### Scenario: 其他任务存在同名进程
-- **WHEN** 另一个 task environment 中存在同名 server 或使用相同默认端口的进程
+- **WHEN** 另一个Task Worktree中存在同名server或使用相同默认端口的进程
 - **THEN** 当前 runner MUST 保留该进程
 - **AND** cleanup evidence MUST 只引用当前 runner 的 ownership identity
 
@@ -407,22 +377,22 @@ Buildr MUST 让 Agent 只处理 `blocked` 的语义冲突或 `recovery-unprovabl
 - **AND** MUST NOT通过删除sidecar、采用当前baseline或覆盖canonical绕过失败
 
 ### Requirement: Agent 只能处理收敛事务外的语义决定
-Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直接继续Development后续阶段，`blocked`只处理最小语义冲突，`recovery-unprovable`只在当前Task执行位置仍保留恢复现场时使用OpenSpec Convergence Inspect或进行人工核对。Agent MUST NOT手工恢复Canonical Specs、刷新baseline、选择内部恢复stage、拼装旧门禁命令、把Inspect变成正常验收门禁，或在Formal Task Finish/Environment cleanup后追索Receipt。
+Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直接继续后续工作，`blocked`只处理最小语义冲突，`recovery-unprovable`只在当前实际工作位置仍保留恢复现场时使用OpenSpec Convergence Inspect或进行人工核对。Agent MUST NOT手工恢复Canonical Specs、刷新baseline、选择内部恢复stage、拼装旧门禁命令，或把Inspect变成正常验收门禁。
 
 #### Scenario: 产品报告状态无法证明
-- **WHEN** `buildr openspec converge`返回`recovery-unprovable`且当前Task Environment尚未清理
+- **WHEN** `buildr openspec converge`返回`recovery-unprovable`且当前Change工作根仍保留
 - **THEN** Agent MAY调用`buildr openspec convergence inspect`读取逐文件事实，并停止其他正式文件写入
-- **AND** MUST NOT删除Receipt、刷新baseline或从旧stage继续
+- **AND** MUST NOT删除恢复现场、刷新baseline或从旧stage继续
 
 #### Scenario: 产品报告确定性通过
 - **WHEN** `buildr openspec converge`返回`passed`与`archived`
 - **THEN** Agent MUST直接消费该结果继续current knowledge检查、Content Target、Verification与后续Task流程
-- **AND** MUST NOT再次运行Convergence Inspect或要求Receipt进入Git交付
+- **AND** MUST NOT再次运行Convergence Inspect或要求内部恢复记录进入Git交付
 
-#### Scenario: Task Environment已经清理
-- **WHEN** Formal Task Finish已经成功且Task Environment cleanup完成
-- **THEN** Agent MUST使用Archived Change、Canonical Specs、Git交付事实和Formal Finish Result回答正常历史问题
-- **AND** MUST NOT要求恢复Worktree、读取Receipt或把Receipt缺失报告为`recovery-unprovable`
+#### Scenario: Worktree已经清理
+- **WHEN** Formal Task Finish已经成功且具体owner cleanup完成
+- **THEN** Agent MUST使用Archived Change、Canonical Specs和Git交付事实回答正常历史问题
+- **AND** MUST NOT要求恢复Worktree或把临时现场缺失报告为`recovery-unprovable`
 
 #### Scenario: Inspect返回not-applicable
 - **WHEN** Convergence Inspect报告事务尚未开始或Change已经终结
@@ -433,8 +403,8 @@ Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直�
 Buildr 的 `task-triage` MUST optional 依赖 `buildr.task-record/v1`，并 MUST 在已确认进入正式持久交付的分支、首次交付写入前调用 selected provider 创建或恢复 Task Record。路径已明确而无需重新 Triage 的正式执行也 MUST 遵守同一前置条件。
 
 #### Scenario: Triage 选择已有契约实现
-- **WHEN** task-triage 选择 implementation，且任务即将创建环境、分支或修改交付物
-- **THEN** Agent MUST 先创建或恢复 Task Record，再进入当前 Environment provider
+- **WHEN** task-triage 选择 implementation，且任务即将创建分支或修改交付物
+- **THEN** Agent MUST 先创建或恢复 Task Record，再进入当前实际工作位置
 - **AND** Task Record provider 不 ready 或操作 blocked MUST 阻止首次交付写入，但不抹去已确认的 triage 结论
 
 #### Scenario: Triage 选择 Change Flow
@@ -451,42 +421,6 @@ Buildr 的 `task-triage` MUST optional 依赖 `buildr.task-record/v1`，并 MUST
 - **WHEN** 正式执行上下文已提供 Task ID
 - **THEN** Agent MUST inspect 并核对 active Task 的 intent/scope
 - **AND** MUST NOT 重新 create、从 worktree 名称补造第二个 Task ID 或覆盖终态 Task
-
-### Requirement: P0.1 必须切换 Task Record authority，但不抢占专业 authority
-P0.1 实现完成、集成并投射到 retained runtime 后，新正式 Task MUST 使用 Task Record Application 与 canonical Task Record 作为顶层 Task authority；`task-manager` 与 Buildr Web 只是两个客户端，该能力 MUST NOT 标记为 preview。当前 Environment、Verification、Finish、Board、Asset Review 与 Git 模块 MUST 继续拥有各自专业事实，直到对应模块 Change 当场完成替换。
-
-#### Scenario: P0.1 已在 retained runtime 生效
-- **WHEN** Agent 开始新的正式持久交付 Task
-- **THEN** task-triage/正式执行入口 MUST 先建立 Task Record
-- **AND** MUST NOT 同时创建第二份旧顶层 Task record
-
-#### Scenario: 调用尚未替换的专业模块
-- **WHEN** active Task 在 P0.2/P0.4/P0.6/P0.8/P1/P2 前调用当前 Environment、Verification、Git、Finish、Board 或 Asset Review
-- **THEN** 当前 provider MUST 继续维护其专业 receipt/result/store
-- **AND** Task Manager MUST 不复制、不索引、不解释这些专业数据
-
-#### Scenario: 后续模块达到旧 authority
-- **WHEN** 后续 Change 实现与现有模块事实重叠的新 authority
-- **THEN** 该 Change MUST 同时迁移或保留必要历史读取、切换 consumer/routing 并删除或关闭旧 mutation path
-- **AND** MUST NOT 把已知清退工作统一延迟到完整主闭环之后
-
-### Requirement: task-environment Skill 必须作为环境生命周期入口
-Buildr MUST 交付名为 `task-environment` 的 workspace Skill，并 MUST 用精确 routing description 将它限制在正式 Task 的环境准备、检查、串行恢复和 cleanup。Skill MUST 通过公共 `buildr task environment prepare|inspect|cleanup` CLI 消费 selected `buildr.task-environment/v1`；它 MUST NOT 成为 Task dispatcher、Git 集成入口、验证执行器，也 MUST NOT 指导 Agent 手写 Receipt 或调用内部资源动作。
-
-#### Scenario: 正式 Task 请求准备或恢复环境
-- **WHEN** 用户或上游 Skill 要求为已有 Task 准备、检查、恢复或清理执行环境
-- **THEN** Agent MUST 使用 `task-environment` 调用对应公共 CLI，并报告 Task ID、`ready / blocked`、实际执行位置、关键 resources/effects 与 next action
-- **AND** MUST NOT 直接手写 Environment Receipt 或把 `task-worktree` 结果当作最终环境结论
-
-#### Scenario: 用户明确管理 Git worktree
-- **WHEN** 用户只要求创建、检查、保留或删除特定 Git worktree/本地任务分支
-- **THEN** `task-worktree` MAY 作为窄 Git provider Skill 处理该意图
-- **AND** MUST NOT 抢占 Task Environment 的 Runtime、依赖、projection、资源、恢复或总 cleanup authority
-
-#### Scenario: Task 外临时操作
-- **WHEN** 请求只是纯讨论、只读探索、单次测试、临时服务或 Agent host task/thread 管理
-- **THEN** `task-environment` MUST NOT 仅因存在本机执行效果而自动创建正式 Task/receipt
-- **AND** 适用入口 MUST 保持原有语义
 
 ### Requirement: task-review Skill 必须作为 Task Review 语义入口
 Buildr MUST交付一个`task-review` workspace Skill，并通过selected`buildr.task-review/v2`支持`planning|completion`。Agent理解Task Intent、重新观察真实subject、动态选择工具和范围并形成结论；Application只负责inspect与CAS record。
@@ -877,31 +811,14 @@ Buildr Agent workflow MUST 将已检出 canonical Workspace 因远端协作者�
 - **AND** Agent MUST 按对应 authority 的下一动作处理或停止并请求所需授权
 
 #### Scenario: 当前会话存在 matching Formal Finish Result
-- **WHEN** 当前会话持有绑定同一 canonical Workspace、Task、run、delivered ref 与 Environment retained Node 的 eligible Formal Finish Result
+- **WHEN** 当前会话持有绑定同一 canonical Workspace、Task、run、delivered ref 与retained Node的eligible Formal Finish Result
 - **THEN** Buildr 自举 Workspace MAY 按 `buildr-self-bootstrap-sync` 的既有 contract 执行唯一 runner
 - **AND** 普通 Workspace update 路由 MUST NOT替代、伪造或修改该 Finish Result
 
 #### Scenario: workspace sync 不产生 Task 或 Finish authority
 - **WHEN** Buildr Skill 为协作者更新执行 workspace sync
 - **THEN** sync MUST 只收敛 workspace destination 与当前 Agent runtime 并返回最终 Doctor
-- **AND** sync MUST NOT 创建 Task、Environment、Verification、Candidate、Finish Result 或 self-bootstrap evidence
-
-### Requirement: 准备 Environment 时必须写出当前宿主
-`task-environment` Skill与正式执行入口在调用`buildr task environment prepare`时 MUST提供当前宿主的`--agent <adapter>`。Agent MUST把该值写成正在执行本次prepare的runtime id，例如Cursor会话写`cursor`、Codex会话写`codex`。Skill示例、帮助摘录与停止条件 MUST NOT展示可省略`--agent`的prepare命令，也 MUST NOT指示省略后默认为Codex。Buildr MUST NOT要求Agent探测宿主；写错宿主时仍按Task Environment既有mismatch失败。
-
-#### Scenario: Cursor Agent 准备环境
-- **WHEN** 当前会话宿主为Cursor，且Agent为active Task运行prepare
-- **THEN** 调用 MUST包含`--agent cursor`
-- **AND** MUST NOT省略`--agent`或改写为`codex`
-
-#### Scenario: Codex Agent 准备环境
-- **WHEN** 当前会话宿主为Codex，且Agent为active Task运行prepare
-- **THEN** 调用 MUST包含`--agent codex`
-
-#### Scenario: Skill 示例要求 --agent
-- **WHEN** Agent阅读`task-environment` Skill的prepare用法
-- **THEN** 示例 MUST包含必填`--agent <adapter>`
-- **AND** MUST NOT给出省略`--agent`即可成功的prepare命令
+- **AND** sync MUST NOT 创建 Task、Verification、Candidate、Finish Result 或 self-bootstrap evidence
 
 ### Requirement: Buildr 工作流门禁必须保持宽而薄
 Buildr required Core MUST 将“宽而薄”定义为通用治理原则：只有继续推进会造成越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真或完成误报时才关闭式失败；其他可恢复不确定性 MUST 如实报告事实、风险与下一步，并保留 Agent 的安全判断和推进空间。Product scope MUST要求新增硬门禁明确其保护的 authority 或结果不变量及放行造成的具体伤害，MUST NOT仅因缺少辅助 provenance、推荐流程、特定工具身份或统一工作方式而阻断原本可安全检查和继续的工作。
@@ -989,7 +906,7 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 - **AND** MUST NOT撤销Publication、写入dev、重跑已通过Candidate或创建resume Task
 
 ### Requirement: Buildr Release Skill必须消费统一发布编排结果
-`buildr-release` MUST使用release orchestration runner推进merge后readiness、显式授权dispatch与Publication后closeout，同时继续把selection、transaction、Git convergence、Task Record、Task Environment和Doctor视为独立owner。Skill MUST在每次暂停或恢复时报告current action、context/timeline identity、已成立effects与唯一next action，不得用聊天摘要补造阶段或成功事实。
+`buildr-release` MUST使用release orchestration runner推进merge后readiness、显式授权dispatch与Publication后closeout，同时继续把selection、transaction、Git convergence、Task Record、Worktree、Release Preparation和Doctor视为独立owner。Skill MUST在每次暂停或恢复时报告current action、context/timeline identity、已成立effects与唯一next action，不得用聊天摘要补造阶段或成功事实。
 
 #### Scenario: readiness完成后请求唯一publication授权
 - **WHEN** release→main已合并且orchestration `prepare-dispatch`返回current frozen context与`awaiting-publication-authorization`
@@ -1153,14 +1070,6 @@ OpenSpec propose、update、apply、sync与archive contributions MUST按真实�
 - **WHEN** Agent完成实现并准备收敛Change
 - **THEN** Agent MUST按impact完成reconcile并重新观察交付内容
 - **AND** OpenSpec convergence MUST不依赖任务研发回执
-
-### Requirement: Task Environment 只保护实际环境动作
-正式Task需要受管执行根、运行时、资源或清理时，Agent MUST使用matching Task Environment；不需要这些能力的安全工作 MUST不因Environment缺失而停止。
-
-#### Scenario: 任务需要隔离检出
-- **WHEN** Agent将修改写入受管Task worktree
-- **THEN** Agent MUST使用Environment返回的实际执行根和controller
-- **AND** Environment MUST不决定研发、审查、验证或交付顺序
 
 ### Requirement: Task Review 与 Task Verification 必须保持独立
 Review与Verification MUST分别记录真实审查和验证结果。Agent MUST依据目标、当前对象和风险判断是否调用及如何消费；Application MUST不生成统一推进决定。

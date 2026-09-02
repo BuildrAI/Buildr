@@ -387,8 +387,8 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 
 #### Scenario: 授权Preparation写入
 - **WHEN** Intake取得`preparation.yml`精确diff授权
-- **THEN** Agent MUST进入`task-environment` owner流程维护声明
-- **AND** Intake Skill MUST不直接执行Preparation Step
+- **THEN** Agent MUST直接维护Project拥有的准备入口并核对真实wrapper、cwd和scope
+- **AND** Intake Skill MUST不执行准备入口或保存Task级结果
 
 #### Scenario: 授权Verification写入
 - **WHEN** Intake取得`verification.yml`精确diff授权

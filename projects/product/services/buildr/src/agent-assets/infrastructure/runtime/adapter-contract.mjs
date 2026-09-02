@@ -581,7 +581,7 @@ export function runtimeDiscoveryPayload() {
       taskAdoption: {
         sessionEvidenceRequired: true,
         modes: adapter.traits.activation.skills === 'explicit-reload' ? ['new-session', 'reentered', 'reload'] : ['new-session', 'reentered'],
-        guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the task environment root as its local project.`,
+        guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the current work root as its local project.`,
         sessionConsumption: 'unknown-until-adopted',
       },
     }])),

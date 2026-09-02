@@ -230,34 +230,6 @@ Buildr MUST 只允许已携带当前 migration assets 的 retained controller �
 - **THEN** runner MUST 依现有连续 migration 规则原子应用新 script 并登记 checksum
 - **AND** MUST NOT 导入 Task Validation Workspace 的任何测试或任务数据
 
-### Requirement: Environment current 必须使用独立窄 SQLite schema
-Workspace Structured Store MUST以独立`task_environment_current` table保存每个正式Task的Environment current Receipt。该表 MUST使用task_id唯一绑定tasks，保存经过Domain校验的receipt_json、可查询status和updated_at；Receipt v3的dependency roots MUST保留在同一JSON current中。repository MUST兼容读取旧v2，但 MUST只允许显式prepare把active current收敛为v3；MUST NOT把Environment字段并入tasks、建设第二张dependency表、通用history/event/audit表或复制facts到其他projection。
-
-#### Scenario: fresh Workspace 初始化 Environment schema
-- **WHEN** current runtime初始化新的Workspace Structured Store
-- **THEN** migrations MUST建立task_environment_current、Task foreign key、JSON validity与唯一current slot
-- **AND** MUST NOT建立Environment file index、dependency root副本表、history或远端同步table
-
-#### Scenario: 已有 Workspace 升级
-- **WHEN** 健康数据库已应用到前一migration version且retained controller执行合法writable action
-- **THEN** runner MUST原子应用pending migrations并登记准硬checksum
-- **AND** MUST保留已有Task、专业current rows、v2/v3 Environment rows与Finish rows，并以Environment current row为唯一authority
-
-#### Scenario: 已有Workspace读取v2 current
-- **WHEN** 健康数据库包含合法v2 Environment Receipt并由新runtime只读访问
-- **THEN** repository MUST保留row bytes并返回兼容read model或legacy blocked diagnostic
-- **AND** GET/inspect MUST NOT因兼容读取自动写v3
-
-#### Scenario: Environment current value 被替换
-- **WHEN** Task Environment Application已观察正式声明并完成root normalization/preparation
-- **THEN** repository MUST在单一transaction中以v3完整替换精确task_id slot，写后读取验证并提交
-- **AND** 任一校验、busy、foreign key或integrity failure MUST rollback并保留最后有效current
-
-#### Scenario: 不存在的 Task 被 Environment writer 引用
-- **WHEN** Environment Application尝试为不存在Task ID写入current
-- **THEN** foreign key与Application validation MUST拒绝mutation
-- **AND** transaction MUST rollback并保留其他Environment rows
-
 ### Requirement: task_lifecycle_current 必须通过连续 migration 安全退役
 Buildr MUST 通过新的连续 migration升级专业 current schema、迁移可证明的 Development applicability、核验 terminal association并最终删除 `task_lifecycle_current`。Migration MUST在删除前以专业表为authority处理冲突，MUST NOT修改任何已登记script bytes/checksum、从 lifecycle覆盖Task/Environment/Result/Finish事实或静默丢弃无法匹配的terminal association。
 
@@ -290,19 +262,6 @@ Buildr MUST 通过新的连续 migration升级专业 current schema、迁移可�
 - **WHEN** ledger已包含当前旧runtime不认识的退役migration
 - **THEN** 旧runtime MUST返回`database-newer-than-runtime`
 - **AND** MUST NOT重建`task_lifecycle_current`、降级schema或继续业务读写
-
-### Requirement: Receipt v5必须继续使用唯一Environment current slot
-Workspace SQLite `task_environment_current` MUST继续作为每个Task唯一Environment authority，并 MUST以完整closed payload持久化Receipt v5。Buildr MUST不为Preparation Declaration、Recipe或Step创建第二套current store、history或lifecycle projection副本。
-
-#### Scenario: v5 Receipt整值替换
-- **WHEN** prepare或资源lifecycle成功形成新的Receipt v5
-- **THEN** repository MUST在单一transaction中closed-normalize、整值替换并重读确认
-- **AND** 失败 MUST rollback并保留旧current
-
-#### Scenario: 只读旧版本
-- **WHEN** repository读取v4 Receipt
-- **THEN** reader MUST返回legacy read model
-- **AND** MUST不在GET、inspect或migration open时回写v5
 
 ### Requirement: Task execution record metadata 必须使用独立有界 SQLite schema
 Workspace Structured Store MUST在已退役`task_lifecycle_current`的current migration ledger上，通过下一连续migration建立单张STRICT `task_execution_records`表。该表 MUST以非级联foreign key绑定`tasks(task_id)`，保存closed record/Task identity、owner/kind/run/target/producer、outcome、lifecycle/resolution/body/quota状态、relative locator、digest、stored/original size、truncated、redaction version、reservation与必要retention/cleanup时间事实，并使用稳定唯一键与Task timeline、recent retention、quota/cleanup查询所需indexes。Structured Store MUST NOT建立Consumer/Adoption关系、BLOB/任意JSON payload、通用event/audit/history、execution resource、`task_facts`或新的Task lifecycle聚合表。
@@ -356,3 +315,16 @@ Buildr MUST通过连续migration直接删除`task_development_current`与`task_f
 - **WHEN** 旧runtime不认识删除表的migration
 - **THEN** MUST返回database-newer-than-runtime
 - **AND** MUST不重建退役表或继续写入
+
+### Requirement: Task Environment current必须一次删除
+
+Workspace SQLite MUST通过单一连续migration删除`task_environment_current`及其index。Migration MUST不复制旧rows、不创建history/backup表、不保留view或双读入口；Task、Review、Verification、Retrospective和其他current tables MUST保持不变。
+
+#### Scenario: 升级含旧Environment数据的Workspace
+- **WHEN** migration应用到包含任意`task_environment_current`rows的数据库
+- **THEN** table和rows MUST被直接删除
+- **AND** 其他Task专业记录 MUST保持可读
+
+#### Scenario: 新Workspace建库
+- **WHEN** 全部migration从空库顺序执行
+- **THEN** 最终schema MUST不包含`task_environment_current`及其index

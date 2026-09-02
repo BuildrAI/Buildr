@@ -1,31 +1,22 @@
 import { registerTaskRecordApplication } from './application/task-record-application.mjs';
 import { registerTaskRetrospectiveApplication } from './application/task-retrospective-application.mjs';
 import { registerTaskReviewApplication } from './application/task-review-application.ts';
-import { registerTaskEnvironmentApplication } from './application/task-environment-application.mjs';
-import {
-  normalizeProjectEnvironmentPreparation,
-  parseProjectEnvironmentPreparation,
-  projectEnvironmentPreparationScopeSelector,
-} from './domain/project-environment-preparation.mjs';
 import { registerTaskVerificationApplication } from './application/task-verification-application.ts';
 import { registerParentCoordinationApplication } from './application/parent-coordination-application.ts';
 import { registerTaskOverviewApplication } from './application/task-overview-application.ts';
 import { registerTaskRecordRepository } from './persistence/task-record-repository.ts';
 import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.ts';
-import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.ts';
-import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.ts';
+import { registerGitWorktreeProvider, TASK_WORKTREE_PROVIDER } from './infrastructure/git-worktree-provider.ts';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.ts';
 import { gitWorktreeCommand } from './interfaces/cli/git-worktree.ts';
-import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
 import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
 import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.ts';
 import {
   createParentCoordinationHttpContribution,
-  createTaskEnvironmentHttpContribution,
   createTaskOverviewHttpContribution,
   createTaskVerificationHttpContribution,
 } from './interfaces/http/task-lifecycle-core.ts';
@@ -48,12 +39,6 @@ const INTERNAL_WORKFLOW_RUNNERS = Object.freeze({
 });
 
 export { REQUIRED_INTERNAL_WORKFLOW_ROUTES, inspectRequiredInternalWorkflowRoutes };
-export {
-  normalizeProjectEnvironmentPreparation,
-  parseProjectEnvironmentPreparation,
-  projectEnvironmentPreparationScopeSelector,
-};
-
 export function runRequiredInternalWorkflowRoute(route, args, options = {}) {
   return routeInternalWorkflow(route, args, INTERNAL_WORKFLOW_RUNNERS, options);
 }
@@ -70,12 +55,7 @@ export const TASK_RETROSPECTIVE_MODULE_ID = 'task-retrospective';
 export const TASK_RETROSPECTIVE_APPLICATION = 'task-retrospective.application';
 export const TASK_RETROSPECTIVE_PERSISTENCE_READ = 'task-retrospective.persistence-read';
 export const TASK_RETROSPECTIVE_RUNTIME_PORT = 'task-retrospective.runtime-port';
-export const TASK_ENVIRONMENT_MODULE_ID = 'task-environment';
-export const TASK_ENVIRONMENT_APPLICATION = 'task-environment.application';
-export const TASK_ENVIRONMENT_PERSISTENCE_READ = 'task-environment.persistence-read';
-export const TASK_ENVIRONMENT_RUNTIME_PORT = 'task-environment.runtime-port';
-export const TASK_ENVIRONMENT_DECLARATION = 'task-environment.declaration';
-export const TASK_WORKTREE_PROVIDER = 'task-environment.worktree-provider';
+export { TASK_WORKTREE_PROVIDER } from './infrastructure/git-worktree-provider.ts';
 export const TASK_VERIFICATION_MODULE_ID = 'task-verification';
 export const TASK_VERIFICATION_APPLICATION = 'task-verification.application';
 export const TASK_VERIFICATION_PERSISTENCE_READ = 'task-verification.persistence-read';
@@ -128,15 +108,6 @@ const TASK_RETROSPECTIVE_RUNTIME_PORT_METHODS = Object.freeze([
   'writeTaskRetrospectiveResultPersistence', 'writeTaskRetrospectiveDispositionPersistence', 'renderTaskRetrospectiveResult',
 ]);
 
-const TASK_ENVIRONMENT_APPLICATION_METHODS = Object.freeze([
-  'prepareTaskEnvironment', 'inspectTaskEnvironment', 'readTaskEnvironmentCurrent',
-  'recordTaskEnvironmentPlan', 'inspectTaskEnvironmentPlan', 'cleanupTaskEnvironment',
-  'registerTaskEnvironmentResource', 'releaseTaskEnvironmentResource',
-  'resolveTaskEnvironmentExecution', 'resolveTaskEnvironmentCleanupContext', 'assertTaskEnvironmentController',
-]);
-const TASK_ENVIRONMENT_PERSISTENCE_METHODS = Object.freeze([
-  'taskEnvironmentPath', 'readTaskEnvironmentPersistence', 'writeTaskEnvironmentPersistence', 'renderTaskEnvironmentReceipt',
-]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
   'inspectTaskVerification', 'inspectTaskVerificationView', 'recordTaskVerification',
 ]);
@@ -193,44 +164,10 @@ export function createWorktreeProviderModule(runtime) {
             'cleanupGitWorktrees',
           ]),
         },
+        contributions: { cli: createGitWorktreeCliContributions() },
       });
     },
   });
-}
-
-function taskEnvironmentCliContributions() {
-  return Object.freeze([
-    {
-      key: 'task environment prepare', surface: 'agent-machine', summary: '按Project Preparation Declaration与Agent选择的Task Plan幂等准备Project/Service执行环境。',
-      help: ['Usage: buildr task environment prepare <task-id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--plan <json-file>] [--branch <branch>] [--start-point <ref>] [--shared] [--target <canonical-workspace>] [--json]', '', 'Plan Request必须恰好覆盖Task Record中的全部Project/Service scope，可引用Project preparation.yml的Recipe或显式task-inline Recipe。', '默认使用Git worktree；inspect严格只读，不执行Step或回写current。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'prepare',
-      run: (runtime, context) => taskEnvironmentCommand(runtime, 'prepare', context.argv.slice(5)),
-    },
-    {
-      key: 'task environment plan record', surface: 'agent-machine', summary: '解析Project Preparation Declaration并原子保存当前Task的Plan执行快照，不执行任何准备Step。',
-      help: ['Usage: buildr task environment plan record <task-id> --input <json-file> [--target <canonical-workspace>] [--json]', '       buildr task environment plan record --schema|--example [--json]', '', '输入必须是closed buildr.task-environment-plan-request/v1；新current保存resolved buildr.task-environment-plan/v3。', 'Discovery与实际Plan request定义同源，零Workspace读取且零写入。'],
-      match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'record',
-      run: (runtime, context) => taskEnvironmentPlanCommand(runtime, 'record', context.args.slice(1)),
-    },
-    {
-      key: 'task environment plan inspect', surface: 'agent-machine', summary: '只读返回Environment current中保存的Preparation Plan，不探测或修复环境。',
-      help: ['Usage: buildr task environment plan inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读取Workspace SQLite current；缺少Plan时返回unavailable。'],
-      match: ({ domain, action, runtimeId, args }) => domain === 'task' && action === 'environment' && runtimeId === 'plan' && args[0] === 'inspect',
-      run: (runtime, context) => taskEnvironmentPlanCommand(runtime, 'inspect', context.args.slice(1)),
-    },
-    {
-      key: 'task environment inspect', surface: 'agent-machine', summary: '只读返回当前机器的 Environment Receipt availability、observedAt、scope/root、执行基础、provider、资源和 cleanup 摘要。',
-      help: ['Usage: buildr task environment inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读返回当前机器的 Environment Receipt availability、observedAt、scope/root、执行基础、provider、资源和 cleanup 摘要。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'inspect',
-      run: (runtime, context) => taskEnvironmentCommand(runtime, 'inspect', context.argv.slice(5)),
-    },
-    {
-      key: 'task environment cleanup', surface: 'agent-machine', summary: '按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。',
-      help: ['Usage: buildr task environment cleanup <task-id> [--target <canonical-workspace>] [--json]', '', '按 provider 依赖先停止 Task-owned 资源，再清理可证明属于该 Task 的 Git checkout；成功后保留最小处置摘要。', '公共CLI接受已持久化且可重新验证的Delivery evidence，或已明确abandon终态；不接受调用方声明交付成功。'],
-      match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'environment' && runtimeId === 'cleanup',
-      run: (runtime, context) => taskEnvironmentCommand(runtime, 'cleanup', context.argv.slice(5)),
-    },
-  ].map(Object.freeze));
 }
 
 function taskVerificationCliContributions() {
@@ -269,7 +206,7 @@ export function createGitWorktreeCliContributions(application = null) {
         'Usage: buildr worktree create <task-id> --branch <branch> [--start-point <ref>] [--include <project:code|service:project/service> ...] [--target <workspace>] [--json]',
         '',
         '这是窄 Git provider 命令：只规划并创建显式 repository checkout/branch，写入 Git common-dir provider evidence。',
-        '全部仓库在写入前统一预检；部分创建失败保留已创建 checkout 和 evidence，供同一计划恢复。它不判断 Environment ready，也不准备 Runtime/CLI/依赖/projection。',
+        '全部仓库在写入前统一预检；部分创建失败保留已创建 checkout 和 evidence，供同一计划恢复。它不判断Task完成，也不准备Runtime/CLI/依赖/projection。',
       ],
       match: ({ domain, action }) => domain === 'worktree' && action === 'create',
       run: (runtime, context) => gitWorktreeCommand(application || runtime, 'create', context.argv.slice(4)),
@@ -282,7 +219,7 @@ export function createGitWorktreeCliContributions(application = null) {
         'Usage: buildr worktree cleanup <task-id> --expected-source <selector>=<full-commit> --delivered-ref <selector>=<full-commit> ... [--target <workspace>] [--json]',
         '',
         '调用方先核验完整交付；provider复核checkout/branch/clean/registration、source版本和delivered提交仍由非任务retained ref持有。',
-        '它不读取Environment Receipt、不停止动态资源、不判断业务等价，也不删除远端分支。',
+        '它不停止其他资源、不判断业务等价，也不删除远端分支。',
       ],
       match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup',
       run: (runtime, context) => gitWorktreeCommand(application || runtime, 'cleanup', context.argv.slice(4)),
@@ -290,11 +227,11 @@ export function createGitWorktreeCliContributions(application = null) {
     {
       key: 'worktree inspect',
       surface: 'agent-machine',
-      summary: '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
+      summary: '根据窄provider evidence检查全部成员仓库的checkout、branch、HEAD、clean与registration；不输出Task、runtime或session结论。',
       help: [
         'Usage: buildr worktree inspect <task-id> [--target <workspace>] [--json]',
         '',
-        '根据窄 provider evidence 检查全部成员仓库的 checkout、branch、HEAD、clean 与 registration；不输出 Environment ready 或 runtime/session 事实。',
+        '根据窄provider evidence检查全部成员仓库的checkout、branch、HEAD、clean与registration；不输出Task、runtime或session结论。',
       ],
       match: ({ domain, action }) => domain === 'worktree' && action === 'inspect',
       run: (runtime, context) => gitWorktreeCommand(application || runtime, 'inspect', context.argv.slice(4)),
@@ -309,10 +246,10 @@ export function createTaskRecordCliContributions(application = null) {
       help: [
         'Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--retrospective-source <task-id> ...] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
-        '省略 --status 时创建 active；--status todo 只写 SQLite，拒绝 Change，不创建 Environment、Git 或专业记录。',
+        '省略 --status 时创建active；--status todo只写SQLite，拒绝Change，不执行Git或创建专业记录。',
         '--retrospective-source 只接受已有 current 复盘的 completed/abandoned Task，可重复且仅保存 source Task ID。',
         '--parent 只接受当前 Workspace 中已存在且 active 的 Task；副作用是在本地 structured store 中原子创建 Task 及其直接 Parent 关系。',
-        '不创建 Environment、Change、branch、commit 或专业记录，也不自动改变 Parent/Child 的状态。',
+        '不创建Change、branch、commit或专业记录，也不自动改变Parent/Child状态。',
       ],
       match: ({ domain, action }) => domain === 'task' && action === 'create',
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'create', context.argv.slice(4)),
@@ -336,7 +273,7 @@ export function createTaskRecordCliContributions(application = null) {
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'update', context.argv.slice(4)),
     },
     {
-      key: 'task activate', surface: 'primary', summary: '把 todo Task 单向激活为 active；该动作自身不执行 Git、Environment 或研发阶段。',
+      key: 'task activate', surface: 'primary', summary: '把todo Task单向激活为active；该动作自身不执行Git或研发工作。',
       help: ['Usage: buildr task activate <task-id> [--target <canonical-workspace>] [--json]', '', '只执行 todo -> active。Agent 必须在调用前通过 Task Triage 完成当前事实确认与 Git 基线门禁。'],
       match: ({ domain, action }) => domain === 'task' && action === 'activate',
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'activate', context.argv.slice(4)),
@@ -349,7 +286,7 @@ export function createTaskRecordCliContributions(application = null) {
     },
     {
       key: 'task abandon', surface: 'primary', summary: '把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。',
-      help: ['Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]', '', '把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。', '该动作只更新顶层 Task Record，不执行 Environment cleanup、Git 或其他专业动作。'],
+      help: ['Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]', '', '把todo或active Task单向标记为abandoned；终态不可重开或继续修改。', '该动作只更新顶层Task Record，不执行Git或其他专业动作。'],
       match: ({ domain, action }) => domain === 'task' && action === 'abandon',
       run: (runtime, context) => taskRecordCommand(application || pick(runtime, APPLICATION_METHODS), 'abandon', context.argv.slice(4)),
     },
@@ -522,46 +459,6 @@ export const TASK_RETROSPECTIVE_MODULE = Object.freeze({
   ]),
   create: createTaskRetrospectiveModule,
 });
-
-export function createTaskEnvironmentModule(runtime, { agentRuntimeCapability = null, worktreeProviderCapability = null } = {}) {
-  return Object.freeze({
-    id: TASK_ENVIRONMENT_MODULE_ID,
-    requires: Object.freeze([
-      TASK_RECORD_PERSISTENCE_READ,
-      ...(agentRuntimeCapability ? [agentRuntimeCapability] : []),
-      ...(worktreeProviderCapability ? [worktreeProviderCapability] : []),
-    ]),
-    create(requires) {
-      const composition = taskPrivateComposition(runtime, requires);
-      registerTaskEnvironmentRepository(composition);
-      registerTaskEnvironmentApplication(composition);
-      const application = pick(composition, TASK_ENVIRONMENT_APPLICATION_METHODS);
-      const persistenceRead = pick(composition, ['taskEnvironmentPath', 'readTaskEnvironmentPersistence']);
-      const testSupportProperties = {
-        readTaskEnvironmentPersistence: Object.freeze({
-          get: () => composition.readTaskEnvironmentPersistence,
-          set: (value) => { composition.readTaskEnvironmentPersistence = value; },
-        }),
-      };
-      return Object.freeze({
-        provides: {
-          [TASK_ENVIRONMENT_APPLICATION]: application,
-          [TASK_ENVIRONMENT_PERSISTENCE_READ]: persistenceRead,
-          [TASK_ENVIRONMENT_DECLARATION]: Object.freeze({
-            normalizeProjectEnvironmentPreparation,
-            parseProjectEnvironmentPreparation,
-            projectEnvironmentPreparationScopeSelector,
-          }),
-          [TASK_ENVIRONMENT_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_ENVIRONMENT_PERSISTENCE_METHODS, ...TASK_ENVIRONMENT_APPLICATION_METHODS]), testSupportProperties),
-        },
-        contributions: {
-          cli: Object.freeze([...taskEnvironmentCliContributions(), ...createGitWorktreeCliContributions()]),
-          http: [createTaskEnvironmentHttpContribution(TASK_RECORD_ID_SOURCE, application, requires[TASK_RECORD_PERSISTENCE_READ])],
-        },
-      });
-    },
-  });
-}
 
 export function createTaskVerificationModule(runtime, { verificationDeclaration = null } = {}) {
   return Object.freeze({

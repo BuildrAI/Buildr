@@ -96,13 +96,12 @@ test('OpenSpec deltaHash 在逻辑 delta 输入变化时改变', (t) => {
   assert.notEqual(runtime.parseOpenSpecChangeDelta(changedPath).hash, baseHash);
 });
 
-test('converge help明确Task execution root且不把canonical Workspace作为target', () => {
+test('converge help明确实际工作根且不自动选择其他worktree', () => {
   const buildr = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
   const result = spawnSync(process.execPath, [buildr, 'help', 'openspec', 'converge'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /--target <task-execution-root>/);
-  assert.match(result.stdout, /execution\.workdir/);
-  assert.match(result.stdout, /不是canonical Workspace/);
+  assert.match(result.stdout, /--target <actual-work-root>/);
+  assert.match(result.stdout, /当前Workspace或matching Worktree真实根/);
   assert.match(result.stdout, /不会自动搜索或选择其他worktree/);
   assert.doesNotMatch(result.stdout, /--target <(?:dir|workspace)>/);
 });
@@ -111,13 +110,13 @@ test('semantic readiness preflight help明确只读、失效与最终重检边�
   const buildr = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
   const result = spawnSync(process.execPath, [buildr, 'help', 'openspec', 'convergence', 'preflight'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /--target <task-execution-root>/);
+  assert.match(result.stdout, /--target <actual-work-root>/);
   assert.match(result.stdout, /不会写canonical、Receipt或archive/);
   assert.match(result.stdout, /ready会在delta、canonical、active Changes或executable变化后失效/);
   assert.match(result.stdout, /最终converge始终重新检查/);
 });
 
-test('canonical target看不到active Change时零写入并指向matching Environment Receipt', (t) => {
+test('canonical target看不到active Change时零写入并指向包含Change的实际工作根', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-execution-root-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const canonicalProject = path.join(root, 'canonical', 'projects', 'product');
@@ -136,15 +135,15 @@ test('canonical target看不到active Change时零写入并指向matching Enviro
     () => runtime.openSpecContractContext([
       'task-change', '--project', 'product', '--target', path.join(root, 'canonical'),
     ], {
-      usage: 'buildr openspec converge <change> --project <project> [--target <task-execution-root>] [--json]',
+      usage: 'buildr openspec converge <change> --project <project> [--target <actual-work-root>] [--json]',
       allowArchived: true,
     }),
     (error) => {
       assert.equal(error.code, 'openspec.active_change_not_found');
       assert.match(error.message, /Active OpenSpec change not found in the provided --target/);
-      assert.match(error.nextAction, /matching Task Environment Receipt.*execution\.workdir/);
-      assert.match(error.nextAction, /不得把Change复制到canonical Workspace或自动搜索其他worktree/);
-      assert.match(error.usage, /--target <task-execution-root>/);
+      assert.match(error.nextAction, /当前Workspace还是matching Worktree/);
+      assert.match(error.nextAction, /不得复制Change或自动搜索其他worktree/);
+      assert.match(error.usage, /--target <actual-work-root>/);
       return true;
     },
   );

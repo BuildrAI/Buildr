@@ -187,7 +187,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'Runtime and Buildr Web integration slice',
     'Release and installation integration slice',
     'Workspace data-store integration slice',
-    'Task Environment integration slice',
     'Self-bootstrap closeout integration slice',
     'Task read-model integration slice',
     'Task coordination integration slice',
@@ -202,7 +201,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'System runtime recovery',
     'System Buildr Web Runtime',
     'System Buildr Web process and preview',
-    'System fresh build',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
     'OpenSpec canonical spec quality',
@@ -243,7 +241,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 11);
+  assert.equal(systemOwners.length, 10);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -257,13 +255,8 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 3);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 1);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], undefined);
-  const freshBuild = verificationSteps.find((step) => step.id === 'system-fresh-build');
-  assert.equal(freshBuild.schedulingCostMs, 25_000);
-  assert.equal(freshBuild.concurrencyClass, 'workspace-heavy');
-  assert.deepEqual(freshBuild.resources, ['workspace-saturating', 'task-lifecycle-heavy']);
   assert.equal(verificationSteps.find((step) => step.id === 'integration-self-bootstrap').schedulingCostMs, 50_000);
 });
 
@@ -345,11 +338,9 @@ test('distributed Candidate creates one artifact and fans out independent consum
     'workspace-lifecycle-windows',
     'task-worktree-recovery-windows',
     'task-concurrent-windows',
-    'fresh-build-windows',
   ]);
   const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
-  assert.match(windowsJob, /projects\/product\/services\/buildr-web\/package-lock\.json/);
-  assert.match(windowsJob, /if: matrix\.shard == 'fresh-build-windows'[\s\S]*npm ci --ignore-scripts/);
+  assert.doesNotMatch(windowsJob, /fresh-build-windows|task-environment-fresh-build/);
   assert.equal((workflow.match(/name: candidate-package/g) || []).length, 4, 'one upload and three consumer downloads');
   assert.equal((workflow.match(/Build the single Candidate artifact/g) || []).length, 1);
   assert.doesNotMatch(windowsJob, /candidate-package|BUILDR_CANDIDATE_CI_ARTIFACT_DIR/);
@@ -415,31 +406,18 @@ test('Candidate aggregate import graph is clean-checkout Node-only', () => {
   assert.ok(visited.has('test/verification/registry.mjs'));
 });
 
-test('fresh build reuses prepared controller dependencies without weakening tested installs', () => {
-  const source = read('test/system/task-environment-fresh-build-web.test.mjs');
-  assert.doesNotMatch(source, /\[npmCli, 'ci'\]/);
-  assert.match(source, /reuse prepared dependencies without another npm ci/);
-  assert.match(source, /preparationSteps\.map\(\(step\) => step\.executed\), \[true, true\]/);
-  assert.match(source, /managedNpm, \['run', 'build:web'\]/);
-});
-
 test('双任务并发验收输出完整的组合证据并执行归属清理', () => {
-  const source = read('test/verification/concurrency/task-acceptance.mjs');
+  const source = read('test/verification/concurrency/task-acceptance.ts');
   for (const phrase of [
-    'buildr.concurrent-task-acceptance/v1', 'cliInvocation', 'web', 'preview',
-    'previewRegistrationFailure', 'resourceCoordination', 'environmentPreparation', 'portableResults', 'phases',
-    'target-race', 'cleanup', 'retainedDoctor', 'durationMs',
+    'buildr.concurrent-task-acceptance/v2', 'workLocations', 'verificationRuns', 'previews', 'cleanup', 'durationMs',
   ]) assert.ok(source.includes(phrase), phrase);
-  assert.ok(source.includes('processesOverlap(prepareResults[0], prepareResults[1])'));
-  assert.ok(source.includes("'task', 'verification', 'record'"));
-  assert.ok(source.includes("'--report', reportPath"));
-  assert.equal(source.includes("'task', 'verification', 'inspect'"), false);
-  assert.equal(source.includes('taskChangeResolution'), false);
-  assert.equal(source.includes('candidate-only'), false);
-  assert.equal(source.includes('RESOURCE_WORKER'), false);
-  assert.ok(source.includes("profiles: ['candidate']") === false);
+  assert.ok(source.includes('processesOverlap(verificationResults[0], verificationResults[1])'));
+  assert.ok(source.includes("'worktree', 'create'"));
+  assert.ok(source.includes('assertPreviewStopOwner'));
+  assert.ok(source.includes("'task', 'complete'"));
+  assert.equal(source.includes("'task', 'environment'"), false);
   const entry = verificationSteps.find((step) => step.id === 'concurrent-task-acceptance');
-  assert.equal(entry.executor.file, 'test/verification/concurrency/task-acceptance.mjs');
+  assert.equal(entry.executor.file, 'test/verification/concurrency/task-acceptance.ts');
   assert.deepEqual(entry.profiles, ['candidate', 'core']);
   assert.ok(entry.resources.includes('workspace-saturating'));
   assert.ok(entry.budgetMs > 0);

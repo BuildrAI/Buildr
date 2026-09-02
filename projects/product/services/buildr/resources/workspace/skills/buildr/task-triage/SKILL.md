@@ -60,9 +60,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
 | 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 分别证明current integration branch、matching upstream与clean状态；每个 operation 返回before/after、effects与current facts，适用Workspace transition check ready | 任一目标解析、前置事实、provider、fetch、rebase、冲突恢复或Doctor blocked时不调用Task Record `create`；报告全部部分effects，不换策略 |
-| 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Environment、Change或专业placeholder |
+| 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Change或专业placeholder |
 | 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
-| 独立执行位置 | `buildr.git-worktree-provider/v1` 的 `create/inspect` | Task ID、canonical Workspace、branch、start point与明确repository selectors；返回实际checkout、HEAD、clean与registration | provider不可用或evidence漂移只阻塞依赖该Worktree的动作；可安全直接工作时不回退猜测，也不补造Environment |
+| 独立执行位置 | `buildr.git-worktree-provider/v1` 的 `create/inspect` | Task ID、canonical Workspace、branch、start point与明确repository selectors；返回实际checkout、HEAD、clean与registration | provider不可用或evidence漂移只阻塞依赖该Worktree的动作；可安全直接工作时不回退猜测 |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有Task Record或Buildr Web已创建时先inspect并核对intent/scope，不重复create，也不重新执行创建前Git基线门禁；只维护已有Task metadata时不递归创建新Task。Task Record provider不可用时不得手写YAML代替；其他provider不可用时只阻塞对应分支。current knowledge provider不可用时，不得回退为无evidence的直接编辑或伪造Change。
 

@@ -41,8 +41,6 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr project daily-progress record\|inspect\|list --project <code>` | Agent-machine 本机每日演进。`record` 把已构造的四问摘要、提交与变更文件写入 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`；Task 关联可选，他人提交禁止挂 Task，存在的 Task ID 仍须本机已有。`inspect`/`list` 只读。JSON 使用 `buildr.project-daily-progress-*-result/v1`。不进入 Git 或 Task SQLite，读取路径不扫描 Git，也不提供定时调度。 |
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
-| `buildr task environment plan record\|inspect <task-id>` | Agent登记或只读查看覆盖全部Task Service scope的Environment Preparation Plan；`record --input <json-file>`不执行Step。 |
-| `buildr task environment prepare\|inspect\|cleanup <task-id>` | `prepare`必须带`--agent <adapter>`，可选`--plan <json-file>`幂等执行或恢复Plan；省略`--agent`失败且不默认为 Codex。未给`--branch`时默认任务分支为`<adapter>/<task-id>`。`inspect`只读观察；`cleanup`清理正式Task环境。Environment Receipt独占Plan、ready、恢复、资源和总cleanup。 |
 | `buildr worktree create\|inspect\|cleanup <task-id>` | 窄Git worktree provider。`create`接受branch/start point与显式Project/Service selectors；`inspect`复核checkout/branch/HEAD/clean/registration；`cleanup`要求每仓成对提供expected source与delivered完整提交。它不判断Task完成，也不准备Runtime、CLI、依赖、projection或动态资源。 |
 | `buildr project verification inspect|validate|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
 | `buildr task verification record|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
@@ -63,7 +61,7 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 Task Record 使用 closed `buildr.task-record/v2` schema。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为 todo + active。复盘来源使用独立多对多关系表，只保存 source Task ID；多个复盘可指向同一 Task，一个复盘也可形成多个后续 Task。Task Record 不保存 Environment、执行计划或 action item。Parent/Child、Change resolver、`recordDigest` 与旧 `task.yml` inert 语义保持不变。
 
-Task Record、Task Environment、Task Verification、Planning/Completion Review与Task Retrospective current facts以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web调用对应Application；interface不直接打开数据库。旧研发和旧收尾current表已删除，不建立history或双读。Task current records不进入Git或跨机器同步。
+Task Record、Task Verification、Planning/Completion Review与Task Retrospective current facts以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web调用对应Application；interface不直接打开数据库。旧研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。Task current records不进入Git或跨机器同步。
 
 默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情固定为“概览、原型、证据、复盘、环境”五个一级视图；概览组合Task Record、Review、Verification与Environment，证据分别调用Review/Verification reader，环境调用Environment reader。页面没有研发页签或旧机器交付历史。
 
@@ -71,9 +69,9 @@ Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`�
 
 `service create --integration-branch` 只适用于 Git 来源，`--branch` 仅为兼容别名。Canonical Service Domain 保存 UUID `id`、`workspaceId`、`projectId`、`code`、`name`、`description`、`type` 和 `source`；`source.path` 定位文件系统中的实际 Service，Git source 保存 URL、remote 与稳定 integration branch。当前分支、HEAD、dirty、upstream 与 ahead/behind 只实时观察，不写回 Domain。
 
-Project根可选`preparation.yml`（`buildr.project-environment-preparation/v1`），长期声明Project-wide或Service-scoped Recipe。Agent按Task完整Project/Service scope提交closed`buildr.task-environment-plan-request/v1`；Application解析声明identity并把resolved`buildr.task-environment-plan/v3`与Receipt v6保存到canonical Workspace SQLite唯一`task_environment_current`。`task environment plan record|inspect`管理saved Plan，`prepare --plan <file>`可一次选择并准备。Recipe Step只接受无shell executable、args、所属Project/Service相对cwd、inputs、expected outputs、required和timeout；核心不枚举package manager、不扫描manifest。Plan分离typed Workspace path reference、closed executable authority、基础Task选择与capability辅助准备；Receipt保存解析后的机器路径、runtime invocation及Declaration、Scope、Recipe、Step current/prepared事实。任一required Recipe/Step缺失、漂移或失败都会阻断整体ready。`inspect`只读实时观察且不执行Step、不创建输出、不升级Plan、不回写；Buildr Web GET只读取saved current。旧Plan/Receipt只读兼容，必须显式提供Plan Request才能升级。
+Project根可选`preparation.yml`，长期说明Project-wide或Service-scoped真实准备入口。Agent只在当前动作需要时，从matching Project或Service根直接调用对应wrapper；没有额外准备的Project无需声明空步骤。Buildr不生成Task Plan、不保存选择和执行结果，也不把局部准备失败扩大为统一工作许可。
 
-`project create`、`service create`及Buildr Web对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、Environment declaration/Recipe gap与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，仍由`task-environment`或`task-verification`各自owner维护。
+`project create`、`service create`及Buildr Web对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、准备入口缺口与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，Agent直接维护Project拥有的准备入口；`task-verification`继续维护验证声明。
 
 Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git common-dir的`buildr/task-worktrees/<task-id>.json`。它只包含repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote和Git effects。成果交付后，Agent把已核对的逐仓source与delivered完整提交直接交给provider；provider复核source版本、dirty、registration和retained ref后才删除。provider不删除远端分支，也不执行交付或验证判断。
 
@@ -84,7 +82,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
 | `buildr doctor` | 只读聚合workspace、npm/platform/development/current instance安装身份、main process runtime role、独立Workspace Node声明/runtime、registries、Components和Commands；不要求main process Node等于Workspace Node。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不扫描或迁移旧 Task Environment 文件。 |
+| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |

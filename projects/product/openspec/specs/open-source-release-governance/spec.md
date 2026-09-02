@@ -170,7 +170,7 @@ Buildr release workflow MUST 在公开 mutation 前后读取 npm `latest` 与 `n
 
 ### Requirement: Publication 必须从已完成 Task 的权威环境事实重建
 
-Buildr Release MUST在matching release Worktree中使用冻结source的Buildr Service`package.json`、`package-lock.json`和Product exact Node执行`npm ci`。Preparation Result MUST保存source inputs、cwd、command、Node和outcome identity，MUST NOT保存stdout、凭证或Task Environment Plan/Receipt。无副作用readiness MUST只读取该Result，不得执行依赖安装。
+Buildr Release MUST在matching release Worktree中使用冻结source的Buildr Service`package.json`、`package-lock.json`和Product exact Node执行`npm ci`。Preparation Result MUST保存source inputs、cwd、command、Node和outcome identity，MUST NOT保存stdout或凭证。无副作用readiness MUST只读取该Result，不得执行依赖安装。
 
 #### Scenario: Release Task Finish 已清理 worktree
 - **WHEN** exact Node在matching release Worktree的Buildr Service root执行`npm ci`成功且inputs未漂移
@@ -367,7 +367,7 @@ Buildr MUST从Task、Git/PR、GitHub run/attempt、release owner Result、Enviro
 - **AND** compact output MUST只返回关键阶段、timeline identity与inspect pointer，完整timeline只在显式full中展开
 
 ### Requirement: 发布关联必须与旧收尾执行证明解耦
-Release transaction MUST只要求release/support Task Record关系、适用Task Environment、current Product Candidate、唯一artifact、Git/main/dev和publication facts。Task Development、Task Candidate、Development Handoff、Task Finish legacy Result或Terminal Delivery MUST不成为关联输入、缺失finding或发布准备条件。
+Release transaction MUST只要求release/support Task Record关系、matching Worktree、Release Preparation、current Product Candidate、唯一artifact、Git/main/dev和publication facts。Task Development、Task Candidate、Development Handoff、Task Finish legacy Result或Terminal Delivery MUST不成为关联输入、缺失finding或发布准备条件。
 
 #### Scenario: support Task直接交付dev
 - **WHEN** support Task通过当前task-finish Skill和Git事实完成交付且Task Record已completed

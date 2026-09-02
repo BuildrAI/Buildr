@@ -128,34 +128,6 @@ Buildr CLI MUST 在无法匹配命令且输入请求 `--json` 时输出登记的
 - **THEN** 产品验证 MUST失败并报告遗漏的 command/schema family
 - **AND** MUST NOT保留 v1 alias 或按运行时存储选择不同 schema
 
-### Requirement: Task Environment CLI 必须提供稳定公开 JSON identity
-`task environment prepare|inspect|cleanup --json` MUST返回`buildr.task-environment-result/v3`；Plan `record|inspect --json` MUST返回`buildr.task-environment-plan-result/v1`。Environment result MUST包含operation、status、taskId、SQLite current locator、observedAt、sanitized read model、Plan identity、逐Service/Step facts、diagnostic、effects与nextActions，并 MUST不暴露SQLite path、resource handle、凭证或完整命令输出。
-
-#### Scenario: Environment 操作成功
-- **WHEN** action成功并请求JSON
-- **THEN** stdout MUST是单一匹配schema对象且stderr为空
-- **AND** payload MUST返回实际operation、status、观察时间、locator、read model与精确effects
-
-#### Scenario: Environment 业务阻塞
-- **WHEN** action因plan-missing/invalid、scope、identity/drift、Step failure、provider、Runtime/CLI、projection、resource或cleanup authorization blocked
-- **THEN** stdout MUST返回v3 blocked对象并以非零状态退出
-- **AND** payload MUST包含稳定code、具体Service/Step、已发生effects与next action
-
-#### Scenario: Inspect 尚无 Environment Receipt
-- **WHEN** 有效Task尚无current且执行inspect
-- **THEN** payload MUST返回只读unavailable、空read model与prepare next action
-- **AND** MUST不创建row或伪造Plan/effect
-
-#### Scenario: JSON 暴露敏感或越权字段
-- **WHEN** result包含secret、环境变量值、完整stdout/stderr、任意shell、resource handle、provider receipt、Agent session或SQLite path
-- **THEN** public schema verification MUST失败
-- **AND** checkout/npm parity同时漂移 MUST不视为通过
-
-#### Scenario: JSON coverage 未登记 Environment action
-- **WHEN** public command registry启用Plan或Environment action但schema/parity未覆盖
-- **THEN** package verification MUST失败并指出遗漏family
-- **AND** 内部resource/saved-current actions MUST不进入public registry
-
 ### Requirement: Git worktree provider CLI 必须使用窄公开 JSON identity
 `buildr worktree create|inspect|cleanup --json` MUST 返回 `buildr.git-worktree-result/v1` 顶层 identity，并 MUST 至少包含 operation、status、taskId、repository plan/evidence、Git effects、diagnostic 与 nextActions。payload MUST 只表达 repository、checkout、branch、HEAD、remote、clean、registration 与本地 Git cleanup 事实；checkout 和 npm tarball CLI MUST 保持 schema parity。
 
@@ -212,20 +184,6 @@ Public JSON registry、CLI command registry、help、schema validation 与 check
 - **WHEN** Application 拒绝 input、Task terminal、declaration invalid 或 persistence 失败
 - **THEN** payload MUST 返回 blocked、具体 diagnostic 与零 effects
 - **AND** stdout MUST 不混入普通日志
-
-### Requirement: Verification JSON registry 必须与 command registry 同步
-公开 schema registry、CLI registry、help/architecture verification 与 npm package parity MUST 同时登记 `verificationPlanResult`、`verificationExecution`、`verificationEvidenceCleanup` 和 `taskVerificationOperationResult`，并 MUST 删除旧 `verificationRun` schema key 与 `buildr.verification-run/v1` identity。`verificationPlanResult` MUST 使用 closed `buildr.verification-plan-result/v1` envelope，包含原始 `buildr.verification-plan/v1`、只读 Preparation preview、零副作用与下一步；无 formal Environment 的 `verification plan` MUST 继续返回 raw Plan v1。
-
-#### Scenario: 枚举公开 JSON families
-- **WHEN** product tests 枚举 `PUBLIC_JSON_SCHEMAS`
-- **THEN** registry MUST 精确包含四个当前 Verification families
-- **AND** checkout 与 installed CLI MUST 输出相同 schema identities
-
-#### Scenario: 正式与普通 Plan 输出兼容
-- **WHEN** 调用方分别执行绑定 matching Task Environment 的 formal Plan 和未绑定 Environment 的普通 Plan
-- **THEN** formal Plan MUST 返回 `buildr.verification-plan-result/v1`
-- **AND** 普通 Plan MUST 继续返回 `buildr.verification-plan/v1`
-- **AND** 同版 `verification run --plan` MUST 接受两种输出
 
 ### Requirement: Task JSON 必须稳定表达 Parent 与直接 Children
 Task Record operation JSON MUST 使用新的 major schema identity，并 MUST 在 record 中明确返回 nullable `parentTaskId` 与排序后的 `childTaskIds`。该 read model MUST NOT 暴露数据库 row id、SQL、路径、祖先闭包或递归 Task 正文。
@@ -483,12 +441,12 @@ Buildr MUST在公共 JSON registry、CLI help、schema validation与checkout/npm
 - **AND** MUST不把 compact summary identity写入专业 durable Result或替代其authority
 
 ### Requirement: Public JSON registry不得包含退役任务研发与旧收尾schema
-Buildr public JSON registry、CLI help、HTTP DTO和checkout/npm parity MUST不包含Task Development、Task Finish legacy result、Task Finish compact/self-bootstrap或Terminal Delivery schema。
+
+Public JSON registry MUST不包含Task Development、旧Task Finish、Task Environment、Environment Plan/Receipt或其他已退役任务流程schema。删除项不得保留兼容alias、example或parity检查。
 
 #### Scenario: fresh build检查JSON catalog
-- **WHEN** generator和contract verification读取current catalog
-- **THEN** 已删除schema和operation MUST不存在
-- **AND** Task Record、Environment、Review、Verification与Retrospective schema MUST继续通过
+- **WHEN** package/static validation读取公共schema registry
+- **THEN** registry MUST只包含仍有公共消费者的Task Record、Review、Verification、Parent、Worktree及其他当前schema
 
 ### Requirement: Parent启动就绪与refresh结果必须保持独立公开JSON identity
 Buildr MUST为Parent启动就绪投影和planning refresh operation登记closed public JSON shape，并在Application、CLI、schema registry与checkout/npm parity中保持一致；payload MUST不暴露Review正文、SQLite locator或本机绝对路径。

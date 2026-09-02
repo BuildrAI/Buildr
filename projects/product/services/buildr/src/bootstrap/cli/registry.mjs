@@ -126,7 +126,7 @@ const COMMAND_GROUPS = [
       "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
       "Task Manager只管理canonical Workspace中的Task Record；专业事实由各自Application读取。",
-      "它不创建或记录 Task Environment，不执行开发、Review、Verification、Git、交付、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
+      "它不执行开发、Review、Verification、Git、交付、cleanup或publication，也不接受完整next-state文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],
     executable: false,
@@ -155,19 +155,6 @@ const COMMAND_GROUPS = [
     ],
     executable: false,
   },
-  {
-    key: "task environment",
-    surface: "agent-machine",
-    summary: "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
-    help: [
-      "Usage: buildr task environment <plan record|plan inspect|prepare|inspect|cleanup> <task-id> [--target <canonical-workspace>] [--json]",
-      "       buildr task environment plan record --schema|--example [--json]",
-      "",
-      "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
-      "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受可重新验证的Delivery evidence或已持久化的abandon终态。"
-    ],
-    executable: false,
-  }
 ];
 
 function executableCommand(descriptor) {

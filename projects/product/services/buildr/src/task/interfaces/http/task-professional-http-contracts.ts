@@ -46,8 +46,6 @@ const RETROSPECTIVE_PATCH = closed({
 export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   overviewRequest: schema('overview/request', 'TaskOverviewRequest', EMPTY),
   overviewResponse: schema('overview/response', 'TaskOverviewResponse', RESPONSE),
-  environmentRequest: schema('environment/request', 'TaskEnvironmentRequest', EMPTY),
-  environmentResponse: schema('environment/response', 'TaskEnvironmentResponse', RESPONSE),
   reviewsRequest: schema('reviews/request', 'TaskReviewsRequest', EMPTY),
   reviewsResponse: schema('reviews/response', 'TaskReviewsResponse', RESPONSE),
   verificationRequest: schema('verification/request', 'TaskVerificationRequest', EMPTY),
@@ -73,7 +71,6 @@ const operation = (id: string, method: string, path: string, request: SchemaKey,
 
 export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-overview.detail', 'GET', '/tasks/:taskId/overview', 'overviewRequest', 'overviewResponse'),
-  operation('task-environment.detail', 'GET', '/tasks/:taskId/environment', 'environmentRequest', 'environmentResponse'),
   operation('task-review.detail', 'GET', '/tasks/:taskId/reviews', 'reviewsRequest', 'reviewsResponse'),
   operation('task-verification.detail', 'GET', '/tasks/:taskId/verification', 'verificationRequest', 'verificationResponse'),
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),

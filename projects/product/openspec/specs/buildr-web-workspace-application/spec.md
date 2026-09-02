@@ -381,7 +381,7 @@ Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent�
 - **AND** 生成与复制结果 MUST 明确说明对象或任务尚未创建或开始
 
 ### Requirement: 界面领域名词必须使用中文主称
-Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项目”“服务”作为领域对象的主要名称，英文名称只能作为首次解释或技术辅助信息。任务页面及其直接的 Task-scoped 入口 MUST 对任务记录、任务环境、任务研发、审查结果、验证结果、内容目标、任务候选与研发交接使用纯中文或“中文（English Term）”主称，不得使用英文-only 标题或操作名。
+Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项目”“服务”作为领域对象的主要名称，英文名称只能作为首次解释或技术辅助信息。任务页面及其直接的 Task-scoped 入口 MUST 对任务记录、审查结果与验证结果使用纯中文或“中文（English Term）”主称，不得使用英文-only 标题或操作名。
 
 #### Scenario: 展示导航和页面标题
 - **WHEN** 应用展示工作空间、项目或服务的导航、面包屑、页面标题、按钮、状态或说明
@@ -391,7 +391,7 @@ Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项�
 #### Scenario: 展示任务页面与直接入口
 - **WHEN** 应用展示任务目录、任务详情页签、专业区块或 Task-scoped Change 的审查入口
 - **THEN** 已有稳定中文名称的任务对象、专业能力、状态与操作 MUST 使用纯中文或“中文（English Term）”形式
-- **AND** MUST NOT 只使用 Task Record、Task Environment、Task Review、Task Verification、Task Development、Planning Review 或 Completion Review 作为用户可见主称
+- **AND** MUST NOT 只使用 Task Record、Task Review、Task Verification、Planning Review 或 Completion Review 作为用户可见主称
 
 #### Scenario: 展示技术字段
 - **WHEN** 应用展示 Workspace ID、schemaVersion、digest、字段名、路径、Git 或 API 等精确技术标识
@@ -682,7 +682,7 @@ Buildr Web MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Ch
 #### Scenario: Task 没有关联 Change
 - **WHEN** Task Record 没有 Change 引用
 - **THEN** 页面 MUST 显示明确的无关联 Change 状态
-- **AND** 页面 MUST NOT 扫描 Workspace、Project 或 Task Environment 以发现 Change
+- **AND** 页面 MUST NOT 扫描 Workspace、Project 或Worktree以发现 Change
 
 ### Requirement: 首次开始工作必须触发scope内Declaration Intake
 Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只读检查所选Project及可选Service的Preparation与Verification声明。Prompt生成 MUST不读取代码树来生成声明候选，也 MUST不写Project文件。

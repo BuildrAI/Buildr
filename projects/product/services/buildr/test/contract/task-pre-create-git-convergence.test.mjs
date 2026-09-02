@@ -10,7 +10,7 @@ const triage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
 const gitOperations = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const gitContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
 const taskManager = read('resources/workspace/skills/buildr/task-manager/SKILL.md');
-const environment = read('resources/workspace/skills/buildr/task-environment/SKILL.md');
+const worktree = read('resources/workspace/skills/buildr/task-worktree/SKILL.md');
 
 test('task-triage 在新正式 Task create 前按逐repository权威基线消费 Git Operations', () => {
   for (const required of [
@@ -59,8 +59,7 @@ test('package manifests 声明 task-triage optional Git Operations dependency', 
   assert.ok(packageManifest.builtins.skills.find((item) => item.id === 'task-triage').requires.some((item) => JSON.stringify(item) === JSON.stringify(dependency)));
 });
 
-test('Task Record 与 Environment 继续排除创建前 Git 编排', () => {
+test('Task Record与Worktree继续排除创建前Git编排', () => {
   assert.doesNotMatch(taskManager, /git fetch|git rebase|origin\/dev/);
-  assert.match(environment, /不要由Environment自动fetch\/rebase/);
-  assert.doesNotMatch(environment, /rebase --abort|origin\/dev/);
+  assert.doesNotMatch(worktree, /git fetch|git rebase|rebase --abort|origin\/dev/);
 });

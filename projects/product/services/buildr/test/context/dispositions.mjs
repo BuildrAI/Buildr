@@ -16,7 +16,6 @@ const entries = [
     'integration-task-read-models',
     'integration-task-coordination',
     'integration-project-daily-progress',
-    'integration-task-environment',
   ]),
   ...disposition('full-lifecycle', 'stateless-direct-evidence', 'The owner is a bounded static or stateless check and has no reusable mutable Context.', [
     'typecheck',
@@ -58,7 +57,6 @@ const entries = [
     'system-worktree-lifecycle',
     'system-runtime-recovery',
     'system-app-process',
-    'system-fresh-build',
     'system-windows-platform',
     'concurrent-task-acceptance',
     'openspec-convergence-recovery',

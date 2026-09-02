@@ -49,24 +49,6 @@ capabilityContracts:
         integrity: sha256-026125f83f82e2a0a650b38b2e2ae0291c3f1ef5fd37565066d2fc36b7f0a981
         provider: git-ops
         description: 在 workspace sync 前安全更新 Git checkout。
-  - id: buildr.task-environment
-    version: 1
-    description: 管理正式 Task 的实际执行环境和唯一 Environment Receipt。
-    path: resources/workspace/skills/contracts/buildr/task-environment/v1.md
-    target: skills/contracts/buildr/task-environment/v1.md
-    replaces:
-      - id: buildr.task-worktree-lifecycle
-        version: 1
-        target: skills/contracts/buildr/task-worktree-lifecycle/v1.md
-        integrity: sha256-08fab39602e8bbc264286ea228aa9137b49132ce2c232f2b2b3b9319af26fea0
-        provider: task-worktree
-        description: 管理任务 worktree 的放置、保留和安全清理。
-      - id: buildr.task-worktree-lifecycle
-        version: 2
-        target: skills/contracts/buildr/task-worktree-lifecycle/v2.md
-        integrity: sha256-d4baeefd45a23b1276b7f4a6254352b43e79982f046ac44f84ccdb6212560541
-        provider: task-worktree
-        description: 管理单仓或多仓 task environment 的放置、执行边界、保留和安全清理。
   - id: buildr.git-worktree-provider
     version: 1
     description: 管理 Task 的 Git worktree 并返回窄 Git provider evidence。
@@ -170,9 +152,6 @@ initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
-  - capability: buildr.task-environment
-    version: 1
-    provider: task-environment
   - capability: buildr.git-worktree-provider
     version: 1
     provider: task-worktree
@@ -225,7 +204,7 @@ builtins:
     - id: declaration-intake
       path: resources/workspace/skills/buildr/declaration-intake
       target: skills/buildr/declaration-intake
-      description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；只读发现 preparation.yml 与 verification.yml 候选，长期写入必须经用户确认并交给各声明 owner Skill。
+      description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-testing
@@ -292,15 +271,6 @@ builtins:
         runtimePath: task-asset-review
       legacyIntegrities:
         - sha256-e7224325aa5b2d183d9a152f336e4f24699e3fd10ea5505e08d90bd77f09f642
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-environment
-      path: resources/workspace/skills/buildr/task-environment
-      target: skills/buildr/task-environment
-      description: 正式 Task 需要准备、检查、恢复或清理实际执行环境，或按 Task ID 取得 Environment Receipt 的当前机器事实时使用；不用于任务分流、Task Record、验证结论或 Git 集成。
-      required: false
-      provides:
-        - capability: buildr.task-environment
-          version: 1
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-worktree
       path: resources/workspace/skills/buildr/task-worktree
@@ -462,7 +432,6 @@ workspaceFiles:
   - resources/workspace/gitattributes => .gitattributes copy
   - resources/workspace/gitignore => .gitignore copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
@@ -486,11 +455,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/project-daily-progress/SKILL.md => skills/buildr/project-daily-progress/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
-  - resources/workspace/skills/buildr/task-environment/SKILL.md => skills/buildr/task-environment/SKILL.md copy
-  - resources/workspace/skills/buildr/task-environment/agents/openai.yaml => skills/buildr/task-environment/agents/openai.yaml copy
-  - resources/workspace/skills/buildr/task-environment/references/project-environment-preparation-v1.md => skills/buildr/task-environment/references/project-environment-preparation-v1.md copy
-  - resources/workspace/skills/buildr/task-environment/templates/project-preparation.yml => skills/buildr/task-environment/templates/project-preparation.yml copy
-  - resources/workspace/skills/buildr/task-environment/templates/task-environment-plan-request.json => skills/buildr/task-environment/templates/task-environment-plan-request.json copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy

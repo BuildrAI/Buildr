@@ -248,9 +248,9 @@ node --test --test-isolation=none --test-concurrency=1 <assigned files...>
 
 ## 10. Buildr provider组合与真实采用
 
-Buildr在公共Test Context Runtime上注册Application与Workspace Context。`createBuildrApplicationTest()`让Task read models、Parent/Task coordination、Project Daily Progress与Task Environment在独立sandbox中复用同一Host的Application组装；以初始化、migration、自举、Candidate、tarball或Launcher真实生命周期为主证据的owner继续使用`full-lifecycle`。已删除的任务研发与旧收尾模块不再拥有Context、owner或测试分片。
+Buildr在公共Test Context Runtime上注册Application与Workspace Context。`createBuildrApplicationTest()`让Task read models、Parent/Task coordination与Project Daily Progress在独立sandbox中复用同一Host的Application组装；以初始化、migration、自举、Candidate、tarball或Launcher真实生命周期为主证据的owner继续使用`full-lifecycle`。已删除的任务研发、旧收尾与统一Task Environment不再拥有Context、owner或测试分片。
 
-真实Git、完整CLI协议、Task Environment create/cleanup、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
+真实Git、完整CLI协议、Worktree create/cleanup、Preview owner、自举与Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
 
 ### Prepared Fixture Provider
 

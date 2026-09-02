@@ -21,7 +21,7 @@ Buildr Product MUST 将 OpenSpec contract 与 convergence/recovery fixture 划�
 - **AND** `all` MUST NOT 被 Candidate 中两个 owner 同时调用
 
 ### Requirement: 重复生命周期验证必须声明唯一主 owner
-Buildr Product MUST 为 development checkout onboarding、init 行为、checkout/package parity、Task lifecycle、并发 Task Environment 和安装后 release lifecycle 声明不同的主 verifier；多个 verifier MAY 经过相同命令，但 MUST NOT 重复持有同一 happy-path 结果作为主要证据。
+Buildr Product MUST 为development checkout onboarding、init行为、checkout/package parity、Task lifecycle、并发Worktree/Preview组合和安装后release lifecycle声明不同的主verifier；多个verifier MAY经过相同命令，但 MUST NOT重复持有同一happy-path结果作为主要证据。
 
 #### Scenario: 验证 development checkout onboarding
 - **WHEN** repository onboarding verifier 在干净 Git checkout运行
@@ -37,7 +37,7 @@ Buildr Product MUST 为 development checkout onboarding、init 行为、checkout
 #### Scenario: 验证 checkout 与 package 一致性
 - **WHEN** CLI package parity verifier 运行
 - **THEN** verifier MUST 比较 checkout 与同一 candidate tarball 的代表输出和一个代表 mutation 结果
-- **AND** verifier MUST NOT 重跑 Task Record、Task Review Result、Task Verification Result 或双 Task Environment 生命周期
+- **AND** verifier MUST NOT重跑Task Record、Task Review Result、Task Verification Result或双Worktree组合生命周期
 - **AND** verifier MUST NOT 将单侧初始化成功作为独立发布证据
 
 #### Scenario: 验证安装后发布生命周期
@@ -155,7 +155,7 @@ Buildr candidate verifier MUST 在同一冻结候选 run 内复用不可变 npm 
 - **AND** 每个测试 MUST 继续隔离 `.buildr`、SQLite、Git worktree、Task/Finish、Buildr Web runtime state 与其他可变 Workspace 内容
 
 #### Scenario: fresh build 保持真实依赖闭包
-- **WHEN** `system-fresh-build` 验证 Task Environment 的多 Service preparation
+- **WHEN** Project准备入口或Release Preparation验证多Service依赖安装
 - **THEN** 测试 harness MAY 复用当前已安装 controller 而不额外复制源码并执行 controller `npm ci`
 - **AND** 被测 Buildr 与 Buildr Web checkout MUST 从没有 `node_modules` 的状态分别执行锁定安装
 - **AND** 被测 checkout MUST 使用受管工具链真实完成一次 `build:web`
@@ -630,29 +630,29 @@ Buildr Changed verification MUST 使用与 Candidate 相同的 timing schema fam
 - **AND** 候选 package 等短生命周期执行制品 MUST 继续清理
 
 ### Requirement: Candidate 包含双任务并发整体验收
-Buildr Product Candidate MUST 将 `concurrent-task-acceptance` 登记为 required verification step，MUST 真正并发准备两个不同 Task 的独立 Environment，并 MUST 使用独立 executor、阶段 timing 和预算执行；不得由其他单项测试的通过状态推断该组合验收通过。
+Buildr Product Candidate MUST 将`concurrent-task-acceptance`登记为required verification step，MUST真实创建两个Task的独立Worktree并并发运行Project测试，组合Preview owner与具体cleanup安全，并 MUST使用独立executor、timing和预算执行；不得由其他单项测试的通过状态推断该组合验收通过。
 
 #### Scenario: 执行完整候选验证
 - **WHEN** 维护者执行 Product Candidate 验证
 - **THEN** verification registry MUST 选择 `concurrent-task-acceptance`
 - **AND** 该步骤失败或证据不完整时 Candidate MUST 失败
 
-#### Scenario: 准备两个 Task Environment
+#### Scenario: 准备两个Task Worktree
 - **WHEN** acceptance fixture 已创建两个正式 Task Record
-- **THEN** verifier MUST 并发调用两个独立 Task Environment prepare
-- **AND** 两个 Environment MUST 使用不同 execution roots 并保持各自 repository set 与 CLI invocation
-- **AND** summary MUST 记录 fixture、environment prepare、Task invocation、verification、Verification Result、preview、resource coordination 与 cleanup 的 wall-clock
+- **THEN** verifier MUST创建两个独立Task Worktree
+- **AND** 两个Worktree MUST使用不同checkout并保持各自repository set
+- **AND** summary MUST记录work location、并发verification、preview ownership与cleanup
 
 #### Scenario: 两个 Task 形成独立 current Verification Result
 - **WHEN** 两个 Task 的显式 verification execution 都已完成
-- **THEN** verifier MUST 并发调用各自 Receipt-bound CLI 记录两份 current Result
+- **THEN** verifier MUST分别记录两份current Result或直接保留各自运行证据
 - **AND** 两个 Result MUST 使用不同 Task-scoped path 与 digest 并保持 `current` applicability
 - **AND** acceptance MUST NOT 为证明 `record` 响应再重复执行两个 `inspect`；Result reader 的完整协议由 Task Verification System owner 持有
 
-#### Scenario: 清理并发 Task Environment
+#### Scenario: 清理并发Task Worktree
 - **WHEN** 两个 Task 的并发行为已经完成
-- **THEN** verifier MUST 证明清理第一个 Task 不会删除或使第二个 Environment 失效
-- **AND** verifier MUST 最终清理两个 Environment 及其 owned resources
+- **THEN** verifier MUST证明清理第一个Worktree不会删除或使第二个Worktree失效
+- **AND** verifier MUST最终由各owner清理两个Worktree及其owned resources
 
 ### Requirement: Product test plan 与 Task Verification authority 必须分离
 Buildr Product MAY 继续在 `test/verification/` 使用 Fast、Changed、Focus、Candidate profiles、DAG scheduling、prepared fixtures 与 workspace-saturating resources；这些名称和实现 MUST 只属于 Product repository testing policy。Installed Project declaration parser、capability runner 与 Task Verification Result MUST NOT 导入该 test-only planner、复制其 profile levels 或把它变成所有 Project 的默认 schema。
@@ -699,7 +699,7 @@ Buildr Product MUST 允许主要被测事实不包含 Workspace 初始化的高�
 - **AND** 所有 case 完成或失败后 MUST 清理该本地基线和各自 sandbox
 
 #### Scenario: 测试以初始化或全局生命周期为主要事实
-- **WHEN** System 测试验证 Workspace init、Project/Service 创建、真实 Git/Task Environment、安装、迁移、cleanup 或 Task Finish 交付生命周期
+- **WHEN** System测试验证Workspace init、Project/Service创建、真实Git/Worktree、安装、迁移或cleanup生命周期
 - **THEN** 该测试 MUST 保留自身完整隔离环境
 - **AND** runner MUST NOT 用预建结果跳过其主要被测边界
 
@@ -883,7 +883,7 @@ CI Candidate MUST将Windows runtime/Launcher、Workspace/Task lifecycle与fresh 
 Release smoke、fresh build和其他高成本lifecycle verifier MUST记录阶段timing，并 MUST把产品ownership cleanup失败与断言完成后的harness临时根删除失败区分处理。
 
 #### Scenario: 产品owned cleanup失败
-- **WHEN** Launcher、进程、端口、资源协调、Task Environment或owned Workspace cleanup无法证明ownership与完成状态
+- **WHEN** Launcher、进程、端口、资源owner、Worktree或owned Workspace cleanup无法证明ownership与完成状态
 - **THEN** 对应verifier MUST失败并保留诊断
 - **AND** aggregate gate MUST失败
 
@@ -1369,7 +1369,7 @@ Buildr Product MUST在发布源码提供runner-independent的Node Test Context R
 - **AND** MUST NOT依赖共享transaction回滚恢复其他进程或Git/filesystem状态
 
 #### Scenario: 黄金生命周期
-- **WHEN** 初始化、迁移、Task Environment、Worktree、Finish、自举、cleanup或并发Acceptance本身是主要待证明事实
+- **WHEN** 初始化、迁移、Worktree、自举、cleanup或并发Acceptance本身是主要待证明事实
 - **THEN** primary owner MUST保留完整真实生命周期和独立环境
 - **AND** 预建Context MUST NOT跳过该事实边界
 
@@ -1775,12 +1775,12 @@ Buildr Product live `verification.yml` MUST使用closed `buildr.project-verifica
 Buildr Product verification owner MUST按真实启动的Task lifecycle、Workspace pressure与App runtime声明资源，并 MUST为进程型step记录有界phase、readiness与cleanup诊断。资源声明 MUST只用于压力节流，不得改变required coverage、Full全局capacity或建立共享状态锁。
 
 #### Scenario: concurrent task acceptance参与Candidate调度
-- **WHEN** `concurrent-task-acceptance`创建Task Environment、运行Verification并启动Preview
+- **WHEN** `concurrent-task-acceptance`创建Worktree、运行Project测试并组合Preview owner
 - **THEN** registry MUST声明`workspace-saturating`、`task-lifecycle-heavy`与`app-runtime`
 - **AND**scheduler MUST在capacity不足时排队该step而不是与冲突owner同时扩张
 
 #### Scenario: Preview在正常负载下就绪
-- **WHEN** Preview child存活且instance、health与Environment resource在deadline内current
+- **WHEN** Preview child存活且instance、health与Preview owner在deadline内current
 - **THEN** acceptance runner MUST在readiness成立后立即继续
 - **AND** MUST不等待完整timeout或仅以固定sleep判断成功
 

@@ -43,7 +43,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_environment_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
   ]);
   assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
@@ -237,23 +237,17 @@ test('operation scope 只复用单次action的canonical与owner Application read
   let taskReads = 0;
   const readTaskRecordPersistence = runtime.readTaskRecordPersistence;
   runtime.readTaskRecordPersistence = (...args) => { taskReads += 1; return readTaskRecordPersistence(...args); };
-  let environmentReads = 0;
-  const readTaskEnvironmentPersistence = runtime.readTaskEnvironmentPersistence;
-  runtime.readTaskEnvironmentPersistence = (...args) => { environmentReads += 1; return readTaskEnvironmentPersistence(...args); };
-
   runtime.withWorkspaceStructuredStoreOperation(root, () => {
     assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
     assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
     assert.deepEqual(runtime.inspectTaskRecord(root, 'operation-scope'), runtime.inspectTaskRecord(root, 'operation-scope'));
-    assert.deepEqual(runtime.inspectTaskEnvironment(root, 'operation-scope'), runtime.inspectTaskEnvironment(root, 'operation-scope'));
   });
   assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 2, '兼容 Facade 只观察 Environment owner/repository validation；Task 模块内部读取保持私有');
-  assert.equal(environmentReads, 1, 'Local Environment inspect 只查询 SQLite Environment current');
+  assert.equal(taskReads, 0, 'Task模块内部读取保持私有且没有跨专业兼容Facade');
 
   runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
   assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
-  assert.equal(taskReads, 2, '新 operation 中的 Task 模块内部读取也不经过可替换的兼容 Facade');
+  assert.equal(taskReads, 0, '新operation中的Task模块内部读取也不经过可替换的兼容Facade');
 
   assert.throws(() => runtime.withWorkspaceStructuredStoreOperation(root, () => {
     runtime.assertCanonicalStructuredWorkspace(root);
@@ -598,12 +592,28 @@ test('Task workflow retirement migration删除研发与旧收尾数据且保留�
   ) VALUES ('retired-workflow', 'retired-run', 'buildr.task-finish-current/v2', 'complete', 'sha256-run', 'cleanup',
     'sha256-handoff', 'sha256-candidate', 1, 'sha256-content', ?, '{}',
     '2026-09-02T00:00:00.000Z', '2026-09-02T01:00:00.000Z', '2026-09-02T01:00:00.000Z')`).run(phases);
-  database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('retired-workflow', 'cleaned', '{}', '2026-09-02T01:00:00.000Z')").run();
 
   applyWorkspaceSqliteMigration(database, retirement);
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_development_current', 'task_finish_current')").get().count, 0);
   assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'retired-workflow'").get().status, 'completed');
-  assert.equal(database.prepare("SELECT status FROM task_environment_current WHERE task_id = 'retired-workflow'").get().status, 'cleaned');
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
+  database.close();
+});
+
+test('Task Environment retirement migration直接删除旧数据且保留其他Task专业事实', () => {
+  const database = new DatabaseSync(':memory:');
+  const migrations = loadWorkspaceSqliteMigrations();
+  const retirement = migrations.find((migration) => migration.name === '0029_drop_task_environment_current.sql');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('environment-retirement', 'buildr.task-record/v2', 'Retire environment', 'Delete obsolete environment data', 'completed', 'delivered', 0, '2026-09-02T00:00:00.000Z', '2026-09-02T01:00:00.000Z', NULL)`).run();
+  database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('environment-retirement', 'ready', '{\"legacy\":true}', '2026-09-02T01:00:00.000Z')").run();
+  database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES ('environment-retirement', 'completion', '{}', 'sha256-subject', 'accepted', '2026-09-02T01:00:00.000Z')").run();
+
+  applyWorkspaceSqliteMigration(database, retirement);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_environment_current'").get().count, 0);
+  assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'environment-retirement'").get().status, 'completed');
+  assert.equal(database.prepare("SELECT outcome FROM task_review_current WHERE task_id = 'environment-retirement'").get().outcome, 'accepted');
   assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
   database.close();
 });

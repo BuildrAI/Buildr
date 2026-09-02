@@ -7,17 +7,17 @@
 ## Requirements
 
 ### Requirement: Task Record 必须拥有 canonical Workspace 路径
-Buildr MUST 为每个正式 Task 在明确的 canonical Workspace 的唯一 Workspace structured store 中维护一条 canonical Task Record，并 MUST 让命令参数和记录内 `taskId` 完全一致。Task Record MUST NOT保存数据库 path、row id、Workspace identity 或 Task Environment identity；`.buildr/tasks/<task-id>/task.yml` MUST NOT再作为 Task Record authority、fallback 或兼容输入。
+Buildr MUST 为每个正式 Task 在明确的 canonical Workspace 的唯一 Workspace structured store 中维护一条 canonical Task Record，并 MUST 让命令参数和记录内 `taskId` 完全一致。Task Record MUST NOT保存数据库path、row id、Workspace identity或Worktree identity；`.buildr/tasks/<task-id>/task.yml` MUST NOT再作为Task Record authority、fallback或兼容输入。
 
 #### Scenario: 在 canonical Workspace 创建记录
 - **WHEN** 调用方以已初始化的 canonical Workspace 为 target 创建合法 Task ID
 - **THEN** Buildr MUST 在 `.buildr/local/workspace.sqlite` 的 Task-owned tables 中事务化创建记录
-- **AND** MUST NOT在记录中复制 `workspaceId`、database path、row id、checkout path 或 environment receipt
+- **AND** MUST NOT在记录中复制`workspaceId`、database path、row id、checkout path或Worktree evidence
 
-#### Scenario: 从 task environment 发起调用
-- **WHEN** 调用方当前位于 task environment 但需要维护 Task Record
+#### Scenario: 从Task Worktree发起调用
+- **WHEN** 调用方当前位于Task Worktree但需要维护Task Record
 - **THEN** 调用方 MUST 显式传入已由上游确认的 canonical Workspace target
-- **AND** Task Record Application MUST NOT读取 environment receipt、推断 worktree 与 retained root 关系或保存任何环境字段
+- **AND** Task Record Application MUST NOT推断Worktree与retained root关系或保存任何Worktree字段
 
 #### Scenario: target 不是 canonical Workspace
 - **WHEN** target 未初始化、指向 task worktree 副本、存在多个无法消歧的 Workspace root 或目标路径逃逸
@@ -82,7 +82,7 @@ Buildr MUST 通过 `create`、`inspect`、`update`、`activate`、`complete` 和
 - **THEN** MUST允许合法修订，并保存被更正的终态上下文，不因原状态已结束而一律拒绝。
 
 ### Requirement: Change 引用必须在当前记录内可解析且无重复
-Task Record MUST 使用 `{project, change}` 限定 OpenSpec Change，并 MUST 继续作为该逻辑关联的唯一可移植 owner。Application MUST 在新增引用时通过共享任务范围 Change 引用解析器（Task-scoped Change Reference Resolver），以 canonical Workspace、Task ID 与限定引用确认任务环境或 retained Project 中的 active/archived Change 当前可解析；MUST 只在当前记录内去重。Task Record MUST NOT 保存 Environment identity、checkout path、branch 或 provenance，Application MUST NOT 直接读取 Environment Receipt。
+Task Record MUST 使用 `{project, change}` 限定 OpenSpec Change，并 MUST 继续作为该逻辑关联的唯一可移植 owner。Application MUST 在新增引用时通过共享任务范围 Change 引用解析器（Task-scoped Change Reference Resolver），以 canonical Workspace、Task ID、matching Worktree与限定引用确认实际工作根或retained Project中的active/archived Change当前可解析；MUST只在当前记录内去重。Task Record MUST NOT保存checkout path、branch或provenance。
 
 #### Scenario: Task 没有关联 Change
 - **WHEN** 正式 Task 不需要 OpenSpec Change，或 Change 尚未创建
@@ -94,9 +94,9 @@ Task Record MUST 使用 `{project, change}` 限定 OpenSpec Change，并 MUST �
 - **THEN** writer MUST 保存去重后的 `0..N` 个 `project/change` 引用
 - **AND** 跨 Project 同名 Change MUST 通过 Project code 无歧义区分
 
-#### Scenario: 新 Change 只存在于任务环境
-- **WHEN** 调用方新增 `project/change` 引用，且 Change 只存在于 matching Task Environment 的 Project 执行根
-- **THEN** Resolver MUST 将其识别为可解析的 `task-environment candidate`，Application MUST 接受该逻辑引用
+#### Scenario: 新 Change 只存在于matching Worktree
+- **WHEN** 调用方新增 `project/change` 引用，且 Change 只存在于matching Worktree的Project根
+- **THEN** Resolver MUST将其识别为可解析的working-copy Change，Application MUST接受该逻辑引用
 - **AND** MUST NOT 要求先把 Change 写入 retained Project，也 MUST NOT 将执行根路径保存到 Task Record
 
 #### Scenario: 当前记录重复引用
@@ -366,23 +366,18 @@ Task Record repository MUST只拥有 Workspace structured store 中的 `tasks`�
 - **AND** 产品 MUST NOT声称本地 transaction 和 digest 提供远程多用户协调、租约或自动 merge
 
 ### Requirement: Buildr Web 必须展示并适当管理 Task Record
-Buildr Web MUST 在已登记 Workspace 下提供 Task 核心导航、SQLite 轻量列表和详情，并 MUST 允许人通过 Task Record Application 编辑 active Task 以及明确完成或放弃 Task。Buildr Web MUST NOT 提供正式 Task 创建入口；正式 Task 只由 Agent 通过 Task Manager/Application 创建。Task 概览 MUST NOT 从 Environment、worktree、branch、OpenSpec currentness、Review、Verification、Finish、Board 或 Retrospective 推断 lifecycle。
+Buildr Web MUST 在已登记 Workspace 下提供 Task 核心导航、SQLite 轻量列表和详情，并 MUST 允许人通过 Task Record Application 编辑 active Task 以及明确完成或放弃 Task。Buildr Web MUST NOT 提供正式 Task 创建入口；正式 Task 只由 Agent 通过 Task Manager/Application 创建。Task 概览 MUST NOT 从worktree、branch、OpenSpec currentness、Review、Verification、Finish、Board 或 Retrospective 推断 lifecycle。
 
 #### Scenario: 浏览 Workspace Task 列表
 - **WHEN** 用户进入 `/workspaces/:workspaceId/tasks`
 - **THEN** 页面 MUST 从 SQLite authority 的轻量 query projection 列出匹配过滤条件的 Task ID、title、intent、Project/Service scope、stored Change references、status、直接 Child 数量、terminal result 摘要和 `updatedAt`
 - **AND** MUST 支持按复盘 current row 是否存在筛选任务
-- **AND** MUST NOT 为列表调用 Environment、Git、OpenSpec Change resolution、Development、Review、Verification 或 Finish reader
+- **AND** MUST NOT 为列表调用Git、OpenSpec Change resolution、Development、Review、Verification 或 Finish reader
 
 #### Scenario: 查看 Task 详情
 - **WHEN** 用户进入 `/workspaces/:workspaceId/tasks/:taskId`
 - **THEN** Task 概览 MUST 只读取该 Task 的 current stored record、Parent/Child 摘要、stored references、派生 `childTaskCount` 与 response-level digest
 - **AND** MUST NOT 阻塞读取完整 Task 列表或任何专业 currentness
-
-#### Scenario: 查看 Task Environment
-- **WHEN** 用户选择 Task 详情的“环境”页签
-- **THEN** 页面 MUST 只读展示 Task Environment Application 返回的当前机器 read model，并与 Task Record 概览分开
-- **AND** MUST NOT 提供 prepare/cleanup/resource mutation、直接 receipt 编辑或把 Environment 状态复制到 Task Record
 
 #### Scenario: 从 Buildr Web 创建或编辑 Task
 - **WHEN** 用户编辑 active Task 的 title、intent、Parent、scope 或 Change references
@@ -397,7 +392,7 @@ Buildr Web MUST 在已登记 Workspace 下提供 Task 核心导航、SQLite 轻�
 #### Scenario: 从 Buildr Web 完成或放弃 Task
 - **WHEN** 用户对 active Task 选择完成或放弃
 - **THEN** 页面 MUST 要求明确确认并提交非空 summary/reason；完成时 MUST 让用户明确选择是否为 no-change
-- **AND** 确认文案 MUST 说明该动作只更新 Task 顶层状态，不执行 Finish、Git、Verification、Environment cleanup 或其他专业动作
+- **AND** 确认文案 MUST 说明该动作只更新 Task 顶层状态，不执行 Finish、Git、Verification、Worktree或其他资源cleanup
 
 #### Scenario: Buildr Web 打开 terminal Task
 - **WHEN** Task status 已是 completed 或 abandoned
@@ -437,29 +432,6 @@ Buildr MUST 在 `/api/v1/workspaces/:workspaceId/tasks` 及 Task identity 子路
 - **THEN** HTTP response MUST匹配 operation 对应的成功或错误 Schema
 - **AND** Schema/DTO 引入 MUST NOT改变既有公开 payload major、Application、Domain、Persistence、SQLite 或 writer authority
 
-### Requirement: Buildr Web Task Environment API 必须保持 Workspace 读取安全边界
-Buildr MUST 为 Task 详情提供 Workspace-scoped、只读的 Environment API，并 MUST 在调用 Task Environment Application `inspect` 前解析已登记 Workspace 与真实 Task ID。HTTP interface 与 Web feature MUST NOT 接收 `target/root/path`、直接读取 Environment Receipt/provider evidence 或自行判断 `ready / blocked / cleanup`。
-
-#### Scenario: 打开 Environment 页签
-- **WHEN** 用户打开 `/workspaces/:workspaceId/tasks/:taskId` 的“环境”页签
-- **THEN** Buildr Web MUST 通过类似 `GET /api/v1/workspaces/:workspaceId/tasks/:taskId/environment` 的路径调用 Application `inspect`
-- **AND** 响应 MUST 使用 no-store 语义并返回 current-machine source、`observedAt`、receipt availability、status、scopes/roots、Runtime/CLI/依赖/projection、provider evidence、resources 与 cleanup 摘要
-
-#### Scenario: Environment 暂不可用
-- **WHEN** Task 尚无 Receipt、当前机器没有对应环境、probe 发现 drift 或 Application 返回 blocked
-- **THEN** 页面 MUST 显示明确 unavailable/no-receipt/drift/blocked 状态、观察时间与 next action
-- **AND** MUST NOT 隐藏 Task Record、伪造 ready 或从 branch/worktree 名猜环境
-
-#### Scenario: 刷新当前环境事实
-- **WHEN** 用户打开页签、页面重新获得焦点或手动刷新
-- **THEN** 页面 MUST 发起一次有界只读 probe 并以新的 `observedAt` 替换旧展示
-- **AND** P0.2 MUST NOT 增加 WebSocket、后台持续订阅、全量高频轮询或 Environment mutation 按钮
-
-#### Scenario: Environment API 请求路径输入
-- **WHEN** 请求携带 `target`、`root`、`path`、receipt bytes 或其他未登记 filesystem input
-- **THEN** HTTP interface MUST 在访问文件系统前拒绝请求
-- **AND** MUST NOT 回退到 server cwd、调用方路径或其他 Workspace/Task
-
 ### Requirement: Buildr Web Task Review API 必须复用 Application 并保持只读
 Buildr MUST 提供 Workspace-scoped `GET /api/v1/workspaces/:workspaceId/tasks/:taskId/reviews`，在解析已登记 Workspace 与真实 Task 后调用 Task Review Application `inspect`。HTTP/Web 层 MUST NOT 接收 target/root/path、直接读取 Result 文件、计算 digest、派生 applicability 或提供 Result CRUD。
 
@@ -477,16 +449,16 @@ Buildr MUST 提供 Workspace-scoped `GET /api/v1/workspaces/:workspaceId/tasks/:
 - **AND** MUST 不在浏览器或 HTTP handler 中直接提交、编辑或删除 Result
 
 ### Requirement: Buildr Web Task 详情必须使用四个一级信息视图
-Buildr Web MUST 将 Task 详情一级导航保持为“概览、原型、证据、复盘、环境”。“概览”MUST以Task Record为主体；“证据”MUST组合Task Review与Task Verification；“环境”MUST投影Task Environment。页面 MUST不提供“研发”页签、旧Finish历史页或聚合状态机。
+Buildr Web MUST 将 Task 详情一级导航保持为“概览、原型、证据、复盘”。“概览”MUST以Task Record为主体；“证据”MUST组合Task Review与Task Verification。页面 MUST不提供“研发”“环境”页签、旧Finish历史页或聚合状态机。
 
 #### Scenario: 打开 Task 详情
 - **WHEN** 用户进入`/workspaces/:workspaceId/tasks/:taskId`
-- **THEN** 页面 MUST提供“概览、原型、证据、复盘、环境”并默认打开“概览”
+- **THEN** 页面 MUST提供“概览、原型、证据、复盘”并默认打开“概览”
 - **AND** MUST不存在研发、独立审查、独立验证或旧交付历史一级页签
 
 #### Scenario: 查看概览摘要
 - **WHEN** 用户查看“概览”
-- **THEN** 页面 MUST显示Task Record顶层事实与Review、Verification、Environment摘要
+- **THEN** 页面 MUST显示Task Record顶层事实与Review、Verification摘要
 - **AND** MUST明确Task status仍由Task Record拥有
 
 #### Scenario: 查看研发依据
@@ -497,10 +469,10 @@ Buildr Web MUST 将 Task 详情一级导航保持为“概览、原型、证据�
 #### Scenario: 证据 reader 部分不可用
 - **WHEN** Task Review或Task Verification任一读取失败或缺失
 - **THEN** “证据”视图 MUST独立展示对应诊断或空状态，并保留另一reader的有效内容
-- **AND** 概览、原型、复盘与环境视图 MUST不受影响
+- **AND** 概览、原型与复盘视图 MUST不受影响
 
 ### Requirement: Buildr Web Task query projection 必须保持轻量且来自唯一 authority
-Task Record Application MUST 为 Buildr Web 提供 stored-state query projection，并 MUST 只从 canonical Workspace SQLite Task authority 读取持久字段和直接关系。Projection MUST NOT 读取 filesystem registry 或调用 Environment、Git、OpenSpec Change resolver、Development、Review、Verification、Finish reader。
+Task Record Application MUST 为 Buildr Web 提供 stored-state query projection，并 MUST 只从 canonical Workspace SQLite Task authority 读取持久字段和直接关系。Projection MUST NOT 读取 filesystem registry 或调用Git、OpenSpec Change resolver、Development、Review、Verification、Finish reader。
 
 #### Scenario: 批量读取 Task 列表
 - **WHEN** Workspace 包含数百个 Task 且 Buildr Web 请求列表
@@ -510,19 +482,19 @@ Task Record Application MUST 为 Buildr Web 提供 stored-state query projection
 #### Scenario: 返回 stored Change reference
 - **WHEN** 轻量列表或详情包含一个已保存 `project/change` reference
 - **THEN** projection MUST 保留该引用并允许 Buildr Web 构造具体 Change 链接
-- **AND** MUST NOT 声称该引用当前 available、active、archived 或来自 matching Task Environment
+- **AND** MUST NOT 声称该引用当前 available、active、archived 或来自matching Worktree
 
 #### Scenario: 进入具体 Change 页面
 - **WHEN** 用户点击某个 stored Change reference
-- **THEN** 具体 Change route MUST 继续调用 Task-scoped Change resolver，实时解析 matching Task Environment candidate 与 retained active/archive facts
+- **THEN** 具体 Change route MUST继续调用Task-scoped Change resolver，实时解析matching Worktree working copy与retained active/archive facts
 - **AND** 当前不可用时 MUST 返回现有 fail-closed diagnostic
 
 ### Requirement: Buildr Web Task Overview 必须组合专业 current 摘要且不扩张 Task Record authority
-Buildr MUST为单个Task提供独立只读Task Overview Application。它MUST以Task Record为身份/顶层状态authority，并通过一条Workspace SQLite查询组合Planning/Completion Review、Verification与Environment最小摘要；MUST NOT读取Development或旧Finish表、推断机器交付或写回Task Record。
+Buildr MUST为单个Task提供独立只读Task Overview Application。它MUST以Task Record为身份/顶层状态authority，并通过一条Workspace SQLite查询组合Planning/Completion Review与Verification最小摘要；MUST NOT读取Development或旧Finish表、推断机器交付或写回Task Record。
 
 #### Scenario: 打开 Task 概览
 - **WHEN** Buildr Web请求真实Task的Overview
-- **THEN** Application MUST返回Task Record、直接Parent/Children、Review、Verification与Environment摘要
+- **THEN** Application MUST返回Task Record、直接Parent/Children、Review与Verification摘要
 - **AND** MUST不调用Git、Change resolver、专业writer或旧历史reader
 
 #### Scenario: Overview mutation请求
@@ -531,7 +503,7 @@ Buildr MUST为单个Task提供独立只读Task Overview Application。它MUST以
 - **AND** Task Record与全部保留的专业current rows MUST保持不变
 
 #### Scenario: 顶层状态与专业状态不一致
-- **WHEN** Task Record status与Environment、Review或Verification摘要不同
+- **WHEN** Task Record status与Review或Verification摘要不同
 - **THEN** Overview MUST以Task Record表达顶层status并分别展示专业事实
 - **AND** MUST不反写Task Record或自动修复数据库
 
@@ -587,10 +559,10 @@ Task query projection MUST 支持关键词、Project、Service、`open|todo|acti
 - **AND** 空结果 MUST 区分 Workspace 没有 Task 与当前筛选无结果
 
 ### Requirement: Task 交付终态不得被后续维护 attention 撤销
-Task Record的`completed/noChange=false` MUST表达已经完成的任务结果；是否经过机器验证的交付 MUST由独立证据表达。retained activation、Environment cleanup、Finish transient cleanup或diagnostics retention的pending/attention MUST由专业read model独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
+Task Record的`completed/noChange=false` MUST表达已经完成的任务结果；是否经过机器验证的交付 MUST由独立证据表达。retained activation、Worktree/Preview cleanup或diagnostics retention的pending/attention MUST由专业owner独立展示，MUST NOT把已完成Task退回active、blocked或未交付。
 
 #### Scenario: completed Task仍有cleanup attention
-- **WHEN** Task已完成远端交付而Task Environment尚未安全清理
+- **WHEN** Task已完成远端交付而Worktree或Preview尚未安全清理
 - **THEN** Task Record MUST保持completed，Task详情 MUST展示独立cleanup attention
 - **AND** Agent MUST能继续处理清理且用户可以查看结果和进行任务复盘
 

@@ -11,6 +11,7 @@ import { controlMetadataPath } from '../../infrastructure/git/control-metadata-p
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
 export const GIT_WORKTREE_EVIDENCE_SCHEMA = 'buildr.git-worktree-evidence/v1';
+export const TASK_WORKTREE_PROVIDER = 'task-worktree.provider';
 
 type EntityType = 'workspace' | 'project' | 'service';
 type RepositoryState = 'created' | 'reused' | 'ready' | 'blocked';

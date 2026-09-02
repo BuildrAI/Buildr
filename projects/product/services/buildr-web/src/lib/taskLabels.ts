@@ -2,14 +2,6 @@ export function taskStatusLabel(status: string): string {
   return status === 'todo' ? '待办' : status === 'active' ? '进行中' : status === 'completed' ? '已完成' : status === 'abandoned' ? '已放弃' : status;
 }
 
-export function environmentStatusLabel(status: string): string {
-  return ({ ready: '可执行', blocked: '受阻', unavailable: '当前机器不可用', cleaned: '已清理' } as Record<string, string>)[status] || status || '未知';
-}
-
-export function probeStatusLabel(status: string): string {
-  return ({ ready: '就绪', blocked: '受阻', 'not-applicable': '不适用' } as Record<string, string>)[status] || status || '未知';
-}
-
 export function applicabilityLabel(status: string): string {
   return ({ current: '当前适用', stale: '已失效', unknown: '适用性未知' } as Record<string, string>)[status] || status || '未知';
 }

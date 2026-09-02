@@ -194,7 +194,7 @@ task/
 
 当前Task专业模块包括Environment、Review、Verification、Retrospective、Overview和Parent Coordination。研发过程由Agent依据目标、真实现场与专业Skill组合，不再由独立Task Development或Planning Identity模块保存和裁决。
 
-Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。旧Task Finish与Terminal Delivery的Application、Repository、CLI和internal driver已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记与Task Environment清理，本身不形成Application状态。
+Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。旧Task Finish、Terminal Delivery与统一Task Environment的Application、Repository、CLI和internal driver已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
 
 ## `workspace` 模块
 

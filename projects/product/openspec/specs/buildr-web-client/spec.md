@@ -6,19 +6,6 @@ Buildr Web React 客户端源码位置、构建产物、本机 session adapter �
 
 ## Requirements
 
-### Requirement: Environment Tab必须展示Preparation来源与分层readiness
-Buildr Web Environment Tab MUST从Task Environment saved-current read model展示Plan来源、Project Declaration、scope、Recipe与Step状态、identity、最近观察、diagnostic和本次prepare执行事实。页面 MUST不把同一Step probe复制为多个scope事实。
-
-#### Scenario: 多Service Receipt
-- **WHEN** Receipt包含`buildr`与`buildr-web`两个Service Recipe
-- **THEN** 页面 MUST分别展示两个Recipe及其Step状态
-- **AND** 任一blocked MUST在Environment聚合结论中可见
-
-#### Scenario: task-inline Receipt
-- **WHEN** Plan来源为`task-inline`
-- **THEN** 页面 MUST明确显示该来源没有长期Declaration
-- **AND** MUST提供由Agent初始化Project声明的next action提示而不直接写文件
-
 ### Requirement: Task 详情必须展示协调计划与派生 Child 交付
 Buildr Web MUST 在 Task 详情展示 Parent Coordination Application 派生的当前推进状态、推荐下一步、可启动 Contribution、真实启动阻塞、最终验收进度、Parent Plan 治理事实、Child identity/status、planned/delivered/extra/residual/superseded facts 与 final acceptance prerequisites；历史 Task MUST 显示不采用新模型的清晰空态。可启动 Contribution MUST 以 Parent Plan 已保存的 `summary` 作为用户可读名称或计划结果，并同时展示稳定 `id`；Web MUST NOT 维护已知 Contribution 的平行名称字典。页面 MUST 将 `startup` readiness 与 `prerequisitesSatisfied` final acceptance readiness 分开表达，并 MUST 按公开 Planning Review read model 形状展示 outcome、applicability、摘要与时间，不得向用户显示 `undefined`。
 

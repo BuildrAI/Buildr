@@ -21,17 +21,17 @@ Buildr MUST 由 `web/application` 唯一编排默认实例与 Preview 的启动�
 - **AND** HTTP Host MUST NOT 注册 CLI 方法或拥有实例 receipt、启动锁、scheduled maintenance 与浏览器打开策略
 
 ### Requirement: Web 专属运行状态必须与通用技术机制分离
-Buildr MUST 将实例 receipt、启动锁、PID、Secret、健康探测和认证退出等 Web 专属适配放入 `web/infrastructure`，并 MUST 复用全局 Infrastructure 已有的 filesystem、process、network、platform、产品身份与原子写入机制。Web Infrastructure MUST NOT 创建第二套 Workspace、Task Environment、Launcher 或业务 persistence authority。
+Buildr MUST 将实例 receipt、启动锁、PID、Secret、健康探测和认证退出等 Web 专属适配放入 `web/infrastructure`，并 MUST 复用全局 Infrastructure 已有的 filesystem、process、network、platform、产品身份与原子写入机制。Web Infrastructure MUST NOT 创建第二套 Workspace、Worktree、Launcher 或业务 persistence authority。
 
 #### Scenario: 写入实例状态
 - **WHEN** 一个 Web 实例健康就绪并保存运行状态
 - **THEN** Web Infrastructure MUST 使用既有受管原子写入机制保存相同 schema、字段和 Data Root
 - **AND** MUST NOT 新建另一份 instance receipt、连接、事务或 writer
 
-#### Scenario: Preview 与 Task Environment 协作
-- **WHEN** Task Preview 启动、停止或清理 Environment resource
-- **THEN** Web Application MUST 继续调用 Task Environment 的公开 resource register、probe、release 或 cleanup 能力
-- **AND** Web module MUST NOT 解释或直接写 Task Environment persistence
+#### Scenario: Preview管理自己的资源
+- **WHEN** Task Preview启动、停止或清理进程
+- **THEN** Web Application MUST直接维护Preview owner、PID、Secret和实例状态
+- **AND** Web module MUST NOT登记统一Task资源或写其他owner persistence
 
 ### Requirement: 生命周期迁移必须保持外部行为等价
 Buildr MUST 在迁移前后保持公开 CLI、HTTP、JSON、错误语义、端口选择与 fallback、实例复用、Launcher handoff、Preview ownership、维护频率、信号退出、SQLite schema 和运行副作用等价。
@@ -42,8 +42,8 @@ Buildr MUST 在迁移前后保持公开 CLI、HTTP、JSON、错误语义、端�
 - **AND** Launcher binding、Workspace 页面 URL 与浏览器打开行为 MUST 保持既有语义
 
 #### Scenario: 管理 Task Preview
-- **WHEN** 调用方启动、枚举或停止由 Task Environment 拥有的 Preview
-- **THEN** Buildr MUST 保持现有 owner、Secret、provider identity、resource receipt 和 fail-closed 校验
+- **WHEN** 调用方启动、枚举或停止由Preview能力拥有的实例
+- **THEN** Buildr MUST保持owner、Secret、Worktree identity、instance receipt和fail-closed校验
 - **AND** 公开 JSON schema 与人类可读输出 MUST 保持不变
 
 #### Scenario: 运行 scheduled maintenance

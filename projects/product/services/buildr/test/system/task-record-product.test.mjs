@@ -171,9 +171,9 @@ test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均
   const staleDigest = created.recordDigest;
   runtime.updateTaskRecord(root, 'safe-task', { intent: '由另一客户端更新' });
   const current = runtime.inspectTaskRecord(root, 'safe-task');
-  const environmentFile = path.join(legacyDirectory, 'environment.json');
-  fs.writeFileSync(environmentFile, '{"owner":"task-environment"}\n');
-  const environmentBytes = fs.readFileSync(environmentFile, 'utf8');
+  const professionalFile = path.join(legacyDirectory, 'professional.json');
+  fs.writeFileSync(professionalFile, '{"owner":"independent-professional"}\n');
+  const professionalBytes = fs.readFileSync(professionalFile, 'utf8');
   const reviewsDirectory = path.join(legacyDirectory, 'reviews');
   fs.mkdirSync(reviewsDirectory);
   const reviewSiblings = new Map([
@@ -189,7 +189,7 @@ test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均
   database.close();
   assert.throws(() => runtime.updateTaskRecord(root, 'safe-task', { title: '不应留下' }), (error) => error.code === 'task_record_database_failed');
   assert.equal(runtime.inspectTaskRecord(root, 'safe-task').recordDigest, current.recordDigest, 'failed transaction must preserve current logical record');
-  assert.equal(fs.readFileSync(environmentFile, 'utf8'), environmentBytes, 'Task Record failure must not rewrite sibling professional files');
+  assert.equal(fs.readFileSync(professionalFile, 'utf8'), professionalBytes, 'Task Record failure must not rewrite sibling professional files');
   for (const [file, content] of reviewSiblings) assert.equal(fs.readFileSync(file, 'utf8'), content, 'Task Record failure must preserve Task Review slots');
   assert.equal(fs.readFileSync(legacyFile, 'utf8'), legacyBytes, 'legacy task.yml must remain inert and unchanged');
 

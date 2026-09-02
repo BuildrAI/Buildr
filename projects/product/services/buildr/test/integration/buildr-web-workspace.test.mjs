@@ -146,7 +146,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
-test('任务详情使用概览、原型、证据、复盘、环境五个一级视图', () => {
+test('任务详情只使用概览、原型、证据、复盘四个一级视图', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
@@ -158,7 +158,7 @@ test('任务详情使用概览、原型、证据、复盘、环境五个一级�
   assert.doesNotMatch(source, /id: 'development', label: '研发'/);
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
-  assert.match(source, /id: 'environment', label: '环境'/);
+  assert.doesNotMatch(source, /id: 'environment', label: '环境'/);
   assert.match(source, /ParentCoordinationPanel/);
   assert.match(source, /taskProfessionalApi\.coordination\(currentTaskId, \{ signal \}\)/);
   assert.match(coordination, /id="task-parent-coordination"/);
@@ -247,15 +247,13 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
 test('任务详情面向用户的核心术语使用中文或中英文并列', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
-  const environment = read('../buildr-web/src/pages/task-detail/EnvironmentTab.tsx');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
   const change = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
   assert.match(source, /任务记录（Task Record）/);
-  assert.match(environment, /任务环境（Task Environment）/);
   assert.match(evidence, /方案审查（Planning Review）/);
   assert.match(evidence, /完成审查（Completion Review）/);
   assert.doesNotMatch(source, />Task Record</);
-  assert.doesNotMatch(environment, />Task Environment</);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/pages/task-detail/EnvironmentTab.tsx')), false);
   assert.doesNotMatch(evidence, />Planning Review</);
   assert.doesNotMatch(evidence, />Completion Review</);
   assert.doesNotMatch(evidence, />Verification Result</);

@@ -5,7 +5,6 @@ import { createRuntimeDiagnostics } from './runtime-diagnostics.mjs';
 import { createScopeDiagnostics } from './scope-diagnostics.mjs';
 import { createServiceDiagnostics } from './service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
-import { createProjectEnvironmentPreparationDiagnostics } from './project-environment-preparation-diagnostics.mjs';
 import { finalizeDoctorResult } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';
 import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-route-diagnostics.mjs';
@@ -13,7 +12,7 @@ import { inspectRequiredInternalWorkflowRoutes } from '../../../task/contracts/i
 
 export function registerApplicationDoctor(runtime) {
   const { RUNTIME_CHECKERS, SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, assembleRuntimeProjection, getRuntimeAdapter, isSupportedAgent } = runtime;
-  const { resolveSkillCapabilityGraph, createProjectVerificationDiagnostics, normalizeProjectEnvironmentPreparation, parseProjectEnvironmentPreparation } = runtime;
+  const { resolveSkillCapabilityGraph, createProjectVerificationDiagnostics } = runtime;
   const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);
   const componentRegistryPath = (...args) => runtime.componentRegistryPath(...args);
   const packageComponentsStatus = (...args) => runtime.packageComponentsStatus(...args);
@@ -131,12 +130,6 @@ export function registerApplicationDoctor(runtime) {
   });
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
-  const { diagnoseProjectEnvironmentPreparation } = createProjectEnvironmentPreparationDiagnostics({
-    addDoctorFinding,
-    normalizeProjectEnvironmentPreparation,
-    parseProjectEnvironmentPreparation,
-    resolveSourceRoot,
-  });
   const { diagnoseInternalWorkflowRoutes } = createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes: inspectRequiredInternalWorkflowRoutes });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
@@ -229,7 +222,6 @@ export function registerApplicationDoctor(runtime) {
     diagnoseSkillsManifestSchemas,
     diagnoseSkillCapabilities,
     diagnoseProjectVerification,
-    diagnoseProjectEnvironmentPreparation,
     diagnoseInternalWorkflowRoutes,
     finalizeDoctorResult,
     printDoctorReport,

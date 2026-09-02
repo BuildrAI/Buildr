@@ -11,8 +11,6 @@ type ReadContext = {
   submitTaskRead(operation: string, taskId: string, value: Record<string, never>): Promise<unknown>;
 };
 
-type EnvironmentApplication = { readTaskEnvironmentCurrent(root: string, taskId: string): unknown };
-type TaskRecordRead = { readTaskRecordPersistence(root: string, taskId: string): unknown };
 type ReadInput = (match: RegExpMatchArray, searchParams?: URLSearchParams) => Record<string, never>;
 
 function httpError(code: string, message: string, status: number): Error {
@@ -43,23 +41,6 @@ export function createTaskOverviewHttpContribution(taskIdSource: string) {
 
 export function createTaskVerificationHttpContribution(taskIdSource: string) {
   return readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$', undefined, 'task-verification.detail');
-}
-
-export function createTaskEnvironmentHttpContribution(taskIdSource: string, application: EnvironmentApplication, taskRecordRead: TaskRecordRead) {
-  const pattern = new RegExp(`^/tasks/(${taskIdSource})/environment$`);
-  return Object.freeze({
-    id: 'task-environment.http',
-    handle: ({ request, suffix, root, searchParams }: ReadContext) => {
-      const match = suffix.match(pattern);
-      if (request.method !== 'GET' || !match) return null;
-      if (searchParams?.size) {
-        throw httpError('task_api_query_forbidden', 'Task environment 不接受 query 参数。', 400);
-      }
-      validateTaskProfessionalRequest('task-environment.detail', {}, 'Task environment');
-      taskRecordRead.readTaskRecordPersistence(root, match[1]);
-      return { status: 200, body: application.readTaskEnvironmentCurrent(root, match[1]) };
-    },
-  });
 }
 
 export function createParentCoordinationHttpContribution(taskIdSource: string) {

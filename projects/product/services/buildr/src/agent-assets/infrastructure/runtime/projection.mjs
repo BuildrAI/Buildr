@@ -459,7 +459,7 @@ export function checkRuntimeProjection(options) {
       projectionIdentity: projectionIdentity(assembled.plan),
       activation: adapter.traits.activation,
       adoptionModes: adoptionModes(adapter),
-      guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the task environment root as its local project.`,
+      guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the current work root as its local project.`,
       projectionReady: false,
       sessionConsumption: 'unknown',
     },

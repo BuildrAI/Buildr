@@ -12,13 +12,9 @@ import {
   TASK_RETROSPECTIVE_MODULE,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_MODULE,
-  TASK_ENVIRONMENT_RUNTIME_PORT,
-  TASK_ENVIRONMENT_DECLARATION,
-  TASK_WORKTREE_PROVIDER,
   TASK_VERIFICATION_RUNTIME_PORT,
   PARENT_COORDINATION_RUNTIME_PORT,
   TASK_OVERVIEW_RUNTIME_PORT,
-  createTaskEnvironmentModule,
   createWorktreeProviderModule,
   createTaskVerificationModule,
   createParentCoordinationModule,
@@ -125,10 +121,6 @@ export function createRuntime() {
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
   installTaskRecordModule(runtime, registry);
-  installTaskRuntimeModule(runtime, registry, createTaskEnvironmentModule(runtime, {
-    agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
-    worktreeProviderCapability: TASK_WORKTREE_PROVIDER,
-  }), TASK_ENVIRONMENT_RUNTIME_PORT);
   registry.install(createVerificationModule(runtime));
   installTaskReviewModule(runtime, registry);
   installTaskRetrospectiveModule(runtime, registry);
@@ -142,7 +134,6 @@ export function createRuntime() {
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
     agentCapabilityQuery: AGENT_ASSETS_CAPABILITY_QUERY,
     verificationDeclaration: VERIFICATION_DECLARATION,
-    taskEnvironmentDeclaration: TASK_ENVIRONMENT_DECLARATION,
     workspaceQuery: WORKSPACE_QUERY,
   }));
   const doctorApplication = registry.provide(SYSTEM_DOCTOR_APPLICATION);

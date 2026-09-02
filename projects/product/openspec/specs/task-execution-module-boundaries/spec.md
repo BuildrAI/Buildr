@@ -7,38 +7,44 @@
 ## Requirements
 
 ### Requirement: Task Execution 与 Verification 必须有清晰的静态 owner
-Buildr SHALL将Task lifecycle、Task Environment和Task Verification的Application/Domain/Persistence实现归入`src/task/`，将Project测试地图parser、validator与Application归入Project Verification owner。产品MUST不保留Task Execution Record模块、runtime port或跨模块依赖；System Doctor MUST只消费Project Verification的窄声明诊断能力。
 
-#### Scenario: Task Verification读取测试地图
-- **WHEN** Task Verification保存或inspect报告需要观察相关Project地图identity
-- **THEN** 它MUST依赖Project Verification-owned parser/validator
-- **AND** MUST NOT取得测试执行、Execution Record或资源协调能力
+Task Record、Review、Verification、Retrospective、Worktree与Preview MUST保持独立owner；生产模块图 MUST不包含Task Environment Application、Persistence、CLI、HTTP或声明provider。Agent直接组合这些能力，不建立统一执行流程模块。
 
-#### Scenario: Verification 解析 declaration
-- **WHEN**Project Verification或Task Verification需要读取`verification.yml`
-- **THEN**它们MUST复用Project Verification-owned parser/validator
-- **AND**MUST NOT从System Doctor复制解析语义
-
-#### Scenario: Doctor 生成 diagnostics
-- **WHEN**System Doctor检查Project测试地图
-- **THEN**Doctor MUST通过Project Verification窄诊断能力生成findings
-- **AND**MUST NOT成为测试地图writer或Task Verification consumer
+#### Scenario: 检查生产依赖图
+- **WHEN** architecture/static validation扫描生产模块和import graph
+- **THEN** MUST不存在Task Environment模块或反向依赖
 
 #### Scenario: Bootstrap组装Task模块
-- **WHEN** Bootstrap组装Task相关模块
-- **THEN** MUST不登记Task Execution Record descriptor、capability或runtime port
-- **AND** 其他Task能力MUST不依赖已退役模块
+- **WHEN** Bootstrap组装Task产品能力
+- **THEN** MUST只安装Task Record、Review、Verification、Retrospective、Worktree和Parent等当前模块
+
+#### Scenario: Doctor 生成 diagnostics
+- **WHEN** Doctor收集Task相关diagnostics
+- **THEN** MUST不调用Environment Application或读取Receipt
+
+#### Scenario: Task Verification读取测试地图
+- **WHEN** Task Verification读取Project测试地图
+- **THEN** MUST直接使用Verification declaration owner
+
+#### Scenario: Verification 解析 declaration
+- **WHEN** Verification解析Project声明
+- **THEN** MUST不生成Environment supplemental Plan或ready结论
 
 ### Requirement: Task Environment 与 Worktree provider 必须保持窄基础设施边界
-Task Environment SHALL 通过 `buildr.git-worktree-provider/v1` 调用 Task infrastructure 中的 Git Worktree provider；provider MUST 只负责 Git plan/checkout/evidence/cleanup，不得拥有 Environment readiness、runtime projection、Verification Result 或 Task lifecycle authority。
+
+Git Worktree provider MUST独立负责checkout、branch、evidence和删除安全。Task Environment模块 MUST不存在；Worktree MUST不接管Preparation、Runtime、Preview、Review、Verification、Task结果或Release状态。
+
+#### Scenario: Worktree provider被调用
+- **WHEN** Agent创建、检查或清理Task Worktree
+- **THEN** provider MUST只验证Git位置和具体删除不变量
 
 #### Scenario: Environment 创建或清理 worktree
-- **WHEN** Task Environment 请求 Git worktree prepare、inspect 或 cleanup
-- **THEN** provider MUST 返回既有 Git evidence 和 effects，且 MUST 保持原有 checkout、branch、HEAD、remote、clean、registration 与 ownership 语义
+- **WHEN** 旧Environment创建或清理入口被调用
+- **THEN** 产品 MUST拒绝不存在的入口且不得转发到Worktree
 
 #### Scenario: provider 被直接调用
-- **WHEN** 调用方执行 provider-level inspect
-- **THEN** 返回 MUST 不包含 Environment ready、runtime/CLI/dependency、Verification Result 或 Task status 判定
+- **WHEN** Agent直接调用Worktree provider
+- **THEN** provider MUST不要求Environment状态或Receipt
 
 ### Requirement: 结构迁移不得改变公开契约与运行语义
 目录、文件和 import 迁移 SHALL 保留既有 CLI、HTTP、JSON envelope、Task/Verification Result、SQLite transaction、锁、安全边界、执行副作用、cleanup 顺序与 capability identity；本 Change MUST NOT 引入完整 JSON Schema、Ajv、DTO 生成或 Typed API Client。

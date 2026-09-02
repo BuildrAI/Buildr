@@ -1,4 +1,0 @@
-interface:
-  display_name: "任务环境"
-  short_description: "准备、检查、恢复与清理正式 Task 的执行环境"
-  default_prompt: "Use $task-environment to manage the formal Task Environment through Buildr public commands."

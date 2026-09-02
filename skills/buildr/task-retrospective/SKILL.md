@@ -96,7 +96,7 @@ Application会完整替换同一Task的current row；不创建历史、候选或
 取得明确授权且复核无变化后，每个仍有效方向按以下顺序落地：
 
 1. 已有 todo 或 active Task 覆盖目标时，通过 `task update --add-retrospective-source` 关联，不重复创建。
-2. 没有承接 Task 且用户已同意保留意向时，通过 `task create --status todo --retrospective-source` 只写数据；不运行Git基线、不创建Environment、Change、proposal或design。
+2. 没有承接Task且用户已同意保留意向时，通过`task create --status todo --retrospective-source`只写数据；不运行Git基线、不创建Change、proposal或design。
 3. 多个方向可以合并到同一Task，一个源Task也可以关联多个Task；关系只到source Task ID，不绑定具体建议文本。
 4. 已失效、已解决、收益不足或不适用的方向说明当前证据和丢弃理由，不创建Task。
 

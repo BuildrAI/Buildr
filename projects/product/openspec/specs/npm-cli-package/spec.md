@@ -287,7 +287,7 @@ Buildr npm package MUST 包含 application payload 中 Buildr Web 运行所需�
 - **AND** npm pack 与 Launcher install MUST NOT 需要 `projects/product/services/buildr-web` 或重建前端资源
 
 ### Requirement: npm发行版运行时不得依赖development准备事实
-npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、development Environment Receipt、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
+npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
 
 #### Scenario: 用户在普通Workspace运行发行版CLI
 - **WHEN** 用户通过npm installation执行`buildr doctor`、`sync`、`update`或其他发行版命令

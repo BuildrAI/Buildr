@@ -2,7 +2,7 @@ import { registerChangeApplication, type ChangeRuntime, type OpenSpecQuery, type
 import { createChangeHttpContribution } from './interfaces/http/change-http.mjs';
 import { OPENSPEC_QUERY } from '../openspec/module.mjs';
 import { PROJECT_APPLICATION } from '../../workspace/module.mjs';
-import { TASK_WORKTREE_PROVIDER } from '../module.mjs';
+import { TASK_WORKTREE_PROVIDER } from '../infrastructure/git-worktree-provider.ts';
 
 export const CHANGE_MODULE_ID = 'change';
 export const CHANGE_APPLICATION = 'change.application';

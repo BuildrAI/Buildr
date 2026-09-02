@@ -34,7 +34,7 @@ test('release collection contract freezes one manual selection chain and fails c
     '发布模块必须保持唯一owner与窄consumer边界',
   ]) assert.match(contract, new RegExp(marker.replace(/[<>/]/g, '\\$&')), marker);
   assert.match(contract, /MUST NOT自动解决、直接编辑、rebase、reset、force push/);
-  assert.match(contract, /不得复制专业Result正文.*旁路persistence/);
+  assert.match(contract, /不得写入Task Record新状态字段或建立旁路workflow store/);
   assert.match(contract, /Release lifecycle 必须维持唯一协调Task与稳定恢复身份/);
   assert.match(contract, /codex\/release-main-<version>-g<generation>/);
 });

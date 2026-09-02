@@ -260,6 +260,17 @@ export function createPackageStaticValidator(deps) {
         if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task workflow retirement migration must not preserve duplicate data: ${forbidden}`);
       }
     }
+    const taskEnvironmentRetirementMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0029_drop_task_environment_current.sql');
+    if (!existsFile(taskEnvironmentRetirementMigration)) problems.push('Workspace SQLite Task Environment retirement migration is missing.');
+    else {
+      const sql = fs.readFileSync(taskEnvironmentRetirementMigration, 'utf8');
+      for (const required of ['DROP INDEX IF EXISTS task_environment_current_status_idx', 'DROP TABLE IF EXISTS task_environment_current']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite Task Environment retirement migration must include: ${required}`);
+      }
+      for (const forbidden of ['history', 'backup', 'CREATE TABLE', 'INSERT INTO']) {
+        if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Environment retirement migration must delete without preserving data: ${forbidden}`);
+      }
+    }
     for (const legacyRepository of ['task-verification-repository.mjs', 'task-review-repository.ts']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
@@ -276,42 +287,21 @@ export function createPackageStaticValidator(deps) {
 
   function validateTaskEnvironmentAuthorityResidue(context) {
     const { root, problems } = context;
-    const allowedLegacyFiles = new Set([
-      path.join(root, 'src', 'agent-assets', 'application', 'package-maintenance', 'static-validation.mjs'),
-      path.join(root, 'resources', 'manifest.yml'),
-    ].map((file) => path.resolve(file)));
-    const forbidden = [
-      'buildr.task-worktree-lifecycle',
-      'buildr.task-environment-receipt/v1',
-      'buildr.task-environment-adoption',
-      'buildr.task-environment-context',
-      'buildr.worktree-create/',
-      'buildr.worktree-cleanup/',
-      'resolveTaskEnvironmentContext',
-      'createTaskWorktree',
-      'adoptTaskEnvironment',
-      'taskEnvironmentContext',
-      'worktree context',
-      'worktree adopt',
-      'executionReady',
-    ];
-    for (const directory of ['bin', 'src', 'package', 'docs'].map((relative) => path.join(root, relative)).filter(existsDirectory)) {
-      for (const file of collectFiles(directory)) {
-        if (allowedLegacyFiles.has(path.resolve(file))) continue;
-        const content = fs.readFileSync(file, 'utf8');
-        for (const pattern of forbidden) {
-          if (content.includes(pattern)) problems.push(`Legacy Task Environment authority residue ${JSON.stringify(pattern)} found in ${toPosixRelative(root, file)}.`);
-        }
-      }
-    }
     for (const relative of [
-      'src/task/infrastructure/worktree-application.mjs',
-      'src/application/task-environment/legacy-migration.mjs',
-      'src/application/task-environment/current-migration.mjs',
+      'src/task/domain/task-environment.mjs',
+      'src/task/domain/task-environment-plan.mjs',
+      'src/task/persistence/task-environment-repository.mjs',
+      'src/task/interfaces/cli/task-environment.mjs',
+      'resources/workspace/skills/buildr/task-environment/SKILL.md',
+      'resources/workspace/skills/contracts/buildr/task-environment/v1.md',
       'resources/workspace/skills/contracts/buildr/task-worktree-lifecycle/v2.md',
     ]) {
-      if (existsFile(path.join(root, relative))) problems.push(`Legacy Task Environment authority file must be removed: ${relative}`);
+      if (existsFile(path.join(root, relative))) problems.push(`Retired Task Environment file must be removed: ${relative}`);
     }
+    const publicJson = fs.readFileSync(path.join(root, 'src/infrastructure/contracts/public-json.mjs'), 'utf8');
+    for (const forbidden of ['taskEnvironmentResult', 'taskEnvironmentPlanResult']) if (publicJson.includes(forbidden)) problems.push(`Public JSON registry must remove Task Environment schema: ${forbidden}`);
+    const taskModule = fs.readFileSync(path.join(root, 'src/task/module.mjs'), 'utf8');
+    for (const forbidden of ['TASK_ENVIRONMENT_', 'createTaskEnvironmentModule', 'task environment prepare']) if (taskModule.includes(forbidden)) problems.push(`Task module must remove Task Environment surface: ${forbidden}`);
   }
 
   function validateTaskLifecycleRetirement(context) {
@@ -946,7 +936,7 @@ export function createPackageStaticValidator(deps) {
       try {
         const metadata = parseSkillFrontmatter(skillFile);
         if (metadata.name !== skill.id) problems.push(`${label}.id must match SKILL.md frontmatter name: ${skill.id} != ${metadata.name}`);
-        if (['task-triage', 'task-manager', 'task-review', 'task-environment', 'task-worktree', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
+        if (['task-triage', 'task-manager', 'task-review', 'task-worktree', 'task-finish'].includes(skill.id) && metadata.description !== skill.description) {
           problems.push(`${label}.description must exactly match SKILL.md frontmatter description.`);
         }
       } catch (error) {
@@ -969,27 +959,6 @@ export function createPackageStaticValidator(deps) {
         }
         if ((skill.provides || []).length > 0 || (skill.requires || []).length > 0) {
           problems.push('capability-adaptation is a management Skill and must not declare provides/requires.');
-        }
-      }
-      if (skill.id === 'task-environment') {
-        for (const requiredText of [
-          '本 Skill 是 `buildr.task-environment/v1` 的默认 provider',
-          'buildr task environment prepare <task-id>',
-          '--agent <adapter>',
-          'buildr task environment inspect <task-id>',
-          'buildr task environment cleanup <task-id>',
-          '`prepare` 同时承担首次准备和幂等恢复',
-          'Environment Receipt 独占 Runtime、CLI、Preparation Declaration/Scope/Recipe/Step、projection、动态资源、ready、恢复和总 cleanup',
-          '真实 Agent session 是否采用候选 runtime 属于 Task Verification',
-          '不要从cwd、分支、同一HEAD或旧worktree receipt猜ownership',
-        ]) {
-          if (!skillContent.includes(requiredText)) problems.push(`task-environment Skill must include ${JSON.stringify(requiredText)}.`);
-        }
-        if (!skill.provides?.some((entry) => entry.capability === 'buildr.task-environment' && entry.version === 1)) {
-          problems.push('task-environment must provide buildr.task-environment@1.');
-        }
-        for (const forbiddenText of ['resource register', 'resource release', 'worktree context', 'worktree adopt', 'Task Record 中保存']) {
-          if (skillContent.includes(forbiddenText)) problems.push(`task-environment Skill must not expose ${JSON.stringify(forbiddenText)}.`);
         }
       }
       if (skill.id === 'task-worktree') {
@@ -1229,9 +1198,6 @@ export function createPackageStaticValidator(deps) {
     }
     if (!manifest.builtins.skills.some((skill) => skill.id === 'task-verification' && skill.required === false)) {
       problems.push('builtins.skills must declare optional task-verification.');
-    }
-    if (!manifest.builtins.skills.some((skill) => skill.id === 'task-environment' && skill.required === false)) {
-      problems.push('builtins.skills must declare optional task-environment.');
     }
     if (manifest.builtins.skills.some((skill) => skill.id.includes('openspec-store'))) {
       problems.push('OpenSpec Stores are beta and must not be registered as a Buildr builtin Skill.');

@@ -36,32 +36,32 @@ Buildr Product 新增、保留或收紧硬门禁时 MUST 明确记录当前 `act
 Buildr Product 的 `ready`、`blocked`、`required` 与 capability readiness MUST 绑定具体 action 和 consumer。一个局部缺口 MUST 只阻止实际消费该事实或能力的动作；Product MUST NOT 使用聚合 `health.ready`、Receipt 完整性或 optional capability readiness 作为所有 Agent 工作的统一许可位。
 
 #### Scenario: 当前恢复动作 required 但无关工作合法
-- **WHEN** 当前 Buildr-managed action 缺少 matching Environment Plan、Receipt 或 selected capability
+- **WHEN** 当前Buildr-managed action缺少自身执行所需的明确目标、owner或selected capability
 - **THEN** Product MAY 将恢复动作标为 `required`
 - **AND** MUST 明确该缺口不证明无关只读调查、直接专业工作或其他不消费该事实的动作非法
 
 #### Scenario: 目标身份不匹配
 - **WHEN** consumer 将要写入或执行的目标不属于当前授权或 matching execution roots
 - **THEN** Product MUST blocked 该具体写入或执行动作
-- **AND** fallback MUST 要求重新解析正确目标或取得新授权，不得回退到 cwd、相似路径或旧 Receipt 猜测
+- **AND** fallback MUST要求重新解析正确目标或取得新授权，不得回退到cwd、相似路径或旧记录猜测
 
 ### Requirement: 有界门禁审计清单
 Buildr Product MUST 维护一份面向本次治理迁移的有界门禁审计清单，至少标注 gate/source、action、consumer、当前分类、保护的不变量、authority、阻塞范围、安全降级与后续 owner。该清单 MUST 是当前事实与迁移输入，不得成为运行时 registry、第二套规范、完成状态或 Parent progress authority。
 
 #### Scenario: 审计项属于后续模块迁移
-- **WHEN** 审计发现某个 Finish、Environment、Development、Doctor 或其他模块的门禁需要重构
+- **WHEN** 审计发现某个Finish、Worktree、Preview、Doctor或其他模块的门禁需要重构
 - **THEN** 清单 MUST 标注对应 owner/Contribution 与当前判断
 - **AND** 本 Change MUST NOT 因审计发现而批量修改所有模块或声称该项已经交付
 
 ### Requirement: 代表性基础证明
 Buildr Product MUST 以真实专业模块的自动测试证明分类契约可落地，至少覆盖局部硬阻断、attention/无关动作继续和安全降级，同时保持身份、授权、证据真实性与危险副作用的 fail-closed 边界。测试 MUST 断言结果不变量，不得只断言固定 Skill 措辞、文档段落或流程顺序。
 
-#### Scenario: Formal Verification preparation 缺口
-- **WHEN** matching Formal Task Environment 缺少 selected capability 所需 preparation
-- **THEN** 自动测试 MUST 证明该缺口阻止正式 Verification Result，并提供受控 Environment 恢复输入
-- **AND** MUST 证明无关开发不被该缺口阻止
+#### Scenario: Project准备入口缺口
+- **WHEN** 当前验证动作缺少selected capability所需的Project准备入口
+- **THEN** 自动测试 MUST证明该缺口只阻止依赖它的验证动作，并提供Declaration Intake恢复方向
+- **AND** MUST证明无关开发不被该缺口阻止
 
 #### Scenario: Task Finish 入口缺口
-- **WHEN** Task Finish 同时观察到 Development、Environment 或 Delivery 缺口
+- **WHEN** Task Finish同时观察到Worktree、具体资源或Delivery缺口
 - **THEN** 自动测试 MUST 证明 Finish run 不会启动且各模块缺口均被保留
 - **AND** MUST NOT 把该失败解释为取消其他已成立的专业事实或 Agent 的全局工作许可

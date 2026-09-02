@@ -1,20 +1,20 @@
 ---
 name: declaration-intake
-description: 用户要求初始化、刷新或审查 Project 的环境准备与任务验证声明，或 Project/Service 注册、首次 Task scope、Environment 缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类 routine maintenance 与真正需要用户决定的长期变化，再交给声明 owner。
+description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
 ---
 
 # Declaration Intake Skill
 
 本 Skill 是 Project Declaration Intake 的 Agent 编排入口。它只管理两类 Project-owned 长期声明：
 
-- `projects/<project>/preparation.yml`：怎么准备 Task Environment；
+- `projects/<project>/preparation.yml`：Agent按需调用哪些Project/Service真实准备入口；
 - `projects/<project>/verification.yml`：怎么验证 Task 交付目标。
 
 Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilities.yml`、`commands.yml`。缺少 Skill/provider 时交给 Capability 体系；缺少 CLI/runtime 时只报告 Commands/Doctor 诊断。
 
 ## 1. 确认触发与范围
 
-识别 trigger：Project 注册、Service 注册、首次 Task scope、依赖/构建/测试入口变化、Environment declaration/Recipe gap、Verification coverage gap，或用户显式初始化/刷新。
+识别trigger：Project注册、Service注册、首次Task scope、依赖/构建/测试入口变化、Preparation declaration/Recipe gap、Verification coverage gap，或用户显式初始化/刷新。
 
 只使用已登记 Project 和本次明确 Project/Service scope。Project-only 不虚构 Service；多 Service 分别列出事实与候选，不复制其他 Service 的结论。不得递归扫描整个仓库、按目录名猜技术栈，或读取 Task lifecycle/current projection 作为声明来源。
 
@@ -29,7 +29,7 @@ Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilitie
 
 对每个 scope 输出：trigger、当前声明状态、Preparation Recipe 候选/差异、Verification Capability 候选/差异、证据、外部缺口和建议写入。没有稳定事实时标记 gap，不创建技术栈 adapter、测试、wrapper 或工具安装方案。
 
-Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `inspect` 与 Task Finish 均不得创建、修改或删除长期声明。
+Discovery、Project/Service注册、Buildr Web GET、Doctor与Task Finish均不得创建、修改或删除长期声明。
 
 ## 3. 区分 routine maintenance 与用户决定
 
@@ -51,10 +51,10 @@ Discovery、Project/Service 注册、Buildr Web GET、Doctor、Environment `insp
 
 分类完成后：
 
-- Preparation 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-environment` Skill，使用其 schema、模板和 Doctor 校验；
+- Preparation在`routine-maintenance`成立或用户确认长期变化后，由Agent直接维护Project-owned`preparation.yml`并核对真实wrapper、cwd和scope；不创建Application状态；
 - Verification 在`routine-maintenance`成立或用户确认长期变化后，交给 `task-verification` Skill，使用其 schema、模板和 Doctor 校验。
 
-Intake不直接编辑声明，不合并两个writer。owner完成后运行适用Doctor，并再次只读确认文件、scope和identity。声明变化只会让各专业Task snapshot或报告按自身契约stale或blocked，不由Intake改写Environment Receipt、Task Plan、任务验证报告或Task Record。
+Intake不直接编辑声明，不合并两个writer。owner完成后运行适用静态检查，并再次只读确认文件、scope和identity。声明变化不改写任务验证报告或Task Record，也不产生Task级Plan、Receipt或ready状态。
 
 ## 输出
 

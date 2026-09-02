@@ -58,7 +58,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/core-diagnostics-and-package.test.mjs",
       "test/integration/internal-workflow-route-diagnostics.test.mjs",
       "test/integration/project-verification-map.test.ts",
-      "test/integration/change-application.test.mjs",
+      "test/integration/change-application.test.ts",
       "test/integration/openspec-convergence-preflight.test.mjs",
       "test/integration/openspec-convergence-recovery.test.mjs",
       "test/integration/openspec-convergence-transaction.test.mjs",
@@ -76,7 +76,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/buildr-web-read-executor.test.mjs",
       "test/integration/buildr-web-runtime.test.mjs",
       "test/integration/buildr-web-workspace.test.mjs",
-      "test/integration/preview-ownership.test.mjs",
+      "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.mjs",
       "test/integration/task-record-http-contract.test.mjs",
       "test/integration/task-manager-capability-graph.test.mjs",
@@ -87,10 +87,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/product-installation-registry.test.mjs",
       "test/integration/workspace-management-fence.test.mjs",
       "test/integration/workspace-sqlite.test.mjs",
-      "test/integration/project-environment-preparation-diagnostics.test.mjs",
-      "test/integration/task-environment-controller-handoff.test.mjs",
-      "test/integration/task-environment-preparation-plan.test.mjs",
-      "test/integration/task-environment-repository.test.mjs",
       "test/integration/self-bootstrap-closeout.test.mjs",
       "test/integration/task-overview-repository.test.ts",
       "test/integration/task-retrospective-repository.test.mjs",
@@ -109,9 +105,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/project-verification-map.test.ts",
       "src/task/contracts/internal-workflow-route-catalog.mjs",
       "src/system/doctor/application/internal-workflow-route-diagnostics.mjs",
-      "src/system/doctor/application/project-environment-preparation-diagnostics.mjs",
       "src/verification/application/project-verification-diagnostics.mjs",
-      "src/task/domain/project-environment-preparation.mjs",
       "src/system/doctor/application/diagnostics.mjs",
       "src/system/doctor/application/result-model.mjs",
       "src/system/doctor/application/scope-diagnostics.mjs",
@@ -121,7 +115,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   },
   "integration-openspec": {
     "inputs": [
-      "test/integration/change-application.test.mjs",
+      "test/integration/change-application.test.ts",
       "test/integration/openspec-convergence-preflight.test.mjs",
       "test/integration/openspec-convergence-recovery.test.mjs",
       "test/integration/openspec-convergence-transaction.test.mjs",
@@ -179,7 +173,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/buildr-web-read-executor.test.mjs",
       "test/integration/buildr-web-runtime.test.mjs",
       "test/integration/buildr-web-workspace.test.mjs",
-      "test/integration/preview-ownership.test.mjs",
+      "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.mjs",
       "test/integration/task-record-http-contract.test.mjs",
       "test/integration/task-manager-capability-graph.test.mjs",
@@ -228,18 +222,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/application/task-execution-record-application.mjs",
       "src/task/persistence/task-execution-record-body-store.mjs",
       "src/task/persistence/task-execution-record-repository.mjs"
-    ],
-    "inputExclusions": []
-  },
-  "integration-task-environment": {
-    "inputs": [
-      "test/integration/project-environment-preparation-diagnostics.test.mjs",
-      "test/integration/task-environment-controller-handoff.test.mjs",
-      "test/integration/task-environment-preparation-plan.test.mjs",
-      "test/integration/task-environment-repository.test.mjs",
-      "src/task/application/task-environment-application.mjs",
-      "src/task/domain/project-environment-preparation.mjs",
-      "src/task/persistence/task-environment-repository.mjs"
     ],
     "inputExclusions": []
   },
@@ -496,8 +478,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "test/system/worktree-create.test.ts",
       "src/task/infrastructure/**",
-      "src/task/application/task-environment-application.mjs",
-      "src/task/domain/project-environment-preparation.mjs",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.mjs",
       "test/verification/system-suites.mjs",
@@ -568,37 +548,15 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     ],
     "inputExclusions": []
   },
-  "system-fresh-build": {
-    "inputs": [
-      "test/system/task-environment-fresh-build-web.test.mjs",
-      "test/verification/http-contract-fresh-build-inventory.mjs",
-      "src/task/application/task-environment-application.mjs",
-      "src/task/domain/project-environment-preparation.mjs",
-      "preparation.yml",
-      "services/buildr-web/package.json",
-      "services/buildr-web/package-lock.json",
-      "services/buildr-web/vite.config.*",
-      "services/buildr-web/tsconfig*.json",
-      "test/helpers/clean-product-source.mjs",
-      "test/verification/system-suites.mjs",
-      "test/verification/system.mjs",
-      "test/helpers/task-lifecycle-system-context.mjs",
-      "test/verification/system-file-timing-reporter.mjs"
-    ],
-    "inputExclusions": []
-  },
   "system-windows-platform": {
     "inputs": [
       "test/system/cli-update.test.mjs",
       "test/system/buildr-web-launcher.test.mjs",
-      "test/system/task-environment-fresh-build-web.test.mjs",
       "test/system/workspace-runtime-recovery.test.mjs",
       "test/system/worktree-create.test.ts",
       "test/helpers/task-finish-sqlite-fixture.mjs",
       "src/system/installation/application/cli-update.mjs",
       "src/task/application/finish/**",
-      "src/task/application/task-environment-application.mjs",
-      "src/task/domain/project-environment-preparation.mjs",
       "src/task/infrastructure/**",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/git/**",
@@ -1124,7 +1082,7 @@ const fullScopeAuthority = (pattern, code, explanation) => Object.freeze({ patte
 export const VERIFICATION_FULL_SCOPE_AUTHORITIES = Object.freeze([
   fullScopeAuthority('.github/workflows/verify.yml', 'execution-graph-change', 'Candidate and development verification workflow topology changed.'),
   fullScopeAuthority('.node-version', 'execution-foundation-change', 'The retained Product development Node authority changed.'),
-  fullScopeAuthority('preparation.yml', 'environment-authority-change', 'Formal verification preparation authority changed.'),
+  fullScopeAuthority('preparation.yml', 'project-preparation-entry-change', 'Project preparation entry authority changed.'),
   fullScopeAuthority('verification.yml', 'verification-authority-change', 'Public verification capability authority changed.'),
   fullScopeAuthority('package.json', 'package-execution-metadata-change', 'non-version package metadata changes may affect scripts, dependencies, or execution semantics.'),
   fullScopeAuthority('package-lock.json', 'package-execution-metadata-change', 'non-version package metadata changes may affect locked dependencies or execution semantics.'),

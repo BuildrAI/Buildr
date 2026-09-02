@@ -74,14 +74,6 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
   assert.equal(workspaceManifest.bindings.find((item) => item.capability === 'buildr.git-operations').provider, 'git-operations', 'provider install must not silently change binding');
 
   await run(['skills', 'bind', 'buildr.git-operations@1', '--provider', 'internal-git', '--scope', '.', '--target', root]);
-  const internalEnvironmentSource = writeSkill(root, 'internal-environment');
-  await run([
-    'skills', 'add', '--source', internalEnvironmentSource, '--scope', '.', '--target', root,
-    '--provides', 'buildr.task-environment@1',
-  ]);
-  assert.equal(manifest(root).bindings.find((item) => item.capability === 'buildr.task-environment').provider, 'task-environment');
-  await run(['skills', 'bind', 'buildr.task-environment@1', '--provider', 'internal-environment', '--scope', '.', '--target', root]);
-  await run(['builtin', 'uninstall', 'task-environment', '--target', root, '--reason', 'internal replacement']);
   const internalVerificationSource = writeSkill(root, 'internal-verification');
   await run([
     'skills', 'add', '--source', internalVerificationSource, '--scope', '.', '--target', root,

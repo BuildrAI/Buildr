@@ -252,17 +252,17 @@ Service CLI MUST 使用 `code`、`name`、`description`、`type`、`source` 与 
 - **THEN** 输出 MUST 包含稳定 Domain、registry revision 与 declared/observed 分离结果
 
 ### Requirement: Worktree CLI 必须与 Task Environment CLI 分离
-Buildr MAY 保留 `buildr worktree create|inspect|cleanup` 作为 Git provider-level 公共命令，但 MUST 只通过 `buildr.git-worktree-result/v1` 返回 Git checkout/branch/HEAD/clean/registration/cleanup evidence。`worktree context|adopt`、session adoption 与 environment-shaped worktree help/JSON MUST 被删除，正式 workflow MUST NOT 以 worktree command result 代替 Task Environment result。
+
+Buildr MUST只保留`buildr worktree create|inspect|cleanup`作为Git位置和删除安全公共命令。CLI MUST NOT提供`task environment`、Plan、Receipt、ready、恢复、资源登记或总cleanup动作。
 
 #### Scenario: 用户明确管理 Git worktree
-- **WHEN** 用户运行保留的 `worktree create|inspect|cleanup`
-- **THEN** CLI MUST 说明该操作只管理 Git provider 事实和精确 Git effects
-- **AND** MUST NOT 声称 Runtime/CLI/依赖、ready、恢复、动态资源、session 或总 cleanup authority
+- **WHEN** 用户运行`worktree create|inspect|cleanup`
+- **THEN** CLI MUST只返回`buildr.git-worktree-result/v1`
+- **AND** MUST NOT要求或生成Task Environment记录
 
 #### Scenario: 调用已删除的环境路由
-- **WHEN** 调用方运行 `buildr worktree context|adopt` 或旧 environment-shaped action/参数
-- **THEN** CLI MUST 作为不存在或不支持的 action 拒绝，并指向 `buildr task environment prepare|inspect`
-- **AND** MUST NOT 加载旧 reader/writer、创建 adoption state 或返回旧 Environment result
+- **WHEN** 调用方运行`task environment *`、`worktree context|adopt`或旧Environment参数
+- **THEN** CLI MUST作为不存在或不支持的命令拒绝
 
 ### Requirement: CLI 必须提供最小 Task Review Result 管理入口
 Buildr CLI MUST 公开 `buildr task review inspect <task-id>` 与 `buildr task review record <task-id>`，并 MUST 只把解析后的 canonical target、current target identity 或完整语义字段交给 Task Review Application。CLI MUST NOT 执行 Review、生成 plan/Candidate identity、接受 caller path 或写完整 next-state YAML。
@@ -357,48 +357,6 @@ Buildr MUST 不再注册、执行或发布 `buildr skills migrate-project-assets
 - **WHEN** Doctor 观察到 Project 下仍存在旧 Skill manifest 或 source
 - **THEN** Doctor MUST 报告 unsupported/fail-closed diagnostic
 - **AND** MUST NOT 推荐当前版本不存在的 migration command 或执行自动修复
-
-### Requirement: Task Environment 必须提供 Plan 与 Environment 薄公共 CLI actions
-Buildr CLI MUST公开`task environment plan record|inspect`以及`task environment prepare|inspect|cleanup`。Plan record MUST只接收`--input <json-file>`中的closed Plan，或通过互斥的`--schema|--example`返回与实际Plan request校验定义同源的静态发现结果；prepare MUST支持可选`--plan <json-file>`并在省略时复用current Plan。prepare MUST要求`--agent <adapter>`；省略时 MUST以CLI syntax失败并以非零状态退出，且 MUST NOT默认为`codex`或任何其他adapter。所有CLI MUST只负责参数解析、Application调用、JSON/文本输出和退出码；Buildr Web MUST使用saved-current reader。
-
-#### Scenario: 查看 Task Environment 帮助
-- **WHEN** 用户运行`buildr help task environment`或action help
-- **THEN** 帮助 MUST展示Plan登记/读取、`plan record --schema|--example`以及prepare/inspect/cleanup
-- **AND** MUST说明Plan由Agent形成、prepare执行、inspect与discovery零写入且Receipt不属于Task Record
-- **AND** prepare usage MUST把`--agent <adapter>`写成必填，不得写成可选或暗示可省略
-
-#### Scenario: 发现 Plan record 输入契约
-- **WHEN** Agent运行`task environment plan record --schema`或`--example`
-- **THEN** CLI MUST直接返回与实际Plan request normalizer同源的closed schema或canonical example
-- **AND** discovery MUST不要求Task ID、`--input`或`--target`，不compose runtime、不读取Workspace且零写入
-- **AND** `--schema`、`--example`与`--input` MUST互斥
-
-#### Scenario: 登记 Plan
-- **WHEN** Agent运行`task environment plan record <task-id> --input <file>`
-- **THEN** CLI MUST把解析后的Plan交给Application并返回Plan identity/currentness
-- **AND** MUST不执行Plan Steps或接受完整Receipt/next state
-
-#### Scenario: 准备或恢复 Environment
-- **WHEN** Agent运行prepare并传入`--agent`且可选传入Plan
-- **THEN** CLI MUST返回ready/blocked、execution roots、Plan及逐Service/Step facts和effects
-- **AND** MUST不选择技术栈、扫描manifest或直接调用Git provider形成总结果
-- **AND** MUST把解析后的adapter原样交给Application，不得改写为另一个默认宿主
-
-#### Scenario: 省略 prepare --agent
-- **WHEN** 调用方运行`buildr task environment prepare <task-id>`且未提供`--agent`
-- **THEN** CLI MUST在调用Application前以syntax失败并以非零状态退出
-- **AND** MUST零写入Task Environment Receipt、Git worktree与Preparation Steps
-- **AND** diagnostic MUST要求提供`--agent <adapter>`，不得继续并默认为`codex`
-
-#### Scenario: 只读检查 Environment
-- **WHEN** 调用方运行inspect
-- **THEN** CLI MUST只读返回current Plan、executable/input/output observations和Environment read model
-- **AND** MUST不执行Step、创建output、创建checkout、启动/停止资源或cleanup
-
-#### Scenario: cleanup 与内部资源边界
-- **WHEN** 调用方运行cleanup或检查public registry
-- **THEN** cleanup MUST只转交已授权handoff/abandon facts，resource register/release与saved-current read MUST保持内部
-- **AND** CLI MUST不接受任意shell、删除路径或caller-authored provider result
 
 ### Requirement: OpenSpec Convergence Inspect必须提供唯一公共JSON契约
 Buildr CLI MUST让`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`返回`buildr.openspec-convergence-inspect/v1`，并以`passed|not-applicable|recovery-unprovable`表达当前恢复检查结果。Command catalog、topic help、dispatch、unknown-command candidates、JSON registry与验证 MUST从同一当前入口收敛，不得保留`openspecAudit`或`buildr.openspec-convergence-audit/v1`当前注册。
@@ -591,18 +549,6 @@ Buildr CLI MUST 将 Project 每日演进的 `record`、`inspect` 与 `list` 登�
 - **WHEN** Parent action因identity、状态或输入冲突被拒绝
 - **THEN** stdout MUST仍是单一v3 blocked对象并保持非零退出
 - **AND** diagnostic与effects MUST保持准确
-
-### Requirement: Task Environment no-change cleanup 资格必须由Application派生
-公开`task environment cleanup` CLI MUST只负责触发Task Environment Application并输出结果。CLI MUST NOT接受no-change flag、caller-authored provider result、任意integrated ref或删除路径；no-change cleanup资格 MUST由Application从current Task Record派生，并由provider按Environment evidence复核。
-
-#### Scenario: public cleanup 处理 completed no-change Task
-- **WHEN** 调用方对current Task Record为`completed + noChange=true`的Task运行`task environment cleanup`
-- **THEN** CLI MUST不要求额外Delivery参数，并把Application与provider形成的current结果原样返回
-- **AND** 调用方 MUST NOT能够通过命令参数覆盖Task Record终态或Git provider proof
-
-#### Scenario: 调用方尝试伪造 no-change cleanup 输入
-- **WHEN** 调用方向public cleanup命令提供no-change claim、provider result、integrated ref或删除路径
-- **THEN** CLI MUST在Application mutation前拒绝未知参数，且 MUST不修改Environment Receipt或Git evidence
 
 ### Requirement: Project CLI必须提供测试地图维护入口
 Buildr MUST提供`project verification inspect|validate|update <project>`。`validate`和`update` MUST接收Agent生成的候选文件；`update` MUST要求expected identity并在冲突时零写入。CLI MUST不扫描项目自动生成地图或执行测试。

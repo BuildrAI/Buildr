@@ -45,7 +45,7 @@ Workspace Control Plane 结构迁移 MUST 保持现有 `init`、mutation recover
 - **AND** 静态架构检查 MUST 不发现旧路径引用、重复 writer 或新的循环依赖
 
 ### Requirement: Workspace Query 必须是稳定窄的只读入口
-Workspace owner MUST 提供面向后续 Task Execution/Verification 的稳定 Workspace/Project Query；Query MUST 只返回必要 identity、registry 与规范化路径事实，不暴露业务 Persistence、SQLite、Environment Receipt 或 Verification Result writer。
+Workspace owner MUST 提供面向后续Task Execution/Verification的稳定Workspace/Project Query；Query MUST只返回必要identity、registry与规范化路径事实，不暴露业务Persistence、SQLite或Verification Result writer。
 
 #### Scenario: Query consumer
 - **WHEN** 后续 Task 模块查询 Workspace/Project/Service
