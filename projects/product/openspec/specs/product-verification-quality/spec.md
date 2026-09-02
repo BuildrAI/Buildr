@@ -1047,19 +1047,6 @@ Buildr Product MUST 为 `src/application` 与 `src/infrastructure` 的生产模�
 - **THEN** registry MAY 使用包含精确路径、owner 和理由的显式 allowlist
 - **AND** 已存在直接领域 Integration 测试的模块 MUST NOT 通过 allowlist 绕过选择
 
-### Requirement: 专属 Integration slice 必须保持唯一 primary ownership
-Buildr Product MUST 从同一 registry 派生专属 Integration slice 与 general suite exclusions。Candidate 中每个 Integration 测试文件 MUST 恰好由一个 primary owner执行；直接 Integration 层入口 MAY 继续运行完整文件集合用于定位，但 Candidate general 与专属 slice MUST NOT 重复执行同一文件。
-
-#### Scenario: Task read model 源码发生改变
-- **WHEN** changed paths 命中 Task Entry、Overview、Planning Identity 或 Retrospective 实现
-- **THEN** planner MUST 只选择对应有界 Task read-model Integration slice及其必要依赖
-- **AND** MUST NOT 因该路径选择完整 general Integration owner
-
-#### Scenario: Candidate 聚合全部 Integration
-- **WHEN** 维护者或 CI 运行 Candidate profile
-- **THEN** general Integration 与全部专属 slice 的测试文件并集 MUST 等于完整 Candidate Integration 文件集合
-- **AND** 交集 MUST 为空
-
 ### Requirement: 本地 affected 与 Full 必须先通过同次 admission wave
 Buildr 本地 `test:changed` 与 `test:candidate` MUST 在同一 verification execution 中先运行低成本 Fast steps；当原计划包含验证框架 canary时 MUST 同时纳入 admission wave。所有非 admission steps MUST 等待 admission 全部通过；任一 admission step失败时，尚未启动的重型 Integration、System、Workspace、package 或 artifact steps MUST 被 blocked且不得产生执行副作用。
 
@@ -1632,17 +1619,17 @@ Product `verification.yml` 中每个稳定公开 capability MUST 让用户识别
 - **AND** 具体 step membership、dependency、resource、budget 与 primary evidence owner MUST 只从唯一 registry 取得
 
 ### Requirement: Task Content 与 Product Artifact Candidate 必须语义隔离
-Product 验证用户模型 MUST 将普通 Task Delivery 的内容对象称为 frozen Task Content 或 Task Content Target，并 MUST 将 Product Artifact Candidate 限定为 exact source 与唯一候选制品。内部 Task Development 的 Task Candidate identity MAY 继续作为 lifecycle 兼容 authority，但不得被描述为 Product Artifact Candidate 或发布制品。
+Product验证用户模型 MUST把普通Task交付对象称为当前任务内容或真实产物，并 MUST把Product Artifact Candidate限定为exact release source与唯一候选制品。产品和测试 MUST不存在内部Task Candidate、Candidate generation、Development Content Target或Handoff的current行为。
 
 #### Scenario: 冻结普通 Task 内容
-- **WHEN** Task Development 冻结 Content Target 并形成内部 Task Candidate identity
-- **THEN** Product verification capability MUST 将待证明对象描述为 frozen Task Content
-- **AND** MUST NOT 暗示已经生成 Product Artifact Candidate、tarball 或发布资格
+- **WHEN** Agent完成代码、文档、配置或外部结果并准备审查、验证或交付
+- **THEN** Agent MUST使用真实Git、文件、外部revision或专业Result identity
+- **AND** MUST不创建Task Candidate或借用Product Artifact Candidate术语
 
 #### Scenario: 验证 Product Artifact Candidate
-- **WHEN** `product.candidate` 对 exact Product source 和唯一候选制品执行
-- **THEN** plan MUST 包含完整 daily evidence 与适用 artifact/package/install compatibility evidence
-- **AND** 结果 MUST 与内部 Task Candidate identity、affected feedback 和正式 Published Release evidence 区分
+- **WHEN** release source进入完整Product Candidate验证
+- **THEN** Product Candidate generation、CI aggregate和唯一tarball MUST继续由发布验证owner维护
+- **AND** 删除Task Development MUST不改变其行为
 
 ### Requirement: daily-full、Product Artifact Candidate 与 Published Release 必须分离新增证据
 Buildr Product MUST 让 daily-full 只包含完整日常证据；Product Artifact Candidate MUST 在完整日常证据上增加 exact artifact、package、install 和 compatibility evidence；Published Release MUST 复用 matching verified Candidate 并只增加 publish、published install/launcher smoke 与 registry/readback 等 Release-only evidence。普通 Task daily-full MUST NOT吸收 Candidate-only 或 Release-only primary evidence。
@@ -1824,3 +1811,19 @@ Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO�
 - **WHEN** `system-fresh-build` 被 affected、focus 或 Candidate plan选择
 - **THEN** System fixture MUST从闭合 inventory复制最小 HTTP contract inputs并执行真实 npm-ci 与 build:web
 - **AND** Fast 静态检查 MUST不冒充该 System evidence
+
+### Requirement: 退役任务能力必须具有无残留验收
+Product verification MUST覆盖fresh/升级SQLite、Task/OpenSpec/Review/Verification/Environment/Web无Development运行、退役CLI/HTTP/route缺失、package inventory与Product Candidate回归。
+
+#### Scenario: 完整受影响验证
+- **WHEN** 删除任务研发与旧Finish实现完成
+- **THEN** 类型、Unit、Component、Contract、Integration、System、Browser、package和OpenSpec检查 MUST通过
+- **AND** release candidate相关检查 MUST证明Product Candidate模型未变
+
+### Requirement: 专属 Integration slice 必须保持当前能力的唯一 primary ownership
+Verification registry MUST为仍存在的Task Entry、Overview、Review、Verification、Retrospective、Environment与Parent Coordination实现选择唯一primary owner，不得保留退役能力的空step或shard。
+
+#### Scenario: changed paths命中Task read或专业实现
+- **WHEN** affected selection命中当前Task实现
+- **THEN** MUST选择覆盖该实现的现有owner
+- **AND** MUST不选择Task Development、Planning Identity或旧Finish owner

@@ -23,9 +23,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
     'src/task/persistence/task-record-repository.ts',
-    'src/task/persistence/task-development-repository.mjs',
     'src/task/persistence/task-environment-repository.mjs',
-    'src/task/persistence/task-finish-repository.mjs',
     'src/task/persistence/task-overview-repository.ts',
     'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.ts',
@@ -43,7 +41,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
   assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/index.mjs')), false);
   for (const registration of [
     'registerTaskEnvironmentRepository',
-    'registerTaskVerificationRepository', 'registerTaskDevelopmentRepository',
+    'registerTaskVerificationRepository',
     'registerTaskRecordRepository', 'registerTaskOverviewRepository',
     'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',
   ]) assert.match(taskModule, new RegExp(registration));

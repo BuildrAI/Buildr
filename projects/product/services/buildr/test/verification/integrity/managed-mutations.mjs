@@ -50,7 +50,6 @@ const allowed = new Map([
   ['src/task/application/finish/task-finish-bootstrap-recovery.mjs', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/infrastructure/git/git-task-contribution.mjs', new Set(['withGitTaskContributionSnapshot'])],
   ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],

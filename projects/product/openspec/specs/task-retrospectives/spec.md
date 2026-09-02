@@ -53,14 +53,6 @@ Buildr MUST 为每个 terminal Task 在 Workspace SQLite 中保存至多一份 c
 - **THEN** capability MUST 只要求一份自由 Markdown 报告
 - **AND** MUST NOT 强制评分、固定问题分类、候选列表或结构化优化项
 
-### Requirement: Task Retrospective 不成为生命周期门禁
-Task Record terminal transition、Task Development、Task Finish、Environment cleanup 与 OpenSpec lifecycle MUST NOT required 消费 Task Retrospective capability 或检查 Result 是否存在。
-
-#### Scenario: 没有复盘仍可完成任务
-- **WHEN** Task 满足自身 terminal transition、handoff、delivery 或 cleanup 条件但没有 Retrospective Result
-- **THEN** 对应 lifecycle operation MUST 正常继续
-- **AND** MUST NOT 创建空复盘或隐式触发 Agent 复盘
-
 ### Requirement: 旧 observation 保持不可见且不迁移
 Task Retrospective implementation MUST NOT 读取、迁移、删除或双写既有 `.buildr/asset-review/` 内容；该目录可继续由 `.gitignore` 排除，但不得成为 current capability 的数据源。
 
@@ -306,3 +298,10 @@ Task Retrospective provider MUST在生成或处理复盘时，从当前session/r
 - **WHEN** 人确认继续探索或承接一项确定性流程候选
 - **THEN** Agent MUST区分价值观/边界的Rule、Agent判断方法的Skill、固定机械顺序的Application/CLI workflow与不变量/跨版本边界的checker/test
 - **AND** MUST尽量把重叠方向合并为少量纵向Task，不自动修改任何目标资产
+
+### Requirement: Task Retrospective 不成为任何任务动作门禁
+Task Record、Review、Verification、Environment、OpenSpec、交付、清理与Parent Coordination MUST NOT required消费Task Retrospective capability或检查Result是否存在。
+
+#### Scenario: Task没有复盘结果
+- **WHEN** Agent执行任一其他任务动作
+- **THEN** 该动作 MUST不因Retrospective缺失而失败

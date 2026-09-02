@@ -20,7 +20,6 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskEnvironmentPlanResult: 'buildr.task-environment-plan-result/v2',
   gitWorktreeResult: 'buildr.git-worktree-result/v1',
   taskRecordResult: 'buildr.task-record-result/v4',
-  taskTerminalDelivery: 'buildr.task-terminal-delivery/v1',
   taskRecordView: 'buildr.task-record-view/v2',
   taskRecordList: 'buildr.task-record-list/v4',
   parentCoordinationResult: 'buildr.parent-coordination-result/v4',
@@ -35,10 +34,6 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskRetrospectiveListResult: 'buildr.task-retrospective-list-result/v1',
   taskRetrospectiveOperationResult: 'buildr.task-retrospective-operation-result/v1',
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',
-  taskFinishRun: 'buildr.task-finish-run/v3',
-  taskFinishCompactResult: 'buildr.task-finish-compact-result/v1',
-  taskFinishResult: 'buildr.task-finish-result/v3',
-  taskFinishSelfBootstrapInput: 'buildr.task-finish-self-bootstrap-input/v1',
   longRunningOperationSummary: 'buildr.long-running-operation-summary/v1',
   verificationEvidenceCleanup: 'buildr.verification-evidence-cleanup/v1',
 });

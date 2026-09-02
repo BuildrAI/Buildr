@@ -26,7 +26,6 @@ test('Task Triage 的正式 owner 依赖保持 optional，直接工作不被结�
     'buildr.task-record',
     'buildr.git-operations',
     'buildr.task-environment',
-    'buildr.task-development',
   ]) {
     assert.ok(triage.requires.some((item) => item.capability === capability && item.mode === 'optional'), capability);
   }

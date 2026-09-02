@@ -61,7 +61,8 @@ test('任务完成只经既有 complete，旧收尾专用完成写入口退出',
   const completed = runtime.completeTaskRecord(root, 'direct-task', { summary: '业务成果已到位，实际业务结果已核对。', noChange: false });
   assert.equal(completed.record.status, 'completed');
   assert.equal(completed.record.result.noChange, false);
-  assert.equal(runtime.inspectTaskTerminalDelivery(root, 'direct-task').status, 'completed');
+  assert.equal(runtime.inspectTaskTerminalDelivery, undefined);
+  assert.equal(runtime.inspectTaskOverview(root, 'direct-task').task.status, 'completed');
 });
 
 test('todo 只保存意向与复盘信源，支持多对多关联、open 查询与显式激活', (t) => {

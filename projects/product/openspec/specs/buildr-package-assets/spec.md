@@ -329,40 +329,6 @@ Buildr package verification MUST 防止正式 workflow 绕过 Task Environment �
 - **THEN** 验证 MUST 确认相同 Candidate identity 集成后不要求在 retained 开发分支重复产品 E2E
 - **AND** MUST 区分 Candidate E2E 与集成后 retained sync/render/doctor 的正式激活检查
 
-### Requirement: 产品验证覆盖 Task Finish 收尾契约
-Buildr package verification MUST确保`task-finish`作为完整“收尾/交付”意图的唯一内置Skill入口，并继续作为`buildr.task-finish/v1`唯一默认provider发布；正式Task分支required消费`buildr.task-development@2`与`buildr.task-environment/v1`，直接Git或retained metadata-only分支按需把optional `buildr.git-operations/v1`提升为required。验证 MUST通过source/package/runtime parity保护统一入口、正式五阶段adapter与直接Git结果边界，并 MUST拒绝把直接Git结果写成Task lifecycle evidence。
-
-#### Scenario: 校验 Task Finish 随包发布
-- **WHEN** Buildr执行package check或runtime parity verification
-- **THEN** workspace/package manifests MUST声明enabled、installed的`task-finish`及其current provides/requires，所有runtime MUST投射相同Skill/contract identity
-- **AND** `task-finish` description MUST覆盖完整“收尾/交付”意图并在正文按matching Task事实分支
-- **AND** Git Operations description MUST只覆盖已选择的单次Git Operation，不得与`task-finish`争抢完整收尾意图
-
-#### Scenario: 校验无 Task 的统一入口
-- **WHEN** runtime fixture中当前范围没有匹配的未结束Task且用户要求收尾
-- **THEN** verifier MUST证明`task-finish`选择直接Git分支并只调用独立Git Operations
-- **AND** MUST证明该分支不创建或修改Task Record、Development、Verification、Candidate、Formal Finish或Environment cleanup事实
-
-#### Scenario: 校验收尾状态机
-- **WHEN** verifier使用真实Task Environment、current Development Handoff与Git remote执行无冲突direct-to-target收尾
-- **THEN** 一次canonical CLI invocation MUST连续完成`preflight → prepare → verify → deliver → cleanup`、普通push、远端ref回读与适用retained activation
-- **AND** MUST断言`agentProviderCompletions: 0`、`manualRecoveryManifests: 0`、`formalVerificationExecutions: 0`且Candidate/generation/Review/Verification/decision未被Finish修改
-
-#### Scenario: 校验收尾授权边界
-- **WHEN** fixtures分别让Delivery Baseline无冲突前进、deliver发生target-race和同路径变化产生Git conflict
-- **THEN** verifier MUST证明deterministic reuse、exact-token carrier rebuild与Agent-reviewed Delivery Adaptation都复用current Candidate/handoff且只在run-owned carrier发生
-- **AND** MUST NOT把这些路径路由为Development rebuild、自动冲突解决或Formal Verification
-
-#### Scenario: 校验旧authority残留
-- **WHEN** package/static/runtime verification扫描current manifests、Skill/contract、CLI help/registry、Application registration、JSON schemas、managed mutations与executable tests
-- **THEN** 旧Finish action/writer、`--project|--change`/Verification summary/caller Candidate输入、旧Git capability ids、旧Change convergence routing和并行run/receipt schema residual MUST为零
-- **AND** archived Change与明确历史fixture MAY保留旧事实，但 MUST NOT被current runtime、help或默认tests解析为可用入口
-
-#### Scenario: Core 不复制收尾流程
-- **WHEN** verifier检查required Core、Task Development、Task Environment、Git Operations与Task Finish
-- **THEN** Candidate/generation/decision MUST只由Development写入，资源/provider cleanup MUST只由Environment写入，单次Git Operation MUST不选择Finish流程，Task current records MUST只由各自Application写入Workspace SQLite
-- **AND** Formal Task Finish MUST只持有carrier/equivalence/delivery/retained activation/cleanup handoff/run恢复事实，不得创建第二份专业Result或顶层Task终态
-
 ### Requirement: Package manifest 声明 workspace Components
 Buildr package manifest MUST 显式声明随包 workspace Components，并将 Component 定义、外部 Skill resolved sources 和 Buildr-owned member sources 限制在可验证的发布边界内。
 
@@ -762,22 +728,6 @@ task worktree/branch 内的 Task Manager、task-triage、contract、manifest 和
 - **THEN** Agent MUST 从 retained `projects/product/buildr` 执行适用 sync/render/doctor
 - **AND** activation evidence MUST 匹配 retained source identity、受管 runtime source 与 Task Manager/task-triage 专项验收
 
-### Requirement: Package 必须原子交付 Task Review authority
-Buildr package MUST原子交付`buildr.task-review/v2` contract、默认Skill、TypeScript Domain/Application/Repository/CLI/HTTP、v2 JSON、只读Web API与前端Agent action。package check与doctor MUST校验v1 retirement、v2 binding、Development v4独立契约和全部接口一致性。
-
-#### Scenario: 安装或更新 workspace assets
-- **WHEN** package安装、更新或同步workspace
-- **THEN** Skills manifest MUST登记`buildr.task-review@2`与`buildr.task-development@4`
-- **AND** runtime projection MUST删除v1/v3 contract且不创建类型专属Review provider
-
-#### Scenario: package/runtime parity
-- **WHEN** Task Review从source、package checkout或tarball执行
-- **THEN** 三者 MUST产生等价v2 Result、CAS、JSON、CLI help与只读Web model
-
-#### Scenario: Task Review 资产不完整
-- **WHEN** contract、Skill、binding、Application/CLI、migration、JSON、Web或tests任一缺失
-- **THEN** package check/doctor MUST报告blocked且不得描述为ready
-
 ### Requirement: Package residual gate 防止 Task Review 与 Retrospective 双 authority
 Buildr package verification MUST 区分 Task Review、普通 Change review 与 Task Retrospective，并 MUST 拒绝任何第二个正式 Task Review writer/store、按类型拆分的 capability、Task Record/Environment Review 字段或绕过 Application 的 Task-scoped review route。
 
@@ -926,19 +876,6 @@ Buildr package与runtime projection MUST让未安装`buildr-self-bootstrap` Comp
 - **THEN** Component integrity MUST证明专属Skill与Contribution完整，且有效Task Finish末尾包含post-Finish activation片段
 - **AND** package/runtime parity MUST证明该组合未进入用户package默认能力
 
-### Requirement: self-bootstrap activation evidence必须逐动作可诊断且不建立新authority
-self-bootstrap activation MUST报告冻结输入、路径分类、去重动作计划、每个实际命令的身份与结果、push/readback、retained checkout显式开发入口identity和最终Doctor。Development entry evidence MUST包含Project bridge与Service CLI entry真实路径、Environment retained Node、预期及观测package/version/channel/source；MUST NOT读取、改变或要求PATH默认`buildr`。该evidence MUST只作为当前post-Finish执行报告，不得写入SQLite、Task Record、Development Receipt、Review/Verification Result、Finish JSON或新的聚合store。
-
-#### Scenario: activation全部通过
-- **WHEN** 所有适用self-bootstrap动作、显式开发入口identity与最终Doctor通过
-- **THEN** Agent MUST报告每个动作的`passed|not-applicable`、retained commit、development entry、Node、package/version与Doctor evidence
-- **AND** MUST能证明没有PATH默认CLI mutation、新增authority、store或writer
-
-#### Scenario: activation中途失败
-- **WHEN** 任一适用动作或显式开发入口identity验证失败
-- **THEN** 后续不安全动作 MUST停止，并返回已完成动作、失败动作、冻结输入、入口链证据与精确恢复事实
-- **AND** MUST不撤销或改写已经complete的Formal Finish
-
 ### Requirement: 产品验证必须覆盖已包含交付与post-Finish自举
 Buildr package与runtime verification MUST覆盖Task Finish `already-contained` target disposition、正常post-Finish activation和retained Doctor blocked后的自举恢复，并证明普通用户Workspace、通用Task Finish Skill和Product executor不获得self-bootstrap专属依赖、路径分类或Doctor绕过分支。
 
@@ -1086,14 +1023,6 @@ Buildr package MUST原子交付Preparation Declaration schema/reference/template
 - **THEN** package check MUST验证全部Environment Preparation Declaration companion files存在且受manifest管理
 - **AND** 安装后Workspace MUST能让Agent读取模板、选择Recipe并调用公开CLI
 
-### Requirement: Package 必须原子交付 Parent coordination 能力
-Buildr package MUST原子交付Domain/Application、Development Receipt major兼容、CLI/HTTP/public JSON、Buildr Web build、Skills/contracts/bindings与专项验证；任一schema、registry、source/package/runtime parity或Application接线不一致 MUST fail closed。
-
-#### Scenario: package source parity
-- **WHEN** package verifier检查Parent coordination资产
-- **THEN** source、package target与runtime投射identity MUST一致
-- **AND** CLI与Buildr Web MUST绑定同一Application
-
 ### Requirement: Package验证必须拒绝重复authority
 Package verification MUST拒绝新增Parent lifecycle/progress/event/history/audit表、`tasks`任意JSON/Child status array、GET filesystem scan、历史backfill/single-Task migration和Parent/Child相同delta双重owner。
 
@@ -1145,14 +1074,6 @@ Buildr package MUST 原子交付升级后的 Task Record 与 Task Retrospective 
 - **WHEN** verifier 比较 source、npm package、workspace runtime 与 Buildr Web bundle
 - **THEN** contract major、Skill routing、CLI action/filter、JSON schema、migration 和 Web labels MUST 一致
 - **AND** 旧 runtime 读取更新后的 store MUST 按现有 migration version 边界 fail closed
-
-### Requirement: Buildr package 必须交付 Task Planning Identity consumer闭环
-Buildr package MUST原子交付Task Planning Identity Domain/Application、runtime composition、bundled `__internal task-planning-identity`只读route、checkout薄driver wrapper、相关contracts/specs与更新后的`task-development`、`task-review`、OpenSpec propose/update/apply/contract-guard Skills。受管consumer MUST通过retained controller invocation调用resolver；Package static validation、Doctor与installed artifact contract tests MUST证明consumer使用resolver结果且不再指引Agent手工摘要OpenSpec planning target或直连source driver。
-
-#### Scenario: Package 与runtime projection完整
-- **WHEN** Buildr构建package并向Workspace投射Skills
-- **THEN** bundled resolver route、结果契约和全部相关consumer指引 MUST同时存在且相互一致
-- **AND** 任一缺失、source-only路径、旧手工摘要指引或版本接线漂移 MUST使package检查或Doctor失败
 
 ### Requirement: Package 必须原子交付 Buildr Web Task Manager 能力
 Buildr package MUST 原子交付 Task Record Domain/Application/repository、`buildr.task-record/v2` capability contract、默认 `task-manager` provider、workspace binding、Skill source、CLI/help/runtime 接线、Buildr Web Task routes/API/Web assets 和公开 JSON identity；任一 identity、path、version、binding 或 Application client 接线不一致时 package check 与 doctor MUST fail closed。
@@ -1410,19 +1331,6 @@ Buildr package MUST包含Task Entry Snapshot Application、CLI route、public JS
 - **THEN** 既有Task inspect、Environment、Development、retry/resume/cancel、Verification Result、Execution Record与Finish命令 MUST保持原schema和行为
 - **AND** 不得要求持久化migration或回填历史Task
 
-### Requirement: Package 必须验证正式工作流内部路由闭环
-Buildr package MUST维护Task Development、Task Retrospective与Task Planning Identity的单一required internal workflow route inventory，并 MUST让CLI分派、受管consumer、package static validation、Doctor与npm installed-layout tests消费一致route identity。每个route MUST在实际npm artifact中可启动；Retrospective writer与Planning Identity reader MUST在安装布局fixture中完成真实Application调用。
-
-#### Scenario: npm artifact 内部路由完整
-- **WHEN** 产品验证安装本次生成的npm tarball并执行required internal workflow route tests
-- **THEN** 三个`__internal` route MUST由安装产物自身成功启动且返回各自closed contract
-- **AND** test MUST NOT借用development checkout的source driver、node_modules或payload identity完成执行
-
-#### Scenario: Doctor 发现 route closure 漂移
-- **WHEN** 当前runtime缺少required route、受管consumer引用未知route或route未绑定对应runner
-- **THEN** Doctor MUST返回稳定actionable finding并保持只读
-- **AND** MUST NOT通过下载source checkout、改写Skill或伪造route availability来自愈
-
 ### Requirement: Parent Plan v2 必须在产品包中一致交付
 Buildr package MUST 原子交付 Parent Plan v2 Domain/Application/CLI JSON contract、Task workflow guidance、Buildr Web 正式构建产物与对应验证。Package/current workspace/candidate 三种入口的 schema、状态语义或 Web assets 不一致时 package check 或适用验证 MUST fail closed。
 
@@ -1523,3 +1431,35 @@ Buildr MUST 只在随包工作空间 `AGENTS.md` 受管区块维护核心规则�
 - **WHEN** 人或智能体从一个入口修改产物，其他入口继续相关工作
 - **THEN** 规则 MUST 要求变化可被发现，继续判断或修改前核对当前事实，写入时保护已观察版本并显式处理冲突
 - **AND** 规则 MUST 将成果一致与目标验收区分，不把对话或一次执行作为唯一权威
+
+### Requirement: Package 必须完整退役 Task Development、Planning Identity 与旧 Finish 历史
+Package manifest、workspace resources、Application Payload、CLI/runtime route inventory和installed-layout MUST不包含Task Development Skill/contract/provider、Task Planning Identity或旧Finish/Terminal Delivery入口。
+
+#### Scenario: 构建候选package
+- **WHEN** package verification检查resource inventory和installed runtime
+- **THEN** 退役文件、binding、route、schema和help MUST不存在
+- **AND** 保留Task与OpenSpec能力 MUST继续可用
+
+### Requirement: Package 必须原子交付独立 Task Review authority
+Buildr package MUST原子交付`buildr.task-review@2` contract、provider、binding、Application、SQLite current slots、CLI/HTTP与专项验证，且 MUST不要求Task Development能力存在。
+
+#### Scenario: 安装或升级Task Review
+- **WHEN** package投射Task Review资产
+- **THEN** Review能力 MUST独立ready
+- **AND** Skills manifest MUST不登记Task Development依赖
+
+### Requirement: self-bootstrap activation evidence必须保持无旧收尾authority
+self-bootstrap activation MUST报告实际输入、动作、push/readback、开发入口identity和最终Doctor。该报告 MUST保持response-only，不得写入SQLite、Task Record、Review、Verification或新的聚合store。
+
+#### Scenario: 直接交付后执行自举同步
+- **WHEN** matching Task成果已由Git证明交付
+- **THEN** self-bootstrap MUST依据当前Git和retained checkout执行适用动作
+- **AND** MUST不读取旧Finish Result或研发回执
+
+### Requirement: Package 必须原子交付独立 Parent coordination 能力
+Buildr package MUST原子交付Parent Coordination Domain、Application、Task-owned历史字段、CLI/HTTP/public JSON、Buildr Web与专项验证，且 MUST不保留Development Receipt兼容。
+
+#### Scenario: 构建Parent coordination package
+- **WHEN** package检查Parent能力闭环
+- **THEN** schema、registry、source/package/runtime parity与Application接线 MUST一致
+- **AND** Parent只读历史 MUST来自Task-owned迁移字段

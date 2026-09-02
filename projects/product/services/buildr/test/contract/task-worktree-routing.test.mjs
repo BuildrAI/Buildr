@@ -37,12 +37,10 @@ test('task triage 输出两轴决策、repository set 与 Task Environment 动�
 });
 
 test('OpenSpec propose 直接入口在首次写入前执行 Task Environment 门禁', () => {
-  assert.match(proposeSidebar, /执行 `openspec new change` 或写入任何 change artifacts 前/);
-  assert.match(proposeSidebar, /代码修改、构建、测试或需要长期开发上下文/);
-  assert.match(proposeSidebar, /使用 `task-environment` 按 Task ID 准备完整 repository set/);
-  assert.match(proposeSidebar, /共享执行根，不必创建 Git worktree/);
-  assert.match(proposeSidebar, /无法判断是否会进入实现时，先澄清执行范围/);
-  assert.match(proposeSidebar, /不修改外部 `openspec-propose` Skill 的上游正文/);
+  assert.match(proposeSidebar, /先取得正式 Task Record 和匹配的 Task Environment/);
+  assert.match(proposeSidebar, /代码、构建或测试时使用隔离执行根/);
+  assert.match(proposeSidebar, /只维护 OpenSpec、规则、Skill、文档或模板时可以使用共享执行根/);
+  assert.match(proposeSidebar, /`openspec new change`、`task update --add-change`/);
 
   assert.doesNotMatch(proposeUpstream, /canonical task worktree/);
   assert.doesNotMatch(proposeUpstream, /任务执行形态/);
@@ -52,8 +50,7 @@ test('OpenSpec update 只补新的执行效果门槛，不引入新的 capabilit
   assert.match(updateUpstream, /generatedBy: "1\.6\.0"/);
   assert.match(updateSidebar, /只修订既有 planning artifacts/);
   assert.match(updateSidebar, /不授予实现、同步或归档权限/);
-  assert.match(updateSidebar, /重新运行 Task Environment `prepare`/);
-  assert.match(updateSidebar, /matching `ready`、明确 execution roots 与执行 CLI/);
+  assert.match(updateSidebar, /先为正式 Task 恢复匹配的 Task Environment/);
   assert.ok(openSpecComponent.members.skills.includes('skills/openspec/openspec-update-change'));
   assert.ok(openSpecComponent.contributions.skillFragments.some((item) => item.startsWith('openspec-update-change@prepend=')));
   for (const sidebar of ['openspec-explore-sidebar.md', 'openspec-sync-sidebar.md', 'openspec-archive-sidebar.md']) {
@@ -97,7 +94,6 @@ test('Task Environment 独占环境职责，worktree 只保留窄 Git provider �
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'optional' },
     { capability: 'buildr.task-environment', version: 1, mode: 'optional' },
-    { capability: 'buildr.task-development', version: 4, mode: 'optional' },
   ];
   assert.deepEqual(packagedTriage.requires, expected);
   assert.equal(packagedTriage.requires.some((item) => item.capability === 'buildr.task-verification'), false);

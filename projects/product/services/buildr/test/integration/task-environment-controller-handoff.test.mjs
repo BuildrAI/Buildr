@@ -356,6 +356,7 @@ test('clean retained M2 keeps probing the M1 task checkout without handoff or so
 test('clean retained manager upgrade can register/release resources and complete authorized cleanup without handoff', async (t) => {
   const current = fixture(t);
   current.advanceManager();
+  const originalTask = current.runtime.readTaskRecordPersistence();
   const timestamp = new Date().toISOString();
   const input = {
     id: 'preview:demo', kind: 'preview', scope: 'workspace', provider: 'local-app-preview',
@@ -369,9 +370,8 @@ test('clean retained manager upgrade can register/release resources and complete
   assert.equal(released.resource.status, 'released');
   assert.equal(current.receipt().controller.identity, 'sha256-created-at-m1');
 
-  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID, {
-    type: 'finish', deliveries: { workspace: 'dev' }, candidateRef: current.m1,
-  });
+  current.runtime.readTaskRecordPersistence = () => ({ record: { ...originalTask.record, status: 'completed', result: { noChange: false, summary: 'Delivered.' } } });
+  const result = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
   assert.equal(result.status, 'cleaned', JSON.stringify(result, null, 2));
   assert.equal(current.receipt().controller.identity, 'sha256-created-at-m1');
   assert.equal(result.effects.some((effect) => effect.type === 'controller-handoff'), false);
@@ -381,12 +381,14 @@ test('clean retained manager upgrade can register/release resources and complete
 test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without rewriting the Receipt', async (t) => {
   await t.test('dirty retained manager', async (subtest) => {
     const current = fixture(subtest);
+    const originalTask = current.runtime.readTaskRecordPersistence();
     fs.appendFileSync(path.join(current.controllerRoot, 'src', 'controller.mjs'), 'export const dirty = true;\n');
     const prepared = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex' });
     assert.equal(prepared.status, 'blocked');
     assert.equal(prepared.diagnostic.code, 'task_environment_manager_dirty');
     assert.equal(current.calls.writes, 0);
-    const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID, { type: 'finish', deliveries: { workspace: 'dev' } });
+    current.runtime.readTaskRecordPersistence = () => ({ record: { ...originalTask.record, status: 'completed', result: { noChange: false, summary: 'Delivered.' } } });
+    const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
     assert.equal(cleaned.status, 'blocked');
     assert.equal(cleaned.diagnostic.code, 'task_environment_manager_dirty');
     assert.equal(current.calls.writes, 0);
@@ -395,6 +397,7 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
 
   await t.test('candidate can inspect but cannot mutate', async (subtest) => {
     const current = fixture(subtest);
+    const originalTask = current.runtime.readTaskRecordPersistence();
     current.setProductRoot(path.join(current.taskRoot, 'projects', 'product', 'services', 'buildr'));
     const inspected = current.runtime.inspectTaskEnvironment(current.root, TASK_ID);
     assert.equal(inspected.status, 'ready', JSON.stringify(inspected, null, 2));
@@ -402,7 +405,8 @@ test('dirty, candidate, sourceRoot and adapter mismatches remain blocked without
     assert.equal(prepared.status, 'blocked');
     assert.equal(prepared.diagnostic.code, 'task_environment_candidate_controller_forbidden');
     assert.throws(() => current.runtime.registerTaskEnvironmentResource(current.root, TASK_ID, {}), (error) => error.code === 'task_environment_candidate_controller_forbidden');
-    const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID, { type: 'finish', deliveries: { workspace: 'dev' } });
+    current.runtime.readTaskRecordPersistence = () => ({ record: { ...originalTask.record, status: 'completed', result: { noChange: false, summary: 'Delivered.' } } });
+    const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
     assert.equal(cleaned.status, 'blocked');
     assert.equal(cleaned.diagnostic.code, 'task_environment_candidate_controller_forbidden');
     assert.equal(current.calls.writes, 0);
@@ -464,16 +468,14 @@ test('active到completed no-change的golden lifecycle可受控清理Environment'
 
   assert.equal(completed.status, 'cleaned', JSON.stringify(completed, null, 2));
   assert.equal(current.calls.providerCleanupInput.allowNoChange, true);
-  assert.deepEqual(current.calls.providerCleanupInput.integratedRefs, {});
+  assert.equal('integratedRefs' in current.calls.providerCleanupInput, false);
   assert.match(current.receipt().latest.cleanup.summary, /无代码变更/);
 });
 
-test('completed Task cleanup does not read legacy Finish or prepare the environment', async (t) => {
+test('completed Task cleanup uses Task Record without preparing the environment', async (t) => {
   const current = fixture(t);
   const original = current.runtime.readTaskRecordPersistence();
   current.runtime.readTaskRecordPersistence = () => ({ record: { ...original.record, status: 'completed', result: { noChange: false, summary: 'Delivered with Git.' } } });
-  current.runtime.readTaskFinishCompletionPersistence = () => { throw new Error('must not read Finish'); };
-  current.runtime.readTaskFinishRunPersistence = () => { throw new Error('must not read Finish'); };
   const cleaned = await current.runtime.cleanupTaskEnvironment(current.root, TASK_ID);
   assert.equal(cleaned.status, 'cleaned', JSON.stringify(cleaned.diagnostic));
   assert.equal(current.calls.providerCleanupInput.allowCompleted, true);

@@ -114,35 +114,9 @@ capabilityContracts:
         integrity: sha256-030f4599e84bc24823fe95d93d3a8847335bcb6fa518fd229d8d15b364c9158e
         provider: task-verification
         description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
-  - id: buildr.task-development
-    version: 4
-    description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate与Current Knowledge，且与Task Review、Task Verification独立。
-    path: resources/workspace/skills/contracts/buildr/task-development/v4.md
-    target: skills/contracts/buildr/task-development/v4.md
-    replaces:
-      - id: buildr.task-development
-        version: 3
-        target: skills/contracts/buildr/task-development/v3.md
-        integrity: sha256-7b1ca07404d1a1e4276548a9b2ceb63ad108acd4256af26bd273e0da74149b9d
-        provider: task-development
-        description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate、Completion Review与Current Knowledge，且与Task Verification独立。
-      - id: buildr.task-development
-        version: 2
-        target: skills/contracts/buildr/task-development/v2.md
-        integrity: sha256-8f5cdba4290ea6f126acbe209f0c974965a12a764a08a3f86a7abee9a5ec4d09
-        legacyIntegrities:
-          - sha256-016534858b4438805ef2982e81fde2798a3289533511e0e0e3d72578917ed5d7
-        provider: task-development
-        description: 从首个正式研发动作到 immutable Finish handoff，维护planning聚合事实、稳定 Content Target、verification policy、Task Candidate generation与推进决定。
-      - id: buildr.task-development
-        version: 1
-        target: skills/contracts/buildr/task-development/v1.md
-        integrity: sha256-c903f0b6b81b1bd28615528c1f80e2b6aa7be27da5f8071c7ec65cd4f8b334db
-        provider: task-development
-        description: 形成稳定 Content Target、verification policy、Task Candidate generation、推进决定与 immutable Finish handoff。
   - id: buildr.task-finish
     version: 1
-    description: 消费 current Development handoff，在隔离 Delivery Carrier 上机械复用或进行 Delivery Adaptation、推进目标并清理 Environment。
+    description: 由智能体依据真实现场组合已有工具完成成果交付、已有任务结果登记与安全善后。
     path: resources/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
   - id: buildr.task-retrospective
@@ -211,9 +185,6 @@ initialSkillBindings:
   - capability: buildr.task-verification
     version: 4
     provider: task-verification
-  - capability: buildr.task-development
-    version: 4
-    provider: task-development
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -250,9 +221,6 @@ builtins:
         - capability: buildr.task-environment
           version: 1
           mode: optional
-        - capability: buildr.task-development
-          version: 4
-          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: declaration-intake
       path: resources/workspace/skills/buildr/declaration-intake
@@ -278,7 +246,7 @@ builtins:
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
       target: skills/buildr/task-review
-      description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、Task Development 门禁或通用代码 Review。
+      description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
       required: false
       provides:
         - capability: buildr.task-review
@@ -354,25 +322,6 @@ builtins:
       provides:
         - capability: buildr.task-verification
           version: 4
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
-    - id: task-development
-      path: resources/workspace/skills/buildr/task-development
-      target: skills/buildr/task-development
-      description: 正式Task从首个proposal、方案或直接实现开始，到稳定Content Target、Task Candidate、Current Knowledge、推进决定与研发交接的全过程使用；不用于Task Record、Task Review、Task Verification、测试执行或交付执行。
-      required: false
-      provides:
-        - capability: buildr.task-development
-          version: 4
-      requires:
-        - capability: buildr.task-record
-          version: 2
-          mode: required
-        - capability: buildr.task-environment
-          version: 1
-          mode: required
-        - capability: buildr.current-knowledge-maintenance
-          version: 2
-          mode: required
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: agent-first-design
       path: resources/workspace/skills/buildr/agent-first-design
@@ -518,7 +467,6 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
-  - resources/workspace/skills/contracts/buildr/task-development/v4.md => skills/contracts/buildr/task-development/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
@@ -547,7 +495,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy
   - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
-  - resources/workspace/skills/buildr/task-development/SKILL.md => skills/buildr/task-development/SKILL.md copy
   - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy
   - resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md => skills/buildr/agent-first-design/references/task-closeout.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy

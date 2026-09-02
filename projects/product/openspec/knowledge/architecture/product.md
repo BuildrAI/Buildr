@@ -41,12 +41,12 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
 - Task Review：一个 `buildr.task-review/v2` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。Agent依据真实方案或完成结果动态审查，确定性 Application只负责inspect、带摘要比较的原子record和最小Result；它不判断适用性，也不依赖Development或成为其他模块门禁。
 - Task Verification：`buildr.task-verification/v4`指导Agent从Project测试地图选择并直接执行已有前后端测试；Project Verification Application只维护`verification.yml`，Task Verification Application只保存开发完成后的有意义报告。报告绑定内容版本和测试地图identity，不创建计划、runner、Candidate、Execution Record或Task门禁。
-- Task Development：一个`buildr.task-development@4`capability和唯一Application从首个正式研发动作到Finish handoff维护Development Receipt、planning snapshot、stable Content Target、Task Candidate/generation、Current Knowledge disposition、推进决定与不可变研发交接。它与Task Review、Task Verification独立，不读取两者Result，也不维护planning/completion/verification gate。Buildr Web仅调用同一Application的只读`inspect`投影。
+- 开发执行：Agent直接读取Task目标、OpenSpec、代码、Git、文件、环境和专业结果，按适用Skill完成开发；Buildr不建立任务级研发聚合Application。
 - Task Retrospective：`buildr.task-retrospective/v2` 保留原始 Markdown current Result，处理时基于当前事实重算改进方向。有效方向由 Task Record v2 关联到已有 todo/active Task 或 data-only todo，不建立 action item ID、Change 或执行计划；后续进展只读 Task 当前状态。
-- 任务收尾（Task Finish）：由智能体依据技能组合已有工具完成成果交付、已有任务结果登记和安全善后。无任务不创建，多仓库逐项保留结果。默认不要求候选、交接或旧收尾运行；参与者和实现职责见 [任务收尾](../flows/task-closeout.md)。
+- 任务收尾（Task Finish）：由智能体依据技能组合已有工具完成成果交付、已有任务结果登记和安全善后。无任务不创建，多仓库逐项保留结果；参与者和实现职责见 [任务收尾](../flows/task-closeout.md)。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
-- 任务研发由独立专业能力组成；父子管理使用目标、可读计划与真实任务结果，不传播环境、验证或交付事实。人明确授权父任务完成，完整说明见[父子管理](../flows/parent-child-management.md)。
-- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。Overview只给人查看并列事实；Terminal Delivery只读取Task Record与Finish历史。旧Parent Plan迁入Task-owned只读历史字段，原Development/Finish payload保持历史证据，不再成为current行为的替代authority。
+- 父子管理使用目标、可读计划与真实任务结果，不传播环境、验证或交付事实。人明确授权父任务完成，完整说明见[父子管理](../flows/parent-child-management.md)。
+- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。Overview只给人查看Task Record、Review、Verification与Environment并列事实。旧Parent Plan迁入Task-owned只读历史字段；原聚合表已删除。
 
 ## 产品边界
 

@@ -582,7 +582,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
   const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
-  for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}；旧收尾运行已退役。`);
+  for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const nodeExecutable = option(args, '--node-executable');
   if (!nodeExecutable || !sameFilesystemPath(actualNodeExecutable, nodeExecutable)) throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '必须使用保留环境声明的 Node。');
   const detail = option(args, '--detail') || 'compact';

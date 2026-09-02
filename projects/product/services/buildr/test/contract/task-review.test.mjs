@@ -31,7 +31,7 @@ test('task-review 从真实对象动态审查、真实记录method并用CAS防�
     '--expected-current',
   ]) assert.ok(skill.includes(required), required);
   assert.match(skill, /完成结果可以是当前代码内容、Git commit\/tree、文件产物、部署结果或外部系统结果/);
-  assert.match(skill, /不要求先创建 Task Candidate/);
+  assert.match(skill, /直接使用当前对象或专业接口已返回的稳定身份/);
   assert.match(skill, /Application 不判断适用性/);
   assert.match(skill, /并发冲突时重新 inspect/);
   assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
@@ -41,12 +41,10 @@ test('Task Review 与 Task Retrospective authority 独立且都不成为 Finish 
   const manifest = YAML.parse(read('resources/manifest.yml'));
   const review = manifest.builtins.skills.find((item) => item.id === 'task-review');
   const retrospective = manifest.builtins.skills.find((item) => item.id === 'task-retrospective');
-  const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 2 }]);
   assert.deepEqual(retrospective.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
-  assert.equal(development.requires.some((item) => item.capability === 'buildr.task-review'), false);
-  assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
+  assert.equal(manifest.builtins.skills.some((item) => item.id === 'task-development'), false);
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.match(read('resources/workspace/skills/buildr/task-review/SKILL.md'), /Task Retrospective/);

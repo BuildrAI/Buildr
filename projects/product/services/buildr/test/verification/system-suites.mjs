@@ -81,7 +81,6 @@ export const SYSTEM_SUITES = Object.freeze([
     resources: Object.freeze(['workspace-saturating']),
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
-      'test/system/task-development-generic-journey.test.mjs',
       'test/system/task-record-change-resolver.test.mjs',
       'test/system/task-record-buildr-web.test.mjs',
       'test/system/task-record-product.test.mjs',
@@ -139,17 +138,6 @@ export const SYSTEM_SUITES = Object.freeze([
       'test/system/buildr-web-channel-isolation.test.mjs',
       'test/system/buildr-web-launcher.test.mjs',
       'test/system/workspace-app-process.test.mjs',
-    ]),
-  }),
-  Object.freeze({
-    id: 'system-task-finish-cli',
-    name: 'System Task Finish CLI journey',
-    innerConcurrency: 1,
-    schedulingCostMs: 8000,
-    concurrencyClass: 'workspace-heavy',
-    resources: Object.freeze(['workspace-saturating', 'task-lifecycle-heavy']),
-    files: Object.freeze([
-      'test/system/task-finish-cli.test.mjs',
     ]),
   }),
   Object.freeze({

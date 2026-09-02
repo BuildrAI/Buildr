@@ -20,12 +20,6 @@ import {
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_PERSISTENCE_READ,
-  TASK_FINISH_APPLICATION,
-  TASK_FINISH_RUNTIME_PORT,
-  TASK_FINISH_INTERNAL,
-  TASK_FINISH_PERSISTENCE_READ,
-  TASK_TERMINAL_DELIVERY_APPLICATION,
-  TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
   TASK_ENVIRONMENT_DECLARATION,
   TASK_WORKTREE_PROVIDER,
 } from '../../src/task/module.mjs';
@@ -193,18 +187,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
-    id: 'task-planning-identity',
-    requires: ['task-record.application'],
-    provides: ['task-planning-identity.application', 'task-planning-identity.runtime-port'],
-    contributions: { cli: [], http: [], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
-    id: 'task-development',
-    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-planning-identity.application'],
-    provides: ['task-development.application', 'task-development.persistence-read', 'task-development.runtime-port'],
-    contributions: { cli: [], http: ['task-development.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'task-parent-coordination',
     requires: ['task-record.application', 'task-record.persistence-read'],
     provides: ['task-parent-coordination.application', 'task-parent-coordination.runtime-port'],
@@ -219,18 +201,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: ['task-record.persistence-read'],
     provides: ['task-overview.application', 'task-overview.runtime-port'],
     contributions: { cli: [], http: ['task-overview.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
-    id: 'task-finish',
-    requires: ['task-record.application', 'task-environment.application', 'workspace.structured-store'],
-    provides: [TASK_FINISH_APPLICATION, TASK_FINISH_PERSISTENCE_READ, TASK_FINISH_INTERNAL, TASK_FINISH_RUNTIME_PORT],
-    contributions: { cli: ['task finish inspect'], http: [], diagnostics: ['task-finish.diagnostics'] },
-    lifecycle: 'none',
-  }, {
-    id: 'task-terminal-delivery',
-    requires: ['task-record.application', 'task-finish.application'],
-    provides: [TASK_TERMINAL_DELIVERY_APPLICATION, TASK_TERMINAL_DELIVERY_RUNTIME_PORT],
-    contributions: { cli: ['task delivery inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'system-installation',
@@ -280,7 +250,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
     'task parent inspect',
-    'task finish inspect', 'task delivery inspect',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
     'web preview start', 'web preview list', 'web preview stop', 'web',
@@ -288,7 +257,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http', 'task-environment.http',
-    'task-review.http', 'task-retrospective.http', 'task-verification.http', 'task-development.http',
+    'task-review.http', 'task-retrospective.http', 'task-verification.http',
     'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
   ]);
 
@@ -445,28 +414,17 @@ test('Task Retrospective 旧全局技术层路径已经退出', () => {
 test('Task 生命周期核心只保留模块内扁平技术层', () => {
   for (const relative of [
     'src/domain/parent-coordination/parent-coordination.ts',
-    'src/domain/task-development/task-development.mjs',
     'src/domain/task-environment/task-environment.mjs',
-    'src/domain/task-planning-identity/task-planning-identity.mjs',
     'src/domain/task-verification/task-verification.mjs',
     'src/application/parent-coordination/parent-coordination-application.ts',
-    'src/application/task-development/task-development-application.ts',
     'src/application/task-environment/task-environment-application.mjs',
     'src/application/task-overview/task-overview-application.ts',
-    'src/application/task-planning-identity/task-planning-identity-application.mjs',
     'src/application/task-verification/task-verification-application.mjs',
     'src/interfaces/cli/task-environment.mjs',
-    'src/interfaces/internal/task-development-driver.mjs',
     'src/task/persistence/index.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 
-  for (const relative of [
-    'src/task/domain/task-development.mjs',
-    'src/task/application/task-development-application.ts',
-    'src/task/persistence/task-development-repository.mjs',
-    'src/task/interfaces/internal/task-development-driver.mjs',
-    'src/task/interfaces/http/task-lifecycle-core.ts',
-  ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
+  assert.equal(fs.existsSync(path.join(root, 'src/task/interfaces/http/task-lifecycle-core.ts')), true);
 
   const host = read('src/web/http/server.mjs');
   assert.doesNotMatch(host, /recordParentPlan|reconcileParentPlan|readTaskEnvironmentCurrent|taskDevelopmentMatch|taskVerificationMatch/);

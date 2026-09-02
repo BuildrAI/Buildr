@@ -1,10 +1,5 @@
 const CONSUMERS = Object.freeze([
-  Object.freeze({ path: 'resources/workspace/skills/buildr/task-development/SKILL.md', routes: Object.freeze(['task-development', 'task-planning-identity']), retainedInvocation: true }),
   Object.freeze({ path: 'resources/workspace/skills/buildr/task-retrospective/SKILL.md', routes: Object.freeze(['task-retrospective']), retainedInvocation: true }),
-  Object.freeze({ path: 'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
-  Object.freeze({ path: 'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', routes: Object.freeze(['task-planning-identity']), retainedInvocation: true }),
 ]);
 
 export function createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes }) {
@@ -37,7 +32,7 @@ export function createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, p
         if (!routeIds.has(route) || !content.includes(`__internal ${route}`)) failures.push(`${consumer.path}:${route}`);
       }
       if (consumer.retainedInvocation && !/retained[^\n]{0,80}(?:controller|Buildr)|controllerInvocation/u.test(content)) failures.push(`${consumer.path}:retained-controller`);
-      if (/src\/(?:interfaces\/internal\/task-(?:development|planning-identity)-driver|task\/interfaces\/internal\/task-retrospective-driver)\.mjs/u.test(content)) failures.push(`${consumer.path}:source-driver`);
+      if (/src\/task\/interfaces\/internal\/task-retrospective-driver\.mjs/u.test(content)) failures.push(`${consumer.path}:source-driver`);
     }
     if (failures.length) addDoctorFinding(result, 'error', 'product.internal_workflow_route_closure_invalid', 'Buildr受管Skill与bundled internal workflow routes不闭合。', {
       failures,

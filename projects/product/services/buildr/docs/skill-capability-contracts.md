@@ -48,9 +48,9 @@ operation、前后 branch/commit、适用 remote/ref/range、变化维度、部�
 - 已 push/共享 commit 冻结，不自动 stash、reset、rebase、merge、force push、改写共享历史或失败后换策略；
 - Result 只包含适用的 identity、range、变化维度和实际 effects，部分失败必须保留现场。
 
-Git Operations 的结果只是本次操作事实，不是 Candidate、Review 或 Verification 结论。`task-worktree` 只提供窄 Git checkout/branch/HEAD/clean/registration evidence；Task Environment 独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总 cleanup；Task Development/Verification 继续判断 Content Target 与 evidence applicability。各模块只通过最小 evidence 交接。
+Git Operations 的结果只是本次操作事实，不是Review或Verification结论。`task-worktree`只提供窄Git checkout/branch/HEAD/clean/registration evidence；Task Environment独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总cleanup。Agent直接观察代码、Git、文件与专业结果判断下一步，各模块只保存自身长期事实。
 
-Task Record、Development、Verification与Review current records都由各自Application维护在Workspace SQLite中，不再提供metadata publication capability。Git Operations仍是普通Git内容与其他已选consumer的独立能力，但没有Task metadata provider、binding或consumer route。
+Task Record、Verification与Review current records都由各自Application维护在Workspace SQLite中，不再提供metadata publication capability。Git Operations仍是普通Git内容与其他已选consumer的独立能力，但没有Task metadata provider、binding或consumer route。
 
 ### 2. Manifest 注册、provider、consumer 与 binding
 
@@ -76,11 +76,9 @@ bindings:
 
 任务验证单独建模，是因为Project测试地图和开发完成后的Task验证报告需要稳定协作边界。`buildr.task-verification/v4`不执行测试：Skill指导Agent选择并直接调用项目工具；Project Verification Application维护`verification.yml`，Task Verification Application维护current报告。Project测试地图不进入`capabilities.yml`。
 
-顶层验证provider不是只有用户主动说“验证”才加载。用户直接要求测试、初始化或更新测试地图时由description发现；开发完成后，Agent独立读取Task、实际改动和`verification.yml`，选择并直接执行已有测试，再保存一份有意义的current报告。Task Development与Task Finish均不依赖、不路由也不解释Task Verification。
+顶层验证provider不是只有用户主动说“验证”才加载。用户直接要求测试、初始化或更新测试地图时由description发现；开发完成后，Agent独立读取Task、实际改动和`verification.yml`，选择并直接执行已有测试，再保存一份有意义的current报告。任务收尾不路由或解释Task Verification。
 
 `buildr.task-record/v2` 是正式 Task 顶层记录的薄能力，默认由 `task-manager` 提供。todo 只保存已接受意向，显式 activate 后才进入 active 研发路径；`open` 为 todo + active 查询态。Task Record 可以仅以 Task ID 关联多个终态且已有 current 复盘的来源，并派生反向后续列表；不保存 action item、复盘正文或执行计划。Parent/Child 与所有专业 authority 边界不变。Buildr Web 只观察和有限维护已有 Task，不创建或激活。
-
-`buildr.task-development@3` 默认由 `task-development` 提供，并消费Task Record、Task Environment、Task Review与current knowledge。从proposal、design或直接实现等首个正式研发动作开始，provider通过随包内部driver调用唯一Task Development Application，维护planning聚合事实、Content Target、Task Candidate/generation、Completion Review、decision与不可变研发handoff。它不读取Project测试地图或Task验证报告，不创建verification policy、verification gate或Formal Verification Readiness。历史Receipt中的旧验证字段只为读取旧数据保留，新写入会清空这些字段。
 
 `buildr.task-environment/v1`默认由`task-environment`提供。Project `preparation.yml`长期声明Project-wide或Service-scoped Recipe；Agent根据正式Task完整Project/Service scope及构建/验证事实提交Plan Request，Application解析Declaration/Recipe identity并保存Task Plan快照，通过公共`plan record|inspect`和`prepare|inspect|cleanup`CLI执行，消费`buildr.task-environment-plan-result/v2`与`buildr.task-environment-result/v4`。核心不枚举技术栈或package manager，只执行closed Recipe中的无shellStep并保存分层current/prepared identity。CLI`inspect`只读实时观察，Buildr Web GET只读SQLite current。Git隔离是可选实现细节；所有消费者复用同一Application/read model，不直接解析Receipt或写第二份环境状态。
 
@@ -92,13 +90,13 @@ Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验
 
 ### 4. Runtime evidence
 
-render/sync会在`task-development`和`task-finish`的runtime派生版本中注入受管binding block，记录contract path/digest、dependency mode、selected provider、provider runtime path、scope、readiness、reason和provenance。源Skill不会被写入这段接线信息。
+render/sync会在有capability依赖的runtime派生Skill中注入受管binding block，记录contract path/digest、dependency mode、selected provider、provider runtime path、scope、readiness、reason和provenance。源Skill不会被写入这段接线信息。
 
 ### 5. Agent 实际执行
 
-正式实现内容稳定后，Agent runtime根据description命中`task-development`，完成current knowledge/Change fixed point、Planning、Content Target、Candidate、Completion Review、decision和handoff。Task Verification作为独立工作由Agent按Project测试地图执行并记录，不参与Development推进。用户随后说“收尾”时才加载`task-finish`；收尾按当前目标组合真实Git、任务和环境事实。
+正式实现中，Agent直接读取目标、OpenSpec、current knowledge、代码、Git、文件和环境，根据适用Skill完成开发；需要审查或验证时分别调用对应能力。用户随后说“收尾”时加载`task-finish`，按当前目标组合真实Git、任务和环境事实。
 
-产品中的verification领域服务遵守`buildr.task-verification/v4`：Project地图候选来自真实测试代码、脚本、CI和说明，并通过expected identity维护；Task报告保存内容版本、实际checks、gaps和完整结论。报告不决定Development、Finish或Task完成，也不建立风险授权或清理workflow。
+产品中的verification领域服务遵守`buildr.task-verification/v4`：Project地图来自真实测试代码、脚本、CI和说明，并通过expected identity维护；Task报告保存内容版本、实际checks、gaps和完整结论。报告不决定任务收尾或Task完成，也不建立风险授权或清理workflow。
 
 `buildr.task-retrospective/v2`默认由`task-retrospective`提供。处理时先返回原始Markdown/current digest，再以当前项目事实重新判断和拆分方向：失效项说明理由，有效项关联已有 todo/active Task 或创建 data-only todo。不创建 action item ID，也不自动生成 Change/提案/设计。所有有效方向均已关联后才标记 handled；无有效方向则标记 no-action。Result current row 与处置状态仍由 Retrospective Application 独占。
 
@@ -106,7 +104,7 @@ render/sync会在`task-development`和`task-finish`的runtime派生版本中注�
 
 若组织创建 `internal-git` 并声明提供同一 contract，安装它不会改变用户的“收尾”入口。产品执行器只能使用已具备稳定确定性 application service 的实现；需要 Agent completion 或改变 fast-forward/push 授权语义的 provider 不能被直接接入固定正常路径。
 
-旧收尾执行写入口已退役，历史只读和必要资源安全能力保留。沿用 `buildr.task-finish/v1` 的独立方法契约，不创建新总入口或交付状态库。
+旧收尾执行应用和历史读取均已删除。沿用`buildr.task-finish/v1`的Skill方法契约，由Agent组合现有能力，不创建新总入口或交付状态库。
 
 这里有两个不同的版本概念：
 

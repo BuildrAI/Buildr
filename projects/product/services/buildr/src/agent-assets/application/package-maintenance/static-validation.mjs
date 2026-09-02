@@ -242,32 +242,25 @@ export function createPackageStaticValidator(deps) {
     const taskCurrentMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0004_create_task_current_records.sql');
     if (existsFile(taskCurrentMigration)) {
       const sql = fs.readFileSync(taskCurrentMigration, 'utf8');
-      for (const required of ['CREATE TABLE task_development_current', 'CREATE TABLE task_verification_current', 'CREATE TABLE task_review_current', 'REFERENCES tasks(task_id) ON DELETE CASCADE', "review_type IN ('planning', 'completion')", 'PRIMARY KEY (task_id, review_type)']) {
+      for (const required of ['CREATE TABLE task_verification_current', 'CREATE TABLE task_review_current', 'REFERENCES tasks(task_id) ON DELETE CASCADE', "review_type IN ('planning', 'completion')", 'PRIMARY KEY (task_id, review_type)']) {
         if (!sql.includes(required)) problems.push(`Workspace SQLite Task current-record migration must include: ${required}`);
       }
       for (const forbidden of ['history', 'event_log', 'revision', 'lease', 'scheduler', 'sync_state']) {
         if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task current-record migration must stay current-only: ${forbidden}`);
       }
     }
-    const lifecycleRetirementMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0009_retire_task_lifecycle_current.sql');
-    if (existsFile(lifecycleRetirementMigration)) {
-      const sql = fs.readFileSync(lifecycleRetirementMigration, 'utf8');
-      for (const required of ['ADD COLUMN applicability_status', 'ADD COLUMN target_identity', 'task_finish_completions', 'DROP TABLE task_lifecycle_current']) {
-        if (!sql.includes(required)) problems.push(`Workspace SQLite lifecycle retirement migration must include: ${required}`);
+    const taskWorkflowRetirementMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0028_drop_task_development_and_finish_current.sql');
+    if (!existsFile(taskWorkflowRetirementMigration)) problems.push('Workspace SQLite Task workflow retirement migration is missing.');
+    else {
+      const sql = fs.readFileSync(taskWorkflowRetirementMigration, 'utf8');
+      for (const required of ['DROP TABLE task_development_current', 'DROP TABLE task_finish_current']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite Task workflow retirement migration must include: ${required}`);
       }
-      if (sql.indexOf('DROP TABLE task_lifecycle_current') < sql.indexOf('task_finish_completions')) problems.push('Workspace SQLite lifecycle retirement must validate Finish completion before dropping lifecycle data.');
-    }
-    const taskFinishCompactionMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0012_compact_task_finish_current.sql');
-    if (existsFile(taskFinishCompactionMigration)) {
-      const sql = fs.readFileSync(taskFinishCompactionMigration, 'utf8');
-      for (const required of ['CREATE TABLE task_finish_current', 'phases_json TEXT NOT NULL', 'lease_target_identity TEXT', 'DROP TABLE task_finish_transient_artifacts', 'DROP TABLE task_finish_target_leases', 'DROP TABLE task_finish_completions', 'DROP TABLE task_finish_runs']) {
-        if (!sql.includes(required)) problems.push(`Workspace SQLite Task Finish compaction migration must include: ${required}`);
-      }
-      for (const forbidden of ['CREATE TABLE task_finish_phase_current', 'CREATE TABLE task_finish_target_leases']) {
-        if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Finish current authority must stay one-table: ${forbidden}`);
+      for (const forbidden of ['history', 'backup', 'CREATE TABLE']) {
+        if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task workflow retirement migration must not preserve duplicate data: ${forbidden}`);
       }
     }
-    for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.ts']) {
+    for (const legacyRepository of ['task-verification-repository.mjs', 'task-review-repository.ts']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
     for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'tools/release/release-contract.mjs']) {
@@ -331,7 +324,6 @@ export function createPackageStaticValidator(deps) {
     }
     for (const relative of [
       'src/bootstrap/runtime.mjs',
-      'src/task/application/task-development-application.ts',
       'src/task/application/task-review-application.ts',
       'src/task/application/task-verification-application.ts',
       'src/task/application/task-environment-application.mjs',
@@ -452,55 +444,6 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
-  function validateTaskPlanningIdentityAuthority(context) {
-    const { root, problems } = context;
-    const sourceContracts = new Map([
-      ['src/task/domain/task-planning-identity.mjs', ['createTaskPlanningIdentity', 'checklist-completion', 'change-lifecycle-provenance']],
-      ['src/task/application/task-planning-identity-application.mjs', ['inspectTaskPlanningIdentity', 'resolveTaskScopedChange', 'includeContent: true', "effects: []"]],
-      ['src/task/interfaces/internal/task-planning-identity-driver.mjs', ['runTaskPlanningIdentityDriver']],
-      ['src/task/interfaces/internal/task-planning-identity-driver-runner.mjs', ['inspect --task <task-id> --target <canonical-workspace>', 'inspectTaskPlanningIdentity']],
-      ['src/task/contracts/internal-workflow-route-catalog.mjs', ["id: 'task-planning-identity'", 'task-planning-identity-driver-runner.mjs']],
-      ['src/task/module.mjs', ['runRequiredInternalWorkflowRoute', 'runTaskPlanningIdentityDriver']],
-      ['src/task/module.mjs', ['registerTaskPlanningIdentityApplication', 'createTaskPlanningIdentityModule']],
-    ]);
-    for (const [relative, requiredTexts] of sourceContracts) {
-      const file = path.join(root, relative);
-      if (!existsFile(file)) {
-        problems.push(`Task Planning Identity runtime asset is missing: ${relative}.`);
-        continue;
-      }
-      const content = fs.readFileSync(file, 'utf8');
-      for (const required of requiredTexts) {
-        if (!content.includes(required)) problems.push(`Task Planning Identity runtime asset ${relative} must include ${JSON.stringify(required)}.`);
-      }
-    }
-
-    const consumers = new Map([
-      ['resources/workspace/skills/buildr/task-development/SKILL.md', ['__internal task-planning-identity inspect', '`planningNodes`', 'raw digest', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review不是apply门禁', '再次调用Task Planning Identity resolver', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', '`planningNodes`', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review是否需要重做由Agent独立判断', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review是否需要重做由Agent重新观察subject后独立判断', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
-    ]);
-    for (const [relative, requiredTexts] of consumers) {
-      const file = path.join(root, relative);
-      if (!existsFile(file)) {
-        problems.push(`Task Planning Identity consumer asset is missing: ${relative}.`);
-        continue;
-      }
-      const content = fs.readFileSync(file, 'utf8');
-      for (const required of requiredTexts) {
-        if (!content.includes(required)) problems.push(`Task Planning Identity consumer ${relative} must include ${JSON.stringify(required)}.`);
-      }
-      for (const forbidden of ['shasum proposal.md', 'sha256sum proposal.md']) {
-        if (content.includes(forbidden)) problems.push(`Task Planning Identity consumer ${relative} must not instruct manual OpenSpec target hashing with ${JSON.stringify(forbidden)}.`);
-      }
-      if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) problems.push(`Task Planning Identity consumer ${relative} must use the bundled retained-controller route, not a source driver path.`);
-    }
-  }
-
   function validateInternalWorkflowRouteClosure(context) {
     const { root, problems } = context;
     const inventory = path.join(root, 'src/task/contracts/internal-workflow-route-catalog.mjs');
@@ -519,14 +462,7 @@ export function createPackageStaticValidator(deps) {
       if (!existsFile(runner)) problems.push(`Required internal workflow runner is missing: ${route.runner}.`);
       if (!existsFile(wrapper)) problems.push(`Required internal workflow checkout wrapper is missing: ${route.id}-driver.mjs.`);
     }
-    const consumers = [
-      ['resources/workspace/skills/buildr/task-development/SKILL.md', ['task-development', 'task-planning-identity']],
-      ['resources/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']],
-      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['task-planning-identity']],
-    ];
+    const consumers = [['resources/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']]];
     for (const [relative, routes] of consumers) {
       const file = path.join(root, relative);
       if (!existsFile(file)) {
@@ -535,8 +471,7 @@ export function createPackageStaticValidator(deps) {
       }
       const content = fs.readFileSync(file, 'utf8');
       for (const route of routes) if (!content.includes(`__internal ${route}`)) problems.push(`Required internal workflow consumer ${relative} must use bundled route ${route}.`);
-      if (!content.includes('retained controller') && relative !== 'resources/workspace/skills/buildr/task-retrospective/SKILL.md') problems.push(`Required internal workflow consumer ${relative} must use a retained controller.`);
-      if (/src\/interfaces\/internal\/task-(?:development|retrospective|planning-identity)-driver\.mjs/u.test(content)) problems.push(`Required internal workflow consumer ${relative} must not use a source driver path.`);
+      if (/src\/task\/interfaces\/internal\/task-retrospective-driver\.mjs/u.test(content)) problems.push(`Required internal workflow consumer ${relative} must not use a source driver path.`);
     }
   }
 
@@ -646,11 +581,11 @@ export function createPackageStaticValidator(deps) {
           const proposeSidebar = packageComponentSourcePath('components/buildr/openspec/contributions/openspec-propose-sidebar.md');
           const content = fs.readFileSync(proposeSidebar, 'utf8');
           for (const requiredText of [
-            '执行 `openspec new change` 或写入任何 change artifacts 前',
-            '代码修改、构建、测试或需要长期开发上下文',
-            '使用 `task-environment` 按 Task ID 准备完整 repository set',
-            '无法判断是否会进入实现时，先澄清执行范围',
-            '不修改外部 `openspec-propose` Skill 的上游正文',
+            '先取得正式 Task Record 和匹配的 Task Environment',
+            '代码、构建或测试时使用隔离执行根',
+            '只维护 OpenSpec、规则、Skill、文档或模板时可以使用共享执行根',
+            '`openspec new change`、`task update --add-change`',
+            'Application 不额外保存规划快照',
           ]) {
             if (!content.includes(requiredText)) problems.push(`OpenSpec propose sidebar must include ${JSON.stringify(requiredText)}.`);
           }
@@ -659,7 +594,7 @@ export function createPackageStaticValidator(deps) {
           for (const requiredText of [
             '只修订既有 planning artifacts',
             '不授予实现、同步或归档权限',
-            '重新运行 Task Environment `prepare`',
+            '先为正式 Task 恢复匹配的 Task Environment',
             '`openspec-apply-change`',
           ]) {
             if (!updateContent.includes(requiredText)) problems.push(`OpenSpec update sidebar must include ${JSON.stringify(requiredText)}.`);
@@ -1258,7 +1193,7 @@ export function createPackageStaticValidator(deps) {
           '不建立reviewer、票数或approval状态',
           'task create --status todo --retrospective-source',
           '不生成新 action item ID',
-          '不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁',
+          '不参与Task完成、交付、cleanup或OpenSpec门禁',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);
         }
@@ -1267,7 +1202,7 @@ export function createPackageStaticValidator(deps) {
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-development/v4` provider', 'selected `buildr.task-verification/v4` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
@@ -1278,7 +1213,7 @@ export function createPackageStaticValidator(deps) {
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', '`ready|blocked`', '`scenario-omission`', '最终`buildr openspec converge`永远重新读取最新事实', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', 'Formal Task Finish与Environment cleanup不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', '`ready|blocked`', '`scenario-omission`', '最终`buildr openspec converge`永远重新读取最新事实', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', '任务收尾与Environment cleanup不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }
@@ -1473,7 +1408,6 @@ export function createPackageStaticValidator(deps) {
     validateTaskLifecycleRetirement(context);
     validateTaskVerificationPromptRetirement(context);
     validateTaskReviewAuthority(context);
-    validateTaskPlanningIdentityAuthority(context);
     validateInternalWorkflowRouteClosure(context);
     validateMappedEntries(context);
     validatePackageComponents(context);

@@ -248,51 +248,9 @@ node --test --test-isolation=none --test-concurrency=1 <assigned files...>
 
 ## 10. Buildr provider组合与真实采用
 
-Task Development Application集合注册两个Context：
+Buildr在公共Test Context Runtime上注册Application与Workspace Context。`createBuildrApplicationTest()`让Task read models、Parent/Task coordination、Project Daily Progress与Task Environment在独立sandbox中复用同一Host的Application组装；以初始化、migration、自举、Candidate、tarball或Launcher真实生命周期为主证据的owner继续使用`full-lifecycle`。已删除的任务研发与旧收尾模块不再拥有Context、owner或测试分片。
 
-### `buildr.task-application/v1`
-
-- worker scope，每Host只执行一次`createRuntime()`；
-- exclusive，因为测试会临时覆盖Environment resolver、Change resolver和repository reader；
-- release后恢复Application Runtime的完整property descriptors；
-- inspect拒绝未恢复的属性漂移。
-
-### `buildr.task-workspace/v1`
-
-- worker scope、isolated；
-- state持有Buildr `task-lifecycle/v1` immutable seed Pool；
-- outer plan投影存在时复用同一seed identity，直接单文件时本地prepare；
-- 每test取得独立sandbox lease，release删除case-owned sandbox；
-- marker、tree digest、realpath containment和alias检查继续失败关闭。
-
-统一adapter `test/context/buildr-node-test.mjs`向测试暴露`createBuildrContextTest()`、`createBuildrApplicationTest()`与`createBuildrApplicationWorkspaceTest()`。当前以下owner已经使用`node-context-test`持久Host，并在每个Host内复用matching Application assembly：
-
-- Task read models；
-- Parent/Task coordination；
-- Project Daily Progress；
-- Task Environment repository/Application边界；
-- Task Finish Application core；
-- Task Development Application与Workspace lease。
-
-其中只有Task Development需要`buildr.task-workspace/v1`；其他迁移集合只复用Application组装，测试自己创建的SQLite或临时目录仍保持逐case隔离。动态修改`BUILDR_APP_DATA_DIR`、跨CLI/Git/SQLite多连接或以真实生命周期为断言的case继续为hybrid/full-lifecycle，不为提高注册率共享process global或可变Workspace。
-
-后续接入审查把“可以复用的组装”与“必须重新发生的行为”明确分开：
-
-| 旅程 | Context结论 | 必须保留的真实证据 |
-| --- | --- | --- |
-| 初始化 | `full-lifecycle` | fresh root、首次registry/manifest创建、重入与原子失败 |
-| migration | `full-lifecycle` | 每个历史schema、candidate/retained分离、连续升级与rollback |
-| self-bootstrap | `full-lifecycle` | retained checkout、sync、activation、process identity与closeout |
-| Finish Application core | `hybrid` | 复用Application；每case仍使用独立SQLite/filesystem/CLI sandbox |
-| Finish delivery与cleanup | `full-lifecycle` | carrier、target transition、retained activation、删除/保留/ownership与重复执行 |
-| Candidate与tarball | `full-lifecycle` | 唯一artifact生成、inventory、offline install与从成品执行 |
-| Launcher | `full-lifecycle` | 多独立进程、Host Node/package binding、ownership冲突、handoff与shutdown |
-
-这不表示黄金旅程“不能调用”公共Runtime，而是它们不能共享正在被验证的可变状态。只有当一段准备工作昂贵、与待证事实无关、可以完整检查与reset时，才把该段提取成新的provider；单纯把`createRuntime()`换成lease而不减少真实成本，不算有效迁移。`test/context/dispositions.mjs`中的黄金边界审查由Contract逐owner校验，防止后续为了接入率误改成共享Context。
-
-Task Development owner中原先仍有四个repository/profile文件直接调用`createRuntime()`，与其`context-runtime`声明不一致。它们现已统一通过`createBuildrApplicationTest()`取得Application lease；Contract同时禁止`context-runtime` owner再次直接组装matching Runtime。因此这里的收益首先是事实一致、descriptor reset与dirty检查覆盖，其次才是同一Worker Host内减少重复Application组装。
-
-真实Git contribution、完整CLI协议、Task Environment create/cleanup、Finish、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
+真实Git、完整CLI协议、Task Environment create/cleanup、自举、Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
 
 ### Prepared Fixture Provider
 
@@ -415,27 +373,7 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 
 ## 17. 性能验收方法与当前基线
 
-Task Development owner的历史基线约为71.9秒；第一阶段只做seed与手工shard后约40.8秒。迁移到公共Runtime后的独立focus为31.670秒：4个Host、8次Context创建、22次cache hit、15次隔离lease，累计test body为69.202秒，而Workspace materialize/cleanup合计只有0.931秒。
-
-下表保留当时冻结实现树的三轮无外部竞争历史样本。历史样本不得替代当前测试工具的实际结果。
-
-| 样本 | Core墙钟 | 累计executor work | 有效并行度 | Task Development | 最慢step |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Core 1 | 266.434s | 877.724s | 3.294 | 30.709s | `system-task-finish` 78.802s |
-| Core 2 | 269.674s | 888.804s | 3.296 | 31.160s | `system-task-finish` 84.000s |
-| Core 3 | 267.561s | 881.674s | 3.295 | 30.810s | `system-task-finish` 80.596s |
-| 中位 | 267.561s | 881.674s | 3.295 | 30.810s | 80.596s |
-
-三轮墙钟极差为3.240秒，约占中位数1.2%。每轮聚合15个Host、16次Context创建、93次cache hit和94次lease；均为0 dirty、0 eviction、0 Context wait。Context创建累计约1.9--2.0秒，Task Development的Workspace materialize与cleanup均约0.6秒，说明这一批owner的重复环境创建已经不再是Core主导成本。相对本Change中途两轮Core的320.687秒阶段中位数，最终中位数下降约16.6%；Task Development相对71.9秒历史基线下降约57.1%。
-
-同一冻结树另做一次真实Core/affected竞争。affected由`test/integration/task-development-application.test.ts`选择8个step，双方均通过：
-
-| 执行 | 墙钟 | 关键结果 |
-| --- | ---: | --- |
-| affected | 44.367s | Task Development 35.427s；8 creates、22 hits、0 dirty/evict |
-| Core | 285.105s | 累计work 913.074s；有效并行度3.203；最慢step 81.498s |
-
-affected先取得`task-lifecycle-heavy:0`与`workspace-saturating:0`并完整释放；Core的`system-task-finish`等待29.529秒后取得同一slots，执行后也完整释放。Core相对无竞争中位数增加17.544秒（约6.6%），但没有并发写入、脏Context、遗留进程或失效缓存。该样本证明跨plan资源协调会把竞争记录为resource wait，而不是把等待混入Context创建收益；同时也说明CPU、磁盘与生命周期容量竞争仍会放大墙钟。
+已退役模块的旧性能样本不再代表当前verification registry，也不再用于affected/Candidate选择。当前性能结论必须从现有step集合和实际timing summary重新观察。
 
 该历史轮次的结论是180秒低于当时244秒数学下限，不能作为当时52-step集合的可达目标；它建立了Context技术框架，但不是当前预算事实。2026-08-24的current daily-full数学下限已现场复核为259秒，预算360秒。若要进一步下降，必须减少选择放大、消除重复primary evidence或优化真实生命周期body/cleanup；Product Artifact Candidate与Published Release证据不能为追求daily-full数字而下放或删除。
 

@@ -7,11 +7,6 @@ import process from 'node:process';
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
-import {
-  verifyDeliveredGitTaskContribution,
-  verifyGitNoContributionProof,
-  verifyGitTaskContributionContainmentProof,
-} from '../../task/application/finish/git-task-contribution.mjs';
 import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
@@ -360,7 +355,7 @@ export function registerGitWorktreeProvider(runtime) {
     }
   }
 
-  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, integratedContributions = {}, allowDirty = false, allowNoChange = false, allowCompleted = false, cleanupDelivery = {} }) {
+  function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, allowDirty = false, allowNoChange = false, allowCompleted = false, cleanupDelivery = {} }) {
     const effects = [];
     try {
       const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
@@ -370,7 +365,6 @@ export function registerGitWorktreeProvider(runtime) {
       if (Object.keys(reviewedDeliveries).length && !allowCompleted) return result('cleanup', 'blocked', taskId, stored.file, [], [], { code: 'git_worktree_cleanup_unauthorized', message: '已核验交付输入需要已完成任务的清理授权。' });
       const checks = [];
       const controlMetadataOnly = new Set();
-      const contributionEquivalent = new Set();
       const retainedTargets = new Map();
       for (const record of stored.evidence.repositories) {
         const reviewedDelivery = reviewedDeliveries[record.selector];
@@ -405,18 +399,9 @@ export function registerGitWorktreeProvider(runtime) {
           if (delivered !== reviewedDelivery.targetHead || !retainedRef) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_delivery_target_mismatch', message: `已核验的交付提交不由当前保留分支持有：${record.selector}。` });
         }
         const integratedRef = allowNoChange ? record.head : retainedRef || integratedRefs[record.selector] || null;
-        const contributionProof = reviewedDelivery ? null : integratedContributions[record.selector] || null;
-        const contribution = !allowDirty && integratedRef && contributionProof && checkoutExists
-          ? contributionProof.kind === 'no-contribution'
-            ? verifyGitNoContributionProof({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
-            : contributionProof.schemaVersion === 'buildr.task-delivery-containment-proof/v1'
-              ? verifyGitTaskContributionContainmentProof({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
-              : verifyDeliveredGitTaskContribution({ taskRoot: record.checkoutPath, targetRef: integratedRef, proof: contributionProof })
-          : null;
-        if (contribution?.status === 'equivalent') contributionEquivalent.add(path.resolve(record.checkoutPath));
         if (!allowDirty && identity && !identity.clean) {
           const changed = changedWorktreePaths(record.checkoutPath);
-          if (!changed || (changed.source.length > 0 && contribution?.status !== 'equivalent')) return result('cleanup', 'blocked', taskId, stored.file, [...checks, { ...record, ...identity, state: 'blocked', contribution }], effects, { code: contribution?.code || 'git_worktree_dirty', message: `Task checkout source is dirty without equivalent delivered contribution evidence: ${record.selector}.` }, ['先完成交付或由明确 abandon authorization 处理 Task-owned 内容。']);
+          if (!changed || changed.source.length > 0) return result('cleanup', 'blocked', taskId, stored.file, [...checks, { ...record, ...identity, state: 'blocked' }], effects, { code: 'git_worktree_dirty', message: `Task checkout source is dirty: ${record.selector}.` }, ['先完成交付或由明确 abandon authorization 处理 Task-owned 内容。']);
           controlMetadataOnly.add(path.resolve(record.checkoutPath));
         }
         if (!allowDirty) {
@@ -424,9 +409,9 @@ export function registerGitWorktreeProvider(runtime) {
           const target = gitText(record.sourceRepository, ['rev-parse', '--verify', `${integratedRef}^{commit}`]);
           const taskHead = identity?.head || record.head;
           const ancestor = !reviewedDelivery && Boolean(target && taskHead && git(record.sourceRepository, ['merge-base', '--is-ancestor', taskHead, target]).status === 0);
-          if (!reviewedDelivery && !ancestor && contribution?.status !== 'equivalent') return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: contribution?.code || 'git_worktree_not_integrated', message: `${record.selector} HEAD is neither contained by ${integratedRef} nor covered by equivalent Task Contribution evidence.`, contribution }, ['完成交付或修复 contribution evidence 后重试。']);
+          if (!reviewedDelivery && !ancestor) return result('cleanup', 'blocked', taskId, stored.file, checks, effects, { code: 'git_worktree_not_integrated', message: `${record.selector} HEAD is not contained by ${integratedRef}.` }, ['完成交付并提供已核验的源提交和目标提交后重试。']);
         }
-        checks.push({ ...record, head: identity?.head || reviewedDelivery?.sourceHead || record.head, reviewedDelivery: reviewedDelivery || null, clean: identity?.clean ?? record.clean, registered: Boolean(identity?.registered), integratedRef, contribution: contribution?.status === 'equivalent' ? contribution : null, checkoutExists, state: 'ready' });
+        checks.push({ ...record, head: identity?.head || reviewedDelivery?.sourceHead || record.head, reviewedDelivery: reviewedDelivery || null, clean: identity?.clean ?? record.clean, registered: Boolean(identity?.registered), integratedRef, checkoutExists, state: 'ready' });
       }
       const removed = [];
       for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
@@ -446,7 +431,7 @@ export function registerGitWorktreeProvider(runtime) {
         }
         if (record.checkoutExists) {
           const discardControlMetadata = controlMetadataOnly.has(path.resolve(record.checkoutPath));
-          const args = ['worktree', 'remove', ...(allowDirty || discardControlMetadata || contributionEquivalent.has(path.resolve(record.checkoutPath)) ? ['--force'] : []), record.checkoutPath];
+          const args = ['worktree', 'remove', ...(allowDirty || discardControlMetadata ? ['--force'] : []), record.checkoutPath];
           const removal = git(record.sourceRepository, args);
           if (removal.status !== 0) return result('cleanup', 'blocked', taskId, stored.file, [...removed, { ...record, state: 'remove-failed' }], effects, { code: 'git_worktree_remove_failed', message: (removal.stderr || removal.stdout).trim() }, ['保留剩余 evidence 并从当前步骤重试。']);
           effects.push({ type: 'worktree-removed', selector: record.selector, checkoutPath: record.checkoutPath });

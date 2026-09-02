@@ -22,7 +22,6 @@ export function registerSystemDoctorApplication(runtime) {
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
   const diagnoseProjectEnvironmentPreparation = (...args) => runtime.diagnoseProjectEnvironmentPreparation(...args);
   const diagnoseInternalWorkflowRoutes = (...args) => runtime.diagnoseInternalWorkflowRoutes(...args);
-  const inspectTaskFinishPersistence = (...args) => runtime.inspectTaskFinishPersistence(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
@@ -81,28 +80,6 @@ export function registerSystemDoctorApplication(runtime) {
     }
   }
 
-  function diagnoseTaskFinishStore(result, targetRoot) {
-    if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
-      result.taskFinish = { status: 'not-applicable', current: [], leases: [] };
-      return;
-    }
-    try {
-      const observation = inspectTaskFinishPersistence(targetRoot);
-      result.taskFinish = observation;
-      for (const lease of observation.leases || []) if (lease.expired) addDoctorFinding(result, 'error', 'task_finish.expired_lease', `Task Finish target lease 已过期：${lease.targetIdentity}`, {
-        path: '.buildr/local/workspace.sqlite', taskId: lease.taskId, runId: lease.runId,
-        suggestion: '确认没有仍在运行的 Finish 进程后重试或恢复对应 run；Doctor 不会自动删除 lease。', userActionRequired: true,
-      });
-      for (const item of observation.current || []) if (item.status === 'cleanup_pending') addDoctorFinding(result, 'warning', 'task_finish.cleanup_pending', `Task Finish run 等待 cleanup：${item.runId}`, {
-        path: '.buildr/local/workspace.sqlite', taskId: item.taskId, runId: item.runId, suggestion: '使用同一 Task Finish run 与 resume token 继续 cleanup；不要重新执行已完成的 delivery。', userActionRequired: true,
-      });
-    } catch (error) {
-      result.taskFinish = { status: 'unavailable', error: error.message };
-      addDoctorFinding(result, 'error', error.code || 'task_finish.persistence_failed', error.message, { path: '.buildr/local/workspace.sqlite', suggestion: '保留数据库现场并运行 Buildr Doctor；不要从旧 Finish 文件恢复。', userActionRequired: true });
-    }
-  }
-
-
   function doctor(args, internalOptions = {}) {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const requestedScope = optionValue(args, '--scope', null);
@@ -134,7 +111,6 @@ export function registerSystemDoctorApplication(runtime) {
       summary: { ok: 0, info: 0, warning: 0, error: 0 },
       workspace: null,
       structuredStore: null,
-      taskFinish: null,
       projectRegistry: null,
       projectVerification: [],
       projectEnvironmentPreparation: [],
@@ -163,7 +139,6 @@ export function registerSystemDoctorApplication(runtime) {
     diagnoseReleaseAwareness(result, internalOptions.releaseAwarenessOptions);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
-    if (result.workspace?.initialized) diagnoseTaskFinishStore(result, targetRoot);
     diagnoseMutations(result, targetRoot);
     if (result.workspace?.initialized) diagnoseRules(result, targetRoot);
     const registry = diagnoseProjectRegistry(result, targetRoot);

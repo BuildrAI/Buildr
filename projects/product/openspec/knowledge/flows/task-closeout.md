@@ -13,7 +13,7 @@ flowchart TB
     A --> E["原资源所有者：核对归属与内容保全后清理"]
 ```
 
-这些是可组合能力，不是固定阶段。`task next` 不推荐、不批准、不恢复收尾；研发结果不强制交接给收尾。旧 `task finish run|rollover|reconcile` 已退役，`task finish inspect` 仅保留历史读取。
+这些是可组合能力，不是固定阶段。Agent按目标和真实现场选择实际需要的动作，Buildr不提供统一批准、交接或机器交付历史。
 
 ## 四种常见现场
 

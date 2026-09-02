@@ -949,14 +949,6 @@ Buildr Web MUST 只通过当前 Task 的已保存 Change 引用读取 Change 内
 - **THEN** Buildr Web MUST NOT 在本次能力中列出、扫描、关联或处置该 Change
 - **AND** Buildr Web MUST NOT 将其显示为待处理 Task 或空态计数
 
-### Requirement: Buildr Web 必须展示保存的终态交付事实
-Buildr Web 的任务终态投影 MUST 展示最近一次 Finish 已保存的 terminal association snapshot，并明确其为交付时事实。页面读取 MUST NOT 因当前 Review、Verification 或 Development 状态变化而重新推导历史交付关联。
-
-#### Scenario: 已完成 Task 打开终态信息
-- **WHEN** 用户读取已有 terminal association snapshot 的已完成 Task
-- **THEN** HTTP interface MUST 通过 Application 返回保存的 handoff/gate 关联
-- **AND** Web 页面 MUST 将其呈现为最近一次正式交付采用的事实
-
 ### Requirement: Buildr Web HTTP interface 必须托管构建产物并支持 SPA 深链
 Buildr Web HTTP interface MUST 从 Buildr Web 构建产物目录提供 `index.html` 与静态资产，并 MUST 在注入本机 session token 与可选 preview identity 后返回 shell。对已登记 Workspace 的应用深链（非 `/api/`），当请求不是已声明的静态资产时，HTTP interface MUST 返回同一注入后的 `index.html`，以便 React Router 恢复路由。静态托管 MUST 限制为构建产物内可证明的资产，MUST NOT 递归托管任意未纳入产物清单的远程或用户路径。
 
@@ -974,29 +966,6 @@ Buildr Web HTTP interface MUST 从 Buildr Web 构建产物目录提供 `index.ht
 - **WHEN** Buildr Web 以 preview 实例启动
 - **THEN** 返回的 shell MUST 继续注入 preview identity 信息
 - **AND** 页面 MUST 能显示 preview 身份条且不得改写 `Buildr Web Dev.app` identity
-
-### Requirement: Buildr Web 必须通过 Task Finish Application 投影 current 与 terminal 状态
-Terminal Delivery Application MUST从Workspace SQLite中的唯一`task_finish_current` authority形成read model；Buildr Web HTTP/Web MUST只消费该Application结果，不得直接查询SQLite、读取phase detail、扫描或配对legacy Finish files、读取transient diagnostics、恢复run、计算live identity或读取lifecycle projection。terminal delivered判断 MUST只使用同Task且与保存Development handoff匹配的compact terminal association；非terminal current row只用于展示进行中、blocked、failed或cleanup pending状态。
-
-#### Scenario: Finish 正在执行
-- **WHEN** Task存在非terminal Finish current row
-- **THEN** Buildr Web MUST展示current phase、有界状态、更新时间与唯一next action
-- **AND** MUST NOT把Task显示为delivered、读取完整stdout/stderr或触发resume
-
-#### Scenario: Finish cleanup pending
-- **WHEN** delivery已证明但Environment或Finish-owned cleanup尚未完成
-- **THEN** Buildr Web MUST显示“交付清理中”或匹配的blocked状态
-- **AND** MUST NOT提前显示Task completed或terminal delivered成功语义
-
-#### Scenario: Finish terminal completion
-- **WHEN** Application返回与Task/Development保存identity匹配且`status: complete`的compact terminal current association
-- **THEN** Buildr Web MUST以其commit/ref、remote readback、Doctor、cleanup与完成时间投影“已交付”
-- **AND** GET MUST不访问Git、remote、Environment provider、旧四表、legacy files、transient root或已删除lifecycle table
-
-#### Scenario: legacy store 残留
-- **WHEN** `.buildr/task-finish`仍存在但SQLite中没有matching terminal current
-- **THEN** Buildr Web MUST不扫描、不读取、不把legacy文件当作交付authority
-- **AND** MUST只展示SQLite-backed Application read model；旧目录清理由升级步骤负责
 
 ### Requirement: Buildr Web 静态资源托管必须继续归属 buildr 且不因前端 Service 拆分改变安全模型
 在 `buildr-web` 拥有前端源码后，Buildr MUST 继续由 `product/buildr` 的 Buildr Web HTTP interface 在 loopback 上同源托管已纳入的构建产物。写保护 MUST 继续要求当前应用 Origin、有效 session token 与 JSON content type。拆分 MUST NOT 引入分域 CORS 写路径、远程 CDN 静态依赖，或要求运行时读取 `buildr-web` 源码树。
@@ -1280,24 +1249,6 @@ Buildr Web MUST在Task“证据”页展示任务验证报告presence、内容�
 - **THEN**prompt MUST说明开发中的测试不记录、开发完成后才保存有意义报告
 - **AND**复制prompt MUST NOT修改报告
 
-### Requirement: Buildr Web Task 页面必须分别读取独立专业事实
-Buildr Web MUST以Task Record为任务目标和状态authority，并按需分别读取Review、Verification、Development、Environment和Finish history read model。页面 MUST NOT通过Candidate、Handoff、gate match或terminal association构造统一完成、交付或下一步状态。
-
-#### Scenario: 没有Development的active Task
-- **WHEN** Task具有Review或Verification Result但没有Development Receipt
-- **THEN** 概览和证据页 MUST正常展示Task与专业Result
-- **AND** 研发页 MAY显示尚无研发记录但不得影响其他页签
-
-#### Scenario: completed Task历史不完整
-- **WHEN** Task Record已completed但旧Development或Finish历史不可读
-- **THEN** 页面 MUST保持完成结果并只在对应历史section显示diagnostic
-- **AND** MUST NOT将任务降级为未完成
-
-#### Scenario: 发起专业Agent动作
-- **WHEN** 用户从Review或Verification区块选择交给Agent
-- **THEN** 前端 MUST只传递Task ID、动作类型和必要上下文
-- **AND** 专业Application MUST不生成或保存工作prompt
-
 ### Requirement: Buildr Web必须把Review展示为独立可选意见
 Task证据页 MUST独立读取并展示Planning/Completion v2 slots，以`已记录|未记录`、subject identity、method、实际覆盖、未覆盖、发现和`已接受|要求修改`表达Review。页面 MUST不显示current/stale、adopted、gate或统一下一步。
 
@@ -1321,3 +1272,16 @@ Buildr Web MUST在前端形成携带Task ID的最小指令，要求Agent读取Ta
 - **WHEN** 用户在证据页发起Task Verification Agent action
 - **THEN** 前端 MUST生成短指令且不修改Verification Report
 - **AND** Agent自行选择并调用已有测试工具
+
+### Requirement: Buildr Web Task 页面必须退出研发与旧交付历史
+Buildr Web MUST以Task Record为任务目标和结果authority，按需读取Review、Verification、Environment、Retrospective和Parent facts。页面 MUST不请求或展示Development、Task Candidate、Handoff、Task Planning Identity、Terminal Delivery或旧Finish history。
+
+#### Scenario: 查看没有Development的Task
+- **WHEN** 用户打开任意active、completed或abandoned Task
+- **THEN** 页面 MUST正常展示Task、Change、证据、复盘和环境
+- **AND** MUST不存在研发页签、研发空状态或旧机器交付历史section
+
+#### Scenario: 完成任务
+- **WHEN** 用户通过现有Task Record动作完成Task
+- **THEN** 页面 MUST展示Task Record保存的结果
+- **AND** MUST不要求或查询Development/Finish历史证明

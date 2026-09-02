@@ -146,7 +146,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
-test('任务详情使用概览、原型、研发、证据、复盘、环境六个一级视图', () => {
+test('任务详情使用概览、原型、证据、复盘、环境五个一级视图', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
@@ -155,7 +155,7 @@ test('任务详情使用概览、原型、研发、证据、复盘、环境六�
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
   assert.match(source, /id: 'prototype', label: '原型'/);
-  assert.match(source, /id: 'development', label: '研发'/);
+  assert.doesNotMatch(source, /id: 'development', label: '研发'/);
   assert.match(source, /id: 'evidence', label: '证据'/);
   assert.match(source, /id: 'retrospective', label: '复盘'/);
   assert.match(source, /id: 'environment', label: '环境'/);
@@ -221,29 +221,12 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-prototype-frame/);
 });
 
-test('任务研发视图只读投影 current Development Receipt、候选与最近交接', () => {
-  const source = read('../buildr-web/src/pages/task-detail/DevelopmentTab.tsx');
-  const labels = read('../buildr-web/src/lib/taskLabels.ts');
+test('任务研发页签、客户端调用与专属样式已退出', () => {
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const styles = read('../buildr-web/src/styles.css');
-  assert.match(source, /任务研发（Task Development）/);
-  assert.match(detail, /taskProfessionalApi\.development\(currentTaskId, \{ signal \}\)/);
-  assert.match(labels, /'handoff-current': '研发交接已就绪'/);
-  assert.match(labels, /'candidate-current': '候选已就绪'/);
-  assert.match(labels, /planning: '规划中'/);
-  assert.match(source, /研发规划事实/);
-  assert.match(source, /development-planning-card|developmentPlanning/);
-  assert.match(labels, /waived: '已明确豁免'/);
-  assert.match(source, /节点不构成必经工作流/);
-  assert.match(source, /任务上下文身份|development-identity/);
-  assert.match(source, /const latest = handoffs\.at\(-1\)/);
-  assert.match(source, /历史研发交接仍被保留，但当前无法实时复核/);
-  assert.doesNotMatch(source, /task-development-gates|task-development-decision|task-development-terminal/);
-  assert.doesNotMatch(source, /recordTaskDevelopment|freezeTaskDevelopment|decideTaskDevelopment|createTaskDevelopmentHandoff/);
-  assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync/);
-  assert.match(styles, /\.development-axis-grid/);
-  assert.match(styles, /\.development-planning-list/);
-  assert.match(styles, /\.development-axis-grid \{ display: grid/);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/pages/task-detail/DevelopmentTab.tsx')), false);
+  assert.doesNotMatch(detail, /taskProfessionalApi\.development|DevelopmentTab|data-task-panel="development"/);
+  assert.doesNotMatch(styles, /\.development-axis-grid|\.development-planning-list/);
 });
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {

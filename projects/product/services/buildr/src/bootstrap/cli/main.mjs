@@ -32,11 +32,6 @@ async function runInternalProductAction(argv) {
     await streamRemoteText(url, timeoutMs);
     return true;
   }
-  if (action === 'task-finish-retained-cleanup') {
-    const { runRetainedTaskFinishCleanup } = await import('../../task/interfaces/internal/task-finish-retained-cleanup.mjs');
-    await runRetainedTaskFinishCleanup(argv.slice(4));
-    return true;
-  }
   if (action === 'enroll-npm-installation') {
     const { enrollNpmInstallationFromLifecycle } = await import('../../system/installation/module.mjs');
     const result = enrollNpmInstallationFromLifecycle();
@@ -57,15 +52,13 @@ async function runInternalProductAction(argv) {
 
 export async function runCli(argv = process.argv) {
   if (await runInternalProductAction(argv)) return;
-  const { isLightweightTaskFinishCommand, runLightweightTaskFinish } = await import('./task-finish-bootstrap.mjs');
-  if (isLightweightTaskFinishCommand(argv)) return runLightweightTaskFinish(argv);
   if (process.env.BUILDR_TEST_FAIL_FULL_BOOTSTRAP === '1') throw new Error('Injected full runtime bootstrap failure.');
   const { dispatch } = await import('./registry.mjs');
   return dispatch(argv);
 }
 
 export function reportCliFailure(error, argv = process.argv) {
-  const structuredInputError = typeof error.code === 'string' && (error.code.startsWith('task_finish.') || error.code.startsWith('task_record_cli.') || typeof error.usage === 'string');
+  const structuredInputError = typeof error.code === 'string' && (error.code.startsWith('task_record_cli.') || typeof error.usage === 'string');
   if (argv.includes('--json') && structuredInputError) {
     const payload = {
       schemaVersion: 'buildr.cli-error/v1',
@@ -79,13 +72,6 @@ export function reportCliFailure(error, argv = process.argv) {
     console.error(process.env.BUILDR_DEBUG_STACK === '1' && error.stack ? error.stack : `${error.code ? `[${error.code}] ` : ''}${error.message}`);
     if (error.usage) console.error(`Usage: ${error.usage}`);
     if (error.nextAction) console.error(`Next: ${error.nextAction}`);
-    if (error.code === 'task_finish.entry_gaps' && error.details?.gaps) {
-      for (const module of ['development', 'environment', 'delivery']) {
-        for (const item of error.details.gaps[module] || []) {
-          console.error(`[${module}] ${item.code}: ${item.message}`);
-        }
-      }
-    }
   }
   process.exit(structuredInputError ? 2 : 1);
 }

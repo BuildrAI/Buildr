@@ -365,12 +365,24 @@ Buildr MUST从Task、Git/PR、GitHub run/attempt、release owner Result、Enviro
 - **AND** compact output MUST只返回关键阶段、timeline identity与inspect pointer，完整timeline只在显式full中展开
 
 ### Requirement: 发布关联必须与旧收尾执行证明解耦
-发布支持任务 MUST以已有完成记录建立关联，MUST不要求旧运行、研发交接或旧自举运行号；发布 MUST继续独立验证冻结源码、候选、唯一产物、目标引用和授权。
+Release transaction MUST只要求release/support Task Record关系、适用Task Environment、current Product Candidate、唯一artifact、Git/main/dev和publication facts。Task Development、Task Candidate、Development Handoff、Task Finish legacy Result或Terminal Delivery MUST不成为关联输入、缺失finding或发布准备条件。
 
-#### Scenario: 直接完成支持任务
-- **WHEN** 支持任务已完成但无旧收尾记录
-- **THEN** 关联不因缺旧证据阻塞
+#### Scenario: support Task直接交付dev
+- **WHEN** support Task通过当前task-finish Skill和Git事实完成交付且Task Record已completed
+- **THEN** release correlation MUST接受其Task、Environment与真实dev source commit
+- **AND** MUST不要求旧Development或Finish run
+
+#### Scenario: Product Candidate校验
+- **WHEN** release进入Product Candidate与publication readiness
+- **THEN** source、generation、CI aggregate与唯一tarball MUST继续按现有发布owner校验
+- **AND** 本变更 MUST不降低或替换任何发布候选门禁
 
 #### Scenario: 发布事实不足
-- **WHEN** 支持任务已完成但发布源码或产物证据不匹配
-- **THEN** 发布仍被对应安全检查阻止
+- **WHEN** Product Candidate、artifact、Git、npm、GitHub或publication事实不足或不匹配
+- **THEN** release MUST按对应owner返回blocked
+- **AND** MUST不从已删除Development/Finish历史补造成功
+
+#### Scenario: 直接完成支持任务
+- **WHEN** support Task已通过真实Git/业务交付并保存Task Record结果
+- **THEN** release correlation MUST接受matching dev source与Task/Environment facts
+- **AND** MUST不要求旧Finish run、Candidate或Handoff

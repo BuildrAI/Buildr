@@ -60,12 +60,8 @@ export const VERIFICATION_STEP_TESTING = Object.freeze({
   'integration-task-read-models': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Task entry and read-model applications preserve their SQLite and Application boundaries.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-task-coordination': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Parent coordination and publication applications preserve their real repository boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-project-daily-progress': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Project daily progress Application, store, and CLI boundaries remain coherent without synthesizing Git.', TEST_ENVIRONMENTS.repeatedFilesystem),
-  'integration-task-development': testing(SERVICE_OWNER, 'Development', 'Integration', 25000, 'Task Development, Review, and Verification lifecycle behavior remains correct across real CLI, filesystem, Git, and Application boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'integration-task-finish': testing(SERVICE_OWNER, 'Development', 'Integration', 20000, 'Task Finish core bootstrap, run, diagnostics, entry, and SQLite behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
-  'integration-task-finish-delivery': testing(SERVICE_OWNER, 'Development', 'Integration', 75000, 'Task Finish remote delivery, retained activation, cleanup, and contribution behavior remains correct.', TEST_ENVIRONMENTS.repeatedGitCli),
   'system-windows-platform': testing(PROJECT_OWNER, 'Development', 'System', 300000, 'Windows high-risk CLI, worktree, Task Environment, Task Finish, launcher, and managed runtime journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-buildr-web-http': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Buildr Web Runtime HTTP routes preserve read, error, session and cleanup boundaries.', TEST_ENVIRONMENTS.workspaceLifecycle),
-  'system-task-finish-cli': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Task Finish public CLI journey and result projection behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-verification-admission': testing(PROJECT_OWNER, 'Static Conformance', 'System', 10000, 'Changed-path collection remains trustworthy before broad project verification.', TEST_ENVIRONMENTS.repeatedCli),
   'system-verification-contracts': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'Verification orchestration, timing, resource, and Workspace contracts hold through public entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
   'system-public-json-contracts': testing(PROJECT_OWNER, 'Static Conformance', 'System', 25000, 'Public JSON outputs remain closed, versioned, and stable through real CLI entrypoints.', TEST_ENVIRONMENTS.repeatedCli),
@@ -127,18 +123,6 @@ export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
     'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
     'real retained checkout, Git identity, and runtime synchronization',
   ),
-  'integration-task-development': primaryEvidence(
-    'A stale planning, Candidate, Review, Verification, or repository identity must block the lifecycle transition.',
-    'real CLI, filesystem, Git, and SQLite-backed Task Development lifecycle',
-  ),
-  'integration-task-finish': primaryEvidence(
-    'A bootstrap, readiness, run, diagnostics, or SQLite mismatch must stop Task Finish before unsafe effects.',
-    'real Task Finish CLI and SQLite boundary',
-  ),
-  'integration-task-finish-delivery': primaryEvidence(
-    'A remote delivery mismatch, retained activation drift, occupied carrier, or cleanup ownership gap must fail closed.',
-    'real Git remote, retained activation, contribution, and cleanup boundaries',
-  ),
   'system-verification-contracts': primaryEvidence(
     'A public verification run that violates scheduling, timing, resource, or Workspace result contracts must fail.',
     'public verification and Workspace entrypoints',
@@ -170,10 +154,6 @@ export const VERIFICATION_STEP_EVIDENCE = Object.freeze({
   'system-app-process': primaryEvidence(
     'A Buildr Web or preview process that crosses channel/profile boundaries or survives owned cleanup must fail.',
     'real child process, port, profile, and process cleanup',
-  ),
-  'system-task-finish-cli': primaryEvidence(
-    'The public Task Finish CLI must reject stale readiness and project the exact terminal result.',
-    'real public Task Finish CLI process',
   ),
   'concurrent-task-acceptance': primaryEvidence(
     'Two concurrent Task workflows that leak state, violate isolation, or corrupt a shared authority must fail.',
@@ -331,9 +311,9 @@ export const VERIFICATION_RESOURCE_CONTRACTS = Object.freeze({
 });
 
 export const VERIFICATION_EXECUTION_PROFILES = Object.freeze({
-  local: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  ci: concurrency(4, 3, 2, { integration: 4, 'integration-task-finish-delivery': 2, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-task-finish-delivery': 1, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
+  local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
+  ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY = VERIFICATION_EXECUTION_PROFILES.local;
@@ -425,8 +405,8 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
     'test/integration/task-overview-repository.test.ts',
-    'test/integration/task-planning-identity-application.test.mjs',
     'test/integration/task-retrospective-repository.test.mjs',
+    'test/integration/task-review-repository.test.ts',
   ], { schedulingCostMs: 4000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-coordination', [
     'test/integration/parent-coordination-application.test.ts',
@@ -436,24 +416,6 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   integrationSlice('integration-project-daily-progress', [
     'test/integration/project-daily-progress-application.test.mjs',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
-  integrationSlice('integration-task-development', [
-    'test/integration/task-development-application-shard-3.test.mjs',
-    'test/integration/task-development-application.test.ts',
-    'test/integration/task-development-application-shard-4.test.mjs',
-    'test/integration/task-development-application-shard-2.test.mjs',
-    'test/integration/task-review-repository.test.ts',
-    'test/integration/task-development-repository.test.mjs',
-    'test/integration/task-development-driver-profile.test.mjs',
-    'test/integration/task-development-driver-discovery.test.mjs',
-  ], { schedulingCostMs: 30000, executorType: 'node-context-test', resources: ['workspace-saturating', 'task-lifecycle-heavy'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY], args: ['--test-concurrency=4'] }),
-  integrationSlice('integration-task-finish', [
-    'test/integration/task-finish-sqlite.test.mjs',
-    'test/integration/task-finish-maintenance.test.mjs',
-  ], { schedulingCostMs: 11000, executorType: 'node-context-test', args: ['--test-concurrency=2'] }),
-  integrationSlice('integration-task-finish-delivery', [
-    'test/integration/task-finish-retained-cleanup.test.mjs',
-    'test/integration/task-finish-task-contribution.test.mjs',
-  ], { schedulingCostMs: 75_000, timeoutMs: 360_000 }),
 ]);
 
 export const INTEGRATION_GENERAL_EXCLUDED_FILES = Object.freeze([...new Set([
@@ -481,9 +443,6 @@ export const verificationSteps = Object.freeze([
       'integration-task-read-models': 'Task read-model integration slice',
       'integration-task-coordination': 'Task coordination integration slice',
       'integration-project-daily-progress': 'Project daily progress integration slice',
-      'integration-task-development': 'Task Development lifecycle integration',
-      'integration-task-finish': 'Task Finish core integration slice',
-      'integration-task-finish-delivery': 'Task Finish delivery integration slice',
     })[slice.id],
     executor: { type: slice.executorType, files: [...slice.files], args: [...slice.args] },
     profiles: ['candidate'],
@@ -494,11 +453,7 @@ export const verificationSteps = Object.freeze([
     contexts: [...slice.contexts],
     admission: slice.admission,
   })),
-  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy', preflight: {
-    executor: { type: 'node', file: 'test/contract/task-development.test.mjs' },
-    budgetMs: 3000,
-    sideEffects: 'none',
-  } }),
+  step({ id: 'contract', name: 'repository contract tests', executor: { type: 'npm', args: ['run', 'test:contract'] }, profiles: ['fast', 'candidate'], concurrencyClass: 'cpu-heavy' }),
   ...SYSTEM_SUITES.map((suite) => step({
     id: suite.id,
     name: suite.name,
@@ -515,7 +470,6 @@ export const verificationSteps = Object.freeze([
     'test/system/cli-update.test.mjs',
     'test/system/buildr-web-launcher.test.mjs',
     'test/system/task-environment-fresh-build-web.test.mjs',
-    'test/system/task-finish-cli.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
     'test/system/worktree-create.test.mjs',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
@@ -596,8 +550,6 @@ export const CORE_MACOS_STEP_IDS = Object.freeze([
   'integration-task-read-models',
   'integration-task-coordination',
   'integration-project-daily-progress',
-  'integration-task-finish',
-  'integration-task-finish-delivery',
   'system-verification-contracts',
   'system-public-json-contracts',
   'system-openspec-contract-audit',
@@ -628,8 +580,6 @@ export const CORE_MACOS_SHARDS = Object.freeze([
   candidateShard('core-task-lifecycle-macos', 'macos', 'verification', [
     'integration-task-environment',
     'integration-self-bootstrap',
-    'integration-task-finish',
-    'integration-task-finish-delivery',
   ], { requiresArtifact: true }),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
@@ -709,11 +659,7 @@ export const CANDIDATE_CI_SHARDS = Object.freeze([
     'system-worktree-lifecycle',
     'openspec-convergence-recovery',
   ]),
-  candidateShard('task-finish-windows', 'windows', 'verification', [
-    'system-task-finish-cli',
-  ]),
-  candidateShard('task-development-windows', 'windows', 'verification', [
-    'integration-task-development',
+  candidateShard('task-concurrent-windows', 'windows', 'verification', [
     'concurrent-task-acceptance',
   ]),
   candidateShard('fresh-build-windows', 'windows', 'verification', [

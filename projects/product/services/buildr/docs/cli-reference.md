@@ -47,12 +47,8 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr project verification inspect|validate|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
 | `buildr task verification record|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
 | `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在 canonical Workspace 的 SQLite 中维护 Task Record v2。`create --status todo` 只保存意向，不接受 Change；`activate` 显式转为 active。`--retrospective-source` 及 update add/remove flags 只关联已有 current 复盘的终态来源 Task，不创建行动项。todo 只能以 `--no-change` 完成；todo/active 都可 abandon，终态不可重开。Parent/Child 仍只表达协调层级。 |
-| `buildr task delivery inspect <task-id>` | 仅凭 Task ID 只读返回 `buildr.task-terminal-delivery/v1`。已交付时包含 Finish run ID、final remote ref 与 cleanup 摘要；旧运行仅展示 run ID、历史 phase 和诊断，不生成恢复执行命令；直接完成的任务显示 completed 且不声称机器验证了交付；历史关联不匹配时保留完成记录并给出 diagnostic。该命令不执行 resume、cleanup 或 Finish，不扩展只查询 Task Record 的 `task inspect`，也不替代按 run identity 查询完整明细的 `task finish inspect --run`。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
-| `buildr task finish inspect --run <id>` | 只读查询历史收尾结果；支持 compact、full 与 self-bootstrap 历史投影。旧 run、rollover、reconcile 执行入口已退役。新收尾由 task-finish 技能直接处理真实成果、已有任务记录及安全善后。 |
-
-旧收尾记录只读保留；历史资源维护仍保护身份、归属和内容保全。旧执行状态写入口已退役，任务完成仅通过 `task complete` 保存真实结果。
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
@@ -65,11 +61,11 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
-Task Record 使用 closed `buildr.task-record/v2` schema。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为 todo + active。复盘来源使用独立多对多关系表，只保存 source Task ID；多个复盘可指向同一 Task，一个复盘也可形成多个后续 Task。Task Record 不保存 Environment、Development 或 action item。Parent/Child、Change resolver、`recordDigest` 与旧 `task.yml` inert 语义保持不变。
+Task Record 使用 closed `buildr.task-record/v2` schema。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为 todo + active。复盘来源使用独立多对多关系表，只保存 source Task ID；多个复盘可指向同一 Task，一个复盘也可形成多个后续 Task。Task Record 不保存 Environment、执行计划或 action item。Parent/Child、Change resolver、`recordDigest` 与旧 `task.yml` inert 语义保持不变。
 
-Task Record、Task Development current Receipt、Task Verification current Result与Planning/Completion Review current Results全部以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web仍调用对应Application；interface不直接打开数据库。旧Task-scoped YAML不读取、不迁移、不双写，Task current records不进入Git或跨机器同步。Git Operations只处理用户或其他consumer明确选择的普通Git内容；产品不再提供Task Metadata Publication入口、contract或runtime Skill。Environment与Finish继续保存各自本机运行/交付事实。
+Task Record、Task Environment、Task Verification、Planning/Completion Review与Task Retrospective current facts以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web调用对应Application；interface不直接打开数据库。旧研发和旧收尾current表已删除，不建立history或双读。Task current records不进入Git或跨机器同步。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情固定为“概览、研发、证据、环境”四个一级视图：研发调用 Task Development Application `inspect`，证据分别调用 Review/Verification reader，环境调用 Environment reader；打开、窗口聚焦或手动刷新时执行有界读取。Development/Review/Verification/Environment 专业区块均不提供 writer；审查和验证仍可生成受限 Agent prompt。Task 关联 Change 的详情通过同一 Task-scoped Resolver 读取任务执行根与 retained baseline；全局 Change 列表仍保持 retained-only。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情固定为“概览、原型、证据、复盘、环境”五个一级视图；概览组合Task Record、Review、Verification与Environment，证据分别调用Review/Verification reader，环境调用Environment reader。页面没有研发页签或旧机器交付历史。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 
@@ -115,7 +111,7 @@ Task Verification Skill指导Agent在开发中直接调用Maven、npm、Playwrig
 
 没有声明或没有适用能力时，doctor 不产生 finding，Task Verification 在具体 Result 中报告 coverage gap，不自动开发测试。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”时，Agent 只从真实 build scripts、CI、文档和已有测试发现候选，并由用户确认 Project policy。
 
-current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope、Agent提交的实际内容版本和current Project测试地图identity，保存实际checks、选择范围、targets、结果、gaps与结论。Task Verification Application只提供`record|inspect`并整体替换current报告；`inspect`按调用方内容identity与current测试地图派生`current|stale|unknown`。它不绑定Candidate/generation，不创建Execution Record，不保存stdout/stderr或临时路径，也不被Task Development或Task Finish消费。
+current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope、Agent提交的实际内容版本和current Project测试地图identity，保存实际checks、选择范围、targets、结果、gaps与结论。Task Verification Application只提供`record|inspect`并整体替换current报告；`inspect`按调用方内容identity与current测试地图派生`current|stale|unknown`。它不创建Execution Record，不保存stdout/stderr或临时路径，也不决定Task完成或交付。
 
 ## Skill capability contracts
 

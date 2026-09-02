@@ -168,20 +168,6 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND** Task HTTP Adapter MUST调用同一Task Record Application API
 - **AND**公开HTTP path、method、DTO、授权、响应与错误映射 MUST保持等价
 
-### Requirement: 迁移期兼容 Runtime 必须有界且可退出
-尚未迁移能力 MAY 暂时使用由Bootstrap唯一拥有的兼容 Runtime Facade，但该Facade MUST只投射同一真实实现、记录owner、适用调用者与退出条件，并 MUST NOT形成第二实现、第二writer、双读或双写。新的模块化实现 MUST NOT新增对宽Runtime的业务依赖。
-
-#### Scenario: 旧Task能力读取Task Record
-- **WHEN** 尚未迁移的Task Development、Review、Verification、Retrospective、Finish或Environment能力读取Task Record
-- **THEN** 兼容Facade MAY投射Task Record Application API或已确认的窄Persistence Read Port
-- **AND** 调用 MUST仍落到同一Task Record Repository、SQLite连接、事务和writer authority
-- **AND** 架构验证 MUST拒绝基线清单之外新增的宽Runtime消费者
-
-#### Scenario: 后续能力完成模块迁移
-- **WHEN** 对应Parent Contribution已交付并为原调用者提供模块公开Application或Read Port
-- **THEN** 该调用者 MUST退出兼容Facade
-- **AND** 最终 `legacy-exit-and-conformance`验收 MUST删除无剩余owner或无退出条件的Facade
-
 ### Requirement: 第二轮收敛后顶层生产职责必须全部有 owner
 Buildr Service MUST将公共 contract 技术机制、release version、internal workflow route 与 Web HTTP 职责归入明确模块 owner；Bootstrap MUST只负责模块注册、依赖注入、进程入口与生命周期组合。没有独立 owner 的顶层 `src/application`、`src/domain`、`src/interfaces` 生产残留 MUST被删除。
 
@@ -199,3 +185,24 @@ Buildr Service MUST将公共 contract 技术机制、release version、internal 
 - **WHEN** 最终收敛验证检查 Task Execution 与 Verification 路径
 - **THEN** 生产实现 MUST继续位于已交付的 Task 与 Verification owner
 - **AND** 本 Change MUST NOT恢复旧顶层实现或第二 writer
+
+### Requirement: 退役任务模块不得保留人工源码或兼容转发
+Task Development、Task Planning Identity、legacy Task Finish与Terminal Delivery的Domain、Application、Persistence、Interface、fixture、helper和专属测试 MUST直接删除。直接重写的Task Overview、Repository、HTTP契约与Web接口 MUST使用TypeScript单一人工源码；现有共享MJS组合与验证基础 MAY只移除退役依赖，MUST NOT通过仅修改扩展名伪装成已完成TypeScript迁移。
+
+#### Scenario: 扫描生产与测试源码
+- **WHEN** source layout verification扫描受影响路径
+- **THEN** 退役模块 MUST没有`.mjs|.js|.ts`实现或兼容wrapper
+- **AND** 直接重写的TypeScript源码 MUST没有同名MJS、`@ts-nocheck`、无边界`any`或掩盖职责边界的类型断言
+
+#### Scenario: 构建Application Payload
+- **WHEN** current TypeScript source生成CLI/runtime payload
+- **THEN** 生成JavaScript与声明 MUST只作为构建产物
+- **AND** MUST不形成第二人工源码或运行时TypeScript依赖
+
+### Requirement: 迁移期兼容 Runtime 必须只覆盖仍存在的能力
+迁移期compatibility port MUST具有明确owner、scope与退出条件，并 MUST不为已退役Task Development、Planning Identity、legacy Finish或Terminal Delivery保留转发、双读或双写。
+
+#### Scenario: 保留能力仍通过兼容port读取Task Record
+- **WHEN** Review、Verification、Retrospective或Environment尚未完成结构迁移
+- **THEN** compatibility port MAY转发到唯一Task Record owner
+- **AND** MUST不恢复已退役模块

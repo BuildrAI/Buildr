@@ -80,8 +80,7 @@ test('Windows lifecycle owners are partitioned into bounded semantic shards', ()
   const shardIds = [
     'workspace-lifecycle-windows',
     'task-worktree-recovery-windows',
-    'task-finish-windows',
-    'task-development-windows',
+    'task-concurrent-windows',
   ];
   const shards = CANDIDATE_CI_SHARDS.filter((shard) => shardIds.includes(shard.id));
   assert.deepEqual(shards.map((shard) => ({ id: shard.id, stepIds: shard.stepIds })), [
@@ -93,14 +92,7 @@ test('Windows lifecycle owners are partitioned into bounded semantic shards', ()
       id: 'task-worktree-recovery-windows',
       stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'openspec-convergence-recovery'],
     },
-    {
-      id: 'task-finish-windows',
-      stepIds: ['system-task-finish-cli'],
-    },
-    {
-      id: 'task-development-windows',
-      stepIds: ['integration-task-development', 'concurrent-task-acceptance'],
-    },
+    { id: 'task-concurrent-windows', stepIds: ['concurrent-task-acceptance'] },
   ]);
   const owners = shards.flatMap((shard) => shard.stepIds);
   assert.equal(new Set(owners).size, owners.length);

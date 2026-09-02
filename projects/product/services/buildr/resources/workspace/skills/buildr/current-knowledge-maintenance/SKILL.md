@@ -1,6 +1,6 @@
 ---
 name: current-knowledge-maintenance
-description: OpenSpec Change 创建、修订、实现、同步或 Task Development 形成稳定 Content Target 前需要评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 概览、架构、流程、Service 说明和术语追上已确认当前事实时使用。
+description: OpenSpec Change 创建、修订、实现或同步时需要评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 概览、架构、流程、Service 说明和术语追上已确认当前事实时使用。
 ---
 
 # 当前认知维护
@@ -91,7 +91,7 @@ sourceIdentities: <paths/specs/tree>
 treeIdentity: <current candidate identity>
 ```
 
-Development聚合时只保存`aligned|not-applicable|attention|blocked`、tree identity、summary、source identities与bounded unresolved items。多Project Task必须逐Project取得Result并提交精确覆盖全部有效Project的dispositions；不得让一个Project结果代表整个Task。`updated`后必须重新观察新tree，`unresolved|change-required`按是否会造成错误完成结论转为blocked或先回到Change flow，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
+多Project Task必须逐Project取得Result，不得让一个Project结果代表整个Task。`updated`后必须重新观察新tree；`unresolved|change-required`只影响实际依赖该知识结论的判断或动作，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
 
 ## Guardrails
 

@@ -82,9 +82,9 @@ test('context-runtime owner的Runtime组装必须来自统一adapter', () => {
   }
 });
 
-test('初始化、迁移、自举、Finish、cleanup、Candidate、tarball与Launcher保持审查后的Context边界', () => {
+test('初始化、迁移、自举、cleanup、Candidate、tarball与Launcher保持审查后的Context边界', () => {
   assert.deepEqual(Object.keys(VERIFICATION_GOLDEN_CONTEXT_AUDIT), [
-    'initialization', 'migration', 'selfBootstrap', 'finishApplication', 'finishDelivery', 'cleanup', 'candidate', 'tarball', 'launcher',
+    'initialization', 'migration', 'selfBootstrap', 'cleanup', 'candidate', 'tarball', 'launcher',
   ]);
   const byId = new Map(verificationSteps.map((step) => [step.id, step]));
   for (const [journey, audit] of Object.entries(VERIFICATION_GOLDEN_CONTEXT_AUDIT)) {
@@ -109,7 +109,6 @@ test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () 
 
   for (const id of [
     'integration-self-bootstrap',
-    'system-task-finish-cli',
     'system-workspace-lifecycle',
     'system-worktree-lifecycle',
     'concurrent-task-acceptance',
@@ -226,19 +225,13 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
     'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
-    'system-buildr-web-http', 'system-app-process', 'system-task-finish-cli', 'system-fresh-build',
+    'system-buildr-web-http', 'system-app-process', 'system-fresh-build',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite) => suite.id === owner), `missing System owner ${owner}`);
   }
   assert.equal(SYSTEM_SUITES.find((suite) => suite.id === 'system-runtime-recovery')?.innerConcurrency, 1);
   assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-verification-contracts')?.contexts ?? [], [], 'unrelated System owners must not pay Task Context setup');
   assert.deepEqual(SYSTEM_SUITES.find((suite) => suite.id === 'system-task-lifecycle')?.contexts, ['task-lifecycle/v1']);
-  const taskDevelopment = verificationSteps.find((step) => step.id === 'integration-task-development');
-  assert.deepEqual(taskDevelopment?.contexts, ['task-lifecycle/v1']);
-  assert.equal(taskDevelopment?.resourceDemand.workers, 4, 'Task Development shards must consume the outer worker grant');
-  assert.equal(taskDevelopment?.executor.type, 'node-context-test', 'Task Development must use persistent Context Worker Hosts');
-  assert.equal(taskDevelopment?.executor.files.filter((file) => file.includes('task-development-application')).length, 4);
-
   for (const file of taskLifecycleContextConsumers) {
     const source = fs.readFileSync(path.join(productRoot, 'test', 'system', file), 'utf8');
     assert.match(source, /copyTaskLifecycleWorkspace/, `${file} must consume the shared immutable context through its helper`);
@@ -309,9 +302,8 @@ test('公共Node Test Context Runtime与Buildr provider保持独立authority', (
   assert.match(provider, /buildrTaskWorkspaceContext = defineTestContext/);
   assert.match(provider, /parallelSafety: 'exclusive'/);
   assert.match(provider, /parallelSafety: 'isolated'/);
-  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.ts'), 'utf8');
-  assert.match(taskTests, /createBuildrContextTest/);
-  assert.match(taskTests, /BUILDR_TASK_TEST_CONTEXTS/);
+  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-overview-repository.test.ts'), 'utf8');
+  assert.match(taskTests, /createBuildrApplicationTest/);
   assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');
   const framework = fs.readFileSync(path.join(productRoot, 'docs/verification-framework.md'), 'utf8');
   for (const term of ['@buildr-ai/buildr/test-context', 'Worker Host', 'Cache Identity', 'Dirty', 'node-context-test']) assert.match(framework, new RegExp(term));

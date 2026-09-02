@@ -119,17 +119,6 @@ const COMMAND_GROUPS = [
     executable: false,
   },
   {
-    key: "task delivery",
-    surface: "agent-machine",
-    summary: "按 Task ID 只读回读 Terminal Delivery，不替代 Task Record 或按 run 的 Finish 明细查询。",
-    help: [
-      "Usage: buildr task delivery inspect <task-id> [--target <canonical-workspace>] [--json]",
-      "",
-      "按 Task ID 只读回读 Terminal Delivery；使用 task finish inspect --run 查询完整 Finish run 明细。"
-    ],
-    executable: false,
-  },
-  {
     key: "task",
     surface: "primary",
     summary: "Task Manager只管理Task Record；专业动作由对应Skill和Interface处理。",
@@ -137,7 +126,7 @@ const COMMAND_GROUPS = [
       "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
       "Task Manager只管理canonical Workspace中的Task Record；专业事实由各自Application读取。",
-      "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
+      "它不创建或记录 Task Environment，不执行开发、Review、Verification、Git、交付、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],
     executable: false,
@@ -145,11 +134,11 @@ const COMMAND_GROUPS = [
   {
     key: "task review",
     surface: "agent-machine",
-    summary: "Task Review CLI 只管理已经完整形成的 Planning/Completion Result；两个槽位均可选，它不执行 Review、生成 plan/Candidate identity 或设置 Development gate。",
+    summary: "Task Review CLI 只管理已经完整形成的 Planning/Completion Result；两个槽位均可选，它不执行 Review 或设置统一门禁。",
     help: [
       "Usage: buildr task review <inspect|record> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
-      "Task Review CLI 只管理已经完整形成的 Planning/Completion Result；两个槽位均可选，它不执行 Review、生成 plan/Candidate identity 或设置 Development gate。",
+      "Task Review CLI 只管理已经完整形成的 Planning/Completion Result；两个槽位均可选，它不执行 Review 或设置统一门禁。",
       "record 必须由调用方提供明确 target identity；Review 中断时不调用 writer，inspect 通过 identity 比较派生 current/stale/unknown。"
     ],
     executable: false,
@@ -176,18 +165,6 @@ const COMMAND_GROUPS = [
       "",
       "Task Environment 独占 ready、恢复、执行投影、动态资源与 cleanup 事实。Task Record 不保存环境字段。",
       "Agent登记Plan；prepare幂等执行与恢复；inspect只读复核；cleanup只接受可重新验证的Delivery evidence或已持久化的abandon终态。"
-    ],
-    executable: false,
-  },
-  {
-    key: "task finish",
-    surface: "agent-machine",
-    summary: "run 提供可选自动交付；rollover 安全替换无副作用旧run；reconcile 收敛 Agent 或外部路径已形成的远端事实；inspect 只读查看 durable result。",
-    help: [
-      "Usage: buildr task finish inspect --run <id> ...",
-      "",
-      "run 消费 current formal Development handoff 并自动执行交付；rollover只在严格本地资格成立时替换旧run；reconcile独立观察远端交付结果；inspect只读查看durable result。",
-      "该聚合入口不创建 Candidate、不执行 formal Verification/Review，也不收敛 OpenSpec Change。"
     ],
     executable: false,
   }

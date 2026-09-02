@@ -62,17 +62,9 @@ const digest = (letter) => `sha256-${letter.repeat(64)}`;
 const gitSha = (letter) => letter.repeat(40);
 
 function completedTaskEvidence(taskId) {
-  const carrierIdentity = digest('7');
   return {
     taskId,
     environment: { taskId, status: 'cleaned', receiptIdentity: digest('2'), receiptDigest: digest('3'), declarationIdentity: digest('4'), executionIdentity: digest('5') },
-    development: { taskId, status: 'current', receiptIdentity: digest('f'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), taskContextIdentity: digest('d'), contributionIdentity: digest('e') },
-    finish: {
-      taskId, status: 'complete', runId: 42, resultIdentity: digest('6'), handoffIdentity: digest('a'), candidateIdentity: digest('b'), candidateGeneration: 2, contentTargetIdentity: digest('c'), deliveryStatus: 'delivered', deliveryRef: gitSha('8'), sourceTree: gitSha('9'),
-      repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity, carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', deliveryStatus: 'delivered', finalRemoteRef: gitSha('b') }],
-      activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed',
-    },
-    selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4'), activationIdentity: digest('5'), planIdentity: digest('6'), carrierIdentity, deliveredRef: gitSha('8'), sourceTree: gitSha('9') },
   };
 }
 
@@ -125,7 +117,7 @@ function releaseContext() {
     environment: { identity: environment.identity, status: environment.environmentStatus, taskId: environment.taskId, nodeVersion: environment.node.version, nodeIdentity: environment.node.executionIdentity },
     node: { authority: environment.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
     workflow: { path: '.github/workflows/publish.yml', digest: `sha256-${sha256(workflow)}`, repository: 'BuildrAI/Buildr', environment: 'npm-production' },
-    taskCorrelation: { identity: digest('b'), carrierIdentity: digest('c'), status: 'passed', sourceCommit: fixtureCommit, sourceTree: candidateTree, remoteRef: fixtureCommit },
+    taskCorrelation: { identity: digest('b'), status: 'passed', sourceCommit: fixtureCommit, sourceTree: candidateTree, remoteRef: fixtureCommit },
   });
 }
 
@@ -294,43 +286,11 @@ test('release transaction runner binds preparation inputs to the final frozen so
   };
   const supportTask = completeTaskRecord('support-fixture', 'Support fixture');
   const retrospectiveTask = completeTaskRecord('retrospective-fixture', 'Retrospective fixture');
-  const developmentReadModel = (taskId) => ({
-    development: {
-      receiptDigest: digest('f'),
-      receipt: {
-        taskContext: { identity: digest('d') },
-        contentTarget: { identity: digest('c') },
-        candidate: { identity: digest('b'), generation: 2 },
-        handoffs: [{ identity: digest('a'), candidate: { identity: digest('b'), generation: 2, contentTargetIdentity: digest('c') }, contributionHandoff: { identity: digest('e') } }],
-      },
-      applicability: { status: 'candidate-current', handoff: 'current', reasons: [] },
-    },
-    taskId,
-  });
-  const finishReadModel = (taskId) => ({
-    result: {
-      status: 'complete',
-      taskId,
-      runId: 42,
-      identity: {
-        run: digest('6'),
-        handoffIdentity: digest('a'),
-        candidateIdentity: digest('b'),
-        candidateGeneration: 2,
-        contentTargetIdentity: digest('c'),
-        repositories: [{ selector: 'workspace', disposition: 'applicable', carrierIdentity: digest('7'), carrierRef: gitSha('a'), remote: 'origin', targetBranch: 'dev', status: 'delivered', finalRemoteRef: gitSha('b') }],
-      },
-      delivery: { status: 'delivered', finalRemoteRef: gitSha('8'), carrierTree: gitSha('9') },
-      maintenance: { activation: 'passed', environmentCleanup: 'cleaned', diagnostics: 'passed', selfBootstrap: { schemaVersion: 'buildr.self-bootstrap-closeout-result/v1', status: 'passed', taskId, runId: 42, resultIdentity: digest('4') } },
-    },
-  });
   const runtime = {
     inspectTaskRecord: (_repo, taskId) => taskId === releaseTask.taskId
       ? { record: releaseTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [retrospectiveTask] } }
       : { record: taskId === supportTask.taskId ? supportTask : retrospectiveTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [] } },
     inspectTaskEnvironment: () => environmentResult,
-    inspectTaskDevelopment: (_repo, taskId) => developmentReadModel(taskId),
-    inspectTaskFinishReadModel: ({ taskId }) => finishReadModel(taskId),
   };
   const currentRun = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
   const candidateRun = { repository: { full_name: 'BuildrAI/Buildr' }, event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1, html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/654' };

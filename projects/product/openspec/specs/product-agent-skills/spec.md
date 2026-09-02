@@ -546,24 +546,6 @@ Buildr package MUST 提供 id 为 `ui-prototype` 的 optional workspace Skill，
 - **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
 - **AND** MUST 明确区别于正式设计、canonical specs 和真实前端工程中的编码式原型
 
-### Requirement: UI 相关研发流程必须路由原型并默认遵循已有原型
-Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply contributions MUST 在当前任务可能改变前端 UI 时询问用户是否需要 UI Prototype，并 MUST 只在明确确认后路由到 selected `ui-prototype`。一旦 Task 已生成原型，后续正式前端实现 MUST 默认读取并按原型的信息架构、布局和交互开发，除非用户明确要求忽略。询问、产物与忽略选择 MUST NOT 成为 Planning Review、Development、Verification、Finish 或 Task 状态的 gate。
-
-#### Scenario: OpenSpec 方案包含 UI 变化
-- **WHEN** proposal、design 或 delta spec 表明本次 Change 会产生用户可见 UI 变化
-- **THEN** Agent MUST 确认用户是否需要 UI Prototype
-- **AND** 明确需要时 MUST 在正式实现前完成现有 UI 调查、一个或多个原型页面生成与浏览器验证
-
-#### Scenario: 已有原型且用户未忽略
-- **WHEN** 正式前端实现开始前已存在当前 Task 的 UI Prototype，且用户没有明确要求忽略
-- **THEN** Agent MUST 读取全部相关原型并按其开发页面与交互
-- **AND** 需要成为正式行为的确认选择 MUST 写入 design、delta specs、Brief 与 tasks
-
-#### Scenario: 用户跳过生成或明确忽略已有原型
-- **WHEN** 用户不需要生成原型、没有明确确认生成，或明确要求忽略已有原型
-- **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
-- **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker
-
 ### Requirement: 产品必须提供按需的智能体优先设计技能
 Buildr MUST 提供可选 `agent-first-design` 技能（Skill），在用户设计或改造智能体参与产品交付的软件，或审视智能体工作系统的职责、工作流及门禁时提供已确认范式、关系图和判断方法。技能 MUST 不成为普通开发或收尾的统一前置，也不引入新规则、评分或审批门禁。发现描述与正文 MUST 区分使用智能体开发软件和引入智能体交付产品结果；渐进演进时只指导相关部分，并保留既有业务、安全及授权边界。
 
@@ -630,10 +612,18 @@ Package MUST投射Task Verification Skill，指导Agent探查项目测试体系�
 - **THEN** Skill MUST指导Agent执行任务相关测试、相关服务低成本完整回归和适用环境冒烟
 - **AND** 形成包含选择理由、实际targets、结果、gaps和结论的报告后调用record
 
-### Requirement: Task Development Skill不得编排Task Verification
-Task Development Skill MUST NOT要求Task Verification capability、Formal Plan、formal run、reconcile、verification policy、Candidate lease或Verification gate。它 MAY提醒Agent按独立Task Verification Skill完成开发后验证，但MUST不把报告设为Development前置。
+### Requirement: Package 不得投射 Task Development 或旧 Finish Skill 依赖
+Buildr package MUST不再提供`task-development` Skill、`buildr.task-development` contract/provider/binding，也 MUST不在OpenSpec、Current Knowledge、Release或Task Skills中要求Task Planning Identity、Development Receipt、Task Candidate或旧Finish Application。
 
-#### Scenario: Development继续工作
-- **WHEN** Task Verification报告缺失或stale
-- **THEN** Task Development Skill MUST继续依据自身事实指导合法研发动作
-- **AND** MUST不要求先恢复Task Verification流程
+#### Scenario: 初始化或同步Workspace
+- **WHEN** current package向Agent runtime投射Skills与capability bindings
+- **THEN** 输出 MUST不存在Task Development Skill、contract、provider或consumer dependency
+- **AND** OpenSpec、Review、Verification、Environment与默认task-finish MUST保持可发现
+
+### Requirement: UI相关工作必须由实际入口询问原型并默认遵循已有原型
+Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在当前任务可能改变前端UI时询问用户是否需要UI Prototype，并只在明确确认后路由selected provider。已有原型时Agent MUST默认按其信息架构、布局和交互开发，除非用户明确要求忽略。
+
+#### Scenario: 用户不需要原型
+- **WHEN** 用户明确拒绝本次UI Prototype
+- **THEN** Agent MUST继续当前Task或OpenSpec工作
+- **AND** MUST不创建原型状态或流程门禁

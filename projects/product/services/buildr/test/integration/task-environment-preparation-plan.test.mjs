@@ -293,12 +293,7 @@ test('非npm Service executable同样按input/executable/output identity准备�
   const recovered = current.runtime.prepareTaskEnvironment(current.root, TASK_ID, { adapter: 'codex', useGit: false });
   assert.equal(recovered.status, 'ready');
   assert.equal(recovered.effects.filter((effect) => effect.type === 'preparation-step-executed').length, 1);
-  const hints = current.runtime.resolveTaskEnvironmentExecution(current.root, TASK_ID).preparationHints;
-  assert.equal(hints.schemaVersion, 'buildr.task-finish-preparation-hints/v1');
-  assert.deepEqual(hints.unavailable, []);
-  assert.equal(hints.steps[0].cwd, 'projects/product/services/buildr');
-  assert.equal(hints.steps[0].executable, `projects/product/services/buildr/${executableName}`);
-  assert.equal(hints.steps[0].outputs[0].path, 'projects/product/services/buildr/prepared.txt');
+  assert.equal('preparationHints' in current.runtime.resolveTaskEnvironmentExecution(current.root, TASK_ID), false);
 });
 
 test('Plan替换原子使旧准备事实blocked且record本身不执行Step', (t) => {

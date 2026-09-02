@@ -6,24 +6,6 @@
 
 ## Requirements
 
-### Requirement: 只读 executor 必须保持 Task read authority 与输入边界
-Buildr MUST 只允许 executor 执行三个受控 operation：development、reviews 和 verification；每个 operation MUST 在 Worker 内组合本地 runtime、按传入 Workspace root 读取既有 Application read model，并 MUST 不执行任何 mutation、Finish 聚合扫描或新的 Git/worktree provenance 证明。
-
-#### Scenario: development Tab 读取
-- **WHEN** Buildr Web 将已解析的 Workspace root 与 Task ID 交给 development operation
-- **THEN** executor MUST 返回 Task Development Application read model 及已写 terminal association
-- **AND** MUST NOT 调用完整 `inspectTaskTerminalDelivery` 聚合器
-
-#### Scenario: reviews 或 verification Tab 读取
-- **WHEN** Buildr Web 将已解析的 Workspace root 与 Task ID 交给 reviews 或 verification operation
-- **THEN** executor MUST 只读取对应 Review 或 Verification Application current record 及已写 terminal association
-- **AND** MUST NOT 读取其他专业 Application 以重新推导交付事实
-
-#### Scenario: 非法 operation 或任意路径输入
-- **WHEN** 调用方提交不在白名单中的 operation、缺失 Task ID 或未由 Buildr Web registry 解析的 root
-- **THEN** executor MUST 在派发前拒绝请求
-- **AND** MUST NOT 启动数据库读取、Worker mutation 或 Git 命令
-
 ### Requirement: 只读 executor 必须提供可观察的取消与错误传播
 Buildr MUST 为每个 read request 提供 queued/running cancellation 和错误传播语义；取消 MUST 不触发重试或重复执行，Application/Worker 的稳定错误 MUST 原样保留 code、status 与受控 details。
 
@@ -64,23 +46,32 @@ Buildr MUST 为 Buildr Web 的 development、reviews、verification Task read vi
 - **AND** 尚未交付的 queued/running read MUST 被明确结算为关闭或取消
 
 ### Requirement: Buildr Web 三个 Task 专业 Tab 必须通过 executor 读取
-Buildr Web HTTP interface MUST 将 `/tasks/<task-id>/development`、`/reviews` 和 `/verification` 的 GET 请求提交给 bounded read executor，并 MUST 保持 existing no-store、已解析 Workspace identity、独立失败与只读安全边界。
+Buildr Web MUST让Evidence中的Review/Verification与Parent Coordination通过固定容量只读executor执行。Executor MUST不注册Development或旧Finish history operation；Environment与Retrospective继续使用各自既有安全reader。
+
+#### Scenario: 并发读取Task证据
+- **WHEN** 页面并发请求Review和Verification
+- **THEN** 两个请求 MUST通过有界executor调用所属Application
+- **AND** MUST不读取Development、Terminal Delivery或Finish history
+
+#### Scenario: 调用已删除operation
+- **WHEN** 调用方提交development或finish-history read operation
+- **THEN** executor MUST返回forbidden operation
+- **AND** MUST不启动worker或访问Workspace SQLite
 
 #### Scenario: 三个 Tab 独立并发请求
-- **WHEN** 用户同时打开 development、reviews 和 verification Tab
-- **THEN** 三个请求 MUST 分别只触发对应 operation 一次
-- **AND** 任一 operation 失败 MUST 不阻止另外两个请求返回各自结果
-- **AND** 返回结果 MUST 保持各自已有 Application schema 与 `cache-control: no-store`
-
-#### Scenario: 已解析 canonical root 的只读请求
-- **WHEN** Tab request 已由 Workspace registry 解析为 root
-- **THEN** executor/Worker MUST 直接消费该 root 的只读 store
-- **AND** MUST NOT 触发 Git/worktree provenance observer 或 `git rev-parse`
+- **WHEN** 页面同时读取Evidence、Parent和其他保留Task视图
+- **THEN** executor MUST有界调度Review、Verification和Coordination请求
+- **AND** 任一请求失败 MUST不取消或覆盖其他专业结果
 
 #### Scenario: 写入和专业生命周期操作
-- **WHEN** 请求是 Task、Environment、worktree、Finish、Doctor 或其他 mutation/生命周期操作
-- **THEN** MUST 继续走原有 Application 和必要 Git 校验路径
-- **AND** MUST NOT 复用只读 executor 作为新的写入 authority
+- **WHEN** 页面执行Task Record mutation或其他专业写操作
+- **THEN** MUST继续走对应writer接口
+- **AND** MUST不通过只读executor执行写入
+
+#### Scenario: 已解析 canonical root 的只读请求
+- **WHEN** Web Host已解析并授权canonical Workspace root
+- **THEN** executor MUST只传递该root、Task ID和允许的read operation
+- **AND** worker MUST不重新扫描或选择其他Workspace
 
 ### Requirement: Buildr Web Runtime 只读执行公开命名必须保持边界
 只读 executor、其测试和诊断 MUST 使用 Buildr Web Runtime 术语；迁移 MUST NOT 扩大 Task read authority、输入边界、取消传播或固定容量执行器。
@@ -89,3 +80,11 @@ Buildr Web HTTP interface MUST 将 `/tasks/<task-id>/development`、`/reviews` �
 - **WHEN** 维护者查看 bounded read executor 的公开文档或测试结果
 - **THEN** 组件 MUST 被描述为 Buildr Web Runtime read executor
 - **AND** 同一 Task-scoped 只读边界 MUST 继续生效
+
+### Requirement: 只读 executor 必须保持当前 Task read authority 与输入边界
+Task只读executor MUST只分发当前存在的Task Overview、Environment、Review、Verification、Coordination与Retrospective read操作，并保持有界执行、取消和资源回收。
+
+#### Scenario: 读取任务详情
+- **WHEN** Buildr Web通过executor读取Task详情
+- **THEN** executor MUST返回目标Application的当前read model
+- **AND** MUST不读取或恢复已退役研发与旧收尾事实

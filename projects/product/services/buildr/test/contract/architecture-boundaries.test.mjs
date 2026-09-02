@@ -92,7 +92,7 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
   assert.doesNotMatch(registry, /key: "web preview|key: "web"/);
 });
 
-test('Task Delivery 与 Finish 只由 Task module 组装', () => {
+test('旧 Task Development、Finish 与 Terminal Delivery runtime 已整体退出', () => {
   for (const relative of [
     'src/task/application/finish/task-finish-application.mjs',
     'src/task/application/task-terminal-delivery-application.ts',
@@ -101,8 +101,6 @@ test('Task Delivery 与 Finish 只由 Task module 组装', () => {
     'src/task/interfaces/internal/task-finish-maintenance-driver.mjs',
     'src/task/interfaces/internal/task-finish-retained-cleanup.mjs',
     'src/task/interfaces/internal/task-finish-target-lease-driver.mjs',
-  ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
-  for (const relative of [
     'src/application/task-finish',
     'src/application/task-terminal-delivery',
     'src/task/persistence/finish',
@@ -114,13 +112,12 @@ test('Task Delivery 与 Finish 只由 Task module 组装', () => {
 
   const runtime = createRuntime();
   const modules = runtimeModuleSnapshot(runtime);
-  assert.equal(modules.filter((module) => module.id === 'task-finish').length, 1);
-  assert.equal(modules.filter((module) => module.id === 'task-terminal-delivery').length, 1);
+  assert.equal(modules.some((module) => ['task-development', 'task-planning-identity', 'task-finish', 'task-terminal-delivery'].includes(module.id)), false);
   assert.deepEqual(
     runtimeContributions(runtime, 'cli')
       .filter((route) => route.key.startsWith('task finish ') || route.key === 'task delivery inspect')
       .map((route) => route.key),
-    ['task finish inspect', 'task delivery inspect'],
+    [],
   );
   assert.equal(fs.existsSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs')), false);
   const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');

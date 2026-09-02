@@ -1,43 +1,11 @@
 # OpenSpec Change 生命周期
 
-## 当前流程
+1. Agent依据用户目标、canonical specs、当前认知、实现和active Changes判断是否需要OpenSpec Change；Task Record保存Change引用，OpenSpec自己拥有proposal、design、delta specs与tasks。
+2. 需要持久实现或受管执行根时先取得匹配Task Environment；仅维护OpenSpec、规则、Skill、文档或模板时可以使用共享执行根。
+3. `openspec-propose`创建Change并维护Brief与`.buildr/knowledge-impact.yml`。Application不另存规划快照；Agent直接读取当前artifacts判断完整性和是否需要Planning Review。
+4. apply前运行`openspec validate <change> --strict`和`buildr openspec convergence preflight`。Preflight只检查当前delta、canonical、active Changes与projected validation；诊断由Agent处理，不转成统一许可或Review Result。
+5. `openspec-apply-change`在Task Environment允许的根内实现Change-owned tasks。开发反馈由Agent直接调用项目工具；Current Knowledge按Project执行`assess/reconcile`并维护长期知识。
+6. 全部Change checkbox闭合后调用单一`buildr openspec converge`事务完成canonical sync和archive。Converge永远重读最新事实；只有中断或恢复不确定时才使用只读`convergence inspect`。
+7. Converge成功后，Agent重新观察当前代码、Archived Change、canonical specs、Git、Review、Verification和Environment，按目标继续审查、验证与交付。
 
-1. `task-triage`先判断是否只需保存已接受意向。是时通过 selected `buildr.task-record/v2` provider 创建 data-only todo，不运行 Git、Environment、OpenSpec 或 Development；否则对新 active Task 或 todo 激活路径先完成全部目标仓库的 clean `dev`、`origin/dev`、fetch/rebase 门禁，再 create/activate。Task Record Application 的 activate 只转状态，不执行 Git。active 后才进入 Environment Plan/prepare 和后续正式研发。
-2. `openspec-propose` 使用 OpenSpec 1.6.0 创建 proposal、design、delta specs 和 tasks；其 Component contribution required依赖Task Record、ready Task Environment、Task Development与current knowledge，Environment可以选择共享执行根。Buildr contribution 创建 Brief、执行 current knowledge `assess`；Agent写入或修订每个checkbox时立即确认它能在Change convergence/archive前完成，不为填写checklist预读完整下游流程。`tasks.md`只包含Change disposition前可完成的实现、当前认知、直接验证反馈与archive readiness动作；Formal Development、Task Verification/Candidate、Task Finish、Environment cleanup和Task terminal state不进入Change checklist。apply-ready并通过上游strict后，OpenSpec Contract Guard先运行只读Semantic Readiness Preflight；`blocked`由Agent处理active Change依赖、Scenario omission、rename/identity冲突或projected validation诊断，`ready`后才由Task Planning Identity Application从Task Intent/scope与全部关联Change planning artifacts生成统一target与nodes并更新Development planning。任一门禁blocked时停止，不创建、读取或要求旧contract baseline/阶段sidecar，也不手工摘要文件或把preflight诊断改写成Review Result。
-3. `openspec-update-change` 修订planning artifacts时同步刷新Brief与impacts；current knowledge为required依赖，Environment与Development为条件依赖。纯planning修订可以安全降级，需要新的实现、构建、测试、资源或执行位置变化时必须停止update，取得matching Environment/Development context并转入apply。方案形成或改变后重新strict validate和Semantic Readiness Preflight；ready后才调用Task Planning Identity resolver。Development保存返回的target/nodes，Task Review由Agent按目标独立选择，不影响update或apply许可。Task-scoped Change详情的审查Agent action进入此route，全局retained-only Change仍使用generic review prompt。
-4. `openspec-apply-change` 在首个实现编辑前核对apply-required artifacts、上游strict validation、current Semantic Readiness Preflight、Task Planning Identity resolved target与proposal/delta classification；Task Review是独立可选意见，不属于apply门禁。Preflight只复用正式planner、active Change scan与projected strict validation，结果绑定当前delta、canonical、全部active Changes和executable/algorithm identity，且不检查实现期checklist、不写canonical/Receipt/archive/Task/Review事实；事实变化后旧ready陈旧。apply required依赖Task Record、ready Environment、matching Development context与current knowledge，随后实现Change-owned tasks；发现的新知识影响写回tasks/sidecar，implementation content完成后在最终验证前`reconcile`。全部checkbox必须在任何canonical/receipt/archive写入前闭合；直接命中`openspec-sync-specs`或`openspec-archive-change`时Buildr contribution拒绝上游写入、确认绕过和直接移动，并从matching Task Environment Receipt取得`execution.workdir`作为`buildr openspec converge --target`，不得指向canonical Workspace或自动搜索其他worktree。target中看不到active Change时CLI保持零写入并要求按同一Receipt纠正。converge发现未完成项时返回`change-checklist-incomplete`与精确progress并保持零写入；Checklist闭合后无条件按最新事实重新规划验证，由同一transaction完成deterministic canonical sync/archive，并在正常archive后释放本次事务Receipt再返回`passed`，不消费旧preflight作为写入授权。只有Converge中断、报告恢复不确定或终态释放失败，且当前Task Environment恢复现场仍存在时，才运行只读`buildr openspec convergence inspect`；未开始或已归档返回`not-applicable`。sync/archive consumers不机械声明Task lifecycle dependencies，Task Finish也不调用、不拥有或解释Change checklist、convergence或Inspect，Environment cleanup后不得追索Receipt。
-5. 实现、测试开发与修复完成后，`task-development`先使用current knowledge provider完成`reconcile/inspect`，让所有关联Change完成sync/archive或明确`not-applicable`。正常archive后再次调用Task Planning Identity resolver；`resolved`时更新Development planning，`blocked`时停止对应mutation，Review是否需要重做由Agent独立判断。随后在受管runtime资产同步固定后观察ready Environment全部scope的stable Content Target；`observe`对任一`pending` Change在Content observation与Receipt写入前失败关闭，code-only或无OpenSpec Task提交空列表，明确`not-applicable`继续合法。Content Target只观察原Task source snapshot的deliverable内容，不读取retained最新Delivery Baseline；`.buildr`/`.git`控制面metadata不进入Content identity。
-6. 开发完成后，Agent根据Task目标、当前改动、相关Project的`verification.yml`测试地图、测试目录、构建脚本与CI说明，选择并直接运行任务相关测试、受影响Service的低成本完整回归，以及适用且环境可用的冒烟测试。Task Verification Application不生成计划、不代跑测试、不读取Execution Record拼装结果；Agent只在开发完成时保存一份绑定Task、内容版本、测试地图、实际检查、未覆盖项和结论的任务验证报告，开发过程中的临时测试不记录。
-7. Task Candidate identity不包含Review或任务验证报告identity；Task Development不读取Review或Verification Result、不形成专业gate或风险授权，只依据自身Candidate与Current Knowledge形成decision/handoff；任务验证失败时由Agent修复问题或向用户如实报告，不把负向报告改写成通过。
-8. 用户要求收尾后，由 `task-finish` 技能依据目标组合已有工具，交付成果、保存已有任务结果并安全善后；不再强制循环 `task next` 或创建交接。完整参与者和边界见 [任务收尾](task-closeout.md)。
-   Buildr Web影响路径另在专属runner的`install-buildr-web`阶段执行连续性子流程：安装前用instance secret认证默认Development Web；健康development实例在manager更新Launcher后经retained Project bridge以新identity恢复原端口并重新health验证；未运行、stale或其他channel不自动启动。恢复失败只回收本次spawn PID并停止后续identity gate/Doctor/resume，不回退delivered Launcher或写新workflow authority。
-9. Candidate freeze后Delivery Baseline前进不自动使Development Handoff stale。自动Finish可在run-owned Delivery Carrier机械应用Task Contribution；Git conflict由Agent决定Delivery Adaptation、直接Git或PR策略。多repository恢复必须把relation与containment proof成对持久化：remote仍等于carrier时保持`carrier`，只有后继完整包含时才标记`already-contained`。外部交付可按目标tree对Task Contribution逐路径after-state形成exact containment proof，不要求carrier ancestry。remote未包含贡献、target identity有歧义、需要force push/共享历史改写或worktree ownership无法证明时停止；Buildr内部证明可重建、重复观察已交付repository、Doctor、cleanup或Execution Record失败不属于Delivery阻断。
-
-   Agent-reviewed Delivery Adaptation另外对冻结Task Contribution逐路径形成唯一coverage：target精确包含、carrier实际改变或Agent在matching run/resume中逐路径说明目标语义承接。缺失、未知、重复或identity漂移时adoption、deliver与cleanup保持blocked；Buildr不把Agent理由解释为机器语义证明，也不因自动run受阻禁止PR、直接Git或后续真实remote reconciliation。
-
-10. 每个正式生命周期动作只写所属专业 authority：Task Record写顶层状态，Development把Receipt与本次applicability observation同事务保存，Review保存Result及subject/outcome/time并做事务内digest比较，Verification保存自己的报告，Environment保存自身current Receipt，Finish completion保存terminal association。Buildr Web Overview用一次SQLite联表查询组合这些最小保存事实，Development、证据、环境和Terminal Delivery GET继续调用对应专业reader；读取不重新观察Git、文件、declaration、Environment provider或transient Finish artifacts。保存观察缺失时返回unknown/unavailable，外部变化等待下一次拥有该语义的正式action确认。
-
-Task Review继续只提供可选Planning/Completion slots，不生成Candidate identity或通用状态机；Task Development与Review/Verification独立，只要求自身planning、Content Target、Candidate与Current Knowledge事实。
-
-Task Verification当前提供一个current `buildr.task-verification-report/v1`槽位与`buildr.project-verification/v4`测试地图。报告绑定Task、内容版本、当前地图、实际检查、未覆盖项、结论和完成时间；Application只校验、保存、查询和判断current/stale。Task Verification不创建、读取或恢复Execution Record。
-
-没有 Change 的独立当前事实收敛不进入上述 Change planning lifecycle：`task-triage` 选择 `spec-maintenance + metadata-only`，由 selected `buildr.current-knowledge-maintenance/v2` provider 执行 `maintain`。它只让 current knowledge 追上已由 canonical specs、实现、registries 或已确认决定证明的既有事实；authority 冲突返回 `unresolved`，发现新业务语义返回 `change-required` 并重新进入 Change lifecycle。
-
-直接在保留工作空间完成文档等工作时，依照 [任务收尾](task-closeout.md) 核对归属、验证和 Git 目标，不再为结果登记补建候选或交接。
-
-## 失败与停止
-
-- Required capability blocked、术语 unresolved、Brief/current knowledge 冲突或 evidence identity 陈旧时停止后续 workflow。
-- Environment Receipt、实际 scope/root、controller、Runtime/CLI、任一required dependency root、runtime projection、provider evidence 或动态资源 probe 不匹配时停止 proposal/apply/verification；`inspect`只读报告具体root缺失/漂移，`prepare`只按显式声明恢复可确定修复，不静默改plan或扫描无关Service。
-- 内容版本或Project测试地图identity变化后，current任务验证报告派生stale；Application不静默改写旧报告。
-- Semantic Readiness Preflight返回`blocked`时，Agent只处理对应active Change依赖或Change artifact语义并重新运行strict/preflight；Planning Review不拥有检查逻辑。Preflight后delta、canonical、active Changes或executable变化会使ready陈旧，最终Converge始终重新检查。
-- Projected validation 在 task-owned 临时 Project 中投射完整 expected canonical tree，并使用事务Receipt绑定的OpenSpec executable运行strict validation；失败时正式文件零写入。写入前任一delta、canonical before或executable identity漂移都会重新规划，混合或未知文件状态关闭式失败。Receipt只服务未终结transaction恢复，不进入Delivery Carrier或长期审计；正常长期事实由Archived Change、Canonical Specs、Git和Task专业事实承担。
-- Active Change存在未完成checkbox时，convergence在任何receipt、canonical或archive写入前关闭式失败；Agent只能完成真实Change task或在归档前修订错误边界，不得自动勾选、删除任务或用归档后Task lifecycle evidence绕过。
-- 默认收尾不要求旧研发交接或五阶段执行器；若明确选择旧执行器，其自身候选、交接和恢复边界仍适用。它的状态不是普通交付、任务完成或安全清理的前置。
-- Formal Verification的正式Plan先把Project/Workspace相对changed path收敛为同一Project-relative identity；绑定matching Environment与canonical Workspace时只读返回完整Preparation preview。`action-required`由Agent把closed Plan Request原样交给Task Environment一次prepare，成功后再用同一Plan envelope启动run；run仍重验current declaration、Environment与closure。忽略preview或发生drift时保留`preparation_blocked`安全降级，但正常首次流程不再需要`blocked → prepare → retry`往返。
-- Task Finish preflight一次聚合低成本、无共享副作用检查；preflight和verify都不启动Task Verification测试执行，也不把任务验证报告当作Finish授权。
-- retained metadata-only handoff 的任务 path、验证 identity、目标 ref 或 Git provider readiness 任一不可证明时停止，不能把 dirty retained tree 伪装为 task environment。
-- Archive 只移动已对齐 Change、Brief 和 sidecar；归档后不补写 glossary 或 current knowledge。
-- Archive后的Development、Review、Verification、Finish、Environment cleanup与Task terminal事实由各自专业authority形成；Task current records只保存在Workspace SQLite，不发布、不进入Git，也不回写`tasks.md`。
-- 逻辑 Task/Change/run 可跨 Agent session 延续，但默认仍是同一用户对话和一个 Task Environment。普通 Rule/Skill 内容修改不要求新 session、reload、re-enter 或 activation evidence。只有任务本身修改 runtime 的发现、加载或激活机制，且专项验收明确要求证明该机制在真实 Agent host 生效时，才由 Task Verification 验证；P0.2 不内省 Agent host，也不保存 session adoption evidence。
-Development 到 Formal Verification 的交接使用 current-input discovery 生成 closed `observe|policy` mutation input；同一 request 的 broad affected plan 由 Formal Verification 复用，较窄 feedback 保持 transient，不能满足 current Result gate。
+OpenSpec流程不要求额外任务研发聚合、候选代次、统一推进决定或交接。某项专业结果缺失只影响实际依赖它的判断或动作。

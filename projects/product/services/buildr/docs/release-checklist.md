@@ -151,4 +151,4 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 
 实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 
-使用`task-finish`自动收尾时，先由`task-development`完成OpenSpec/current knowledge/runtime内容fixed point，观察stable Content Target、冻结Task Candidate、完成Completion Review并固化current handoff。开发完成后的Task Verification由Agent独立执行和记录，不绑定Candidate，也不由Finish代跑或消费。Finish只聚合当前交付所需的handoff、Environment、target和retained事实；不得在Finish中converge/archive、rebase原Task、修改贡献、生成Candidate、补写Task验证报告、自动解决冲突或force push。
+完成release支持任务时，Agent直接读取OpenSpec、current knowledge、代码、Git、Review、Verification与Environment当前事实，按目标完成交付和Task结果登记。任务收尾Skill不代跑验证、不收敛Change、不自动解决冲突，也不改变Product/Release Candidate模型。

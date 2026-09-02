@@ -42,7 +42,7 @@ export function RetrospectiveTab({ active, data, loading, error, onRefresh, onHa
           <div>
             <p className="eyebrow">Agent 执行效率</p>
             <h2>任务复盘（Task Retrospective）</h2>
-            <p className="section-copy">复盘报告保持只读；处置状态只记录已做出判断，不会影响任务状态、研发交接或收尾。</p>
+            <p className="section-copy">复盘报告保持只读；处置状态只记录已做出判断，不会影响任务状态、验证或交付。</p>
           </div>
           <Button id="task-retrospective-refresh" disabled={loading} onClick={onRefresh}>
             刷新复盘

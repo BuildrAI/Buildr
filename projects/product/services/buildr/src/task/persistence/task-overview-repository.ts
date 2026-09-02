@@ -1,25 +1,34 @@
-// @ts-nocheck -- Legacy JavaScript boundary migrated to a single TypeScript source; typing is outside this change.
-function error(code, message, status = 409, details = undefined) {
-  const failure = new Error(message);
-  Object.assign(failure, { code, status, details, taskOverviewBusiness: true });
-  return failure;
+type StructuredDatabase = {
+  prepare(sql: string): { get(taskId: string): unknown };
+  close(): void;
+};
+
+type TaskOverviewRuntime = {
+  assertCanonicalTaskWorkspace(targetRoot: string): string;
+  openWorkspaceStructuredStore(root: string, options: { writable: false }): { present: boolean; database: StructuredDatabase };
+  readTaskOverviewPersistence?: (targetRoot: string, taskId: string) => { root: string; row: object; queryCount: 1 };
+};
+
+function overviewError(code: string, message: string, status = 409, details?: object): Error {
+  return Object.assign(new Error(message), { code, status, details, taskOverviewBusiness: true });
 }
 
-export function registerTaskOverviewRepository(runtime) {
-  function readTaskOverviewPersistence(targetRoot, taskId) {
+function isKnownError(cause: unknown): cause is Error & { taskOverviewBusiness?: boolean; structuredStoreBusiness?: boolean; taskRecordBusiness?: boolean } {
+  return cause instanceof Error;
+}
+
+export function registerTaskOverviewRepository(runtime: TaskOverviewRuntime): TaskOverviewRuntime {
+  function readTaskOverviewPersistence(targetRoot: string, taskId: string): { root: string; row: object; queryCount: 1 } {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
-    let opened;
+    let opened: ReturnType<TaskOverviewRuntime['openWorkspaceStructuredStore']> | undefined;
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
-      if (!opened.present) throw error('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
+      if (!opened.present) throw overviewError('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
       const row = opened.database.prepare(`SELECT
         task.*,
         parent.title AS parent_title,
         parent.status AS parent_status,
         (SELECT json_group_array(json_object('taskId', child.task_id, 'title', child.title, 'status', child.status)) FROM tasks child WHERE child.parent_task_id = task.task_id ORDER BY child.task_id) AS children_json,
-        development.record_json AS development_json,
-        development.applicability_status AS development_status,
-        development.observed_at AS development_observed_at,
         planning.result_json AS planning_json,
         planning.subject_identity AS planning_subject_identity,
         planning.outcome AS planning_outcome,
@@ -34,31 +43,24 @@ export function registerTaskOverviewRepository(runtime) {
         verification.updated_at AS verification_updated_at,
         environment.status AS environment_status,
         environment.receipt_json AS environment_receipt_json,
-        environment.updated_at AS environment_updated_at,
-        finish.run_id AS finish_run_id,
-        finish.status AS finish_status,
-        finish.current_phase AS finish_current_phase,
-        finish.updated_at AS finish_updated_at,
-        finish.completed_at AS finish_completed_at,
-        finish.cleanup_status AS finish_cleanup_status,
-        finish.primary_failure_code AS finish_primary_failure_code,
-        finish.primary_failure_status AS finish_primary_failure_status,
-        finish.payload_json AS finish_payload_json
+        environment.updated_at AS environment_updated_at
       FROM tasks task
       LEFT JOIN tasks parent ON parent.task_id = task.parent_task_id
-      LEFT JOIN task_development_current development ON development.task_id = task.task_id
       LEFT JOIN task_review_current planning ON planning.task_id = task.task_id AND planning.review_type = 'planning'
       LEFT JOIN task_review_current completion_review ON completion_review.task_id = task.task_id AND completion_review.review_type = 'completion'
       LEFT JOIN task_verification_current verification ON verification.task_id = task.task_id
       LEFT JOIN task_environment_current environment ON environment.task_id = task.task_id
-      LEFT JOIN task_finish_current finish ON finish.task_id = task.task_id
       WHERE task.task_id = ?`).get(taskId);
-      if (!row) throw error('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
+      if (row === undefined) throw overviewError('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
+      if (row === null || typeof row !== 'object' || Array.isArray(row)) throw overviewError('task_overview_read_failed', `Task Overview读取失败：${taskId}。`, 500, { taskId });
       return { root, row, queryCount: 1 };
     } catch (cause) {
-      if (cause.taskOverviewBusiness || cause.structuredStoreBusiness || cause.taskRecordBusiness) throw cause;
-      throw error('task_overview_read_failed', `Task Overview读取失败：${cause.message}`, 500, { taskId });
-    } finally { try { opened?.database?.close(); } catch {} }
+      if (isKnownError(cause) && (cause.taskOverviewBusiness || cause.structuredStoreBusiness || cause.taskRecordBusiness)) throw cause;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw overviewError('task_overview_read_failed', `Task Overview读取失败：${message}`, 500, { taskId });
+    } finally {
+      try { opened?.database.close(); } catch { /* close failure cannot change the read result */ }
+    }
   }
 
   Object.assign(runtime, { readTaskOverviewPersistence });

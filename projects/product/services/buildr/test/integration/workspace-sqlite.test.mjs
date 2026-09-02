@@ -28,13 +28,6 @@ runtime:
   return root;
 }
 
-function finishPhases(status = 'pending') {
-  return ['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({
-    id, status, attempts: status === 'pending' ? 0 : 1, startedAt: null, completedAt: null, durationMs: 0,
-    inputIdentity: null, outputIdentity: null, checks: [], operations: [], observations: [], output: null, failure: null,
-  }));
-}
-
 test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写入', (t) => {
   const root = workspace(t);
   const runtime = createRuntime();
@@ -50,19 +43,18 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_development_current', 'task_environment_current', 'task_finish_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
+    'schema_migrations', 'task_changes', 'task_environment_current', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
   ]);
   assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
   assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row) => row.name === 'tasks_parent_task_idx'));
-  for (const table of ['task_development_current', 'task_verification_current', 'task_review_current', 'task_retrospective_current', 'task_finish_current']) {
+  for (const table of ['task_verification_current', 'task_review_current', 'task_retrospective_current']) {
     assert.ok(writable.database.prepare(`PRAGMA foreign_key_list(${table})`).all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
   }
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_record_consumers'").get().count, 0);
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
-  assert.ok(writable.database.prepare("SELECT name FROM pragma_index_list('task_finish_current')").all().some((row) => row.name === 'task_finish_current_lease_target_idx'));
-  assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_development_current)').all().map((row) => row.name), ['task_id', 'record_json', 'applicability_status', 'applicability_json', 'observed_at']);
+  assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_development_current', 'task_finish_current')").get().count, 0);
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_review_current)').all().map((row) => row.name), ['task_id', 'review_type', 'result_json', 'subject_identity', 'outcome', 'updated_at']);
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_verification_current)').all().map((row) => row.name), ['task_id', 'result_json', 'target_identity', 'outcome', 'updated_at']);
   writable.database.close();
@@ -339,7 +331,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
   assert.equal(prepared.record.title, 'Existing');
   const upgraded = runtime.openWorkspaceStructuredStore(root, { writable: false });
   assert.equal(upgraded.version, migrations.at(-1).version);
-  assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_development_current').get().count, 0);
+  assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_development_current', 'task_finish_current')").get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_verification_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_review_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_retrospective_current').get().count, 0);
@@ -590,157 +582,29 @@ test('Task Verification报告migration保留真实检查并把无检查的历史
   database.close();
 });
 
-test('Task Finish migration把run、prepared completion与lease收敛为唯一current row', () => {
-  const migrations = loadWorkspaceSqliteMigrations();
-  const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');
+test('Task workflow retirement migration删除研发与旧收尾数据且保留其他事实', () => {
   const database = new DatabaseSync(':memory:');
-  for (const migration of migrations.filter((item) => item.version < compact.version)) applyWorkspaceSqliteMigration(database, migration);
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('finish-migration', 'buildr.task-record/v1', 'Finish', 'Compact Finish', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
-  const run = {
-    schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-migration-run', status: 'cleanup_pending',
-    identity: { task: 'finish-migration', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
-    identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T01:00:00.000Z', completedAt: null,
-    invocations: 1, deliveryCarrier: { identity: 'sha256-carrier' }, equivalence: null, delivery: null, completion: null,
-    resume: { phase: 'cleanup', token: 'sha256-resume', generatedAt: '2026-08-01T01:00:00.000Z', carrierIdentity: 'sha256-carrier' },
-    primaryFailure: { phase: 'cleanup', operation: 'environment-cleanup', failureClass: 'transient-external-condition', code: 'cleanup-blocked', status: 'blocked', exitCode: null, message: 'blocked', diagnostic: { digest: 'sha256-diagnostic' } },
-    phases: finishPhases('passed').map((phase) => phase.id === 'cleanup' ? { ...phase, status: 'blocked', failure: { phase: 'cleanup', code: 'cleanup-blocked' } } : phase),
-  };
-  const association = { handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, gates: { planning: { targetIdentity: 'sha256-plan' }, completion: { targetIdentity: 'sha256-completion' }, verification: { targetIdentity: 'sha256-verification' } } };
-  const completion = { schemaVersion: 'buildr.task-finish-completion/v1', runId: run.runId, task: 'finish-migration', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', carrierIdentity: 'sha256-carrier', targetBranch: 'dev', status: 'prepared', association, cleanup: { status: 'blocked' } };
-  database.prepare("INSERT INTO task_finish_runs(task_id, run_id, status, identity_digest, run_json, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, NULL)").run('finish-migration', run.runId, run.status, run.identityDigest, JSON.stringify(run), run.updatedAt);
-  database.prepare("INSERT INTO task_finish_completions(task_id, run_id, status, result_json, completed_at, updated_at) VALUES (?, ?, 'cleanup_pending', ?, NULL, ?)").run('finish-migration', run.runId, JSON.stringify(completion), run.updatedAt);
-  database.prepare("INSERT INTO task_finish_target_leases(target_identity, run_id, task_id, token, acquired_at, expires_at, heartbeat_at) VALUES ('origin:dev', ?, 'finish-migration', 'lease-token', '2026-08-01T00:30:00.000Z', '2026-08-01T01:01:00.000Z', '2026-08-01T01:00:00.000Z')").run(run.runId);
-
-  applyWorkspaceSqliteMigration(database, compact);
-  const row = database.prepare("SELECT status, current_phase, handoff_identity, planning_gate_target_identity, lease_target_identity, lease_token, json_extract(payload_json, '$.kind') AS kind, json_extract(payload_json, '$.preparedCompletion.status') AS prepared_status FROM task_finish_current WHERE task_id = 'finish-migration'").get();
-  assert.deepEqual({ ...row }, { status: 'cleanup_pending', current_phase: 'cleanup', handoff_identity: 'sha256-handoff', planning_gate_target_identity: 'sha256-plan', lease_target_identity: 'origin:dev', lease_token: 'lease-token', kind: 'run', prepared_status: 'prepared' });
-  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_finish_runs', 'task_finish_completions', 'task_finish_target_leases', 'task_finish_transient_artifacts')").get().count, 0);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, compact.version);
-  database.close();
-});
-
-test('Task Finish migration把terminal-only completion原位收敛为compact terminal row', () => {
   const migrations = loadWorkspaceSqliteMigrations();
-  const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');
-  const database = new DatabaseSync(':memory:');
-  for (const migration of migrations.filter((item) => item.version < compact.version)) applyWorkspaceSqliteMigration(database, migration);
+  const retirement = migrations.find((migration) => migration.name === '0028_drop_task_development_and_finish_current.sql');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
   database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('finish-terminal', 'buildr.task-record/v1', 'Finish terminal', 'Compact terminal', 'completed', 'done', 0, '2026-08-01T00:00:00.000Z', '2026-08-01T02:00:00.000Z', NULL)`).run();
-  const association = { handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2, gates: { planning: { targetIdentity: 'sha256-plan' }, completion: { targetIdentity: 'sha256-review' }, verification: { targetIdentity: 'sha256-verify' } } };
-  const completion = {
-    schemaVersion: 'buildr.task-finish-completion/v1', runId: 'finish-terminal-run', task: 'finish-terminal',
-    handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2,
-    contentTargetIdentity: 'sha256-content', carrierIdentity: 'sha256-carrier', targetBranch: 'dev', status: 'complete', association,
-    cleanup: { status: 'cleaned' }, preparedAt: '2026-08-01T01:00:00.000Z', completedAt: '2026-08-01T02:00:00.000Z',
-    result: {
-      schemaVersion: 'buildr.task-finish-result/v2', runId: 'finish-terminal-run', status: 'complete',
-      identity: { task: 'finish-terminal', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 2, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
-      carrier: { identity: 'sha256-carrier' }, phases: finishPhases('passed'), completion: { cleanup: { status: 'cleaned' } },
-    },
-  };
-  database.prepare("INSERT INTO task_finish_completions(task_id, run_id, status, result_json, completed_at, updated_at) VALUES ('finish-terminal', 'finish-terminal-run', 'complete', ?, '2026-08-01T02:00:00.000Z', '2026-08-01T02:00:00.000Z')").run(JSON.stringify(completion));
-
-  applyWorkspaceSqliteMigration(database, compact);
-  const row = database.prepare("SELECT status, current_phase, candidate_generation, cleanup_status, json_extract(payload_json, '$.kind') AS kind, json_extract(payload_json, '$.completion.result.phases') AS payload_phases FROM task_finish_current WHERE task_id = 'finish-terminal'").get();
-  assert.deepEqual({ ...row }, { status: 'complete', current_phase: 'cleanup', candidate_generation: 2, cleanup_status: 'cleaned', kind: 'terminal', payload_phases: null });
-  assert.equal(database.prepare("SELECT json_array_length(phases_json) AS count FROM task_finish_current WHERE task_id = 'finish-terminal'").get().count, 5);
-  database.close();
-});
-
-test('Task Finish repository-set migration 保留 v2 run payload 并扩展查询 identity', () => {
-  const migrations = loadWorkspaceSqliteMigrations();
-  const expansion = migrations.find((migration) => migration.name === '0017_expand_task_finish_repository_set.sql');
-  const database = new DatabaseSync(':memory:');
-  for (const migration of migrations.filter((item) => item.version < expansion.version)) applyWorkspaceSqliteMigration(database, migration);
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('finish-v2-reader', 'buildr.task-record/v2', 'Finish v2', 'Preserve bounded reader', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
-  const phases = finishPhases();
-  const run = {
-    schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-v2-reader-run', status: 'active',
-    identity: { task: 'finish-v2-reader', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
-    identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z', completedAt: null,
-    invocations: 0, deliveryCarrier: null, equivalence: null, delivery: null, completion: null, resume: null, primaryFailure: null,
-  };
+    VALUES ('retired-workflow', 'buildr.task-record/v2', 'Retire workflow', 'Delete obsolete current rows', 'completed', 'done', 0, '2026-09-02T00:00:00.000Z', '2026-09-02T01:00:00.000Z', NULL)`).run();
+  database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES ('retired-workflow', '{}')").run();
+  const phases = JSON.stringify(['preflight', 'prepare', 'verify', 'deliver', 'cleanup'].map((id) => ({ id, status: 'passed', attempts: 1 })));
   database.prepare(`INSERT INTO task_finish_current(
     task_id, run_id, schema_version, status, identity_digest, current_phase,
     handoff_identity, candidate_identity, candidate_generation, content_target_identity,
-    target_branch, target_remote, phases_json, payload_json, created_at, updated_at, completed_at
-  ) VALUES (?, ?, 'buildr.task-finish-current/v1', 'active', ?, 'preflight', ?, ?, 1, ?, 'dev', 'origin', ?, ?, ?, ?, NULL)`).run(
-    'finish-v2-reader', run.runId, run.identityDigest, run.identity.handoffIdentity, run.identity.candidateIdentity,
-    run.identity.contentTargetIdentity, JSON.stringify(phases), JSON.stringify({ kind: 'run', run, preparedCompletion: null }), run.createdAt, run.updatedAt,
-  );
-
-  applyWorkspaceSqliteMigration(database, expansion);
-  const row = database.prepare("SELECT schema_version, target_branch, target_remote, repository_set_identity, carrier_set_identity, delivery_set_identity, json_extract(payload_json, '$.run.schemaVersion') AS run_schema FROM task_finish_current WHERE task_id = 'finish-v2-reader'").get();
-  assert.deepEqual({ ...row }, {
-    schema_version: 'buildr.task-finish-current/v2', target_branch: 'dev', target_remote: 'origin',
-    repository_set_identity: null, carrier_set_identity: null, delivery_set_identity: null,
-    run_schema: 'buildr.task-finish-run/v2',
-  });
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, expansion.version);
-  database.close();
-});
-
-test('Task Finish migration遇到live artifact metadata时完整rollback', () => {
-  const migrations = loadWorkspaceSqliteMigrations();
-  const compact = migrations.find((migration) => migration.name === '0012_compact_task_finish_current.sql');
-  const database = new DatabaseSync(':memory:');
-  for (const migration of migrations.filter((item) => item.version < compact.version)) applyWorkspaceSqliteMigration(database, migration);
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('finish-artifact', 'buildr.task-record/v1', 'Finish', 'Rollback artifact', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
-  const run = {
-    schemaVersion: 'buildr.task-finish-run/v2', runId: 'finish-artifact-run', status: 'active',
-    identity: { task: 'finish-artifact', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, contentTargetIdentity: 'sha256-content', agent: 'codex', targetBranch: 'dev', remote: 'origin', environmentRoot: '/tmp/environment', workspaceRoot: '/tmp/workspace' },
-    identityDigest: 'sha256-run', createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z', completedAt: null,
-    invocations: 0, deliveryCarrier: null, equivalence: null, delivery: null, completion: null, resume: null, primaryFailure: null, phases: finishPhases(),
-  };
-  database.prepare("INSERT INTO task_finish_runs(task_id, run_id, status, identity_digest, run_json, updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, NULL)").run('finish-artifact', run.runId, run.status, run.identityDigest, JSON.stringify(run), run.updatedAt);
-  database.prepare("INSERT INTO task_finish_transient_artifacts(artifact_id, run_id, kind, relative_locator, size_bytes, sha256, retention_status, cleanup_code, updated_at) VALUES ('artifact', ?, 'stderr', '.buildr/transient/task-finish/finish-artifact-run/stderr.log', 1, 'sha256-x', 'retained', NULL, ?)").run(run.runId, run.updatedAt);
-  assert.throws(() => applyWorkspaceSqliteMigration(database, compact), (error) => error.code === 'workspace_store_database_failed');
-  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_finish_current'").get().count, 0);
-  assert.equal(database.prepare("SELECT count(*) AS count FROM task_finish_transient_artifacts").get().count, 1);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, compact.version - 1);
-  database.close();
-});
-
-test('退役 migration迁移专业查询字段、保留Environment authority并删除Lifecycle副本', () => {
-  const database = new DatabaseSync(':memory:');
-  const migrations = loadWorkspaceSqliteMigrations();
-  const retirement = migrations.find((migration) => migration.name === '0009_retire_task_lifecycle_current.sql');
-  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('migration-task', 'buildr.task-record/v1', 'Migration', 'Retire lifecycle', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
-  database.prepare("INSERT INTO task_development_current(task_id, record_json) VALUES ('migration-task', '{}')").run();
-  database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json) VALUES ('migration-task', 'planning', ?)").run(JSON.stringify({ targetIdentity: 'sha256-plan', conclusion: { outcome: 'ready' }, completedAt: '2026-08-01T01:00:00.000Z' }));
-  database.prepare("INSERT INTO task_verification_current(task_id, result_json) VALUES ('migration-task', ?)").run(JSON.stringify({ target: { identity: 'sha256-target' }, conclusion: { outcome: 'passed' }, completedAt: '2026-08-01T02:00:00.000Z' }));
-  database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('migration-task', 'ready', '{}', '2026-08-01T03:00:00.000Z')").run();
-  const association = { schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, gates: { planning: null, completion: null, verification: null } };
-  database.prepare("INSERT INTO task_finish_completions(task_id, run_id, status, result_json, completed_at, updated_at) VALUES ('migration-task', 'migration-run', 'complete', ?, '2026-08-01T05:00:00.000Z', '2026-08-01T05:00:00.000Z')").run(JSON.stringify({ association }));
-  database.prepare("INSERT INTO task_lifecycle_current(task_id, model_json) VALUES ('migration-task', ?)").run(JSON.stringify({ development: { applicability: { status: 'developing', reasons: [] }, observedAt: '2026-08-01T04:00:00.000Z' }, environment: { status: 'blocked' }, finish: { association } }));
+    phases_json, payload_json, created_at, updated_at, completed_at
+  ) VALUES ('retired-workflow', 'retired-run', 'buildr.task-finish-current/v2', 'complete', 'sha256-run', 'cleanup',
+    'sha256-handoff', 'sha256-candidate', 1, 'sha256-content', ?, '{}',
+    '2026-09-02T00:00:00.000Z', '2026-09-02T01:00:00.000Z', '2026-09-02T01:00:00.000Z')`).run(phases);
+  database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('retired-workflow', 'cleaned', '{}', '2026-09-02T01:00:00.000Z')").run();
 
   applyWorkspaceSqliteMigration(database, retirement);
-  assert.deepEqual({ ...database.prepare("SELECT applicability_status, observed_at FROM task_development_current WHERE task_id = 'migration-task'").get() }, { applicability_status: 'developing', observed_at: '2026-08-01T04:00:00.000Z' });
-  assert.deepEqual({ ...database.prepare("SELECT target_identity, outcome, updated_at FROM task_review_current WHERE task_id = 'migration-task'").get() }, { target_identity: 'sha256-plan', outcome: 'ready', updated_at: '2026-08-01T01:00:00.000Z' });
-  assert.deepEqual({ ...database.prepare("SELECT target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = 'migration-task'").get() }, { target_identity: 'sha256-target', outcome: 'passed', updated_at: '2026-08-01T02:00:00.000Z' });
-  assert.equal(database.prepare("SELECT status FROM task_environment_current WHERE task_id = 'migration-task'").get().status, 'ready');
-  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
-  database.close();
-});
-
-test('退役 migration遇到无法证明的terminal association时完整rollback', () => {
-  const database = new DatabaseSync(':memory:');
-  const migrations = loadWorkspaceSqliteMigrations();
-  const retirement = migrations.find((migration) => migration.name === '0009_retire_task_lifecycle_current.sql');
-  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
-    VALUES ('terminal-task', 'buildr.task-record/v1', 'Terminal', 'Fail closed', 'completed', 'done', 0, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
-  const association = { schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: 'sha256-handoff', candidateIdentity: 'sha256-candidate', candidateGeneration: 1, gates: { planning: null, completion: null, verification: null } };
-  database.prepare("INSERT INTO task_lifecycle_current(task_id, model_json) VALUES ('terminal-task', ?)").run(JSON.stringify({ finish: { association } }));
-  assert.throws(() => applyWorkspaceSqliteMigration(database, retirement), (error) => error.code === 'workspace_store_database_failed');
-  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 1);
-  assert.deepEqual(database.prepare('PRAGMA table_info(task_development_current)').all().map((row) => row.name), ['task_id', 'record_json']);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version - 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_development_current', 'task_finish_current')").get().count, 0);
+  assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'retired-workflow'").get().status, 'completed');
+  assert.equal(database.prepare("SELECT status FROM task_environment_current WHERE task_id = 'retired-workflow'").get().status, 'cleaned');
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
   database.close();
 });
 

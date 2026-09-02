@@ -315,10 +315,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /Usage: buildr/);
     const developmentSchema = run(['__internal', 'task-development', 'planning', '--schema']);
-    assert.equal(developmentSchema.status, 0, developmentSchema.stderr);
-    const parsedDevelopmentSchema = JSON.parse(developmentSchema.stdout);
-    assert.equal(parsedDevelopmentSchema.schemaVersion, 'buildr.task-development-driver-schema/v1');
-    assert.equal(parsedDevelopmentSchema.action, 'planning');
+    assert.notEqual(developmentSchema.status, 0, 'retired Task Development route must be absent');
     assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-development-driver.mjs')), false);
     assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-retrospective-driver.mjs')), false);
     assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-planning-identity-driver.mjs')), false);
@@ -329,24 +326,8 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
     const project = run(['project', 'create', 'demo', '--target', workflowWorkspace, '--name', 'Demo', '--description', 'Installed workflow route fixture.']);
     assert.equal(project.status, 0, project.stderr || project.stdout);
-    fs.mkdirSync(path.join(workflowWorkspace, 'projects/demo/openspec'), { recursive: true });
-    fs.writeFileSync(path.join(workflowWorkspace, 'projects/demo/openspec/config.yaml'), 'schema: spec-driven\n');
-    const archivedChange = path.join(workflowWorkspace, 'projects/demo/openspec/changes/archive/2026-08-20-planning-route-change');
-    fs.mkdirSync(path.join(archivedChange, 'specs/demo'), { recursive: true });
-    fs.writeFileSync(path.join(archivedChange, '.openspec.yaml'), 'schema: spec-driven\n');
-    fs.writeFileSync(path.join(archivedChange, 'proposal.md'), '## Why\n\nVerify the installed route.\n\n## What Changes\n\n- Exercise the reader.\n\n## Capabilities\n\n### New Capabilities\n\n- `demo`: Fixture.\n\n### Modified Capabilities\n\nNone.\n\n## Impact\n\nTest only.\n');
-    fs.writeFileSync(path.join(archivedChange, 'design.md'), '## Context\n\nInstalled fixture.\n\n## Goals / Non-Goals\n\nResolve planning.\n\n## Decisions\n\nUse the bundled route.\n\n## Risks / Trade-offs\n\nNone.\n');
-    fs.writeFileSync(path.join(archivedChange, 'tasks.md'), '## 1. Fixture\n\n- [x] 1.1 Resolve the planning identity.\n');
-    fs.writeFileSync(path.join(archivedChange, 'specs/demo/spec.md'), '## ADDED Requirements\n\n### Requirement: Installed route works\nThe installed route MUST invoke the Planning Identity Application.\n\n#### Scenario: Resolve fixture\n- **WHEN** the archived fixture is inspected\n- **THEN** the route returns a resolved target\n');
-    const planningTask = run(['task', 'create', 'planning-route-fixture', '--title', 'Planning route fixture', '--intent', 'Verify the installed Planning Identity Application route.', '--project', 'demo', '--change', 'demo/planning-route-change', '--target', workflowWorkspace, '--json']);
-    assert.equal(planningTask.status, 0, planningTask.stderr || planningTask.stdout);
     const planningIdentity = run(['__internal', 'task-planning-identity', 'inspect', '--task', 'planning-route-fixture', '--target', workflowWorkspace]);
-    assert.equal(planningIdentity.status, 0, planningIdentity.stderr || planningIdentity.stdout);
-    const parsedPlanningIdentity = JSON.parse(planningIdentity.stdout);
-    assert.equal(parsedPlanningIdentity.schemaVersion, 'buildr.task-planning-identity-result/v1');
-    assert.equal(parsedPlanningIdentity.status, 'resolved');
-    assert.equal(parsedPlanningIdentity.semanticProjection.changeCount, 1);
-    assert.equal(parsedPlanningIdentity.planningNodes.length, 4);
+    assert.notEqual(planningIdentity.status, 0, 'retired Planning Identity route must be absent');
 
     const retrospectiveTask = run(['task', 'create', 'retrospective-route-fixture', '--title', 'Retrospective route fixture', '--intent', 'Verify the installed Retrospective Application route.', '--target', workflowWorkspace, '--json']);
     assert.equal(retrospectiveTask.status, 0, retrospectiveTask.stderr || retrospectiveTask.stdout);

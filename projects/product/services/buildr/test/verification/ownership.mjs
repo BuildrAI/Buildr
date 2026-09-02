@@ -93,25 +93,13 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/task-environment-repository.test.mjs",
       "test/integration/self-bootstrap-closeout.test.mjs",
       "test/integration/task-overview-repository.test.ts",
-      "test/integration/task-planning-identity-application.test.mjs",
       "test/integration/task-retrospective-repository.test.mjs",
       "test/integration/parent-coordination-application.test.ts",
       "test/integration/parent-coordination-repository.test.ts",
       "test/integration/publication-application.test.mjs",
       "test/integration/project-daily-progress-application.test.mjs",
-      "test/integration/task-development-application.test.ts",
-      "test/integration/task-development-application-shard-2.test.mjs",
-      "test/integration/task-development-application-shard-3.test.mjs",
-      "test/integration/task-development-application-shard-4.test.mjs",
-      "test/integration/task-development-driver-discovery.test.mjs",
-      "test/integration/task-development-driver-profile.test.mjs",
-      "test/integration/task-development-repository.test.mjs",
       "test/integration/task-review-repository.test.ts",
       "test/integration/task-verification-report.test.ts",
-      "test/integration/task-finish-sqlite.test.mjs",
-      "test/integration/task-finish-maintenance.test.mjs",
-      "test/integration/task-finish-retained-cleanup.test.mjs",
-      "test/integration/task-finish-task-contribution.test.mjs",
     ]
   },
   "integration-declarations": {
@@ -271,10 +259,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/persistence/task-overview-repository.mjs",
       "src/task/persistence/task-overview-repository.ts",
       "test/integration/task-overview-repository.test.ts",
-      "test/integration/task-planning-identity-application.test.mjs",
       "test/integration/task-retrospective-repository.test.mjs",
       "src/task/application/task-overview-application.ts",
-      "src/task/application/task-planning-identity-application.mjs",
       "src/task/application/task-retrospective-application.mjs",
       "src/task/domain/task-retrospective.mjs",
       "src/task/interfaces/http/task-retrospective-http.mjs",
@@ -307,63 +293,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/workspace/interfaces/cli/project-daily-progress.mjs",
       "src/workspace/interfaces/http/workspace-http.mjs",
       "src/workspace/module.mjs"
-    ],
-    "inputExclusions": []
-  },
-  "integration-task-development": {
-    "inputs": [
-      "src/task/application/task-development*.mjs",
-      "test/integration/task-development-application.test.ts",
-      "test/integration/task-development-application-shard-2.test.mjs",
-      "test/integration/task-development-application-shard-3.test.mjs",
-      "test/integration/task-development-application-shard-4.test.mjs",
-      "test/integration/task-development-driver-discovery.test.mjs",
-      "test/integration/task-development-driver-profile.test.mjs",
-      "test/integration/task-development-repository.test.mjs",
-      "test/integration/task-review-repository.test.ts",
-      "test/integration/task-verification-report.test.ts",
-      "test/helpers/task-verification-result-fixture.mjs",
-      "src/task/domain/task-development.mjs",
-      "src/task/persistence/task-development-repository.mjs",
-      "src/task/persistence/task-review-repository.ts",
-      "src/task/persistence/task-verification-repository.mjs",
-      "src/task/application/task-review-application.ts",
-      "src/task/domain/task-review.ts",
-      "src/task/interfaces/cli/task-review.ts",
-      "src/task/interfaces/http/task-review-http.ts",
-      "src/task/application/task-verification-application.mjs",
-      "src/task/interfaces/internal/task-development-driver.mjs",
-      "src/task/interfaces/internal/task-development-driver-runner.mjs"
-    ],
-    "inputExclusions": []
-  },
-  "integration-task-finish": {
-    "inputs": [
-      "src/task/application/finish/**",
-      "test/helpers/legacy-finish-history.mjs",
-      "test/integration/task-finish-sqlite.test.mjs",
-      "test/integration/task-finish-maintenance.test.mjs",
-      "test/helpers/task-finish-sqlite-fixture.mjs",
-      "src/task/application/finish/task-finish-application.mjs",
-      "src/task/application/finish/task-finish-current-facts.mjs",
-      "src/task/application/finish/task-finish-delivery-commit.mjs",
-      "src/task/application/finish/task-finish-repository-set.mjs",
-      "src/task/application/finish/task-finish-result-projection.mjs",
-      "src/task/application/finish/task-finish-self-bootstrap-projection.mjs",
-      "src/task/application/finish/task-finish-run.mjs",
-      "src/task/application/finish/task-finish-maintenance.mjs",
-      "src/task/persistence/task-finish-repository.mjs"
-    ],
-    "inputExclusions": []
-  },
-  "integration-task-finish-delivery": {
-    "inputs": [
-      "src/task/application/task-terminal-delivery-application.mjs",
-      "test/integration/task-finish-retained-cleanup.test.mjs",
-      "test/integration/task-finish-task-contribution.test.mjs",
-      "src/task/application/finish/git-task-contribution.mjs",
-      "src/task/application/finish/task-finish-delivery-commit.mjs",
-      "src/task/application/task-terminal-delivery-application.ts"
     ],
     "inputExclusions": []
   },
@@ -431,8 +360,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     ],
     "inputExclusions": [],
     "preflightInputs": [
-      "resources/workspace/skills/buildr/task-development/**",
-      "test/contract/task-development.test.mjs"
     ]
   },
   "system-verification-admission": {
@@ -525,10 +452,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "system-task-lifecycle": {
     "inputs": [
       "src/task/persistence/task-record-repository.mjs",
-      "src/task/application/task-development-application.ts",
       "src/task/application/task-record*.mjs",
       "src/task/persistence/task-record-repository.ts",
-      "test/system/task-development-generic-journey.test.mjs",
       "test/system/task-record-change-resolver.test.mjs",
       "test/system/task-record-buildr-web.test.mjs",
       "test/system/task-record-product.test.mjs",
@@ -542,17 +467,14 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/helpers/task-record-system-fixture.mjs",
       "src/task/module.mjs",
       "src/task/domain/task-record.mjs",
-      "src/task/domain/task-development.mjs",
       "src/task/domain/task-verification.mjs",
       "src/task/domain/task-review.ts",
       "src/task/domain/task-retrospective.mjs",
-      "src/task/domain/task-planning-identity.mjs",
       "src/task/domain/parent-coordination.ts",
       "src/task/domain/terminal-contribution-reconciliation.mjs",
       "src/task/application/task-verification-application.mjs",
       "src/task/application/task-review-application.ts",
       "src/task/application/task-retrospective-application.mjs",
-      "src/task/application/task-planning-identity-application.mjs",
       "src/task/application/task-overview-application.ts",
       "src/task/application/parent-coordination-application.ts",
       "src/task/persistence/parent-coordination-repository.mjs",
@@ -568,9 +490,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/helpers/task-lifecycle-system-context.mjs",
       "test/verification/system-file-timing-reporter.mjs"
     ],
-    "inputExclusions": [
-      "src/task/persistence/task-finish-repository.mjs"
-    ]
+    "inputExclusions": []
   },
   "system-worktree-lifecycle": {
     "inputs": [
@@ -641,26 +561,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/development/workspace-smoke.mjs",
       "test/fixtures/failing-workspace-smoke.mjs",
       "test/helpers/workspace-product-suite.mjs",
-      "test/verification/system-suites.mjs",
-      "test/verification/system.mjs",
-      "test/helpers/task-lifecycle-system-context.mjs",
-      "test/verification/system-file-timing-reporter.mjs"
-    ],
-    "inputExclusions": []
-  },
-  "system-task-finish-cli": {
-    "inputs": [
-      "src/task/application/finish/task-finish-application.mjs",
-      "src/task/application/finish/task-finish-run.mjs",
-      "src/task/persistence/task-finish-repository.mjs",
-      "test/system/task-finish-*.test.mjs",
-      "test/system/task-finish-cli.test.mjs",
-      "src/bootstrap/cli/**",
-      "src/task/application/finish/task-finish-result-projection.mjs",
-      "src/task/application/finish/task-finish-self-bootstrap-projection.mjs",
-      "src/infrastructure/contracts/public-json.mjs",
-      "src/task/interfaces/cli/**",
-      "test/helpers/task-finish-sqlite-fixture.mjs",
       "test/verification/system-suites.mjs",
       "test/verification/system.mjs",
       "test/helpers/task-lifecycle-system-context.mjs",
@@ -961,7 +861,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/openspec/application/**",
       "test/verification/openspec/contract.mjs",
       "resources/workspace/skills/buildr/openspec-contract-guard/**",
-      "resources/workspace/skills/buildr/task-development/**",
       "resources/workspace/skills/buildr/current-knowledge-maintenance/**"
     ],
     "inputExclusions": []

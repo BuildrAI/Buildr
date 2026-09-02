@@ -203,17 +203,17 @@ Buildr MUST 仅从按确定顺序排列的逻辑 delta 文件标识和规范化 
 - **AND** MUST NOT 为了匹配当前 hash 而改写或采用旧 receipt
 
 ### Requirement: OpenSpec Contract Guard必须前置语义就绪门禁
-OpenSpec Contract Guard MUST 在Change artifacts达到apply-ready并通过上游strict validation后、Planning Review和实现前调用semantic readiness preflight。只有current结果为`ready`时 sidebar 才能继续planning identity resolver和Planning Review；`blocked`时 MUST停止Review/apply并把最小语义结果交给Agent。Planning Review MUST NOT拥有、复制或重新实现OpenSpec preflight逻辑。
+OpenSpec Contract Guard MUST 在Change artifacts达到apply-ready并通过上游strict validation后、实现前调用semantic readiness preflight。`ready`时Agent MAY直接apply或按目标执行Planning Review；`blocked`时 MUST停止apply并处理最小语义问题。Guard MUST NOT调用Task Planning Identity、Task Development或把Planning Review设为apply门禁。
 
 #### Scenario: Preflight ready后进入Planning Review
 - **WHEN** 当前Change的semantic readiness preflight返回`ready`
-- **THEN** Contract Guard sidebar MUST继续取得planning identity并按既有Task workflow执行或inspect Planning Review
+- **THEN** sidebar MUST允许Agent直接apply或选择审查当前真实artifacts
 - **AND** MUST说明ready只覆盖当前OpenSpec观察，不替代最终converge或实现验证
 
 #### Scenario: 内在语义问题阻塞
 - **WHEN** preflight返回`scenario-omission`、`identity-conflict`、`projected-validation`或其他`semantic-resolution-required`
-- **THEN** sidebar MUST在Planning Review前停止并要求Agent修订Change artifact或请求用户决定
-- **AND**修订后 MUST重新运行upstream strict与preflight
+- **THEN** sidebar MUST在apply前停止并要求Agent修订Change artifact或请求用户决定
+- **AND** 修订后 MUST重新运行upstream strict与preflight
 
 #### Scenario: Active Change冲突阻塞
 - **WHEN** preflight返回`active-change-conflict`

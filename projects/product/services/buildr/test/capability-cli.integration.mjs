@@ -112,7 +112,7 @@ test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consume
   await run(['init', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
   await run(['builtin', 'uninstall', 'task-retrospective', '--target', root, '--reason', 'optional fixture']);
   const report = await doctor(root);
-  assert.equal(consumer(report, '.', 'task-development').readiness, 'ready');
+  assert.equal(report.capabilities.graphs.some((graph) => graph.consumer === 'task-development'), false);
   assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 

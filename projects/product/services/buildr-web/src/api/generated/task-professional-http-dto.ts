@@ -1,15 +1,13 @@
 /* eslint-disable */
 // Generated from Task Professional HTTP JSON Schema. Do not edit.
 // Run: npm run contracts:professional:generate
-// Source Schema Identity: sha256-7cb7fd0e008cc1d9accc510076677351f3f5683ffcd129f2129e97f41eee0d3a
+// Source Schema Identity: sha256-38c8c86630bbf7e4948b0d3983249c0ce18a79f0a31cc3ac1c856331592a0708
 
 export interface TaskProfessionalHttpDtoProjection {
   overviewRequest: OverviewRequest;
   overviewResponse: OverviewResponse;
   environmentRequest: EnvironmentRequest;
   environmentResponse: EnvironmentResponse;
-  developmentRequest: DevelopmentRequest;
-  developmentResponse: DevelopmentResponse;
   reviewsRequest: ReviewsRequest;
   reviewsResponse: ReviewsResponse;
   verificationRequest: VerificationRequest;
@@ -27,10 +25,6 @@ export interface OverviewResponse {
 }
 export interface EnvironmentRequest {}
 export interface EnvironmentResponse {
-  [k: string]: unknown | undefined;
-}
-export interface DevelopmentRequest {}
-export interface DevelopmentResponse {
   [k: string]: unknown | undefined;
 }
 export interface ReviewsRequest {}

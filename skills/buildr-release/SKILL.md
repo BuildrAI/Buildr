@@ -69,18 +69,18 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 ## 5. 准备发布
 
-准备阶段是正式开发/发布Task，遵循`task-triage`、`task-environment`、`task-development`、`task-verification`、`task-finish`和self-bootstrap唯一runner：
+准备阶段是正式开发/发布Task，遵循`task-triage`、`task-environment`、`task-verification`、`task-finish`和self-bootstrap唯一runner。Agent直接读取OpenSpec、代码、Git、文件和专业结果完成开发：
 
 1. 对明确指定的`<version>`、精确`<dev-baseline>`和有序待选择dev commits按原值处理；对未指定项先fetch并读取current `dev`，形成包含精确SHA/tree的缺省方案并取得确认，再重新证明确认的commits属于current dev authority。确认后不得把移动中的`dev`当作新的baseline或隐式扩展selection。
-2. 创建或复用唯一`release-<version>`协调Task/Environment。该Task的intent必须覆盖selection、main coverage、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部current前保持active/blocked，不调用Task Finish或complete。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
+2. 创建或复用唯一`release-<version>`协调Task/Environment。该Task的intent必须覆盖selection、main coverage、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部成立前Task保持active，不调用complete。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
 3. 从active Task与ready Environment生成closed execution binding。release selection、reopen、freeze、main coverage/reconciliation与local cleanup每次写入前都必须重新生成并核验该binding；只允许matching Task worktree的`codex/release-<version>`分支，正式`release-<version>`作为受控ref同步移动。retained primary worktree、其他Task worktree、陈旧branch/HEAD或caller路径声明必须零写入失败；owner不得checkout retained workspace。
 4. 通过release selection owner创建或核验唯一`release-<version>`集合。create只建立正式release ref与lifecycle refs，不切换Task分支、不隐含push；同版本identity冲突时停止。
 5. 对维护者明确列出的commit逐个执行selection update；只允许`cherry-pick -x`，并且必须在绑定的Task分支执行，成功后原子同步正式release ref。冲突立即停止，保留可诊断现场，不自动解决、继续、rebase、reset、force push或直接编辑冒充选择成功。
-6. version、CHANGELOG、README/known limitations/checklist、测试修复或release owner修复等需要在Candidate前独立交付的内容，必须使用scope/intent明确、基于current `dev`的release support Task worktree完成Development/Verification/Finish并先交付`dev`；再把delivered dev commit以`cherry-pick -x`选择到既有release集合。不得直接在release worktree修复后把整条release历史合并或倒灌`dev`，也不得用`release-<version>`协调Task承担这类提前Finish的内容贡献。
-7. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。support Task按正式Development/Verification/Finish闭环交付，matching self-bootstrap仍由唯一runner完成，失败不改写Delivery；support Task terminal、Delivery或Activation都不使release协调Task completed。
+6. version、CHANGELOG、README/known limitations/checklist、测试修复或release owner修复等需要在Candidate前独立交付的内容，必须使用scope/intent明确、基于current `dev`的release support Task worktree完成实现、审查、验证与交付；再把delivered dev commit以`cherry-pick -x`选择到既有release集合。不得直接在release worktree修复后把整条release历史合并或倒灌`dev`，也不得用`release-<version>`协调Task承担这类提前内容贡献。
+7. 运行changed/affected开发反馈并读取timing；它不等于完整Candidate。support Task由Agent依据真实现场完成开发、验证、交付和Task结果登记，matching self-bootstrap仍由唯一runner完成；support Task terminal或交付结果都不使release协调Task completed。
 8. Freeze current release HEAD/tree与selection chain，随后立即在matching release execution worktree执行current main coverage。main已是release祖先时直接通过；否则只有main涉及的Product路径都能由current dev/release provenance覆盖时，owner才可用原release tree创建显式双亲history commit。发现main独有Product路径时零写入停止，先通过正式Task交付dev；禁止工作树merge、人工解冲突、`ours`、reset、rebase或force push。
 9. history commit形成后核验两个父提交、coverage identity以及post tree精确等于pre tree，递增并重新freeze final generation。该SHA是唯一final release source；任何pre-reconciliation Candidate或tarball仅保留为stale历史，不得复用。
-10. 只对final source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一final SHA/tree/generation、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active/blocked，不得Finish/complete或把support delivery误报为准备完成。
+10. 只对final source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一final SHA/tree/generation、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active，不得complete或把support delivery误报为准备完成。
 11. 为final generation创建或复用唯一`codex/release-main-<version>-g<generation>` carrier，并只以该carrier创建唯一release→main受保护PR；正式远端`release-<version>`不作为PR carrier。release PR必须使用GitHub `Create a merge commit`；终态readback必须证明merge commit、两个父提交、current carrier和main tree。Candidate后current main若前进，旧Candidate、tarball、carrier与PR立即stale，必须重新coverage/reconciliation形成下一generation并完整重跑Candidate。同SHA暂态失败先用`candidate-failed-shard-retry.mjs inspect`读取matching run与失败分片，取得明确授权后只执行`rerun --failed`；不得dispatch新的完整run或跨run拼接evidence。
 12. merge后核验`origin/main^{tree}`精确等于当前release tree，并核对main commit的父提交包含current carrier。merge method、tree或remote ref不一致时立即停止。
 13. 调用`tools/release/release-orchestration-runner.mjs prepare-dispatch`，由编排器复用transaction readiness owner构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
@@ -107,7 +107,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 
 - release内容变化：旧Candidate/artifact/readiness/context全部stale，形成新generation和唯一tarball，不拼接旧evidence。
 - frozen Candidate失败且需要修复：保持同一release协调Task与selection，先从current `dev`创建或复用窄support Task worktree，在该Task完成修复及相关检查并把成果交付`dev`。同时从GitHub、Git tag、npm官方registry、GitHub Release和protected workflow回读目标version的全部公开/不可逆事实；只有证明尚无tag、npm version、GitHub Release且protected transaction未开始公共mutation，维护者才可独立授权selection `reopen --confirm --reason <text>`。reopen只保留immutable freeze history并释放current frozen ref，不隐含update/push；随后只把matching delivered dev commit逐个`cherry-pick -x`、重新freeze、普通push并对新SHA运行完整Candidate。不得直接在release worktree修复再回灌dev；任何公开事实已存在时停止并选择新version，不接受caller布尔值或历史stdout代替证明。
-- 同version release协调Task在本模型生效前已被提前completed：保留terminal Task与既有Finish审计事实，不直接改SQLite、不伪造reopen或把旧记录迁移成current；这是历史异常，不是后续version的正常恢复模板。新version必须始终使用唯一active协调Task直到lifecycle closed。
+- 同version release协调Task在本模型生效前已被提前completed：保留terminal Task，不直接改SQLite或伪造reopen；这是历史异常，不是后续version的正常恢复模板。新version必须始终使用唯一active协调Task直到lifecycle closed。
 - selection冲突：保持pre-operation identity和冲突现场，停止后续选择/remote/public mutation；只在维护者作出新决定后恢复。
 - release→main tree不一致或remote race：停止publication，不用历史形状、`ours`、reset或force push掩盖。
 - protected transaction失败：先读取terminal run/attempt与逐步evidence，按`same-attempt`、`new-attempt`或`blocked-new-version`解释恢复；已创建tag时保留tag和同context事实，不删除tag后重发。

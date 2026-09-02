@@ -38,15 +38,15 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 恢复内置能力 | 内置能力（Builtins）/ Agent runtime 渲染 |
 | 接入业务、产品线、系统或长期工作单元 | 项目（Project） |
 | 接入代码仓、服务仓或可执行资产 | 服务（Service） |
-| 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Development、Review、Verification 公开 read model；Buildr Web 动态投影 |
+| 查看待办/正式 Task、Parent/Child、复盘来源与各专业当前状态 | `buildr.task-record/v2` 及 Review、Verification、Environment 公开 read model；Buildr Web 动态投影 |
 | 启动或继续已有active Formal Task并确定当前执行根、writer与next action | `buildr task next <task-id> --json`；只加载返回的当前capability/provider，`required`先恢复安全前置，`recommended`可按实际情况调整 |
-| 创建或检查opt-in Parent Plan、绑定Child Contribution、显式reconcile范围变化、严格恢复终态遗漏的交付证据或记录Parent最终集成验收 | `buildr.task-development/v3` selected provider + `task parent inspect|record|bind-child|reconcile|reconcile-child-delivery|accept`；终态恢复只用于matching Finish异常，progress只由Application动态派生 |
+| 查看 Parent/Child 关系、旧 Parent Plan 与整体完成观察 | `task parent inspect`；关系和终态由 Task Record 管理，旧 Parent Plan 只读 |
 | 记录、查看或处理已结束Task的Agent执行效率复盘 | `buildr.task-retrospective/v2` selected provider；有效方向由todo/active Task承接，不进入生命周期门禁 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 为正式 Task 准备、检查、恢复或清理实际执行环境 | `buildr.task-environment/v1` selected provider |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |
-| 从首个proposal、方案或直接实现等正式研发动作开始，维护planning facts、稳定Content Target、Task Candidate、Completion Review、Current Knowledge与handoff | `buildr.task-development/v3` selected provider；Task Verification独立 |
+| 从 proposal、方案或直接实现开始完成开发工作 | Agent 直接读取目标、OpenSpec、Git、代码、文件和专业结果，并按适用 Skill 使用现有工具；不创建研发回执 |
 | 用户要求“收尾”“交付”或完成当前工作 | `task-finish` 技能依据真实现场组合 Git、系统工具和已有 Buildr 接口；有任务则登记真实结果，无任务不创建，不要求旧候选或交接链 |
 | 已明确 repository/ref 的 commit、push、commit+push 或其他已选 Git Operation | `buildr.git-operations/v1` selected provider；本 Skill 或直接用户继续决定 operation、目标与顺序 |
 | 统一安装、更新和卸载一组 workspace Rules、Skills、Command collections | 组件（Components） |
@@ -57,7 +57,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 | 为 Buildr 增加新的 Agent runtime adapter | runtime trait intake + OpenSpec change |
 | 采用内部流程、调整工作方式、修改或替换 Skill 行为 | `capability-adaptation` Skill；先识别跨 Skill 稳定依赖边界，再开发、验证和激活 |
 产品入口 Buildr Skill 只对自身已命中的 Buildr 管理意图执行内部能力路由，不是同时 required 依赖全部 capabilities 的 workspace consumer。只有某类 Buildr 管理意图命中本 Skill 后，才把对应 capability 作为本次动作的 required dependency；单项 capability blocked 不得阻塞 init、doctor、Project/Service 或其他无关 Buildr 管理动作。顶层 capability 的 binding 只选择 provider，不自动产生 Agent 意图命中；替换顶层入口时必须由能力适配同时验证 selected provider 的 runtime 可发现性、description 覆盖和触发歧义。Formal Task和Task Environment不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用明确时，Agent可以直接工作，但不得冒充Environment或正式Result。需要Buildr-managed checkout、Preparation、runtime projection、Task-owned资源、正式环境证据或自动Finish时，使用 `buildr task environment prepare <task-id> --agent <agent> --target <canonical-workspace> --json`；`prepare` 确定性完成实际执行位置、Runtime、Workspace CLI、依赖、runtime projection 和真实 probes，重复调用承担恢复。只有结果为 `ready` 才在返回的执行根中继续受管动作。Git worktree 只是可组合 provider；其 evidence 不代表环境 ready。任一 provider 返回 `treeChanged: true` 后，按本 Skill 的 workspace transition 约束，在对应已初始化 Buildr workspace 中针对当前 Agent 和 workspace root 运行 doctor。doctor 指出 workspace sync 是合适修复动作时，询问用户是否由 Agent 立即同步，同时提供准确手动命令作为备选；确认后由 Agent 执行 sync 并验证。当前 session 是否重新发现新资产由 Agent runtime 决定。“更新 workspace”或“同步 workspace”已包含 Git 更新与 Buildr sync 授权，不重复询问 sync；遇到本地改动、分叉、冲突、缺少 upstream 或其他需要用户决策的状态时停止，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。
-完整收尾意图由 `task-finish` 提供方法和边界。本入口不复制流程，不要求 `task next`、旧收尾运行或对账；应用只保障具体动作的身份、版本和副作用安全。
+完整收尾意图由 `task-finish` 提供方法和边界。本入口不复制流程；应用只保障具体动作的身份、版本和副作用安全。
 ## 资产维护
 
 ### Workspace / Organization Root
@@ -154,7 +154,7 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 - Adapter 只生成 runtime-specific 声明式计划；Buildr 通用 core 统一负责 Component 完整性后的 source assembly、计划验证、冲突预检、写入、清理和诊断。
 - 用户要求增加新 adapter 时，先从目标 Agent 收集能直接映射到 trait descriptor 的最小 intake：identity/surface、Rules kind、Skills root、activation、安装/版本 checker 和最小黑盒证据；不要调查与 adapter 无关的产品功能。
 - 新 adapter 属于 Buildr 产品 change-flow：每个 runtime 使用独立 descriptor、capability evidence 和 tests；只在现有 primitive 无法表达时增加新的静态 implementation，不能 alias 或 fallback 到其他 adapter。
-- 用户说“更新 Buildr”或“同步 Buildr”时，先读取 `buildr update check --json`，说明 GA/RC 可用更新并等待用户选择；选择后运行对应 `buildr update --track stable|candidate`，再用新入口执行 `buildr skill install <agent> --target <dir>`。用户说“只更新 CLI”时不追加 Skill install。用户说“更新 workspace”或“同步 workspace”时，Git 管理的 workspace 由 Buildr Skill 向 Git Operations 提供明确 workspace、upstream 和 update operation，安全更新本地 checkout 后运行 `buildr sync <agent> --target <dir>`，非 Git workspace 直接 sync，且两者都不先更新 CLI。sync 只同步 workspace destination。协作者提交使canonical checkout前进、但当前会话没有matching Formal Finish Result时，固定归类为普通Workspace update；本地没有协作者Task是正常事实，不得从commit author、Task缺失、HEAD、dirty tree或Doctor runtime drift反推本地Finish或`buildr-self-bootstrap-sync`。post-transition Doctor仅把actionable findings归因于当前Agent managed workspace/runtime projection stale时，执行一次`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；Doctor包含CLI、Component、Command、Git或其他非sync blocker时，不能把一次sync宣称为完整修复。普通workspace sync不创建Task、Environment、Verification、Candidate、Finish Result或self-bootstrap evidence。
+- 用户说“更新 Buildr”或“同步 Buildr”时，先读取 `buildr update check --json`，说明 GA/RC 可用更新并等待用户选择；选择后运行对应 `buildr update --track stable|candidate`，再用新入口执行 `buildr skill install <agent> --target <dir>`。用户说“只更新 CLI”时不追加 Skill install。用户说“更新 workspace”或“同步 workspace”时，Git 管理的 workspace 由 Buildr Skill 向 Git Operations 提供明确 workspace、upstream 和 update operation，安全更新本地 checkout 后运行 `buildr sync <agent> --target <dir>`，非 Git workspace 直接 sync，且两者都不先更新 CLI。协作者提交使canonical checkout前进时，归类为普通Workspace update；本地没有协作者Task是正常事实，不得从commit author、Task缺失、HEAD、dirty tree或Doctor runtime drift反推本地交付流程。post-transition Doctor仅把actionable findings归因于当前Agent managed workspace/runtime projection stale时，执行一次`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；Doctor包含CLI、Component、Command、Git或其他非sync blocker时，不能把一次sync宣称为完整修复。普通workspace sync不创建Task、Environment、Verification或self-bootstrap evidence。
 - doctor 指出特定 Rules scope runtime 问题时按 canonical workspace 相对 scope 运行 `render`、`rules render` 或 `runtime check`；Skills 始终从 workspace authority 处理 destination，不折叠为 legacy Project Skill source scope。
 - `runtime check` 是专项 runtime 细查入口；只有 doctor 指向具体 runtime 问题，或用户明确要求细查时运行。
 

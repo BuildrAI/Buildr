@@ -17,9 +17,8 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   const provider = manifest.builtins.skills.find((item) => item.id === 'task-retrospective');
   assert.deepEqual(provider.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
   assert.ok(provider.requires.some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required'));
-  const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
-  assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
+  assert.equal(manifest.builtins.skills.some((item) => item.id === 'task-development'), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   const skill = read('resources/workspace/skills/buildr/task-retrospective/SKILL.md');
   const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-retrospective/v2.md');
@@ -38,7 +37,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(skill, /digest冲突，重新inspect/);
   assert.match(skill, /完整原始 `reportMarkdown`/);
   assert.match(skill, /有界执行事实图/);
-  assert.match(skill, /Task Record时点与终态.*Development\/Review\/Verification current摘要.*Finish timing/);
+  assert.match(skill, /Task Record时点与终态.*Review、Verification与Environment摘要/);
   assert.match(skill, /已有复盘是本次重新思考的证据之一，不是必须保留的结论/);
   assert.match(skill, /每次生成或重做复盘都主动判断是否存在确定性流程候选/);
   assert.match(skill, /closed输入、唯一Owner、明确停止条件、可验证结果与幂等\/有界恢复/);
@@ -71,7 +70,7 @@ test('Task Retrospective contract/provider/binding保持terminal-only与非门�
   assert.match(capabilityContract, /不建立approval状态/);
   assert.match(capabilityContract, /候选确认只授权承接Task effects，不授权直接修改其建议落点/);
   assert.match(capabilityContract, /不得强制固定候选列表或评分/);
-  assert.match(skill, /不参与Task完成、Development handoff、Finish、cleanup或OpenSpec门禁/);
+  assert.match(skill, /不参与Task完成、交付、cleanup或OpenSpec门禁/);
 });
 
 test('active package不再发布Task Asset Review', () => {

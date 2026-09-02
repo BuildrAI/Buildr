@@ -28,7 +28,7 @@ buildr openspec convergence preflight <change> --project <project> --target <tas
 
 `<task-execution-root>`必须来自matching Task Environment Receipt的`execution.workdir`。Preflight只读复用正式convergence planner、active Change scan和projected strict validation，不检查实现期checklist，不写canonical、Receipt、archive、Task或Review事实。它把blocked区分为`active-change-conflict`、`scenario-omission`、`identity-conflict`、`projected-validation`与其他`semantic-resolution-required`：Agent只处理对应依赖、Change artifact语义或用户决定，再重新运行strict与preflight，不得自动补回Scenario、选择rename或修改canonical。
 
-只有preflight返回current `ready`后，正式Task才使用matching `task environment inspect`返回的retained controller调用`__internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>`；只把`resolved`结果的`target.identity`和`planningNodes`交给Task Development。不得使用candidate `cliInvocation`或source driver。Preflight或resolver `blocked`时停止apply，禁止把blocker写入Review Result代替处理，也禁止用raw digest、文件路径、mtime、checklist progress或Git ref回退。Agent若另行选择Planning Review，可把resolver identity作为真实subject，但Review不是apply门禁，也不拥有、不复制或解释preflight逻辑。Buildr 不提供 baseline/create 或阶段型 check，也不创建、刷新、读取或依赖这些 sidecar。
+只有preflight返回current `ready`后才继续apply。Agent直接读取当前OpenSpec artifacts，必要时使用OpenSpec返回的identity作为Planning Review subject；不调用额外规划身份接口，也不保存研发快照。Preflight `blocked`时停止apply，禁止把blocker写入Review Result代替处理。Review不是apply门禁，也不拥有、不复制或解释preflight逻辑。Buildr不提供baseline/create或阶段型check，也不创建、刷新、读取或依赖这些sidecar。
 
 `ready`只绑定本次delta、canonical、全部active Change observation与OpenSpec executable/algorithm identity；任一事实变化后旧ready陈旧。它不是写入授权，也不替代实现验证。最终`buildr openspec converge`永远重新读取最新事实、重新规划并重新验证，不接受或读取旧preflight结果。
 
@@ -47,7 +47,7 @@ buildr openspec converge <change> --project <project> --target <task-execution-r
 
 `buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且当前Task Environment恢复现场仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
 
-正常Converge返回`passed + archived`后，正式Task再次调用Task Planning Identity resolver。`resolved`时用当前identity更新Development planning；`blocked`时停止Development mutation并处理真实诊断。Review是否需要重做由Agent重新观察subject后独立判断，不影响convergence或Development。该检查不运行Convergence Inspect；Formal Task Finish与Environment cleanup不调用Inspect。Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。正常长期事实使用Archived Change、Canonical Specs、Git与Task Development/Finish事实。
+正常Converge返回`passed + archived`后，Agent重新观察当前代码、Archived Change、Canonical Specs、Git与专业结果继续工作。Review是否需要重做由Agent重新观察subject后独立判断，不影响convergence。该检查不运行Convergence Inspect；任务收尾与Environment cleanup不调用Inspect。Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。
 
 ## 4. 失败处理
 

@@ -1,0 +1,3 @@
+# 清除已退役任务工作流的主规范残留
+
+第一轮删除已经完成运行代码、数据、接口和核心规范退役；本Change只修正收敛后暴露的旧规范语句，确保主规范不再同时要求已经删除的Task Development、Planning Identity、Task Candidate、Development Handoff或旧Finish Application。禁止恢复旧能力、旧Parent Plan迁移和数据库升级历史仍保留。发布候选模型不变。

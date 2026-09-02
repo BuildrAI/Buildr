@@ -191,9 +191,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'Self-bootstrap closeout integration slice',
     'Task read-model integration slice',
     'Task coordination integration slice',
-    'Task Development lifecycle integration',
-    'Task Finish core integration slice',
-    'Task Finish delivery integration slice',
     'repository contract tests',
     'System verification admission canary',
     'System verification orchestration contracts',
@@ -205,7 +202,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'System runtime recovery',
     'System Buildr Web Runtime',
     'System Buildr Web process and preview',
-    'System Task Finish CLI journey',
     'System fresh build',
     'Concurrent task workflow acceptance',
     'CLI modular architecture',
@@ -247,7 +243,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   }
   assert.ok(candidatePlan.steps.some((step) => step.executor.file === 'test/capability-cli.integration.mjs'));
   const systemOwners = candidatePlan.steps.filter((step) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 12);
+  assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.mjs');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.mjs'));
@@ -260,9 +256,6 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].resources['task-lifecycle-heavy'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-contracts'], 3);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['integration-task-finish-delivery'], 2);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.innerConcurrency['integration-task-finish-delivery'], 2);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['integration-task-finish-delivery'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
@@ -271,15 +264,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.equal(freshBuild.schedulingCostMs, 25_000);
   assert.equal(freshBuild.concurrencyClass, 'workspace-heavy');
   assert.deepEqual(freshBuild.resources, ['workspace-saturating', 'task-lifecycle-heavy']);
-  assert.deepEqual(Object.fromEntries([
-    'integration-task-finish-delivery',
-    'integration-task-development',
-    'integration-self-bootstrap',
-  ].map((id) => [id, verificationSteps.find((step) => step.id === id).schedulingCostMs])), {
-    'integration-task-finish-delivery': 75_000,
-        'integration-task-development': 30_000,
-    'integration-self-bootstrap': 50_000,
-  });
+  assert.equal(verificationSteps.find((step) => step.id === 'integration-self-bootstrap').schedulingCostMs, 50_000);
 });
 
 test('release tarball smoke isolates npm cache writes without a Workspace runtime', () => {
@@ -351,10 +336,6 @@ test('distributed Candidate creates one artifact and fans out independent consum
   const selfBootstrap = verificationSteps.find((step) => step.id === 'integration-self-bootstrap');
   assert.ok(selfBootstrap.resources.includes('workspace-saturating'));
   assert.equal(selfBootstrap.timeoutMs, 360_000);
-  const finishDelivery = verificationSteps.find((step) => step.id === 'integration-task-finish-delivery');
-  assert.deepEqual(finishDelivery.resources, []);
-  assert.equal(finishDelivery.testing.environment.isolation, 'unique-temporary-root');
-  assert.equal(finishDelivery.timeoutMs, 360_000);
   assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
   const runtimeWindowsStep = document.jobs['candidate-runtime-windows'].steps.find((step) => step.name === 'Run Windows runtime shard');
   assert.equal(runtimeWindowsStep.shell, 'pwsh', 'Windows runtime Candidate must preserve native PowerShell environment semantics');
@@ -363,8 +344,7 @@ test('distributed Candidate creates one artifact and fans out independent consum
   assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, [
     'workspace-lifecycle-windows',
     'task-worktree-recovery-windows',
-    'task-finish-windows',
-    'task-development-windows',
+    'task-concurrent-windows',
     'fresh-build-windows',
   ]);
   const windowsJob = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));

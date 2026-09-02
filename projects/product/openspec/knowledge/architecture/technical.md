@@ -158,7 +158,6 @@ Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-loca
 | SQLite schema | 随 npm package 交付的连续 SQL scripts | SQLite infrastructure migration | 只允许前向迁移 |
 | Project Daily Progress | `.buildr/daily-progress/<project>/<date>.yml` | Daily Progress Application | Git ignored 的本机日事实 |
 | Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
-| 历史交付目录 | 旧收尾运行拥有的隔离目录 | 原资源所有者 | 只按归属与内容保全安全处置 |
 | Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
 
 专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；面向页面和 Agent 的 Overview 通过只读查询或 Application projection 组合事实。
@@ -171,7 +170,7 @@ SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不
 
 任务记录保存结果；Git 和外部系统拥有交付事实；环境应用（Application）及资源所有者保护删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
 
-研发、审查和正式验证仍由各专业能力维护。旧五阶段执行器及写入口、Task Entry Snapshot与`task next`已经退役；Agent直接读取当前Task、现场和所需专业结果后选择动作。Overview不计算gate match或跨专业完成状态，Terminal Delivery只读取Task Record与Finish history；历史损坏只产生局部诊断，不否定已成立的Task结果。
+Agent直接读取当前Task、代码、Git、文件、环境和所需专业结果后选择开发动作。Task Entry Snapshot、`task next`、任务研发聚合、任务规划身份和旧机器交付历史均已删除。Overview不计算gate match或跨专业完成状态，只组合Task Record、Review、Verification与Environment。
 
 ## Runtime、构建与分发
 
@@ -240,6 +239,6 @@ Buildr Product自身的测试runner仍属于项目测试架构，可按Project�
 | OpenSpec 从提案到归档的跨模块流程 | [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md) |
 | npm Candidate、发布与安装事实链 | [Buildr npm 发布流程](../flows/open-source-release.md) |
 | Project Daily Progress 的写入与展示 | [项目每日演进](../flows/project-daily-progress.md) |
-| Task Finish 的规范性行为 | [Task Finish execution specification](../../specs/task-finish-execution/spec.md) |
+| Task Finish 的规范性行为 | [Task closeout orchestration specification](../../specs/task-closeout-orchestration/spec.md) |
 | 人和 Agent 共用的 canonical 名称 | [术语表](../glossary.md) |
 | 文档区域的权威分工 | [Buildr 文档说明](../../../docs/document-index.md) |

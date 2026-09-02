@@ -16,21 +16,13 @@ import {
   TASK_ENVIRONMENT_DECLARATION,
   TASK_WORKTREE_PROVIDER,
   TASK_VERIFICATION_RUNTIME_PORT,
-  TASK_PLANNING_IDENTITY_RUNTIME_PORT,
-  TASK_DEVELOPMENT_RUNTIME_PORT,
   PARENT_COORDINATION_RUNTIME_PORT,
   TASK_OVERVIEW_RUNTIME_PORT,
-  TASK_FINISH_RUNTIME_PORT,
-  TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
   createTaskEnvironmentModule,
   createWorktreeProviderModule,
   createTaskVerificationModule,
-  createTaskPlanningIdentityModule,
-  createTaskDevelopmentModule,
   createParentCoordinationModule,
   createTaskOverviewModule,
-  createTaskFinishModule,
-  createTaskTerminalDeliveryModule,
 } from '../task/module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.mjs';
@@ -141,12 +133,8 @@ export function createRuntime() {
   installTaskReviewModule(runtime, registry);
   installTaskRetrospectiveModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskPlanningIdentityModule(runtime), TASK_PLANNING_IDENTITY_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskDevelopmentModule(runtime), TASK_DEVELOPMENT_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskFinishModule(runtime), TASK_FINISH_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskTerminalDeliveryModule(runtime), TASK_TERMINAL_DELIVERY_RUNTIME_PORT);
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   registry.install(createSystemDoctorModule(runtime, {

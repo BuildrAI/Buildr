@@ -165,10 +165,8 @@ function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, depen
 }
 
 function taskCorrelationProjection(value) {
-  const releaseEntry = value?.entries?.find((entry) => entry.taskId === value.releaseTask?.taskId);
   return value ? {
     identity: value.identity,
-    carrierIdentity: releaseEntry?.selfBootstrap?.carrierIdentity || releaseEntry?.finish?.repositories?.[0]?.carrierIdentity || null,
     status: value.status,
     sourceCommit: value.source?.sourceCommit || null,
     sourceTree: value.source?.sourceTree || null,

@@ -81,7 +81,7 @@ if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)
 
 const requiredRuntime = [
   'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
-  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts', 'bootstrap/cli/task-finish-bootstrap.mjs',
+  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.ts',
   'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.mjs',
@@ -104,9 +104,8 @@ const requiredRuntime = [
   'task/infrastructure/git-worktree-provider.mjs',
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
-  'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
-  'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.ts',
+  'task/persistence/task-review-repository.ts',
   'task/persistence/task-verification-repository.ts',
   'task/module.mjs', 'task/domain/task-record.mjs',
   'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
@@ -114,7 +113,6 @@ const requiredRuntime = [
   'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.ts',
   'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
-  'task/interfaces/internal/task-development-driver.mjs', 'task/interfaces/internal/task-planning-identity-driver.mjs',
   'task/interfaces/internal/workflow-route-router.mjs', 'task/contracts/internal-workflow-route-catalog.mjs',
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
@@ -143,7 +141,7 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
 const layerOf = (relative) => {
-  if (relative === 'infrastructure/contracts/public-json.mjs' || relative === 'task/application/finish/git-task-contribution.mjs' || relative === 'task/application/finish/task-finish-delivery-commit.mjs') return 'infrastructure';
+  if (relative === 'infrastructure/contracts/public-json.mjs') return 'infrastructure';
   const parts = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
   const moduleOffset = (
@@ -235,11 +233,6 @@ for (const file of graph.keys()) visitCycle(file);
 
 const bootstrapRuntimeConsumers = new Set([
   'bootstrap/cli/registry.mjs',
-  'task/interfaces/internal/task-development-driver-runner.mjs',
-  'task/interfaces/internal/task-finish-maintenance-driver.mjs',
-  'task/interfaces/internal/task-finish-retained-cleanup.mjs',
-  'task/interfaces/internal/task-finish-target-lease-driver.mjs',
-  'task/interfaces/internal/task-planning-identity-driver-runner.mjs',
   'task/interfaces/internal/task-retrospective-driver.mjs',
   'web/http/read-worker.mjs',
 ]);
@@ -465,18 +458,11 @@ const legacyTaskRecordConsumers = new Set([
   'change/module.mjs',
   'change/interfaces/http/change-http.mjs',
   'workspace/application/project-daily-progress-application.mjs',
-  'task/application/task-development-application.ts',
   'task/application/task-environment-application.mjs',
-  'task/application/finish/task-finish-application.mjs',
-  'task/application/finish/task-finish-delivery-terminal.mjs',
-  'task/application/task-planning-identity-application.mjs',
   'task/application/task-retrospective-application.mjs',
-  'task/application/task-terminal-delivery-application.ts',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.mjs',
   'task/persistence/task-environment-repository.mjs',
-  'task/persistence/task-development-repository.mjs',
-  'task/persistence/task-finish-repository.mjs',
   'task/persistence/task-overview-repository.ts',
   'task/persistence/task-retrospective-repository.mjs',
   'task/persistence/task-verification-repository.ts',

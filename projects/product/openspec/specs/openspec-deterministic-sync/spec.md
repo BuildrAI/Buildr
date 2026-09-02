@@ -156,19 +156,6 @@ Buildr MUST 维护历史 `baseline`、`check`、`sync-plan`、`sync-apply`及`au
 - **THEN** 正式验证 MUST失败并报告消费者位置
 - **AND** 退役登记 MUST NOT报告当前流程已收敛
 
-### Requirement: Convergence transaction 必须在任何写入前门禁 Change checklist
-Buildr MUST 在 active Change 的 canonical planning、receipt写入、canonical apply和archive之前，以与Change read model相同的Markdown checkbox语义检查现有`tasks.md`。存在任一未完成checkbox时，convergence MUST返回`blocked`与稳定的checklist progress，且不得写receipt、canonical spec或调用archive；Buildr MUST NOT自动勾选、删除或把归档后Task lifecycle evidence解释为Change task完成。
-
-#### Scenario: Change仍有未完成checkbox
-- **WHEN** active Change的`tasks.md`同时包含已完成与未完成checkbox
-- **THEN** `buildr openspec converge` MUST返回`change-checklist-incomplete`及`completed`、`total`、`remaining`
-- **AND** canonical files、convergence receipt与archive lifecycle MUST保持不变
-
-#### Scenario: Change checklist已经闭合
-- **WHEN** active Change的全部checkbox均已完成且其他convergence门禁通过
-- **THEN** transaction MUST继续执行确定性planning、validation、apply、confirmation与archive
-- **AND** archive后Task Development、Task Finish、Environment cleanup与Task terminal evidence MUST由各自authority形成，Task current records MUST只写Workspace SQLite且不得回写archive checkbox
-
 ### Requirement: 全部 Requirements 清退必须删除 canonical capability spec
 当一个现有 capability 的全部 canonical Requirements 都被同一无歧义 delta 安全删除时，deterministic convergence MUST 将目标建模为 expected absent，而不是生成没有 Requirements 的空 spec。Plan 与 receipt MUST 保存 before/expected existence，projected strict validation MUST 在隔离树中删除目标，canonical applier MUST 原子删除目标文件并在批次失败时恢复 before bytes，observer MUST 只在目标文件确实不存在时确认 expected state。
 
@@ -276,3 +263,11 @@ Preflight MUST 产生稳定`readinessIdentity`，绑定change、project、plan i
 - **WHEN** 相同规范化delta、canonical、active Change observations、executable与algorithm identity重复执行preflight
 - **THEN** 结果 MUST产生相同readiness identity、plan identity、operations和blocker分类
 - **AND**duration等非identity运行数据 MUST不影响identity
+
+### Requirement: Convergence transaction 必须在任何写入前检查 Change checklist
+Convergence MUST在canonical写入前确认Change checklist已完成。Archive后Task交付、Environment cleanup与Task terminal result由Agent和各自owner形成，不得回写archive checkbox。
+
+#### Scenario: checklist存在未完成项
+- **WHEN** converge观察到未完成任务
+- **THEN** MUST在canonical写入前停止
+- **AND** MUST不创建其他任务流程状态

@@ -170,8 +170,7 @@ assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
 const finishStatus = run(['task', 'finish', 'status', '--json']);
 assert.equal(finishStatus.status, 2);
 assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
-assert.ok(JSON.parse(finishStatus.stdout).suggestions.includes('task finish inspect'));
-assert.equal(JSON.parse(finishStatus.stdout).suggestions.some((item) => ['task finish run', 'task finish rollover', 'task finish reconcile'].includes(item)), false, '提示不得重新推荐已退役的收尾写入口');
+assert.equal(JSON.parse(finishStatus.stdout).suggestions.some((item) => item.startsWith('task finish')), false, '提示不得推荐已退役的收尾入口');
 assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
 
 const omitPrepareAgent = run(['task', 'environment', 'prepare', 'demo', '--json']);

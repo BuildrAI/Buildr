@@ -7,6 +7,7 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT = path.resolve(SERVICE_ROOT, '../..');
 const WORKSPACE_ROOT = path.resolve(PRODUCT_ROOT, '../..');
 const CHANGE_ROOTS = [
+  path.join(PRODUCT_ROOT, 'openspec/changes/remove-task-development-and-legacy-finish-history'),
   path.join(PRODUCT_ROOT, 'openspec/changes/streamline-release-dispatch-and-closeout'),
   path.join(PRODUCT_ROOT, 'openspec/changes/replace-main-dev-merge-with-dev-provenance-reconciliation'),
   path.join(PRODUCT_ROOT, 'openspec/changes/unify-release-task-lifecycle-and-closeout'),
@@ -33,16 +34,14 @@ test('release collection contract freezes one manual selection chain and fails c
     '发布模块必须保持唯一owner与窄consumer边界',
   ]) assert.match(contract, new RegExp(marker.replace(/[<>/]/g, '\\$&')), marker);
   assert.match(contract, /MUST NOT自动解决、直接编辑、rebase、reset、force push/);
-  assert.match(contract, /MUST NOT新增release旁路SQLite slot、复制Result/);
+  assert.match(contract, /不得复制专业Result正文.*旁路persistence/);
   assert.match(contract, /Release lifecycle 必须维持唯一协调Task与稳定恢复身份/);
   assert.match(contract, /codex\/release-main-<version>-g<generation>/);
 });
 
-test('release integrations retain Candidate authority and do not require legacy Finish', () => {
+test('release integrations retain Product Candidate authority without retired task workflow evidence', () => {
   const release = capabilityContract('open-source-release-governance');
   const verification = capabilityContract('product-verification-quality');
-  const finish = capabilityContract('task-finish-execution');
-  const closeout = capabilityContract('task-closeout-orchestration');
 
   assert.match(release, /公开发布必须绑定release集合并分离两次Git收敛/);
   assert.match(release, /published-but-dev-reconciliation-blocked/);
@@ -50,10 +49,9 @@ test('release integrations retain Candidate authority and do not require legacy 
   assert.match(release, /只读.*幂等|只读dev provenance reconciliation/s);
   assert.match(verification, /Release模型适配不得重复建设既有验证能力/);
   assert.match(verification, /同一release source SHA\/tree MUST只有一个matching Candidate generation和一个不可变tarball/);
-  assert.match(release, /发布关联必须与旧收尾执行证明解耦/);
-  assert.match(finish, /旧收尾只允许读取历史/);
-  assert.match(closeout, /自举激活必须支持无旧收尾运行的直接交付/);
-  assert.match(closeout, /不撤销完成或重新推送业务内容/);
+  assert.match(release, /Release transaction MUST只要求release\/support Task Record关系/);
+  assert.match(release, /source、generation、CI aggregate与唯一tarball MUST继续按现有发布owner校验/);
+  assert.match(release, /MUST不降低或替换任何发布候选门禁/);
 });
 
 test('source release Skill blocks incomplete migration and does not retain the old dev-main recipe', () => {
@@ -63,12 +61,12 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /精确`<dev-baseline>`和有序待选择dev commits/);
   assert.match(skill, /只允许`cherry-pick -x`/);
   assert.match(skill, /reopen --confirm --reason/);
-  assert.match(skill, /support Task terminal、Delivery或Activation都不使release协调Task completed/);
-  assert.match(skill, /aggregate失败、缺失或source不匹配时，release协调Task保持active\/blocked/);
+  assert.match(skill, /support Task terminal或交付结果都不使release协调Task completed/);
+  assert.match(skill, /aggregate失败、缺失或source不匹配时，release协调Task保持active/);
   assert.match(skill, /candidate-failed-shard-retry\.mjs inspect/);
   assert.match(skill, /rerun --failed/);
   assert.match(skill, /不得dispatch新的完整run或跨run拼接evidence/);
-  assert.match(skill, /全部current前保持active\/blocked，不调用Task Finish或complete/);
+  assert.match(skill, /这些事实全部成立前Task保持active，不调用complete/);
   assert.match(skill, /调用`release-orchestration-runner\.mjs closeout`/);
   assert.match(skill, /`release-git-convergence\.mjs reconcile-dev`/);
   assert.match(skill, /基于current `dev`的release support Task worktree/);

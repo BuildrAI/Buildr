@@ -6,9 +6,6 @@ const disposition = (mode, reasonCode, reason, owners) => owners.map((owner) => 
 }));
 
 const entries = [
-  ...disposition('context-runtime', 'runtime-owns-application-and-sandbox', 'The public Runtime owns reusable Application state and per-case sandbox isolation.', [
-    'integration-task-development',
-  ]),
   ...disposition('hybrid', 'immutable-seed-with-real-boundary', 'The owner reuses an immutable seed while retaining its real CLI, process, or Workspace boundary.', [
     'integration-runtime',
     'system-verification-admission',
@@ -20,7 +17,6 @@ const entries = [
     'integration-task-coordination',
     'integration-project-daily-progress',
     'integration-task-environment',
-    'integration-task-finish',
   ]),
   ...disposition('full-lifecycle', 'stateless-direct-evidence', 'The owner is a bounded static or stateless check and has no reusable mutable Context.', [
     'typecheck',
@@ -55,7 +51,6 @@ const entries = [
   ]),
   ...disposition('full-lifecycle', 'lifecycle-is-primary-evidence', 'Initialization, mutation, recovery, Finish, cleanup, or concurrency is the primary evidence and cannot be replaced by a cached Context.', [
     'integration-self-bootstrap',
-    'integration-task-finish-delivery',
     'system-verification-contracts',
     'system-public-json-contracts',
     'system-openspec-contract-audit',
@@ -63,7 +58,6 @@ const entries = [
     'system-worktree-lifecycle',
     'system-runtime-recovery',
     'system-app-process',
-    'system-task-finish-cli',
     'system-fresh-build',
     'system-windows-platform',
     'concurrent-task-acceptance',
@@ -124,20 +118,8 @@ export const VERIFICATION_GOLDEN_CONTEXT_AUDIT = Object.freeze({
     'none',
     'Retained checkout synchronization, activation, process identity, and closeout are the primary evidence and cannot start from a cached Application.',
   ),
-  finishApplication: goldenJourney(
-    ['integration-task-finish'],
-    'hybrid',
-    'application',
-    'Finish Application core reuses the Application assembly while every case retains its own SQLite, filesystem, CLI, and failure sandbox.',
-  ),
-  finishDelivery: goldenJourney(
-    ['integration-task-finish-delivery', 'system-task-finish-cli'],
-    'full-lifecycle',
-    'none',
-    'Delivery carrier construction, target transition, retained activation, public CLI, and cleanup are the primary evidence.',
-  ),
   cleanup: goldenJourney(
-    ['integration-task-finish-delivery', 'workspace-lifecycle', 'ownership-recovery'],
+    ['workspace-lifecycle', 'ownership-recovery'],
     'full-lifecycle',
     'none',
     'Cleanup must prove removal, retention, ownership, rollback, and repeatability against state created by the same case.',

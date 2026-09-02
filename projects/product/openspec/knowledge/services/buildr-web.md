@@ -26,7 +26,7 @@
 - Task、Project与Service文档入口共享Workspace相对Markdown路径规则。Task Intent中的`.md`链接只能解析到Task scope内已登记Project的`source.path`；Project/Service预览内的相对导航继续受同一Project边界约束。界面分别表达“引用已解析”与“正文当前可读取”，正文缺失或读取失败不反向判定引用非法；前端不建立Task附件、文档副本或新writer。
 - 项目详情第三 Tab「每日演进」只读展示当天本机 v2 文件的四问摘要与提交（不展示变更文件列表；`files` 仍可由 CLI inspect 返回），可用日期选择器与前后一天切换日期，并按日/人/任务分组；按任务只聚合已关联的自己的提交。空态明确需要 Agent 收集 Git 后写入，页面无写入控件，打开时不扫描 Git。Task 详情概览不展示每日演进反向关联；生成入口走右上角交给 Agent。
 - 父子管理从任务记录直接读取目标、关系及子任务结果，旧专用计划只读。父任务完成要求当前观察、总体验收、逐项处置与明确用户授权；界面和命令共享同一写入保护。见[父子管理](../flows/parent-child-management.md)。
-- 所有Task角色先展示同一Task Overview用户摘要：目标以及相互正交的Delivery、Activation、Cleanup，随后列出局部attention和具名authorization；前端直接消费read model，不从技术字段重算authority、拼装授权token、解释Development gate或把maintenance attention降级为Delivery失败。Review、Verification与Development按需独立读取，任一缺失或失败不隐藏其他模块；Parent/Child导航与详情侧栏保持独立任务语义。
+- 所有Task角色先展示同一Task Overview用户摘要：目标、Task Record顶层结果、Environment cleanup与局部attention。前端直接消费read model，不推断机器交付、激活、授权或统一门禁。Review与Verification按需独立读取，任一缺失或失败不隐藏其他模块；Parent/Child导航保持独立任务语义。
 - Task“证据”页只展示Review Results与current任务验证报告；Task Execution Record浏览器和相关API已经删除。
 
 ## 运行与验证

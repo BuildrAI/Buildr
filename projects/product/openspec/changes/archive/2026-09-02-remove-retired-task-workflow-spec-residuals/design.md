@@ -1,0 +1,5 @@
+# 设计
+
+以收敛后的当前实现和退役规范为准，区分两类文本：描述旧能力为当前依赖的正向Requirement必须删除；明确禁止恢复旧能力、解释已完成数据迁移或保留不可变历史的文本继续存在。对仍有独立价值的Requirement用Agent、真实现场和现有专业owner重写，不建立替代状态机或兼容层。
+
+本Change不改Product Candidate、Release Candidate、发布事务或任何运行时实现。验收以当前主规范无正向旧依赖、strict validation通过和文档链接有效为准。

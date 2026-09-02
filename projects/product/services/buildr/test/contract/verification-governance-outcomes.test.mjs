@@ -18,15 +18,7 @@ const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'ut
 const governanceInvariants = Object.freeze([
   { id: 'action-local-doctor-readiness', owner: 'integration-declarations', files: ['test/integration/core-diagnostics-and-package.test.mjs'] },
   { id: 'delivery-activation-cleanup-orthogonality', owner: 'integration-task-read-models', files: ['test/integration/task-overview-repository.test.ts'] },
-  { id: 'development-current-evidence', owner: 'integration-task-development', files: ['test/integration/task-development-application.test.ts'] },
   { id: 'parent-contribution-read-model', owner: 'integration-task-coordination', files: ['test/integration/parent-coordination-application.test.ts'] },
-  {
-    id: 'legacy-resource-safety',
-    owner: 'integration-task-finish-delivery',
-    files: [
-      'test/integration/task-finish-retained-cleanup.test.mjs',
-    ],
-  },
 ]);
 
 test('前序治理结果由现有最低充分 Integration owner 集中覆盖', () => {

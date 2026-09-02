@@ -12,7 +12,6 @@ import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocument
 import { ChangeBriefPanel, type ChangePayload } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
-import { DevelopmentTab } from './task-detail/DevelopmentTab';
 import { EnvironmentTab } from './task-detail/EnvironmentTab';
 import { EvidenceTab } from './task-detail/EvidenceTab';
 import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
@@ -41,7 +40,6 @@ type BriefState =
 const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'prototype', label: '原型' },
-  { id: 'development', label: '研发' },
   { id: 'evidence', label: '证据' },
   { id: 'retrospective', label: '复盘' },
   { id: 'environment', label: '环境' },
@@ -85,8 +83,6 @@ export function TaskDetailPage() {
   const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
   const [documentReference, setDocumentReference] = useState<TaskDocumentReference | null>(null);
 
-  const [developmentData, setDevelopmentData] = useState<any>(null);
-  const [developmentLoading, setDevelopmentLoading] = useState(false);
   const [environmentData, setEnvironmentData] = useState<any>(null);
   const [environmentLoading, setEnvironmentLoading] = useState(false);
   const [reviewData, setReviewData] = useState<any>(null);
@@ -106,7 +102,6 @@ export function TaskDetailPage() {
   activeTabRef.current = activeTab;
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
-  const developmentRequestRef = useRef(0);
   const prototypeRequestRef = useRef(0);
   const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
@@ -208,31 +203,6 @@ export function TaskDetailPage() {
       }
     } finally {
       if (coordinationRequestRef.current === requestId) setCoordinationLoading(false);
-    }
-  }, [taskId]);
-
-  const refreshDevelopment = useCallback(async () => {
-    const requestId = ++developmentRequestRef.current;
-    const currentTaskId = taskId;
-    setDevelopmentLoading(true);
-    try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'development', (signal) => (
-        taskProfessionalApi.development(currentTaskId, { signal })
-      ));
-      if (developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setDevelopmentData(next);
-      }
-    } catch (err) {
-      if (!isTaskReadCancelled(err) && developmentRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setDevelopmentData({
-          status: 'unavailable',
-          development: null,
-          diagnostic: { code: (err as ApiError).code || 'task_development_read_failed', message: err instanceof Error ? err.message : '读取失败' },
-          nextActions: [],
-        });
-      }
-    } finally {
-      if (developmentRequestRef.current === requestId) setDevelopmentLoading(false);
     }
   }, [taskId]);
 
@@ -380,7 +350,6 @@ export function TaskDetailPage() {
       void refreshOverview();
       void refreshCoordination();
     }
-    if (tab === 'development') void refreshDevelopment();
     if (tab === 'prototype') void refreshPrototype();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
@@ -388,7 +357,7 @@ export function TaskDetailPage() {
       void refreshVerification();
     }
     if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshDevelopment, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshEnvironment, refreshReview, refreshVerification, refreshRetrospective]);
 
   useEffect(() => {
     setPageError(null);
@@ -397,7 +366,6 @@ export function TaskDetailPage() {
     setActiveTab('overview');
     setOverviewData(null);
     setCoordinationData(null);
-    setDevelopmentData(null);
     setPrototypeData(null);
     setPrototypeError(null);
     setEnvironmentData(null);
@@ -412,7 +380,6 @@ export function TaskDetailPage() {
     setDocumentReference(null);
     projectRegistryRef.current = null;
     setEditState('可以修改');
-    developmentRequestRef.current += 1;
     prototypeRequestRef.current += 1;
     overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
@@ -421,7 +388,6 @@ export function TaskDetailPage() {
     verificationRequestRef.current += 1;
     retrospectiveRequestRef.current += 1;
     retrospectiveMutationRef.current += 1;
-    setDevelopmentLoading(false);
     setPrototypeLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
@@ -453,7 +419,6 @@ export function TaskDetailPage() {
       void refreshOverview();
       void refreshCoordination();
     }
-    if (tab === 'development') void refreshDevelopment();
     if (tab === 'environment') void refreshEnvironment();
     if (tab === 'evidence') {
       void refreshReview();
@@ -728,8 +693,7 @@ export function TaskDetailPage() {
           summary={overviewData?.userSummary}
           loading={overviewLoading}
           onRefresh={() => { void refreshOverview(); }}
-          onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'development')}
-          onAuthorize={(authorization) => openAgentAction(authorization.owner, { taskId, action: authorization.action, summary: authorization.summary })}
+          onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'overview')}
         />
         )}
         <details className={`task-technical-overview${currentCoordination?.mode === 'parent' ? ' parent-mode' : ' ordinary-mode'}`} open={!record.isParent}>
@@ -744,12 +708,10 @@ export function TaskDetailPage() {
           </div>
           {overviewData?.error ? <p className="alert error">{overviewData.error}</p> : (
             <dl className="read-facts detail-facts">
-              <Fact label="研发" value={overviewData?.development?.present ? `${overviewData.development.status || 'unknown'} · ${formatDateTime(overviewData.development.observedAt)}` : '尚未形成'} />
               <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${formatDateTime(overviewData.reviews.planning.updatedAt)}` : '尚未记录'} />
               <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${formatDateTime(overviewData.reviews.completion.updatedAt)}` : '尚未记录'} />
               <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${formatDateTime(overviewData.verification.updatedAt)}` : '尚未记录'} />
               <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
-              <Fact label="历史交付记录" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '无旧收尾记录'} />
             </dl>
           )}
         </section>
@@ -971,13 +933,6 @@ export function TaskDetailPage() {
         </form>
       </Modal>
 
-      <DevelopmentTab
-        taskId={taskId}
-        active={activeTab === 'development'}
-        data={developmentData}
-        loading={developmentLoading}
-        onRefresh={() => { void refreshDevelopment(); }}
-      />
       <PrototypeTab
         active={activeTab === 'prototype'}
         workspaceId={workspaceId}

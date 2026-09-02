@@ -1,154 +1,143 @@
-// @ts-nocheck -- Legacy JavaScript boundary migrated to a single TypeScript source; typing is outside this change.
 import crypto from 'node:crypto';
 
-function digest(value) {
+type JsonObject = Record<string, unknown>;
+
+type OverviewRow = {
+  task_id: string;
+  title: string;
+  intent: string;
+  status: 'todo' | 'active' | 'completed' | 'abandoned';
+  result_summary: string | null;
+  result_no_change: number | null;
+  parent_task_id: string | null;
+  parent_title: string | null;
+  parent_status: string | null;
+  children_json: string | null;
+  created_at: string;
+  updated_at: string;
+  planning_json: string | null;
+  planning_subject_identity: string | null;
+  planning_outcome: string | null;
+  planning_updated_at: string | null;
+  completion_review_json: string | null;
+  completion_review_subject_identity: string | null;
+  completion_review_outcome: string | null;
+  completion_review_updated_at: string | null;
+  verification_json: string | null;
+  verification_target_identity: string | null;
+  verification_outcome: string | null;
+  verification_updated_at: string | null;
+  environment_status: string | null;
+  environment_receipt_json: string | null;
+  environment_updated_at: string | null;
+};
+
+type TaskOverviewRuntime = {
+  readTaskOverviewPersistence(targetRoot: string, taskId: string): { row: OverviewRow };
+  inspectTaskOverview?: (targetRoot: string, taskId: string) => JsonObject;
+};
+
+function digest(value: string | null): string | null {
   return value == null ? null : `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-function parsed(value) {
+function parsed(value: string | null): unknown {
   return value == null ? null : JSON.parse(value);
 }
 
-function text(value) {
+function isJsonObject(value: unknown): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function object(value: unknown): JsonObject | null {
+  return isJsonObject(value) ? value : null;
+}
+
+function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function finishDetail(payload) {
-  if (payload?.kind === 'terminal') return payload.completion || null;
-  if (payload?.kind === 'run') return payload.preparedCompletion || payload.run || null;
-  return null;
+function cleanupStatus(row: OverviewRow): string {
+  const receipt = object(parsed(row.environment_receipt_json));
+  const latest = object(receipt?.latest);
+  const cleanup = object(latest?.cleanup);
+  return text(cleanup?.status) ?? (row.environment_status == null ? 'not-applicable' : 'pending');
 }
 
-function finishMaintenance(detail) {
-  return detail?.maintenance || detail?.result?.maintenance || detail?.result?.completion?.maintenance || null;
-}
-
-function authorizationFacts(...sources) {
-  const facts = [];
-  for (const source of sources) {
-    const candidates = Array.isArray(source?.requiredAuthorizations)
-      ? source.requiredAuthorizations
-      : Array.isArray(source?.authorizations)
-        ? source.authorizations
-        : source?.authorizationRequired && typeof source.authorizationRequired === 'object'
-          ? [source.authorizationRequired]
-          : [];
-    for (const candidate of candidates) {
-      const owner = text(candidate?.owner);
-      const action = text(candidate?.action);
-      const summary = text(candidate?.summary);
-      if (owner && action && summary) facts.push({ owner, action, summary });
-    }
-  }
-  return facts.filter((fact, index) => facts.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(fact)) === index);
-}
-
-function userSummary(row) {
-  const environment = parsed(row.environment_receipt_json);
-  const payload = parsed(row.finish_payload_json);
-  const detail = finishDetail(payload);
-  const maintenance = finishMaintenance(detail);
-  const terminal = row.finish_status === 'complete';
-  const delivery = terminal
-      ? { status: 'delivered', summary: '已读取历史机器交付记录。', source: 'task-finish-history' }
-      : row.finish_run_id != null
-        ? { status: 'historical-run', summary: '存在未终结的旧收尾运行记录。', source: 'task-finish-history' }
-        : row.status === 'completed'
-          ? { status: row.result_no_change === 1 ? 'not-applicable' : 'completed', summary: row.result_no_change === 1 ? '任务已完成且无需交付变更。' : '任务结果已保存；没有可用的旧机器交付历史。', source: 'task-record' }
-          : { status: 'not-started', summary: '尚未形成交付事实。', source: 'task-record' };
-  const activationStatus = text(maintenance?.activation) || (terminal ? 'unknown' : 'not-applicable');
-  const activation = {
-    status: activationStatus,
-    summary: activationStatus === 'passed'
-      ? '激活已通过。'
-      : activationStatus === 'not-applicable'
-        ? '本次交付无需激活。'
-        : activationStatus === 'unknown'
-          ? '尚无可读取的激活结果。'
-          : '激活需要局部关注。',
-    source: 'task-finish-maintenance',
-  };
-  const cleanupStatus = text(environment?.latest?.cleanup?.status)
-    || text(maintenance?.environmentCleanup)
-    || text(row.finish_cleanup_status)
-    || text(detail?.cleanup?.status)
-    || (row.environment_status == null ? 'not-applicable' : 'pending');
-  const cleanup = {
-    status: cleanupStatus,
-    summary: cleanupStatus === 'cleaned'
+function userSummary(row: OverviewRow): JsonObject {
+  const cleanup = cleanupStatus(row);
+  const result = row.status === 'completed'
+    ? {
+        status: row.result_no_change === 1 ? 'not-applicable' : 'completed',
+        summary: row.result_no_change === 1 ? '任务已完成且没有产生变更。' : '任务结果已保存。',
+        source: 'task-record',
+      }
+    : row.status === 'abandoned'
+      ? { status: 'abandoned', summary: row.result_summary ?? '任务已放弃。', source: 'task-record' }
+      : row.status === 'active'
+        ? { status: 'in-progress', summary: '任务正在进行。', source: 'task-record' }
+        : { status: 'not-started', summary: '任务尚未开始。', source: 'task-record' };
+  const cleanupFact = {
+    status: cleanup,
+    summary: cleanup === 'cleaned'
       ? '任务环境已清理。'
-      : cleanupStatus === 'not-applicable'
+      : cleanup === 'not-applicable'
         ? '本次任务没有适用的环境清理。'
-        : cleanupStatus === 'pending'
-          ? '环境清理尚待专业 owner 完成。'
+        : cleanup === 'pending'
+          ? '环境清理尚待完成。'
           : '环境清理需要局部关注。',
-    source: environment?.latest?.cleanup ? 'task-environment' : 'task-finish-maintenance',
+    source: 'task-environment',
   };
-  const attention = [];
-  if (['attention', 'blocked', 'failed'].includes(activation.status)) attention.push({ owner: 'task-finish', scope: 'activation', summary: activation.summary });
-  if (['attention', 'blocked', 'failed'].includes(cleanup.status)) attention.push({ owner: 'task-environment', scope: 'cleanup', summary: cleanup.summary });
-  if (['blocked', 'failed'].includes(row.finish_status) && row.finish_primary_failure_code) {
-    attention.push({ owner: 'task-finish', scope: 'diagnostics', summary: `交付诊断：${row.finish_primary_failure_code}` });
-  } else if (row.environment_status === 'blocked' && !attention.some((item) => item.owner === 'task-environment')) {
-    attention.push({ owner: 'task-environment', scope: 'environment', summary: '任务环境当前存在局部阻塞。' });
-  }
+  const attention = ['attention', 'blocked', 'failed'].includes(cleanup)
+    ? [{ owner: 'task-environment', scope: 'cleanup', summary: cleanupFact.summary }]
+    : row.environment_status === 'blocked'
+      ? [{ owner: 'task-environment', scope: 'environment', summary: '任务环境当前存在局部阻塞。' }]
+      : [];
   return {
     goal: { status: 'available', title: row.title, intent: row.intent },
-    delivery,
-    activation,
-    cleanup,
+    result,
+    cleanup: cleanupFact,
     attention,
-    authorization: authorizationFacts(detail, maintenance),
   };
 }
 
-function resultSlot(row, prefix, identityField = 'target') {
-  const serialized = row[`${prefix}_json`];
+function resultSlot(serialized: string | null, identityField: 'subject' | 'target', identityValue: string | null, outcome: string | null, updatedAt: string | null) {
   return {
     present: serialized != null,
-    [`${identityField}Identity`]: row[`${prefix}_${identityField}_identity`] ?? null,
-    outcome: row[`${prefix}_outcome`] ?? null,
-    updatedAt: row[`${prefix}_updated_at`] ?? null,
+    [`${identityField}Identity`]: identityValue,
+    outcome,
+    updatedAt,
     resultDigest: digest(serialized),
   };
 }
 
-export function registerTaskOverviewApplication(runtime) {
-  function inspectTaskOverview(targetRoot, taskId) {
-    const persistence = runtime.readTaskOverviewPersistence(targetRoot, taskId);
-    const row = persistence.row;
-    const planning = resultSlot(row, 'planning', 'subject');
-    const completion = resultSlot(row, 'completion_review', 'subject');
-    const verification = resultSlot(row, 'verification');
-    const finishTerminal = row.finish_status === 'complete';
+export function registerTaskOverviewApplication(runtime: TaskOverviewRuntime): TaskOverviewRuntime {
+  function inspectTaskOverview(targetRoot: string, taskId: string): JsonObject {
+    const row = runtime.readTaskOverviewPersistence(targetRoot, taskId).row;
     return {
-      schemaVersion: 'buildr.task-overview/v1',
+      schemaVersion: 'buildr.task-overview/v2',
       taskId: row.task_id,
       task: {
         title: row.title,
         intent: row.intent,
         status: row.status,
-        result: row.status === 'active' ? null : { summary: row.result_summary, ...(row.status === 'completed' ? { noChange: row.result_no_change === 1 } : {}) },
+        result: row.status === 'active' || row.status === 'todo'
+          ? null
+          : { summary: row.result_summary, ...(row.status === 'completed' ? { noChange: row.result_no_change === 1 } : {}) },
         parent: row.parent_task_id ? { taskId: row.parent_task_id, title: row.parent_title, status: row.parent_status } : null,
-        children: parsed(row.children_json) || [],
+        children: parsed(row.children_json) ?? [],
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       },
-      development: {
-        present: row.development_json != null,
-        status: row.development_status ?? 'unknown',
-        observedAt: row.development_observed_at ?? null,
-        receiptDigest: digest(row.development_json),
-      },
       reviews: {
-        planning,
-        completion,
+        planning: resultSlot(row.planning_json, 'subject', row.planning_subject_identity, row.planning_outcome, row.planning_updated_at),
+        completion: resultSlot(row.completion_review_json, 'subject', row.completion_review_subject_identity, row.completion_review_outcome, row.completion_review_updated_at),
       },
-      verification,
-      environment: { present: row.environment_status != null, status: row.environment_status ?? 'unknown', updatedAt: row.environment_updated_at ?? null },
-      finish: {
-        current: { present: row.finish_run_id != null && !finishTerminal, runId: !finishTerminal ? row.finish_run_id ?? null : null, status: !finishTerminal ? row.finish_status ?? null : null, phase: !finishTerminal ? row.finish_current_phase ?? null : null, updatedAt: !finishTerminal ? row.finish_updated_at ?? null : null },
-        completion: { present: row.finish_run_id != null && finishTerminal, runId: finishTerminal ? row.finish_run_id ?? null : null, status: finishTerminal ? row.finish_status : null, completedAt: finishTerminal ? row.finish_completed_at ?? null : null, updatedAt: finishTerminal ? row.finish_updated_at ?? null : null },
+      verification: resultSlot(row.verification_json, 'target', row.verification_target_identity, row.verification_outcome, row.verification_updated_at),
+      environment: {
+        present: row.environment_status != null,
+        status: row.environment_status ?? 'unknown',
+        updatedAt: row.environment_updated_at ?? null,
       },
       userSummary: userSummary(row),
       diagnostics: [],

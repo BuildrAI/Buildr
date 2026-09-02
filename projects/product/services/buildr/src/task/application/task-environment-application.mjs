@@ -546,40 +546,6 @@ export function registerTaskEnvironmentApplication(runtime) {
     }));
   }
 
-  function portablePreparationHints(receipt) {
-    const root = receipt.scopes[0].validationRoot;
-    const portableRelative = (value) => {
-      if (!inside(root, value)) return null;
-      const relative = path.relative(root, value).split(path.sep).join('/');
-      return relative || '.';
-    };
-    const steps = [];
-    const unavailable = [];
-    for (const planned of plannedSteps(receipt).filter((step) => step.required || step.recipeRequired)) {
-      const cwd = portableRelative(planned.cwd);
-      const executable = portableRelative(planned.executablePath);
-      const outputs = planned.outputs.map((output) => ({
-        path: portableRelative(path.resolve(planned.scopeRoot, output.path)),
-        kind: output.kind,
-      }));
-      if (!cwd || !executable || outputs.some((output) => !output.path)) {
-        unavailable.push({ id: planned.id, reason: 'step-path-not-portable-to-carrier' });
-        continue;
-      }
-      steps.push({
-        id: planned.id,
-        scope: planned.scope,
-        recipe: planned.recipe,
-        cwd,
-        executable,
-        args: [...planned.args],
-        timeoutMs: planned.timeoutMs,
-        outputs,
-      });
-    }
-    return { schemaVersion: 'buildr.task-finish-preparation-hints/v1', steps, unavailable };
-  }
-
   function observePreparationStep(planned, saved = null, prepared = null) {
     const observedAt = now();
     const executable = planned.executablePath;
@@ -1265,9 +1231,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       persistence = runtime.readTaskEnvironmentPersistence(root, taskId, { optional: true });
       if (!persistence) return environmentResult('cleanup', 'unavailable', root, taskId, null, null, { code: 'task_environment_no_receipt', message: '当前机器没有可清理的 Environment Receipt。' });
       if (persistence.receipt.status === 'cleaned') {
-        let maintenanceRefresh = null;
-        try { maintenanceRefresh = runtime.refreshTaskFinishMaintenance?.(root, taskId) || null; } catch (error) { maintenanceRefresh = { status: 'attention', code: error.code || 'task_finish_maintenance_refresh_failed', message: error.message }; }
-        return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), maintenanceRefresh?.status === 'attention' ? maintenanceRefresh : null);
+        return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt));
       }
       const persistedAuthorization = authorization === null
         ? (task.status === 'completed' && task.result?.noChange === false
@@ -1276,10 +1240,9 @@ export function registerTaskEnvironmentApplication(runtime) {
         : null;
       authorization ||= persistedAuthorization;
       const abandon = authorization?.type === 'abandon' || (authorization === null && task.status === 'abandoned');
-      const finish = authorization?.type === 'finish' && authorization.deliveries && typeof authorization.deliveries === 'object';
       const noChange = persistedAuthorization?.type === 'no-change' && authorization === persistedAuthorization;
       const completed = persistedAuthorization?.type === 'completed' && authorization === persistedAuthorization;
-      if (!abandon && !finish && !noChange && !completed) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已完成或明确放弃的任务；具体删除安全仍由资源所有者复核。', 409, undefined, '先完成并对账交付、确认 Task 无代码变更，或明确 abandon Task。');
+      if (!abandon && !noChange && !completed) throw taskEnvironmentError('task_environment_cleanup_unauthorized', 'Environment cleanup 需要已完成或明确放弃的任务；具体删除安全仍由资源所有者复核。', 409, undefined, '先完成并对账交付、确认 Task 无代码变更，或明确 abandon Task。');
       const reviewedDelivery = normalizeTaskCleanupDelivery(cleanupDelivery, persistence.receipt.scopes.filter((scope) => scope.provider?.capability === GIT_PROVIDER).map((scope) => scope.selector));
       const hasReviewedDelivery = Object.keys(reviewedDelivery).length > 0;
       if (hasReviewedDelivery && !completed && !noChange) throw taskEnvironmentError('task_environment_cleanup_unauthorized', '已核验交付输入只用于已完成任务。', 409);
@@ -1301,7 +1264,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       }
       const hasGit = persistence.receipt.scopes.some((scope) => scope.provider?.capability === GIT_PROVIDER);
       if (hasGit) {
-        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, integratedRefs: finish ? authorization.deliveries : {}, integratedContributions: finish ? authorization.integratedContributions || {} : {}, allowDirty: abandon, allowNoChange: noChange && !hasReviewedDelivery, allowCompleted: completed || (noChange && hasReviewedDelivery), cleanupDelivery });
+        const provider = runtime.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowDirty: abandon, allowNoChange: noChange && !hasReviewedDelivery, allowCompleted: completed || (noChange && hasReviewedDelivery), cleanupDelivery });
         effects.push(...provider.effects.map((effect) => ({ ...effect, provider: GIT_PROVIDER })));
         if (provider.status === 'blocked') throw taskEnvironmentError(provider.diagnostic?.code || 'task_environment_provider_cleanup_blocked', provider.diagnostic?.message || 'Git provider cleanup blocked.', 409, provider.diagnostic);
       }
@@ -1314,10 +1277,7 @@ export function registerTaskEnvironmentApplication(runtime) {
       const summary = `${abandon ? '明确放弃授权下，已清理可证明属于该 Task 的环境资源。' : noChange && !hasReviewedDelivery ? 'Task 已确认无代码变更，环境资源已在无 HEAD 漂移证明下清理。' : '任务环境资源已按当前内容保全事实清理或保留；本结果不证明远端交付。'}${retainedSummary}`;
       persistence = runtime.writeTaskEnvironmentPersistence(root, { ...persistence.receipt, status: 'cleaned', resources: persistence.receipt.resources.map((item) => ({ ...item, status: 'released', updatedAt: completedAt })), latest: { ...persistence.receipt.latest, cleanup: { status: 'cleaned', completedAt, summary } }, updatedAt: completedAt });
       effects.push({ type: 'receipt-finalized', path: persistence.file });
-      let maintenanceRefresh = null;
-      try { maintenanceRefresh = runtime.refreshTaskFinishMaintenance?.(root, taskId) || null; } catch (error) { maintenanceRefresh = { status: 'attention', code: error.code || 'task_finish_maintenance_refresh_failed', message: error.message }; }
-      if (maintenanceRefresh?.status === 'attention') effects.push({ type: 'finish-maintenance-refresh-attention', diagnostic: maintenanceRefresh });
-      return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), maintenanceRefresh?.status === 'attention' ? maintenanceRefresh : null, effects);
+      return environmentResult('cleanup', 'cleaned', root, taskId, persistence, taskEnvironmentReadModel(persistence.receipt), null, effects);
     } catch (error) {
       if (persistence && (!cleanupAuthorized || managerAuthorized)) {
         try {
@@ -1364,7 +1324,6 @@ export function registerTaskEnvironmentApplication(runtime) {
       repositories: providerResult?.repositories || [],
       scopes: inspected.environment.scopes,
       resources: inspected.environment.resources.map((resource) => ({ ...resource, handle: handles.get(resource.id) })),
-      preparationHints: portablePreparationHints(persistence.receipt),
       observedAt: inspected.observedAt,
     };
   }

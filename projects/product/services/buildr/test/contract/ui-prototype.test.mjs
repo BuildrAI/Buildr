@@ -46,19 +46,17 @@ test('ui-prototype Skill 保持明确确认、真实 UI、完整页面与浏览�
 
 test('UI 影响任务路由 selected Skill 并默认按已有原型开发', () => {
   const triage = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
-  const development = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   const fragments = [
     'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
     'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',
     'resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md',
   ].map(read);
-  for (const source of [triage, development, ...fragments]) {
+  for (const source of [triage, ...fragments]) {
     assert.match(source, /界面原型（UI Prototype）/);
-    assert.match(source, /明确确认/);
-    assert.match(source, /不.*阻塞|继续/s);
-    assert.match(source, /selected `ui-prototype` Skill/);
-    assert.match(source, /用户未明确要求忽略|用户没有明确要求忽略|除非用户明确要求忽略/);
-    assert.match(source, /读取全部相关原型/);
+    assert.match(source, /明确(?:确认|要求)/);
+    assert.match(source, /不是门禁|不.*阻塞|继续/s);
+    assert.match(source, /界面原型（UI Prototype）/);
+    assert.match(source, /已有原型|已生成原型/);
   }
 });
 

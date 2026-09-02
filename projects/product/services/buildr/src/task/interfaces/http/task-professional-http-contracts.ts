@@ -1,4 +1,3 @@
-// @ts-nocheck -- Legacy JavaScript boundary migrated to a single TypeScript source; typing is outside this change.
 import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.mjs';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -19,13 +18,20 @@ const ERROR = Object.freeze({
   required: ['error'],
 });
 const RESPONSE = Object.freeze({ type: 'object', additionalProperties: true });
-const schema = (id, title, body) => Object.freeze({
+type JsonSchema = Record<string, unknown> & { $id: string };
+type SchemaValidationIssue = {
+  keyword?: string;
+  instancePath?: string;
+  params?: { additionalProperty?: string; missingProperty?: string };
+};
+
+const schema = (id: string, title: string, body: Record<string, unknown>): Readonly<JsonSchema> => Object.freeze({
   $schema: DRAFT_2020_12,
   $id: `${CONTRACT_ROOT}/${id}/v1`,
   title,
   ...body,
 });
-const closed = (properties, required = []) => ({
+const closed = (properties: Record<string, unknown>, required: readonly string[] = []): Record<string, unknown> => ({
   type: 'object',
   additionalProperties: false,
   properties,
@@ -42,8 +48,6 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   overviewResponse: schema('overview/response', 'TaskOverviewResponse', RESPONSE),
   environmentRequest: schema('environment/request', 'TaskEnvironmentRequest', EMPTY),
   environmentResponse: schema('environment/response', 'TaskEnvironmentResponse', RESPONSE),
-  developmentRequest: schema('development/request', 'TaskDevelopmentRequest', EMPTY),
-  developmentResponse: schema('development/response', 'TaskDevelopmentResponse', RESPONSE),
   reviewsRequest: schema('reviews/request', 'TaskReviewsRequest', EMPTY),
   reviewsResponse: schema('reviews/response', 'TaskReviewsResponse', RESPONSE),
   verificationRequest: schema('verification/request', 'TaskVerificationRequest', EMPTY),
@@ -56,7 +60,9 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   errorResponse: schema('error/response', 'TaskProfessionalErrorResponse', ERROR),
 });
 
-const operation = (id, method, path, request, success) => Object.freeze({
+type SchemaKey = keyof typeof TASK_PROFESSIONAL_HTTP_SCHEMAS;
+
+const operation = (id: string, method: string, path: string, request: SchemaKey, success: SchemaKey) => Object.freeze({
   id,
   method,
   path,
@@ -68,7 +74,6 @@ const operation = (id, method, path, request, success) => Object.freeze({
 export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-overview.detail', 'GET', '/tasks/:taskId/overview', 'overviewRequest', 'overviewResponse'),
   operation('task-environment.detail', 'GET', '/tasks/:taskId/environment', 'environmentRequest', 'environmentResponse'),
-  operation('task-development.detail', 'GET', '/tasks/:taskId/development', 'developmentRequest', 'developmentResponse'),
   operation('task-review.detail', 'GET', '/tasks/:taskId/reviews', 'reviewsRequest', 'reviewsResponse'),
   operation('task-verification.detail', 'GET', '/tasks/:taskId/verification', 'verificationRequest', 'verificationResponse'),
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),
@@ -79,21 +84,23 @@ export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
 export const TASK_PROFESSIONAL_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(TASK_PROFESSIONAL_HTTP_SCHEMAS));
 const OPERATIONS = new Map(TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => [item.id, item]));
 
-function validationError(operationId, label, errors) {
+function validationError(operationId: string, label: string, errors: readonly SchemaValidationIssue[]): Error {
   const item = errors.find((entry) => entry.keyword === 'additionalProperties')
     || errors.find((entry) => entry.keyword === 'required')
     || errors[0]
     || {};
   const field = item.params?.additionalProperty || item.params?.missingProperty || String(item.instancePath || '').split('/').filter(Boolean)[0] || null;
-  const error = new Error(`${label} 请求不符合 HTTP 契约${field ? `：${field}` : ''}。`);
-  error.status = 400;
-  error.code = item.keyword === 'additionalProperties' ? 'task_api_field_forbidden' : 'task_api_field_invalid';
-  if (operationId === 'task-retrospective.patch' && field === 'expectedCurrentDigest') error.code = 'task_retrospective_digest_required';
-  error.details = { operation: operationId, ...(field ? { field } : {}), keyword: item.keyword || 'schema' };
-  return error;
+  const code = operationId === 'task-retrospective.patch' && field === 'expectedCurrentDigest'
+    ? 'task_retrospective_digest_required'
+    : item.keyword === 'additionalProperties' ? 'task_api_field_forbidden' : 'task_api_field_invalid';
+  return Object.assign(new Error(`${label} 请求不符合 HTTP 契约${field ? `：${field}` : ''}。`), {
+    status: 400,
+    code,
+    details: { operation: operationId, ...(field ? { field } : {}), keyword: item.keyword || 'schema' },
+  });
 }
 
-export function validateTaskProfessionalRequest(operationId, value, label = operationId) {
+export function validateTaskProfessionalRequest(operationId: string, value: unknown, label = operationId): unknown {
   const registered = OPERATIONS.get(operationId);
   if (!registered) throw new Error(`Task professional HTTP operation is not registered: ${operationId}`);
   const result = TASK_PROFESSIONAL_HTTP_VALIDATORS.validate(registered.requestSchemaId, value);
@@ -101,7 +108,7 @@ export function validateTaskProfessionalRequest(operationId, value, label = oper
   return value;
 }
 
-export function inspectTaskProfessionalHttpContractCoverage(routeIds) {
+export function inspectTaskProfessionalHttpContractCoverage(routeIds: readonly string[]) {
   const migrated = new Set(TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => item.id));
   const unmigrated = [...new Set(routeIds)].filter((id) => !migrated.has(id)).sort();
   return Object.freeze({

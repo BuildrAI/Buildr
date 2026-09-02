@@ -49,7 +49,7 @@ export function createReleaseContext(input) {
     environment: optionalProjection(input.environment, ['identity', 'status', 'taskId', 'nodeVersion', 'nodeIdentity'], 'environment'),
     node: optionalProjection(input.node, ['authority', 'version', 'executionIdentity'], 'node'),
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
-    taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'carrierIdentity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
+    taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
   };
   value.identity = releaseContextIdentity(value);
   return value;
@@ -129,7 +129,7 @@ export function evaluateReleaseReadiness(input) {
   if (context.candidate && context.artifact && context.candidate.sourceCommit !== context.artifact.sourceCommit) findings.push(finding('candidate-artifact-source-mismatch', 'product-candidate', context.candidate.sourceCommit, context.artifact.sourceCommit, '使用同一Candidate run的aggregate和artifact。'));
   if (context.taskCorrelation) {
     checkIdentity(findings, context.taskCorrelation.identity, 'task-correlation', 'task-correlation');
-    if (context.taskCorrelation.status !== 'passed') findings.push(finding('task-correlation-not-passed', 'task-correlation', 'passed', context.taskCorrelation.status, '恢复current Task/Finish/self-bootstrap correlation。'));
+    if (context.taskCorrelation.status !== 'passed') findings.push(finding('task-correlation-not-passed', 'task-correlation', 'passed', context.taskCorrelation.status, '重新读取current release与support Task关系。'));
     if (context.release && context.taskCorrelation.sourceTree !== context.release.sourceTree) findings.push(finding('task-correlation-source-mismatch', 'task-correlation', { tree: context.release.sourceTree }, { commit: context.taskCorrelation.sourceCommit, tree: context.taskCorrelation.sourceTree }, '按current release/main tree重建Task correlation。'));
   }
   if (context.environment) {

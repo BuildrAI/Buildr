@@ -170,7 +170,7 @@ async function verifyLifecycle(context) {
     assert.ok(renderedFinish.includes('不重新交付已成立的成果'));
     assert.ok(renderedFinish.includes('--expected-source'));
     assert.ok(renderedFinish.includes('--delivered-ref'));
-    assert.ok(renderedFinish.includes('不建立候选、研发交接、旧收尾运行'));
+    assert.ok(renderedFinish.includes('收尾不建立统一验证记录、聚合流程状态或新的证明文件'));
     assert.ok(!renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
     assert.ok(!renderedFinish.includes('task finish reconcile'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));

@@ -2,7 +2,7 @@
 
 本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。第一轮计划迁移已经进入当前实现；仍未确定最终归属的生产职责必须在迁移台账中显式标记为 `deferred`，不能因暂不移动而成为无 owner 遗留。文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代 Parent 的 Contribution Handoff 与最终集成验收。
 
-本文是长期架构方向和迁移边界，不是单次实施 authority。每个进入实现的独立结构切片必须绑定 Task-scoped OpenSpec Change；Parent Plan 只负责协调总体结果、架构不变量、能力贡献、依赖和最终验收，不替代 Child Change、Development、Verification 或 Finish。
+本文是长期架构方向和迁移边界，不是单次实施 authority。每个进入实现的独立结构切片必须绑定 Task-scoped OpenSpec Change；父任务只负责协调总体结果、架构不变量、能力贡献、依赖和最终验收，不替代子任务的 Change、审查、验证或交付。
 
 ## 基本原则
 
@@ -28,7 +28,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
-| Task 参考、生命周期核心与交付切片 | Task Record、Review、Retrospective、Environment、Development、Verification、Planning Identity、Entry Snapshot、Overview、Parent Coordination、Task Finish与Terminal Delivery由`src/task/`显式注册；Task Execution Record已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
+| Task 参考与专业能力 | Task Record、Review、Retrospective、Environment、Verification、Overview和Parent Coordination由`src/task/`显式注册；Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
 | Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Task Change、Task OpenSpec、System Publication 与 Project Verification 已由各自模块拥有 |
 | Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
 | System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
@@ -188,15 +188,13 @@ task/
   module.mjs
 ```
 
-只有某项能力已经形成多个需要独立维护的文件、明确的私有协作边界，或者扁平层中的同类文件已明显妨碍查找和所有权判断时，才在对应技术层内为它建立子目录。例如 Task Finish 的 Application 实现包含多个独立交付步骤时，可以使用 `application/finish/`；其他技术层不因此被要求建立对称的 `domain/finish/` 或 `persistence/finish/`。`interfaces/cli/`、`interfaces/http/` 和 `interfaces/internal/` 继续按适配协议与调用方向分类，不属于业务能力子目录。
+只有某项能力已经形成多个需要独立维护的文件、明确的私有协作边界，或者扁平层中的同类文件已明显妨碍查找和所有权判断时，才在对应技术层内为它建立子目录。`interfaces/cli/`、`interfaces/http/` 和 `interfaces/internal/` 继续按适配协议与调用方向分类，不属于业务能力子目录。
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前Task专业模块包括Environment、Development、Review、Verification、Planning Identity、Overview和Parent Coordination；Task Entry Snapshot与Task Execution Record相关接口已删除。
+当前Task专业模块包括Environment、Review、Verification、Retrospective、Overview和Parent Coordination。研发过程由Agent依据目标、真实现场与专业Skill组合，不再由独立Task Development或Planning Identity模块保存和裁决。
 
-Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。Finish 的二十余个私有 Application 协作者集中在 `application/finish/`，Terminal Delivery Application 与单文件 Finish Repository 分别保持为 `application/task-terminal-delivery-application.mjs` 和 `persistence/task-finish-repository.mjs`，CLI 与 maintenance、retained cleanup、target lease driver 位于扁平的 `interfaces/cli/`、`interfaces/internal/`。旧 `src/application/task-finish/`、`src/application/task-terminal-delivery/`、`src/task/persistence/finish/` 和全局 Finish interfaces 不保留转发入口。
-
-`task-finish`只消费自身需要的Task、Development与Environment事实并保存Finish Result；不消费或创建Task Execution Record。`task-terminal-delivery`保持只读投影authority。
+Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。旧Task Finish与Terminal Delivery的Application、Repository、CLI和internal driver已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记与Task Environment清理，本身不形成Application状态。
 
 ## `workspace` 模块
 
@@ -803,7 +801,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 |--------|------------|--------------------|------|
 | Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.mjs` | public-json-contracts system、architecture verification | `migrated` |
-| Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Development/Planning Identity contracts | `migrated` |
+| Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Retrospective contract | `migrated` |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.mjs` | Git Worktree contract、CLI architecture | `migrated` |
 | Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
 

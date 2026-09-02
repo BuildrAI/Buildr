@@ -1,6 +1,6 @@
 # Buildr 智能体优先治理重构纲领
 
-> 本文描述尚未完成的目标架构与分阶段重构方向，不是当前产品事实、规范行为契约、规则（Rule）、技能（Skill）或智能体运行时（Agent Runtime）资产。每个工作项进入实现前，必须由独立子任务（Child Task）和适用的 OpenSpec Change 收敛需求、设计、规范、实现与验证。
+> 本文保存重构纲领与历史分阶段方向，不是当前产品事实、规范行为契约、规则（Rule）、技能（Skill）或智能体运行时（Agent Runtime）资产。Task Development、Task Candidate与Development Handoff等旧目标已经被后续实现取代；当前行为见[任务生命周期架构](task-lifecycle-architecture.md)。
 
 ## 一句话目标
 

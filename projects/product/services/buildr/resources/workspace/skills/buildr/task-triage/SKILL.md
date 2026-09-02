@@ -16,7 +16,7 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 - 完整 Git repository set，使用 Workspace/Project/Service selector，不按目录层级猜测边界；
 - 写入授权、不可逆影响和仍需用户决定的语义冲突。
 
-首次修改 proposal、Skill、代码、测试或当前知识前，从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立一次有界 authority source map。该 map 只用于当前 Agent 工作上下文，不写入 Task Record、Development Receipt、sidecar 或其他产品 authority；后续只有 scope、authority 或相关事实变化时才增量刷新，不反复全量扫描。
+首次修改 proposal、Skill、代码、测试或当前知识前，从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立一次有界 authority source map。该 map 只用于当前 Agent 工作上下文，不写入 Task Record、sidecar 或其他产品 authority；后续只有 scope、authority 或相关事实变化时才增量刷新，不反复全量扫描。
 
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
@@ -47,15 +47,15 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - `metadata-only`：仅维护 OpenSpec artifacts、Rules、Skills、文档或模板，不进入代码、构建或测试。
 - `unknown`：信息不足；先澄清，不提前写 Change artifacts 或当前事实。
 
-该轴独立于语义治理。Formal Task Record本身不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用边界均明确时，Agent可以直接工作，但不得把该路径冒充ready Environment、Development、Formal Verification、Candidate、Finish或cleanup事实。选择Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据或自动Finish时，才必须根据Task完整Project/Service scope与Project `preparation.yml`形成Environment Plan并取得ready；`metadata-only`受管执行可以使用共享执行根。
+该轴独立于语义治理。Formal Task Record本身不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用边界均明确时，Agent可以直接工作，但不得把该路径冒充ready Environment、Formal Verification或cleanup事实。选择Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据或cleanup时，才必须根据Task完整Project/Service scope与Project `preparation.yml`形成Environment Plan并取得ready；`metadata-only`受管执行可以使用共享执行根。
 
 ## 3. 条件化交接
 
 已有或刚创建的active Formal Task先`task inspect`核对目标、scope与current record identity。需要Buildr-managed checkout、Preparation、runtime projection、Task-owned资源、正式环境证据或cleanup authority时，使用`task environment inspect|prepare`取得matching执行根与retained controller；不需要这些能力的直接工作不补造Environment。
 
-按用户目标和当前事实渐进装配专业上下文：执行当前动作前只读取相应Skill、binding、contract与直接authority，Review、Verification、OpenSpec、Parent管理和Finish只在真实命中时加载。不得为发现未来阶段运行Doctor full或预读完整专业Result；provider不ready时只阻塞或降级对应分支，保留其他已确认结论。
+按用户目标和当前事实渐进装配专业上下文：执行当前动作前只读取相应Skill、binding、contract与直接authority，Review、Verification、OpenSpec、Parent管理和任务收尾只在真实命中时加载。不得为发现未来阶段运行Doctor full或预读完整专业Result；provider不ready时只阻塞或降级对应分支，保留其他已确认结论。
 
-用户已经授权实现时，先选择直接工作或Buildr受管正式证据路径。直接工作在真实Git、文件ownership与副作用边界内立即推进并如实报告证据范围；需要OpenSpec managed flow、Development、Formal Verification、Candidate、自动Finish、Task-owned资源或cleanup时，取得matching ready Environment后立即进入proposal或当前首个研发动作。
+用户已经授权实现时，先选择直接工作或Buildr受管执行路径。直接工作在真实Git、文件ownership与副作用边界内立即推进并如实报告证据范围；需要OpenSpec managed flow、Formal Verification、Task-owned资源或cleanup时，取得matching ready Environment后立即进入proposal或实现。
 
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
@@ -79,14 +79,14 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 3. 读取optional `buildr.git-operations/v1` binding；在本create分支把ready selected provider作为required。先为全部repositories逐一选择独立`fetch` operation，明确各自remote与integration branch，消费每个Result。任一fetch blocked时不执行尚未开始的rebase，不创建Task，并报告全部已发生的remote-ref effects。
 4. 全部fetch成功后重新核验每个local integration branch、matching remote ref与clean状态，再按同一顺序为每个repository明确选择`rebase` operation。本地已对齐、仅落后或含未push且未共享commit都使用同一operation；provider不自行选择merge或push。
 5. rebase冲突时，consumer明确授权provider只在pre-state已证明clean时执行有界`rebase --abort`。只有branch、HEAD、index与working tree精确恢复到pre-rebase facts才记为recovered；无论恢复是否成功，本次Task create都是`blocked`。abort失败或恢复不可证明时保留现场。已经在其他repository成功的fetch/rebase不反向回滚，必须作为部分effects报告。
-6. 任一rebase返回`treeChanged: true`时，按产品入口Buildr Skill的workspace transition约束，对相应Buildr Workspace执行当前Agent的check；Doctor或必要收敛未ready时不创建Task。若tree前进来自matching upstream上的协作者提交且当前会话不存在绑定同一Workspace、Task、run与delivered ref的matching Formal Finish Result，只能把它归类为普通Workspace update：本地没有协作者Task是正常事实，不得因此查找、恢复或启动`buildr-self-bootstrap-sync`。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理，不用一次sync掩盖。
+6. 任一rebase返回`treeChanged: true`时，按产品入口Buildr Skill的workspace transition约束，对相应Buildr Workspace执行当前Agent的check；Doctor或必要收敛未ready时不创建Task。matching upstream上的协作者提交属于普通Workspace update；本地没有协作者Task是正常事实，不得据此补造历史任务或交付记录。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理。
 7. 只有完整repository set的fetch、rebase、恢复检查与适用transition check全部成功，才调用selected `buildr.task-record/v2` provider的active `create`或`activate`。任一门禁blocked时todo保持不变。Task Record Application、Buildr Web与Task Environment不获得任何Git mutation或本门禁状态authority。
 
-上述Workspace update分类只组合本次Git Result、post-transition Doctor与当前会话已有的matching Formal Finish Result，不按commit author推断ownership，也不建立持久状态。只有真实matching Finish Result才能把同一run交给self-bootstrap；普通workspace sync不创建Task、Environment、Verification、Candidate、Finish Result或self-bootstrap evidence。
+上述Workspace update分类只组合本次Git Result与post-transition Doctor，不按commit author推断ownership，也不建立持久状态。普通workspace sync不创建Task、Environment、Verification或self-bootstrap evidence。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment，再在写入该路径的首个proposal、方案或实现内容前调用selected `buildr.task-development/v4` provider的`begin`建立研发聚合事实。后续专业planning artifact变化时更新planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具，不写正式报告；开发完成后独立使用selected `buildr.task-verification/v4` provider，根据Project测试地图完成受影响功能和低成本完整回归，并只保存有意义的Task验证报告，不预设 minimal/affected/candidate 层级。Task Development不消费该报告，triage不把验证报告变成研发或Task完成门禁。
+实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续，不因Formal Task或Environment缺失而停止；选择Buildr受管正式证据路径时，先取得matching ready Environment。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
 
 ## 4. 输出契约
 
@@ -103,7 +103,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 - 下一动作：<selected capability/provider action 或用户决定>
 ```
 
-只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话表达；不得把 readiness、planned identity、文件存在或单次 finding 冒充行为成功。
+只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话表达；不得把 readiness、文件存在或单次 finding 冒充行为成功。
 
 ## Guardrails
 

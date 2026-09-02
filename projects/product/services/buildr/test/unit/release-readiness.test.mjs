@@ -16,7 +16,7 @@ function input(overrides = {}) {
     environment: { identity: digest('6'), status: 'ready', taskId: 'release-1.2.3', nodeVersion: '24.15.0', nodeIdentity: digest('7') },
     node: { authority: 'projects/product/.node-version', version: '24.15.0', executionIdentity: digest('7') },
     workflow: { path: '.github/workflows/publish.yml', digest: digest('8'), repository: 'BuildrAI/Buildr', environment: 'npm-production' },
-    taskCorrelation: { identity: digest('9'), carrierIdentity: digest('a'), status: 'passed', sourceCommit: sha('a'), sourceTree: sha('b'), remoteRef: sha('c') },
+    taskCorrelation: { identity: digest('9'), status: 'passed', sourceCommit: sha('a'), sourceTree: sha('b'), remoteRef: sha('c') },
     ...overrides,
   };
 }
