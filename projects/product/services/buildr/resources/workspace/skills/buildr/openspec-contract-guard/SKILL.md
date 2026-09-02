@@ -23,10 +23,10 @@ change artifacts complete 且上游严格验证通过后运行：
 
 ```bash
 openspec validate <change> --strict
-buildr openspec convergence preflight <change> --project <project> --target <task-execution-root> --json
+buildr openspec convergence preflight <change> --project <project> --target <actual-work-root> --json
 ```
 
-`<task-execution-root>`必须来自matching Task Environment Receipt的`execution.workdir`。Preflight只读复用正式convergence planner、active Change scan和projected strict validation，不检查实现期checklist，不写canonical、Receipt、archive、Task或Review事实。它把blocked区分为`active-change-conflict`、`scenario-omission`、`identity-conflict`、`projected-validation`与其他`semantic-resolution-required`：Agent只处理对应依赖、Change artifact语义或用户决定，再重新运行strict与preflight，不得自动补回Scenario、选择rename或修改canonical。
+`<actual-work-root>`必须是Agent已核对的当前Workspace或matching Worktree根。Preflight只读复用正式convergence planner、active Change scan和projected strict validation，不检查实现期checklist，不写canonical、Receipt、archive、Task或Review事实。它把blocked区分为`active-change-conflict`、`scenario-omission`、`identity-conflict`、`projected-validation`与其他`semantic-resolution-required`：Agent只处理对应依赖、Change artifact语义或用户决定，再重新运行strict与preflight，不得自动补回Scenario、选择rename或修改canonical。
 
 只有preflight返回current `ready`后才继续apply。Agent直接读取当前OpenSpec artifacts，必要时使用OpenSpec返回的identity作为Planning Review subject；不调用额外规划身份接口，也不保存研发快照。Preflight `blocked`时停止apply，禁止把blocker写入Review Result代替处理。Review不是apply门禁，也不拥有、不复制或解释preflight逻辑。Buildr不提供baseline/create或阶段型check，也不创建、刷新、读取或依赖这些sidecar。
 
@@ -36,18 +36,18 @@ buildr openspec convergence preflight <change> --project <project> --target <tas
 
 ```bash
 openspec validate <change> --strict
-buildr openspec converge <change> --project <project> --target <task-execution-root> --json
+buildr openspec converge <change> --project <project> --target <actual-work-root> --json
 ```
 
-`<task-execution-root>`必须原样取自matching Task Environment Receipt的`execution.workdir`，不是canonical Workspace，也不得从cwd、其他worktree或目录扫描猜测。target中看不到active Change时保持零写入，按CLI next action回到同一Environment Receipt纠正target。
+`<actual-work-root>`必须是Agent已按Git checkout、Project/Service registry与可选Worktree evidence核对的真实Change根，不得从cwd、分支名、路径相似或旧Receipt猜测。target中看不到active Change时保持零写入，按CLI next action纠正实际root。
 
 产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。首次canonical mutation前写入唯一事务期`.buildr/convergence-receipt.json`；写后只确认expected digests与真实strict validation，再执行`archive --skip-specs`，正常archive成功后释放本次Receipt再返回`passed`。
 
 ## 3. OpenSpec Convergence Inspect
 
-`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且当前Task Environment恢复现场仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
+`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且对应实际Change工作根仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
 
-正常Converge返回`passed + archived`后，Agent重新观察当前代码、Archived Change、Canonical Specs、Git与专业结果继续工作。Review是否需要重做由Agent重新观察subject后独立判断，不影响convergence。该检查不运行Convergence Inspect；任务收尾与Environment cleanup不调用Inspect。Worktree清理后不得恢复环境、追索Receipt或把Receipt缺失报告为恢复失败。
+正常Converge返回`passed + archived`后，Agent重新观察当前代码、Archived Change、Canonical Specs、Git与专业结果继续工作。Review是否需要重做由Agent重新观察subject后独立判断，不影响convergence。任务收尾和资源清理不调用Inspect；Worktree清理后不得根据旧路径补造恢复现场。
 
 ## 4. 失败处理
 

@@ -84,11 +84,11 @@ const requiredRuntime = [
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.ts',
-  'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.mjs',
-  'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.mjs',
-  'web/application/instance-lifecycle.mjs', 'web/application/preview-lifecycle.mjs',
+  'task/interfaces/cli/task-environment.mjs', 'task/interfaces/cli/git-worktree.ts',
+  'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.ts',
+  'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
   'web/infrastructure/instance-runtime.mjs',
-  'web/interfaces/cli/web.mjs',
+  'web/interfaces/cli/web.ts',
   'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
   'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
   'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
@@ -101,7 +101,7 @@ const requiredRuntime = [
   'workspace/persistence/project-daily-progress-repository.mjs',
   'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
   'workspace/interfaces/http/workspace-http.mjs',
-  'task/infrastructure/git-worktree-provider.mjs',
+  'task/infrastructure/git-worktree-provider.ts',
   'task/application/task-environment-application.mjs',
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
@@ -117,7 +117,7 @@ const requiredRuntime = [
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
   'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
-  'task/openspec/module.mjs', 'task/change/module.mjs', 'task/change/application/change-application.mjs',
+  'task/openspec/module.mjs', 'task/change/module.ts', 'task/change/application/change-application.ts',
   'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
   'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.mjs',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
@@ -171,15 +171,15 @@ const allowedTargets = {
 const allowedCrossModulePorts = new Set([
   'agent-assets/module.mjs -> workspace/module.mjs',
   'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
-  'web/module.mjs -> system/installation/module.mjs',
-  'web/module.mjs -> workspace/module.mjs',
+  'web/module.ts -> system/installation/module.mjs',
+  'web/module.ts -> workspace/module.mjs',
   'bootstrap/cli/registry.mjs -> task/openspec/module.mjs',
   'bootstrap/runtime.mjs -> system/publication/module.mjs',
   'bootstrap/runtime.mjs -> task/openspec/module.mjs',
-  'bootstrap/runtime.mjs -> task/change/module.mjs',
+  'bootstrap/runtime.mjs -> task/change/module.ts',
   'task/openspec/module.mjs -> workspace/module.mjs',
-  'task/change/module.mjs -> task/openspec/module.mjs',
-  'task/change/module.mjs -> workspace/module.mjs',
+  'task/change/module.ts -> task/openspec/module.mjs',
+  'task/change/module.ts -> workspace/module.mjs',
   'system/publication/module.mjs -> workspace/module.mjs',
 ]);
 
@@ -461,13 +461,13 @@ const legacyTaskRecordConsumers = new Set([
   'task/application/task-environment-application.mjs',
   'task/application/task-retrospective-application.mjs',
   'task/application/task-verification-application.ts',
-  'task/infrastructure/git-worktree-provider.mjs',
+  'task/infrastructure/git-worktree-provider.ts',
   'task/persistence/task-environment-repository.mjs',
   'task/persistence/task-overview-repository.ts',
   'task/persistence/task-retrospective-repository.mjs',
   'task/persistence/task-verification-repository.ts',
   'web/http/server.mjs',
-  'web/application/preview-lifecycle.mjs',
+  'web/application/preview-lifecycle.ts',
 ]);
 const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
 for (const file of sourceFiles) {
@@ -551,7 +551,7 @@ if ([buildrWebServer, buildrWebRouter].some((file) => fs.existsSync(file) && /in
 }
 
 const gitWorktreeProvider = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
-const gitWorktreeInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'git-worktree.mjs');
+const gitWorktreeInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'git-worktree.ts');
 if (fs.existsSync(gitWorktreeProvider)) {
   const source = fs.readFileSync(gitWorktreeProvider, 'utf8');
   if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {

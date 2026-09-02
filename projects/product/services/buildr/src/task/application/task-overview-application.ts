@@ -27,9 +27,6 @@ type OverviewRow = {
   verification_target_identity: string | null;
   verification_outcome: string | null;
   verification_updated_at: string | null;
-  environment_status: string | null;
-  environment_receipt_json: string | null;
-  environment_updated_at: string | null;
 };
 
 type TaskOverviewRuntime = {
@@ -45,27 +42,7 @@ function parsed(value: string | null): unknown {
   return value == null ? null : JSON.parse(value);
 }
 
-function isJsonObject(value: unknown): value is JsonObject {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function object(value: unknown): JsonObject | null {
-  return isJsonObject(value) ? value : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function cleanupStatus(row: OverviewRow): string {
-  const receipt = object(parsed(row.environment_receipt_json));
-  const latest = object(receipt?.latest);
-  const cleanup = object(latest?.cleanup);
-  return text(cleanup?.status) ?? (row.environment_status == null ? 'not-applicable' : 'pending');
-}
-
 function userSummary(row: OverviewRow): JsonObject {
-  const cleanup = cleanupStatus(row);
   const result = row.status === 'completed'
     ? {
         status: row.result_no_change === 1 ? 'not-applicable' : 'completed',
@@ -77,27 +54,10 @@ function userSummary(row: OverviewRow): JsonObject {
       : row.status === 'active'
         ? { status: 'in-progress', summary: '任务正在进行。', source: 'task-record' }
         : { status: 'not-started', summary: '任务尚未开始。', source: 'task-record' };
-  const cleanupFact = {
-    status: cleanup,
-    summary: cleanup === 'cleaned'
-      ? '任务环境已清理。'
-      : cleanup === 'not-applicable'
-        ? '本次任务没有适用的环境清理。'
-        : cleanup === 'pending'
-          ? '环境清理尚待完成。'
-          : '环境清理需要局部关注。',
-    source: 'task-environment',
-  };
-  const attention = ['attention', 'blocked', 'failed'].includes(cleanup)
-    ? [{ owner: 'task-environment', scope: 'cleanup', summary: cleanupFact.summary }]
-    : row.environment_status === 'blocked'
-      ? [{ owner: 'task-environment', scope: 'environment', summary: '任务环境当前存在局部阻塞。' }]
-      : [];
   return {
     goal: { status: 'available', title: row.title, intent: row.intent },
     result,
-    cleanup: cleanupFact,
-    attention,
+    attention: [],
   };
 }
 
@@ -134,11 +94,6 @@ export function registerTaskOverviewApplication(runtime: TaskOverviewRuntime): T
         completion: resultSlot(row.completion_review_json, 'subject', row.completion_review_subject_identity, row.completion_review_outcome, row.completion_review_updated_at),
       },
       verification: resultSlot(row.verification_json, 'target', row.verification_target_identity, row.verification_outcome, row.verification_updated_at),
-      environment: {
-        present: row.environment_status != null,
-        status: row.environment_status ?? 'unknown',
-        updatedAt: row.environment_updated_at ?? null,
-      },
       userSummary: userSummary(row),
       diagnostics: [],
     };

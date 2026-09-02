@@ -1,13 +1,28 @@
-export function createWebCliContributions() {
-  return Object.freeze([
+type WebCliRuntime = {
+  manageBuildrWebPreview(action: string, args: string[]): unknown;
+  startBuildrWeb(args: string[]): unknown;
+};
+type WebCliContext = { argv: string[] };
+type WebCliMatch = { domain?: string; action?: string; runtimeId?: string };
+type WebCliContribution = {
+  key: string;
+  surface: string;
+  summary: string;
+  help: string[];
+  match(input: WebCliMatch): boolean;
+  run(runtime: WebCliRuntime, context: WebCliContext): unknown;
+};
+
+export function createWebCliContributions(): readonly WebCliContribution[] {
+  const contributions: WebCliContribution[] = [
   {
     key: "web preview start",
     surface: "maintenance",
-    summary: "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
+    summary: "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
     help: [
       "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]",
       "",
-      "提供 --task 时，从该 Task Environment 的任务验证工作区启动，并在健康后登记为 Environment 动态资源；登记失败会认证停止刚创建的实例。",
+      "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
       "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
@@ -28,11 +43,11 @@ export function createWebCliContributions() {
   {
     key: "web preview stop",
     surface: "maintenance",
-    summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。",
+    summary: "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。",
     help: [
       "Usage: buildr web preview stop <instance> [--task <task-id> --target <canonical-workspace>] [--json]",
       "",
-      "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Environment resource、preview metadata 和进程 secret 完全匹配；停止后释放同一资源。独立 preview 保持实例级停止。"
+      "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
     run: (r, c) => r.manageBuildrWebPreview('stop', c.argv.slice(5)),
@@ -57,17 +72,24 @@ export function createWebCliContributions() {
     match: ({ domain }) => domain === 'web',
     run: (r, c) => r.startBuildrWeb(c.argv.slice(3)),
   },
-  ].map(Object.freeze));
+  ];
+  return Object.freeze(contributions.map((contribution) => Object.freeze(contribution)));
 }
 
-export const WEB_CLI_GROUPS = Object.freeze([Object.freeze({
+export const WEB_CLI_GROUPS: readonly Readonly<{
+  key: string;
+  surface: string;
+  summary: string;
+  help: readonly string[];
+  executable: boolean;
+}>[] = Object.freeze([Object.freeze({
   key: 'web preview',
   surface: 'maintenance',
-  summary: '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。',
+  summary: '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和关闭安全由预览能力直接管理。',
   help: Object.freeze([
     'Usage: buildr web preview <start|list|stop> ...',
     '',
-    '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和 cleanup 事实由 Environment Receipt 管理。',
+    '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和关闭安全由预览能力直接管理。',
   ]),
   executable: false,
 })]);

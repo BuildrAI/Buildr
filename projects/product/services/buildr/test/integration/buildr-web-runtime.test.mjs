@@ -7,7 +7,7 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
-import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.mjs';
 import {
   clearBuildrWebInstance,

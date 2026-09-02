@@ -3,7 +3,51 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../../workspace/domain/source-root.mjs';
 
-const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+type ChangeLifecycle = 'active' | 'archived';
+type Project = { id: string; code: string; name: string; source: { type?: string; path: string } };
+type Artifact = { exists: boolean; path: string; content?: string };
+type ChangeModel = {
+  ref: string;
+  code: string;
+  name: string;
+  lifecycle: ChangeLifecycle;
+  project: { id: string; code: string; name: string };
+  updatedAt: string;
+  progress: unknown;
+  brief: Artifact & { kind: string };
+  artifacts: { root: string; proposal: Artifact; design: Artifact; tasks: Artifact; specs: Array<Artifact & { capability: string }> };
+};
+type PrototypePage = { path: string; title: string; html: string; sizeBytes: number; updatedAt: string };
+type PrototypeDiagnostic = { code: string; message: string; path?: string; project?: string; change?: string };
+type TaskPrototype = PrototypePage & { id: string; project: string; change: string; lifecycle: ChangeLifecycle; provenance: string };
+type WorktreeRepository = { selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string };
+export type OpenSpecQuery = { inspectChangeChecklist(root: string): unknown };
+export type ProjectQuery = {
+  projectDetail(root: string, code: string): { project: Project };
+  listProjects(root: string): { projects: Project[] };
+};
+export type WorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: WorktreeRepository[] } };
+type ChangeReference = { project: string; change: string };
+type ChangeWorkingCopy = { provenance: string; root: string; change: ChangeModel };
+type ChangeResolution = {
+  schemaVersion: string;
+  taskId: string;
+  reference: ChangeReference;
+  availability: 'available' | 'unavailable';
+  workingCopy: ChangeWorkingCopy | null;
+  retainedBaseline: ChangeWorkingCopy | null;
+  diagnostic: { code: string; message: string } | null;
+};
+export type ChangeRuntime = {
+  readTaskRecordPersistence(root: string, taskId: string): unknown;
+  inspectTaskRecord(root: string, taskId: string): { record: { changes: ChangeReference[] } };
+  [key: string]: unknown;
+};
+type ChangeApplicationOptions = { openSpecQuery?: OpenSpecQuery; projectQuery?: ProjectQuery; worktreeQuery?: WorktreeQuery };
+type InspectChecklist = (root: string) => unknown;
+type ChangeError = Error & { code: string; status: number; details?: unknown };
+
+const SAFE_SEGMENT: RegExp = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVE_PREFIX = 'active~';
 const ARCHIVED_PREFIX = 'archived~';
 const CHANGE_CONTENT_FILES = ['.openspec.yaml', 'brief.md', 'proposal.md', 'design.md', 'tasks.md'];
@@ -13,35 +57,33 @@ const UI_PROTOTYPE_MAX_CANDIDATES = 200;
 const UI_PROTOTYPE_MAX_PAGES = 20;
 const UI_PROTOTYPE_MAX_BYTES = 2 * 1024 * 1024;
 
-function inside(parent, child) {
+function inside(parent: string, child: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
-export function changeError(code, message, status = 400, details = undefined) {
-  const error = new Error(message);
-  error.code = code;
-  error.status = status;
-  if (details !== undefined) error.details = details;
+export function changeError(code: string, message: string, status = 400, details?: unknown): ChangeError {
+  const error = Object.assign(new Error(message), { code, status });
+  if (details !== undefined) Object.assign(error, { details });
   return error;
 }
 
-function assertObject(input, code, message) {
+function assertObject(input: unknown, code: string, message: string): asserts input is Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw changeError(code, message);
 }
 
-function assertSafeSegment(value, label) {
+function assertSafeSegment(value: unknown, label: string): string {
   if (typeof value !== 'string' || !SAFE_SEGMENT.test(value)) {
     throw changeError('change_reference_invalid', `${label} 不合法。`, 400);
   }
   return value;
 }
 
-function relativePath(root, file) {
+function relativePath(root: string, file: string): string {
   return path.relative(root, file).split(path.sep).join('/');
 }
 
-function isDirectory(file) {
+function isDirectory(file: string): boolean {
   try {
     return fs.statSync(file, { throwIfNoEntry: false })?.isDirectory() === true && fs.lstatSync(file).isSymbolicLink() === false;
   } catch {
@@ -49,7 +91,7 @@ function isDirectory(file) {
   }
 }
 
-function isFile(file) {
+function isFile(file: string): boolean {
   try {
     return fs.statSync(file, { throwIfNoEntry: false })?.isFile() === true && fs.lstatSync(file).isSymbolicLink() === false;
   } catch {
@@ -57,7 +99,7 @@ function isFile(file) {
   }
 }
 
-function readDirectories(root) {
+function readDirectories(root: string): string[] {
   if (!isDirectory(root)) return [];
   return fs.readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink() && SAFE_SEGMENT.test(entry.name))
@@ -65,7 +107,7 @@ function readDirectories(root) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-function artifact(file, root, includeContent) {
+function artifact(file: string, root: string, includeContent: boolean): Artifact {
   const exists = isFile(file);
   return {
     exists,
@@ -74,7 +116,7 @@ function artifact(file, root, includeContent) {
   };
 }
 
-function specs(changeRoot, workspaceRoot, includeContent) {
+function specs(changeRoot: string, workspaceRoot: string, includeContent: boolean): Array<Artifact & { capability: string }> {
   const specsRoot = path.join(changeRoot, 'specs');
   return readDirectories(specsRoot).flatMap((capability) => {
     const file = path.join(specsRoot, capability, 'spec.md');
@@ -82,7 +124,7 @@ function specs(changeRoot, workspaceRoot, includeContent) {
   });
 }
 
-function updatedAt(changeRoot) {
+function updatedAt(changeRoot: string): string {
   const files = CHANGE_CONTENT_FILES.map((name) => path.join(changeRoot, name));
   for (const capability of readDirectories(path.join(changeRoot, 'specs'))) {
     files.push(path.join(changeRoot, 'specs', capability, 'spec.md'));
@@ -91,33 +133,33 @@ function updatedAt(changeRoot) {
   return new Date(Math.max(...timestamps, fs.statSync(changeRoot).mtimeMs)).toISOString();
 }
 
-function changeName(code, proposalFile) {
+function changeName(code: string, proposalFile: string): string {
   if (!isFile(proposalFile)) return code;
   const heading = fs.readFileSync(proposalFile, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.trim();
   return heading || code;
 }
 
-function uiPrototypeTitle(content, relative) {
+function uiPrototypeTitle(content: string, relative: string): string {
   const raw = content.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '';
   const title = raw.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   return title || path.basename(relative, path.extname(relative));
 }
 
-function uiPrototypeId(project, change, relative) {
+function uiPrototypeId(project: string, change: string, relative: string): string {
   return crypto.createHash('sha256').update(`${project}\0${change}\0${relative}`).digest('hex').slice(0, 32);
 }
 
-function discoverUiPrototypes(changeRoot) {
-  const prototypes = [];
-  const diagnostics = [];
+function discoverUiPrototypes(changeRoot: string): { prototypes: PrototypePage[]; diagnostics: PrototypeDiagnostic[] } {
+  const prototypes: PrototypePage[] = [];
+  const diagnostics: PrototypeDiagnostic[] = [];
   let candidates = 0;
   let stopped = false;
 
-  function diagnostic(code, message, relative = null) {
+  function diagnostic(code: string, message: string, relative?: string) {
     diagnostics.push({ code, message, ...(relative ? { path: relative } : {}) });
   }
 
-  function visit(directory, depth) {
+  function visit(directory: string, depth: number): void {
     if (stopped) return;
     if (depth > UI_PROTOTYPE_MAX_DEPTH) {
       diagnostic('ui_prototype_depth_limit', `UI Prototype 扫描深度超过 ${UI_PROTOTYPE_MAX_DEPTH} 层，已跳过更深目录。`, relativePath(changeRoot, directory));
@@ -191,7 +233,7 @@ function discoverUiPrototypes(changeRoot) {
   return { prototypes, diagnostics };
 }
 
-function projectContext(projectQuery, targetRoot, projectCode) {
+function projectContext(projectQuery: ProjectQuery, targetRoot: string, projectCode: string): { project: Project; projectRoot: string } {
   assertSafeSegment(projectCode, 'Project code');
   const detail = projectQuery.projectDetail(targetRoot, projectCode);
   return {
@@ -200,7 +242,7 @@ function projectContext(projectQuery, targetRoot, projectCode) {
   };
 }
 
-function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, lifecycle, includeContent = false, inspectChecklist) {
+function buildChangeAtProjectRoot(targetRoot: string, project: Project, projectRoot: string, directory: string, lifecycle: ChangeLifecycle, includeContent: boolean, inspectChecklist: InspectChecklist): ChangeModel | null {
   const changesRoot = path.join(projectRoot, 'openspec', 'changes');
   const changeRoot = lifecycle === 'active' ? path.join(changesRoot, directory) : path.join(changesRoot, 'archive', directory);
   const identityFile = path.join(changeRoot, '.openspec.yaml');
@@ -235,11 +277,11 @@ function buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, l
   };
 }
 
-function buildChange(targetRoot, project, directory, lifecycle, includeContent = false, inspectChecklist) {
+function buildChange(targetRoot: string, project: Project, directory: string, lifecycle: ChangeLifecycle, includeContent: boolean, inspectChecklist: InspectChecklist): ChangeModel | null {
   return buildChangeAtProjectRoot(targetRoot, project, resolveSourceRoot(targetRoot, project.source), directory, lifecycle, includeContent, inspectChecklist);
 }
 
-function findLogicalChange(targetRoot, project, projectRoot, code, includeContent = false, inspectChecklist) {
+function findLogicalChange(targetRoot: string, project: Project, projectRoot: string, code: string, includeContent: boolean, inspectChecklist: InspectChecklist): ChangeModel | null {
   const changesRoot = path.join(projectRoot, 'openspec', 'changes');
   const active = buildChangeAtProjectRoot(targetRoot, project, projectRoot, code, 'active', includeContent, inspectChecklist);
   if (active) return active;
@@ -253,7 +295,7 @@ function findLogicalChange(targetRoot, project, projectRoot, code, includeConten
   return null;
 }
 
-function decodeRef(ref) {
+function decodeRef(ref: unknown): { lifecycle: ChangeLifecycle; directory: string } {
   if (typeof ref !== 'string') throw changeError('change_reference_invalid', 'Change reference 不合法。');
   const lifecycle = ref.startsWith(ACTIVE_PREFIX) ? 'active' : ref.startsWith(ARCHIVED_PREFIX) ? 'archived' : null;
   if (!lifecycle) throw changeError('change_reference_invalid', 'Change reference 不合法。');
@@ -262,39 +304,35 @@ function decodeRef(ref) {
   return { lifecycle, directory };
 }
 
-export function registerChangeApplication(runtime, { openSpecQuery, projectQuery } = {}) {
+export function registerChangeApplication(runtime: ChangeRuntime, options: ChangeApplicationOptions = {}): ChangeRuntime {
+  const { openSpecQuery, projectQuery, worktreeQuery } = options;
   if (!openSpecQuery || typeof openSpecQuery.inspectChangeChecklist !== 'function') {
-    const error = new Error('Change Application requires the OpenSpec Query capability.');
-    error.code = 'change_openspec_query_missing';
-    throw error;
+    throw changeError('change_openspec_query_missing', 'Change Application requires the OpenSpec Query capability.');
   }
   if (!projectQuery || typeof projectQuery.projectDetail !== 'function' || typeof projectQuery.listProjects !== 'function') {
-    const error = new Error('Change Application requires the Project Query capability.');
-    error.code = 'change_project_query_missing';
-    throw error;
+    throw changeError('change_project_query_missing', 'Change Application requires the Project Query capability.');
   }
-  function taskScopedProjectRoot(targetRoot, taskId, projectCode, project) {
-    const current = runtime.readTaskEnvironmentCurrent(targetRoot, taskId);
-    if (!['ready', 'blocked'].includes(current.status) || !current.environment) return null;
-    const scopes = Array.isArray(current.environment.scopes) ? current.environment.scopes : [];
-    const direct = scopes.find((scope) => scope.selector === `project:${projectCode}`);
+  const requiredOpenSpecQuery = openSpecQuery;
+  const requiredProjectQuery = projectQuery;
+  function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: Project): string | null {
+    if (!worktreeQuery || typeof worktreeQuery.inspectGitWorktrees !== 'function') return null;
+    const inspected = worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
+    if (inspected.status !== 'ready') return null;
+    const direct = inspected.repositories.find((repository) => repository.selector === `project:${projectCode}`);
     if (direct) {
-      if (direct.kind !== 'project' || direct.project !== projectCode || direct.sourcePath !== project.source.path) return null;
-      if (typeof direct.executionRoot !== 'string' || typeof direct.validationRoot !== 'string') return null;
-      const candidate = path.resolve(direct.executionRoot);
-      return direct.shared === true || inside(direct.validationRoot, candidate) ? candidate : null;
+      if (direct.entityType !== 'project' || direct.sourcePath !== project.source.path || direct.state !== 'ready') return null;
+      return path.resolve(direct.checkoutPath);
     }
-    const workspace = scopes.find((scope) => scope.selector === 'workspace');
-    if (!workspace) return null;
-    if (workspace.kind !== 'workspace' || workspace.sourcePath !== '.') return null;
-    if (typeof workspace.executionRoot !== 'string' || typeof workspace.validationRoot !== 'string') return null;
-    const executionRoot = path.resolve(workspace.executionRoot);
-    if (!inside(workspace.validationRoot, executionRoot)) return null;
+    const workspace = inspected.repositories.find((repository) => repository.selector === 'workspace');
+    if (!workspace || workspace.entityType !== 'workspace' || workspace.sourcePath !== '.' || workspace.state !== 'ready') return null;
+    const executionRoot = path.resolve(workspace.checkoutPath);
     const candidate = resolveSourceRoot(executionRoot, project.source);
-    return inside(executionRoot, candidate) && inside(workspace.validationRoot, candidate) ? candidate : null;
+    return inside(executionRoot, candidate) ? candidate : null;
   }
 
-  function resolveTaskScopedChange(targetRoot, taskId, reference, { includeContent = false, allowMissingTask = false } = {}) {
+  function resolveTaskScopedChange(targetRoot: string, taskId: string, reference: unknown, options: { includeContent?: boolean; allowMissingTask?: boolean } = {}): ChangeResolution {
+    const includeContent = options.includeContent || false;
+    const allowMissingTask = options.allowMissingTask || false;
     assertObject(reference, 'change_reference_invalid', 'Task-scoped Change reference 必须是对象。');
     const allowed = new Set(['project', 'change']);
     for (const field of Object.keys(reference)) if (!allowed.has(field)) throw changeError('change_reference_field_forbidden', `Task-scoped Change reference 不支持字段：${field}。`);
@@ -302,15 +340,15 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     const changeCode = assertSafeSegment(reference.change, 'Change code');
     let taskAvailable = true;
     try { runtime.readTaskRecordPersistence(targetRoot, taskId); } catch (error) {
-      if (!allowMissingTask || error.code !== 'task_record_not_found') throw error;
+      if (!allowMissingTask || !(error instanceof Error && 'code' in error && error.code === 'task_record_not_found')) throw error;
       taskAvailable = false;
     }
-    const { project, projectRoot } = projectContext(projectQuery, targetRoot, projectCode);
+    const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
     const candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null;
-    const candidate = candidateRoot && isDirectory(candidateRoot) ? findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent, openSpecQuery.inspectChangeChecklist) : null;
-    const retained = findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent, openSpecQuery.inspectChangeChecklist);
-    const working = candidate
-      ? { provenance: 'task-environment-candidate', root: candidateRoot, change: candidate }
+    const candidate = candidateRoot && isDirectory(candidateRoot) ? findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent, requiredOpenSpecQuery.inspectChangeChecklist) : null;
+    const retained = findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent, requiredOpenSpecQuery.inspectChangeChecklist);
+    const working = candidate && candidateRoot
+      ? { provenance: 'task-worktree-candidate', root: candidateRoot, change: candidate }
       : retained
         ? { provenance: retained.lifecycle === 'active' ? 'retained-active' : 'retained-archive', root: projectRoot, change: retained }
         : null;
@@ -325,16 +363,16 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     };
   }
 
-  function taskScopedChangeDetail(targetRoot, taskId, projectCode, changeCode) {
+  function taskScopedChangeDetail(targetRoot: string, taskId: string, projectCode: string, changeCode: string): { resolution: ChangeResolution } {
     const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true });
-    if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic.message, 404, resolution.reference);
+    if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic?.message || 'Change 不存在。', 404, resolution.reference);
     return { resolution };
   }
 
-  function taskUiPrototypeEntries(targetRoot, taskId) {
+  function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
     const task = runtime.inspectTaskRecord(targetRoot, taskId);
-    const prototypes = [];
-    const diagnostics = [];
+    const prototypes: TaskPrototype[] = [];
+    const diagnostics: PrototypeDiagnostic[] = [];
     for (const reference of task.record.changes) {
       const resolution = resolveTaskScopedChange(targetRoot, taskId, reference);
       if (resolution.availability !== 'available') {
@@ -347,8 +385,9 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
         continue;
       }
       const working = resolution.workingCopy;
+      if (!working) continue;
       const change = working.change;
-      const base = working.provenance === 'task-environment-candidate' ? working.root : targetRoot;
+      const base = working.provenance === 'task-worktree-candidate' ? working.root : targetRoot;
       const changeRoot = path.resolve(base, change.artifacts.root);
       if (!inside(working.root, changeRoot) || !isDirectory(changeRoot)) {
         diagnostics.push({
@@ -381,7 +420,7 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     };
   }
 
-  function taskUiPrototypes(targetRoot, taskId) {
+  function taskUiPrototypes(targetRoot: string, taskId: string): { taskId: string; prototypes: Array<Omit<TaskPrototype, 'html'>>; diagnostics: PrototypeDiagnostic[] } {
     const result = taskUiPrototypeEntries(targetRoot, taskId);
     return {
       ...result,
@@ -389,7 +428,7 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     };
   }
 
-  function taskUiPrototype(targetRoot, taskId, prototypeId) {
+  function taskUiPrototype(targetRoot: string, taskId: string, prototypeId: string): TaskPrototype {
     if (typeof prototypeId !== 'string' || !/^[a-f0-9]{32}$/.test(prototypeId)) {
       throw changeError('ui_prototype_reference_invalid', 'UI Prototype reference 不合法。', 400);
     }
@@ -399,42 +438,42 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     return prototype;
   }
 
-  function listProjectChanges(targetRoot, projectCode) {
-    const { project, projectRoot } = projectContext(projectQuery, targetRoot, projectCode);
+  function listProjectChanges(targetRoot: string, projectCode: string): { project: { id: string; code: string; name: string }; changes: ChangeModel[] } {
+    const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
     const changesRoot = path.join(projectRoot, 'openspec', 'changes');
     const active = readDirectories(changesRoot)
       .filter((directory) => directory !== 'archive')
-      .map((directory) => buildChange(targetRoot, project, directory, 'active', false, openSpecQuery.inspectChangeChecklist));
+      .map((directory) => buildChange(targetRoot, project, directory, 'active', false, requiredOpenSpecQuery.inspectChangeChecklist));
     const archived = readDirectories(path.join(changesRoot, 'archive'))
-      .map((directory) => buildChange(targetRoot, project, directory, 'archived', false, openSpecQuery.inspectChangeChecklist));
+      .map((directory) => buildChange(targetRoot, project, directory, 'archived', false, requiredOpenSpecQuery.inspectChangeChecklist));
     return {
       project: { id: project.id, code: project.code, name: project.name },
-      changes: [...active, ...archived].filter(Boolean).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+      changes: [...active, ...archived].filter((change): change is ChangeModel => change !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     };
   }
 
-  function listChanges(targetRoot) {
-    const projects = projectQuery.listProjects(targetRoot).projects;
+  function listChanges(targetRoot: string): { projects: Array<{ id: string; code: string; name: string }>; changes: ChangeModel[] } {
+    const projects = requiredProjectQuery.listProjects(targetRoot).projects;
     const changes = projects.flatMap((project) => listProjectChanges(targetRoot, project.code).changes)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return { projects: projects.map(({ id, code, name }) => ({ id, code, name })), changes };
   }
 
-  function changeDetail(targetRoot, projectCode, ref) {
-    const { project } = projectContext(projectQuery, targetRoot, projectCode);
+  function changeDetail(targetRoot: string, projectCode: string, ref: string): { change: ChangeModel } {
+    const { project } = projectContext(requiredProjectQuery, targetRoot, projectCode);
     const { lifecycle, directory } = decodeRef(ref);
-    const change = buildChange(targetRoot, project, directory, lifecycle, true, openSpecQuery.inspectChangeChecklist);
+    const change = buildChange(targetRoot, project, directory, lifecycle, true, requiredOpenSpecQuery.inspectChangeChecklist);
     if (!change) throw changeError('change_not_found', `Change 不存在：${projectCode}/${ref}。`, 404);
     return { change };
   }
 
-  function generateChangeCreatePrompt(targetRoot, input) {
+  function generateChangeCreatePrompt(targetRoot: string, input: unknown): { prompt: string; copiedMeansCreated: false } {
     assertObject(input, 'change_prompt_invalid', 'Change prompt 请求必须是对象。');
     const allowed = new Set(['projectCode', 'goal']);
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw changeError('change_prompt_field_forbidden', `Change prompt 不支持字段：${field}。`);
     const projectCode = String(input.projectCode || '').trim();
     const goal = String(input.goal || '').trim();
-    const { project } = projectContext(projectQuery, targetRoot, projectCode);
+    const { project } = projectContext(requiredProjectQuery, targetRoot, projectCode);
     if (!goal) throw changeError('change_prompt_goal_required', '请填写本次变更目标。');
     return {
       prompt: [
@@ -452,7 +491,7 @@ export function registerChangeApplication(runtime, { openSpecQuery, projectQuery
     };
   }
 
-  function generateChangeActionPrompt(targetRoot, input) {
+  function generateChangeActionPrompt(targetRoot: string, input: unknown): { prompt: string; copiedMeansCreated: false } {
     assertObject(input, 'change_prompt_invalid', 'Change prompt 请求必须是对象。');
     const allowed = new Set(['projectCode', 'ref', 'action']);
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw changeError('change_prompt_field_forbidden', `Change prompt 不支持字段：${field}。`);

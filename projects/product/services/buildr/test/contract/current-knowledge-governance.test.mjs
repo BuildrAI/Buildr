@@ -45,13 +45,14 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-development'), false);
   assert.deepEqual(packagedFinish.requires, [
     { capability: 'buildr.task-record', version: 2, mode: 'optional' },
-    { capability: 'buildr.task-environment', version: 1, mode: 'optional' },
+    { capability: 'buildr.git-worktree-provider', version: 1, mode: 'optional' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);
   const triage = packageManifest.builtins.skills.find((item) => item.id === 'task-triage');
   assert.ok(triage.requires.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 2 && item.mode === 'optional'));
   assert.equal(triage.requires.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
-  assert.ok(triage.requires.some((item) => item.capability === 'buildr.task-environment' && item.version === 1 && item.mode === 'optional'));
+  assert.ok(triage.requires.some((item) => item.capability === 'buildr.git-worktree-provider' && item.version === 1 && item.mode === 'optional'));
+  assert.equal(triage.requires.some((item) => item.capability === 'buildr.task-environment'), false);
   assert.equal(packageManifest.builtins.skills.some((item) => item.id === 'task-board'), false);
   assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-board-maintenance'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-board-maintenance'), false);
@@ -85,9 +86,9 @@ test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护'
   const dependencies = component.contributions.skillDependencies;
   const has = (skill, capability, mode) => dependencies.some((item) => item.skill === skill && item.capability === capability && item.mode === mode);
   assert.equal(has('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
-  for (const id of ['openspec-propose', 'openspec-apply-change']) for (const capability of ['buildr.task-record', 'buildr.task-environment', 'buildr.current-knowledge-maintenance']) assert.equal(has(id, capability, 'required'), true, `${id}:${capability}`);
+  for (const id of ['openspec-propose', 'openspec-apply-change']) for (const capability of ['buildr.task-record', 'buildr.current-knowledge-maintenance']) assert.equal(has(id, capability, 'required'), true, `${id}:${capability}`);
+  assert.equal(dependencies.some((item) => item.capability === 'buildr.task-environment'), false);
   assert.equal(has('openspec-update-change', 'buildr.current-knowledge-maintenance', 'required'), true);
-  assert.equal(has('openspec-update-change', 'buildr.task-environment', 'optional'), true);
   assert.equal(dependencies.some((item) => item.capability === 'buildr.task-development'), false);
   assert.equal(dependencies.some((item) => ['openspec-sync-specs', 'openspec-archive-change'].includes(item.skill)), false);
   assert.equal(skills.get('task-finish').requires?.some((item) => item.capability === 'buildr.current-knowledge-maintenance' && item.mode === 'required') || false, false);

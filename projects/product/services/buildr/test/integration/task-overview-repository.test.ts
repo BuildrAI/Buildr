@@ -13,8 +13,7 @@ type OverviewResult = {
   task: { status: string; children: Array<{ taskId: string }> };
   reviews: { planning: { present: boolean } };
   verification: { present: boolean };
-  environment: { present: boolean; status: string };
-  userSummary: { result: { status: string }; cleanup: { status: string }; attention: Array<{ owner: string; scope: string; summary: string }> };
+  userSummary: { result: { status: string }; attention: Array<{ owner: string; scope: string; summary: string }> };
 };
 
 type TestRuntime = {
@@ -49,7 +48,6 @@ test('Task Overview以一条SQLite查询组合保留的专业事实', (t: Buildr
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   const planning = JSON.stringify({ schemaVersion: 'buildr.task-review-result/v2', taskId: 'overview-task', reviewType: 'planning', subjectIdentity: 'sha256-plan', method: 'self', reviewed: ['plan'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'accepted' }, completedAt: '2026-08-08T00:01:00.000Z' });
   opened.database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES ('overview-task', 'planning', ?, 'sha256-plan', 'accepted', '2026-08-08T00:01:00.000Z')").run(planning);
-  opened.database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('overview-task', 'ready', '{}', '2026-08-08T00:03:00.000Z')").run();
   opened.database.close();
 
   assert.equal(runtime.readTaskOverviewPersistence(root, 'overview-task').queryCount, 1);
@@ -59,9 +57,9 @@ test('Task Overview以一条SQLite查询组合保留的专业事实', (t: Buildr
   assert.deepEqual(overview.task.children.map((child) => child.taskId), ['overview-child']);
   assert.equal(overview.reviews.planning.present, true);
   assert.equal(overview.verification.present, false);
-  assert.equal(overview.environment.status, 'ready');
   assert.equal(overview.userSummary.result.status, 'in-progress');
-  assert.equal(overview.userSummary.cleanup.status, 'pending');
+  assert.equal('environment' in overview, false);
+  assert.equal('cleanup' in overview.userSummary, false);
   assert.equal('development' in overview, false);
   assert.equal('finish' in overview, false);
   assert.equal('authorization' in overview.userSummary, false);
@@ -74,21 +72,20 @@ test('Task Overview缺失专业rows时正常返回且不写数据库', (t: Build
   const overview = runtime.inspectTaskOverview(root, 'overview-child');
   assert.equal(overview.reviews.planning.present, false);
   assert.equal(overview.verification.present, false);
-  assert.equal(overview.environment.present, false);
   assert.equal(overview.userSummary.result.status, 'in-progress');
-  assert.equal(overview.userSummary.cleanup.status, 'not-applicable');
+  assert.equal('environment' in overview, false);
+  assert.equal('cleanup' in overview.userSummary, false);
   assert.equal(fs.statSync(file).mtimeMs, before);
 });
 
-test('Task Overview只把Environment cleanup失败作为局部关注', (t: BuildrTestContext) => {
+test('Task Overview不把资源清理编造成Task结果的一部分', (t: BuildrTestContext) => {
   const { root, runtime } = fixture(t);
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   opened.database.prepare("UPDATE tasks SET status = 'completed', result_summary = '已完成', result_no_change = 0 WHERE task_id = 'overview-task'").run();
-  opened.database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('overview-task', 'blocked', ?, '2026-08-08T00:03:00.000Z')").run(JSON.stringify({ latest: { cleanup: { status: 'blocked' } } }));
   opened.database.close();
 
   const overview = runtime.inspectTaskOverview(root, 'overview-task');
   assert.equal(overview.userSummary.result.status, 'completed');
-  assert.equal(overview.userSummary.cleanup.status, 'blocked');
-  assert.deepEqual(overview.userSummary.attention, [{ owner: 'task-environment', scope: 'cleanup', summary: '环境清理需要局部关注。' }]);
+  assert.equal('cleanup' in overview.userSummary, false);
+  assert.deepEqual(overview.userSummary.attention, []);
 });

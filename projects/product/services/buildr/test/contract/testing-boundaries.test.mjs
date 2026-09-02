@@ -32,7 +32,7 @@ const fullIsolationOwners = [
   'public-json-contracts.test.mjs',
   'service-product.test.mjs',
   'workspace-manifest-registry.test.mjs',
-  'worktree-create.test.mjs',
+  'worktree-create.test.ts',
 ];
 
 function directBoundaryImports(layer) {

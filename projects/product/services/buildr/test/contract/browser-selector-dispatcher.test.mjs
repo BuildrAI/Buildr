@@ -36,7 +36,7 @@ test('Browser dispatcher closes the old zero-selector success for Web package an
 });
 
 test('Browser dispatcher accepts Project-relative Buildr paths', () => {
-  const plan = selectBrowserSelectors(['services/buildr/src/web/application/preview-lifecycle.mjs']);
+  const plan = selectBrowserSelectors(['services/buildr/src/web/application/preview-lifecycle.ts']);
   assert.equal(plan.status, 'selected');
   assert.deepEqual(plan.selectors, ['shell', 'core']);
 });

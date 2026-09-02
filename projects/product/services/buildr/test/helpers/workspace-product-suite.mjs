@@ -9,7 +9,7 @@ import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
-import { stopPreview } from '../../src/web/application/preview-lifecycle.mjs';
+import { stopPreview } from '../../src/web/application/preview-lifecycle.ts';
 import { copyPreparedWorkspace } from './prepared-fixtures.mjs';
 
 export function registerWorkspaceProductSuite(selectedSuite) {

@@ -25,8 +25,9 @@ test('Task Triage 的正式 owner 依赖保持 optional，直接工作不被结�
   for (const capability of [
     'buildr.task-record',
     'buildr.git-operations',
-    'buildr.task-environment',
+    'buildr.git-worktree-provider',
   ]) {
     assert.ok(triage.requires.some((item) => item.capability === capability && item.mode === 'optional'), capability);
   }
+  assert.equal(triage.requires.some((item) => item.capability === 'buildr.task-environment'), false);
 });

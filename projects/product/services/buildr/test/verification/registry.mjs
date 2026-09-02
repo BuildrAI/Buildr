@@ -471,7 +471,7 @@ export const verificationSteps = Object.freeze([
     'test/system/buildr-web-launcher.test.mjs',
     'test/system/task-environment-fresh-build-web.test.mjs',
     'test/system/workspace-runtime-recovery.test.mjs',
-    'test/system/worktree-create.test.mjs',
+    'test/system/worktree-create.test.ts',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.mjs' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.mjs' }, profiles: ['fast', 'candidate'], }),

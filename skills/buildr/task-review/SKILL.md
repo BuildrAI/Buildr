@@ -19,7 +19,7 @@ buildr task review inspect <task-id> --target <canonical-workspace> --json
 
 - 方案可以来自当前 OpenSpec artifacts、任务清单、设计文档或其他专业 owner；直接使用当前对象或专业接口已返回的稳定身份。
 - 完成结果可以是当前代码内容、Git commit/tree、文件产物、部署结果或外部系统结果。
-- 实际对象位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root；不要从 cwd 或旧 Review Result 猜测。
+- 实际对象位于独立Worktree时，使用matching Worktree evidence返回的checkout；否则核对当前Workspace、Project/Service registry与Git根。不要从cwd、分支名或旧Review Result猜测。
 
 Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
 

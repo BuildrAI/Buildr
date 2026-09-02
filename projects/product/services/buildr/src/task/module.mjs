@@ -16,10 +16,10 @@ import { registerTaskReviewRepository } from './persistence/task-review-reposito
 import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.ts';
-import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.mjs';
+import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.ts';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.ts';
-import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
+import { gitWorktreeCommand } from './interfaces/cli/git-worktree.ts';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
 import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
 import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.ts';
@@ -277,12 +277,12 @@ export function createGitWorktreeCliContributions(application = null) {
     {
       key: 'worktree cleanup',
       surface: 'agent-machine',
-      summary: '只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。',
+      summary: '按Git provider evidence及调用方已核验的逐仓source/delivered完整提交保护内容，再nested-first删除worktree、本地任务分支和provider evidence。',
       help: [
-        'Usage: buildr worktree cleanup <task-id> --integrated-ref <selector>=<ref> ... [--target <workspace>] [--json]',
+        'Usage: buildr worktree cleanup <task-id> --expected-source <selector>=<full-commit> --delivered-ref <selector>=<full-commit> ... [--target <workspace>] [--json]',
         '',
-        '只根据 Git provider evidence 核对 checkout/branch/clean/registration 与 integrated ref，再 nested-first 删除 worktree、本地任务分支和 provider evidence。',
-        '它不读取 Environment Receipt、不停止动态资源、不决定总 cleanup，也不删除远端分支。正式 workflow 由 Task Environment Application 编排。',
+        '调用方先核验完整交付；provider复核checkout/branch/clean/registration、source版本和delivered提交仍由非任务retained ref持有。',
+        '它不读取Environment Receipt、不停止动态资源、不判断业务等价，也不删除远端分支。',
       ],
       match: ({ domain, action }) => domain === 'worktree' && action === 'cleanup',
       run: (runtime, context) => gitWorktreeCommand(application || runtime, 'cleanup', context.argv.slice(4)),

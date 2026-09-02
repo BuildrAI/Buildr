@@ -52,16 +52,16 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
 
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
   const identityConsumers = [
-    'src/task/infrastructure/git-worktree-provider.mjs',
+    'src/task/infrastructure/git-worktree-provider.ts',
     'src/task/persistence/task-environment-repository.mjs',
-    'src/web/application/preview-lifecycle.mjs',
+    'src/web/application/preview-lifecycle.ts',
     'package/launchers/manage.mjs',
   ];
   for (const relative of identityConsumers) {
     const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
     assert.match(source, /sameFilesystemPath/, `${relative} must use the shared filesystem identity owner`);
   }
-  const worktree = fs.readFileSync(path.join(productRoot, 'src/task/infrastructure/git-worktree-provider.mjs'), 'utf8');
+  const worktree = fs.readFileSync(path.join(productRoot, 'src/task/infrastructure/git-worktree-provider.ts'), 'utf8');
   assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
   const adapter = fs.readFileSync(path.join(productRoot, 'src/agent-assets/infrastructure/runtime/adapter-contract.mjs'), 'utf8');
   assert.match(adapter, /runtimeWriteModeMatches/);
@@ -75,18 +75,18 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
 
 test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有运行策略', () => {
   for (const relative of [
-    'src/web/module.mjs',
-    'src/web/application/instance-lifecycle.mjs',
-    'src/web/application/preview-lifecycle.mjs',
+    'src/web/module.ts',
+    'src/web/application/instance-lifecycle.ts',
+    'src/web/application/preview-lifecycle.ts',
     'src/web/infrastructure/instance-runtime.mjs',
-    'src/web/interfaces/cli/web.mjs',
+    'src/web/interfaces/cli/web.ts',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
   for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
     assert.equal(fs.existsSync(path.join(productRoot, 'src/web/runtime', legacy)), false);
   }
   const host = fs.readFileSync(path.join(productRoot, 'src/web/http/server.mjs'), 'utf8');
   assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/);
-  const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.mjs'), 'utf8');
+  const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.ts'), 'utf8');
   assert.doesNotMatch(lifecycle, /ensureRegisteredTarget\(runtime,/);
   const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
   assert.doesNotMatch(registry, /key: "web preview|key: "web"/);

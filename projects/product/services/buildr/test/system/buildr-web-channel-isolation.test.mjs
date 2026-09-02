@@ -12,7 +12,7 @@ import { registerWorkspaceManagementFence } from '../../src/workspace/infrastruc
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
-import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.mjs';
 
 const CHILD = new URL('../fixtures/buildr-web-profile-child.mjs', import.meta.url);

@@ -1,0 +1,39 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: separate-task-work-location-and-resources
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/separate-task-work-location-and-resources/brief.md
+    reason: 说明普通工作、Worktree、Preview与过渡Environment边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/separate-task-work-location-and-resources/proposal.md
+      - openspec/changes/separate-task-work-location-and-resources/design.md
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: Task Finish改为直接调用Worktree与Preview owner完成安全善后
+    status: pending
+    sourceIdentities:
+      - specs/direct-git-closeout/spec.md
+      - specs/agent-task-workflows/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的Worktree、Preview、Change resolver、Overview与capability bindings变化
+    status: pending
+    sourceIdentities:
+      - specs/task-environments/spec.md
+      - specs/worktree-buildr-web-preview/spec.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Buildr Web任务展示退出Environment聚合摘要并更新Preview消费边界
+    status: pending
+    sourceIdentities:
+      - specs/worktree-buildr-web-preview/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 工作位置、资源owner与Application职责边界变化
+    status: pending
+    sourceIdentities:
+      - design.md
+unresolvedItems: []

@@ -8,7 +8,7 @@ import { createOpenSpecCliContributions } from '../../task/openspec/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
-import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.mjs';
+import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');

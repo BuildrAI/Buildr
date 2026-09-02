@@ -1,31 +1,44 @@
 schemaVersion: buildr.knowledge-impact/v1
-change: migrate-buildr-workspace-agent-assets-http-contracts
+change: separate-task-work-location-and-resources
 operation: reconcile
-treeIdentity: sha256-7adf7bcd9cb26ad06ce137c50edf96d779bfc863111d3ab2fa43c93992d61a2f
+treeIdentity: e33a783920fe2a5705f7843b216e75c66e2ccb4a
 impacts:
   - type: brief
-    target: openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: 本 Change 横跨 Buildr Service 与 Buildr Web，并改变 HTTP 契约、生成 DTO 与测试入口。
+    target: openspec/changes/separate-task-work-location-and-resources/brief.md
+    reason: 记录普通工作、独立Worktree与Preview资源owner的新责任边界。
     status: aligned
     sourceIdentities:
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/proposal.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/design.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/workspace-http-contracts/spec.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/agent-assets-http-contracts/spec.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/tasks.md
+      - openspec/changes/separate-task-work-location-and-resources/proposal.md
+      - openspec/changes/separate-task-work-location-and-resources/design.md
+      - openspec/changes/separate-task-work-location-and-resources/tasks.md
+  - type: project-overview
+    target: docs/buildr-product.md
+    reason: Task概览、OpenSpec工作位置、Worktree与Preview用户路径已经变化。
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task/infrastructure/git-worktree-provider.ts
+      - services/buildr/src/web/application/preview-lifecycle.ts
+      - services/buildr-web/src/pages/TaskDetailPage.tsx
   - type: technical-architecture
-    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: 需要记录模块 HTTP Interfaces、Infrastructure contract mechanism、Application mapping 与 typed Client 的 authority 边界。
-    status: aligned
+    target: docs/architecture/service-architecture.md
+    reason: Worktree与Web lifecycle的保留实现迁到TypeScript并收窄owner。
+    status: updated
     sourceIdentities:
-      - openspec/specs/infrastructure-boundaries/spec.md
-      - openspec/specs/workspace-control-plane-module-architecture/spec.md
-      - openspec/specs/managed-skill-assets/spec.md
+      - services/buildr/src/task/interfaces/cli/git-worktree.ts
+      - services/buildr/src/web/application/instance-lifecycle.ts
+      - services/buildr/src/web/application/preview-lifecycle.ts
   - type: service
-    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: Buildr Service 与 Buildr Web 的 API、生成 DTO、构建和 smoke 验收入口发生变化。
-    status: aligned
+    target: services/buildr/docs/cli-reference.md
+    reason: Worktree cleanup与Task Preview公共使用方式已经变化。
+    status: updated
     sourceIdentities:
-      - services/buildr
-      - services/buildr-web
+      - services/buildr/src/task/interfaces/cli/git-worktree.ts
+      - services/buildr/src/web/interfaces/cli/web.ts
+  - type: service
+    target: services/buildr/docs/skill-capability-contracts.md
+    reason: Task工作位置、Preview资源与依赖准备改由真实owner协作。
+    status: updated
+    sourceIdentities:
+      - services/buildr/resources/manifest.yml
+      - skills/manifest.yml
 unresolvedItems: []

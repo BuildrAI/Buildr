@@ -100,10 +100,11 @@ test('旧 Git graph 只保留 migration evidence，active manifests 与文件为
   assert.deepEqual(new Set(replacement.replaces.map((item) => item.id)), legacyCapabilities);
 });
 
-test('Task Finish consumer 已迁移且 worktree provider 保持独立', () => {
+test('Task Finish按需消费独立Git与Worktree providers', () => {
   const finish = packageManifest.builtins.skills.find((item) => item.id === 'task-finish');
   assert.ok(finish.requires.some((item) => item.capability === 'buildr.git-operations' && item.mode === 'optional'));
-  assert.equal(finish.requires.some((item) => item.capability === 'buildr.git-worktree-provider'), false);
+  assert.ok(finish.requires.some((item) => item.capability === 'buildr.git-worktree-provider' && item.mode === 'optional'));
+  assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-environment'), false);
   const worktree = packageManifest.builtins.skills.find((item) => item.id === 'task-worktree');
   assert.deepEqual(worktree.provides, [{ capability: 'buildr.git-worktree-provider', version: 1 }]);
   assert.equal(worktree.provides.some((item) => item.capability === 'buildr.git-operations'), false);

@@ -494,7 +494,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   },
   "system-worktree-lifecycle": {
     "inputs": [
-      "test/system/worktree-create.test.mjs",
+      "test/system/worktree-create.test.ts",
       "src/task/infrastructure/**",
       "src/task/application/task-environment-application.mjs",
       "src/task/domain/project-environment-preparation.mjs",
@@ -593,7 +593,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/buildr-web-launcher.test.mjs",
       "test/system/task-environment-fresh-build-web.test.mjs",
       "test/system/workspace-runtime-recovery.test.mjs",
-      "test/system/worktree-create.test.mjs",
+      "test/system/worktree-create.test.ts",
       "test/helpers/task-finish-sqlite-fixture.mjs",
       "src/system/installation/application/cli-update.mjs",
       "src/task/application/finish/**",
@@ -682,7 +682,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/infrastructure/**",
       "src/task/application/task-verification-application.mjs",
       "src/verification/application/**",
-      "src/web/application/preview-lifecycle.mjs",
+      "src/web/application/preview-lifecycle.ts",
       "openspec/specs/concurrent-task-acceptance/**",
       "openspec/specs/task-environments/**"
     ],

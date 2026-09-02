@@ -693,7 +693,6 @@ export function TaskDetailPage() {
           summary={overviewData?.userSummary}
           loading={overviewLoading}
           onRefresh={() => { void refreshOverview(); }}
-          onOpenOwner={(owner) => selectTab(owner === 'task-environment' ? 'environment' : owner === 'task-review' || owner === 'task-verification' ? 'evidence' : 'overview')}
         />
         )}
         <details className={`task-technical-overview${currentCoordination?.mode === 'parent' ? ' parent-mode' : ' ordinary-mode'}`} open={!record.isParent}>
@@ -711,7 +710,6 @@ export function TaskDetailPage() {
               <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${formatDateTime(overviewData.reviews.planning.updatedAt)}` : '尚未记录'} />
               <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${formatDateTime(overviewData.reviews.completion.updatedAt)}` : '尚未记录'} />
               <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${formatDateTime(overviewData.verification.updatedAt)}` : '尚未记录'} />
-              <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
             </dl>
           )}
         </section>

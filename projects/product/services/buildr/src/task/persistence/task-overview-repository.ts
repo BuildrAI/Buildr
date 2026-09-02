@@ -40,16 +40,12 @@ export function registerTaskOverviewRepository(runtime: TaskOverviewRuntime): Ta
         verification.result_json AS verification_json,
         verification.target_identity AS verification_target_identity,
         verification.outcome AS verification_outcome,
-        verification.updated_at AS verification_updated_at,
-        environment.status AS environment_status,
-        environment.receipt_json AS environment_receipt_json,
-        environment.updated_at AS environment_updated_at
+        verification.updated_at AS verification_updated_at
       FROM tasks task
       LEFT JOIN tasks parent ON parent.task_id = task.parent_task_id
       LEFT JOIN task_review_current planning ON planning.task_id = task.task_id AND planning.review_type = 'planning'
       LEFT JOIN task_review_current completion_review ON completion_review.task_id = task.task_id AND completion_review.review_type = 'completion'
       LEFT JOIN task_verification_current verification ON verification.task_id = task.task_id
-      LEFT JOIN task_environment_current environment ON environment.task_id = task.task_id
       WHERE task.task_id = ?`).get(taskId);
       if (row === undefined) throw overviewError('task_overview_not_found', `Task不存在：${taskId}。`, 404, { taskId });
       if (row === null || typeof row !== 'object' || Array.isArray(row)) throw overviewError('task_overview_read_failed', `Task Overview读取失败：${taskId}。`, 500, { taskId });

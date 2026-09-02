@@ -42,7 +42,7 @@ const allowed = new Map([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
-  ['src/web/application/preview-lifecycle.mjs', new Set(['clearOwner'])],
+  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner'])],
   ['src/task/infrastructure/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/task/application/finish/task-finish-run.mjs', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',

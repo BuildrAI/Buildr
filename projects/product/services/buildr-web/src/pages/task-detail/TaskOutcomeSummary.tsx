@@ -7,7 +7,6 @@ type OutcomeFact = { status: string; summary: string; source: string };
 export type TaskUserSummary = {
   goal: { status: string; title: string; intent: string };
   result: OutcomeFact;
-  cleanup: OutcomeFact;
   attention: Array<{ owner: string; scope: string; summary: string }>;
 };
 
@@ -15,7 +14,6 @@ type Props = {
   summary?: TaskUserSummary | null;
   loading: boolean;
   onRefresh: () => void;
-  onOpenOwner: (owner: string) => void;
 };
 
 const statusLabel: Record<string, string> = {
@@ -36,7 +34,7 @@ function OutcomeCard({ label, value }: { label: string; value: OutcomeFact }) {
   </article>;
 }
 
-export function TaskOutcomeSummary({ summary, loading, onRefresh, onOpenOwner }: Props) {
+export function TaskOutcomeSummary({ summary, loading, onRefresh }: Props) {
   return <section className="panel task-outcome-summary" id="task-outcome-summary" aria-live="polite">
     <div className="panel-heading">
       <div><p className="eyebrow">任务结果</p><h2>{summary?.goal.title || '目标与结果'}</h2></div>
@@ -46,10 +44,9 @@ export function TaskOutcomeSummary({ summary, loading, onRefresh, onOpenOwner }:
     {summary ? <>
       <div className="task-outcome-grid">
         <OutcomeCard label="任务结果" value={summary.result} />
-        <OutcomeCard label="环境清理（Cleanup）" value={summary.cleanup} />
       </div>
       {summary.attention.length ? <div className="task-outcome-attention"><h3>局部关注事项</h3>
-        {summary.attention.map((item, index) => <div key={`${item.owner}-${item.scope}-${index}`}><p>{item.summary}</p><Button size="small" onClick={() => onOpenOwner(item.owner)}>查看专业事实</Button></div>)}
+        {summary.attention.map((item, index) => <div key={`${item.owner}-${item.scope}-${index}`}><p>{item.summary}</p></div>)}
       </div> : null}
     </> : null}
   </section>;

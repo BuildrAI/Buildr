@@ -24,7 +24,7 @@ import {
   repairNpmLauncher,
   uninstallNpmLauncher,
 } from '../../src/system/installation/infrastructure/npm-launcher.mjs';
-import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.mjs';
+import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import {

@@ -83,7 +83,7 @@ test('普通发布测试无GUI副作用，真实平台Launcher仅由显式入口
 });
 
 test('Development Launcher固定端口不改变Task Preview的随机端口与无浏览器子进程边界', () => {
-  const previewManager = read('src/web/application/preview-lifecycle.mjs');
+  const previewManager = read('src/web/application/preview-lifecycle.ts');
   assert.match(previewManager, /optionValue\(args, '--port', '0'\)/u);
   assert.match(previewManager, /'web', '--target', targetRoot, '--port', String\(port\), '--no-open'/u);
 });

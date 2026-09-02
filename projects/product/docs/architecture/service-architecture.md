@@ -802,7 +802,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.mjs` | public-json-contracts system、architecture verification | `migrated` |
 | Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Retrospective contract | `migrated` |
-| Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.mjs` | Git Worktree contract、CLI architecture | `migrated` |
+| Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.ts` | Git Worktree contract、CLI architecture | `migrated` |
 | Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
 
 完整 JSON Schema、Ajv、DTO 自动生成与 buildr-web typed client 仍属于后续 `evolve-buildr-http-contract-system`，不因本次 identity/envelope 结构迁移而被视为完成。

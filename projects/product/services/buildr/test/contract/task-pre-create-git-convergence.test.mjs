@@ -27,7 +27,7 @@ test('task-triage 在新正式 Task create 前按逐repository权威基线消费
   ]) assert.ok(triage.includes(required), required);
 
   assert.match(triage, /不checkout、不stash\/autostash、不猜其他branch\/remote/);
-  assert.match(triage, /Task Record Application、Buildr Web与Task Environment不获得任何Git mutation/);
+  assert.match(triage, /Task Record Application与Buildr Web不获得任何Git mutation/);
   assert.match(triage, /Git 基线：converged \/ none \/ blocked/);
   assert.match(triage, /todo create.*不执行/);
 });

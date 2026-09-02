@@ -96,7 +96,7 @@ export const SYSTEM_SUITES = Object.freeze([
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     files: Object.freeze([
-      'test/system/worktree-create.test.mjs',
+      'test/system/worktree-create.test.ts',
     ]),
   }),
   Object.freeze({

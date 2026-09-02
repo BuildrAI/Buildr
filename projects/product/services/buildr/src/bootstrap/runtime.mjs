@@ -25,7 +25,7 @@ import {
   createTaskOverviewModule,
 } from '../task/module.mjs';
 import { createModuleRegistry } from './module-registry.mjs';
-import { createWebModule } from '../web/module.mjs';
+import { createWebModule } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.mjs';
 import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.mjs';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.mjs';
@@ -34,7 +34,7 @@ import { registerProjectGitObserver } from '../infrastructure/git/project-git-ob
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
 import { createPublicationModule } from '../system/publication/module.mjs';
 import { createOpenSpecModule } from '../task/openspec/module.mjs';
-import { createChangeModule } from '../task/change/module.mjs';
+import { createChangeModule } from '../task/change/module.ts';
 import { VERIFICATION_DECLARATION, createVerificationModule } from '../verification/module.ts';
 import * as webProfileContract from '../system/installation/contracts/web-profile.mjs';
 
@@ -122,8 +122,8 @@ export function createRuntime() {
   registerProjectGitObserver(runtime);
   registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
-  registry.install(createChangeModule(runtime));
   registry.install(createWorktreeProviderModule(runtime));
+  registry.install(createChangeModule(runtime));
   installTaskRecordModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskEnvironmentModule(runtime, {
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,

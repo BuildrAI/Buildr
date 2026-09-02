@@ -32,7 +32,7 @@ import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
 } from '../../src/system/installation/module.mjs';
-import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.mjs';
+import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import {
   PROJECT_DAILY_PROGRESS_APPLICATION,
   PROJECT_APPLICATION,
@@ -120,16 +120,16 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
-    id: 'change',
-    requires: ['openspec.query', 'project.application'],
-    provides: ['change.application'],
-    contributions: { cli: [], http: ['change.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'task-worktree-provider',
     requires: [],
     provides: [TASK_WORKTREE_PROVIDER],
     contributions: { cli: [], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'change',
+    requires: ['openspec.query', 'project.application', TASK_WORKTREE_PROVIDER],
+    provides: ['change.application'],
+    contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-record',

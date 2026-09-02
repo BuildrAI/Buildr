@@ -10,7 +10,7 @@ Agent 判断的不是用户是否说出 capability 名字，而是目标行为�
 
 用户意图首先由 Agent runtime 的原生 Skill 发现机制处理：runtime 暴露 Skill description，Agent 根据用户目标选择并加载入口 Skill。Buildr CLI 不拦截 prompt，也不存在一个始终先于所有 Skills 运行的全局 capability dispatcher。入口 Skill 加载后，才读取 Buildr 注入的 binding evidence 解析其 capability dependencies。
 
-产品入口 Buildr Skill 只在自身因 Buildr 管理意图被 Agent 命中后充当内部能力路由者，例如更新 workspace、调整工作方式或诊断 Buildr 能力。它不是“收尾”等所有专业意图的统一前置入口。`task-finish/v1` 是独立收尾方法入口；Task Environment、Git provider、verification 与 current knowledge 各自维护独立 authority，并只通过最小结果交接。
+产品入口 Buildr Skill 只在自身因 Buildr 管理意图被 Agent 命中后充当内部能力路由者，例如更新 workspace、调整工作方式或诊断 Buildr 能力。它不是“收尾”等所有专业意图的统一前置入口。`task-finish/v1` 是独立收尾方法入口；Git provider、Preview、verification 与 current knowledge 各自维护独立 authority，并只通过最小结果交接。
 
 ## 五种相关但不同的关系
 
@@ -48,7 +48,7 @@ operation、前后 branch/commit、适用 remote/ref/range、变化维度、部�
 - 已 push/共享 commit 冻结，不自动 stash、reset、rebase、merge、force push、改写共享历史或失败后换策略；
 - Result 只包含适用的 identity、range、变化维度和实际 effects，部分失败必须保留现场。
 
-Git Operations 的结果只是本次操作事实，不是Review或Verification结论。`task-worktree`只提供窄Git checkout/branch/HEAD/clean/registration evidence；Task Environment独占实际执行根、Runtime/CLI/依赖、projection、动态资源、ready、恢复和总cleanup。Agent直接观察代码、Git、文件与专业结果判断下一步，各模块只保存自身长期事实。
+Git Operations的结果只是本次操作事实，不是Review或Verification结论。`task-worktree`只提供窄Git checkout/branch/HEAD/clean/registration evidence和具体删除安全；Preview保存自己创建的进程owner。依赖、代码生成和运行入口由Project/Service真实工具负责。Agent直接观察代码、Git、文件与专业结果判断下一步，各模块只保存自身长期事实或副作用安全所需owner。
 
 Task Record、Verification与Review current records都由各自Application维护在Workspace SQLite中，不再提供metadata publication capability。Git Operations仍是普通Git内容与其他已选consumer的独立能力，但没有Task metadata provider、binding或consumer route。
 

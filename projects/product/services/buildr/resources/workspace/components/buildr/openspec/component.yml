@@ -23,10 +23,6 @@ contributions:
       version: 2
       mode: required
     - skill: openspec-propose
-      capability: buildr.task-environment
-      version: 1
-      mode: required
-    - skill: openspec-propose
       capability: buildr.current-knowledge-maintenance
       version: 1
       mode: required
@@ -34,17 +30,9 @@ contributions:
       capability: buildr.current-knowledge-maintenance
       version: 1
       mode: required
-    - skill: openspec-update-change
-      capability: buildr.task-environment
-      version: 1
-      mode: optional
     - skill: openspec-apply-change
       capability: buildr.task-record
       version: 2
-      mode: required
-    - skill: openspec-apply-change
-      capability: buildr.task-environment
-      version: 1
       mode: required
     - skill: openspec-apply-change
       capability: buildr.current-knowledge-maintenance
@@ -57,11 +45,11 @@ integrity:
   - skills/openspec/openspec-apply-change=sha256-2bc0d51408640c259f8b4608b6aa9c5f4dd736ec1a353546157a757f74b3d613
   - skills/openspec/openspec-sync-specs=sha256-c3971fa0e66489c123d9118410c404009148b40e4801d4879924d07655e05925
   - skills/openspec/openspec-archive-change=sha256-71b27be3cccf568fba36589da3ec43dc1c98032bf21b5873ce29f3e593945ca9
-  - skills/buildr/openspec-contract-guard=sha256-2b056e1c7f975e6660b2c88f924a1b80a63a16ed44e99ef662db800f79b72cc7
+  - skills/buildr/openspec-contract-guard=sha256-6cd923dde14839a0401cf9f4c4dfda94cda2d16e5a416180b0280ccb1f3524e7
   - commands/buildr/openspec/manifest.yml=sha256-beb4526c7109ada72b34394e8ce6fe7823cbd4ff695e376da9709e87439fe1b9
   - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-e9c0e2382be125b68f250479f546ba49c25bf892b8ea6442196cd70cb53e106b
-  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-1b23d3a5a48c16badad5d97fabd5cb2c413b0018cb594be91d0fa4504ff0b205
-  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-bb2a0e0585913197402e65aa9055ba779c4ad4ad0608f5f2bfe4bdd116c95cfe
-  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-00ca7485d51db8a8a1349b6bdf8dcdb5b9c1962655416daebb170fc06edd39fa
-  - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-bb5636840b351f0c0d6637512ffeed0943d090b902c016e1e055455e94fda5be
-  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-bb632f5107674136858aeab889b6c74b5f3f67343365b43e7f1f11d5d6a0f109
+  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-c0e05586ed2e3021409dc0d309b531a9bedf67e1ba814c121ba24ccc8213bc89
+  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-cf662705688ffbe878fdb8b4e7d2b6f1058a0cb891627940b037ea78f35c5dca
+  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-f1b6d88f8674f9b84ebae9cc61b67b17b18878ce010bff8f2ce84d76eaf1132f
+  - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-d5e5b09bef8c402258b5805382dfb2bc211a86c679970002a0a40ae512a20571
+  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-d0da2a3cbf832c741a86086ffffc10405de308bbd8f5ae85d033358ad641750d
