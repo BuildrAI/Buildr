@@ -43,6 +43,24 @@ function injectLegacyTaskVerificationV3(root) {
   return target;
 }
 
+function injectLegacyTaskRecordV2(root) {
+  const manifestFile = path.join(root, 'skills', 'manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.contracts = manifest.contracts.filter((item) => item.id !== 'buildr.task-record');
+  manifest.bindings = manifest.bindings.filter((item) => item.capability !== 'buildr.task-record');
+  manifest.contracts.push({
+    id: 'buildr.task-record',
+    version: 2,
+    path: 'contracts/buildr/task-record/v2.md',
+    description: '管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。',
+  });
+  manifest.bindings.push({ capability: 'buildr.task-record', version: 2, provider: 'task-manager' });
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
+  const target = path.join(root, 'skills', 'contracts', 'buildr', 'task-record', 'v2.md');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', 'legacy-task-record-contract-v2.md'), target);
+}
+
 function seedMigrationV4(root) {
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -161,6 +179,17 @@ test('sync 接受上一版 Task Verification contract metadata 并安全升级�
   assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-verification' && item.version === 3), false);
   assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-verification' && item.version === 4), true);
   assert.equal(fs.existsSync(legacy), false);
+});
+
+test('sync 接受上一版 Task Record contract metadata 并安全升级到v3', (t) => {
+  const root = fixtureRoot(t);
+  injectLegacyTaskRecordV2(root);
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const manifest = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-record' && item.version === 2), false);
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-record' && item.version === 3), true);
+  assert.equal(manifest.bindings.some((item) => item.capability === 'buildr.task-record' && item.version === 2), false);
 });
 
 test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t) => {

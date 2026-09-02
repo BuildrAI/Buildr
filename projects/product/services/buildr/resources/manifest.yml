@@ -65,7 +65,7 @@ capabilityContracts:
         target: skills/contracts/buildr/task-record/v2.md
         integrity: sha256-3c6f2f8e61f6381e1d09831dbe7c203229749ffcd32ec910cfa3d15d97dd494e
         provider: task-manager
-        description: 管理canonical Workspace中待办与正式Task的最小顶层记录及复盘来源。
+        description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
       - id: buildr.task-retrospective
         version: 2
         target: skills/contracts/buildr/task-retrospective/v2.md
