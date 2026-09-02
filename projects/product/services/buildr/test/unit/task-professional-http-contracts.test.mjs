@@ -7,16 +7,13 @@ import {
   TASK_PROFESSIONAL_HTTP_VALIDATORS,
   inspectTaskProfessionalHttpContractCoverage,
   validateTaskProfessionalRequest,
-} from '../../src/task/interfaces/http/task-professional-http-contracts.mjs';
-import {
-  mapTaskParentCoordinationRequest,
-  mapTaskRetrospectiveRequest,
-} from '../../src/task/interfaces/http/task-professional-http-mapping.mjs';
+} from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
+import { mapTaskRetrospectiveRequest } from '../../src/task/interfaces/http/task-professional-http-mapping.ts';
 
 test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error schema', () => {
   const ids = TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(ids.length, 11);
+  assert.equal(ids.length, 10);
   for (const operation of TASK_PROFESSIONAL_HTTP_OPERATIONS) {
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.requestSchemaId));
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.successSchemaId));
@@ -38,11 +35,6 @@ test('Interface mapping 返回新对象，不把 DTO 原对象传入 Application
   const mappedRetrospective = mapTaskRetrospectiveRequest(retrospective);
   assert.notEqual(mappedRetrospective, retrospective);
   assert.deepEqual(mappedRetrospective, retrospective);
-
-  const parent = { operation: 'accept', expectedPlanIdentity: 'sha256-plan', summary: '已验收', ignored: undefined };
-  const mappedParent = mapTaskParentCoordinationRequest(parent);
-  assert.notEqual(mappedParent, parent);
-  assert.deepEqual(mappedParent, { operation: 'accept', expectedPlanIdentity: 'sha256-plan', summary: '已验收' });
 });
 
 test('未迁移 operation 只形成 attention diagnostic，不阻断其他能力', () => {

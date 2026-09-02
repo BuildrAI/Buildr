@@ -42,16 +42,8 @@ export function developmentAxisLabel(status: string): string {
   } as Record<string, string>)[status] || '当前无法判断';
 }
 
-export function gateOutcomeLabel(outcome?: string): string {
-  return ({ ready: '已就绪', 'changes-required': '需要修改', passed: '已通过', 'not-passed': '未通过' } as Record<string, string>)[outcome || ''] || '尚未形成';
-}
-
 export function developmentDispositionLabel(disposition?: string): string {
   return ({ pending: '待形成', current: '当前事实', stale: '已失效', 'not-applicable': '不适用', waived: '已明确豁免' } as Record<string, string>)[disposition || ''] || disposition || '未知';
-}
-
-export function decisionOutcomeLabel(outcome?: string): string {
-  return ({ proceed: '允许推进', blocked: '阻止推进' } as Record<string, string>)[outcome || ''] || '尚未形成';
 }
 
 export function capabilityOutcomeLabel(outcome?: string): string {

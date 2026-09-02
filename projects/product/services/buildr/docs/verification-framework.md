@@ -428,7 +428,7 @@ Task Development owner的历史基线约为71.9秒；第一阶段只做seed与�
 
 三轮墙钟极差为3.240秒，约占中位数1.2%。每轮聚合15个Host、16次Context创建、93次cache hit和94次lease；均为0 dirty、0 eviction、0 Context wait。Context创建累计约1.9--2.0秒，Task Development的Workspace materialize与cleanup均约0.6秒，说明这一批owner的重复环境创建已经不再是Core主导成本。相对本Change中途两轮Core的320.687秒阶段中位数，最终中位数下降约16.6%；Task Development相对71.9秒历史基线下降约57.1%。
 
-同一冻结树另做一次真实Core/affected竞争。affected由`test/integration/task-development-application.test.mjs`选择8个step，双方均通过：
+同一冻结树另做一次真实Core/affected竞争。affected由`test/integration/task-development-application.test.ts`选择8个step，双方均通过：
 
 | 执行 | 墙钟 | 关键结果 |
 | --- | ---: | --- |

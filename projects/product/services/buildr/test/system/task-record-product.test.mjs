@@ -238,9 +238,6 @@ test('CLI parent completion requires an explicit evidence file and preserves the
     authorization: { source: 'test:explicit-parent-user-message', statement: '用户明确授权完成 explicit-parent' } }));
   const completed = json(['task', 'complete', 'explicit-parent', '--summary', '整体完成', '--expected-record', created.recordDigest, '--parent-completion', evidence, '--target', root]);
   assert.equal(completed.record.result.parentCompletion.authorization.source, 'test:explicit-parent-user-message');
-  const retired = json(['task', 'parent', 'record', 'explicit-parent', '--target', root], 1);
-  assert.equal(retired.diagnostic.code, 'parent_coordination_action_retired');
-  assert.deepEqual(retired.effects, []);
 });
 
 

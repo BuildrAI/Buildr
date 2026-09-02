@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Input, Select } from 'antd';
-import { api, taskProfessionalApi } from '../api';
+import { api } from '../api';
 
 const ACTION_LABELS: Record<string, string> = {
   workspace: '工作空间',
@@ -236,34 +236,34 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     }
   };
 
-  const submitTaskReview = async (event: FormEvent) => {
+  const submitTaskReview = (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     const reviewType = context.reviewType === 'completion' ? 'completion' : 'planning';
     const change = context.projectCode && context.change ? String(context.change) : '';
-    try {
-      const result = await taskProfessionalApi.reviewPrompt({
-        taskId: String(context.taskId || ''),
-        reviewType,
-        ...(change ? { projectCode: String(context.projectCode), change } : {}),
-      });
-      showResult(result.prompt, ACTION_LABELS['task-review'], '审查结果尚未记录。');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
+    const typeLabel = reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）';
+    const taskId = String(context.taskId || '');
+    showResult([
+      `请对正式任务 ${taskId} 执行${typeLabel}。`,
+      '',
+      '读取并遵循 task-review Skill；重新读取当前 Task、真实审查对象和已有 Review Result。',
+      ...(change ? [`限定的 Task-scoped Change：${String(context.projectCode)}/${change}。`] : []),
+      '根据当前目标和风险选择审阅范围，完整结束后才通过 Task Review Interface 保存结果。',
+      'Review 不决定 Task 是否继续、完成或交付。',
+    ].join('\n'), ACTION_LABELS['task-review'], '审查结果尚未记录。');
   };
 
-  const submitTaskVerification = async (event: FormEvent) => {
+  const submitTaskVerification = (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    try {
-      const result = await taskProfessionalApi.verificationPrompt({
-        taskId: String(context.taskId || ''),
-      });
-      showResult(result.prompt, ACTION_LABELS['task-verification'], '验证报告未被修改。');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
+    const taskId = String(context.taskId || '');
+    showResult([
+      `请完成正式任务 ${taskId} 的任务验证（Task Verification）。`,
+      '',
+      '读取并遵循 task-verification Skill；读取当前Task、真实改动和相关Project测试地图。',
+      '由你选择并直接调用项目已有测试工具；Buildr不生成验证计划或代跑测试。',
+      '全部验证完成后，只保存包含实际检查、未覆盖项和明确结论的有意义报告。',
+    ].join('\n'), ACTION_LABELS['task-verification'], '验证报告未被修改。');
   };
 
   if (action === 'daily-progress') {
@@ -737,7 +737,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     return (
       <>
         {formHeader('任务审查', '准备')}
-        <form id="agent-action-form" onSubmit={(event) => void submitTaskReview(event)}>
+        <form id="agent-action-form" onSubmit={submitTaskReview}>
           <div className="context-help">
             为正式任务
             {' '}
@@ -768,7 +768,7 @@ export function AgentActionDrawer({ initialAction, initialContext = {} }: Props)
     return (
       <>
         {formHeader('任务验证', '准备')}
-        <form id="agent-action-form" onSubmit={(event) => void submitTaskVerification(event)}>
+        <form id="agent-action-form" onSubmit={submitTaskVerification}>
           <div className="context-help">
             为正式任务
             {' '}

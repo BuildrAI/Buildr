@@ -745,9 +745,9 @@ export function TaskDetailPage() {
           {overviewData?.error ? <p className="alert error">{overviewData.error}</p> : (
             <dl className="read-facts detail-facts">
               <Fact label="研发" value={overviewData?.development?.present ? `${overviewData.development.status || 'unknown'} · ${formatDateTime(overviewData.development.observedAt)}` : '尚未形成'} />
-              <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${overviewData.reviews.planning.gateMatch}` : '尚未记录'} />
-              <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${overviewData.reviews.completion.gateMatch}` : '尚未记录'} />
-              <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${overviewData.verification.gateMatch}` : '尚未记录'} />
+              <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${formatDateTime(overviewData.reviews.planning.updatedAt)}` : '尚未记录'} />
+              <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${formatDateTime(overviewData.reviews.completion.updatedAt)}` : '尚未记录'} />
+              <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${formatDateTime(overviewData.verification.updatedAt)}` : '尚未记录'} />
               <Fact label="环境" value={overviewData?.environment?.present ? `${overviewData.environment.status} · ${formatDateTime(overviewData.environment.updatedAt)}` : '尚未形成'} />
               <Fact label="历史交付记录" value={overviewData?.finish?.completion?.present ? `${overviewData.finish.completion.status} · ${formatDateTime(overviewData.finish.completion.completedAt)}` : overviewData?.finish?.current?.present ? overviewData.finish.current.status : '无旧收尾记录'} />
             </dl>
@@ -977,7 +977,6 @@ export function TaskDetailPage() {
         data={developmentData}
         loading={developmentLoading}
         onRefresh={() => { void refreshDevelopment(); }}
-        onSelectEvidence={() => selectTab('evidence')}
       />
       <PrototypeTab
         active={activeTab === 'prototype'}

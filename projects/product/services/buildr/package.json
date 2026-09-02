@@ -59,7 +59,7 @@
     "test": "./test/verification/verify-buildr-product-fast",
     "test:fast": "./test/verification/verify-buildr-product-fast",
     "test:unit": "node --test test/unit/*.test.mjs test/unit/*.test.ts",
-    "test:component": "node --test test/component/*.test.mjs",
+    "test:component": "node --test test/component/*.test.mjs test/component/*.test.ts",
     "test:contract": "node --test test/contract/*.test.mjs test/contract/*.test.ts",
     "test:integration": "node --test test/integration/*.test.mjs test/integration/*.test.ts",
     "contracts:generate": "node tools/contracts/task-record-dto.mjs && node tools/contracts/task-professional-dto.mjs && node tools/contracts/runtime-system-dto.mjs",

@@ -181,7 +181,7 @@ test('任务详情使用概览、原型、研发、证据、复盘、环境六�
   assert.match(source, /if \(tab === 'evidence'\) \{[\s\S]*refreshReview\(\);[\s\S]*refreshVerification\(\);/);
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
   assert.match(evidence, /openAgentAction\('task-review', \{ taskId, reviewType \}\)/);
-  assert.match(evidence, /current: '当前适用', stale: '目标已变化', unknown: '适用性未知'/);
+  assert.match(evidence, /stateText = slot\.present \? '已记录' : '未记录'/);
   assert.match(source, /taskProfessionalApi\.reviews\(currentTaskId, \{ signal \}\)/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
@@ -221,7 +221,7 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-prototype-frame/);
 });
 
-test('任务研发视图只读投影 current Development Receipt、候选、门禁、决策与最近交接', () => {
+test('任务研发视图只读投影 current Development Receipt、候选与最近交接', () => {
   const source = read('../buildr-web/src/pages/task-detail/DevelopmentTab.tsx');
   const labels = read('../buildr-web/src/lib/taskLabels.ts');
   const detail = read('../buildr-web/src/pages/TaskDetailPage.tsx');
@@ -235,20 +235,15 @@ test('任务研发视图只读投影 current Development Receipt、候选、门�
   assert.match(source, /development-planning-card|developmentPlanning/);
   assert.match(labels, /waived: '已明确豁免'/);
   assert.match(source, /节点不构成必经工作流/);
-  assert.match(source, /方案审查/);
-  assert.match(source, /任务验证/);
-  assert.match(source, /完成审查/);
   assert.match(source, /任务上下文身份|development-identity/);
-  assert.match(source, /已接受风险数/);
   assert.match(source, /const latest = handoffs\.at\(-1\)/);
   assert.match(source, /历史研发交接仍被保留，但当前无法实时复核/);
+  assert.doesNotMatch(source, /task-development-gates|task-development-decision|task-development-terminal/);
   assert.doesNotMatch(source, /recordTaskDevelopment|freezeTaskDevelopment|decideTaskDevelopment|createTaskDevelopmentHandoff/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync/);
   assert.match(styles, /\.development-axis-grid/);
-  assert.match(styles, /\.development-gate-grid/);
   assert.match(styles, /\.development-planning-list/);
   assert.match(styles, /\.development-axis-grid \{ display: grid/);
-  assert.match(styles, /\.development-gate-grid \{ display: grid/);
 });
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
@@ -260,7 +255,8 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
   assert.match(source, /测试地图适用性/);
   assert.match(detail, /taskProfessionalApi\.verification\(currentTaskId, \{ signal \}\)/);
   assert.match(source, /openAgentAction\('task-verification', \{ taskId \}\)/);
-  assert.match(actions, /taskProfessionalApi\.verificationPrompt\(/);
+  assert.doesNotMatch(actions, /taskProfessionalApi\.(?:reviewPrompt|verificationPrompt)\(/);
+  assert.match(actions, /读取并遵循 task-verification Skill/);
   assert.match(actions, /验证报告未被修改/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskVerification/);
 });

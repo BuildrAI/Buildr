@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Task Development 是唯一 Receipt/Candidate/generation/handoff Application authority', () => {
-  const application = read('src/task/application/task-development-application.mjs');
+  const application = read('src/task/application/task-development-application.ts');
   const repository = read('src/task/persistence/task-development-repository.mjs');
   const composition = read('src/task/module.mjs');
   assert.match(application, /observeTaskDevelopment/);
@@ -17,7 +17,7 @@ test('Task Development 是唯一 Receipt/Candidate/generation/handoff Applicatio
   assert.doesNotMatch(repository, /development\.yml|from ['"]yaml['"]|YAML\.(?:parse|stringify)/);
   assert.match(composition, /registerTaskDevelopmentApplication/);
   for (const forbidden of ['readTaskReviewResultPersistence', 'readTaskVerificationResultPersistence', 'writeTaskReviewResultPersistence', 'writeTaskVerificationResultPersistence']) assert.equal(application.includes(forbidden), false, forbidden);
-  const writers = fs.readFileSync(path.join(root, 'src/task/application/task-development-application.mjs'), 'utf8').includes('writeTaskDevelopmentPersistence');
+  const writers = fs.readFileSync(path.join(root, 'src/task/application/task-development-application.ts'), 'utf8').includes('writeTaskDevelopmentPersistence');
   assert.equal(writers, true);
   assert.doesNotMatch(application, /deriveFormalVerificationReadiness|inspectTaskVerification|observeTaskVerificationDeclarations|recordTaskDevelopmentPolicy/);
   assert.match(application, /task_development_change_pending_for_content_target/);
@@ -42,7 +42,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const help = read('src/bootstrap/cli/help.mjs');
   const server = read('src/web/http/server.mjs');
   const router = read('src/web/http/router.mjs');
-  const http = read('src/task/interfaces/http/task-lifecycle-core.mjs');
+  const http = read('src/task/interfaces/http/task-lifecycle-core.ts');
   const skill = read('resources/workspace/skills/buildr/task-development/SKILL.md');
   assert.doesNotMatch(registry, /task development/);
   assert.doesNotMatch(help, /buildr task development/);
@@ -51,7 +51,8 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(router, /submitTaskRead\(request, response, operation, root, taskId/);
   assert.doesNotMatch(`${server}\n${router}`, /runtime\.(?:observe|record|freeze|decide|create)TaskDevelopment/);
   const readWorker = read('src/web/http/read-worker.mjs');
-  assert.match(readWorker, /development:\s*'inspectTaskDevelopmentView'/);
+  assert.match(readWorker, /development:\s*'inspectTaskDevelopment'/);
+  assert.match(readWorker, /reviews:\s*'inspectTaskReview'/);
   assert.match(skill, /Buildr Web只消费Application `inspect`的只读投影/);
   assert.match(skill, /不依赖`buildr\.task-verification` capability/);
   assert.match(skill, /task-development discover/);
@@ -74,9 +75,9 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   assert.match(routes, /task-development[\s\S]*runTaskDevelopmentDriver/);
   assert.match(routerSource, /REQUIRED_ROUTE_IDS[\s\S]*runners\?\.\[route\]/);
   assert.match(inventory, /id: 'task-development'/);
-  const application = read('src/task/application/task-development-application.mjs');
+  const application = read('src/task/application/task-development-application.ts');
   assert.match(application, /taskDevelopmentActionFields/);
-  const operationContracts = read('src/task/application/task-development-operation-contracts.mjs');
+  const operationContracts = read('src/task/application/task-development-operation-contracts.ts');
   assert.match(operationContracts, /additionalProperties:\s*false/);
   assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
   const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v3.md');
@@ -87,7 +88,7 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
 });
 
 test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {
-  const application = read('src/task/application/task-development-application.mjs');
+  const application = read('src/task/application/task-development-application.ts');
   const sqlite = read('src/infrastructure/sqlite/workspace-sqlite.mjs');
   const taskRecord = read('src/task/application/task-record-application.mjs');
   const environment = read('src/task/application/task-environment-application.mjs');
@@ -105,7 +106,7 @@ test('v3 package声明精确退休v2 contract并更新binding', () => {
 });
 
 test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测试技术栈', () => {
-  const application = read('src/task/application/task-development-application.mjs');
+  const application = read('src/task/application/task-development-application.ts');
   for (const forbidden of ['project=product', "'product'", 'service=buildr', "'buildr'", 'origin/dev', "'dev'", 'node_modules', "'npm'", 'git worktree', 'OpenSpec', 'verification registry']) assert.equal(application.includes(forbidden), false, forbidden);
   const observer = read('src/task/infrastructure/content-target-observer.mjs');
   assert.match(observer, /FILESYSTEM_CONTENT_OBSERVER/);

@@ -1,6 +1,6 @@
 import { TASK_RECORD_ID_SOURCE } from './task-record-http.mjs';
-import { validateTaskProfessionalRequest } from './task-professional-http-contracts.mjs';
-import { mapTaskRetrospectiveRequest } from './task-professional-http-mapping.mjs';
+import { validateTaskProfessionalRequest } from './task-professional-http-contracts.ts';
+import { mapTaskRetrospectiveRequest } from './task-professional-http-mapping.ts';
 
 const TASK_RETROSPECTIVE_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/retrospective$`);
 

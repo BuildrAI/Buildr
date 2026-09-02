@@ -17,7 +17,7 @@ buildr task review inspect <task-id> [--planning-target <identity>] [--completio
 
 读取 Task Record 的 Intent、scope 与限定 Change 引用。实际执行目标位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root 读取，不从 cwd 或 Review Result 猜环境 authority。
 
-- `planning` 绑定当前计划上下文的明确稳定 identity。计划可以是 OpenSpec Change、任务清单或其他 owner 已界定的计划，不要求固定形态。正式Task的OpenSpec计划必须先用`buildr task next`返回的matching retained `environment.controllerInvocation`调用`__internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>`；只消费`resolved`结果的`target.identity`和`planningNodes`。不得使用candidate `cliInvocation`、source driver，不得手工摘要artifact、路径、mtime、checkbox progress、Git ref或沿用旧Result；resolver `blocked`时停止且不record Review。
+- `planning` 绑定当前计划上下文的明确稳定 identity。计划可以是 OpenSpec Change、任务清单或其他 owner 已界定的计划，不要求固定形态。正式Task的OpenSpec计划必须先用matching `task environment inspect`返回的retained controller调用`__internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>`；只消费`resolved`结果的`target.identity`和`planningNodes`。不得使用candidate `cliInvocation`、source driver，不得手工摘要artifact、路径、mtime、checkbox progress、Git ref或沿用旧Result；resolver `blocked`时停止且不record Review。
 - 父子协调本身不要求正式计划审查。只有实际选择独立研发审查时才消费本能力；旧父计划不再要求审查采用。
 - `completion` 只绑定上游已形成的 current Candidate identity。没有明确 Candidate identity 就停止，不得用 HEAD、dirty tree、Environment identity、时间或任意临时摘要代替。
 - 仅工作区Candidate仍执行同一Completion Review；Review不得把workspace coverage gap或`not-passed` Verification重写为passed、waiver或风险接受。

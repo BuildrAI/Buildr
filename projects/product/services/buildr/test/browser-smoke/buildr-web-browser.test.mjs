@@ -236,12 +236,11 @@ function createSelectedFixture(root, controllerCli) {
   return selector;
 }
 
-function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contributionBinding = null, contributionHandoff = null) {
+function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
   runtime.beginTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planning: { targetIdentity: 'plan:browser-v1', nodes: [{ id: 'proposal', kind: 'proposal', authority: 'openspec/v1', reference: 'demo/browser-flow/proposal', identity: taskDevelopmentDigest('browser-flow-proposal'), disposition: 'current', summary: '浏览器夹具提案已形成。' }] },
   });
-  if (contributionBinding) runtime.bindChildContributions(root, taskId, contributionBinding);
   let development = runtime.observeTaskDevelopment(root, taskId, {
     changeDispositions: [{ project: 'demo', change: 'browser-flow', disposition: 'not-applicable', summary: '浏览器夹具不验证Change收敛。' }],
     planningTargetIdentity: 'plan:browser-v1',
@@ -273,7 +272,7 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task', contr
     unresolvedItems: [],
   });
   runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
-  return runtime.createTaskDevelopmentHandoff(root, taskId, contributionHandoff ? { contributionHandoff } : {}).development.receipt;
+  return runtime.createTaskDevelopmentHandoff(root, taskId).development.receipt;
 }
 
 function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResult) {
@@ -891,14 +890,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-development-axes .development-axis-card').count(), 5);
     assert.equal(await page.locator('#task-development-axes').getByText('当前有效', { exact: true }).count(), 5);
     assert.match(await page.locator('#task-development-planning').innerText(), /proposal · proposal[\s\S]*当前事实[\s\S]*openspec\/v1[\s\S]*浏览器夹具提案已形成/);
-    assert.equal(await page.locator('#task-development-gates .development-gate-card').count(), 2);
-    assert.match(await page.locator('#task-development-gates').innerText(), /方案审查[\s\S]*已就绪/);
-    assert.match(await page.locator('#task-development-gates').innerText(), /完成审查[\s\S]*已就绪/);
+    assert.equal(await page.locator('#task-development-gates').count(), 0, '研发页不展示跨专业门禁');
     assert.match(await page.locator('#task-development-candidate').innerText(), /候选代次[\s\S]*1/);
-    assert.match(await page.locator('#task-development-decision').innerText(), /允许推进/);
-    assert.match(await page.locator('#task-development-decision').innerText(), /已接受风险数[\s\S]*0/);
+    assert.equal(await page.locator('#task-development-decision').count(), 0, '研发页不展示统一推进决定');
     assert.match(await page.locator('#task-development-handoff').innerText(), /已保存交接数[\s\S]*1/);
-    assert.equal(await page.locator('#task-development-panel button').count(), 3, '研发页只有刷新和两个审查证据跳转');
+    assert.equal(await page.locator('#task-development-panel button').count(), 1, '研发页只提供只读刷新');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.getByRole('button', { name: '研发', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
@@ -916,7 +912,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.equal(await page.locator('#task-review-slots').getByText('适用性未知', { exact: true }).count(), 2);
+    assert.equal(await page.locator('#task-review-slots').getByText('已记录', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-review-slots').innerText(), /plan:browser-v1/);
     assert.match(await page.locator('#task-review-slots').innerText(), /sha256-/);
     assert.match(await page.locator('#task-review-slots').innerText(), /计划可执行/);
@@ -943,23 +939,21 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.goto(`${workspaceUrl}/tasks/browser-delivered`);
     await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-delivered');
     await page.getByRole('button', { name: '研发', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已交付');
-    assert.equal(await page.locator('#task-development-axes').getByText('交付时快照', { exact: true }).count(), 5);
-    assert.match(await page.locator('#task-development-terminal').innerText(), /origin\/dev[\s\S]*已按正常流程清理/);
-    assert.equal(await page.locator('#task-development-history-note').innerText(), 'Environment 已按正常流程清理；刷新只会重读交付事实，不会重新创建 Environment。');
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '研发交接已就绪');
+    assert.equal(await page.locator('#task-development-axes').getByText('当前有效', { exact: true }).count(), 5);
+    assert.equal(await page.locator('#task-development-terminal').count(), 0, '研发页不组合Finish历史');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
-    assert.match(await page.locator('#task-review-slots').innerText(), /已随交付候选采用/);
+    assert.equal(await page.locator('#task-review-slots').getByText('已记录', { exact: true }).count(), 2);
     assert.match(await page.locator('#task-verification-result').innerText(), /浏览器验证已通过/);
     assert.equal(await page.locator('#task-verification-result .review-slot-card').evaluate((item) => item.getBoundingClientRect().width <= 800), true);
 
     await page.goto(`${workspaceUrl}/tasks/browser-unproven`);
     await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-unproven');
     await page.getByRole('button', { name: '研发', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '已完成');
-    assert.match(await page.locator('#task-development-terminal').innerText(), /任务结果已保存[\s\S]*不要求旧收尾运行证明/);
-    assert.equal(await page.locator('#task-development-terminal').evaluate((item) => item.classList.contains('delivered')), false);
+    await page.waitForFunction(() => document.getElementById('task-development-status')?.textContent === '尚未形成研发回执');
+    assert.equal(await page.locator('#task-development-terminal').count(), 0, 'Task完成状态不反写研发页');
 
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-task');

@@ -1,14 +1,12 @@
 import { Button } from 'antd';
 import {
-  decisionOutcomeLabel,
   developmentAxisLabel,
   developmentDispositionLabel,
   developmentReasonLabel,
   developmentStatusLabel,
   formatDateTime,
-  gateOutcomeLabel,
 } from '../../lib/taskLabels';
-import { Fact, TechnicalDetails } from './shared';
+import { Fact } from './shared';
 
 type Props = {
   taskId: string;
@@ -16,24 +14,19 @@ type Props = {
   data: any;
   loading: boolean;
   onRefresh: () => void;
-  onSelectEvidence: () => void;
 };
 
-export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvidence }: Props) {
+export function DevelopmentTab({ active, data, loading, onRefresh }: Props) {
   const development = data?.development;
-  const terminal = data?.terminal;
   const applicability = development?.applicability;
-  const terminalStatus = terminal && terminal.status !== 'active' ? terminal.status : null;
-  const status = terminalStatus || (data?.status === 'missing' ? 'missing' : applicability?.status || 'unknown');
+  const status = data?.status === 'missing' ? 'missing' : applicability?.status || 'unknown';
   const receipt = development?.receipt;
-  const delivered = terminalStatus === 'delivered';
-  const historical = terminalStatus === 'abandoned';
-  const unknown = !terminalStatus && status === 'unknown';
+  const unknown = status === 'unknown';
   const reasons = applicability?.reasons || [];
   const showDiagnostic = Boolean(data?.diagnostic || data?.nextActions?.length || reasons.length);
   const handoffs = receipt?.handoffs || [];
   const latest = handoffs.at(-1);
-  const showHistoryNote = delivered ? true : Boolean(latest && (unknown || applicability?.handoff !== 'current'));
+  const showHistoryNote = Boolean(latest && (unknown || applicability?.handoff !== 'current'));
 
   return (
     <section id="task-development-panel" className={active ? '' : 'hidden'} data-task-panel="development" aria-live="polite">
@@ -42,7 +35,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
           <div>
             <p className="eyebrow">研发事实</p>
             <h2>任务研发（Task Development）</h2>
-            <p className="section-copy">从首个正式研发动作开始，只读聚合规划节点、当前目标、候选、审查与最近一次交接；terminal Task另行展示交付时事实，不伪装实时currentness。</p>
+            <p className="section-copy">这里只读展示已保存的研发聚合事实；任务结果、审查、验证和历史交付由各自页面独立展示。</p>
           </div>
           <Button id="task-development-refresh" disabled={loading} onClick={onRefresh}>
             刷新研发状态
@@ -58,30 +51,6 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             <dd id="task-development-updated">{receipt?.updatedAt ? formatDateTime(receipt.updatedAt) : '—'}</dd>
           </div>
         </dl>
-        <div id="task-development-terminal" className={`delivery-summary${terminalStatus ? '' : ' hidden'}`}>
-          {terminalStatus ? (
-            <>
-              <p className="delivery-conclusion">{developmentStatusLabel(terminalStatus)}</p>
-              {terminal.delivery ? (
-                <>
-                  <dl className="read-facts delivery-facts">
-                    <Fact label="交付目标" value={`${terminal.delivery.remote}/${terminal.delivery.targetBranch}`} />
-                    <Fact label="完成时间" value={formatDateTime(terminal.delivery.completedAt)} />
-                    <Fact
-                      label="环境清理"
-                      value={`${terminal.delivery.cleanup.status === 'cleaned' ? '已按正常流程清理' : terminal.delivery.cleanup.status} · ${terminal.delivery.cleanup.summary}`}
-                    />
-                  </dl>
-                  <TechnicalDetails value={`final ref ${terminal.delivery.finalRemoteRef} · run ${terminal.delivery.runId} · ${terminal.delivery.reuseMode} · ${terminal.delivery.semanticEquivalence}`} />
-                </>
-              ) : null}
-              {terminalStatus === 'completed-no-change' ? <p>Task 明确以 noChange 完成，不要求 Formal Finish Result。</p> : null}
-              {terminalStatus === 'completed' ? <p>任务结果已保存；交付位置与验证说明见任务结果，不要求旧收尾运行证明。</p> : null}
-              {terminalStatus === 'completed-unproven' ? <p>没有找到与 immutable handoff/Candidate 完整匹配的成功 Finish Result。</p> : null}
-              {terminalStatus === 'abandoned' ? <p>这里只读展示已保存的历史快照，不会恢复 Environment 或 Candidate。</p> : null}
-            </>
-          ) : null}
-        </div>
         <details className="technical-details compact">
           <summary>技术信息</summary>
           <dl className="read-facts">
@@ -117,13 +86,9 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
             <section className="panel">
               <div className="panel-heading">
                 <div>
-                  <h2 id="task-development-axes-title">{delivered ? '交付时快照' : historical ? '历史快照' : '当前有效性'}</h2>
+                  <h2 id="task-development-axes-title">当前有效性</h2>
                   <p id="task-development-axes-copy" className="section-copy">
-                    {delivered
-                      ? '这些事实随 immutable handoff 被交付采用；它们不是对已清理 Environment 的实时 currentness 判断。'
-                      : historical
-                        ? '只展示放弃前已保存的研发事实，不重新判断或恢复 Candidate。'
-                        : '分别判断任务上下文、研发规划、内容目标、候选与研发交接是否仍然有效。'}
+                    分别展示任务上下文、研发规划、内容目标、候选与研发交接最近一次保存的有效性；不代表任务完成或交付。
                   </p>
                 </div>
               </div>
@@ -135,7 +100,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                   ['当前候选', 'candidate'],
                   ['研发交接', 'handoff'],
                 ] as const).map(([label, key]) => {
-                  const axisStatus = delivered ? 'snapshot' : historical ? 'historical' : unknown ? 'unknown' : applicability?.[key] || 'unknown';
+                  const axisStatus = unknown ? 'unknown' : applicability?.[key] || 'unknown';
                   return (
                     <article key={key} className={`development-axis-card ${axisStatus}`}>
                       <span>{label}</span>
@@ -168,7 +133,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                 )}
               </div>
             </section>
-            <section className="detail-layout">
+            <section>
               <article className="panel">
                 <div className="panel-heading">
                   <div>
@@ -183,63 +148,6 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                   <Fact label="内容目标身份" value={receipt.contentTarget?.identity || '尚未稳定'} />
                 </dl>
               </article>
-              <aside className="panel facts-panel">
-                <p className="eyebrow">研发决策</p>
-                <h2>保存的推进结论</h2>
-                <dl id="task-development-decision" className="fact-list">
-                  <Fact label="已保存结论" value={decisionOutcomeLabel(receipt.decision?.outcome)} />
-                  <Fact label="摘要" value={receipt.decision?.summary || '尚未形成'} />
-                  <Fact label="已接受风险数" value={String(receipt.decision?.risks?.length || 0)} />
-                </dl>
-                <div id="task-development-risks" className="development-risk-list">
-                  {receipt.decision?.risks?.length ? (
-                    <>
-                      <h3>已接受风险</h3>
-                      <ul>
-                        {receipt.decision.risks.map((risk: any) => (
-                          <li key={`${risk.gate}-${risk.scope}-${risk.summary}`}>
-                            {`${risk.gate === 'completion' ? '完成审查' : '历史风险'} · ${risk.scope}：${risk.summary}`}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  ) : null}
-                </div>
-              </aside>
-            </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>研发审查</h2>
-                  <p className="section-copy">方案审查和完成审查的当前结果；任务验证报告在“证据”中独立展示。</p>
-                </div>
-              </div>
-              <div id="task-development-gates" className="development-gate-grid">
-                {([
-                  ['方案审查', delivered ? terminal.snapshot?.handoff?.gates?.planning : applicability?.gates?.planning],
-                  ['完成审查', delivered ? terminal.snapshot?.handoff?.gates?.completion : applicability?.gates?.completion],
-                ] as const).map(([label, gate]) => {
-                  const gateStatus = unknown ? 'unknown' : gate ? 'current' : 'missing';
-                  return (
-                    <article key={label} className={`development-gate-card ${gateStatus}`}>
-                      <div className="development-gate-heading">
-                        <strong>{label}</strong>
-                        <span className={`state review-state ${gateStatus}`}>
-                          {unknown ? '当前无法判断' : gate?.disposition ? developmentDispositionLabel(gate.disposition) : gateOutcomeLabel(gate?.outcome)}
-                        </span>
-                      </div>
-                      <small className="development-identity">
-                        {gate
-                          ? (gate.resultDigest ? `${gate.targetIdentity} · ${gate.resultDigest}` : `${gate.summary} · ${gate.source}`)
-                          : (unknown ? '当前无法实时复核目标。' : '尚未形成当前门禁结果。')}
-                      </small>
-                      {gate?.resultDigest ? (
-                        <Button type="link" className="text-button" onClick={onSelectEvidence}>查看证据</Button>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
             </section>
             <section className="panel">
               <div className="panel-heading">
@@ -251,7 +159,7 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
               <dl id="task-development-handoff" className="read-facts">
                 {latest ? (
                   <>
-                    <Fact label={delivered ? '交付关联' : '当前有效性'} value={developmentAxisLabel(delivered ? 'snapshot' : historical ? 'historical' : unknown ? 'unknown' : applicability?.handoff || 'unknown')} />
+                    <Fact label="当前有效性" value={developmentAxisLabel(unknown ? 'unknown' : applicability?.handoff || 'unknown')} />
                     <Fact label="交接身份" value={latest.identity} />
                     <Fact label="候选代次" value={String(latest.candidate.generation)} />
                     <Fact label="形成时间" value={formatDateTime(latest.createdAt)} />
@@ -265,11 +173,9 @@ export function DevelopmentTab({ active, data, loading, onRefresh, onSelectEvide
                 )}
               </dl>
               <p id="task-development-history-note" className={`development-status-note${showHistoryNote ? '' : ' hidden'}`}>
-                {delivered
-                  ? 'Environment 已按正常流程清理；刷新只会重读交付事实，不会重新创建 Environment。'
-                  : unknown
-                    ? '历史研发交接仍被保留，但当前无法实时复核。'
-                    : '最近保存的研发交接仍被保留，但已不再代表当前交付状态。'}
+                {unknown
+                  ? '历史研发交接仍被保留，但当前无法实时复核。'
+                  : '最近保存的研发交接仍被保留，但已不再代表当前交付状态。'}
               </p>
             </section>
           </>

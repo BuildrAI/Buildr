@@ -1,0 +1,51 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: decouple-task-development-consumers
+operation: reconcile
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/decouple-task-development-consumers/brief.md
+    reason: 说明消费者解耦后的目标、流程、影响和验收
+    status: updated
+    sourceIdentities:
+      - openspec/changes/decouple-task-development-consumers/proposal.md
+      - openspec/changes/decouple-task-development-consumers/design.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 当前Task workflow仍把Development描述为Review和Finish中心
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/overview.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 需要更新Task专业能力与Agent组合关系
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/architecture/product.md
+      - docs/roadmap/task-system-dependency-audit.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 需要更新Task Entry、Overview、Terminal和数据authority
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/architecture/technical.md
+      - docs/roadmap/task-lifecycle-architecture.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 需要更新Task模块、CLI、HTTP、SQLite migration与历史adapter
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 需要更新任务详情独立read model与Agent action
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr-web.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 本Change沿用既有Task、Development、Review、Verification、Finish和Parent术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

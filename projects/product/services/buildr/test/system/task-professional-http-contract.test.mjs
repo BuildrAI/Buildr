@@ -6,7 +6,7 @@ import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';
-import { TASK_PROFESSIONAL_HTTP_SCHEMAS, TASK_PROFESSIONAL_HTTP_VALIDATORS } from '../../src/task/interfaces/http/task-professional-http-contracts.mjs';
+import { TASK_PROFESSIONAL_HTTP_SCHEMAS, TASK_PROFESSIONAL_HTTP_VALIDATORS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings } from './parent-coordination.mjs';
+import { normalizeContributionHandoff, normalizeParentPlan, normalizePlannedContributionBindings } from './parent-coordination.ts';
 
 export const TASK_DEVELOPMENT_RECEIPT_SCHEMA = 'buildr.task-development-receipt/v3';
 export const LEGACY_TASK_DEVELOPMENT_RECEIPT_SCHEMAS = Object.freeze(['buildr.task-development-receipt/v1', 'buildr.task-development-receipt/v2']);

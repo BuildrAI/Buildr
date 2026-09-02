@@ -104,7 +104,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({ ready: true, taskId, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root, scopes: [] });
   runtime.beginTaskDevelopment(root, 'app-parent', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Parent Plan尚未记录。', source: 'system fixture' } });
   const readExecutor = {
-    run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopmentView', reviews: 'inspectTaskReviewView', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
+    run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopment', reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
     close: async () => {},
   };
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });
@@ -146,10 +146,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v2'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
   const coordinationEndpoint = `${endpoint}/app-parent/coordination`;
   response = await request(coordinationEndpoint); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.parent-coordination-result/v4'); assert.equal(response.body.mode, 'parent');
-  const parentPlan = { outcome: 'Buildr Web displays one shared coordination model.', architectureDecisions: ['No Child status is copied into Parent Plan.'], contributions: [{ id: 'app-child-delivery', priority: 'P0-1', title: 'App Child delivery', objective: 'The existing Child delivers its narrow scope.', directions: ['Use the existing Child relation.'], boundaries: ['Do not copy Child status.'], expectedChild: 'The existing app-task Child', dependencies: [] }], finalAcceptance: ['The saved delivery is explicitly accepted.'] };
-  response = await request(coordinationEndpoint, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operation: 'record', plan: parentPlan }) }); assert.equal(response.status, 403);
-  response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ operation: 'record', plan: parentPlan }) });
-  assert.equal(response.status, 410); assert.equal(response.body.diagnostic.code, 'parent_coordination_action_retired'); assert.deepEqual(response.body.effects, []);
+  response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: '{}' }); assert.equal(response.status, 404);
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.schemaVersion, 'buildr.task-development-operation-result/v1'); assert.equal(response.body.status, 'missing'); assert.equal(response.headers.get('cache-control'), 'no-store');
   const inspectDevelopment = runtime.inspectTaskDevelopment.bind(runtime);
   const developmentReadModel = { schemaVersion: 'buildr.task-development-operation-result/v1', operation: 'inspect', status: 'inspected', taskId: 'app-task', development: { path: 'workspace-sqlite:task-development/app-task', receiptDigest: 'sha256-development', receipt: { generation: 2 }, applicability: { status: 'candidate-current' } }, diagnostic: null, effects: [], nextActions: [] };
@@ -161,12 +158,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
     return developmentReadModel;
   };
   response = await request(`${taskEndpoint}/development`); assert.equal(response.status, 200);
-  const { terminal, ...developmentBody } = response.body;
-  assert.deepEqual(developmentBody, developmentReadModel, '既有 Development read model 字段保持兼容');
-  assert.equal(terminal.schemaVersion, 'buildr.task-terminal-delivery/v1');
-  assert.equal(terminal.status, 'active');
-  assert.equal(terminal.delivered, false);
-  assert.equal(terminal.snapshot.generation, 2);
+  assert.deepEqual(response.body, developmentReadModel, 'Development GET只返回自身read model');
   assert.equal(developmentReads, 1);
   const inspectReview = runtime.inspectTaskReview.bind(runtime);
   const inspectVerification = runtime.inspectTaskVerificationView.bind(runtime);
@@ -174,12 +166,21 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   let verificationReads = 0;
   runtime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
   runtime.inspectTaskVerificationView = (...args) => { verificationReads += 1; return inspectVerification(...args); };
-  runtime.inspectTaskTerminalDelivery = () => { throw new Error('Buildr Web Tab 不得调用完整 terminal 聚合器。'); };
-  response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal(response.body.terminal.status, 'active');
+  runtime.inspectTaskTerminalDelivery = () => { throw new Error('专业Tab不得调用terminal聚合器。'); };
+  response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal('terminal' in response.body, false);
   response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal('terminal' in response.body, false, 'Verification GET 不读取或解释Development/Terminal Delivery');
-  assert.equal(developmentReads, 2, '只有Development与Review terminal section读取Development handoff authority');
+  assert.equal(developmentReads, 1, 'Review和Verification不得读取Development');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
   assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');
+  const concurrent = await Promise.all([
+    request(`${taskEndpoint}/development`),
+    request(`${taskEndpoint}/reviews`),
+    request(`${taskEndpoint}/verification`),
+  ]);
+  assert.deepEqual(concurrent.map((item) => item.status), [200, 200, 200]);
+  assert.equal(developmentReads, 2, '并发读取Development只调用所属Application');
+  assert.equal(reviewReads, 2, '并发读取Review只调用所属Application');
+  assert.equal(verificationReads, 2, '并发读取Verification只调用所属Application');
   response = await request(`${taskEndpoint}/development?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
   response = await request(`${endpoint}/missing-task/development`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_record_not_found');
   const retrospectiveEndpoint = `${endpoint}/app-retrospective/retrospective`;

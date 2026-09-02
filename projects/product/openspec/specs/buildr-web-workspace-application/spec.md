@@ -874,47 +874,6 @@ Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model �
 - **THEN** 页面 MUST 保留 Parent/Children 投影并禁用关系 mutation
 - **AND** MUST NOT 提供自动处置关联 Task 的按钮
 
-### Requirement: Buildr Web 必须以 Application terminal projection 展示 Task 交付事实
-Buildr Web Task详情 MUST保持“概览、研发、证据、复盘、环境”五个一级页签，并 MUST只通过Application read model获取current/terminal facts。“概览”MUST调用Task Overview Application的一次SQLite联表读取；其他页签MUST继续调用所属专业Application reader。HTTP/Web MUST NOT直接读取SQLite、扫描Finish JSON、计算live identity、接受target/root/path filesystem query或依赖独立lifecycle projection；Terminal Delivery Application MUST只查询Task、Development与唯一Finish current保存事实。
-
-#### Scenario: completed delivered Task
-- **WHEN** terminal projection返回delivered
-- **THEN** 研发页主结论 MUST显示“已交付”，并展示交付时Task context、planning disposition、Content Target、verification policy、Candidate/generation与Development handoff
-- **AND** MUST展示final commit/ref、完成时间与Environment cleanup为正常结果
-- **AND** GET MUST NOT扫描Finish Result、恢复Environment或观察Git
-
-#### Scenario: completed noChange Task
-- **WHEN** Task completed且result.noChange为true
-- **THEN** 页面 MUST显示“已完成，无需交付变更”
-- **AND** MUST NOT要求或伪造Finish Result
-
-#### Scenario: completed Task 缺少匹配 Finish
-- **WHEN** Task completed、非noChange且Finish terminal current没有matching association
-- **THEN** 页面 MUST显示“已完成，但交付未经证明”
-- **AND** MUST NOT使用delivered的绿色成功语义或从其他来源补造
-
-#### Scenario: terminal 证据视图
-- **WHEN** terminal projection从Finish terminal current返回Review/Verification delivery association
-- **THEN** 证据页 MUST使用“已随交付候选采用”与“已随交付目标验证通过/未通过”等交付时文案
-- **AND** MUST将active保存值匹配关系与terminal association分开表达，不得在读取时重算live applicability
-
-#### Scenario: 技术详情与单卡宽度
-- **WHEN** 页面展示SHA、digest、`workspace-sqlite:` locator或单一Verification Result
-- **THEN** 技术标识 MUST位于次要或可展开详情，Verification单卡 MUST使用合理最大宽度
-- **AND** Agent生成的原始evidence内容 MUST保持原文，不由Web翻译或改写
-
-Task Finish MAY请求Development Application针对一个允许的carrier root重观测complete Content Target，但MUST NOT创建Candidate。只有carrier Content Target与handoff Candidate绑定的target逐component相等且Task context/policy仍current时，Application MUST返回equivalent；否则MUST返回Development handoff失效。上述Finish动作完成后 MUST写入Finish terminal association；读取terminal Task时不得重新执行该重观测。
-
-#### Scenario: 只增加delivery commit
-- **WHEN** Finish机械提交当前内容但所有scope bytes与逻辑语义未变化
-- **THEN** carrier equivalence MUST通过且Candidate identity保持不变
-- **AND** commit、branch与ref MUST不进入Content Target或Candidate identity
-
-#### Scenario: carrier prepare改变内容
-- **WHEN** rebase、sync、archive、生成或冲突处理改变任一component identity
-- **THEN** equivalence MUST失败并判定current handoff失效
-- **AND** Finish MUST退出到Development重新验证和生成Candidate
-
 ### Requirement: Buildr Web 必须提供独立文章入口
 
 Buildr Web MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
@@ -1320,3 +1279,21 @@ Buildr Web MUST在Task“证据”页展示任务验证报告presence、内容�
 - **WHEN**用户触发“交给智能体验证”
 - **THEN**prompt MUST说明开发中的测试不记录、开发完成后才保存有意义报告
 - **AND**复制prompt MUST NOT修改报告
+
+### Requirement: Buildr Web Task 页面必须分别读取独立专业事实
+Buildr Web MUST以Task Record为任务目标和状态authority，并按需分别读取Review、Verification、Development、Environment和Finish history read model。页面 MUST NOT通过Candidate、Handoff、gate match或terminal association构造统一完成、交付或下一步状态。
+
+#### Scenario: 没有Development的active Task
+- **WHEN** Task具有Review或Verification Result但没有Development Receipt
+- **THEN** 概览和证据页 MUST正常展示Task与专业Result
+- **AND** 研发页 MAY显示尚无研发记录但不得影响其他页签
+
+#### Scenario: completed Task历史不完整
+- **WHEN** Task Record已completed但旧Development或Finish历史不可读
+- **THEN** 页面 MUST保持完成结果并只在对应历史section显示diagnostic
+- **AND** MUST NOT将任务降级为未完成
+
+#### Scenario: 发起专业Agent动作
+- **WHEN** 用户从Review或Verification区块选择交给Agent
+- **THEN** 前端 MUST只传递Task ID、动作类型和必要上下文
+- **AND** 专业Application MUST不生成或保存工作prompt

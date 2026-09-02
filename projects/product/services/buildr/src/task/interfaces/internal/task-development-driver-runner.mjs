@@ -6,7 +6,7 @@ import {
   taskDevelopmentDriverExample,
   taskDevelopmentDriverHelp,
   taskDevelopmentDriverSchema,
-} from '../../application/task-development-operation-contracts.mjs';
+} from '../../application/task-development-operation-contracts.ts';
 import { compactTaskDevelopmentOperationResult } from '../../application/task-development-result-projection.mjs';
 
 function option(args, name, fallback = undefined) {

@@ -379,9 +379,9 @@ HTTP/Web 层只接收已登记的 `workspaceId` 与真实 Task ID，拒绝 `targ
 
 ### P0.5a Buildr Web 研发与证据视图
 
-P0.5a 当时不增加第五个模块页签，而将已交付的信息架构收敛为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示 `missing / developing / candidate-current / handoff-current / unknown` 的中文结论、最小输入适用性、候选代次、三个门禁、保存的推进决定、风险和最近一次研发交接；P2.1 再以同样的只读边界加入“复盘”Tab。页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
+P0.5a 将信息架构收敛为“概览、研发、证据、环境”。“研发”通过 Workspace-scoped、no-store 的只读 API 调用 Task Development Application `inspect`，展示其自身保存的研发事实和最近交接；页面不把研发门禁、决定或候选解释为Task完成或其他专业模块的准入。P2.1 再以同样的只读边界加入“复盘”Tab。页面不打开SQLite或读取旧YAML，不重新推导 currentness，也不提供 Development writer。
 
-“证据”不增加二级导航，连续放置审查结果与验证结果两个独立区块；打开视图时分别调用 Task Review 与 Task Verification reader，任一 loading/diagnostic 不隐藏另一方。Environment 已清理或当前观察失败时，Development reader 返回 `unknown`；页面保留已保存候选、决定与最近交接，并明确说明历史事实当前无法实时复核，不把它显示为 current、stale 或 failed。首版不展示日志、diff、完整 Result、全部交接历史、后台轮询或写操作。
+“证据”不增加二级导航，连续放置审查结果与验证结果两个独立区块；打开视图时分别调用 Task Review 与 Task Verification reader，任一 loading/diagnostic 不隐藏另一方。Environment 已清理或当前观察失败时，Development reader返回自身可用的历史事实和局部诊断，不影响Review、Verification或Task结果。首版不展示日志、diff、完整Result、全部交接历史、后台轮询或写操作。
 
 ### 主 Workspace 存放边界
 

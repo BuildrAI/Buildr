@@ -31,7 +31,6 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | 长流程缺省compact（release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
 | `__internal task-retrospective list` | `buildr.task-retrospective-list-result/v1` |
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
-| `task next` | `buildr.task-entry-snapshot/v1` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v3` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v2`（v1只读兼容）/ `buildr.contribution-handoff/v1` |
 | Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
@@ -61,8 +60,6 @@ Task Finish的canonical Result由SQLite current/terminal authority决定；CLI�
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
 `buildr.task-record-result/v4` 覆盖六个 Task Record 动作，返回 closed v2 `record`、`recordDigest`、Parent/Child `taskRelations`与复盘来源/后续 `retrospectiveRelations`。`record.retrospectiveSourceTaskIds` 只保存 source Task ID；关系摘要补充当前标题和状态。完整 Application 列表仍使用 `buildr.task-record-list/v2`。
-
-`buildr.task-entry-snapshot/v1`是零写入Formal Task入口，只按Task → Environment → Development最早硬前置读取，返回最小identity/current facts、receipt证明的execution/writer route、直接blockers与唯一typed next。它不复制完整Receipt/Result或capability graph，不替代实际owner写前重验。`required`只表示当前authority/identity安全前置；`recommended`是可调整建议。显式`--profile`只增加本次wall-clock、owner read次数与失败/重复尝试事实，不持久化、不影响gate、Candidate或Task status。
 
 `buildr.parent-coordination-result/v3`覆盖Parent coordination actions，并直接替代v2。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、紧凑`plan`摘要、Parent status/final acceptance、紧凑Planning Review、直接Children摘要与唯一顶层`contributions`。每个work item只在顶层Contribution Map出现一次，`expectedChild`规范化为`expectation.child`；Child只返回`boundContributions`与协调所需delivery摘要，不返回完整Contribution Handoff。`startup.next`是唯一下一步，依赖阻塞继续由`blockers`和各Contribution eligibility表达；完整`dependencyBlockers`只属于独立`buildr.parent-startup-readiness/v2`。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
 

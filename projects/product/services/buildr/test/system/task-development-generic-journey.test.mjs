@@ -160,6 +160,7 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   assert.equal(parentCarrier.status, 'equivalent');
   assert.deepEqual(parentCarrier.effects, []);
   assert.deepEqual(parentCarrier.development.receipt.parentPlan, parentPlan);
-  assert.throws(() => runtime.completeTaskRecord(root, 'publish-guide', { summary: 'Guide delivered', noChange: false }), { code: 'parent_completion_authorization_required' });
+  const completedWithoutLegacyDependency = runtime.completeTaskRecord(root, 'publish-guide', { summary: 'Guide delivered', noChange: false });
+  assert.equal(completedWithoutLegacyDependency.record.status, 'completed');
 
 });

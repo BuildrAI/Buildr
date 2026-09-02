@@ -23,7 +23,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts.test, './test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:fast'], './test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs test/unit/*.test.ts');
-  assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs');
+  assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs test/component/*.test.ts');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs test/contract/*.test.ts');
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs test/integration/*.test.ts');
   assert.equal(scripts.typecheck, 'npm run test-context:check && tsc --project tsconfig.json');
@@ -263,7 +263,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['integration-task-finish-delivery'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.ci.innerConcurrency['integration-task-finish-delivery'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['integration-task-finish-delivery'], 1);
-  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 2);
+  assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-verification-admission'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES.local.innerConcurrency['system-fresh-build'], 1);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-workspace-lifecycle'], 2);
   assert.equal(VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency['system-task-finish'], undefined);

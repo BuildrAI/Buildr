@@ -132,11 +132,11 @@ const COMMAND_GROUPS = [
   {
     key: "task",
     surface: "primary",
-    summary: "Task Manager管理Task Record；task next另提供只读Formal Task compact入口。",
+    summary: "Task Manager只管理Task Record；专业动作由对应Skill和Interface处理。",
     help: [
-      "Usage: buildr task <next|create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
-      "Task Manager只管理canonical Workspace中的Task Record；task next是组合既有owner的只读compact projection。",
+      "Task Manager只管理canonical Workspace中的Task Record；专业事实由各自Application读取。",
       "它不创建或记录 Task Environment，不执行 Development、Review、Verification、Git、Finish、Board、cleanup 或 publication，也不接受完整 next-state 文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],

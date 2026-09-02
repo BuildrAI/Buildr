@@ -302,7 +302,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);
         validateAppliedMigrations(database, scripts, { allowPending: false });
-        if (scripts.at(-1)?.name === '0025_drop_task_execution_records.sql') cleanupRetiredTaskExecutionRecords(root);
+        if (scripts.some((script) => script.name === '0025_drop_task_execution_records.sql')) cleanupRetiredTaskExecutionRecords(root);
       }
       return {
         root,

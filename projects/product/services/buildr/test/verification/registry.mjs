@@ -424,14 +424,13 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/self-bootstrap-closeout.test.mjs',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
-    'test/integration/task-entry-snapshot-application.test.mjs',
-    'test/integration/task-overview-repository.test.mjs',
+    'test/integration/task-overview-repository.test.ts',
     'test/integration/task-planning-identity-application.test.mjs',
     'test/integration/task-retrospective-repository.test.mjs',
   ], { schedulingCostMs: 4000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-coordination', [
-    'test/integration/parent-coordination-application.test.mjs',
-    'test/integration/parent-coordination-repository.test.mjs',
+    'test/integration/parent-coordination-application.test.ts',
+    'test/integration/parent-coordination-repository.test.ts',
     'test/integration/publication-application.test.mjs',
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-project-daily-progress', [
@@ -439,7 +438,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
   ], { schedulingCostMs: 5000, executorType: 'node-context-test', concurrencyClass: 'cpu-heavy', args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-development', [
     'test/integration/task-development-application-shard-3.test.mjs',
-    'test/integration/task-development-application.test.mjs',
+    'test/integration/task-development-application.test.ts',
     'test/integration/task-development-application-shard-4.test.mjs',
     'test/integration/task-development-application-shard-2.test.mjs',
     'test/integration/task-review-repository.test.mjs',

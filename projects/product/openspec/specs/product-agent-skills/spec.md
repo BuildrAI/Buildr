@@ -396,12 +396,17 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** Intake Skill MUST不执行或开发验证能力
 
 ### Requirement: Task Skills 必须解释协调与专业 authority 边界
-Buildr package MUST更新Task Manager、Triage、Development、Review与Finish Skills，使Agent能发现Parent Plan/Contribution意图、创建独立Child、形成Contribution Handoff、显式reconcile并完成Parent最终验收；Skills MUST NOT引导双写、checkbox同步或自动状态传播。
+Buildr package MUST更新Task Manager、Triage、Development、Review、Verification、OpenSpec与Finish Skills，使Agent根据用户目标和当前事实直接发现专业owner。Skills MUST NOT要求`task next`、Candidate、Handoff或Development current作为Review、Verification、Parent管理、OpenSpec apply或Finish的统一前置，也 MUST NOT引导双写、checkbox同步或自动状态传播。
 
 #### Scenario: runtime Agent读取新流程
-- **WHEN** 用户要求创建Parent或从Contribution启动Child
-- **THEN** matching Skill MUST路由到现有Task/Development/Review/Finish capabilities与Parent coordination actions
-- **AND** MUST明确禁止继承Parent Change和推断delivery
+- **WHEN** 用户要求审查、验证、OpenSpec实现、父子管理或收尾
+- **THEN** matching Skill MUST直接读取Task、Environment和本专业所需事实并调用所属Interface
+- **AND** MUST不先调用`task next`取得统一流程许可
+
+#### Scenario: 专业provider不可用
+- **WHEN** 某一专业Skill的required provider unavailable
+- **THEN** MUST只阻止该专业动作并保留其他已确认事实
+- **AND** MUST不把整个Task或Workspace标记为blocked
 
 ### Requirement: Runtime投射必须来自Workspace source
 更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST NOT作为长期编辑authority。

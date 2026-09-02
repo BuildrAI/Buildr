@@ -23,7 +23,7 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES = Object.freeze([
     ['buildr-web', 'src/api/generated/task-record-http-dto.ts'],
   ]),
   family('task-professional', 'tools/contracts/task-professional-dto.mjs', [
-    'src/task/interfaces/http/task-professional-http-contracts.mjs',
+    'src/task/interfaces/http/task-professional-http-contracts.ts',
   ], [
     ['buildr', 'src/task/interfaces/http/generated/task-professional-http-dto.ts'],
     ['buildr-web', 'src/api/generated/task-professional-http-dto.ts'],

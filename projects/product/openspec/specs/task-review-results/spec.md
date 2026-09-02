@@ -117,24 +117,6 @@ Review Result MUST 保持轻量且只保存可移植 reviewed/uncovered 引用�
 - **THEN** Workspace SQLite及其sidecars MUST保持ignored，且MUST不存在可纳入Git的Review current文件
 - **AND** Review Application MUST不生成兼容`planning.yml`或`completion.yml`
 
-### Requirement: terminal delivery association 必须与 Review current applicability 分离
-Application 层 terminal projection MUST 只读取matching Finish completion中保存的association；当association的handoff gate `resultDigest`、`targetIdentity` 与当前 Review slot完全一致时，才将Result表达为`adopted-at-delivery`。该状态 MUST NOT命名为current applicability，MUST NOT写回Review Result/current row，也MUST NOT依赖独立lifecycle projection。
-
-#### Scenario: Completion Review 已随交付候选采用
-- **WHEN** completed delivered Task 的Completion Result digest与Candidate target identity均匹配Finish completion association
-- **THEN** terminal projection MUST表达“已随交付候选采用”及原始conclusion
-- **AND** 当前Result与保存Development gate的匹配关系 MUST作为独立保存值诊断
-
-#### Scenario: Planning Review missing 且 gate not-applicable
-- **WHEN** Planning Review slot missing，但Finish completion association保存的Development handoff planning gate disposition为not-applicable
-- **THEN** Review slot MUST仍显示未记录
-- **AND** terminal projection MUST另行展示gate disposition、summary与source，不得伪造Planning Result
-
-#### Scenario: digest 或 target identity 不匹配
-- **WHEN** Review slot与Finish completion association的gate digest或target identity任一不一致
-- **THEN** terminal projection MUST fail closed，MUST NOT标记adopted-at-delivery
-- **AND** MUST NOT扫描Git、Finish文件或已删除lifecycle投影寻找替代关联
-
 ### Requirement: Review current row 必须保存稳定查询字段
 Task Review repository MUST在同一current row保存Domain验证的完整`result_json`、同一Result的`target_identity`、`outcome`与`updated_at`。这些字段MUST只作为结果定位、Overview查询与保存值一致性检查，MUST NOT保存applicability、Development gate adoption、terminal status或第二份Result正文。
 
@@ -224,3 +206,16 @@ Task Review MUST 继续只以 Parent Plan identity 作为 Parent Planning Review
 #### Scenario: 跨owner遗漏只构成改进建议
 - **WHEN** 未覆盖边界不会造成错误写入、证据失真或完成误报
 - **THEN** Review MAY记录finding但 MUST NOT仅因通用完整性偏好增加硬门禁
+
+### Requirement: Task Review read model 必须独立于 Development 与 Finish
+Task Review Application和Buildr Web GET MUST只读取Task Review current rows及Task identity。它们 MUST NOT读取Development Receipt、Candidate、Handoff、Finish association或Terminal Delivery projection。
+
+#### Scenario: 没有Development的Task
+- **WHEN** active或terminal Task存在Review Result但没有Development Receipt
+- **THEN** Review inspect MUST正常返回两个slot
+- **AND** MUST NOT产生Development missing diagnostic
+
+#### Scenario: completed Task存在旧Finish association
+- **WHEN** 旧Finish payload包含Review gate digest或target identity
+- **THEN** Review页面 MUST不显示adopted-at-delivery或gate disposition
+- **AND** 旧值只在Finish历史详情中保留

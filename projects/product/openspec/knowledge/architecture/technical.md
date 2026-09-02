@@ -171,7 +171,7 @@ SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不
 
 任务记录保存结果；Git 和外部系统拥有交付事实；环境应用（Application）及资源所有者保护删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
 
-研发、审查和正式验证仍由各专业能力维护。旧五阶段执行器及写入口已退役，历史读取和必要资源安全能力保留。`task next` 只指导研发，不推荐、批准或恢复收尾；已结束任务不重新加载研发和环境。
+研发、审查和正式验证仍由各专业能力维护。旧五阶段执行器及写入口、Task Entry Snapshot与`task next`已经退役；Agent直接读取当前Task、现场和所需专业结果后选择动作。Overview不计算gate match或跨专业完成状态，Terminal Delivery只读取Task Record与Finish history；历史损坏只产生局部诊断，不否定已成立的Task结果。
 
 ## Runtime、构建与分发
 

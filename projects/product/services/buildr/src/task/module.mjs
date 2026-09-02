@@ -9,36 +9,34 @@ import {
 } from './domain/project-environment-preparation.mjs';
 import { registerTaskVerificationApplication } from './application/task-verification-application.ts';
 import { registerTaskPlanningIdentityApplication } from './application/task-planning-identity-application.mjs';
-import { registerTaskDevelopmentApplication } from './application/task-development-application.mjs';
+import { registerTaskDevelopmentApplication } from './application/task-development-application.ts';
 import { registerContentTargetObserver } from './infrastructure/content-target-observer.mjs';
 import { registerTaskFinishApplication } from './application/finish/task-finish-application.mjs';
-import { registerTaskTerminalDeliveryApplication } from './application/task-terminal-delivery-application.mjs';
-import { registerParentCoordinationApplication } from './application/parent-coordination-application.mjs';
-import { registerTaskOverviewApplication } from './application/task-overview-application.mjs';
-import { registerTaskEntrySnapshotApplication } from './application/task-entry-snapshot-application.mjs';
-import { registerTaskRecordRepository } from './persistence/task-record-repository.mjs';
+import { registerTaskTerminalDeliveryApplication } from './application/task-terminal-delivery-application.ts';
+import { registerParentCoordinationApplication } from './application/parent-coordination-application.ts';
+import { registerTaskOverviewApplication } from './application/task-overview-application.ts';
+import { registerTaskRecordRepository } from './persistence/task-record-repository.ts';
 import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
 import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
 import { registerTaskDevelopmentRepository } from './persistence/task-development-repository.mjs';
 import { registerTaskFinishRepository } from './persistence/task-finish-repository.mjs';
-import { registerTaskOverviewRepository } from './persistence/task-overview-repository.mjs';
+import { registerTaskOverviewRepository } from './persistence/task-overview-repository.ts';
 import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
 import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
 import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
 import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
-import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.mjs';
+import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.ts';
 import {
   createParentCoordinationHttpContribution,
   createTaskDevelopmentHttpContribution,
   createTaskEnvironmentHttpContribution,
   createTaskOverviewHttpContribution,
   createTaskVerificationHttpContribution,
-} from './interfaces/http/task-lifecycle-core.mjs';
-import { taskEntrySnapshotCommand } from './interfaces/cli/task-entry-snapshot.mjs';
+} from './interfaces/http/task-lifecycle-core.ts';
 import { taskTerminalDeliveryInspectCommand } from './interfaces/cli/task-terminal-delivery.mjs';
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from './interfaces/http/task-record-http.mjs';
 import { handleTaskRetrospectiveHttpRequest } from './interfaces/http/task-retrospective-http.mjs';
@@ -116,9 +114,6 @@ export const PARENT_COORDINATION_RUNTIME_PORT = 'task-parent-coordination.runtim
 export const TASK_OVERVIEW_MODULE_ID = 'task-overview';
 export const TASK_OVERVIEW_APPLICATION = 'task-overview.application';
 export const TASK_OVERVIEW_RUNTIME_PORT = 'task-overview.runtime-port';
-export const TASK_ENTRY_SNAPSHOT_MODULE_ID = 'task-entry-snapshot';
-export const TASK_ENTRY_SNAPSHOT_APPLICATION = 'task-entry-snapshot.application';
-export const TASK_ENTRY_SNAPSHOT_RUNTIME_PORT = 'task-entry-snapshot.runtime-port';
 export const TASK_FINISH_MODULE_ID = 'task-finish';
 export const TASK_FINISH_APPLICATION = 'task-finish.application';
 export const TASK_FINISH_PERSISTENCE_READ = 'task-finish.persistence-read';
@@ -190,19 +185,16 @@ const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
   'recordTaskDevelopmentPlanning', 'observeTaskDevelopment',
   'recordTaskDevelopmentKnowledge',
   'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
-  'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier', 'recordTaskParentPlan',
-  'bindTaskPlannedContributions', 'reconcileTerminalChildContributionDelivery', 'recordTaskParentAcceptance',
+  'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier',
 ]);
 const TASK_DEVELOPMENT_PERSISTENCE_METHODS = Object.freeze([
   'taskDevelopmentReceiptPath', 'readTaskDevelopmentPersistence', 'writeTaskDevelopmentPersistence', 'renderTaskDevelopmentReceipt',
 ]);
 const PARENT_COORDINATION_APPLICATION_METHODS = Object.freeze([
   'inspectParentCoordination',
-  'refreshParentPlanning', 'recordParentPlan', 'reconcileParentPlan', 'bindChildContributions', 'reconcileChildDelivery', 'acceptParentCoordination',
 ]);
 const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview']);
 const TASK_OVERVIEW_PERSISTENCE_METHODS = Object.freeze(['readTaskOverviewPersistence']);
-const TASK_ENTRY_SNAPSHOT_APPLICATION_METHODS = Object.freeze(['inspectTaskEntrySnapshot']);
 const TASK_FINISH_APPLICATION_METHODS = Object.freeze([
   'taskFinish', 'refreshTaskFinishMaintenance', 'inspectTaskFinishReadModel', 'readTaskFinishResults',
 ]);
@@ -223,7 +215,7 @@ const TASK_FINISH_INTERNAL_METHODS = Object.freeze([
   'refreshTaskFinishMaintenance', 'acquireTaskFinishCurrentTargetLease', 'releaseTaskFinishCurrentTargetLease',
 ]);
 const TASK_TERMINAL_DELIVERY_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskTerminalDelivery', 'inspectTaskDevelopmentView', 'inspectTaskReviewView',
+  'inspectTaskTerminalDelivery',
 ]);
 
 function pick(source, methods) {
@@ -334,23 +326,11 @@ function taskVerificationCliContributions() {
 }
 
 function parentCoordinationCliContributions() {
-  const definitions = [
-    ['inspect', 'primary', '查看整体目标、真实子任务结果、完成观察身份和历史父计划。', ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]'], 'inspect'],
-    ...['record', 'reconcile', 'refresh-planning', 'bind-child', 'reconcile-child-delivery', 'accept'].map((action) => [action, 'agent-machine', '已退役：使用已有任务、计划文档和明确完成授权。', [`旧 task parent ${action} 写入口已退役；使用 task parent inspect 查看当前成果。`], action]),
-  ];
-  return Object.freeze(definitions.map(([runtimeId, surface, summary, help, operation]) => Object.freeze({
-    key: `task parent ${runtimeId}`, surface, summary, help,
-    match: ({ domain, action, runtimeId: actual, operation: extra }) => domain === 'task' && action === 'parent' && actual === runtimeId && (runtimeId !== 'inspect' || !extra),
-    run: (runtime, context) => parentCoordinationCommand(runtime, operation, context.argv.slice(5)),
-  })));
-}
-
-function taskEntrySnapshotCliContributions() {
   return Object.freeze([Object.freeze({
-    key: 'task next', surface: 'agent-machine', summary: '只读返回Formal Task当前最小identity、execution/writer route与唯一required或recommended next action。',
-    help: ['Usage: buildr task next <task-id> [--execution-target <path>] [--profile] [--target <canonical-workspace>] [--json]', '', '按Task → Environment → Development的最早硬前置短路读取；不执行next、不写正式事实，也不展开完整下游lifecycle或capability graph。', '--execution-target对父任务显式选择独立研发检查，并核验matching Environment允许的执行根；--profile只返回本次调用可观察的wall-clock与owner read事实。'],
-    match: ({ domain, action }) => domain === 'task' && action === 'next',
-    run: (runtime, context) => taskEntrySnapshotCommand(runtime, context.argv.slice(4)),
+    key: 'task parent inspect', surface: 'primary', summary: '查看整体目标、真实子任务结果、完成观察身份和历史父计划。',
+    help: ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]'],
+    match: ({ domain, action, runtimeId, operation }) => domain === 'task' && action === 'parent' && runtimeId === 'inspect' && !operation,
+    run: (runtime, context) => parentCoordinationCommand(runtime, context.argv.slice(5)),
   })]);
 }
 
@@ -818,31 +798,6 @@ export function createTaskOverviewModule(runtime) {
   });
 }
 
-export function createTaskEntrySnapshotModule(runtime, { agentCapabilityQuery = null } = {}) {
-  return Object.freeze({
-    id: TASK_ENTRY_SNAPSHOT_MODULE_ID,
-    requires: Object.freeze([
-      TASK_RECORD_APPLICATION,
-      TASK_ENVIRONMENT_APPLICATION,
-      TASK_DEVELOPMENT_APPLICATION,
-      PARENT_COORDINATION_APPLICATION,
-      ...(agentCapabilityQuery ? [agentCapabilityQuery] : []),
-    ]),
-    create(requires) {
-      const composition = taskPrivateComposition(runtime, requires);
-      registerTaskEntrySnapshotApplication(composition);
-      const application = pick(composition, TASK_ENTRY_SNAPSHOT_APPLICATION_METHODS);
-      return Object.freeze({
-        provides: {
-          [TASK_ENTRY_SNAPSHOT_APPLICATION]: application,
-          [TASK_ENTRY_SNAPSHOT_RUNTIME_PORT]: runtimePort(application),
-        },
-        contributions: { cli: taskEntrySnapshotCliContributions() },
-      });
-    },
-  });
-}
-
 export function createTaskFinishModule(runtime) {
   return Object.freeze({
     id: TASK_FINISH_MODULE_ID,
@@ -881,8 +836,6 @@ export function createTaskTerminalDeliveryModule(runtime) {
     id: TASK_TERMINAL_DELIVERY_MODULE_ID,
     requires: Object.freeze([
       TASK_RECORD_APPLICATION,
-      TASK_DEVELOPMENT_APPLICATION,
-      TASK_REVIEW_APPLICATION,
       TASK_FINISH_APPLICATION,
     ]),
     create(requires) {

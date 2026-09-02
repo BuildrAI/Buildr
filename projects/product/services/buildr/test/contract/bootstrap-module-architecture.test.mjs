@@ -209,7 +209,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: ['task-record.application', 'task-record.persistence-read'],
     provides: ['task-parent-coordination.application', 'task-parent-coordination.runtime-port'],
     contributions: {
-      cli: ['task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept'],
+      cli: ['task parent inspect'],
       http: ['task-parent-coordination.http'],
       diagnostics: [],
     },
@@ -221,12 +221,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['task-overview.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
-    id: 'task-entry-snapshot',
-    requires: ['task-record.application', 'task-environment.application', 'task-development.application', 'task-parent-coordination.application', AGENT_ASSETS_CAPABILITY_QUERY],
-    provides: ['task-entry-snapshot.application', 'task-entry-snapshot.runtime-port'],
-    contributions: { cli: ['task next'], http: [], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'task-finish',
     requires: ['task-record.application', 'task-environment.application', 'workspace.structured-store'],
     provides: [TASK_FINISH_APPLICATION, TASK_FINISH_PERSISTENCE_READ, TASK_FINISH_INTERNAL, TASK_FINISH_RUNTIME_PORT],
@@ -234,7 +228,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-terminal-delivery',
-    requires: ['task-record.application', 'task-development.application', 'task-review.application', 'task-finish.application'],
+    requires: ['task-record.application', 'task-finish.application'],
     provides: [TASK_TERMINAL_DELIVERY_APPLICATION, TASK_TERMINAL_DELIVERY_RUNTIME_PORT],
     contributions: { cli: ['task delivery inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
@@ -285,8 +279,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
-    'task parent inspect', 'task parent record', 'task parent reconcile', 'task parent refresh-planning', 'task parent bind-child', 'task parent reconcile-child-delivery', 'task parent accept',
-    'task next',
+    'task parent inspect',
     'task finish inspect', 'task delivery inspect',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
@@ -451,16 +444,15 @@ test('Task Retrospective 旧全局技术层路径已经退出', () => {
 
 test('Task 生命周期核心只保留模块内扁平技术层', () => {
   for (const relative of [
-    'src/domain/parent-coordination/parent-coordination.mjs',
+    'src/domain/parent-coordination/parent-coordination.ts',
     'src/domain/task-development/task-development.mjs',
     'src/domain/task-environment/task-environment.mjs',
     'src/domain/task-planning-identity/task-planning-identity.mjs',
     'src/domain/task-verification/task-verification.mjs',
-    'src/application/parent-coordination/parent-coordination-application.mjs',
-    'src/application/task-development/task-development-application.mjs',
-    'src/application/task-entry/task-entry-snapshot-application.mjs',
+    'src/application/parent-coordination/parent-coordination-application.ts',
+    'src/application/task-development/task-development-application.ts',
     'src/application/task-environment/task-environment-application.mjs',
-    'src/application/task-overview/task-overview-application.mjs',
+    'src/application/task-overview/task-overview-application.ts',
     'src/application/task-planning-identity/task-planning-identity-application.mjs',
     'src/application/task-verification/task-verification-application.mjs',
     'src/interfaces/cli/task-environment.mjs',
@@ -470,10 +462,10 @@ test('Task 生命周期核心只保留模块内扁平技术层', () => {
 
   for (const relative of [
     'src/task/domain/task-development.mjs',
-    'src/task/application/task-development-application.mjs',
+    'src/task/application/task-development-application.ts',
     'src/task/persistence/task-development-repository.mjs',
     'src/task/interfaces/internal/task-development-driver.mjs',
-    'src/task/interfaces/http/task-lifecycle-core.mjs',
+    'src/task/interfaces/http/task-lifecycle-core.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
 
   const host = read('src/web/http/server.mjs');

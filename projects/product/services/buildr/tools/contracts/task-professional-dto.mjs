@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
-import { TASK_PROFESSIONAL_HTTP_SCHEMAS } from '../../src/task/interfaces/http/task-professional-http-contracts.mjs';
+import { TASK_PROFESSIONAL_HTTP_SCHEMAS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');

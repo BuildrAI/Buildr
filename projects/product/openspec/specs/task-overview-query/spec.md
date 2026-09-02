@@ -7,43 +7,43 @@
 ## Requirements
 
 ### Requirement: Task Overview 必须从专业 current facts 组合读取
-Buildr MUST 通过只读 Task Overview Application 从 Workspace SQLite 中组合 Task Record、Development、Planning/Completion Review、Verification、Environment 与 Finish 的已保存 current 摘要。Repository MUST 对单个 Task 使用一个 read-only connection 与一条参数化 `LEFT JOIN` 查询取得这些 facts，且Finish只JOIN `task_finish_current`；MUST NOT 持久化聚合 JSON、复制完整专业 payload、为phase展开额外查询或建立第二 writer。
+Buildr MUST 通过只读 Task Overview Application 从 Workspace SQLite 中组合 Task Record、Development、Planning/Completion Review、Verification、Environment 与 Finish 的已保存摘要。Repository MUST 对单个 Task 使用一个 read-only connection 与一条参数化查询取得这些 facts；MUST NOT持久化聚合JSON、复制完整专业payload、调用writer或把任一专业row缺失解释为任务失败。
 
 #### Scenario: 读取 active Task 全貌
-- **WHEN** Buildr Web 或内部 consumer 请求一个已有 active Task 的 Overview
-- **THEN** Application MUST 返回 Task status、各专业 row presence、保存的 status/target/outcome/observed time 与Finish current或terminal摘要
-- **AND** 查询 MUST NOT 随专业模块数量重复打开数据库、同时JOIN旧run/completion表或逐模块调用writer Application
+- **WHEN** Buildr Web 或内部 consumer 请求已有 active Task 的 Overview
+- **THEN** Application MUST 返回 Task 顶层事实和各专业 row 的独立 presence/summary/observed time
+- **AND** MUST NOT根据Development gate、Candidate或Handoff推导任务完成、下一步或交付
 
 #### Scenario: 专业 row 缺失
-- **WHEN** Task 存在但一个或多个专业 current row 尚未形成
-- **THEN** Overview MUST 对对应 section 返回稳定 missing/unknown 语义并保留其他已保存 facts
-- **AND** MUST NOT 创建占位 row、回填聚合状态或把缺失解释为失败
+- **WHEN** 一个或多个专业 current row 尚未形成
+- **THEN** Overview MUST保留其他已保存事实并把对应section表达为missing
+- **AND** MUST NOT创建占位row、统一blocked状态或替代专业Result
 
 ### Requirement: Task Overview 与专业 inspect 必须只计算无副作用保存值关系
-Task Overview、Task Development/Review/Verification inspect 与 Buildr Web GET MUST 只读取 SQLite 中已保存的 payload和查询字段，并 MAY 计算 row presence、payload digest、响应格式及已保存 identity 之间的一致性。它们 MUST NOT 在读取时执行 Git observation、Content Target scan、Project registry/`verification.yml` 解析、Environment probe、Finish filesystem scan、旧 Environment/Development/Result file 读取或数据库 mutation。
+Task Overview、Task Development/Review/Verification inspect 与 Buildr Web GET MUST只读取所属Application允许的已保存值和响应格式。它们 MUST NOT比较Development gate与Review/Verification Result、执行Git或Content Target observation、Environment probe、Finish filesystem scan、旧专业文件恢复或数据库mutation。
 
 #### Scenario: 比较保存的 gate 与 Result identity
-- **WHEN** Overview 同时读取 Development gate 与 Review/Verification current row
-- **THEN** Application MAY 比较两份已保存的 target identity/result digest 并报告 matched/mismatched/unknown
-- **AND** MUST NOT 把该比较解释为对当前外部世界的重新验证
+- **WHEN** Overview读取Development、Review与Verification保存值
+- **THEN** MUST分别返回各自摘要
+- **AND** MUST NOT报告matched/mismatched、adopted或统一readiness
 
 #### Scenario: 外部事实在最近一次 action 后变化
-- **WHEN** Git、Content Target、declaration、Environment 或 provider 在最近一次专业 action 后变化
-- **THEN** GET MUST 继续返回最近一次 action 保存的事实与 observed time
-- **AND** 只有拥有该观察语义的下一次正式专业 action MAY 更新保存状态
+- **WHEN** Git、文档、声明、环境或外部系统在最近一次专业动作后变化
+- **THEN** GET MUST继续返回最近一次保存事实与观察时间
+- **AND** Agent MUST通过真实owner工具重新观察，不由Overview更新
 
 ### Requirement: Terminal Delivery 必须直接读取 Finish completion association
-Terminal Delivery Application MUST 从`task_finish_current`、Task Record与Development current Receipt组合current/terminal read model。delivered判断 MUST只使用同Task且`status: complete`的compact terminal current row中已保存的association，并对handoff、Candidate与gate保存identity/digest做确定性匹配；MUST NOT依赖phase detail、旧run/completion表、lifecycle projection或legacy/transient files。
+Terminal Delivery Application MUST只从Task Record和只读Finish history取得顶层结果、旧run、远端引用、activation与cleanup事实。它 MUST NOT读取Development或Review，不返回Candidate、Handoff、planning/completion gate association，也不得因Finish历史缺失或损坏撤销Task Record已保存结果。
 
 #### Scenario: matching Finish completion
-- **WHEN** completed、非 noChange Task 具有matching compact terminal current与terminal association
-- **THEN** Application MUST 返回delivered、delivery/cleanup facts、交付时Development snapshot与gate associations
-- **AND** MUST NOT 恢复Environment、观察Git/remote或改写专业current rows
+- **WHEN** completed Task存在可读的旧Finish terminal记录
+- **THEN** Application MUST返回历史交付、激活和清理事实及其观察来源
+- **AND** MUST NOT恢复Environment、观察Git、读取Development或判断Review adoption
 
 #### Scenario: completion association 缺失或不匹配
-- **WHEN** completed、非noChange Task没有matching terminal association，或保存identity与Development handoff不一致
-- **THEN** Application MUST返回`completed-unproven`与精确诊断
-- **AND** MUST NOT从旧表、已删除lifecycle projection、legacy Finish file或外部系统补造association
+- **WHEN** completed Task没有Finish记录或旧payload不可读
+- **THEN** Application MUST保留Task Record completed结果并返回局部历史diagnostic
+- **AND** MUST NOT从Development、Review、Git或外部系统补造交付证明
 
 ### Requirement: Task 轻量查询必须组合复盘来源关系
 Task 列表与详情的 SQLite read model MUST 从 Task Record owner tables 读取 `retrospectiveSourceTaskIds`，并 MAY 对单个 source Task 派生承接 Task 的 ID、title 与 status。查询 MUST 保持只读、固定数量 SQL，不得读取复盘 Markdown、专业 currentness 或建立关系缓存。
@@ -59,19 +59,23 @@ Task 列表与详情的 SQLite read model MUST 从 Task Record owner tables 读�
 - **AND** 目标状态变化 MUST 由下一次查询直接反映
 
 ### Requirement: Task Overview 必须返回面向用户的正交结果摘要
-Task Overview Application MUST 从同一只读查询取得的Task intent与已保存Development、Environment和compact Finish current payload派生closed用户摘要，至少分别表达目标、Delivery、Activation、Cleanup、局部attention与必要authorization。该摘要 MUST 保持这些结果正交，MUST NOT以Activation、Cleanup或Diagnostics失败撤销已保存Delivery，也 MUST NOT复制完整专业Result、执行外部观察或建立第二writer。
+Task Overview Application MUST从Task Record、Environment和旧Finish保存事实分别表达目标、Delivery、Activation、Cleanup与局部attention。该摘要 MUST保持这些结果正交，MUST NOT使用Development applicability、Candidate、Handoff或Review/Verification缺失生成attention、authorization或完成判断。
 
 #### Scenario: 已交付但激活或清理需要关注
-- **WHEN** compact terminal Finish已保存Delivery成功，同时Activation或Cleanup保存attention/failed/blocked事实
-- **THEN** Overview MUST将Delivery显示为delivered并分别返回Activation与Cleanup状态
-- **AND** MUST把后两者形成局部attention而不把Delivery改为失败
+- **WHEN** Finish历史保存Delivery成功且Activation或Cleanup需要关注
+- **THEN** Overview MUST保持Delivery为delivered并分别返回局部状态
 
 #### Scenario: 仍需用户授权
-- **WHEN** saved professional current fact明确要求业务风险接受、长期scope决定或危险外部效果授权
-- **THEN** Overview MUST在authorization中返回专业owner、动作与人类可读摘要
-- **AND** MUST NOT要求用户处理digest、token、Receipt或内部恢复步骤
+- **WHEN** 任一具体专业动作保存了仍需人决定的业务或外部副作用授权
+- **THEN** Overview MAY返回该owner保存的最小授权摘要
+- **AND** MUST NOT从Development risk、Review finding或内部恢复状态推导新授权
+
+#### Scenario: 没有Finish历史
+- **WHEN** Task已completed但没有旧Finish记录
+- **THEN** Overview MUST显示任务结果已保存且机器交付历史不可用
+- **AND** MUST NOT显示Development blocked或要求补造旧流程
 
 #### Scenario: 专业事实尚未形成
-- **WHEN** Task尚无matching Development、Environment或Finish current row
-- **THEN** Overview MUST对相应用户结果返回稳定`unknown`或`not-applicable`语义
-- **AND** MUST NOT从Task status、Git、文件或聊天内容猜测结果
+- **WHEN** Task尚无Development、Review、Verification、Environment或Finish中的任一专业row
+- **THEN** Overview MUST只把该section表达为missing并保留其他事实
+- **AND** MUST NOT从Task status、Git、文件或聊天内容猜测专业结果

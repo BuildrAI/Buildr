@@ -1,5 +1,5 @@
-import { validateTaskProfessionalRequest } from './task-professional-http-contracts.mjs';
-import { mapTaskReviewPromptRequest } from './task-professional-http-mapping.mjs';
+import { validateTaskProfessionalRequest } from './task-professional-http-contracts.ts';
+import { mapTaskReviewPromptRequest } from './task-professional-http-mapping.ts';
 
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 

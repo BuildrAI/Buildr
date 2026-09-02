@@ -51,9 +51,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 ## 3. 条件化交接
 
-已有或刚创建的active Formal Task优先运行`buildr task next <task-id> --target <canonical-workspace> --json`。它只读组合Task、Environment与Development当前最小事实：`required`表示必须先恢复的authority/identity安全前置，`recommended`只是默认推进建议，用户可以选择其他仍满足对应owner contract的合法动作。只读取Snapshot当前next返回的capability contract与selected provider；不要为发现未来阶段运行Doctor full或预读完整Review、Verification。Snapshot不自动执行、不替代专业owner写前重验。
+已有或刚创建的active Formal Task先`task inspect`核对目标、scope与current record identity。需要Buildr-managed checkout、Preparation、runtime projection、Task-owned资源、正式环境证据或cleanup authority时，使用`task environment inspect|prepare`取得matching执行根与retained controller；不需要这些能力的直接工作不补造Environment。
 
-按 next executable action 渐进装配上下文：执行当前动作前读取相应 optional binding、contract、selected provider 与直接 authority，Verification、Completion 等研发阶段只在成为当前动作时再读取。该边界不允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence；provider 不 ready 时只阻塞或降级对应分支，保留其他已确认结论。
+按用户目标和当前事实渐进装配专业上下文：执行当前动作前只读取相应Skill、binding、contract与直接authority，Review、Verification、OpenSpec、Parent管理和Finish只在真实命中时加载。不得为发现未来阶段运行Doctor full或预读完整专业Result；provider不ready时只阻塞或降级对应分支，保留其他已确认结论。
 
 用户已经授权实现时，先选择直接工作或Buildr受管正式证据路径。直接工作在真实Git、文件ownership与副作用边界内立即推进并如实报告证据范围；需要OpenSpec managed flow、Development、Formal Verification、Candidate、自动Finish、Task-owned资源或cleanup时，取得matching ready Environment后立即进入proposal或当前首个研发动作。
 

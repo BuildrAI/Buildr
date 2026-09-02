@@ -2,7 +2,6 @@ import { Button } from 'antd';
 import {
   applicabilityLabel,
   capabilityOutcomeLabel,
-  developmentDispositionLabel,
   formatDateTime,
   reviewMethodLabel,
 } from '../../lib/taskLabels';
@@ -52,26 +51,18 @@ function ReviewList({
 function ReviewSlotCard({
   reviewType,
   slot,
-  association,
   taskId,
   taskActive,
   openAgentAction,
 }: {
   reviewType: 'planning' | 'completion';
   slot: any;
-  association: any;
   taskId: string;
   taskActive: boolean;
   openAgentAction: Props['openAgentAction'];
 }) {
-  const cardClass = association?.status === 'adopted-at-delivery'
-    ? 'delivered'
-    : slot.present ? slot.applicability : 'missing';
-  const stateText = association?.status === 'adopted-at-delivery'
-    ? '已随交付候选采用'
-    : !slot.present
-      ? '未记录'
-      : ({ current: '当前适用', stale: '目标已变化', unknown: '适用性未知' } as Record<string, string>)[slot.applicability] || '未知';
+  const cardClass = slot.present ? 'present' : 'missing';
+  const stateText = slot.present ? '已记录' : '未记录';
 
   return (
     <article className={`review-slot-card ${cardClass}`}>
@@ -80,17 +71,10 @@ function ReviewSlotCard({
           <p className="eyebrow">{reviewType === 'planning' ? '计划目标' : '完成候选'}</p>
           <h3>{reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）'}</h3>
         </div>
-        <span className={`state review-state ${slot.present ? slot.applicability : 'missing'}`}>{stateText}</span>
+        <span className={`state review-state ${slot.present ? 'present' : 'missing'}`}>{stateText}</span>
       </div>
       {!slot.present ? (
-        <>
-          <div className="review-slot-empty">尚未形成完整结果；不会创建空占位记录。</div>
-          {association?.status === 'gate-disposition' ? (
-            <p className="delivery-gate-note">
-              {`Development gate：${developmentDispositionLabel(association.disposition)} · ${association.summary} · ${association.source}`}
-            </p>
-          ) : null}
-        </>
+        <div className="review-slot-empty">尚未形成完整结果；不会创建空占位记录。</div>
       ) : (
         <>
           <dl className="read-facts review-facts">
@@ -171,7 +155,6 @@ export function EvidenceTab({
               <ReviewSlotCard
                 reviewType="planning"
                 slot={reviewData.slots.planning}
-                association={reviewData.terminal?.associations?.planning}
                 taskId={taskId}
                 taskActive={taskActive}
                 openAgentAction={openAgentAction}
@@ -179,7 +162,6 @@ export function EvidenceTab({
               <ReviewSlotCard
                 reviewType="completion"
                 slot={reviewData.slots.completion}
-                association={reviewData.terminal?.associations?.completion}
                 taskId={taskId}
                 taskActive={taskActive}
                 openAgentAction={openAgentAction}

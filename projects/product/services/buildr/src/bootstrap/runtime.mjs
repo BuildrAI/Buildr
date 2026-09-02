@@ -20,7 +20,6 @@ import {
   TASK_DEVELOPMENT_RUNTIME_PORT,
   PARENT_COORDINATION_RUNTIME_PORT,
   TASK_OVERVIEW_RUNTIME_PORT,
-  TASK_ENTRY_SNAPSHOT_RUNTIME_PORT,
   TASK_FINISH_RUNTIME_PORT,
   TASK_TERMINAL_DELIVERY_RUNTIME_PORT,
   createTaskEnvironmentModule,
@@ -30,7 +29,6 @@ import {
   createTaskDevelopmentModule,
   createParentCoordinationModule,
   createTaskOverviewModule,
-  createTaskEntrySnapshotModule,
   createTaskFinishModule,
   createTaskTerminalDeliveryModule,
 } from '../task/module.mjs';
@@ -147,7 +145,6 @@ export function createRuntime() {
   installTaskRuntimeModule(runtime, registry, createTaskDevelopmentModule(runtime), TASK_DEVELOPMENT_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskEntrySnapshotModule(runtime, { agentCapabilityQuery: AGENT_ASSETS_CAPABILITY_QUERY }), TASK_ENTRY_SNAPSHOT_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createTaskFinishModule(runtime), TASK_FINISH_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createTaskTerminalDeliveryModule(runtime), TASK_TERMINAL_DELIVERY_RUNTIME_PORT);
   registry.install(createSystemInstallationModule(runtime));

@@ -9,7 +9,7 @@ export const SYSTEM_SUITES = Object.freeze([
   Object.freeze({
     id: 'system-verification-admission',
     name: 'System verification admission canary',
-    innerConcurrency: 2,
+    innerConcurrency: 1,
     schedulingCostMs: 5000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),

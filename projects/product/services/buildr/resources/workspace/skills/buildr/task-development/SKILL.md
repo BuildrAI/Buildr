@@ -7,8 +7,8 @@ description: 正式Task从首个proposal、方案或直接实现开始，到稳�
 
 本Skill编排`buildr.task-development/v3`。它维护研发聚合事实，不管理任务验证。Buildr Web只消费Application `inspect`的只读投影；不得手写Development Receipt。
 
-所有内部action使用`buildr task next`返回的retained `controllerInvocation.command + argsPrefix`，再追加`__internal task-development <action> ...`。不得使用candidate CLI、resource payload root或源码内部路径写canonical Workspace。
-具体调用以`environment.controllerInvocation`为准；planning snapshot使用Planning Identity Application返回的`planningNodes`，不得自行重算。
+所有内部action使用matching `buildr task environment inspect <task-id> --target <canonical-workspace> --json`返回的retained controller invocation，再追加`__internal task-development <action> ...`。不得使用candidate CLI、resource payload root或源码内部路径写canonical Workspace。
+具体调用以Environment read model返回的controller为准；planning snapshot使用Planning Identity Application返回的`planningNodes`，不得自行重算。
 
 ## 进入与继续研发
 

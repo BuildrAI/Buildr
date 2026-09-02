@@ -95,7 +95,7 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
 test('Task Delivery 与 Finish 只由 Task module 组装', () => {
   for (const relative of [
     'src/task/application/finish/task-finish-application.mjs',
-    'src/task/application/task-terminal-delivery-application.mjs',
+    'src/task/application/task-terminal-delivery-application.ts',
     'src/task/persistence/task-finish-repository.mjs',
     'src/task/interfaces/cli/task-terminal-delivery.mjs',
     'src/task/interfaces/internal/task-finish-maintenance-driver.mjs',

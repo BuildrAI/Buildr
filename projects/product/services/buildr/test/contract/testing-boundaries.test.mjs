@@ -309,7 +309,7 @@ test('公共Node Test Context Runtime与Buildr provider保持独立authority', (
   assert.match(provider, /buildrTaskWorkspaceContext = defineTestContext/);
   assert.match(provider, /parallelSafety: 'exclusive'/);
   assert.match(provider, /parallelSafety: 'isolated'/);
-  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.mjs'), 'utf8');
+  const taskTests = fs.readFileSync(path.join(productRoot, 'test/integration/task-development-application.test.ts'), 'utf8');
   assert.match(taskTests, /createBuildrContextTest/);
   assert.match(taskTests, /BUILDR_TASK_TEST_CONTEXTS/);
   assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');

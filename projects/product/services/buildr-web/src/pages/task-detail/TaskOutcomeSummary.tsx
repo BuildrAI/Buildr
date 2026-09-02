@@ -23,7 +23,7 @@ type Props = {
 
 const statusLabel: Record<string, string> = {
   delivered: '已交付', 'in-progress': '进行中', 'not-started': '尚未开始', passed: '已通过', cleaned: '已清理',
-  pending: '待处理', attention: '需关注', blocked: '受阻', failed: '未通过', unknown: '尚未确认', 'not-applicable': '不适用',
+  completed: '结果已保存', 'historical-run': '旧运行记录', pending: '待处理', attention: '需关注', blocked: '受阻', failed: '未通过', unknown: '尚未确认', 'not-applicable': '不适用',
 };
 
 function tone(status: string) {
