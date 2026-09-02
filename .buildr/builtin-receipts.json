@@ -153,11 +153,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-cf17cff0f0a8e524ea0af66fd6c91eed1d3dd81b5038ff8d2fe4687d72b5bb07",
+      "integrity": "sha256-c47c24003e4a25b75628ffe93dc3014b13a841323e8a4d056a96a9abadae9dba",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-337add1099536cd5d5127859744109d2b2e98298b73fadbe07c9d36a02b0f045"
+          "integrity": "sha256-522146c6d7e1141d67c00534c7994329b4d17a374efe4ebfcc3728b24931da58"
         },
         {
           "path": "agents/openai.yaml",
@@ -169,15 +169,15 @@
       "type": "skill",
       "id": "task-retrospective",
       "target": "skills/buildr/task-retrospective",
-      "integrity": "sha256-2d1aabe822749e29177fb8d6ddee041f0424dfe9429c806076612f99faf61332",
+      "integrity": "sha256-02bba29d678161f41234d597119ca5d1f45dc00ea3d0073f78f624717f78e096",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-cff78814d839cabd0ac8022cce32eef5366c00efdccc891e0fa296ee30e125d5"
+          "integrity": "sha256-f1a13dd5bb254f22ca2f6f89b91a830921b8e457bb6530e20685b603223b9b5f"
         },
         {
           "path": "agents/openai.yaml",
-          "integrity": "sha256-131da2bb9ce896a7aeb95ba76e3c05a44da626c3e66ee173e9d6097ca2f6532a"
+          "integrity": "sha256-0dd42ab22db9242bab1cabce5efa395cfdb8d6dd919bfba7f500dfe925768f75"
         }
       ]
     },
@@ -201,11 +201,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-eff93f1c9289fc9bd020121b9bdef3e2227629c1e3f5e25b8435b6ebe2de8ad1",
+      "integrity": "sha256-e232ca985770688bb8477302bd86a7191ba568123a7201e168f110077f477c2e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a6ddc7455307a1a9f1e86902aac94296e32c517b6464ffbbcd4d4419ea24d0eb"
+          "integrity": "sha256-d1b024b6c15a5c78080771208e9641e3e321844747671c643ebd02eb45ee312b"
         }
       ]
     },

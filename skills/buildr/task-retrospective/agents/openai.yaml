@@ -1,4 +1,4 @@
 interface:
   display_name: "任务复盘"
-  short_description: "复盘终态 Task 并把有效改进关联到后续 Task"
-  default_prompt: "Use $task-retrospective to record or process a terminal Task retrospective and link valid improvements to todo or active Task Records."
+  short_description: "生成和查看本机任务复盘文档"
+  default_prompt: "Use $task-retrospective to analyze a terminal Task from visible evidence, maintain its local Markdown document, and leave follow-up work to ordinary Task Records after the user decides."

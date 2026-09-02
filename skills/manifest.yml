@@ -20,7 +20,7 @@ skills:
     runtimePath: task-triage
     requires:
       - capability: buildr.task-record
-        version: 2
+        version: 3
         mode: optional
       - capability: buildr.git-operations
         version: 1
@@ -96,7 +96,7 @@ skills:
         version: 1
     requires:
       - capability: buildr.task-record
-        version: 2
+        version: 3
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -235,7 +235,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-retrospective
     source: buildr
     path: buildr/task-retrospective
-    description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
+    description: 用户明确要求复盘已完成或已放弃的正式Task，查看本机复盘文档，或在阅读后决定是否继续行动时使用；只基于当前可见事实生成本机Markdown并维护Task上的待决策/已决策状态。
     enabled: true
     required: false
     state: installed
@@ -248,12 +248,9 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: task-retrospective
-    provides:
-      - capability: buildr.task-retrospective
-        version: 2
     requires:
       - capability: buildr.task-record
-        version: 2
+        version: 3
         mode: required
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
@@ -367,7 +364,7 @@ skills:
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
-        version: 2
+        version: 3
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:skills/buildr/task-review
@@ -513,14 +510,6 @@ contracts:
     version: 1
     path: contracts/buildr/git-operations/v1.md
     description: 为已选定的单次 Git Operation 提供授权、安全边界、前后 identity 与最小结果。
-  - id: buildr.task-record
-    version: 2
-    path: contracts/buildr/task-record/v2.md
-    description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
-  - id: buildr.task-retrospective
-    version: 2
-    path: contracts/buildr/task-retrospective/v2.md
-    description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
   - id: buildr.task-verification
     version: 4
     path: contracts/buildr/task-verification/v4.md
@@ -529,6 +518,10 @@ contracts:
     version: 2
     path: contracts/buildr/task-review/v2.md
     description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
+  - id: buildr.task-record
+    version: 3
+    path: contracts/buildr/task-record/v3.md
+    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
@@ -548,16 +541,13 @@ bindings:
   - capability: buildr.git-operations
     version: 1
     provider: git-operations
-  - capability: buildr.task-record
-    version: 2
-    provider: task-manager
-  - capability: buildr.task-retrospective
-    version: 2
-    provider: task-retrospective
   - capability: buildr.task-verification
     version: 4
     provider: task-verification
   - capability: buildr.task-review
     version: 2
     provider: task-review
+  - capability: buildr.task-record
+    version: 3
+    provider: task-manager
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
