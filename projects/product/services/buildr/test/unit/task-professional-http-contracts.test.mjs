@@ -13,8 +13,9 @@ import { mapTaskRetrospectiveRequest } from '../../src/task/interfaces/http/task
 test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error schema', () => {
   const ids = TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(ids.length, 9);
+  assert.equal(ids.length, 8);
   assert.equal(ids.includes('task-review.prompt'), false);
+  assert.equal(ids.includes('task-verification.prompt'), false);
   for (const operation of TASK_PROFESSIONAL_HTTP_OPERATIONS) {
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.requestSchemaId));
     assert.ok(TASK_PROFESSIONAL_HTTP_VALIDATORS.schemaIds.includes(operation.successSchemaId));

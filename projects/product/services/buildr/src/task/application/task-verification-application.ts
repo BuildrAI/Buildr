@@ -112,11 +112,7 @@ export function registerTaskVerificationApplication(runtime: any) {
     const written = runtime.writeTaskVerificationReportPersistence(task.root, report);
     return result('record', 'recorded', taskId, slot(task, report.content.identity), [{ type: written.created ? 'created' : 'updated', path: written.file }]);
   }
-  function generateTaskVerificationPrompt(targetRoot: string, input: any) {
-    assertInput(input, new Set(['taskId']), 'Task Verification prompt'); const task = runtime.readTaskRecordPersistence(targetRoot, input.taskId).record;
-    return { prompt: [`请完成正式 Task“${task.title}（${task.taskId}）”开发完成后的任务验证。`, '', `目标：${task.intent}`, '', '读取 task-verification Skill、Task 当前改动、相关 Project verification.yml、前后端测试目录、构建脚本、CI 与测试说明。由你根据任务范围选择并直接调用 Maven、npm、Playwright、Browser、HTTP 等现有工具；Buildr 不生成计划或代跑测试。', '至少执行受影响服务的完整低成本回归和任务相关功能测试；测试环境冒烟只在当前目标适用且环境可用时执行。', '测试失败时先修复或如实报告。全部验证完成后，形成包含内容版本、实际检查、选择范围、结果、未覆盖项和明确结论的有意义报告，再通过 task verification record 保存。开发过程中的临时测试不写报告。'].join('\n'), copiedMeansRecorded: false };
-  }
   const inspectTaskVerificationView = (targetRoot: string, taskId: string) => inspectTaskVerification(targetRoot, taskId);
-  Object.assign(runtime, { inspectTaskVerification, inspectTaskVerificationView, recordTaskVerification, generateTaskVerificationPrompt });
+  Object.assign(runtime, { inspectTaskVerification, inspectTaskVerificationView, recordTaskVerification });
   return runtime;
 }

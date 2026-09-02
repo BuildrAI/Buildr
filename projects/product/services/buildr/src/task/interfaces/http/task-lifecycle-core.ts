@@ -2,7 +2,6 @@
 import { validateTaskProfessionalRequest } from './task-professional-http-contracts.ts';
 import {
   mapTaskProfessionalReadRequest,
-  mapTaskVerificationPromptRequest,
 } from './task-professional-http-mapping.ts';
 
 function readContribution(id, taskIdSource, operation, suffixPattern, input = () => ({}), contractId = `task-${operation}.detail`) {
@@ -34,26 +33,8 @@ export function createTaskDevelopmentHttpContribution(taskIdSource) {
   return readContribution('task-development.http', taskIdSource, 'development', '^/tasks/<task-id>/development$', undefined, 'task-development.detail');
 }
 
-export function createTaskVerificationHttpContribution(taskIdSource, application) {
-  const read = readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$', undefined, 'task-verification.detail');
-  return Object.freeze({
-    id: read.id,
-    handle: async (input) => {
-      const readResult = await read.handle(input);
-      if (readResult) return readResult;
-      const { request, suffix, searchParams, root, authorizeWrite, readBody } = input;
-      if (request.method !== 'POST' || suffix !== '/prompts/task-verification') return null;
-      if (searchParams?.size) {
-        const error = new Error('Task Verification prompt 不接受 query 参数。');
-        error.code = 'task_api_query_forbidden';
-        error.status = 400;
-        throw error;
-      }
-      authorizeWrite();
-      const body = mapTaskVerificationPromptRequest(validateTaskProfessionalRequest('task-verification.prompt', await readBody(new Set(['taskId']), 'Task Verification prompt'), 'Task Verification prompt'));
-      return { status: 200, body: application.generateTaskVerificationPrompt(root, body) };
-    },
-  });
+export function createTaskVerificationHttpContribution(taskIdSource) {
+  return readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$', undefined, 'task-verification.detail');
 }
 
 export function createTaskEnvironmentHttpContribution(taskIdSource, application, taskRecordRead) {

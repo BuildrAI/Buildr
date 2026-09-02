@@ -348,6 +348,27 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
+  function validateTaskVerificationPromptRetirement(context) {
+    const { root, problems } = context;
+    const files = [
+      'src/task/application/task-verification-application.ts',
+      'src/task/interfaces/http/task-lifecycle-core.ts',
+      'src/task/interfaces/http/task-professional-http-contracts.ts',
+      'src/task/interfaces/http/task-professional-http-mapping.ts',
+      'src/task/module.mjs',
+      '../buildr-web/src/api/task-professional.ts',
+      '../buildr-web/src/api/generated/task-professional-http-dto.ts',
+    ];
+    for (const relative of files) {
+      const file = path.join(root, relative);
+      if (!existsFile(file)) { problems.push(`Task Verification prompt retirement asset is missing: ${relative}.`); continue; }
+      const content = fs.readFileSync(file, 'utf8');
+      for (const forbidden of ['generateTaskVerificationPrompt', 'task-verification.prompt', '/prompts/task-verification', 'mapTaskVerificationPromptRequest', 'VerificationPromptRequest', 'VerificationPromptResponse']) {
+        if (content.includes(forbidden)) problems.push(`${relative} must not retain Task Verification prompt symbol ${JSON.stringify(forbidden)}.`);
+      }
+    }
+  }
+
   function validateTaskReviewAuthority(context) {
     const { root, manifest, problems } = context;
     const taskReviewContracts = (manifest.capabilityContracts || []).filter((entry) => entry.id === 'buildr.task-review' && entry.version === 2);
@@ -1450,6 +1471,7 @@ export function createPackageStaticValidator(deps) {
     validatePackageMetadata(context);
     validateTaskEnvironmentAuthorityResidue(context);
     validateTaskLifecycleRetirement(context);
+    validateTaskVerificationPromptRetirement(context);
     validateTaskReviewAuthority(context);
     validateTaskPlanningIdentityAuthority(context);
     validateInternalWorkflowRouteClosure(context);

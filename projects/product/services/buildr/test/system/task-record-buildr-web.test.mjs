@@ -169,6 +169,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   runtime.inspectTaskTerminalDelivery = () => { throw new Error('专业Tab不得调用terminal聚合器。'); };
   response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v2'); assert.equal('terminal' in response.body, false);
   response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal('terminal' in response.body, false, 'Verification GET 不读取或解释Development/Terminal Delivery');
+  response = await request(`${url}/api/v1/workspaces/${initialWorkspaceId}/prompts/task-verification`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task' }) }); assert.equal(response.status, 404, 'Buildr Web不得暴露Task Verification后端prompt');
   assert.equal(developmentReads, 1, 'Review和Verification不得读取Development');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
   assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');

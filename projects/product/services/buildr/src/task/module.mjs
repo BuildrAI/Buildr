@@ -174,7 +174,7 @@ const TASK_ENVIRONMENT_PERSISTENCE_METHODS = Object.freeze([
   'taskEnvironmentPath', 'readTaskEnvironmentPersistence', 'writeTaskEnvironmentPersistence', 'renderTaskEnvironmentReceipt',
 ]);
 const TASK_VERIFICATION_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskVerification', 'inspectTaskVerificationView', 'recordTaskVerification', 'generateTaskVerificationPrompt',
+  'inspectTaskVerification', 'inspectTaskVerificationView', 'recordTaskVerification',
 ]);
 const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
   'taskVerificationReportPath', 'readTaskVerificationReportPersistence', 'writeTaskVerificationReportPersistence', 'renderTaskVerificationReport',

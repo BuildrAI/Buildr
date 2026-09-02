@@ -7,8 +7,6 @@ import type {
   RetrospectivePatchRequest,
   RetrospectiveResponse,
   ReviewsResponse,
-  VerificationPromptRequest,
-  VerificationPromptResponse,
   VerificationResponse,
 } from './generated/task-professional-http-dto';
 
@@ -47,9 +45,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
     },
     updateRetrospective(taskId: string, input: RetrospectivePatchRequest): Promise<RetrospectiveResponse> {
       return typed(client(taskPath(taskId, '/retrospective'), { method: 'PATCH', body: JSON.stringify(input) }));
-    },
-    verificationPrompt(input: VerificationPromptRequest): Promise<VerificationPromptResponse> {
-      return typed(client('/api/v1/prompts/task-verification', { method: 'POST', body: JSON.stringify(input) }));
     },
   });
 }

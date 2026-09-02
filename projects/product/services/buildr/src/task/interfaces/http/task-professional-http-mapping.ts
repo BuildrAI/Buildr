@@ -14,7 +14,3 @@ export function mapTaskRetrospectiveRequest(input = {}) {
     expectedCurrentDigest: input.expectedCurrentDigest,
   });
 }
-
-export function mapTaskVerificationPromptRequest(input) {
-  return Object.freeze({ taskId: input.taskId });
-}

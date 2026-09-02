@@ -3,9 +3,7 @@ import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const CONTRACT_ROOT = 'https://schemas.buildr.ai/http/task-professional';
-const TASK_ID_PATTERN = '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$';
 const NON_EMPTY = Object.freeze({ type: 'string', minLength: 1, pattern: '\\S' });
-const TASK_ID = Object.freeze({ type: 'string', pattern: TASK_ID_PATTERN });
 const EMPTY = Object.freeze({ type: 'object', additionalProperties: false });
 const ERROR = Object.freeze({
   type: 'object',
@@ -21,12 +19,6 @@ const ERROR = Object.freeze({
   required: ['error'],
 });
 const RESPONSE = Object.freeze({ type: 'object', additionalProperties: true });
-const PROMPT_RESPONSE = Object.freeze({
-  type: 'object',
-  additionalProperties: false,
-  properties: { prompt: NON_EMPTY, copiedMeansRecorded: { type: 'boolean' } },
-  required: ['prompt', 'copiedMeansRecorded'],
-});
 const schema = (id, title, body) => Object.freeze({
   $schema: DRAFT_2020_12,
   $id: `${CONTRACT_ROOT}/${id}/v1`,
@@ -61,8 +53,6 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   retrospectiveRequest: schema('retrospective/request', 'TaskRetrospectiveRequest', EMPTY),
   retrospectiveResponse: schema('retrospective/response', 'TaskRetrospectiveResponse', RESPONSE),
   retrospectivePatchRequest: schema('retrospective/patch-request', 'TaskRetrospectivePatchRequest', RETROSPECTIVE_PATCH),
-  verificationPromptRequest: schema('verification-prompt/request', 'TaskVerificationPromptRequest', closed({ taskId: TASK_ID }, ['taskId'])),
-  verificationPromptResponse: schema('verification-prompt/response', 'TaskVerificationPromptResponse', PROMPT_RESPONSE),
   errorResponse: schema('error/response', 'TaskProfessionalErrorResponse', ERROR),
 });
 
@@ -84,7 +74,6 @@ export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),
   operation('task-retrospective.detail', 'GET', '/tasks/:taskId/retrospective', 'retrospectiveRequest', 'retrospectiveResponse'),
   operation('task-retrospective.patch', 'PATCH', '/tasks/:taskId/retrospective', 'retrospectivePatchRequest', 'retrospectiveResponse'),
-  operation('task-verification.prompt', 'POST', '/prompts/task-verification', 'verificationPromptRequest', 'verificationPromptResponse'),
 ]);
 
 export const TASK_PROFESSIONAL_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(TASK_PROFESSIONAL_HTTP_SCHEMAS));
