@@ -419,9 +419,10 @@ export function createTaskFinishHandoff({ candidate, changes, gates, knowledge =
   const normalizedGates = normalizeGates(gates);
   const normalizedDecision = normalizeDecision(decision);
   const normalizedKnowledge = knowledge == null ? null : createTaskDevelopmentKnowledge(knowledge);
+  const hasLegacyGates = Boolean(normalizedGates.planning || normalizedGates.completion || normalizedGates.verification);
   const resolved = (gate, positive) => Boolean(gate) && (gate.disposition === 'waived' || gate.disposition === 'not-applicable' || positive.includes(gate.outcome));
-  if (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.completion, ['ready', 'changes-required'])) {
-    throw taskDevelopmentError('task_development_handoff_gates_incomplete', 'Finish handoff 需要 current专业Result或合法not-applicable/waived gate。', 409);
+  if (hasLegacyGates && (!resolved(normalizedGates.planning, ['ready']) || !resolved(normalizedGates.completion, ['ready', 'changes-required']))) {
+    throw taskDevelopmentError('task_development_handoff_gates_incomplete', '历史 Finish handoff 的专业 gate 必须完整。', 409);
   }
   if (normalizedDecision?.outcome !== 'proceed' || normalizedDecision.candidateIdentity !== normalizedCandidate.identity) throw taskDevelopmentError('task_development_handoff_decision_blocked', 'Finish handoff 需要绑定 current Candidate 的 proceed decision。', 409);
   if (normalizedKnowledge && (normalizedKnowledge.treeIdentity !== normalizedCandidate.contentTargetIdentity || normalizedKnowledge.status === 'blocked')) throw taskDevelopmentError('task_development_handoff_knowledge_blocked', 'Finish handoff需要current且非blocked的Current Knowledge disposition。', 409);
@@ -429,7 +430,7 @@ export function createTaskFinishHandoff({ candidate, changes, gates, knowledge =
     const gate = normalizedGates[risk.gate];
     if (!gate || gate.disposition || risk.resultDigest !== gate.resultDigest) throw taskDevelopmentError('task_development_risk_result_mismatch', `风险接受必须绑定current ${risk.gate} Result digest。`, 409, { gate: risk.gate, expected: gate?.resultDigest || null, actual: risk.resultDigest });
   }
-  const adverse = [
+  const adverse = !hasLegacyGates ? [] : [
     ...(normalizedGates.completion.disposition || normalizedGates.completion.outcome === 'ready' ? [] : [{ gate: 'completion', digest: normalizedGates.completion.resultDigest }]),
   ];
   for (const item of adverse) {

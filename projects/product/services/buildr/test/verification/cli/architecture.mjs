@@ -106,13 +106,13 @@ const requiredRuntime = [
   'task/domain/task-environment.mjs', 'task/persistence/task-environment-repository.mjs',
   'task/application/finish/task-finish-application.mjs', 'task/application/finish/task-finish-run.mjs',
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
-  'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.mjs',
+  'task/persistence/task-development-repository.mjs', 'task/persistence/task-review-repository.ts',
   'task/persistence/task-verification-repository.ts',
   'task/module.mjs', 'task/domain/task-record.mjs',
-  'task/domain/task-review.mjs', 'task/application/task-review-application.mjs', 'task/persistence/task-review-repository.mjs',
+  'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
   'task/application/task-record-application.mjs', 'task/persistence/task-record-repository.ts',
-  'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.mjs',
-  'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.mjs',
+  'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.ts',
+  'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
   'task/interfaces/internal/task-development-driver.mjs', 'task/interfaces/internal/task-planning-identity-driver.mjs',
   'task/interfaces/internal/workflow-route-router.mjs', 'task/contracts/internal-workflow-route-catalog.mjs',
@@ -501,7 +501,7 @@ if (fs.existsSync(taskEnvironmentApplication)) {
   }
 }
 
-const taskReviewApplication = path.join(sourceRoot, 'task', 'application', 'task-review-application.mjs');
+const taskReviewApplication = path.join(sourceRoot, 'task', 'application', 'task-review-application.ts');
 const taskReviewInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-review.mjs');
 if (fs.existsSync(taskReviewApplication)) {
   const source = fs.readFileSync(taskReviewApplication, 'utf8');

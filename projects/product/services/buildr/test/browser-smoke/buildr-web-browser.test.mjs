@@ -210,9 +210,9 @@ testing:
     if (taskId !== 'browser-contribution-delivered') {
       runBuildr(['task', 'environment', 'prepare', taskId, '--plan', planFile, ...(taskId === 'browser-delivered' ? ['--shared'] : []), '--agent', 'codex', '--target', root], controllerCli);
     }
-    runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
+    runBuildr(['task', 'review', 'record', taskId, '--type', 'planning', '--subject-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'accepted', '--summary', '计划可执行', '--expected-current', 'absent', '--target', root]);
   }
-  runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--target-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'ready', '--summary', '计划可执行', '--target', root]);
+  runBuildr(['task', 'review', 'record', 'browser-task', '--type', 'planning', '--subject-identity', 'plan:browser-v1', '--method', 'self', '--reviewed', 'task intent', '--reviewed', 'change:demo/browser-flow', '--outcome', 'accepted', '--summary', '计划可执行', '--expected-current', 'absent', '--target', root]);
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
@@ -260,9 +260,9 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
   development = runtime.freezeTaskDevelopmentCandidate(root, taskId);
   assert.equal(development.status, 'unchanged');
   runtime.recordTaskReview(root, taskId, {
-    reviewType: 'completion', targetIdentity: candidate.identity, method: 'human', reviewed: ['当前任务候选'],
+    reviewType: 'completion', subjectIdentity: candidate.identity, method: 'human', reviewed: ['当前任务候选'],
     uncovered: [{ subject: '浏览器视觉差异', reason: '本轮只执行烟雾测试。' }], findings: ['没有阻断问题'],
-    conclusion: { outcome: 'ready', summary: '候选可交付' },
+    conclusion: { outcome: 'accepted', summary: '候选可交付' }, expectedCurrentDigest: 'absent',
   });
   runtime.recordTaskDevelopmentKnowledge(root, taskId, {
     treeIdentity: candidate.contentTargetIdentity,
@@ -271,7 +271,7 @@ function prepareDevelopmentFixture(runtime, root, taskId = 'browser-task') {
     sourceIdentities: ['test:buildr-web-browser'],
     unresolvedItems: [],
   });
-  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前门禁均允许推进。', risks: [] });
+  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: '当前研发事实允许推进。' });
   return runtime.createTaskDevelopmentHandoff(root, taskId).development.receipt;
 }
 
@@ -294,12 +294,7 @@ function writeDeliveredFinishFixture(runtime, root, taskId, receipt, cleanupResu
   const association = {
     schemaVersion: 'buildr.task-terminal-delivery-associations/v1', handoffIdentity: handoff.identity,
     candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation,
-    gates: {
-      planning: handoff.gates.planning.disposition
-        ? { status: 'gate-disposition', disposition: handoff.gates.planning.disposition, targetIdentity: handoff.gates.planning.targetIdentity, summary: handoff.gates.planning.summary, source: handoff.gates.planning.source }
-        : { status: 'adopted-at-delivery', targetIdentity: handoff.gates.planning.targetIdentity, resultDigest: handoff.gates.planning.resultDigest, outcome: handoff.gates.planning.outcome },
-      completion: { status: 'adopted-at-delivery', targetIdentity: handoff.gates.completion.targetIdentity, resultDigest: handoff.gates.completion.resultDigest, outcome: handoff.gates.completion.outcome },
-    },
+    gates: { planning: null, completion: null },
     observedAt: completedAt, source: 'task-finish-application',
   };
   const completionRecord = { schemaVersion: 'buildr.task-finish-completion/v1', runId, task: taskId, handoffIdentity: handoff.identity, candidateIdentity: handoff.candidate.identity, candidateGeneration: handoff.candidate.generation, contentTargetIdentity: handoff.candidate.contentTargetIdentity, carrierIdentity: carrier.identity, carrierRef: delivery.finalRemoteRef, finalRemoteRef: delivery.finalRemoteRef, taskContributionIdentity: 'sha256-browser-contribution', deliveryBaseline: { head: 'browser-base', tree: 'browser-tree' }, targetBranch: 'dev', status: 'complete', preparedAt: completedAt, completedAt, cleanup: cleanupResult, association };

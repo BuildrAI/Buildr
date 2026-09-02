@@ -31,7 +31,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   dailyProgressInspectResult: 'buildr.project-daily-progress-inspect-result/v1',
   dailyProgressListResult: 'buildr.project-daily-progress-list-result/v1',
   dailyProgressTaskView: 'buildr.project-daily-progress-task-view/v1',
-  taskReviewOperationResult: 'buildr.task-review-operation-result/v1',
+  taskReviewOperationResult: 'buildr.task-review-operation-result/v2',
   taskRetrospectiveListResult: 'buildr.task-retrospective-list-result/v1',
   taskRetrospectiveOperationResult: 'buildr.task-retrospective-operation-result/v1',
   taskVerificationOperationResult: 'buildr.task-verification-operation-result/v1',

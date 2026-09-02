@@ -74,12 +74,12 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   const planningTargetIdentity = taskDevelopmentDigest('publish-guide-plan-v1');
   runtime.recordTaskReview(root, 'publish-guide', {
     reviewType: 'planning',
-    targetIdentity: planningTargetIdentity,
+    subjectIdentity: planningTargetIdentity,
     method: 'self',
     reviewed: ['Task intent', 'docs/guide scope', 'declared documentation check'],
     uncovered: [],
     findings: [],
-    conclusion: { outcome: 'ready', summary: 'The code-only documentation task is bounded and ready.' },
+    conclusion: { outcome: 'accepted', summary: 'The code-only documentation task is bounded and ready.' }, expectedCurrentDigest: 'absent',
   });
 
   let development = runtime.observeTaskDevelopment(root, 'publish-guide', { changeDispositions: [], planningTargetIdentity });
@@ -107,12 +107,12 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
   assert.equal(development.status, 'unchanged');
   runtime.recordTaskReview(root, 'publish-guide', {
     reviewType: 'completion',
-    targetIdentity: candidate.identity,
+    subjectIdentity: candidate.identity,
     method: 'self',
     reviewed: ['Task Candidate', 'Content Target', 'task result'],
     uncovered: [],
     findings: [],
-    conclusion: { outcome: 'ready', summary: 'The Candidate satisfies the Task intent.' },
+    conclusion: { outcome: 'accepted', summary: 'The Candidate satisfies the Task intent.' }, expectedCurrentDigest: 'absent',
   });
   runtime.recordTaskDevelopmentKnowledge(root, 'publish-guide', {
     treeIdentity: candidate.contentTargetIdentity,
@@ -121,7 +121,7 @@ test('非 product、non-Git、code-only Workspace 完成 Development 到 Finish 
     sourceIdentities: ['test:task-development-generic-journey'],
     unresolvedItems: [],
   });
-  development = runtime.decideTaskDevelopment(root, 'publish-guide', { outcome: 'proceed', summary: 'All current gates are positive.', risks: [] });
+  development = runtime.decideTaskDevelopment(root, 'publish-guide', { outcome: 'proceed', summary: 'All current gates are positive.' });
   assert.equal(development.development.receipt.decision.candidateIdentity, candidate.identity);
   development = runtime.createTaskDevelopmentHandoff(root, 'publish-guide');
   assert.equal(development.development.receipt.handoffs.length, 1);

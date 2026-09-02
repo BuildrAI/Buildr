@@ -85,7 +85,7 @@ export const SYSTEM_SUITES = Object.freeze([
       'test/system/task-record-change-resolver.test.mjs',
       'test/system/task-record-buildr-web.test.mjs',
       'test/system/task-record-product.test.mjs',
-      'test/system/task-review-product.test.mjs',
+      'test/system/task-review-product.test.ts',
       'test/system/task-verification-product.test.ts',
     ]),
   }),

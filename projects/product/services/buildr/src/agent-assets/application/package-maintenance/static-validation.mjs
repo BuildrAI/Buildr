@@ -267,7 +267,7 @@ export function createPackageStaticValidator(deps) {
         if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Finish current authority must stay one-table: ${forbidden}`);
       }
     }
-    for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.mjs']) {
+    for (const legacyRepository of ['task-development-repository.mjs', 'task-verification-repository.mjs', 'task-review-repository.ts']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
     for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'tools/release/release-contract.mjs']) {
@@ -332,7 +332,7 @@ export function createPackageStaticValidator(deps) {
     for (const relative of [
       'src/bootstrap/runtime.mjs',
       'src/task/application/task-development-application.ts',
-      'src/task/application/task-review-application.mjs',
+      'src/task/application/task-review-application.ts',
       'src/task/application/task-verification-application.ts',
       'src/task/application/task-environment-application.mjs',
       'src/task/application/task-record-application.mjs',
@@ -350,8 +350,8 @@ export function createPackageStaticValidator(deps) {
 
   function validateTaskReviewAuthority(context) {
     const { root, manifest, problems } = context;
-    const taskReviewContracts = (manifest.capabilityContracts || []).filter((entry) => entry.id === 'buildr.task-review' && entry.version === 1);
-    if (taskReviewContracts.length !== 1) problems.push('Package must declare exactly one buildr.task-review@1 capability contract.');
+    const taskReviewContracts = (manifest.capabilityContracts || []).filter((entry) => entry.id === 'buildr.task-review' && entry.version === 2);
+    if (taskReviewContracts.length !== 1) problems.push('Package must declare exactly one buildr.task-review@2 capability contract.');
     for (const contract of manifest.capabilityContracts || []) {
       if (contract.id !== 'buildr.task-review' && /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(contract.id || '')) {
         problems.push(`Task Review must not declare a type-specific capability: ${contract.id}.`);
@@ -367,13 +367,13 @@ export function createPackageStaticValidator(deps) {
     const sourceRoot = path.join(root, 'src');
     if (existsDirectory(sourceRoot)) {
       for (const file of collectFiles(sourceRoot)) {
-        if (!/\.(?:mjs|js)$/.test(file)) continue;
+        if (!/\.(?:mjs|js|ts)$/.test(file)) continue;
         if (path.resolve(file) === path.resolve(root, 'src/agent-assets/application/package-maintenance/static-validation.mjs')) continue;
         const content = fs.readFileSync(file, 'utf8');
         if (content.includes('.writeTaskReviewResultPersistence(')) writerCallers.push(toPosixRelative(root, file));
       }
     }
-    if (JSON.stringify(writerCallers) !== JSON.stringify(['src/task/application/task-review-application.mjs'])) {
+    if (JSON.stringify(writerCallers) !== JSON.stringify(['src/task/application/task-review-application.ts'])) {
       problems.push(`Task Review Result writer must have exactly one Application caller: ${writerCallers.join(', ') || '<none>'}.`);
     }
 
@@ -393,7 +393,7 @@ export function createPackageStaticValidator(deps) {
       }
     }
 
-    const cli = path.join(root, 'src', 'task', 'interfaces', 'cli', 'task-review.mjs');
+    const cli = path.join(root, 'src', 'task', 'interfaces', 'cli', 'task-review.ts');
     if (!existsFile(cli)) problems.push('Task Review CLI adapter is missing.');
     else {
       const content = fs.readFileSync(cli, 'utf8');
@@ -408,7 +408,7 @@ export function createPackageStaticValidator(deps) {
       const content = fs.readFileSync(localServer, 'utf8');
       const readWorker = path.join(root, 'src', 'web', 'http', 'read-worker.mjs');
       const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
-      const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.mjs');
+      const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.ts');
       const taskReviewHttpContent = existsFile(taskReviewHttp) ? fs.readFileSync(taskReviewHttp, 'utf8') : '';
       const taskModule = path.join(root, 'src', 'task', 'module.mjs');
       const taskModuleContent = existsFile(taskModule) ? fs.readFileSync(taskModule, 'utf8') : '';
@@ -416,12 +416,11 @@ export function createPackageStaticValidator(deps) {
         [taskReviewHttpContent, "submitTaskRead('reviews', reviews[1])"],
         [readWorkerContent, "reviews: 'inspectTaskReview'"],
         [content, 'for (const contribution of httpContributions)'],
-        [taskReviewHttpContent, "suffix !== '/prompts/task-review'"],
-        [taskReviewHttpContent, 'runtime.generateTaskReviewPrompt(root, input)'],
         [taskModuleContent, "id: 'task-review.http'"],
       ]) {
         if (!owner.includes(required)) problems.push(`Task Review Buildr Web interface must include ${JSON.stringify(required)}.`);
       }
+      for (const forbidden of ['/prompts/task-review', 'generateTaskReviewPrompt']) if (taskReviewHttpContent.includes(forbidden)) problems.push(`Task Review HTTP must not include ${JSON.stringify(forbidden)}.`);
       if (content.includes('runtime.recordTaskReview(')) problems.push('Buildr Web must not expose a direct Task Review Result writer.');
     }
 
@@ -457,11 +456,10 @@ export function createPackageStaticValidator(deps) {
 
     const consumers = new Map([
       ['resources/workspace/skills/buildr/task-development/SKILL.md', ['__internal task-planning-identity inspect', '`planningNodes`', 'raw digest', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/skills/buildr/task-review/SKILL.md', ['__internal task-planning-identity inspect', 'checkbox progress', '不重复record', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Planning Review不拥有、不复制也不解释preflight逻辑', '再次调用Task Planning Identity resolver', 'task environment inspect', 'retained controller']],
+      ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review不是apply门禁', '再次调用Task Planning Identity resolver', 'task environment inspect', 'retained controller']],
       ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', '`planningNodes`', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target不变则不重复record Review', 'task environment inspect', 'retained controller']],
-      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'target与apply前相同则复用current Planning Review', 'task environment inspect', 'retained controller']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review是否需要重做由Agent独立判断', 'task environment inspect', 'retained controller']],
+      ['resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md', ['buildr openspec convergence preflight', '__internal task-planning-identity inspect', 'Review是否需要重做由Agent重新观察subject后独立判断', 'task environment inspect', 'retained controller']],
       ['resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md', ['重新调用Task Planning Identity resolver']],
       ['resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md', ['重新调用Task Planning Identity resolver']],
     ]);
@@ -503,7 +501,6 @@ export function createPackageStaticValidator(deps) {
     const consumers = [
       ['resources/workspace/skills/buildr/task-development/SKILL.md', ['task-development', 'task-planning-identity']],
       ['resources/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']],
-      ['resources/workspace/skills/buildr/task-review/SKILL.md', ['task-planning-identity']],
       ['resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md', ['task-planning-identity']],
       ['resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md', ['task-planning-identity']],
       ['resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md', ['task-planning-identity']],
@@ -1095,22 +1092,21 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-review') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-review/v1` 的默认 provider',
-          '用一个参数化能力完成 Planning Review 或 Completion Review',
+          '本 Skill 是 `buildr.task-review/v2` 的默认 provider',
+          'Agent 完成判断，Task Review Application 只保存两份可选结果',
           'buildr task review inspect <task-id>',
           'buildr task review record <task-id>',
-          '动态执行语义审查',
-          '不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围',
+          '动态审查',
+          '从真实工作现场取得本次对象',
           '同一 Agent 自审使用 `self`',
-          '没有明确 Candidate identity 就停止',
           '中断时不要调用 record',
-          '不生成总 receipt',
+          '--expected-current',
           'Task Retrospective',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-review Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1);
-        if (!provided) problems.push('task-review must provide buildr.task-review@1.');
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 2);
+        if (!provided) problems.push('task-review must provide buildr.task-review@2.');
         for (const forbiddenText of ['buildr verification run', 'buildr task finish run', 'git commit', 'git push', 'revision:']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-review Skill must not execute or persist ${JSON.stringify(forbiddenText)}.`);
         }
@@ -1250,7 +1246,7 @@ export function createPackageStaticValidator(deps) {
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-development/v3` provider', 'selected `buildr.task-verification/v4` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '首次受管效果前取得`ready`', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.task-environment/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-development/v4` provider', 'selected `buildr.task-verification/v4` provider', '不预设 minimal/affected/candidate 层级', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
@@ -1339,8 +1335,8 @@ export function createPackageStaticValidator(deps) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@2.');
         }
         const taskReview = baselineSkills.find((entry) => entry.id === 'task-review');
-        if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 1)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@1.');
+        if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 2)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@2.');
         }
         const taskRetrospective = baselineSkills.find((entry) => entry.id === 'task-retrospective');
         if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || !(taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 2)) {

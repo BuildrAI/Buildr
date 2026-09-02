@@ -6,8 +6,6 @@ import type {
   OverviewResponse,
   RetrospectivePatchRequest,
   RetrospectiveResponse,
-  ReviewPromptRequest,
-  ReviewPromptResponse,
   ReviewsResponse,
   VerificationPromptRequest,
   VerificationPromptResponse,
@@ -49,9 +47,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
     },
     updateRetrospective(taskId: string, input: RetrospectivePatchRequest): Promise<RetrospectiveResponse> {
       return typed(client(taskPath(taskId, '/retrospective'), { method: 'PATCH', body: JSON.stringify(input) }));
-    },
-    reviewPrompt(input: ReviewPromptRequest): Promise<ReviewPromptResponse> {
-      return typed(client('/api/v1/prompts/task-review', { method: 'POST', body: JSON.stringify(input) }));
     },
     verificationPrompt(input: VerificationPromptRequest): Promise<VerificationPromptResponse> {
       return typed(client('/api/v1/prompts/task-verification', { method: 'POST', body: JSON.stringify(input) }));

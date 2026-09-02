@@ -85,10 +85,17 @@ capabilityContracts:
         provider: task-manager
         description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
   - id: buildr.task-review
-    version: 1
-    description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
-    path: resources/workspace/skills/contracts/buildr/task-review/v1.md
-    target: skills/contracts/buildr/task-review/v1.md
+    version: 2
+    description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
+    path: resources/workspace/skills/contracts/buildr/task-review/v2.md
+    target: skills/contracts/buildr/task-review/v2.md
+    replaces:
+      - id: buildr.task-review
+        version: 1
+        target: skills/contracts/buildr/task-review/v1.md
+        integrity: sha256-302f709e0a0aa7f15da1f92de0de6be2be4cf009b4d4f0e49719e699a3bdf18f
+        provider: task-review
+        description: 对正式 Task 的计划或完成候选执行语义审查并维护两个可选 current Result。
   - id: buildr.task-verification
     version: 4
     description: 维护 Project 测试地图，并保存开发完成后的 Task 验证报告。
@@ -108,11 +115,17 @@ capabilityContracts:
         provider: task-verification
         description: 编排项目声明或既有政策定义的分层验证，并返回能力选择、候选身份、结果与真实耗时证据。
   - id: buildr.task-development
-    version: 3
-    description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate、Completion Review与Current Knowledge，且与Task Verification独立。
-    path: resources/workspace/skills/contracts/buildr/task-development/v3.md
-    target: skills/contracts/buildr/task-development/v3.md
+    version: 4
+    description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate与Current Knowledge，且与Task Review、Task Verification独立。
+    path: resources/workspace/skills/contracts/buildr/task-development/v4.md
+    target: skills/contracts/buildr/task-development/v4.md
     replaces:
+      - id: buildr.task-development
+        version: 3
+        target: skills/contracts/buildr/task-development/v3.md
+        integrity: sha256-7b1ca07404d1a1e4276548a9b2ceb63ad108acd4256af26bd273e0da74149b9d
+        provider: task-development
+        description: 从首个正式研发动作到immutable Finish handoff维护planning、Content Target、Task Candidate、Completion Review与Current Knowledge，且与Task Verification独立。
       - id: buildr.task-development
         version: 2
         target: skills/contracts/buildr/task-development/v2.md
@@ -193,13 +206,13 @@ initialSkillBindings:
     version: 2
     provider: task-manager
   - capability: buildr.task-review
-    version: 1
+    version: 2
     provider: task-review
   - capability: buildr.task-verification
     version: 4
     provider: task-verification
   - capability: buildr.task-development
-    version: 3
+    version: 4
     provider: task-development
   - capability: buildr.task-finish
     version: 1
@@ -238,7 +251,7 @@ builtins:
           version: 1
           mode: optional
         - capability: buildr.task-development
-          version: 3
+          version: 4
           mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: declaration-intake
@@ -265,11 +278,11 @@ builtins:
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
       target: skills/buildr/task-review
-      description: 用户要求审查正式 Task 的计划或完成候选、查看已有 Task Review Result，或实现任务在计划/完成节点需要形成轻量审查 evidence 时使用；不用于资产沉淀复盘、Task Verification 或通用代码 Review。
+      description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、Task Development 门禁或通用代码 Review。
       required: false
       provides:
         - capability: buildr.task-review
-          version: 1
+          version: 2
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: capability-adaptation
       path: resources/workspace/skills/buildr/capability-adaptation
@@ -345,19 +358,16 @@ builtins:
     - id: task-development
       path: resources/workspace/skills/buildr/task-development
       target: skills/buildr/task-development
-      description: 正式Task从首个proposal、方案或直接实现开始，到稳定Content Target、Task Candidate、Completion Review、Current Knowledge、推进决定与研发交接的全过程使用；不用于Task Record、Task Verification、测试执行或交付执行。
+      description: 正式Task从首个proposal、方案或直接实现开始，到稳定Content Target、Task Candidate、Current Knowledge、推进决定与研发交接的全过程使用；不用于Task Record、Task Review、Task Verification、测试执行或交付执行。
       required: false
       provides:
         - capability: buildr.task-development
-          version: 3
+          version: 4
       requires:
         - capability: buildr.task-record
           version: 2
           mode: required
         - capability: buildr.task-environment
-          version: 1
-          mode: required
-        - capability: buildr.task-review
           version: 1
           mode: required
         - capability: buildr.current-knowledge-maintenance
@@ -506,9 +516,9 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/task-environment/v1.md => skills/contracts/buildr/task-environment/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
-  - resources/workspace/skills/contracts/buildr/task-review/v1.md => skills/contracts/buildr/task-review/v1.md copy
+  - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
-  - resources/workspace/skills/contracts/buildr/task-development/v3.md => skills/contracts/buildr/task-development/v3.md copy
+  - resources/workspace/skills/contracts/buildr/task-development/v4.md => skills/contracts/buildr/task-development/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - resources/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy

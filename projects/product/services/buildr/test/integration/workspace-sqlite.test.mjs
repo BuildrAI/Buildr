@@ -63,7 +63,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
   assert.ok(writable.database.prepare("SELECT name FROM pragma_index_list('task_finish_current')").all().some((row) => row.name === 'task_finish_current_lease_target_idx'));
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_development_current)').all().map((row) => row.name), ['task_id', 'record_json', 'applicability_status', 'applicability_json', 'observed_at']);
-  assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_review_current)').all().map((row) => row.name), ['task_id', 'review_type', 'result_json', 'target_identity', 'outcome', 'updated_at']);
+  assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_review_current)').all().map((row) => row.name), ['task_id', 'review_type', 'result_json', 'subject_identity', 'outcome', 'updated_at']);
   assert.deepEqual(writable.database.prepare('PRAGMA table_info(task_verification_current)').all().map((row) => row.name), ['task_id', 'result_json', 'target_identity', 'outcome', 'updated_at']);
   writable.database.close();
 
@@ -344,7 +344,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_review_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_retrospective_current').get().count, 0);
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
-  assert.ok(upgraded.database.prepare("SELECT name FROM pragma_index_list('task_review_current')").all().some((row) => row.name === 'task_review_current_target_idx'));
+  assert.ok(upgraded.database.prepare("SELECT name FROM pragma_index_list('task_review_current')").all().some((row) => row.name === 'task_review_current_subject_idx'));
   upgraded.database.close();
   assert.equal(fs.readFileSync(legacy, 'utf8'), 'legacy: inert\n');
 });
@@ -360,6 +360,47 @@ test('每个既有 migration ledger 版本都可连续升级到当前 schema', (
     assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
     database.close();
   }
+});
+
+test('Task Review v2 migration迁移两槽位且遇到不一致历史row完整回滚', () => {
+  const migrations = loadWorkspaceSqliteMigrations();
+  const migration = migrations.find((item) => item.name === '0027_migrate_task_review_result_v2.sql');
+  const createDatabase = () => {
+    const database = new DatabaseSync(':memory:');
+    for (const item of migrations.filter((candidate) => candidate.version < migration.version)) applyWorkspaceSqliteMigration(database, item);
+    database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+      VALUES ('review-migration', 'buildr.task-record/v2', 'Review', 'Migrate review', 'active', NULL, NULL, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z', NULL)`).run();
+    return database;
+  };
+  const legacy = (reviewType, targetIdentity, outcome, completedAt) => JSON.stringify({
+    schemaVersion: 'buildr.task-review-result/v1', taskId: 'review-migration', reviewType, targetIdentity,
+    method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome, summary: `${reviewType} result` }, completedAt,
+  });
+
+  const database = createDatabase();
+  database.prepare('INSERT INTO task_review_current(task_id, review_type, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('review-migration', 'planning', legacy('planning', 'plan:v1', 'ready', '2026-08-01T01:00:00.000Z'), 'plan:v1', 'ready', '2026-08-01T01:00:00.000Z');
+  database.prepare('INSERT INTO task_review_current(task_id, review_type, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('review-migration', 'completion', legacy('completion', 'git:content-v1', 'changes-required', '2026-08-01T02:00:00.000Z'), 'git:content-v1', 'changes-required', '2026-08-01T02:00:00.000Z');
+  applyWorkspaceSqliteMigration(database, migration);
+  const rows = database.prepare('SELECT review_type, subject_identity, outcome, result_json FROM task_review_current ORDER BY review_type').all();
+  assert.deepEqual(rows.map((row) => ({ reviewType: row.review_type, subjectIdentity: row.subject_identity, outcome: row.outcome })), [
+    { reviewType: 'completion', subjectIdentity: 'git:content-v1', outcome: 'changes-requested' },
+    { reviewType: 'planning', subjectIdentity: 'plan:v1', outcome: 'accepted' },
+  ]);
+  for (const row of rows) {
+    const result = JSON.parse(row.result_json);
+    assert.equal(result.schemaVersion, 'buildr.task-review-result/v2');
+    assert.equal(result.subjectIdentity, row.subject_identity);
+    assert.equal('targetIdentity' in result, false);
+  }
+  database.close();
+
+  const invalid = createDatabase();
+  invalid.prepare('INSERT INTO task_review_current(task_id, review_type, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('review-migration', 'planning', legacy('planning', 'plan:json', 'ready', '2026-08-01T01:00:00.000Z'), 'plan:column', 'ready', '2026-08-01T01:00:00.000Z');
+  assert.throws(() => applyWorkspaceSqliteMigration(invalid, migration), (error) => error.code === 'workspace_store_database_failed');
+  assert.deepEqual(invalid.prepare('PRAGMA table_info(task_review_current)').all().map((row) => row.name), ['task_id', 'review_type', 'result_json', 'target_identity', 'outcome', 'updated_at']);
+  assert.equal(invalid.prepare('SELECT count(*) AS count FROM task_review_current').get().count, 1);
+  assert.equal(invalid.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, migration.version - 1);
+  invalid.close();
 });
 
 test('v19 数据库可直接完成任务，升级不绕过版本和状态检查', async (t) => {

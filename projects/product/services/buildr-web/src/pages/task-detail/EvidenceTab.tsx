@@ -68,7 +68,7 @@ function ReviewSlotCard({
     <article className={`review-slot-card ${cardClass}`}>
       <div className="review-slot-heading">
         <div>
-          <p className="eyebrow">{reviewType === 'planning' ? '计划目标' : '完成候选'}</p>
+          <p className="eyebrow">{reviewType === 'planning' ? '方案对象' : '完成结果'}</p>
           <h3>{reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）'}</h3>
         </div>
         <span className={`state review-state ${slot.present ? 'present' : 'missing'}`}>{stateText}</span>
@@ -78,13 +78,13 @@ function ReviewSlotCard({
       ) : (
         <>
           <dl className="read-facts review-facts">
-            <Fact label="目标身份" value={slot.result.targetIdentity} />
+            <Fact label="审查对象身份" value={slot.result.subjectIdentity} />
             <Fact label="执行方式" value={reviewMethodLabel(slot.result.method)} />
             <Fact label="完成时间" value={formatDateTime(slot.result.completedAt)} />
             <Fact label="结果摘要（resultDigest）" value={slot.resultDigest} />
           </dl>
           <div className={`review-conclusion ${slot.result.conclusion.outcome}`}>
-            <strong>{slot.result.conclusion.outcome === 'ready' ? '已就绪' : '需要修改'}</strong>
+            <strong>{slot.result.conclusion.outcome === 'accepted' ? '已接受' : '要求修改'}</strong>
             <p>{slot.result.conclusion.summary}</p>
           </div>
           <div className="review-evidence-grid">

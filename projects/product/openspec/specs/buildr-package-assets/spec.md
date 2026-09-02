@@ -763,20 +763,20 @@ task worktree/branch 内的 Task Manager、task-triage、contract、manifest 和
 - **AND** activation evidence MUST 匹配 retained source identity、受管 runtime source 与 Task Manager/task-triage 专项验收
 
 ### Requirement: Package 必须原子交付 Task Review authority
-Buildr package MUST 原子交付 `buildr.task-review/v1` contract、默认 `task-review` Skill、Task Review Domain/Application/repository、CLI/JSON、Buildr Web Review API/Web assets、Task-scoped Planning Review route、workspace binding、runtime source mappings 与专项验证。任一 identity、version、provider、path、schema、binding 或 Application client 接线不一致时 package check 与 doctor MUST fail closed。
+Buildr package MUST原子交付`buildr.task-review/v2` contract、默认Skill、TypeScript Domain/Application/Repository/CLI/HTTP、v2 JSON、只读Web API与前端Agent action。package check与doctor MUST校验v1 retirement、v2 binding、Development v4独立契约和全部接口一致性。
 
 #### Scenario: 安装或更新 workspace assets
-- **WHEN** Buildr package 安装、更新或同步支持 Task Review 的 workspace
-- **THEN** workspace Skills manifest MUST 登记 `buildr.task-review@1`、enabled/installed/optional 的 `task-review` provider 和 default binding
-- **AND** runtime projection MUST 包含同一 contract/Skill identity，不得创建 planning-review/completion-review 两个 provider
+- **WHEN** package安装、更新或同步workspace
+- **THEN** Skills manifest MUST登记`buildr.task-review@2`与`buildr.task-development@4`
+- **AND** runtime projection MUST删除v1/v3 contract且不创建类型专属Review provider
 
 #### Scenario: package/runtime parity
-- **WHEN** Task Review 从 source checkout、package checkout 或 npm tarball 执行
-- **THEN** 三者 MUST 产生等价的 persisted Result、operation JSON、CLI help、Buildr Web read model 和 target applicability
+- **WHEN** Task Review从source、package checkout或tarball执行
+- **THEN** 三者 MUST产生等价v2 Result、CAS、JSON、CLI help与只读Web model
 
 #### Scenario: Task Review 资产不完整
-- **WHEN** contract、Skill、manifest/binding、Application/CLI、JSON registry、Buildr Web route 或 tests 任一缺失/漂移
-- **THEN** package check/doctor MUST 报告 blocked，MUST 不把 capability 描述为 ready 或正式生效
+- **WHEN** contract、Skill、binding、Application/CLI、migration、JSON、Web或tests任一缺失
+- **THEN** package check/doctor MUST报告blocked且不得描述为ready
 
 ### Requirement: Package residual gate 防止 Task Review 与 Retrospective 双 authority
 Buildr package verification MUST 区分 Task Review、普通 Change review 与 Task Retrospective，并 MUST 拒绝任何第二个正式 Task Review writer/store、按类型拆分的 capability、Task Record/Environment Review 字段或绕过 Application 的 Task-scoped review route。

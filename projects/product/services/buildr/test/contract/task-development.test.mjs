@@ -80,11 +80,11 @@ test('不暴露 public Development CLI，Buildr Web 只读投影复用 Applicati
   const operationContracts = read('src/task/application/task-development-operation-contracts.ts');
   assert.match(operationContracts, /additionalProperties:\s*false/);
   assert.match(operationContracts, /buildr\.task-development-driver-schema\/v1/);
-  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v3.md');
+  const capabilityContract = read('resources/workspace/skills/contracts/buildr/task-development/v4.md');
   assert.match(capabilityContract, /buildr\.task-development-driver-compact\/v1/);
   assert.match(capabilityContract, /discover/);
-  assert.match(capabilityContract, /不依赖Task Verification/);
-  assert.match(capabilityContract, /不依赖Task Verification/);
+  assert.match(capabilityContract, /不依赖Task Review或Task Verification/);
+  assert.match(capabilityContract, /旧Receipt\/Handoff中的值只作历史decode/);
 });
 
 test('Task Development action使用有界operation scope且不直接缓存专业repository', () => {
@@ -99,10 +99,10 @@ test('Task Development action使用有界operation scope且不直接缓存专业
   assert.doesNotMatch(application, /readTaskReviewResultPersistence|readTaskVerificationResultPersistence|readTaskEnvironmentPersistence/);
 });
 
-test('v3 package声明精确退休v2 contract并更新binding', () => {
+test('v4 package声明精确退休v3与v2 contract并更新binding', () => {
   const manifest = read('resources/manifest.yml');
-  assert.match(manifest, /id: buildr\.task-development[\s\S]*version: 3[\s\S]*replaces:[\s\S]*version: 2[\s\S]*target: skills\/contracts\/buildr\/task-development\/v2\.md[\s\S]*provider: task-development/);
-  assert.match(manifest, /capability: buildr\.task-development\n\s+version: 3\n\s+provider: task-development/);
+  assert.match(manifest, /id: buildr\.task-development[\s\S]*version: 4[\s\S]*replaces:[\s\S]*version: 3[\s\S]*target: skills\/contracts\/buildr\/task-development\/v3\.md[\s\S]*version: 2[\s\S]*target: skills\/contracts\/buildr\/task-development\/v2\.md/);
+  assert.match(manifest, /capability: buildr\.task-development\n\s+version: 4\n\s+provider: task-development/);
 });
 
 test('Development Application 不硬编码自举 Project、Git/OpenSpec 或测试技术栈', () => {

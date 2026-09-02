@@ -168,7 +168,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-review',
-    requires: [TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store', 'change.resolver'],
+    requires: [TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store'],
     provides: [TASK_REVIEW_APPLICATION, TASK_REVIEW_PERSISTENCE_READ, TASK_REVIEW_RUNTIME_PORT],
     contributions: {
       cli: ['task review inspect', 'task review record'],
@@ -200,7 +200,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-development',
-    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-review.application', 'task-planning-identity.application'],
+    requires: ['task-record.application', 'task-record.persistence-read', 'task-environment.application', 'task-planning-identity.application'],
     provides: ['task-development.application', 'task-development.persistence-read', 'task-development.runtime-port'],
     contributions: { cli: [], http: ['task-development.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -395,7 +395,7 @@ test('System Installation module owns installation identity, update and npm Laun
 test('Task Review module 只公开共享 Application、只读 Persistence 与正式 runtime port', () => {
   const runtime = createRuntime();
   const application = runtimeProvide(runtime, TASK_REVIEW_APPLICATION);
-  assert.deepEqual(Object.keys(application), ['inspectTaskReview', 'recordTaskReview', 'generateTaskReviewPrompt']);
+  assert.deepEqual(Object.keys(application), ['inspectTaskReview', 'recordTaskReview']);
 
   const persistenceRead = runtimeProvide(runtime, TASK_REVIEW_PERSISTENCE_READ);
   assert.equal(typeof persistenceRead.readTaskReviewResultPersistence, 'function');
@@ -410,9 +410,9 @@ test('Task Review module 只公开共享 Application、只读 Persistence 与正
 test('Task Review 旧全局技术层路径已经退出', () => {
   for (const relative of [
     'src/domain/task-review/task-review.mjs',
-    'src/application/task-review/task-review-application.mjs',
-    'src/interfaces/cli/task-review.mjs',
-    'src/task/persistence/review/task-review-repository.mjs',
+    'src/application/task-review/task-review-application.ts',
+    'src/interfaces/cli/task-review.ts',
+    'src/task/persistence/review/task-review-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 

@@ -102,7 +102,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   runtime.completeTaskRecord(root, 'app-retrospective', { expectedRecordDigest: retrospectiveTask.recordDigest, summary: '复盘筛选夹具', noChange: false });
   runtime.recordTaskRetrospective(root, 'app-retrospective', { reportMarkdown: '# 复盘\n\n列表筛选验证。' });
   runtime.resolveTaskEnvironmentExecution = (_workspace, taskId) => ({ ready: true, taskId, receiptSchema: 'buildr.task-environment-receipt/v2', workspaceRoot: root, environmentRoot: root, validationRoot: root, scopes: [] });
-  runtime.beginTaskDevelopment(root, 'app-parent', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] }, planningGate: { disposition: 'not-applicable', targetIdentity: null, summary: 'Parent Plan尚未记录。', source: 'system fixture' } });
+  runtime.beginTaskDevelopment(root, 'app-parent', { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } });
   const readExecutor = {
     run: (operation, input) => Promise.resolve(runtime[{ development: 'inspectTaskDevelopment', reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
     close: async () => {},
@@ -167,7 +167,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   runtime.inspectTaskReview = (...args) => { reviewReads += 1; return inspectReview(...args); };
   runtime.inspectTaskVerificationView = (...args) => { verificationReads += 1; return inspectVerification(...args); };
   runtime.inspectTaskTerminalDelivery = () => { throw new Error('专业Tab不得调用terminal聚合器。'); };
-  response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v1'); assert.equal('terminal' in response.body, false);
+  response = await request(`${taskEndpoint}/reviews`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-review-operation-result/v2'); assert.equal('terminal' in response.body, false);
   response = await request(`${taskEndpoint}/verification`); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.task-verification-operation-result/v1'); assert.equal('terminal' in response.body, false, 'Verification GET 不读取或解释Development/Terminal Delivery');
   assert.equal(developmentReads, 1, 'Review和Verification不得读取Development');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');

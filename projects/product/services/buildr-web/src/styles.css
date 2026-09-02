@@ -1526,18 +1526,16 @@ input:disabled, textarea:disabled, select:disabled { color: #7c8881; background:
 .technical-details.compact { margin-top: 10px; }
 .technical-details.compact summary { cursor: pointer; color: var(--soft-muted); font-size: .86rem; }
 .review-slot-card { min-width: 0; padding: 18px; border: 1px solid var(--soft-line); border-radius: 8px; background: var(--soft-surface); }
-.review-slot-card.current { border-color: #8dbda1; }
-.review-slot-card.stale { border-color: #d4b16c; }
+.review-slot-card.present { border-color: #8dbda1; }
 .review-slot-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .review-slot-heading h3 { margin: 2px 0 0; font-size: 16px; }
-.review-state.current { color: var(--soft-primary); background: rgba(79, 143, 138, 0.08); }
-.review-state.stale { color: #8a6e2f; background: rgba(196, 163, 90, 0.16); }
+.review-state.present { color: var(--soft-primary); background: rgba(79, 143, 138, 0.08); }
 .review-slot-empty { min-height: 132px; display: grid; place-items: center; padding: 18px; border: 1px dashed var(--soft-line); border-radius: 6px; color: var(--soft-muted); background: #fafbfa; font-size: 12px; line-height: 1.6; text-align: center; }
 .review-facts div { grid-template-columns: 112px minmax(0, 1fr); }
 .review-conclusion { margin-top: 16px; padding: 12px; border-radius: 6px; background: rgba(79, 143, 138, 0.08); }
-.review-conclusion.changes-required { background: rgba(196, 163, 90, 0.16); }
+.review-conclusion.changes-requested { background: rgba(196, 163, 90, 0.16); }
 .review-conclusion strong { color: var(--soft-primary); font-size: 12px; }
-.review-conclusion.changes-required strong { color: #8a6e2f; }
+.review-conclusion.changes-requested strong { color: #8a6e2f; }
 .review-conclusion p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
 .review-evidence-grid { display: grid; gap: 0; margin-top: 12px; border-top: 1px solid var(--soft-line); }
 .review-evidence-section { padding: 12px 0; border-bottom: 1px solid var(--soft-line); }

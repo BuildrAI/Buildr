@@ -1,6 +1,6 @@
 import { registerTaskRecordApplication } from './application/task-record-application.mjs';
 import { registerTaskRetrospectiveApplication } from './application/task-retrospective-application.mjs';
-import { registerTaskReviewApplication } from './application/task-review-application.mjs';
+import { registerTaskReviewApplication } from './application/task-review-application.ts';
 import { registerTaskEnvironmentApplication } from './application/task-environment-application.mjs';
 import {
   normalizeProjectEnvironmentPreparation,
@@ -17,7 +17,7 @@ import { registerParentCoordinationApplication } from './application/parent-coor
 import { registerTaskOverviewApplication } from './application/task-overview-application.ts';
 import { registerTaskRecordRepository } from './persistence/task-record-repository.ts';
 import { registerTaskRetrospectiveRepository } from './persistence/task-retrospective-repository.mjs';
-import { registerTaskReviewRepository } from './persistence/task-review-repository.mjs';
+import { registerTaskReviewRepository } from './persistence/task-review-repository.ts';
 import { registerTaskEnvironmentRepository } from './persistence/task-environment-repository.mjs';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
 import { registerTaskDevelopmentRepository } from './persistence/task-development-repository.mjs';
@@ -25,7 +25,7 @@ import { registerTaskFinishRepository } from './persistence/task-finish-reposito
 import { registerTaskOverviewRepository } from './persistence/task-overview-repository.ts';
 import { registerGitWorktreeProvider } from './infrastructure/git-worktree-provider.mjs';
 import { taskRecordCommand } from './interfaces/cli/task-record.mjs';
-import { taskReviewCommand } from './interfaces/cli/task-review.mjs';
+import { taskReviewCommand } from './interfaces/cli/task-review.ts';
 import { gitWorktreeCommand } from './interfaces/cli/git-worktree.mjs';
 import { taskEnvironmentCommand, taskEnvironmentPlanCommand } from './interfaces/cli/task-environment.mjs';
 import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
@@ -40,7 +40,7 @@ import {
 import { taskTerminalDeliveryInspectCommand } from './interfaces/cli/task-terminal-delivery.mjs';
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE } from './interfaces/http/task-record-http.mjs';
 import { handleTaskRetrospectiveHttpRequest } from './interfaces/http/task-retrospective-http.mjs';
-import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.mjs';
+import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.ts';
 import {
   REQUIRED_INTERNAL_WORKFLOW_ROUTES,
   inspectRequiredInternalWorkflowRoutes,
@@ -140,7 +140,7 @@ const TEST_SUPPORT_METHODS = Object.freeze([
 ]);
 
 const TASK_REVIEW_APPLICATION_METHODS = Object.freeze([
-  'inspectTaskReview', 'recordTaskReview', 'generateTaskReviewPrompt',
+  'inspectTaskReview', 'recordTaskReview',
 ]);
 
 const TASK_REVIEW_PERSISTENCE_READ_METHODS = Object.freeze([
@@ -184,7 +184,7 @@ const TASK_DEVELOPMENT_APPLICATION_METHODS = Object.freeze([
   'inspectTaskDevelopment', 'inspectTaskDevelopmentCurrent', 'discoverTaskDevelopmentInput', 'beginTaskDevelopment',
   'recordTaskDevelopmentPlanning', 'observeTaskDevelopment',
   'recordTaskDevelopmentKnowledge',
-  'recordTaskDevelopmentGate', 'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
+  'freezeTaskDevelopmentCandidate', 'decideTaskDevelopment',
   'createTaskDevelopmentHandoff', 'assertTaskDevelopmentCarrier',
 ]);
 const TASK_DEVELOPMENT_PERSISTENCE_METHODS = Object.freeze([
@@ -466,11 +466,11 @@ export function createTaskReviewCliContributions(application = null) {
   return Object.freeze([
     {
       key: 'task review inspect', surface: 'agent-machine',
-      summary: '只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。',
+      summary: '只读返回 Planning/Completion 两个可选槽位及 response-only resultDigest；不判断对当前现场的适用性。',
       help: [
-        'Usage: buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task review inspect <task-id> [--target <canonical-workspace>] [--json]',
         '',
-        '只读返回 Planning/Completion 两个可选槽位、response-only resultDigest 与派生 applicability；未提供 current target 时已有 Result 显示 unknown。',
+        '只读返回 Planning/Completion 两个可选槽位及 response-only resultDigest；不判断对当前现场的适用性。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'inspect',
       run: (runtime, context) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'inspect', context.argv.slice(5)),
@@ -479,10 +479,10 @@ export function createTaskReviewCliContributions(application = null) {
       key: 'task review record', surface: 'agent-machine',
       summary: '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
       help: [
-        'Usage: buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> [--target <canonical-workspace>] [--json]',
         '',
         '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
-        '中断、缺少 target identity、覆盖或结论不完整时不写入；Completion identity 必须由真实 Candidate producer 提供。',
+        '中断、缺少审查对象 identity、并发冲突或结论不完整时不写入。',
       ],
       match: ({ domain, action, runtimeId }) => domain === 'task' && action === 'review' && runtimeId === 'record',
       run: (runtime, context) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'record', context.argv.slice(5)),
@@ -543,7 +543,6 @@ function createTaskReviewModule(requires) {
   const privateComposition = {
     ...requires[TASK_RECORD_PERSISTENCE_READ],
     ...requires['workspace.structured-store'],
-    ...requires['change.resolver'],
   };
   registerTaskReviewRepository(privateComposition);
   registerTaskReviewApplication(privateComposition);
@@ -581,7 +580,6 @@ export const TASK_REVIEW_MODULE = Object.freeze({
   requires: Object.freeze([
     TASK_RECORD_PERSISTENCE_READ,
     'workspace.structured-store',
-    'change.resolver',
   ]),
   create: createTaskReviewModule,
 });
@@ -727,7 +725,7 @@ export function createTaskDevelopmentModule(runtime) {
     id: TASK_DEVELOPMENT_MODULE_ID,
     requires: Object.freeze([
       TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_ENVIRONMENT_APPLICATION,
-      TASK_REVIEW_APPLICATION, TASK_PLANNING_IDENTITY_APPLICATION,
+      TASK_PLANNING_IDENTITY_APPLICATION,
     ]),
     create(requires) {
       const composition = taskPrivateComposition(runtime, requires);

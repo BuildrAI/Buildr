@@ -44,7 +44,6 @@ test('默认 providers 与 bindings 可解析，Development 承接专业依赖�
   assert.deepEqual(packagedDevelopment.requires, [
     { capability: 'buildr.task-record', version: 2, mode: 'required' },
     { capability: 'buildr.task-environment', version: 1, mode: 'required' },
-    { capability: 'buildr.task-review', version: 1, mode: 'required' },
     { capability: 'buildr.current-knowledge-maintenance', version: 2, mode: 'required' },
   ]);
   assert.deepEqual(packagedFinish.requires, [

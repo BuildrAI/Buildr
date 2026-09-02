@@ -98,90 +98,59 @@ Application MUST 从matching ready Task Environment read model取得全部Task s
 - **THEN** 重新观察的Content Target MUST 与旧target不同
 - **AND** Application MUST 清除current Candidate、Completion gate与decision，并使既有handoff snapshot不再current但不得改写或删除
 
-### Requirement: Planning Review 必须在Candidate前保持current
-Development MUST 只通过Task Review Application inspect消费Planning Result；若当前policy要求Planning Review，则target为current planning identity且outcome为`ready`的Result MUST在Candidate前成立。Policy判定Planning Review不适用时MUST记录`not-applicable`；用户明确跳过时MUST记录`waived`与授权来源。Development MUST NOT读取Review store、复制findings、替代语义Review或把waiver伪造成Result。
-
-#### Scenario: Planning Result current且ready
-- **WHEN** Task Review Application报告planning target current且conclusion ready
-- **THEN** Development MUST 保存`current`最小gate reference并允许继续freeze
-- **AND** reference MUST 只含Result digest、target、outcome、disposition与applicability
-
-#### Scenario: Planning方案发生变化
-- **WHEN** current planning target与已有Planning Result target不同
-- **THEN** Application MUST 把Planning gate派生为stale并阻止freeze，直到重新Review或得到合法disposition
-- **AND** MUST 保留Review owner中的旧Result不变
-
-#### Scenario: Planning Review被明确跳过
-- **WHEN** 用户明确授权当前planning target跳过Planning Review
-- **THEN** Development MAY保存`waived` gate并继续Candidate policy判断
-- **AND** gate MUST绑定target identity、summary与authorization source且不得包含伪造Result digest
-
 ### Requirement: Candidate identity 与generation必须只由Development生成
-Application MUST只在Task context、stable Content Target、verification policy与Candidate前适用的planning dispositions得到明确处置时冻结Candidate。Candidate closed value MUST只包含`identity`、正整数`generation`、`contentTargetIdentity`、`taskContextIdentity`与`policyIdentity`；identity MUST绑定这四项，generation MUST只由Development单调生成。Content Target、Task Context、policy或Candidate前planning disposition变化MUST使current Candidate失效；后续Verification、Completion Review或Current Knowledge disposition变化MUST使相关gate、decision与handoff失效，但MUST NOT改变Candidate identity或generation。
+Application MUST只在Task context、stable Content Target与planning snapshot current且Change非pending时冻结Candidate。Candidate closed value与既有identity算法保持不变；Review、Verification与Current Knowledge均不得进入Candidate identity。Content Target或Task Context变化使Candidate失效；Review、Verification或Current Knowledge变化不得改变Candidate identity或generation。
 
 #### Scenario: 首次冻结Candidate
-- **WHEN** Candidate前适用事实完整且当前没有Candidate
+- **WHEN** Development自身Candidate输入完整且当前没有Candidate
 - **THEN** Application MUST生成generation 1与唯一Candidate identity
-- **AND** Review/Verification Result digest、knowledge disposition、Environment identity、时间、branch或commit MUST NOT进入Candidate
+- **AND** Review/Verification Result、knowledge disposition、Environment identity、时间、branch或commit MUST NOT进入Candidate
 
 #### Scenario: 已有current Candidate重复freeze
-- **WHEN** Task Context、Content Target、policy与Candidate前planning disposition均未变化且current Candidate仍适用
+- **WHEN** Task Context与Content Target均未变化且current Candidate仍适用
 - **THEN** freeze MUST幂等返回同一Candidate/generation
-- **AND** MUST NOT仅因Verification、Completion或knowledge尚未形成而递增generation
+- **AND** MUST NOT因Review、Verification或knowledge变化递增generation
 
 #### Scenario: 失效后形成下一代Candidate
-- **WHEN** 旧Candidate已因Content Target、Task Context、policy或Candidate前planning disposition变化失效，新的事实重新满足freeze条件
+- **WHEN** 旧Candidate已因Content Target或Task Context变化失效，新的事实重新满足freeze条件
 - **THEN** Application MUST生成严格大于旧generation的新Candidate
-- **AND** Receipt MUST只保留新current Candidate，不创建完整generation history；既有正式handoff snapshots保持不可变
-
-### Requirement: Completion Review 必须绑定Candidate且由Development消费
-Candidate冻结后，Completion Review MUST 由Task Review Application以`reviewType: completion`记录并绑定current Candidate identity。Development MUST 通过Application read model证明target current且outcome ready；Candidate变化时旧Completion Result MUST stale。
-
-#### Scenario: Completion Review通过
-- **WHEN** Completion Result target等于current Candidate且conclusion ready
-- **THEN** Development MUST 保存最小Completion gate reference
-- **AND** MUST NOT把review findings、method细节或Result body复制进Candidate
-
-#### Scenario: Candidate变化
-- **WHEN** 新generation替换旧Candidate
-- **THEN** 旧Completion Result MUST 由Task Review Application派生为stale
-- **AND** Development MUST 清除旧Completion gate与decision，并使旧handoff snapshot不再current但不得改写或删除
+- **AND** Receipt MUST只保留新current Candidate，既有正式handoff snapshots保持不可变
 
 ### Requirement: Development 必须独占proceed/blocked、scoped risk与Finish handoff
-只有Task Development MAY根据current Candidate、专业Result gates、current knowledge disposition与明确`not-applicable|waived` dispositions形成`proceed|blocked` decision，并记录与Task Intent或明确用户授权相关的最小portable scoped risk。只有current Candidate、全部适用gate与disposition、非blocked的current knowledge disposition及`proceed` decision同时成立时，Application MAY形成immutable handoff snapshot与identity；Verification、Review与Current Knowledge专业事实 MUST保持各自authority。
+Task Development MAY根据current Candidate与current knowledge disposition形成`proceed|blocked` decision。只有current Candidate、非blocked Current Knowledge和绑定该Candidate的`proceed` decision同时成立时，Application MAY形成immutable handoff。新handoff MUST保存空planning/completion/verification gates与空risks；历史gate/risk只读decode，不得恢复为current准入。
 
 #### Scenario: 全部正向gate满足且决定proceed
-- **WHEN** current Candidate、适用专业gate、合法not-applicable/waived dispositions、policy coverage与current knowledge disposition均current
-- **THEN** Application MUST形成绑定Candidate、gate/disposition refs、knowledge disposition与decision的Finish handoff
-- **AND** handoff MUST不包含Result body、knowledge正文、raw output、临时路径或delivery execution plan
+- **WHEN** current Candidate、非blocked Current Knowledge与proceed decision成立
+- **THEN** Application MUST形成绑定Candidate、knowledge与decision的Finish handoff
+- **AND** handoff MUST不包含Review/Verification Result、raw output、临时路径或delivery execution plan
 
 #### Scenario: 用户接受负向Verification或Completion风险
-- **WHEN** current Verification为`not-passed`、存在coverage gap或current Completion为`changes-required`，且用户明确接受与Task Intent相关的风险
-- **THEN** Development MAY记录gate、精确Result digest、scope、summary与authorization source并据此决定proceed
-- **AND** MUST NOT用风险接受改写专业事实、接受completion-critical knowledge conflict或绕过stale/incomplete gate、Content Target漂移
+- **WHEN** Review或Verification存在负向结论且用户决定继续研发交接
+- **THEN** Agent MAY保留该专业事实并依据实际授权继续其他动作
+- **AND** Development MUST不保存Result digest、risk acceptance或把专业结论改写为gate
 
 #### Scenario: handoff后上游漂移
-- **WHEN** planning snapshot、Content Target、Task context、policy、Candidate、current knowledge或任一gate applicability/disposition变化
-- **THEN** Application MUST清除current decision、判定旧snapshot不再current并返回`task-development`
-- **AND** Finish MUST不得继续消费旧snapshot，Application MUST NOT改写或删除它
+- **WHEN** planning snapshot、Content Target、Task context、Candidate或Current Knowledge变化
+- **THEN** Application MUST清除current decision、判定旧snapshot不再current并返回task-development建议
+- **AND** Review或Verification单独变化 MUST NOT使handoff失效
 
 ### Requirement: Task Development 必须覆盖完整正式研发区间
-Task Development MUST 从 active Task 的首个正式研发动作开始维护研发聚合事实，直到形成 current Finish handoff。Proposal、design、Planning Review、实现收敛、formal Verification 与 Completion Review 等节点 MUST 可按 Task 事实不存在、`not-applicable` 或由明确授权 `waived`；节点存在时 Development MUST 保存其专业 authority、portable reference、identity 与 disposition，不得复制专业内容或 Result 正文。
+Task Development MUST从active Task的首个正式研发动作开始维护自身聚合事实，直到形成current Finish handoff。Proposal、design等planning节点存在时只保存专业authority、portable reference、identity与disposition；Task Review与Task Verification保持独立，不写入Development。
 
 #### Scenario: 从 proposal 开始正式研发
-- **WHEN** active Task 在 ready Environment 中开始创建 proposal，且尚未形成 Content Target
-- **THEN** Development Application MUST 原子建立 Receipt 与 current planning snapshot
-- **AND** Receipt MUST 不创建 Content Target、verification policy、Candidate、Result gate、decision 或 handoff 占位事实
+- **WHEN** active Task在ready Environment中开始创建proposal且尚未形成Content Target
+- **THEN** Development Application MUST原子建立Receipt与current planning snapshot
+- **AND** Receipt MUST不创建Content Target、Candidate、Result gate、decision或handoff占位事实
 
 #### Scenario: code-only Task 直接实现
-- **WHEN** Task 没有 proposal、design 或 Change，且首个正式研发动作为代码实现
-- **THEN** Development MUST 接受空 planning nodes 与空 Change references并开始维护研发事实
-- **AND** MUST NOT为了流程完整虚构 OpenSpec、Planning Review 或其他节点
+- **WHEN** Task没有proposal、design或Change且首个正式研发动作为代码实现
+- **THEN** Development MUST接受空planning nodes与空Change references并开始维护研发事实
+- **AND** MUST NOT为了流程完整虚构OpenSpec、Review或其他节点
 
 #### Scenario: 用户主动跳过节点
-- **WHEN** 用户或具备业务授权的来源明确跳过一个适用研发节点
-- **THEN** Development MUST 记录 `waived`、精确目标、summary 与 authorization source
-- **AND** MUST NOT把 waiver 写成专业 Result 的 `ready`、`passed` 或 `current`
+- **WHEN** 用户或具备业务授权的来源明确跳过一个适用planning节点
+- **THEN** Development planning node MUST记录`waived`、目标、summary与authorization source
+- **AND** MUST NOT把waiver写成Task Review、Verification或其他专业Result
 
 ### Requirement: Planning snapshot 必须最小、可移植且不是事件历史
 Development Receipt MUST 保存一个 closed current `planning` snapshot，包含确定性 identity 与按稳定 id 排序的 nodes。Node MUST 只包含 `id`、`kind`、`authority`、portable `reference`、内容 `identity`、`pending|current|stale|not-applicable|waived` disposition、最小 `summary` 与按需 `source`；MUST NOT保存正文、diff、命令、attempt、progress、transition event或完整历史。
@@ -316,71 +285,67 @@ Task Development 内部 driver MUST 为每个受支持 action 提供无需 Task 
 - **AND** driver MUST不 compose runtime、不访问Workspace、不执行任何Task Development action
 
 ### Requirement: OpenSpec planning target 必须使用语义身份
-Task Development consumer为OpenSpec planning登记target时 MUST使用Task Planning Identity Application返回的aggregate identity与artifact semantic nodes。Development Receipt继续只保存opaque target、最小node authority/reference/content identity/disposition/summary；MUST NOT保存semantic projection正文或自行解析Markdown。
+Task Development consumer为OpenSpec planning登记target时 MUST使用Task Planning Identity Application返回的aggregate identity与artifact semantic nodes。Development Receipt只保存opaque target与最小nodes；Task Review可选地使用同一identity作为真实subject，但不是Development依赖。
 
 #### Scenario: 仅执行进度或provenance改变
-- **WHEN** resolver证明OpenSpec semantic target未变，但planning node的物理active/archive provenance或checklist完成事实发生变化
-- **THEN** consumer MUST保持相同Planning Review target
-- **AND** Development MUST NOT仅因此要求新的Planning Review Result
+- **WHEN** resolver证明OpenSpec semantic target未变但provenance或checklist事实变化
+- **THEN** consumer MUST保持相同Development planning target
+- **AND** Agent自行判断是否需要新的Planning Review
 
 #### Scenario: resolver target变化或blocked
 - **WHEN** resolver返回不同target或blocked diagnostic
-- **THEN** consumer MUST分别把已有Planning Review视为stale或停止Development推进
-- **AND** MUST NOT以旧target、raw artifact digest或手工摘要满足planning gate
+- **THEN** consumer MUST分别更新Development planning或停止对应Development mutation
+- **AND** MUST NOT以旧target、raw artifact digest或手工摘要满足planning输入
 
 ### Requirement: Buildr Web 必须只读投影任务研发 read model
-Buildr Web MUST 为正式 Task 提供只读“研发”视图，并 MUST 通过 Task Development Application `inspect` 展示 Development presence、最近一次正式 Development action 同row保存的适用性、planning nodes/dispositions、Task context、Content Target、verification policy、Candidate/generation、Planning/Verification/Completion gates、decision、明确风险与最近一次 Development handoff。HTTP 与 Web 层 MUST NOT 直接读取或解析 `development.yml`、重新计算 identity/currentness、复制专业 artifact/Result body、提供 Receipt mutation 或注册公共`buildr task development` CLI。`inspect` MUST只查询Development current row与读取terminal facts所需的Task/Finish current rows。
+Buildr Web MUST通过Task Development Application `inspect`展示Development presence、保存的applicability、planning、Task context、Content Target、Candidate/generation、Current Knowledge、decision与最近handoff。页面 MUST不展示或解释Planning/Completion/Verification gate、Review Result或risk acceptance，也不提供Receipt mutation。
 
 #### Scenario: 查看 current Development
-- **WHEN** 保存的Development applicability status为`planning`、`developing`、`candidate-current`或`handoff-current`
-- **THEN** 页面 MUST用中文分别显示“规划中”“研发中”“候选已就绪”或“研发交接已就绪”
-- **AND** MUST将planning、Task context、Content Target、policy、Candidate与handoff的保存时current/stale/missing/disposition作为独立事实展示，不得在GET中改写Task Record或重新计算
+- **WHEN** 保存的Development applicability status为`planning|developing|candidate-current|handoff-current`
+- **THEN** 页面 MUST显示对应研发状态与自身facts
+- **AND** MUST不从Review或Verification重算状态
 
 #### Scenario: Development 尚未形成
-- **WHEN** Application `inspect`返回`status: missing`且没有Development Receipt
-- **THEN** 页面 MUST显示“尚未形成研发回执”的空状态
-- **AND** 概览、证据和环境视图 MUST继续正常工作，不得创建空Receipt或提供浏览器写操作
+- **WHEN** Application `inspect`返回missing
+- **THEN** 页面 MUST显示尚未形成且不创建占位Receipt
 
 #### Scenario: 只有planning facts
-- **WHEN** Receipt已经记录proposal、design、review disposition或其他planning nodes，但Content Target仍为null
-- **THEN** 页面 MUST展示节点authority、reference、disposition与适用的waiver来源，并显示“规划中”
-- **AND** MUST NOT把尚未形成的Content Target、policy或Candidate显示为stale或failed
+- **WHEN** Receipt只有planning nodes且Content Target仍为null
+- **THEN** 页面 MUST展示节点authority、reference与disposition并显示规划中
+- **AND** MUST不显示Review gate、waiver或尚未形成的Candidate错误
 
 #### Scenario: 当前环境不可观察但历史交接存在
-- **WHEN** Receipt存在但迁移后没有保存applicability，或observedAt早于已知外部变化
-- **THEN** 页面 MUST保留展示planning、候选、决定和最近一次研发交接摘要，并明确显示“状态来自最近一次正式研发动作”或unknown
-- **AND** 页面 MUST NOT在读取时重新观察Environment、Git、Content Target或declaration
+- **WHEN** Receipt只有最近一次保存的applicability或历史handoff
+- **THEN** 页面 MUST保留展示planning、Candidate、decision与handoff摘要并标明保存时状态
+- **AND** MUST不在GET中重新观察Environment、Git、Review或Verification
 
 #### Scenario: 安全读取 Development
-- **WHEN** 客户端对已登记Workspace和真实Task发起`GET /api/v1/workspaces/:workspaceId/tasks/:taskId/development`
-- **THEN** API MUST返回Task Development Application operation read model并使用no-store语义
-- **AND** query参数、未知Task、POST、PUT、PATCH与DELETE MUST fail closed，且Task及全部专业current bytes MUST保持不变
+- **WHEN** 客户端发起Development GET
+- **THEN** API MUST返回Application read model并使用no-store语义
+- **AND** 非法参数、未知Task或写方法 MUST fail closed且零写入
 
 #### Scenario: 展示最小研发信息
-- **WHEN** Development Receipt包含长identity、多个planning nodes/handoff或专业Result reference
-- **THEN** 页面 MUST默认只展示完整但次级排版的当前identity、节点disposition、候选代次、三个gate摘要、决定、风险数量和最近一次handoff
-- **AND** MUST NOT展示开发日志、source diff、完整命令输出、隐藏推理、专业artifact/Result body或全部历史handoff列表
+- **WHEN** Receipt包含长identity、多个nodes或handoff
+- **THEN** 页面 MUST默认展示当前identity、节点、Candidate、Current Knowledge、decision与最近handoff
+- **AND** MUST不展示gate摘要、风险数量、日志、diff、隐藏推理或专业Result body
 
 ### Requirement: Task Development driver 必须提供紧凑 current 与 next-action 投影
-
-Task Development 内部 driver MUST 在显式 compact 请求下，从同一次 `buildr.task-development-operation-result/v1` 生成 response-only `buildr.task-development-driver-compact/v1` 投影。投影 MUST保留 operation、status、Task ID、Receipt digest、保存的observed time、current applicability axes、相关planning/content/policy/Candidate/handoff identities、Candidate generation、current gates、decision、reasons、effects、diagnostic与next actions；MUST NOT创建第二authority、再次inspect Workspace或改变Application effect。
-
-Next actions MUST只根据同一次Application已保存的Receipt与applicability给出建议性方向，MUST NOT执行专业动作、修改Task/Receipt/gate/Candidate或根据timing、调用次数和其他效率指标自动skip/advance。默认未请求compact时 MUST继续返回完整 `buildr.task-development-operation-result/v1`。
+driver MAY从同一次Development operation result提供紧凑current与建议动作，但 MUST只依据Development自身事实，不推荐或要求Task Review/Verification作为推进门禁。
 
 #### Scenario: 显式请求紧凑反馈
-- **WHEN** Agent对一个普通Task Development action显式传入compact选项
+- **WHEN** Agent显式传入compact选项
 - **THEN** driver MUST只执行一次对应Application action并返回版本化compact投影
-- **AND** `current`与`nextActions` MUST来自该次完整operation result，不得额外观察或持久化
+- **AND** 不得额外读取Review或Verification
 
 #### Scenario: 需要完整研发事实
-- **WHEN** Agent未请求compact或需要读取完整Receipt snapshot
-- **THEN** driver MUST保持现有完整operation result shape与authority
-- **AND** compact projection MUST NOT替代Application、repository或Development Receipt
+- **WHEN** Agent未请求compact或需要完整Receipt
+- **THEN** driver MUST保持完整operation result authority
+- **AND** compact projection MUST NOT替代Application、repository或Receipt
 
 #### Scenario: 建议不能自动推进
-- **WHEN** current facts指向Planning Review、Formal Verification、Completion Review、risk decision或Finish等下一阶段
+- **WHEN** current facts指向develop、freeze、knowledge、decision、handoff或report
 - **THEN** result MAY返回对应建议动作
-- **AND** Agent MUST仍按selected provider、专业Result与明确授权决定是否执行，指标不得成为gate
+- **AND** MUST不返回Planning/Completion Review gate建议或自动推进
 
 ### Requirement: Task Development 在 Content Target 前检查新增文本文件 EOF
 Task Development Skill MUST 在内容固定且调用 `observe` 形成 Content Target 前，要求 Agent 检查 Task 本次新增的全部文本文件是否满足 required Core 的 EOF 不变量。Git-backed scope 的检查 MUST 覆盖 tracked-added 文件与未忽略的 untracked 文件；该动作 MUST NOT 扩大为未触达存量文件的批量清理。
@@ -431,12 +396,12 @@ Task Development MUST只接受精确覆盖Task有效Project集合的Current Know
 - **THEN** MUST 零写入报告退役。
 
 ### Requirement: Task Development必须与Task Verification独立
-Task Development MUST NOT声明、调用或依赖Task Verification Application、Persistence、Skill或capability。Development Receipt、Candidate、gate、decision、handoff、current input discovery与next action MUST NOT包含verification policy、Verification Result/Report digest、Formal Verification Readiness或Task Verification outcome。
+Task Development MUST NOT声明、调用或依赖Task Verification Application、Persistence、Skill或capability；同样 MUST不依赖Task Review。Receipt、Candidate、decision、handoff与next action MUST不包含新的专业Result digest或gate。
 
 #### Scenario: Development形成Candidate和handoff
-- **WHEN** Task Development根据自身Task context、planning、Content Target、Completion Review和Current Knowledge形成Candidate或handoff
-- **THEN** Application MUST不读取Task Verification报告或项目测试地图
-- **AND** Task Verification报告缺失、失败、stale或损坏MUST不阻止Development mutation
+- **WHEN** Task Development根据自身Task context、planning、Content Target和Current Knowledge形成Candidate或handoff
+- **THEN** Application MUST不读取Task Verification或Task Review
+- **AND** 两类Result缺失、失败、变化或损坏 MUST不阻止Development mutation
 
 #### Scenario: Task Verification报告独立变化
 - **WHEN** Agent新建、替换或使Task Verification报告stale
@@ -450,3 +415,16 @@ Task Development current input discovery MUST只返回Development自身合法mut
 - **WHEN** current Content Target形成且Development需要下一动作
 - **THEN** next action MAY继续Development自己的Review、Knowledge、Candidate或handoff流程
 - **AND** MUST NOT把Task Verification设为结构性前置；Agent按独立Skill决定何时执行和记录验证
+
+### Requirement: Task Development必须与Task Review独立
+Task Development module MUST不依赖Task Review Application，不读取Review Result、不保存新的Planning/Completion gate，也不因Review缺失、结论或变化改变Candidate、Current Knowledge、decision或handoff。旧Receipt/Handoff gate只作历史decode。
+
+#### Scenario: Review结果在Candidate后变化
+- **WHEN** Agent新增或替换Task Review current Result
+- **THEN** Development Receipt、Candidate generation和handoff MUST保持不变
+- **AND** Development inspect MUST不报告Review blocker或推荐Review action
+
+#### Scenario: 没有Review形成Candidate
+- **WHEN** Development自身Task context、planning、Content Target和Change disposition满足Candidate条件
+- **THEN** freeze MUST形成或复用Candidate
+- **AND** MUST不调用Review Application或补造not-applicable gate

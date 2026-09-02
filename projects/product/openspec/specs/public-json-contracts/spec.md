@@ -175,22 +175,24 @@ Buildr CLI MUST 在无法匹配命令且输入请求 `--json` 时输出登记的
 - **AND** `worktree context|adopt` MUST NOT 出现在 command/schema registry
 
 ### Requirement: Task Review CLI 必须提供稳定 operation JSON identity
-`buildr task review inspect|record --json` MUST 返回 `buildr.task-review-operation-result/v1` 顶层 identity，并 MUST 至少包含 operation、`status: inspected|recorded|blocked`、taskId、`slots.planning`、`slots.completion`、diagnostic、effects 与 nextActions。每个 slot MUST 包含 deterministic path、present、`result|null`、`resultDigest|null` 与 `applicability: current|stale|unknown|null`。
+`task review inspect|record` MUST输出closed `buildr.task-review-operation-result/v2`，每个slot包含v2 Result、`resultDigest`与`observedAt`，MUST不包含applicability、Development或Terminal facts。record冲突 MUST返回当前slot与稳定diagnostic且effects为空。
+
+#### Scenario: CAS冲突JSON
+- **WHEN** record提交陈旧expectedCurrentDigest
+- **THEN** CLI MUST返回v2 blocked operation result和current digest
+- **AND** MUST不覆盖current Result
 
 #### Scenario: JSON inspect 成功
-- **WHEN** CLI 从 checkout 或 npm tarball 执行成功的 Task Review inspect
-- **THEN** stdout MUST 是单一有效 operation result 且 stderr 为空
-- **AND** 两种发行形态 MUST 保持 schema、字段与退出语义 parity
+- **WHEN** 用户以`--json`检查存在或缺失的Review slots
+- **THEN** MUST返回closed v2 operation envelope和两个slot
 
 #### Scenario: JSON record blocked
-- **WHEN** target identity 缺失、Task terminal、Result schema 无效或原子写入失败
-- **THEN** stdout MUST 仍返回同一 schema 的 blocked object 并以非零状态退出
-- **AND** effects MUST 不声称 canonical Result 已改变
+- **WHEN** record输入不完整、Task terminal或CAS冲突
+- **THEN** MUST返回v2 blocked envelope、diagnostic、current slots与零effects
 
 #### Scenario: response-only digest
-- **WHEN** 任一 slot 存在有效 Result
-- **THEN** resultDigest MUST 是 canonical Result bytes 的响应级 identity
-- **AND** Result object MUST 不包含 resultDigest、revision、current 或 applicability
+- **WHEN** inspect或record返回已有Result
+- **THEN** `resultDigest` MUST由规范Result序列化计算且不写入Result或数据库revision列
 
 ### Requirement: Task Review JSON registry 必须与 command registry 同步
 Public JSON registry、CLI command registry、help、schema validation 与 checkout/npm parity MUST 对 Task Review 两个 actions 保持一致；任一 action 可达但 operation schema/关键字段测试缺失时，package verification MUST fail closed。
@@ -422,31 +424,6 @@ Buildr MUST在public JSON registry、CLI help、schema coverage与checkout/npm p
 #### Scenario: compact 泄漏完整诊断
 - **WHEN** compact payload包含完整operations、checks、observations、stdout/stderr、diagnostics正文或本机locator
 - **THEN** public JSON contract test MUST失败
-
-### Requirement: Task Entry Snapshot CLI 必须提供稳定公开 JSON identity
-`buildr task next <task-id> --json` MUST输出closed `buildr.task-entry-snapshot/v1`，至少包含operation、status、task、environment、development、blockers、`next`、diagnostic、effects，并 MAY包含显式请求的response-only profile。payload MUST不包含完整Receipt/Result、SQLite locator、resource handle、完整capability graph或隐藏Agent状态。
-
-#### Scenario: compact snapshot 成功
-- **WHEN** checkout或npm tarball CLI读取有效active Task
-- **THEN** stdout MUST是单一有效JSON对象且stderr为空
-- **AND** 两种发行形态 MUST保持schema、关键字段与退出语义parity
-
-#### Scenario: snapshot blocked
-- **WHEN** Task不存在或terminal、Environment/Development identity stale、execution target mismatch或capability route不可用
-- **THEN** stdout MUST仍返回同一schema的blocked object并以非零状态退出
-- **AND** effects MUST为空且diagnostic MUST包含精确code、owner与recovery action
-
-#### Scenario: profile 未请求
-- **WHEN** 调用方未提供`--profile`
-- **THEN** payload MUST不包含profile
-- **AND** 不得从其他持久化事实推断或回填历史性能数据
-
-### Requirement: Task Entry Snapshot JSON registry 必须与 command registry 同步
-Public JSON registry、command registry、help、schema guard与checkout/npm parity MUST同时登记Task Entry Snapshot；任一 surface 可达但coverage缺失时package/static verification MUST fail closed。
-
-#### Scenario: registry 漂移
-- **WHEN** `task next`已登记但`buildr.task-entry-snapshot/v1`、关键字段guard或parity fixture缺失
-- **THEN** 产品验证 MUST失败并指出缺失identity
 
 ### Requirement: Buildr update 双轨道 JSON 必须使用 v2 identity
 `buildr update check --json` MUST输出 `buildr.update-check/v2`，`buildr update --json` MUST输出 `buildr.update/v2`；两者 MUST用 closed 双轨道结构替代 v1 单一 `available.version` 语义。

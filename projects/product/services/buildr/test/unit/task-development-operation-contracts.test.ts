@@ -11,7 +11,7 @@ import {
   taskDevelopmentDriverSchema,
 } from '../../src/task/application/task-development-operation-contracts.ts';
 
-const expectedActions = ['inspect', 'discover', 'begin', 'planning', 'observe', 'knowledge', 'gate', 'freeze', 'decide', 'handoff', 'carrier'];
+const expectedActions = ['inspect', 'discover', 'begin', 'planning', 'observe', 'knowledge', 'freeze', 'decide', 'handoff', 'carrier'];
 
 test('Task Development action contract覆盖全部driver actions并提供closed schema', () => {
   assert.deepEqual(TASK_DEVELOPMENT_ACTIONS, expectedActions);
@@ -34,7 +34,7 @@ test('schema与example使用稳定发现envelope并区分运行态约束', () =>
   assert.equal(schema.action, 'begin');
   assert.equal(schema.inputSchema.additionalProperties, false);
   assert.deepEqual(schema.inputSchema.required, ['changeDispositions', 'planning']);
-  assert.deepEqual(Object.keys(schema.inputSchema.properties), ['changeDispositions', 'planning', 'planningGate']);
+  assert.deepEqual(Object.keys(schema.inputSchema.properties), ['changeDispositions', 'planning']);
   assert.match(schema.runtimeValidation, /Application/);
 
   const example = taskDevelopmentDriverExample('begin');

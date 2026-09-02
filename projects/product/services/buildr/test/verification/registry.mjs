@@ -441,7 +441,7 @@ export const INTEGRATION_PRIMARY_SLICES = Object.freeze([
     'test/integration/task-development-application.test.ts',
     'test/integration/task-development-application-shard-4.test.mjs',
     'test/integration/task-development-application-shard-2.test.mjs',
-    'test/integration/task-review-repository.test.mjs',
+    'test/integration/task-review-repository.test.ts',
     'test/integration/task-development-repository.test.mjs',
     'test/integration/task-development-driver-profile.test.mjs',
     'test/integration/task-development-driver-discovery.test.mjs',

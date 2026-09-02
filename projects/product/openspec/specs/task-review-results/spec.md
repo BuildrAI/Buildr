@@ -7,97 +7,65 @@
 ## Requirements
 
 ### Requirement: Task Review 必须使用一个能力维护两个可选 current Result 槽位
-Buildr MUST 为正式 Task 提供一个 Task Review capability，并 MUST 在Workspace SQLite中以同一个 `TaskReviewResult` 数据模型维护 `planning` 与 `completion` 两个互不覆盖的可选 current 槽位。Buildr MUST NOT 创建 Task Review Receipt、类型专属 schema、Result 列表或空占位记录。
+Buildr MUST以同一Task Review能力维护`planning|completion`两个可选current槽位。两个槽位 MUST只共享Task ID和Result模型，MUST NOT形成顺序、推进许可或相互前置；没有Task Development、Candidate、Environment或另一个槽位时，active Task仍 MUST可独立record任一真实审查结果。
 
-#### Scenario: 新 Task 尚未执行 Review
-- **WHEN** 正式 Task 已存在但没有完成过 Planning Review 或 Completion Review
-- **THEN** 两个槽位 MUST 都返回 missing，SQLite MUST 不出现空Review rows
+#### Scenario: 没有Development的普通Task接受完成审查
+- **WHEN** Agent对一个active但没有Development Receipt或Candidate的Task完成Completion Review
+- **THEN** Application MUST以Agent提交的真实subject identity保存completion Result
+- **AND** MUST NOT创建Development、Candidate、gate或另一个Review槽位
 
 #### Scenario: 两种 Review 都已完成
-- **WHEN** 同一 Task 已分别记录一份完整 Planning Result 与 Completion Result
-- **THEN** 两个 `(task_id, review_type)` rows MUST 同时存在并分别作为各自类型的 current Result
-- **AND** 记录一种类型 MUST NOT 读取后改写、删除或覆盖另一种类型
+- **WHEN** 同一Task已经保存Planning和Completion Result
+- **THEN** inspect MUST分别返回两个current slot且互不覆盖
 
-#### Scenario: 未知 Task 请求记录 Result
-- **WHEN** 调用方为不存在的 Task ID 请求 record
-- **THEN** Application MUST 返回 blocked 且 transaction零effects
+#### Scenario: 新 Task 尚未执行 Review
+- **WHEN** active Task两个slot均不存在
+- **THEN** inspect MUST返回两个明确missing slot且不创建占位row
 
 #### Scenario: 旧Review YAML存在
-- **WHEN** `.buildr/tasks/<task-id>/reviews/planning.yml`或`completion.yml`存在
-- **THEN** Application MUST只读取SQLite对应slot
-- **AND** MUST NOT迁移、双写、删除或生成兼容YAML
+- **WHEN** Workspace保留旧Review YAML文件
+- **THEN** v2 Application MUST忽略它且只读取SQLite current
 
-### Requirement: Review Result 必须使用最小 closed v1 schema
-每个 current 文件 MUST 使用 closed `buildr.task-review-result/v1` schema，且 MUST 只包含 `schemaVersion`、`taskId`、`reviewType`、`targetIdentity`、`method`、`reviewed`、`uncovered`、`findings`、`conclusion` 与 `completedAt`。`reviewType` MUST 为 `planning|completion`，`method` MUST 为 `self|independent-agent|human`，`conclusion.outcome` MUST 为 `ready|changes-required`。
-
-#### Scenario: Application 记录完整 Result
-- **WHEN** 调用方提交明确 review type、非空 target identity、执行方式、至少一个 reviewed 对象、完整 uncovered/findings 与非空结论
-- **THEN** Application MUST 生成 schemaVersion、matching Task ID、matching reviewType 与系统 completedAt，并写入对应 slot
-
-#### Scenario: Result 包含超前字段
-- **WHEN** 输入或已有文件包含 revision、resultId、current、applicability、status、reviewer、Agent session、model、duration、policy/environment identity、Candidate components、finding lifecycle、history 或其他未知字段
-- **THEN** Application MUST fail closed，MUST 保留已有 current bytes
-
-#### Scenario: Review 没有形成完整结论
-- **WHEN** reviewed 为空、uncovered 缺少 reason、target identity 缺失、结论为空或 enum 不受支持
-- **THEN** Application MUST 拒绝记录，MUST NOT 用 blocked/draft/incomplete Result 覆盖 current slot
+#### Scenario: 未知 Task 请求记录 Result
+- **WHEN** caller对不存在的Task执行record
+- **THEN** MUST返回Task not found且不得创建orphan Review row
 
 ### Requirement: 完整 Review 写入必须原子替换且中断不覆盖 current
-Repository MUST 只在一份完整 Result 通过校验后，以单一 SQLite transaction 更新精确 slot并在提交前重读验证。输入校验、serialization、mutation或写后读取失败时 MUST rollback并保留原 current value与全部 sibling rows。
+`record` MUST要求`expectedCurrentDigest`。空slot MUST使用`absent`，已有slot MUST使用inspect返回的当前digest；Repository MUST在同一事务内比较、写入、回读，任何不匹配或失败 MUST零写入。
 
-#### Scenario: 新 Review 正常完成
-- **WHEN** 同类型 current Result 已存在且新的完整 Result 通过全部校验
-- **THEN** Repository MUST 精确替换该类型row并返回 changed `resultDigest`
-- **AND** 另一类型 Result、Task Record、Environment Receipt 与其他current rows MUST 保持不变
+#### Scenario: 两个Agent基于同一current并发记录
+- **WHEN** 第一个Agent已替换current后第二个Agent提交旧`expectedCurrentDigest`
+- **THEN** 第二次写入 MUST返回稳定conflict与最新digest
+- **AND** current MUST保持第一个Agent的完整Result
 
 #### Scenario: Review 执行中断
-- **WHEN** Agent、工具或人工流程在形成完整结论前中断或失败
-- **THEN** `task-review` Skill MUST NOT 调用 record
-- **AND** 原 current Result 即使已经 stale 也 MUST 保持原值，且 MUST NOT 被描述为仍适用
+- **WHEN** Agent在形成完整结论或调用record前中断
+- **THEN** current MUST保持不变且不得创建空Result
+
+#### Scenario: 新 Review 正常完成
+- **WHEN** caller携带匹配expectedCurrentDigest提交完整v2 Result
+- **THEN** Repository MUST原子替换对应slot并返回新digest
 
 #### Scenario: 注入 SQLite mutation 失败
-- **WHEN** 精确slot mutation或写后确认失败
-- **THEN** operation MUST 返回 blocked 与精确 diagnostic/effects
-- **AND** 原 current Result和所有sibling records MUST在rollback后保持不变
+- **WHEN** INSERT或UPDATE在事务中失败
+- **THEN** MUST rollback并保留last-valid current
 
 #### Scenario: 注入原子替换失败
-- **WHEN** fault injection使SQLite精确slot替换或提交前重读失败
-- **THEN** operation MUST返回blocked与精确transaction stage diagnostic
-- **AND** rollback后原current Result与所有sibling records MUST保持不变
-
-### Requirement: Result 适用性必须由 target identity 派生
-Review Result MUST 只持久化 `targetIdentity`，MUST NOT 持久化 applicability 或 current 状态。Application `inspect` MUST 对每种类型使用调用方提供的 matching current target identity 派生 `current|stale|unknown`；Result 缺失时 applicability MUST 为 null。
-
-#### Scenario: target identity 匹配
-- **WHEN** Result target identity 与同类型 current target identity 完全相等
-- **THEN** read model MUST 返回 `applicability: current`
-
-#### Scenario: target identity 已变化
-- **WHEN** Result target identity 与同类型 current target identity 不相等
-- **THEN** read model MUST 返回 `applicability: stale`
-- **AND** MUST 不删除、改写或覆盖该 Result
-
-#### Scenario: current target 未提供
-- **WHEN** Result 存在但调用方没有提供该类型的 current target identity
-- **THEN** read model MUST 返回 `applicability: unknown`
-- **AND** consumer MUST NOT 把 unknown 描述为满足 Review gate
-
-#### Scenario: Completion 没有 Candidate identity
-- **WHEN** 调用方请求记录 Completion Result 但不能提供明确 current Candidate identity
-- **THEN** record MUST blocked，MUST NOT 从 Git HEAD、dirty tree、Environment identity、时间或任意内容摘要生成临时 Candidate
+- **WHEN** 写后回读、query field一致性或COMMIT失败
+- **THEN** MUST rollback且另一个Review slot不受影响
 
 ### Requirement: Result digest 必须是响应级值 identity 而不是持久 revision
-Application MUST 对每份有效 canonical Result value 计算 response-only `resultDigest`，并 MUST NOT 将 digest 或 revision 写入 Result payload。首版 MUST NOT 建设 Result history、expected revision、锁、CAS、租约或同类型多 writer 协议。
+Application MUST对每份有效Result返回response-only `resultDigest`，不得写入payload或revision列。`record` MUST用该digest或`absent`执行事务内compare-and-set，但不得建设history、lease或多版本状态机。
 
 #### Scenario: inspect 有效 Result
-- **WHEN** Application 成功读取任一 current Result
-- **THEN** read model MUST 返回该closed value canonical serialization的稳定 `resultDigest`
-- **AND** persisted payload MUST 不包含 resultDigest 或 revision
+- **WHEN** Application成功读取任一current Result
+- **THEN** read model MUST返回canonical serialization的稳定resultDigest
+- **AND** persisted payload MUST不包含resultDigest或revision
 
 #### Scenario: Result 被完整替换
-- **WHEN** 同类型新完整 Result 与旧 canonical value 不同
-- **THEN** 新 read model MUST 返回不同 resultDigest
-- **AND** Application MUST NOT 为此生成或递增持久 revision
+- **WHEN** 同类型新Result与旧canonical value不同且expected digest匹配
+- **THEN** 新read model MUST返回不同resultDigest
+- **AND** Application MUST不生成或递增持久revision
 
 ### Requirement: Review Result 必须保持可移植且不抢占其他 lifecycle authority
 Review Result MUST 保持轻量且只保存可移植 reviewed/uncovered 引用与最小语义文本，但作为Workspace本地Task事实 MUST NOT进入Git或本地多机同步。Task Review MUST NOT 保存或拥有 Task 顶层状态、Environment/Runtime、Candidate generation、Verification execution、Finish effects、Agent session、凭证、完整日志或隐藏推理。
@@ -118,104 +86,53 @@ Review Result MUST 保持轻量且只保存可移植 reviewed/uncovered 引用�
 - **AND** Review Application MUST不生成兼容`planning.yml`或`completion.yml`
 
 ### Requirement: Review current row 必须保存稳定查询字段
-Task Review repository MUST在同一current row保存Domain验证的完整`result_json`、同一Result的`target_identity`、`outcome`与`updated_at`。这些字段MUST只作为结果定位、Overview查询与保存值一致性检查，MUST NOT保存applicability、Development gate adoption、terminal status或第二份Result正文。
+Repository MUST在同一row保存完整`result_json`、同一Result的`subject_identity`、`outcome`与`updated_at`，只用于定位、Overview摘要与一致性校验，不保存applicability、gate或第二份正文。
 
 #### Scenario: 记录 Review Result
 - **WHEN** Application形成新的完整Planning或Completion Result
-- **THEN** repository MUST在单一transaction中原子替换JSON与查询字段并写后验证
-- **AND** target/outcome/time与Result JSON不一致时 MUST rollback并保留原slot
+- **THEN** repository MUST在单一transaction中原子比较、替换并写后验证
+- **AND** subject/outcome/time与Result JSON不一致时 MUST rollback
 
 #### Scenario: 读取 Overview
 - **WHEN** Task Overview查询Review摘要
-- **THEN** repository MUST通过planning/completion两个`LEFT JOIN` alias返回presence、target、outcome与updated time
-- **AND** MUST NOT反序列化或复制完整findings到Overview
-
-### Requirement: Parent Planning Review 必须只绑定 Parent Plan identity
-Task Review MUST以Parent Plan内容identity作为Parent Planning Review target；只有outcome、architecture invariants、Contribution Map、dependency graph或final acceptance实质变化 MUST使Result stale。
-
-#### Scenario: Child 专业状态变化
-- **WHEN** Child Verification通过、Change归档或Finish完成但Parent Plan未改变
-- **THEN** Parent Planning Review applicability MUST保持current
-- **AND** Review store MUST NOT写入新的Result
-
-#### Scenario: 显式reconciliation改变Contribution Map
-- **WHEN** Parent reconciliation产生新的Parent Plan identity
-- **THEN** 旧Planning Review MUST显示stale
-- **AND** 新Review MUST只审查五类Parent协调事实
+- **THEN** repository MUST通过两个LEFT JOIN返回presence、subject、outcome与updated time
+- **AND** MUST不反序列化或复制完整findings到Overview
 
 ### Requirement: Task Review Application 必须是 Buildr Web 与专业 consumer 的唯一 Result writer
-Buildr MUST 由一个共享 Task Review Application 实现 `inspect` 与 `record`，并 MUST 让 CLI、Skill 与 Buildr Web 复用该 Application/read model。调用方 MUST NOT 直接写SQLite、提交完整 next state 或自行生成系统字段。
+Buildr MUST由共享Application实现`inspect|record`，CLI与HTTP读接口复用该Application。Buildr Web只读展示并在前端形成Agent指令；后端不提供Review prompt或直接writer。
 
 #### Scenario: Agent 完成语义 Review
-- **WHEN** `task-review` Skill 已形成完整语义结果
-- **THEN** Skill MUST 只把允许的语义字段交给 Application `record`
-- **AND** Application MUST 独占 schema 校验、系统时间、slot选择、serialization、digest 与 persistence effects
+- **WHEN** Skill形成完整语义结果
+- **THEN** Skill MUST只把允许字段与expected digest交给Application record
+- **AND** Application MUST独占schema、系统时间、slot、serialization、CAS与effects
 
 #### Scenario: Buildr Web 查看 Result
-- **WHEN** Buildr Web 请求 Task Review 详情
-- **THEN** HTTP interface MUST 调用 Application `inspect`，MUST NOT 直接读取SQLite、计算 digest 或判断 applicability
+- **WHEN** Buildr Web请求Task Review详情
+- **THEN** HTTP MUST调用Application inspect
+- **AND** MUST不直接读取SQLite、生成prompt或判断applicability
 
 #### Scenario: terminal Task 被读取或写入
-- **WHEN** 调用方 inspect completed/abandoned Task
-- **THEN** Application MUST 允许读取已有 Result
-- **AND** 对 terminal Task 的 record MUST fail closed
-
-### Requirement: Planning Review 必须语义审查 Change checklist 生命周期边界
-当 current planning nodes 包含 OpenSpec Change `tasks.md` 时，Task Review guidance MUST检查每个 checkbox 是否能在 Change archive 前完成，并 MUST把实际审查的 checklist 记录为现有 Review Result 的 `reviewed` 或在无法覆盖时写入 `uncovered`。发现只能在 archive 后完成的 Formal Verification、Candidate、Completion、Finish、cleanup 或 Task terminal 动作时，Review MUST返回 `changes-required`；Review MUST NOT通过关键词匹配代替语义判断。
-
-#### Scenario: checklist 含归档后生命周期动作
-- **WHEN** Planning Review确认某个 checkbox 只能在 Change archive 后由 Task Development 或 Finish authority完成
-- **THEN** Review MUST记录精确 finding 并返回 `changes-required`
-- **AND** MUST要求修订 planning artifact，而不是让 convergence 自动勾选、删除或绕过该任务
-
-#### Scenario: Change 合法实现同名产品能力
-- **WHEN** checklist 文本提到 Verification、Candidate 或 Finish，但该 checkbox 实际是在 archive 前实现或测试对应产品能力
-- **THEN** Review MUST按任务语义判断其边界并可将其视为合法 Change-owned action
-- **AND** MUST不因命中关键词直接产生 finding
-
-#### Scenario: planning 没有 OpenSpec checklist
-- **WHEN** current planning nodes 不包含 `tasks.md` 或 Task 为 code-only
-- **THEN** Review MUST如实记录实际 reviewed/uncovered 范围
-- **AND** MUST不创建虚假 checklist、finding 或统一必选审查对象
-
-### Requirement: Parent v2 Planning Review 必须覆盖完整结构化 Plan identity
-Task Review MUST 继续只以 Parent Plan identity 作为 Parent Planning Review target，并 MUST 让 v2 outcome、architecture decisions、全部 work-item 结构化字段、dependencies 与 final acceptance 的任一实质变化使旧 Result stale；expected/actual Child 运行事实变化但 Plan bytes 未变时 MUST 保持 current。
-
-#### Scenario: 修改完整实施方向
-- **WHEN** caller reconcile v2 Plan 并改变 work item objective、directions 或 boundaries
-- **THEN** 旧 Planning Review applicability MUST 为 stale
-- **AND** Parent startup MUST 在新的 ready Review 被 Development 消费前保持 blocked
-
-#### Scenario: 创建真实 Child
-- **WHEN** expected Child 对应的真实 Child 后续创建并绑定，但 Parent Plan bytes 未改变
-- **THEN** Planning Review applicability MUST 保持 current
-- **AND** Review repository MUST NOT 写入新 Result
-
-### Requirement: Planning Review必须审查真实跨owner结果边界
-当Task Intent或current planning nodes实际跨两个以上lifecycle owner时，Task Review guidance MUST要求Agent在现有`reviewed|uncovered|findings`中说明受影响owner、每个owner保护的结果不变量及未覆盖边界。Owner集合与影响 MUST由Agent基于current Task和planning artifacts语义判断；Buildr MUST NOT通过关键词生成通用authority map、固定所有Task的owner checklist、增加Result字段或接管专业判断。只有遗漏会放行错误对象写入、证据失真或完成误报时，Planning Review MUST返回`changes-required`。
-
-#### Scenario: Change同时影响Delivery、Activation与Cleanup
-- **WHEN** Planning Review确认同一Change修改Task Delivery后的Activation顺序和Environment/Carrier Cleanup证据
-- **THEN** `reviewed` MUST覆盖这些实际owner及其Delivery不可撤销、Doctor只读、物理清理证据等适用不变量
-- **AND** 无法覆盖的相关owner MUST进入`uncovered`并说明原因
-
-#### Scenario: 单owner或code-only计划
-- **WHEN** current计划只影响一个owner，或没有真实跨owner语义
-- **THEN** Review MUST按实际范围工作，不得生成固定Delivery/Activation/Cleanup/Diagnostics清单
-
-#### Scenario: 跨owner遗漏只构成改进建议
-- **WHEN** 未覆盖边界不会造成错误写入、证据失真或完成误报
-- **THEN** Review MAY记录finding但 MUST NOT仅因通用完整性偏好增加硬门禁
+- **WHEN** 调用方inspect terminal Task或尝试record
+- **THEN** Application MUST允许读取已有Result
+- **AND** terminal record MUST fail closed
 
 ### Requirement: Task Review read model 必须独立于 Development 与 Finish
-Task Review Application和Buildr Web GET MUST只读取Task Review current rows及Task identity。它们 MUST NOT读取Development Receipt、Candidate、Handoff、Finish association或Terminal Delivery projection。
+Task Review Application和GET MUST只读取Task Review current rows及Task identity，不读取Development、Candidate、Handoff、Finish或Terminal Delivery。
 
 #### Scenario: 没有Development的Task
-- **WHEN** active或terminal Task存在Review Result但没有Development Receipt
-- **THEN** Review inspect MUST正常返回两个slot
-- **AND** MUST NOT产生Development missing diagnostic
+- **WHEN** Task存在Review Result但没有Development Receipt
+- **THEN** inspect MUST正常返回两个slot
+- **AND** MUST不产生Development missing diagnostic
 
 #### Scenario: completed Task存在旧Finish association
-- **WHEN** 旧Finish payload包含Review gate digest或target identity
-- **THEN** Review页面 MUST不显示adopted-at-delivery或gate disposition
-- **AND** 旧值只在Finish历史详情中保留
+- **WHEN** 旧Finish payload包含历史Review gate
+- **THEN** Review页面 MUST不显示adopted或gate disposition
+- **AND** 旧值只在Finish历史中保留
+
+### Requirement: Review Result 必须使用最小 closed v2 schema
+每个current Result MUST使用closed `buildr.task-review-result/v2`，只包含`schemaVersion`、`taskId`、`reviewType`、`subjectIdentity`、`method`、`reviewed`、`uncovered`、`findings`、`conclusion`和`completedAt`。`conclusion.outcome` MUST为`accepted|changes-requested`，只表达本次审查意见。
+
+#### Scenario: Agent提交v2完整审查结果
+- **WHEN** Agent提交一个真实subject的完整Result
+- **THEN** Application MUST规范化并保存所有审查事实
+- **AND** MUST拒绝target/applicability/revision/Candidate/Handoff/gate/log/path等额外字段

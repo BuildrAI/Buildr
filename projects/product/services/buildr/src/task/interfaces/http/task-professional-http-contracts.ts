@@ -45,12 +45,6 @@ const RETROSPECTIVE_PATCH = closed({
   note: NON_EMPTY,
   expectedCurrentDigest: NON_EMPTY,
 }, ['expectedCurrentDigest']);
-const REVIEW_PROMPT = closed({
-  taskId: TASK_ID,
-  reviewType: { enum: ['planning', 'completion'] },
-  projectCode: NON_EMPTY,
-  change: NON_EMPTY,
-}, ['taskId', 'reviewType']);
 export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   overviewRequest: schema('overview/request', 'TaskOverviewRequest', EMPTY),
   overviewResponse: schema('overview/response', 'TaskOverviewResponse', RESPONSE),
@@ -67,8 +61,6 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   retrospectiveRequest: schema('retrospective/request', 'TaskRetrospectiveRequest', EMPTY),
   retrospectiveResponse: schema('retrospective/response', 'TaskRetrospectiveResponse', RESPONSE),
   retrospectivePatchRequest: schema('retrospective/patch-request', 'TaskRetrospectivePatchRequest', RETROSPECTIVE_PATCH),
-  reviewPromptRequest: schema('review-prompt/request', 'TaskReviewPromptRequest', REVIEW_PROMPT),
-  reviewPromptResponse: schema('review-prompt/response', 'TaskReviewPromptResponse', PROMPT_RESPONSE),
   verificationPromptRequest: schema('verification-prompt/request', 'TaskVerificationPromptRequest', closed({ taskId: TASK_ID }, ['taskId'])),
   verificationPromptResponse: schema('verification-prompt/response', 'TaskVerificationPromptResponse', PROMPT_RESPONSE),
   errorResponse: schema('error/response', 'TaskProfessionalErrorResponse', ERROR),
@@ -92,7 +84,6 @@ export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),
   operation('task-retrospective.detail', 'GET', '/tasks/:taskId/retrospective', 'retrospectiveRequest', 'retrospectiveResponse'),
   operation('task-retrospective.patch', 'PATCH', '/tasks/:taskId/retrospective', 'retrospectivePatchRequest', 'retrospectiveResponse'),
-  operation('task-review.prompt', 'POST', '/prompts/task-review', 'reviewPromptRequest', 'reviewPromptResponse'),
   operation('task-verification.prompt', 'POST', '/prompts/task-verification', 'verificationPromptRequest', 'verificationPromptResponse'),
 ]);
 

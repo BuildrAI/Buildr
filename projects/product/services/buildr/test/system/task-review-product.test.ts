@@ -1,3 +1,4 @@
+// @ts-nocheck -- Existing behavioral suite migrated with its public interface.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -33,26 +34,23 @@ function fixture(t) {
   return { base, root };
 }
 
-test('Task Review CLI 提供单一稳定 JSON、两槽位与 current/stale/unknown', (t) => {
+test('Task Review CLI 提供单一稳定 JSON、两槽位与CAS写入', (t) => {
   const { root } = fixture(t);
   const runtime = createRuntime();
   let response = json(['task', 'review', 'inspect', 'review-task', '--target', root]);
-  assert.equal(response.schemaVersion, 'buildr.task-review-operation-result/v1');
+  assert.equal(response.schemaVersion, 'buildr.task-review-operation-result/v2');
   assert.equal(response.status, 'inspected');
   assert.equal(response.slots.planning.present, false);
 
-  response = json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--target-identity', 'plan:v1', '--method', 'self', '--reviewed', 'task intent', '--uncovered', 'browser::not relevant', '--finding', 'No blocking finding', '--outcome', 'ready', '--summary', 'Plan is ready', '--target', root]);
+  response = json(['task', 'review', 'record', 'review-task', '--type', 'planning', '--subject-identity', 'plan:v1', '--method', 'self', '--reviewed', 'task intent', '--uncovered', 'browser::not relevant', '--finding', 'No blocking finding', '--outcome', 'accepted', '--summary', 'Plan is accepted', '--expected-current', 'absent', '--target', root]);
   assert.equal(response.status, 'recorded');
-  assert.equal(response.slots.planning.applicability, 'current');
+  assert.equal(response.slots.planning.result.subjectIdentity, 'plan:v1');
   assert.deepEqual(response.effects, [{ type: 'created', path: 'workspace-sqlite:task-review/review-task/planning' }]);
   assert.equal('resultDigest' in response.slots.planning.result, false);
 
-  response = json(['task', 'review', 'inspect', 'review-task', '--planning-target', 'plan:v2', '--target', root]);
-  assert.equal(response.slots.planning.applicability, 'stale');
-  response = runtime.inspectTaskReview(root, 'review-task');
-  assert.equal(response.slots.planning.applicability, 'unknown');
+  assert.equal('applicability' in response.slots.planning, false);
 
-  const missingIdentity = json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'candidate', '--outcome', 'ready', '--summary', 'done', '--target', root], 1);
+  const missingIdentity = json(['task', 'review', 'record', 'review-task', '--type', 'completion', '--method', 'self', '--reviewed', 'result', '--outcome', 'accepted', '--summary', 'done', '--expected-current', 'absent', '--target', root], 1);
   assert.equal(missingIdentity.status, 'blocked');
   assert.equal(missingIdentity.diagnostic.code, 'task_review_field_invalid');
   assert.deepEqual(missingIdentity.effects, []);
@@ -62,12 +60,13 @@ test('Review Result只在SQLite持久化且数据库保持Git ignore', (t) => {
   const { root } = fixture(t);
   createRuntime().recordTaskReview(root, 'review-task', {
     reviewType: 'completion',
-    targetIdentity: 'candidate:g1',
+    subjectIdentity: 'git:content-g1',
     method: 'human',
-    reviewed: ['candidate:g1'],
+    reviewed: ['git:content-g1'],
     uncovered: [],
     findings: [],
-    conclusion: { outcome: 'ready', summary: 'Candidate approved' },
+    conclusion: { outcome: 'accepted', summary: 'Result accepted' },
+    expectedCurrentDigest: 'absent',
   });
   assert.equal(spawnSync('git', ['init', '-q'], { cwd: root }).status, 0);
   const result = spawnSync('git', ['check-ignore', '-q', '.buildr/local/workspace.sqlite'], { cwd: root, encoding: 'utf8' });
@@ -79,7 +78,7 @@ test('Review Result只在SQLite持久化且数据库保持Git ignore', (t) => {
   assert.doesNotMatch(payload, /revision|resultDigest|applicability/);
 });
 
-test('Buildr Web 只读查看双槽位，并只生成 Task Review Agent prompt', async (t) => {
+test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer', async (t) => {
   const previousAppData = process.env.BUILDR_APP_DATA_DIR;
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-review-product-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -120,11 +119,11 @@ test('Buildr Web 只读查看双槽位，并只生成 Task Review Agent prompt',
   const taskBefore = runtime.inspectTaskRecord(root, 'review-task');
   const environmentBytes = fs.readFileSync(environmentFile);
   runtime.recordTaskReview(root, 'review-task', {
-    reviewType: 'planning', targetIdentity: 'plan:local-app', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Plan ready' },
+    reviewType: 'planning', subjectIdentity: 'plan:local-app', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Plan accepted' }, expectedCurrentDigest: 'absent',
   });
   response = await request(`${endpoint}/tasks/review-task/reviews`);
   assert.equal(response.body.slots.planning.present, true);
-  assert.equal(response.body.slots.planning.applicability, 'unknown');
+  assert.equal('applicability' in response.body.slots.planning, false);
   assert.equal(response.body.slots.completion.present, false);
   const taskAfter = runtime.inspectTaskRecord(root, 'review-task');
   assert.equal(taskAfter.recordDigest, taskBefore.recordDigest);
@@ -132,18 +131,7 @@ test('Buildr Web 只读查看双槽位，并只生成 Task Review Agent prompt',
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);
 
   response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning' }) });
-  assert.equal(response.status, 200);
-  assert.match(response.body.prompt, /task-review Skill/);
-  assert.match(response.body.prompt, /中断、目标不明或结论不完整时不得覆盖/);
-  response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning', projectCode: 'demo', change: 'review-change' }) });
-  assert.equal(response.status, 200);
-  assert.match(response.body.prompt, /限定的 Task-scoped Change：demo\/review-change/);
-  response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'completion', projectCode: 'demo', change: 'unlinked' }) });
-  assert.equal(response.status, 409);
-  assert.equal(response.body.error.code, 'task_review_change_not_linked');
-  response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning', path: root }) });
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, 'target_forbidden');
+  assert.equal(response.status, 404);
   const taskAtEnd = runtime.inspectTaskRecord(root, 'review-task');
   assert.equal(taskAtEnd.recordDigest, taskBefore.recordDigest);
   assert.deepEqual(taskAtEnd.record, taskBefore.record);

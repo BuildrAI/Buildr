@@ -27,10 +27,10 @@ test('Task Overview以一条SQLite查询组合专业最小保存事实', (t) => 
   const { root, runtime } = fixture(t);
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   const database = opened.database;
-  const planningJson = JSON.stringify({ targetIdentity: 'sha256-plan', conclusion: { outcome: 'ready' }, completedAt: '2026-08-08T00:01:00.000Z' });
+  const planningJson = JSON.stringify({ schemaVersion: 'buildr.task-review-result/v2', taskId: 'overview-task', reviewType: 'planning', subjectIdentity: 'sha256-plan', method: 'self', reviewed: ['plan'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'accepted' }, completedAt: '2026-08-08T00:01:00.000Z' });
   const developmentJson = JSON.stringify({ gates: { planning: { targetIdentity: 'sha256-plan', resultDigest: `sha256-${'0'.repeat(64)}`, outcome: 'ready' }, completion: null, verification: null } });
   database.prepare("INSERT INTO task_development_current(task_id, record_json, applicability_status, applicability_json, observed_at) VALUES ('overview-task', ?, 'planning', ?, '2026-08-08T00:02:00.000Z')").run(developmentJson, JSON.stringify({ status: 'planning', reasons: [] }));
-  database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json, target_identity, outcome, updated_at) VALUES ('overview-task', 'planning', ?, 'sha256-plan', 'ready', '2026-08-08T00:01:00.000Z')").run(planningJson);
+  database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES ('overview-task', 'planning', ?, 'sha256-plan', 'accepted', '2026-08-08T00:01:00.000Z')").run(planningJson);
   database.prepare("INSERT INTO task_environment_current(task_id, status, receipt_json, updated_at) VALUES ('overview-task', 'ready', '{}', '2026-08-08T00:03:00.000Z')").run();
   database.close();
 

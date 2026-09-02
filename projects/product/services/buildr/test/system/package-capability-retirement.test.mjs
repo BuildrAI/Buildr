@@ -201,14 +201,14 @@ test('sync 接受上一版 Task Verification contract metadata 并安全升级�
   assert.equal(fs.existsSync(legacy), false);
 });
 
-test('sync 接受上一版 Task Development contract bytes 并安全升级到v3', (t) => {
+test('sync 接受历史 Task Development v2 contract bytes 并安全升级到v4', (t) => {
   const root = fixtureRoot(t);
   const legacy = injectLegacyTaskDevelopmentV2(root);
   const synced = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const manifest = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-development' && item.version === 2), false);
-  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-development' && item.version === 3), true);
+  assert.equal(manifest.contracts.some((item) => item.id === 'buildr.task-development' && item.version === 4), true);
   assert.equal(fs.existsSync(legacy), false);
 });
 

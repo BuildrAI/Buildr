@@ -65,8 +65,8 @@ test('terminal Task维护单一SQLite current Result且旧observation保持原�
   assert.throws(() => runtime.handleTaskRetrospective(root, 'demo-task', { status: 'no-action', note: '没有报告', expectedCurrentDigest: 'sha256-missing' }), (error) => error.code === 'task_retrospective_result_not_found');
   assert.throws(() => runtime.recordTaskRetrospective(root, 'demo-task', { reportMarkdown: 'active' }), (error) => error.code === 'task_retrospective_task_not_terminal');
   runtime.recordTaskReview(root, 'demo-task', {
-    reviewType: 'planning', targetIdentity: 'plan:demo', method: 'self', reviewed: ['任务计划'],
-    uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: '计划可执行' },
+    reviewType: 'planning', subjectIdentity: 'plan:demo', method: 'self', reviewed: ['任务计划'],
+    uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: '计划可执行' }, expectedCurrentDigest: 'absent',
   });
   const reviewBefore = JSON.stringify(runtime.inspectTaskReview(root, 'demo-task'));
   terminal(runtime, root);

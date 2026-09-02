@@ -102,11 +102,11 @@ function userSummary(row) {
   };
 }
 
-function resultSlot(row, prefix) {
+function resultSlot(row, prefix, identityField = 'target') {
   const serialized = row[`${prefix}_json`];
   return {
     present: serialized != null,
-    targetIdentity: row[`${prefix}_target_identity`] ?? null,
+    [`${identityField}Identity`]: row[`${prefix}_${identityField}_identity`] ?? null,
     outcome: row[`${prefix}_outcome`] ?? null,
     updatedAt: row[`${prefix}_updated_at`] ?? null,
     resultDigest: digest(serialized),
@@ -117,8 +117,8 @@ export function registerTaskOverviewApplication(runtime) {
   function inspectTaskOverview(targetRoot, taskId) {
     const persistence = runtime.readTaskOverviewPersistence(targetRoot, taskId);
     const row = persistence.row;
-    const planning = resultSlot(row, 'planning');
-    const completion = resultSlot(row, 'completion_review');
+    const planning = resultSlot(row, 'planning', 'subject');
+    const completion = resultSlot(row, 'completion_review', 'subject');
     const verification = resultSlot(row, 'verification');
     const finishTerminal = row.finish_status === 'complete';
     return {

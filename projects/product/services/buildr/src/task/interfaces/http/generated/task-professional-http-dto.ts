@@ -1,7 +1,7 @@
 /* eslint-disable */
 // Generated from Task Professional HTTP JSON Schema. Do not edit.
 // Run: npm run contracts:professional:generate
-// Source Schema Identity: sha256-7394bc1b73eefff5d9fe66b893336b718a8e0d31c8ff408768e5e1101e1f2600
+// Source Schema Identity: sha256-123153c2077c0a3bf9feb8a7f75c0a41b1d650c8ffa0b03a3f536b5cdf4ec945
 
 export interface TaskProfessionalHttpDtoProjection {
   overviewRequest: OverviewRequest;
@@ -19,8 +19,6 @@ export interface TaskProfessionalHttpDtoProjection {
   retrospectiveRequest: RetrospectiveRequest;
   retrospectiveResponse: RetrospectiveResponse;
   retrospectivePatchRequest: RetrospectivePatchRequest;
-  reviewPromptRequest: ReviewPromptRequest;
-  reviewPromptResponse: ReviewPromptResponse;
   verificationPromptRequest: VerificationPromptRequest;
   verificationPromptResponse: VerificationPromptResponse;
   errorResponse: ErrorResponse;
@@ -57,16 +55,6 @@ export interface RetrospectivePatchRequest {
   status?: 'pending' | 'handled' | 'no-action';
   note?: string;
   expectedCurrentDigest: string;
-}
-export interface ReviewPromptRequest {
-  taskId: string;
-  reviewType: 'planning' | 'completion';
-  projectCode?: string;
-  change?: string;
-}
-export interface ReviewPromptResponse {
-  prompt: string;
-  copiedMeansRecorded: boolean;
 }
 export interface VerificationPromptRequest {
   taskId: string;

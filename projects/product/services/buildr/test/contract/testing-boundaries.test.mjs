@@ -19,7 +19,7 @@ const forbiddenNodeBoundaries = new Set([
   'child_process', 'cluster', 'dgram', 'fs', 'http', 'http2', 'https', 'net', 'tls', 'worker_threads',
 ]);
 const taskLifecycleContextConsumers = [
-  'task-review-product.test.mjs',
+  'task-review-product.test.ts',
   'task-verification-product.test.ts',
 ];
 const taskRecordContextConsumers = [

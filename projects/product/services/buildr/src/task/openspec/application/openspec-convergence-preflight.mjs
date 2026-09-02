@@ -131,7 +131,7 @@ export function runOpenSpecConvergencePreflight({
     execution,
     effects: [],
     nextActions: status === 'ready'
-      ? ['继续解析current planning identity并执行或检查Planning Review；最终converge仍会按最新事实重新检查。']
+      ? ['继续解析current planning identity并进入apply；是否执行Planning Review由Agent按当前目标独立判断。最终converge仍会按最新事实重新检查。']
       : ['由Agent处理列出的OpenSpec语义或active Change依赖后，重新运行strict validation与preflight。'],
   };
 }

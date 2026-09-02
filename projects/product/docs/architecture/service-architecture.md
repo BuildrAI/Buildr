@@ -166,23 +166,23 @@ misc/
 task/
   domain/
     task-record.mjs
-    task-review.mjs
+    task-review.ts
     task-retrospective.mjs
   application/
     task-record-application.mjs
-    task-review-application.mjs
+    task-review-application.ts
     task-retrospective-application.mjs
   persistence/
     task-record-repository.mjs
-    task-review-repository.mjs
+    task-review-repository.ts
     task-retrospective-repository.mjs
   interfaces/
     cli/
       task-record.mjs
-      task-review.mjs
+      task-review.ts
     http/
       task-record-http.mjs
-      task-review-http.mjs
+      task-review-http.ts
     internal/
       task-retrospective-driver.mjs
   module.mjs
@@ -192,7 +192,7 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前Task生命周期核心包括Environment、Development、Verification、Planning Identity、Entry Snapshot、Overview和Parent Coordination；Task Execution Record descriptor、runtime port与相关接口已删除。
+当前Task专业模块包括Environment、Development、Review、Verification、Planning Identity、Overview和Parent Coordination；Task Entry Snapshot与Task Execution Record相关接口已删除。
 
 Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。Finish 的二十余个私有 Application 协作者集中在 `application/finish/`，Terminal Delivery Application 与单文件 Finish Repository 分别保持为 `application/task-terminal-delivery-application.mjs` 和 `persistence/task-finish-repository.mjs`，CLI 与 maintenance、retained cleanup、target lease driver 位于扁平的 `interfaces/cli/`、`interfaces/internal/`。旧 `src/application/task-finish/`、`src/application/task-terminal-delivery/`、`src/task/persistence/finish/` 和全局 Finish interfaces 不保留转发入口。
 
@@ -876,15 +876,15 @@ Verification 的公开契约演进（完整 JSON Schema/Ajv/DTO/Typed Client）�
 
 ## 父任务与子任务
 
-建立一个“Buildr 服务分层和模块组织重构”父任务，并在父任务的 intent 和 scope 中引用本文件，作为结构目标、迁移边界和验收依据。Parent Task 激活并取得 ready Environment、Development Receipt 后，记录 Parent Plan。
+建立一个“Buildr 服务分层和模块组织重构”父任务，并在父任务的 intent 和 scope 中引用本文件，作为结构目标、迁移边界和验收依据。Parent只维护目标、关系和自己的结果判断，不要求Parent Plan、Environment或Development作为协调前置。
 
 Parent Plan 只包含总体 outcome、architecture invariants、Contribution Map、真实 dependencies 和 final acceptance。它不保存 Child 状态、完整 Requirement、文件或 migration 清单、测试 Result，也不使用 Markdown checkbox 表达进度。只有上述协调事实实质变化时才显式 reconcile。
 
-子任务按能够独立交付和验证的结构切片建立，并通过 Parent/Child 关系关联父任务。一个一级模块可以根据实际范围拆成多个子任务，例如 `system/installation` 和 `system/doctor` 可以分别迁移；不要求一个目录对应一个子任务。Child 只有在真实开始时创建，独立拥有自己的 Task-scoped OpenSpec Change、Environment、Development、文件清单、Review、Verification 和 Finish。
+子任务按能够独立交付和验证的结构切片建立，并通过 Parent/Child 关系关联父任务。一个一级模块可以根据实际范围拆成多个子任务，例如 `system/installation` 和 `system/doctor` 可以分别迁移；不要求一个目录对应一个子任务。Child 只有在真实需要时创建，并按自身目标选择OpenSpec、Environment、Development、Review、Verification与Finish能力，不补造统一流程记录。
 
 第一轮子任务只承担结构迁移。需要改变功能、系统行为、产品设计或验证体系的问题，另行建立后续任务，不混入当前结构迁移子任务。
 
-Child completed 不等于能力贡献已经被 Parent 接受。每个 Child 必须以 Contribution Handoff 说明 planned、delivered、extra、residual、superseded、affected 和唯一 next action；全部贡献得到可证明处置后，Parent 再执行显式最终集成验收，随后按正常 Completion Review、Development handoff 和 Finish 完成自身生命周期。
+Child completed 不等于 Parent 已完成。Agent从真实Child结果、代码、Git和外部系统重新检查总体目标；只有用户明确授权父任务完成时，Parent管理才记录结果。Task Review、Verification、Development和Finish保持独立，由Agent按实际目标组合。
 
 ## 重构观察与反馈
 

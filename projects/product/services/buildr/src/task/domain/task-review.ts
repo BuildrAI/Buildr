@@ -1,7 +1,8 @@
-export const TASK_REVIEW_RESULT_SCHEMA = 'buildr.task-review-result/v1';
+// @ts-nocheck -- Existing domain migrated to the single TypeScript source in this change.
+export const TASK_REVIEW_RESULT_SCHEMA = 'buildr.task-review-result/v2';
 export const TASK_REVIEW_TYPES = Object.freeze(['planning', 'completion']);
 export const TASK_REVIEW_METHODS = Object.freeze(['self', 'independent-agent', 'human']);
-export const TASK_REVIEW_OUTCOMES = Object.freeze(['ready', 'changes-required']);
+export const TASK_REVIEW_OUTCOMES = Object.freeze(['accepted', 'changes-requested']);
 
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|file:\/\/)/;
 
@@ -80,7 +81,7 @@ export function assertTaskReviewType(value, field = 'reviewType') {
 
 export function normalizeTaskReviewResult(value, { expectedTaskId = null, expectedReviewType = null } = {}) {
   const result = object(value, 'Task Review Result');
-  closed(result, new Set(['schemaVersion', 'taskId', 'reviewType', 'targetIdentity', 'method', 'reviewed', 'uncovered', 'findings', 'conclusion', 'completedAt']), '');
+  closed(result, new Set(['schemaVersion', 'taskId', 'reviewType', 'subjectIdentity', 'method', 'reviewed', 'uncovered', 'findings', 'conclusion', 'completedAt']), '');
   if (result.schemaVersion !== TASK_REVIEW_RESULT_SCHEMA) {
     throw taskReviewError('task_review_schema_unsupported', `Task Review Result schemaVersion 必须是 ${TASK_REVIEW_RESULT_SCHEMA}。`, 409, { field: 'schemaVersion', actual: result.schemaVersion });
   }
@@ -104,7 +105,7 @@ export function normalizeTaskReviewResult(value, { expectedTaskId = null, expect
     schemaVersion: TASK_REVIEW_RESULT_SCHEMA,
     taskId,
     reviewType,
-    targetIdentity: portableText(result.targetIdentity, 'targetIdentity'),
+    subjectIdentity: portableText(result.subjectIdentity, 'subjectIdentity'),
     method: result.method,
     reviewed: stringList(result.reviewed, 'reviewed', { minimum: 1, portable: true }),
     uncovered: uncoveredList(result.uncovered),

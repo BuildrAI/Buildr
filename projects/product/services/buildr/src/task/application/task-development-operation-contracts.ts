@@ -36,13 +36,6 @@ const planning = closed({
   nodes: array(planningNode),
 }, ['nodes']);
 
-const planningGate = closed({
-  disposition: { type: 'string', enum: ['waived', 'not-applicable'] },
-  targetIdentity: nullableText('Gate 绑定的 planning target identity。'),
-  summary: text('Disposition 摘要。'),
-  source: text('明确授权或不适用事实来源。'),
-}, ['disposition', 'summary', 'source']);
-
 const knowledge = {
   treeIdentity: text('current Content Target identity。'),
   status: { type: 'string', enum: ['aligned', 'not-applicable', 'attention', 'blocked'] },
@@ -57,14 +50,6 @@ const knowledge = {
     unresolvedItems: array(text()),
   }, ['project', 'status', 'summary', 'sourceIdentities', 'unresolvedItems'])),
 };
-
-const risk = closed({
-  gate: { type: 'string', enum: ['completion'] },
-  resultDigest: text('绑定的专业 Result sha256 digest。'),
-  scope: text(),
-  summary: text(),
-  source: text('明确风险接受来源。'),
-}, ['gate', 'resultDigest', 'scope', 'summary', 'source']);
 
 function inputSchema(properties = {}, required = [], description = RUNTIME_NOTE) {
   return { $schema: JSON_SCHEMA_DRAFT, ...closed(properties, required, description) };
@@ -85,12 +70,12 @@ const contracts = {
   },
   begin: {
     summary: '在首个正式研发动作前建立 Development Receipt 与 planning snapshot。',
-    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions', 'planning']),
+    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning }, ['changeDispositions', 'planning']),
     example: { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } },
   },
   planning: {
     summary: '在专业 planning artifacts 变化后刷新 planning snapshot。',
-    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning, planningGate }, ['changeDispositions', 'planning']),
+    inputSchema: inputSchema({ changeDispositions: array(changeDisposition), planning }, ['changeDispositions', 'planning']),
     example: { changeDispositions: [], planning: { targetIdentity: null, nodes: [] } },
   },
   observe: {
@@ -106,19 +91,8 @@ const contracts = {
     inputSchema: inputSchema(knowledge, ['treeIdentity']),
     example: { treeIdentity: 'sha256-<content-target>', projects: [{ project: '<project>', status: 'aligned', summary: '<knowledge-summary>', sourceIdentities: [], unresolvedItems: [] }] },
   },
-  gate: {
-    summary: '记录planning或completion gate的明确waiver/not-applicable disposition。',
-    inputSchema: inputSchema({
-      gate: { type: 'string', enum: ['planning', 'completion'] },
-      disposition: { type: 'string', enum: ['waived', 'not-applicable'] },
-      targetIdentity: nullableText(),
-      summary: text(),
-      source: text(),
-    }, ['gate', 'disposition', 'summary', 'source']),
-    example: { gate: 'planning', disposition: 'not-applicable', targetIdentity: null, summary: '<reason>', source: '<authority-source>' },
-  },
   freeze: {
-    summary: '在 Change、planning 与正式验证前置事实满足后冻结 current Candidate。',
+    summary: '在 Change 与稳定内容事实满足后冻结 current Candidate。',
     inputSchema: inputSchema({ planningTargetIdentity: nullableText() }),
     example: {},
   },
@@ -127,9 +101,8 @@ const contracts = {
     inputSchema: inputSchema({
       outcome: { type: 'string', enum: ['proceed', 'blocked'] },
       summary: text(),
-      risks: array(risk),
-    }, ['outcome', 'summary', 'risks']),
-    example: { outcome: 'blocked', summary: '<blocking-summary>', risks: [] },
+    }, ['outcome', 'summary']),
+    example: { outcome: 'blocked', summary: '<blocking-summary>' },
   },
   handoff: {
     summary: '为 current Candidate 创建 immutable Finish handoff。',

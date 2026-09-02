@@ -1,62 +1,53 @@
 ---
 name: task-review
-description: 用户要求审查正式 Task 的计划或完成候选、查看已有 Task Review Result，或实现任务在计划/完成节点需要形成轻量审查 evidence 时使用；不用于资产沉淀复盘、Task Verification 或通用代码 Review。
+description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、Task Development 门禁或通用代码 Review。
 ---
 
-# Task Review Skill
+# Task Review
 
-本 Skill 是 `buildr.task-review/v1` 的默认 provider。它用一个参数化能力完成 Planning Review 或 Completion Review；语义审查由 Agent/人完成，确定性 Task Review Application 独占 Result 写入和读取。
+本 Skill 是 `buildr.task-review/v2` 的默认 provider。Agent 完成判断，Task Review Application 只保存两份可选结果。
 
-## 1. 确认目标
+## 1. 确认审查目标
 
-先确认 canonical Workspace、正式 Task ID、`planning|completion` 类型和该类型的 current target identity，再运行：
-
-```text
-buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] --target <canonical-workspace> --json
-```
-
-读取 Task Record 的 Intent、scope 与限定 Change 引用。实际执行目标位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root 读取，不从 cwd 或 Review Result 猜环境 authority。
-
-- `planning` 绑定当前计划上下文的明确稳定 identity。计划可以是 OpenSpec Change、任务清单或其他 owner 已界定的计划，不要求固定形态。正式Task的OpenSpec计划必须先用matching `task environment inspect`返回的retained controller调用`__internal task-planning-identity inspect --task <task-id> --target <canonical-workspace>`；只消费`resolved`结果的`target.identity`和`planningNodes`。不得使用candidate `cliInvocation`、source driver，不得手工摘要artifact、路径、mtime、checkbox progress、Git ref或沿用旧Result；resolver `blocked`时停止且不record Review。
-- 父子协调本身不要求正式计划审查。只有实际选择独立研发审查时才消费本能力；旧父计划不再要求审查采用。
-- `completion` 只绑定上游已形成的 current Candidate identity。没有明确 Candidate identity 就停止，不得用 HEAD、dirty tree、Environment identity、时间或任意临时摘要代替。
-- 仅工作区Candidate仍执行同一Completion Review；Review不得把workspace coverage gap或`not-passed` Verification重写为passed、waiver或风险接受。
-
-Result 存在但未提供 current target 时 applicability 是 `unknown`；identity 不同是 `stale`。两者都不能描述为仍满足审查。
-
-同一OpenSpec语义从active移动到archive，或只改变tasks checkbox时，resolver target保持不变，已有current Planning Review继续适用，不重复record。proposal、design、delta Requirement/Scenario、关键任务文本或Task Intent/scope使resolver target改变时，才以新target重新审查。
-
-## 2. 动态执行语义审查
-
-根据 Task Intent、Project authority、目标内容、风险和用户要求选择实际 reviewed 对象。不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围。
-
-current planning nodes包含OpenSpec Change `tasks.md`时，Planning Review必须逐项语义判断checkbox能否在Change convergence/archive前完成，并把实际checklist写入`reviewed`；无法审查时写入`uncovered`及原因。只能在archive后由Formal Verification、Candidate、Completion Review、Task Finish、Environment cleanup或Task terminal authority完成的checkbox必须形成精确finding并返回`changes-required`，先修订planning artifact。不得用关键词匹配代替语义判断：实现或测试同名产品能力、且能在archive前完成的Change-owned action仍可合法保留。planning不含`tasks.md`时不创建虚假审查对象。
-
-当Task Intent或current planning nodes经语义审查后确实跨两个以上lifecycle owner时，Planning Review另外把实际受影响owner、每个owner保护的结果不变量与未覆盖边界写入现有`reviewed|uncovered|findings`。Owner集合必须来自Agent对current Task、canonical authority与planning artifacts的判断，不得按关键词生成通用authority map，也不得为单owner、code-only或不相关Task套用固定Delivery/Activation/Cleanup/Diagnostics清单。无法覆盖的相关owner写入`uncovered`及真实原因；只有遗漏会放行错误对象写入、证据失真或完成误报时才返回`changes-required`，一般完整性建议只记录finding。
-
-同时维护：
-
-- `reviewed`：至少一个实际完成审阅的可移植逻辑对象；
-- `uncovered`：相关但没有审阅的对象及真实原因，可以为空；
-- `findings`：简洁事实列表，可以为空；
-- `conclusion`：完整的 `ready|changes-required` 与非空摘要。
-
-method 必须真实：同一 Agent 自审使用 `self`；只有实际独立 Agent 完整执行才使用 `independent-agent`；只有人类给出本次结论才使用 `human`。不要保存 reviewer、Agent session、model、隐藏推理、完整日志或凭证。
-
-## 3. 只记录完整 Result
-
-只有目标 identity 和完整结论都已形成时，调用：
+读取 canonical Workspace 中的正式 Task，确认 `planning|completion` 类型。先执行：
 
 ```text
-buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> --target <canonical-workspace> --json
+buildr task review inspect <task-id> --target <canonical-workspace> --json
 ```
 
-只传语义字段；不直接编辑旧YAML或打开SQLite，不传 schemaVersion、taskId、completedAt、revision、current、applicability、path 或完整 next state。Application 只事务替换精确类型的 current slot；Planning 和 Completion 同时存在时不生成总 receipt，也不让一种覆盖另一种。
+再从真实工作现场取得本次对象及稳定 `subjectIdentity`：
 
-Agent、工具或人工流程在形成完整结论前中断时不要调用 record。已有 Result 即使 stale 也保留；不得写 draft/blocked 占位结果。
+- 方案可以来自当前 OpenSpec artifacts、任务清单、设计文档或其他专业 owner；OpenSpec 可使用 Task Planning Identity resolver，但不是所有方案的强制来源。
+- 完成结果可以是当前代码内容、Git commit/tree、文件产物、部署结果或外部系统结果；不要求先创建 Task Candidate。
+- 实际对象位于 Task Environment 时，使用 `task-environment` 返回的 execution/validation root；不要从 cwd 或旧 Review Result 猜测。
 
-## 4. 报告与边界
+Review 是可选证据。Task Development、Task Verification、Task Finish 和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
 
-报告 reviewType、target identity、method、实际 reviewed/uncovered、findings、结论，以及 operation status、resultDigest、applicability、effects/diagnostic。`changes-required` 只表达审查结论，不修改 Task 顶层状态。
+## 2. 动态审查
 
-本 Skill 不创建 Task Environment、Task Development、Candidate generation、Verification evidence、Task Retrospective、Task Finish run、Git 提交或通用状态机。后续 gate 只由 Task Development 通过本 Application read model 判断；Task Review 本身不设置 gate。
+根据 Task Intent、当前对象、工程风险和用户要求决定阅读范围，使用现有文件、Git、测试、浏览器、外部系统或其他专业工具重新观察。正常软件开发中，例如：方案审查检查接口边界、兼容性和测试安排；完成审查检查真实代码差异、关键测试结果及用户要求是否兑现。
+
+记录：
+
+- `reviewed`：至少一个实际审阅的可移植对象；
+- `uncovered`：相关但未审阅的对象及真实原因；
+- `findings`：简洁事实，可以为空；
+- `conclusion`：`accepted|changes-requested` 和非空摘要。
+
+同一 Agent 自审使用 `self`；只有另一 Agent 完整执行才使用 `independent-agent`；只有人给出本次结论才使用 `human`。不要保存隐藏推理、session、model、完整日志或凭证。
+
+## 3. 原子记录
+
+完整结论形成后，用 `inspect` 返回的同类型 `resultDigest` 作为 `--expected-current`；槽位不存在时使用 `absent`：
+
+```text
+buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> --target <canonical-workspace> --json
+```
+
+并发冲突时重新 inspect，重新核对现场后决定是否重做或替换；不得盲目重试。Agent、工具或人工流程在完整结论前中断时不要调用 record，也不要写 draft/blocked 占位。
+
+## 4. 报告边界
+
+报告类型、审查对象 identity、method、reviewed/uncovered、findings、结论和写入效果。Application 不判断适用性；以后使用该 Result 时，Agent 必须重新观察对象并自行判断。
+
+本 Skill 不创建 Candidate、Development gate、Verification 报告、Finish run、Parent 决定、Git 提交或通用状态机；Task Retrospective 继续独立处理执行效率与流程改进。

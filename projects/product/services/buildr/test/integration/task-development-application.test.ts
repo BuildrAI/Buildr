@@ -76,7 +76,7 @@ function fixture(t, taskId) {
   });
   pinImmutableTaskRecord(runtime, root, taskId);
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', subjectIdentity: planningTargetIdentity, method: 'self', reviewed: ['Task plan'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Ready.' }, expectedCurrentDigest: 'absent' });
   const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
   return { root, runtime, taskId, planningTargetIdentity, targetIdentity: observed.development.receipt.contentTarget.identity };
 }
@@ -110,7 +110,7 @@ function changeFixture(t, taskId, initial = { availability: 'available', lifecyc
   });
   pinImmutableTaskRecord(runtime, root, taskId);
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Change convergence guard'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', subjectIdentity: planningTargetIdentity, method: 'self', reviewed: ['Change convergence guard'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Ready.' }, expectedCurrentDigest: 'absent' });
   const dispositions = [{ project: 'demo', change: 'convergence-guard', disposition: 'converged', summary: 'Change converged.' }];
   return { root, runtime, taskId, planningTargetIdentity, dispositions, setObserved(value) { observed = value; } };
 }
@@ -196,9 +196,35 @@ test('Development与Task Verification报告保持独立', (t) => {
 
   completion(current, candidate);
   recordKnowledge(current);
-  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Development facts are current.', risks: [] });
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Development facts are current.' });
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
   assert.equal(result.development.applicability.handoff, 'current');
+});
+
+test('Task Review新增或替换不改变Development Candidate与handoff', (t) => {
+  const current = fixture(t, 'development-review-independent');
+  let result = current.runtime.freezeTaskDevelopmentCandidate(current.root, current.taskId);
+  const candidate = result.development.receipt.candidate;
+  recordKnowledge(current);
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Development facts are current.' });
+  result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
+  const before = { receiptDigest: result.development.receiptDigest, candidate: candidate.identity, handoff: result.development.receipt.handoffs.at(-1).identity };
+
+  let review = current.runtime.recordTaskReview(current.root, current.taskId, {
+    reviewType: 'completion', subjectIdentity: current.targetIdentity, method: 'self', reviewed: ['current content'], uncovered: [], findings: [],
+    conclusion: { outcome: 'accepted', summary: 'Current content accepted.' }, expectedCurrentDigest: 'absent',
+  });
+  review = current.runtime.recordTaskReview(current.root, current.taskId, {
+    reviewType: 'completion', subjectIdentity: current.targetIdentity, method: 'self', reviewed: ['current content'], uncovered: [], findings: ['Documentation can be clearer.'],
+    conclusion: { outcome: 'changes-requested', summary: 'Improve documentation.' }, expectedCurrentDigest: review.slots.completion.resultDigest,
+  });
+  assert.equal(review.slots.completion.result.conclusion.outcome, 'changes-requested');
+
+  const after = current.runtime.inspectTaskDevelopment(current.root, current.taskId);
+  assert.equal(after.development.receiptDigest, before.receiptDigest);
+  assert.equal(after.development.receipt.candidate.identity, before.candidate);
+  assert.equal(after.development.receipt.handoffs.at(-1).identity, before.handoff);
+  assert.equal(after.development.applicability.handoff, 'current');
 });
 
 
@@ -209,12 +235,12 @@ test('Current Knowledge只让completion-critical blocked阻止handoff，attentio
   completion(current, candidate);
   recordKnowledge(current, 'blocked');
   assert.throws(
-    () => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Blocked knowledge cannot be waived.', risks: [] }),
+    () => current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Blocked knowledge cannot be waived.' }),
     (error) => error.code === 'task_development_proceed_not_ready' && error.details.reasons.some((reason) => reason.code === 'current-knowledge-completion-conflict'),
   );
   result = recordKnowledge(current, 'attention');
   assert.equal(result.development.receipt.currentKnowledge.status, 'attention');
-  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explanatory drift is non-blocking.', risks: [] });
+  result = current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Explanatory drift is non-blocking.' });
   assert.equal(result.development.receipt.decision.outcome, 'proceed');
   result = current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
   assert.equal(result.development.receipt.handoffs.at(-1).knowledge.status, 'attention');
@@ -235,7 +261,7 @@ test('多Project Current Knowledge要求精确Project集合并确定性聚合顶
   });
   pinImmutableTaskRecord(runtime, root, taskId);
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Multi Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', subjectIdentity: planningTargetIdentity, method: 'self', reviewed: ['Multi Project plan'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Ready.' }, expectedCurrentDigest: 'absent' });
   const observed = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
   const treeIdentity = observed.development.receipt.contentTarget.identity;
   assert.throws(() => runtime.recordTaskDevelopmentKnowledge(root, taskId, {
@@ -388,12 +414,12 @@ function handoffChangeFixture(current) {
   const candidate = frozen.development.receipt.candidate;
   completion(current, candidate);
   recordKnowledge(current);
-  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
+  current.runtime.decideTaskDevelopment(current.root, current.taskId, { outcome: 'proceed', summary: 'Current positive gates.' });
   return current.runtime.createTaskDevelopmentHandoff(current.root, current.taskId);
 }
 
-function completion(current, candidate, outcome = 'ready') {
-  return current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Task Candidate'], uncovered: [], findings: outcome === 'ready' ? [] : ['Known acceptance concern.'], conclusion: { outcome, summary: outcome === 'ready' ? 'Ready.' : 'Requires explicit risk acceptance.' } });
+function completion(current, candidate, outcome = 'accepted') {
+  return current.runtime.recordTaskReview(current.root, current.taskId, { reviewType: 'completion', subjectIdentity: candidate.identity, method: 'self', reviewed: ['Task Candidate'], uncovered: [], findings: outcome === 'accepted' ? [] : ['Known acceptance concern.'], conclusion: { outcome, summary: outcome === 'accepted' ? 'Ready.' : 'Requires changes.' }, expectedCurrentDigest: 'absent' });
 }
 
 function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
@@ -434,14 +460,14 @@ function gitDevelopmentFixture(t, taskId, { sharedPath = false } = {}) {
     ],
   });
   const planningTargetIdentity = taskDevelopmentDigest(`${taskId}:plan`);
-  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', targetIdentity: planningTargetIdentity, method: 'self', reviewed: ['Git-backed plan'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.recordTaskReview(root, taskId, { reviewType: 'planning', subjectIdentity: planningTargetIdentity, method: 'self', reviewed: ['Git-backed plan'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Ready.' }, expectedCurrentDigest: 'absent' });
   let result = runtime.observeTaskDevelopment(root, taskId, { changeDispositions: [], planningTargetIdentity });
   const targetIdentity = result.development.receipt.contentTarget.identity;
   result = runtime.freezeTaskDevelopmentCandidate(root, taskId);
   const candidate = result.development.receipt.candidate;
-  runtime.recordTaskReview(root, taskId, { reviewType: 'completion', targetIdentity: candidate.identity, method: 'self', reviewed: ['Git Task Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'ready', summary: 'Ready.' } });
+  runtime.recordTaskReview(root, taskId, { reviewType: 'completion', subjectIdentity: candidate.identity, method: 'self', reviewed: ['Git Task Candidate'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Ready.' }, expectedCurrentDigest: 'absent' });
   recordKnowledge({ runtime, root, taskId });
-  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'Current positive gates.', risks: [] });
+  runtime.decideTaskDevelopment(root, taskId, { outcome: 'proceed', summary: 'Current positive gates.' });
   result = runtime.createTaskDevelopmentHandoff(root, taskId);
   return { root, taskRoot, runtime, taskId, planningTargetIdentity, candidate, handoff: result.development.receipt.handoffs.at(-1), targetIdentity };
 }
@@ -487,11 +513,7 @@ test('读取只返回最近一次 Development lifecycle snapshot，不重新观�
   assert.equal(result.development.applicability.contentTarget, 'current');
   assert.equal(result.development.applicability.candidate, 'current');
   assert.equal(result.development.applicability.handoff, 'current');
-  assert.deepEqual(result.development.applicability.gates, {
-    planning: { ...result.development.receipt.gates.planning, applicability: 'current' },
-    verification: null,
-    completion: { ...result.development.receipt.gates.completion, applicability: 'current' },
-  });
+  assert.deepEqual(result.development.applicability.gates, { planning: null, verification: null, completion: null });
   result = shared.runtime.freezeTaskDevelopmentCandidate(shared.root, shared.taskId);
   assert.equal(result.status, 'unchanged');
   assert.equal(result.development.receipt.candidate.generation, 1);

@@ -1,3 +1,4 @@
+// @ts-nocheck -- Existing CLI migrated to the single TypeScript source in this change.
 import path from 'node:path';
 import process from 'node:process';
 
@@ -19,12 +20,12 @@ function parseUncovered(value, usage) {
 
 function parseTaskReviewCli(operation, args) {
   const usages = {
-    inspect: 'buildr task review inspect <task-id> [--planning-target <identity>] [--completion-target <identity>] [--target <canonical-workspace>] [--json]',
-    record: 'buildr task review record <task-id> --type <planning|completion> --target-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <ready|changes-required> --summary <text> [--target <canonical-workspace>] [--json]',
+    inspect: 'buildr task review inspect <task-id> [--target <canonical-workspace>] [--json]',
+    record: 'buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> [--target <canonical-workspace>] [--json]',
   };
   const allowed = operation === 'inspect'
-    ? new Set(['--planning-target', '--completion-target', '--target', '--json'])
-    : new Set(['--type', '--target-identity', '--method', '--reviewed', '--uncovered', '--finding', '--outcome', '--summary', '--target', '--json']);
+    ? new Set(['--target', '--json'])
+    : new Set(['--type', '--subject-identity', '--method', '--reviewed', '--uncovered', '--finding', '--outcome', '--summary', '--expected-current', '--target', '--json']);
   const repeatable = new Set(['--reviewed', '--uncovered', '--finding']);
   const values = new Map();
   const positions = [];
@@ -60,7 +61,7 @@ function emptySlots(runtime, targetRoot, taskId) {
   const build = (reviewType) => {
     let reviewPath = null;
     try { reviewPath = runtime.taskReviewResultPath(targetRoot, taskId, reviewType); } catch {}
-    return { path: reviewPath, present: false, result: null, resultDigest: null, applicability: null };
+    return { path: reviewPath, present: false, result: null, resultDigest: null, observedAt: null };
   };
   return { planning: build('planning'), completion: build('completion') };
 }
@@ -75,7 +76,7 @@ function blockedResult(runtime, operation, taskId, targetRoot, error) {
     slots: reviewSlots,
     diagnostic: { code: error.code || 'task_review_failed', message: error.message, ...(error.details === undefined ? {} : { details: error.details }) },
     effects: [],
-    nextActions: [error.nextAction || '检查 Task Review 诊断并基于当前 Task/target identity 重试。'],
+    nextActions: [error.nextAction || '检查 Task Review 诊断，重新观察审查对象与 current slot 后重试。'],
   });
 }
 
@@ -90,15 +91,16 @@ export function taskReviewCommand(runtime, operation, args) {
   const parsed = parseTaskReviewCli(operation, args);
   try {
     const payload = operation === 'inspect'
-      ? runtime.inspectTaskReview(parsed.targetRoot, parsed.taskId, { planningTargetIdentity: parsed.one('--planning-target'), completionTargetIdentity: parsed.one('--completion-target') })
+      ? runtime.inspectTaskReview(parsed.targetRoot, parsed.taskId)
       : runtime.recordTaskReview(parsed.targetRoot, parsed.taskId, {
         reviewType: parsed.one('--type'),
-        targetIdentity: parsed.one('--target-identity'),
+        subjectIdentity: parsed.one('--subject-identity'),
         method: parsed.one('--method'),
         reviewed: parsed.many('--reviewed'),
         uncovered: parsed.uncovered,
         findings: parsed.many('--finding'),
         conclusion: { outcome: parsed.one('--outcome'), summary: parsed.one('--summary') },
+        expectedCurrentDigest: parsed.one('--expected-current'),
       });
     return print(payload, parsed.json);
   } catch (error) {

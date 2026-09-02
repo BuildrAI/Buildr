@@ -26,7 +26,6 @@ test('Task Planning Identity runtime保持独立只读入口且由Task module注
 test('全部OpenSpec consumer消费resolver且拒绝手工target摘要', () => {
   const consumers = [
     'resources/workspace/skills/buildr/task-development/SKILL.md',
-    'resources/workspace/skills/buildr/task-review/SKILL.md',
     'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
     'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
     'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',

@@ -396,17 +396,22 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** Intake Skill MUST不执行或开发验证能力
 
 ### Requirement: Task Skills 必须解释协调与专业 authority 边界
-Buildr package MUST更新Task Manager、Triage、Development、Review、Verification、OpenSpec与Finish Skills，使Agent根据用户目标和当前事实直接发现专业owner。Skills MUST NOT要求`task next`、Candidate、Handoff或Development current作为Review、Verification、Parent管理、OpenSpec apply或Finish的统一前置，也 MUST NOT引导双写、checkbox同步或自动状态传播。
+`task-review` Skill MUST指导Agent从用户目标、Task、真实subject和专业owner事实动态选择Planning或Completion审查，先inspect current slot，再使用现有代码/Git/文件/测试/Browser/HTTP/外部工具完成审查，最后以CAS record完整Result。Skill MUST不要求Environment、Development、Candidate、Handoff或统一gate；目标不明或审查中断时不得写Result。
+
+#### Scenario: Agent审查普通代码修改
+- **WHEN** 用户要求审查一个没有Development的服务修复Task
+- **THEN** Agent MUST读取Task与真实diff、相关测试和Service规则形成subject identity及Review Result
+- **AND** MUST不要求补造OpenSpec、Candidate或Development Receipt
 
 #### Scenario: runtime Agent读取新流程
-- **WHEN** 用户要求审查、验证、OpenSpec实现、父子管理或收尾
-- **THEN** matching Skill MUST直接读取Task、Environment和本专业所需事实并调用所属Interface
-- **AND** MUST不先调用`task next`取得统一流程许可
+- **WHEN** runtime Agent命中Task Review意图
+- **THEN** MUST读取投射后的Task Review Skill并直接检查Task、current slot和真实subject
+- **AND** MUST不读取`task next`或要求Development provider
 
 #### Scenario: 专业provider不可用
-- **WHEN** 某一专业Skill的required provider unavailable
-- **THEN** MUST只阻止该专业动作并保留其他已确认事实
-- **AND** MUST不把整个Task或Workspace标记为blocked
+- **WHEN** Task Review provider未绑定或不可用
+- **THEN** Agent MUST报告Review动作不可执行且不写Result
+- **AND** MUST不阻塞其他不依赖Review的Task工作
 
 ### Requirement: Runtime投射必须来自Workspace source
 更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST NOT作为长期编辑authority。

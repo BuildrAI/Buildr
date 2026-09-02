@@ -663,20 +663,21 @@ Buildr package/runtime capability graph MUST让`task-environment`提供`buildr.t
 - **AND** MUST NOT根据Skill ID、目录名或旧receipt schema硬编码调用
 
 ### Requirement: task-review Skill 必须作为 Task Review 语义入口
-Buildr MUST 交付一个名为 `task-review` 的 workspace Skill，并 MUST 通过 selected `buildr.task-review/v1` provider 支持 `planning|completion` 两种参数化 Review。Skill MUST 负责理解 Task Intent、动态选择实际审阅对象、形成 findings 与真实结论；产品 Application MUST 只负责确定性 Result persistence/read model。
+Buildr MUST交付一个`task-review` workspace Skill，并通过selected`buildr.task-review/v2`支持`planning|completion`。Agent理解Task Intent、重新观察真实subject、动态选择工具和范围并形成结论；Application只负责inspect与CAS record。
 
 #### Scenario: 用户要求审查正式 Task 的方案
-- **WHEN** 用户、Project policy 或未来 Development 请求 Planning Review，并提供正式 Task 与明确 plan target identity
-- **THEN** Agent MUST 路由到一个 `task-review` Skill，以 `reviewType: planning` 执行并在完整结束后记录 Planning Result
+- **WHEN** 用户或Agent目标需要Planning Review并能取得真实方案identity
+- **THEN** Agent MUST路由到task-review并在完整结束后可选记录Planning Result
 
 #### Scenario: 用户要求审查完成候选
-- **WHEN** 用户、Project policy 或未来 Development 请求 Completion Review，并提供 current Candidate identity
-- **THEN** Agent MUST 路由到同一个 `task-review` Skill，以 `reviewType: completion` 执行并在完整结束后记录 Completion Result
+- **WHEN** 用户要求审查真实完成结果
+- **THEN** Agent MUST路由到同一Skill并自行从代码、Git、文件、部署或外部系统取得subject
+- **AND** MUST不要求Candidate或Development Receipt
 
 #### Scenario: Task 外普通审查
-- **WHEN** 用户只要求一次性阅读或评论且没有正式 Task/target identity
-- **THEN** Agent MAY 返回会话内审查意见
-- **AND** MUST NOT 创建 Task Review Result、空 Task 或伪 target identity
+- **WHEN** 用户只要求一次性评论且没有正式Task
+- **THEN** Agent MAY返回会话内意见
+- **AND** MUST不创建Task Review Result或伪subject
 
 ### Requirement: Task Review 必须如实记录执行方式和覆盖边界
 `task-review` MUST 如实选择 `self|independent-agent|human`，动态记录实际 reviewed、相关但 uncovered 的对象与原因、findings 和结论。Skill MUST NOT 把自审描述为独立审查，也 MUST NOT 把固定 OpenSpec artifacts、代码目录、测试命令或 review checklist 强制为所有 Task 的统一范围。
@@ -862,39 +863,32 @@ Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected 
 - **AND** 语义或重大风险决定 MUST 由 Agent 交还用户，恢复或重试 MUST 先重新核验事实
 
 ### Requirement: Task Development 必须区分任务贡献与交付基线适用性
-
-Task Development MUST是 Content Target、Candidate、Verification Result、Completion Review、decision 与研发交接（Development Handoff）是否 current/stale 的唯一 authority。Git-backed Development MUST只读观察原 Task source snapshot、Task Context、policy 与 gates；交付基线（Delivery Baseline）前进或 Task Finish 的机械应用冲突 MUST NOT自动改变这些 applicability facts。只有原 Task source/任务贡献（Task Contribution）、Task Context、policy或gate真实变化时，Development `observe`才使旧facts stale并要求重新Verification、Completion Review、handoff与新Candidate freeze。Buildr MUST NOT以路径不重叠、clean apply、resume动作或调用方boolean推断语义安全。
+Task Development MUST只维护Content Target、Candidate、Current Knowledge、decision与handoff适用性。Review与Verification独立；交付基线前进或两类Result变化 MUST不改变Development。只有原Task source/贡献、Task Context、planning或Content Target真实变化时，Development action才使对应facts stale。
 
 #### Scenario: rebase 只引入无关交付基线前进
-
-- **WHEN** current Development handoff形成后Delivery Baseline前进，但原Task worktree/source snapshot、Task Context、policy与gates均未变化
-- **THEN** Development只读inspect MUST保持Content Target、Candidate、Verification Result、Completion Review、decision与handoff current
-- **AND** MUST不调用observe覆盖Content Target、不重跑formal Verification且Candidate generation不增加
-- **AND** Agent MUST只在隔离Delivery Carrier处理需要的Delivery Adaptation
+- **WHEN** handoff形成后Delivery Baseline前进但原Task source、Task Context与Content Target未变化
+- **THEN** Development inspect MUST保持Candidate、decision与handoff current
+- **AND** MUST不读取Review/Verification或增加generation
 
 #### Scenario: 任务贡献或同路径基线事实变化
-
-- **WHEN** 原Task source/Task Contribution、Task Context、policy或gate真实变化
-- **THEN** Development MUST派生相应Content Target、Candidate或gate stale并阻止旧handoff继续交付
-- **AND** Agent MUST在Development重新完成formal Verification、Completion Review与handoff后才能freeze新generation
+- **WHEN** 原Task source、Task Contribution、Task Context或Content Target真实变化
+- **THEN** Development MUST使相应Candidate或handoff stale
+- **AND** Agent按真实目标重新开发；Review与Verification仍由各自Skill独立判断
 
 #### Scenario: Finish conflict不写Development authority
-
-- **WHEN** Finish报告`delivery-adaptation-required`或`semantic-review-required`，且Development只读inspect仍证明原Task source与全部applicability inputs未变
-- **THEN** Development MUST保持全部gates与handoff current
-- **AND** Finish result或Agent resume MUST NOT写Development Receipt或宣称Candidate stale
+- **WHEN** Finish报告需要交付适配且Development自身inputs未变
+- **THEN** Development MUST保持Candidate与handoff current
+- **AND** Finish或Agent resume MUST不写Development Receipt
 
 #### Scenario: 无法判断是否改变任务行为
-
 - **WHEN** Agent无法判断Delivery Adaptation是否改变任务行为或验收目标
 - **THEN** workflow MUST保持blocked且不得交付
-- **AND** MUST NOT伪造复用evidence或静默调用Development observe
+- **AND** MUST不伪造复用evidence或调用Development observe
 
 #### Scenario: 真实 Development 到 Finish 的适用性覆盖
-
 - **WHEN** Product验证目标分支前进后的Candidate复用
-- **THEN** 测试 MUST使用真实Task Development Application形成并只读检查current gates与handoff
-- **AND** MUST覆盖clean reuse、same-path conflict adaptation、真实source drift rebuild、generation与formal Verification执行次数
+- **THEN** 测试 MUST使用真实Task Development Application形成并只读检查Candidate与handoff
+- **AND** MUST覆盖clean reuse、conflict adaptation、source drift与generation
 
 ### Requirement: OpenSpec Change checklist 必须止于 Change disposition 边界
 Buildr-owned OpenSpec propose、update与apply contributions MUST引导Agent只把Change disposition前可完成的实现、知识收敛、验证反馈和archive readiness动作写入`tasks.md`。Contributions MUST NOT把Formal Development、Task Finish、Environment cleanup、Task terminal state或其他只能在archive后发生的Task lifecycle动作写为Change checkbox；convergence/archive MUST在Task Development观察stable Content Target之前完成，Task Finish MUST不拥有或解释Change checklist。

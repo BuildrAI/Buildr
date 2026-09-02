@@ -28,22 +28,29 @@ Buildr MUST 由 `src/task/module.mjs` 的 Task Review descriptor 显式声明 re
 - **AND** Host MUST NOT 直接导入 Task Review CLI/HTTP adapter 或自行注册 Task Review Application/Repository
 
 ### Requirement: Task Review 模块端口必须保持 writer authority 与兼容边界
-Task Review module MUST 只公开共享 Application、只读 persistence port 和有 owner、scope、退出条件的 Bootstrap compatibility port。Repository writer MUST 保持为模块私有依赖，CLI、HTTP、Skill 与其他 consumer MUST 继续通过 Task Review Application 写入 Result。
+Task Review module MUST公开v2 inspect/record Application、只读Persistence与runtime port；MUST NOT公开prompt生成、target applicability或Development gate适配方法。保留和修改的Review人工源码 MUST以TypeScript为唯一实现。
+
+#### Scenario: Bootstrap组装Review模块
+- **WHEN** Bootstrap创建完整runtime
+- **THEN** Review module MUST只requires Task Record persistence和Workspace structured store机制
+- **AND** Task Development module MUST不requires Review Application
 
 #### Scenario: consumer 读取或记录 Review Result
-- **WHEN** CLI、HTTP、Skill 或 Task lifecycle consumer 需要 Task Review 能力
-- **THEN** consumer MUST 复用同一 Application read/write 方法及其既有 JSON read model
-- **AND** consumer MUST NOT 直接写 SQLite、创建第二套 writer 或取得 Task Review schema/system field authority
+- **WHEN** CLI、HTTP或Web需要Review事实
+- **THEN** MUST只通过Task Review Application和公开module port调用inspect/record
 
 #### Scenario: 未迁移 consumer 使用兼容方法
-- **WHEN** 当前切片之外的既有 consumer 仍通过 runtime method 调用 Task Review
-- **THEN** Bootstrap compatibility port MAY 投射同一模块实现的方法
-- **AND** 该 port MUST 声明 owner、限定 existing runtime consumers，并把删除条件绑定到后续 consumer migration 与 legacy convergence
+- **WHEN** 旧consumer请求prompt、target applicability或Review gate adapter
+- **THEN** module MUST不提供兼容方法并由调用面原子迁移
 
 ### Requirement: 迁移必须保持 Task Review 外部与持久化行为等价
-Task Review 模块迁移 MUST 保持公开 CLI、HTTP、JSON、Review Result schema、Planning/Completion slots、applicability、SQLite schema、查询字段、事务、原子替换、rollback 和幂等语义不变。Application Payload 和 npm candidate MUST 继续提供等价入口。
+迁移 MUST保留两个可选slot、原子current替换、可移植证据与Task identity，同时按v2明确改变subject、outcome和CAS契约；MUST NOT保留v1双读或prompt stub。
+
+#### Scenario: 旧current row升级
+- **WHEN** v1数据库首次由集成后的retained runtime执行合法writer
+- **THEN** migration MUST把全部合法v1 rows转换为v2并保持slot数量与语义
+- **AND** 非法row MUST使整次migration回滚
 
 #### Scenario: 迁移前后执行 Task Review journeys
-- **WHEN** checkout 或 npm candidate 执行 inspect、record、Web prompt、无 Result、stale target、terminal Task 或注入写入失败场景
-- **THEN** operation、status、diagnostic、effects、JSON schema、SQLite bytes 与 rollback 结果 MUST 与既有契约等价
-- **AND** migration 顺序和 checksum MUST 不发生变化
+- **WHEN** 同一组inspect、record、slot隔离、写失败和并发场景分别在fresh v2与v1升级数据库运行
+- **THEN** MUST得到相同v2外部结果与原子安全边界

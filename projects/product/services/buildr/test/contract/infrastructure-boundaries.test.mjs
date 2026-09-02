@@ -16,7 +16,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/infrastructure/sqlite/task-finish-repository.mjs',
     'src/infrastructure/sqlite/task-overview-repository.ts',
     'src/infrastructure/sqlite/task-retrospective-repository.mjs',
-    'src/infrastructure/sqlite/task-review-repository.mjs',
+    'src/infrastructure/sqlite/task-review-repository.ts',
     'src/infrastructure/sqlite/task-verification-repository.mjs',
     'src/infrastructure/filesystem/task-environment-repository.mjs',
     'src/task/persistence/parent-coordination-repository.mjs',
@@ -28,7 +28,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/task/persistence/task-finish-repository.mjs',
     'src/task/persistence/task-overview-repository.ts',
     'src/task/persistence/task-retrospective-repository.mjs',
-    'src/task/persistence/task-review-repository.mjs',
+    'src/task/persistence/task-review-repository.ts',
     'src/task/persistence/task-verification-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
 });

@@ -11,7 +11,6 @@ const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 const CONSUMERS = [
   'resources/workspace/skills/buildr/task-development/SKILL.md',
   'resources/workspace/skills/buildr/task-retrospective/SKILL.md',
-  'resources/workspace/skills/buildr/task-review/SKILL.md',
   'resources/workspace/skills/buildr/openspec-contract-guard/SKILL.md',
   'resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md',
   'resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md',

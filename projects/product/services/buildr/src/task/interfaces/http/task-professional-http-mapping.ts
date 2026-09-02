@@ -15,15 +15,6 @@ export function mapTaskRetrospectiveRequest(input = {}) {
   });
 }
 
-export function mapTaskReviewPromptRequest(input) {
-  return Object.freeze({
-    ...present(input, 'taskId'),
-    ...present(input, 'reviewType'),
-    ...present(input, 'projectCode'),
-    ...present(input, 'change'),
-  });
-}
-
 export function mapTaskVerificationPromptRequest(input) {
   return Object.freeze({ taskId: input.taskId });
 }

@@ -684,10 +684,10 @@
 
 ## 研发回执（Development Receipt）
 
-- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；当前行为保存Environment逻辑引用、最小Task context、planning snapshot、Content Target、current Candidate/generation、Completion Review、decision与不可变研发handoff。旧verification policy与verification gate字段仅兼容读取历史row，新写入清空。
-- 适用范围：Development inspect/begin/planning/observe/gate/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
+- 定义：Task Development Application在Workspace SQLite中按Task ID维护的唯一closed current记录；当前行为保存Environment逻辑引用、最小Task context、planning snapshot、Content Target、current Candidate/generation、Current Knowledge、decision与不可变研发handoff。旧专业gate与risk字段仅兼容读取历史row，新写入清空。
+- 适用范围：Development inspect/begin/planning/observe/knowledge/freeze/decide/handoff与Finish carrier equivalence；其他模块只能调用Application read model。
 - 避免混用：不保存开发日志、进度、diff、完整Result/evidence、Environment本机资源、完整Candidate history、revision、CAS或锁；Task Finish不得直接打开SQLite，只消费Application handoff port。
-- 来源：[Task Development capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-development/v3.md)
+- 来源：[Task Development capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-development/v4.md)
 
 ## 研发节点（Development Node）
 
@@ -698,9 +698,9 @@
 
 ## 明确豁免（waived）
 
-- 定义：用户或具备业务授权的来源针对精确planning node或Planning/Completion target明确允许不执行该项的研发事实，必须保存summary与authorization source。
-- 适用范围：Task Development planning与Planning/Completion disposition；用于解释为何允许继续Candidate或handoff。
-- 避免混用：不等于not-applicable，不改写Review或Task验证报告，也不使stale/incomplete事实变为current。
+- 定义：用户或具备业务授权的来源针对精确planning node明确允许不执行该节点，必须保存summary与authorization source。
+- 适用范围：Task Development planning node；不用于Review、Verification或统一推进许可。
+- 避免混用：不等于not-applicable，不改写专业Result，也不使stale事实变为current。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
 ## 内容目标（Content Target）
@@ -712,8 +712,8 @@
 
 ## 任务候选（Task Candidate）
 
-- 定义：Task Development在Task Context、Planning disposition与stable Content Target明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context和generation。Completion与Current Knowledge不改变其identity或generation，Task Verification与Candidate无关。
-- 适用范围：Completion Review target、Development decision/handoff和Finish carrier equivalence。
+- 定义：Task Development在Task Context、planning snapshot与stable Content Target明确后冻结的Task级交付候选身份与正整数generation；identity只绑定Content Target、Task context和generation。Task Review、Task Verification与Current Knowledge不改变其identity或generation。
+- 适用范围：Development decision/handoff和Finish carrier equivalence；Agent可选择把Candidate或真实内容identity作为Review subject，但不是强制绑定。
 - 避免混用：不等于 Product Candidate verification、Git commit/branch/worktree、Task Environment、runtime projection、Agent session、tarball 或其他交付载体；不包含Planning、Task验证报告或Completion Result identity。
 - 来源：[Task Development specification](../specs/task-development/spec.md)
 
@@ -852,7 +852,7 @@
 
 ## 收尾就绪候选（Finish-ready Candidate）
 
-- 定义：已有current正式研发交接的Task Candidate；实现、current knowledge、Change处置、Completion Review与推进决定均已在Development闭合。Task验证报告是独立事实，不构成该候选资格。
+- 定义：已有current正式研发交接的Task Candidate；实现、current knowledge、Change处置与推进决定均已在Development闭合。Task Review与Task Verification是独立事实，不构成该候选资格。
 - 适用范围：Task Finish的输入资格与Development/Finish责任边界。
 - 避免混用：不等于“代码大致完成”，也不授权Finish收敛Change、修改内容、生成Candidate或接受风险；发现缺陷、target advancement或等价性失败时必须退出到Development。
 - 来源：[Task Finish执行规范](../specs/task-finish-execution/spec.md)

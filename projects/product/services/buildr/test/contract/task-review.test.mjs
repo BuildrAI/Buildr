@@ -10,38 +10,30 @@ const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
 test('task-review contract/provider/binding 以一个能力支持两种参数化 Result', () => {
   const manifest = YAML.parse(read('resources/manifest.yml'));
-  const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-review' && item.version === 1);
+  const contract = manifest.capabilityContracts.find((item) => item.id === 'buildr.task-review' && item.version === 2);
   assert.ok(contract);
   assert.equal(parseCapabilityContract(path.resolve(contract.path), contract).id, 'buildr.task-review');
-  assert.deepEqual(manifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-review'), { capability: 'buildr.task-review', version: 1, provider: 'task-review' });
+  assert.deepEqual(manifest.initialSkillBindings.find((item) => item.capability === 'buildr.task-review'), { capability: 'buildr.task-review', version: 2, provider: 'task-review' });
   const provider = manifest.builtins.skills.find((item) => item.id === 'task-review');
   assert.equal(provider.required, false);
-  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-review', version: 1 }]);
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.task-review', version: 2 }]);
   assert.equal(manifest.capabilityContracts.some((item) => /(?:planning|completion)[.-]review|task-review-(?:planning|completion)/i.test(item.id)), false);
 });
 
-test('task-review 动态审查范围、真实 method，并在中断时不写 Result', () => {
+test('task-review 从真实对象动态审查、真实记录method并用CAS防覆盖', () => {
   const skill = read('resources/workspace/skills/buildr/task-review/SKILL.md');
   for (const required of [
-    'Planning Review 或 Completion Review',
-    '动态执行语义审查',
+    '从真实工作现场取得本次对象',
+    '动态审查',
     '同一 Agent 自审使用 `self`',
-    '实际独立 Agent 完整执行',
-    '没有明确 Candidate identity 就停止',
+    '只有另一 Agent 完整执行才使用 `independent-agent`',
     '中断时不要调用 record',
-    '不生成总 receipt',
+    '--expected-current',
   ]) assert.ok(skill.includes(required), required);
-  assert.match(skill, /不要把 OpenSpec artifacts、代码目录、测试命令或 checklist 固定为每个 Task 的必选范围/);
-  assert.match(skill, /current planning nodes包含OpenSpec Change `tasks\.md`/);
-  assert.match(skill, /逐项语义判断checkbox能否在Change convergence\/archive前完成/);
-  assert.match(skill, /把实际checklist写入`reviewed`.*无法审查时写入`uncovered`/);
-  assert.match(skill, /必须形成精确finding并返回`changes-required`/);
-  assert.match(skill, /不得用关键词匹配代替语义判断/);
-  assert.match(skill, /同名产品能力.*Change-owned action仍可合法保留/);
-  assert.match(skill, /确实跨两个以上lifecycle owner/);
-  assert.match(skill, /实际受影响owner、每个owner保护的结果不变量与未覆盖边界/);
-  assert.match(skill, /不得按关键词生成通用authority map/);
-  assert.match(skill, /单owner、code-only或不相关Task套用固定/);
+  assert.match(skill, /完成结果可以是当前代码内容、Git commit\/tree、文件产物、部署结果或外部系统结果/);
+  assert.match(skill, /不要求先创建 Task Candidate/);
+  assert.match(skill, /Application 不判断适用性/);
+  assert.match(skill, /并发冲突时重新 inspect/);
   assert.doesNotMatch(skill, /buildr verification run|buildr task finish run|git commit|git push|revision:/);
 });
 
@@ -51,9 +43,9 @@ test('Task Review 与 Task Retrospective authority 独立且都不成为 Finish 
   const retrospective = manifest.builtins.skills.find((item) => item.id === 'task-retrospective');
   const development = manifest.builtins.skills.find((item) => item.id === 'task-development');
   const finish = manifest.builtins.skills.find((item) => item.id === 'task-finish');
-  assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 1 }]);
+  assert.deepEqual(review.provides, [{ capability: 'buildr.task-review', version: 2 }]);
   assert.deepEqual(retrospective.provides, [{ capability: 'buildr.task-retrospective', version: 2 }]);
-  assert.equal(development.requires.some((item) => item.capability === 'buildr.task-review' && item.version === 1 && item.mode === 'required'), true);
+  assert.equal(development.requires.some((item) => item.capability === 'buildr.task-review'), false);
   assert.equal(development.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
   assert.equal(finish.requires.some((item) => item.capability === 'buildr.task-review'), false);
   assert.equal(finish.requires.some((item) => /retrospective|asset-review/.test(item.capability)), false);
@@ -69,9 +61,9 @@ test('Task Review Application 是唯一 repository writer caller', () => {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(file);
       else if (file.endsWith('static-validation.mjs')) continue;
-      else if (/\.(?:mjs|js)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskReviewResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
+      else if (/\.(?:mjs|js|ts)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskReviewResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(callers, ['task/application/task-review-application.mjs']);
+  assert.deepEqual(callers, ['task/application/task-review-application.ts']);
 });
