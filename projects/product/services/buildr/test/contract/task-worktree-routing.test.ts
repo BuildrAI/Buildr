@@ -48,7 +48,7 @@ test('Worktree只维护Git位置和精确删除安全', () => {
     'buildr worktree cleanup <task-id>',
     '--expected-source <selector>=<full-commit>',
     '--delivered-ref <selector>=<full-commit>',
-    '不判断Task是否完成或业务成果是否等价',
+    '不判断 Task 是否 ready、完成或业务成果是否等价',
     '不管理Preview、容器或其他资源',
   ]) assert.ok(worktreeSkill.includes(required), `task-worktree must include ${required}`);
   assert.doesNotMatch(worktreeSkill, /--integrated-ref|Environment Receipt|环境 ready|总 cleanup/);

@@ -22,7 +22,7 @@ import {
   selectReleaseCommit,
 } from '../../tools/release/release-selection.mjs';
 import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.mjs';
-import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.mjs';
+import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
 import { runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.mjs';
 
 const digest = (value) => `sha256-${String(value).padStart(64, '0')}`;
@@ -61,8 +61,11 @@ function releaseWorktree(root, remote, baseline, version = '0.1.0-rc.5') {
   const providerEvidence = path.join(root, 'provider.json');
   fs.writeFileSync(providerEvidence, JSON.stringify({ schemaVersion: 'buildr.git-worktree-evidence/v1', taskId: `release-${version}`, workspaceRoot: controller, branch: `codex/release-${version}`, planDigest: digest('1'), status: 'ready', repositories: [{ selector: 'workspace', checkoutPath: work, branch: `codex/release-${version}` }], effects: [], updatedAt: '2026-08-28T00:00:00.000Z' }));
   const task = { taskId: `release-${version}`, status: 'active' };
-  const environmentResult = { status: 'ready', taskId: task.taskId, environment: { workspace: { root: controller }, controller: { identity: digest('2') }, runtimeInvocation: { identity: `${digest('3')}:v24.15.0` }, scopes: [{ selector: 'workspace', executionRoot: work, provider: { evidence: providerEvidence } }] } };
-  return { controller, work, binding: () => createReleaseExecutionBinding({ version, task, environmentResult, repo: work }) };
+  return { controller, work, binding: () => {
+    const head = git(work, 'rev-parse', 'HEAD');
+    const repository = { selector: 'workspace', checkoutPath: work, branch: `codex/release-${version}`, head, state: 'ready' };
+    return createReleaseExecutionBinding({ version, task, workspaceRoot: controller, repo: work, worktreeResult: { status: 'ready', taskId: task.taskId, evidencePath: providerEvidence, repositories: [repository] } });
+  } };
 }
 
 function convergenceFixture() {
@@ -402,7 +405,7 @@ test('本地Tag漂移在任何发布资源删除前阻止closeout', (t) => {
   assert.equal(git(data.controller, 'rev-parse', 'release-0.1.0-rc.5'), data.releaseCommit);
 });
 
-test('发布编排真实调用Git closeout并把精确交付映射交给Environment owner', async (t) => {
+test('发布编排真实调用Git closeout并把精确交付映射直接交给Worktree owner', async (t) => {
   const data = convergenceFixture();
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   const version = '0.1.0-rc.5';
@@ -411,7 +414,6 @@ test('发布编排真实调用Git closeout并把精确交付映射交给Environm
   git(data.controller, 'branch', carrier, data.releaseCommit);
   git(data.controller, 'push', 'origin', `${carrier}:${carrier}`);
   let task = { taskId, status: 'active', result: null };
-  let environmentStatus = 'ready';
   const controllerCalls = [];
   const orchestrationContext = createReleaseContext({
     selection: data.publicationEvidence.context.selection,
@@ -437,7 +439,6 @@ test('发布编排真实调用Git closeout并把精确交付映射交给Environm
     inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence: orchestrationEvidence }),
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('9'), recoveryIdentity: digest('8'), effects: [], nextActions: [] }),
     inspectTaskRecord: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '7' : '6') }),
-    inspectTaskEnvironment: () => ({ status: environmentStatus, environment: { workspace: { root: data.controller }, controller: { sourceRoot: path.join(data.controller, 'projects/product/services/buildr'), identity: digest('5') }, runtimeInvocation: { executable: process.execPath } } }),
     resolveRetainedController: () => ({ executable: process.execPath, argsPrefix: [], workspaceRoot: data.controller }),
     invokeRetainedController: (_controller, args) => {
       controllerCalls.push(args);
@@ -445,9 +446,8 @@ test('发布编排真实调用Git closeout并把精确交付映射交给Environm
         task = { ...task, status: 'completed', result: { summary: 'closed', noChange: true } };
         return { status: 'completed', effects: [{ type: 'task-completed' }] };
       }
-      if (args[0] === 'task' && args[1] === 'environment') {
-        environmentStatus = 'cleaned';
-        return { status: 'cleaned', effects: [{ type: 'environment-cleaned' }] };
+      if (args[0] === 'worktree' && args[1] === 'cleanup') {
+        return { status: 'cleaned', effects: [{ type: 'worktree-cleaned' }] };
       }
       return { status: 'ready', effects: [] };
     },
@@ -461,7 +461,7 @@ test('发布编排真实调用Git closeout并把精确交付映射交给Environm
   assert.equal(closed.status, 'passed', JSON.stringify(closed));
   assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${carrier}`), '');
   assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/release-${version}`).startsWith(data.releaseCommit), true);
-  assert.deepEqual(controllerCalls[1].slice(4, 8), ['--expected-source', `workspace=${data.releaseCommit}`, '--delivered-ref', `workspace=${data.mainCommit}`]);
+  assert.deepEqual(controllerCalls[1].slice(3, 7), ['--expected-source', `workspace=${data.releaseCommit}`, '--delivered-ref', `workspace=${data.mainCommit}`]);
   const repeated = await runReleaseOrchestration(options, dependencies);
   assert.equal(repeated.status, 'passed', JSON.stringify(repeated));
   assert.equal(controllerCalls.filter((args) => args[0] === 'task' && args[1] === 'complete').length, 1);

@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compactReleaseOrchestration, inspectReleaseOrchestration, resolveRetainedController, runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.mjs';
+import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.mjs';
 
 const digest = (letter) => `sha256-${letter.repeat(64)}`;
 const commit = (letter) => letter.repeat(40);
 
 function context() {
   return {
-    schemaVersion: 'buildr.release-context/v1',
+    schemaVersion: 'buildr.release-context/v2',
     identity: digest('1'),
     selection: { status: 'frozen', generation: 2, identity: digest('2') },
     release: { version: '1.0.0-rc.1', sourceCommit: commit('a'), sourceTree: commit('b') },
     candidate: { status: 'passed', runId: 42, runAttempt: 2, aggregateIdentity: digest('3') },
     convergence: { mainCommit: commit('a') },
-    environment: { taskId: 'release-1.0.0-rc.1' },
+    preparation: { taskId: 'release-1.0.0-rc.1' },
   };
 }
 
@@ -30,7 +30,6 @@ function evidence() {
 
 function closeoutDependencies(overrides = {}) {
   let task = { taskId: 'release-1.0.0-rc.1', status: 'active', result: null };
-  let environmentStatus = 'ready';
   let gitCloseoutInput = null;
   const calls = [];
   const dependencies = {
@@ -41,7 +40,6 @@ function closeoutDependencies(overrides = {}) {
       return { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'retained-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' }, effects: [{ type: 'selection-cleaned' }], nextActions: [] };
     },
     inspectTaskRecord: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '8' : '9') }),
-    inspectTaskEnvironment: () => ({ status: environmentStatus, environment: { workspace: { root: '/workspace' }, controller: { sourceRoot: '/workspace/projects/product/services/buildr', identity: digest('a') }, runtimeInvocation: { executable: '/node' } } }),
     resolveRetainedController: () => ({ executable: '/node', argsPrefix: ['/workspace/projects/product/services/buildr/bin/buildr.mjs'], workspaceRoot: '/workspace' }),
     invokeRetainedController: (_controller, args) => {
       calls.push(args);
@@ -49,15 +47,14 @@ function closeoutDependencies(overrides = {}) {
         task = { ...task, status: 'completed', result: { summary: 'done', noChange: true } };
         return { status: 'completed', recordDigest: digest('9'), effects: [{ type: 'task-completed' }], nextActions: [] };
       }
-      if (args[0] === 'task' && args[1] === 'environment') {
-        environmentStatus = 'cleaned';
-        return { status: 'cleaned', effects: [{ type: 'environment-cleaned' }], nextActions: [] };
+      if (args[0] === 'worktree' && args[1] === 'cleanup') {
+        return { status: 'cleaned', effects: [{ type: 'worktree-cleaned' }], nextActions: [] };
       }
       return { status: 'ready', identity: digest('b'), effects: [], nextActions: [] };
     },
     ...overrides,
   };
-  return { dependencies, calls, getTask: () => task, getGitCloseoutInput: () => gitCloseoutInput, setTask: (value) => { task = value; }, setEnvironmentStatus: (value) => { environmentStatus = value; } };
+  return { dependencies, calls, getTask: () => task, getGitCloseoutInput: () => gitCloseoutInput, setTask: (value) => { task = value; } };
 }
 
 test('prepare-dispatch has no effects and returns the unique current approval request', async () => {
@@ -100,8 +97,8 @@ test('closeout completes every owner in order and emits compact timeline output'
   assert.equal(fixture.getTask().result.noChange, true);
   assert.equal(fixture.getGitCloseoutInput().publicationEvidence.identity, digest('4'));
   assert.ok(fixture.calls[0].includes('--expected-record'));
-  assert.deepEqual(fixture.calls[1].slice(4, 8), ['--expected-source', `workspace=${commit('a')}`, '--delivered-ref', `workspace=${commit('a')}`]);
-  assert.deepEqual(fixture.calls.map((args) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['task', 'environment', 'cleanup'], ['doctor', '--target', '/workspace']]);
+  assert.deepEqual(fixture.calls[1].slice(3, 7), ['--expected-source', `workspace=${commit('a')}`, '--delivered-ref', `workspace=${commit('a')}`]);
+  assert.deepEqual(fixture.calls.map((args) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['worktree', 'cleanup', 'release-1.0.0-rc.1'], ['doctor', '--target', '/workspace']]);
   assert.equal(value.lifecycle.phase, 'closed');
   assert.equal(value.timeline.terminalStatus, 'closed');
   assert.equal(value.timeline.phases.find((item) => item.id === 'candidate-attempt:42:2').attempt.evidence[0].disposition, 'reused');
@@ -135,7 +132,7 @@ test('terminal Task resume continues cleanup without repeating Task completion',
   let cleanupAttempts = 0;
   const baseInvoke = fixture.dependencies.invokeRetainedController;
   fixture.dependencies.invokeRetainedController = (controller, args) => {
-    if (args[0] === 'task' && args[1] === 'environment') {
+    if (args[0] === 'worktree' && args[1] === 'cleanup') {
       cleanupAttempts += 1;
       if (cleanupAttempts === 1) return { status: 'blocked', effects: [], nextActions: ['restore cleanup'] };
     }
@@ -156,16 +153,6 @@ test('cleanup authorization blocker stops before canonical Task mutation', async
   assert.equal(value.status, 'blocked');
   assert.deepEqual(fixture.calls, []);
   assert.equal(fixture.getTask().status, 'active');
-});
-
-test('retained controller resolver rejects candidate worktree source before canonical mutation', async () => {
-  const fixture = closeoutDependencies();
-  fixture.dependencies.resolveRetainedController = resolveRetainedController;
-  fixture.dependencies.inspectTaskEnvironment = () => ({ status: 'ready', environment: { workspace: { root: '/workspace' }, controller: { sourceRoot: '/workspace/.worktrees/release/projects/product/services/buildr', identity: digest('a') }, runtimeInvocation: { executable: '/node' } } });
-  const value = await runReleaseOrchestration({ action: 'closeout', version: '1.0.0-rc.1', releaseTask: 'release-1.0.0-rc.1', publishRunId: 84, repo: '/workspace', canonicalWorkspace: '/workspace', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true }, fixture.dependencies);
-  assert.equal(value.status, 'blocked');
-  assert.match(value.nextActions[0], /retained controller/u);
-  assert.deepEqual(fixture.calls, []);
 });
 
 test('merge-to-dispatch and post-Publication closeout recover as one end-to-end orchestration path', async () => {
@@ -190,7 +177,7 @@ test('merge-to-dispatch and post-Publication closeout recover as one end-to-end 
   let cleanupAttempts = 0;
   const invoke = fixture.dependencies.invokeRetainedController;
   fixture.dependencies.invokeRetainedController = (controller, args) => {
-    if (args[0] === 'task' && args[1] === 'environment' && ++cleanupAttempts === 1) return { status: 'blocked', effects: [], nextActions: ['restore cleanup'] };
+    if (args[0] === 'worktree' && args[1] === 'cleanup' && ++cleanupAttempts === 1) return { status: 'blocked', effects: [], nextActions: ['restore cleanup'] };
     return invoke(controller, args);
   };
   const closeoutOptions = {

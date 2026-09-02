@@ -1,0 +1,5 @@
+# Release退出统一任务环境
+
+发布流程保留现有selection、Candidate、唯一artifact、受保护publish和main/dev收敛，只把Task Environment连接替换为三个真实owner：Worktree证明Git位置，Release Preparation证明依赖安装，Product exact Node和retained controller证明实际入口。
+
+发布成功后，Task完成、Worktree清理和Doctor仍按顺序善后，但任一清理失败不会否定已经成立的Publication和交付事实。

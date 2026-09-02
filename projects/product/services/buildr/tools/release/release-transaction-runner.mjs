@@ -17,11 +17,11 @@ import {
   releaseWorkflowPath,
   sha256,
 } from './release-authority.mjs';
-import { createReleaseEnvironmentBinding } from './release-environment-binding.mjs';
+import { validateReleasePreparationBinding } from './release-preparation-binding.ts';
 import { readReleaseArtifact } from './release-artifact.mjs';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.mjs';
 import { inspectReleaseSelection } from './release-selection.mjs';
-import { createReleaseTaskEvidenceCorrelationFromRuntime } from './release-task-evidence-correlation.mjs';
+import { createReleaseTaskEvidenceCorrelationFromRuntime } from './release-task-evidence-correlation.ts';
 import { createReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -80,12 +80,13 @@ function parseOptions(argv) {
     timeoutMs: Number(options['timeout-ms'] || 20 * 60 * 1000),
     publicationAuthorized: options['publication-authorized'] === 'true',
     releaseContext: options['release-context'] ? JSON.parse(fs.readFileSync(path.resolve(options['release-context']), 'utf8')) : null,
+    preparationBinding: options.preparation ? JSON.parse(fs.readFileSync(path.resolve(options.preparation), 'utf8')) : null,
   };
 }
 
 export function compactReleaseTransaction(result) {
   const runId = result.github?.runId || result.evidence?.publish?.runId || null;
-  const taskId = result.context?.environment?.taskId || result.context?.releaseTask?.taskId || null;
+  const taskId = result.context?.preparation?.taskId || result.context?.releaseTask?.taskId || null;
   const failedFinding = result.findings?.find((finding) => finding.severity === 'blocked') || null;
   const failed = result.error ? { code: 'release.transaction_failed', message: result.error } : failedFinding ? { code: failedFinding.code, message: failedFinding.nextAction || failedFinding.expected } : null;
   const normalizedStatus = result.status === 'passed' || result.status === 'ready'
@@ -199,8 +200,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
   const workflowSource = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256 = sha256(workflowSource);
   const title = `Release ${version} (${releaseId})`;
-  const environmentNodeVersion = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
-  if (exactNode.audit.version !== environmentNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Task Environment project Node ${environmentNodeVersion}.`);
+  const productNodeVersion = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
+  if (exactNode.audit.version !== productNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Product exact Node ${productNodeVersion}.`);
   let context;
   if (options.releaseContext) context = validateReleaseContext(options.releaseContext);
   else {
@@ -212,15 +213,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const releaseTask = releaseTaskResult?.record;
     const supportTasks = (options.supportTasks ?? []).map((taskId) => taskContextProjection(runtime.inspectTaskRecord(repo, taskId)?.record));
     const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
-    const environment = createReleaseEnvironmentBinding({
-      task: releaseTask,
-      taskStatus: 'active',
-      environmentResult: runtime.inspectTaskEnvironment(repo, options.releaseTask),
-      repo,
-      sourceCommit,
-      nodeAudit: exactNode.audit,
-      readSourceFile: (commit, file) => invoke(execute, 'git', ['show', `${commit}:${file}`], repo),
-    });
+    const preparation = validateReleasePreparationBinding(options.preparationBinding ?? dependencies.preparationBinding, { repo });
+    if (preparation.taskId !== releaseTask.taskId || preparation.sourceCommit !== sourceCommit) throw new Error('Release preparation binding does not match the active release Task/publication source.');
     const candidateRun = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');
     const candidateActual = {
       repository: candidateRun?.repository?.full_name ?? null,
@@ -311,8 +305,8 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
         devTree,
         ...(reconciliation ? { mergeCommit: sourceCommit, mergeParents: mainParents, mergeMethod: mainParents.length === 2 ? 'merge' : null, reconciliationIdentity: reconciliation.reconciliationIdentity } : {}),
       },
-      environment: { identity: environment.identity, status: environment.environmentStatus, taskId: environment.taskId, nodeVersion: environment.node.version, nodeIdentity: environment.node.executionIdentity },
-      node: { authority: environment.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
+      preparation: { identity: preparation.identity, status: preparation.outcome.status, taskId: preparation.taskId, sourceCommit: preparation.sourceCommit, nodeVersion: preparation.node.version, nodeIdentity: preparation.node.executionIdentity },
+      node: { authority: preparation.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
       workflow: { path: releaseWorkflowPath, digest: `sha256-${workflowSha256}`, repository: releasePublishAuthority.repository, environment: releasePublishAuthority.environment },
       taskCorrelation: taskCorrelationProjection(taskCorrelation),
     });

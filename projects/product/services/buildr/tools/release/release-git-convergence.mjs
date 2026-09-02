@@ -129,7 +129,7 @@ function blocked(operation, code, message, data = {}) {
 }
 
 function releaseSource(context) {
-  if (context.schemaVersion === 'buildr.release-context/v1') {
+  if (context.schemaVersion === 'buildr.release-context/v2') {
     return {
       version: context.release?.version,
       releaseCommit: context.release?.sourceCommit,

@@ -170,17 +170,17 @@ Candidate packaging MUST 只生成一个带 source identity、Candidate generati
 - **AND** workflow MUST 不产生第二份 publishable bytes
 
 ### Requirement: 共享 Release Context 必须只组合current owner facts
-Buildr MUST使用唯一closed builder组合release selection、release HEAD/tree、Product Candidate aggregate、冻结artifact、main/dev、Task correlation、Task Environment、exact Node与publish workflow identity。Builder MUST只保存最低充分owner projection、portable locator与identity/digest，不得复制专业Result正文、stdout、caller-claimed success或旁路persistence。
+
+Buildr MUST使用唯一closed builder组合release selection、release HEAD/tree、Product Candidate aggregate、冻结artifact、main/dev、Task correlation、matching Worktree evidence、Release Preparation、exact Node与publish workflow identity。Builder MUST NOT读取Task Environment ready、Plan、Receipt、controller或runtime投影。
 
 #### Scenario: 构造完整dispatch context
-- **WHEN** selection、Candidate、artifact、main、Task correlation、Environment、Node与workflow facts均可读取
-- **THEN** builder MUST返回closed release context、稳定context digest和每个owner的current identity
-- **AND** 相同规范化输入 MUST产生相同digest，任一owner identity变化 MUST产生不同digest
+- **WHEN** active release Task、matching Worktree、Release Preparation、Candidate、artifact、Git与Node事实全部current
+- **THEN** Release MUST形成不含Environment字段的current context
 
 #### Scenario: 专业事实缺失或漂移
 - **WHEN** 任一必需owner fact缺失、stale、schema不受支持或与release source不一致
 - **THEN** builder MUST保留可读取的其他owner projection并形成对应finding输入
-- **AND** MUST NOT从Task状态、历史stdout、文件路径或caller assertion补造缺失成功
+- **AND** MUST NOT从Task状态、历史stdout、文件路径、caller assertion或旧Environment数据补造缺失成功
 
 ### Requirement: Release Readiness 必须分阶段collect-all且无副作用
 Buildr MUST让`pre-candidate`、`pre-main`、`dispatch-check`与hosted`pre-tag`使用同一context schema、currentness规则和finding codes。每个本地Readiness Result MUST返回stage、context identity、`ready|blocked`、全部findings、hosted deferred checks、next actions与`effects: []`；不得因首个失败丢弃其他finding。
@@ -264,21 +264,24 @@ Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x`
 - **AND** MUST不移动 frozen ref、覆盖 release branch 或递增 generation
 
 ### Requirement: Release Git mutation 必须绑定matching Task Environment execution root
-Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active `release-<version>`协调Task的ready Task Environment execution root中运行。Consumer MUST从Environment read model构造closed binding，owner MUST独立核验canonical Workspace、Task、worktree provider evidence、repo root、branch、HEAD与runtime/controller identity；retained primary worktree和caller提交的路径声明 MUST NOT成为执行授权。
+
+Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active`release-<version>`Task的provider-owned Worktree中运行。Owner MUST核验canonical Workspace、Task、Worktree evidence、repo root、branch与HEAD；retained primary worktree、caller路径声明或旧Environment Receipt MUST NOT成为执行授权。
 
 #### Scenario: matching release execution root
-- **WHEN** active release Task、ready Environment、provider-owned worktree、release branch与expected HEAD全部匹配
-- **THEN** owner MAY执行已单独授权的selection或reconciliation Git mutation
-- **AND** result MUST返回Environment binding identity与实际execution root disposition
+- **WHEN** active release Task、ready Worktree evidence、release branch与expected HEAD全部匹配
+- **THEN** Release Git owner MAY执行对应Git动作
+
+- **AND** result MUST返回Worktree binding identity与实际execution root disposition
 
 #### Scenario: retained workspace被作为repo输入
-- **WHEN** 调用方把canonical retained primary worktree传给release Git owner
-- **THEN** owner MUST在checkout、merge、commit、ref mutation或remote push前失败关闭
+- **WHEN** 调用方把canonical retained primary worktree作为release mutation repo
+- **THEN** Release MUST在任何Git写入前拒绝
+
 - **AND** retained branch、index与working tree MUST保持不变
 
 #### Scenario: Environment binding漂移
-- **WHEN** Task、Receipt、worktree provider evidence、branch或HEAD不再匹配closed binding
-- **THEN** owner MUST返回current expected/actual identity与唯一Environment恢复动作
+- **WHEN** Task、Worktree evidence、branch或HEAD不再匹配closed binding
+- **THEN** owner MUST返回current expected/actual identity与唯一Worktree恢复动作
 - **AND** MUST NOT扫描其他worktree、切换执行root或回退到retained controller checkout执行Git mutation
 
 ### Requirement: Final release source 必须在 Candidate 前固定

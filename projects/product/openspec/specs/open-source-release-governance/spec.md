@@ -169,18 +169,19 @@ Buildr release workflow MUST 在公开 mutation 前后读取 npm `latest` 与 `n
 - **AND** MUST NOT把该漂移伪装成本次发布的成功副作用
 
 ### Requirement: Publication 必须从已完成 Task 的权威环境事实重建
-Buildr release preparation MUST消费matching active release Task Environment Plan/Receipt中已验证的Service preparation declaration、recipe、inputs与identity。等待授权期间Environment MAY保持ready或由owner清理可释放资源；后续publication MUST从冻结commit、已保存Environment facts和同一权威recipe重建clean hosted environment，并 MUST NOT要求提前完成release Task、恢复旧worktree或在Product根及其他未声明cwd另行运行依赖准备。
+
+Buildr Release MUST在matching release Worktree中使用冻结source的Buildr Service`package.json`、`package-lock.json`和Product exact Node执行`npm ci`。Preparation Result MUST保存source inputs、cwd、command、Node和outcome identity，MUST NOT保存stdout、凭证或Task Environment Plan/Receipt。无副作用readiness MUST只读取该Result，不得执行依赖安装。
 
 #### Scenario: Release Task Finish 已清理 worktree
-- **WHEN** active release Task已形成current frozen readiness context且publication得到明确授权，无论原execution worktree仍ready或已由owner清理可释放资源
-- **THEN** release runner MUST验证plan identity、`service:product/buildr` recipe、Service lockfile inputs、source commit与同一active Task identity
-- **AND** workflow MUST在冻结Buildr Service root按同一recipe语义重建依赖
+- **WHEN** exact Node在matching release Worktree的Buildr Service root执行`npm ci`成功且inputs未漂移
+- **THEN** Release MUST形成current Preparation binding
+
+- **AND** workflow MUST在冻结Buildr Service root按同一`npm ci`入口重建依赖
 - **AND** MUST NOT完成或重开Task、恢复旧worktree或在`projects/product`执行`npm ci`
 
 #### Scenario: recipe、cwd 或 lockfile 不匹配
-- **WHEN** Environment Receipt缺少required recipe、冻结source缺少Service lockfile、cwd不是声明的Service root或input identity漂移
-- **THEN** release preparation MUST在dispatch或npm mutation前确定性失败
-- **AND** diagnostic MUST指出expected selector、recipe、cwd、input与actual fact
+- **WHEN** `npm ci`失败或source inputs、Node、cwd漂移
+- **THEN** Release MUST只阻塞依赖该准备的readiness，不改变Task、Candidate、Git或Publication事实
 
 ### Requirement: Candidate 与 Release 子进程必须共同冻结 exact Node executable 和 PATH
 Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，development精确版本只约束development checkout入口。
@@ -316,16 +317,17 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 - **AND** explicit full MUST从同一run artifact校验后返回完整 portable evidence
 
 ### Requirement: 发布完成必须以零中间资源和正式release ref核验为边界
-Buildr MUST在Publication成功且post-publication dev provenance reconciliation通过后执行幂等closeout，并 MUST把正式远端`release-<version>`作为默认保留的发布事实，把generation carrier、临时convergence worktree、本地release branch、selection lifecycle refs与owned release worktree作为必需清理资源。可选删除正式远端release ref MUST继续要求独立明确授权，但 MUST NOT成为唯一release Task完成门禁。
+
+Publication和dev provenance已成立后，Release closeout MUST从canonical Workspace即时解析retained controller，完成release Task后直接调用Worktree provider cleanup，再运行Doctor。Worktree或Doctor cleanup失败 MUST保留已成立的Publication、Task结果和Git convergence事实。
 
 #### Scenario: 默认保留正式远端release branch
 - **WHEN** Publication、matching dev provenance reconciliation已成立且正式远端release branch精确等于冻结release commit
-- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并清理全部matching中间资源
+- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并完成Task、直接调用Worktree cleanup与Doctor
 - **AND** 未请求正式ref删除 MUST NOT产生blocked或要求新的协调Task
 
 #### Scenario: 中间资源漂移
-- **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership或expected identity无法证明
-- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、reconciliation与其他已清理事实
+- **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership、dirty状态或expected identity无法证明
+- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、Task completion、reconciliation与其他已清理事实
 - **AND** MUST NOT删除未知branch、worktree、正式release ref或其他version资源
 
 ### Requirement: 发布编排必须保留独立owner与授权边界

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.mjs';
+import { createReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
 import { createReleaseSelection, freezeReleaseSelection, inspectReleaseSelection, reconcileReleaseSelectionWithMain, reopenReleaseSelection, selectReleaseCommit } from '../../tools/release/release-selection.mjs';
 
 const digest = (value) => `sha256-${String(value).padStart(64, '0')}`;
@@ -44,11 +44,11 @@ function fixture(version) {
     planDigest: digest('1'), status: 'ready', repositories: [{ selector: 'workspace', checkoutPath: repo, branch: taskBranch }], effects: [], updatedAt: '2026-08-28T00:00:00.000Z',
   }, null, 2)}\n`);
   const task = { taskId: `release-${version}`, status: 'active' };
-  const environmentResult = { status: 'ready', taskId: task.taskId, environment: {
-    workspace: { root: retained }, controller: { identity: digest('2') }, runtimeInvocation: { identity: `${digest('3')}:v24.15.0` },
-    scopes: [{ selector: 'workspace', executionRoot: repo, provider: { evidence: providerEvidence } }],
-  } };
-  const binding = () => createReleaseExecutionBinding({ version, task, environmentResult, repo });
+  const binding = () => {
+    const head = git(repo, 'rev-parse', 'HEAD');
+    const repository = { selector: 'workspace', checkoutPath: repo, branch: taskBranch, head, state: 'ready' };
+    return createReleaseExecutionBinding({ version, task, workspaceRoot: retained, repo, worktreeResult: { status: 'ready', taskId: task.taskId, evidencePath: providerEvidence, repositories: [repository] } });
+  };
   return { root, retained, repo, version, baseline, source, binding };
 }
 

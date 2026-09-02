@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
-export const releaseContextSchema = 'buildr.release-context/v1';
+export const releaseContextSchema = 'buildr.release-context/v2';
 export const releaseReadinessSchema = 'buildr.release-readiness/v1';
 
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
@@ -38,7 +38,7 @@ function optionalProjection(value, fields, label) {
 }
 
 export function createReleaseContext(input) {
-  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'environment', 'node', 'workflow', 'taskCorrelation'], 'release context input');
+  closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'], 'release context input');
   const value = {
     schemaVersion: releaseContextSchema,
     selection: optionalProjection(input.selection, ['identity', 'version', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
@@ -46,7 +46,7 @@ export function createReleaseContext(input) {
     candidate: optionalProjection(input.candidate, ['workflow', 'runId', 'runAttempt', 'runUrl', 'sourceCommit', 'sourceTree', 'registryIdentity', 'aggregateIdentity', 'status'], 'candidate'),
     artifact: optionalProjection(input.artifact, ['artifactName', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'], 'artifact'),
     convergence: optionalProjection(input.convergence, ['mainCommit', 'mainTree', 'devCommit', 'devTree', 'mergeCommit', 'mergeParents', 'mergeMethod', 'reconciliationIdentity'], 'convergence'),
-    environment: optionalProjection(input.environment, ['identity', 'status', 'taskId', 'nodeVersion', 'nodeIdentity'], 'environment'),
+    preparation: optionalProjection(input.preparation, ['identity', 'status', 'taskId', 'sourceCommit', 'nodeVersion', 'nodeIdentity'], 'preparation'),
     node: optionalProjection(input.node, ['authority', 'version', 'executionIdentity'], 'node'),
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
     taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
@@ -56,7 +56,7 @@ export function createReleaseContext(input) {
 }
 
 export function validateReleaseContext(value) {
-  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'environment', 'node', 'workflow', 'taskCorrelation', 'identity'], 'release context');
+  closed(value, ['schemaVersion', 'selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation', 'identity'], 'release context');
   if (value.schemaVersion !== releaseContextSchema || !DIGEST.test(value.identity || '')) throw new Error('Release context schema/identity is invalid.');
   const { schemaVersion: _schemaVersion, identity: _identity, ...input } = value;
   const recreated = createReleaseContext(input);
@@ -65,10 +65,10 @@ export function validateReleaseContext(value) {
 }
 
 const stageRequired = Object.freeze({
-  'pre-candidate': ['selection', 'release', 'environment', 'node', 'workflow', 'taskCorrelation'],
-  'pre-main': ['selection', 'release', 'candidate', 'artifact', 'environment', 'node', 'workflow', 'taskCorrelation'],
-  'dispatch-check': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'environment', 'node', 'workflow', 'taskCorrelation'],
-  'pre-tag': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'environment', 'node', 'workflow', 'taskCorrelation'],
+  'pre-candidate': ['selection', 'release', 'preparation', 'node', 'workflow', 'taskCorrelation'],
+  'pre-main': ['selection', 'release', 'candidate', 'artifact', 'preparation', 'node', 'workflow', 'taskCorrelation'],
+  'dispatch-check': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'],
+  'pre-tag': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'],
 });
 
 const hostedChecks = Object.freeze([
@@ -132,11 +132,12 @@ export function evaluateReleaseReadiness(input) {
     if (context.taskCorrelation.status !== 'passed') findings.push(finding('task-correlation-not-passed', 'task-correlation', 'passed', context.taskCorrelation.status, '重新读取current release与support Task关系。'));
     if (context.release && context.taskCorrelation.sourceTree !== context.release.sourceTree) findings.push(finding('task-correlation-source-mismatch', 'task-correlation', { tree: context.release.sourceTree }, { commit: context.taskCorrelation.sourceCommit, tree: context.taskCorrelation.sourceTree }, '按current release/main tree重建Task correlation。'));
   }
-  if (context.environment) {
-    checkIdentity(findings, context.environment.identity, 'environment', 'task-environment');
-    if (!['ready', 'cleaned'].includes(context.environment.status)) findings.push(finding('environment-not-current', 'task-environment', 'ready|cleaned', context.environment.status, '恢复matching Task Environment read model。'));
+  if (context.preparation) {
+    checkIdentity(findings, context.preparation.identity, 'preparation', 'release-preparation');
+    if (context.preparation.status !== 'passed') findings.push(finding('preparation-not-passed', 'release-preparation', 'passed', context.preparation.status, '在冻结source上重新执行Release Preparation。'));
+    if (context.convergence && context.preparation.sourceCommit !== context.convergence.mainCommit) findings.push(finding('preparation-source-mismatch', 'release-preparation', context.convergence.mainCommit, context.preparation.sourceCommit, '按current publication source重建Release Preparation。'));
   }
-  if (context.node && context.environment && (context.node.version !== context.environment.nodeVersion || context.node.executionIdentity !== context.environment.nodeIdentity)) findings.push(finding('node-environment-mismatch', 'task-environment', { version: context.environment.nodeVersion, identity: context.environment.nodeIdentity }, { version: context.node.version, identity: context.node.executionIdentity }, '使用Environment冻结的exact Node重新运行。'));
+  if (context.node && context.preparation && (context.node.version !== context.preparation.nodeVersion || context.node.executionIdentity !== context.preparation.nodeIdentity)) findings.push(finding('node-preparation-mismatch', 'release-preparation', { version: context.preparation.nodeVersion, identity: context.preparation.nodeIdentity }, { version: context.node.version, identity: context.node.executionIdentity }, '使用Product exact Node重新运行Release Preparation。'));
   if (context.workflow) {
     if (context.workflow.path !== '.github/workflows/publish.yml' || context.workflow.environment !== 'npm-production') findings.push(finding('workflow-authority-mismatch', 'publish-workflow', { path: '.github/workflows/publish.yml', environment: 'npm-production' }, context.workflow, '恢复唯一publish workflow authority。'));
     checkIdentity(findings, context.workflow.digest, 'workflow', 'publish-workflow');

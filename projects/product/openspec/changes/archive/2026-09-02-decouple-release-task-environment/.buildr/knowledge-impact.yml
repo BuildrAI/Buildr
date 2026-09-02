@@ -1,30 +1,28 @@
 schemaVersion: buildr.knowledge-impact/v1
 change: decouple-release-task-environment
-operation: reconcile
+operation: assess
 treeIdentity: 97c9081e232c1305cda2b3c589b335cc06b2671e
 impacts:
   - type: brief
     target: openspec/changes/decouple-release-task-environment/brief.md
-    reason: Release退出Task Environment连接并直接消费真实owner。
+    reason: 记录Release直接消费Worktree、Preparation、Node和retained controller的边界。
     status: aligned
     sourceIdentities:
       - openspec/changes/decouple-release-task-environment/proposal.md
       - openspec/changes/decouple-release-task-environment/design.md
-      - openspec/changes/decouple-release-task-environment/tasks.md
   - type: service
     target: services/buildr/docs/release-checklist.md
-    reason: Release readiness、dependency preparation、execution binding与closeout输入已变化。
+    reason: Release readiness和closeout输入发生变化，但selection与publish authority保持不变。
     status: updated
     sourceIdentities:
       - services/buildr/tools/release/release-execution-binding.ts
       - services/buildr/tools/release/release-preparation-binding.ts
-      - services/buildr/tools/release/release-transaction-runner.mjs
       - services/buildr/tools/release/release-orchestration-runner.mjs
   - type: workflow
     target: skills/buildr-release/SKILL.md
-    reason: 发布Skill直接组合Worktree、Release Preparation、Node与retained controller。
+    reason: 发布Skill不再准备或清理Task Environment。
     status: updated
     sourceIdentities:
       - services/buildr/tools/release/release-readiness.mjs
-      - services/buildr/tools/release/release-task-evidence-correlation.ts
+      - services/buildr/tools/release/release-transaction-runner.mjs
 unresolvedItems: []

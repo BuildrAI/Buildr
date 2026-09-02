@@ -69,11 +69,11 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 ## 5. 准备发布
 
-准备阶段是正式开发/发布Task，遵循`task-triage`、`task-environment`、`task-verification`、`task-finish`和self-bootstrap唯一runner。Agent直接读取OpenSpec、代码、Git、文件和专业结果完成开发：
+准备阶段是正式开发/发布Task，遵循`task-triage`、`task-worktree`、`task-verification`、`task-finish`和self-bootstrap唯一runner。Agent直接读取OpenSpec、代码、Git、文件和专业结果完成开发；需要隔离Git位置时使用matching Worktree，需要依赖时调用Buildr Service真实`npm ci`入口：
 
 1. 对明确指定的`<version>`、精确`<dev-baseline>`和有序待选择dev commits按原值处理；对未指定项先fetch并读取current `dev`，形成包含精确SHA/tree的缺省方案并取得确认，再重新证明确认的commits属于current dev authority。确认后不得把移动中的`dev`当作新的baseline或隐式扩展selection。
-2. 创建或复用唯一`release-<version>`协调Task/Environment。该Task的intent必须覆盖selection、main coverage、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部成立前Task保持active，不调用complete。只由ready的`service:product/buildr/buildr.npm-ci` recipe在Buildr Service root准备依赖，使用Receipt的exact Node/CLI；不得在Product根`npm ci`。
-3. 从active Task与ready Environment生成closed execution binding。release selection、reopen、freeze、main coverage/reconciliation与local cleanup每次写入前都必须重新生成并核验该binding；只允许matching Task worktree的`codex/release-<version>`分支，正式`release-<version>`作为受控ref同步移动。retained primary worktree、其他Task worktree、陈旧branch/HEAD或caller路径声明必须零写入失败；owner不得checkout retained workspace。
+2. 创建或复用唯一`release-<version>`协调Task和matching Worktree。该Task的intent必须覆盖selection、main coverage、完整Candidate、唯一tarball、release→main与零副作用readiness；这些事实全部成立前Task保持active，不调用complete。依赖准备直接使用matching Worktree中Buildr Service的`npm ci`入口；不得在Product根执行。
+3. 从active Task与current Worktree evidence生成closed execution binding。release selection、reopen、freeze、main coverage/reconciliation与local cleanup每次写入前都必须重新生成并核验该binding；只允许matching Task worktree的`codex/release-<version>`分支，正式`release-<version>`作为受控ref同步移动。retained primary worktree、其他Task worktree、陈旧branch/HEAD或caller路径声明必须零写入失败；owner不得checkout retained workspace。
 4. 通过release selection owner创建或核验唯一`release-<version>`集合。create只建立正式release ref与lifecycle refs，不切换Task分支、不隐含push；同版本identity冲突时停止。
 5. 对维护者明确列出的commit逐个执行selection update；只允许`cherry-pick -x`，并且必须在绑定的Task分支执行，成功后原子同步正式release ref。冲突立即停止，保留可诊断现场，不自动解决、继续、rebase、reset、force push或直接编辑冒充选择成功。
 6. version、CHANGELOG、README/known limitations/checklist、测试修复或release owner修复等需要在Candidate前独立交付的内容，必须使用scope/intent明确、基于current `dev`的release support Task worktree完成实现、审查、验证与交付；再把delivered dev commit以`cherry-pick -x`选择到既有release集合。不得直接在release worktree修复后把整条release历史合并或倒灌`dev`，也不得用`release-<version>`协调Task承担这类提前内容贡献。
@@ -83,7 +83,7 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 10. 只对final source运行GitHub分布式`Candidate gate`；aggregate必须绑定同一final SHA/tree/generation、registry、唯一tarball、macOS/Windows/Host Node evidence。单个job绿色不能替代aggregate。aggregate失败、缺失或source不匹配时，release协调Task保持active，不得complete或把support delivery误报为准备完成。
 11. 为final generation创建或复用唯一`codex/release-main-<version>-g<generation>` carrier，并只以该carrier创建唯一release→main受保护PR；正式远端`release-<version>`不作为PR carrier。release PR必须使用GitHub `Create a merge commit`；终态readback必须证明merge commit、两个父提交、current carrier和main tree。Candidate后current main若前进，旧Candidate、tarball、carrier与PR立即stale，必须重新coverage/reconciliation形成下一generation并完整重跑Candidate。同SHA暂态失败先用`candidate-failed-shard-retry.mjs inspect`读取matching run与失败分片，取得明确授权后只执行`rerun --failed`；不得dispatch新的完整run或跨run拼接evidence。
 12. merge后核验`origin/main^{tree}`精确等于当前release tree，并核对main commit的父提交包含current carrier。merge method、tree或remote ref不一致时立即停止。
-13. 调用`tools/release/release-orchestration-runner.mjs prepare-dispatch`，由编排器复用transaction readiness owner构造并检查`buildr.release-context/v1`；只读取selection、Candidate aggregate/唯一artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。不得本地模拟OIDC、审批、tag、npm或GitHub Release。
+13. 先用exact Node运行`tools/release/release-preparation-binding.ts prepare --task <task-id> --workspace <canonical-workspace> --repo <release-worktree> --source-commit <main-commit> --output <private-json>`；它只在matching Worktree的Buildr Service root执行一次`npm ci`并返回closed Preparation binding。随后把该binding写入`release-orchestration-runner.mjs prepare-dispatch`输入的`transaction.preparationBinding`；readiness只读构造并检查`buildr.release-context/v2`，不得再次安装依赖。它只读取selection、Candidate aggregate/唯一artifact、Task correlation、matching Worktree、Release Preparation、exact Node、main/dev与workflow facts，要求context digest稳定、collect-all findings完整且`effects: []`。调用后删除private JSON，不把临时路径写入Result。不得本地模拟OIDC、审批、tag、npm publish或GitHub Release。
 14. 只有current selection、Candidate aggregate、唯一tarball、main tree与dispatch-check readiness全部matching时，编排结果才进入`awaiting-publication-authorization`。报告current orchestration identity、context digest、Release Phase Timeline identity、已成立effects和唯一publication授权请求，然后停止。`release-<version>`协调Task必须保持active；Task状态、历史授权或readiness通过都不构成publication授权。
 
 ## 6. 发布版本
@@ -92,13 +92,13 @@ description: 准备、检查、发布和验证Buildr候选版或稳定版时使�
 
 1. fetch并重新核验current release HEAD/tree、main tree、Candidate generation、tarball manifest/integrity、Task correlation、readiness context和workflow digest全部matching。
 2. 首次发布确认tag/npm version/GitHub Release不存在；恢复路径核对已有事实与同一context/tarball，不删除或覆盖。
-3. 使用release Task Environment保存的exact Node调用`release-orchestration-runner.mjs dispatch`，同时传入维护者对current frozen context的显式publication授权与expected context digest。编排器先重跑无副作用readiness；digest一致后才调用唯一transaction owner并只dispatch一次`publish.yml`。context漂移时旧授权失效且零远端写入。本机不创建/push tag、不dispatch probe-only workflow。
+3. 使用Product `.node-version`证明的exact Node调用`release-orchestration-runner.mjs dispatch`，同时传入维护者对current frozen context的显式publication授权与expected context digest。编排器先重跑无副作用readiness；digest一致后才调用唯一transaction owner并只dispatch一次`publish.yml`。context漂移时旧授权失效且零远端写入。本机不创建/push tag、不dispatch probe-only workflow。
 4. read-only jobs按context中的Candidate run下载matching `candidate-aggregate`和`candidate-package`，验证aggregate identity与tarball manifest/bytes后供Host Node、Launcher和protected job复用；publish run不得build Application Payload、`npm pack`或形成第二份候选物。全部通过后唯一protected job请求一次`npm-production`审批。
 5. 审批后同一job完成OIDC proof、final pre-tag convergence、tag ensure、Registry snapshot、`npm publish <same-tarball>`、双dist-tag/integrity readback、GitHub Release ensure和官方Registry精确安装smoke。
 6. 已存在npm version只在integrity与manifest相同、tag/source/context匹配时复用；否则停止，不unpublish、不覆盖、不重新pack。
 7. 按publish run调用`release-orchestration-runner.mjs closeout`。编排器先由hosted evidence owner inspect `release-evidence-*`，核验selection、release/support Tasks、Candidate、main、publish、tag、npm/GitHub Release、Registry smoke与context digest；临时下载立即清理。
 8. 同一closeout动作随后调用`release-git-convergence.mjs reconcile-dev`执行只读dev provenance reconciliation，再调用Git closeout owner保留并核验正式远端`release-<version>`，幂等删除matching generation carrier、本地release branch、selection lifecycle refs、owned worktree与临时资源。来源、ownership或identity不可证明时停止在对应owner，保留Publication和已成立effects；不得写入dev或撤销Publication。carrier与local selection cleanup继续需要本次显式授权，正式远端release ref删除仍是独立可选授权。
-9. lifecycle `closed`成立后，编排器只通过Task Environment Receipt指向的retained controller依次执行协调Task no-change completion、Task Environment cleanup与最终Doctor。Task已terminal但cleanup或Doctor失败时，恢复只继续未完成owner，不重跑Publication、reconciliation、Git closeout或Task completion。
+9. lifecycle `closed`成立后，编排器从canonical Workspace、retained Product source和exact Node即时解析controller，依次执行协调Task no-change completion、Worktree cleanup与最终Doctor。Task已terminal但cleanup或Doctor失败时，恢复只继续未完成owner，不重跑Publication、reconciliation、Git closeout或Task completion。
 10. 每次暂停、失败和成功都报告同一编排结果中的current action、orchestration/context/Timeline identities、owner steps、已成立effects与唯一next action；原transaction/evidence/Git convergence入口只保留为owner诊断和窄恢复入口，不再由Agent手工拼成第二套成功结论。
 
 RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告`next`现状，不擅自删除或移动非目标tag。
@@ -127,7 +127,7 @@ RC不得主动移动`latest`；GA确认`latest`指向目标稳定版并只报告
 - release/support Tasks 的记录关联、发布 Environment 与实际发布证据；
 - release→main PR、main commit/tree、publication context/run/approval、tag/npm/dist-tags/GitHub Release/Registry smoke；
 - post-publication dev provenance reconciliation identity、dev baseline/source commits/current dev HEAD和`published-but-dev-reconciliation-blocked`等独立attention；
-- local Task Environment、generation carrier、本地selection/worktree资源、正式远端release ref保留核验和可选删除授权事实；
+- matching Task Worktree、generation carrier、本地selection资源、正式远端release ref保留核验和可选删除授权事实；
 - `buildr.release-phase-timeline/v1` identity、selection/freeze、Candidate每个`runId + runAttempt`、成功shard evidence原attempt、实际rerun scope、aggregate、PR merge、readiness、人工授权、平台排队、Environment approval、Publication、reconciliation和closeout时间边界；缺失边界明确`unknown`，不估算duration；
 - 当前缺失owner/read model或迁移Contribution；未齐备时明确`release-model-implementation-incomplete`。
 

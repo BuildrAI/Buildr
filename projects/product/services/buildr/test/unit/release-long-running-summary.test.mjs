@@ -8,7 +8,7 @@ test('release transaction compact保留evidence identity与inspect入口', () =>
   const evidence = {
     identity: 'sha256-release-evidence', status: 'passed',
     publish: { runId: 42 },
-    context: { environment: { taskId: 'release-task' } },
+    context: { preparation: { taskId: 'release-task' } },
     attempt: { steps: [{ id: 'npm', status: 'passed' }] },
   };
   const output = compactReleaseTransaction({

@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { parseArguments, requireOption } from './release-files.mjs';
-import { validateReleaseExecutionBinding } from './release-execution-binding.mjs';
+import { validateReleaseExecutionBinding } from './release-execution-binding.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 
 export const releaseSelectionSchema = 'buildr.release-selection/v1';
@@ -68,7 +68,7 @@ function cleanWorktree(repo, dependencies) {
 }
 
 function requireExecutionBinding(options, repo) {
-  if (!options.executionBinding) throw new Error('Release Git mutation requires a matching Task Environment execution binding.');
+  if (!options.executionBinding) throw new Error('Release Git mutation requires a matching Task Worktree execution binding.');
   const binding = validateReleaseExecutionBinding(options.executionBinding, { repo });
   if (binding.version !== options.version) throw new Error(`Release execution binding version ${binding.version} does not match ${options.version}.`);
   return binding;
@@ -77,7 +77,7 @@ function requireExecutionBinding(options, repo) {
 function requireCleanupAuthority(options, repo, state) {
   if (options.executionBinding) {
     const executionBinding = requireExecutionBinding(options, repo);
-    return { kind: 'task-environment', identity: executionBinding.identity };
+    return { kind: 'task-worktree', identity: executionBinding.identity };
   }
   const evidence = validateReleaseTransactionEvidence(options.publicationEvidence);
   const context = evidence.context;
@@ -336,7 +336,7 @@ export function createReleaseSelection(options = {}, dependencies = {}) {
     const baseline = resolveCommit(options.baseline, repo, dependencies);
     const devHead = resolveCommit(devRef, repo, dependencies);
     if (!ancestor(baseline, devHead, repo, dependencies)) throw new Error(`Dev baseline ${baseline} is not contained by current ${devRef} (${devHead}).`);
-    if (executionBinding.head !== baseline) throw new Error(`Release Task Environment HEAD ${executionBinding.head} does not match selected baseline ${baseline}.`);
+    if (executionBinding.head !== baseline) throw new Error(`Release Task Worktree HEAD ${executionBinding.head} does not match selected baseline ${baseline}.`);
     updateRefs([`create ${branchRef} ${baseline}`, `create ${baselineRef} ${baseline}`], repo, dependencies);
     const result = readState({ version: required, repo, devRef }, dependencies);
     return { ...result, operation: 'create', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [{ type: 'branch-created', ref: branchRef, commit: baseline }, { type: 'baseline-ref-created', ref: baselineRef, commit: baseline }], nextActions: ['按维护者明确顺序逐个调用 update；普通 dev 前进不会自动进入 release。'] };
