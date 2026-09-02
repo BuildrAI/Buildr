@@ -78,7 +78,7 @@ bindings:
 
 顶层验证provider不是只有用户主动说“验证”才加载。用户直接要求测试、初始化或更新测试地图时由description发现；开发完成后，Agent独立读取Task、实际改动和`verification.yml`，选择并直接执行已有测试，再保存一份有意义的current报告。任务收尾不路由或解释Task Verification。
 
-`buildr.task-record/v2` 是正式 Task 顶层记录的薄能力，默认由 `task-manager` 提供。todo 只保存已接受意向，显式 activate 后才进入 active 研发路径；`open` 为 todo + active 查询态。Task Record 可以仅以 Task ID 关联多个终态且已有 current 复盘的来源，并派生反向后续列表；不保存 action item、复盘正文或执行计划。Parent/Child 与所有专业 authority 边界不变。Buildr Web 只观察和有限维护已有 Task，不创建或激活。
+`buildr.task-record/v3`是正式Task顶层记录的薄能力，默认由`task-manager`提供。todo只保存已接受意向，显式activate后才进入active；`open`为todo + active查询态。终态Task可登记固定本机复盘Markdown的SHA-256与`pending-decision|decided`，但不保存正文、处置说明、action item、复盘来源或执行计划。Buildr Web只观察和有限维护已有Task，不创建或激活。
 
 Buildr不再提供统一任务环境能力。需要隔离Git位置时，Agent调用`buildr.git-worktree-provider/v1`；Project `preparation.yml`只说明真实准备入口，由Agent按需直接调用；Preview、Runtime和其他动态资源由创建它们的能力维护owner与清理。它们之间不共享Plan、Receipt、`ready`状态或总cleanup Application。
 
@@ -98,7 +98,7 @@ render/sync会在有capability依赖的runtime派生Skill中注入受管binding 
 
 产品中的verification领域服务遵守`buildr.task-verification/v4`：Project地图来自真实测试代码、脚本、CI和说明，并通过expected identity维护；Task报告保存内容版本、实际checks、gaps和完整结论。报告不决定任务收尾或Task完成，也不建立风险授权或清理workflow。
 
-`buildr.task-retrospective/v2`默认由`task-retrospective`提供。处理时先返回原始Markdown/current digest，再以当前项目事实重新判断和拆分方向：失效项说明理由，有效项关联已有 todo/active Task 或创建 data-only todo。不创建 action item ID，也不自动生成 Change/提案/设计。所有有效方向均已关联后才标记 handled；无有效方向则标记 no-action。Result current row 与处置状态仍由 Retrospective Application 独占。
+`task-retrospective`不再提供独立capability，而是按需纯Skill并依赖`buildr.task-record/v3`。Agent基于当前可见事实生成本机Markdown，缺失耗时或Token时明确说明；查看零写入。用户决定继续行动后，Agent复用或创建普通Task；`decided`只表示用户已决定，不表示建议已实施。
 
 ### 6. 用户替换实现
 

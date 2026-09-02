@@ -55,11 +55,49 @@ capabilityContracts:
     path: resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
     target: skills/contracts/buildr/git-worktree-provider/v1.md
   - id: buildr.task-record
-    version: 2
-    description: 管理 canonical Workspace 中待办与正式 Task 的最小顶层记录及复盘来源。
-    path: resources/workspace/skills/contracts/buildr/task-record/v2.md
-    target: skills/contracts/buildr/task-record/v2.md
+    version: 3
+    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
+    path: resources/workspace/skills/contracts/buildr/task-record/v3.md
+    target: skills/contracts/buildr/task-record/v3.md
     replaces:
+      - id: buildr.task-record
+        version: 2
+        target: skills/contracts/buildr/task-record/v2.md
+        integrity: sha256-3c6f2f8e61f6381e1d09831dbe7c203229749ffcd32ec910cfa3d15d97dd494e
+        provider: task-manager
+        description: 管理canonical Workspace中待办与正式Task的最小顶层记录及复盘来源。
+      - id: buildr.task-retrospective
+        version: 2
+        target: skills/contracts/buildr/task-retrospective/v2.md
+        integrity: sha256-4e6b43ea1a7c4e60067f6e0de86cab6c6c8ef5ac7292316dbe18986135dd3710
+        provider: task-retrospective
+        description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
+      - id: buildr.task-retrospective
+        version: 1
+        target: skills/contracts/buildr/task-retrospective/v1.md
+        integrity: sha256-db41f691851dfe8e7d1f9fb2f858d605eea27e3991e8d95faef298a504f88499
+        provider: task-retrospective
+        description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
+      - id: buildr.task-asset-review
+        version: 1
+        target: skills/contracts/buildr/task-asset-review/v1.md
+        integrity: sha256-eb7d2d92f1cea492763a107d5c35ee0fe38406cb8480ade679b5595e6855f856
+        legacyIntegrities:
+          - sha256-8812af33714611af6b92c888a8204a26376e27116dc7cc63baa979141d6b2d89
+        provider: task-asset-review
+        description: 审查任务过程并提出可沉淀工作资产候选。
+      - id: buildr.task-asset-review
+        version: 2
+        target: skills/contracts/buildr/task-asset-review/v2.md
+        integrity: sha256-5b7dc8921816574f8981b10d01ff7dd472330cd5d6e33a70407f51ff8ec65b81
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
+      - id: buildr.task-asset-review
+        version: 3
+        target: skills/contracts/buildr/task-asset-review/v3.md
+        integrity: sha256-428ea04129a4701035617c3d35fa944cd1b20e863c4d7f9cafb76ae2a7485804
+        provider: task-asset-review
+        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
       - id: buildr.task-record
         version: 1
         target: skills/contracts/buildr/task-record/v1.md
@@ -101,38 +139,6 @@ capabilityContracts:
     description: 由智能体依据真实现场组合已有工具完成成果交付、已有任务结果登记与安全善后。
     path: resources/workspace/skills/contracts/buildr/task-finish/v1.md
     target: skills/contracts/buildr/task-finish/v1.md
-  - id: buildr.task-retrospective
-    version: 2
-    description: 按需复盘terminal Task，并把有效改进通过Task来源关系落地。
-    path: resources/workspace/skills/contracts/buildr/task-retrospective/v2.md
-    target: skills/contracts/buildr/task-retrospective/v2.md
-    replaces:
-      - id: buildr.task-retrospective
-        version: 1
-        target: skills/contracts/buildr/task-retrospective/v1.md
-        integrity: sha256-db41f691851dfe8e7d1f9fb2f858d605eea27e3991e8d95faef298a504f88499
-        provider: task-retrospective
-        description: 对terminal Task的Agent执行效率进行按需复盘，并维护Workspace SQLite中的唯一current Markdown Result。
-      - id: buildr.task-asset-review
-        version: 1
-        target: skills/contracts/buildr/task-asset-review/v1.md
-        integrity: sha256-eb7d2d92f1cea492763a107d5c35ee0fe38406cb8480ade679b5595e6855f856
-        legacyIntegrities:
-          - sha256-8812af33714611af6b92c888a8204a26376e27116dc7cc63baa979141d6b2d89
-        provider: task-asset-review
-        description: 审查任务过程并提出可沉淀工作资产候选。
-      - id: buildr.task-asset-review
-        version: 2
-        target: skills/contracts/buildr/task-asset-review/v2.md
-        integrity: sha256-5b7dc8921816574f8981b10d01ff7dd472330cd5d6e33a70407f51ff8ec65b81
-        provider: task-asset-review
-        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
-      - id: buildr.task-asset-review
-        version: 3
-        target: skills/contracts/buildr/task-asset-review/v3.md
-        integrity: sha256-428ea04129a4701035617c3d35fa944cd1b20e863c4d7f9cafb76ae2a7485804
-        provider: task-asset-review
-        description: 持续维护任务资产 observation，并完成审查、人工决定和独立任务交接。
   - id: buildr.terminology-governance
     version: 1
     description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
@@ -156,7 +162,7 @@ initialSkillBindings:
     version: 1
     provider: task-worktree
   - capability: buildr.task-record
-    version: 2
+    version: 3
     provider: task-manager
   - capability: buildr.task-review
     version: 2
@@ -167,9 +173,6 @@ initialSkillBindings:
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
-  - capability: buildr.task-retrospective
-    version: 2
-    provider: task-retrospective
   - capability: buildr.terminology-governance
     version: 1
     provider: terminology-governance
@@ -189,7 +192,7 @@ builtins:
       required: false
       requires:
         - capability: buildr.task-record
-          version: 2
+          version: 3
           mode: optional
         - capability: buildr.git-operations
           version: 1
@@ -220,7 +223,7 @@ builtins:
       required: false
       provides:
         - capability: buildr.task-record
-          version: 2
+          version: 3
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
@@ -256,14 +259,11 @@ builtins:
     - id: task-retrospective
       path: resources/workspace/skills/buildr/task-retrospective
       target: skills/buildr/task-retrospective
-      description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
+      description: 用户明确要求复盘已完成或已放弃的正式Task，查看本机复盘文档，或在阅读后决定是否继续行动时使用；只基于当前可见事实生成本机Markdown并维护Task上的待决策/已决策状态。
       required: false
-      provides:
-        - capability: buildr.task-retrospective
-          version: 2
       requires:
         - capability: buildr.task-record
-          version: 2
+          version: 3
           mode: required
       replaces:
         id: task-asset-review
@@ -309,7 +309,7 @@ builtins:
           version: 1
       requires:
         - capability: buildr.task-record
-          version: 2
+          version: 3
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -433,11 +433,10 @@ workspaceFiles:
   - resources/workspace/gitignore => .gitignore copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-record/v2.md => skills/contracts/buildr/task-record/v2.md copy
+  - resources/workspace/skills/contracts/buildr/task-record/v3.md => skills/contracts/buildr/task-record/v3.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-retrospective/v2.md => skills/contracts/buildr/task-retrospective/v2.md copy
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy

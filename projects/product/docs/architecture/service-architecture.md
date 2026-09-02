@@ -156,7 +156,7 @@ misc/
 
 ## `task` 模块
 
-`task/`管理Task Record、Environment、Development、Review、Verification、Retrospective、Finish和Parent Coordination等能力；不再包含Task Execution Record。
+`task/`管理Task Record、Review、Verification、Parent Coordination和复盘文档确定性读取边界；不再包含Task Environment、Development、Retrospective Application、Finish或Task Execution Record。
 
 这里的 `task` 是领域或功能模块名称，不只是 `domain/` 层。与 Task 相关的领域模型、应用用例、持久化映射和接口入口都归入 `task/`，再在模块内部按技术职责分层。
 
@@ -165,36 +165,32 @@ misc/
 ```text
 task/
   domain/
-    task-record.mjs
+    task-record.ts
     task-review.ts
-    task-retrospective.mjs
   application/
-    task-record-application.mjs
+    task-record-application.ts
     task-review-application.ts
-    task-retrospective-application.mjs
   persistence/
-    task-record-repository.mjs
+    task-record-repository.ts
+    task-record-retrospective-document.ts
     task-review-repository.ts
-    task-retrospective-repository.mjs
   interfaces/
     cli/
-      task-record.mjs
+      task-record.ts
       task-review.ts
     http/
-      task-record-http.mjs
+      task-record-http.ts
       task-review-http.ts
-    internal/
-      task-retrospective-driver.mjs
-  module.mjs
+  module.ts
 ```
 
 只有某项能力已经形成多个需要独立维护的文件、明确的私有协作边界，或者扁平层中的同类文件已明显妨碍查找和所有权判断时，才在对应技术层内为它建立子目录。`interfaces/cli/`、`interfaces/http/` 和 `interfaces/internal/` 继续按适配协议与调用方向分类，不属于业务能力子目录。
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前Task专业模块包括Environment、Review、Verification、Retrospective、Overview和Parent Coordination。研发过程由Agent依据目标、真实现场与专业Skill组合，不再由独立Task Development或Planning Identity模块保存和裁决。
+当前Task专业模块包括Review、Verification、Overview和Parent Coordination。复盘是按需纯Skill；正文写入本机ignored Markdown，Task Record只维护摘要和人的决定状态。研发过程由Agent依据目标、真实现场与专业Skill组合。
 
-Task Record 的 Domain、Application 和 Persistence 均直接位于对应技术层，不再保留只有单文件的 `domain/record/`、`application/record/` 或 `persistence/record/` 末级目录；Review、Retrospective 与生命周期核心采用同一扁平规则。旧Task Finish、Terminal Delivery与统一Task Environment的Application、Repository、CLI和internal driver已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
+Task Record 的 Domain、Application、Persistence和Interface均使用TypeScript并直接位于对应技术层。旧Retrospective Domain/Application/Repository/HTTP/Driver、Task Finish、Terminal Delivery与统一Task Environment实现已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
 
 ## `workspace` 模块
 
@@ -778,7 +774,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 |----------|----------------------|--------------------|--------------------|------|--------------------------|
 | Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.mjs`、`module-registry.mjs`、`bootstrap/cli/` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
 | 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
-| Task 全生命周期 | `src/task/module.mjs` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Retrospective、Environment、Development、Verification、Parent Coordination、Delivery/Finish 各自保留唯一 Result/Receipt/writer | Task contract/integration suites、`product.delivery` | `migrated` | — |
+| Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与Parent Coordination各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
 | Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
 | Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
@@ -800,8 +796,8 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | 原职责 | 最终 owner | Verification owner | 处置 |
 |--------|------------|--------------------|------|
 | Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
-| Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.mjs` | public-json-contracts system、architecture verification | `migrated` |
-| Internal workflow route inventory/router | `src/task/contracts/internal-workflow-route-catalog.mjs`、`src/task/interfaces/internal/workflow-route-router.mjs`，由 `task/module.mjs` 组装 runner | internal-workflow diagnostics、Task Retrospective contract | `migrated` |
+| Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.ts` | public-json-contracts system、architecture verification | `migrated` |
+| Internal workflow route inventory/router | 已随Retrospective Driver删除 | Task Retrospective contract、architecture verification | `migrated`（已删除） |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.ts` | Git Worktree contract、CLI architecture | `migrated` |
 | Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
 

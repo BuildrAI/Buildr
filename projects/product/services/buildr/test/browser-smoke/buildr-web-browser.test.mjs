@@ -703,14 +703,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
     await page.locator('#task-parent-coordination').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-task-tab]').count(), 4);
+    assert.equal(await page.locator('[data-task-tab]').count(), 3);
     await unique(page.getByRole('button', { name: '原型', exact: true }), '任务原型页签');
     assert.equal(await page.getByRole('button', { name: '研发', exact: true }).count(), 0);
     await unique(page.getByRole('button', { name: '证据', exact: true }), '任务证据页签');
-    await unique(page.getByRole('button', { name: '复盘', exact: true }), '任务复盘页签');
-    await page.getByRole('button', { name: '复盘', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('尚未复盘'));
-    assert.equal(await page.locator('#task-retrospective-panel button').count(), 1, '复盘页签只提供只读刷新');
+    assert.equal(await page.getByRole('button', { name: '复盘', exact: true }).count(), 0);
+    assert.equal(await page.locator('#task-retrospective-document-state').innerText(), '无复盘文档');
     await page.getByRole('button', { name: '证据', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('#task-review-slots .review-slot-card').length === 2);
     await page.waitForFunction(() => document.querySelectorAll('#task-verification-result .review-slot-card').length === 1);
@@ -736,30 +734,34 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-terminal-note').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-detail-status').innerText(), '已完成');
     assert.equal(await page.locator('#task-active-actions').isHidden(), true);
-    runtime.recordTaskRetrospective(workspaceRoot, 'created-in-app', { reportMarkdown: '# 执行效率\n\n减少重复读取。' });
+    const retrospectivePath = path.join(workspaceRoot, '.buildr', 'local', 'task-retrospectives', 'created-in-app.md');
+    fs.mkdirSync(path.dirname(retrospectivePath), { recursive: true });
+    fs.writeFileSync(retrospectivePath, '# 执行效率\n\n减少重复读取。\n');
+    const retrospectiveDocument = runtime.inspectTaskRetrospectiveDocument(workspaceRoot, 'created-in-app');
+    const completedRecord = runtime.inspectTaskRecord(workspaceRoot, 'created-in-app');
+    runtime.updateTaskRecord(workspaceRoot, 'created-in-app', {
+      expectedRecordDigest: completedRecord.recordDigest,
+      retrospectiveState: 'pending-decision',
+      retrospectiveDocumentDigest: retrospectiveDocument.actualDigest,
+    });
     await page.goto(`${workspaceUrl}/tasks`);
     await openTaskFilterPanel(page);
-    await selectAntdOption(page, 'task-filter-retrospective', '未处理');
+    await selectAntdOption(page, 'task-filter-retrospective', '等待决定');
     assert.equal(await antdSelectDisplay(page, 'task-filter-status'), '全部', '处置状态筛选应解除默认的进行中限制');
     await applyTaskFilters(page);
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
     await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
-    await page.getByRole('button', { name: '复盘', exact: true }).click();
-    await page.waitForFunction(() => document.getElementById('task-retrospective-content')?.textContent.includes('减少重复读取'));
-    assert.match(await page.locator('#task-retrospective-content').innerText(), /Agent 执行效率[\s\S]*执行效率[\s\S]*减少重复读取/);
-    assert.equal(await page.locator('#task-retrospective-content h2').innerText(), '执行效率');
-    assert.match(await page.locator('.retrospective-disposition').innerText(), /未处理/);
-    await page.locator('#task-retrospective-handle-open').click();
-    await page.locator('#task-retrospective-disposition-note').waitFor({ state: 'visible' });
-    await page.locator('#task-retrospective-disposition-note').fill('没有可转化为改进任务的事项');
-    await page.locator('#task-retrospective-no-action').click();
-    await page.waitForFunction(() => document.querySelector('.retrospective-disposition')?.textContent.includes('没有可转化为改进任务的事项'));
-    assert.match(await page.locator('.retrospective-disposition').innerText(), /无需处理[\s\S]*重新打开[\s\S]*没有可转化为改进任务的事项/);
+    assert.equal(await page.locator('#task-retrospective-document-state').innerText(), '等待你的决定');
+    await page.locator('#task-retrospective-document-open').click();
+    await page.waitForFunction(() => document.querySelector('.retrospective-document-meta')?.textContent.includes('等待你的决定'));
+    assert.match(await page.locator('.ant-modal .markdown-body').innerText(), /执行效率[\s\S]*减少重复读取/);
+    await page.locator('#task-retrospective-document-decide').click();
+    await page.waitForFunction(() => document.querySelector('.retrospective-document-meta')?.textContent.includes('已经决定'));
     await page.goto(`${workspaceUrl}/tasks`);
     await openTaskFilterPanel(page);
-    await selectAntdOption(page, 'task-filter-retrospective', '无需处理');
+    await selectAntdOption(page, 'task-filter-retrospective', '已经决定');
     await applyTaskFilters(page);
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
     assert.match(await page.locator('#task-table-body').innerText(), /页面查看任务/);

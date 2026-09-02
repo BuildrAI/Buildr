@@ -126,7 +126,7 @@ test('remote text owner includes product re-entry and payload entry boundaries',
   for (const input of [
     'src/infrastructure/network/**',
     'src/infrastructure/product-invocation/**',
-    'src/bootstrap/cli/main.mjs',
+    'src/bootstrap/cli/main.ts',
     'tools/release/application-payload-entry.mjs',
   ]) assert.ok(remote.inputs.includes(input), `remote-skill-timeout must own ${input}`);
 });

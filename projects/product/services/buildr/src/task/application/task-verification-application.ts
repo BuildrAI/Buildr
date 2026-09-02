@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
-import { taskRecordEffectiveProjectCodes } from '../domain/task-record.mjs';
+import { taskRecordEffectiveProjectCodes } from '../domain/task-record.ts';
 import { normalizeTaskVerificationCheck, normalizeTaskVerificationGap, normalizeTaskVerificationReport, taskVerificationError } from '../domain/task-verification.ts';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
 const digest = (value: Buffer | string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 function assertInput(input: any, allowed: Set<string>, label: string) {

@@ -14,14 +14,11 @@ import {
   TASK_RECORD_APPLICATION,
   TASK_RECORD_RUNTIME_PORT,
   TASK_RECORD_PERSISTENCE_READ,
-  TASK_RETROSPECTIVE_APPLICATION,
-  TASK_RETROSPECTIVE_RUNTIME_PORT,
-  TASK_RETROSPECTIVE_PERSISTENCE_READ,
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_PERSISTENCE_READ,
   TASK_WORKTREE_PROVIDER,
-} from '../../src/task/module.mjs';
+} from '../../src/task/module.ts';
 import {
   VERIFICATION_APPLICATION,
   VERIFICATION_DECLARATION,
@@ -44,7 +41,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task 内部 Adapter', () => {
-  assert.match(read('bin/buildr.mjs'), /src\/bootstrap\/cli\/main\.mjs/);
+  assert.match(read('bin/buildr.mjs'), /src\/bootstrap\/cli\/main\.ts/);
   assert.equal(fs.existsSync(path.join(root, 'src/application/compose-runtime.mjs')), false);
   const bootstrap = read('src/bootstrap/runtime.mjs');
   assert.match(bootstrap, /createModuleRegistry/);
@@ -53,7 +50,7 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.doesNotMatch(bootstrap, /registerTaskRecord(?:Repository|Application)/);
 
   const cliHost = read('src/bootstrap/cli/registry.mjs');
-  assert.match(cliHost, /from '..\/..\/task\/module\.mjs'/);
+  assert.match(cliHost, /from '..\/..\/task\/module\.ts'/);
   assert.doesNotMatch(cliHost, /task\/interfaces\/(?:cli|http)/);
   assert.match(cliHost, /runtimeContributions\(runtime, 'cli'\)/);
 
@@ -157,16 +154,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
-    id: 'task-retrospective',
-    requires: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store'],
-    provides: [TASK_RETROSPECTIVE_APPLICATION, TASK_RETROSPECTIVE_PERSISTENCE_READ, TASK_RETROSPECTIVE_RUNTIME_PORT],
-    contributions: {
-      cli: [],
-      http: ['task-retrospective.http'],
-      diagnostics: [],
-    },
-    lifecycle: 'none',
-  }, {
     id: 'task-verification',
     requires: ['task-record.persistence-read', VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
@@ -242,7 +229,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http',
-    'task-review.http', 'task-retrospective.http', 'task-verification.http',
+    'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
   ]);
 
@@ -265,8 +252,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const application = runtimeProvide(runtime, TASK_RECORD_APPLICATION);
   const persistenceRead = runtimeProvide(runtime, TASK_RECORD_PERSISTENCE_READ);
   assert.equal(typeof application.inspectTaskRecord, 'function');
+  assert.equal(typeof application.inspectTaskRetrospectiveDocument, 'function');
   assert.equal(typeof application.createTaskRecord, 'function');
   assert.equal(typeof persistenceRead.readTaskRecordPersistence, 'function');
+  assert.equal(typeof persistenceRead.readTaskRetrospectiveDocumentPersistence, 'function');
   assert.equal(persistenceRead.createTaskRecordPersistence, undefined);
 
   const runtimePort = runtimeProvide(runtime, TASK_RECORD_RUNTIME_PORT);
@@ -370,19 +359,13 @@ test('Task Review 旧全局技术层路径已经退出', () => {
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
-test('Task Retrospective module 只公开共享 Application、只读 Persistence 与正式 runtime port', () => {
+test('Task Retrospective独立模块已经退出，文档读取归属Task Record', () => {
   const runtime = createRuntime();
-  const application = runtimeProvide(runtime, TASK_RETROSPECTIVE_APPLICATION);
-  assert.deepEqual(Object.keys(application), ['inspectTaskRetrospective', 'listTaskRetrospectives', 'recordTaskRetrospective', 'handleTaskRetrospective']);
-
-  const persistenceRead = runtimeProvide(runtime, TASK_RETROSPECTIVE_PERSISTENCE_READ);
-  assert.equal(typeof persistenceRead.readTaskRetrospectiveResultPersistence, 'function');
-  assert.equal(persistenceRead.writeTaskRetrospectiveResultPersistence, undefined);
-
-  const runtimePort = runtimeProvide(runtime, TASK_RETROSPECTIVE_RUNTIME_PORT);
-  assert.deepEqual(Object.keys(runtimePort.testSupportProperties), ['taskRetrospectiveSerialize']);
-  assert.equal(runtimePort.owner, undefined);
-  assert.equal(runtimePort.exit, undefined);
+  assert.equal(runtimeModuleSnapshot(runtime).some((item) => item.id === 'task-retrospective'), false);
+  assert.equal(runtime.recordTaskRetrospective, undefined);
+  assert.equal(runtime.handleTaskRetrospective, undefined);
+  assert.equal(runtime.listTaskRetrospectives, undefined);
+  assert.equal(typeof runtimeProvide(runtime, TASK_RECORD_APPLICATION).inspectTaskRetrospectiveDocument, 'function');
 });
 
 test('Task Retrospective 旧全局技术层路径已经退出', () => {
@@ -393,6 +376,11 @@ test('Task Retrospective 旧全局技术层路径已经退出', () => {
     'src/task/persistence/retrospective/task-retrospective-repository.mjs',
     'src/interfaces/internal/task-retrospective-driver.mjs',
     'src/interfaces/internal/task-retrospective-driver-runner.mjs',
+    'src/task/application/task-retrospective-application.mjs',
+    'src/task/domain/task-retrospective.mjs',
+    'src/task/interfaces/http/task-retrospective-http.mjs',
+    'src/task/interfaces/internal/task-retrospective-driver.mjs',
+    'src/task/persistence/task-retrospective-repository.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 

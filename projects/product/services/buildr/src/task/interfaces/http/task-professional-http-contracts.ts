@@ -38,11 +38,6 @@ const closed = (properties: Record<string, unknown>, required: readonly string[]
   ...(required.length ? { required } : {}),
 });
 
-const RETROSPECTIVE_PATCH = closed({
-  status: { enum: ['pending', 'handled', 'no-action'] },
-  note: NON_EMPTY,
-  expectedCurrentDigest: NON_EMPTY,
-}, ['expectedCurrentDigest']);
 export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   overviewRequest: schema('overview/request', 'TaskOverviewRequest', EMPTY),
   overviewResponse: schema('overview/response', 'TaskOverviewResponse', RESPONSE),
@@ -52,9 +47,6 @@ export const TASK_PROFESSIONAL_HTTP_SCHEMAS = Object.freeze({
   verificationResponse: schema('verification/response', 'TaskVerificationResponse', RESPONSE),
   coordinationRequest: schema('coordination/request', 'TaskCoordinationRequest', EMPTY),
   coordinationResponse: schema('coordination/response', 'TaskCoordinationResponse', RESPONSE),
-  retrospectiveRequest: schema('retrospective/request', 'TaskRetrospectiveRequest', EMPTY),
-  retrospectiveResponse: schema('retrospective/response', 'TaskRetrospectiveResponse', RESPONSE),
-  retrospectivePatchRequest: schema('retrospective/patch-request', 'TaskRetrospectivePatchRequest', RETROSPECTIVE_PATCH),
   errorResponse: schema('error/response', 'TaskProfessionalErrorResponse', ERROR),
 });
 
@@ -74,8 +66,6 @@ export const TASK_PROFESSIONAL_HTTP_OPERATIONS = Object.freeze([
   operation('task-review.detail', 'GET', '/tasks/:taskId/reviews', 'reviewsRequest', 'reviewsResponse'),
   operation('task-verification.detail', 'GET', '/tasks/:taskId/verification', 'verificationRequest', 'verificationResponse'),
   operation('task-parent-coordination.detail', 'GET', '/tasks/:taskId/coordination', 'coordinationRequest', 'coordinationResponse'),
-  operation('task-retrospective.detail', 'GET', '/tasks/:taskId/retrospective', 'retrospectiveRequest', 'retrospectiveResponse'),
-  operation('task-retrospective.patch', 'PATCH', '/tasks/:taskId/retrospective', 'retrospectivePatchRequest', 'retrospectiveResponse'),
 ]);
 
 export const TASK_PROFESSIONAL_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(TASK_PROFESSIONAL_HTTP_SCHEMAS));
@@ -87,9 +77,7 @@ function validationError(operationId: string, label: string, errors: readonly Sc
     || errors[0]
     || {};
   const field = item.params?.additionalProperty || item.params?.missingProperty || String(item.instancePath || '').split('/').filter(Boolean)[0] || null;
-  const code = operationId === 'task-retrospective.patch' && field === 'expectedCurrentDigest'
-    ? 'task_retrospective_digest_required'
-    : item.keyword === 'additionalProperties' ? 'task_api_field_forbidden' : 'task_api_field_invalid';
+  const code = item.keyword === 'additionalProperties' ? 'task_api_field_forbidden' : 'task_api_field_invalid';
   return Object.assign(new Error(`${label} 请求不符合 HTTP 契约${field ? `：${field}` : ''}。`), {
     status: 400,
     code,

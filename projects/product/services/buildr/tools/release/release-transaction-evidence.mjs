@@ -9,12 +9,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.mjs';
+import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
 import { releasePreparationBindingSchema, validateReleasePreparationBinding } from './release-preparation-binding.ts';
 import { releaseContextSchema, validateReleaseContext } from './release-readiness.mjs';
 import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.ts';
 
-export const releaseTransactionContextSchema = 'buildr.release-transaction-context/v1';
+export const releaseTransactionContextSchema = 'buildr.release-transaction-context/v2';
 export const releaseTransactionEvidenceSchema = 'buildr.release-transaction-evidence/v2';
 export const releaseTransactionInspectSchema = 'buildr.release-transaction-inspect/v1';
 
@@ -54,13 +54,10 @@ function taskProjection(value, label) {
 }
 
 export function createReleaseTransactionContext(input) {
-  closed(input, ['releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'preparation', 'taskCorrelation'], 'release transaction context input');
+  closed(input, ['releaseTask', 'supportTasks', 'candidate', 'convergence', 'preparation', 'taskCorrelation'], 'release transaction context input');
   const releaseTask = taskProjection(input.releaseTask, 'releaseTask');
-  const retrospectiveSources = [...(input.retrospectiveSources ?? [])].map((item, index) => taskProjection(item, `retrospectiveSources[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const supportTasks = [...(input.supportTasks ?? [])].map((item, index) => taskProjection(item, `supportTasks[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   if (new Set([releaseTask.taskId, ...supportTasks.map((item) => item.taskId)]).size !== supportTasks.length + 1) throw new Error('Release/support Task IDs must be unique.');
-  const retrospectiveIds = new Set(retrospectiveSources.map((item) => item.taskId));
-  if (supportTasks.some((item) => retrospectiveIds.has(item.taskId))) throw new Error('Support Tasks must not be represented as retrospective sources.');
   const candidate = closed(input.candidate, ['sourceCommit', 'workflow', 'runId', 'runAttempt', 'runUrl'], 'candidate');
   sha(candidate.sourceCommit, 'candidate.sourceCommit');
   positiveInteger(candidate.runId, 'candidate.runId');
@@ -80,7 +77,6 @@ export function createReleaseTransactionContext(input) {
   const value = {
     schemaVersion: releaseTransactionContextSchema,
     releaseTask,
-    retrospectiveSources,
     supportTasks,
     candidate: {
       sourceCommit: candidate.sourceCommit,
@@ -98,11 +94,10 @@ export function createReleaseTransactionContext(input) {
 }
 
 export function validateReleaseTransactionContext(value, options = {}) {
-  closed(value, ['schemaVersion', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'candidate', 'convergence', 'preparation', 'taskCorrelation', 'identity'], 'release transaction context');
+  closed(value, ['schemaVersion', 'releaseTask', 'supportTasks', 'candidate', 'convergence', 'preparation', 'taskCorrelation', 'identity'], 'release transaction context');
   if (value.schemaVersion !== releaseTransactionContextSchema || !DIGEST.test(value.identity || '')) throw new Error('Release transaction context schema/identity is invalid.');
   const recreated = createReleaseTransactionContext({
     releaseTask: value.releaseTask,
-    retrospectiveSources: value.retrospectiveSources,
     supportTasks: value.supportTasks,
     candidate: value.candidate,
     convergence: value.convergence,

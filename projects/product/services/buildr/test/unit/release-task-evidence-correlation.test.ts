@@ -14,7 +14,6 @@ function correlation(overrides: Record<string, unknown> = {}) {
     releaseTask: task('release-1.0.0', 'active'),
     releaseTaskStatus: 'active',
     supportTasks: [task('support-1')],
-    retrospectiveSources: [task('retro-1')],
     source: { sourceCommit: sha('c'), sourceTree: sha('d'), remoteRef: sha('e') },
     ...overrides,
   });
@@ -22,7 +21,7 @@ function correlation(overrides: Record<string, unknown> = {}) {
 
 test('correlates only Task records and frozen source', () => {
   const result = correlation();
-  assert.equal(result.schemaVersion, 'buildr.release-task-evidence-correlation/v4');
+  assert.equal(result.schemaVersion, 'buildr.release-task-evidence-correlation/v5');
   assert.equal(result.status, 'passed');
   assert.equal('entries' in result, false);
   assert.equal(JSON.stringify(result).includes('environment'), false);
@@ -30,7 +29,7 @@ test('correlates only Task records and frozen source', () => {
   assert.equal(inspectReleaseTaskEvidenceCorrelation(result).identity, result.identity);
 });
 
-test('release Task remains active while support and retrospective Tasks are completed', () => {
+test('release Task remains active while support Tasks are completed', () => {
   assert.equal(correlation().releaseTask.status, 'active');
   assert.throws(() => correlation({ releaseTask: task('release-1.0.0') }), /releaseTask must be active/u);
   assert.throws(() => correlation({ supportTasks: [task('support-1', 'active')] }), /must be completed/u);
@@ -53,7 +52,6 @@ test('transaction context carries preparation and Task correlation without Envir
   const contextTask = (value: { taskId: string; title: string; status: string }) => ({ taskId: value.taskId, title: value.title, status: value.status });
   const context = createReleaseTransactionContext({
     releaseTask: contextTask(task('release-1.0.0')),
-    retrospectiveSources: [contextTask(task('retro-1'))],
     supportTasks: [contextTask(task('support-1'))],
     candidate: { sourceCommit: sha('1'), workflow: '.github/workflows/verify.yml', runId: 11, runAttempt: 1, runUrl: 'https://github.example/run/11' },
     convergence: { candidateBase: sha('2'), candidateTree: sha('3'), sourceCommit: sha('1'), mainCommit: sha('1'), devCommit: sha('4') },
@@ -64,4 +62,5 @@ test('transaction context carries preparation and Task correlation without Envir
   assert.equal(context.taskCorrelation.identity, taskCorrelation.identity);
   assert.equal(context.preparation.identity, preparation.identity);
   assert.equal('environment' in context, false);
+  assert.equal('retrospectiveSources' in context, false);
 });

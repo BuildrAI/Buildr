@@ -146,18 +146,18 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
-test('任务详情只使用概览、原型、证据、复盘四个一级视图', () => {
+test('任务详情只使用概览、原型、证据三个一级视图，复盘文档位于概览', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const coordination = read('../buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx');
   const evidence = read('../buildr-web/src/pages/task-detail/EvidenceTab.tsx');
-  const retrospective = read('../buildr-web/src/pages/task-detail/RetrospectiveTab.tsx');
+  const retrospective = read('../buildr-web/src/pages/task-detail/RetrospectiveDocumentCard.tsx');
   const styles = read('../buildr-web/src/styles.css');
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
   assert.match(source, /id: 'prototype', label: '原型'/);
   assert.doesNotMatch(source, /id: 'development', label: '研发'/);
   assert.match(source, /id: 'evidence', label: '证据'/);
-  assert.match(source, /id: 'retrospective', label: '复盘'/);
+  assert.doesNotMatch(source, /id: 'retrospective', label: '复盘'/);
   assert.doesNotMatch(source, /id: 'environment', label: '环境'/);
   assert.match(source, /ParentCoordinationPanel/);
   assert.match(source, /taskProfessionalApi\.coordination\(currentTaskId, \{ signal \}\)/);
@@ -167,16 +167,14 @@ test('任务详情只使用概览、原型、证据、复盘四个一级视图',
   assert.doesNotMatch(source, /id: '(?:review|verification)'/);
   assert.match(source, /data-task-panel="prototype"|PrototypeTab/);
   assert.match(evidence, /data-task-panel="evidence"/);
-  assert.match(retrospective, /data-task-panel="retrospective"/);
-  assert.match(retrospective, /尚未复盘/);
-  assert.match(retrospective, /MarkdownHost[\s\S]*reportMarkdown|reportMarkdown[\s\S]*MarkdownHost/);
-  assert.match(source, /taskProfessionalApi\.retrospective\(currentTaskId, \{ signal \}\)/);
-  assert.match(source, /taskProfessionalApi\.updateRetrospective\(currentTaskId, \{ status, note, expectedCurrentDigest: currentDigest \}\)/);
-  assert.match(source, /task_retrospective_conflict[\s\S]*已刷新为最新状态/);
-  assert.match(source, /retrospectiveMutationRef\.current === mutationId[\s\S]*taskIdRef\.current === currentTaskId/);
-  assert.match(retrospective, /task-retrospective-no-action[\s\S]*无需处理/);
-  assert.match(retrospective, /task-retrospective-handle[\s\S]*标记已处理/);
-  assert.match(retrospective, /task-retrospective-reopen[\s\S]*重新打开/);
+  assert.match(source, /RetrospectiveDocumentCard/);
+  assert.match(retrospective, /task-retrospective-document-card/);
+  assert.match(retrospective, /本机文档/);
+  assert.match(retrospective, /MarkdownHost[\s\S]*document\.content|document\.content[\s\S]*MarkdownHost/);
+  assert.match(retrospective, /tasksApi\.retrospectiveDocument\(taskId\)/);
+  assert.match(retrospective, /retrospectiveState: 'decided'/);
+  assert.match(retrospective, /我已完成决定/);
+  assert.doesNotMatch(retrospective, /no-action|handled|重新打开/);
   assert.doesNotMatch(source, /openAgentAction\('task-retrospective'/);
   assert.match(source, /if \(tab === 'evidence'\) \{[\s\S]*refreshReview\(\);[\s\S]*refreshVerification\(\);/);
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
@@ -310,9 +308,9 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /matchesTaskQuery/);
   assert.match(tasks, /hasChildren/);
   assert.match(tasks, /retrospectiveState/);
-  assert.match(tasks, /value: 'pending', label: '未处理'/);
-  assert.match(tasks, /value: 'handled', label: '已处理'/);
-  assert.match(tasks, /value: 'no-action', label: '无需处理'/);
+  assert.match(tasks, /value: 'pending-decision', label: '等待决定'/);
+  assert.match(tasks, /value: 'decided', label: '已经决定'/);
+  assert.doesNotMatch(tasks, /value: 'handled'|value: 'no-action'/);
   assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);

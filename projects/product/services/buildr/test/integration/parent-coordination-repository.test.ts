@@ -9,7 +9,7 @@ const test = createBuildrApplicationTest('integration-parent-coordination-reposi
 
 function record(taskId, parentTaskId = null) {
   return {
-    schemaVersion: 'buildr.task-record/v2',
+    schemaVersion: 'buildr.task-record/v3',
     taskId,
     title: taskId,
     intent: 'Verify bounded Parent Coordination reads.',
@@ -17,7 +17,7 @@ function record(taskId, parentTaskId = null) {
     changes: [],
     parentTaskId,
     childTaskIds: [],
-    retrospectiveSourceTaskIds: [],
+    retrospective: null,
     status: 'active',
     result: null,
     createdAt: '2026-08-08T00:00:00.000Z',

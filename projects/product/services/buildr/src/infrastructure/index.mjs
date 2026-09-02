@@ -3,7 +3,7 @@ import { registerWorkspaceSqlite } from './sqlite/workspace-sqlite.mjs';
 
 /**
  * The Infrastructure composition root owns technical mechanisms only. Business
- * repositories are privately registered by their owning `src/task/module.mjs`
+ * repositories are privately registered by their owning `src/task/module.ts`
  * descriptor; task capabilities are installed by the bootstrap module registry.
  */
 export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([

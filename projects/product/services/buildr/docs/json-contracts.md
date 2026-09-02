@@ -27,11 +27,11 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `openspec convergence inspect` | `buildr.openspec-convergence-inspect/v1` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
 | 长流程缺省compact（release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
-| `__internal task-retrospective list` | `buildr.task-retrospective-list-result/v1` |
-| `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
+| `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v5` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v3` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v2`（v1只读兼容）/ `buildr.contribution-handoff/v1` |
-| Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
+| Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v5` |
+| Buildr Web Task本机复盘文档读取 | `buildr.task-retrospective-document/v1` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | `task finish run/inspect`（缺省或`--detail compact`） | `buildr.task-finish-compact-result/v1` |
 | `task finish run/inspect --detail full` | `buildr.task-finish-result/v2` |
@@ -45,7 +45,7 @@ Task Finish的canonical Result由SQLite current/terminal authority决定；CLI�
 
 `buildr.project-verification-result/v1`返回Project测试地图的operation、status、path、identity、规范化declaration、errors和effects。`buildr.task-verification-operation-result/v1`返回Task current报告、digest、内容/测试地图适用性、diagnostic和effects。
 
-`buildr.task-retrospective-list-result/v1`同时返回matching/returned数量、`maxBytes`、实际`returnedBytes`与`truncated`。默认limit为100、字节预算为262144，公共最大值为1048576；item只在完整JSON对象边界加入。`--include-report`请求的正文无法完整容纳时省略正文并标记truncated，单Task `inspect`仍是全文入口。
+`buildr.task-retrospective-document/v1`是Task Record下的只读响应，只读取`.buildr/local/task-retrospectives/<task-id>.md`，返回正文、实际摘要、已登记摘要、已登记状态、派生当前状态和局部诊断。固定上限为256 KiB；请求不接受路径、查询或字节预算，也不产生写入。
 
 `buildr.verification-evidence-cleanup/v1` 只报告 transient execution evidence 的 cleanup 状态。非 transient、identity 不匹配、目录越界或无法证明 provider ownership 的文件不会被删除。
 
@@ -53,11 +53,11 @@ Task Finish的canonical Result由SQLite current/terminal authority决定；CLI�
 
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
-`buildr.task-record-result/v4` 覆盖六个 Task Record 动作，返回 closed v2 `record`、`recordDigest`、Parent/Child `taskRelations`与复盘来源/后续 `retrospectiveRelations`。`record.retrospectiveSourceTaskIds` 只保存 source Task ID；关系摘要补充当前标题和状态。完整 Application 列表仍使用 `buildr.task-record-list/v2`。
+`buildr.task-record-result/v5`覆盖六个Task Record动作，返回closed v3 `record`、`recordDigest`、Parent/Child `taskRelations`与`retrospectiveDocument`路径/登记摘要。Task不再返回复盘来源/后续关系。
 
 `buildr.parent-coordination-result/v3`覆盖Parent coordination actions，并直接替代v2。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、紧凑`plan`摘要、Parent status/final acceptance、紧凑Planning Review、直接Children摘要与唯一顶层`contributions`。每个work item只在顶层Contribution Map出现一次，`expectedChild`规范化为`expectation.child`；Child只返回`boundContributions`与协调所需delivery摘要，不返回完整Contribution Handoff。`startup.next`是唯一下一步，依赖阻塞继续由`blockers`和各Contribution eligibility表达；完整`dependencyBlockers`只属于独立`buildr.parent-startup-readiness/v2`。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
 
-Buildr Web stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
+Buildr Web stored-state projection使用详情v3和列表v5，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。`open`只是查询语义，不持久。列表不读取Markdown正文；`recordDigest`、`childTaskCount`与关系摘要都不进入Task Record schema。
 
 
 ## Doctor v1 结果语义

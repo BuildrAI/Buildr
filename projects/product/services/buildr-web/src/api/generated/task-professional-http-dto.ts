@@ -1,7 +1,7 @@
 /* eslint-disable */
 // Generated from Task Professional HTTP JSON Schema. Do not edit.
 // Run: npm run contracts:professional:generate
-// Source Schema Identity: sha256-23c326e9bcca3161fb162983d06fd10cc06b7eb5251ae1057d2aa989d8485a7a
+// Source Schema Identity: sha256-9b467247578bc8492340b0ada7ce22e6bb8d9dc6129677f0bade527058d96c53
 
 export interface TaskProfessionalHttpDtoProjection {
   overviewRequest: OverviewRequest;
@@ -12,9 +12,6 @@ export interface TaskProfessionalHttpDtoProjection {
   verificationResponse: VerificationResponse;
   coordinationRequest: CoordinationRequest;
   coordinationResponse: CoordinationResponse;
-  retrospectiveRequest: RetrospectiveRequest;
-  retrospectiveResponse: RetrospectiveResponse;
-  retrospectivePatchRequest: RetrospectivePatchRequest;
   errorResponse: ErrorResponse;
 }
 export interface OverviewRequest {}
@@ -32,15 +29,6 @@ export interface VerificationResponse {
 export interface CoordinationRequest {}
 export interface CoordinationResponse {
   [k: string]: unknown | undefined;
-}
-export interface RetrospectiveRequest {}
-export interface RetrospectiveResponse {
-  [k: string]: unknown | undefined;
-}
-export interface RetrospectivePatchRequest {
-  status?: 'pending' | 'handled' | 'no-action';
-  note?: string;
-  expectedCurrentDigest: string;
 }
 export interface ErrorResponse {
   error: {

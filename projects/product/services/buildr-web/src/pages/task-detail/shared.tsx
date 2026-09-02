@@ -56,4 +56,4 @@ export function diff<T>(
 export type { TaskRecord, TaskRelationSummary };
 export type TaskDetailData = TaskDetailResponse;
 
-export type TaskTab = 'overview' | 'prototype' | 'evidence' | 'retrospective';
+export type TaskTab = 'overview' | 'prototype' | 'evidence';

@@ -16,7 +16,7 @@ type GitWorktreeResult = {
   repositories: GitWorktreeRepositoryResult[];
   diagnostic?: { message: string } | null;
 };
-type GitWorktreeCliRuntime = {
+export type GitWorktreeCliRuntime = {
   prepareGitWorktrees(input: {
     workspaceRoot: string;
     taskId: string;

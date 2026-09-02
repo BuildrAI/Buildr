@@ -6,7 +6,7 @@ import process from 'node:process';
 import { normalizeGitWorktreeCleanupDelivery, type GitWorktreeCleanupDeliveryInput, type GitWorktreeReviewedDelivery } from '../domain/git-worktree.ts';
 import { spawnSync } from '../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
@@ -31,7 +31,7 @@ type ProjectRegistry = {
   projects: Record<string, RegisteredEntity>;
 };
 type ServiceRegistry = { services: Record<string, RegisteredEntity> };
-type GitWorktreeRuntime = {
+export type GitWorktreeRuntime = {
   assertCanonicalTaskWorkspace(root: string): string;
   readProjectRegistryRecord(root: string): ProjectRegistry;
   readServiceRegistryRecord(root: string, project: string): ServiceRegistry;

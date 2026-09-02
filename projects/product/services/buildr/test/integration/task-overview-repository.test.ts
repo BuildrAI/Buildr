@@ -36,7 +36,7 @@ function fixture(t: BuildrTestContext) {
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
   const record = (taskId: string, parentTaskId: string | null = null) => ({
-    schemaVersion: 'buildr.task-record/v2', taskId, title: taskId, intent: 'Verify one-query overview', scope: { projects: [], services: [] }, changes: [], parentTaskId, childTaskIds: [], retrospectiveSourceTaskIds: [], status: 'active', result: null, createdAt: '2026-08-08T00:00:00.000Z', updatedAt: '2026-08-08T00:00:00.000Z',
+    schemaVersion: 'buildr.task-record/v3', taskId, title: taskId, intent: 'Verify one-query overview', scope: { projects: [], services: [] }, changes: [], parentTaskId, childTaskIds: [], retrospective: null, status: 'active', result: null, createdAt: '2026-08-08T00:00:00.000Z', updatedAt: '2026-08-08T00:00:00.000Z',
   });
   runtime.createTaskRecordPersistence(root, record('overview-task'));
   runtime.createTaskRecordPersistence(root, record('overview-child', 'overview-task'));

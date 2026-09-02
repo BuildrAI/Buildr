@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA = 'buildr.release-task-evidence-correlation/v4';
+export const RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA = 'buildr.release-task-evidence-correlation/v5';
 
 type TaskProjection = { taskId: string; title: string; status: string; recordDigest: string | null };
 type SourceProjection = { sourceCommit: string | null; sourceTree: string | null; remoteRef: string | null };
@@ -8,7 +8,6 @@ type Correlation = {
   schemaVersion: typeof RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA;
   status: 'passed';
   releaseTask: TaskProjection;
-  retrospectiveSources: TaskProjection[];
   supportTasks: TaskProjection[];
   source: SourceProjection | null;
   identity: string;
@@ -53,26 +52,22 @@ function source(value: unknown): SourceProjection | null {
 export function createReleaseTaskEvidenceCorrelation(input: {
   releaseTask: unknown;
   releaseTaskStatus?: 'active' | 'completed';
-  retrospectiveSources?: unknown[];
   supportTasks?: unknown[];
   source?: unknown;
 }): Correlation {
   const releaseTaskStatus = input.releaseTaskStatus || 'active';
   const releaseTask = task(input.releaseTask, 'releaseTask', releaseTaskStatus);
   const supportTasks = (input.supportTasks || []).map((item, index) => task(item, `supportTasks[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
-  const retrospectiveSources = (input.retrospectiveSources || []).map((item, index) => task(item, `retrospectiveSources[${index}]`)).sort((left, right) => left.taskId.localeCompare(right.taskId));
   const ids = [releaseTask.taskId, ...supportTasks.map((item) => item.taskId)];
   if (new Set(ids).size !== ids.length) throw new Error('Release/support Task IDs must be unique.');
-  const retrospectiveIds = new Set(retrospectiveSources.map((item) => item.taskId));
-  if (supportTasks.some((item) => retrospectiveIds.has(item.taskId))) throw new Error('Support Tasks must not be represented as retrospective sources.');
-  const unsigned: Omit<Correlation, 'identity'> = { schemaVersion: RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA, status: 'passed', releaseTask, retrospectiveSources, supportTasks, source: source(input.source) };
+  const unsigned: Omit<Correlation, 'identity'> = { schemaVersion: RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA, status: 'passed', releaseTask, supportTasks, source: source(input.source) };
   return { ...unsigned, identity: digest(unsigned) };
 }
 
 export function validateReleaseTaskEvidenceCorrelation(value: unknown): Correlation {
-  const item = closed(value, ['schemaVersion', 'status', 'releaseTask', 'retrospectiveSources', 'supportTasks', 'source', 'identity'], 'release task evidence correlation');
-  if (item.schemaVersion !== RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA || item.status !== 'passed' || typeof item.identity !== 'string' || !DIGEST.test(item.identity) || !Array.isArray(item.supportTasks) || !Array.isArray(item.retrospectiveSources)) throw new Error('Release task evidence correlation schema/identity is invalid.');
-  const recreated = createReleaseTaskEvidenceCorrelation({ releaseTask: item.releaseTask, releaseTaskStatus: record(item.releaseTask, 'releaseTask').status === 'active' ? 'active' : 'completed', retrospectiveSources: item.retrospectiveSources, supportTasks: item.supportTasks, source: item.source });
+  const item = closed(value, ['schemaVersion', 'status', 'releaseTask', 'supportTasks', 'source', 'identity'], 'release task evidence correlation');
+  if (item.schemaVersion !== RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA || item.status !== 'passed' || typeof item.identity !== 'string' || !DIGEST.test(item.identity) || !Array.isArray(item.supportTasks)) throw new Error('Release task evidence correlation schema/identity is invalid.');
+  const recreated = createReleaseTaskEvidenceCorrelation({ releaseTask: item.releaseTask, releaseTaskStatus: record(item.releaseTask, 'releaseTask').status === 'active' ? 'active' : 'completed', supportTasks: item.supportTasks, source: item.source });
   if (recreated.identity !== item.identity) throw new Error('Release task evidence correlation identity mismatch.');
   return recreated;
 }
@@ -88,13 +83,12 @@ function runtimeTask(runtime: Runtime, root: string, taskId: string): TaskProjec
   return { taskId: typeof value.taskId === 'string' ? value.taskId : taskId, title: typeof value.title === 'string' ? value.title : '', status: typeof value.status === 'string' ? value.status : 'unknown', recordDigest: observed.recordDigest || null };
 }
 
-export function createReleaseTaskEvidenceCorrelationFromRuntime(input: { runtime: Runtime; root: string; releaseTask: string | TaskProjection; releaseTaskStatus?: 'active' | 'completed'; supportTasks?: Array<string | TaskProjection>; retrospectiveSources?: Array<string | TaskProjection>; source?: SourceProjection | null }): Correlation {
+export function createReleaseTaskEvidenceCorrelationFromRuntime(input: { runtime: Runtime; root: string; releaseTask: string | TaskProjection; releaseTaskStatus?: 'active' | 'completed'; supportTasks?: Array<string | TaskProjection>; source?: SourceProjection | null }): Correlation {
   const projectTask = (value: string | TaskProjection): TaskProjection => typeof value === 'string' ? runtimeTask(input.runtime, input.root, value) : value;
   return createReleaseTaskEvidenceCorrelation({
     releaseTask: projectTask(input.releaseTask),
     releaseTaskStatus: input.releaseTaskStatus,
     supportTasks: (input.supportTasks || []).map(projectTask),
-    retrospectiveSources: (input.retrospectiveSources || []).map(projectTask),
     source: input.source || null,
   });
 }

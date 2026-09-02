@@ -28,7 +28,7 @@ test('HTTP contract Fresh Build inventory闭合generator、Schema与两端DTO', 
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(buildrRoot, 'package.json'), 'utf8'));
   const registeredGenerators = new Set(Object.values(packageJson.scripts || {}).flatMap((value) =>
-    [...String(value).matchAll(/tools\/contracts\/[^\s]+-dto\.mjs/g)].map((match) => match[0])));
+    [...String(value).matchAll(/tools\/contracts\/[^\s]+-dto\.(?:mjs|ts)/g)].map((match) => match[0])));
   assert.deepEqual(
     [...new Set(HTTP_CONTRACT_FRESH_BUILD_FAMILIES.map((item) => item.generator.path))].sort(),
     [...registeredGenerators].sort(),

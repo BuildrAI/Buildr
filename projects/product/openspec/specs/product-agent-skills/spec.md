@@ -353,35 +353,6 @@ Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的
 - **WHEN** 项目或仓库规则定义了比 workspace 默认格式更具体的提交约定
 - **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
-### Requirement: 产品入口 Buildr Skill 路由 Task Retrospective
-产品内置 Buildr Skill MUST 在用户明确要求记录、查看或处理任务复盘时路由到 selected `buildr.task-retrospective/v2` provider，并 MUST 将复盘报告限制为 terminal Task 的 Agent 执行效率复盘；处理已有报告时 MAY 通过 Task Manager 承接后续改进。
-
-#### Scenario: 用户明确要求任务复盘
-- **WHEN** 用户要求复盘已完成或已放弃 Task 的执行效率
-- **THEN** Buildr Skill MUST 引导 Agent 使用 selected Task Retrospective provider
-- **AND** MUST NOT恢复过程 observation、资产候选或 lifecycle gate
-
-#### Scenario: 用户明确要求处理已有复盘
-- **WHEN** 用户要求处理 pending Retrospective Result
-- **THEN** Buildr Skill MUST 路由同一 v2 provider 执行当前事实重评与 Task 承接
-- **AND** MUST NOT把处理简化为只改 disposition note
-
-#### Scenario: Runtime 找不到 provider
-- **WHEN** capability graph 表示 provider 应存在但 runtime 无法发现
-- **THEN** Buildr Skill MUST 引导 Agent 检查 builtin、workspace source、binding 和 runtime 投射
-
-### Requirement: 产品入口按 current capability 路由复盘意图
-产品入口 Buildr Skill MUST 将明确的 terminal Task 执行效率复盘及其后续处理路由到 `buildr.task-retrospective/v2` selected provider，并 MUST NOT 将 builtin Skill id 当作不可替换入口。
-
-#### Scenario: 路由 Task Retrospective
-- **WHEN** 用户明确要求记录、查看或处理 terminal Task 的执行效率复盘
-- **THEN** Buildr Skill MUST 使用当前 capability graph 的 v2 selected provider
-- **AND** Buildr Skill MUST honor blocked semantics
-
-#### Scenario: 用户替换 provider
-- **WHEN** workspace 绑定兼容的内部 v2 provider
-- **THEN** Buildr Skill MUST 路由到该 provider而不要求 `task-retrospective` Skill id
-
 ### Requirement: Package必须投射Declaration Intake Skill
 Buildr package MUST提供`declaration-intake` workspace Skill，description MUST覆盖声明初始化、刷新及自动触发缺口。Skill MUST声明只读发现、用户授权与owner handoff，并 MUST不成为Preparation或Verification capability provider。
 
@@ -459,19 +430,6 @@ Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace
 - **WHEN** 用户要求开始执行已有 todo
 - **THEN** Task Triage MUST 先完成当前事实确认与 Git 基线收敛，再调用 activate
 - **AND** 任一前置门禁 blocked 时 MUST 保持 todo 不变
-
-### Requirement: Task Retrospective Skill 必须完成后续落地闭环
-Task Retrospective provider MUST 把 inspect、当前事实重评、承接 Task 选择、来源关系写入和 disposition 更新组成一个可恢复流程。它 MUST 先向用户提供原始报告或不可变引用，且 MUST 在所有 Task 关系成功后才标记 handled。
-
-#### Scenario: 处理待处理复盘
-- **WHEN** 用户要求处理 pending retrospective
-- **THEN** provider MUST 输出原文/引用、当前有效性分析、重新拆分的方向、承接 Task 与丢弃理由
-- **AND** MUST 返回实际 Task IDs、关系 effects 与最终 disposition evidence
-
-#### Scenario: 中途写入失败
-- **WHEN** 任一目标 Task 创建或来源关系 mutation 失败
-- **THEN** provider MUST 保持 retrospective 为 pending 并报告精确恢复动作
-- **AND** MUST NOT把部分完成冒充为 handled
 
 ### Requirement: Task Finish Skill 必须为 bootstrap recovery取得单独明确授权
 
@@ -627,3 +585,16 @@ Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在当�
 - **WHEN** 用户明确拒绝本次UI Prototype
 - **THEN** Agent MUST继续当前Task或OpenSpec工作
 - **AND** MUST不创建原型状态或流程门禁
+
+### Requirement: 产品必须投射纯任务复盘Skill
+Buildr package MUST继续投射可选`task-retrospective` Skill，指导Agent按用户明确要求生成固定本机Markdown、登记Task Record文档事实和处理缺失数据。该Skill MUST不提供独立capability，不调用内部Driver，不维护处置队列或专用来源关系。
+
+#### Scenario: 用户明确要求复盘
+- **WHEN** Agent runtime发现终态Task复盘意图
+- **THEN** Agent MUST读取纯Skill并组合当前Task与真实工具
+- **AND** provider缺失 MUST不成为问题，因为不存在可替换Retrospective Application能力
+
+#### Scenario: 用户接受后续行动
+- **WHEN** 用户明确决定复用或创建普通Task
+- **THEN** Skill MUST把精确Task effects交给Task Manager
+- **AND** MUST不创建专用relation、action item或自动修改其他资产

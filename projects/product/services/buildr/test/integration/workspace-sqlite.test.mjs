@@ -43,13 +43,13 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_projects', 'task_retrospective_current', 'task_retrospective_sources', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
   ]);
   assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
   assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row) => row.name === 'tasks_parent_task_idx'));
-  for (const table of ['task_verification_current', 'task_review_current', 'task_retrospective_current']) {
+  for (const table of ['task_verification_current', 'task_review_current']) {
     assert.ok(writable.database.prepare(`PRAGMA foreign_key_list(${table})`).all().some((row) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
   }
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_execution_record_consumers'").get().count, 0);
@@ -328,7 +328,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_development_current', 'task_finish_current')").get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_verification_current').get().count, 0);
   assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_review_current').get().count, 0);
-  assert.equal(upgraded.database.prepare('SELECT count(*) AS count FROM task_retrospective_current').get().count, 0);
+  assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_retrospective_current', 'task_retrospective_sources')").get().count, 0);
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
   assert.ok(upgraded.database.prepare("SELECT name FROM pragma_index_list('task_review_current')").all().some((row) => row.name === 'task_review_current_subject_idx'));
   upgraded.database.close();
@@ -430,8 +430,10 @@ test('v19 数据库可直接完成任务，升级不绕过版本和状态检查'
         const record = after.prepare("SELECT * FROM tasks WHERE task_id = 'upgrade-task'").get();
         if (scenario.error) {
           // Schema upgrades may add columns; a rejected completion must preserve every existing business field.
-          assert.deepEqual(Object.fromEntries(Object.keys(before).map((key) => [key, record[key]])), { ...before });
+          const preservedFields = Object.keys(before).filter((key) => key !== 'schema_version');
+          assert.deepEqual(Object.fromEntries(preservedFields.map((key) => [key, record[key]])), Object.fromEntries(preservedFields.map((key) => [key, before[key]])));
           if (!scenario.failMigration) {
+            assert.equal(record.schema_version, 'buildr.task-record/v3');
             assert.equal(record.is_parent, 0);
             assert.equal(record.parent_completion_json, null);
           }
@@ -614,6 +616,29 @@ test('Task Environment retirement migration直接删除旧数据且保留其他T
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_environment_current'").get().count, 0);
   assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'environment-retirement'").get().status, 'completed');
   assert.equal(database.prepare("SELECT outcome FROM task_review_current WHERE task_id = 'environment-retirement'").get().outcome, 'accepted');
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
+  database.close();
+});
+
+test('Task Retrospective重构migration直接删除旧正文、处置与来源关系', () => {
+  const database = new DatabaseSync(':memory:');
+  const migrations = loadWorkspaceSqliteMigrations();
+  const retirement = migrations.find((migration) => migration.name === '0030_refactor_task_retrospective_documents.sql');
+  for (const migration of migrations.filter((item) => item.version < retirement.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('retrospective-source', 'buildr.task-record/v2', 'Retrospective source', 'Delete obsolete data', 'completed', 'done', 0, '2026-09-03T00:00:00.000Z', '2026-09-03T01:00:00.000Z', NULL)`).run();
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('retrospective-followup', 'buildr.task-record/v2', 'Retrospective followup', 'Delete obsolete relation', 'todo', NULL, NULL, '2026-09-03T00:00:00.000Z', '2026-09-03T01:00:00.000Z', NULL)`).run();
+  database.prepare("INSERT INTO task_retrospective_current(task_id, result_json, disposition_status, disposition_note, disposed_at) VALUES ('retrospective-source', ?, 'handled', '旧处置', '2026-09-03T02:00:00.000Z')").run(JSON.stringify({ schemaVersion: 'buildr.task-retrospective-result/v1', taskId: 'retrospective-source', focus: 'agent-execution-efficiency', reportMarkdown: '# 旧复盘', completedAt: '2026-09-03T01:00:00.000Z' }));
+  database.prepare("INSERT INTO task_retrospective_sources(target_task_id, source_task_id, created_at) VALUES ('retrospective-followup', 'retrospective-source', '2026-09-03T02:00:00.000Z')").run();
+
+  applyWorkspaceSqliteMigration(database, retirement);
+
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_retrospective_current', 'task_retrospective_sources')").get().count, 0);
+  assert.deepEqual({ ...database.prepare("SELECT schema_version, retrospective_state, retrospective_document_digest FROM tasks WHERE task_id = 'retrospective-source'").get() }, {
+    schema_version: 'buildr.task-record/v3', retrospective_state: null, retrospective_document_digest: null,
+  });
+  assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'retrospective-followup'").get().status, 'todo');
   assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
   database.close();
 });

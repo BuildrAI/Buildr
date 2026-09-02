@@ -1030,22 +1030,27 @@ Buildr Candidate aggregate gate MUST 只依赖 pinned Node、checkout 内聚合�
 - **AND** `Candidate gate` MUST 保持 branch protection可见的稳定失败结论
 
 ### Requirement: 生产源码必须具有显式领域验证所有权
-Buildr Product MUST 为 `src/application` 与 `src/infrastructure` 的生产模块维护可执行的 affected owner 契约；通用 Unit、Candidate 制品或 broad application payload 匹配 MUST NOT 单独充当领域 owner。每个生产模块 MUST 命中至少一个直接 Integration/System/Static owner，或进入包含 owner 与理由的显式闭合 allowlist；新增或移除路径造成缺口时 planner MUST 在启动 verifier 前 fail closed。
+Buildr Product MUST 为保留的`src/application`与`src/infrastructure`生产模块维护可执行的affected owner契约；通用Unit、Candidate制品或broad application payload匹配 MUST NOT单独充当领域owner。每个保留生产模块 MUST命中至少一个直接Integration/System/Static owner，或进入包含owner与理由的显式闭合allowlist；新增、迁移或移除路径造成缺口时planner MUST在启动verifier前fail closed。确定退役的Task Retrospective生产路径 MUST从owner表和验证registry删除，不保留空owner。
 
 #### Scenario: 已有领域 Integration 的源码发生改变
-- **WHEN** Task Entry、Task Retrospective 或其他已有领域 Integration 证据的生产源码进入 changed paths
-- **THEN** planner MUST 选择包含该真实测试文件的有界领域 Integration owner
-- **AND** MUST NOT 仅返回 Unit、Candidate tarball 或 application payload owner
+- **WHEN** Task Record、Task Review、Task Verification或其他仍存在且具有领域Integration证据的生产源码进入changed paths
+- **THEN** planner MUST选择包含该真实测试文件的有界领域Integration owner
+- **AND** MUST NOT仅返回Unit、Candidate tarball或application payload owner
+
+#### Scenario: 退役Retrospective生产路径
+- **WHEN** Task Retrospective Application、Repository、Driver或HTTP实现被删除
+- **THEN** verification registry与ownership MUST同时删除专用owner和测试
+- **AND** MUST不保留空step、旧路径allowlist或为了旧设计而存在的primary evidence
 
 #### Scenario: 新生产模块没有直接 owner
-- **WHEN** 新增 `src/application` 或 `src/infrastructure` 模块且没有直接 owner或显式 allowlist 条目
-- **THEN** planner 与 repository contract MUST 在启动测试进程前报告生产源码 owner coverage gap
-- **AND** MUST NOT 根据相似文件名、CLI 可达性或 broad `src/**` 匹配猜测领域覆盖
+- **WHEN** 新增`src/application`或`src/infrastructure`模块且没有直接owner或显式allowlist条目
+- **THEN** planner与repository contract MUST在启动测试进程前报告生产源码owner coverage gap
+- **AND** MUST NOT根据相似文件名、CLI可达性或broad `src/**`匹配猜测领域覆盖
 
 #### Scenario: 生产模块明确只适用现有非领域证据
-- **WHEN** 维护者确认某模块没有真实领域 Integration/System 场景且已有 owner 足以证明其风险
-- **THEN** registry MAY 使用包含精确路径、owner 和理由的显式 allowlist
-- **AND** 已存在直接领域 Integration 测试的模块 MUST NOT 通过 allowlist 绕过选择
+- **WHEN** 维护者确认某模块没有真实领域Integration/System场景且已有owner足以证明其风险
+- **THEN** registry MAY使用包含精确路径、owner和理由的显式allowlist
+- **AND** 已存在直接领域Integration测试的模块 MUST NOT通过allowlist绕过选择
 
 ### Requirement: 本地 affected 与 Full 必须先通过同次 admission wave
 Buildr 本地 `test:changed` 与 `test:candidate` MUST 在同一 verification execution 中先运行低成本 Fast steps；当原计划包含验证框架 canary时 MUST 同时纳入 admission wave。所有非 admission steps MUST 等待 admission 全部通过；任一 admission step失败时，尚未启动的重型 Integration、System、Workspace、package 或 artifact steps MUST 被 blocked且不得产生执行副作用。
@@ -1821,9 +1826,14 @@ Product verification MUST覆盖fresh/升级SQLite、Task/OpenSpec/Review/Verific
 - **AND** release candidate相关检查 MUST证明Product Candidate模型未变
 
 ### Requirement: 专属 Integration slice 必须保持当前能力的唯一 primary ownership
-Verification registry MUST为仍存在的Task Entry、Overview、Review、Verification、Retrospective、Environment与Parent Coordination实现选择唯一primary owner，不得保留退役能力的空step或shard。
+Verification registry MUST为仍存在的Task Overview、Record、Review、Verification与Parent Coordination实现选择唯一primary owner，不得保留Retrospective、Task Entry、Environment、Task Development、Planning Identity或旧Finish的空step、shard或路径映射。
 
 #### Scenario: changed paths命中Task read或专业实现
-- **WHEN** affected selection命中当前Task实现
+- **WHEN** affected selection命中当前保留的Task实现
 - **THEN** MUST选择覆盖该实现的现有owner
-- **AND** MUST不选择Task Development、Planning Identity或旧Finish owner
+- **AND** MUST不选择已退役Task能力的owner
+
+#### Scenario: 本机复盘文档能力变化
+- **WHEN** Task Record复盘摘要、固定文件读取或Buildr Web复盘卡片发生改变
+- **THEN** MUST由Task Record Integration/System和适用Browser owner证明
+- **AND** MUST不重建Task Retrospective专属slice

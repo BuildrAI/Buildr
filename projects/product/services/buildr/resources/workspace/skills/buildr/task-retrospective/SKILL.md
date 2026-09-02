@@ -1,119 +1,76 @@
 ---
 name: task-retrospective
-description: 用户明确要求复盘已完成或已放弃的正式 Task，或要查看、处理、标记无需处理、重新打开已有复盘时使用；复盘重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。不用于过程 observation、任务审查、门禁或资产自动写回。
+description: 用户明确要求复盘已完成或已放弃的正式Task，查看本机复盘文档，或在阅读后决定是否继续行动时使用；只基于当前可见事实生成本机Markdown并维护Task上的待决策/已决策状态。
 ---
 
-# Task Retrospective
+<!-- buildr:capability-bindings begin -->
+## Buildr Capability Bindings
 
-本 Skill 是 `buildr.task-retrospective/v2` 的默认 provider。Agent负责复盘、当前事实重评与后续承接；Retrospective Application只负责terminal校验与SQLite current Result/处置状态，Task来源关系只通过selected `buildr.task-record/v2` provider维护。
+Consumer readiness: `ready`. `ready`只表示结构可路由。
 
-## 1. 恢复任务事实
+- `buildr.task-record@3` — mode `required`, readiness `ready`, reason `none`
+  - contract: `skills/contracts/buildr/task-record/v3.md`
+  - provider: `task-manager` → `.agents/skills/task-manager/SKILL.md` (scope `.`)
 
-确认 canonical Workspace 和正式 Task ID，读取 Task Record；Task 必须是 `completed` 或 `abandoned`。使用当前Workspace matching retained Buildr controller invocation执行bundled `inspect`；不得使用candidate `cliInvocation`、resource payload root或checkout内部driver：
+执行provider-dependent action前，读取上面已解析的contract与provider；成功仍由contract要求的授权和结果证据判断。
+<!-- buildr:capability-bindings end -->
 
-```text
-<controller-command> <controller-args-prefix...> __internal task-retrospective inspect --task <task-id> --target <canonical-workspace>
-```
+# 任务复盘
 
-已有Result可以重做并完整替换；没有Result只是“尚未复盘”。同时读取 `disposition` 与 `currentDigest`；不要打开SQLite；不读取、迁移或删除`.buildr/asset-review/`。
+任务复盘帮助人和Agent从已经结束的工作中发现执行浪费、等待、重复、错误恢复和协作问题。Agent负责分析并生成文档；Task Record只记录当前本机文档版本是否仍等待人的决定。
 
-在复盘生成前建立一次有界执行事实图，只读取当前runtime可达且与效率、重复、等待、失败恢复或人机协作直接相关的最小事实：Task Record时点与终态、适用的Review、Verification与Environment摘要、当前session工具结果，以及已有current `reportMarkdown`。已有复盘是本次重新思考的证据之一，不是必须保留的结论。没有某类事实时标记缺口，不为补齐图谱遍历全部owner、读取完整日志或增加任务消耗；同一事实已在当前上下文可用时不重复回读。该图只存在于Agent任务上下文，不写入Result之外的store、Receipt、history或分析平台。
+## 1. 核对真实对象
 
-## 2. 生成一份自由复盘
+确认canonical Workspace、正式Task ID和当前Task Record。Task 必须是 `completed` 或 `abandoned`；进行中的工作可以讨论改进，但不登记为终态任务复盘。
 
-只基于当前session/runtime可访问的任务步骤、工具结果和最终事实，重点寻找：
+只读取当前真正可达且与复盘相关的最小事实：Task目标与结果、当前会话工具结果、Git、代码、测试、适用Review/Verification、CI或外部业务结果。已有本机文档只是调查线索，继续判断前重新核对当前事实。
 
-- 哪些步骤耗时最多或token消耗最大；
-- 哪些推理、检索、尝试、验证或恢复发生重复；
-- 哪些等待、阻塞或环境准备可以前移、缓存或确定化；
-- 哪些选择应更早交给人，哪些可以由workflow/harness直接确定；
-- 哪些Buildr引导本身增加了不必要工作量。
+## 2. 生成自由Markdown
 
-报告使用自由Markdown，不要求固定标题、评分、分类或结构化建议。Token 数据按证据可见性处理：可信可得时记录数值、来源和覆盖范围；部分可得时明确覆盖的步骤、阶段或调用及其不代表完整 Task；不可得时直接标记缺失，并继续使用耗时、重复尝试、等待、工具调用和人机协作等可观察事实。不得为了补齐 Token 数字回放完整上下文、读取隐藏推理、强制估算、新增采集流程或增加任务消耗；其他精确成本数据不可见时同样写明缺口并区分观察事实与推断。不得声称读取隐藏推理、完整对话、完整工具日志或后台事件。
+重点检查 Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率。报告使用自由Markdown，不要求评分、固定分类、行动项或确定性流程候选。
 
-用户或团队给出的同类任务耗时参考区间，只作为当前任务复杂度下的比较、解释和优化背景；报告应说明适用范围及偏离原因，不把它固化为通用产品阈值、Result字段、gate、pass/fail标准或自动缩减验证范围的依据。
+明确区分：
 
-### 确定性流程候选
+- 已观察事实；
+- 基于事实的推断；
+- 当前缺失的数据。
 
-每次生成或重做复盘都主动判断是否存在确定性流程候选，但报告仍是自由Markdown，不要求固定标题、候选数组或评分。可信候选必须有重复证据，或单次已经造成高成本/高风险，并同时说明：
+Token、完整耗时或调用次数不可得时直接标记缺失并继续分析。不得声称读取隐藏推理、完整对话、完整工具日志或后台事件，不为补齐数字回放上下文、强制估算或新增采集。
 
-- closed输入、唯一Owner、明确停止条件、可验证结果与幂等/有界恢复；
-- 哪些机械步骤可由Application、CLI workflow、checker或test确定化；
-- 哪些目标、业务判断、风险取舍和授权仍由人和Agent保留；
-- 预期节省、失败风险、证据局限与建议资产落点。
-
-候选必须通过Core哲学过滤：**Buildr应该约束Agent不要做错事，而不是要求Agent必须通过Buildr才能做事。** 要求普通动作必须经过Buildr、把推荐路径变成唯一合法路径、建立通用许可层/生命周期gate、自动替代专业判断或自动修改Rule/Skill/workflow的方向，不得作为可固化候选；说明违反的authority/判断边界后保留Agent在现有授权与安全边界内直接执行的路径。证据不足、仍依赖业务语义、边界无法闭合或收益不足时，如实保留为普通优化方向或说明没有可信候选，不为填充报告虚构候选。
-
-建议落点由Agent判断：价值观、authority与授权边界进入Rule；可复用的Agent判断方法进入Skill；固定机械顺序和closed变换进入Application/CLI workflow；不变量、跨版本兼容与fail-closed边界进入checker/test。候选只提出建议，不直接修改这些资产。
-
-## 3. 完整后一次写入
-
-报告未完成或任务仍active时不写。完整报告形成后执行：
+用户明确授权生成文档后，把完整报告写入固定本机路径：
 
 ```text
-<controller-command> <controller-args-prefix...> __internal task-retrospective record --task <task-id> --target <canonical-workspace> --report-markdown <markdown>
+.buildr/local/task-retrospectives/<task-id>.md
 ```
 
-Application会完整替换同一Task的current row；不创建历史、候选或draft。若命令行承载长Markdown存在转义风险，使用安全的进程参数调用方式，不借此新增临时持久化store。
+该文件不进入Git、SQLite正文、发布物或Current Knowledge。先安全写入完整文件，再计算实际SHA-256；文件写入失败时不登记Task状态。
 
-## 4. 处理 current 复盘
+## 3. 登记当前文档
 
-用户要求处理多份已有复盘时，先通过一次有界批量只读调用取得默认 `pending` 摘要：
+重新读取Task取得当前`recordDigest`，执行：
 
 ```text
-<controller-command> <controller-args-prefix...> __internal task-retrospective list --target <canonical-workspace> [--status <pending|handled|no-action|all>] [--task <task-id> ...] [--limit <1..500>] [--max-bytes <1..1048576>] [--include-report]
+buildr task update <task-id> --retrospective-state pending-decision --retrospective-document-digest <sha256-digest> --expected-record <recordDigest> --target <workspace> --json
 ```
 
-默认最多返回 100 份 pending 摘要、受 262144 UTF-8字节预算约束且不包含报告正文；先用摘要收窄对象，只在确实需要批量读取原文时显式使用 `--include-report`。正文不能作为完整item落入预算时会被省略并标记`truncated`，个别全文继续使用单 Task `inspect`。`list` 只减少重复 driver 调用，不自动分析、评分、生成方向、创建 Task 或修改 disposition，也不成为后续 mutation 的授权或门禁。
+Application会重新读取固定文件并校验Task终态、普通文件、非符号链接、正文、大小、摘要和Task版本。登记失败时保留已生成文件，只恢复登记；不得重做已完成的复盘。
 
-用户要求处理已有复盘时，再对需要判断的对象使用 `inspect`，在对话中直接给出完整原始 `reportMarkdown`；正文过长或已在同一对话完整展示时可以给出 `currentDigest` 不可变引用，但不能只让用户去 Buildr Web 查。随后读取当前 canonical specs、实现、knowledge 与 open Task，对原问题和建议逐项判断当前是否仍存在、仍有效，再按当前事实重新拆分改进方向；不沿用旧行动项编号，也不生成新 action item ID。
+## 4. 查看与决定
 
-处理单份或多份复盘时，对其中的确定性流程候选执行同一语义重评：按实际目标、closed边界和当前实现聚类、合并或丢弃，不按关键词自动聚类，也不把旧候选当作current事实。先用bounded list摘要收窄来源，再逐项inspect必要正文；Application仍只提供事实，分析由Agent完成。重叠候选尽量合并为少量纵向Task，互不相干或不能共享交付结果的方向保持独立。
+用户只要求查看时，读取当前Task和固定Markdown并直接展示；查看零写入，不自动标记已决策。
 
-### 4.1 先完成只读讨论
+用户明确决定继续行动时，先核对现有普通Task，复用匹配todo/active Task或展示将创建的普通Task effects并取得授权。普通Task可以在目标中引用来源Task或本机复盘路径；不建立专用来源关系。
 
-用户只说“处理”“检查”“查看”或“分析”复盘时，只授权只读阶段。Agent 可以 inspect、调查当前事实、重判方向并形成拟处置方案，但不得调用 Task Record `create|update` 或 Task Retrospective `handle`。先向用户完整展示：
-
-- current disposition 与 `currentDigest`；
-- 拟 disposition 及完整处置理由；
-- 将复用、创建或关联的目标 Task IDs；
-- 每一项 Task Record 与 Retrospective mutation effect；没有 Task effect 时明确写 none。
-- 每项可信确定性流程候选的来源证据、closed输入、Owner、停止条件、结果/恢复边界、保留给人和Agent的判断、预期收益/风险与Rule/Skill/Application/CLI/checker/test建议落点；没有可信候选时明确说明。
-
-展示后停止写入并等待用户决定。用户继续讨论、要求调整、提出异议、只表示“看看再说”或没有明确接受时，保持 current disposition 和全部 Task Record rows 不变；不得把“处理复盘”推断成 `no-action`、`handled`、`pending` 或创建/关联 Task 的授权。
-
-### 4.2 判断是否已有明确授权
-
-以下任一情况可以进入写入阶段：
-
-1. 用户直接指定了完整 mutation，例如“把这个复盘标记为无需处理，理由是……”，或明确指定 `handled`、处置说明和全部目标 Task effects；完整动作本身就是本次精确 mutation 的明确授权，不再机械要求第二次确认。
-2. 一人或多人明确接受 Agent 刚展示的完整方案，且 disposition、理由、确定性流程候选、目标 Task IDs 与关系 effects 均未变化。多人意见不一致或仍在讨论时保持只读，不建立reviewer、票数或approval状态。
-
-授权只覆盖已指定或已展示的精确 effects。确认候选只授权创建或关联承接Task，不授权直接修改候选指向的Rule、Skill、Application、CLI、checker或test；这些资产仍由后续Task按当前事实治理。表达不完整或含糊时继续保持只读。实际写入前重新 inspect，并复核 current digest、拟 disposition、处置理由、候选边界、目标 Task 与关系 effects；任一事实或 effect 发生实质变化时旧授权失效，立即停止后续写入、保持 current disposition、重新展示变化后的完整方案并取得新授权。若已有部分已授权 effects 成功，原样报告实际 effects，不回滚、不扩大授权，也不得把部分落地冒充完整处置。
-
-### 4.3 只执行已授权 effects
-
-取得明确授权且复核无变化后，每个仍有效方向按以下顺序落地：
-
-1. 已有 todo 或 active Task 覆盖目标时，通过 `task update --add-retrospective-source` 关联，不重复创建。
-2. 没有承接Task且用户已同意保留意向时，通过`task create --status todo --retrospective-source`只写数据；不运行Git基线、不创建Change、proposal或design。
-3. 多个方向可以合并到同一Task，一个源Task也可以关联多个Task；关系只到source Task ID，不绑定具体建议文本。
-4. 已失效、已解决、收益不足或不适用的方向说明当前证据和丢弃理由，不创建Task。
-
-全部已授权的有效方向完成关系写入后才处置：
-
-- `handled`：所有有效方向均已有承接 Task，处置说明包含当前事实判断、目标 Task ID 与丢弃理由；不等于目标 Task 已实施完成。
-- `no-action`：当前没有值得转化的行动；必须说明理由。
-- `pending`：重新打开，清空上次处置说明与时间。
+用户明确完成决定后，重新读取Task和文档摘要，再执行：
 
 ```text
-<controller-command> <controller-args-prefix...> __internal task-retrospective handle --task <task-id> --target <canonical-workspace> --status <pending|handled|no-action> --note <reason> --expected-current-digest <current-digest>
+buildr task update <task-id> --retrospective-state decided --retrospective-document-digest <sha256-digest> --expected-record <recordDigest> --target <workspace> --json
 ```
 
-`handled|no-action` 必须提供非空完整处理意见；`pending` 不保留说明。任一Task创建或关系写入失败时不提交最终 `handle`，保持 current disposition并报告实际 effects 与恢复动作。若digest冲突，重新inspect并基于最新报告、关系与处置状态重新判断、展示方案并取得新授权。重新record会原子重置为pending。
+`decided`只表示人已决定是否继续行动，不表示改进已经实施。用户决定不行动时不创建Task，也不保存`no-action`说明。
 
-## 5. 报告边界
+文档内容变化或重新生成时，重新登记为`pending-decision`。只有用户明确要求解除关联时，才使用`--clear-retrospective`；该动作不删除Markdown。
 
-向用户返回原始复盘或不可变引用、当前有效性证据、重新拆分方向、确定性流程候选或无候选结论、哲学边界判断、丢弃理由、实际承接Task IDs、关系effects、operation status与current digest。todo只表示意向，后续明确启动时再走task-triage和activate。
+## 5. 边界
 
-本Skill不参与Task完成、交付、cleanup或OpenSpec门禁，也不创建空复盘。
+本Skill不参与Task完成、交付、cleanup或OpenSpec门禁，不自动提示、生成、批量处理或关闭复盘。复盘建议不自动修改Rule、Skill、Application、CLI、测试或工作流；需要继续行动时使用普通Task和对应专业能力。

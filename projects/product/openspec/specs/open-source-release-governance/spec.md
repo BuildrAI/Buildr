@@ -208,24 +208,22 @@ Buildr MUST由一个共享 execution environment helper同时绑定权威 Node e
 - **AND** MUST不依赖硬编码历史复盘中的 Node 版本恢复
 
 ### Requirement: Release transaction evidence 必须提供正式关联与可验证 readback
-Buildr MUST以 closed release transaction context/evidence schema关联 source release Task、其 retrospective sources、显式 support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry smoke。context MUST由Task/Application与GitHub/Git/npm正式读模型形成；terminal evidence MUST保存在既有 release evidence artifact，并 MUST提供按 publish run读取和验证的 portable inspect结果。
+Buildr MUST以closed release transaction context/evidence schema关联source release Task、显式support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry smoke。发布事务 MUST不读取、复制或依赖Task复盘文档、决定状态或来源关系。
 
 #### Scenario: dispatch 正式 release transaction
-- **WHEN** 维护者明确授权 publication 且runner准备dispatch唯一 protected workflow
-- **THEN** runner MUST在dispatch前验证 release/support Tasks、retrospective source、Candidate run/source、Git bridge与Environment binding
-- **AND** workflow input MUST携带 canonical closed context及其 digest
-- **AND** Task Record MUST只保留既有顶层/Parent/retrospective事实，不得复制关联正文
+- **WHEN** 维护者明确授权publication且runner准备dispatch唯一protected workflow
+- **THEN** runner MUST验证release/support Tasks、Candidate run/source、Git bridge与适用准备事实
+- **AND** MUST不查询Retrospective Application、Task复盘关系或本机Markdown
 
 #### Scenario: 读取完成的发布链路
-- **WHEN** 调用方按 publish run ID执行 release transaction inspect
-- **THEN** read model MUST下载同一 run 的正式 evidence artifact并校验 context digest、source/workflow/run/attempt和公共发布事实
-- **AND** result MUST同时返回 release/support Tasks、Candidate、publish、bridge、tag、npm/GitHub Release与Registry smoke关联
-- **AND** 不匹配、缺失或跨 run evidence MUST fail closed
+- **WHEN** 调用方按publish run ID读取release transaction evidence
+- **THEN** read model MUST返回release/support Tasks和公共发布事实
+- **AND** schema MUST不包含`retrospectiveSources`
 
 #### Scenario: transaction 在公共写入前失败
-- **WHEN** workflow 在 tag/npm mutation 前失败
-- **THEN** evidence MUST保留已确认的 context、Candidate与publish run facts及失败阶段
-- **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
+- **WHEN** Task、Candidate、Git或准备事实不匹配
+- **THEN** runner MUST在tag、npm publish或GitHub Release写入前失败
+- **AND** MUST不通过复盘状态补足或绕过缺失事实
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
 Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen selection完成current main coverage检查与保持release tree不变的历史收敛，并把该post-reconciliation generation作为唯一final source。Buildr MUST只对通过完整Product Candidate的final generation创建一个generation-scoped受保护release→main收敛PR；PR MUST以current generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于Candidate绑定的frozen release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。

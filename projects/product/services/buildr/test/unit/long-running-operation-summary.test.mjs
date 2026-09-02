@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import {
   LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES,
   longRunningOperationSummary,
-} from '../../src/infrastructure/contracts/public-json.mjs';
+} from '../../src/infrastructure/contracts/public-json.ts';
 
 test('long-running summary 是有界 closed projection', () => {
   const summary = longRunningOperationSummary({

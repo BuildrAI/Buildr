@@ -17,7 +17,7 @@ test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名
   const { root } = fixture(t, 'task-lifecycle');
   const runtime = createRuntime();
   const empty = runtime.createTaskRecord(root, { taskId: 'empty-task', title: '空引用', intent: '允许没有 Change', projects: [], services: [], changes: [] });
-  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v4'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.deepEqual(empty.nextActions, []); assert.equal('path' in empty, false);
+  assert.equal(empty.schemaVersion, 'buildr.task-record-result/v5'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.deepEqual(empty.nextActions, []); assert.equal('path' in empty, false);
 
   const created = json(['task', 'create', 'multi-task', '--title', '多范围任务', '--intent', '验证限定引用', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/same-change', '--change', 'demo/second-change', '--change', 'other/same-change', '--target', root]);
   assert.equal(created.record.changes.length, 3); assert.match(created.recordDigest, /^sha256-/); assert.deepEqual(created.effects, [{ type: 'created', taskId: 'multi-task' }]); assert.equal('path' in created, false);
@@ -29,26 +29,18 @@ test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名
 
   const completed = json(['task', 'complete', 'empty-task', '--summary', '确认无需修改', '--no-change', '--target', root]);
   assert.deepEqual(completed.record.result, { summary: '确认无需修改', noChange: true });
-  assert.match(completed.nextActions[0], /是否进行任务复盘.*Token 数据仅在 Agent 可取得时记录.*缺失不影响复盘/);
+  assert.deepEqual(completed.nextActions, []);
   const abandoned = runtime.createTaskRecord(root, { taskId: 'abandoned-task', title: '取消任务', intent: '验证放弃', projects: [], services: [], changes: [] });
   assert.equal(abandoned.status, 'created');
   const ended = runtime.abandonTaskRecord(root, 'abandoned-task', { reason: '目标取消' }); assert.deepEqual(ended.record.result, { summary: '目标取消' }); assert.deepEqual(ended.nextActions, completed.nextActions);
-  runtime.createTaskRecord(root, { taskId: 'human-output-task', title: '人类输出', intent: '验证终态提示', projects: [], services: [], changes: [] });
+  runtime.createTaskRecord(root, { taskId: 'human-output-task', title: '人类输出', intent: '验证终态输出', projects: [], services: [], changes: [] });
   const human = run(['task', 'complete', 'human-output-task', '--summary', '完成', '--no-change', '--target', root]);
-  assert.match(human.stdout, /Task human-output-task completed[\s\S]*Next: 是否进行任务复盘/);
+  assert.match(human.stdout, /Task human-output-task completed/);
+  assert.doesNotMatch(human.stdout, /复盘|Next:/);
   const terminal = json(['task', 'update', 'abandoned-task', '--title', '不可重开', '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_digest_required'); assert.deepEqual(terminal.effects, []);
-  runtime.createTaskRecord(root, { taskId: 'terminal-retro-source', title: '复盘来源', intent: '提供 current 复盘', projects: [], services: [], changes: [] });
-  runtime.completeTaskRecord(root, 'terminal-retro-source', { summary: '来源已完成', noChange: true });
-  runtime.recordTaskRetrospective(root, 'terminal-retro-source', { reportMarkdown: '# 复盘\n\n来源已形成。' });
-  runtime.createTaskRecord(root, { taskId: 'terminal-followup', title: '终态承接', intent: '验证终态关系维护', projects: [], services: [], changes: [] });
-  runtime.completeTaskRecord(root, 'terminal-followup', { summary: '承接已完成', noChange: true });
-  const terminalSourceAdded = runtime.updateTaskRecord(root, 'terminal-followup', { addRetrospectiveSources: ['terminal-retro-source'] });
-  assert.deepEqual(terminalSourceAdded.record.retrospectiveSourceTaskIds, ['terminal-retro-source']);
-  assert.deepEqual(runtime.inspectTaskRetrospective(root, 'terminal-retro-source').followupTasks.map((item) => item.taskId), ['terminal-followup']);
-  const terminalSourceRemoved = runtime.updateTaskRecord(root, 'terminal-followup', { removeRetrospectiveSources: ['terminal-retro-source'] });
-  assert.deepEqual(terminalSourceRemoved.record.retrospectiveSourceTaskIds, []);
-  assert.throws(() => runtime.updateTaskRecord(root, 'terminal-followup', { title: '仍不可改' }), (error) => error.code === 'task_record_digest_required');
-  assert.throws(() => runtime.updateTaskRecord(root, 'terminal-followup', { title: '混合更新', addRetrospectiveSources: ['terminal-retro-source'] }), (error) => error.code === 'task_record_digest_required');
+  assert.equal(runtime.recordTaskRetrospective, undefined);
+  assert.equal(runtime.handleTaskRetrospective, undefined);
+  assert.equal(runtime.listTaskRetrospectives, undefined);
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_already_exists');
   const syntax = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
 });
@@ -65,39 +57,85 @@ test('任务完成只经既有 complete，旧收尾专用完成写入口退出',
   assert.equal(runtime.inspectTaskOverview(root, 'direct-task').task.status, 'completed');
 });
 
-test('todo 只保存意向与复盘信源，支持多对多关联、open 查询与显式激活', (t) => {
-  const { root } = fixture(t, 'task-todo-retrospective-sources');
+test('普通后续 Task 只在目标中说明来源，不维护复盘专用关系', (t) => {
+  const { root } = fixture(t, 'task-todo-followup');
   const runtime = createRuntime();
-  for (const sourceTaskId of ['source-one', 'source-two']) {
-    runtime.createTaskRecord(root, { taskId: sourceTaskId, title: sourceTaskId, intent: '形成复盘信源', projects: [], services: [], changes: [] });
-    runtime.completeTaskRecord(root, sourceTaskId, { summary: '已结束', noChange: true });
-    runtime.recordTaskRetrospective(root, sourceTaskId, { reportMarkdown: `# ${sourceTaskId}\n\n当时的原始复盘。` });
-  }
-
-  const todo = json(['task', 'create', 'todo-followup', '--title', '待办改进', '--intent', '仅记录已接受意向', '--status', 'todo', '--retrospective-source', 'source-one', '--retrospective-source', 'source-two', '--target', root]);
+  const todo = json(['task', 'create', 'todo-followup', '--title', '待办改进', '--intent', '承接 source-one 的复盘建议', '--status', 'todo', '--target', root]);
   assert.equal(todo.record.status, 'todo');
   assert.deepEqual(todo.record.changes, []);
-  assert.deepEqual(todo.record.retrospectiveSourceTaskIds, ['source-one', 'source-two']);
-  assert.deepEqual(todo.retrospectiveRelations.sources.map((item) => item.taskId), ['source-one', 'source-two']);
+  assert.equal(todo.record.intent, '承接 source-one 的复盘建议');
+  assert.equal('retrospectiveSourceTaskIds' in todo.record, false);
+  assert.equal('retrospectiveRelations' in todo, false);
   assert.deepEqual(runtime.queryTaskRecordViews(root, { status: 'open' }).tasks.map((item) => item.record.taskId), ['todo-followup']);
   assert.deepEqual(runtime.queryTaskRecordViews(root, { status: 'todo' }).tasks.map((item) => item.record.taskId), ['todo-followup']);
   assert.throws(() => runtime.updateTaskRecord(root, 'todo-followup', { addChanges: ['demo/same-change'] }), (error) => error.code === 'task_record_todo_change_forbidden');
   assert.throws(() => runtime.completeTaskRecord(root, 'todo-followup', { summary: '存在交付', noChange: false }), (error) => error.code === 'task_record_todo_completion_requires_no_change');
-
-  runtime.createTaskRecord(root, { taskId: 'active-followup', title: '已激活改进', intent: '复用同一复盘信源', retrospectiveSourceTaskIds: ['source-one'], projects: [], services: [], changes: [] });
-  assert.deepEqual(runtime.inspectTaskRetrospective(root, 'source-one').followupTasks.map((item) => item.taskId), ['active-followup', 'todo-followup']);
-  assert.deepEqual(runtime.inspectTaskRetrospective(root, 'source-two').followupTasks.map((item) => item.taskId), ['todo-followup']);
-
   const activated = json(['task', 'activate', 'todo-followup', '--target', root]);
   assert.equal(activated.status, 'activated');
   assert.equal(activated.record.status, 'active');
-  assert.deepEqual(activated.record.retrospectiveSourceTaskIds, ['source-one', 'source-two']);
-  assert.deepEqual(runtime.queryTaskRecordViews(root, { status: 'open' }).tasks.map((item) => item.record.taskId).sort(), ['active-followup', 'todo-followup']);
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { status: 'open' }).tasks.map((item) => item.record.taskId), ['todo-followup']);
+});
 
-  runtime.createTaskRecord(root, { taskId: 'no-retrospective-source', title: '无复盘来源', intent: '校验拒绝', projects: [], services: [], changes: [] });
-  runtime.completeTaskRecord(root, 'no-retrospective-source', { summary: '结束', noChange: true });
-  assert.throws(() => runtime.createTaskRecord(root, { taskId: 'invalid-followup', title: '非法来源', intent: '缺少 current 复盘', status: 'todo', retrospectiveSourceTaskIds: ['no-retrospective-source'], projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_retrospective_source_missing');
-  assert.throws(() => runtime.createTaskRecord(root, { taskId: 'active-source-followup', title: '非终态来源', intent: '来源必须结束', status: 'todo', retrospectiveSourceTaskIds: ['active-followup'], projects: [], services: [], changes: [] }), (error) => error.code === 'task_record_retrospective_source_not_terminal');
+test('复盘文档由 Agent 写入固定本地路径，Task Record 只登记摘要与决定状态', (t) => {
+  const { root } = fixture(t, 'task-retrospective-document');
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'document-task', title: '本地复盘', intent: '验证最小登记', projects: [], services: [], changes: [] });
+  runtime.completeTaskRecord(root, 'document-task', { summary: '任务完成', noChange: true });
+  const before = runtime.inspectTaskRecord(root, 'document-task');
+  assert.equal(before.record.retrospective, null);
+  assert.equal(runtime.inspectTaskRetrospectiveDocument(root, 'document-task').effectiveState, 'missing');
+
+  const documentPath = path.join(root, '.buildr', 'local', 'task-retrospectives', 'document-task.md');
+  fs.mkdirSync(path.dirname(documentPath), { recursive: true });
+  fs.writeFileSync(documentPath, '# 任务复盘\n\n当前没有可继续行动的问题。\n');
+  const observed = runtime.inspectTaskRetrospectiveDocument(root, 'document-task');
+  assert.equal(observed.present, true);
+  assert.equal(observed.effectiveState, 'pending-decision');
+  assert.match(observed.actualDigest, /^sha256-[0-9a-f]{64}$/);
+
+  const registered = runtime.updateTaskRecord(root, 'document-task', {
+    expectedRecordDigest: before.recordDigest,
+    retrospectiveState: 'pending-decision',
+    retrospectiveDocumentDigest: observed.actualDigest,
+  });
+  assert.deepEqual(registered.record.retrospective, { state: 'pending-decision', documentDigest: observed.actualDigest });
+  const decided = runtime.updateTaskRecord(root, 'document-task', {
+    expectedRecordDigest: registered.recordDigest,
+    retrospectiveState: 'decided',
+    retrospectiveDocumentDigest: observed.actualDigest,
+  });
+  assert.equal(decided.record.retrospective.state, 'decided');
+  assert.deepEqual(runtime.queryTaskRecordViews(root, { retrospectiveState: 'decided' }).tasks.map((item) => item.record.taskId), ['document-task']);
+
+  fs.appendFileSync(documentPath, '\n新的事实。\n');
+  const changed = runtime.inspectTaskRetrospectiveDocument(root, 'document-task');
+  assert.equal(changed.effectiveState, 'pending-decision');
+  assert.equal(changed.diagnostic.code, 'task_record_retrospective_document_changed');
+  const latest = runtime.inspectTaskRecord(root, 'document-task');
+  const cleared = runtime.updateTaskRecord(root, 'document-task', { expectedRecordDigest: latest.recordDigest, clearRetrospective: true });
+  assert.equal(cleared.record.retrospective, null);
+  assert.equal(fs.existsSync(documentPath), true, '清除 Task Record 摘要不能删除本地文档');
+});
+
+test('复盘文档读取拒绝符号链接目录且不写Task状态', (t) => {
+  const { base, root } = fixture(t, 'task-retrospective-document-symlink');
+  const runtime = createRuntime();
+  runtime.createTaskRecord(root, { taskId: 'symlink-task', title: '符号链接复盘', intent: '验证读取边界', projects: [], services: [], changes: [] });
+  runtime.completeTaskRecord(root, 'symlink-task', { summary: '任务完成', noChange: true });
+  const external = path.join(base, 'external-retrospectives');
+  fs.mkdirSync(external);
+  fs.writeFileSync(path.join(external, 'symlink-task.md'), '# 外部文件\n');
+  fs.symlinkSync(external, path.join(root, '.buildr', 'local', 'task-retrospectives'));
+  const before = runtime.inspectTaskRecord(root, 'symlink-task');
+  assert.throws(() => runtime.inspectTaskRetrospectiveDocument(root, 'symlink-task'), (error) => error.code === 'task_record_retrospective_document_directory_invalid');
+  assert.equal(runtime.inspectTaskRecord(root, 'symlink-task').recordDigest, before.recordDigest);
+
+  const documents = path.join(root, '.buildr', 'local', 'task-retrospectives');
+  fs.unlinkSync(documents);
+  fs.mkdirSync(documents);
+  fs.symlinkSync(path.join(external, 'symlink-task.md'), path.join(documents, 'symlink-task.md'));
+  assert.throws(() => runtime.inspectTaskRetrospectiveDocument(root, 'symlink-task'), (error) => error.code === 'task_record_retrospective_document_invalid');
+  assert.equal(runtime.inspectTaskRecord(root, 'symlink-task').recordDigest, before.recordDigest);
 });
 
 test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、循环和 terminal 新关系', (t) => {

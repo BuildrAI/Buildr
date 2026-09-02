@@ -451,14 +451,6 @@ Buildr MUST交付一个`task-review` workspace Skill，并通过selected`buildr.
 - **THEN** Skill MUST 把对象与真实原因写入 uncovered
 - **AND** MUST NOT 以空列表或概括性 passed 隐藏覆盖缺口
 
-### Requirement: Task Review 与 Task Retrospective 必须保持独立 authority
-`task-review` MUST只拥有当前方案/完成目标的Review Result；`task-retrospective` MUST只拥有terminal Task的执行效率复盘current Result。两个Skill MUST NOT互写store、互相别名或形成lifecycle dependency。
-
-#### Scenario: Task 同时存在 Review 与 Retrospective
-- **WHEN** 同一正式Task已有Planning/Completion Review并在terminal后形成Retrospective
-- **THEN** 两类Result MUST由各自provider独立维护
-- **AND** Development与Finish MUST不读取、替换或等待Retrospective Result
-
 ### Requirement: Skill 必须区分 Capability Declaration、Execution 与 Result
 Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/stderr、耗时、资源等待和诊断作为 transient Execution Evidence，把current Result作为Workspace-local Task fact。Skill MUST NOT将三者合并成一个schema，也 MUST NOT把execution summary path写入Result。
 
@@ -630,37 +622,6 @@ Buildr self-bootstrap workflow MUST 将候选验证绑定到 Content Target、ru
 - **WHEN** retained branch 前进，但 Task 的 Content Target、runtime identity、migration identity、verification declaration 与受影响范围可证明均未变化
 - **THEN** workflow MUST 记录最终 identity check 并可复用既有验证 evidence
 - **AND** MUST NOT 仅因 rebase 动作机械要求全量 Candidate 验证
-
-### Requirement: 终态 Task 提供非阻塞任务复盘提示
-Buildr MUST 在正式 Task 成功进入 `completed` 或 `abandoned` 终态后，让结束任务的 Agent 使用稳定名称“任务复盘”询问用户是否复盘；该提示 MUST 发生在终态结果成立之后，且 MUST NOT 自动运行复盘或改变终态结果。
-
-#### Scenario: Task Record 完成后提示复盘
-- **WHEN** Task Record Application 成功完成 active Task
-- **THEN** terminal operation result MUST 提供非阻塞“任务复盘”建议
-- **AND** `task-manager` MUST 要求 Agent 在用户可见终态响应中询问是否进行任务复盘
-- **AND** 用户未同意复盘时 MUST NOT 调用 `task-retrospective`
-
-#### Scenario: Task Record 放弃后提示复盘
-- **WHEN** Task Record Application 成功放弃 active Task
-- **THEN** terminal operation result MUST 提供非阻塞“任务复盘”建议
-- **AND** 复盘缺失或用户拒绝 MUST NOT 改变 `abandoned` 状态
-
-#### Scenario: Formal Finish 成功后提示复盘
-- **WHEN** Task Finish 成功完成 retained Task Record 与 cleanup
-- **THEN** complete result MUST 提供非阻塞“任务复盘”建议
-- **AND** `task-finish` MUST 要求 Agent 在最终响应中询问是否进行任务复盘
-- **AND** 该建议 MUST NOT成为 Finish operation、cleanup 或 Task terminal transition 的门禁
-
-#### Scenario: 终态操作失败或阻塞
-- **WHEN** Task Record terminal transition 或 Task Finish 未成功到达目标终态
-- **THEN** Agent MUST NOT提示当前 Task 已可进行终态复盘
-- **AND** blocked result MUST 继续优先提供其确定性恢复动作
-
-#### Scenario: 任务复盘提示说明当前重点
-- **WHEN** Agent 展示终态任务复盘提示
-- **THEN** 提示 MUST 使用长期名称“任务复盘”
-- **AND** MUST 说明当前重点包括 Agent 执行耗时、Token 消耗、重复尝试和人机协作效率
-- **AND** MUST 说明 Token 数据仅在 Agent 可取得时记录且缺失不影响复盘
 
 ### Requirement: task-manager Skill 必须作为 Buildr Web 与 CLI 共享的 Task Record 薄管理入口
 Buildr MUST交付名为 `task-manager` 的 workspace Skill，并 MUST用精确 routing description 将它限制在 Agent 对正式 Task Record 的创建、按 Task ID 恢复、查看、更新和结束；Skill MUST通过 selected `buildr.task-record/v1` provider 执行，不得成为全局任务 dispatcher。Buildr Web MUST作为同一 Task Record Application 的独立人类客户端，不通过 Skill routing 写记录；任一客户端 MUST NOT直接访问 SQLite、SQL 或 migration scripts。
@@ -1087,10 +1048,17 @@ Buildr-owned OpenSpec contributions MUST只把归档前可完成的实现、知�
 - **THEN** checklist MUST允许Change归档
 - **AND** MUST不要求Task Candidate、Development Handoff或旧Finish运行
 
-### Requirement: 受管内部入口必须只覆盖仍存在的专业能力
-受管Skills调用Task Retrospective等仍存在的内部能力时 MUST使用matching retained controller。Runtime和文档 MUST不发现Task Development或Task Planning Identity route。
+### Requirement: 任务复盘必须由Agent按用户意图直接完成
+用户明确要求复盘终态Task时，Agent MUST使用`task-retrospective` Skill读取当前事实、生成固定本机Markdown并通过Task Record登记。Task完成本身 MUST不自动提示、生成、登记或要求复盘。
 
-#### Scenario: 从Task worktree记录复盘
-- **WHEN** Agent需要调用Task Retrospective内部入口
-- **THEN** MUST使用Environment或Workspace解析的retained controller
-- **AND** MUST不恢复任何已退役内部route
+#### Scenario: 用户在任务完成后要求复盘
+- **WHEN** 用户明确要求复盘指定终态Task
+- **THEN** Agent MUST直接组合Task、Git、代码、测试和适用专业结果形成文档
+- **AND** MUST不调用独立Retrospective Application、内部Driver或统一流程门禁
+
+### Requirement: Task Review与任务复盘必须保持职责独立
+Task Review MUST继续审查方案或完成结果；任务复盘Skill MUST只分析实际执行过程与改进。两者 MUST不合并为通用审查平台，也不得互相成为门禁。
+
+#### Scenario: Task没有复盘
+- **WHEN** Agent记录或读取Task Review、执行Verification或完成Task
+- **THEN** 动作 MUST不要求复盘文档或决定状态

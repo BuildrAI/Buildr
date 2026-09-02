@@ -28,25 +28,24 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 ## 领域与能力模块
 
 - Workspace：Organization/root 范围、identity、资产治理和 runtime 投射入口。
-- Workspace Structured Store：Buildr Local中每个canonical Workspace独立的local-only SQLite，用于索引、关系、聚合和事务；是Task Record、Development、Verification、Planning/Completion Review与Retrospective current records的唯一持久化authority，不属于portable工作资产，也不进入Git或同步。
+- Workspace Structured Store：Buildr Local中每个canonical Workspace独立的local-only SQLite，用于索引、关系、聚合和事务；是Task Record、Verification与Planning/Completion Review的本机持久化authority，不属于portable工作资产，也不进入Git或同步。
 - Project：业务事实、OpenSpec、capability/applicability context 和 Service 关系。
 - Service：职责与代码/资产边界。
 - Buildr Web：当前通过默认浏览器使用的本机 Web 界面，由 Buildr Web Frontend Service 交付前端产物、Buildr Web Runtime 同源托管，并可由 Buildr Web Launcher 启动。三者不建立第二个数据或 Application authority；Buildr Web 为未来桌面产品保留，当前未实现。
 - Buildr Application Payload 与分发载体：CLI、Core/Application、Buildr Web Runtime和正式静态资源、SQLite migrations、package baseline、生产依赖、版本与协议identity只形成一份公共负载；唯一正式载体是npm package。本机Launcher只是显式安装的图形投射，绑定同一npm安装，不复制Node、Buildr或业务实现。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
-- Task Record：正式 Task 的最小顶层事实。closed v2 表达 todo/active/终态、Parent/Children 和复盘来源 Task ID；todo 只是 data-only 意向，`open` 是 todo + active 查询。Buildr Web 只观察和有限维护已有 Task，不创建/激活。Task 专业模块仍保持独立 Domain、Application 和 writer。
+- Task Record：正式 Task 的最小顶层事实。closed v3 表达 todo/active/终态、Parent/Children，以及可选本机复盘文档的摘要与`pending-decision|decided`。todo 只是 data-only 意向，`open` 是 todo + active 查询。Buildr Web 只观察和有限维护已有 Task，不创建/激活。
 - 项目每日演进：按已登记 Project 保存的本机日历日 Git 提交摘要；权威是 ignored YAML 文件，不进 Structured Store。日摘要回答新增、更新、删除与弊端；自己的提交可挂 0..N 个本机 Task，他人提交必须展示且禁止挂 Task。产品读取路径不生成摘要、不扫描 Git、不内置 cron；Web 只读展示。
-- Task Environment：正式 Task 的本机执行基础与环境 authority；唯一 Environment Receipt 保存实际执行根、ready/blocked probes、动态资源和 cleanup。它可以组合共享根或 Git worktree provider，但不是 Workspace、Agent runtime 或 Task Record。
-- Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Environment candidate 或 retained Project 解析限定 Change；全局 Change 索引保持 retained-only。
+- Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Worktree或retained Project解析限定Change；全局Change索引保持retained-only。
 - Task Review：一个 `buildr.task-review/v2` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。Agent依据真实方案或完成结果动态审查，确定性 Application只负责inspect、带摘要比较的原子record和最小Result；它不判断适用性，也不依赖Development或成为其他模块门禁。
 - Task Verification：`buildr.task-verification/v4`指导Agent从Project测试地图选择并直接执行已有前后端测试；Project Verification Application只维护`verification.yml`，Task Verification Application只保存开发完成后的有意义报告。报告绑定内容版本和测试地图identity，不创建计划、runner、Candidate、Execution Record或Task门禁。
 - 开发执行：Agent直接读取Task目标、OpenSpec、代码、Git、文件、环境和专业结果，按适用Skill完成开发；Buildr不建立任务级研发聚合Application。
-- Task Retrospective：`buildr.task-retrospective/v2` 保留原始 Markdown current Result，处理时基于当前事实重算改进方向。有效方向由 Task Record v2 关联到已有 todo/active Task 或 data-only todo，不建立 action item ID、Change 或执行计划；后续进展只读 Task 当前状态。
+- Task Retrospective：可选纯Skill。用户明确要求后，Agent只基于当前可见事实生成`.buildr/local/task-retrospectives/<task-id>.md`；Task Record只登记文档SHA-256和`pending-decision|decided`。查看零写入，建议不自动修改资产或创建Task；用户决定继续时复用或创建普通Task并在目标中说明来源。
 - 任务收尾（Task Finish）：由智能体依据技能组合已有工具完成成果交付、已有任务结果登记和安全善后。无任务不创建，多仓库逐项保留结果；参与者和实现职责见 [任务收尾](../flows/task-closeout.md)。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
 - 父子管理使用目标、可读计划与真实任务结果，不传播环境、验证或交付事实。人明确授权父任务完成，完整说明见[父子管理](../flows/parent-child-management.md)。
-- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。Overview只给人查看Task Record、Review、Verification与Environment并列事实。旧Parent Plan迁入Task-owned只读历史字段；原聚合表已删除。
+- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。Overview只给人查看Task Record、Review与Verification并列事实。旧Parent Plan迁入Task-owned只读历史字段；原聚合表已删除。
 
 ## 产品边界
 

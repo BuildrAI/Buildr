@@ -11,7 +11,7 @@ import {
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
 } from '../infrastructure/runtime/adapter-contract.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
 export function registerDomainsRuntime(runtime) {
   const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);

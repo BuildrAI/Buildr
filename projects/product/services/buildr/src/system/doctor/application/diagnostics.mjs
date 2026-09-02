@@ -7,8 +7,6 @@ import { createServiceDiagnostics } from './service-diagnostics.mjs';
 import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
 import { finalizeDoctorResult } from './result-model.mjs';
 import { printProductInstallationReport } from './product-installation-report.mjs';
-import { createInternalWorkflowRouteDiagnostics } from './internal-workflow-route-diagnostics.mjs';
-import { inspectRequiredInternalWorkflowRoutes } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
 export function registerApplicationDoctor(runtime) {
   const { RUNTIME_CHECKERS, SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, assembleRuntimeProjection, getRuntimeAdapter, isSupportedAgent } = runtime;
@@ -130,7 +128,6 @@ export function registerApplicationDoctor(runtime) {
   });
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
-  const { diagnoseInternalWorkflowRoutes } = createInternalWorkflowRouteDiagnostics({ addDoctorFinding, fs, path, productRoot, inspectRoutes: inspectRequiredInternalWorkflowRoutes });
 
   function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
     const checked = new Set();
@@ -222,7 +219,6 @@ export function registerApplicationDoctor(runtime) {
     diagnoseSkillsManifestSchemas,
     diagnoseSkillCapabilities,
     diagnoseProjectVerification,
-    diagnoseInternalWorkflowRoutes,
     finalizeDoctorResult,
     printDoctorReport,
   });

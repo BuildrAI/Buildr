@@ -46,32 +46,27 @@ Buildr MUST 为 Buildr Web 的 development、reviews、verification Task read vi
 - **AND** 尚未交付的 queued/running read MUST 被明确结算为关闭或取消
 
 ### Requirement: Buildr Web 三个 Task 专业 Tab 必须通过 executor 读取
-Buildr Web MUST让Evidence中的Review/Verification与Parent Coordination通过固定容量只读executor执行。Executor MUST不注册Development或旧Finish history operation；Environment与Retrospective继续使用各自既有安全reader。
+Buildr Web MUST让Evidence中的Review/Verification与Parent Coordination通过固定容量只读executor执行。Task Record与本机复盘文档使用自身轻量安全reader，不进入专业executor。
 
 #### Scenario: 并发读取Task证据
 - **WHEN** 页面并发请求Review和Verification
 - **THEN** 两个请求 MUST通过有界executor调用所属Application
-- **AND** MUST不读取Development、Terminal Delivery或Finish history
 
 #### Scenario: 调用已删除operation
-- **WHEN** 调用方提交development或finish-history read operation
-- **THEN** executor MUST返回forbidden operation
-- **AND** MUST不启动worker或访问Workspace SQLite
+- **WHEN** 调用方提交development、environment、retrospective或finish-history read operation
+- **THEN** executor MUST返回forbidden且不启动worker
 
 #### Scenario: 三个 Tab 独立并发请求
 - **WHEN** 页面同时读取Evidence、Parent和其他保留Task视图
-- **THEN** executor MUST有界调度Review、Verification和Coordination请求
-- **AND** 任一请求失败 MUST不取消或覆盖其他专业结果
+- **THEN** executor MUST有界调度Review、Verification和Coordination
 
 #### Scenario: 写入和专业生命周期操作
-- **WHEN** 页面执行Task Record mutation或其他专业写操作
-- **THEN** MUST继续走对应writer接口
-- **AND** MUST不通过只读executor执行写入
+- **WHEN** 页面执行Task Record mutation
+- **THEN** MUST走Task Record writer而非只读executor
 
 #### Scenario: 已解析 canonical root 的只读请求
-- **WHEN** Web Host已解析并授权canonical Workspace root
-- **THEN** executor MUST只传递该root、Task ID和允许的read operation
-- **AND** worker MUST不重新扫描或选择其他Workspace
+- **WHEN** Web Host已解析canonical root
+- **THEN** executor MUST只传递root、Task ID和允许的operation
 
 ### Requirement: Buildr Web Runtime 只读执行公开命名必须保持边界
 只读 executor、其测试和诊断 MUST 使用 Buildr Web Runtime 术语；迁移 MUST NOT 扩大 Task read authority、输入边界、取消传播或固定容量执行器。
@@ -82,9 +77,9 @@ Buildr Web MUST让Evidence中的Review/Verification与Parent Coordination通过�
 - **AND** 同一 Task-scoped 只读边界 MUST 继续生效
 
 ### Requirement: 只读 executor 必须保持当前 Task read authority 与输入边界
-Task只读executor MUST只分发当前存在的Task Overview、Environment、Review、Verification、Coordination与Retrospective read操作，并保持有界执行、取消和资源回收。
+Task只读executor MUST只分发Task Overview、Review、Verification和Coordination read操作，并保持有界执行、取消和资源回收。复盘文档读取归Task Record HTTP。
 
 #### Scenario: 读取任务详情
-- **WHEN** Buildr Web通过executor读取Task详情
-- **THEN** executor MUST返回目标Application的当前read model
-- **AND** MUST不读取或恢复已退役研发与旧收尾事实
+- **WHEN** Buildr Web通过executor读取Task详情专业结果
+- **THEN** executor MUST返回目标Application read model
+- **AND** MUST不读取Retrospective、Environment或旧研发/收尾事实

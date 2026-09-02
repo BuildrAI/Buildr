@@ -50,7 +50,7 @@ Agent按现场独立选择：
 
 ## 已完成阶段
 
-- Task Record、Parent/Child、Task Review、Task Verification、Worktree、Preview与Task Retrospective形成独立责任边界。
+- Task Record、Parent/Child、Task Review、Task Verification、Worktree与Preview形成独立责任边界；Task Retrospective已收窄为纯Skill、本机Markdown和Task Record两态摘要。
 - 任务研发、任务规划身份、旧Task Finish Application和统一Task Environment已经退役。
 - 普通任务不创建环境记录；局部准备或清理失败不撤销已成立成果。
 

@@ -91,7 +91,7 @@ flowchart TB
 
 ## 实现与验证范围
 
-- 身份与完成：`src/task/domain/task-record.mjs`、`src/task/application/task-record-application.mjs`、`src/task/persistence/task-record-repository.mjs`。
+- 身份与完成：`src/task/domain/task-record.ts`、`src/task/application/task-record-application.ts`、`src/task/persistence/task-record-repository.ts`。
 - 当前摘要：`src/task/application/parent-coordination-application.mjs`。
 - 人类入口：`services/buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx`、`ParentCompletionFields.tsx` 及任务详情。
 - 智能体入口：随包 `task-manager`，由分流、研发、审查及收尾技能按职责引用。

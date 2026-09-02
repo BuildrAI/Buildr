@@ -2,7 +2,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.mjs';
 
 export function registerSystemDoctorApplication(runtime) {
@@ -20,7 +20,6 @@ export function registerSystemDoctorApplication(runtime) {
   const diagnoseSkillsManifestSchemas = (...args) => runtime.diagnoseSkillsManifestSchemas(...args);
   const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
-  const diagnoseInternalWorkflowRoutes = (...args) => runtime.diagnoseInternalWorkflowRoutes(...args);
   const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
   const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
@@ -153,7 +152,6 @@ export function registerSystemDoctorApplication(runtime) {
     diagnoseProjectVerification(result, targetRoot, registry);
     diagnoseServices(result, targetRoot, scopes, registry);
     diagnoseSkillsManifestSchemas(result, targetRoot, scopes);
-    diagnoseInternalWorkflowRoutes(result);
     if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, requestedAgent);
     if (result.workspace?.initialized) {
       try {

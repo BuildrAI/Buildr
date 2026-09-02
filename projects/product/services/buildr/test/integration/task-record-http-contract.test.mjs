@@ -5,13 +5,13 @@ import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
-import { handleTaskRecordHttpRequest } from '../../src/task/interfaces/http/task-record-http.mjs';
+import { handleTaskRecordHttpRequest } from '../../src/task/interfaces/http/task-record-http.ts';
 import {
   inspectTaskRecordHttpContractCoverage,
   TASK_RECORD_HTTP_OPERATIONS,
   TASK_RECORD_HTTP_VALIDATORS,
-} from '../../src/task/interfaces/http/task-record-http-contracts.mjs';
-import { checkTaskRecordHttpDto } from '../../tools/contracts/task-record-dto.mjs';
+} from '../../src/task/interfaces/http/task-record-http-contracts.ts';
+import { checkTaskRecordHttpDto } from '../../tools/contracts/task-record-dto.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.mjs';
 
@@ -27,13 +27,14 @@ function assertSchema(operationId, kind, value) {
 }
 
 test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', async () => {
-  assert.equal(TASK_RECORD_HTTP_OPERATIONS.length, 5);
+  assert.equal(TASK_RECORD_HTTP_OPERATIONS.length, 6);
   assert.deepEqual(TASK_RECORD_HTTP_OPERATIONS.map((operation) => operation.id), [
     'task-record.list',
     'task-record.detail',
     'task-record.update',
     'task-record.complete',
     'task-record.abandon',
+    'task-record.retrospective-document',
   ]);
   assert.deepEqual(await checkTaskRecordHttpDto(), []);
   const coverage = inspectTaskRecordHttpContractCoverage([
@@ -72,7 +73,7 @@ test('非法 DTO 在调用 Task Record Application writer 前被拒绝', async (
   assert.equal(calls, 0);
 });
 
-test('五个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Schema', async (t) => {
+test('六个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Schema', async (t) => {
   const { base, root } = taskRecordFixture(t, 'task-record-http-contract');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -145,6 +146,11 @@ test('五个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Sc
   });
   assert.equal(response.status, 200);
   assertSchema('task-record.complete', 'success', response.body);
+
+  response = await request(`${endpoint}/contract-complete/retrospective-document`);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.effectiveState, 'missing');
+  assertSchema('task-record.retrospective-document', 'success', response.body);
 
   response = await request(`${endpoint}/contract-abandon/abandon`, {
     method: 'POST', headers: writeHeaders,

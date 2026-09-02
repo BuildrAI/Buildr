@@ -44,7 +44,7 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr worktree create\|inspect\|cleanup <task-id>` | 窄Git worktree provider。`create`接受branch/start point与显式Project/Service selectors；`inspect`复核checkout/branch/HEAD/clean/registration；`cleanup`要求每仓成对提供expected source与delivered完整提交。它不判断Task完成，也不准备Runtime、CLI、依赖、projection或动态资源。 |
 | `buildr project verification inspect|validate|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
 | `buildr task verification record|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
-| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在 canonical Workspace 的 SQLite 中维护 Task Record v2。`create --status todo` 只保存意向，不接受 Change；`activate` 显式转为 active。`--retrospective-source` 及 update add/remove flags 只关联已有 current 复盘的终态来源 Task，不创建行动项。todo 只能以 `--no-change` 完成；todo/active 都可 abandon，终态不可重开。Parent/Child 仍只表达协调层级。 |
+| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在 canonical Workspace 的 SQLite 中维护 Task Record v3。`create --status todo`只保存意向；`activate`显式转为active。终态Task可通过`update --retrospective-state pending-decision|decided --retrospective-document-digest <sha256> --expected-record <digest>`登记固定本机复盘文档，或用`--clear-retrospective`解除登记。正文由Agent写入`.buildr/local/task-retrospectives/<task-id>.md`，CLI不生成正文。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
@@ -59,11 +59,11 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
-Task Record 使用 closed `buildr.task-record/v2` schema。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为 todo + active。复盘来源使用独立多对多关系表，只保存 source Task ID；多个复盘可指向同一 Task，一个复盘也可形成多个后续 Task。Task Record 不保存 Environment、执行计划或 action item。Parent/Child、Change resolver、`recordDigest` 与旧 `task.yml` inert 语义保持不变。
+Task Record 使用 closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。Parent/Child、Change resolver、`recordDigest`与旧`task.yml` inert语义保持不变。
 
-Task Record、Task Verification、Planning/Completion Review与Task Retrospective current facts以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web调用对应Application；interface不直接打开数据库。旧研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。Task current records不进入Git或跨机器同步。
+Task Record、Task Verification与Planning/Completion Review以`.buildr/local/workspace.sqlite`作为单机持久化authority。复盘正文保存在被Git忽略的`.buildr/local/task-retrospectives/`，SQLite只保留Task上的文档摘要和决定状态。旧复盘current/source表、研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情固定为“概览、原型、证据、复盘、环境”五个一级视图；概览组合Task Record、Review、Verification与Environment，证据分别调用Review/Verification reader，环境调用Environment reader。页面没有研发页签或旧机器交付历史。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task详情固定为“概览、原型、证据”三个一级视图；概览包含本机复盘文档轻量卡片，证据分别调用Review/Verification reader。页面没有独立复盘工作台、研发页签或旧机器交付历史。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 

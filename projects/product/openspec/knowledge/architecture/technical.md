@@ -85,7 +85,7 @@ services/buildr/
 | 模块 | 拥有的主要职责 | 公开协作边界 |
 |------|----------------|--------------|
 | `workspace/` | Workspace、Project、Service、Project Daily Progress、registry 与 source 解析 | Workspace/Project query、CLI/HTTP/Diagnostic contribution |
-| `task/` | Task Record、Environment、Development、Review、任务验证报告、Retrospective、Parent Coordination、Finish | 专业Application、窄read/internal capability、CLI/HTTP/Diagnostic contribution |
+| `task/` | Task Record、Review、任务验证报告、Parent Coordination与复盘文档只读边界 | 专业Application、窄read capability、CLI/HTTP/Diagnostic contribution；复盘分析由Skill和Agent完成 |
 | `agent-assets/` | Rule、Skill、Command、Component、Builtin/package maintenance 和 Agent runtime 投射 | runtime projection、capability binding、CLI contribution |
 | `verification/` | Project verification declaration、capability execution、资源协调和 transient evidence | verification Application 与 execution result |
 | `web/` | Buildr Web 实例、Preview、session、安全、静态文件和本机 HTTP Host | loopback HTTP、业务 HTTP contribution 分发 |

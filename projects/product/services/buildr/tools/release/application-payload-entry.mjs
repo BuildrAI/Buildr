@@ -8,7 +8,7 @@ import {
   resolveProductRoot,
 } from '../../src/infrastructure/product-resources/index.mjs';
 import { enrollProductInstallation, readCurrentInstallationOrigin } from '../../src/system/installation/module.mjs';
-import { reportCliFailure, runCli } from '../../src/bootstrap/cli/main.mjs';
+import { reportCliFailure, runCli } from '../../src/bootstrap/cli/main.ts';
 
 Promise.resolve()
   .then(() => {

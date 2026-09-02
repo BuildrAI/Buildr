@@ -7,6 +7,7 @@ import type {
   TaskDetailResponse,
   TaskListRequest,
   TaskListResponse,
+  TaskRetrospectiveDocumentResponse,
   TaskUpdateRequest,
   TaskUpdateResponse,
 } from './generated/task-record-http-dto';
@@ -33,6 +34,9 @@ export function createTasksClient(client: ApiClient) {
     },
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
+    },
+    retrospectiveDocument(taskId: string, options: ReadOptions = {}): Promise<TaskRetrospectiveDocumentResponse> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/retrospective-document`, options));
     },
     update(taskId: string, input: TaskUpdateRequest): Promise<TaskUpdateResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {

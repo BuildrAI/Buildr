@@ -76,11 +76,11 @@ const entryContent = fs.existsSync(entry) ? fs.readFileSync(entry, 'utf8') : '';
 const entryLines = entryContent.trimEnd().split(/\r?\n/);
 if (!entryContent) problems.push('missing npm executable: bin/buildr.mjs');
 if (entryLines.length > 20) problems.push(`bin/buildr.mjs must remain a thin executable (found ${entryLines.length} lines)`);
-if (!entryContent.includes("from '../src/bootstrap/cli/main.mjs'")) problems.push('bin/buildr.mjs must delegate to src/bootstrap/cli/main.mjs');
+if (!entryContent.includes("from '../src/bootstrap/cli/main.ts'")) problems.push('bin/buildr.mjs must delegate to src/bootstrap/cli/main.ts');
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'bootstrap/cli/main.mjs', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
+  'bootstrap/cli/main.ts', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
   'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts',
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.ts',
@@ -105,19 +105,18 @@ const requiredRuntime = [
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
   'task/persistence/task-review-repository.ts',
   'task/persistence/task-verification-repository.ts',
-  'task/module.mjs', 'task/domain/task-record.mjs',
+  'task/module.ts', 'task/domain/task-record.ts',
   'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
-  'task/application/task-record-application.mjs', 'task/persistence/task-record-repository.ts',
-  'task/interfaces/cli/task-record.mjs', 'task/interfaces/cli/task-review.ts',
-  'task/interfaces/http/task-record-http.mjs', 'task/interfaces/http/task-review-http.ts',
+  'task/application/task-record-application.ts', 'task/persistence/task-record-repository.ts',
+  'task/interfaces/cli/task-record.ts', 'task/interfaces/cli/task-review.ts',
+  'task/interfaces/http/task-record-http.ts', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
-  'task/interfaces/internal/workflow-route-router.mjs', 'task/contracts/internal-workflow-route-catalog.mjs',
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
   'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
   'task/openspec/module.mjs', 'task/change/module.ts', 'task/change/application/change-application.ts',
   'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
-  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.mjs',
+  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.ts',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.mjs',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
@@ -139,7 +138,7 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 const sourceFiles = listFiles(sourceRoot, (file) => /\.(?:mjs|ts)$/u.test(file));
 const graph = new Map();
 const layerOf = (relative) => {
-  if (relative === 'infrastructure/contracts/public-json.mjs') return 'infrastructure';
+  if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
   const moduleOffset = (
@@ -231,7 +230,6 @@ for (const file of graph.keys()) visitCycle(file);
 
 const bootstrapRuntimeConsumers = new Set([
   'bootstrap/cli/registry.mjs',
-  'task/interfaces/internal/task-retrospective-driver.mjs',
   'web/http/read-worker.mjs',
 ]);
 for (const file of sourceFiles) {
@@ -340,17 +338,17 @@ if (fs.existsSync(registry)) {
   if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
-const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task-record-application.mjs');
-const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.mjs');
-const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.mjs');
+const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task-record-application.ts');
+const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.ts');
+const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.ts');
 const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
 const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.mjs');
 const legacyRuntimeModule = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
 for (const relative of [
-  'domain/task-record/task-record.mjs',
-  'application/task-record/task-record-application.mjs',
+  'domain/task-record/task-record.ts',
+  'application/task-record/task-record-application.ts',
   'infrastructure/sqlite/task-record-repository.ts',
-  'interfaces/cli/task-record.mjs',
+  'interfaces/cli/task-record.ts',
 ]) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
 }
@@ -387,7 +385,7 @@ if (fs.existsSync(taskRecordModule)) {
 if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
 if (fs.existsSync(bootstrapRuntime)) {
   const source = fs.readFileSync(bootstrapRuntime, 'utf8');
-  for (const required of ["from '../task/module.mjs'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskRecordModule', '__bootstrapContributions']) {
+  for (const required of ["from '../task/module.ts'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskRecordModule', '__bootstrapContributions']) {
     if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
   }
   if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
@@ -456,11 +454,10 @@ const legacyTaskRecordConsumers = new Set([
   'change/module.mjs',
   'change/interfaces/http/change-http.mjs',
   'workspace/application/project-daily-progress-application.mjs',
-  'task/application/task-retrospective-application.mjs',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.ts',
   'task/persistence/task-overview-repository.ts',
-  'task/persistence/task-retrospective-repository.mjs',
+  'task/persistence/task-record-retrospective-document.ts',
   'task/persistence/task-verification-repository.ts',
   'web/http/server.mjs',
   'web/application/preview-lifecycle.ts',

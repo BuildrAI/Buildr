@@ -19,19 +19,6 @@ Buildr MUST通过只读Task Overview Application从Workspace SQLite组合Task Re
 - **THEN** Overview MUST保留其他事实并把对应section表达为missing
 - **AND** MUST不创建占位row或统一blocked状态
 
-### Requirement: Task 轻量查询必须组合复盘来源关系
-Task 列表与详情的 SQLite read model MUST 从 Task Record owner tables 读取 `retrospectiveSourceTaskIds`，并 MAY 对单个 source Task 派生承接 Task 的 ID、title 与 status。查询 MUST 保持只读、固定数量 SQL，不得读取复盘 Markdown、专业 currentness 或建立关系缓存。
-
-#### Scenario: 查看目标 Task 来源
-- **WHEN** Buildr Web 读取一个具有多个复盘来源的 todo 或 active Task
-- **THEN** read model MUST 返回去重后的 source Task 摘要
-- **AND** MUST NOT调用 Task Retrospective writer 或复制原始报告
-
-#### Scenario: 查看源 Task 承接列表
-- **WHEN** Buildr Web 打开 terminal source Task 的复盘页
-- **THEN** read model MUST 返回全部当前承接 Task 摘要
-- **AND** 目标状态变化 MUST 由下一次查询直接反映
-
 ### Requirement: Task Overview 必须返回面向用户的正交结果摘要
 Task Overview Application MUST从Task Record和Environment分别表达目标、顶层结果、资源清理与局部attention。它 MUST不从已删除的Development/Finish历史推导Delivery、Activation、Candidate、Handoff、授权或完成判断。
 
@@ -66,9 +53,17 @@ Task Overview Application MUST从Task Record和Environment分别表达目标、�
 - **AND** MUST不从Task状态、Git、文件或聊天猜测专业结果
 
 ### Requirement: Task Overview 与专业 inspect 必须只计算当前owner保存值
-Task Overview、Review、Verification、Environment、Retrospective和Parent inspect以及Buildr Web GET MUST只读取所属Application允许的已保存值。它们 MUST不执行Git observation、Environment probe、filesystem recovery或数据库mutation。
+Task Overview、Review、Verification和Parent inspect以及Buildr Web GET MUST只读取所属Application允许的值。复盘文档单项读取 MUST只读取固定本机Markdown和Task Record登记摘要，不执行Git、恢复、Agent调用或数据库mutation。
 
 #### Scenario: 读取没有专业结果的Task
 - **WHEN** Task仅存在Task Record
-- **THEN** Overview MUST返回目标、状态与专业空态
-- **AND** MUST不恢复旧研发或收尾数据
+- **THEN** Overview MUST返回目标、状态与专业空态，复盘卡片显示未登记
+- **AND** MUST不恢复旧研发、Environment、Retrospective current或收尾数据
+
+### Requirement: Task轻量查询必须组合本机复盘文档摘要
+Task列表与详情read model MUST直接返回Task Record拥有的可空复盘摘要和固定派生文档路径，不得读取Markdown正文、扫描文件系统或维护第二份状态。
+
+#### Scenario: 列出等待人决定的Task
+- **WHEN** Task query读取`pending-decision`记录
+- **THEN** read model MUST返回登记摘要、状态和派生路径
+- **AND** 文档正文与实际currentness MUST只在单Task文档读取时检查

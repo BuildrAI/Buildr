@@ -2,8 +2,6 @@ import type { ApiClient } from './client';
 import type {
   CoordinationResponse,
   OverviewResponse,
-  RetrospectivePatchRequest,
-  RetrospectiveResponse,
   ReviewsResponse,
   VerificationResponse,
 } from './generated/task-professional-http-dto';
@@ -31,12 +29,6 @@ export function createTaskProfessionalClient(client: ApiClient) {
     },
     coordination(taskId: string, options: ReadOptions = {}): Promise<CoordinationResponse> {
       return typed(client(taskPath(taskId, '/coordination'), options));
-    },
-    retrospective(taskId: string, options: ReadOptions = {}): Promise<RetrospectiveResponse> {
-      return typed(client(taskPath(taskId, '/retrospective'), options));
-    },
-    updateRetrospective(taskId: string, input: RetrospectivePatchRequest): Promise<RetrospectiveResponse> {
-      return typed(client(taskPath(taskId, '/retrospective'), { method: 'PATCH', body: JSON.stringify(input) }));
     },
   });
 }

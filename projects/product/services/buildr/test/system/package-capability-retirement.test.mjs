@@ -52,6 +52,15 @@ function seedMigrationV4(root) {
   return file;
 }
 
+function seedBeforeRetrospectiveRefactor(root) {
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  for (const candidate of [file, `${file}-wal`, `${file}-shm`]) fs.rmSync(candidate, { force: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const database = new DatabaseSync(file);
+  for (const migration of loadWorkspaceSqliteMigrations().filter((item) => item.version < 30)) applyWorkspaceSqliteMigration(database, migration);
+  database.close();
+}
+
 test('sync 清退 package 已不再声明的 Buildr-owned contract 与 binding', (t) => {
   const root = fixtureRoot(t);
   const manifestFile = path.join(root, 'skills', 'manifest.yml');
@@ -107,16 +116,32 @@ Fixture.
   assert.equal(fs.existsSync(target), false);
 });
 
-test('sync 不读取、迁移或删除既有 Task Asset Review observation 数据', (t) => {
+test('sync 直接删除既有 Task Asset Review observation 数据', (t) => {
   const root = fixtureRoot(t);
+  seedBeforeRetrospectiveRefactor(root);
   const legacy = path.join(root, '.buildr', 'asset-review', 'inbox', 'legacy.md');
   fs.mkdirSync(path.dirname(legacy), { recursive: true });
-  const before = Buffer.from('legacy observation bytes\n\u0000preserved');
-  fs.writeFileSync(legacy, before);
+  fs.writeFileSync(legacy, Buffer.from('legacy observation bytes\n\u0000retired'));
 
   const synced = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
-  assert.deepEqual(fs.readFileSync(legacy), before);
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'asset-review')), false);
+});
+
+test('sync 不跟随 Task Asset Review 符号链接删除外部数据', (t) => {
+  if (process.platform === 'win32') return t.skip('symlink ownership boundary is covered on POSIX');
+  const root = fixtureRoot(t);
+  seedBeforeRetrospectiveRefactor(root);
+  const external = path.join(path.dirname(root), 'external-asset-review');
+  fs.mkdirSync(external);
+  const externalFile = path.join(external, 'keep.txt');
+  fs.writeFileSync(externalFile, 'external');
+  fs.symlinkSync(external, path.join(root, '.buildr', 'asset-review'));
+
+  const synced = run(['sync', 'codex', '--target', root]);
+  assert.notEqual(synced.status, 0);
+  assert.match(`${synced.stderr}\n${synced.stdout}`, /旧本机数据目录清理失败/);
+  assert.equal(fs.readFileSync(externalFile, 'utf8'), 'external');
 });
 
 test('sync 接受已登记的历史 Task Asset Review contract 并安全退休', (t) => {
@@ -146,7 +171,8 @@ test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t) => {
   const database = new DatabaseSync(file, { readOnly: true });
   const expectedMigrations = loadWorkspaceSqliteMigrations().map(({ version, name }) => ({ version, name }));
   assert.deepEqual(database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), expectedMigrations);
-  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_retrospective_current'").get().count, 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('task_retrospective_current', 'task_retrospective_sources')").get().count, 0);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM tasks WHERE schema_version != 'buildr.task-record/v3'").get().count, 0);
   assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_lifecycle_current'").get().count, 0);
   database.close();
 });

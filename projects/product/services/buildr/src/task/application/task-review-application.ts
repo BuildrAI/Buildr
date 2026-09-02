@@ -1,7 +1,7 @@
 // @ts-nocheck -- Existing application migrated to the single TypeScript source in this change.
 import path from 'node:path';
 
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { normalizeTaskReviewResult, taskReviewError } from '../domain/task-review.ts';
 
 function assertObject(input, label) {

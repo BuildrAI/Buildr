@@ -157,7 +157,7 @@ Install to Buildr, render to Agent runtime.
 
 Buildr 资产是源头；Agent runtime 是面向当前 Agent 的可重建入口。Workspace 就是 Buildr 治理的工作目录，也是 Skill 唯一 source authority；Project 是业务、依赖、适用性和 capability context，不是 Skill 安装隔离层。Skill 只在 workspace `skills/` 维护，再显式 render 到当前工作目录的 `workspace` destination 或个人的 `user` destination。Buildr 在写入前检查同名 identity、ownership、receipt 与完整目录 digest；冲突会阻止整次写入。
 
-当前本地产品通过 `buildr web` 启动或复用只监听 loopback 的全局本机 Web 应用，并在默认浏览器中提供工作空间（Workspace）、项目（Project）、服务（Service）、任务（Task）与变更（Change）管理视图。Buildr Web 是任务记录（Task Record）的观察与有限维护客户端：正式 Task 由 Agent/Task Manager 创建，页面只允许编辑、完成和放弃已有 active Task。任务概览只组合Task Record、Review与Verification，不把执行位置或资源清理编造成Task结果；“证据”分别调用Task Review与Task Verification，“复盘”维护Task Retrospective处置。全局Change保持只读，Agent依据当前Change artifacts和真实现场继续工作。
+当前本地产品通过 `buildr web` 启动或复用只监听 loopback 的全局本机 Web 应用，并在默认浏览器中提供工作空间（Workspace）、项目（Project）、服务（Service）、任务（Task）与变更（Change）管理视图。Buildr Web 是任务记录（Task Record）的观察与有限维护客户端：正式 Task 由 Agent/Task Manager 创建，页面只允许编辑、完成和放弃已有 active Task。任务概览组合Task Record、Review与Verification，并提供本机复盘文档轻量卡片；查看Markdown零写入，只有用户明确决定后才登记`decided`。全局Change保持只读，Agent依据当前Change artifacts和真实现场继续工作。
 
 Buildr当前只通过npm Registry正式分发完整CLI与`buildr web`，主进程使用满足`engines.node`的Host Node。用户可显式运行`buildr web launcher install`生成macOS `.app`或Windows Start Menu shortcut；该图形入口只绑定同一npm安装并执行`web`，不复制Node、Buildr或payload，也不引入Desktop WebView或第二更新渠道。普通CLI不启动HTTP，关闭浏览器不等于退出服务。Buildr Web与自包含平台安装器为未来产品阶段保留，当前未实现。
 
@@ -180,7 +180,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - 默认 `sync` 从 root `.` 递归 reconcile 整个受管理 workspace；扫描跳过符号链接、依赖/build/runtime 目录和未登记的嵌套 Git repo。
 - 正式持久交付以最小Task Record记录意图与scope，但Task Record不是普通编辑、构建或有界测试的通用工作许可。Agent核对真实Git、文件和授权后可以直接工作；需要隔离Git位置时才创建matching Worktree，需要依赖、代码生成或运行入口时直接使用Project/Service声明的真实入口，创建预览等资源时由对应能力保存owner并负责安全关闭。
 - `declaration-intake`统一承接Project/Service注册、首次Task、准备入口变化、Verification coverage gap及显式初始化/刷新：Agent只读发现`preparation.yml`与`verification.yml`候选或差异。用户确认精确长期写入后，Agent直接维护Project拥有的准备入口；验证声明继续由`task-verification` owner维护。Intake不新增store/writer，不管理`capabilities.yml`或`commands.yml`。
-- Buildr Local 在 `.buildr/local/workspace.sqlite` 保存单机local-only structured data。Task Record、Environment、Verification、Planning/Completion Review与Task Retrospective current records以该数据库为唯一持久化authority；它们共用数据库但保持独立Domain、Application和writer。旧研发与旧收尾current表由连续migration直接删除，不建history或双读。数据库不进入Git、runtime投射或跨机器同步。
+- Buildr Local 在 `.buildr/local/workspace.sqlite` 保存单机local-only structured data。Task Record、Verification与Planning/Completion Review以该数据库为持久化authority。复盘正文只保存在被Git忽略的`.buildr/local/task-retrospectives/<task-id>.md`；Task Record只登记当前文档摘要与`pending-decision|decided`。旧Retrospective、研发、旧收尾和Environment表由连续migration直接删除，不建history或双读。
 - `.worktrees/` 是多个Task隔离checkout的容器，不是主Workspace、保留工作区或Agent runtime。`task-worktree`只提供`buildr.git-worktree-provider/v1`的checkout/branch/HEAD/clean/registration evidence和具体删除安全；`buildr worktree create|inspect|cleanup`不代表Task或业务成果完成。
 - 正式 Task 的当前协调入口是普通 Task + Parent/Child + Buildr Web 动态投影。Task 顶层记录、Review、Verification与Environment分别由各专业Application/read model提供，consumer不直接访问SQLite，也不维护第二份进度或证据。
 - 选择Buildr-managed OpenSpec路径时，Agent先核对当前Workspace；需要隔离时创建并检查matching Worktree。OpenSpec artifacts、实现与测试只写已确认owner的真实根，不从cwd、branch名、路径相似或旧回执猜测归属。
@@ -192,7 +192,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 - Buildr Product 的 delivery-required `product.delivery` capability绑定明确内容身份，并按changed owner选择affected或必要full证据；`product.full-regression`是显式产品候选（Product Candidate）验证。Git tracking、staging、commit、相同bytes集成、push和worktree清理不改变内容；交付内容或声明变化后Result派生为stale。
 - `task-finish`是完整“收尾/交付”意图的Skill入口和`buildr.task-finish/v1`默认provider。Agent按当前repository set、Task scope、真实交付现场和用户目标组合Git、业务工具、Task Record与Environment；没有匹配Task时直接收尾，不补建Task。Application不保存统一交付运行或机器历史。
 - `git-operations` 是唯一 Skill-only `buildr.git-operations/v1` provider。直接用户或上游 consumer 必须先明确 repository、operation、相关 ref、scope、授权和顺序；provider 只提供精确 staging、commit/push 分离、完整 push range、共享 commit 冻结、前后 identity、最小 Result 和部分失败 fail-closed 语义。它不新增 Application、CLI、Receipt、状态机或 transaction，也不并入独立的 `buildr.git-worktree-provider/v1`。
-- `task-retrospective` 是 `buildr.task-retrospective/v2` 默认 provider。用户明确要求时，Agent 对 `completed|abandoned` Task 的执行时间、词元消耗（Token Consumption）、重复尝试、人机协作和Buildr workflow/harness成本生成一份自由Markdown报告；Application按Task ID维护唯一current row和`pending|handled|no-action`处置。它不进入Task终态、交付或cleanup门禁。
+- `task-retrospective`是可选纯Skill，不再提供独立capability。用户明确要求时，Agent对`completed|abandoned` Task的当前可见事实形成自由Markdown；耗时或词元（Token）不可得时明确说明。查看不写状态，建议不自动创建Task或修改资产；用户决定继续时使用普通Task。
 - “收尾”只授权可安全确定的常规动作，不授权 force push、merge commit、远端任务分支删除、丢弃改动、共享分支历史改写或语义冲突决策。
 - 实际自举 workspace 的 sync 是独立状态变更，不作为相同tree的第二轮产品验证；唯一self-bootstrap runner按当前交付与retained checkout事实执行sync、入口检查和Doctor。`buildr update`只更新CLI来源。
 - 其他 Agent 在存在 adapter 前，不使用 supported fallback adapter；Agent 应读取标准资产或 bootstrap guide 理解边界，并联系 Buildr 作者反馈 adapter 需求。

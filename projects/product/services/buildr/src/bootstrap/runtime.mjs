@@ -8,8 +8,6 @@ import {
 import {
   TASK_RECORD_RUNTIME_PORT,
   TASK_RECORD_MODULE,
-  TASK_RETROSPECTIVE_RUNTIME_PORT,
-  TASK_RETROSPECTIVE_MODULE,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_MODULE,
   TASK_VERIFICATION_RUNTIME_PORT,
@@ -19,7 +17,7 @@ import {
   createTaskVerificationModule,
   createParentCoordinationModule,
   createTaskOverviewModule,
-} from '../task/module.mjs';
+} from '../task/module.ts';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.mjs';
@@ -73,21 +71,6 @@ function installTaskReviewModule(runtime, registry) {
   return descriptor;
 }
 
-function installTaskRetrospectiveModule(runtime, registry) {
-  const descriptor = registry.install(TASK_RETROSPECTIVE_MODULE);
-  const runtimePort = registry.provide(TASK_RETROSPECTIVE_RUNTIME_PORT);
-  Object.assign(runtime, runtimePort.methods);
-  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties)) {
-    Object.defineProperty(runtime, name, {
-      configurable: true,
-      enumerable: false,
-      get: bridge.get,
-      set: bridge.set,
-    });
-  }
-  return descriptor;
-}
-
 function installTaskRuntimeModule(runtime, registry, definition, capability) {
   const descriptor = registry.install(definition);
   const runtimePort = registry.provide(capability);
@@ -123,7 +106,6 @@ export function createRuntime() {
   installTaskRecordModule(runtime, registry);
   registry.install(createVerificationModule(runtime));
   installTaskReviewModule(runtime, registry);
-  installTaskRetrospectiveModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_RUNTIME_PORT);

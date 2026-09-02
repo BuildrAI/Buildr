@@ -44,7 +44,7 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
   assert.equal(packageManifest.capabilityContracts.some((item) => item.id === 'buildr.task-development'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item) => item.capability === 'buildr.task-development'), false);
   assert.deepEqual(packagedFinish.requires, [
-    { capability: 'buildr.task-record', version: 2, mode: 'optional' },
+    { capability: 'buildr.task-record', version: 3, mode: 'optional' },
     { capability: 'buildr.git-worktree-provider', version: 1, mode: 'optional' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);

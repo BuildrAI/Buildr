@@ -22,10 +22,12 @@ export interface TaskRecordHttpDtoProjection {
   taskCompleteResponse: TaskRecordMutationResponse;
   taskAbandonRequest: TaskAbandonRequest;
   taskAbandonResponse: TaskRecordMutationResponse;
+  taskRetrospectiveDocumentRequest: TaskRetrospectiveDocumentRequest;
+  taskRetrospectiveDocumentResponse: TaskRetrospectiveDocumentResponse;
   taskErrorResponse: ErrorResponse;
 }
 export interface TaskRecordMutationResponse {
-  schemaVersion: 'buildr.task-record-result/v4';
+  schemaVersion: 'buildr.task-record-result/v5';
   operation: 'update' | 'complete' | 'abandon';
   status: 'updated' | 'completed' | 'abandoned';
   taskId: TaskId;
@@ -35,7 +37,7 @@ export interface TaskRecordMutationResponse {
     [k: string]: unknown | undefined;
   }[];
   taskRelations: TaskRelations;
-  retrospectiveRelations: RetrospectiveRelations;
+  retrospectiveDocument: RetrospectiveDocumentReference;
   diagnostic: null;
   effects: {
     type: string;
@@ -44,7 +46,7 @@ export interface TaskRecordMutationResponse {
   nextActions: string[];
 }
 export interface TaskRecord {
-  schemaVersion: 'buildr.task-record/v2';
+  schemaVersion: 'buildr.task-record/v3';
   taskId: TaskId;
   title: string;
   intent: string;
@@ -56,7 +58,10 @@ export interface TaskRecord {
   parentTaskId: TaskId | null;
   childTaskIds: TaskId[];
   isParent?: boolean;
-  retrospectiveSourceTaskIds: TaskId[];
+  retrospective: {
+    state: 'pending-decision' | 'decided';
+    documentDigest: string;
+  } | null;
   status: 'todo' | 'active' | 'completed' | 'abandoned';
   result: TaskResult;
   resultHistory?: TaskResultHistoryEntry[];
@@ -105,9 +110,12 @@ export interface TaskRelationSummary {
   title: string;
   status: 'todo' | 'active' | 'completed' | 'abandoned';
 }
-export interface RetrospectiveRelations {
-  sources: TaskRelationSummary[];
-  followups: TaskRelationSummary[];
+export interface RetrospectiveDocumentReference {
+  path: string;
+  registered: {
+    state: 'pending-decision' | 'decided';
+    documentDigest: string;
+  } | null;
 }
 export interface TaskListRequest {
   q?: string;
@@ -115,19 +123,17 @@ export interface TaskListRequest {
   service?: string;
   status?: 'open' | 'todo' | 'active' | 'completed' | 'abandoned' | 'all';
   hasChildren?: 'yes' | 'no' | 'all';
-  hasRetrospective?: 'yes' | 'no' | 'all';
-  retrospectiveState?: 'missing' | 'pending' | 'handled' | 'no-action' | 'all';
+  retrospectiveState?: 'missing' | 'pending-decision' | 'decided' | 'all';
 }
 export interface TaskListResponse {
-  schemaVersion: 'buildr.task-record-list/v4';
+  schemaVersion: 'buildr.task-record-list/v5';
   filters: {
     q: string;
     project: string | null;
     service: string | null;
     status: 'open' | 'todo' | 'active' | 'completed' | 'abandoned' | 'all';
     hasChildren: 'yes' | 'no' | 'all';
-    hasRetrospective: 'yes' | 'no' | 'all';
-    retrospectiveState: 'missing' | 'pending' | 'handled' | 'no-action' | 'all';
+    retrospectiveState: 'missing' | 'pending-decision' | 'decided' | 'all';
   };
   filterOptions: {
     projects: string[];
@@ -147,18 +153,18 @@ export interface StoredTaskView {
   recordDigest: string;
   storedChangeReferences: QualifiedChange[];
   taskRelations: TaskRelations;
-  retrospectiveRelations: RetrospectiveRelations;
+  retrospectiveDocument: RetrospectiveDocumentReference;
   childTaskCount: number;
 }
 export interface TaskDetailRequest {}
 export interface TaskDetailResponse {
-  schemaVersion: 'buildr.task-record-view/v2';
+  schemaVersion: 'buildr.task-record-view/v3';
   taskId: TaskId;
   record: TaskRecord;
   recordDigest: string;
   storedChangeReferences: QualifiedChange[];
   taskRelations: TaskRelations;
-  retrospectiveRelations: RetrospectiveRelations;
+  retrospectiveDocument: RetrospectiveDocumentReference;
   childTaskCount: number;
 }
 export interface TaskUpdateRequest {
@@ -178,8 +184,9 @@ export interface TaskUpdateRequest {
   removeProjects?: string[];
   addServices?: QualifiedServiceInput[];
   removeServices?: QualifiedServiceInput[];
-  addRetrospectiveSources?: TaskId[];
-  removeRetrospectiveSources?: TaskId[];
+  retrospectiveState?: 'pending-decision' | 'decided';
+  retrospectiveDocumentDigest?: string;
+  clearRetrospective?: true;
 }
 export interface TaskCompleteRequest {
   expectedRecordDigest: string;
@@ -190,6 +197,26 @@ export interface TaskCompleteRequest {
 export interface TaskAbandonRequest {
   expectedRecordDigest: string;
   reason: string;
+}
+export interface TaskRetrospectiveDocumentRequest {}
+export interface TaskRetrospectiveDocumentResponse {
+  schemaVersion: 'buildr.task-retrospective-document/v1';
+  operation: 'inspect';
+  status: 'inspected';
+  taskId: TaskId;
+  path: string;
+  present: boolean;
+  content: string | null;
+  actualDigest: string | null;
+  registeredDigest: string | null;
+  registeredState: ('pending-decision' | 'decided') | null;
+  effectiveState: 'missing' | 'pending-decision' | 'decided';
+  diagnostic: {
+    code: string;
+    message: string;
+  } | null;
+  effects: unknown[];
+  nextActions: string[];
 }
 export interface ErrorResponse {
   error: {

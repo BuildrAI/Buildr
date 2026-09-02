@@ -13,7 +13,7 @@ import { ChangeBriefPanel, type ChangePayload } from './TaskChangeDetailPage';
 import { workspaceHref } from '../lib/labels';
 import { formatDateTime, taskStatusLabel } from '../lib/taskLabels';
 import { EvidenceTab } from './task-detail/EvidenceTab';
-import { RetrospectiveTab } from './task-detail/RetrospectiveTab';
+import { RetrospectiveDocumentCard } from './task-detail/RetrospectiveDocumentCard';
 import { ParentCoordinationPanel } from './task-detail/ParentCoordinationPanel';
 import { TaskDocumentPreviewModal } from './task-detail/TaskDocumentPreviewModal';
 import { TaskOutcomeSummary } from './task-detail/TaskOutcomeSummary';
@@ -40,7 +40,6 @@ const TABS: Array<{ id: TaskTab; label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'prototype', label: '原型' },
   { id: 'evidence', label: '证据' },
-  { id: 'retrospective', label: '复盘' },
 ];
 
 export function TaskDetailPage() {
@@ -87,10 +86,6 @@ export function TaskDetailPage() {
   const [verificationData, setVerificationData] = useState<any>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
-  const [retrospectiveData, setRetrospectiveData] = useState<any>(null);
-  const [retrospectiveLoading, setRetrospectiveLoading] = useState(false);
-  const [retrospectiveMutating, setRetrospectiveMutating] = useState(false);
-  const [retrospectiveError, setRetrospectiveError] = useState<string | null>(null);
 
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -103,8 +98,6 @@ export function TaskDetailPage() {
   const coordinationRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
-  const retrospectiveRequestRef = useRef(0);
-  const retrospectiveMutationRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
   const taskReadLifecycleRef = useRef(createTaskReadLifecycle());
   const focusRefreshRef = useRef<() => void>(() => {});
@@ -263,54 +256,6 @@ export function TaskDetailPage() {
     }
   }, [taskId]);
 
-  const refreshRetrospective = useCallback(async () => {
-    const requestId = ++retrospectiveRequestRef.current;
-    const currentTaskId = taskId;
-    setRetrospectiveLoading(true);
-    setRetrospectiveError(null);
-    try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'retrospective', (signal) => (
-        taskProfessionalApi.retrospective(currentTaskId, { signal })
-      ));
-      if (retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setRetrospectiveData(next);
-      }
-    } catch (err) {
-      if (!isTaskReadCancelled(err) && retrospectiveRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setRetrospectiveError(`${(err as ApiError).code || 'task_retrospective_read_failed'}：${err instanceof Error ? err.message : '读取失败'}`);
-        setRetrospectiveData(null);
-      }
-    } finally {
-      if (retrospectiveRequestRef.current === requestId) setRetrospectiveLoading(false);
-    }
-  }, [taskId]);
-
-  const handleRetrospective = useCallback(async (status: 'pending' | 'handled' | 'no-action', note?: string) => {
-    const currentTaskId = taskId;
-    const currentDigest = retrospectiveData?.slot?.currentDigest;
-    if (!currentDigest) return;
-    const mutationId = ++retrospectiveMutationRef.current;
-    setRetrospectiveMutating(true);
-    setRetrospectiveError(null);
-    try {
-      const next = await taskProfessionalApi.updateRetrospective(currentTaskId, { status, note, expectedCurrentDigest: currentDigest });
-      if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) setRetrospectiveData(next);
-    } catch (err) {
-      const apiError = err as ApiError;
-      if (retrospectiveMutationRef.current !== mutationId || taskIdRef.current !== currentTaskId) return;
-      if (apiError.code === 'task_retrospective_conflict') {
-        await refreshRetrospective();
-        if (retrospectiveMutationRef.current === mutationId && taskIdRef.current === currentTaskId) {
-          setRetrospectiveError('复盘处置已被其他操作更新，已刷新为最新状态，请重新判断。');
-        }
-      } else {
-        setRetrospectiveError(`${apiError.code || 'task_retrospective_handle_failed'}：${err instanceof Error ? err.message : '处置失败'}`);
-      }
-    } finally {
-      if (retrospectiveMutationRef.current === mutationId) setRetrospectiveMutating(false);
-    }
-  }, [retrospectiveData?.slot?.currentDigest, refreshRetrospective, taskId]);
-
   const selectTab = useCallback((tab: TaskTab) => {
     setActiveTab(tab);
     if (tab === 'overview') {
@@ -322,8 +267,7 @@ export function TaskDetailPage() {
       void refreshReview();
       void refreshVerification();
     }
-    if (tab === 'retrospective') void refreshRetrospective();
-  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshReview, refreshVerification, refreshRetrospective]);
+  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshReview, refreshVerification]);
 
   useEffect(() => {
     setPageError(null);
@@ -336,7 +280,6 @@ export function TaskDetailPage() {
     setPrototypeError(null);
     setReviewData(null);
     setVerificationData(null);
-    setRetrospectiveData(null);
     setBriefs([]);
     setCompleteSummary('');
     setCompleteNoChange('');
@@ -350,15 +293,11 @@ export function TaskDetailPage() {
     coordinationRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
-    retrospectiveRequestRef.current += 1;
-    retrospectiveMutationRef.current += 1;
     setPrototypeLoading(false);
     setOverviewLoading(false);
     setCoordinationLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
-    setRetrospectiveLoading(false);
-    setRetrospectiveMutating(false);
 
     let cancelled = false;
     void (async () => {
@@ -386,7 +325,6 @@ export function TaskDetailPage() {
       void refreshReview();
       void refreshVerification();
     }
-    if (tab === 'retrospective') void refreshRetrospective();
   };
 
   useEffect(() => {
@@ -657,6 +595,12 @@ export function TaskDetailPage() {
           onRefresh={() => { void refreshOverview(); }}
         />
         )}
+        <RetrospectiveDocumentCard
+          taskId={record.taskId}
+          recordDigest={data.recordDigest}
+          reference={data.retrospectiveDocument}
+          onRecordUpdated={refresh}
+        />
         <details className={`task-technical-overview${currentCoordination?.mode === 'parent' ? ' parent-mode' : ' ordinary-mode'}`} open={!record.isParent}>
           <summary>技术事实、Change 与 Task Record</summary>
         <section className="panel" id="task-professional-overview" aria-live="polite">
@@ -724,24 +668,6 @@ export function TaskDetailPage() {
                   )}
                 </dd>
               </div>
-              <div>
-                <dt>复盘来源</dt>
-                <dd id="task-detail-retrospective-sources">
-                  {!data.retrospectiveRelations.sources.length ? '无' : (
-                    <span className="task-change-links">
-                      {data.retrospectiveRelations.sources.map((source) => (
-                        <Link
-                          key={source.taskId}
-                          className={`task-change-link ${source.status}`}
-                          to={href(`/tasks/${encodeURIComponent(source.taskId)}`)}
-                        >
-                          {`${source.title} · ${source.taskId} · ${taskStatusLabel(source.status)}`}
-                        </Link>
-                      ))}
-                    </span>
-                  )}
-                </dd>
-              </div>
               <Fact label="项目范围" value={<span id="task-detail-projects">{record.scope.projects.join('、') || '无'}</span>} />
               <Fact label="服务范围" value={<span id="task-detail-services">{lines(record.scope.services, 'service').replaceAll('\n', '、') || '无'}</span>} />
               <div>
@@ -775,7 +701,7 @@ export function TaskDetailPage() {
             <p className="eyebrow">技术事实</p>
             <h2>读取证据</h2>
             <dl className="fact-list">
-              <Fact label="数据格式" value="buildr.task-record/v2" />
+              <Fact label="数据格式" value="buildr.task-record/v3" />
               <Fact label="存储范围" value="Workspace 本地数据" />
               <Fact label="记录摘要（recordDigest）" value={<span id="task-detail-digest">{data.recordDigest}</span>} />
             </dl>
@@ -914,15 +840,6 @@ export function TaskDetailPage() {
         onRefreshReview={() => { void refreshReview(); }}
         onRefreshVerification={() => { void refreshVerification(); }}
         openAgentAction={openAgentAction}
-      />
-      <RetrospectiveTab
-        active={activeTab === 'retrospective'}
-        data={retrospectiveData}
-        loading={retrospectiveLoading || retrospectiveMutating}
-        error={retrospectiveError}
-        onRefresh={() => { void refreshRetrospective(); }}
-        onHandle={(status, note) => { void handleRetrospective(status, note); }}
-        taskHref={(relatedTaskId) => href(`/tasks/${encodeURIComponent(relatedTaskId)}`)}
       />
     </>
   );

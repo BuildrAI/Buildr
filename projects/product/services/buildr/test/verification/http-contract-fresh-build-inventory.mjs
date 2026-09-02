@@ -16,8 +16,8 @@ export const HTTP_CONTRACT_FRESH_BUILD_SUPPORT = Object.freeze([
 ]);
 
 export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES = Object.freeze([
-  family('task-record', 'tools/contracts/task-record-dto.mjs', [
-    'src/task/interfaces/http/task-record-http-contracts.mjs',
+  family('task-record', 'tools/contracts/task-record-dto.ts', [
+    'src/task/interfaces/http/task-record-http-contracts.ts',
   ], [
     ['buildr', 'src/task/interfaces/http/generated/task-record-http-dto.ts'],
     ['buildr-web', 'src/api/generated/task-record-http-dto.ts'],

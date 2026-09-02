@@ -64,7 +64,6 @@ const gitSha = (letter) => letter.repeat(40);
 function readyTaskCorrelation(releaseTask, supportTasks) {
   return createReleaseTaskEvidenceCorrelation({
     releaseTask: { ...releaseTask, recordDigest: digest('1') },
-    retrospectiveSources: [],
     supportTasks: supportTasks.map((task) => ({ ...task, recordDigest: digest('1') })),
     source: { sourceCommit: fixtureCommit, sourceTree: candidateTree, remoteRef: fixtureCommit },
   });
@@ -241,7 +240,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     fs.writeFileSync(target, contents);
   }
   const completeTaskRecord = (taskId, title) => ({
-    schemaVersion: 'buildr.task-record/v2',
+    schemaVersion: 'buildr.task-record/v3',
     taskId,
     title,
     intent: `${title} intent`,
@@ -249,7 +248,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     changes: [],
     parentTaskId: null,
     childTaskIds: [],
-    retrospectiveSourceTaskIds: [],
+    retrospective: null,
     status: 'completed',
     result: { summary: `${title} completed`, noChange: false },
     createdAt: '2026-08-20T00:00:00.000Z',
@@ -261,11 +260,8 @@ test('release transaction runner binds preparation inputs to the final frozen so
     result: null,
   };
   const supportTask = completeTaskRecord('support-fixture', 'Support fixture');
-  const retrospectiveTask = completeTaskRecord('retrospective-fixture', 'Retrospective fixture');
   const runtime = {
-    inspectTaskRecord: (_repo, taskId) => taskId === releaseTask.taskId
-      ? { record: releaseTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [retrospectiveTask] } }
-      : { record: taskId === supportTask.taskId ? supportTask : retrospectiveTask, recordDigest: digest('1'), retrospectiveRelations: { sources: [] } },
+    inspectTaskRecord: (_repo, taskId) => ({ record: taskId === releaseTask.taskId ? releaseTask : supportTask, recordDigest: digest('1') }),
   };
   const currentRun = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
   const candidateRun = { repository: { full_name: 'BuildrAI/Buildr' }, event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1, html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/654' };

@@ -159,18 +159,6 @@ Buildr Web Task 列表 MUST 默认使用 `open` 过滤，并 MUST 提供 `open`�
 - **THEN** 页面 MUST 允许编辑顶层字段、无变更完成或放弃，并说明尚未进入正式执行
 - **AND** Environment、Development 与 Finish 视图 MUST 不伪造任何占位事实
 
-### Requirement: Buildr Web 必须展示复盘来源与承接关系
-Task 概览 MUST 展示当前 Task 的复盘来源摘要；复盘 Tab MUST 展示以当前 Task 为来源的承接 Task 摘要及当前 status。展示 MUST 使用 Task Record/Retrospective Application read model，不得由 Web 客户端拼接全量 Task 列表。
-
-#### Scenario: 查看复盘来源
-- **WHEN** todo/active Task 具有一个或多个 retrospective source
-- **THEN** 概览 MUST 显示可导航的 source Task ID、title 与 terminal status
-
-#### Scenario: 查看复盘承接结果
-- **WHEN** terminal Task 的复盘已关联一个或多个承接 Task
-- **THEN** 复盘 Tab MUST 在原始报告和处置意见附近显示目标 Task ID、title 与当前 status
-- **AND** 无承接关系时 MUST 显示明确空态而非隐藏原始复盘
-
 ### Requirement: Buildr Web 必须在全局壳层展示 GA 与 RC 更新
 Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并展示 GA/RC 更新提示；提示 MUST 在全局与 Workspace 路由保持一致，不得由各页面重复实现。
 
@@ -470,3 +458,16 @@ Task、Project与Service页面 MUST使用共享解析规则处理带用户可读
 - **WHEN** 维护者扫描当前 `buildr-web` 源码、测试和构建配置
 - **THEN** 用户可见旧称 MUST 不再作为 canonical 命名出现
 - **AND** `local-app-*` 仅能出现在明确标注的兼容 identity 或测试 fixture 中
+
+### Requirement: Buildr Web必须在概览按需查看本机复盘文档
+Buildr Web MUST在Task概览显示复盘文档固定本机路径与`无复盘文档|等待你的决定|已经决定`状态。只有Task Record已经登记文档时才提供查看入口；打开正文 MUST调用Task Record只读接口并 MUST不产生写入。
+
+#### Scenario: 只读查看当前复盘
+- **WHEN** 用户打开已登记复盘文档
+- **THEN** 页面 MUST展示Markdown、实际摘要状态和局部漂移提示
+- **AND** Task Record digest MUST保持不变
+
+#### Scenario: 用户明确完成决定
+- **WHEN** 用户查看匹配当前登记摘要的文档并点击“我已完成决定”
+- **THEN** 页面 MUST通过Task Record update提交当前record digest、文档摘要和`decided`
+- **AND** MUST不创建后续Task或处置说明

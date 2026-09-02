@@ -484,7 +484,7 @@ export function createPackageSmokeChecks(deps) {
     const { root, problems, files } = context;
     for (const relative of [
       'bin/buildr.mjs',
-      'src/bootstrap/cli/main.mjs',
+      'src/bootstrap/cli/main.ts',
       'src/agent-assets/application/package-maintenance/verification-registry.mjs',
     ]) {
       const runtimeFile = path.join(root, relative);

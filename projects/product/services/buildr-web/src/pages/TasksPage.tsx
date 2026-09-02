@@ -242,7 +242,7 @@ export function TasksPage() {
             value={draftStatus}
             onChange={(next) => {
               setDraftStatus(next);
-              if (['open', 'todo', 'active'].includes(next) && ['pending', 'handled', 'no-action'].includes(draftRetrospectiveState)) {
+              if (['open', 'todo', 'active'].includes(next) && ['pending-decision', 'decided'].includes(draftRetrospectiveState)) {
                 setDraftRetrospectiveState('all');
               }
             }}
@@ -305,7 +305,7 @@ export function TasksPage() {
             ]}
           />
         </Form.Item>
-        <Form.Item className="task-filter-span" label="复盘处置">
+        <Form.Item className="task-filter-span" label="复盘文档">
           <Select
             id="task-filter-retrospective"
             popupMatchSelectWidth
@@ -313,16 +313,15 @@ export function TasksPage() {
             value={draftRetrospectiveState}
             onChange={(next) => {
               setDraftRetrospectiveState(next);
-              if (['pending', 'handled', 'no-action'].includes(next) && ['open', 'todo', 'active'].includes(draftStatus)) {
+              if (['pending-decision', 'decided'].includes(next) && ['open', 'todo', 'active'].includes(draftStatus)) {
                 setDraftStatus('all');
               }
             }}
             options={[
               { value: 'all', label: '不限' },
-              { value: 'missing', label: '未复盘' },
-              { value: 'pending', label: '未处理' },
-              { value: 'handled', label: '已处理' },
-              { value: 'no-action', label: '无需处理' },
+              { value: 'missing', label: '无复盘文档' },
+              { value: 'pending-decision', label: '等待决定' },
+              { value: 'decided', label: '已经决定' },
             ]}
           />
         </Form.Item>

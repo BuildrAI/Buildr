@@ -23,7 +23,7 @@ test('task-triage 在新正式 Task create 前按逐repository权威基线消费
     '`rebase --abort`',
     '已经在其他repository成功的fetch/rebase不反向回滚',
     'workspace transition约束',
-    '才调用selected `buildr.task-record/v2` provider的active `create`或`activate`',
+    '才调用selected `buildr.task-record/v3` provider的active `create`或`activate`',
   ]) assert.ok(triage.includes(required), required);
 
   assert.match(triage, /不checkout、不stash\/autostash、不猜其他branch\/remote/);

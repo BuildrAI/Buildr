@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 
 function syntax(message: string, usage: string) { const error = new Error(message) as Error & Record<string, unknown>; Object.assign(error, { code: 'task_verification_cli.syntax', status: 400, usage }); return error; }
 function parse(operation: string, args: string[]) {

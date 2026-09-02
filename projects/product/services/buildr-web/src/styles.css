@@ -1522,30 +1522,6 @@ input:disabled, textarea:disabled, select:disabled { color: #7c8881; background:
 .review-evidence-section ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .review-evidence-section li, .review-list-empty { margin: 0; color: var(--soft-muted); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .review-result-path { display: block; margin-top: 10px; overflow-wrap: anywhere; color: var(--soft-muted); font: 9px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.retrospective-result { display: grid; gap: 20px; }
-.retrospective-facts-module {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--soft-line);
-}
-.retrospective-facts-module .retrospective-facts {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-.retrospective-facts { padding-bottom: 16px; border-bottom: 1px solid var(--soft-line); }
-.retrospective-disposition, .retrospective-followups { display: grid; gap: 16px; padding: 18px; border: 1px solid #b8d7c4; border-radius: 8px; background: #fbfefc; }
-.retrospective-disposition-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.retrospective-disposition-heading h3 { margin: 3px 0 0; font-size: 16px; }
-.retrospective-disposition-form { display: grid; gap: 12px; }
-.retrospective-disposition-form label { display: grid; gap: 7px; }
-.retrospective-disposition-form .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.retrospective-disposition-facts div { grid-template-columns: 112px minmax(0, 1fr); }
 .review-slot-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
 .task-actions { display: grid; gap: 24px; margin-top: 24px; }
 .terminal-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }

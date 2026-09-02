@@ -1,0 +1,49 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-task-retrospective
+operation: reconcile
+treeIdentity: implementation-working-tree@3e0987166b5f26fdb35786d1c47e3762423e0d11
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-task-retrospective/brief.md
+    reason: 说明本机复盘文档、人的决策状态和独立模块退役边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/proposal.md
+      - openspec/changes/refactor-task-retrospective/design.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: Task Retrospective从独立Application收窄为纯Skill与Task Record本机文档事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/specs/task-retrospectives/spec.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 删除独立模块、内部Driver和SQLite current表，新增固定本机文档边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/design.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 更新Task Record、SQLite、HTTP、Skill、package和Doctor职责
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/proposal.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 删除独立复盘Tab并改为概览内本机文档查看
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/proposal.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 重定义任务复盘与复盘决策状态，删除旧处置状态定义
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/design.md
+  - type: flow
+    target: openspec/knowledge/flows/open-source-release.md
+    reason: 发布事务删除复盘来源依赖
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-retrospective/specs/open-source-release-governance/spec.md
+unresolvedItems: []

@@ -35,7 +35,7 @@ scripts/                      checkout 安装、卸载和验证入口
 package/                      Buildr 向 Workspace/runtime 交付的源资产
 ```
 
-`bin/buildr.mjs` 只启动 `src/bootstrap/cli/main.mjs`。Bootstrap 是唯一 composition root：`runtime.mjs` 组装模块，`bootstrap/cli/` 持有公共 Host。Product 根 `buildr` 是 checkout convenience entry，也委托同一个 bin；npm 安装、checkout 执行与本机安装因此共享一套 implementation。
+`bin/buildr.mjs` 只启动 `src/bootstrap/cli/main.ts`。Bootstrap 是唯一 composition root：`runtime.mjs` 组装模块，`bootstrap/cli/` 持有公共 Host。Product 根 `buildr` 是 checkout convenience entry，也委托同一个 bin；npm 安装、checkout 执行与本机安装因此共享一套 implementation。
 
 `src/application/domains/` 保留原有 Rules、Skills、Commands、Components、部分 workspace lifecycle、OpenSpec 和 runtime handler。Workspace、Project、Service 已完成垂直切片：`src/domain/<domain>/` 只表达实体、值对象和纯约束，`src/application/<domain>/` 持有用例，`src/infrastructure/filesystem/*-manifest-repository.mjs` 持有 YAML/path/revision，Git adapter 持有实时观察，`src/web/` 持有 HTTP/Web。旧 lifecycle 只能逐步委托这些 Application，不得新增 interface 直接解析 manifest 的路径。
 
@@ -78,7 +78,7 @@ CLI command 只进入 `src/bootstrap/cli/registry.mjs` 合并出的唯一 comman
 
 Surface只控制发现层级与兼容承诺，不提供权限。`agent-machine`保留Review、任务验证报告与Worktree等低频机器接口；`maintenance`隔离package、preview与OpenSpec workflow。`openspec audit`、`openspec sync-plan`/`sync-apply`的公开route、handler和JSON schema已删除；deterministic planner/apply primitive继续由单一`openspec converge`transaction内部组合，事务期只读恢复检查由唯一三段route`openspec convergence inspect`提供。
 
-Task Record 是参考模块：`src/task/module.mjs` 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver与operation memoizer等命名窄依赖，在私有组合对象中创建 Repository 与 Application，再提供唯一 Application API、Persistence Read Port及CLI/HTTP/Diagnostic contributions。CLI与HTTP Adapter调用同一Application对象；正式 runtime port 不创建第二store、writer、双读或双写。Review、Verification、Worktree、Preview与Retrospective由各自owner持有。
+Task Record 是参考模块：`src/task/module.ts`只接收Structured Workspace Store、Project/Service Reader、Change Resolver与operation memoizer等命名窄依赖，在私有组合对象中创建Repository与Application，再提供唯一Application API、Persistence Read Port及CLI/HTTP/Diagnostic contributions。CLI与HTTP Adapter调用同一Application对象；复盘文档的固定路径读取与两态登记也归Task Record，复盘分析本身由纯Skill和Agent完成。
 
 任务研发聚合、任务规划身份和旧Task Finish Application均已删除。Bootstrap不安装这些模块，CLI/HTTP/Web不提供对应入口，SQLite migration删除两张旧current表。任务总览只组合Task Record、Review、Verification和Environment；任务收尾由Agent按Skill直接组合Git、环境及业务工具，不创建交付状态库。
 

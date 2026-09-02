@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/infrastructure/contracts/public-json.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -126,8 +126,6 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'taskRecordList',
     'taskRecordResult',
     'taskRecordView',
-    'taskRetrospectiveListResult',
-    'taskRetrospectiveOperationResult',
     'taskReviewOperationResult',
     'taskVerificationOperationResult',
     'update',

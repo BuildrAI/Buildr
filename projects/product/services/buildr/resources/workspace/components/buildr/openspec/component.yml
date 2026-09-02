@@ -20,7 +20,7 @@ contributions:
       mode: optional
     - skill: openspec-propose
       capability: buildr.task-record
-      version: 2
+      version: 3
       mode: required
     - skill: openspec-propose
       capability: buildr.current-knowledge-maintenance
@@ -32,7 +32,7 @@ contributions:
       mode: required
     - skill: openspec-apply-change
       capability: buildr.task-record
-      version: 2
+      version: 3
       mode: required
     - skill: openspec-apply-change
       capability: buildr.current-knowledge-maintenance

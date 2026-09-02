@@ -60,8 +60,8 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 | 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
 |---|---|---|---|
 | 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 分别证明current integration branch、matching upstream与clean状态；每个 operation 返回before/after、effects与current facts，适用Workspace transition check ready | 任一目标解析、前置事实、provider、fetch、rebase、冲突恢复或Doctor blocked时不调用Task Record `create`；报告全部部分effects，不换策略 |
-| 待办意向 | `buildr.task-record/v2` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent、scope与可选复盘来源；只返回SQLite record/effects | 不运行Git基线，不创建Change或专业placeholder |
-| 正式持久交付 | `buildr.task-record/v2` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
+| 待办意向 | `buildr.task-record/v3` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent与scope；只返回SQLite record/effects | 不运行Git基线，不创建Change或专业placeholder |
+| 正式持久交付 | `buildr.task-record/v3` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
 | 独立执行位置 | `buildr.git-worktree-provider/v1` 的 `create/inspect` | Task ID、canonical Workspace、branch、start point与明确repository selectors；返回实际checkout、HEAD、clean与registration | provider不可用或evidence漂移只阻塞依赖该Worktree的动作；可安全直接工作时不回退猜测 |
 | 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有Task Record或Buildr Web已创建时先inspect并核对intent/scope，不重复create，也不重新执行创建前Git基线门禁；只维护已有Task metadata时不递归创建新Task。Task Record provider不可用时不得手写YAML代替；其他provider不可用时只阻塞对应分支。current knowledge provider不可用时，不得回退为无evidence的直接编辑或伪造Change。
@@ -80,7 +80,7 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 4. 全部fetch成功后重新核验每个local integration branch、matching remote ref与clean状态，再按同一顺序为每个repository明确选择`rebase` operation。本地已对齐、仅落后或含未push且未共享commit都使用同一operation；provider不自行选择merge或push。
 5. rebase冲突时，consumer明确授权provider只在pre-state已证明clean时执行有界`rebase --abort`。只有branch、HEAD、index与working tree精确恢复到pre-rebase facts才记为recovered；无论恢复是否成功，本次Task create都是`blocked`。abort失败或恢复不可证明时保留现场。已经在其他repository成功的fetch/rebase不反向回滚，必须作为部分effects报告。
 6. 任一rebase返回`treeChanged: true`时，按产品入口Buildr Skill的workspace transition约束，对相应Buildr Workspace执行当前Agent的check；Doctor或必要收敛未ready时不创建Task。matching upstream上的协作者提交属于普通Workspace update；本地没有协作者Task是正常事实，不得据此补造历史任务或交付记录。Doctor仅指向当前Agent managed workspace/runtime projection stale时，将现有用户授权或一次明确sync确认交给产品入口Buildr Skill执行`buildr sync <agent> --target <workspace-root>`并消费最终Doctor；存在非sync blocker时按对应authority停止或处理。
-7. 只有完整repository set的fetch、rebase、恢复检查与适用transition check全部成功，才调用selected `buildr.task-record/v2` provider的active `create`或`activate`。任一门禁blocked时todo保持不变。Task Record Application与Buildr Web不获得任何Git mutation或本门禁状态authority。
+7. 只有完整repository set的fetch、rebase、恢复检查与适用transition check全部成功，才调用selected `buildr.task-record/v3` provider的active `create`或`activate`。任一门禁blocked时todo保持不变。Task Record Application与Buildr Web不获得任何Git mutation或本门禁状态authority。
 
 上述Workspace update分类只组合本次Git Result与post-transition Doctor，不按commit author推断ownership，也不建立持久状态。普通workspace sync不创建Task、Worktree、Verification或self-bootstrap evidence。
 

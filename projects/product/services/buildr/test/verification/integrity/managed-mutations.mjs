@@ -41,7 +41,7 @@ const allowed = new Map([
   ['src/web/infrastructure/instance-runtime.mjs', new Set([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
-  ['src/bootstrap/cli/main.mjs', new Set(['writeInternalDownload'])],
+  ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner'])],
   ['src/task/infrastructure/worktree-application.mjs', new Set(['writeReceipt'])],
   ['src/task/application/finish/task-finish-run.mjs', new Set([

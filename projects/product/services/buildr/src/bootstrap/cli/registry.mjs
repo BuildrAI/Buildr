@@ -3,7 +3,7 @@ import { createRuntime, runtimeContributions } from '../runtime.mjs';
 import { registerCommandHelp } from './help.mjs';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
-import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.mjs';
+import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
 import { createOpenSpecCliContributions } from '../../task/openspec/module.mjs';
 import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';

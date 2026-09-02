@@ -519,32 +519,30 @@ Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导
 - **AND** 验证 MUST 确认 Git 更新属于 Buildr Skill 的 consumer 编排，而不是 `buildr sync` CLI 或 Git Operations provider 的隐式行为
 
 ### Requirement: 产品验证覆盖 capability provider replacement
-Buildr product verification MUST 覆盖默认 provider、内部 provider 替换、provider 卸载、歧义、版本冲突和 required dependency failure，并 MUST 验证所有 supported runtime adapters 获得一致 binding 语义。
+Buildr product verification MUST覆盖仍存在的capability provider默认解析、替换、卸载、歧义、版本冲突和required dependency failure。`task-retrospective`是纯Skill，不参与provider replacement。
 
 #### Scenario: 默认 providers 完成现有工作流
-- **WHEN** a temporary workspace uses package defaults
-- **THEN** Git Operations、worktree、task consumers与Task Retrospective MUST resolve to the declared builtin providers
-- **AND** existing workspace update、worktree and retained metadata-only finish behavior MUST remain available
+- **WHEN** temporary Workspace使用package defaults
+- **THEN** Git Operations、worktree与Task Record consumers MUST解析到声明的provider
+- **AND** `task-retrospective` MUST作为无`provides`的可选Skill安装
 
 #### Scenario: 内部 provider 替换 Git Ops
-- **WHEN** a temporary workspace installs one compatible internal `buildr.git-operations@1` provider、binds it and uninstalls `git-operations`
-- **THEN** product entry and `task-finish` MUST resolve the internal provider，且 `task-worktree` MUST 继续解析自己的独立 provider
-- **AND** render and doctor MUST identify the internal provider without restoring `git-operations` or any removed legacy capability
+- **WHEN** Workspace替换Git Operations provider
+- **THEN** product entry与`task-finish` MUST解析新provider，worktree保持独立
+- **AND** MUST不恢复Retrospective capability
 
 #### Scenario: Required provider 缺失或有歧义
-- **WHEN** a test removes the only compatible required provider or leaves multiple unbound providers in the nearest scope
-- **THEN** doctor MUST report `blocked` with `missing_provider` or `ambiguous_provider` reason、affected consumers、candidates and nextActions
-- **AND** runtime render MUST retain affected consumers with blocked safety guidance and retain unrelated Skills
+- **WHEN** required provider缺失或存在未绑定歧义
+- **THEN** doctor MUST报告blocked及根因
+- **AND** unrelated Skills MUST保持可用
 
 #### Scenario: Runtime adapters 接收相同解析结果
-- **WHEN** Buildr renders the same scope for each supported Agent adapter
-- **THEN** every adapter MUST project equivalent capability status、selected provider and provenance
-- **AND** adapter-specific paths MUST NOT change provider resolution
+- **WHEN** Buildr为全部supported Agent adapters渲染同一scope
+- **THEN** provider解析与provenance MUST等价
 
 #### Scenario: Transitive provider dependency 被阻断或成环
-- **WHEN** selected provider 的 required dependency blocked，或 capability graph contains a required cycle
-- **THEN** product verification MUST confirm blocked readiness propagates to every affected upstream consumer
-- **AND** doctor MUST report `provider_not_ready` root cause chain or `dependency_cycle` path without hanging or selecting an arbitrary edge
+- **WHEN** required dependency blocked或成环
+- **THEN** readiness MUST只传播到受影响consumer并返回稳定根因
 
 ### Requirement: package 验证必须按资产与行为边界拆分
 Buildr MUST 将 package 静态内容校验、package workspace smoke 和领域 integration 实现为可独立执行的 verifier，并 MUST 让 `buildr package check` 聚合这些 verifier 的结果而不改变公开成功或失败语义。
@@ -727,22 +725,6 @@ task worktree/branch 内的 Task Manager、task-triage、contract、manifest 和
 - **WHEN** 最终候选已验证并进入 retained checkout
 - **THEN** Agent MUST 从 retained `projects/product/buildr` 执行适用 sync/render/doctor
 - **AND** activation evidence MUST 匹配 retained source identity、受管 runtime source 与 Task Manager/task-triage 专项验收
-
-### Requirement: Package residual gate 防止 Task Review 与 Retrospective 双 authority
-Buildr package verification MUST 区分 Task Review、普通 Change review 与 Task Retrospective，并 MUST 拒绝任何第二个正式 Task Review writer/store、按类型拆分的 capability、Task Record/Environment Review 字段或绕过 Application 的 Task-scoped review route。
-
-#### Scenario: Task Retrospective 保持独立
-- **WHEN** package 同时包含`task-review`与`task-retrospective`
-- **THEN** capability graph MUST显示不同contract identity、provider、store与consumer purpose
-- **AND** 两者 MUST不互写 Result 或互为 lifecycle dependency
-
-#### Scenario: Task-scoped route 仍使用普通 Change review
-- **WHEN** Buildr Web 或 Agent action 在明确 Task context 下仍生成不记录 Planning Result 的旧通用 Change review prompt
-- **THEN** residual gate/browser contract MUST 失败
-
-#### Scenario: sibling records 受到写入影响
-- **WHEN** Task Record、Environment、Task Review或Task Retrospective repository写入同一Workspace SQLite
-- **THEN** 专项 fixture MUST证明每个writer只替换自己的精确current row并保留其他专业records
 
 ### Requirement: 候选 Task Review authority 必须在 retained cutover 前保持隔离
 Task worktree 中新增的 Task Review Skill、CLI、Application 或 runtime assets MUST 只在该任务验证工作区和临时 Workspace 中验证；它们 MUST NOT 写 retained Workspace 的 Review Result、替换正式 runtime 或宣称 selected authority 已切换。只有候选集成、retained source sync/render/doctor 和真实 E2E 成功后，P0.3 authority 才 MUST 被报告为生效。
@@ -1035,37 +1017,6 @@ Buildr package bootstrap 契约 MUST 校验生成的产品入口 Skill包含宿�
 - **WHEN** package contract 为所有 supported adapters 生成产品入口 Buildr Skill
 - **THEN** 每份生成 Skill MUST 包含相同的 adapter-neutral 身份边界
 - **AND** MUST NOT 因投射 adapter 不同而生成不同的默认维护目标
-
-### Requirement: Package 原子交付 Task Retrospective v2
-Buildr package MUST 原子交付 `buildr.task-retrospective/v2` contract、默认 provider、bundled `__internal task-retrospective` route、checkout薄driver wrapper、workspace binding、Task Record v2 consumer binding以及Buildr Web投影，并 MUST不建立lifecycle gate。受管consumer MUST通过retained controller invocation调用该route，npm artifact MUST不依赖发布包外的controller source root或`src/interfaces/internal`文件。
-
-#### Scenario: Package 安装 Task Retrospective
-- **WHEN** Buildr 初始化或同步 workspace
-- **THEN** package MUST 安装 v2 contract 与完整 task-retrospective Skill
-- **AND** default binding、Task Record consumer与内部route MUST指向兼容provider/runner
-
-#### Scenario: Package 校验 v2 边界
-- **WHEN** Agent 运行 package check、Doctor 或产品 affected verification
-- **THEN** verifier MUST 检查contract、provider、binding、bundled route、SQLite repositories、Buildr Web route、Result schema与Task来源关系
-- **AND** verifier MUST拒绝source-only consumer、history、自动采集、action item store、自动执行Task或lifecycle gate
-
-### Requirement: Package 必须原子交付 todo Task 与复盘承接能力
-Buildr package MUST 原子交付升级后的 Task Record 与 Task Retrospective contracts/providers、SQLite migration、Application/repository、CLI/help/JSON、Buildr Web API/Web assets、capability bindings 和验证。任一版本、状态、来源关系、runtime projection 或客户端行为漂移时 package check 与 Doctor MUST fail closed。
-
-#### Scenario: 初始化新 Workspace
-- **WHEN** 新 package 初始化 Workspace 并创建带多个来源的 todo Task
-- **THEN** CLI、Application 与 Buildr Web read model MUST 返回一致的 v2 record、todo status 和来源关系
-- **AND** filesystem 与其他专业 current tables MUST 保持无新增
-
-#### Scenario: 迁移既有 Workspace
-- **WHEN** migration 遇到现有 active/completed/abandoned Task 与 retrospective rows
-- **THEN** 所有既有 Task status、result、scope、references 与复盘内容 MUST 原样保留
-- **AND** MUST NOT从缺失 artifacts、pending disposition 或文本内容推断 todo/来源关系
-
-#### Scenario: package/runtime parity
-- **WHEN** verifier 比较 source、npm package、workspace runtime 与 Buildr Web bundle
-- **THEN** contract major、Skill routing、CLI action/filter、JSON schema、migration 和 Web labels MUST 一致
-- **AND** 旧 runtime 读取更新后的 store MUST 按现有 migration version 边界 fail closed
 
 ### Requirement: Package 必须原子交付 Buildr Web Task Manager 能力
 Buildr package MUST 原子交付 Task Record Domain/Application/repository、`buildr.task-record/v2` capability contract、默认 `task-manager` provider、workspace binding、Skill source、CLI/help/runtime 接线、Buildr Web Task routes/API/Web assets 和公开 JSON identity；任一 identity、path、version、binding 或 Application client 接线不一致时 package check 与 doctor MUST fail closed。
@@ -1384,3 +1335,21 @@ Buildr package MUST原子交付Parent Coordination Domain、Application、Task-o
 - **WHEN** package检查Parent能力闭环
 - **THEN** schema、registry、source/package/runtime parity与Application接线 MUST一致
 - **AND** Parent只读历史 MUST来自Task-owned迁移字段
+
+### Requirement: Package必须原子交付本机任务复盘文档能力
+Buildr package MUST原子交付Task Record新版本、SQLite迁移、固定本机文档读取、Task查询、Buildr Web概览和纯`task-retrospective` Skill。Package MUST不包含`buildr.task-retrospective` contract、binding、Application、Repository、Driver、HTTP处置接口、旧公共JSON或专用来源关系。
+
+#### Scenario: 初始化新Workspace
+- **WHEN** 当前package初始化Workspace
+- **THEN** SQLite MUST只建立Task-owned复盘文档字段且不得建立旧Retrospective表
+- **AND** `.buildr/local/task-retrospectives/` MUST保持Git忽略和本机边界
+
+#### Scenario: 升级旧Workspace
+- **WHEN** migration遇到旧复盘正文、处置状态和来源关系
+- **THEN** migration MUST直接删除全部旧数据并把现有Task迁入新closed版本且复盘字段为`null`
+- **AND** MUST不导出、备份、建立legacy表或双读
+
+#### Scenario: Runtime投射
+- **WHEN** package同步Workspace和Agent runtime
+- **THEN** MUST投射纯`task-retrospective` Skill和当前Task Record contract
+- **AND** MUST删除旧Retrospective contract、binding和受管内部route资产

@@ -329,16 +329,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     const planningIdentity = run(['__internal', 'task-planning-identity', 'inspect', '--task', 'planning-route-fixture', '--target', workflowWorkspace]);
     assert.notEqual(planningIdentity.status, 0, 'retired Planning Identity route must be absent');
 
-    const retrospectiveTask = run(['task', 'create', 'retrospective-route-fixture', '--title', 'Retrospective route fixture', '--intent', 'Verify the installed Retrospective Application route.', '--target', workflowWorkspace, '--json']);
-    assert.equal(retrospectiveTask.status, 0, retrospectiveTask.stderr || retrospectiveTask.stdout);
-    const completedTask = run(['task', 'complete', 'retrospective-route-fixture', '--summary', 'Installed route fixture completed.', '--no-change', '--target', workflowWorkspace, '--json']);
-    assert.equal(completedTask.status, 0, completedTask.stderr || completedTask.stdout);
     const retrospective = run(['__internal', 'task-retrospective', 'record', '--task', 'retrospective-route-fixture', '--target', workflowWorkspace, '--report-markdown', '# Installed route fixture\n\nThe bundled Retrospective writer reached the canonical Application.']);
-    assert.equal(retrospective.status, 0, retrospective.stderr || retrospective.stdout);
-    const parsedRetrospective = JSON.parse(retrospective.stdout);
-    assert.equal(parsedRetrospective.schemaVersion, 'buildr.task-retrospective-operation-result/v1');
-    assert.equal(parsedRetrospective.status, 'recorded');
-    assert.equal(parsedRetrospective.slot.disposition.status, 'pending');
+    assert.notEqual(retrospective.status, 0, 'retired Task Retrospective internal route must be absent');
+    assert.equal(fs.existsSync(path.join(packageRoot, 'payload/product/resources/workspace/skills/buildr/task-retrospective/SKILL.md')), true);
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     const installationRegistryFile = path.join(appData, 'product-installations.json');
     const firstRegistryBytes = fs.readFileSync(installationRegistryFile, 'utf8');

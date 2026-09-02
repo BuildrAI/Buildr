@@ -10,6 +10,7 @@ const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
 const MIGRATIONS_ROOT = resolveProductResource('product/src/infrastructure/sqlite/migrations');
 const BUSY_TIMEOUT_MS = 5_000;
 const RETIRED_TASK_EXECUTION_RECORDS_PATH = ['.buildr', 'local', 'task-execution-records'];
+const RETIRED_TASK_ASSET_REVIEW_PATH = ['.buildr', 'asset-review'];
 let defaultMigrationScripts = null;
 
 function digest(bytes) {
@@ -127,12 +128,12 @@ function configure(database, { writable }) {
   }
 }
 
-function cleanupRetiredTaskExecutionRecords(root) {
-  const target = path.join(root, ...RETIRED_TASK_EXECUTION_RECORDS_PATH);
+function cleanupRetiredLocalData(root, relativePath, label) {
+  const target = path.join(root, ...relativePath);
   if (!fs.existsSync(target)) return;
   try {
     const stat = fs.lstatSync(target);
-    const expected = path.join(fs.realpathSync(root), ...RETIRED_TASK_EXECUTION_RECORDS_PATH);
+    const expected = path.join(fs.realpathSync(root), ...relativePath);
     if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(target) !== expected) {
       throw new Error('retired path is not an owned canonical directory');
     }
@@ -140,9 +141,9 @@ function cleanupRetiredTaskExecutionRecords(root) {
   } catch (error) {
     throw structuredStoreError(
       'workspace_store_retired_local_data_cleanup_failed',
-      `已删除Task Execution Record数据库结构，但旧本机正文目录清理失败：${error.message}`,
+      `已删除${label}数据库结构，但旧本机数据目录清理失败：${error.message}`,
       500,
-      { path: RETIRED_TASK_EXECUTION_RECORDS_PATH.join('/') },
+      { path: relativePath.join('/') },
       '检查该目录ownership和权限后重试任意合法structured-store mutation。',
     );
   }
@@ -302,7 +303,8 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);
         validateAppliedMigrations(database, scripts, { allowPending: false });
-        if (scripts.some((script) => script.name === '0025_drop_task_execution_records.sql')) cleanupRetiredTaskExecutionRecords(root);
+        if (scripts.some((script) => script.name === '0025_drop_task_execution_records.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_EXECUTION_RECORDS_PATH, 'Task Execution Record');
+        if (scripts.some((script) => script.name === '0030_refactor_task_retrospective_documents.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_ASSET_REVIEW_PATH, 'Task Retrospective');
       }
       return {
         root,

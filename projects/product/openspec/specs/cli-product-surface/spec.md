@@ -372,52 +372,57 @@ Buildr CLI MUST让`buildr openspec convergence inspect <change> --project <proje
 - **AND** 该结果 MUST以成功状态退出且不得创建Receipt
 
 ### Requirement: Task Record 必须提供六个明确 CLI action
-Buildr CLI MUST公开 `buildr task create <task-id>`、`inspect`、`update`、`activate`、`complete` 和 `abandon`，并 MUST在帮助中将它们描述为 Task Manager 的确定性记录动作。CLI interface MUST只拥有参数解析、Application 调用、输出和退出码；Task Record Application MUST NOT解析 argv、打印 stdout/stderr、修改 process exit state 或向客户端暴露 SQL/storage internals。现有 `buildr task finish run|inspect` MUST保持当前专业语义，直到 Task Finish 模块被替换。
+Buildr CLI MUST公开`buildr task create <task-id>`、`inspect`、`update`、`activate`、`complete`和`abandon`。CLI interface MUST只拥有参数解析、Application调用、输出和退出码；Task Record Application MUST NOT解析argv、打印stdout/stderr、修改process exit state或暴露SQL/storage internals。
 
 #### Scenario: 查看 Task Manager 帮助
-- **WHEN** 用户运行 `buildr help task` 或任一 Task Record action help
-- **THEN** CLI MUST展示精确 usage、canonical Workspace target、required/repeatable/exclusive flags、副作用与停止条件
-- **AND** MUST说明 todo 只写 SQLite、activate 不执行 Git/Environment，且 Task Manager 不管理专业阶段或自动 publication
+- **WHEN** 用户运行`buildr help task`或任一Task Record action help
+- **THEN** CLI MUST展示精确usage、canonical Workspace target、参数、副作用与停止条件
+- **AND** MUST说明复盘正文由Agent写入固定本机路径，Task Record只登记摘要与决定状态
 
 #### Scenario: CLI 与 Application 分层
-- **WHEN** command registry 路由任一 Task Record action
-- **THEN** CLI interface MUST将结构化 action input 交给共享 Application，并把 result 映射为人类或 JSON 输出
-- **AND** Application MUST保持可由 Buildr Web 直接复用，不依赖 argv、stdout/stderr、CLI process state 或客户端 SQL
+- **WHEN** command registry路由任一Task Record action
+- **THEN** CLI MUST将结构化action input交给共享Application并映射输出
+- **AND** Application MUST保持可由Buildr Web复用
 
 #### Scenario: 创建 Task Record
-- **WHEN** 调用方运行 `buildr task create <task-id> --title <text> --intent <text>`，按需提供 `--status todo|active`、scope/Change 或重复 `--retrospective-source <task-id>`
-- **THEN** CLI MUST将明确参数交给 create Application，并只在 SQLite authority 中记录不存在且校验通过时原子创建
-- **AND** status 省略时 MUST 保持 active 默认；todo MUST 拒绝 Change 且不得隐式创建任何外部或专业资产
+- **WHEN** 调用方运行`buildr task create`并提供合法目标、范围和状态
+- **THEN** CLI MUST只在SQLite authority中原子创建Task
+- **AND** MUST不接受复盘来源或自动生成复盘文档
 
 #### Scenario: 检查 Task Record
-- **WHEN** 调用方运行 `buildr task inspect <task-id>`
-- **THEN** CLI MUST只读返回 canonical logical Task Record、复盘来源与 response-level digest
-- **AND** MUST NOT创建数据库、更新 `updatedAt`、status、result 或任何业务字段
+- **WHEN** 调用方运行`buildr task inspect <task-id>`
+- **THEN** CLI MUST只读返回Task Record、Parent/Child、复盘文档登记摘要与record digest
+- **AND** MUST不更新任何业务字段
 
 #### Scenario: 更新 Task Record
-- **WHEN** 调用方运行 `buildr task update <task-id>` 并提供至少一个登记的 set/add/remove flag，包括复盘来源 flag
-- **THEN** CLI MUST由 Application 对 transaction 内最新 todo/active record 应用明确 mutation并验证最终完整记录
-- **AND** MUST NOT接受完整 next-state document、SQL 或任意 JSON/YAML patch
+- **WHEN** 调用方运行`buildr task update <task-id>`并提供普通Task mutation，或独立提供复盘文档两态mutation
+- **THEN** Application MUST校验最新记录、record digest与适用文档摘要
+- **AND** MUST不接受复盘来源、完整next-state、SQL或任意patch
 
 #### Scenario: 激活 Task Record
-- **WHEN** 调用方运行 `buildr task activate <task-id>`
-- **THEN** CLI MUST只允许 Application 执行 todo-to-active transition
-- **AND** MUST NOT执行 Git baseline、Environment、Change、Development、commit 或 push
+- **WHEN** 调用方运行`buildr task activate <task-id>`
+- **THEN** CLI MUST只允许todo-to-active transition
+- **AND** MUST清除不再适用的复盘文档登记且不执行Git或开发
 
 #### Scenario: 完成或放弃 Task
-- **WHEN** 调用方运行 `complete` 或 `abandon`
-- **THEN** CLI MUST由 Application 执行合法 todo/active-to-terminal transition
-- **AND** MUST NOT从专业 records 推断结果或自动执行 Finish、cleanup、commit 或 push
+- **WHEN** 调用方运行`complete`或`abandon`
+- **THEN** Application MUST执行合法todo/active-to-terminal transition
+- **AND** MUST不自动提示、生成或登记复盘
 
 #### Scenario: 已知业务冲突
-- **WHEN** action 遇到重复 Task ID、非法状态/来源/scope/Change、终态改写、database/schema failure 或 canonical Workspace 冲突
-- **THEN** CLI MUST返回当前 Task Record result family 的 structured blocked result并以非零状态退出
-- **AND** MUST包含稳定 code、未发生 effects 与唯一恢复 next action
+- **WHEN** action遇到重复Task、非法状态/scope/Change、终态改写、文档摘要漂移或canonical Workspace冲突
+- **THEN** CLI MUST返回structured blocked result和稳定恢复动作
+- **AND** MUST保持Task与文档零额外写入
 
 #### Scenario: Task Finish 命令保持兼容
-- **WHEN** 用户运行现有 `buildr task finish run|inspect` 或对应帮助
-- **THEN** CLI MUST继续匹配现有三段式 command key 与当前 Task Finish 契约
-- **AND** 新增 `task activate` MUST NOT遮蔽或误解析 `task finish` actions
+- **WHEN** 用户运行现有Task Finish相关入口
+- **THEN** CLI MUST保持其当前独立语义
+- **AND** Task Record复盘字段 MUST不成为Finish依赖
+
+#### Scenario: 登记本机复盘文档
+- **WHEN** 调用方对terminal Task提交当前record digest、实际文档摘要和`pending-decision|decided`
+- **THEN** Application MUST只保存摘要与状态并返回v5结果
+- **AND** MUST不生成或保存Markdown正文
 
 ### Requirement: CLI 产品表面必须显式分层并采用 Buildr Web 主入口
 Buildr MUST 将当前可执行命令区分为 `primary`、`agent-machine` 与 `maintenance` 三类产品表面，并在 command metadata、help、产品文档、current-state knowledge 和验证中保持同一分类。该分类只控制可发现性与支持承诺，不改变命令自身的授权、安全契约或可执行 effects。Buildr MUST NOT 注册 `legacy` command surface。

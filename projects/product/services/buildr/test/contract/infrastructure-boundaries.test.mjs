@@ -23,8 +23,8 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
     'src/task/persistence/task-record-repository.ts',
+    'src/task/persistence/task-record-retrospective-document.ts',
     'src/task/persistence/task-overview-repository.ts',
-    'src/task/persistence/task-retrospective-repository.mjs',
     'src/task/persistence/task-review-repository.ts',
     'src/task/persistence/task-verification-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
@@ -33,7 +33,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
 test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persistence', () => {
   const infrastructure = read('src/infrastructure/index.mjs');
   const bootstrap = read('src/bootstrap/runtime.mjs');
-  const taskModule = read('src/task/module.mjs');
+  const taskModule = read('src/task/module.ts');
   assert.match(infrastructure, /registerWorkspaceInfrastructure/);
   assert.match(infrastructure, /registerWorkspaceSqlite/);
   assert.match(infrastructure, /registerInfrastructure/);
@@ -41,7 +41,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
   for (const registration of [
     'registerTaskVerificationRepository',
     'registerTaskRecordRepository', 'registerTaskOverviewRepository',
-    'registerTaskReviewRepository', 'registerTaskRetrospectiveRepository',
+    'registerTaskReviewRepository', 'registerTaskRecordRetrospectiveDocument',
   ]) assert.match(taskModule, new RegExp(registration));
   assert.doesNotMatch(taskModule, /registerParentCoordinationRepository/);
   assert.match(bootstrap, /registerInfrastructure/);

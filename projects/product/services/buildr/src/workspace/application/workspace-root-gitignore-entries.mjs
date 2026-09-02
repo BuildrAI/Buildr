@@ -12,7 +12,7 @@ export const WORKSPACE_ROOT_GITIGNORE_ENTRIES = Object.freeze([
   '/.buildr/agent-runtime/',
   '# Workspace local structured data',
   '/.buildr/local/',
-  '# Retired Task asset review data remains untracked',
+  '# Retired Task asset review path remains ignored until local cleanup',
   '/.buildr/asset-review/',
   '# Task machine-local state',
   '/.buildr/tasks/',

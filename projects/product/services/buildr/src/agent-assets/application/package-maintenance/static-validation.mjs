@@ -1,5 +1,4 @@
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.mjs';
-import { REQUIRED_INTERNAL_WORKFLOW_ROUTES } from '../../../task/contracts/internal-workflow-route-catalog.mjs';
 
 // Validate the advertised command contract, not prose or placeholder spelling.
 export function validateTaskRecordSkillCommands(content) {
@@ -298,9 +297,9 @@ export function createPackageStaticValidator(deps) {
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Retired Task Environment file must be removed: ${relative}`);
     }
-    const publicJson = fs.readFileSync(path.join(root, 'src/infrastructure/contracts/public-json.mjs'), 'utf8');
+    const publicJson = fs.readFileSync(path.join(root, 'src/infrastructure/contracts/public-json.ts'), 'utf8');
     for (const forbidden of ['taskEnvironmentResult', 'taskEnvironmentPlanResult']) if (publicJson.includes(forbidden)) problems.push(`Public JSON registry must remove Task Environment schema: ${forbidden}`);
-    const taskModule = fs.readFileSync(path.join(root, 'src/task/module.mjs'), 'utf8');
+    const taskModule = fs.readFileSync(path.join(root, 'src/task/module.ts'), 'utf8');
     for (const forbidden of ['TASK_ENVIRONMENT_', 'createTaskEnvironmentModule', 'task environment prepare']) if (taskModule.includes(forbidden)) problems.push(`Task module must remove Task Environment surface: ${forbidden}`);
   }
 
@@ -317,7 +316,7 @@ export function createPackageStaticValidator(deps) {
       'src/task/application/task-review-application.ts',
       'src/task/application/task-verification-application.ts',
       'src/task/application/task-environment-application.mjs',
-      'src/task/application/task-record-application.mjs',
+      'src/task/application/task-record-application.ts',
       'src/task/application/finish/task-finish-product-executor.mjs',
       'src/task/application/task-terminal-delivery-application.ts',
     ]) {
@@ -337,7 +336,7 @@ export function createPackageStaticValidator(deps) {
       'src/task/interfaces/http/task-lifecycle-core.ts',
       'src/task/interfaces/http/task-professional-http-contracts.ts',
       'src/task/interfaces/http/task-professional-http-mapping.ts',
-      'src/task/module.mjs',
+      'src/task/module.ts',
       '../buildr-web/src/api/task-professional.ts',
       '../buildr-web/src/api/generated/task-professional-http-dto.ts',
     ];
@@ -381,8 +380,8 @@ export function createPackageStaticValidator(deps) {
     }
 
     for (const relative of [
-      'src/task/domain/task-record.mjs',
-      'src/task/application/task-record-application.mjs',
+      'src/task/domain/task-record.ts',
+      'src/task/application/task-record-application.ts',
       'src/task/persistence/task-record-repository.ts',
       'src/task/domain/task-environment.mjs',
       'src/task/application/task-environment-application.mjs',
@@ -413,7 +412,7 @@ export function createPackageStaticValidator(deps) {
       const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
       const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.ts');
       const taskReviewHttpContent = existsFile(taskReviewHttp) ? fs.readFileSync(taskReviewHttp, 'utf8') : '';
-      const taskModule = path.join(root, 'src', 'task', 'module.mjs');
+      const taskModule = path.join(root, 'src', 'task', 'module.ts');
       const taskModuleContent = existsFile(taskModule) ? fs.readFileSync(taskModule, 'utf8') : '';
       for (const [owner, required] of [
         [taskReviewHttpContent, "submitTaskRead('reviews', reviews[1])"],
@@ -431,37 +430,6 @@ export function createPackageStaticValidator(deps) {
     if (existsFile(changeDetail)) {
       const content = fs.readFileSync(changeDetail, 'utf8');
       if (content.includes('openAgentAction(')) problems.push('Task-scoped Change must remain read-only and must not expose Agent actions.');
-    }
-  }
-
-  function validateInternalWorkflowRouteClosure(context) {
-    const { root, problems } = context;
-    const inventory = path.join(root, 'src/task/contracts/internal-workflow-route-catalog.mjs');
-    const cli = path.join(root, 'src/bootstrap/cli/main.mjs');
-    if (!existsFile(inventory)) problems.push('Required internal workflow route inventory is missing.');
-    if (!existsFile(cli)) problems.push('Buildr CLI internal workflow route dispatcher is missing.');
-    else if (!fs.readFileSync(cli, 'utf8').includes('runRequiredInternalWorkflowRoute')) problems.push('Buildr CLI must dispatch the required internal workflow route inventory.');
-    for (const route of REQUIRED_INTERNAL_WORKFLOW_ROUTES) {
-      if (route.source) {
-        if (!existsFile(path.join(root, route.source))) problems.push(`Required internal workflow driver is missing: ${route.source}.`);
-        if (route.wrapperSource && !existsFile(path.join(root, route.wrapperSource))) problems.push(`Required internal workflow checkout wrapper is missing: ${route.wrapperSource}.`);
-        continue;
-      }
-      const runner = path.join(root, 'src/task/interfaces/internal', route.runner);
-      const wrapper = path.join(root, 'src/task/interfaces/internal', `${route.id}-driver.mjs`);
-      if (!existsFile(runner)) problems.push(`Required internal workflow runner is missing: ${route.runner}.`);
-      if (!existsFile(wrapper)) problems.push(`Required internal workflow checkout wrapper is missing: ${route.id}-driver.mjs.`);
-    }
-    const consumers = [['resources/workspace/skills/buildr/task-retrospective/SKILL.md', ['task-retrospective']]];
-    for (const [relative, routes] of consumers) {
-      const file = path.join(root, relative);
-      if (!existsFile(file)) {
-        problems.push(`Required internal workflow consumer is missing: ${relative}.`);
-        continue;
-      }
-      const content = fs.readFileSync(file, 'utf8');
-      for (const route of routes) if (!content.includes(`__internal ${route}`)) problems.push(`Required internal workflow consumer ${relative} must use bundled route ${route}.`);
-      if (/src\/task\/interfaces\/internal\/task-retrospective-driver\.mjs/u.test(content)) problems.push(`Required internal workflow consumer ${relative} must not use a source driver path.`);
     }
   }
 
@@ -995,8 +963,8 @@ export function createPackageStaticValidator(deps) {
         for (const forbiddenText of ['buildr worktree create', 'buildr verification run', 'buildr task finish run', 'git commit', 'git push']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-manager Skill must not execute professional action ${JSON.stringify(forbiddenText)}.`);
         }
-        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2);
-        if (!provided) problems.push('task-manager must provide buildr.task-record@2.');
+        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 3);
+        if (!provided) problems.push('task-manager must provide buildr.task-record@3.');
         try {
           const { description = '' } = parseSkillFrontmatter(skillFile);
           const sentenceStops = description.match(/[。！？]/g)?.length || 0;
@@ -1141,41 +1109,27 @@ export function createPackageStaticValidator(deps) {
       }
       if (skill.id === 'task-retrospective') {
         for (const requiredText of [
-          '本 Skill 是 `buildr.task-retrospective/v2` 的默认 provider',
+          '.buildr/local/task-retrospectives/<task-id>.md',
           'Agent 执行时间、token 消耗、重复尝试、人机协作或 Buildr workflow/harness 效率',
           'Task 必须是 `completed` 或 `abandoned`',
           '自由Markdown',
           '不可得时直接标记缺失',
           '隐藏推理、完整对话、完整工具日志或后台事件',
-          '不读取、迁移或删除`.buildr/asset-review/`',
-          '__internal task-retrospective inspect',
-          '__internal task-retrospective record',
-          '__internal task-retrospective handle',
-          'matching retained Buildr controller invocation',
-          'expected-current-digest',
-          '`handled|no-action` 必须提供非空完整处理意见',
-          '完整原始 `reportMarkdown`',
-          '有界执行事实图',
-          '确定性流程候选',
-          'Buildr应该约束Agent不要做错事，而不是要求Agent必须通过Buildr才能做事',
-          'Rule/Skill/Application/CLI/checker/test',
-          '一人或多人明确接受',
-          '不建立reviewer、票数或approval状态',
-          'task create --status todo --retrospective-source',
-          '不生成新 action item ID',
+          'pending-decision',
+          'decided',
+          '普通Task',
           '不参与Task完成、交付、cleanup或OpenSpec门禁',
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        const provided = (skill.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 2);
-        if (!provided) problems.push('task-retrospective must provide buildr.task-retrospective@2.');
-        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@2.');
+        if ((skill.provides || []).some((item) => item.capability === 'buildr.task-retrospective')) problems.push('task-retrospective must remain a pure Skill without a dedicated capability provider.');
+        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@3.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v2`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider', '## 4. 输出契约']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@2.');
+        if (!(skill.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@3.');
         if (!(skill.requires || []).some((item) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.git-operations@1.');
         for (const retiredText of ['`create-board`', '`continue-board`', '`buildr.task-board-maintenance/v1`']) {
           if (skillContent.includes(retiredText)) problems.push(`task-triage Skill must not route retired Task Board behavior: ${JSON.stringify(retiredText)}.`);
@@ -1254,16 +1208,16 @@ export function createPackageStaticValidator(deps) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-verification.');
         }
         const taskManager = baselineSkills.find((entry) => entry.id === 'task-manager');
-        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 2)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@2.');
+        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item) => item.capability === 'buildr.task-record' && item.version === 3)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@3.');
         }
         const taskReview = baselineSkills.find((entry) => entry.id === 'task-review');
         if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item) => item.capability === 'buildr.task-review' && item.version === 2)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@2.');
         }
         const taskRetrospective = baselineSkills.find((entry) => entry.id === 'task-retrospective');
-        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || !(taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective' && item.version === 2)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-retrospective providing buildr.task-retrospective@2.');
+        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || (taskRetrospective.provides || []).some((item) => item.capability === 'buildr.task-retrospective') || !(taskRetrospective.requires || []).some((item) => item.capability === 'buildr.task-record' && item.version === 3)) {
+          problems.push('Workspace skills baseline must declare enabled installed pure task-retrospective requiring buildr.task-record@3.');
         }
         if (baselineSkills.some((entry) => entry.id === 'task-asset-review' || (entry.provides || []).some((item) => item.capability === 'buildr.task-asset-review') || (entry.requires || []).some((item) => item.capability === 'buildr.task-asset-review'))) {
           problems.push('Workspace skills baseline must not retain Task Asset Review provider or consumer declarations.');
@@ -1375,7 +1329,6 @@ export function createPackageStaticValidator(deps) {
     validateTaskLifecycleRetirement(context);
     validateTaskVerificationPromptRetirement(context);
     validateTaskReviewAuthority(context);
-    validateInternalWorkflowRouteClosure(context);
     validateMappedEntries(context);
     validatePackageComponents(context);
     validateProjectVerificationTransition(context);

@@ -25,7 +25,7 @@
 
 - `@buildr-ai/buildr` tarball只由npm Registry承载；GitHub Release只保存版本说明，不上传Buildr binary Assets。
 - Actions artifact只保存冻结candidate与验证evidence，不能作为README、官网、安装脚本或其他公共下载authority。
-- `release-evidence-*` artifact中的closed transaction context/evidence正式关联release selection、release/support Tasks、retrospective source、Candidate/publish runs、release/main/dev provenance reconciliation、Environment binding、tag、npm/GitHub Release和Registry smoke。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
+- `release-evidence-*` artifact中的closed transaction context/evidence正式关联release selection、release/support Tasks、Candidate/publish runs、release/main/dev provenance reconciliation、Environment binding、tag、npm/GitHub Release和Registry smoke。发布证据不读取复盘文档、状态或来源关系。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
 - 同一Candidate run重跑失败job时，每个逻辑shard用同名overwrite替换旧attempt evidence；成功shard与唯一tarball继续复用。代码修复产生新source SHA后必须重跑完整分布式门禁，但Windows高成本场景保持三个并行恢复边界。
 - 历史`release-<version>` Task若在本生命周期模型生效前被提前completed，保留该terminal记录与Finish事实，不直接改SQLite、伪造reopen或迁移为current。后续version必须以唯一active协调Task和稳定recovery identity恢复，不创建finalize/resume协调Task。
 - GitHub Release ensure只核对tag、target commit、notes、draft、prerelease/Latest并拒绝任何binary Asset；Buildr bytes的missing/same/drift恢复只由npm Registry version与integrity决定。

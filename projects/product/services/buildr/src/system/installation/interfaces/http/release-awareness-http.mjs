@@ -1,4 +1,4 @@
-import { withJsonSchema } from '../../../../infrastructure/contracts/public-json.mjs';
+import { withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
 import {
   RELEASE_AWARENESS_HTTP_OPERATIONS,
   RELEASE_AWARENESS_HTTP_SCHEMAS,

@@ -8,12 +8,11 @@ import {
   inspectTaskProfessionalHttpContractCoverage,
   validateTaskProfessionalRequest,
 } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
-import { mapTaskRetrospectiveRequest } from '../../src/task/interfaces/http/task-professional-http-mapping.ts';
 
 test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error schema', () => {
   const ids = TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.equal(ids.length, 6);
+  assert.equal(ids.length, 4);
   assert.equal(ids.includes('task-environment.detail'), false);
   assert.equal(ids.includes('task-development.detail'), false);
   assert.equal(ids.includes('task-review.prompt'), false);
@@ -28,17 +27,10 @@ test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error
 test('strict validator 拒绝未知字段、缺失字段和非法类型且不变异输入', () => {
   const input = { expectedCurrentDigest: 'sha256-current', note: '保留', extra: true };
   const before = structuredClone(input);
-  assert.throws(() => validateTaskProfessionalRequest('task-retrospective.patch', input, 'retrospective'), (error) => error.code === 'task_api_field_forbidden');
+  assert.throws(() => validateTaskProfessionalRequest('task-overview.detail', input, 'overview'), (error) => error.code === 'task_api_field_forbidden');
   assert.deepEqual(input, before);
-  assert.throws(() => validateTaskProfessionalRequest('task-retrospective.patch', {}, 'retrospective'), (error) => error.code === 'task_retrospective_digest_required');
+  assert.throws(() => validateTaskProfessionalRequest('task-retrospective.patch', {}, 'retrospective'), /not registered/);
   assert.throws(() => validateTaskProfessionalRequest('task-execution-record.list', {}, 'execution records'), /not registered/);
-});
-
-test('Interface mapping 返回新对象，不把 DTO 原对象传入 Application', () => {
-  const retrospective = { status: 'handled', note: '已处理', expectedCurrentDigest: 'sha256-current' };
-  const mappedRetrospective = mapTaskRetrospectiveRequest(retrospective);
-  assert.notEqual(mappedRetrospective, retrospective);
-  assert.deepEqual(mappedRetrospective, retrospective);
 });
 
 test('未迁移 operation 只形成 attention diagnostic，不阻断其他能力', () => {

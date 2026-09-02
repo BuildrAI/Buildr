@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { normalizeParentCompletion } from '../../src/task/domain/task-record.mjs';
+import { normalizeParentCompletion } from '../../src/task/domain/task-record.ts';
 const root = path.resolve(import.meta.dirname, '../..');
 test('parent completion is closed evidence, not arbitrary workflow state', () => {
   const evidence = { expectedSnapshot: 'observed', acceptance: { summary: 'Goal met', children: [] }, authorization: { source: 'user-message', statement: 'Complete this parent.' } };

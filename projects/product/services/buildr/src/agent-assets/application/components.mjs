@@ -6,7 +6,7 @@ import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.mjs';
 import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.mjs';
 import { capabilityKey, validateCapabilityIdentity } from '../infrastructure/runtime/skills/manifests.mjs';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.mjs';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import {
   legacySkillProjectionOwnershipReceiptRoot,
   legacySkillProjectionOwnershipReceiptTarget,

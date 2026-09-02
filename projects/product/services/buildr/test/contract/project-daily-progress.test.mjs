@@ -20,7 +20,7 @@ test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON iden
   const workspaceModule = read('src/workspace/module.mjs');
   const cli = read('src/workspace/interfaces/cli/project-daily-progress.mjs');
   const http = read('src/workspace/interfaces/http/workspace-http.mjs');
-  const json = read('src/infrastructure/contracts/public-json.mjs');
+  const json = read('src/infrastructure/contracts/public-json.ts');
   const skill = read('resources/workspace/skills/buildr/project-daily-progress/SKILL.md');
   const gitignore = read('resources/workspace/gitignore');
   for (const command of ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list']) {

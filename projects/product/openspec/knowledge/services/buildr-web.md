@@ -21,7 +21,7 @@
 - Task professional detail/list/update operations通过`src/api/task-professional.ts`消费Buildr Service生成的tracked DTO；Task Detail页面不拥有Schema或Application authority，也不再包含Execution Records面板。Review与Verification的“交给Agent”动作只形成携带Task ID和必要上下文的短指令，Agent再读取对应Skill与真实现场；前端typed client与后端均不存在这两类专业prompt API。
 - Release Awareness、Publication list/detail 与安全退出通过 `src/api/runtimeSystem.ts` 消费 Buildr Service 的 Runtime/System Schema 生成 DTO；`AppLayout` 与 Articles 页面不再保存同一响应的手写类型或调用点 `as` 断言。Publication asset 仍使用同源 binary URL，不进入 JSON client；低层 `client.ts` 继续返回 `unknown`，Buildr Web 不安装 Ajv或取得 Runtime/System Application authority。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
-- Task 列表默认 `open` (todo + active)，可单独筛选 todo，并继续以 `retrospectiveState` 筛选复盘处置。Task 详情展示复盘来源，复盘 Tab 保持原始 Markdown 只读并展示后续 Task 实时状态。UI 不创建或激活 Task。
+- Task 列表默认 `open` (todo + active)，可单独筛选 todo，并以`missing|pending-decision|decided`筛选本机复盘文档状态。Task详情不再有独立复盘Tab；概览中的轻量卡片显示固定本机路径，按需只读打开Markdown，并只在用户明确决定后把当前文档标为`decided`。UI不创建或激活Task，也不维护复盘来源关系。
 - Task 详情“原型”Tab 按需读取 sibling `buildr` 的 Task UI Prototype metadata，提供明确空态，并列出、选择和切换多个完整原型页面及其来源。具体 HTML 只从 Task 与不透明页面 ID 的专用响应装入不含 `allow-same-origin` 的 `sandbox="allow-scripts"` iframe；响应头同时强制 opaque-origin CSP sandbox 与离线资源策略。舞台提供「新窗口打开」，用新窗口打开当前页面同一内容 URL；内容不进入主 DOM、不继承 Buildr Web session，也不能联网、提交表单或导航顶层页面。
 - Task、Project与Service文档入口共享Workspace相对Markdown路径规则。Task Intent中的`.md`链接只能解析到Task scope内已登记Project的`source.path`；Project/Service预览内的相对导航继续受同一Project边界约束。界面分别表达“引用已解析”与“正文当前可读取”，正文缺失或读取失败不反向判定引用非法；前端不建立Task附件、文档副本或新writer。
 - 项目详情第三 Tab「每日演进」只读展示当天本机 v2 文件的四问摘要与提交（不展示变更文件列表；`files` 仍可由 CLI inspect 返回），可用日期选择器与前后一天切换日期，并按日/人/任务分组；按任务只聚合已关联的自己的提交。空态明确需要 Agent 收集 Git 后写入，页面无写入控件，打开时不扫描 Git。Task 详情概览不展示每日演进反向关联；生成入口走右上角交给 Agent。

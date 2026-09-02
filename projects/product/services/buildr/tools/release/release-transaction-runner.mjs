@@ -9,7 +9,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.mjs';
+import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
 import {
@@ -212,7 +212,6 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
     const releaseTaskResult = runtime.inspectTaskRecord(repo, options.releaseTask);
     const releaseTask = releaseTaskResult?.record;
     const supportTasks = (options.supportTasks ?? []).map((taskId) => taskContextProjection(runtime.inspectTaskRecord(repo, taskId)?.record));
-    const retrospectiveSources = (releaseTaskResult?.retrospectiveRelations?.sources ?? []).map(taskContextProjection);
     const preparation = validateReleasePreparationBinding(options.preparationBinding ?? dependencies.preparationBinding, { repo });
     if (preparation.taskId !== releaseTask.taskId || preparation.sourceCommit !== sourceCommit) throw new Error('Release preparation binding does not match the active release Task/publication source.');
     const candidateRun = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');
@@ -241,7 +240,6 @@ export async function runHostedReleaseTransaction(options = {}, dependencies = {
       releaseTask: options.releaseTask,
       releaseTaskStatus: 'active',
       supportTasks: options.supportTasks ?? [],
-      retrospectiveSources: retrospectiveSources.map((item) => item.taskId),
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
     });
     const inspectSelection = dependencies.inspectSelection ?? inspectReleaseSelection;
