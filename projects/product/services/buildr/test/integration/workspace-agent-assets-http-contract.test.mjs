@@ -7,7 +7,7 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { AGENT_ASSETS_HTTP_OPERATIONS, AGENT_ASSETS_HTTP_VALIDATORS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs';
-import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_VALIDATORS } from '../../src/workspace/interfaces/http/workspace-http-contracts.mjs';
+import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_VALIDATORS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';
 
 function validate(catalog, operations, id, kind, value) {
   const operation = operations.find((item) => item.id === id);

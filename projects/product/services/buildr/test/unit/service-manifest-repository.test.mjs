@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { SERVICES_SCHEMA_V1, SERVICES_SCHEMA_V2, parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision } from '../../src/workspace/persistence/service-manifest-repository.mjs';
+import { SERVICES_SCHEMA_V1, SERVICES_SCHEMA_V2, parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision } from '../../src/workspace/persistence/service-manifest-repository.ts';
 
 const ID = 'bc098bd6-08a2-4e8b-883c-3ef5b188a86d';
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';

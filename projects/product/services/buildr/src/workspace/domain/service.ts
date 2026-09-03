@@ -1,22 +1,22 @@
-import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.mjs';
+import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-function requiredText(value, field) {
+function requiredText(value: any, field: any) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Service.${field} must be a non-empty string.`);
   return value.trim();
 }
 
-export function isServiceId(value) {
+export function isServiceId(value: any) {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export function isServiceCode(value) {
+export function isServiceCode(value: any) {
   return typeof value === 'string' && CODE_PATTERN.test(value);
 }
 
-export function createServiceSource(source, projectCode, code) {
+export function createServiceSource(source: any, projectCode: any, code: any) {
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('Service.source must be an object.');
   const type = requiredText(source.type, 'source.type');
   if (!['workspace', 'git'].includes(type)) throw new Error('Service.source.type must be workspace or git.');
@@ -39,7 +39,7 @@ export function createServiceSource(source, projectCode, code) {
   });
 }
 
-export function createService({ id, workspaceId, projectId, projectCode, code, name, description, type, source }) {
+export function createService({ id, workspaceId, projectId, projectCode, code, name, description, type, source }: any) {
   if (!isServiceId(id)) throw new Error('Service.id must be a UUID.');
   if (!isServiceId(workspaceId)) throw new Error('Service.workspaceId must be a UUID.');
   if (!isServiceId(projectId)) throw new Error('Service.projectId must be a UUID.');

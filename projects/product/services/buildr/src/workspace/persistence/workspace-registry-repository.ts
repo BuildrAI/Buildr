@@ -7,11 +7,11 @@ import { productDataRoot } from '../../infrastructure/filesystem/product-data-ro
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
-function registryRevision(content) {
+function registryRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function buildrWebDataRoot({ respectOverride = true } = {}) {
+export function buildrWebDataRoot({ respectOverride = true }: any = {}) {
   if (respectOverride && process.env.BUILDR_APP_DATA_DIR) return path.resolve(process.env.BUILDR_APP_DATA_DIR);
   return productDataRoot({ respectOverride: false });
 }
@@ -20,16 +20,16 @@ function emptyRegistry() {
   return { schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots: [], lastOpenedRoot: null };
 }
 
-function canonicalRegistry(value, label) {
+function canonicalRegistry(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object.`);
   for (const field of Object.keys(value)) {
     if (!new Set(['schemaVersion', 'roots', 'lastOpenedRoot']).has(field)) throw new Error(`${label}.${field} is not supported.`);
   }
   if (value.schemaVersion !== WORKSPACE_REGISTRY_SCHEMA) throw new Error(`${label}.schemaVersion must be ${WORKSPACE_REGISTRY_SCHEMA}.`);
-  if (!Array.isArray(value.roots) || value.roots.some((root) => typeof root !== 'string' || !path.isAbsolute(root))) {
+  if (!Array.isArray(value.roots) || value.roots.some((root: any) => typeof root !== 'string' || !path.isAbsolute(root))) {
     throw new Error(`${label}.roots must contain absolute paths.`);
   }
-  const roots = [...new Set(value.roots.map((root) => path.resolve(root)))];
+  const roots = [...new Set(value.roots.map((root: any) => path.resolve(root)))];
   const lastOpenedRoot = value.lastOpenedRoot === null || value.lastOpenedRoot === undefined
     ? null
     : path.resolve(value.lastOpenedRoot);
@@ -37,21 +37,21 @@ function canonicalRegistry(value, label) {
   return { schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots, lastOpenedRoot };
 }
 
-export function readWorkspaceRegistryFile(file) {
+export function readWorkspaceRegistryFile(file: any) {
   const resolved = path.resolve(file);
   if (!fs.existsSync(resolved)) return { file: resolved, status: 'absent', registry: emptyRegistry(), reason: null };
   let value;
-  try { value = JSON.parse(fs.readFileSync(resolved, 'utf8')); } catch (error) {
+  try { value = JSON.parse(fs.readFileSync(resolved, 'utf8')); } catch (error: any) {
     return { file: resolved, status: 'invalid', registry: null, reason: `workspace-registry.json is invalid JSON: ${error.message}` };
   }
   try {
     return { file: resolved, status: 'ready', registry: canonicalRegistry(value, 'workspace-registry.json'), reason: null };
-  } catch (error) {
+  } catch (error: any) {
     return { file: resolved, status: 'invalid', registry: null, reason: error.message };
   }
 }
 
-export function registerWorkspaceRegistryRepository(runtime, options = {}) {
+export function registerWorkspaceRegistryRepository(runtime: any, options: any = {}) {
   const productIdentity = options.productIdentity || options.readProductIdentity?.();
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');
@@ -75,20 +75,20 @@ export function registerWorkspaceRegistryRepository(runtime, options = {}) {
     return { file, content, revision: registryRevision(content), registry: observed.registry };
   }
 
-  function writeWorkspaceRegistry(file, registry) {
+  function writeWorkspaceRegistry(file: any, registry: any) {
     runtime.atomicWriteJson(file, canonicalRegistry(registry, 'Workspace registry'));
   }
 
-  function withWorkspaceRegistryMutation(expectedRevision, mutate) {
+  function withWorkspaceRegistryMutation(expectedRevision: any, mutate: any) {
     const file = workspaceRegistryPath();
     const lock = `${file}.lock`;
     runtime.ensureDirectory(path.dirname(file));
     let descriptor;
     try {
       descriptor = fs.openSync(lock, 'wx');
-    } catch (error) {
+    } catch (error: any) {
       if (error.code !== 'EEXIST') throw error;
-      const conflict = new Error('Workspace 登记列表正在被另一个操作修改，请刷新后重试。');
+      const conflict: Error & Record<string, any> = new Error('Workspace 登记列表正在被另一个操作修改，请刷新后重试。');
       conflict.code = 'workspace_registry_revision_conflict';
       conflict.status = 409;
       throw conflict;
@@ -96,7 +96,7 @@ export function registerWorkspaceRegistryRepository(runtime, options = {}) {
     try {
       const current = readWorkspaceRegistryPersistence();
       if (current.revision !== expectedRevision) {
-        const conflict = new Error('Workspace 登记列表已变化，请刷新后重试。');
+        const conflict: Error & Record<string, any> = new Error('Workspace 登记列表已变化，请刷新后重试。');
         conflict.code = 'workspace_registry_revision_conflict';
         conflict.status = 409;
         conflict.details = { currentRevision: current.revision };

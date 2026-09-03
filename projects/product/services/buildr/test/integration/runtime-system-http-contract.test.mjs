@@ -11,7 +11,7 @@ import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } 
 import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
 import { TASK_RECORD_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-record-http-contracts.ts';
 import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
-import { WORKSPACE_HTTP_OPERATIONS } from '../../src/workspace/interfaces/http/workspace-http-contracts.mjs';
+import { WORKSPACE_HTTP_OPERATIONS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';
 import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs';
 import { inspectHttpOperationCoverage, ownedHttpOperations } from '../../src/web/http/http-operation-coverage.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';

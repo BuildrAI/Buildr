@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveSourceRoot } from '../../../workspace/domain/source-root.mjs';
+import { resolveSourceRoot } from '../../../workspace/domain/source-root.ts';
 
 const PUBLICATION_ID = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const IMAGE_TYPES = new Map([

@@ -1,39 +1,41 @@
-import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from './workspace-http-contracts.mjs';
+import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from './workspace-http-contracts.ts';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 const CODE = '[A-Za-z0-9][A-Za-z0-9._-]*';
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
-function ok(body) {
+function ok(body: any) {
   return { status: 200, body };
 }
 
-function decodeDocumentPath(value, kind) {
+function decodeDocumentPath(value: any, kind: any) {
   try {
     return decodeURIComponent(value);
   } catch {
     const label = kind === 'project' ? '项目' : '服务';
-    const error = new Error(`${label}文档路径无效。`);
+    const error: Error & Record<string, any> = new Error(`${label}文档路径无效。`);
     error.code = `${kind}_document_path_forbidden`;
     error.status = 400;
     throw error;
   }
 }
 
-export function createWorkspaceHttpContribution(application) {
-  const operation = (id) => WORKSPACE_HTTP_OPERATIONS.find((item) => item.id === id);
-  function validateRequest(id, value) {
+export function createWorkspaceHttpContribution(application: any) {
+  const operation = (id: any) => WORKSPACE_HTTP_OPERATIONS.find((item: any) => item.id === id);
+  function validateRequest(id: any, value: any) {
     const item = operation(id);
+    if (!item) throw new Error(`Workspace HTTP operation is missing: ${id}`);
     return validateWorkspaceHttp(item.requestSchemaId, value, id);
   }
-  function validateResponse(id, value) {
+  function validateResponse(id: any, value: any) {
     const item = operation(id);
+    if (!item) throw new Error(`Workspace HTTP operation is missing: ${id}`);
     return validateWorkspaceHttp(item.successSchemaId, value, id, 'response');
   }
-  const respond = (id, value) => ({ status: 200, body: validateResponse(id, value) });
+  const respond = (id: any, value: any) => ({ status: 200, body: validateResponse(id, value) });
   return Object.freeze({
     id: 'workspace-core.http',
-    async handleTopLevel({ request, pathname, authorizeWrite, readJsonBody, pickWorkspaceDirectory }) {
+    async handleTopLevel({ request, pathname, authorizeWrite, readJsonBody, pickWorkspaceDirectory }: any) {
       if (request.method === 'GET' && pathname === '/api/v1/workspaces') {
         validateRequest('workspace.registry.list', {});
         return respond('workspace.registry.list', application.listRegisteredWorkspaces());
@@ -64,7 +66,7 @@ export function createWorkspaceHttpContribution(application) {
       }
       return null;
     },
-    async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }) {
+    async handle({ request, suffix, searchParams, root, authorizeWrite, readJsonBody }: any) {
       if (request.method === 'GET' && suffix === '') {
         validateRequest('workspace.read', {});
         return respond('workspace.read', application.getWorkspace(root));
@@ -83,9 +85,9 @@ export function createWorkspaceHttpContribution(application) {
       const projectDailyProgressTodayMatch = suffix.match(new RegExp(`^/projects/(${CODE})/daily-progress$`));
       const projectDailyProgressDateMatch = suffix.match(new RegExp(`^/projects/(${CODE})/daily-progress/(\\d{4}-\\d{2}-\\d{2})$`));
       if (request.method === 'GET' && (projectDailyProgressTodayMatch || projectDailyProgressDateMatch)) {
-        const extra = [...searchParams.keys()].filter((field) => field !== 'group');
+        const extra = [...searchParams.keys()].filter((field: any) => field !== 'group');
         if (extra.length) {
-          const error = new Error('每日演进 API 只接受 group query。');
+          const error: Error & Record<string, any> = new Error('每日演进 API 只接受 group query。');
           error.code = 'daily_progress_query_forbidden';
           error.status = 400;
           error.details = { field: extra[0] };

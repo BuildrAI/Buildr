@@ -5,7 +5,7 @@ import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.mjs';
 import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
 import { createOpenSpecCliContributions } from '../../task/openspec/module.ts';
-import { createWorkspaceCliContributions } from '../../workspace/module.mjs';
+import { createWorkspaceCliContributions } from '../../workspace/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.mjs';
 import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';

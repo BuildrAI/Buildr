@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../../infrastructure/product-layout.mjs';
 import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.mjs';
-import { createProject as createProjectEntity } from '../../../workspace/domain/project.mjs';
-import { createService as createServiceEntity } from '../../../workspace/domain/service.mjs';
+import { createProject as createProjectEntity } from '../../../workspace/domain/project.ts';
+import { createService as createServiceEntity } from '../../../workspace/domain/service.ts';
 
 export function registerAgentAssetsPackageAssets(runtime) {
   const readGitRemote = (...args) => runtime.readGitRemote(...args);

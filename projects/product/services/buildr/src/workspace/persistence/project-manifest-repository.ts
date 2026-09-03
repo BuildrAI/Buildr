@@ -3,29 +3,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import { createProject, isProjectCode } from '../domain/project.mjs';
+import { createProject, isProjectCode } from '../domain/project.ts';
 
 export const PROJECTS_SCHEMA_V1 = 'buildr.projects/v1';
 export const PROJECTS_SCHEMA_V2 = 'buildr.projects/v2';
 
-function plainObject(value, label) {
+function plainObject(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value;
 }
 
-function closedFields(value, fields, label) {
+function closedFields(value: any, fields: any, label: any) {
   for (const key of Object.keys(value)) {
     if (!fields.has(key)) throw new Error(`${label}.${key} is not a supported projects/manifest.yml field.`);
   }
 }
 
-function parseYaml(content, label) {
+function parseYaml(content: any, label: any) {
   const document = YAML.parseDocument(content, { uniqueKeys: true, prettyErrors: true });
-  if (document.errors.length) throw new Error(`${label} is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
+  if (document.errors.length) throw new Error(`${label} is invalid YAML: ${document.errors.map((error: any) => error.message).join('; ')}`);
   return plainObject(document.toJS({ mapAsMap: false }), label);
 }
 
-function legacyProject(code, value, workspaceId) {
+function legacyProject(code: any, value: any, workspaceId: any) {
   const project = plainObject(value, `projects.${code}`);
   const repo = plainObject(project.repo, `projects.${code}.repo`);
   if (!['workspace', 'git'].includes(repo.kind)) throw new Error(`projects.${code}.repo.kind must be workspace or git.`);
@@ -56,12 +56,12 @@ function legacyProject(code, value, workspaceId) {
   };
 }
 
-export function parseProjectsManifest(content, { workspaceId = null, label = 'projects/manifest.yml' } = {}) {
+export function parseProjectsManifest(content: any, { workspaceId = null, label = 'projects/manifest.yml' }: any = {}) {
   const document = parseYaml(content, label);
   const projects = plainObject(document.projects, `${label}.projects`);
   if (document.schemaVersion === PROJECTS_SCHEMA_V2) {
     closedFields(document, new Set(['schemaVersion', 'projects']), label);
-    const canonical = Object.entries(projects).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
+    const canonical = Object.entries(projects).sort(([a]: any, [b]: any) => a.localeCompare(b)).map(([key, value]: any) => {
       if (!isProjectCode(key)) throw new Error(`projects.${key} key is invalid.`);
       const project = plainObject(value, `projects.${key}`);
       closedFields(project, new Set(['id', 'workspaceId', 'code', 'name', 'description', 'source']), `projects.${key}`);
@@ -73,11 +73,11 @@ export function parseProjectsManifest(content, { workspaceId = null, label = 'pr
       if (workspaceId && entity.workspaceId !== workspaceId) throw new Error(`projects.${key}.workspaceId must equal the current Workspace id.`);
       return entity;
     });
-    const entities = Object.fromEntries(canonical.map((project) => [project.code, project]));
+    const entities = Object.fromEntries(canonical.map((project: any) => [project.code, project]));
     return { canonical: true, migrationRequired: false, schemaVersion: PROJECTS_SCHEMA_V2, projects: entities, entities, document };
   }
   if (document.schemaVersion === PROJECTS_SCHEMA_V1) {
-    const entities = Object.fromEntries(Object.entries(projects).sort(([a], [b]) => a.localeCompare(b)).map(([code, value]) => {
+    const entities = Object.fromEntries(Object.entries(projects).sort(([a]: any, [b]: any) => a.localeCompare(b)).map(([code, value]: any) => {
       if (!isProjectCode(code)) throw new Error(`projects.${code} key is invalid.`);
       return [code, legacyProject(code, value, workspaceId)];
     }));
@@ -86,10 +86,10 @@ export function parseProjectsManifest(content, { workspaceId = null, label = 'pr
   throw new Error(`${label}.schemaVersion must be ${PROJECTS_SCHEMA_V1} or ${PROJECTS_SCHEMA_V2}.`);
 }
 
-export function renderProjectsManifest(projects) {
+export function renderProjectsManifest(projects: any) {
   const entries = Array.isArray(projects) ? projects : Object.values(projects || {});
-  const canonical = entries.map((project) => createProject(project)).sort((a, b) => a.code.localeCompare(b.code));
-  const document = { schemaVersion: PROJECTS_SCHEMA_V2, projects: {} };
+  const canonical = entries.map((project: any) => createProject(project)).sort((a: any, b: any) => a.code.localeCompare(b.code));
+  const document: any = { schemaVersion: PROJECTS_SCHEMA_V2, projects: {} };
   for (const project of canonical) {
     document.projects[project.code] = {
       id: project.id,
@@ -99,22 +99,22 @@ export function renderProjectsManifest(projects) {
       description: project.description,
       source: project.source.type === 'workspace'
         ? { type: 'workspace', path: project.source.path }
-        : { type: 'git', ...(project.source.root === 'attached' ? { root: 'attached' } : {}), path: project.source.path, git: { ...project.source.git } },
+        : { type: 'git', ...((project.source as any).root === 'attached' ? { root: 'attached' } : {}), path: project.source.path, git: { ...(project.source as any).git } },
     };
   }
   return YAML.stringify(document, { lineWidth: 0 });
 }
 
-export function projectManifestRevision(content) {
+export function projectManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerProjectManifestRepository(runtime) {
-  function projectsManifestPath(targetRoot) {
+export function registerProjectManifestRepository(runtime: any) {
+  function projectsManifestPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), 'projects', 'manifest.yml');
   }
 
-  function readProjectRegistryPersistence(targetRoot, options = {}) {
+  function readProjectRegistryPersistence(targetRoot: any, options: any = {}) {
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
     const manifestPath = projectsManifestPath(root);
@@ -128,7 +128,7 @@ export function registerProjectManifestRepository(runtime) {
     };
   }
 
-  function writeProjectRegistry(file, projects) {
+  function writeProjectRegistry(file: any, projects: any) {
     runtime.atomicWriteFile(file, renderProjectsManifest(projects));
   }
 

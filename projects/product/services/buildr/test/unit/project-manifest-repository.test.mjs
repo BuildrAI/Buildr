@@ -7,7 +7,7 @@ import {
   parseProjectsManifest,
   projectManifestRevision,
   renderProjectsManifest,
-} from '../../src/workspace/persistence/project-manifest-repository.mjs';
+} from '../../src/workspace/persistence/project-manifest-repository.ts';
 
 const PROJECT_ID = 'd15bde2c-9aab-4ed8-bf43-28a5372ca407';
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';

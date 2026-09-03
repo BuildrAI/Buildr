@@ -6,31 +6,31 @@ import {
   normalizeDailyProgressDate,
   normalizeDailyProgressGroup,
   normalizeDailyProgressPayload,
-} from '../domain/project-daily-progress.mjs';
+} from '../domain/project-daily-progress.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
-function assertObject(value, label) {
+function assertObject(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw dailyProgressError('daily_progress_input_invalid', `${label} 必须是对象。`);
   }
 }
 
-function assertFields(value, fields, label) {
+function assertFields(value: any, fields: any, label: any) {
   assertObject(value, label);
   for (const field of Object.keys(value)) {
     if (!fields.has(field)) throw dailyProgressError('daily_progress_field_forbidden', `${label}.${field} 不受支持。`, 400, { field });
   }
 }
 
-function identity(value, field) {
+function identity(value: any, field: any) {
   if (typeof value !== 'string' || !value.trim()) {
     throw dailyProgressError('daily_progress_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
   }
   return value.trim();
 }
 
-export function registerProjectDailyProgressApplication(runtime) {
-  function registeredProject(targetRoot, projectCode) {
+export function registerProjectDailyProgressApplication(runtime: any) {
+  function registeredProject(targetRoot: any, projectCode: any) {
     const code = identity(projectCode, 'project');
     const record = runtime.readProjectRegistryRecord(targetRoot);
     const project = record.projects[code];
@@ -40,11 +40,11 @@ export function registerProjectDailyProgressApplication(runtime) {
     return project;
   }
 
-  function resolveTask(targetRoot, taskId) {
+  function resolveTask(targetRoot: any, taskId: any) {
     try {
       const inspected = runtime.inspectTaskRecord(targetRoot, taskId);
       return { taskId, title: inspected.record.title, status: inspected.record.status, resolved: true };
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'task_record_not_found') {
         return { taskId, title: null, status: null, resolved: false };
       }
@@ -52,15 +52,15 @@ export function registerProjectDailyProgressApplication(runtime) {
     }
   }
 
-  function hydrateCommits(targetRoot, commits) {
-    return commits.map((commit) => ({
+  function hydrateCommits(targetRoot: any, commits: any) {
+    return commits.map((commit: any) => ({
       ...commit,
-      tasks: commit.taskIds.map((taskId) => resolveTask(targetRoot, taskId)),
+      tasks: commit.taskIds.map((taskId: any) => resolveTask(targetRoot, taskId)),
     }));
   }
 
-  function assertExistingTasks(targetRoot, commits) {
-    const missing = [];
+  function assertExistingTasks(targetRoot: any, commits: any) {
+    const missing: any[] = [];
     const seen = new Set();
     for (const commit of commits) {
       for (const taskId of commit.taskIds) {
@@ -82,8 +82,8 @@ export function registerProjectDailyProgressApplication(runtime) {
     return seen.size;
   }
 
-  function publicCommits(commits) {
-    return commits.map((commit) => ({
+  function publicCommits(commits: any) {
+    return commits.map((commit: any) => ({
       sha: commit.sha,
       subject: commit.subject,
       authorName: commit.authorName,
@@ -94,7 +94,7 @@ export function registerProjectDailyProgressApplication(runtime) {
     }));
   }
 
-  function inspectPayload(project, date, group, document, commits, incompatible) {
+  function inspectPayload(project: any, date: any, group: any, document: any, commits: any, incompatible: any) {
     const present = Boolean(document);
     const status = incompatible ? 'incompatible' : present ? 'inspected' : 'not-found';
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.dailyProgressInspectResult, {
@@ -108,11 +108,11 @@ export function registerProjectDailyProgressApplication(runtime) {
       daySummary: document?.daySummary || null,
       itemCount: commits.length,
       commitCount: commits.length,
-      taskReferenceCount: new Set(commits.flatMap((commit) => commit.taskIds)).size,
-      unresolvedTaskCount: commits.reduce((count, commit) => count + commit.tasks.filter((task) => !task.resolved).length, 0),
+      taskReferenceCount: new Set(commits.flatMap((commit: any) => commit.taskIds)).size,
+      unresolvedTaskCount: commits.reduce((count: any, commit: any) => count + commit.tasks.filter((task: any) => !task.resolved).length, 0),
       commits: publicCommits(commits),
       files: document?.files || [],
-      groups: groupDailyProgressCommits(commits, group).map((section) => ({
+      groups: groupDailyProgressCommits(commits, group).map((section: any) => ({
         key: section.key,
         label: section.label,
         commits: publicCommits(section.commits),
@@ -125,7 +125,7 @@ export function registerProjectDailyProgressApplication(runtime) {
     });
   }
 
-  function recordProjectDailyProgress(targetRoot, input) {
+  function recordProjectDailyProgress(targetRoot: any, input: any) {
     assertFields(input, new Set(['project', 'date', 'payload', 'recordedAt']), '每日演进 record');
     const project = registeredProject(targetRoot, input.project);
     const date = input.date === undefined || input.date === null || input.date === ''
@@ -165,7 +165,7 @@ export function registerProjectDailyProgressApplication(runtime) {
     });
   }
 
-  function inspectProjectDailyProgress(targetRoot, input = {}) {
+  function inspectProjectDailyProgress(targetRoot: any, input: any = {}) {
     assertFields(input, new Set(['project', 'date', 'group']), '每日演进 inspect');
     const project = registeredProject(targetRoot, input.project);
     const date = input.date === undefined || input.date === null || input.date === ''
@@ -177,7 +177,7 @@ export function registerProjectDailyProgressApplication(runtime) {
     return inspectPayload(project, date, group, read.document, commits, Boolean(read.incompatible));
   }
 
-  function listProjectDailyProgress(targetRoot, input = {}) {
+  function listProjectDailyProgress(targetRoot: any, input: any = {}) {
     assertFields(input, new Set(['project']), '每日演进 list');
     const project = registeredProject(targetRoot, input.project);
     const dates = runtime.listDailyProgressDates(targetRoot, project.code);
@@ -194,11 +194,11 @@ export function registerProjectDailyProgressApplication(runtime) {
     });
   }
 
-  function inspectTaskDailyProgress(targetRoot, taskIdValue) {
+  function inspectTaskDailyProgress(targetRoot: any, taskIdValue: any) {
     const taskId = identity(taskIdValue, 'taskId');
     const task = runtime.inspectTaskRecord(targetRoot, taskId);
     const registry = runtime.readProjectRegistryRecord(targetRoot);
-    const items = [];
+    const items: any[] = [];
     for (const document of runtime.listDailyProgressDocuments(targetRoot)) {
       const project = registry.projects[document.project];
       if (!project) continue;
@@ -220,7 +220,7 @@ export function registerProjectDailyProgressApplication(runtime) {
         });
       }
     }
-    items.sort((left, right) => right.date.localeCompare(left.date) || left.item.id.localeCompare(right.item.id));
+    items.sort((left: any, right: any) => right.date.localeCompare(left.date) || left.item.id.localeCompare(right.item.id));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.dailyProgressTaskView, {
       operation: 'inspect-task',
       status: 'inspected',

@@ -3,26 +3,28 @@ import path from 'node:path';
 import process from 'node:process';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 
-function syntax(message, usage) {
-  const error = new Error(message);
+function syntax(message: any, usage: any) {
+  const error: Error & Record<string, any> = new Error(message);
   Object.assign(error, { code: 'daily_progress_cli.syntax', status: 400, usage });
   return error;
 }
 
-function parse(operation, args) {
-  const usage = {
+function parse(operation: any, args: any) {
+  const usageByOperation: Record<string, string> = {
     record: 'buildr project daily-progress record --project <code> [--date <YYYY-MM-DD>] --input <payload.json> [--target <canonical-workspace>] [--json] | --schema | --example',
     inspect: 'buildr project daily-progress inspect --project <code> [--date <YYYY-MM-DD>] [--group day|person|task] [--target <canonical-workspace>] [--json]',
     list: 'buildr project daily-progress list --project <code> [--target <canonical-workspace>] [--json]',
-  }[operation];
-  const allowed = {
+  };
+  const usage = usageByOperation[operation];
+  const allowedByOperation: Record<string, string[]> = {
     record: ['--project', '--date', '--input', '--target', '--json', '--schema', '--example'],
     inspect: ['--project', '--date', '--group', '--target', '--json'],
     list: ['--project', '--target', '--json'],
-  }[operation];
+  };
+  const allowed = allowedByOperation[operation];
   const boolean = new Set(['--json', '--schema', '--example']);
   const values = new Map();
-  const positions = [];
+  const positions: any[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (!arg.startsWith('--')) { positions.push(arg); continue; }
@@ -37,10 +39,10 @@ function parse(operation, args) {
     }
     values.set(arg, list);
   }
-  const one = (name) => values.get(name)?.[0];
+  const one = (name: any) => values.get(name)?.[0];
   const discovery = Boolean(one('--schema') || one('--example'));
   if (discovery && operation !== 'record') throw syntax(`${operation} does not support discovery.`, usage);
-  if (discovery && (positions.length || (one('--schema') && one('--example')) || [...values.keys()].some((name) => !['--schema', '--example', '--json'].includes(name)))) {
+  if (discovery && (positions.length || (one('--schema') && one('--example')) || [...values.keys()].some((name: any) => !['--schema', '--example', '--json'].includes(name)))) {
     throw syntax('Discovery accepts exactly one of --schema or --example, optionally with --json.', usage);
   }
   if (!discovery && positions.length) throw syntax(`${operation} does not accept positional arguments.`, usage);
@@ -58,12 +60,12 @@ function parse(operation, args) {
   };
 }
 
-function payload(file) {
+function payload(file: any) {
   const value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
   return value.payload || value;
 }
 
-function print(payload, json) {
+function print(payload: any, json: any) {
   if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else if (payload.operation === 'list') console.log(`Project daily progress ${payload.project}: ${payload.dates.length} day(s)`);
   else if (payload.operation === 'inspect-task') console.log(`Task daily progress ${payload.taskId}: ${payload.itemCount} item(s)`);
@@ -71,7 +73,7 @@ function print(payload, json) {
   return payload;
 }
 
-function discovery(kind) {
+function discovery(kind: any) {
   const text = { type: 'string', minLength: 1, maxLength: 4000 };
   const id = { ...text, pattern: '^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$' };
   const example = {
@@ -151,7 +153,7 @@ function discovery(kind) {
   });
 }
 
-export function projectDailyProgressCommand(runtime, operation, args) {
+export function projectDailyProgressCommand(runtime: any, operation: any, args: any) {
   const parsed = parse(operation, args);
   if (parsed.discovery) {
     const payload = discovery(parsed.discovery);
@@ -176,7 +178,7 @@ export function projectDailyProgressCommand(runtime, operation, args) {
       result = runtime.listProjectDailyProgress(parsed.targetRoot, { project: parsed.project });
     }
     return print(result, parsed.json);
-  } catch (error) {
+  } catch (error: any) {
     if (!error.dailyProgressBusiness && error.code !== 'daily_progress_cli.syntax') throw error;
     const result = {
       schemaVersion: operation === 'list' ? 'buildr.project-daily-progress-list-result/v1' : operation === 'record' ? 'buildr.project-daily-progress-record-result/v1' : 'buildr.project-daily-progress-inspect-result/v1',

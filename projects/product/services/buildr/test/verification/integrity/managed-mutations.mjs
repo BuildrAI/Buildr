@@ -33,7 +33,7 @@ const allowed = new Map([
   ['src/infrastructure/filesystem/index.mjs', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
-  ['src/workspace/persistence/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/workspace/persistence/workspace-registry-repository.ts', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/sqlite/workspace-sqlite.mjs', new Set(['cleanupRetiredLocalData'])],
   ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
@@ -55,7 +55,7 @@ const allowed = new Map([
   ])],
   ['src/verification/application/verification-application.mjs', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
-  ['src/workspace/interfaces/cli/workspace.mjs', new Set(['createProject', 'createService'])],
+  ['src/workspace/interfaces/cli/workspace.ts', new Set(['createProject', 'createService'])],
   ['src/agent-assets/application/rules.mjs', new Set(['rulesRemoveUnsafe'])],
   ['src/agent-assets/application/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/agent-assets/application/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
@@ -68,7 +68,7 @@ const allowed = new Map([
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
-  ['src/workspace/application/workspace-operations.mjs', new Set(['mutationRecover'])],
+  ['src/workspace/application/workspace-operations.ts', new Set(['mutationRecover'])],
   ['src/agent-assets/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
   ['src/agent-assets/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
   ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],

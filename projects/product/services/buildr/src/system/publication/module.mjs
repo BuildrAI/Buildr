@@ -1,6 +1,6 @@
 import { registerPublicationApplication } from './application/publication-application.mjs';
 import { createPublicationHttpContribution } from './interfaces/http/publication-http.mjs';
-import { PROJECT_APPLICATION } from '../../workspace/module.mjs';
+import { PROJECT_APPLICATION } from '../../workspace/module.ts';
 
 export const PUBLICATION_MODULE_ID = 'publication';
 export const PUBLICATION_APPLICATION = 'publication.application';

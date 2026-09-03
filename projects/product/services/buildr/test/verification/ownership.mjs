@@ -35,7 +35,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "component": {
     "inputs": [
       "test/component/**",
-      "src/workspace/application/service-application.mjs"
+      "src/workspace/application/service-application.ts"
     ],
     "inputExclusions": []
   },
@@ -249,12 +249,12 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "integration-project-daily-progress": {
     "inputs": [
       "test/integration/project-daily-progress-application.test.mjs",
-      "src/workspace/domain/project-daily-progress.mjs",
-      "src/workspace/application/project-daily-progress-application.mjs",
-      "src/workspace/persistence/project-daily-progress-repository.mjs",
-      "src/workspace/interfaces/cli/project-daily-progress.mjs",
-      "src/workspace/interfaces/http/workspace-http.mjs",
-      "src/workspace/module.mjs"
+      "src/workspace/domain/project-daily-progress.ts",
+      "src/workspace/application/project-daily-progress-application.ts",
+      "src/workspace/persistence/project-daily-progress-repository.ts",
+      "src/workspace/interfaces/cli/project-daily-progress.ts",
+      "src/workspace/interfaces/http/workspace-http.ts",
+      "src/workspace/module.ts"
     ],
     "inputExclusions": []
   },
@@ -481,7 +481,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/task-professional-http-contract.test.mjs",
       "test/system/workspace-buildr-web-http.test.mjs",
       "src/bootstrap/**",
-      "src/workspace/module.mjs",
+      "src/workspace/module.ts",
       "src/workspace/interfaces/http/**",
       "src/task/module.ts",
       "src/task/change/interfaces/http/**",
@@ -693,7 +693,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/bootstrap/**",
       "src/task/interfaces/cli/**",
       "src/system/doctor/**",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "package.json",
       "package-lock.json",
       "test/verification/host-node.mjs",
@@ -732,7 +732,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/infrastructure/testing/context-runtime/node-test.ts",
       "src/infrastructure/testing/context-runtime/node-runner.ts",
       "src/agent-assets/application/package-maintenance/**",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "src/workspace/persistence/**",
       "src/workspace/interfaces/cli/**",
       "src/infrastructure/filesystem/**",
@@ -808,7 +808,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
       "src/workspace/**",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "src/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
@@ -920,7 +920,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "init-onboarding": {
     "inputs": [
       "src/workspace/**",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "test/verification/onboarding/init.mjs",
       "resources/workspace/manifest.yml",
       "resources/workspace/AGENTS.md",
@@ -990,7 +990,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/system/installation/application/cli-update.mjs",
       "src/agent-assets/application/package-maintenance/**",
       "src/agent-assets/application/package-maintenance.mjs",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "src/infrastructure/product-layout.mjs",
       "package.json",
       "package-lock.json",
@@ -1003,7 +1003,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "src/agent-assets/application/package-maintenance/**",
       "src/agent-assets/application/package-maintenance.mjs",
-      "src/workspace/application/workspace-operations.mjs",
+      "src/workspace/application/workspace-operations.ts",
       "src/agent-assets/application/commands.mjs",
       "src/agent-assets/application/components.mjs",
       "src/agent-assets/application/rules.mjs",

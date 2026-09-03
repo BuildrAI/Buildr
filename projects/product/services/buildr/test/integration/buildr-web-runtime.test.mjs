@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
+import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.mjs';
 import {

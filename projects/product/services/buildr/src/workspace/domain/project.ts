@@ -1,24 +1,24 @@
-import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.mjs';
+import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-function requiredText(value, field) {
+function requiredText(value: any, field: any) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`Project.${field} must be a non-empty string.`);
   }
   return value.trim();
 }
 
-export function isProjectId(value) {
+export function isProjectId(value: any) {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export function isProjectCode(value) {
+export function isProjectCode(value: any) {
   return typeof value === 'string' && CODE_PATTERN.test(value);
 }
 
-export function createProjectSource(source, code) {
+export function createProjectSource(source: any, code: any) {
   if (!source || typeof source !== 'object' || Array.isArray(source)) {
     throw new Error('Project.source must be an object.');
   }
@@ -43,7 +43,7 @@ export function createProjectSource(source, code) {
   return Object.freeze({ type, ...(location.root === SOURCE_ROOT_ATTACHED ? { root: SOURCE_ROOT_ATTACHED } : {}), path: sourcePath, git });
 }
 
-export function createProject({ id, workspaceId, code, name, description, source }) {
+export function createProject({ id, workspaceId, code, name, description, source }: any) {
   if (!isProjectId(id)) throw new Error('Project.id must be a UUID.');
   if (!isProjectId(workspaceId)) throw new Error('Project.workspaceId must be a UUID.');
   if (!isProjectCode(code)) throw new Error('Project.code must contain only letters, digits, dots, underscores, or dashes.');

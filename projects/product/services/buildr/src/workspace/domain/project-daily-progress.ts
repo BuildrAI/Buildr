@@ -16,8 +16,8 @@ const COMMIT_FIELDS = Object.freeze(['sha', 'subject', 'authorName', 'authorEmai
 const FILE_FIELDS = Object.freeze(['path', 'kind']);
 const PAYLOAD_FIELDS = Object.freeze(['daySummary', 'commits', 'files']);
 
-export function dailyProgressError(code, message, status = 400, details = undefined, nextAction = undefined) {
-  const error = new Error(message);
+export function dailyProgressError(code: any, message: any, status: any = 400, details: any = undefined, nextAction: any = undefined) {
+  const error: Error & Record<string, any> = new Error(message);
   error.code = code;
   error.status = status;
   if (details !== undefined) error.details = details;
@@ -26,16 +26,16 @@ export function dailyProgressError(code, message, status = 400, details = undefi
   return error;
 }
 
-export function localCalendarDate(now = new Date()) {
+export function localCalendarDate(now: any = new Date()) {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-export function isDailyProgressDate(value) {
+export function isDailyProgressDate(value: any) {
   if (typeof value !== 'string' || !DATE_PATTERN.test(value)) return false;
-  const [, yearText, monthText, dayText] = value.match(DATE_PATTERN);
+  const [, yearText, monthText, dayText] = value.match(DATE_PATTERN)!;
   const year = Number(yearText);
   const month = Number(monthText);
   const day = Number(dayText);
@@ -43,7 +43,7 @@ export function isDailyProgressDate(value) {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
-function closed(value, fields, field) {
+function closed(value: any, fields: any, field: any) {
   for (const key of Object.keys(value)) {
     if (!fields.has(key)) {
       const name = field ? `${field}.${key}` : key;
@@ -52,21 +52,21 @@ function closed(value, fields, field) {
   }
 }
 
-function object(value, field) {
+function object(value: any, field: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw dailyProgressError('daily_progress_field_invalid', `${field} 必须是对象。`, 400, { field });
   }
   return value;
 }
 
-function nonEmptyText(value, field) {
+function nonEmptyText(value: any, field: any) {
   if (typeof value !== 'string' || !value.trim()) {
     throw dailyProgressError('daily_progress_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
   }
   return value.trim();
 }
 
-function identity(value, field, pattern = IDENTITY_PATTERN) {
+function identity(value: any, field: any, pattern: any = IDENTITY_PATTERN) {
   const normalized = nonEmptyText(value, field);
   if (!pattern.test(normalized)) {
     throw dailyProgressError('daily_progress_identity_invalid', `${field} 不是合法 identity。`, 400, { field, value: normalized });
@@ -74,7 +74,7 @@ function identity(value, field, pattern = IDENTITY_PATTERN) {
   return normalized;
 }
 
-function unique(values, key, field) {
+function unique(values: any, key: any, field: any) {
   const seen = new Set();
   for (const value of values) {
     const identityKey = key(value);
@@ -86,7 +86,7 @@ function unique(values, key, field) {
   return values;
 }
 
-export function normalizeDailyProgressDate(value, field = 'date') {
+export function normalizeDailyProgressDate(value: any, field: any = 'date') {
   const date = nonEmptyText(value, field);
   if (!isDailyProgressDate(date)) {
     throw dailyProgressError('daily_progress_date_invalid', `${field} 必须是合法 YYYY-MM-DD 日历日。`, 400, { field, value: date });
@@ -94,7 +94,7 @@ export function normalizeDailyProgressDate(value, field = 'date') {
   return date;
 }
 
-export function normalizeDailyProgressGroup(value) {
+export function normalizeDailyProgressGroup(value: any) {
   if (value === undefined || value === null || value === '') return 'day';
   const group = nonEmptyText(value, 'group');
   if (!DAILY_PROGRESS_GROUPS.includes(group)) {
@@ -103,7 +103,7 @@ export function normalizeDailyProgressGroup(value) {
   return group;
 }
 
-function normalizeDaySummary(value) {
+function normalizeDaySummary(value: any) {
   const summary = object(value, 'daySummary');
   closed(summary, new Set(SUMMARY_FIELDS), 'daySummary');
   return {
@@ -114,18 +114,18 @@ function normalizeDaySummary(value) {
   };
 }
 
-function normalizeTaskIds(value, field, authorship) {
+function normalizeTaskIds(value: any, field: any, authorship: any) {
   if (!Array.isArray(value)) {
     throw dailyProgressError('daily_progress_field_invalid', `${field} 必须是数组。`, 400, { field });
   }
-  const taskIds = unique(value.map((taskId, index) => identity(taskId, `${field}[${index}]`, TASK_ID_PATTERN)), (taskId) => taskId, field);
+  const taskIds = unique(value.map((taskId: any, index: any) => identity(taskId, `${field}[${index}]`, TASK_ID_PATTERN)), (taskId: any) => taskId, field);
   if (authorship === 'other' && taskIds.length) {
     throw dailyProgressError('daily_progress_foreign_task_forbidden', `${field}：他人提交不得关联 Task。`, 400, { field });
   }
   return taskIds;
 }
 
-function normalizeCommit(value, index) {
+function normalizeCommit(value: any, index: any) {
   const field = `commits[${index}]`;
   const commit = object(value, field);
   closed(commit, new Set(COMMIT_FIELDS), field);
@@ -143,7 +143,7 @@ function normalizeCommit(value, index) {
   };
 }
 
-function normalizeFile(value, index) {
+function normalizeFile(value: any, index: any) {
   const field = `files[${index}]`;
   const file = object(value, field);
   closed(file, new Set(FILE_FIELDS), field);
@@ -158,7 +158,7 @@ function normalizeFile(value, index) {
   return { path: filePath, kind };
 }
 
-export function normalizeDailyProgressPayload(input) {
+export function normalizeDailyProgressPayload(input: any) {
   const payload = object(input, 'payload');
   closed(payload, new Set(PAYLOAD_FIELDS), 'payload');
   if (!Array.isArray(payload.commits)) {
@@ -167,10 +167,10 @@ export function normalizeDailyProgressPayload(input) {
   if (!Array.isArray(payload.files)) {
     throw dailyProgressError('daily_progress_field_invalid', 'payload.files 必须是数组。', 400, { field: 'files' });
   }
-  const commits = payload.commits.map((commit, index) => normalizeCommit(commit, index));
-  unique(commits, (commit) => commit.sha, 'commits');
-  const files = payload.files.map((file, index) => normalizeFile(file, index));
-  unique(files, (file) => file.path, 'files');
+  const commits = payload.commits.map((commit: any, index: any) => normalizeCommit(commit, index));
+  unique(commits, (commit: any) => commit.sha, 'commits');
+  const files = payload.files.map((file: any, index: any) => normalizeFile(file, index));
+  unique(files, (file: any) => file.path, 'files');
   return {
     daySummary: normalizeDaySummary(payload.daySummary),
     commits,
@@ -178,11 +178,11 @@ export function normalizeDailyProgressPayload(input) {
   };
 }
 
-export function isLegacyDailyProgressDocument(input) {
+export function isLegacyDailyProgressDocument(input: any) {
   return Boolean(input && typeof input === 'object' && !Array.isArray(input) && input.schemaVersion === PROJECT_DAILY_PROGRESS_SCHEMA_V1);
 }
 
-export function normalizeDailyProgressDocument(input, expected = {}) {
+export function normalizeDailyProgressDocument(input: any, expected: any = {}) {
   const document = object(input, 'document');
   if (isLegacyDailyProgressDocument(document)) {
     throw dailyProgressError(
@@ -219,7 +219,7 @@ export function normalizeDailyProgressDocument(input, expected = {}) {
   };
 }
 
-export function createDailyProgressDocument({ project, date, daySummary, commits, files, recordedAt }) {
+export function createDailyProgressDocument({ project, date, daySummary, commits, files, recordedAt }: any) {
   return normalizeDailyProgressDocument({
     schemaVersion: PROJECT_DAILY_PROGRESS_SCHEMA,
     project,
@@ -231,7 +231,7 @@ export function createDailyProgressDocument({ project, date, daySummary, commits
   });
 }
 
-export function groupDailyProgressCommits(commits, group) {
+export function groupDailyProgressCommits(commits: any, group: any) {
   const mode = normalizeDailyProgressGroup(group);
   if (mode === 'day') {
     return [{ key: 'day', label: '按日', commits }];
@@ -249,7 +249,7 @@ export function groupDailyProgressCommits(commits, group) {
   const groups = new Map();
   for (const commit of commits) {
     if (commit.authorship !== 'self') continue;
-    const refs = commit.tasks || commit.taskIds.map((taskId) => ({ taskId }));
+    const refs = commit.tasks || commit.taskIds.map((taskId: any) => ({ taskId }));
     if (!refs.length) {
       if (!groups.has('unlinked')) groups.set('unlinked', { key: 'unlinked', label: UNLINKED_TASK_LABEL, commits: [] });
       groups.get('unlinked').commits.push(commit);

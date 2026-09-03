@@ -1,48 +1,48 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace-root-gitignore-entries.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace-root-gitignore-entries.ts';
 
-export function registerWorkspaceOperations(runtime) {
+export function registerWorkspaceOperations(runtime: any) {
   const { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, isSupportedAgent } = runtime;
-  const positionalArgs = (...args) => runtime.positionalArgs(...args);
-  const syncPackageComponents = (...args) => runtime.syncPackageComponents(...args);
-  const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
-  const readPackageManifest = (...args) => runtime.readPackageManifest(...args);
-  const parseManifestFileEntry = (...args) => runtime.parseManifestFileEntry(...args);
-  const parseYamlDocument = (...args) => runtime.parseYamlDocument(...args);
-  const diagnoseRules = (...args) => runtime.diagnoseRules(...args);
-  const assertName = (...args) => runtime.assertName(...args);
-  const assertAgentId = (...args) => runtime.assertAgentId(...args);
-  const renderSkillsManifestYaml = (...args) => runtime.renderSkillsManifestYaml(...args);
-  const renderProjectsYaml = (...args) => runtime.renderProjectsYaml(...args);
-  const renderRulesManifestYaml = (...args) => runtime.renderRulesManifestYaml(...args);
-  const renderCommandsManifestYaml = (...args) => runtime.renderCommandsManifestYaml(...args);
-  const renderComponentsManifestYaml = (...args) => runtime.renderComponentsManifestYaml(...args);
-  const trackWrite = (...args) => runtime.trackWrite(...args);
-  const printResult = (...args) => runtime.printResult(...args);
-  const optionValue = (...args) => runtime.optionValue(...args);
-  const ensureDirectory = (...args) => runtime.ensureDirectory(...args);
-  const atomicWriteJson = (...args) => runtime.atomicWriteJson(...args);
-  const mutationStateRoot = (...args) => runtime.mutationStateRoot(...args);
-  const mutationLockPath = (...args) => runtime.mutationLockPath(...args);
-  const mutationRecoveryReceiptPath = (...args) => runtime.mutationRecoveryReceiptPath(...args);
-  const restoreMutationSnapshot = (...args) => runtime.restoreMutationSnapshot(...args);
-  const removeMutationRestoreTarget = (...args) => runtime.removeMutationRestoreTarget(...args);
-  const withWorkspaceMutation = (...args) => runtime.withWorkspaceMutation(...args);
-  const productRoot = (...args) => runtime.productRoot(...args);
-  const writeMappedFileIfMissing = (...args) => runtime.writeMappedFileIfMissing(...args);
-  const appendGitignoreEntries = (...args) => runtime.appendGitignoreEntries(...args);
-  const hasFlag = (...args) => runtime.hasFlag(...args);
-  const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args) => runtime.existsDirectory(...args);
-  const existsFile = (...args) => runtime.existsFile(...args);
-  const ensureRootRequiredBlock = (...args) => runtime.ensureRootRequiredBlock(...args);
-  const assertInitializedBuildrWorkspace = (...args) => runtime.assertInitializedBuildrWorkspace(...args);
-  const addDoctorFinding = (...args) => runtime.addDoctorFinding(...args);
-  const createWorkspaceId = (...args) => runtime.createWorkspaceId(...args);
-  const renderWorkspaceManifest = (...args) => runtime.renderWorkspaceManifest(...args);
-  const diagnoseWorkspaceMetadata = (...args) => runtime.diagnoseWorkspaceMetadata(...args);
+  const positionalArgs = (...args: any[]) => runtime.positionalArgs(...args);
+  const syncPackageComponents = (...args: any[]) => runtime.syncPackageComponents(...args);
+  const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);
+  const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
+  const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
+  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
+  const diagnoseRules = (...args: any[]) => runtime.diagnoseRules(...args);
+  const assertName = (...args: any[]) => runtime.assertName(...args);
+  const assertAgentId = (...args: any[]) => runtime.assertAgentId(...args);
+  const renderSkillsManifestYaml = (...args: any[]) => runtime.renderSkillsManifestYaml(...args);
+  const renderProjectsYaml = (...args: any[]) => runtime.renderProjectsYaml(...args);
+  const renderRulesManifestYaml = (...args: any[]) => runtime.renderRulesManifestYaml(...args);
+  const renderCommandsManifestYaml = (...args: any[]) => runtime.renderCommandsManifestYaml(...args);
+  const renderComponentsManifestYaml = (...args: any[]) => runtime.renderComponentsManifestYaml(...args);
+  const trackWrite = (...args: any[]) => runtime.trackWrite(...args);
+  const printResult = (...args: any[]) => runtime.printResult(...args);
+  const optionValue = (...args: any[]) => runtime.optionValue(...args);
+  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
+  const atomicWriteJson = (...args: any[]) => runtime.atomicWriteJson(...args);
+  const mutationStateRoot = (...args: any[]) => runtime.mutationStateRoot(...args);
+  const mutationLockPath = (...args: any[]) => runtime.mutationLockPath(...args);
+  const mutationRecoveryReceiptPath = (...args: any[]) => runtime.mutationRecoveryReceiptPath(...args);
+  const restoreMutationSnapshot = (...args: any[]) => runtime.restoreMutationSnapshot(...args);
+  const removeMutationRestoreTarget = (...args: any[]) => runtime.removeMutationRestoreTarget(...args);
+  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
+  const productRoot = (...args: any[]) => runtime.productRoot(...args);
+  const writeMappedFileIfMissing = (...args: any[]) => runtime.writeMappedFileIfMissing(...args);
+  const appendGitignoreEntries = (...args: any[]) => runtime.appendGitignoreEntries(...args);
+  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
+  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
+  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
+  const existsFile = (...args: any[]) => runtime.existsFile(...args);
+  const ensureRootRequiredBlock = (...args: any[]) => runtime.ensureRootRequiredBlock(...args);
+  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
+  const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
+  const createWorkspaceId = (...args: any[]) => runtime.createWorkspaceId(...args);
+  const renderWorkspaceManifest = (...args: any[]) => runtime.renderWorkspaceManifest(...args);
+  const diagnoseWorkspaceMetadata = (...args: any[]) => runtime.diagnoseWorkspaceMetadata(...args);
 
   function bootstrapGuide() {
     const guidePath = path.join(productRoot(), 'docs', 'bootstrap-guide.md');
@@ -52,29 +52,29 @@ export function registerWorkspaceOperations(runtime) {
     process.stdout.write(fs.readFileSync(guidePath, 'utf8'));
   }
 
-  function mutationTransactions(targetRoot) {
+  function mutationTransactions(targetRoot: any) {
     const stateRoot = mutationStateRoot(targetRoot);
     if (!existsDirectory(stateRoot)) return [];
     return fs.readdirSync(stateRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => {
+      .filter((entry: any) => entry.isDirectory())
+      .map((entry: any) => {
         const transactionRoot = path.join(stateRoot, entry.name);
         const journalFile = path.join(transactionRoot, 'journal.json');
-        let journal = null;
-        let parseError = null;
-        try { journal = JSON.parse(fs.readFileSync(journalFile, 'utf8')); } catch (error) { parseError = error.message; }
+        let journal: any = null;
+        let parseError: any = null;
+        try { journal = JSON.parse(fs.readFileSync(journalFile, 'utf8')); } catch (error: any) { parseError = error.message; }
         return { id: entry.name, transactionRoot, journalFile, journal, parseError };
       });
   }
 
-  function diagnoseMutations(result, targetRoot) {
+  function diagnoseMutations(result: any, targetRoot: any) {
     const lockFile = mutationLockPath(targetRoot);
-    let lock = null;
+    let lock: any = null;
     if (existsFile(lockFile)) {
       try { lock = JSON.parse(fs.readFileSync(lockFile, 'utf8')); } catch { lock = { invalid: true }; }
     }
     const transactions = mutationTransactions(targetRoot);
-    result.mutations = { blocked: Boolean(lock || transactions.length), lock, transactions: transactions.map((item) => ({ id: item.id, operation: item.journal?.operation || null, phase: item.journal?.phase || null, affectedPaths: item.journal?.affectedPaths || [], parseError: item.parseError })) };
+    result.mutations = { blocked: Boolean(lock || transactions.length), lock, transactions: transactions.map((item: any) => ({ id: item.id, operation: item.journal?.operation || null, phase: item.journal?.phase || null, affectedPaths: item.journal?.affectedPaths || [], parseError: item.parseError })) };
     for (const transaction of transactions) {
       addDoctorFinding(result, 'error', 'mutation.transaction_incomplete', `检测到未完成 Buildr source mutation：${transaction.id}`, {
         path: toPosixRelative(targetRoot, transaction.transactionRoot),
@@ -97,7 +97,7 @@ export function registerWorkspaceOperations(runtime) {
     }
   }
 
-  function mutationRecover(args) {
+  function mutationRecover(args: any) {
     const [id] = positionalArgs(args);
     if (!id) throw new Error('Missing mutation transaction id.');
     assertName(id, 'Mutation transaction id');
@@ -115,12 +115,12 @@ export function registerWorkspaceOperations(runtime) {
     const journal = JSON.parse(fs.readFileSync(journalFile, 'utf8'));
     if (journal.schemaVersion !== 'buildr.mutation/v1' || journal.transactionId !== id || !Array.isArray(journal.snapshots)) throw new Error(`Mutation transaction journal is invalid: ${id}`);
     const lockFile = mutationLockPath(targetRoot);
-    let lock = null;
+    let lock: any = null;
     if (existsFile(lockFile)) {
       lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
       if (lock.transactionId !== id) throw new Error(`Mutation lock belongs to another transaction: ${lock.transactionId}`);
     }
-    const restorePlan = [...journal.snapshots].reverse().map((snapshot) => {
+    const restorePlan = [...journal.snapshots].reverse().map((snapshot: any) => {
       const target = path.resolve(snapshot.target);
       const relative = path.relative(targetRoot, target);
       if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || relative.startsWith(`.buildr${path.sep}mutations`)) throw new Error(`Mutation recovery target is unsafe: ${snapshot.target}`);
@@ -144,7 +144,7 @@ export function registerWorkspaceOperations(runtime) {
     console.log(`已恢复 Buildr source mutation：${id}`);
   }
 
-  function initBuildr(args) {
+  function initBuildr(args: any) {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const name = optionValue(args, '--name', path.basename(targetRoot));
     const description = optionValue(args, '--description', 'TODO: 请补充 Workspace 的管理范围和用途。');
@@ -160,8 +160,8 @@ export function registerWorkspaceOperations(runtime) {
       }
     }
     const manifest = readPackageManifest();
-    const created = [];
-    const changed = [];
+    const created: any[] = [];
+    const changed: any[] = [];
 
     ensureDirectory(targetRoot);
     for (const relativeDir of manifest.workspaceDirectories) {
@@ -169,7 +169,7 @@ export function registerWorkspaceOperations(runtime) {
     }
 
     const workspaceId = createWorkspaceId();
-    const variables = {};
+    const variables: Record<string, any> = {};
     for (const rawEntry of manifest.workspaceFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
       writeMappedFileIfMissing(targetRoot, targetRoot, entry, variables, created);
@@ -187,7 +187,7 @@ export function registerWorkspaceOperations(runtime) {
     const builtinResult = syncPackageBuiltins(targetRoot);
     changed.push(...builtinResult.changed);
     const componentResult = syncPackageComponents(targetRoot);
-    if (componentResult.errors.length) throw new Error(componentResult.errors.map((item) => item.error).join('\n'));
+    if (componentResult.errors.length) throw new Error(componentResult.errors.map((item: any) => item.error).join('\n'));
     changed.push(...componentResult.changed);
 
     const gitignoreChanged = appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES]);
@@ -203,7 +203,7 @@ export function registerWorkspaceOperations(runtime) {
       console.log(`正在准备 ${agent} runtime；该步骤复用 buildr sync ${agent} 并执行最终 doctor。`);
       try {
         runtime.syncRuntime(agent, ['--target', targetRoot]);
-      } catch (error) {
+      } catch (error: any) {
         throw new Error(`Workspace 源资产已初始化，但 ${agent} onboarding 未完成。\n修复问题后运行：buildr sync ${agent} --target ${targetRoot}\n原因：${error.message}`);
       }
       console.log(`Buildr onboarding 已完成：${agent}（包含 sync 与最终 doctor）。`);

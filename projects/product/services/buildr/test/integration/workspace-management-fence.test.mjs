@@ -7,8 +7,8 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
-import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.mjs';
+import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.ts';
+import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const RELEASED = { channel: 'npm', runtime: { role: 'host' } };

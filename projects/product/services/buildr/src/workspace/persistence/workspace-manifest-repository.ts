@@ -3,17 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 
-import { createWorkspace } from '../domain/workspace.mjs';
+import { createWorkspace } from '../domain/workspace.ts';
 
 export const WORKSPACE_SCHEMA_V1 = 'buildr.workspace/v1';
 export const WORKSPACE_DESCRIPTION_TODO = 'TODO: 请补充 Workspace 的管理范围和用途。';
 
 const CANONICAL_FIELDS = new Set(['schemaVersion', 'id', 'name', 'description', 'kind', 'profile', 'runtime']);
 
-function parseYaml(content, label) {
+function parseYaml(content: any, label: any) {
   const document = YAML.parseDocument(content, { uniqueKeys: true, prettyErrors: true });
   if (document.errors.length) {
-    throw new Error(`${label} is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
+    throw new Error(`${label} is invalid YAML: ${document.errors.map((error: any) => error.message).join('; ')}`);
   }
   const value = document.toJS({ mapAsMap: false });
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -22,14 +22,14 @@ function parseYaml(content, label) {
   return value;
 }
 
-function requiredText(value, field, label) {
+function requiredText(value: any, field: any, label: any) {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${label}.${field} must be a non-empty string.`);
   }
   return value.trim();
 }
 
-function optionalCompatibilityText(value, field, label) {
+function optionalCompatibilityText(value: any, field: any, label: any) {
   if (value === undefined) return undefined;
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${label}.${field} must be a non-empty string when provided.`);
@@ -37,7 +37,7 @@ function optionalCompatibilityText(value, field, label) {
   return value.trim();
 }
 
-export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml') {
+export function parseWorkspaceManifest(content: any, label: any = '.buildr/workspace.yml') {
   const document = parseYaml(content, label);
   const compatibility = {
     kind: optionalCompatibilityText(document.kind, 'kind', label),
@@ -78,9 +78,9 @@ export function parseWorkspaceManifest(content, label = '.buildr/workspace.yml')
   throw new Error(`${label}.schemaVersion must be 1, omitted for a legacy Workspace, or ${WORKSPACE_SCHEMA_V1}.`);
 }
 
-export function renderWorkspaceManifest({ workspace, compatibility = {} }) {
+export function renderWorkspaceManifest({ workspace, compatibility = {} }: any) {
   const canonical = createWorkspace(workspace);
-  const document = {
+  const document: any = {
     schemaVersion: WORKSPACE_SCHEMA_V1,
     id: canonical.id,
     name: canonical.name,
@@ -95,20 +95,20 @@ export function renderWorkspaceManifest({ workspace, compatibility = {} }) {
   return YAML.stringify(document, { lineWidth: 0 });
 }
 
-export function workspaceManifestRevision(content) {
+export function workspaceManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerWorkspaceManifestRepository(runtime) {
-  function workspaceMetadataPath(targetRoot) {
+export function registerWorkspaceManifestRepository(runtime: any) {
+  function workspaceMetadataPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), '.buildr', 'workspace.yml');
   }
 
-  function workspaceSkillsManifestPath(targetRoot) {
+  function workspaceSkillsManifestPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), 'skills', 'manifest.yml');
   }
 
-  function readWorkspacePersistence(targetRoot) {
+  function readWorkspacePersistence(targetRoot: any) {
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
     const metadataPath = workspaceMetadataPath(root);
@@ -131,7 +131,7 @@ export function registerWorkspaceManifestRepository(runtime) {
     };
   }
 
-  function writeWorkspaceManifest(file, content) {
+  function writeWorkspaceManifest(file: any, content: any) {
     runtime.atomicWriteFile(file, content);
   }
 

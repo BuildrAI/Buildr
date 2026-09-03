@@ -6,7 +6,7 @@ import {
   parseWorkspaceManifest,
   renderWorkspaceManifest,
   workspaceManifestRevision,
-} from '../../src/workspace/persistence/workspace-manifest-repository.mjs';
+} from '../../src/workspace/persistence/workspace-manifest-repository.ts';
 
 const WORKSPACE_ID = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
 

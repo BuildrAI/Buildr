@@ -18,7 +18,7 @@ import {
 } from '../task/module.ts';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.ts';
-import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.mjs';
+import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.mjs';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.mjs';
 import { registerInfrastructure } from '../infrastructure/index.mjs';

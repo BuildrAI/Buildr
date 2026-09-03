@@ -1,29 +1,29 @@
-import { ensureRegisteredTarget, registerWorkspaceApplication } from './application/workspace-application.mjs';
-import { registerWorkspaceOperations } from './application/workspace-operations.mjs';
-import { registerProjectApplication } from './application/project-application.mjs';
-import { registerServiceApplication } from './application/service-application.mjs';
-import { registerProjectDailyProgressApplication } from './application/project-daily-progress-application.mjs';
-import { registerWorkspaceManifestRepository } from './persistence/workspace-manifest-repository.mjs';
-import { registerProjectManifestRepository } from './persistence/project-manifest-repository.mjs';
-import { registerServiceManifestRepository } from './persistence/service-manifest-repository.mjs';
-import { registerWorkspaceRegistryRepository } from './persistence/workspace-registry-repository.mjs';
-import { registerProjectDailyProgressRepository } from './persistence/project-daily-progress-repository.mjs';
-import { registerWorkspaceCliAdapter } from './interfaces/cli/workspace.mjs';
-import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.mjs';
-import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.mjs';
-import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.mjs';
-import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.mjs';
+import { ensureRegisteredTarget, registerWorkspaceApplication } from './application/workspace-application.ts';
+import { registerWorkspaceOperations } from './application/workspace-operations.ts';
+import { registerProjectApplication } from './application/project-application.ts';
+import { registerServiceApplication } from './application/service-application.ts';
+import { registerProjectDailyProgressApplication } from './application/project-daily-progress-application.ts';
+import { registerWorkspaceManifestRepository } from './persistence/workspace-manifest-repository.ts';
+import { registerProjectManifestRepository } from './persistence/project-manifest-repository.ts';
+import { registerServiceManifestRepository } from './persistence/service-manifest-repository.ts';
+import { registerWorkspaceRegistryRepository } from './persistence/workspace-registry-repository.ts';
+import { registerProjectDailyProgressRepository } from './persistence/project-daily-progress-repository.ts';
+import { registerWorkspaceCliAdapter } from './interfaces/cli/workspace.ts';
+import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.ts';
+import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.ts';
+import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.ts';
 
-export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-root-gitignore-entries.mjs';
-export { createProject, createProjectSource, isProjectCode, isProjectId } from './domain/project.mjs';
-export { createService, createServiceSource, isServiceCode, isServiceId } from './domain/service.mjs';
-export { createWorkspace, isWorkspaceId } from './domain/workspace.mjs';
-export { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.mjs';
-export { parseProjectsManifest, renderProjectsManifest } from './persistence/project-manifest-repository.mjs';
-export { parseServicesManifest, renderServicesDomainManifest } from './persistence/service-manifest-repository.mjs';
-export { parseWorkspaceManifest } from './persistence/workspace-manifest-repository.mjs';
-export { buildrWebDataRoot, readWorkspaceRegistryFile } from './persistence/workspace-registry-repository.mjs';
-export { ensureRegisteredTarget } from './application/workspace-application.mjs';
+export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-root-gitignore-entries.ts';
+export { createProject, createProjectSource, isProjectCode, isProjectId } from './domain/project.ts';
+export { createService, createServiceSource, isServiceCode, isServiceId } from './domain/service.ts';
+export { createWorkspace, isWorkspaceId } from './domain/workspace.ts';
+export { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+export { parseProjectsManifest, renderProjectsManifest } from './persistence/project-manifest-repository.ts';
+export { parseServicesManifest, renderServicesDomainManifest } from './persistence/service-manifest-repository.ts';
+export { parseWorkspaceManifest } from './persistence/workspace-manifest-repository.ts';
+export { buildrWebDataRoot, readWorkspaceRegistryFile } from './persistence/workspace-registry-repository.ts';
+export { ensureRegisteredTarget } from './application/workspace-application.ts';
 export {
   PROJECT_DAILY_PROGRESS_SCHEMA,
   PROJECT_DAILY_PROGRESS_SCHEMA_V1,
@@ -37,7 +37,7 @@ export {
   normalizeDailyProgressDocument,
   normalizeDailyProgressGroup,
   normalizeDailyProgressPayload,
-} from './domain/project-daily-progress.mjs';
+} from './domain/project-daily-progress.ts';
 
 export const WORKSPACE_MODULE_ID = 'workspace-core';
 export const WORKSPACE_APPLICATION = 'workspace.application';
@@ -69,8 +69,8 @@ const WORKSPACE_QUERY_METHODS = Object.freeze([
   'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
 ]);
 
-function pick(source, methods) {
-  return Object.freeze(Object.fromEntries(methods.map((method) => [method, (...args) => source[method](...args)])));
+function pick(source: any, methods: any) {
+  return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => source[method](...args)])));
 }
 
 export function createWorkspaceCliContributions() {
@@ -87,8 +87,8 @@ export function createWorkspaceCliContributions() {
         '--title 继续作为 --name 的 legacy compatibility 输入，但 canonical help 和输出统一使用 --name。',
         'Project baseline 包含 commands.yml；它只引用 workspace Command catalog，不复制 executable、probe 或 install hint。',
       ],
-      match: ({ domain, action }) => domain === 'project' && action === 'create',
-      run: (runtime, context) => runtime.createProject(context.argv.slice(4)),
+      match: ({ domain, action }: any) => domain === 'project' && action === 'create',
+      run: (runtime: any, context: any) => runtime.createProject(context.argv.slice(4)),
     }),
     Object.freeze({
       key: 'service create', surface: 'primary',
@@ -102,8 +102,8 @@ export function createWorkspaceCliContributions() {
         '--title 和 --branch 继续作为 --name、--integration-branch 的 legacy compatibility 输入。',
         'Service 规则入口是 Service 目录中的 AGENTS.md，不在 Service registry 中记录规则路径。',
       ],
-      match: ({ domain, action }) => domain === 'service' && action === 'create',
-      run: (runtime, context) => runtime.createService(context.argv.slice(4)),
+      match: ({ domain, action }: any) => domain === 'service' && action === 'create',
+      run: (runtime: any, context: any) => runtime.createService(context.argv.slice(4)),
     }),
     Object.freeze({
       key: 'project daily-progress record', surface: 'agent-machine',
@@ -116,8 +116,8 @@ export function createWorkspaceCliContributions() {
         '一天一份，校验通过后原子覆盖；他人提交不得挂 Task，存在的 Task ID 必须本机已有，否则整次失败且不写文件。',
         '该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
-      run: (runtime, context) => projectDailyProgressCommand(runtime, 'record', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
+      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'record', context.argv.slice(5)),
     }),
     Object.freeze({
       key: 'project daily-progress inspect', surface: 'agent-machine',
@@ -128,8 +128,8 @@ export function createWorkspaceCliContributions() {
         '只读查看已保存的本机每日演进文件并解析仍存在的 Task 摘要。',
         '文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
-      run: (runtime, context) => projectDailyProgressCommand(runtime, 'inspect', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
+      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'inspect', context.argv.slice(5)),
     }),
     Object.freeze({
       key: 'project daily-progress list', surface: 'agent-machine',
@@ -139,17 +139,17 @@ export function createWorkspaceCliContributions() {
         '',
         '只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
-      run: (runtime, context) => projectDailyProgressCommand(runtime, 'list', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
+      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'list', context.argv.slice(5)),
     }),
   ]);
 }
 
-export function createWorkspaceModule(runtime, { readProductIdentity, webProfileContract, agentRuntimeCapability = null } = {}) {
+export function createWorkspaceModule(runtime: any, { readProductIdentity, webProfileContract, agentRuntimeCapability = null }: any = {}) {
   return Object.freeze({
     id: WORKSPACE_MODULE_ID,
     requires: Object.freeze(agentRuntimeCapability ? [agentRuntimeCapability] : []),
-    create(requires) {
+    create(requires: any) {
       const agentRuntime = agentRuntimeCapability ? requires[agentRuntimeCapability] : {};
       Object.assign(runtime, agentRuntime);
       registerWorkspaceManifestRepository(runtime);
@@ -159,8 +159,8 @@ export function createWorkspaceModule(runtime, { readProductIdentity, webProfile
       registerProjectDailyProgressRepository(runtime);
       Object.assign(runtime, {
         resolveSourceRoot,
-        resolveProjectRoot: (targetRoot, project) => resolveSourceRoot(targetRoot, project.source),
-        resolveServiceRoot: (targetRoot, service) => resolveSourceRoot(targetRoot, service.source),
+        resolveProjectRoot: (targetRoot: any, project: any) => resolveSourceRoot(targetRoot, project.source),
+        resolveServiceRoot: (targetRoot: any, service: any) => resolveSourceRoot(targetRoot, service.source),
         sourceIdentity,
         sourceOwnership,
         sourceRootKind,
@@ -172,7 +172,7 @@ export function createWorkspaceModule(runtime, { readProductIdentity, webProfile
       registerProjectDailyProgressApplication(runtime);
       registerWorkspaceCliAdapter(runtime);
       registerWorkspaceManagementFence(runtime, { oppositeWebProfile: webProfileContract?.oppositeWebProfile });
-      runtime.ensureRegisteredTarget = (targetRoot) => ensureRegisteredTarget(runtime, targetRoot);
+      runtime.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(runtime, targetRoot);
 
       const workspace = Object.freeze({
         ...pick(runtime, WORKSPACE_METHODS),

@@ -1,4 +1,4 @@
-import { WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.mjs';
+import { WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
 import { registerDomainsCommands } from './application/commands.mjs';
 import { registerDomainsComponents } from './application/components.mjs';
 import { registerApplicationPackageMaintenance } from './application/package-maintenance.mjs';

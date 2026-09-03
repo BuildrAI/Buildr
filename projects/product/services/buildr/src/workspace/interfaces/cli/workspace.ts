@@ -5,38 +5,40 @@ import process from 'node:process';
 import { execFileSync, spawnSync } from '../../../infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
 import YAML from 'yaml';
-import { createProject as createProjectEntity } from '../../domain/project.mjs';
-import { createService as createServiceEntity } from '../../domain/service.mjs';
+import { createProject as createProjectEntity } from '../../domain/project.ts';
+import { createService as createServiceEntity } from '../../domain/service.ts';
 import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.mjs';
-import { parseProjectsManifest, renderProjectsManifest } from '../../persistence/project-manifest-repository.mjs';
+import { parseProjectsManifest, renderProjectsManifest } from '../../persistence/project-manifest-repository.ts';
 
-export function registerWorkspaceCliAdapter(runtime) {
-  const readGitRemote = (...args) => runtime.readGitRemote(...args);
-  const gitignoreLines = (...args) => runtime.gitignoreLines(...args);
-  const isPlainObject = (...args) => runtime.isPlainObject(...args);
-  const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);
-  const positionalArgs = (...args) => runtime.positionalArgs(...args);
-  const readPackageManifest = (...args) => runtime.readPackageManifest(...args);
-  const parseManifestFileEntry = (...args) => runtime.parseManifestFileEntry(...args);
-  const isValidAssetId = (...args) => runtime.isValidAssetId(...args);
-  const assertName = (...args) => runtime.assertName(...args);
-  const renderSkillsManifestYaml = (...args) => runtime.renderSkillsManifestYaml(...args);
-  const renderProjectCapabilitiesYaml = (...args) => runtime.renderProjectCapabilitiesYaml(...args);
-  const renderProjectCommandsYaml = (...args) => runtime.renderProjectCommandsYaml(...args);
-  const optionValue = (...args) => runtime.optionValue(...args);
-  const ensureDirectory = (...args) => runtime.ensureDirectory(...args);
-  const atomicWriteFile = (...args) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args) => runtime.parseYamlDocument(...args);
-  const sameGitIdentity = (...args) => runtime.sameGitIdentity(...args);
-  const withWorkspaceMutation = (...args) => runtime.withWorkspaceMutation(...args);
-  const writeIfMissing = (...args) => runtime.writeIfMissing(...args);
-  const writeMappedFileIfMissing = (...args) => runtime.writeMappedFileIfMissing(...args);
-  const appendGitignoreEntries = (...args) => runtime.appendGitignoreEntries(...args);
-  const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args) => runtime.existsDirectory(...args);
-  const existsFile = (...args) => runtime.existsFile(...args);
+const declarationIntakeAction: any = declarationIntakeNextAction;
 
-  function parseProjectRef(ref) {
+export function registerWorkspaceCliAdapter(runtime: any) {
+  const readGitRemote = (...args: any[]) => runtime.readGitRemote(...args);
+  const gitignoreLines = (...args: any[]) => runtime.gitignoreLines(...args);
+  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
+  const assertNoUnknownOptions = (...args: any[]) => runtime.assertNoUnknownOptions(...args);
+  const positionalArgs = (...args: any[]) => runtime.positionalArgs(...args);
+  const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
+  const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
+  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
+  const assertName = (...args: any[]) => runtime.assertName(...args);
+  const renderSkillsManifestYaml = (...args: any[]) => runtime.renderSkillsManifestYaml(...args);
+  const renderProjectCapabilitiesYaml = (...args: any[]) => runtime.renderProjectCapabilitiesYaml(...args);
+  const renderProjectCommandsYaml = (...args: any[]) => runtime.renderProjectCommandsYaml(...args);
+  const optionValue = (...args: any[]) => runtime.optionValue(...args);
+  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
+  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
+  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
+  const sameGitIdentity = (...args: any[]) => runtime.sameGitIdentity(...args);
+  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
+  const writeIfMissing = (...args: any[]) => runtime.writeIfMissing(...args);
+  const writeMappedFileIfMissing = (...args: any[]) => runtime.writeMappedFileIfMissing(...args);
+  const appendGitignoreEntries = (...args: any[]) => runtime.appendGitignoreEntries(...args);
+  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
+  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
+  const existsFile = (...args: any[]) => runtime.existsFile(...args);
+
+  function parseProjectRef(ref: any) {
     const parts = ref.split('/').filter(Boolean);
     if (parts.length === 1) {
       assertName(parts[0], 'Project');
@@ -45,7 +47,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     throw new Error(`Project ref must be <project>. Organization-prefixed refs are not supported: ${ref}`);
   }
 
-  function parseServiceRef(ref) {
+  function parseServiceRef(ref: any) {
     const parts = ref.split('/').filter(Boolean);
     if (parts.length === 2) {
       assertName(parts[0], 'Project');
@@ -55,44 +57,44 @@ export function registerWorkspaceCliAdapter(runtime) {
     throw new Error(`Service ref must be <project>/<service>. Organization-prefixed refs are not supported: ${ref}`);
   }
 
-  function isGitUrl(value) {
+  function isGitUrl(value: any) {
     return /^(https?:\/\/|ssh:\/\/|git@)/.test(value) || /\.git$/.test(value);
   }
 
-  function isProjectGitUrl(value) {
+  function isProjectGitUrl(value: any) {
     return /^(https?:\/\/|ssh:\/\/|git@|file:\/\/)/.test(value);
   }
 
-  function quoteYaml(value) {
-    if (Array.isArray(value)) return JSON.stringify(value.map((item) => String(item)));
+  function quoteYaml(value: any) {
+    if (Array.isArray(value)) return JSON.stringify(value.map((item: any) => String(item)));
     if (typeof value === 'boolean') return value ? 'true' : 'false';
     return JSON.stringify(String(value));
   }
 
-  function parseYamlValue(value) {
+  function parseYamlValue(value: any) {
     const document = YAML.parseDocument(value, { uniqueKeys: true, prettyErrors: true });
-    if (document.errors.length) throw new Error(`Invalid YAML value: ${value} (${document.errors.map((error) => error.message).join('; ')})`);
+    if (document.errors.length) throw new Error(`Invalid YAML value: ${value} (${document.errors.map((error: any) => error.message).join('; ')})`);
     return document.toJS();
   }
 
-  function parseServicesYaml(content) {
+  function parseServicesYaml(content: any) {
     const parsed = parseYamlDocument(content, 'legacy services.yml');
     return isPlainObject(parsed.services) ? parsed.services : parsed;
   }
 
-  function parseServicesManifestYaml(content) {
+  function parseServicesManifestYaml(content: any) {
     const manifest = parseYamlDocument(content, 'services/manifest.yml');
     if (!isPlainObject(manifest.services)) manifest.services = {};
     return manifest;
   }
 
-  function parseProjectsYaml(content) {
+  function parseProjectsYaml(content: any) {
     const registry = parseYamlDocument(content, 'projects/manifest.yml');
     if (!isPlainObject(registry.projects)) registry.projects = {};
     return registry;
   }
 
-  function renderProjectsYaml(registry) {
+  function renderProjectsYaml(registry: any) {
     if (registry.schemaVersion === 'buildr.projects/v2') return renderProjectsManifest(registry.projects || {});
     const projects = registry.projects || {};
     const names = Object.keys(projects).sort();
@@ -119,16 +121,16 @@ export function registerWorkspaceCliAdapter(runtime) {
     return `${lines.join('\n')}\n`;
   }
 
-  function validateProjectsRegistry(registry) {
+  function validateProjectsRegistry(registry: any) {
     if (registry?.schemaVersion === 'buildr.projects/v2') {
       try {
         parseProjectsManifest(YAML.stringify(registry));
         return [];
-      } catch (error) {
+      } catch (error: any) {
         return [error.message];
       }
     }
-    const errors = [];
+    const errors: any[] = [];
     if (String(registry.schemaVersion) !== 'buildr.projects/v1') {
       errors.push('projects/manifest.yml schemaVersion must be buildr.projects/v1.');
     }
@@ -137,7 +139,7 @@ export function registerWorkspaceCliAdapter(runtime) {
       return errors;
     }
 
-    for (const [projectName, project] of Object.entries(registry.projects)) {
+    for (const [projectName, project] of Object.entries(registry.projects as Record<string, any>)) {
       const label = `projects.${projectName}`;
       if (!isValidAssetId(projectName)) {
         errors.push(`${label} key must contain only letters, digits, dots, underscores, or dashes.`);
@@ -185,7 +187,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     return errors;
   }
 
-  function renderServicesManifestYaml(manifest) {
+  function renderServicesManifestYaml(manifest: any) {
     if (manifest.schemaVersion === 'buildr.services/v2') return runtime.renderServicesDomainManifest(manifest.projectId, manifest.services || {});
     const services = manifest.services || {};
     const names = Object.keys(services).sort();
@@ -212,16 +214,16 @@ export function registerWorkspaceCliAdapter(runtime) {
     return `${lines.join('\n')}\n`;
   }
 
-  function validateServicesManifest(manifest, expectedProject) {
+  function validateServicesManifest(manifest: any, expectedProject: any) {
     if (manifest?.schemaVersion === 'buildr.services/v2') {
       try {
         runtime.parseServicesManifest(YAML.stringify(manifest), { projectCode: expectedProject });
         return [];
-      } catch (error) {
+      } catch (error: any) {
         return [error.message];
       }
     }
-    const errors = [];
+    const errors: any[] = [];
     if (manifest.schemaVersion !== 'buildr.services/v1') {
       errors.push('services/manifest.yml schemaVersion must be buildr.services/v1.');
     }
@@ -232,7 +234,7 @@ export function registerWorkspaceCliAdapter(runtime) {
       errors.push('services/manifest.yml services must be an object.');
       return errors;
     }
-    for (const [serviceName, service] of Object.entries(manifest.services)) {
+    for (const [serviceName, service] of Object.entries(manifest.services as Record<string, any>)) {
       const label = `services.${serviceName}`;
       if (!isValidAssetId(serviceName)) {
         errors.push(`${label} key must contain only letters, digits, dots, underscores, or dashes.`);
@@ -273,54 +275,54 @@ export function registerWorkspaceCliAdapter(runtime) {
     return errors;
   }
 
-  function readProjectsRegistryForWrite(targetRoot) {
+  function readProjectsRegistryForWrite(targetRoot: any) {
     const file = projectsManifestPath(targetRoot);
     if (!existsFile(file)) return { schemaVersion: 'buildr.projects/v1', projects: {} };
     const registry = parseProjectsYaml(fs.readFileSync(file, 'utf8'));
     const errors = validateProjectsRegistry(registry)
-      .filter((message) => !message.endsWith('.title is required.'))
-      .filter((message) => !message.endsWith('.description is required.'));
+      .filter((message: any) => !message.endsWith('.title is required.'))
+      .filter((message: any) => !message.endsWith('.description is required.'));
     if (errors.length > 0) {
       throw new Error(`projects/manifest.yml is invalid:\n- ${errors.join('\n- ')}`);
     }
     return registry;
   }
 
-  function writeProjectsRegistry(targetRoot, registry) {
+  function writeProjectsRegistry(targetRoot: any, registry: any) {
     const file = projectsManifestPath(targetRoot);
     atomicWriteFile(file, renderProjectsYaml(registry));
     return file;
   }
 
-  function projectsManifestPath(targetRoot) {
+  function projectsManifestPath(targetRoot: any) {
     return path.join(targetRoot, 'projects', 'manifest.yml');
   }
 
-  function servicesManifestPath(projectRoot) {
+  function servicesManifestPath(projectRoot: any) {
     return path.join(projectRoot, 'services', 'manifest.yml');
   }
 
-  function readServicesManifestForWrite(projectRoot, projectName) {
+  function readServicesManifestForWrite(projectRoot: any, projectName: any) {
     const file = servicesManifestPath(projectRoot);
     if (!existsFile(file)) return { schemaVersion: 'buildr.services/v1', project: projectName, services: {} };
     const manifest = parseServicesManifestYaml(fs.readFileSync(file, 'utf8'));
     const errors = validateServicesManifest(manifest, projectName)
-      .filter((message) => !message.endsWith('.title is required.'))
-      .filter((message) => !message.endsWith('.description is required.'))
-      .filter((message) => !message.endsWith('.type is required.'));
+      .filter((message: any) => !message.endsWith('.title is required.'))
+      .filter((message: any) => !message.endsWith('.description is required.'))
+      .filter((message: any) => !message.endsWith('.type is required.'));
     if (errors.length > 0) {
       throw new Error(`services/manifest.yml is invalid:\n- ${errors.join('\n- ')}`);
     }
     return manifest;
   }
 
-  function writeServicesManifest(projectRoot, manifest) {
+  function writeServicesManifest(projectRoot: any, manifest: any) {
     const file = servicesManifestPath(projectRoot);
     atomicWriteFile(file, renderServicesManifestYaml(manifest));
     return file;
   }
 
-  function updateServicesManifest(projectRoot, projectName, serviceName, metadata) {
+  function updateServicesManifest(projectRoot: any, projectName: any, serviceName: any, metadata: any) {
     const manifest = readServicesManifestForWrite(projectRoot, projectName);
     manifest.schemaVersion = 'buildr.services/v1';
     manifest.project = projectName;
@@ -328,11 +330,11 @@ export function registerWorkspaceCliAdapter(runtime) {
     return writeServicesManifest(projectRoot, manifest);
   }
 
-  function gitOutput(args, cwd) {
+  function gitOutput(args: any, cwd: any) {
     return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   }
 
-  function gitCurrentBranch(repoPath) {
+  function gitCurrentBranch(repoPath: any) {
     try {
       const branch = gitOutput(['symbolic-ref', '--short', 'HEAD'], repoPath);
       return branch || 'HEAD';
@@ -341,7 +343,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     }
   }
 
-  function gitDefaultBranch(repoPath, remote = 'origin') {
+  function gitDefaultBranch(repoPath: any, remote: any = 'origin') {
     const remoteUrl = readGitRemote(repoPath, remote);
     if (remoteUrl) {
       const result = spawnSync('git', ['ls-remote', '--symref', remoteUrl, 'HEAD'], {
@@ -362,12 +364,12 @@ export function registerWorkspaceCliAdapter(runtime) {
     }
   }
 
-  function pathInside(parent, child) {
+  function pathInside(parent: any, child: any) {
     const relative = path.relative(parent, child);
     return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
   }
 
-  function attachedGitSource(rawPath, targetRoot, remote, integrationBranch, label) {
+  function attachedGitSource(rawPath: any, targetRoot: any, remote: any, integrationBranch: any, label: any) {
     const requested = path.resolve(rawPath);
     if (!path.isAbsolute(rawPath) || path.normalize(rawPath) !== rawPath) throw new Error(`${label} --attach must be a normalized absolute path.`);
     if (!existsDirectory(requested)) throw new Error(`${label} attached root does not exist: ${rawPath}`);
@@ -385,26 +387,26 @@ export function registerWorkspaceCliAdapter(runtime) {
     return { rootPath: actual, source: { type: 'git', root: 'attached', path: actual, git: { url, remote, integrationBranch: branch } } };
   }
 
-  function assertGitBranch(value) {
+  function assertGitBranch(value: any) {
     if (!value) return;
     const result = spawnSync('git', ['check-ref-format', '--branch', value], { encoding: 'utf8' });
     if (result.status !== 0) throw new Error(`Invalid Git branch: ${value}`);
   }
 
-  function defaultAssetDescription(kind, id) {
+  function defaultAssetDescription(kind: any, id: any) {
     return `TODO: 补充 ${kind} ${id} 的用途说明。`;
   }
 
-  function inferRepoKind(assetRoot) {
+  function inferRepoKind(assetRoot: any) {
     return existsDirectory(path.join(assetRoot, '.git')) ? 'git' : 'workspace';
   }
 
-  function ensureIgnoreEntry(repoRoot, pattern) {
+  function ensureIgnoreEntry(repoRoot: any, pattern: any) {
     const changed = appendGitignoreEntries(path.join(repoRoot, '.gitignore'), [pattern]);
     return changed ? toPosixRelative(process.cwd(), path.join(repoRoot, '.gitignore')) : null;
   }
 
-  function gitBoundaryFor(targetRoot, item) {
+  function gitBoundaryFor(targetRoot: any, item: any) {
     if (!existsDirectory(path.join(item.assetRoot, '.git'))) return null;
     const projectRoot = path.join(targetRoot, 'projects', item.project);
     if (item.type === 'project') {
@@ -422,8 +424,8 @@ export function registerWorkspaceCliAdapter(runtime) {
     return null;
   }
 
-  function ensureGitBoundaries(targetRoot, items) {
-    const changed = [];
+  function ensureGitBoundaries(targetRoot: any, items: any) {
+    const changed: any[] = [];
     for (const item of items) {
       const boundary = gitBoundaryFor(targetRoot, item);
       if (!boundary) continue;
@@ -433,19 +435,19 @@ export function registerWorkspaceCliAdapter(runtime) {
     return [...new Set(changed)];
   }
 
-  function gitBoundaryIgnored(boundary) {
+  function gitBoundaryIgnored(boundary: any) {
     if (!boundary) return true;
     const lines = gitignoreLines(boundary.repoRoot);
     return lines.includes(boundary.pattern);
   }
 
-  function trackWrite(targetRoot, file, content, created) {
+  function trackWrite(targetRoot: any, file: any, content: any, created: any) {
     if (writeIfMissing(file, content)) {
       created.push(path.relative(targetRoot, file).split(path.sep).join('/'));
     }
   }
 
-  function printResult(title, targetRoot, created, changed = [], nextActions = []) {
+  function printResult(title: any, targetRoot: any, created: any, changed: any = [], nextActions: any = []) {
     console.log(title);
     if (created.length > 0) {
       console.log('Created:');
@@ -458,11 +460,11 @@ export function registerWorkspaceCliAdapter(runtime) {
     for (const action of nextActions) console.log(`Next: ${action}`);
   }
 
-  function displayScope(scope) {
+  function displayScope(scope: any) {
     return scope === '.' ? 'root (.)' : scope;
   }
 
-  function createProject(args) {
+  function createProject(args: any) {
     const allowedFlags = new Set(['--target', '--repo', '--attach', '--name', '--title', '--description', '--remote', '--integration-branch']);
     assertNoUnknownOptions(args, allowedFlags);
     const ref = positionalArgs(args)[0];
@@ -479,8 +481,8 @@ export function registerWorkspaceCliAdapter(runtime) {
     if (repoRef && attachRef) throw new Error('--repo and --attach are mutually exclusive.');
     const attachment = attachRef ? attachedGitSource(attachRef, targetRoot, remoteOption, integrationBranchOption, 'Project') : null;
     const projectRoot = attachment?.rootPath || path.join(targetRoot, 'projects', project);
-    const created = [];
-    const changed = [];
+    const created: any[] = [];
+    const changed: any[] = [];
     const manifest = readPackageManifest();
     const registryRecord = runtime.readProjectRegistryRecord(targetRoot);
     if (registryRecord.registry.migrationRequired) {
@@ -596,7 +598,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     });
   }
 
-  function createService(args) {
+  function createService(args: any) {
     assertNoUnknownOptions(args, new Set(['--target', '--attach', '--name', '--title', '--description', '--type', '--rules', '--branch', '--integration-branch', '--remote', '--json']), new Set(['--json']));
     const positional = positionalArgs(args);
     const ref = positional[0];
@@ -621,7 +623,7 @@ export function registerWorkspaceCliAdapter(runtime) {
     const projectRoot = parentProject ? runtime.resolveProjectRoot(targetRoot, parentProject) : path.join(targetRoot, 'projects', project);
     const servicesRoot = path.join(projectRoot, 'services');
     const servicePath = path.join(servicesRoot, service);
-    const changed = [];
+    const changed: any[] = [];
 
     if (!fs.existsSync(projectRoot)) {
       createProject([project, '--target', targetRoot]);
@@ -660,7 +662,7 @@ export function registerWorkspaceCliAdapter(runtime) {
       const actualBranch = gitCurrentBranch(servicePath);
       if (requestedBranch && actualBranch !== requestedBranch) throw new Error(`Service branch conflicts for ${project}/${service}: expected ${requestedBranch}, actual ${actualBranch}.`);
     }
-    const localPath = gitSource ? null : path.resolve(repoRef);
+    const localPath: any = gitSource ? null : path.resolve(repoRef);
     if (!gitSource && !fs.existsSync(localPath)) throw new Error(`Local service source path does not exist: ${repoRef}`);
     if (!gitSource && fs.existsSync(servicePath)) throw new Error(`Service target already exists: projects/${project}/services/${service}`);
 
@@ -674,7 +676,7 @@ export function registerWorkspaceCliAdapter(runtime) {
           const entity = createServiceEntity({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspaceId, projectId: registryRecord.project.id, projectCode: project, code: service, name: nameInput || existingEntry?.name || service, description: descriptionInput || existingEntry?.description || defaultAssetDescription('Service', service), type: serviceType || existingEntry?.type || 'service', source: attachment.source });
           runtime.writeServiceRegistry(registryRecord.manifestPath, registryRecord.project.id, { ...registryRecord.services, [service]: entity }, project);
           changed.push(toPosixRelative(targetRoot, registryRecord.manifestPath));
-          const nextActions = [declarationIntakeNextAction({ trigger: 'service-registered', project, services: [service] })];
+          const nextActions: any[] = [declarationIntakeAction({ trigger: 'service-registered', project, services: [service] })];
           if (jsonOutput) console.log(JSON.stringify({ ...runtime.serviceDetail(targetRoot, project, service), changed, nextActions }, null, 2));
           else printResult(`Attached service ${project}/${service}`, targetRoot, [], changed, nextActions);
           return;
@@ -713,7 +715,7 @@ export function registerWorkspaceCliAdapter(runtime) {
         const metadataPath = registryRecord.manifestPath;
         changed.push(path.relative(targetRoot, metadataPath).split(path.sep).join('/'));
         for (const file of ensureGitBoundaries(targetRoot, [{ type: 'service', project, service, assetRoot: servicePath }])) changed.push(file);
-        const nextActions = [declarationIntakeNextAction({ trigger: 'service-registered', project, services: [service] })];
+        const nextActions: any[] = [declarationIntakeAction({ trigger: 'service-registered', project, services: [service] })];
         if (jsonOutput) console.log(JSON.stringify({ ...runtime.serviceDetail(targetRoot, project, service), changed, nextActions }, null, 2));
         else printResult(`Created service ${project}/${service}`, targetRoot, [], changed, nextActions);
       } finally {

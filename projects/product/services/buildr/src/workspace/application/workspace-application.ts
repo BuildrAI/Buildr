@@ -1,17 +1,19 @@
-import { createWorkspace, isWorkspaceId } from '../domain/workspace.mjs';
+import { createWorkspace, isWorkspaceId } from '../domain/workspace.ts';
 import process from 'node:process';
-import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.mjs';
+import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
-function workspaceError(code, message, status = 400, details = undefined) {
-  const error = new Error(message);
+const declarationIntakeAction: any = declarationIntakeNextAction;
+
+function workspaceError(code: any, message: any, status: any = 400, details: any = undefined) {
+  const error: Error & Record<string, any> = new Error(message);
   error.code = code;
   error.status = status;
   if (details !== undefined) error.details = details;
   return error;
 }
 
-export function resolveWorkspaceIdentity(workspaceId, skillsWorkspaceId, generateId = () => null) {
+export function resolveWorkspaceIdentity(workspaceId: any, skillsWorkspaceId: any, generateId: any = () => null) {
   if (workspaceId !== null && workspaceId !== undefined && !isWorkspaceId(workspaceId)) {
     throw workspaceError('workspace_identity_invalid', '.buildr/workspace.yml.id 必须是 UUID。', 409, { path: '.buildr/workspace.yml' });
   }
@@ -29,25 +31,25 @@ export function resolveWorkspaceIdentity(workspaceId, skillsWorkspaceId, generat
   return workspaceId || skillsWorkspaceId || generateId();
 }
 
-export function ensureRegisteredTarget(runtime, targetRoot) {
+export function ensureRegisteredTarget(runtime: any, targetRoot: any) {
   if (!targetRoot) return null;
   const root = runtime.path.resolve(targetRoot);
   runtime.assertInitializedBuildrWorkspace(root);
   let registry = runtime.listRegisteredWorkspaces();
-  const existing = registry.workspaces.find((entry) => entry.rootPath === root);
+  const existing = registry.workspaces.find((entry: any) => entry.rootPath === root);
   if (!existing) registry = runtime.registerLocalWorkspace({ rootPath: root, revision: registry.revision });
-  const entry = registry.workspaces.find((item) => item.rootPath === root);
+  const entry = registry.workspaces.find((item: any) => item.rootPath === root);
   return entry?.workspace?.id || null;
 }
 
-export function registerWorkspaceApplication(runtime) {
+export function registerWorkspaceApplication(runtime: any) {
   const createWorkspaceId = () => runtime.crypto.randomUUID();
 
-  function readWorkspaceRecord(targetRoot) {
+  function readWorkspaceRecord(targetRoot: any) {
     let persistence;
     try {
       persistence = runtime.readWorkspacePersistence(targetRoot);
-    } catch (error) {
+    } catch (error: any) {
       if (error.code) throw error;
       throw workspaceError('workspace_metadata_invalid', error.message, 409, { path: '.buildr/workspace.yml' });
     }
@@ -68,7 +70,7 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function publicWorkspace(record) {
+  function publicWorkspace(record: any) {
     return {
       workspace: record.workspace,
       rootPath: record.root,
@@ -82,18 +84,18 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function getWorkspace(targetRoot) {
+  function getWorkspace(targetRoot: any) {
     return publicWorkspace(readWorkspaceRecord(targetRoot));
   }
 
-  function workspaceRegistryEntry(root) {
+  function workspaceRegistryEntry(root: any) {
     try {
       const record = readWorkspaceRecord(root);
       if (!record.workspace.id) {
         return { rootPath: root, status: 'migration_required', workspace: record.workspace, migrationRequired: true };
       }
       return { rootPath: root, status: 'ready', workspace: record.workspace, migrationRequired: record.migrationRequired };
-    } catch (error) {
+    } catch (error: any) {
       return {
         rootPath: root,
         status: runtime.existsDirectory(root) ? 'invalid' : 'unavailable',
@@ -117,11 +119,11 @@ export function registerWorkspaceApplication(runtime) {
       if (peers.length < 2) continue;
       for (const entry of peers) entry.status = 'identity_conflict';
     }
-    const lastOpened = entries.find((entry) => entry.rootPath === persistence.registry.lastOpenedRoot) || null;
+    const lastOpened = entries.find((entry: any) => entry.rootPath === persistence.registry.lastOpenedRoot) || null;
     return { schemaVersion: persistence.registry.schemaVersion, revision: persistence.revision, workspaces: entries, lastOpenedWorkspaceId: lastOpened?.workspace?.id || null };
   }
 
-  function registerLocalWorkspace(input) {
+  function registerLocalWorkspace(input: any) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw workspaceError('workspace_registry_input_invalid', 'Workspace 登记请求必须是对象。');
     for (const field of Object.keys(input)) {
       if (!new Set(['rootPath', 'revision', 'open']).has(field)) throw workspaceError('workspace_registry_field_forbidden', `Workspace 登记不支持字段：${field}。`);
@@ -129,14 +131,14 @@ export function registerWorkspaceApplication(runtime) {
     if (typeof input.rootPath !== 'string' || !input.rootPath.trim()) throw workspaceError('workspace_registry_root_required', '请选择 Workspace 目录。');
     const root = runtime.path.resolve(input.rootPath);
     try { runtime.canonicalWorkspaceManagementIdentity(root); }
-    catch (error) { throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, error.details); }
+    catch (error: any) { throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, error.details); }
     let candidate;
-    try { candidate = readWorkspaceRecord(root); } catch (error) {
+    try { candidate = readWorkspaceRecord(root); } catch (error: any) {
       throw workspaceError(error.code || 'workspace_registry_root_invalid', `无法登记 Workspace：${error.message}`, 409, { rootPath: root });
     }
     if (!candidate.workspace.id) throw workspaceError('workspace_registry_migration_required', '该 Workspace 需要先完成 canonical metadata 迁移。', 409, { rootPath: root });
     runtime.withWorkspaceManagementClaim(root, () => {
-      runtime.withWorkspaceRegistryMutation(input.revision, (current) => {
+      runtime.withWorkspaceRegistryMutation(input.revision, (current: any) => {
         const roots = current.roots;
         if (!roots.includes(root)) {
           for (const existingRoot of roots) {
@@ -160,7 +162,7 @@ export function registerWorkspaceApplication(runtime) {
     return listRegisteredWorkspaces();
   }
 
-  function removeRegisteredWorkspace(input) {
+  function removeRegisteredWorkspace(input: any) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw workspaceError('workspace_registry_input_invalid', 'Workspace 移除请求必须是对象。');
     for (const field of Object.keys(input)) {
       if (!new Set(['workspaceId', 'rootPath', 'revision']).has(field)) throw workspaceError('workspace_registry_field_forbidden', `Workspace 移除不支持字段：${field}。`);
@@ -168,16 +170,16 @@ export function registerWorkspaceApplication(runtime) {
     if (input.workspaceId === undefined && input.rootPath === undefined) throw workspaceError('workspace_registry_identity_invalid', 'Workspace 移除请求必须指定 workspaceId 或已登记 rootPath。');
     if (input.workspaceId !== undefined && !isWorkspaceId(input.workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const requestedRoot = input.rootPath === undefined ? null : runtime.path.resolve(input.rootPath);
-    let removed = null;
-    runtime.withWorkspaceRegistryMutation(input.revision, (current) => {
-      const matches = current.roots.filter((root) => requestedRoot ? root === requestedRoot : workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
+    let removed: any = null;
+    runtime.withWorkspaceRegistryMutation(input.revision, (current: any) => {
+      const matches = current.roots.filter((root: any) => requestedRoot ? root === requestedRoot : workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
       if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记。', 404);
       if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个目录，请按已登记 rootPath 移除。', 409);
       const entry = workspaceRegistryEntry(matches[0]);
       removed = { rootPath: matches[0], workspaceId: entry.workspace?.id || input.workspaceId || null };
       return {
         ...current,
-        roots: current.roots.filter((root) => root !== matches[0]),
+        roots: current.roots.filter((root: any) => root !== matches[0]),
         lastOpenedRoot: current.lastOpenedRoot === matches[0] ? null : current.lastOpenedRoot,
       };
     });
@@ -187,25 +189,25 @@ export function registerWorkspaceApplication(runtime) {
     return listRegisteredWorkspaces();
   }
 
-  function resolveRegisteredWorkspace(workspaceId, { touch = false } = {}) {
+  function resolveRegisteredWorkspace(workspaceId: any, { touch = false }: any = {}) {
     if (!isWorkspaceId(workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const persistence = runtime.readWorkspaceRegistryPersistence();
-    const matches = persistence.registry.roots.filter((root) => workspaceRegistryEntry(root).workspace?.id === workspaceId);
+    const matches = persistence.registry.roots.filter((root: any) => workspaceRegistryEntry(root).workspace?.id === workspaceId);
     if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记或当前不可用。', 404);
     if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个已登记目录。', 409);
     const current = readWorkspaceRecord(matches[0]);
     if (current.workspace.id !== workspaceId) throw workspaceError('workspace_registry_identity_mismatch', '已登记路径中的 Workspace identity 已变化。', 409);
     if (touch && persistence.registry.lastOpenedRoot !== matches[0]) {
       try {
-        runtime.withWorkspaceRegistryMutation(persistence.revision, (current) => ({ ...current, lastOpenedRoot: current.roots.includes(matches[0]) ? matches[0] : current.lastOpenedRoot }));
-      } catch (error) {
+        runtime.withWorkspaceRegistryMutation(persistence.revision, (current: any) => ({ ...current, lastOpenedRoot: current.roots.includes(matches[0]) ? matches[0] : current.lastOpenedRoot }));
+      } catch (error: any) {
         if (error.code !== 'workspace_registry_revision_conflict') throw error;
       }
     }
     return { rootPath: matches[0], workspace: publicWorkspace(current) };
   }
 
-  function workspaceMigrationPlan(targetRoot) {
+  function workspaceMigrationPlan(targetRoot: any) {
     const record = readWorkspaceRecord(targetRoot);
     return {
       required: record.migrationRequired,
@@ -219,7 +221,7 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function migrateWorkspaceMetadata(targetRoot) {
+  function migrateWorkspaceMetadata(targetRoot: any) {
     const before = readWorkspaceRecord(targetRoot);
     const workspaceId = before.resolvedWorkspaceId || createWorkspaceId();
     return runtime.withWorkspaceMutation(before.root, 'workspace.metadata.migrate', [before.metadataPath, before.skillsPath], () => {
@@ -238,7 +240,7 @@ export function registerWorkspaceApplication(runtime) {
         workspaceId,
         skills: current.skills.skills || [],
       });
-      const changed = [];
+      const changed: any[] = [];
       if (current.metadataContent !== metadataContent) {
         runtime.writeWorkspaceManifest(current.metadataPath, metadataContent);
         changed.push('.buildr/workspace.yml');
@@ -255,7 +257,7 @@ export function registerWorkspaceApplication(runtime) {
     });
   }
 
-  function updateWorkspaceMetadata(targetRoot, input) {
+  function updateWorkspaceMetadata(targetRoot: any, input: any) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw workspaceError('workspace_update_invalid', 'Workspace 修改请求必须是对象。');
     }
@@ -295,7 +297,7 @@ export function registerWorkspaceApplication(runtime) {
     });
   }
 
-  function generateWorkspaceCreatePrompt(input) {
+  function generateWorkspaceCreatePrompt(input: any) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw workspaceError('workspace_prompt_invalid', 'Workspace prompt 请求必须是对象。');
     }
@@ -332,7 +334,7 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function recoveryPrompt(rootPath, kind) {
+  function recoveryPrompt(rootPath: any, kind: any) {
     const action = kind === 'migration_required'
       ? '检查 Workspace metadata、确认正确 identity 后执行 canonical buildr sync <agent>'
       : '检查该目录是否应作为 Buildr Workspace 初始化，并在获得授权后执行 canonical buildr init --agent <agent>';
@@ -349,7 +351,7 @@ export function registerWorkspaceApplication(runtime) {
     ].join('\n');
   }
 
-  function inspectLocalWorkspaceCandidate(rootPath, revision) {
+  function inspectLocalWorkspaceCandidate(rootPath: any, revision: any) {
     const root = runtime.path.resolve(rootPath);
     try {
       const candidate = readWorkspaceRecord(root);
@@ -367,7 +369,7 @@ export function registerWorkspaceApplication(runtime) {
         rootPath: root,
         registry: registerLocalWorkspace({ rootPath: root, revision }),
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'workspace_identity_conflict') {
         return { status: 'identity_conflict', rootPath: root, message: error.message };
       }
@@ -383,7 +385,7 @@ export function registerWorkspaceApplication(runtime) {
     }
   }
 
-  function getWorkspaceGettingStarted(targetRoot, input = {}) {
+  function getWorkspaceGettingStarted(targetRoot: any, input: any = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw workspaceError('workspace_getting_started_invalid', '开始页请求必须是对象。');
     for (const field of Object.keys(input)) {
       throw workspaceError('workspace_getting_started_field_forbidden', `开始页不支持字段：${field}。`);
@@ -392,7 +394,7 @@ export function registerWorkspaceApplication(runtime) {
     let projects;
     try {
       projects = runtime.listProjects(targetRoot);
-    } catch (error) {
+    } catch (error: any) {
       return {
         workspace,
         phase: 'degraded',
@@ -403,7 +405,7 @@ export function registerWorkspaceApplication(runtime) {
         diagnostics: [{ code: error.code || 'project_registry_unavailable', message: error.message }],
       };
     }
-    const projectOptions = projects.projects.map((project) => ({ id: project.id, code: project.code, name: project.name, description: project.description }));
+    const projectOptions = projects.projects.map((project: any) => ({ id: project.id, code: project.code, name: project.name, description: project.description }));
     if (workspace.migrationRequired || projects.migrationRequired) {
       return {
         workspace,
@@ -426,8 +428,8 @@ export function registerWorkspaceApplication(runtime) {
         diagnostics: [],
       };
     }
-    const services = [];
-    const diagnostics = [];
+    const services: any[] = [];
+    const diagnostics: any[] = [];
     let incomplete = false;
     for (const project of projectOptions) {
       try {
@@ -437,7 +439,7 @@ export function registerWorkspaceApplication(runtime) {
           diagnostics.push(...(serviceRegistry.nextActions || []));
           continue;
         }
-        services.push(...serviceRegistry.services.map((service) => ({
+        services.push(...serviceRegistry.services.map((service: any) => ({
           id: service.id,
           code: service.code,
           name: service.name,
@@ -445,7 +447,7 @@ export function registerWorkspaceApplication(runtime) {
           type: service.type,
           projectCode: project.code,
         })));
-      } catch (error) {
+      } catch (error: any) {
         incomplete = true;
         diagnostics.push({ code: error.code || 'service_registry_unavailable', message: error.message });
       }
@@ -461,7 +463,7 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function generateStartWorkPrompt(targetRoot, input) {
+  function generateStartWorkPrompt(targetRoot: any, input: any) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw workspaceError('workspace_start_work_invalid', '开始工作请求必须是对象。');
     const allowed = new Set(['projectCode', 'serviceCode', 'goal']);
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw workspaceError('workspace_start_work_field_forbidden', `开始工作不支持字段：${field}。`);
@@ -471,7 +473,7 @@ export function registerWorkspaceApplication(runtime) {
     if (!projectCode || !goal) throw workspaceError('workspace_start_work_fields_required', '请选择项目并填写要完成的工作。');
     const workspace = getWorkspace(targetRoot);
     const project = runtime.projectDetail(targetRoot, projectCode).project;
-    let service = null;
+    let service: any = null;
     if (serviceCode) service = runtime.serviceDetail(targetRoot, projectCode, serviceCode).service;
     return {
       prompt: [
@@ -484,7 +486,7 @@ export function registerWorkspaceApplication(runtime) {
         '',
         '执行要求：',
         '1. 先读取当前工作空间、项目与可选服务范围的适用工作资产。',
-        `2. ${declarationIntakeNextAction({ trigger: 'first-task-scope', project: project.code, services: service ? [service.code] : [] })}`,
+        `2. ${declarationIntakeAction({ trigger: 'first-task-scope', project: project.code, services: service ? [service.code] : [] })}`,
         '3. 只在必要时询问范围、业务判断或授权；不要根据排序猜测其他项目或服务。',
         '4. 根据任务性质推进理解、设计、实现和验证，并按当前项目规则报告结果。',
       ].join('\n'),
@@ -492,7 +494,7 @@ export function registerWorkspaceApplication(runtime) {
     };
   }
 
-  function diagnoseWorkspaceMetadata(result, targetRoot) {
+  function diagnoseWorkspaceMetadata(result: any, targetRoot: any) {
     try {
       const workspace = getWorkspace(targetRoot);
       result.workspace.metadata = workspace;
@@ -510,7 +512,7 @@ export function registerWorkspaceApplication(runtime) {
           userActionRequired: true,
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       runtime.addDoctorFinding(result, 'error', error.code || 'workspace_metadata_invalid', error.message, {
         path: error.details?.path || '.buildr/workspace.yml',
         details: error.details,

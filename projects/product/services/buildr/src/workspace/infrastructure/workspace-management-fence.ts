@@ -8,8 +8,8 @@ export const WORKSPACE_MANAGEMENT_SCHEMA = 'buildr.workspace-web-management/v1';
 const OWNER_SCHEMA = 'buildr.workspace-web-management-owner/v1';
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 
-function managementError(code, message, details = undefined) {
-  const error = new Error(message);
+function managementError(code: any, message: any, details: any = undefined) {
+  const error: Error & Record<string, any> = new Error(message);
   error.code = code;
   error.status = 409;
   error.details = details;
@@ -17,12 +17,12 @@ function managementError(code, message, details = undefined) {
   return error;
 }
 
-function canonicalRoot(root) {
+function canonicalRoot(root: any) {
   const resolved = path.resolve(root);
   try { return fs.realpathSync.native(resolved); } catch { return fs.realpathSync(resolved); }
 }
 
-function previewOwnsWorkspace(targetRoot, env = process.env) {
+function previewOwnsWorkspace(targetRoot: any, env: any = process.env) {
   if (!env.BUILDR_LOCAL_APP_PREVIEW) return false;
   try {
     const owner = JSON.parse(env.BUILDR_LOCAL_APP_PREVIEW);
@@ -34,7 +34,7 @@ function previewOwnsWorkspace(targetRoot, env = process.env) {
   }
 }
 
-function ownerFor(profile) {
+function ownerFor(profile: any) {
   return Object.freeze({
     schemaVersion: OWNER_SCHEMA,
     profile: profile.profile,
@@ -44,7 +44,7 @@ function ownerFor(profile) {
   });
 }
 
-function validateOwner(value) {
+function validateOwner(value: any) {
   const fields = ['channel', 'profile', 'profileIdentity', 'runtimeRole', 'schemaVersion'];
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== fields.sort().join(',')) throw new Error('management owner fields are invalid');
   if (value.schemaVersion !== OWNER_SCHEMA) throw new Error('management owner schema is unsupported');
@@ -55,7 +55,7 @@ function validateOwner(value) {
   return Object.freeze({ ...value });
 }
 
-function validateManagementRecord(value) {
+function validateManagementRecord(value: any) {
   const fields = ['canonicalRoot', 'claimedAt', 'owner', 'schemaVersion', 'workspaceId'];
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== fields.sort().join(',')) throw new Error('management record fields are invalid');
   if (value.schemaVersion !== WORKSPACE_MANAGEMENT_SCHEMA) throw new Error('management record schema is unsupported');
@@ -65,25 +65,25 @@ function validateManagementRecord(value) {
   return Object.freeze({ ...value, canonicalRoot: path.resolve(value.canonicalRoot), owner: validateOwner(value.owner) });
 }
 
-function readManagementRecord(file) {
+function readManagementRecord(file: any) {
   if (!fs.existsSync(file)) return { status: 'absent', record: null, reason: null };
   try {
     return { status: 'ready', record: validateManagementRecord(JSON.parse(fs.readFileSync(file, 'utf8'))), reason: null };
-  } catch (error) {
+  } catch (error: any) {
     return { status: 'invalid', record: null, reason: error.message };
   }
 }
 
-function sameOwner(left, right) {
+function sameOwner(left: any, right: any) {
   return left?.profileIdentity === right?.profileIdentity
     && left?.channel === right?.channel
     && left?.runtimeRole === right?.runtimeRole;
 }
 
-export function registerWorkspaceManagementFence(runtime, options = {}) {
+export function registerWorkspaceManagementFence(runtime: any, options: any = {}) {
   const oppositeWebProfile = options.oppositeWebProfile;
   if (typeof oppositeWebProfile !== 'function') throw new Error('Workspace Management Fence requires the System Installation Web Profile contract.');
-  function managementIdentity(targetRoot) {
+  function managementIdentity(targetRoot: any) {
     const root = canonicalRoot(targetRoot);
     const persistence = runtime.readWorkspacePersistence(root);
     const workspaceId = persistence.metadata.canonical ? persistence.metadata.workspace.id : null;
@@ -91,11 +91,11 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     return { canonicalRoot: root, workspaceId };
   }
 
-  function managementPath(targetRoot) {
+  function managementPath(targetRoot: any) {
     return path.join(canonicalRoot(targetRoot), '.buildr', 'local', 'web-management.json');
   }
 
-  function peerRegistry(profile) {
+  function peerRegistry(profile: any) {
     const peerName = profile.profile === 'released' ? 'development' : 'released';
     const peer = options.peerProfiles?.[peerName]
       || oppositeWebProfile(profile, runtime.currentProductIdentity(), options.webProfileOptions);
@@ -103,13 +103,13 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     return { profile: peer, observation: runtime.readWorkspaceRegistryFile(file) };
   }
 
-  function peerWorkspaceIdentity(root) {
-    try { return managementIdentity(root); } catch (error) {
+  function peerWorkspaceIdentity(root: any) {
+    try { return managementIdentity(root); } catch (error: any) {
       throw managementError('workspace_management_peer_identity_unknown', `对侧registry中的Workspace identity无法安全读取：${root}。`, { root, reason: error.message });
     }
   }
 
-  function assertNoPeerRegistration(identity, profile) {
+  function assertNoPeerRegistration(identity: any, profile: any) {
     const peer = peerRegistry(profile);
     if (peer.observation.status === 'invalid') {
       throw managementError('workspace_management_peer_registry_invalid', '对侧Workspace registry损坏，当前操作保持fail closed。', {
@@ -145,7 +145,7 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     return observation;
   }
 
-  function assertRecord(identity, profile, observation) {
+  function assertRecord(identity: any, profile: any, observation: any) {
     if (observation.status === 'invalid') {
       throw managementError('workspace_management_record_invalid', 'Workspace-local Web management记录损坏，当前操作保持fail closed。', {
         workspace: identity,
@@ -169,7 +169,7 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     }
   }
 
-  function assertWorkspaceManagementAccess(targetRoot, options = {}) {
+  function assertWorkspaceManagementAccess(targetRoot: any, options: any = {}) {
     if (previewOwnsWorkspace(targetRoot)) return { status: 'preview', claimed: false, identity: null, profile: null };
     const profile = options.profile || runtime.currentWebProfile();
     const identity = managementIdentity(targetRoot);
@@ -181,7 +181,7 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     return { status: 'ready', claimed: observation.status === 'ready', identity, profile, file, record: observation.record };
   }
 
-  function withWorkspaceManagementClaim(targetRoot, operation, options = {}) {
+  function withWorkspaceManagementClaim(targetRoot: any, operation: any, options: any = {}) {
     if (previewOwnsWorkspace(targetRoot)) return operation({ status: 'preview', created: false });
     const profile = options.profile || runtime.currentWebProfile();
     const identity = managementIdentity(targetRoot);
@@ -205,7 +205,7 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
       }
       try {
         return operation({ status: 'ready', identity, profile, file, created });
-      } catch (error) {
+      } catch (error: any) {
         if (created) {
           const current = readManagementRecord(file);
           if (current.record?.workspaceId === identity.workspaceId && sameOwner(current.record.owner, ownerFor(profile))) runtime.removePath(file);
@@ -215,11 +215,11 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
     });
   }
 
-  function ensureWorkspaceManagementClaim(targetRoot, options = {}) {
-    return withWorkspaceManagementClaim(targetRoot, (claim) => claim, options);
+  function ensureWorkspaceManagementClaim(targetRoot: any, options: any = {}) {
+    return withWorkspaceManagementClaim(targetRoot, (claim: any) => claim, options);
   }
 
-  function releaseWorkspaceManagementClaim(targetRoot, workspaceId, options = {}) {
+  function releaseWorkspaceManagementClaim(targetRoot: any, workspaceId: any, options: any = {}) {
     if (previewOwnsWorkspace(targetRoot)) return false;
     const profile = options.profile || runtime.currentWebProfile();
     const identity = managementIdentity(targetRoot);
@@ -230,7 +230,7 @@ export function registerWorkspaceManagementFence(runtime, options = {}) {
       const observed = readManagementRecord(file);
       if (!observed.record || observed.record.workspaceId !== identity.workspaceId || !sameOwner(observed.record.owner, ownerFor(profile))) return false;
       const current = runtime.readWorkspaceRegistryPersistence().registry;
-      const stillRegistered = current.roots.some((root) => {
+      const stillRegistered = current.roots.some((root: any) => {
         try {
           const registered = managementIdentity(root);
           return registered.canonicalRoot === identity.canonicalRoot || registered.workspaceId === identity.workspaceId;

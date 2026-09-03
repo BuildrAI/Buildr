@@ -1,7 +1,7 @@
 import { registerWebInstanceLifecycle } from './application/instance-lifecycle.ts';
 import { createWebCliContributions } from './interfaces/cli/web.ts';
 import { createLocalWorkspaceServer } from './http/server.ts';
-import { WORKSPACE_APPLICATION } from '../workspace/module.mjs';
+import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,

@@ -27,7 +27,7 @@ import {
 } from '../../src/system/installation/infrastructure/npm-launcher.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
+import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
 import {
   clearBuildrWebInstance,
   writeBuildrWebInstance,

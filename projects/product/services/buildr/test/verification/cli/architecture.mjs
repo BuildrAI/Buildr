@@ -94,17 +94,17 @@ const requiredRuntime = [
   'web/infrastructure/instance-runtime.ts',
   'web/interfaces/cli/web.ts',
   'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
-  'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
-  'workspace/module.mjs', 'workspace/application/workspace-application.mjs',
-  'workspace/application/project-application.mjs', 'workspace/application/service-application.mjs',
-  'workspace/application/project-daily-progress-application.mjs',
-  'workspace/domain/workspace.mjs', 'workspace/domain/project.mjs', 'workspace/domain/service.mjs',
-  'workspace/domain/project-daily-progress.mjs',
-  'workspace/persistence/workspace-manifest-repository.mjs', 'workspace/persistence/workspace-registry-repository.mjs',
-  'workspace/persistence/project-manifest-repository.mjs', 'workspace/persistence/service-manifest-repository.mjs',
-  'workspace/persistence/project-daily-progress-repository.mjs',
-  'workspace/interfaces/cli/workspace.mjs', 'workspace/interfaces/cli/project-daily-progress.mjs',
-  'workspace/interfaces/http/workspace-http.mjs',
+  'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.ts',
+  'workspace/module.ts', 'workspace/application/workspace-application.ts',
+  'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
+  'workspace/application/project-daily-progress-application.ts',
+  'workspace/domain/workspace.ts', 'workspace/domain/project.ts', 'workspace/domain/service.ts',
+  'workspace/domain/project-daily-progress.ts',
+  'workspace/persistence/workspace-manifest-repository.ts', 'workspace/persistence/workspace-registry-repository.ts',
+  'workspace/persistence/project-manifest-repository.ts', 'workspace/persistence/service-manifest-repository.ts',
+  'workspace/persistence/project-daily-progress-repository.ts',
+  'workspace/interfaces/cli/workspace.ts', 'workspace/interfaces/cli/project-daily-progress.ts',
+  'workspace/interfaces/http/workspace-http.ts',
   'task/infrastructure/git-worktree-provider.ts',
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
   'task/persistence/task-review-repository.ts',
@@ -170,18 +170,18 @@ const allowedTargets = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts = new Set([
-  'agent-assets/module.mjs -> workspace/module.mjs',
+  'agent-assets/module.mjs -> workspace/module.ts',
   'web/infrastructure/instance-runtime.ts -> system/installation/module.mjs',
   'web/module.ts -> system/installation/module.mjs',
-  'web/module.ts -> workspace/module.mjs',
+  'web/module.ts -> workspace/module.ts',
   'bootstrap/cli/registry.mjs -> task/openspec/module.ts',
   'bootstrap/runtime.mjs -> system/publication/module.mjs',
   'bootstrap/runtime.mjs -> task/openspec/module.ts',
   'bootstrap/runtime.mjs -> task/change/module.ts',
-  'task/openspec/module.ts -> workspace/module.mjs',
+  'task/openspec/module.ts -> workspace/module.ts',
   'task/change/module.ts -> task/openspec/module.ts',
-  'task/change/module.ts -> workspace/module.mjs',
-  'system/publication/module.mjs -> workspace/module.mjs',
+  'task/change/module.ts -> workspace/module.ts',
+  'system/publication/module.mjs -> workspace/module.ts',
 ]);
 
 for (const file of sourceFiles) {
@@ -345,7 +345,7 @@ if (fs.existsSync(registry)) {
 const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task-record-application.ts');
 const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.ts');
 const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.ts');
-const taskRecordModule = path.join(sourceRoot, 'task', 'module.mjs');
+const taskRecordModule = path.join(sourceRoot, 'task', 'module.ts');
 const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.mjs');
 const legacyRuntimeModule = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
 for (const relative of [
@@ -380,7 +380,7 @@ if (fs.existsSync(taskRecordHttpInterface)) {
 if (fs.existsSync(taskRecordModule)) {
   const source = fs.readFileSync(taskRecordModule, 'utf8');
   const repositoryIndex = source.indexOf('registerTaskRecordRepository(privateComposition)');
-  const applicationIndex = source.indexOf('registerTaskRecordApplication(privateComposition)');
+  const applicationIndex = source.indexOf('registerTaskRecordApplication(documentRuntime)');
   for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_RUNTIME_PORT']) {
     if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
   }
@@ -396,8 +396,8 @@ if (fs.existsSync(bootstrapRuntime)) {
 }
 if (fs.existsSync(legacyRuntimeModule)) problems.push('Bootstrap legacy runtime module must be removed');
 
-const buildrWebServer = path.join(sourceRoot, 'web', 'http', 'server.mjs');
-const buildrWebRouter = path.join(sourceRoot, 'web', 'http', 'router.mjs');
+const buildrWebServer = path.join(sourceRoot, 'web', 'http', 'server.ts');
+const buildrWebRouter = path.join(sourceRoot, 'web', 'http', 'router.ts');
 if (fs.existsSync(buildrWebServer)) {
   const source = fs.readFileSync(buildrWebServer, 'utf8');
   const routerSource = fs.existsSync(buildrWebRouter) ? fs.readFileSync(buildrWebRouter, 'utf8') : '';
@@ -407,7 +407,7 @@ if (fs.existsSync(buildrWebServer)) {
   if (/registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
 }
 
-const workspaceModule = path.join(sourceRoot, 'workspace', 'module.mjs');
+const workspaceModule = path.join(sourceRoot, 'workspace', 'module.ts');
 if (!fs.existsSync(workspaceModule)) problems.push('Workspace Core module entry is missing');
 else {
   const moduleSource = fs.readFileSync(workspaceModule, 'utf8');
@@ -455,14 +455,14 @@ for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-
 
 const legacyTaskRecordConsumers = new Set([
   'application/change/change-application.mjs',
-  'change/module.mjs',
-  'change/interfaces/http/change-http.mjs',
-  'workspace/application/project-daily-progress-application.mjs',
+  'task/change/module.ts',
+  'task/change/interfaces/http/change-http.ts',
+  'workspace/application/project-daily-progress-application.ts',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.ts',
   'task/persistence/task-record-retrospective-document.ts',
   'task/persistence/task-verification-repository.ts',
-  'web/http/server.mjs',
+  'web/http/server.ts',
   'web/application/preview-lifecycle.ts',
 ]);
 const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
@@ -509,8 +509,8 @@ if (fs.existsSync(taskVerificationInterface)) {
     problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
 }
-const dailyProgressApplication = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.mjs');
-const dailyProgressInterface = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.mjs');
+const dailyProgressApplication = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.ts');
+const dailyProgressInterface = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.ts');
 if (fs.existsSync(dailyProgressApplication)) {
   const source = fs.readFileSync(dailyProgressApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {

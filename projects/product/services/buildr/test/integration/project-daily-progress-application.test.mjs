@@ -6,7 +6,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
 
-import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/workspace/module.mjs';
+import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../../src/workspace/module.ts';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
 
 const test = createBuildrApplicationTest('integration-project-daily-progress-application');

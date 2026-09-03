@@ -35,7 +35,7 @@ import {
   SERVICE_APPLICATION,
   WORKSPACE_QUERY,
   WORKSPACE_APPLICATION,
-} from '../../src/workspace/module.mjs';
+} from '../../src/workspace/module.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');

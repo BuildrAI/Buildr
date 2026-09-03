@@ -3,7 +3,7 @@ import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT = 'https://schemas.buildr.ai/http/workspace';
 const text = { type: 'string', minLength: 1 };
-const closed = (properties, required = []) => ({
+const closed = (properties: any, required: any = []) => ({
   type: 'object',
   additionalProperties: false,
   properties,
@@ -36,14 +36,14 @@ const serviceEntity = {
 };
 const registryEntry = closed({ status: text, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' } }, ['status', 'rootPath']);
 const registryProjection = closed({ schemaVersion: text, revision: text, workspaces: { type: 'array', items: registryEntry }, lastOpenedWorkspaceId: { type: ['string', 'null'] } }, ['schemaVersion', 'revision', 'workspaces', 'lastOpenedWorkspaceId']);
-const response = (id, title, properties, required) => Object.freeze({
+const response = (id: any, title: any, properties: any, required: any) => Object.freeze({
   $schema: DRAFT_2020_12,
   $id: `${ROOT}/${id}/v1`,
   title,
   ...closed(properties, required),
 });
 
-export const WORKSPACE_HTTP_SCHEMAS = Object.freeze({
+export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
   registryRequest: response('registry/request', 'WorkspaceRegistryRequest', {}, []),
   registerRequest: response('registry/register-request', 'WorkspaceRegisterRequest', {
     rootPath: text,
@@ -125,7 +125,7 @@ export const WORKSPACE_HTTP_OPERATIONS = Object.freeze([
   ['service.list', 'GET', '/projects/:projectCode/services', 'workspaceReadRequest', 'projectReadResponse'],
   ['service.detail', 'GET', '/projects/:projectCode/services/:serviceCode', 'workspaceReadRequest', 'projectReadResponse'],
   ['service.update', 'PUT', '/projects/:projectCode/services/:serviceCode', 'serviceMetadataUpdateRequest', 'projectReadResponse'],
-].map(([id, method, path, request, success]) => Object.freeze({
+].map(([id, method, path, request, success]: any) => Object.freeze({
   id,
   method,
   path,
@@ -136,18 +136,18 @@ export const WORKSPACE_HTTP_OPERATIONS = Object.freeze([
 
 export const WORKSPACE_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(WORKSPACE_HTTP_SCHEMAS));
 
-export function validateWorkspaceHttp(schemaId, value, operationId, phase = 'request') {
+export function validateWorkspaceHttp(schemaId: any, value: any, operationId: any, phase: any = 'request') {
   const result = WORKSPACE_HTTP_VALIDATORS.validate(schemaId, value);
   if (result.valid) return value;
-  const error = new Error(`Workspace HTTP ${phase} DTO 不符合契约：${operationId}。`);
+  const error: Error & Record<string, any> = new Error(`Workspace HTTP ${phase} DTO 不符合契约：${operationId}。`);
   error.code = phase === 'request' ? 'workspace_http_request_invalid' : 'workspace_http_response_invalid';
   error.status = 400;
   error.details = { operationId, schemaId, errors: result.errors };
   throw error;
 }
 
-export function workspaceOperation(operationId) {
-  const operation = WORKSPACE_HTTP_OPERATIONS.find((item) => item.id === operationId);
+export function workspaceOperation(operationId: any) {
+  const operation = WORKSPACE_HTTP_OPERATIONS.find((item: any) => item.id === operationId);
   if (!operation) throw new Error(`Workspace HTTP operation 未注册：${operationId}`);
   return operation;
 }

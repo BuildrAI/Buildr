@@ -7,7 +7,7 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路径', () => {
-  const application = read('src/workspace/application/project-daily-progress-application.mjs');
+  const application = read('src/workspace/application/project-daily-progress-application.ts');
   for (const required of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress', 'inspectTaskRecord', 'readProjectRegistryRecord']) {
     assert.ok(application.includes(required), required);
   }
@@ -17,9 +17,9 @@ test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路
 });
 
 test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON identity', () => {
-  const workspaceModule = read('src/workspace/module.mjs');
-  const cli = read('src/workspace/interfaces/cli/project-daily-progress.mjs');
-  const http = read('src/workspace/interfaces/http/workspace-http.mjs');
+  const workspaceModule = read('src/workspace/module.ts');
+  const cli = read('src/workspace/interfaces/cli/project-daily-progress.ts');
+  const http = read('src/workspace/interfaces/http/workspace-http.ts');
   const json = read('src/infrastructure/contracts/public-json.ts');
   const skill = read('resources/workspace/skills/buildr/project-daily-progress/SKILL.md');
   const gitignore = read('resources/workspace/gitignore');

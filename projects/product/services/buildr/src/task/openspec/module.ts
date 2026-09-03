@@ -1,6 +1,6 @@
 import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
 import { registerOpenSpecApplication } from './application/openspec-application.ts';
-import { PROJECT_APPLICATION } from '../../workspace/module.mjs';
+import { PROJECT_APPLICATION } from '../../workspace/module.ts';
 
 export const OPENSPEC_MODULE_ID = 'openspec';
 export const OPENSPEC_APPLICATION = 'openspec.application';

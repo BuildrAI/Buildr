@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveSourceRoot } from '../../workspace/domain/source-root.mjs';
+import { resolveSourceRoot } from '../../workspace/domain/source-root.ts';
 import { taskRecordEffectiveProjectCodes } from '../domain/task-record.ts';
 import { normalizeTaskVerificationCheck, normalizeTaskVerificationGap, normalizeTaskVerificationReport, taskVerificationError, type TaskVerificationCheck, type TaskVerificationDeclarationReference, type TaskVerificationGap, type TaskVerificationReport } from '../domain/task-verification.ts';
 import type { TaskPersistence } from '../persistence/task-record-repository.ts';

@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createProject } from '../domain/project.mjs';
-import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.mjs';
+import { createProject } from '../domain/project.ts';
+import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
 
-export function projectError(code, message, status = 400, details = undefined) {
-  const error = new Error(message);
+export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
+  const error: Error & Record<string, any> = new Error(message);
   error.code = code;
   error.status = status;
   if (details !== undefined) error.details = details;
@@ -15,12 +15,12 @@ export function projectError(code, message, status = 400, details = undefined) {
 
 const PROJECT_DOCUMENTS = new Set(['README.md', 'AGENTS.md']);
 
-function inside(parent, child) {
+function inside(parent: any, child: any) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
-function normalizeProjectDocumentPath(documentPath) {
+function normalizeProjectDocumentPath(documentPath: any) {
   const raw = typeof documentPath === 'string' ? documentPath.trim() : '';
   if (!raw) throw projectError('project_document_not_allowed', '不支持读取项目文档：<empty>。', 400);
   if (raw.includes('\0') || raw.includes('\\') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
@@ -31,7 +31,7 @@ function normalizeProjectDocumentPath(documentPath) {
   if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) {
     throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
   }
-  if (normalized.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')) {
+  if (normalized.split('/').some((segment: any) => segment === '' || segment === '.' || segment === '..')) {
     throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
   }
   if (!normalized.endsWith('.md')) {
@@ -40,14 +40,14 @@ function normalizeProjectDocumentPath(documentPath) {
   return normalized;
 }
 
-function assertObject(input, code, message) {
+function assertObject(input: any, code: any, message: any) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw projectError(code, message);
 }
 
-export function compareProjectGit(project, observed, sameGitIdentity) {
+export function compareProjectGit(project: any, observed: any, sameGitIdentity: any) {
   if (project.source.type !== 'git') return { status: 'not-applicable', findings: [] };
   if (!observed?.available) return { status: 'unavailable', findings: [{ status: 'warning', code: 'project.git_observation_unavailable', message: '无法读取 Project Git 实际状态。' }] };
-  const findings = [];
+  const findings: any[] = [];
   if (!observed.repository) findings.push({ status: 'error', code: 'project.git_repository_missing', message: 'Project path 不是可读取的 Git repository。' });
   if (observed.repository && !observed.remoteUrl) findings.push({ status: 'error', code: 'project.git_remote_missing', message: `声明的 Git remote ${project.source.git.remote} 不存在。` });
   if (observed.remoteUrl && !sameGitIdentity(observed.remoteUrl, project.source.git.url)) {
@@ -60,11 +60,11 @@ export function compareProjectGit(project, observed, sameGitIdentity) {
   if ((observed.ahead || 0) > 0 || (observed.behind || 0) > 0) {
     findings.push({ status: 'info', code: 'project.git_upstream_drift', message: `当前分支相对 upstream ahead ${observed.ahead ?? '?'} / behind ${observed.behind ?? '?'}。` });
   }
-  return { status: findings.some((finding) => finding.status === 'error') ? 'error' : findings.length ? 'drift' : 'aligned', findings };
+  return { status: findings.some((finding: any) => finding.status === 'error') ? 'error' : findings.length ? 'drift' : 'aligned', findings };
 }
 
-export function registerProjectApplication(runtime) {
-  function readProjectRegistryRecord(targetRoot) {
+export function registerProjectApplication(runtime: any) {
+  function readProjectRegistryRecord(targetRoot: any) {
     let workspace;
     let persistence;
     try {
@@ -72,14 +72,14 @@ export function registerProjectApplication(runtime) {
       const workspaceId = workspace.workspace.id;
       if (!workspaceId) throw projectError('project_workspace_migration_required', 'Workspace metadata 需要先完成 identity 迁移。', 409);
       persistence = runtime.readProjectRegistryPersistence(targetRoot, { workspaceId });
-    } catch (error) {
+    } catch (error: any) {
       if (error.code) throw error;
       throw projectError('project_registry_invalid', error.message, 409, { path: 'projects/manifest.yml' });
     }
     return { ...persistence, workspace, projects: persistence.registry.entities };
   }
 
-  function publicRegistry(record) {
+  function publicRegistry(record: any) {
     return {
       schemaVersion: record.registry.schemaVersion,
       revision: record.revision,
@@ -91,16 +91,16 @@ export function registerProjectApplication(runtime) {
     };
   }
 
-  function listProjects(targetRoot) {
+  function listProjects(targetRoot: any) {
     return publicRegistry(readProjectRegistryRecord(targetRoot));
   }
 
-  function projectDetail(targetRoot, code) {
+  function projectDetail(targetRoot: any, code: any) {
     const record = readProjectRegistryRecord(targetRoot);
     const project = record.projects[code];
     if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
-    let observed = null;
-    let comparison = { status: 'not-applicable', findings: [] };
+    let observed: any = null;
+    let comparison: any = { status: 'not-applicable', findings: [] };
     const projectRoot = resolveSourceRoot(record.root, project.source);
     if (project.source.type === 'git') {
       observed = runtime.observeProjectGit(projectRoot, project.source.git.remote);
@@ -118,7 +118,7 @@ export function registerProjectApplication(runtime) {
     };
   }
 
-  function projectDocument(targetRoot, code, documentPath) {
+  function projectDocument(targetRoot: any, code: any, documentPath: any) {
     const relativePath = normalizeProjectDocumentPath(documentPath);
     const record = readProjectRegistryRecord(targetRoot);
     const project = record.projects[code];
@@ -145,11 +145,11 @@ export function registerProjectApplication(runtime) {
     };
   }
 
-  function migrateProjectRegistry(targetRoot) {
+  function migrateProjectRegistry(targetRoot: any) {
     const before = readProjectRegistryRecord(targetRoot);
     if (!before.registry.migrationRequired) return { ...publicRegistry(before), changed: [] };
     const workspaceId = before.workspace.workspace.id;
-    const migrated = Object.values(before.projects).map((legacy) => {
+    const migrated = Object.values(before.projects).map((legacy: any) => {
       let source = legacy.source;
       if (source.type === 'git') {
         const observed = runtime.observeProjectGit(resolveSourceRoot(before.root, source), source.git.remote);
@@ -169,7 +169,7 @@ export function registerProjectApplication(runtime) {
     });
   }
 
-  function projectMigrationPlan(targetRoot) {
+  function projectMigrationPlan(targetRoot: any) {
     const record = readProjectRegistryRecord(targetRoot);
     return {
       required: record.registry.migrationRequired,
@@ -178,7 +178,7 @@ export function registerProjectApplication(runtime) {
     };
   }
 
-  function updateProjectMetadata(targetRoot, code, input) {
+  function updateProjectMetadata(targetRoot: any, code: any, input: any) {
     assertObject(input, 'project_update_invalid', 'Project 修改请求必须是对象。');
     const allowed = new Set(['revision', 'name', 'description']);
     for (const field of Object.keys(input)) {
@@ -203,7 +203,7 @@ export function registerProjectApplication(runtime) {
     });
   }
 
-  function generateProjectCreatePrompt(input) {
+  function generateProjectCreatePrompt(input: any) {
     assertObject(input, 'project_prompt_invalid', 'Project prompt 请求必须是对象。');
     const allowed = new Set(['code', 'name', 'description', 'sourceType', 'gitUrl', 'remote', 'integrationBranch']);
     for (const field of Object.keys(input)) {
