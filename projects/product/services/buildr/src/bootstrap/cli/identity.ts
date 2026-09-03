@@ -1,5 +1,5 @@
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
-import { readCurrentProductIdentity } from '../../system/installation/module.mjs';
+import { readCurrentProductIdentity } from '../../system/installation/module.ts';
 
 export function readCliIdentity() {
   return readCurrentProductIdentity();

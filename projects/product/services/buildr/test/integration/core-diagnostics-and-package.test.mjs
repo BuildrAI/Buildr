@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntimeDiagnostics } from '../../src/system/doctor/application/runtime-diagnostics.mjs';
-import { createScopeDiagnostics } from '../../src/system/doctor/application/scope-diagnostics.mjs';
-import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/system/doctor/application/result-model.mjs';
+import { createRuntimeDiagnostics } from '../../src/system/doctor/application/runtime-diagnostics.ts';
+import { createScopeDiagnostics } from '../../src/system/doctor/application/scope-diagnostics.ts';
+import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/system/doctor/application/result-model.ts';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
 import { blockingSyncSourceIssues } from '../../src/agent-assets/application/runtime-projection.mjs';
 

@@ -3,40 +3,40 @@ import process from 'node:process';
 
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.mjs';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
-import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.mjs';
+import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.ts';
 
-export function registerSystemDoctorApplication(runtime) {
+export function registerSystemDoctorApplication(runtime: any) {
   const { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, isSupportedAgent } = runtime;
-  const discoverDoctorScopes = (...args) => runtime.discoverDoctorScopes(...args);
-  const diagnoseProjectRegistry = (...args) => runtime.diagnoseProjectRegistry(...args);
-  const diagnoseWorkspace = (...args) => runtime.diagnoseWorkspace(...args);
-  const diagnoseLegacyPractices = (...args) => runtime.diagnoseLegacyPractices(...args);
-  const diagnoseHierarchy = (...args) => runtime.diagnoseHierarchy(...args);
-  const diagnoseServices = (...args) => runtime.diagnoseServices(...args);
-  const diagnoseRuntime = (...args) => runtime.diagnoseRuntime(...args);
-  const detectManagedRuntimeAgents = (...args) => runtime.detectManagedRuntimeAgents(...args);
-  const diagnoseCommands = (...args) => runtime.diagnoseCommands(...args);
-  const diagnoseComponents = (...args) => runtime.diagnoseComponents(...args);
-  const diagnoseSkillsManifestSchemas = (...args) => runtime.diagnoseSkillsManifestSchemas(...args);
-  const diagnoseSkillCapabilities = (...args) => runtime.diagnoseSkillCapabilities(...args);
-  const diagnoseProjectVerification = (...args) => runtime.diagnoseProjectVerification(...args);
-  const syncPackageBuiltins = (...args) => runtime.syncPackageBuiltins(...args);
-  const finalizeDoctorResult = (...args) => runtime.finalizeDoctorResult(...args);
-  const printDoctorReport = (...args) => runtime.printDoctorReport(...args);
-  const releaseAwareness = (...args) => runtime.releaseAwareness(...args);
-  const optionValue = (...args) => runtime.optionValue(...args);
-  const hasFlag = (...args) => runtime.hasFlag(...args);
-  const assertAgentId = (...args) => runtime.assertAgentId(...args);
-  const addDoctorFinding = (...args) => runtime.addDoctorFinding(...args);
-  const diagnoseRules = (...args) => runtime.diagnoseRules(...args);
-  const diagnoseWorkspaceMetadata = (...args) => runtime.diagnoseWorkspaceMetadata(...args);
-  const diagnoseMutations = (...args) => runtime.diagnoseMutations(...args);
+  const discoverDoctorScopes = (...args: any[]) => runtime.discoverDoctorScopes(...args);
+  const diagnoseProjectRegistry = (...args: any[]) => runtime.diagnoseProjectRegistry(...args);
+  const diagnoseWorkspace = (...args: any[]) => runtime.diagnoseWorkspace(...args);
+  const diagnoseLegacyPractices = (...args: any[]) => runtime.diagnoseLegacyPractices(...args);
+  const diagnoseHierarchy = (...args: any[]) => runtime.diagnoseHierarchy(...args);
+  const diagnoseServices = (...args: any[]) => runtime.diagnoseServices(...args);
+  const diagnoseRuntime = (...args: any[]) => runtime.diagnoseRuntime(...args);
+  const detectManagedRuntimeAgents = (...args: any[]) => runtime.detectManagedRuntimeAgents(...args);
+  const diagnoseCommands = (...args: any[]) => runtime.diagnoseCommands(...args);
+  const diagnoseComponents = (...args: any[]) => runtime.diagnoseComponents(...args);
+  const diagnoseSkillsManifestSchemas = (...args: any[]) => runtime.diagnoseSkillsManifestSchemas(...args);
+  const diagnoseSkillCapabilities = (...args: any[]) => runtime.diagnoseSkillCapabilities(...args);
+  const diagnoseProjectVerification = (...args: any[]) => runtime.diagnoseProjectVerification(...args);
+  const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);
+  const finalizeDoctorResult = (...args: any[]) => runtime.finalizeDoctorResult(...args);
+  const printDoctorReport = (...args: any[]) => runtime.printDoctorReport(...args);
+  const releaseAwareness = (...args: any[]) => runtime.releaseAwareness(...args);
+  const optionValue = (...args: any[]) => runtime.optionValue(...args);
+  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
+  const assertAgentId = (...args: any[]) => runtime.assertAgentId(...args);
+  const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
+  const diagnoseRules = (...args: any[]) => runtime.diagnoseRules(...args);
+  const diagnoseWorkspaceMetadata = (...args: any[]) => runtime.diagnoseWorkspaceMetadata(...args);
+  const diagnoseMutations = (...args: any[]) => runtime.diagnoseMutations(...args);
 
-  function diagnoseProductInstallation(result) {
+  function diagnoseProductInstallation(result: any) {
     result.productInstallation = runtime.buildInstallationInventory();
   }
 
-  function diagnoseReleaseAwareness(result, options = {}) {
+  function diagnoseReleaseAwareness(result: any, options: any = {}) {
     try {
       result.releaseAwareness = releaseAwareness({
         allowDevelopmentQuery: false,
@@ -44,8 +44,8 @@ export function registerSystemDoctorApplication(runtime) {
         notify: true,
         ...options,
       });
-      result.notices = result.releaseAwareness.notices.filter((notice) => notice.notify === true);
-    } catch (error) {
+      result.notices = result.releaseAwareness.notices.filter((notice: any) => notice.notify === true);
+    } catch (error: any) {
       result.releaseAwareness = {
         schemaVersion: 'buildr.release-awareness/v1',
         status: 'blocked',
@@ -57,7 +57,7 @@ export function registerSystemDoctorApplication(runtime) {
     }
   }
 
-  function diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo = false) {
+  function diagnoseWorkspaceStructuredStore(result: any, targetRoot: any, includeInfo: any = false) {
     if (observeGitCheckoutIdentity(targetRoot)?.linkedWorktree) {
       result.structuredStore = { status: 'not-applicable', version: null, integrity: null };
       if (includeInfo) addDoctorFinding(result, 'info', 'workspace.structured_store_not_applicable', 'Linked task worktree 不持有 Workspace structured store；数据库只属于 canonical Workspace。');
@@ -69,7 +69,7 @@ export function registerSystemDoctorApplication(runtime) {
       if (observation.status === 'uninitialized' && includeInfo) {
         addDoctorFinding(result, 'info', 'workspace.structured_store_uninitialized', 'Workspace structured store 尚未初始化；首次合法结构化写入会创建数据库。');
       }
-    } catch (error) {
+    } catch (error: any) {
       result.structuredStore = { status: 'unavailable', version: null, integrity: null };
       addDoctorFinding(result, 'error', error.code || 'workspace.structured_store_failed', error.message, {
         suggestion: error.nextAction || '保留数据库现场并检查 migration 与 integrity 诊断；不要自动删除或从旧 Task 文件恢复。',
@@ -78,7 +78,7 @@ export function registerSystemDoctorApplication(runtime) {
     }
   }
 
-  function doctor(args, internalOptions = {}) {
+  function doctor(args: any, internalOptions: any = {}) {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const requestedScope = optionValue(args, '--scope', null);
     const requestedAgent = optionValue(args, '--agent', null);
@@ -87,7 +87,7 @@ export function registerSystemDoctorApplication(runtime) {
     const detail = optionValue(args, '--detail', 'compact');
     if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
     const includeInfo = hasFlag(args, '--include-info') || hasFlag(args, '--verbose');
-    const result = {
+    const result: any = {
       targetRoot,
       scope: requestedScope || null,
       agentRuntime: requestedAgent
@@ -122,7 +122,7 @@ export function registerSystemDoctorApplication(runtime) {
       productInstallation: null,
       releaseAwareness: null,
       notices: [],
-      runtime: Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent) => [RUNTIME_ADAPTERS[agent].traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()), []])),
+      runtime: Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent: any) => [RUNTIME_ADAPTERS[agent].traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match: any, letter: any) => letter.toUpperCase()), []])),
       mutations: { blocked: false, lock: null, transactions: [] },
       diagnosticProfile: DOCTOR_DIAGNOSTIC_PROFILE,
       health: { workspaceValid: false, ready: false, actionRequired: false, actionableCount: 0 },
@@ -157,7 +157,7 @@ export function registerSystemDoctorApplication(runtime) {
       try {
         const builtinStatus = syncPackageBuiltins(targetRoot, { checkOnly: true });
         result.builtins.items = builtinStatus.findings;
-        for (const finding of builtinStatus.findings.filter((item) => !item.component)) {
+        for (const finding of builtinStatus.findings.filter((item: any) => !item.component)) {
           if (finding.type === 'rule' && finding.id === 'buildr-core') {
             addDoctorFinding(result, 'warning', 'rules.legacy_core', finding.reason || '独立核心规则已退役，可通过同步清理受管旧文件。', {
               path: finding.path,
@@ -177,7 +177,7 @@ export function registerSystemDoctorApplication(runtime) {
             userActionRequired: finding.status !== 'uninstalled',
           });
         }
-      } catch (error) {
+      } catch (error: any) {
         addDoctorFinding(result, 'error', 'builtin.receipt_invalid', `Builtin 安装回执无效：${error.message}`, {
           path: '.buildr/builtin-receipts.json',
           suggestion: '保留回执与 live 资产并检查损坏；无法证明安装状态前不要继续 sync。',

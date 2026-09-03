@@ -100,9 +100,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/core-diagnostics-and-package.test.mjs",
       "test/integration/project-verification-map.test.ts",
       "src/verification/application/project-verification-diagnostics.mjs",
-      "src/system/doctor/application/diagnostics.mjs",
-      "src/system/doctor/application/result-model.mjs",
-      "src/system/doctor/application/scope-diagnostics.mjs",
+      "src/system/doctor/application/diagnostics.ts",
+      "src/system/doctor/application/result-model.ts",
+      "src/system/doctor/application/scope-diagnostics.ts",
       "src/agent-assets/application/package-maintenance/verification-registry.mjs"
     ],
     "inputExclusions": []
@@ -198,8 +198,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/product-installation-identity.test.mjs",
       "test/integration/product-installation-registry.test.mjs",
       "tools/release/**",
-      "src/system/installation/application/product-installation-status.mjs",
-      "src/system/installation/application/npm-installation-enrollment.mjs",
+      "src/system/installation/application/product-installation-status.ts",
+      "src/system/installation/application/npm-installation-enrollment.ts",
       "src/system/installation/**",
       "src/infrastructure/product-invocation/**",
       "src/infrastructure/product-resources/**"
@@ -221,7 +221,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/self-bootstrap-closeout.test.mjs",
       "skills/buildr-self-bootstrap-sync/**",
       "resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**",
-      "src/system/installation/application/release-awareness.mjs"
+      "src/system/installation/application/release-awareness.ts"
     ],
     "inputExclusions": []
   },
@@ -286,7 +286,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/release/release-tag-ensure.mjs",
       "tools/release/release-contract.mjs",
       "tools/release/trusted-publish.mjs",
-      "src/system/installation/domain/release-version.mjs",
+      "src/system/installation/domain/release-version.ts",
       "src/agent-assets/infrastructure/runtime/render-claude-code.mjs",
       "test/verification/candidate.mjs",
       "test/verification/candidate-ci.mjs",
@@ -462,8 +462,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/cli-update.test.mjs",
       "test/system/runtime-target-authority.test.mjs",
       "test/system/workspace-runtime-recovery.test.mjs",
-      "src/system/installation/application/cli-update.mjs",
-      "src/system/installation/application/release-awareness.mjs",
+      "src/system/installation/application/cli-update.ts",
+      "src/system/installation/application/release-awareness.ts",
       "src/agent-assets/application/runtime-projection.mjs",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/network/**",
@@ -525,7 +525,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/workspace-runtime-recovery.test.mjs",
       "test/system/worktree-create.test.ts",
       "test/helpers/task-finish-sqlite-fixture.mjs",
-      "src/system/installation/application/cli-update.mjs",
+      "src/system/installation/application/cli-update.ts",
       "src/task/application/finish/**",
       "src/task/infrastructure/**",
       "src/infrastructure/filesystem/**",
@@ -575,7 +575,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "src/agent-assets/infrastructure/runtime/**",
       "src/agent-assets/application/runtime.mjs",
-      "src/system/doctor/application/runtime-diagnostics.mjs",
+      "src/system/doctor/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-contract.mjs",
       "package/targets/runtime/**",
       "docs/agent-runtime-adapters.md"
@@ -597,7 +597,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/release/release-convergence.mjs",
       "tools/release/release-files.mjs",
       "tools/release/release-notes.mjs",
-      "src/system/installation/domain/release-version.mjs"
+      "src/system/installation/domain/release-version.ts"
     ],
     "inputExclusions": []
   },
@@ -676,7 +676,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "src/system/installation/**",
       "src/bootstrap/cli/identity.ts",
-      "src/system/installation/interfaces/cli/launcher.mjs",
+      "src/system/installation/interfaces/cli/launcher.ts",
       "src/web/http/server.ts",
       "tools/release/application-payload.mjs",
       "tools/release/application-payload-entry.mjs",
@@ -746,7 +746,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/capability-cli.integration.mjs",
       "src/agent-assets/application/package-maintenance/package-assets.mjs",
       "src/agent-assets/application/skills.mjs",
-      "src/system/doctor/application/capability-diagnostics.mjs",
+      "src/system/doctor/application/capability-diagnostics.ts",
       "src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs",
       "src/agent-assets/application/package-maintenance/static-validation.mjs",
       "src/agent-assets/infrastructure/runtime/skills/**",
@@ -864,7 +864,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "src/agent-assets/infrastructure/runtime/**",
       "src/agent-assets/application/runtime.mjs",
-      "src/system/doctor/application/runtime-diagnostics.mjs",
+      "src/system/doctor/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-parity.mjs",
       "test/verification/runtime/fixture.mjs",
       "package/targets/runtime/**",
@@ -987,7 +987,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "bin/buildr.mjs",
       "src/bootstrap/**",
       "src/task/interfaces/cli/**",
-      "src/system/installation/application/cli-update.mjs",
+      "src/system/installation/application/cli-update.ts",
       "src/agent-assets/application/package-maintenance/**",
       "src/agent-assets/application/package-maintenance.mjs",
       "src/workspace/application/workspace-operations.ts",

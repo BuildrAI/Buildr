@@ -14,18 +14,18 @@ import {
   inspectNpmLauncherBinding,
   readAndInspectNpmLauncherBinding,
   validateNpmLauncherBinding,
-} from './launcher-binding.mjs';
+} from './launcher-binding.ts';
 import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
 
-function quoteShell(value) {
+function quoteShell(value: any) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
-function quotePowerShell(value) {
+function quotePowerShell(value: any) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-export function defaultNpmLauncherTarget(platform = process.platform, options = {}) {
+export function defaultNpmLauncherTarget(platform: any = process.platform, options: any = {}) {
   if (options.target) return path.resolve(options.target);
   if (platform === 'darwin') return path.join(os.homedir(), 'Applications', 'Buildr Web.app');
   if (platform === 'win32') {
@@ -35,13 +35,13 @@ export function defaultNpmLauncherTarget(platform = process.platform, options = 
   throw new Error(`Buildr Web Launcher is not supported on ${platform}.`);
 }
 
-export function npmLauncherBindingPath(platform = process.platform, target = defaultNpmLauncherTarget(platform)) {
+export function npmLauncherBindingPath(platform: any = process.platform, target: any = defaultNpmLauncherTarget(platform)) {
   return platform === 'darwin'
     ? path.join(path.resolve(target), 'Contents', 'Resources', 'launcher-binding.json')
     : path.join(productDataRoot(), 'launchers', 'npm', 'launcher-binding.json');
 }
 
-function macLauncherScript(binding) {
+function macLauncherScript(binding: any) {
   const jobPrefix = `ai.buildr.web.npm-launcher.runner.${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 16)}`;
   return `#!/bin/sh
 NODE=${quoteShell(binding.hostNode.path)}
@@ -111,11 +111,11 @@ exit 0
 `;
 }
 
-function macBundleIdentifier(binding) {
+function macBundleIdentifier(binding: any) {
   return `ai.buildr.web.npm-launcher.slot${binding.launcherOwnershipIdentity.slice('sha256-'.length, 'sha256-'.length + 24)}`;
 }
 
-function macInfoPlist(binding) {
+function macInfoPlist(binding: any) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -132,7 +132,7 @@ function macInfoPlist(binding) {
 `;
 }
 
-function writeMacLauncherCandidate(stage, binding) {
+function writeMacLauncherCandidate(stage: any, binding: any) {
   const contents = path.join(stage, 'Contents');
   const executable = path.join(contents, 'MacOS', 'Buildr Web');
   const resources = path.join(contents, 'Resources');
@@ -146,7 +146,7 @@ function writeMacLauncherCandidate(stage, binding) {
   if (process.platform === 'darwin' && signed.status !== 0) throw new Error(`Cannot ad-hoc sign Buildr Web Launcher: ${(signed.stderr || '').trim()}`);
 }
 
-function windowsShortcutScript(target, binding, icon) {
+function windowsShortcutScript(target: any, binding: any, icon: any) {
   const argumentsValue = `"${binding.packageEntry.path.replaceAll('"', '""')}" web --launcher-binding "${binding.bindingPath.replaceAll('"', '""')}"`;
   return [
     '$ErrorActionPreference = "Stop"',
@@ -164,14 +164,14 @@ function windowsShortcutScript(target, binding, icon) {
   ].join('; ');
 }
 
-function writeWindowsLauncherCandidate(target, binding, options = {}) {
+function writeWindowsLauncherCandidate(target: any, binding: any, options: any = {}) {
   const bindingDir = path.dirname(binding.bindingPath);
   fs.mkdirSync(bindingDir, { recursive: true });
   const icon = path.join(bindingDir, 'Buildr.ico');
   const token = `${process.pid}-${crypto.randomUUID()}`;
   const stagedBinding = `${binding.bindingPath}.buildr-stage-${token}`;
   const stagedIcon = `${icon}.buildr-stage-${token}`;
-  const originals = [target, binding.bindingPath, icon].map((file) => ({ file, backup: `${file}.buildr-backup-${token}`, present: fs.existsSync(file), moved: false }));
+  const originals = [target, binding.bindingPath, icon].map((file: any) => ({ file, backup: `${file}.buildr-backup-${token}`, present: fs.existsSync(file), moved: false }));
   const restore = () => {
     for (const { file, present, moved } of originals) if (moved || !present) fs.rmSync(file, { force: true });
     for (const { file, backup, moved } of originals) if (moved && fs.existsSync(backup)) fs.renameSync(backup, file);
@@ -193,11 +193,11 @@ function writeWindowsLauncherCandidate(target, binding, options = {}) {
     }
     const shortcut = readWindowsShortcut(target, options);
     const expected = expectedWindowsShortcut(binding);
-    if (!shortcut || !Object.entries(expected).every(([field, value]) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase())) {
+    if (!shortcut || !Object.entries(expected).every(([field, value]: any) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase())) {
       throw new Error('Created Buildr Web shortcut does not match its npm Launcher binding.');
     }
     for (const { backup } of originals) fs.rmSync(backup, { force: true });
-  } catch (error) {
+  } catch (error: any) {
     fs.rmSync(stagedBinding, { force: true });
     fs.rmSync(stagedIcon, { force: true });
     restore();
@@ -205,7 +205,7 @@ function writeWindowsLauncherCandidate(target, binding, options = {}) {
   }
 }
 
-function readWindowsShortcut(target, options = {}) {
+function readWindowsShortcut(target: any, options: any = {}) {
   if (options.readShortcut) return options.readShortcut(target);
   if (process.platform !== 'win32') return null;
   const script = [
@@ -222,7 +222,7 @@ function readWindowsShortcut(target, options = {}) {
   return JSON.parse(result.stdout);
 }
 
-function expectedWindowsShortcut(binding) {
+function expectedWindowsShortcut(binding: any) {
   return {
     target: binding.hostNode.path,
     arguments: `"${binding.packageEntry.path}" web --launcher-binding "${binding.bindingPath}"`,
@@ -230,7 +230,7 @@ function expectedWindowsShortcut(binding) {
   };
 }
 
-function launcherStructure(platform, target, observed, options = {}) {
+function launcherStructure(platform: any, target: any, observed: any, options: any = {}) {
   if (observed.status !== 'ready') return observed;
   if (platform === 'darwin') {
     const executable = path.join(target, 'Contents', 'MacOS', 'Buildr Web');
@@ -245,24 +245,24 @@ function launcherStructure(platform, target, observed, options = {}) {
   }
   if (platform === 'win32') {
     let shortcut;
-    try { shortcut = readWindowsShortcut(target, options); } catch (error) {
+    try { shortcut = readWindowsShortcut(target, options); } catch (error: any) {
       return { ...observed, status: 'invalid', code: 'launcher.shortcut_unreadable', message: error.message };
     }
     if (!shortcut) return options.readShortcut
       ? { ...observed, status: 'stale', code: 'launcher.shortcut_missing', message: `Launcher shortcut is unavailable: ${target}.` }
       : observed;
     const expected = expectedWindowsShortcut(observed.binding);
-    const equal = Object.entries(expected).every(([field, value]) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase());
+    const equal = Object.entries(expected).every(([field, value]: any) => String(shortcut[field] || '').toLowerCase() === String(value).toLowerCase());
     if (!equal) return { ...observed, status: 'invalid', code: 'launcher.shortcut_foreign', message: 'Launcher shortcut target, arguments, or working directory differs from its binding.' };
   }
   return observed;
 }
 
-function readBindingForTarget(platform, target) {
+function readBindingForTarget(platform: any, target: any) {
   return readAndInspectNpmLauncherBinding(npmLauncherBindingPath(platform, target), { target });
 }
 
-function ownershipMatches(observed, expected) {
+function ownershipMatches(observed: any, expected: any) {
   const binding = observed.binding;
   if (!binding) return false;
   if (binding.launcherOwnershipIdentity === expected.launcherOwnershipIdentity) return true;
@@ -274,7 +274,7 @@ function ownershipMatches(observed, expected) {
     && sameFilesystemPath(binding.target, expected.target);
 }
 
-export function npmLauncherStatus({ platform = process.platform, target, readShortcut } = {}) {
+export function npmLauncherStatus({ platform = process.platform, target, readShortcut }: any = {}) {
   const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const targetPresent = fs.existsSync(resolvedTarget);
@@ -299,7 +299,7 @@ export function npmLauncherStatus({ platform = process.platform, target, readSho
   };
 }
 
-export function installNpmLauncher({ registration, platform = process.platform, target, port, repair = false, writeShortcut, readShortcut } = {}) {
+export function installNpmLauncher({ registration, platform = process.platform, target, port, repair = false, writeShortcut, readShortcut }: any = {}) {
   const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const existing = readBindingForTarget(platform, resolvedTarget);
@@ -329,7 +329,7 @@ export function installNpmLauncher({ registration, platform = process.platform, 
       if (fs.existsSync(resolvedTarget)) fs.renameSync(resolvedTarget, backup);
       fs.renameSync(stage, resolvedTarget);
       if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
-    } catch (error) {
+    } catch (error: any) {
       fs.rmSync(stage, { recursive: true, force: true });
       if (!fs.existsSync(resolvedTarget) && fs.existsSync(backup)) fs.renameSync(backup, resolvedTarget);
       throw error;
@@ -342,11 +342,11 @@ export function installNpmLauncher({ registration, platform = process.platform, 
   return { ...result, action: repair ? 'repaired' : existing.status === 'absent' ? 'installed' : 'refreshed' };
 }
 
-export function repairNpmLauncher(options = {}) {
+export function repairNpmLauncher(options: any = {}) {
   return installNpmLauncher({ ...options, repair: true });
 }
 
-export function uninstallNpmLauncher({ registration, platform = process.platform, target, readShortcut } = {}) {
+export function uninstallNpmLauncher({ registration, platform = process.platform, target, readShortcut }: any = {}) {
   const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const expected = createNpmLauncherBinding({ registration, platform, target: resolvedTarget, bindingPath });
@@ -363,7 +363,7 @@ export function uninstallNpmLauncher({ registration, platform = process.platform
   return { ...npmLauncherStatus({ platform, target: resolvedTarget }), action: observed.status === 'absent' ? 'absent' : 'uninstalled' };
 }
 
-export function refreshInstalledNpmLauncher({ registration, platform = process.platform, target, writeShortcut, readShortcut } = {}) {
+export function refreshInstalledNpmLauncher({ registration, platform = process.platform, target, writeShortcut, readShortcut }: any = {}) {
   if (!['darwin', 'win32'].includes(platform)) return { action: 'skipped', reason: `unsupported platform ${platform}` };
   const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
@@ -382,7 +382,7 @@ export function refreshInstalledNpmLauncher({ registration, platform = process.p
   });
 }
 
-export function assertCurrentNpmLauncherBinding(file, productIdentity) {
+export function assertCurrentNpmLauncherBinding(file: any, productIdentity: any) {
   const observed = readAndInspectNpmLauncherBinding(file);
   if (observed.status !== 'ready') throw new Error(`Buildr Web Launcher binding is ${observed.status}: ${observed.message || observed.code}.`);
   const binding = validateNpmLauncherBinding(observed.binding);
@@ -391,7 +391,7 @@ export function assertCurrentNpmLauncherBinding(file, productIdentity) {
     ['protocolIdentity', binding.protocolIdentity, productIdentity.protocolIdentity],
     ['applicationPayloadDigest', binding.applicationPayloadDigest, productIdentity.applicationPayloadDigest],
     ['installationIdentity', binding.installationOwnershipIdentity, productIdentity.installationIdentity],
-  ].filter(([, expected, actual]) => expected !== actual);
-  if (mismatches.length) throw new Error(`Buildr Web Launcher does not match the current npm Buildr (${mismatches.map(([field]) => field).join(', ')}).`);
+  ].filter(([, expected, actual]: any) => expected !== actual);
+  if (mismatches.length) throw new Error(`Buildr Web Launcher does not match the current npm Buildr (${mismatches.map(([field]: any) => field).join(', ')}).`);
   return binding;
 }

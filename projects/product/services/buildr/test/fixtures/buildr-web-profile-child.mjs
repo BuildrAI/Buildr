@@ -3,11 +3,11 @@ import path from 'node:path';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
-import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
+import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
-import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.mjs';
+import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.ts';
 
 const identity = JSON.parse(process.env.BUILDR_TEST_PRODUCT_IDENTITY);
 const current = resolveWebProfile(identity, { dataRoot: process.env.BUILDR_APP_DATA_DIR });

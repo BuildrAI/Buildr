@@ -1,22 +1,22 @@
-import { registerApplicationCliUpdate } from './application/cli-update.mjs';
-import { registerProductInstallationStatus } from './application/product-installation-status.mjs';
-import { createInstallationCliContributions } from './interfaces/cli/installation.mjs';
-import { createLauncherCliContributions, registerLauncherInterface } from './interfaces/cli/launcher.mjs';
-import { createReleaseAwarenessHttpContribution } from './interfaces/http/release-awareness-http.mjs';
-import { readCurrentProductIdentity } from './infrastructure/current-product-identity.mjs';
-import { assertCurrentNpmLauncherBinding, refreshInstalledNpmLauncher } from './infrastructure/npm-launcher.mjs';
-import { validateNpmLauncherBinding } from './infrastructure/launcher-binding.mjs';
+import { registerApplicationCliUpdate } from './application/cli-update.ts';
+import { registerProductInstallationStatus } from './application/product-installation-status.ts';
+import { createInstallationCliContributions } from './interfaces/cli/installation.ts';
+import { createLauncherCliContributions, registerLauncherInterface } from './interfaces/cli/launcher.ts';
+import { createReleaseAwarenessHttpContribution } from './interfaces/http/release-awareness-http.ts';
+import { readCurrentProductIdentity } from './infrastructure/current-product-identity.ts';
+import { assertCurrentNpmLauncherBinding, refreshInstalledNpmLauncher } from './infrastructure/npm-launcher.ts';
+import { validateNpmLauncherBinding } from './infrastructure/launcher-binding.ts';
 
-export * from './application/npm-installation-enrollment.mjs';
-export * from './application/release-awareness.mjs';
-export * from './interfaces/cli/installation.mjs';
-export * from './interfaces/cli/launcher.mjs';
-export * from './infrastructure/current-product-identity.mjs';
-export * from './infrastructure/installation-origin.mjs';
-export * from './infrastructure/installation-registry.mjs';
-export * from './infrastructure/launcher-binding.mjs';
-export * from './infrastructure/npm-launcher.mjs';
-export * from './contracts/web-profile.mjs';
+export * from './application/npm-installation-enrollment.ts';
+export * from './application/release-awareness.ts';
+export * from './interfaces/cli/installation.ts';
+export * from './interfaces/cli/launcher.ts';
+export * from './infrastructure/current-product-identity.ts';
+export * from './infrastructure/installation-origin.ts';
+export * from './infrastructure/installation-registry.ts';
+export * from './infrastructure/launcher-binding.ts';
+export * from './infrastructure/npm-launcher.ts';
+export * from './contracts/web-profile.ts';
 
 export const SYSTEM_INSTALLATION_MODULE_ID = 'system-installation';
 export const SYSTEM_INSTALLATION_IDENTITY = 'system.installation.identity';
@@ -33,11 +33,11 @@ const APPLICATION_METHODS = Object.freeze([
   'manageBuildrWebLauncher',
 ]);
 
-function methodPort(runtime, methods) {
-  return Object.freeze(Object.fromEntries(methods.map((method) => [method, (...args) => runtime[method](...args)])));
+function methodPort(runtime: any, methods: any) {
+  return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => runtime[method](...args)])));
 }
 
-export function createSystemInstallationModule(runtime) {
+export function createSystemInstallationModule(runtime: any) {
   return Object.freeze({
     id: SYSTEM_INSTALLATION_MODULE_ID,
     requires: Object.freeze([]),

@@ -4,8 +4,8 @@ const DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT = 'https://schemas.buildr.ai/http/system-installation';
 const text = { type: 'string', minLength: 1 };
 const nullableText = { type: ['string', 'null'] };
-const closed = (properties, required = []) => ({ type: 'object', additionalProperties: false, properties, ...(required.length ? { required } : {}) });
-const schema = (id, title, body) => Object.freeze({ $schema: DRAFT, $id: `${ROOT}/${id}/v1`, title, ...body });
+const closed = (properties: any, required: any = []) => ({ type: 'object', additionalProperties: false, properties, ...(required.length ? { required } : {}) });
+const schema = (id: any, title: any, body: any) => Object.freeze({ $schema: DRAFT, $id: `${ROOT}/${id}/v1`, title, ...body });
 
 const track = closed({
   track: { enum: ['stable', 'candidate'] }, tag: text, label: text,
@@ -39,10 +39,10 @@ export const RELEASE_AWARENESS_HTTP_OPERATIONS = Object.freeze([Object.freeze({
 
 export const RELEASE_AWARENESS_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(RELEASE_AWARENESS_HTTP_SCHEMAS));
 
-export function validateReleaseAwarenessHttp(schemaId, value, phase = 'request') {
+export function validateReleaseAwarenessHttp(schemaId: any, value: any, phase: any = 'request') {
   const result = RELEASE_AWARENESS_HTTP_VALIDATORS.validate(schemaId, value);
   if (result.valid) return value;
-  const error = new Error(`Release Awareness HTTP ${phase} DTO 不符合契约。`);
+  const error: Error & Record<string, any> = new Error(`Release Awareness HTTP ${phase} DTO 不符合契约。`);
   error.code = phase === 'request' ? 'release_awareness_http_request_invalid' : 'release_awareness_http_response_invalid';
   error.status = phase === 'request' ? 400 : 500;
   error.details = { operationId: 'system-installation.release-awareness', schemaId, errors: result.errors };

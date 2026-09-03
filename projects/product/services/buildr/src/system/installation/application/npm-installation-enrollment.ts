@@ -6,41 +6,41 @@ import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesyste
 import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
-} from '../infrastructure/installation-origin.mjs';
+} from '../infrastructure/installation-origin.ts';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../infrastructure/installation-registry.mjs';
+} from '../infrastructure/installation-registry.ts';
 import {
   resolveApplicationPayloadRoot,
   readApplicationPayloadManifest,
   resolveProductRoot,
 } from '../../../infrastructure/product-resources/index.mjs';
 
-function requiredAbsoluteFile(value, label) {
+function requiredAbsoluteFile(value: any, label: any) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an explicit absolute path.`);
   const resolved = fs.realpathSync(value);
   if (!fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) throw new Error(`${label} is unavailable: ${value}.`);
   return resolved;
 }
 
-function requiredAbsoluteDirectory(value, label) {
+function requiredAbsoluteDirectory(value: any, label: any) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an explicit absolute path.`);
   const resolved = fs.realpathSync(value);
   if (!fs.statSync(resolved, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`${label} is unavailable: ${value}.`);
   return resolved;
 }
 
-function pathIsInside(candidate, root) {
+function pathIsInside(candidate: any, root: any) {
   const relative = path.relative(root, candidate);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
-function skipped(reason) {
+function skipped(reason: any) {
   return { action: 'skipped', reason };
 }
 
-export function enrollNpmInstallationFromLifecycle(options = {}) {
+export function enrollNpmInstallationFromLifecycle(options: any = {}) {
   const env = options.env || process.env;
   if (env.npm_lifecycle_event !== 'postinstall') throw new Error('npm update authority enrollment is restricted to the package postinstall lifecycle.');
   if (env.npm_config_global !== 'true') return skipped('npm lifecycle is not an explicit global installation');
@@ -48,7 +48,7 @@ export function enrollNpmInstallationFromLifecycle(options = {}) {
     return skipped('sudo changed the lifecycle user; Buildr will not enroll authority in another user registry');
   }
   const requiredEnvironment = ['npm_package_json', 'npm_config_prefix', 'npm_execpath', 'npm_node_execpath'];
-  const missing = requiredEnvironment.filter((name) => !env[name]);
+  const missing = requiredEnvironment.filter((name: any) => !env[name]);
   if (missing.length) return skipped(`npm lifecycle did not provide ${missing.join(', ')}`);
 
   const payloadRoot = options.payloadRoot || resolveApplicationPayloadRoot();

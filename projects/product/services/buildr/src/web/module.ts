@@ -5,7 +5,7 @@ import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
-} from '../system/installation/module.mjs';
+} from '../system/installation/module.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
 
 export const WEB_MODULE_ID = 'web-instance-lifecycle';

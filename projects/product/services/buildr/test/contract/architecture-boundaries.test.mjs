@@ -13,7 +13,7 @@ function lines(relative) {
 
 test('保留入口保持有界且 Doctor 已归属 System', () => {
   assert.ok(lines('src/agent-assets/infrastructure/runtime/render-claude-code.mjs').length <= 100);
-  assert.ok(lines('src/system/doctor/application/diagnostics.mjs').length <= 250);
+  assert.ok(lines('src/system/doctor/application/diagnostics.ts').length <= 250);
   assert.ok(lines('src/agent-assets/application/package-maintenance.mjs').length <= 550);
 });
 

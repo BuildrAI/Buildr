@@ -7,39 +7,39 @@ import process from 'node:process';
 export const WEB_PROFILE_SCHEMA = 'buildr.web-profile/v1';
 export const WEB_PROFILE_NAMES = Object.freeze(['released', 'development']);
 
-function sha256(value) {
+function sha256(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-function runtimeRole(identity) {
+function runtimeRole(identity: any) {
   return identity?.runtime?.role || identity?.runtimeRole || 'unknown';
 }
 
-function resolvePath(value, platform) {
+function resolvePath(value: any, platform: any) {
   return platform === 'win32' ? path.win32.resolve(value) : path.resolve(value);
 }
 
-function sameFilesystemPath(left, right) {
+function sameFilesystemPath(left: any, right: any) {
   if (!left || !right) return false;
-  const canonical = (value) => {
+  const canonical = (value: any) => {
     try { return fs.realpathSync(path.resolve(value)); } catch { return path.resolve(value); }
   };
   return canonical(left) === canonical(right);
 }
 
-export function webProfileName(productIdentity) {
+export function webProfileName(productIdentity: any) {
   const channel = productIdentity?.channel || 'unknown';
   const role = runtimeRole(productIdentity);
   if (channel === 'npm' && role === 'host') return 'released';
   if (channel === 'development' && role === 'development') return 'development';
-  const error = new Error(`Buildr Web product identity不受支持：channel=${channel}, runtimeRole=${role}。`);
+  const error: Error & Record<string, any> = new Error(`Buildr Web product identity不受支持：channel=${channel}, runtimeRole=${role}。`);
   error.code = 'web_profile_identity_invalid';
   error.status = 409;
   error.details = { channel, runtimeRole: role };
   throw error;
 }
 
-export function defaultWebDataRoot(profile, options = {}) {
+export function defaultWebDataRoot(profile: any, options: any = {}) {
   if (!WEB_PROFILE_NAMES.includes(profile)) throw new Error(`Unsupported Buildr Web profile: ${profile}.`);
   const platform = options.platform || process.platform;
   const env = options.env || process.env;
@@ -50,7 +50,7 @@ export function defaultWebDataRoot(profile, options = {}) {
   return path.posix.join(stateHome, profile === 'released' ? 'buildr' : 'buildr-dev');
 }
 
-export function resolveWebProfile(productIdentity, options = {}) {
+export function resolveWebProfile(productIdentity: any, options: any = {}) {
   const profile = webProfileName(productIdentity);
   const env = options.env || process.env;
   const platform = options.platform || process.platform;
@@ -75,7 +75,7 @@ export function resolveWebProfile(productIdentity, options = {}) {
   });
 }
 
-export function oppositeWebProfile(profile, productIdentity, options = {}) {
+export function oppositeWebProfile(profile: any, productIdentity: any, options: any = {}) {
   const opposite = profile.profile === 'released' ? 'development' : 'released';
   const channel = opposite === 'released' ? 'npm' : 'development';
   const role = opposite === 'released' ? 'host' : 'development';
@@ -90,7 +90,7 @@ export function oppositeWebProfile(profile, productIdentity, options = {}) {
   });
 }
 
-export function assertLauncherWebProfile(launcherIdentity, profile, options = {}) {
+export function assertLauncherWebProfile(launcherIdentity: any, profile: any, options: any = {}) {
   if (!launcherIdentity) return null;
   const channel = launcherIdentity.channel || 'unknown';
   const role = launcherIdentity.runtimeRole
@@ -109,7 +109,7 @@ export function assertLauncherWebProfile(launcherIdentity, profile, options = {}
       || runtime.version !== productIdentity?.runtime?.version;
   }
   if (channel !== profile.channel || role !== profile.runtimeRole || protocolMismatch || developmentBindingMismatch) {
-    const error = new Error(`Buildr Launcher与产品身份不匹配：Launcher channel=${channel}, runtimeRole=${role}, protocol=${launcherProtocol || 'unknown'}；产品 channel=${profile.channel}, runtimeRole=${profile.runtimeRole}, protocol=${productIdentity?.protocolIdentity || 'unknown'}。`);
+    const error: Error & Record<string, any> = new Error(`Buildr Launcher与产品身份不匹配：Launcher channel=${channel}, runtimeRole=${role}, protocol=${launcherProtocol || 'unknown'}；产品 channel=${profile.channel}, runtimeRole=${profile.runtimeRole}, protocol=${productIdentity?.protocolIdentity || 'unknown'}。`);
     error.code = 'web_launcher_profile_mismatch';
     error.status = 409;
     error.details = {
@@ -135,6 +135,6 @@ export function assertLauncherWebProfile(launcherIdentity, profile, options = {}
   return launcherIdentity;
 }
 
-export function sameWebProfile(left, right) {
+export function sameWebProfile(left: any, right: any) {
   return Boolean(left?.schemaVersion === WEB_PROFILE_SCHEMA && right?.schemaVersion === WEB_PROFILE_SCHEMA && left.identity === right.identity);
 }

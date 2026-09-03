@@ -1,16 +1,16 @@
 import process from 'node:process';
 
-import { findRegisteredProductInstallation } from '../../infrastructure/installation-registry.mjs';
+import { findRegisteredProductInstallation } from '../../infrastructure/installation-registry.ts';
 import {
   installNpmLauncher,
   npmLauncherStatus,
   repairNpmLauncher,
   uninstallNpmLauncher,
-} from '../../infrastructure/npm-launcher.mjs';
+} from '../../infrastructure/npm-launcher.ts';
 import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../../infrastructure/product-resources/index.mjs';
-import { readCurrentInstallationOrigin } from '../../infrastructure/installation-origin.mjs';
+import { readCurrentInstallationOrigin } from '../../infrastructure/installation-origin.ts';
 
-function currentNpmRegistration(runtime) {
+function currentNpmRegistration(runtime: any) {
   const productRoot = runtime.productRoot();
   const payloadRoot = resolveApplicationPayloadRoot({ required: true });
   const origin = readCurrentInstallationOrigin(productRoot, {
@@ -18,7 +18,7 @@ function currentNpmRegistration(runtime) {
     payloadManifest: readApplicationPayloadManifest(payloadRoot),
   });
   if (origin.channel !== 'npm') {
-    const error = new Error(`Buildr Web Launcher management requires a verified npm installation; current channel is ${origin.channel}.`);
+    const error: Error & Record<string, any> = new Error(`Buildr Web Launcher management requires a verified npm installation; current channel is ${origin.channel}.`);
     error.code = 'launcher.npm_installation_required';
     throw error;
   }
@@ -28,14 +28,14 @@ function currentNpmRegistration(runtime) {
     entryPath: process.env.BUILDR_NPM_ENTRY_PATH,
   });
   if (registration?.status !== 'installed') {
-    const error = new Error(`The npm installation registry is ${registration?.status || 'absent'}: ${registration?.reason || 'run npm install again to enroll exact Host Node/npm prefix authority'}.`);
+    const error: Error & Record<string, any> = new Error(`The npm installation registry is ${registration?.status || 'absent'}: ${registration?.reason || 'run npm install again to enroll exact Host Node/npm prefix authority'}.`);
     error.code = 'launcher.npm_registration_required';
     throw error;
   }
   return registration;
 }
 
-function printLauncherResult(result) {
+function printLauncherResult(result: any) {
   const location = result.target || '-';
   if (result.status === 'ready') console.log(`npm Buildr Web Launcher ready: ${location}`);
   else if (result.status === 'absent') console.log(`npm Buildr Web Launcher absent: ${location}`);
@@ -43,13 +43,13 @@ function printLauncherResult(result) {
   for (const action of result.nextActions || []) console.log(`next: ${action}`);
 }
 
-export function registerLauncherInterface(runtime) {
-  function manageBuildrWebLauncher(action, args) {
+export function registerLauncherInterface(runtime: any) {
+  function manageBuildrWebLauncher(action: any, args: any) {
     const supportsPort = ['install', 'repair'].includes(action);
     runtime.assertNoUnknownOptions(args, new Set(['--target', '--platform', '--json', ...(supportsPort ? ['--port'] : [])]), new Set(['--json']));
     const rawPort = supportsPort ? runtime.optionValue(args, '--port', undefined) : undefined;
     const port = rawPort === undefined ? undefined : Number(rawPort);
-    if (rawPort !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) throw new Error(`Invalid npm Launcher port: ${rawPort}.`);
+    if (rawPort !== undefined && (!Number.isInteger(port) || (port as number) < 0 || (port as number) > 65535)) throw new Error(`Invalid npm Launcher port: ${rawPort}.`);
     const options = {
       target: runtime.optionValue(args, '--target', undefined),
       platform: runtime.optionValue(args, '--platform', process.platform),
@@ -86,8 +86,8 @@ export function createLauncherCliContributions() {
         '默认首选 127.0.0.1:4457；--port 0 直接使用随机 loopback 端口，非零首选端口占用时只随机回退一次。',
         '普通 npm install 不会创建图形入口；已有同 ownership Launcher 才会在 npm 更新后刷新 binding。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
-      run: (runtime, context) => runtime.manageBuildrWebLauncher('install', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'web' && action === 'launcher' && runtimeId === 'install',
+      run: (runtime: any, context: any) => runtime.manageBuildrWebLauncher('install', context.argv.slice(5)),
     },
     {
       key: 'web launcher status',
@@ -98,8 +98,8 @@ export function createLauncherCliContributions() {
         '',
         '任何路径或摘要漂移都会 fail closed；不会从 PATH 查找替代 Buildr。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
-      run: (runtime, context) => runtime.manageBuildrWebLauncher('status', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'web' && action === 'launcher' && runtimeId === 'status',
+      run: (runtime: any, context: any) => runtime.manageBuildrWebLauncher('status', context.argv.slice(5)),
     },
     {
       key: 'web launcher repair',
@@ -111,8 +111,8 @@ export function createLauncherCliContributions() {
         'repair 只接受同一 installation slot 拥有的现有 Launcher；不会接管 foreign target 或改绑到 PATH 中的其他 Buildr。',
         '省略 --port 时保留 v2 binding 的现有策略；从 v1 迁移时采用默认首选端口 4457。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
-      run: (runtime, context) => runtime.manageBuildrWebLauncher('repair', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'web' && action === 'launcher' && runtimeId === 'repair',
+      run: (runtime: any, context: any) => runtime.manageBuildrWebLauncher('repair', context.argv.slice(5)),
     },
     {
       key: 'web launcher uninstall',
@@ -123,8 +123,8 @@ export function createLauncherCliContributions() {
         '',
         'foreign target 或 binding 会被保留并 fail closed；本命令不卸载 npm Buildr、Workspace Registry、SQLite、日志或 Workspace data。',
       ],
-      match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
-      run: (runtime, context) => runtime.manageBuildrWebLauncher('uninstall', context.argv.slice(5)),
+      match: ({ domain, action, runtimeId }: any) => domain === 'web' && action === 'launcher' && runtimeId === 'uninstall',
+      run: (runtime: any, context: any) => runtime.manageBuildrWebLauncher('uninstall', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }

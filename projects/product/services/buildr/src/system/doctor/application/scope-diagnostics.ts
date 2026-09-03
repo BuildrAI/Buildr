@@ -1,4 +1,4 @@
-export function createScopeDiagnostics(deps) {
+export function createScopeDiagnostics(deps: any) {
   const {
     addDoctorFinding,
     execFileSync,
@@ -21,7 +21,7 @@ export function createScopeDiagnostics(deps) {
     resolveSourceRoot,
   } = deps;
 
-  function projectView(code, project) {
+  function projectView(code: any, project: any) {
     if (project?.source) return project;
     return {
       id: null,
@@ -35,7 +35,7 @@ export function createScopeDiagnostics(deps) {
     };
   }
 
-  function scopeParts(scope) {
+  function scopeParts(scope: any) {
     const parts = scope === '.' ? ['.'] : scope.split('/').filter(Boolean);
     const isRootScope = parts.length === 1 && parts[0] === '.';
     const isRootProjectScope = parts[0] === 'projects';
@@ -54,7 +54,7 @@ export function createScopeDiagnostics(deps) {
     return parts;
   }
 
-  function workspaceName(targetRoot) {
+  function workspaceName(targetRoot: any) {
     const metadataPath = path.join(targetRoot, '.buildr', 'workspace.yml');
     if (!existsFile(metadataPath)) return path.basename(targetRoot);
     const content = fs.readFileSync(metadataPath, 'utf8');
@@ -62,13 +62,13 @@ export function createScopeDiagnostics(deps) {
     return match ? parseYamlValue(match[1].trim()) : path.basename(targetRoot);
   }
 
-  function readProjectsRegistryIfExists(targetRoot) {
+  function readProjectsRegistryIfExists(targetRoot: any) {
     const file = projectsManifestPath(targetRoot);
     if (!existsFile(file)) return null;
     return parseProjectsYaml(fs.readFileSync(file, 'utf8'));
   }
 
-  function discoverDoctorScopes(targetRoot, requestedScope, registry = null) {
+  function discoverDoctorScopes(targetRoot: any, requestedScope: any, registry: any = null) {
     if (requestedScope) {
       const parts = scopeParts(requestedScope);
       if (parts[0] === '.') {
@@ -86,7 +86,7 @@ export function createScopeDiagnostics(deps) {
       }
     }
 
-    const scopes = [];
+    const scopes: any[] = [];
     if (existsDirectory(path.join(targetRoot, 'projects')) || existsFile(path.join(targetRoot, '.buildr', 'workspace.yml'))) {
       scopes.push({ org: workspaceName(targetRoot), project: null, servicePath: null, scope: '.' });
       const projectNames = new Set();
@@ -95,7 +95,7 @@ export function createScopeDiagnostics(deps) {
       }
       const projectsRoot = path.join(targetRoot, 'projects');
       if (existsDirectory(projectsRoot)) {
-        const projects = fs.readdirSync(projectsRoot).filter((project) => existsDirectory(path.join(projectsRoot, project))).sort();
+        const projects = fs.readdirSync(projectsRoot).filter((project: any) => existsDirectory(path.join(projectsRoot, project))).sort();
         for (const project of projects) projectNames.add(project);
       }
       for (const project of [...projectNames].sort()) {
@@ -105,12 +105,12 @@ export function createScopeDiagnostics(deps) {
     return scopes;
   }
 
-  function resolveRepoPath(projectRoot, repoPath) {
+  function resolveRepoPath(projectRoot: any, repoPath: any) {
     if (!repoPath) return null;
     return path.isAbsolute(repoPath) ? repoPath : path.resolve(projectRoot, repoPath);
   }
 
-  function readGitRemote(repoPath, remoteName) {
+  function readGitRemote(repoPath: any, remoteName: any) {
     try {
       return gitOutput(['remote', 'get-url', remoteName], repoPath);
     } catch {
@@ -118,13 +118,13 @@ export function createScopeDiagnostics(deps) {
     }
   }
 
-  function gitignoreLines(targetRoot) {
+  function gitignoreLines(targetRoot: any) {
     const gitignore = path.join(targetRoot, '.gitignore');
     if (!existsFile(gitignore)) return [];
-    return fs.readFileSync(gitignore, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return fs.readFileSync(gitignore, 'utf8').split(/\r?\n/).map((line: any) => line.trim()).filter(Boolean);
   }
 
-  function isIgnoredByWorkspace(targetRoot, serviceRepoPath, lines) {
+  function isIgnoredByWorkspace(targetRoot: any, serviceRepoPath: any, lines: any) {
     const relative = toPosixRelative(targetRoot, serviceRepoPath);
     try {
       execFileSync('git', ['check-ignore', '--quiet', relative], { cwd: targetRoot, stdio: 'ignore' });
@@ -145,7 +145,7 @@ export function createScopeDiagnostics(deps) {
     return false;
   }
 
-  function projectDoctorContextFor(targetRoot, item, project = null) {
+  function projectDoctorContextFor(targetRoot: any, item: any, project: any = null) {
     const orgRoot = targetRoot;
     const projectRoot = item.project ? (project ? resolveSourceRoot(orgRoot, project.source) : path.join(orgRoot, 'projects', item.project)) : null;
     return {
@@ -156,7 +156,7 @@ export function createScopeDiagnostics(deps) {
     };
   }
 
-  function projectBaselineStatus(projectRoot) {
+  function projectBaselineStatus(projectRoot: any) {
     return {
       agentsFile: existsFile(path.join(projectRoot, 'AGENTS.md')),
       openspecSpecs: existsDirectory(path.join(projectRoot, 'openspec', 'specs')),
@@ -169,8 +169,8 @@ export function createScopeDiagnostics(deps) {
     };
   }
 
-  function missingProjectBaselineAssets(status) {
-    const labels = {
+  function missingProjectBaselineAssets(status: any) {
+    const labels: Record<string, string> = {
       agentsFile: 'AGENTS.md',
       openspecSpecs: 'openspec/specs',
       openspecKnowledge: 'openspec/knowledge',
@@ -180,14 +180,14 @@ export function createScopeDiagnostics(deps) {
       servicesDirectory: 'services',
     };
     return Object.entries(status)
-      .filter(([key]) => key !== 'commandsContext')
-      .filter(([, exists]) => !exists)
-      .map(([key]) => labels[key]);
+      .filter(([key]: any) => key !== 'commandsContext')
+      .filter(([, exists]: any) => !exists)
+      .map(([key]: any) => labels[key]);
   }
 
-  function diagnoseProjectRegistry(result, targetRoot) {
+  function diagnoseProjectRegistry(result: any, targetRoot: any) {
     const registryPath = projectsManifestPath(targetRoot);
-    const registryResult = {
+    const registryResult: any = {
       path: 'projects/manifest.yml',
       exists: existsFile(registryPath),
       valid: false,
@@ -216,7 +216,7 @@ export function createScopeDiagnostics(deps) {
     let registry;
     try {
       registry = readProjectsRegistryIfExists(targetRoot);
-    } catch (error) {
+    } catch (error: any) {
       addDoctorFinding(result, 'warning', 'projects.registry_invalid', `Project registry 不可解析：${error.message}`, {
         path: registryResult.path,
         suggestion: '修复 projects/manifest.yml 语法后重新运行 doctor。',
@@ -244,7 +244,7 @@ export function createScopeDiagnostics(deps) {
     }
     registryResult.valid = validationErrors.length === 0;
 
-    for (const [projectName, project] of Object.entries(registry.projects || {}).sort(([left], [right]) => left.localeCompare(right))) {
+    for (const [projectName, project] of Object.entries(registry.projects || {}).sort(([left]: any, [right]: any) => left.localeCompare(right))) {
       const view = projectView(projectName, project);
       registryResult.projects.push({
         id: view.id,
@@ -278,7 +278,7 @@ export function createScopeDiagnostics(deps) {
     const registered = new Set(Object.keys(registry.projects || {}));
     const projectsRoot = path.join(targetRoot, 'projects');
     if (existsDirectory(projectsRoot)) {
-      for (const projectName of fs.readdirSync(projectsRoot).filter((project) => existsDirectory(path.join(projectsRoot, project))).sort()) {
+      for (const projectName of fs.readdirSync(projectsRoot).filter((project: any) => existsDirectory(path.join(projectsRoot, project))).sort()) {
         if (!registered.has(projectName)) {
           addDoctorFinding(result, 'warning', 'projects.unregistered', `Project 目录未登记：${projectName}`, {
             path: `projects/${projectName}`,
@@ -292,7 +292,7 @@ export function createScopeDiagnostics(deps) {
     return registry;
   }
 
-  function diagnoseWorkspace(result, targetRoot) {
+  function diagnoseWorkspace(result: any, targetRoot: any) {
     const identity = buildrWorkspaceIdentity(targetRoot);
     const workspace = {
       initialized: identity.state === 'valid',
@@ -336,7 +336,7 @@ export function createScopeDiagnostics(deps) {
     }
   }
 
-  function diagnoseLegacyPractices(result, targetRoot, scopes, includeInfo = false) {
+  function diagnoseLegacyPractices(result: any, targetRoot: any, scopes: any, includeInfo: any = false) {
     if (!includeInfo) return;
     const roots = [{ path: 'practices', root: path.join(targetRoot, 'practices'), scope: 'workspace' }];
     for (const item of scopes) {
@@ -358,7 +358,7 @@ export function createScopeDiagnostics(deps) {
     }
   }
 
-  function diagnoseHierarchy(result, targetRoot, scopes, registry = null) {
+  function diagnoseHierarchy(result: any, targetRoot: any, scopes: any, registry: any = null) {
     result.organizations = [];
     result.projects = [];
     const seenOrganizations = new Set();
@@ -386,7 +386,7 @@ export function createScopeDiagnostics(deps) {
 
       if (!item.project) continue;
 
-      const project = {
+      const project: any = {
         org: item.org,
         id: registryEntry?.id || null,
         workspaceId: registryEntry?.workspaceId || null,

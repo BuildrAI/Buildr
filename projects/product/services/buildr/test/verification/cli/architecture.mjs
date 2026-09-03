@@ -93,7 +93,7 @@ const requiredRuntime = [
   'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
   'web/infrastructure/instance-runtime.ts',
   'web/interfaces/cli/web.ts',
-  'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
+  'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.mjs',
   'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.ts',
   'workspace/module.ts', 'workspace/application/workspace-application.ts',
   'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
@@ -119,14 +119,14 @@ const requiredRuntime = [
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
   'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.ts',
   'task/openspec/module.ts', 'task/change/module.ts', 'task/change/application/change-application.ts',
-  'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
+  'system/publication/module.ts', 'system/publication/application/publication-application.ts',
   'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.ts',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
-  'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.mjs',
+  'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.ts',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
   'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
-  'system/doctor/application/scope-diagnostics.mjs', 'system/doctor/application/service-diagnostics.mjs',
-  'system/doctor/application/runtime-diagnostics.mjs', 'agent-assets/application/package-maintenance/static-validation.mjs',
+  'system/doctor/application/scope-diagnostics.ts', 'system/doctor/application/service-diagnostics.ts',
+  'system/doctor/application/runtime-diagnostics.ts', 'agent-assets/application/package-maintenance/static-validation.mjs',
   'agent-assets/application/package-maintenance/smoke-checks.mjs', 'agent-assets/application/package-maintenance/verification-registry.mjs',
   'agent-assets/application/package-maintenance/output.mjs',
 ];
@@ -171,17 +171,17 @@ const allowedTargets = {
 };
 const allowedCrossModulePorts = new Set([
   'agent-assets/module.mjs -> workspace/module.ts',
-  'web/infrastructure/instance-runtime.ts -> system/installation/module.mjs',
-  'web/module.ts -> system/installation/module.mjs',
+  'web/infrastructure/instance-runtime.ts -> system/installation/module.ts',
+  'web/module.ts -> system/installation/module.ts',
   'web/module.ts -> workspace/module.ts',
   'bootstrap/cli/registry.mjs -> task/openspec/module.ts',
-  'bootstrap/runtime.mjs -> system/publication/module.mjs',
+  'bootstrap/runtime.mjs -> system/publication/module.ts',
   'bootstrap/runtime.mjs -> task/openspec/module.ts',
   'bootstrap/runtime.mjs -> task/change/module.ts',
   'task/openspec/module.ts -> workspace/module.ts',
   'task/change/module.ts -> task/openspec/module.ts',
   'task/change/module.ts -> workspace/module.ts',
-  'system/publication/module.mjs -> workspace/module.ts',
+  'system/publication/module.ts -> workspace/module.ts',
 ]);
 
 for (const file of sourceFiles) {
@@ -246,7 +246,7 @@ for (const file of sourceFiles) {
 
 const facadeLimits = new Map([
   ['src/agent-assets/infrastructure/runtime/render-claude-code.mjs', 100],
-  ['src/system/doctor/application/diagnostics.mjs', 250],
+  ['src/system/doctor/application/diagnostics.ts', 250],
   ['src/agent-assets/application/package-maintenance.mjs', 550],
   ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],

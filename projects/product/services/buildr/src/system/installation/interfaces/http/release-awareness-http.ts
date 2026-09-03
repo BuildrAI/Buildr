@@ -3,14 +3,14 @@ import {
   RELEASE_AWARENESS_HTTP_OPERATIONS,
   RELEASE_AWARENESS_HTTP_SCHEMAS,
   validateReleaseAwarenessHttp,
-} from './release-awareness-http-contracts.mjs';
+} from './release-awareness-http-contracts.ts';
 
-export function createReleaseAwarenessHttpContribution(application) {
+export function createReleaseAwarenessHttpContribution(application: any) {
   return Object.freeze({
     id: 'system-installation.release-awareness.http',
     operations: RELEASE_AWARENESS_HTTP_OPERATIONS,
     schemas: RELEASE_AWARENESS_HTTP_SCHEMAS,
-    handleTopLevel: ({ request, pathname }) => {
+    handleTopLevel: ({ request, pathname }: any) => {
       if (request.method !== 'GET' || pathname !== '/api/v1/release-awareness') return null;
       validateReleaseAwarenessHttp(RELEASE_AWARENESS_HTTP_SCHEMAS.request.$id, {});
       const awareness = application.releaseAwareness({ allowDevelopmentQuery: false, persistState: true, notify: true });

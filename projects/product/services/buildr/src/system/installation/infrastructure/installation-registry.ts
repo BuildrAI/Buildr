@@ -10,7 +10,7 @@ import {
   runtimeIdentityForOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
-} from './installation-origin.mjs';
+} from './installation-origin.ts';
 import { readApplicationPayloadManifest } from '../../../infrastructure/product-resources/index.mjs';
 
 export const PRODUCT_INSTALLATION_REGISTRY_SCHEMA = 'buildr.product-installation-registry/v1';
@@ -28,22 +28,22 @@ const INSTALLATION_FIELDS = new Set([
 const RUNTIME_FIELDS = new Set(['role', 'executable', 'version', 'platform', 'architecture', 'identity']);
 const UPDATE_AUTHORITY_FIELDS = new Set(['type', 'nodeExecutable', 'npmCliPath', 'prefix', 'identity']);
 
-function sha256(value) {
+function sha256(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-function assertClosed(value, fields, label) {
+function assertClosed(value: any, fields: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-  const unknown = Object.keys(value).filter((field) => !fields.has(field));
+  const unknown = Object.keys(value).filter((field: any) => !fields.has(field));
   if (unknown.length) throw new Error(`${label} contains unsupported fields: ${unknown.sort().join(', ')}.`);
 }
 
-function absolute(value, label) {
+function absolute(value: any, label: any) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an absolute path.`);
   return path.resolve(value);
 }
 
-function updateAuthorityMaterial(value) {
+function updateAuthorityMaterial(value: any) {
   return {
     type: value.type,
     nodeExecutable: path.resolve(value.nodeExecutable),
@@ -52,7 +52,7 @@ function updateAuthorityMaterial(value) {
   };
 }
 
-export function validateProductUpdateAuthority(value) {
+export function validateProductUpdateAuthority(value: any) {
   if (value === null) return null;
   assertClosed(value, UPDATE_AUTHORITY_FIELDS, 'product installation updateAuthority');
   if (value.type !== 'npm-cli') throw new Error(`Unsupported product update authority: ${value.type}.`);
@@ -62,19 +62,19 @@ export function validateProductUpdateAuthority(value) {
   return Object.freeze({ ...material, identity: expected });
 }
 
-export function createProductUpdateAuthority(value) {
+export function createProductUpdateAuthority(value: any) {
   const material = updateAuthorityMaterial({ ...value, type: 'npm-cli' });
   return validateProductUpdateAuthority({ ...material, identity: sha256(JSON.stringify(material)) });
 }
 
-function pathIsEqualOrInside(candidate, root) {
+function pathIsEqualOrInside(candidate: any, root: any) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-export function inspectProductUpdateAuthority(value, options = {}) {
+export function inspectProductUpdateAuthority(value: any, options: any = {}) {
   let authority;
-  try { authority = validateProductUpdateAuthority(value); } catch (error) {
+  try { authority = validateProductUpdateAuthority(value); } catch (error: any) {
     return { status: 'invalid', authority: null, reason: error.message };
   }
   if (!authority) return { status: 'absent', authority: null, reason: 'npm update authority is not enrolled' };
@@ -101,7 +101,7 @@ export function inspectProductUpdateAuthority(value, options = {}) {
   return { status: 'ready', authority, reason: null };
 }
 
-function runtimeValue(value, origin) {
+function runtimeValue(value: any, origin: any) {
   assertClosed(value, RUNTIME_FIELDS, 'product installation runtime');
   const executable = absolute(value.executable, 'product installation runtime executable');
   if (value.role !== origin.runtimeRole) throw new Error('Product installation runtime role does not match origin.');
@@ -125,7 +125,7 @@ function runtimeValue(value, origin) {
   });
 }
 
-function installationMaterial(value) {
+function installationMaterial(value: any) {
   const origin = validateInstallationOrigin(value.origin);
   if (origin.channel !== 'npm') throw new Error('Product installation registry accepts only formal npm origins.');
   const envelopePath = absolute(value.envelopePath, 'product installation envelopePath');
@@ -136,11 +136,11 @@ function installationMaterial(value) {
   return { origin, envelopePath, productRoot, entryPath, runtime, updateAuthority };
 }
 
-export function productInstallationRegistryEntryIdentity(value) {
+export function productInstallationRegistryEntryIdentity(value: any) {
   return sha256(JSON.stringify(installationMaterial(value)));
 }
 
-export function validateProductInstallationRegistryEntry(value) {
+export function validateProductInstallationRegistryEntry(value: any) {
   assertClosed(value, INSTALLATION_FIELDS, 'product installation registry entry');
   const material = installationMaterial(value);
   const expected = sha256(JSON.stringify(material));
@@ -148,7 +148,7 @@ export function validateProductInstallationRegistryEntry(value) {
   return Object.freeze({ ...material, identity: expected });
 }
 
-export function validateProductInstallationRegistry(value) {
+export function validateProductInstallationRegistry(value: any) {
   assertClosed(value, REGISTRY_FIELDS, 'product installation registry');
   if (value.schemaVersion !== PRODUCT_INSTALLATION_REGISTRY_SCHEMA) {
     throw new Error(`Product installation registry schema must be ${PRODUCT_INSTALLATION_REGISTRY_SCHEMA}.`);
@@ -163,11 +163,11 @@ export function validateProductInstallationRegistry(value) {
   return Object.freeze({ schemaVersion: PRODUCT_INSTALLATION_REGISTRY_SCHEMA, installations: Object.freeze(installations) });
 }
 
-export function productInstallationRegistryPath(options = {}) {
+export function productInstallationRegistryPath(options: any = {}) {
   return path.resolve(options.file || path.join(options.dataRoot || productDataRoot(), 'product-installations.json'));
 }
 
-export function productInstallationRegistryLockPath(options = {}) {
+export function productInstallationRegistryLockPath(options: any = {}) {
   return `${productInstallationRegistryPath(options)}.lock`;
 }
 
@@ -175,50 +175,50 @@ function emptyRegistry() {
   return { schemaVersion: PRODUCT_INSTALLATION_REGISTRY_SCHEMA, installations: [] };
 }
 
-export function readProductInstallationRegistry(options = {}) {
+export function readProductInstallationRegistry(options: any = {}) {
   const file = productInstallationRegistryPath(options);
   let value;
   try {
     value = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (error) {
+  } catch (error: any) {
     if (error.code === 'ENOENT') return { file, status: 'absent', registry: validateProductInstallationRegistry(emptyRegistry()), reason: null };
     return { file, status: 'invalid', registry: null, reason: `Cannot read product installation registry: ${error.message}` };
   }
   try {
     return { file, status: 'ready', registry: validateProductInstallationRegistry(value), reason: null };
-  } catch (error) {
+  } catch (error: any) {
     return { file, status: 'invalid', registry: null, reason: error.message };
   }
 }
 
-function writeRegistry(file, registry) {
+function writeRegistry(file: any, registry: any) {
   atomicWriteJson(file, registry, { flag: 'wx', mode: 0o600 });
 }
 
-function readReceipt(file) {
+function readReceipt(file: any) {
   let value;
-  try { value = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) {
+  try { value = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error: any) {
     throw new Error(`Cannot read product installation envelope ${file}: ${error.message}`);
   }
   return validateInstallationOrigin(value);
 }
 
-function readPayloadBoundReceipt(file) {
+function readPayloadBoundReceipt(file: any) {
   const receipt = readReceipt(file);
   const manifest = readApplicationPayloadManifest(path.dirname(file));
   return validateFormalInstallationOriginPayloadBinding(receipt, manifest);
 }
 
-function readProductMetadata(root) {
+function readProductMetadata(root: any) {
   let value;
-  try { value = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); } catch (error) {
+  try { value = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); } catch (error: any) {
     throw new Error(`Cannot read registered Buildr package identity at ${root}: ${error.message}`);
   }
   if (value.name !== '@buildr-ai/buildr' || typeof value.version !== 'string') throw new Error('Registered product root is not @buildr-ai/buildr.');
   return value;
 }
 
-export function createProductInstallationRegistryEntry({ envelopePath, productRoot, entryPath, runtimeExecutable = process.execPath, updateAuthority = null }) {
+export function createProductInstallationRegistryEntry({ envelopePath, productRoot, entryPath, runtimeExecutable = process.execPath, updateAuthority = null }: any) {
   const resolvedEnvelope = absolute(envelopePath, 'product installation envelopePath');
   const resolvedProductRoot = absolute(productRoot, 'product installation productRoot');
   const resolvedEntry = absolute(entryPath, 'product installation entryPath');
@@ -241,25 +241,26 @@ export function createProductInstallationRegistryEntry({ envelopePath, productRo
   return validateProductInstallationRegistryEntry({ ...material, identity: sha256(JSON.stringify(material)) });
 }
 
-export function enrollProductInstallation(input, options = {}) {
+export function enrollProductInstallation(input: any, options: any = {}) {
   const entry = createProductInstallationRegistryEntry(input);
   const registryFile = productInstallationRegistryPath(options);
   return withExclusiveFileLock(productInstallationRegistryLockPath(options), registryFile, () => {
     const observed = readProductInstallationRegistry({ file: registryFile });
     if (observed.status === 'invalid') throw new Error(observed.reason);
-    const matchingIndex = observed.registry.installations.findIndex((item) => (
+    const currentRegistry = observed.registry!;
+    const matchingIndex = currentRegistry.installations.findIndex((item: any) => (
       item.origin.ownershipIdentity === entry.origin.ownershipIdentity
       && sameFilesystemPath(item.envelopePath, entry.envelopePath)
       && sameFilesystemPath(item.productRoot, entry.productRoot)
       && sameFilesystemPath(item.entryPath, entry.entryPath)
     ));
-    const matching = matchingIndex === -1 ? null : observed.registry.installations[matchingIndex];
+    const matching = matchingIndex === -1 ? null : currentRegistry.installations[matchingIndex];
     if (matching?.identity === entry.identity || (matching?.updateAuthority && !entry.updateAuthority)) {
-      return { action: 'reused', file: observed.file, entry: matching, registry: observed.registry };
+      return { action: 'reused', file: observed.file, entry: matching, registry: currentRegistry };
     }
     const installations = matchingIndex === -1
-      ? [...observed.registry.installations, entry]
-      : observed.registry.installations.map((item, index) => index === matchingIndex ? entry : item);
+      ? [...currentRegistry.installations, entry]
+      : currentRegistry.installations.map((item: any, index: any) => index === matchingIndex ? entry : item);
     const registry = validateProductInstallationRegistry({
       schemaVersion: PRODUCT_INSTALLATION_REGISTRY_SCHEMA,
       installations,
@@ -276,13 +277,13 @@ export function enrollProductInstallation(input, options = {}) {
   });
 }
 
-export function inspectProductInstallationRegistryEntry(value) {
+export function inspectProductInstallationRegistryEntry(value: any) {
   let entry;
-  try { entry = validateProductInstallationRegistryEntry(value); } catch (error) {
+  try { entry = validateProductInstallationRegistryEntry(value); } catch (error: any) {
     return { status: 'invalid', entry: null, reason: error.message };
   }
   let receipt;
-  try { receipt = readPayloadBoundReceipt(entry.envelopePath); } catch (error) {
+  try { receipt = readPayloadBoundReceipt(entry.envelopePath); } catch (error: any) {
     const missing = !fs.existsSync(entry.envelopePath)
       || !fs.existsSync(path.join(path.dirname(entry.envelopePath), 'application-payload.json'));
     return { status: missing ? 'stale' : 'invalid', entry, reason: error.message };
@@ -291,7 +292,7 @@ export function inspectProductInstallationRegistryEntry(value) {
     return { status: 'invalid', entry, reason: 'Registered product installation envelope identity drifted.' };
   }
   let metadata;
-  try { metadata = readProductMetadata(entry.productRoot); } catch (error) {
+  try { metadata = readProductMetadata(entry.productRoot); } catch (error: any) {
     return { status: fs.existsSync(entry.productRoot) ? 'invalid' : 'stale', entry, reason: error.message };
   }
   if (metadata.name !== receipt.package || metadata.version !== receipt.version) {
@@ -312,22 +313,22 @@ export function inspectProductInstallationRegistryEntry(value) {
   return { status: 'installed', entry, reason: null };
 }
 
-export function registeredProductInstallations(options = {}) {
+export function registeredProductInstallations(options: any = {}) {
   const observed = readProductInstallationRegistry(options);
   if (observed.status === 'invalid') return { ...observed, installations: [] };
   return {
     ...observed,
-    installations: observed.registry.installations.map(inspectProductInstallationRegistryEntry),
+    installations: observed.registry!.installations.map(inspectProductInstallationRegistryEntry),
   };
 }
 
-export function findRegisteredProductInstallation(origin, options = {}) {
+export function findRegisteredProductInstallation(origin: any, options: any = {}) {
   if (!origin?.ownershipIdentity) return null;
   const observed = registeredProductInstallations(options);
   const productRoot = options.productRoot || null;
   const envelopePath = options.envelopePath || null;
   const entryPath = options.entryPath || null;
-  return observed.installations.findLast((item) => (
+  return observed.installations.findLast((item: any) => (
     item.entry?.origin.ownershipIdentity === origin.ownershipIdentity
     && (!productRoot || sameFilesystemPath(item.entry.productRoot, productRoot))
     && (!envelopePath || sameFilesystemPath(item.entry.envelopePath, envelopePath))

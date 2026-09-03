@@ -8,36 +8,36 @@ import {
   buildReleaseAwareness,
   compareVersions,
   defaultReleaseTrack,
-} from './release-awareness.mjs';
+} from './release-awareness.ts';
 import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
-} from '../infrastructure/installation-origin.mjs';
+} from '../infrastructure/installation-origin.ts';
 import {
   findRegisteredProductInstallation,
   inspectProductUpdateAuthority,
-} from '../infrastructure/installation-registry.mjs';
+} from '../infrastructure/installation-registry.ts';
 import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
 
-function run(command, args, options = {}) {
+function run(command: any, args: any, options: any = {}) {
   const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });
   return {
     ok: result.status === 0,
     status: result.status,
-    stdout: (result.stdout || '').trim(),
-    stderr: (result.stderr || '').trim(),
+    stdout: String(result.stdout || '').trim(),
+    stderr: String(result.stderr || '').trim(),
     error: result.error?.message || null,
   };
 }
 
-function readPackage(file) {
+function readPackage(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-export { compareVersions } from './release-awareness.mjs';
+export { compareVersions } from './release-awareness.ts';
 
-export function identifyCliSource(productRoot, options = {}) {
+export function identifyCliSource(productRoot: any, options: any = {}) {
   const root = fs.realpathSync(path.resolve(productRoot));
   const packageFile = path.join(root, 'package.json');
   const manifest = readPackage(packageFile);
@@ -53,7 +53,7 @@ export function identifyCliSource(productRoot, options = {}) {
     } else {
       origin = readCurrentInstallationOrigin(root, { payloadRoot, ...options });
     }
-  } catch (error) {
+  } catch (error: any) {
     origin = {
       channel: 'unknown',
       runtimeRole: 'unknown',
@@ -113,14 +113,14 @@ export function identifyCliSource(productRoot, options = {}) {
   return { ...base, mode: 'unknown', installPrefix: null, blockingReasons: origin.blockingReasons || ['无法从 installation identity 与 ownership receipt 证明当前 Buildr 来源。'] };
 }
 
-function gitValue(root, args) {
+function gitValue(root: any, args: any) {
   const result = run('git', ['-C', root, ...args]);
   return result.ok ? result.stdout : null;
 }
 
-function gitUpdatePlan(source, { fetch = true, registryLookup = null, ...options } = {}) {
+function gitUpdatePlan(source: any, { fetch = true, registryLookup = null, ...options }: any = {}) {
   const root = source.gitRoot;
-  const blockingReasons = [];
+  const blockingReasons: any[] = [];
   const branch = gitValue(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
   const head = gitValue(root, ['rev-parse', 'HEAD']);
   const upstream = gitValue(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
@@ -128,13 +128,13 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null, ...options
   if (!branch) blockingReasons.push('当前 checkout 处于 detached HEAD。');
   if (!upstream) blockingReasons.push('当前 branch 没有 upstream。');
   if (dirty) blockingReasons.push('当前 checkout 存在未提交改动。');
-  let fetchResult = null;
+  let fetchResult: any = null;
   if (fetch && upstream && !dirty) {
     fetchResult = run('git', ['-C', root, 'fetch', '--quiet']);
     if (!fetchResult.ok) blockingReasons.push(`无法 fetch 远端：${fetchResult.stderr || fetchResult.error || 'unknown error'}`);
   }
-  let ahead = null;
-  let behind = null;
+  let ahead: any = null;
+  let behind: any = null;
   if (upstream && (!fetchResult || fetchResult.ok)) {
     const counts = gitValue(root, ['rev-list', '--left-right', '--count', `HEAD...${upstream}`]);
     if (counts) [ahead, behind] = counts.split(/\s+/).map(Number);
@@ -191,7 +191,7 @@ function gitUpdatePlan(source, { fetch = true, registryLookup = null, ...options
   };
 }
 
-function registryUpdatePlan(source, options = {}) {
+function registryUpdatePlan(source: any, options: any = {}) {
   const awareness = buildReleaseAwareness(source, options);
   const selected = awareness.tracks[awareness.selectedTrack];
   const blockingReasons = [...awareness.blockingReasons];
@@ -225,7 +225,7 @@ function registryUpdatePlan(source, options = {}) {
   };
 }
 
-export function buildCliUpdatePlan(productRoot, options = {}) {
+export function buildCliUpdatePlan(productRoot: any, options: any = {}) {
   const source = identifyCliSource(productRoot, options);
   if (source.mode === 'development') return gitUpdatePlan(source, options);
   if (source.mode === 'npm') return registryUpdatePlan(source, options);
@@ -243,7 +243,7 @@ export function buildCliUpdatePlan(productRoot, options = {}) {
   };
 }
 
-export function executeCliUpdatePlan(plan, options = {}) {
+export function executeCliUpdatePlan(plan: any, options: any = {}) {
   if (plan.status !== 'update-available') return { ok: ['up-to-date', 'version-stale', 'manual-check-required'].includes(plan.status), status: ['up-to-date', 'version-stale', 'manual-check-required'].includes(plan.status) ? 0 : 1, stdout: '', stderr: '', error: null };
   if (plan.mode === 'npm' && (!plan.current.updateAuthority || plan.strategy !== 'npm-install')) {
     return { ok: false, status: 1, stdout: '', stderr: 'npm update authority is not receipt-registry-proven.', error: 'npm-update-authority-required' };
@@ -263,12 +263,12 @@ export function executeCliUpdatePlan(plan, options = {}) {
   ], options);
 }
 
-function printPlan(plan, label) {
+function printPlan(plan: any, label: any) {
   if (plan.tracks && plan.current?.version) {
     console.log(`当前安装：${plan.current.version}`);
     const candidate = plan.tracks.candidate;
     const stable = plan.tracks.stable;
-    const trackText = (track) => {
+    const trackText = (track: any) => {
       if (track.status === 'update-available') return `${track.version} 可更新`;
       if (track.status === 'current') return `${track.version}（当前版本）`;
       if (track.status === 'behind-current') return `${track.version}（低于当前版本，不自动降级）`;
@@ -292,24 +292,24 @@ function printPlan(plan, label) {
   for (const action of plan.nextActions) console.log(`next: ${action}`);
 }
 
-export function registerApplicationCliUpdate(runtime) {
-  const productRoot = (...args) => runtime.productRoot(...args);
-  const assertNoUnknownOptions = (...args) => runtime.assertNoUnknownOptions(...args);
-  const hasFlag = (...args) => runtime.hasFlag(...args);
-  const optionValue = (...args) => runtime.optionValue(...args);
+export function registerApplicationCliUpdate(runtime: any) {
+  const productRoot = (...args: any[]) => runtime.productRoot(...args);
+  const assertNoUnknownOptions = (...args: any[]) => runtime.assertNoUnknownOptions(...args);
+  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
+  const optionValue = (...args: any[]) => runtime.optionValue(...args);
 
-  function selectedTrack(args) {
+  function selectedTrack(args: any) {
     const track = optionValue(args, '--track', null);
-    if (track !== null && !RELEASE_TRACKS[track]) throw new Error('--track must be stable or candidate.');
+    if (track !== null && !(RELEASE_TRACKS as Record<string, any>)[track]) throw new Error('--track must be stable or candidate.');
     return track;
   }
 
-  function releaseAwareness(options = {}) {
+  function releaseAwareness(options: any = {}) {
     const source = options.source || identifyCliSource(productRoot(), options);
     return buildReleaseAwareness(source, options);
   }
 
-  function updateCheck(args) {
+  function updateCheck(args: any) {
     if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
     assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
     const plan = buildCliUpdatePlan(productRoot(), { purpose: 'check', persistState: true, notify: true });
@@ -319,7 +319,7 @@ export function registerApplicationCliUpdate(runtime) {
     return plan;
   }
 
-  function updateBuildr(args) {
+  function updateBuildr(args: any) {
     if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
     assertNoUnknownOptions(args, new Set(['--json', '--track']), new Set(['--json']));
     const json = hasFlag(args, '--json');

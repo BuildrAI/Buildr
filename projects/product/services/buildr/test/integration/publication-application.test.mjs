@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { registerPublicationApplication } from '../../src/system/publication/application/publication-application.mjs';
+import { registerPublicationApplication } from '../../src/system/publication/application/publication-application.ts';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publications-'));

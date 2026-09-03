@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { parseSemver } from '../../src/system/installation/domain/release-version.mjs';
+import { parseSemver } from '../../src/system/installation/domain/release-version.ts';
 import { readReleaseArtifact } from './release-artifact.mjs';
 import { writeJson } from './release-files.mjs';
 

@@ -1,4 +1,4 @@
-export function createRuntimeDiagnostics(deps) {
+export function createRuntimeDiagnostics(deps: any) {
   const {
     RUNTIME_CHECKERS,
     SUPPORTED_AGENT_IDS,
@@ -18,19 +18,19 @@ export function createRuntimeDiagnostics(deps) {
     toPosixRelative,
   } = deps;
 
-  function runtimeFindingsForDoctor(findings, includeInfo) {
-    return includeInfo ? findings : findings.filter((finding) => finding.status !== 'info');
+  function runtimeFindingsForDoctor(findings: any, includeInfo: any) {
+    return includeInfo ? findings : findings.filter((finding: any) => finding.status !== 'info');
   }
 
-  function summarizeRuntimeFindings(findings) {
-    const counts = { ok: 0, info: 0, warning: 0, missing: 0, stale: 0, orphan: 0, conflict: 0 };
+  function summarizeRuntimeFindings(findings: any) {
+    const counts: Record<string, number> = { ok: 0, info: 0, warning: 0, missing: 0, stale: 0, orphan: 0, conflict: 0 };
     for (const finding of findings) {
       counts[finding.status] = (counts[finding.status] ?? 0) + 1;
     }
     return counts;
   }
 
-  function addUnsupportedAgentFinding(result, agent) {
+  function addUnsupportedAgentFinding(result: any, agent: any) {
     addDoctorFinding(result, 'warning', 'runtime.agent_unsupported', `${UNSUPPORTED_AGENT_GUIDANCE.message}${UNSUPPORTED_AGENT_GUIDANCE.nextStep}`, {
       path: '.',
       agent,
@@ -41,7 +41,7 @@ export function createRuntimeDiagnostics(deps) {
     });
   }
 
-  function directoryContainsJson(root) {
+  function directoryContainsJson(root: any) {
     if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return false;
     const pending = [root];
     while (pending.length > 0) {
@@ -55,15 +55,15 @@ export function createRuntimeDiagnostics(deps) {
     return false;
   }
 
-  function managedPlanTargetExists(item) {
+  function managedPlanTargetExists(item: any) {
     if (!item?.targetFile || typeof item.isManaged !== 'function' || !fs.existsSync(item.targetFile)) return false;
     const stat = fs.lstatSync(item.targetFile);
     if (!stat.isFile() || stat.isSymbolicLink()) return false;
     return item.isManaged(fs.readFileSync(item.targetFile, 'utf8'));
   }
 
-  function detectManagedRuntimeAgents(targetRoot) {
-    return SUPPORTED_AGENT_IDS.filter((agent) => {
+  function detectManagedRuntimeAgents(targetRoot: any) {
+    return SUPPORTED_AGENT_IDS.filter((agent: any) => {
       const adapter = getRuntimeAdapter(agent);
       const runtimeRoot = path.join(targetRoot, adapter.traits.skills.root);
       if (directoryContainsJson(path.join(targetRoot, '.buildr', 'agent-runtime', 'workspace', agent, 'skill-projection-ownership-receipts'))) return true;
@@ -84,7 +84,7 @@ export function createRuntimeDiagnostics(deps) {
     });
   }
 
-  function diagnoseRuntime(result, targetRoot, scopes, options = {}) {
+  function diagnoseRuntime(result: any, targetRoot: any, scopes: any, options: any = {}) {
     const includeInfo = options.includeInfo === true;
     const selectedAgent = options.agent || null;
     const detectedAgents = options.detectedAgents || detectManagedRuntimeAgents(targetRoot);
@@ -92,16 +92,16 @@ export function createRuntimeDiagnostics(deps) {
     result.agentRuntime.detectedAgents = detectedAgents;
     result.agentRuntime.checkedAgents = checkedAgents;
     result.agentRuntime.diagnosticMode = selectedAgent ? 'selected-runtime' : 'managed-runtime-inventory';
-    const runtimeResultKey = (agent) => getRuntimeAdapter(agent).traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-    result.runtime = Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent) => [runtimeResultKey(agent), []]));
+    const runtimeResultKey = (agent: any) => getRuntimeAdapter(agent).traits.checker.resultKey ?? agent.replace(/-([a-z])/g, (_match: any, letter: any) => letter.toUpperCase());
+    result.runtime = Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent: any) => [runtimeResultKey(agent), []]));
     if (selectedAgent && !isSupportedAgent(selectedAgent)) {
       addUnsupportedAgentFinding(result, selectedAgent);
       return;
     }
 
-    const runtimeScopes = scopes.map((item) => item.scope);
-    const seenFindings = Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent) => [agent, new Set()]));
-    const dedupeFindings = (agent, findings) => findings.filter((finding) => {
+    const runtimeScopes = scopes.map((item: any) => item.scope);
+    const seenFindings = Object.fromEntries(SUPPORTED_AGENT_IDS.map((agent: any) => [agent, new Set()]));
+    const dedupeFindings = (agent: any, findings: any) => findings.filter((finding: any) => {
       const key = [finding.code || finding.status, finding.path, finding.expected || '', finding.actual || ''].join('|');
       if (seenFindings[agent].has(key)) return false;
       seenFindings[agent].add(key);
@@ -122,7 +122,7 @@ export function createRuntimeDiagnostics(deps) {
           });
           const findings = dedupeFindings(agent, runtimeFindingsForDoctor(check.findings, includeInfo));
           result.runtime[resultKey].push({ agent, scope, counts: summarizeRuntimeFindings(findings), findings, skillInventoryEvidence: check.skillInventoryEvidence, environmentChecks: check.environmentChecks, activation: check.activation });
-          if (findings.some((finding) => ['missing', 'stale', 'orphan'].includes(finding.status))) {
+          if (findings.some((finding: any) => ['missing', 'stale', 'orphan'].includes(finding.status))) {
             addDoctorFinding(result, 'warning', `runtime.${codeId}_stale`, `${adapter.displayName} runtime 缺失或过期：${scope}`, {
               path: toPosixRelative(targetRoot, check.targetRoot),
               agent,
@@ -133,12 +133,12 @@ export function createRuntimeDiagnostics(deps) {
               ...(selectedAgent ? { commands: check.repairCommands } : {}),
             });
           }
-          const runtimeWarnings = findings.filter((finding) => finding.status === 'warning');
+          const runtimeWarnings = findings.filter((finding: any) => finding.status === 'warning');
           if (runtimeWarnings.length > 0) {
-            const userActionRequired = Boolean(selectedAgent) && runtimeWarnings.some((finding) => finding.userActionRequired !== false);
-            const runtimeFindingCodes = [...new Set(runtimeWarnings.map((finding) => finding.code).filter(Boolean))];
-            const evidenceLevels = [...new Set(runtimeWarnings.map((finding) => finding.evidence).filter(Boolean))];
-            const opaqueSources = [...new Set(runtimeWarnings.flatMap((finding) => finding.opaqueSources || []))];
+            const userActionRequired = Boolean(selectedAgent) && runtimeWarnings.some((finding: any) => finding.userActionRequired !== false);
+            const runtimeFindingCodes = [...new Set(runtimeWarnings.map((finding: any) => finding.code).filter(Boolean))];
+            const evidenceLevels = [...new Set(runtimeWarnings.map((finding: any) => finding.evidence).filter(Boolean))];
+            const opaqueSources = [...new Set(runtimeWarnings.flatMap((finding: any) => finding.opaqueSources || []))];
             addDoctorFinding(result, 'warning', `runtime.${codeId}_warning`, `${adapter.displayName} runtime 存在警告：${scope}`, {
               path: toPosixRelative(targetRoot, check.targetRoot),
               agent,
@@ -153,7 +153,7 @@ export function createRuntimeDiagnostics(deps) {
                   : `这是未选中 runtime 的 inventory evidence；使用该 Agent 时运行 doctor --agent ${agent} 获取可操作诊断。`,
             });
           }
-          if (findings.some((finding) => finding.status === 'conflict')) {
+          if (findings.some((finding: any) => finding.status === 'conflict')) {
             addDoctorFinding(result, selectedAgent ? 'error' : 'warning', selectedAgent ? `runtime.${codeId}_conflict` : `runtime.${codeId}_inventory_conflict`, `${adapter.displayName} runtime 存在非 Buildr 管理或冲突文件：${scope}`, {
               path: toPosixRelative(targetRoot, check.targetRoot),
               agent,
@@ -164,7 +164,7 @@ export function createRuntimeDiagnostics(deps) {
             });
           }
           if (includeInfo) {
-            for (const finding of findings.filter((item) => item.status === 'info')) {
+            for (const finding of findings.filter((item: any) => item.status === 'info')) {
               addDoctorFinding(result, 'info', finding.code ?? 'runtime.info', finding.message, {
                 path: finding.path,
                 agent,
@@ -175,7 +175,7 @@ export function createRuntimeDiagnostics(deps) {
               });
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           const missingManifest = error.message.startsWith('Manifest not found:');
           const missingCode = adapter.traits.checker.skillsManifestAbsentCode ?? `runtime.${codeId}_skills_manifest_absent`;
           const status = missingManifest ? 'ok' : selectedAgent ? 'error' : 'warning';
@@ -189,7 +189,7 @@ export function createRuntimeDiagnostics(deps) {
     }
   }
 
-  function diagnoseCommands(result, targetRoot, projects = []) {
+  function diagnoseCommands(result: any, targetRoot: any, projects: any = []) {
     const commandsResult = runCommandsCheck(targetRoot, { projects });
     result.commandLineTools = commandsResult;
     for (const finding of commandsResult.findings) {
@@ -212,7 +212,7 @@ export function createRuntimeDiagnostics(deps) {
     }
   }
 
-  function diagnoseComponents(result, targetRoot, includeInfo = false, selectedAgent = null, detectedAgents = []) {
+  function diagnoseComponents(result: any, targetRoot: any, includeInfo: any = false, selectedAgent: any = null, detectedAgents: any = []) {
     if (!existsFile(componentRegistryPath(targetRoot))) {
       addDoctorFinding(result, 'warning', 'components.registry_missing', 'Component registry 缺失。', {
         path: 'components/manifest.yml',
@@ -223,7 +223,7 @@ export function createRuntimeDiagnostics(deps) {
     let status;
     try {
       status = packageComponentsStatus(targetRoot);
-    } catch (error) {
+    } catch (error: any) {
       result.components = { items: [], ownership: {}, findings: [] };
       addDoctorFinding(result, 'error', 'components.registry_invalid', error.message, {
         path: 'components/manifest.yml',
@@ -236,10 +236,10 @@ export function createRuntimeDiagnostics(deps) {
       ownership: Object.fromEntries(status.ownership),
       findings: status.findings,
     };
-    const componentById = new Map(status.components.map((item) => [item.id, item]));
+    const componentById = new Map<string, any>(status.components.map((item: any) => [item.id, item]));
     for (const finding of status.findings) {
       const owners = [finding.componentId, ...(finding.owners || [])].filter(Boolean);
-      const required = owners.some((id) => componentById.get(id)?.required === true);
+      const required = owners.some((id: any) => componentById.get(id)?.required === true);
       addDoctorFinding(result, required ? 'error' : 'warning', finding.code || 'components.invalid', finding.message || `Component ownership conflict: ${finding.member || ''}`, {
         path: finding.member || 'components/manifest.yml',
         componentId: finding.componentId,
@@ -278,8 +278,8 @@ export function createRuntimeDiagnostics(deps) {
       }
     }
     const uninstalledOwners = new Map();
-    for (const item of status.components.filter((component) => component.status === 'uninstalled')) {
-      for (const member of item.members.filter((entry) => entry.path.startsWith('skills/'))) uninstalledOwners.set(path.basename(member.path), item.id);
+    for (const item of status.components.filter((component: any) => component.status === 'uninstalled')) {
+      for (const member of item.members.filter((entry: any) => entry.path.startsWith('skills/'))) uninstalledOwners.set(path.basename(member.path), item.id);
     }
     const componentRuntimeAgents = selectedAgent
       ? isSupportedAgent(selectedAgent) ? [selectedAgent] : []
@@ -288,7 +288,7 @@ export function createRuntimeDiagnostics(deps) {
       let runtimeOrphans;
       try {
         runtimeOrphans = managedRuntimeSkillOrphans(targetRoot, agent);
-      } catch (error) {
+      } catch (error: any) {
         addDoctorFinding(result, selectedAgent ? 'error' : 'warning', `runtime.${agent.replaceAll('-', '_')}_ownership_receipt_conflict`, `无法确认 ${agent} Skill 投射所有权回执。`, {
           path: '.buildr/agent-runtime',
           agent,

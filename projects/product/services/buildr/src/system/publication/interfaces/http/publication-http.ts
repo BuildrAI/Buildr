@@ -4,18 +4,18 @@ import {
   PUBLICATION_HTTP_SCHEMAS,
   publicationOperation,
   validatePublicationHttp,
-} from './publication-http-contracts.mjs';
+} from './publication-http-contracts.ts';
 
 const PUBLICATION_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
-export function createPublicationHttpContribution(application) {
-  const validateRequest = (id, value) => validatePublicationHttp(publicationOperation(id).requestSchemaId, value, id);
-  const success = (id, value) => validatePublicationHttp(publicationOperation(id).successSchemaId, value, id, 'response');
+export function createPublicationHttpContribution(application: any) {
+  const validateRequest = (id: any, value: any) => validatePublicationHttp(publicationOperation(id).requestSchemaId, value, id);
+  const success = (id: any, value: any) => validatePublicationHttp(publicationOperation(id).successSchemaId, value, id, 'response');
   return Object.freeze({
     id: 'publication.http',
     operations: PUBLICATION_HTTP_OPERATIONS,
     schemas: PUBLICATION_HTTP_SCHEMAS,
-    handle: ({ request, suffix, root, respond }) => {
+    handle: ({ request, suffix, root, respond }: any) => {
       if (request.method === 'GET' && suffix === '/publications') {
         validateRequest('system-publication.list', {});
         return { status: 200, body: success('system-publication.list', application.listPublications(root)) };

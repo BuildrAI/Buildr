@@ -27,7 +27,7 @@ import {
   SYSTEM_INSTALLATION_APPLICATION,
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
-} from '../../src/system/installation/module.mjs';
+} from '../../src/system/installation/module.ts';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import {
   PROJECT_DAILY_PROGRESS_APPLICATION,
@@ -312,7 +312,7 @@ test('System Installation module owns installation identity, update and npm Laun
   assert.equal(typeof application.buildInstallationInventory, 'function');
 
   const cliHost = read('src/bootstrap/cli/registry.mjs');
-  assert.match(cliHost, /from '..\/..\/system\/installation\/module\.mjs'/);
+  assert.match(cliHost, /from '..\/..\/system\/installation\/module\.ts'/);
   assert.doesNotMatch(cliHost, /system\/installation\/(?:application|infrastructure|interfaces)/);
   for (const relative of [
     'src/application/cli-update.mjs',

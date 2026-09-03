@@ -9,7 +9,7 @@ import {
   oppositeWebProfile,
   resolveWebProfile,
   webProfileName,
-} from '../../src/system/installation/contracts/web-profile.mjs';
+} from '../../src/system/installation/contracts/web-profile.ts';
 
 const npmIdentity = { channel: 'npm', runtime: { role: 'host' } };
 const developmentIdentity = { channel: 'development', runtime: { role: 'development' } };

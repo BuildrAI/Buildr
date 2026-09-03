@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { BUILDR_WEB_HTTP_SCHEMAS } from '../../src/web/http/buildr-web-http-contracts.ts';
-import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.mjs';
-import { PUBLICATION_HTTP_SCHEMAS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
+import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.ts';
+import { PUBLICATION_HTTP_SCHEMAS } from '../../src/system/publication/interfaces/http/publication-http-contracts.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');

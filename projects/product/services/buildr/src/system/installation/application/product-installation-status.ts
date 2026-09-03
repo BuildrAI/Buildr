@@ -7,26 +7,26 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   readCurrentInstallationOrigin,
   runtimeIdentityForOrigin,
-} from '../infrastructure/installation-origin.mjs';
-import { registeredProductInstallations } from '../infrastructure/installation-registry.mjs';
+} from '../infrastructure/installation-origin.ts';
+import { registeredProductInstallations } from '../infrastructure/installation-registry.ts';
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.ts';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
-import { npmLauncherStatus } from '../infrastructure/npm-launcher.mjs';
-import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.mjs';
+import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
+import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
 
-function readJson(file) {
+function readJson(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-function absent(channel, location, reason) {
+function absent(channel: any, location: any, reason: any) {
   return { channel, status: 'absent', location, identity: null, runtime: null, reason };
 }
 
-function humanValue(value) {
+function humanValue(value: any) {
   return value === null || value === undefined || value === '' ? '-' : String(value);
 }
 
-function printHumanInstallation(item, label = item?.channel || 'unknown') {
+function printHumanInstallation(item: any, label: any = item?.channel || 'unknown') {
   const identity = item?.identity;
   const runtime = item?.runtime;
   console.log(`${label}: channel=${humanValue(item?.channel)} status=${humanValue(item?.status)} path=${humanValue(item?.location)}`);
@@ -34,7 +34,7 @@ function printHumanInstallation(item, label = item?.channel || 'unknown') {
   console.log(`  runtime: role=${humanValue(runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
 }
 
-function printHumanInstance(instance) {
+function printHumanInstance(instance: any) {
   const identity = instance?.identity;
   const runtime = identity?.runtime;
   console.log(`current instance: status=${humanValue(instance?.status)} readiness=${humanValue(instance?.observation?.health)} pid=${humanValue(identity?.pid)} url=${humanValue(identity?.url)}`);
@@ -42,14 +42,14 @@ function printHumanInstance(instance) {
   console.log(`  runtime: role=${humanValue(identity?.runtimeRole || runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
 }
 
-function registeredChannel(observed, channel) {
+function registeredChannel(observed: any, channel: any) {
   if (observed.status === 'invalid') {
     return { channel, status: 'invalid', location: observed.file, identity: null, runtime: null, reason: observed.reason };
   }
-  const candidates = observed.installations.filter((item) => item.entry?.origin.channel === channel);
+  const candidates = observed.installations.filter((item: any) => item.entry?.origin.channel === channel);
   if (candidates.length === 0) return absent(channel, observed.file, 'no validated installation has enrolled this channel');
-  const selected = candidates.findLast((item) => item.status === 'installed')
-    ?? candidates.findLast((item) => item.status === 'invalid')
+  const selected = candidates.findLast((item: any) => item.status === 'installed')
+    ?? candidates.findLast((item: any) => item.status === 'invalid')
     ?? candidates.at(-1);
   return {
     channel,
@@ -69,7 +69,7 @@ function registeredChannel(observed, channel) {
   };
 }
 
-function developmentLauncherIdentity(options = {}) {
+function developmentLauncherIdentity(options: any = {}) {
   const target = options.developmentLauncherRoot || (process.platform === 'darwin'
     ? '/Applications/Buildr Web Dev.app'
     : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'Buildr Web Dev'));
@@ -99,17 +99,17 @@ function developmentLauncherIdentity(options = {}) {
   };
 }
 
-function instancePidAlive(pid, probe = process.kill) {
+function instancePidAlive(pid: any, probe: any = process.kill) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     probe(pid, 0);
     return true;
-  } catch (error) {
+  } catch (error: any) {
     return error?.code === 'EPERM';
   }
 }
 
-function loopbackInstanceUrl(value) {
+function loopbackInstanceUrl(value: any) {
   try {
     const parsed = new URL(value);
     if (
@@ -129,23 +129,23 @@ function loopbackInstanceUrl(value) {
   }
 }
 
-function workspaceRegistryInventory(profile) {
+function workspaceRegistryInventory(profile: any) {
   const observation = readWorkspaceRegistryFile(path.join(profile.dataRoot, 'workspace-registry.json'));
-  const entries = (observation.registry?.roots || []).map((registeredRoot) => {
+  const entries = (observation.registry?.roots || []).map((registeredRoot: any) => {
     let canonicalRoot = path.resolve(registeredRoot);
-    let workspaceId = null;
+    let workspaceId: any = null;
     let status = 'ready';
-    let reason = null;
+    let reason: any = null;
     try {
       canonicalRoot = fs.realpathSync.native(canonicalRoot);
       const manifest = parseWorkspaceManifest(fs.readFileSync(path.join(canonicalRoot, '.buildr', 'workspace.yml'), 'utf8'));
       workspaceId = manifest.canonical ? manifest.workspace.id : null;
       if (!workspaceId) throw new Error('Workspace manifest has no canonical UUID.');
-    } catch (error) {
+    } catch (error: any) {
       status = 'invalid';
       reason = error.message;
     }
-    let managementOwner = null;
+    let managementOwner: any = null;
     try {
       const record = JSON.parse(fs.readFileSync(path.join(canonicalRoot, '.buildr', 'local', 'web-management.json'), 'utf8'));
       managementOwner = record?.owner || null;
@@ -155,12 +155,12 @@ function workspaceRegistryInventory(profile) {
   return { profile: profile.profile, dataRoot: profile.dataRoot, file: observation.file, status: observation.status, reason: observation.reason, entries };
 }
 
-function workspaceManagementInventory(profiles) {
-  const registries = {
+function workspaceManagementInventory(profiles: any) {
+  const registries: Record<string, any> = {
     released: workspaceRegistryInventory(profiles.released),
     development: workspaceRegistryInventory(profiles.development),
   };
-  const conflicts = [];
+  const conflicts: any[] = [];
   for (const profile of ['released', 'development']) {
     const registry = registries[profile];
     if (registry.status === 'invalid') conflicts.push({ type: 'registry-invalid', profile, registry: registry.file, reason: registry.reason });
@@ -169,8 +169,8 @@ function workspaceManagementInventory(profiles) {
       if (entry.managementOwner && entry.managementOwner.profile !== profile) conflicts.push({ type: 'management-owner-conflict', profile, registry: registry.file, root: entry.canonicalRoot, owner: entry.managementOwner });
     }
   }
-  for (const released of registries.released.entries.filter((entry) => entry.status === 'ready')) {
-    for (const development of registries.development.entries.filter((entry) => entry.status === 'ready')) {
+  for (const released of registries.released.entries.filter((entry: any) => entry.status === 'ready')) {
+    for (const development of registries.development.entries.filter((entry: any) => entry.status === 'ready')) {
       if (released.canonicalRoot === development.canonicalRoot || released.workspaceId === development.workspaceId) {
         conflicts.push({
           type: 'cross-channel-registration',
@@ -184,7 +184,7 @@ function workspaceManagementInventory(profiles) {
   return { registries, conflicts };
 }
 
-function annotateInstanceProfile(instance, profile) {
+function annotateInstanceProfile(instance: any, profile: any) {
   const expectedChannel = profile === 'released' ? 'npm' : 'development';
   if (instance.identity && instance.identity.channel !== 'unknown' && instance.identity.channel !== expectedChannel) {
     return {
@@ -196,7 +196,7 @@ function annotateInstanceProfile(instance, profile) {
   return instance;
 }
 
-function observeCurrentInstance(options = {}) {
+function observeCurrentInstance(options: any = {}) {
   const file = path.resolve(options.instanceFile || path.join(options.dataRoot || buildrWebDataRoot(), 'instance.json'));
   if (!fs.existsSync(file)) return { receipt: null, result: { status: 'absent', identity: null, observation: { file, pidAlive: false, endpoint: 'absent', health: 'not-probed' } } };
   const value = readJson(file);
@@ -235,11 +235,11 @@ function observeCurrentInstance(options = {}) {
   } };
 }
 
-export function inspectCurrentInstance(options = {}) {
+export function inspectCurrentInstance(options: any = {}) {
   return observeCurrentInstance(options).result;
 }
 
-export async function inspectCurrentInstanceReadiness(options = {}) {
+export async function inspectCurrentInstanceReadiness(options: any = {}) {
   const observed = observeCurrentInstance(options);
   if (observed.result.status !== 'live-unverified') return observed.result;
   const fetchImpl = options.fetchImpl || fetch;
@@ -260,7 +260,7 @@ export async function inspectCurrentInstanceReadiness(options = {}) {
       reason: 'current instance health endpoint is unreachable',
     };
   }
-  let body = null;
+  let body: any = null;
   try { body = await response.json(); } catch { /* reported as unhealthy below */ }
   const ready = response.ok
     && body?.schemaVersion === 'buildr.local-app-health/v1'
@@ -283,7 +283,7 @@ export async function inspectCurrentInstanceReadiness(options = {}) {
   };
 }
 
-export function buildInstallationInventory(productRoot, options = {}) {
+export function buildInstallationInventory(productRoot: any, options: any = {}) {
   const current = readCurrentInstallationOrigin(productRoot, { payloadRoot: resolveApplicationPayloadRoot(), ...options });
   const registered = registeredProductInstallations({ file: options.installationRegistryFile, dataRoot: options.installationRegistryDataRoot });
   const knownNpm = registeredChannel(registered, 'npm');
@@ -302,7 +302,7 @@ export function buildInstallationInventory(productRoot, options = {}) {
     reason: current.blockingReasons?.join('; ') || null,
   };
   const profileOptions = options.webProfileOptions || {};
-  let currentProfile = null;
+  let currentProfile: any = null;
   try { currentProfile = resolveWebProfile(current, profileOptions); } catch {}
   const explicitRoots = options.instanceDataRoots;
   let releasedProfile;
@@ -330,7 +330,7 @@ export function buildInstallationInventory(productRoot, options = {}) {
       dataRoot: defaultWebDataRoot('development', profileOptions),
     });
   }
-  const instances = {
+  const instances: Record<string, any> = {
     released: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: releasedProfile.dataRoot, pidProbe: options.pidProbe }), 'released'),
     development: annotateInstanceProfile(inspectCurrentInstance({ dataRoot: developmentProfile.dataRoot, pidProbe: options.pidProbe }), 'development'),
   };
@@ -362,9 +362,9 @@ export function buildInstallationInventory(productRoot, options = {}) {
   };
 }
 
-export async function buildInstallationStatusInventory(productRoot, options = {}) {
-  const inventory = buildInstallationInventory(productRoot, options);
-  const instances = {
+export async function buildInstallationStatusInventory(productRoot: any, options: any = {}) {
+  const inventory: any = buildInstallationInventory(productRoot, options);
+  const instances: Record<string, any> = {
     released: annotateInstanceProfile(await inspectCurrentInstanceReadiness({
       dataRoot: inventory.instances.released.dataRoot,
       pidProbe: options.pidProbe, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs,
@@ -398,10 +398,10 @@ export async function buildInstallationStatusInventory(productRoot, options = {}
   };
 }
 
-export function registerProductInstallationStatus(runtime) {
-  async function installationStatus(args) {
+export function registerProductInstallationStatus(runtime: any) {
+  async function installationStatus(args: any) {
     runtime.assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
-    const result = await buildInstallationStatusInventory(runtime.productRoot());
+    const result: any = await buildInstallationStatusInventory(runtime.productRoot());
     if (args.includes('--json')) process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.installation-status/v1', ...result }, null, 2)}\n`);
     else {
       for (const channel of ['npm', 'development']) printHumanInstallation(result.channels[channel]);
@@ -416,8 +416,8 @@ export function registerProductInstallationStatus(runtime) {
     return result;
   }
   Object.assign(runtime, {
-    buildInstallationInventory: (options = {}) => buildInstallationInventory(runtime.productRoot(), options),
-    buildInstallationStatusInventory: (options = {}) => buildInstallationStatusInventory(runtime.productRoot(), options),
+    buildInstallationInventory: (options: any = {}) => buildInstallationInventory(runtime.productRoot(), options),
+    buildInstallationStatusInventory: (options: any = {}) => buildInstallationStatusInventory(runtime.productRoot(), options),
     installationStatus,
   });
   return runtime;

@@ -1,8 +1,8 @@
-function doctorValue(value) {
+function doctorValue(value: any) {
   return value === null || value === undefined || value === '' ? '-' : String(value);
 }
 
-function printInstallationChannel(item, label = item?.channel || 'unknown') {
+function printInstallationChannel(item: any, label: any = item?.channel || 'unknown') {
   const identity = item?.identity;
   console.log(`  ${label}: channel=${doctorValue(item?.channel)} status=${doctorValue(item?.status)} location=${doctorValue(item?.location)}`);
   console.log(`    identity: Buildr=${doctorValue(identity?.version)} protocol=${doctorValue(identity?.protocolIdentity)} payload=${doctorValue(identity?.applicationPayloadDigest)} ownership=${doctorValue(identity?.ownershipIdentity)}`);
@@ -10,13 +10,13 @@ function printInstallationChannel(item, label = item?.channel || 'unknown') {
   console.log(`    runtime: role=${doctorValue(runtime?.role)} Node=${doctorValue(runtime?.version)} executable=${doctorValue(runtime?.executable)} identity=${doctorValue(runtime?.identity)}`);
 }
 
-function printRuntimeIdentity(label, runtime, status = null) {
+function printRuntimeIdentity(label: any, runtime: any, status: any = null) {
   const identity = typeof runtime?.identity === 'string' ? runtime.identity : runtime?.identity?.digest;
   const version = runtime?.version || runtime?.actualVersion || runtime?.identity?.version;
   console.log(`  ${label}: status=${doctorValue(status)} role=${doctorValue(runtime?.role)} version=${doctorValue(version)} identity=${doctorValue(identity)} executable=${doctorValue(runtime?.executable)}`);
 }
 
-export function printProductInstallationReport(result) {
+export function printProductInstallationReport(result: any) {
   const inventory = result.productInstallation;
   if (!inventory) return;
   console.log('');

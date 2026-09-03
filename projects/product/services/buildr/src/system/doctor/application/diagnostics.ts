@@ -1,45 +1,45 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from '../../../infrastructure/process.mjs';
-import { createRuntimeDiagnostics } from './runtime-diagnostics.mjs';
-import { createScopeDiagnostics } from './scope-diagnostics.mjs';
-import { createServiceDiagnostics } from './service-diagnostics.mjs';
-import { createCapabilityDiagnostics } from './capability-diagnostics.mjs';
-import { finalizeDoctorResult } from './result-model.mjs';
-import { printProductInstallationReport } from './product-installation-report.mjs';
+import { createRuntimeDiagnostics } from './runtime-diagnostics.ts';
+import { createScopeDiagnostics } from './scope-diagnostics.ts';
+import { createServiceDiagnostics } from './service-diagnostics.ts';
+import { createCapabilityDiagnostics } from './capability-diagnostics.ts';
+import { finalizeDoctorResult } from './result-model.ts';
+import { printProductInstallationReport } from './product-installation-report.ts';
 
-export function registerApplicationDoctor(runtime) {
+export function registerApplicationDoctor(runtime: any) {
   const { RUNTIME_CHECKERS, SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, assembleRuntimeProjection, getRuntimeAdapter, isSupportedAgent } = runtime;
   const { resolveSkillCapabilityGraph, createProjectVerificationDiagnostics } = runtime;
-  const runCommandsCheck = (...args) => runtime.runCommandsCheck(...args);
-  const componentRegistryPath = (...args) => runtime.componentRegistryPath(...args);
-  const packageComponentsStatus = (...args) => runtime.packageComponentsStatus(...args);
-  const managedRuntimeSkillOrphans = (...args) => runtime.managedRuntimeSkillOrphans(...args);
-  const listManagedDirectories = (...args) => runtime.listManagedDirectories(...args);
-  const runtimeImplementation = (...args) => runtime.runtimeImplementation(...args);
-  const readSkillManifestSchemaVersion = (...args) => runtime.readSkillManifestSchemaVersion(...args);
-  const skillsManifestPath = (...args) => runtime.skillsManifestPath(...args);
-  const parseYamlValue = (...args) => runtime.parseYamlValue(...args);
-  const parseServicesManifestYaml = (...args) => runtime.parseServicesManifestYaml(...args);
-  const parseServicesManifest = (...args) => runtime.parseServicesManifest(...args);
-  const parseProjectsYaml = (...args) => runtime.parseProjectsYaml(...args);
-  const validateProjectsRegistry = (...args) => runtime.validateProjectsRegistry(...args);
-  const validateServicesManifest = (...args) => runtime.validateServicesManifest(...args);
-  const projectsManifestPath = (...args) => runtime.projectsManifestPath(...args);
-  const servicesManifestPath = (...args) => runtime.servicesManifestPath(...args);
-  const gitOutput = (...args) => runtime.gitOutput(...args);
-  const gitCurrentBranch = (...args) => runtime.gitCurrentBranch(...args);
-  const gitBoundaryFor = (...args) => runtime.gitBoundaryFor(...args);
-  const gitBoundaryIgnored = (...args) => runtime.gitBoundaryIgnored(...args);
-  const toPosixRelative = (...args) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args) => runtime.existsDirectory(...args);
-  const existsFile = (...args) => runtime.existsFile(...args);
-  const addDoctorFinding = (...args) => runtime.addDoctorFinding(...args);
-  const buildrWorkspaceIdentity = (...args) => runtime.buildrWorkspaceIdentity(...args);
-  const observeProjectGit = (...args) => runtime.observeProjectGit(...args);
-  const sameGitIdentity = (...args) => runtime.sameGitIdentity(...args);
-  const productRoot = (...args) => runtime.productRoot(...args);
-  const resolveSourceRoot = (...args) => runtime.resolveSourceRoot(...args);
+  const runCommandsCheck = (...args: any[]) => runtime.runCommandsCheck(...args);
+  const componentRegistryPath = (...args: any[]) => runtime.componentRegistryPath(...args);
+  const packageComponentsStatus = (...args: any[]) => runtime.packageComponentsStatus(...args);
+  const managedRuntimeSkillOrphans = (...args: any[]) => runtime.managedRuntimeSkillOrphans(...args);
+  const listManagedDirectories = (...args: any[]) => runtime.listManagedDirectories(...args);
+  const runtimeImplementation = (...args: any[]) => runtime.runtimeImplementation(...args);
+  const readSkillManifestSchemaVersion = (...args: any[]) => runtime.readSkillManifestSchemaVersion(...args);
+  const skillsManifestPath = (...args: any[]) => runtime.skillsManifestPath(...args);
+  const parseYamlValue = (...args: any[]) => runtime.parseYamlValue(...args);
+  const parseServicesManifestYaml = (...args: any[]) => runtime.parseServicesManifestYaml(...args);
+  const parseServicesManifest = (...args: any[]) => runtime.parseServicesManifest(...args);
+  const parseProjectsYaml = (...args: any[]) => runtime.parseProjectsYaml(...args);
+  const validateProjectsRegistry = (...args: any[]) => runtime.validateProjectsRegistry(...args);
+  const validateServicesManifest = (...args: any[]) => runtime.validateServicesManifest(...args);
+  const projectsManifestPath = (...args: any[]) => runtime.projectsManifestPath(...args);
+  const servicesManifestPath = (...args: any[]) => runtime.servicesManifestPath(...args);
+  const gitOutput = (...args: any[]) => runtime.gitOutput(...args);
+  const gitCurrentBranch = (...args: any[]) => runtime.gitCurrentBranch(...args);
+  const gitBoundaryFor = (...args: any[]) => runtime.gitBoundaryFor(...args);
+  const gitBoundaryIgnored = (...args: any[]) => runtime.gitBoundaryIgnored(...args);
+  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
+  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
+  const existsFile = (...args: any[]) => runtime.existsFile(...args);
+  const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
+  const buildrWorkspaceIdentity = (...args: any[]) => runtime.buildrWorkspaceIdentity(...args);
+  const observeProjectGit = (...args: any[]) => runtime.observeProjectGit(...args);
+  const sameGitIdentity = (...args: any[]) => runtime.sameGitIdentity(...args);
+  const productRoot = (...args: any[]) => runtime.productRoot(...args);
+  const resolveSourceRoot = (...args: any[]) => runtime.resolveSourceRoot(...args);
 
   const {
     scopeParts,
@@ -129,7 +129,7 @@ export function registerApplicationDoctor(runtime) {
   const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
 
-  function diagnoseSkillsManifestSchemas(result, targetRoot, scopes) {
+  function diagnoseSkillsManifestSchemas(result: any, targetRoot: any, scopes: any) {
     const checked = new Set();
     const scopeRoots = [targetRoot];
     for (const scope of scopes) {
@@ -156,7 +156,7 @@ export function registerApplicationDoctor(runtime) {
     }
   }
 
-  function printDoctorReport(result) {
+  function printDoctorReport(result: any) {
     console.log(`Buildr doctor for ${result.targetRoot}`);
     console.log(`Status: ok=${result.summary.ok} info=${result.summary.info} warning=${result.summary.warning} error=${result.summary.error}`);
     console.log(`Health: workspaceValid=${result.health.workspaceValid} ready=${result.health.ready} actionRequired=${result.health.actionRequired} actionable=${result.health.actionableCount}`);

@@ -12,22 +12,22 @@ export const DOCTOR_DIAGNOSTIC_PROFILE = Object.freeze({
   ],
 });
 
-function normalizedRepairCommands(finding) {
+function normalizedRepairCommands(finding: any) {
   return [...new Set([
     ...(finding.command ? [finding.command] : []),
     ...(Array.isArray(finding.commands) ? finding.commands : []),
   ].filter(Boolean))];
 }
 
-export function buildDoctorRepairPlan(findings) {
-  const steps = [];
+export function buildDoctorRepairPlan(findings: any) {
+  const steps: any[] = [];
   for (const finding of findings) {
     if (!['error', 'warning'].includes(finding.status) || finding.userActionRequired === false) continue;
     const commands = normalizedRepairCommands(finding);
     if (!finding.suggestion && commands.length === 0) continue;
     const priority = finding.status === 'error' ? 'blocking' : 'required';
     const commandKey = [...commands].sort().join('\n');
-    const current = steps.find((step) =>
+    const current = steps.find((step: any) =>
       (commandKey && step.commandKey === commandKey) ||
       (finding.suggestion && step.suggestion === finding.suggestion));
     if (current) {
@@ -45,12 +45,12 @@ export function buildDoctorRepairPlan(findings) {
     });
   }
   return steps
-    .sort((left, right) => Number(right.priority === 'blocking') - Number(left.priority === 'blocking'))
-    .map(({ commandKey: _commandKey, ...step }, index) => ({ id: `repair-${index + 1}`, ...step }));
+    .sort((left: any, right: any) => Number(right.priority === 'blocking') - Number(left.priority === 'blocking'))
+    .map(({ commandKey: _commandKey, ...step }: any, index: any) => ({ id: `repair-${index + 1}`, ...step }));
 }
 
-export function buildDoctorHealth(result) {
-  const actionableCount = result.findings.filter((finding) =>
+export function buildDoctorHealth(result: any) {
+  const actionableCount = result.findings.filter((finding: any) =>
     ['error', 'warning'].includes(finding.status) && finding.userActionRequired !== false).length;
   const workspaceValid = result.workspace?.identity?.state === 'valid';
   return {
@@ -62,7 +62,7 @@ export function buildDoctorHealth(result) {
   };
 }
 
-export function buildDoctorDomainHealth(findings) {
+export function buildDoctorDomainHealth(findings: any) {
   const domains = new Map();
   for (const finding of findings) {
     const key = `${finding.domain}|${finding.scope}|${finding.ownershipUnit}`;
@@ -77,19 +77,19 @@ export function buildDoctorDomainHealth(findings) {
     }
     domains.set(key, current);
   }
-  return [...domains.values()].map((item) => ({ ...item, blockedActions: [...item.blockedActions].sort(), findingCodes: [...new Set(item.findingCodes)].sort() }))
-    .sort((left, right) => left.domain.localeCompare(right.domain) || left.scope.localeCompare(right.scope) || left.ownershipUnit.localeCompare(right.ownershipUnit));
+  return [...domains.values()].map((item: any) => ({ ...item, blockedActions: [...item.blockedActions].sort(), findingCodes: [...new Set(item.findingCodes)].sort() }))
+    .sort((left: any, right: any) => left.domain.localeCompare(right.domain) || left.scope.localeCompare(right.scope) || left.ownershipUnit.localeCompare(right.ownershipUnit));
 }
 
-export function finalizeDoctorResult(result) {
-  const counts = { ok: 0, info: 0, warning: 0, error: 0 };
+export function finalizeDoctorResult(result: any) {
+  const counts: Record<string, number> = { ok: 0, info: 0, warning: 0, error: 0 };
   for (const finding of result.findings) counts[finding.status] = (counts[finding.status] ?? 0) + 1;
   result.summary = counts;
   result.ok = counts.error === 0;
   result.repairPlan = buildDoctorRepairPlan(result.findings);
   result.health = buildDoctorHealth(result);
   result.domainHealth = buildDoctorDomainHealth(result.findings);
-  result.nextSteps = result.repairPlan.slice(0, 10).map((step) => ({
+  result.nextSteps = result.repairPlan.slice(0, 10).map((step: any) => ({
     code: step.codes[0],
     codes: step.codes,
     suggestion: step.suggestion,

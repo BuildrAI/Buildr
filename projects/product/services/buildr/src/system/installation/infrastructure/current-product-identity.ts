@@ -6,7 +6,7 @@ import {
   resolveApplicationPayloadRoot,
   resolveProductRoot,
 } from '../../../infrastructure/product-resources/index.mjs';
-import { readCurrentInstallationOrigin, runtimeIdentityForOrigin } from './installation-origin.mjs';
+import { readCurrentInstallationOrigin, runtimeIdentityForOrigin } from './installation-origin.ts';
 
 export function readCurrentProductIdentity() {
   const productRoot = resolveProductRoot();

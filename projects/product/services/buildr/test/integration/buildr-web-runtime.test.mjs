@@ -8,7 +8,7 @@ import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
-import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.mjs';
+import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.ts';
 import {
   clearBuildrWebInstance,
   buildrWebInstancePath,
@@ -19,7 +19,7 @@ import {
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
 import { pickWorkspaceDirectory } from '../../src/web/infrastructure/directory-picker.ts';
-import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 
 function opener(platform) {
   const calls = [];

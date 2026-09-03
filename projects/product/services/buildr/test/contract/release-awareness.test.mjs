@@ -25,9 +25,9 @@ test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并�
 });
 
 test('CLI 和 Buildr Web 只暴露明确轨道选择，不提供网页 npm 更新写入口', () => {
-  const installationCli = read('src/system/installation/interfaces/cli/installation.mjs');
-  const module = read('src/system/installation/module.mjs');
-  const contribution = read('src/system/installation/interfaces/http/release-awareness-http.mjs');
+  const installationCli = read('src/system/installation/interfaces/cli/installation.ts');
+  const module = read('src/system/installation/module.ts');
+  const contribution = read('src/system/installation/interfaces/http/release-awareness-http.ts');
   const appLayout = fs.readFileSync(path.join(webRoot, 'src/app/AppLayout.tsx'), 'utf8');
   assert.match(installationCli, /Usage: buildr update \[--track <stable\|candidate>\] \[--json\]/);
   assert.match(module, /createReleaseAwarenessHttpContribution\(application\)/);

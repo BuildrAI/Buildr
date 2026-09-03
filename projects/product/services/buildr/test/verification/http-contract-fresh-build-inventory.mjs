@@ -39,8 +39,8 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES = Object.freeze([
   ]),
   family('runtime-system', 'tools/contracts/runtime-system-dto.mjs', [
     'src/web/http/buildr-web-http-contracts.ts',
-    'src/system/installation/interfaces/http/release-awareness-http-contracts.mjs',
-    'src/system/publication/interfaces/http/publication-http-contracts.mjs',
+    'src/system/installation/interfaces/http/release-awareness-http-contracts.ts',
+    'src/system/publication/interfaces/http/publication-http-contracts.ts',
   ], [
     ['buildr', 'src/web/http/generated/runtime-system-http-dto.ts'],
     ['buildr-web', 'src/api/generated/runtime-system-http-dto.ts'],

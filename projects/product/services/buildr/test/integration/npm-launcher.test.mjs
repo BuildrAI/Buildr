@@ -16,7 +16,7 @@ import { createGeneratedReleaseInputs } from '../helpers/generated-release-input
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../../src/system/installation/infrastructure/installation-registry.mjs';
+} from '../../src/system/installation/infrastructure/installation-registry.ts';
 import {
   installNpmLauncher,
   npmLauncherStatus,
@@ -24,7 +24,7 @@ import {
   refreshInstalledNpmLauncher,
   repairNpmLauncher,
   uninstallNpmLauncher,
-} from '../../src/system/installation/infrastructure/npm-launcher.mjs';
+} from '../../src/system/installation/infrastructure/npm-launcher.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
@@ -32,7 +32,7 @@ import {
   clearBuildrWebInstance,
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
-import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
+import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
@@ -450,7 +450,7 @@ test('non-Windows foreground Web clears its receipt on SIGHUP', async (t) => {
 });
 
 test('Windows Launcher PowerShell bridge preserves shortcut and root paths containing spaces', () => {
-  const npmLauncherSource = fs.readFileSync(new URL('../../src/system/installation/infrastructure/npm-launcher.mjs', import.meta.url), 'utf8');
+  const npmLauncherSource = fs.readFileSync(new URL('../../src/system/installation/infrastructure/npm-launcher.ts', import.meta.url), 'utf8');
   const developmentLauncherSource = fs.readFileSync(new URL('../../package/launchers/manage.mjs', import.meta.url), 'utf8');
   for (const source of [npmLauncherSource, developmentLauncherSource]) {
     assert.doesNotMatch(source, /\$args\[[01]\]/);

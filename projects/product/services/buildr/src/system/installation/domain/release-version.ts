@@ -1,11 +1,11 @@
 const SEMVER_PATTERN = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
-export function parseSemver(value) {
+export function parseSemver(value: any) {
   const input = String(value || '').trim();
   const match = input.match(SEMVER_PATTERN);
   if (!match) return null;
   const prerelease = match[4] ? match[4].split('.') : [];
-  if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0'))) return null;
+  if (prerelease.some((part: any) => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0'))) return null;
   return {
     version: `${match[1]}.${match[2]}.${match[3]}${prerelease.length ? `-${prerelease.join('.')}` : ''}`,
     core: [Number(match[1]), Number(match[2]), Number(match[3])],
@@ -13,7 +13,7 @@ export function parseSemver(value) {
   };
 }
 
-export function compareVersions(left, right) {
+export function compareVersions(left: any, right: any) {
   const a = parseSemver(left);
   const b = parseSemver(right);
   if (!a || !b) throw new Error(`Cannot compare invalid semver values: ${left} and ${right}.`);
@@ -39,6 +39,6 @@ export function compareVersions(left, right) {
   return 0;
 }
 
-export function defaultReleaseTrack(version) {
+export function defaultReleaseTrack(version: any) {
   return parseSemver(version)?.prerelease.length ? 'candidate' : 'stable';
 }

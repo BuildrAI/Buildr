@@ -19,16 +19,16 @@ import {
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.ts';
-import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.mjs';
-import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.mjs';
+import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.ts';
+import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.ts';
 import { registerInfrastructure } from '../infrastructure/index.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
-import { createPublicationModule } from '../system/publication/module.mjs';
+import { createPublicationModule } from '../system/publication/module.ts';
 import { createOpenSpecModule } from '../task/openspec/module.ts';
 import { createChangeModule } from '../task/change/module.ts';
 import { VERIFICATION_DECLARATION, createVerificationModule } from '../verification/module.ts';
-import * as webProfileContract from '../system/installation/contracts/web-profile.mjs';
+import * as webProfileContract from '../system/installation/contracts/web-profile.ts';
 
 const RUNTIME_CONTEXT = new WeakMap();
 

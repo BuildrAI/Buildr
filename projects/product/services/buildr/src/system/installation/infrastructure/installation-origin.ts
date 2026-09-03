@@ -29,11 +29,11 @@ const RECEIPT_KEYS = Object.freeze([
   'ownershipIdentity',
 ]);
 
-function sha256(value) {
+function sha256(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-function originMaterial(value) {
+function originMaterial(value: any) {
   return {
     schemaVersion: INSTALLATION_ORIGIN_SCHEMA,
     channel: value.channel,
@@ -48,22 +48,22 @@ function originMaterial(value) {
   };
 }
 
-export function installationOwnershipIdentity(value) {
+export function installationOwnershipIdentity(value: any) {
   return sha256(JSON.stringify(originMaterial(value)));
 }
 
-export function createInstallationOrigin(value) {
+export function createInstallationOrigin(value: any) {
   const material = originMaterial(value);
   return validateInstallationOrigin({ ...material, ownershipIdentity: installationOwnershipIdentity(material) });
 }
 
-function text(value, field, { nullable = false } = {}) {
+function text(value: any, field: any, { nullable = false }: any = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Installation origin ${field} must be ${nullable ? 'null or ' : ''}a non-empty string.`);
   return value;
 }
 
-export function validateInstallationOrigin(value) {
+export function validateInstallationOrigin(value: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Installation origin must be an object.');
   const keys = Object.keys(value).sort();
   const expected = [...RECEIPT_KEYS].sort();
@@ -85,7 +85,7 @@ export function validateInstallationOrigin(value) {
   return Object.freeze({ ...value });
 }
 
-export function validateFormalInstallationOriginPayloadBinding(value, payloadManifest) {
+export function validateFormalInstallationOriginPayloadBinding(value: any, payloadManifest: any) {
   const origin = validateInstallationOrigin(value);
   if (origin.channel === 'development') return origin;
   if (origin.channel !== 'npm') throw new Error(`Unsupported formal installation channel: ${origin.channel}.`);
@@ -99,25 +99,25 @@ export function validateFormalInstallationOriginPayloadBinding(value, payloadMan
     ['sourceCommit', origin.sourceCommit, manifest.sourceCommit],
   ];
   const mismatches = bindings
-    .filter(([, receipt, payload]) => receipt !== payload)
-    .map(([field, receipt, payload]) => `${field}: receipt=${receipt ?? '<null>'}, payload=${payload ?? '<null>'}`);
+    .filter(([, receipt, payload]: any) => receipt !== payload)
+    .map(([field, receipt, payload]: any) => `${field}: receipt=${receipt ?? '<null>'}, payload=${payload ?? '<null>'}`);
   if (mismatches.length) throw new Error(`Formal installation origin does not match the application payload manifest (${mismatches.join('; ')}).`);
   return origin;
 }
 
-function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) {
+function readJson(file: any) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error: any) {
     if (error.code === 'ENOENT') return null;
     throw new Error(`Cannot read installation origin ${file}: ${error.message}`);
   }
 }
 
-function git(root, args) {
+function git(root: any, args: any) {
   const result = spawnCommandSync('git', ['-C', root, ...args], { encoding: 'utf8' });
   return result.status === 0 ? String(result.stdout || '').trim() : null;
 }
 
-function developmentOrigin(productRoot, metadata) {
+function developmentOrigin(productRoot: any, metadata: any) {
   const gitRoot = git(productRoot, ['rev-parse', '--show-toplevel']);
   if (!gitRoot) return null;
   let canonicalGitRoot;
@@ -150,7 +150,7 @@ function developmentOrigin(productRoot, metadata) {
   };
 }
 
-function unknownOrigin(metadata, reasons) {
+function unknownOrigin(metadata: any, reasons: any) {
   return Object.freeze({
     schemaVersion: INSTALLATION_ORIGIN_SCHEMA,
     channel: 'unknown',
@@ -167,21 +167,21 @@ function unknownOrigin(metadata, reasons) {
   });
 }
 
-function receiptCandidates(productRoot, options = {}) {
-  const candidates = [];
+function receiptCandidates(productRoot: any, options: any = {}) {
+  const candidates: any[] = [];
   const explicit = options.env?.BUILDR_INSTALLATION_IDENTITY ?? process.env.BUILDR_INSTALLATION_IDENTITY;
   if (explicit) candidates.push({ file: path.resolve(explicit), authority: 'explicit-environment' });
   if (options.payloadRoot) candidates.push({ file: path.join(path.resolve(options.payloadRoot), 'installation-origin.json'), authority: 'payload-envelope' });
   candidates.push({ file: path.join(productRoot, 'installation-origin.json'), authority: 'package-root' });
-  return candidates.filter((item, index, all) => all.findIndex((candidate) => candidate.file === item.file) === index);
+  return candidates.filter((item: any, index: any, all: any) => all.findIndex((candidate: any) => candidate.file === item.file) === index);
 }
 
-export function readCurrentInstallationOrigin(productRoot, options = {}) {
+export function readCurrentInstallationOrigin(productRoot: any, options: any = {}) {
   const root = path.resolve(productRoot);
   let metadata;
   try { metadata = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')); } catch { metadata = null; }
   if (metadata?.name !== '@buildr-ai/buildr' || !metadata?.version) return unknownOrigin(metadata, ['当前 product root 没有有效的 @buildr-ai/buildr package identity。']);
-  const invalid = [];
+  const invalid: any[] = [];
   for (const candidate of receiptCandidates(root, options)) {
     const raw = readJson(candidate.file);
     if (!raw) continue;
@@ -195,7 +195,7 @@ export function readCurrentInstallationOrigin(productRoot, options = {}) {
       }
       if (value.version !== metadata.version) throw new Error(`receipt version ${value.version} differs from package version ${metadata.version}.`);
       return Object.freeze({ ...value, receipt: { authority: candidate.authority, file: candidate.file } });
-    } catch (error) {
+    } catch (error: any) {
       invalid.push(`${candidate.authority}: ${error.message}`);
     }
   }
@@ -205,7 +205,7 @@ export function readCurrentInstallationOrigin(productRoot, options = {}) {
   return unknownOrigin(metadata, ['没有 installation-origin receipt，且 product root 不是 canonical Buildr Service Git checkout。']);
 }
 
-export function runtimeIdentityForOrigin(origin, options = {}) {
+export function runtimeIdentityForOrigin(origin: any, options: any = {}) {
   const executable = path.resolve(options.executable || process.execPath);
   const role = RUNTIME_ROLES.includes(origin?.runtimeRole) ? origin.runtimeRole : 'unknown';
   return Object.freeze({

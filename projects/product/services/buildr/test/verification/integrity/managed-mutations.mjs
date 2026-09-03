@@ -35,7 +35,7 @@ const allowed = new Map([
   ])],
   ['src/workspace/persistence/workspace-registry-repository.ts', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/sqlite/workspace-sqlite.mjs', new Set(['cleanupRetiredLocalData'])],
-  ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
+  ['src/system/installation/infrastructure/npm-launcher.ts', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
   ['src/web/infrastructure/instance-runtime.ts', new Set([

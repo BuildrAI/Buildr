@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
-import { inspectProductUpdateAuthority, validateProductInstallationRegistryEntry } from './installation-registry.mjs';
-import { validateFormalInstallationOriginPayloadBinding, validateInstallationOrigin } from './installation-origin.mjs';
+import { inspectProductUpdateAuthority, validateProductInstallationRegistryEntry } from './installation-registry.ts';
+import { validateFormalInstallationOriginPayloadBinding, validateInstallationOrigin } from './installation-origin.ts';
 import { readApplicationPayloadManifest } from '../../../infrastructure/product-resources/index.mjs';
 
 export const NPM_LAUNCHER_BINDING_SCHEMA = 'buildr.npm-launcher-binding/v2';
@@ -18,36 +18,36 @@ const BINDING_FIELDS = new Set([
   'installationSlotIdentity', 'launcherOwnershipIdentity', 'packageRoot', 'prefix', 'originEnvelope',
   'hostNode', 'packageEntry', 'webPort', 'bindingIdentity',
 ]);
-const LEGACY_BINDING_FIELDS = new Set([...BINDING_FIELDS].filter((field) => field !== 'webPort'));
+const LEGACY_BINDING_FIELDS = new Set([...BINDING_FIELDS].filter((field: any) => field !== 'webPort'));
 const FILE_IDENTITY_FIELDS = new Set(['path', 'version', 'sha256']);
 const ENTRY_IDENTITY_FIELDS = new Set(['path', 'sha256']);
 const WEB_PORT_FIELDS = new Set(['preferred', 'fallback']);
 
-function digest(value) {
+function digest(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-function fileDigest(file) {
+function fileDigest(file: any) {
   return digest(fs.readFileSync(file));
 }
 
-function closed(value, fields, label) {
+function closed(value: any, fields: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-  const unknown = Object.keys(value).filter((field) => !fields.has(field));
+  const unknown = Object.keys(value).filter((field: any) => !fields.has(field));
   if (unknown.length) throw new Error(`${label} contains unsupported fields: ${unknown.sort().join(', ')}.`);
 }
 
-function absolute(value, label) {
+function absolute(value: any, label: any) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an absolute path.`);
   return path.resolve(value);
 }
 
-function sha256(value, label) {
+function sha256(value: any, label: any) {
   if (typeof value !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value)) throw new Error(`${label} must be a SHA-256 identity.`);
   return value;
 }
 
-export function normalizeNpmLauncherWebPort(value = DEFAULT_NPM_LAUNCHER_WEB_PORT) {
+export function normalizeNpmLauncherWebPort(value: any = DEFAULT_NPM_LAUNCHER_WEB_PORT) {
   const policy = typeof value === 'number' ? { preferred: value, fallback: 'random' } : value;
   closed(policy, WEB_PORT_FIELDS, 'npm launcher web port policy');
   if (!Number.isInteger(policy.preferred) || policy.preferred < 0 || policy.preferred > 65535) {
@@ -57,8 +57,8 @@ export function normalizeNpmLauncherWebPort(value = DEFAULT_NPM_LAUNCHER_WEB_POR
   return Object.freeze({ preferred: policy.preferred, fallback: 'random' });
 }
 
-function bindingMaterial(value) {
-  const material = {
+function bindingMaterial(value: any) {
+  const material: any = {
     schemaVersion: value.schemaVersion,
     channel: value.channel,
     platform: value.platform,
@@ -89,7 +89,7 @@ function bindingMaterial(value) {
   return material;
 }
 
-export function npmLauncherInstallationSlotIdentity(value) {
+export function npmLauncherInstallationSlotIdentity(value: any) {
   return digest(JSON.stringify({
     package: '@buildr-ai/buildr',
     packageRoot: path.resolve(value.packageRoot),
@@ -98,7 +98,7 @@ export function npmLauncherInstallationSlotIdentity(value) {
   }));
 }
 
-export function npmLauncherOwnershipIdentity(value) {
+export function npmLauncherOwnershipIdentity(value: any) {
   return digest(JSON.stringify({
     schemaVersion: value.schemaVersion,
     platform: value.platform,
@@ -107,7 +107,7 @@ export function npmLauncherOwnershipIdentity(value) {
   }));
 }
 
-export function validateNpmLauncherBinding(value, options = {}) {
+export function validateNpmLauncherBinding(value: any, options: any = {}) {
   const legacy = value?.schemaVersion === LEGACY_NPM_LAUNCHER_BINDING_SCHEMA;
   if (legacy && !options.allowLegacy) throw new Error(`Unsupported npm launcher binding schema: ${value.schemaVersion}.`);
   if (!legacy && value?.schemaVersion !== NPM_LAUNCHER_BINDING_SCHEMA) throw new Error(`Unsupported npm launcher binding schema: ${value?.schemaVersion || '<missing>'}.`);
@@ -138,7 +138,7 @@ export function validateNpmLauncherBinding(value, options = {}) {
   return Object.freeze({ ...material, bindingIdentity: expectedBinding });
 }
 
-export function createNpmLauncherBinding({ registration, platform, target, bindingPath, webPort = DEFAULT_NPM_LAUNCHER_WEB_PORT }) {
+export function createNpmLauncherBinding({ registration, platform, target, bindingPath, webPort = DEFAULT_NPM_LAUNCHER_WEB_PORT }: any) {
   if (registration?.status !== 'installed' || !registration.entry) throw new Error('npm launcher requires an installed, registry-proven npm installation.');
   const entry = validateProductInstallationRegistryEntry(registration.entry);
   if (entry.origin.channel !== 'npm') throw new Error(`npm launcher cannot bind installation channel ${entry.origin.channel}.`);
@@ -154,7 +154,7 @@ export function createNpmLauncherBinding({ registration, platform, target, bindi
     readApplicationPayloadManifest(path.dirname(entry.envelopePath)),
   );
   if (origin.ownershipIdentity !== entry.origin.ownershipIdentity) throw new Error('npm launcher registry origin differs from the current installation envelope.');
-  const material = {
+  const material: any = {
     schemaVersion: NPM_LAUNCHER_BINDING_SCHEMA,
     channel: 'npm',
     platform,
@@ -168,12 +168,12 @@ export function createNpmLauncherBinding({ registration, platform, target, bindi
     installationOwnershipIdentity: origin.ownershipIdentity,
     installationSlotIdentity: npmLauncherInstallationSlotIdentity({
       packageRoot: entry.productRoot,
-      prefix: authority.authority.prefix,
+      prefix: authority.authority!.prefix,
       originEnvelope: entry.envelopePath,
     }),
     launcherOwnershipIdentity: null,
     packageRoot: entry.productRoot,
-    prefix: authority.authority.prefix,
+    prefix: authority.authority!.prefix,
     originEnvelope: entry.envelopePath,
     hostNode: {
       path: entry.runtime.executable,
@@ -190,13 +190,13 @@ export function createNpmLauncherBinding({ registration, platform, target, bindi
   return validateNpmLauncherBinding({ ...material, bindingIdentity: digest(JSON.stringify(bindingMaterial(material))) });
 }
 
-function drift(code, message, binding) {
+function drift(code: any, message: any, binding: any) {
   return { status: 'stale', code, message, binding };
 }
 
-export function inspectNpmLauncherBinding(value, options = {}) {
+export function inspectNpmLauncherBinding(value: any, options: any = {}) {
   let binding;
-  try { binding = validateNpmLauncherBinding(value, { allowLegacy: true }); } catch (error) {
+  try { binding = validateNpmLauncherBinding(value, { allowLegacy: true }); } catch (error: any) {
     return { status: 'invalid', code: 'launcher.binding_invalid', message: error.message, binding: null };
   }
   if (options.target && !sameFilesystemPath(binding.target, options.target)) return drift('launcher.target_drift', 'Launcher target differs from its binding.', binding);
@@ -213,7 +213,7 @@ export function inspectNpmLauncherBinding(value, options = {}) {
       validateInstallationOrigin(JSON.parse(fs.readFileSync(binding.originEnvelope, 'utf8'))),
       readApplicationPayloadManifest(path.dirname(binding.originEnvelope)),
     );
-  } catch (error) {
+  } catch (error: any) {
     return drift('launcher.installation_origin_drift', error.message, binding);
   }
   const comparisons = [
@@ -224,7 +224,7 @@ export function inspectNpmLauncherBinding(value, options = {}) {
     ['source commit', binding.sourceCommit, origin.sourceCommit],
     ['installation ownership', binding.installationOwnershipIdentity, origin.ownershipIdentity],
   ];
-  const mismatch = comparisons.find(([, expected, actual]) => expected !== actual);
+  const mismatch = comparisons.find(([, expected, actual]: any) => expected !== actual);
   if (mismatch) return drift('launcher.installation_identity_drift', `Launcher ${mismatch[0]} identity differs from the npm installation.`, binding);
   if (!fs.statSync(binding.packageRoot, { throwIfNoEntry: false })?.isDirectory()) return drift('launcher.package_root_drift', `Buildr package root is unavailable: ${binding.packageRoot}.`, binding);
   if (!fs.statSync(binding.prefix, { throwIfNoEntry: false })?.isDirectory()) return drift('launcher.prefix_drift', `npm prefix is unavailable: ${binding.prefix}.`, binding);
@@ -234,9 +234,9 @@ export function inspectNpmLauncherBinding(value, options = {}) {
   return { status: 'ready', code: null, message: null, binding };
 }
 
-export function readAndInspectNpmLauncherBinding(file, options = {}) {
+export function readAndInspectNpmLauncherBinding(file: any, options: any = {}) {
   let value;
-  try { value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')); } catch (error) {
+  try { value = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')); } catch (error: any) {
     return { status: error.code === 'ENOENT' ? 'absent' : 'invalid', code: error.code === 'ENOENT' ? 'launcher.absent' : 'launcher.binding_unreadable', message: error.message, binding: null };
   }
   return inspectNpmLauncherBinding(value, options);

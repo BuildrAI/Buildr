@@ -21,7 +21,7 @@ test('release contract runs from a clean checkout before dependencies are instal
     'tools/release/release-contract.mjs',
     'tools/release/release-files.mjs',
     'tools/release/release-notes.mjs',
-    'src/system/installation/domain/release-version.mjs',
+    'src/system/installation/domain/release-version.ts',
     'src/infrastructure/filesystem/filesystem-path-identity.mjs',
   ]) {
     const target = path.join(cleanService, relative);

@@ -9,11 +9,11 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
-import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
+import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
-import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.mjs';
+import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.ts';
 
 const CHILD = new URL('../fixtures/buildr-web-profile-child.mjs', import.meta.url);
 

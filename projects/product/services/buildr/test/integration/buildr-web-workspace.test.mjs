@@ -124,7 +124,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const index = read('../buildr-web/index.html');
   const server = read('src/web/http/server.ts');
   const staticFiles = read('src/web/http/static-files.ts');
-  const publicationHttp = read('src/system/publication/interfaces/http/publication-http.mjs');
+  const publicationHttp = read('src/system/publication/interfaces/http/publication-http.ts');
   const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
   const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
   assert.match(layout, /data-nav=\{item\.nav\}/);

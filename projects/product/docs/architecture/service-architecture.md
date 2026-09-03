@@ -25,7 +25,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
-| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/task/`、`src/verification/` 与 `src/web/` 已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续按 Workspace/System、Agent Assets、Infrastructure/Bootstrap 和工具测试边界纵向迁移；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/task/`、`src/verification/`、`src/web/`、`src/workspace/` 与 `src/system/` 已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续按 Agent Assets、Infrastructure/Bootstrap 和工具测试边界纵向迁移；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
@@ -378,7 +378,7 @@ buildr web
 
 没有安装 Launcher，用户仍然可以直接执行 `buildr web`。
 
-System Installation 已完成迁移。installation identity/origin/registry、CLI Update、Installation Status、Release Awareness、npm installation lifecycle、Launcher binding 与 Launcher 管理通过 `system/installation/module.mjs` 向 Bootstrap 提供窄能力及 CLI、HTTP、Diagnostic contribution；Doctor 与 Bootstrap 消费正式 Application/identity/launcher port，不再依赖临时 compatibility Facade。
+System Installation 已完成 TypeScript 迁移。installation identity/origin/registry、CLI Update、Installation Status、Release Awareness、npm installation lifecycle、Launcher binding 与 Launcher 管理通过 `system/installation/module.ts` 向 Bootstrap 提供窄能力及 CLI、HTTP、Diagnostic contribution；Doctor 与 Bootstrap 消费正式 Application/identity/launcher port，不再依赖临时 compatibility Facade。
 
 ### `system/doctor`
 
@@ -397,7 +397,7 @@ Doctor 理解 Buildr 业务和产品语义，因此不属于通用 Infrastructur
 
 Doctor 可以直接读取数据库、文件、进程和安装状态等底层事实，也可以消费模块公开的诊断或 Read Model。原始数据库读取只用于连接、schema、migration、checksum、损坏和其他物理健康诊断；涉及业务状态、关系和语义的诊断优先消费所属模块公开的 Diagnostic/Read Model，不在 Doctor 中重新实现表到业务事实的映射。Doctor 只负责观察、诊断和聚合：不取得业务写入 authority，不通过诊断路径修改业务事实，也不复制正常业务流程。每个结构迁移切片都必须同步更新受影响的 Doctor 检查与诊断路径。
 
-当前实现由 `system/doctor/module.mjs` 注册 Doctor CLI 与 Application port，并在所有业务模块安装完成后接收最终 Diagnostic contribution 列表。诊断实现和结果模型位于 `system/doctor/application/`；旧 `application/doctor.mjs` 与 `application/doctor/` 路径已删除。该装配顺序保证 Doctor 可以观察完整模块图，同时保持诊断只读和各模块 writer 唯一。
+当前实现由 `system/doctor/module.ts` 注册 Doctor CLI 与 Application port，并在所有业务模块安装完成后接收最终 Diagnostic contribution 列表。诊断实现和结果模型位于 `system/doctor/application/*.ts`；旧 `application/doctor.mjs` 与 `application/doctor/` 路径已删除。该装配顺序保证 Doctor 可以观察完整模块图，同时保持诊断只读和各模块 writer 唯一。
 
 ## `infrastructure` 模块
 
@@ -783,13 +783,13 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.ts` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排；该模块已全部使用 TypeScript | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
 | Web HTTP 公共宿主与静态托管 | `src/web/http/server.ts`、`router.ts`、`session.ts`、`static-files.ts`、`responses.ts`、`read-executor.ts`、`read-worker.ts`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | buildr-web-http、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
-| System Installation | `src/system/installation/`；release version 规则位于 `domain/release-version.mjs` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
+| System Installation | `src/system/installation/**/*.ts`；release version 规则位于 `domain/release-version.ts` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
 | 遗留入口与临时 Facade | 旧 `src/web/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
 | 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
 | Change | `src/task/change/module.ts`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
 | OpenSpec convergence | `src/task/openspec/module.ts`、`src/task/openspec/application/*.ts` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
-| Publication | `src/system/publication/module.mjs`、`src/system/publication/application/`、HTTP contribution | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
+| Publication | `src/system/publication/**/*.ts` | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
 | Project Verification | `src/verification/**/*.ts`，由Bootstrap和Task Verification消费 | 只校验、读取和更新Project测试地图；正式验证进程、deadline和资源协调技术机制也已纳入严格类型检查。Task验证报告writer仍归Task模块 | project/task verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
 
 ### 全局生产 residual 最终收敛
@@ -802,7 +802,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.ts` | public-json-contracts system、architecture verification | `migrated` |
 | 旧 internal workflow route inventory/router | 已删除且不提供替代聚合层 | Task lifecycle contract、architecture verification | `migrated`（已删除） |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.ts` | Git Worktree contract、CLI architecture | `migrated` |
-| Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
+| Release Version Domain | `src/system/installation/domain/release-version.ts` | release awareness、release contract/cold-start | `migrated` |
 
 完整 JSON Schema、Ajv、DTO 自动生成与 buildr-web typed client 仍属于后续 `evolve-buildr-http-contract-system`，不因本次 identity/envelope 结构迁移而被视为完成。
 

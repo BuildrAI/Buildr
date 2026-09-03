@@ -1,4 +1,4 @@
-export function createServiceDiagnostics(deps) {
+export function createServiceDiagnostics(deps: any) {
   const {
     addDoctorFinding,
     existsDirectory,
@@ -19,7 +19,7 @@ export function createServiceDiagnostics(deps) {
     resolveSourceRoot,
   } = deps;
 
-  function diagnoseServicesMetadata(result, targetRoot, owner, metadataPath, baseRoot, serviceLabel, ignoreLines) {
+  function diagnoseServicesMetadata(result: any, targetRoot: any, owner: any, metadataPath: any, baseRoot: any, serviceLabel: any, ignoreLines: any) {
     if (!existsFile(metadataPath)) {
       if (existsDirectory(baseRoot)) {
         addDoctorFinding(result, 'warning', 'services.manifest_missing', `Service manifest 缺失：${serviceLabel}`, {
@@ -33,7 +33,7 @@ export function createServiceDiagnostics(deps) {
     let manifest;
     try {
       manifest = parseServicesManifestYaml(fs.readFileSync(metadataPath, 'utf8'));
-    } catch (error) {
+    } catch (error: any) {
       addDoctorFinding(result, 'warning', 'services.manifest_invalid', `Service manifest 不可解析：${error.message}`, {
         path: toPosixRelative(targetRoot, metadataPath),
         suggestion: '修复 services/manifest.yml 语法后重新运行 doctor。',
@@ -59,7 +59,7 @@ export function createServiceDiagnostics(deps) {
         const domain = parseServicesManifest(fs.readFileSync(metadataPath, 'utf8'), { projectCode: owner.project });
         manifest = {
           ...manifest,
-          services: Object.fromEntries(Object.entries(domain.entities).map(([code, service]) => [code, {
+          services: Object.fromEntries(Object.entries(domain.entities).map(([code, service]: any) => [code, {
             title: service.name,
             description: service.description,
             type: service.type,
@@ -93,12 +93,12 @@ export function createServiceDiagnostics(deps) {
       }
     }
 
-    for (const [serviceName, metadata] of Object.entries(manifest.services || {})) {
+    for (const [serviceName, metadata] of Object.entries(manifest.services || {}) as Array<[string, any]>) {
       if (owner.servicePath && owner.servicePath.split('/')[0] !== serviceName) continue;
       const repo = metadata.repo || {};
       const source = { type: repo.kind === 'git' ? 'git' : 'workspace', ...(metadata.root === 'attached' ? { root: 'attached' } : {}), path: metadata.path || `services/${serviceName}` };
       const repoPath = metadata.root === 'attached' ? source.path : (source.path.startsWith('projects/') ? path.resolve(targetRoot, source.path) : path.resolve(baseRoot, source.path));
-      const service = {
+      const service: any = {
         org: owner.org,
         project: owner.project || null,
         name: serviceName,
@@ -195,7 +195,7 @@ export function createServiceDiagnostics(deps) {
     }
   }
 
-  function diagnoseServices(result, targetRoot, scopes, registry = null) {
+  function diagnoseServices(result: any, targetRoot: any, scopes: any, registry: any = null) {
     result.services = [];
     const ignoreLines = gitignoreLines(targetRoot);
 
