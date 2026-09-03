@@ -16,10 +16,10 @@ description: 用户要求创建、查看或修订任务记录、纠正任务状�
 ```text
 buildr task create <id> --title <text> --intent <text> [--status todo|active] [--parent-task] [--parent <id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] --target <workspace> --json
 buildr task inspect <id> --target <workspace> --json
-buildr task update <id> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--no-change] [--parent-completion <json-file>] [--parent-task] [--parent <id>|--clear-parent] [set/add/remove flags] --expected-record <recordDigest> --target <workspace> --json
-buildr task activate <id> --target <workspace> --json
-buildr task complete <id> --summary <text> [--no-change] --expected-record <recordDigest> [--parent-completion <json-file>] --target <workspace> --json
-buildr task abandon <id> --reason <text> --target <workspace> --json
+buildr task update <id> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--parent-task] [--parent <id>|--clear-parent] [set/add/remove flags] --expected-record <recordDigest> --target <workspace> --json
+buildr task activate <id> --expected-record <recordDigest> --target <workspace> --json
+buildr task complete <id> --summary <text> --expected-record <recordDigest> [--parent-completion <json-file>] --target <workspace> --json
+buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
 
 任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
@@ -28,15 +28,15 @@ buildr task abandon <id> --reason <text> --target <workspace> --json
 
 ## 修订任务事实
 
-已有 `task update` / HTTP `PATCH` 可以修改标题、目标、范围、规范引用、父子关系及四种合法状态；省略字段保持不变，不提交完整记录覆盖。状态变更或已结束任务的普通字段修订必须提供当前 `recordDigest`；更正终态事实还需 `reason`，由智能体（Agent）准确说明已取得的用户决定，不为原因再创建审批步骤。
+已有 `task update` / HTTP `PATCH` 可以修改标题、目标、范围、规范引用、父子关系及四种合法状态；省略字段保持不变，不提交完整记录覆盖。所有非创建写入都必须提供当前 `recordDigest`；更正终态事实还需 `reason`，由智能体（Agent）准确说明已取得的用户决定，不为原因再创建审批步骤。
 
 更正会把原状态、标题、目标、父关系、结果及原更新时间保存到只读 `resultHistory`，同时记录更正时间与原因。恢复进行中使当前 `result` 为空，但不撤销真实交付、不重新准备环境、不改变子任务状态。已完成子任务可按当前版本和原因关联进行中的父任务，保持自己的状态与成果；重复提交相同内容不追加历史。
 
-设置completed仍需`summary`、`noChange`及适用的父任务完成授权，内部与`task complete`复用同一检查。完成请求不同时更改目标、范围或关系；先修订这些事实，再按当前目标验收。已完成父任务变更目标或范围时显式恢复进行中，不能用旧完成依据覆盖新目标。todo仍不能携带规范变化引用。身份、系统时间、结果历史及专业验证证据不得直接修改。
+设置completed仍需`summary`及适用的父任务完成授权，内部与`task complete`复用同一检查。完成请求不同时更改目标、范围或关系；先修订这些事实，再按当前目标验收。已完成父任务变更目标或范围时显式恢复进行中，不能用旧完成依据覆盖新目标。todo仍不能携带规范变化引用。身份、系统时间、结果历史及专业验证证据不得直接修改。
 
 复盘文档登记、决定或清除必须作为独立更新并提供当前`recordDigest`。登记与决定还要提供固定本机文档的实际摘要；清除只解除Task关联，不删除文件。查看文档零写入，只有用户明确决定是否继续行动后才能标记`decided`。
 
-## 父子管理
+## 父任务协调（Task Parent Coordination）
 
 人负责整体目标、边界、关键决定与完成授权；智能体（Agent）在这些边界内规划、创建独立子任务、核对成果和持续推进。`--parent-task` 明确创建父任务；`--parent` 指定子任务归属。关联过子任务的父身份保留，不通过移除最后一个子任务取消完成保护。
 
