@@ -1,0 +1,7 @@
+interface:
+  display_name: "用户体验设计法则"
+  short_description: "基于心理学法则设计、审查和权衡用户界面与交互方案，并给出验证方法"
+  default_prompt: "使用 $ux-design-laws 审查这个界面，给出按优先级排序的改进建议与验证方法。"
+
+policy:
+  allow_implicit_invocation: true

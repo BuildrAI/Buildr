@@ -1,0 +1,45 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: add-ux-design-laws-skill
+operation: reconcile
+treeIdentity: git:043f801f07600bffa0d3c6f638e4bc6eafe4783b+working-tree:sha256-279942eed87918f7557c7ee81c4c113765529d200ee26497405c7e9784c0ee89
+impacts:
+  - type: brief
+    target: openspec/changes/add-ux-design-laws-skill/brief.md
+    reason: 新增用户可见的内置专业技能，需要提供简洁的人类知识入口与验收摘要
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/add-ux-design-laws-skill/proposal.md
+      - openspec/changes/add-ux-design-laws-skill/design.md
+      - openspec/changes/add-ux-design-laws-skill/specs/product-agent-skills/spec.md
+      - openspec/changes/add-ux-design-laws-skill/specs/buildr-package-assets/spec.md
+      - services/buildr/resources/manifest.yml
+      - services/buildr/resources/workspace/skills/buildr/ux-design-laws/SKILL.md
+      - services/buildr/test/contract/ux-design-laws.test.mjs
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: 单个可选专业技能不改变 Project 定位、核心能力或全局入口
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/add-ux-design-laws-skill/proposal.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 复用现有内置 Skill 与 runtime 投射架构，不新增产品角色、领域模块或能力协作边界
+    status: not-applicable
+    sourceIdentities:
+      - openspec/specs/buildr-package-assets/spec.md
+      - openspec/changes/add-ux-design-laws-skill/design.md
+      - services/buildr/resources/manifest.yml
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 不改变 Buildr Service 职责、API、数据、依赖、配置或运行要求
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/add-ux-design-laws-skill/design.md
+      - services/buildr/resources/workspace/skills/buildr/ux-design-laws/SKILL.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 技能内部法则名称不改变 Buildr Project 领域术语、数据语义或所有权边界
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/add-ux-design-laws-skill/specs/product-agent-skills/spec.md
+unresolvedItems: []

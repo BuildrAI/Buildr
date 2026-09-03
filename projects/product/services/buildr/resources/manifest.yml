@@ -246,6 +246,12 @@ builtins:
       description: 用户明确需要界面原型时使用；调查现有真实界面，生成并逐页验证一个或多个使用模拟数据与交互的自包含 HTML。已有原型且用户未明确忽略时，后续 Agent 默认按原型开发页面与交互。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: ux-design-laws
+      path: resources/workspace/skills/buildr/ux-design-laws
+      target: skills/buildr/ux-design-laws
+      description: 设计或审查用户界面、交互流程、信息层级与操作反馈时使用；依据用户目标和真实界面选择相关心理学法则，给出有优先级的设计方案、依据、权衡与验证方法。不用于仅实现既定设计稿、直接生成页面原型，或替代无障碍检查与用户研究。
+      required: false
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-daily-progress
       path: resources/workspace/skills/buildr/project-daily-progress
       target: skills/buildr/project-daily-progress
@@ -451,6 +457,14 @@ workspaceFiles:
   - resources/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - resources/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
   - resources/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/SKILL.md => skills/buildr/ux-design-laws/SKILL.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/agents/openai.yaml => skills/buildr/ux-design-laws/agents/openai.yaml copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/law-index.md => skills/buildr/ux-design-laws/references/law-index.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/foundations-and-strategy.md => skills/buildr/ux-design-laws/references/foundations-and-strategy.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/information-and-decisions.md => skills/buildr/ux-design-laws/references/information-and-decisions.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/visual-perception-and-layout.md => skills/buildr/ux-design-laws/references/visual-perception-and-layout.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/actions-and-feedback.md => skills/buildr/ux-design-laws/references/actions-and-feedback.md copy
+  - resources/workspace/skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md => skills/buildr/ux-design-laws/references/journey-motivation-and-memory.md copy
   - resources/workspace/skills/buildr/project-daily-progress/SKILL.md => skills/buildr/project-daily-progress/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/SKILL.md => skills/buildr/task-retrospective/SKILL.md copy
   - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
