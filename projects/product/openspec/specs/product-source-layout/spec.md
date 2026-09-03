@@ -36,7 +36,7 @@ Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，�
 
 #### Scenario: Task Record 作为首个纵向切片完成迁移
 - **WHEN** 架构 verifier 检查 Task Record 的 Domain、Application、Persistence、CLI/HTTP Adapter 和模块注册入口
-- **THEN** 这些实现 MUST 仅存在于 `src/task/` 的对应扁平技术层，并由 `src/task/module.mjs` 提供单一运行时注册入口
+- **THEN** 这些实现 MUST 仅存在于 `src/task/` 的对应扁平技术层，并由 `src/task/module.ts` 提供单一运行时注册入口
 - **AND** `src/task/domain/record/`、`src/task/application/record/` 与 `src/task/persistence/record/` MUST 不存在
 - **AND** 旧全局技术层 MUST NOT 保留 Task Record 实现、re-export 或兼容 facade
 - **AND** Task Record 公开 CLI/HTTP/JSON、SQLite schema、事务、错误映射和唯一 writer MUST 保持不变
@@ -135,11 +135,11 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND** Bootstrap MUST NOT 创建第二个 CLI Host或改变现有 HTTP Server、端口、Session、安全和实例生命周期语义
 
 ### Requirement: 模块必须通过显式窄合约参与组装
-每个已迁移业务模块 MUST 通过根部 `module.mjs` 提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
+每个已迁移业务模块 MUST 通过根部唯一 `module.ts` 或 `module.mjs` 人工源码提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
 
 #### Scenario: Bootstrap 创建 Task Record 模块
 - **WHEN** Bootstrap 装配 Task Record
-- **THEN** `src/task/module.mjs` MUST 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer和适用的 Parent Coordination Reader等已声明依赖
+- **THEN** `src/task/module.ts` MUST 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer和适用的 Parent Coordination Reader等已声明依赖
 - **AND** 模块 MUST 提供唯一 Task Record Application API、当前兼容所需的窄 Persistence Read Port及自身 CLI/HTTP contributions
 - **AND** Bootstrap、CLI Host与HTTP Host MUST NOT 直接导入 Task Record内部 Application或Persistence实现
 
@@ -169,12 +169,12 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND**公开HTTP path、method、DTO、授权、响应与错误映射 MUST保持等价
 
 ### Requirement: 第二轮收敛后顶层生产职责必须全部有 owner
-Buildr Service MUST将公共 contract 技术机制、release version、internal workflow route 与 Web HTTP 职责归入明确模块 owner；Bootstrap MUST只负责模块注册、依赖注入、进程入口与生命周期组合。没有独立 owner 的顶层 `src/application`、`src/domain`、`src/interfaces` 生产残留 MUST被删除。
+Buildr Service MUST将公共 contract 技术机制、release version 与 Web HTTP 职责归入明确模块 owner；Bootstrap MUST只负责模块注册、依赖注入、进程入口与生命周期组合。没有独立 owner 的顶层 `src/application`、`src/domain`、`src/interfaces` 生产残留 MUST被删除，已退役的Task internal workflow route MUST NOT保留运行入口或兼容转发。
 
 #### Scenario: Bootstrap 进入 Task internal workflow
-- **WHEN** Bootstrap 处理内部 Task workflow route
-- **THEN** Bootstrap MUST通过 Task module 的公开组装入口调用
-- **AND** MUST NOT直接导入 Task internal runner 或维护独立 route mapping
+- **WHEN** 调用方请求已退役的内部 Task workflow route
+- **THEN** Bootstrap MUST返回入口不存在且保持零副作用
+- **AND** MUST NOT直接导入旧Task internal runner、维护兼容route mapping或转发到其他Task能力
 
 #### Scenario: 扫描最终生产源码布局
 - **WHEN** architecture verifier 枚举 `src` 下生产文件

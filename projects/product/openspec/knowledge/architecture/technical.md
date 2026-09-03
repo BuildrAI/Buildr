@@ -160,7 +160,7 @@ Runtime adapter 只投射受管 Rules、Skills、contributions 和 consumer-loca
 | Agent runtime ownership receipts | `.buildr/agent-runtime/` | Agent Assets runtime projection | 本机控制状态，可重建 |
 | Web instance、Launcher 和管理 claim | Product/Web Data Root 与 Workspace local state | Web / Installation owner | 本机运行协调状态 |
 
-专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；面向页面和 Agent 的 Overview 通过只读查询或 Application projection 组合事实。
+专业 Repository 只持久化所属 closed payload、必要查询字段和完整性约束。不存在跨专业 current 副本或聚合 writer；页面和 Agent 按需读取 Task Record 及各专业 Application 的独立投影。
 
 SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不进入 Git、同步或 Agent runtime。共享团队 authority 属于未来 Server/Cloud 边界，不能通过同步本机数据库实现。
 
@@ -168,9 +168,9 @@ SQLite 是每个 canonical Workspace 独立的 local-only Structured Store，不
 
 默认收尾由智能体（Agent）读取收尾技能（Skill），组合 Git、系统工具和已有 Buildr 接口完成目标。完整参与者、调用关系、状态、清理安全与自举边界集中在 [任务收尾](../flows/task-closeout.md)。
 
-任务记录保存结果；Git 和外部系统拥有交付事实；环境应用（Application）及资源所有者保护删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
+任务记录保存结果；Git 和外部系统拥有交付事实；Worktree、Preview 等具体资源所有者分别保护自身删除安全。普通完成不要求候选、交接、五阶段或额外对账，也不把完成记录冒充机器验证。
 
-Agent直接读取当前Task、代码、Git、文件、环境和所需专业结果后选择开发动作。Task Entry Snapshot、`task next`、任务研发聚合、任务规划身份和旧机器交付历史均已删除。Overview不计算gate match或跨专业完成状态，只组合Task Record、Review、Verification与Environment。
+Agent直接读取当前Task、代码、Git、文件、运行现场和所需专业结果后选择开发动作。Task Entry Snapshot、`task next`、任务研发聚合、任务规划身份、统一Task Environment、独立Task Overview和旧机器交付历史均已删除。Buildr Web直接展示Task Record，并按需分别读取Review、Verification与父任务协调，不计算跨专业完成状态。
 
 ## Runtime、构建与分发
 
