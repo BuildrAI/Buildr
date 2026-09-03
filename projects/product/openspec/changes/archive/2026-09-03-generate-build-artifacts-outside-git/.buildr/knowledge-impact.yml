@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: generate-build-artifacts-outside-git
+operation: reconcile
+treeIdentity: worktree-ccee7caa-uncommitted
+impacts:
+  - type: brief
+    target: openspec/changes/generate-build-artifacts-outside-git/brief.md
+    reason: 说明生成物退出Git后的目标、流程、兼容性与验收
+    status: updated
+    sourceIdentities: [proposal.md, canonical-specs, current-build-implementation]
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前文档仍声明Buildr只消费已提交web-dist和tracked测试上下文输出
+    status: updated
+    sourceIdentities: [openspec/knowledge/architecture/technical.md, design.md, implementation]
+  - type: flow
+    target: openspec/knowledge/flows/open-source-release.md
+    reason: 候选构建需要先生成并冻结全部构建产物再形成唯一npm压缩包
+    status: updated
+    sourceIdentities: [openspec/knowledge/flows/open-source-release.md, design.md, implementation]
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Buildr Service的生成器、Application Payload、Browser与package消费者边界改变
+    status: updated
+    sourceIdentities: [openspec/knowledge/services/buildr.md, services/buildr/tools/build, implementation]
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Buildr Web正式构建由tracked交接改为本地忽略输出或隔离候选暂存
+    status: updated
+    sourceIdentities: [openspec/knowledge/services/buildr-web.md, services/buildr-web/vite.config.ts, implementation]
+unresolvedItems: []

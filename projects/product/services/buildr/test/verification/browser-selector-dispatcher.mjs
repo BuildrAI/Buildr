@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
@@ -27,7 +28,6 @@ function isBrowserOwnedPath(value) {
   const normalized = normalize(value);
   const relative = buildrRelative(normalized);
   return normalized.startsWith('services/buildr-web/')
-    || relative.startsWith('web-dist/')
     || (relative.startsWith('src/web/') && !relative.startsWith('src/web/http/'))
     || relative.startsWith('test/browser-smoke/')
     || relative === 'test/verification/browser-selector-dispatcher.mjs'
@@ -95,13 +95,13 @@ export function selectBrowserSelectors(changedPaths) {
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Buildr Web package or build configuration changed; run the complete selector set.' });
       continue;
     }
-    if (originalValue.startsWith('services/buildr-web/src/') || value.startsWith('web-dist/')) {
+    if (originalValue.startsWith('services/buildr-web/src/')) {
       if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');
       else if (/\/(?:pages\/)?(?:[Tt]ask|[Tt]asks)|task-detail/.test(originalValue) || originalValue.includes('/pages/Task') || originalValue.includes('/pages/task-detail')) add(plan, 'task', originalValue, 'Task page, tab or lifecycle interaction changed.');
       else if (originalValue.includes('/pages/Article') || originalValue.includes('/pages/Articles') || originalValue.includes('/articles')) add(plan, 'articles', originalValue, 'Articles page or publication interaction changed.');
-      else if (value.endsWith('/main.tsx') || value.endsWith('/App.tsx') || value.endsWith('/AppLayout.tsx') || value.endsWith('/index.html') || value.includes('/web-dist/')) {
+      else if (value.endsWith('/main.tsx') || value.endsWith('/App.tsx') || value.endsWith('/AppLayout.tsx') || value.endsWith('/index.html')) {
         add(plan, 'shell', originalValue, 'Global app bootstrap or router changed.');
         add(plan, 'core', originalValue, 'Shared routing changed; run the representative Task route smoke.');
       } else add(plan, 'core', originalValue, 'Unclassified Buildr Web path uses the core smoke fallback.');
@@ -138,10 +138,15 @@ export async function runPhase(id, argv, cwd, timeoutMs, env = process.env) {
 async function main() {
   const args = process.argv.slice(2);
   const full = args.includes('--full');
+  const selectorIndex = args.indexOf('--selector');
+  const explicitSelector = selectorIndex < 0 ? null : args[selectorIndex + 1];
+  if (selectorIndex >= 0 && (!explicitSelector || !BROWSER_SELECTORS.includes(explicitSelector))) throw new Error('--selector requires one known Browser selector.');
   const run = args.includes('--run');
   let plan;
   try {
-    plan = full
+    plan = explicitSelector
+      ? { status: 'selected', mode: 'explicit', paths: [], selectors: [explicitSelector], reasons: [{ path: null, selector: explicitSelector, reason: 'Explicit Browser selector.' }], diagnostics: [] }
+      : full
       ? { status: 'selected', mode: 'full', paths: [], selectors: ['all'], reasons: [{ path: null, selector: 'all', reason: 'Explicit full Browser Smoke.' }], diagnostics: [] }
       : selectBrowserSelectors(parseChangedPaths());
   } catch (error) {
@@ -170,15 +175,21 @@ async function main() {
   }
   if (!run || plan.status === 'not-applicable') return;
   const webDistVerifier = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'web-dist.mjs');
-  const webDistResult = await runPhase('web-dist', [process.execPath, webDistVerifier], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000);
-  if (webDistResult.status !== 'passed') {
-    process.exitCode = webDistResult.exitCode ?? 1;
-    return;
+  const stagingParent = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-web-dist-'));
+  const stagingRoot = path.join(stagingParent, 'web-dist');
+  try {
+    const webDistResult = await runPhase('web-dist', [process.execPath, webDistVerifier, '--output', stagingRoot], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000);
+    if (webDistResult.status !== 'passed') {
+      process.exitCode = webDistResult.exitCode ?? 1;
+      return;
+    }
+    const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.mjs');
+    const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
+    const result = await runPhase('browser', [process.execPath, isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
+    if (result.status !== 'passed') process.exitCode = result.exitCode ?? 1;
+  } finally {
+    fs.rmSync(stagingParent, { recursive: true, force: true });
   }
-  const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.mjs');
-  const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.mjs');
-  const result = await runPhase('browser', [process.execPath, isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
-  if (result.status !== 'passed') process.exitCode = result.exitCode ?? 1;
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

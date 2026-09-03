@@ -19,6 +19,8 @@ const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const SELECTOR_INPUT = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR = process.env.BUILDR_SCREENSHOT_DIR;
+const BROWSER_WEB_DIST_ROOT = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
+if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
 const KNOWN_SELECTORS = new Set(['all', 'core', 'shell', 'task', 'project', 'service', 'change', 'articles']);
 const SELECTORS = new Set(SELECTOR_INPUT.split(',').map((item) => item.trim()).filter(Boolean));
 
@@ -360,11 +362,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const instance = createLocalWorkspaceServer(runtime, {
     targetRoot: workspaceRoot,
     webProfile: { profile: 'development' },
+    staticRoot: BROWSER_WEB_DIST_ROOT,
   });
   server = instance.server;
   const { url, initialWorkspaceId } = await instance.ready;
   const previewInstance = createLocalWorkspaceServer(runtime, {
     targetRoot: workspaceRoot,
+    staticRoot: BROWSER_WEB_DIST_ROOT,
     previewIdentity: {
       schemaVersion: 'buildr.local-app-preview/v1', instance: 'browser-preview', worktree: workspaceRoot,
       repository: workspaceRoot, branch: 'preview-branch', head: '0123456789abcdef', dirty: true,

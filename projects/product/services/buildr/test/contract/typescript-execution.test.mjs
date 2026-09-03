@@ -17,7 +17,8 @@ test('TypeScript execution foundation is strict, no-emit, and development-only',
   assert.equal(metadata.dependencies['@types/node'], undefined);
   assert.equal(lock.packages['node_modules/typescript'].version, '7.0.2');
   assert.equal(lock.packages['node_modules/@types/node'].version, '24.13.3');
-  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/release/**/*.ts', 'test/**/*.ts']);
+  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/**/*.ts', 'test/**/*.ts']);
+  assert.match(metadata.scripts.typecheck, /^npm run artifacts:prepare/);
   assert.equal(config.compilerOptions.module, 'NodeNext');
   assert.equal(config.compilerOptions.moduleResolution, 'NodeNext');
   assert.equal(config.compilerOptions.strict, true);

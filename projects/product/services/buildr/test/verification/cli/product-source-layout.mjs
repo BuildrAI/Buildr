@@ -36,7 +36,6 @@ const requiredServiceRootEntries = new Set([
   'src',
   'test',
   'tools',
-  'web-dist',
 ]);
 
 const forbiddenServiceRootEntries = new Set(['scripts']);
@@ -45,7 +44,14 @@ const deferredPackageFiles = new Set([
   'launchers/manage.mjs',
 ]);
 
-export function validateProductSourceLayout({ projectEntries, serviceEntries, packageFiles = [], bridgeSource }) {
+const generatedTrackedPatterns = [
+  /^projects\/product\/services\/buildr\/web-dist\//u,
+  /^projects\/product\/services\/buildr\/package\/targets\/test-context\//u,
+  /^projects\/product\/services\/buildr\/src\/(?:agent-assets|task|web|workspace)\/.*\/generated\/.*-dto\.ts$/u,
+  /^projects\/product\/services\/buildr-web\/src\/api\/generated\/.*-dto\.ts$/u,
+];
+
+export function validateProductSourceLayout({ projectEntries, serviceEntries, packageFiles = [], trackedFiles = [], bridgeSource }) {
   const findings = [];
 
   for (const entry of projectEntries) {
@@ -60,9 +66,12 @@ export function validateProductSourceLayout({ projectEntries, serviceEntries, pa
     if (forbiddenServiceRootEntries.has(entry)) findings.push(`Buildr Service root must not retain ${entry}`);
   }
   for (const file of packageFiles) {
-    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/') && !file.startsWith('targets/test-context/')) {
+    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/')) {
       findings.push(`Buildr Service package/ contains non-deferred file: ${file}`);
     }
+  }
+  for (const file of trackedFiles) {
+    if (generatedTrackedPatterns.some((pattern) => pattern.test(file))) findings.push(`generated artifact must not be tracked: ${file}`);
   }
   if (!/^#!\/bin\/sh\nset -eu\nproject_root=\$\(CDPATH= cd "\$\{0%\/\*\}" && pwd\)\nexec "\$project_root\/services\/buildr\/tools\/development\/run-development-cli" "\$@"\s*$/u.test(bridgeSource)) {
     findings.push('projects/product/buildr must be a thin Service CLI bridge');
@@ -76,4 +85,5 @@ export const productSourceLayoutContract = Object.freeze({
   forbiddenProjectRootEntries: [...forbiddenProjectRootEntries].sort(),
   requiredServiceRootEntries: [...requiredServiceRootEntries].sort(),
   deferredPackageFiles: [...deferredPackageFiles].sort(),
+  generatedTrackedPatterns: generatedTrackedPatterns.map((pattern) => pattern.source),
 });

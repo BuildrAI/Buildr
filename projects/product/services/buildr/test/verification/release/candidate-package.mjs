@@ -45,6 +45,7 @@ export function readSharedCandidatePackage(env = process.env) {
 }
 
 export async function createCandidatePackage(productRoot, destination, options = {}) {
+  const { buildGeneratedArtifactSet } = await import('../../../tools/build/artifact-set.ts');
   const npmExecutable = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
   const source = spawnCommandSync('git', ['rev-parse', 'HEAD'], {
@@ -54,8 +55,12 @@ export async function createCandidatePackage(productRoot, destination, options =
   if (source.status !== 0 || !/^[a-f0-9]{40,64}$/.test(source.stdout.trim())) {
     throw new Error(`candidate source commit is unavailable: ${(source.stderr || source.stdout || '').trim()}`);
   }
-  const payload = await buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim());
-  const artifact = createReleaseArtifact(payload.root, destination, { npmExecutable });
+  const generated = await buildGeneratedArtifactSet(path.join(destination, 'generated-artifacts'), { sourceIdentity: source.stdout.trim() });
+  const payload = await buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim(), {
+    generatedArtifactManifest: generated.manifest,
+    webDistRoot: generated.webDistRoot,
+  });
+  const artifact = createReleaseArtifact(payload.root, destination, { npmExecutable, testContextRoot: generated.testContextRoot });
   const metadata = parsePackMetadata(artifact.packMetadataPath);
   return {
     tarball: artifact.tarball,
@@ -65,6 +70,7 @@ export async function createCandidatePackage(productRoot, destination, options =
     manifest: artifact.manifest,
     payloadRoot: payload.root,
     payloadManifest: payload.manifest,
+    generatedArtifactManifest: generated.manifest,
     stdout: '',
     stderr: '',
   };

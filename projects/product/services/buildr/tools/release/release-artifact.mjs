@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 import { APPLICATION_PAYLOAD_MANIFEST, verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
+import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const releaseArtifactSchemaVersion = 'buildr.release-artifact/v1';
@@ -158,8 +159,12 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 `;
 }
 
-export function createNpmPackStaging(payloadRoot, destination) {
+export function createNpmPackStaging(payloadRoot, destination, options = {}) {
   const frozen = verifyApplicationPayload(path.resolve(payloadRoot), { layout: 'frozen' });
+  if (!options.testContextRoot) throw new Error('npm pack staging requires explicit Test Context generated output.');
+  const generatedArtifactManifest = JSON.parse(fs.readFileSync(path.join(frozen.root, 'resources/build/generated-artifacts.json'), 'utf8'));
+  const testContextRoot = path.resolve(options.testContextRoot);
+  assertGeneratedArtifactEntry(generatedArtifactManifest, 'test-context', testContextRoot);
   const root = path.resolve(destination);
   if (fs.existsSync(root)) throw new Error(`npm pack staging already exists: ${root}`);
   fs.mkdirSync(root, { recursive: true });
@@ -176,7 +181,7 @@ export function createNpmPackStaging(payloadRoot, destination) {
     fs.copyFileSync(path.join(root, 'payload/product/LICENSE'), path.join(root, 'LICENSE'));
     fs.copyFileSync(path.join(root, 'payload/product/README.md'), path.join(root, 'README.md'));
     fs.copyFileSync(path.join(serviceRoot, 'test-context.mjs'), path.join(root, 'test-context.mjs'));
-    copyTree(path.join(serviceRoot, 'package/targets/test-context'), path.join(root, 'package/targets/test-context'));
+    copyTree(testContextRoot, path.join(root, 'package/targets/test-context'));
     fs.writeFileSync(path.join(root, 'package.json'), `${JSON.stringify(stagingPackageJson(frozen.manifest, productMetadata), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'installation-origin.json'), `${JSON.stringify(createNpmInstallationOrigin(frozen.manifest), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'bin/buildr.mjs'), npmBinSource(), { encoding: 'utf8', mode: 0o755 });
@@ -229,7 +234,7 @@ export function createReleaseArtifact(payloadRoot, destination, options = {}) {
   const stagingBase = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-pack-'));
   const stagingRoot = path.join(stagingBase, 'package');
   try {
-    const staging = createNpmPackStaging(payloadRoot, stagingRoot);
+    const staging = createNpmPackStaging(payloadRoot, stagingRoot, { testContextRoot: options.testContextRoot });
     const result = spawnCommandSync(npmExecutable, ['pack', stagingRoot, '--ignore-scripts', '--pack-destination', destination, '--json'], {
       cwd: stagingRoot,
       encoding: 'utf8',
@@ -251,6 +256,7 @@ export function createReleaseArtifact(payloadRoot, destination, options = {}) {
 
     const packMetadataPath = path.join(destination, releasePackMetadataName);
     fs.writeFileSync(packMetadataPath, `${result.stdout.trim()}\n`, 'utf8');
+    const generatedArtifacts = JSON.parse(fs.readFileSync(path.join(payloadRoot, 'resources/build/generated-artifacts.json'), 'utf8'));
     const manifest = {
       schemaVersion: releaseArtifactSchemaVersion,
       packageName: metadata.name,
@@ -260,6 +266,7 @@ export function createReleaseArtifact(payloadRoot, destination, options = {}) {
       sha256: digest(buffer, 'sha256'),
       integrity,
       applicationPayloadDigest: staging.manifest.applicationPayloadDigest,
+      generatedArtifactIdentity: generatedArtifacts.identity,
       protocolIdentity: staging.manifest.protocolIdentity,
       sourceCommit: staging.manifest.sourceCommit,
       enginesNode: staging.manifest.enginesNode,
@@ -292,6 +299,7 @@ export function readReleaseArtifact(manifestValue, expected = {}) {
     || !/^[a-f0-9]{64}$/.test(manifest?.sha256 || '')
     || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(manifest?.integrity || '')
     || !/^sha256-[a-f0-9]{64}$/.test(manifest?.applicationPayloadDigest || '')
+    || !/^sha256-[a-f0-9]{64}$/.test(manifest?.generatedArtifactIdentity || '')
     || manifest?.protocolIdentity !== 'buildr.web-protocol/v1'
     || !/^[a-f0-9]{40,64}$/.test(manifest?.sourceCommit || '')
     || typeof manifest?.enginesNode !== 'string'
@@ -334,13 +342,13 @@ function parseArgs(argv) {
     options[name.slice(2)] = value;
     index += 1;
   }
-  if (!options.payload || !options.output) throw new Error('Usage: release-artifact.mjs --payload <frozen-payload-dir> --output <destination>');
+  if (!options.payload || !options.output || !options['test-context']) throw new Error('Usage: release-artifact.mjs --payload <frozen-payload-dir> --test-context <generated-dir> --output <destination>');
   return options;
 }
 
 function main() {
   const options = parseArgs(process.argv);
-  const artifact = createReleaseArtifact(path.resolve(options.payload), path.resolve(options.output));
+  const artifact = createReleaseArtifact(path.resolve(options.payload), path.resolve(options.output), { testContextRoot: path.resolve(options['test-context']) });
   appendGitHubOutput(artifact);
   process.stdout.write(`${JSON.stringify(artifact.manifest, null, 2)}\n`);
 }

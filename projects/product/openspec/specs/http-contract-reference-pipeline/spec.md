@@ -38,17 +38,17 @@ Buildr MUST 在模块加载或注册时用 Ajv Draft 2020-12 严格编译已登�
 - **AND** 失败 MUST NOT延迟到首个请求才暴露
 
 ### Requirement: DTO 生成物必须来自同一 Schema authority
-Buildr MUST 从已登记 Schema 在构建期确定性生成后端与 Buildr Web TypeScript DTO，并 MUST提供 tracked 生成物 drift check。生成物 MUST是投影而不是可独立手改的第二 authority；Buildr Web MUST NOT安装或运行 Ajv。
+Buildr MUST从已登记Schema在构建前确定性生成后端与Buildr Web TypeScript DTO，并 MUST让generator接受显式输出目标。开发输出 MUST位于精确ignored generated目录，正式构建 MUST绑定同一生成批次manifest；生成物 MUST是投影而不是可独立手改的第二authority，MUST不进入Git tracked tree，Buildr Web MUST NOT安装或运行Ajv。
 
 #### Scenario: Schema 生成 DTO
-- **WHEN** 维护者显式运行 contract generation
-- **THEN** 后端与前端 generated DTO MUST由同一当前 Schema 生成
-- **AND** 相同输入与固定工具版本 MUST产生相同字节
+- **WHEN** 维护者在不含DTO生成物的干净checkout运行contract generation或消费方build
+- **THEN** 后端与前端generated DTO MUST由同一当前Schema生成并进入各自ignored目标
+- **AND** 相同输入与固定工具版本向两个新目标生成 MUST产生相同bytes
 
 #### Scenario: tracked DTO 漂移
-- **WHEN** Schema 已变化但任一 tracked generated DTO 尚未更新，或生成物被手工修改
-- **THEN** drift check MUST失败并指出漂移文件
-- **AND** typecheck/正式 Web build 的参考切片门禁 MUST在交付前暴露该漂移
+- **WHEN** typecheck或正式Web build开始时本地DTO不存在或来自旧Schema
+- **THEN** 声明入口 MUST先重新生成并校验当前DTO，再运行消费者检查
+- **AND** 生成失败、输出不闭合或consumer compile失败 MUST返回非零并指出Schema family与目标
 
 ### Requirement: 业务前端必须通过能力级 typed Client 消费契约
 Buildr Web MUST保留通用 fetch/session transport，并 MUST由 Task 能力级 client 使用生成 DTO 暴露 list、detail、update、complete、abandon typed operations。Task 页面 MUST NOT为这些响应维护平行 DTO 或在业务调用点猜测 `unknown` payload。
@@ -59,14 +59,14 @@ Buildr Web MUST保留通用 fetch/session transport，并 MUST由 Task 能力级
 - **AND** 页面状态与 ViewModel MAY保持局部，但 MUST NOT通过大量 `as` 断言重建 HTTP response shape
 
 ### Requirement: 参考流水线必须由真实 HTTP 与正式前端产物验证
-Buildr MUST以真实 HTTP Contract Test 校验参考 operation 的请求、成功响应和错误响应，并 MUST以正式 `web-dist` build 与 Task Browser Smoke 验证 typed Client 到页面链路。生产成功响应是否运行时重复校验 MUST按局部风险决定，不得替代 Contract Test。
+Buildr MUST以真实HTTP Contract Test校验参考operation的请求、成功响应和错误响应，并 MUST以本次隔离生成的正式`web-dist`与Task Browser Smoke验证typed Client到页面链路。生产成功响应是否运行时重复校验 MUST按局部风险决定，不得替代Contract Test。
 
 #### Scenario: Contract Test 执行参考 operation
-- **WHEN** 产品验证运行 Task Record HTTP contract capability
-- **THEN** 测试 MUST通过真实 HTTP host 覆盖五个 operation 的合法与非法输入
-- **AND** 真实成功/错误 payload MUST通过对应 Schema validator
+- **WHEN** 产品验证运行Task Record HTTP contract capability
+- **THEN** 测试 MUST通过真实HTTP host覆盖五个operation的合法与非法输入
+- **AND** 真实成功/错误payload MUST通过对应Schema validator
 
 #### Scenario: 正式页面验收
-- **WHEN** Buildr Web 从正式源码生成 tracked `web-dist` 并运行 Task Browser Smoke
-- **THEN** Task 列表、详情、更新与 terminal action 的既有用户交互 MUST继续成功
-- **AND** 测试 MUST NOT使用页面专用假 DTO 绕过生成类型或 typed Client
+- **WHEN** Buildr Web从正式源码向隔离目标生成`web-dist`并运行Task Browser Smoke
+- **THEN** Task列表、详情、更新与terminal action的既有用户交互 MUST继续成功
+- **AND** 测试 MUST直接消费同一批次生成DTO和Web dist，MUST NOT使用页面专用假DTO或tracked生成物

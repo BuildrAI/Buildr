@@ -21,6 +21,7 @@ import {
   waitForWebReadiness,
 } from '../../test/verification/release/release-smoke.mjs';
 import { createVerificationExecutor } from '../../test/verification/executor.mjs';
+import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -182,8 +183,9 @@ test('shared candidate package requires a matching immutable tarball and metadat
 test('release artifact preparation packs once and detects mutated bytes', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-artifact-'));
   try {
-    const payload = await buildApplicationPayload(path.join(root, 'payload'), '0'.repeat(40));
-    const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'));
+    const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), '0'.repeat(40));
+    const payload = await buildApplicationPayload(path.join(root, 'payload'), '0'.repeat(40), { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+    const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'), { testContextRoot: generated.testContextRoot });
     assert.equal(artifact.manifest.schemaVersion, 'buildr.release-artifact/v1');
     assert.equal(artifact.manifest.packageName, '@buildr-ai/buildr');
     assert.equal(artifact.manifest.version.length > 0, true);

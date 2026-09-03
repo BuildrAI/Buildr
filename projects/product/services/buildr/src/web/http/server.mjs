@@ -17,6 +17,7 @@ export function createLocalWorkspaceServer(runtime, {
   readExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
   ensureRegisteredTarget = runtime.ensureRegisteredTarget,
+  staticRoot = null,
 } = {}) {
   if (typeof ensureRegisteredTarget !== 'function') throw new TypeError('Buildr Web Host requires the Workspace registration port.');
   const taskIdSources = [...new Set(httpContributions.map((contribution) => contribution.taskIdSource).filter(Boolean))];
@@ -66,6 +67,7 @@ export function createLocalWorkspaceServer(runtime, {
       setImmediate(() => server.close(() => onShutdown?.()));
     },
     submitTaskRead,
+    staticRoot,
   });
   server.once('close', () => {
     if (ownsReadExecutor) void taskReadExecutor.close();

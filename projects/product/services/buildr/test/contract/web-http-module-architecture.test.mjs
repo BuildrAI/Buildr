@@ -39,7 +39,7 @@ test('Web HTTP router 保持 shell、static、health、contribution、shutdown�
   const router = read('src/web/http/router.mjs');
   const markers = [
     "pathname === '/' || workspaceAppRoute.test(pathname)",
-    'serveDistAsset(response, pathname)',
+    'serveDistAsset(response, pathname, staticRoot)',
     "pathname === '/api/v1/health'",
     'contribution.handleTopLevel',
     "pathname === '/api/v1/app/quit'",

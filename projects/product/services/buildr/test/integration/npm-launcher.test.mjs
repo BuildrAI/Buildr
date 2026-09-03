@@ -12,6 +12,7 @@ import test from 'node:test';
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createNpmPackStaging } from '../../tools/release/release-artifact.mjs';
+import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
@@ -71,8 +72,9 @@ async function fixture() {
   const prefix = path.join(root, 'prefix');
   const packageRoot = path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr');
   const payload = path.join(root, 'payload');
-  await buildApplicationPayload(payload, SOURCE_COMMIT);
-  createNpmPackStaging(payload, packageRoot);
+  const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
+  await buildApplicationPayload(payload, SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+  createNpmPackStaging(payload, packageRoot, { testContextRoot: generated.testContextRoot });
   const npmCliPath = path.join(prefix, 'npm-cli.js');
   fs.writeFileSync(npmCliPath, '// test npm authority\n');
   const updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath, prefix });

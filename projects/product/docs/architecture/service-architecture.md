@@ -24,7 +24,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
-| Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`web-dist/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `package/` 只保留仍有明确 owner 和退出条件的兼容内容 |
+| Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
@@ -45,9 +45,9 @@ buildr/
   src/
   test/
   resources/
-  web-dist/
   tools/
   docs/
+  web-dist/                  # ignored，本地按需生成
 ```
 
 | 目录 | 职责 | Java 项目类比 |
@@ -56,15 +56,15 @@ buildr/
 | `src` | Buildr 产品运行源码，包括业务模块、接口、持久化、基础设施和启动组装 | `src/main/java` |
 | `test` | Unit、Component、Contract、Integration、System、Browser 和 Verification | `src/test/java` |
 | `resources` | 随 Buildr 发布，由 Buildr 复制、安装、读取或投射的文件型交付内容 | `src/main/resources` |
-| `web-dist` | sibling `buildr-web` Service 交付的正式前端构建产物，只消费和托管，不作为前端源码 authority | `static/` |
+| `web-dist` | sibling `buildr-web` Service按需生成的ignored本地静态输出；正式Candidate使用隔离staging，不作为前端源码authority | 构建后的`static/` |
 | `tools` | 只用于开发和发布 Buildr 自身的仓库工具 | Maven、Gradle、CI 和发布辅助工具 |
 | `docs` | Buildr Service 的使用、实现和维护文档 | `docs/` |
 
 根目录的 `package.json`、`package-lock.json`、`README.md`、`LICENSE`、`AGENTS.md` 和 ignore 文件描述整个 npm Service，不形成独立目录。
 
-`node_modules/`、`.buildr/` 和临时构建产物属于本机依赖、控制状态或临时结果，不属于长期工程架构。
+`node_modules/`、`.buildr/`、`web-dist/`、`package/targets/test-context/`和两端generated DTO属于本机依赖、控制状态或可重建结果，不属于Git长期源码。
 
-`buildr-web` Service 是前端源码和正式构建过程的 authority；Buildr Service 中的 `web-dist/` 是受控生成产物，不手工编辑。构建、校验、复制、Application Payload 和 npm 打包必须保持从 sibling Service 到本 Service 的单向交接。
+`buildr-web` Service是前端源码和正式构建过程的authority；本地开发可向Buildr Service的ignored `web-dist/`物化，Browser与Candidate则生成到隔离staging。Application Payload和npm打包只消费本次Candidate冻结结果，不读取tracked或陈旧本地输出。
 
 上述根工程职责已经迁入当前目录。`package/` 不再承担通用产品源码或资源 authority，只保留仍有明确兼容 owner 的内容，并在对应后续切片满足退出条件后收敛。
 
@@ -702,7 +702,7 @@ Buildr Service 当前按生命周期使用以下目录：
 bin/          稳定可执行入口
 src/          产品运行源码
 resources/    文件型交付资源
-web-dist/     sibling buildr-web 的正式静态产物
+web-dist/     ignored本地静态输出；正式Candidate使用隔离staging
 test/         测试与 verification
 tools/        checkout-only development/release 工具
 docs/         维护者与公开文档

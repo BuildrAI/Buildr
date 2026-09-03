@@ -5,7 +5,7 @@
 ## 所有权边界
 
 - Service 拥有 Buildr Web 前端工程：`package.json`、Vite/TypeScript 配置、`src/` 与前端依赖锁定。
-- 正式构建产物的交付位置是相邻 `buildr` Service 的 `../buildr/web-dist/`；Buildr Web Runtime 的同源 loopback 托管、session 注入与三入口打包仍由该 Service 负责。
+- 本地构建产物默认交付到相邻`buildr` Service的ignored `../buildr/web-dist/`；Browser与Candidate构建使用调用方提供的隔离staging。Buildr Web Runtime的同源loopback托管、session注入与三入口打包仍由该Service负责。
 - OpenSpec、verification policy 与跨服务产品治理仍在父级 `projects/product/`；本目录不维护独立 OpenSpec 根。
 - 已安装或仅含 dist 的环境不得依赖本 Service 源码树或 Vite 开发服务器。
 

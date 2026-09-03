@@ -55,8 +55,8 @@ src/infrastructure/testing/context-runtime/
 
 test-context.mjs            package顶层稳定facade
 package/targets/test-context/
-├── *.js                    确定性生成的标准ESM
-└── *.d.ts                  JavaScript消费者对应的类型声明
+├── *.js                    ignored本地输出或Candidate暂存中的标准ESM
+└── *.d.ts                  ignored本地输出或Candidate暂存中的类型声明
 tools/testing/test-context-build.mjs
                            generate/check唯一生成入口
 ```
@@ -73,7 +73,7 @@ import {
 } from '@buildr-ai/buildr/test-context';
 ```
 
-该入口进入唯一 `@buildr-ai/buildr` npm tarball，不创建第二个Candidate、tarball或Release transaction。源码authority是strict TypeScript；`test-context:generate`生成标准ESM和`.d.ts`，`test-context:check`逐字节重建并拒绝projection drift，根`typecheck`总是先执行该检查。package export的`types`指向生成声明，Node只执行生成JavaScript，不执行raw `.ts`或依赖类型擦除。正式tarball不包含raw Runtime TypeScript、compiler或Buildr test-only provider。
+该入口进入唯一`@buildr-ai/buildr` npm tarball，不创建第二个Candidate、tarball或Release transaction。源码authority是strict TypeScript；`test-context:generate`向显式ignored或隔离目标生成标准ESM和`.d.ts`，`test-context:check`通过双临时构建与本地物化检查确定性。根`typecheck`先生成再执行strict no-emit；Candidate只复制本次artifact set中的冻结输出。package export的`types`继续指向包内声明，Node只执行生成JavaScript，不执行raw`.ts`或依赖类型擦除。
 
 公共模块只依赖Node.js标准库，不依赖Buildr CLI、Workspace、Git或SQLite。出现第二个真实消费者或独立版本需求后，可以把同一API提取到独立包；当前先用真实接入证明抽象。
 

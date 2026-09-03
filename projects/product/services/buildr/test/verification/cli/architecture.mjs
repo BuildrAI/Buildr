@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
@@ -11,10 +12,12 @@ import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/re
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const projectRoot = path.resolve(productRoot, '../..');
+const repositoryRoot = path.resolve(projectRoot, '../..');
 const sourceRoot = path.join(productRoot, 'src');
 const entry = path.join(productRoot, 'bin', 'buildr.mjs');
 const serviceArchitecture = path.join(projectRoot, 'docs', 'architecture', 'service-architecture.md');
 const problems = [];
+const trackedFiles = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
 const ignoredProjectRootEntries = new Set([
   '.agents', '.claude', '.codebuddy', '.cursor', '.qoder', '.trae', '.buildr', '.git',
 ]);
@@ -22,7 +25,8 @@ const ignoredProjectRootEntries = new Set([
 problems.push(...validateProductSourceLayout({
   projectEntries: fs.readdirSync(projectRoot).filter((entryName) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName) => entryName !== 'node_modules'),
-  packageFiles: listFiles(path.join(productRoot, 'package')).map((file) => path.relative(path.join(productRoot, 'package'), file).split(path.sep).join('/')),
+  packageFiles: trackedFiles.filter((file) => file.startsWith('projects/product/services/buildr/package/')).map((file) => file.slice('projects/product/services/buildr/package/'.length)),
+  trackedFiles,
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
 
@@ -65,7 +69,7 @@ for (const retiredRoot of ['domain', 'interfaces']) {
   }
 }
 
-for (const required of ['bin', 'src', 'resources', 'web-dist', 'test', 'tools', 'docs', 'package']) {
+for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs', 'package']) {
   if (!fs.statSync(path.join(productRoot, required), { throwIfNoEntry: false })?.isDirectory()) {
     problems.push(`missing Product responsibility directory: ${required}/`);
   }
@@ -550,7 +554,7 @@ const legacyRootTokens = [
   'scripts/' + 'release',
   'scripts/' + 'run-development',
 ];
-const currentRoots = ['bin', 'src', 'resources', 'web-dist', 'test', 'docs', 'package', 'tools'];
+const currentRoots = ['bin', 'src', 'resources', 'test', 'docs', 'package', 'tools'];
 for (const root of currentRoots) {
   for (const file of listFiles(path.join(productRoot, root), (item) => /\.(?:mjs|js|json|md|yml|yaml)$/.test(item) || !path.extname(item))) {
     const relative = path.relative(productRoot, file).split(path.sep).join('/');
@@ -584,5 +588,5 @@ if (problems.length) {
   for (const problem of problems) console.error(`- ${problem}`);
   if (!reportOnly) process.exit(1);
 } else {
-  console.log('CLI architecture verification passed: bin/src/resources/web-dist/test/tools/docs ownership, deferred package allowlist, runtime inventory, one-way imports, command registry, and npm boundary.');
+  console.log('CLI architecture verification passed: source/generated lifecycle, bin/src/resources/test/tools/docs ownership, deferred package allowlist, runtime inventory, one-way imports, command registry, and npm boundary.');
 }

@@ -20,20 +20,20 @@ const read = (relative) => fs.readFileSync(path.join(productRoot, relative), 'ut
 
 test('product verification exposes four gates, direct layers, and one focus entry', () => {
   const scripts = JSON.parse(read('package.json')).scripts;
-  assert.equal(scripts.test, './test/verification/verify-buildr-product-fast');
-  assert.equal(scripts['test:fast'], './test/verification/verify-buildr-product-fast');
+  assert.equal(scripts.test, 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
+  assert.equal(scripts['test:fast'], 'npm run artifacts:prepare && ./test/verification/verify-buildr-product-fast');
   assert.equal(scripts['test:unit'], 'node --test test/unit/*.test.mjs test/unit/*.test.ts');
   assert.equal(scripts['test:component'], 'node --test test/component/*.test.mjs test/component/*.test.ts');
   assert.equal(scripts['test:contract'], 'node --test test/contract/*.test.mjs test/contract/*.test.ts');
   assert.equal(scripts['test:integration'], 'node --test test/integration/*.test.mjs test/integration/*.test.ts');
-  assert.equal(scripts.typecheck, 'npm run test-context:check && tsc --project tsconfig.json');
+  assert.equal(scripts.typecheck, 'npm run artifacts:prepare && npm run contracts:check && npm run contracts:check:workspace && npm run test-context:check && tsc --project tsconfig.json');
   assert.equal(scripts['test:system'], 'node test/verification/system.mjs');
   assert.equal(scripts['test:integration:fast'], undefined);
   assert.equal(scripts['test:web-dist'], 'node test/verification/web-dist.mjs');
-  assert.equal(scripts['test:browser:smoke'], 'npm run test:web-dist && node tools/development/run-isolated-workspace-smoke.mjs --script test/browser-smoke/buildr-web-browser.test.mjs');
+  assert.equal(scripts['test:browser:smoke'], 'node test/verification/browser-selector-dispatcher.mjs --full --run');
   assert.equal(scripts['test:browser:changed'], 'node test/verification/browser-selector-dispatcher.mjs --run');
   for (const selector of ['core', 'shell', 'project', 'service', 'change', 'task', 'articles']) {
-    assert.match(scripts[`test:browser:${selector}`], new RegExp(`^npm run test:web-dist && node tools/development/run-isolated-workspace-smoke\\.mjs --script test/browser-smoke/buildr-web-browser\\.test\\.mjs -- ${selector}$`));
+    assert.equal(scripts[`test:browser:${selector}`], `node test/verification/browser-selector-dispatcher.mjs --selector ${selector} --run`);
   }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
   assert.equal(scripts['test:integration:candidate:release'], 'node test/verification/run-node-tests.mjs test/integration-candidate-release/*.test.mjs');
@@ -41,9 +41,9 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:changed'], 'node test/verification/changed.mjs');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.mjs');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.mjs');
-  assert.equal(scripts['test:daily-full'], 'bash test/verification/verify-buildr-product-daily-full');
-  assert.equal(scripts['test:core'], 'bash test/verification/verify-buildr-product-core');
-  assert.equal(scripts['test:candidate'], 'bash test/verification/verify-buildr-product');
+  assert.equal(scripts['test:daily-full'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full');
+  assert.equal(scripts['test:core'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-core');
+  assert.equal(scripts['test:candidate'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product');
   assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.mjs host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.mjs aggregate');

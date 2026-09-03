@@ -5,13 +5,11 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { TASK_PROFESSIONAL_HTTP_SCHEMAS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
+import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
-const outputs = Object.freeze([
-  path.join(serviceRoot, 'src/task/interfaces/http/generated/task-professional-http-dto.ts'),
-  path.join(productRoot, 'services/buildr-web/src/api/generated/task-professional-http-dto.ts'),
-]);
+const defaultOutputs = contractOutputPaths('task/interfaces/http', 'task-professional-http-dto.ts');
 
 function body(schema, definitionName) {
   const { $schema: _draft, $id: _identity, title: _title, ...value } = schema;
@@ -54,13 +52,29 @@ export async function renderTaskProfessionalHttpDto() {
   ].join('\n');
 }
 
-export async function checkTaskProfessionalHttpDto() {
+export async function checkTaskProfessionalHttpDto(outputRoot) {
   const expected = await renderTaskProfessionalHttpDto();
+  const selected = contractOutputPaths('task/interfaces/http', 'task-professional-http-dto.ts', outputRoot);
+  const outputs = [selected.backend, selected.web];
   return outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
+}
+
+export async function writeTaskProfessionalHttpDto(outputRoot) {
+  const expected = await renderTaskProfessionalHttpDto();
+  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-professional-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
+  for (const output of outputs) {
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, expected);
+  }
+  return outputs;
 }
 
 async function main() {
   const expected = await renderTaskProfessionalHttpDto();
+  const outputRoot = cliOutputRoot(process.argv.slice(2));
+  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-professional-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
   if (process.argv.includes('--check')) {
     const drift = outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
     if (drift.length) {
@@ -69,9 +83,7 @@ async function main() {
     }
     return;
   }
-  for (const output of outputs) {
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, expected);
+  for (const output of await writeTaskProfessionalHttpDto(outputRoot)) {
     console.log(`Generated ${path.relative(productRoot, output)}`);
   }
 }

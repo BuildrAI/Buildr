@@ -12,6 +12,7 @@ import { createInstallationOrigin } from '../../src/system/installation/infrastr
 import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.mjs';
+import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';
 
 const SOURCE_COMMIT = 'b'.repeat(40);
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
@@ -42,9 +43,10 @@ async function candidateArtifact(root) {
     artifact: { tarball: shared.tarball, manifestPath: shared.manifestPath, manifest: shared.manifest },
     payloadDigest: shared.manifest.applicationPayloadDigest,
   };
-  const payload = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT);
+  const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
+  const payload = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
   return {
-    artifact: createReleaseArtifact(payload.root, path.join(root, 'artifact')),
+    artifact: createReleaseArtifact(payload.root, path.join(root, 'artifact'), { testContextRoot: generated.testContextRoot }),
     payloadDigest: payload.manifest.applicationPayloadDigest,
   };
 }
@@ -52,8 +54,10 @@ async function candidateArtifact(root) {
 test('same inputs create byte-identical payload and installed resource mapping detects drift', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-application-payload-'));
   try {
-    const first = await buildApplicationPayload(path.join(root, 'first'), SOURCE_COMMIT);
-    const second = await buildApplicationPayload(path.join(root, 'second'), SOURCE_COMMIT);
+    const firstInputs = createGeneratedReleaseInputs(path.join(root, 'first-inputs'), SOURCE_COMMIT);
+    const secondInputs = createGeneratedReleaseInputs(path.join(root, 'second-inputs'), SOURCE_COMMIT);
+    const first = await buildApplicationPayload(path.join(root, 'first'), SOURCE_COMMIT, { generatedArtifactManifest: firstInputs.manifest, webDistRoot: firstInputs.webDistRoot });
+    const second = await buildApplicationPayload(path.join(root, 'second'), SOURCE_COMMIT, { generatedArtifactManifest: secondInputs.manifest, webDistRoot: secondInputs.webDistRoot });
     assert.deepEqual(first.manifest, second.manifest);
     assert.deepEqual(fs.readFileSync(path.join(first.root, 'runtime/buildr.cjs')), fs.readFileSync(path.join(second.root, 'runtime/buildr.cjs')));
     assert.deepEqual(first.manifest.files.filter((entry) => entry.path.includes('/installation/launcher/')).map((entry) => entry.path), [
@@ -78,7 +82,7 @@ test('same inputs create byte-identical payload and installed resource mapping d
     assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['ajv', 'yaml']);
     assert.equal(runtimeMetadata.devDependencies, undefined);
 
-    const staging = createNpmPackStaging(first.root, path.join(root, 'npm-staging'));
+    const staging = createNpmPackStaging(first.root, path.join(root, 'npm-staging'), { testContextRoot: firstInputs.testContextRoot });
     assert.equal(verifyApplicationPayload(staging.root, { layout: 'installed' }).manifest.applicationPayloadDigest, first.manifest.applicationPayloadDigest);
     fs.appendFileSync(path.join(staging.root, 'payload/product/web-dist/index.html'), 'drift');
     assert.throws(() => verifyApplicationPayload(staging.root, { layout: 'installed' }), /digest mismatch/);
@@ -87,13 +91,40 @@ test('same inputs create byte-identical payload and installed resource mapping d
   }
 });
 
+test('same generated inputs create byte-identical npm Candidate and reject unbound local output', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-generated-candidate-repeat-'));
+  try {
+    const firstInputs = createGeneratedReleaseInputs(path.join(root, 'first-inputs'), SOURCE_COMMIT);
+    const secondInputs = createGeneratedReleaseInputs(path.join(root, 'second-inputs'), SOURCE_COMMIT);
+    const firstPayload = await buildApplicationPayload(path.join(root, 'first-payload'), SOURCE_COMMIT, { generatedArtifactManifest: firstInputs.manifest, webDistRoot: firstInputs.webDistRoot });
+    const secondPayload = await buildApplicationPayload(path.join(root, 'second-payload'), SOURCE_COMMIT, { generatedArtifactManifest: secondInputs.manifest, webDistRoot: secondInputs.webDistRoot });
+    const first = createReleaseArtifact(firstPayload.root, path.join(root, 'first-artifact'), { testContextRoot: firstInputs.testContextRoot });
+    const second = createReleaseArtifact(secondPayload.root, path.join(root, 'second-artifact'), { testContextRoot: secondInputs.testContextRoot });
+    assert.equal(first.manifest.generatedArtifactIdentity, second.manifest.generatedArtifactIdentity);
+    assert.equal(first.manifest.applicationPayloadDigest, second.manifest.applicationPayloadDigest);
+    assert.equal(first.manifest.sha256, second.manifest.sha256);
+
+    const staleInputs = createGeneratedReleaseInputs(path.join(root, 'stale-inputs'), SOURCE_COMMIT);
+    fs.appendFileSync(path.join(staleInputs.webDistRoot, 'index.html'), 'stale');
+    await assert.rejects(
+      buildApplicationPayload(path.join(root, 'forbidden-payload'), SOURCE_COMMIT, { generatedArtifactManifest: staleInputs.manifest, webDistRoot: staleInputs.webDistRoot }),
+      /generated_artifact_bytes_mismatch: web-dist/,
+    );
+    assert.equal(fs.existsSync(path.join(root, 'forbidden-payload')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('payload verify runs from a clean tree with no node_modules or esbuild', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-payload-clean-verify-'));
   try {
-    const payload = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT);
+    const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), SOURCE_COMMIT);
+    const payload = await buildApplicationPayload(path.join(root, 'payload'), SOURCE_COMMIT, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
     const cleanRoot = path.join(root, 'clean-service');
     for (const relative of [
       'tools/release/application-payload.mjs',
+      'tools/build/generated-artifacts.ts',
       'src/infrastructure/product-resources/index.mjs',
       'src/infrastructure/filesystem/filesystem-path-identity.mjs',
     ]) {
@@ -127,6 +158,7 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       applicationPayloadDigest: payloadDigest,
     });
     assert.equal(readback.tarball, artifact.tarball);
+    assert.match(artifact.manifest.generatedArtifactIdentity, /^sha256-[a-f0-9]{64}$/);
     const paths = artifact.manifest.inventory.map((entry) => entry.path);
     for (const required of [
       'runtime/buildr.cjs',

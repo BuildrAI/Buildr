@@ -38,6 +38,7 @@ export function createLocalWorkspaceRequestRouter({
   isClosing,
   shutdown,
   submitTaskRead,
+  staticRoot,
 }) {
   const validateRequest = (id, value) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${taskIdPattern})?|/tasks(?:/${taskIdPattern}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
@@ -50,10 +51,10 @@ export function createLocalWorkspaceRequestRouter({
       return;
     }
     if (request.method === 'GET' && (pathname === '/' || workspaceAppRoute.test(pathname))) {
-      textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile), 'text/html; charset=utf-8');
+      textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
-    if (request.method === 'GET' && serveDistAsset(response, pathname)) return;
+    if (request.method === 'GET' && serveDistAsset(response, pathname, staticRoot)) return;
     if (request.method === 'GET' && pathname === '/api/v1/health') {
       if (request.headers['x-buildr-instance'] !== healthSecret) {
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });

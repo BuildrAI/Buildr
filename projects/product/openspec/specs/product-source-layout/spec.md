@@ -6,13 +6,19 @@
 ## Requirements
 
 ### Requirement: Product 顶层目录必须按生命周期分离
-Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、正式 Web 构建产物、测试验证、checkout-only 工具和文档。`package/` MAY 仅保留具备明确后续 owner、理由和退出条件的 deferred 子树。
+Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、测试验证、checkout-only工具和文档。`web-dist/`与`package/targets/test-context/` MAY仅作为精确ignore、可删除并可重建的本地构建输出存在；`package/` MAY仅保留具备明确后续owner、理由和退出条件的deferred源码子树。Buildr/Buildr Web `src/**/generated/*-dto.ts` MUST由Schema在构建前生成且MUST NOT进入tracked tree。
 
 #### Scenario: 检查完成迁移的 Product checkout
-- **WHEN** 架构 verifier 扫描 Product Service 顶层和 tracked files
-- **THEN** `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` MUST 各自只包含其声明生命周期内的内容
-- **AND** `package/` MUST 只包含明确 deferred allowlist 内的文件
-- **AND** tracked source、test、package metadata、docs 和 active OpenSpec artifacts MUST NOT 引用已迁移的旧路径
+- **WHEN** architecture verifier扫描Product Service顶层和tracked files
+- **THEN** `bin/`、`src/`、`resources/`、`test/`、`tools/`和`docs/` MUST各自只包含其声明生命周期内的tracked内容
+- **AND** `web-dist/`、`package/targets/test-context/`和已登记DTO generated目录 MUST没有tracked文件并由精确ignore覆盖
+- **AND** `package/`中的其他tracked文件 MUST只属于明确deferred allowlist
+- **AND** tracked source、test、package metadata、docs和active OpenSpec artifacts MUST NOT把本地生成目录描述为源码authority
+
+#### Scenario: 本地构建物化忽略输出
+- **WHEN** 维护者从干净checkout运行声明的开发构建入口
+- **THEN** builder MAY在上述ignored路径物化生成物供本地消费
+- **AND** Git tracked/index状态 MUST不因构建输出改变
 
 ### Requirement: Product 源码必须按职责和依赖方向分层
 Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，并在模块内部使用 `domain/`、`application/`、`persistence/` 和 `interfaces/` 表达技术职责；跨模块平台能力与尚未迁移的能力 MAY 在渐进迁移期间继续位于明确的全局技术层。模块的每个技术层 MUST 默认扁平，并 MUST 由文件名表达具体能力；只有某项能力包含多个需要独立维护的私有协作者、构成真实子模块或存在明确实现分类时，才允许建立末级能力目录。Buildr MUST 保持接口调用应用用例、应用组合领域与持久化能力、纯领域模型不依赖 adapters 的显式边界，并 MUST NOT 为目录对称创建空层、单文件能力目录、重复实现或旧路径兼容 facade。

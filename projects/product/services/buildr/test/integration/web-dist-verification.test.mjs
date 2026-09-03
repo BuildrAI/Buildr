@@ -4,63 +4,61 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { compareWebDistTrees, describeWebDistTree, inspectLocalWebToolchain, verifyTrackedWebDist } from '../verification/web-dist.mjs';
+import { describeWebDistTree, inspectLocalWebToolchain, verifyGeneratedWebDist } from '../verification/web-dist.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-dist-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const tracked = path.join(root, 'tracked');
-  fs.mkdirSync(path.join(tracked, 'assets'), { recursive: true });
-  fs.writeFileSync(path.join(tracked, 'index.html'), '<main>Buildr</main>');
-  fs.writeFileSync(path.join(tracked, 'assets/app.js'), 'console.log("buildr")');
-  return { root, tracked };
+  return { root };
 }
 
-test('staging web-dist exact match passes without mutating the tracked tree and cleans staging', (t) => {
-  const { root, tracked } = fixture(t);
-  const before = describeWebDistTree(tracked);
+function fakeBuild(target) {
+  fs.mkdirSync(path.join(target, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'index.html'), '<main>Buildr</main>');
+  fs.writeFileSync(path.join(target, 'assets/app.js'), 'console.log("buildr")');
+  fs.writeFileSync(path.join(target, 'assets/app.css'), 'body{}');
+}
+
+test('staging web-dist生成闭合manifest并清理owned root', (t) => {
+  const { root } = fixture(t);
   let stagingRoot;
-  const result = verifyTrackedWebDist({
-    trackedRoot: tracked,
+  const result = verifyGeneratedWebDist({
     temporaryParent: root,
     build(target) {
       stagingRoot = target;
-      fs.cpSync(tracked, target, { recursive: true });
+      fakeBuild(target);
     },
   });
-  assert.deepEqual(result, { status: 'passed', fileCount: 2 });
-  assert.deepEqual(describeWebDistTree(tracked), before);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.fileCount, 3);
+  assert.equal(result.manifest.artifacts[0].id, 'web-dist');
   assert.equal(fs.existsSync(path.dirname(stagingRoot)), false, 'owned staging root must be cleaned');
 });
 
-test('staging web-dist drift fails with a bounded diagnostic and still preserves tracked bytes', (t) => {
-  const { root, tracked } = fixture(t);
-  const before = describeWebDistTree(tracked);
+test('staging web-dist缺失资源时在Browser前失败并清理', (t) => {
+  const { root } = fixture(t);
   let stagingRoot;
-  assert.throws(() => verifyTrackedWebDist({
-    trackedRoot: tracked,
+  assert.throws(() => verifyGeneratedWebDist({
     temporaryParent: root,
     build(target) {
       stagingRoot = target;
-      fs.cpSync(tracked, target, { recursive: true });
-      fs.writeFileSync(path.join(target, 'assets/app.js'), 'stale');
-      fs.writeFileSync(path.join(target, 'assets/extra.css'), 'body{}');
+      fs.mkdirSync(target, { recursive: true });
+      fs.writeFileSync(path.join(target, 'index.html'), '<main>missing assets</main>');
     },
-  }), (error) => error.code === 'web_dist_drift'
-    && error.details.drift.some((entry) => entry.kind === 'content' && entry.path === 'assets/app.js')
-    && error.details.drift.some((entry) => entry.kind === 'unexpected' && entry.path === 'assets/extra.css'));
-  assert.deepEqual(describeWebDistTree(tracked), before);
+  }), (error) => error.code === 'web_dist_inventory_invalid');
   assert.equal(fs.existsSync(path.dirname(stagingRoot)), false, 'failed staging root must be cleaned');
 });
 
-test('tree comparison distinguishes missing files and entry types', (t) => {
-  const { root, tracked } = fixture(t);
-  const other = path.join(root, 'other');
-  fs.mkdirSync(path.join(other, 'index.html'), { recursive: true });
-  const result = compareWebDistTrees(tracked, other);
-  assert.equal(result.ok, false);
-  assert.ok(result.drift.some((entry) => entry.kind === 'type' && entry.path === 'index.html'));
-  assert.ok(result.drift.some((entry) => entry.kind === 'missing' && entry.path === 'assets/app.js'));
+test('显式staging输出被保留且不读取陈旧本地dist', (t) => {
+  const { root } = fixture(t);
+  const stale = path.join(root, 'stale-local-dist');
+  const output = path.join(root, 'explicit-staging');
+  fs.mkdirSync(stale);
+  fs.writeFileSync(path.join(stale, 'stale.js'), 'stale');
+  const result = verifyGeneratedWebDist({ outputRoot: output, build: fakeBuild });
+  assert.equal(result.root, output);
+  assert.equal(describeWebDistTree(output).length, 3);
+  assert.equal(fs.readFileSync(path.join(stale, 'stale.js'), 'utf8'), 'stale');
 });
 
 test('Browser build preflight只接受Buildr Web本地TypeScript和Vite', (t) => {

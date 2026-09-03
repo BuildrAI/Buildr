@@ -8,7 +8,7 @@
 
 - 源码根：`projects/product/services/buildr-web/`（`package.json` name：`@buildr-ai/buildr-web`，private）。
 - 开发：`npm run dev`；正式构建：`npm run build`（也可由 `buildr` 的 `npm run build:web` / `dev:web` 委托）。
-- 构建输出：正式构建默认写入 sibling `buildr` 顶层 `web-dist/`（`emptyOutDir: true`）；验证可通过Vite `--outDir`覆盖到临时staging，只用于与tracked产物精确比较，不改变正式输出契约。
+- 构建输出：本地构建默认写入sibling `buildr`顶层ignored `web-dist/`（`emptyOutDir: true`）；Browser与Candidate通过Vite `--outDir`写入隔离staging并直接消费，不比较tracked副本。
 - OpenSpec与Project测试地图仍在父级Product Project；本Service通过Service registry登记并由Buildr Web/doctor可见。
 - 全局壳层为上下结构：顶栏承载品牌、任务/项目/服务/文章导航、工作空间切换、设置、退出与交给 Agent；内容在下方。进入 Workspace 直接打开任务列表；旧开始页路由重定向到 `/tasks`。任务页与项目页宽屏为左列表、右详情；项目编辑入口在详情右上角；服务/文章仍整页切换。壳层读取 sibling `buildr` 的只读Release Awareness API，在顶栏下展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
 
@@ -17,8 +17,8 @@
 - 依赖 React 19、React Router、Vite、TypeScript，以及 Ant Design 5（`antd` + 必要 icons）；UI 方向为柔和产品感，依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本；前端工程自有 `package-lock.json`。
 - Buildr Web源码工具链的准备入口由本Service自身的`package.json`、`package-lock.json`与项目测试地图声明；智能体在实际选择的checkout中调用受管wrapper。该准备不扩张Task scope、Change或源码写入authority，也不建立Task Environment记录。Browser build在启动Chrome前只接受本root的TypeScript/Vite，不从retained checkout、全局安装或系统PATH借用。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
-- Task list/detail/update/complete/abandon 通过 `src/api/tasks.ts` 的能力级 typed Client消费 sibling `buildr` 从 Task-owned JSON Schema生成的 tracked DTO；低层 `client.ts` 继续只负责 Workspace scope、session/fetch transport并返回`unknown`，业务页面不再手写这五个operation的响应类型或在调用点猜测payload。Buildr Web不安装Ajv、不拥有Schema或Application authority；Schema变化必须先由Buildr生成两端DTO并通过drift check、typecheck、正式build与Task Browser Smoke。
-- Task professional的Review、Verification与父任务协调读取通过`src/api/task-professional.ts`消费Buildr Service生成的tracked DTO；Task Detail页面不拥有Schema或Application authority，也不再包含Execution Records面板。Review与Verification的“交给Agent”动作只形成携带Task ID和必要上下文的短指令，Agent再读取对应Skill与真实现场；前端typed client与后端均不存在这两类专业prompt API。
+- Task list/detail/update/complete/abandon通过`src/api/tasks.ts`的能力级typed Client消费sibling `buildr`从Task-owned JSON Schema按需生成的ignored DTO；低层`client.ts`继续只负责Workspace scope、session/fetch transport并返回`unknown`。Buildr Web不安装Ajv、不拥有Schema或Application authority；构建入口先生成两端DTO，再通过重复生成、typecheck、正式build与Task Browser Smoke验证。
+- Task professional的Review、Verification与父任务协调读取通过`src/api/task-professional.ts`消费Buildr Service按需生成的ignored DTO；Task Detail页面不拥有Schema或Application authority，也不再包含Execution Records面板。Review与Verification的“交给Agent”动作只形成携带Task ID和必要上下文的短指令，Agent再读取对应Skill与真实现场；前端typed client与后端均不存在这两类专业prompt API。
 - Release Awareness、Publication list/detail 与安全退出通过 `src/api/runtimeSystem.ts` 消费 Buildr Service 的 Runtime/System Schema 生成 DTO；`AppLayout` 与 Articles 页面不再保存同一响应的手写类型或调用点 `as` 断言。Publication asset 仍使用同源 binary URL，不进入 JSON client；低层 `client.ts` 继续返回 `unknown`，Buildr Web 不安装 Ajv或取得 Runtime/System Application authority。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。
 - Task 列表默认 `open` (todo + active)，可单独筛选 todo，并以`missing|pending-decision|decided`筛选本机复盘文档状态。Task详情不再有独立复盘Tab；概览中的轻量卡片显示固定本机路径，按需只读打开Markdown，并只在用户明确决定后把当前文档标为`decided`。UI不创建或激活Task，也不维护复盘来源关系。
@@ -31,7 +31,7 @@
 
 ## 运行与验证
 
-- 前端路由、DOM 交互或 Agent Action 变更后，在 `buildr` 生产托管路径下运行 browser smoke（或 affected selector）做直接反馈；package、lockfile、Vite或TypeScript配置变化选择完整Browser selector。selected Browser先完成临时staging build与tracked `web-dist`精确比较，零selector不得成功；尽量保留稳定 DOM id / `data-*` 钩子，不以 Vite HMR 冒充正式验收。
+- 前端路由、DOM交互或Agent Action变更后，Browser dispatcher先在临时staging生成正式Web dist，再由Buildr HTTP直接托管同一目录运行smoke；package、lockfile、Vite或TypeScript配置变化选择完整Browser selector。ignored本地`web-dist`不参与正式结果，零selector不得成功，也不以Vite HMR冒充正式验收。
 - Service registry 中 `source.path` 为 `projects/product/services/buildr-web`，与 `buildr` 路径不重叠。
 
 ## 局部术语

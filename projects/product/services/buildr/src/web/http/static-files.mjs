@@ -4,7 +4,7 @@ import path from 'node:path';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
 import { binaryResponse, textResponse } from './responses.mjs';
 
-const STATIC_ROOT = resolveProductResource('product/web-dist');
+const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');
 const STATIC_CONTENT_TYPES = new Map([
   ['.html', 'text/html; charset=utf-8'],
   ['.js', 'text/javascript; charset=utf-8'],
@@ -22,7 +22,8 @@ const STATIC_CONTENT_TYPES = new Map([
   ['.map', 'application/json; charset=utf-8'],
 ]);
 
-export function resolveDistFile(pathname) {
+export function resolveDistFile(pathname, staticRoot = DEFAULT_STATIC_ROOT) {
+  const root = path.resolve(staticRoot || DEFAULT_STATIC_ROOT);
   let decoded;
   try {
     decoded = decodeURIComponent(pathname);
@@ -32,14 +33,14 @@ export function resolveDistFile(pathname) {
   if (!decoded.startsWith('/') || decoded.includes('\0')) return null;
   const relative = decoded.slice(1);
   if (!relative || relative.split('/').some((part) => part === '..')) return null;
-  const resolved = path.resolve(STATIC_ROOT, relative);
-  const rootWithSep = STATIC_ROOT.endsWith(path.sep) ? STATIC_ROOT : `${STATIC_ROOT}${path.sep}`;
-  if (resolved !== STATIC_ROOT && !resolved.startsWith(rootWithSep)) return null;
+  const resolved = path.resolve(root, relative);
+  const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (resolved !== root && !resolved.startsWith(rootWithSep)) return null;
   return resolved;
 }
 
-export function injectedIndexHtml(sessionToken, previewIdentity, webProfile) {
-  const indexPath = path.join(STATIC_ROOT, 'index.html');
+export function injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot = DEFAULT_STATIC_ROOT) {
+  const indexPath = path.join(path.resolve(staticRoot || DEFAULT_STATIC_ROOT), 'index.html');
   if (!fs.existsSync(indexPath)) {
     const error = new Error('Buildr Web dist 缺失，请先运行 npm run build:web。');
     error.code = 'web_dist_missing';
@@ -53,8 +54,8 @@ export function injectedIndexHtml(sessionToken, previewIdentity, webProfile) {
     .replace('__BUILDR_WEB_PROFILE__', profile);
 }
 
-export function serveDistAsset(response, pathname) {
-  const filePath = resolveDistFile(pathname);
+export function serveDistAsset(response, pathname, staticRoot = DEFAULT_STATIC_ROOT) {
+  const filePath = resolveDistFile(pathname, staticRoot);
   if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
   const contentType = STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
   if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('svg')) {

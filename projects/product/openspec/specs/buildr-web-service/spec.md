@@ -21,18 +21,23 @@ Buildr Product Project MUST 在 canonical Service registry（`services/manifest.
 - **AND** Project root MUST NOT 将前端源码工程声明为第二份 package root 与 `buildr` 重叠
 
 ### Requirement: buildr 必须在构建或打包时消费 buildr-web 产物并继续同源托管
-`buildr` Buildr Web HTTP interface MUST 继续通过 loopback 同源托管已纳入 `buildr` 顶层 `web-dist/` 的 Buildr Web 正式构建产物。`buildr` 的开发构建、npm pack 或 launcher 构建步骤 MUST 从 `buildr-web` 构建输出写入该唯一托管路径。运行已安装 npm package、launcher 或仅含 dist 的 checkout 时，主机 MUST NOT 要求 `buildr-web` 源码树存在。
+`buildr` Buildr Web HTTP interface MUST继续通过loopback同源托管正式Buildr Web静态产物。开发构建 MAY把`buildr-web`输出物化到精确ignored的sibling `buildr/web-dist/`；Browser和Candidate/打包步骤 MUST接受显式隔离输出目标并消费本次matching生成物，不得要求Git tracked `web-dist`。运行已安装npm package、Launcher或仅含dist的环境时，主机 MUST NOT要求`buildr-web`源码树存在。
 
 #### Scenario: 构建交接写入可证明托管路径
-- **WHEN** 维护者执行会产出可发布或可启动 Buildr Web 的 `buildr` 构建/打包步骤
-- **THEN** 步骤 MUST 将 `buildr-web` 的静态构建产物置于 `buildr/web-dist/`
-- **AND** Buildr Web HTTP MUST 能从该路径服务 shell 并注入本机 session meta
-- **AND** 旧 `src/interfaces/local-app/web-dist/` MUST 不存在且不得作为 fallback
+- **WHEN** 维护者执行本地可启动Buildr Web开发构建
+- **THEN** 步骤 MAY将静态产物置于ignored `buildr/web-dist/`
+- **AND** Buildr Web HTTP MUST能从该路径服务shell并注入本机session meta
+- **AND** 构建 MUST不改变Git tracked/index状态
+
+#### Scenario: Candidate构建交接到隔离暂存
+- **WHEN** Candidate或Browser owner为Buildr Web构建提供显式输出目录
+- **THEN** Vite MUST把静态资产写入该目录并返回可枚举的matching生成物
+- **AND** 下游 MUST只消费该输出，不扫描或回退到checkout本地dist
 
 #### Scenario: 无 buildr-web 源码仍可打开已打包应用
-- **WHEN** 环境仅有已包含 web dist 的 `buildr` package 或 launcher bundle
-- **THEN** Buildr Web MUST 仍可通过 loopback HTTP 打开
-- **AND** MUST NOT 依赖 `projects/product/services/buildr-web` 在运行时存在
+- **WHEN** 环境仅有已包含Web dist的`buildr` package或Launcher bundle
+- **THEN** Buildr Web MUST仍可通过loopback HTTP打开
+- **AND** MUST NOT依赖`projects/product/services/buildr-web`、Vite或TypeScript在运行时存在
 
 ### Requirement: buildr-web 必须拥有 Buildr Web React/Vite 源码与构建
 `buildr-web` Service MUST 是 Buildr Web React/Vite/TypeScript 前端源码与前端构建脚本的唯一权威位置。迁移完成后，`product/buildr` Service MUST NOT 继续保留权威的前端源工程根（例如 `web/`）作为第二事实源。

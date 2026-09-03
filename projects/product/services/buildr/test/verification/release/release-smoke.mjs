@@ -14,6 +14,7 @@ import { buildApplicationPayload } from '../../../tools/release/application-payl
 import { createReleaseArtifact, readReleaseArtifact } from '../../../tools/release/release-artifact.mjs';
 import { officialRegistry } from '../../../tools/release/registry-version-state.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
+import { buildGeneratedArtifactSet } from '../../../tools/build/artifact-set.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.mjs';
 import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.mjs';
 
@@ -331,8 +332,9 @@ export async function runReleaseSmoke(env = process.env) {
       fs.mkdirSync(workspace, { recursive: true });
       if (!installTarget) {
         const sourceCommit = run('git', ['rev-parse', 'HEAD'], { cwd: productRoot }).trim();
-        const payload = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit);
-        const artifact = createReleaseArtifact(payload.root, packDirectory);
+        const generated = await buildGeneratedArtifactSet(path.join(root, 'generated-artifacts'), { sourceIdentity: sourceCommit });
+        const payload = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+        const artifact = createReleaseArtifact(payload.root, packDirectory, { testContextRoot: generated.testContextRoot });
         installTarget = artifact.tarball;
         expectedVersion = artifact.manifest.version;
       }

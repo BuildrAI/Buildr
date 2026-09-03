@@ -123,7 +123,7 @@ test('旧 Task Development、Finish 与 Terminal Delivery runtime 已整体退�
   assert.doesNotMatch(cliRegistry, /key: ["']task (?:finish (?:inspect|rollover|reconcile|run)|delivery inspect)/);
 });
 
-test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由顶层 web-dist 交付', () => {
+test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由构建产物交付', () => {
   const domain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/workspace.mjs'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
   const projectDomain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/project.mjs'), 'utf8');
@@ -132,7 +132,6 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
     'src/web/http/server.mjs',
-    'web-dist/index.html',
     '../buildr-web/src/styles.css',
     '../buildr-web/src/main.tsx',
     '../buildr-web/src/App.tsx',
@@ -140,6 +139,7 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
     assert.ok(fs.existsSync(path.join(productRoot, relative)), `missing ${relative}`);
   }
   const packageJson = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
+  assert.match(fs.readFileSync(path.join(productRoot, '.gitignore'), 'utf8'), /^web-dist\/$/m);
   assert.equal(packageJson.bin.buildr, 'bin/buildr.mjs');
   const candidatePackage = fs.readFileSync(path.join(productRoot, 'test/verification/release/candidate-package.mjs'), 'utf8');
   assert.match(candidatePackage, /buildApplicationPayload\(/);

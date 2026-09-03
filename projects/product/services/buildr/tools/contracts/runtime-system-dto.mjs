@@ -6,11 +6,11 @@ import { compile } from 'json-schema-to-typescript';
 import { BUILDR_WEB_HTTP_SCHEMAS } from '../../src/web/http/buildr-web-http-contracts.mjs';
 import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.mjs';
 import { PUBLICATION_HTTP_SCHEMAS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
+import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const productRoot = path.resolve(serviceRoot, '../..');
-const backend = path.join(serviceRoot, 'src/web/http/generated/runtime-system-http-dto.ts');
-const web = path.join(productRoot, 'services/buildr-web/src/api/generated/runtime-system-http-dto.ts');
+const defaultOutputs = contractOutputPaths('web/http', 'runtime-system-http-dto.ts');
 const catalogs = Object.freeze([
   ['buildrWeb', BUILDR_WEB_HTTP_SCHEMAS],
   ['releaseAwareness', RELEASE_AWARENESS_HTTP_SCHEMAS],
@@ -33,14 +33,29 @@ export async function renderRuntimeSystemDto() {
   return ['/* eslint-disable */', '// Generated from Runtime/System HTTP JSON Schemas. Do not edit.', '// Run: npm run contracts:generate:runtime-system', '', ...parts, ''].join('\n');
 }
 
-export async function checkRuntimeSystemDto() {
+export async function checkRuntimeSystemDto(outputRoot) {
   const content = await renderRuntimeSystemDto();
-  return [backend, web].filter((file) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
+  const selected = contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot);
+  return [selected.backend, selected.web].filter((file) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
+}
+
+export async function writeRuntimeSystemDto(outputRoot) {
+  const content = await renderRuntimeSystemDto();
+  const selected = outputRoot ? contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
+  for (const file of outputs) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  }
+  return outputs;
 }
 
 async function main() {
   const content = await renderRuntimeSystemDto();
-  const drift = [backend, web].filter((file) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
+  const outputRoot = cliOutputRoot(process.argv.slice(2));
+  const selected = outputRoot ? contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
+  const drift = outputs.filter((file) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
   if (process.argv.includes('--check')) {
     if (drift.length) {
       console.error(`Runtime/System HTTP DTO drift: ${drift.map((file) => path.relative(productRoot, file)).join(', ')}`);
@@ -48,9 +63,7 @@ async function main() {
     }
     return;
   }
-  for (const file of [backend, web]) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, content);
+  for (const file of await writeRuntimeSystemDto(outputRoot)) {
     console.log(`Generated ${path.relative(productRoot, file)}`);
   }
 }

@@ -132,7 +132,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/fixtures/node-test-context/**",
       "test-context.mjs",
       "src/infrastructure/testing/context-runtime/**",
-      "package/targets/test-context/**",
+      "tools/build/**",
       "tools/testing/test-context-build.mjs",
       "tsconfig.test-context.json",
       "src/verification/infrastructure/capability-runner.mjs",
@@ -550,7 +550,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/**",
       "src/infrastructure/contracts/public-json.ts",
       "resources/**",
-      "web-dist/**",
       "tools/**",
       "package/**",
       "test/verification/cli/**",
@@ -647,7 +646,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/release/release-artifact.mjs",
       "src/**",
       "resources/**",
-      "web-dist/**",
       "package/**",
       "test/verification/release/candidate-package.mjs",
       "test/verification/executor.mjs",
@@ -664,7 +662,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/release/release-artifact.mjs",
       "src/**",
       "resources/**",
-      "web-dist/**",
       "package/**",
       "test/integration/application-payload-release.test.mjs",
       "test/verification/release/candidate-package.mjs",
@@ -796,7 +793,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "package-static": {
     "inputs": [
       "resources/**",
-      "web-dist/**",
       "tools/**",
       "package/**",
       "package.json",
@@ -1058,8 +1054,8 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES = Object.freeze([
   fullScopeAuthority('package-lock.json', 'package-execution-metadata-change', 'non-version package metadata changes may affect locked dependencies or execution semantics.'),
   ...[
     'tsconfig.json', 'tsconfig.test-context.json', 'test-context.mjs',
-    'src/infrastructure/testing/context-runtime/**', 'package/targets/test-context/**',
-    'tools/testing/test-context-build.mjs', 'test/context/**',
+    'src/infrastructure/testing/context-runtime/**', 'tools/build/**',
+    'tools/contracts/**', 'tools/testing/test-context-build.mjs', 'test/context/**',
   ].map((pattern) => fullScopeAuthority(pattern, 'execution-foundation-change', 'Shared TypeScript or Test Context execution foundation changed.')),
   ...[
     'test/verification/verify-buildr-product', 'test/verification/verify-buildr-product-daily-full',

@@ -15,6 +15,7 @@ import {
   verifyApplicationPayload,
 } from '../../src/infrastructure/product-resources/index.mjs';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const MAIN_ENTRY = path.join(serviceRoot, 'tools/release/application-payload-entry.mjs');
@@ -25,7 +26,6 @@ const RESOURCE_SOURCES = Object.freeze([
   ['package/targets/runtime', 'product/package/targets/runtime'],
   ['docs', 'product/docs', { include: new Set(['bootstrap-guide.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
-  ['web-dist', 'product/web-dist'],
 ]);
 
 function sha256(bytes) {
@@ -122,8 +122,12 @@ function dependencyInventory(resourceRoot, metadata) {
   });
 }
 
-async function buildApplicationPayload(output, sourceCommit) {
+async function buildApplicationPayload(output, sourceCommit, options = {}) {
   if (!/^[a-f0-9]{40,64}$/.test(sourceCommit || '')) throw new Error('--source-commit must be a full hexadecimal commit identity.');
+  const webDistRoot = path.resolve(options.webDistRoot || '');
+  const generatedArtifactManifest = options.generatedArtifactManifest;
+  if (!options.webDistRoot || !generatedArtifactManifest) throw new Error('application payload requires explicit generated artifact manifest and web-dist root.');
+  assertGeneratedArtifactEntry(generatedArtifactManifest, 'web-dist', webDistRoot);
   const { buildSync, formatMessagesSync } = await import('esbuild');
   const destination = assertDestination(output);
   if (fs.existsSync(destination)) throw new Error(`application payload output already exists: ${destination}`);
@@ -157,6 +161,9 @@ async function buildApplicationPayload(output, sourceCommit) {
 
     const resourceRoot = path.join(destination, 'resources');
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
+    copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
+    fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
+    fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     copyFile(path.join(serviceRoot, 'LICENSE'), path.join(resourceRoot, 'product/LICENSE'), 0o644);
     copyFile(path.join(serviceRoot, 'README.md'), path.join(resourceRoot, 'product/README.md'), 0o644);
     const metadata = packageMetadata();
@@ -201,7 +208,9 @@ export { buildApplicationPayload, verifyApplicationPayload };
 async function main() {
   const { command, options } = parseArgs(process.argv);
   if (command === 'build') {
-    const result = await buildApplicationPayload(options.output, options['source-commit']);
+    if (!options['generated-artifacts'] || !options['web-dist']) throw new Error('application payload build requires --generated-artifacts and --web-dist.');
+    const generatedArtifactManifest = JSON.parse(fs.readFileSync(path.resolve(options['generated-artifacts']), 'utf8'));
+    const result = await buildApplicationPayload(options.output, options['source-commit'], { generatedArtifactManifest, webDistRoot: options['web-dist'] });
     appendGitHubOutput(result);
     process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
     return;
@@ -212,7 +221,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
     return;
   }
-  throw new Error('Usage: application-payload.mjs build --output <dir> --source-commit <sha> | verify --payload <dir> [--layout frozen|installed]');
+  throw new Error('Usage: application-payload.mjs build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> | verify --payload <dir> [--layout frozen|installed]');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

@@ -10,6 +10,7 @@ import YAML from 'yaml';
 import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesystem/index.mjs';
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createReleaseArtifact } from '../../tools/release/release-artifact.mjs';
+import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';
 
 const service = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source = fs.readFileSync(path.join(service, 'resources/workspace/AGENTS.md'), 'utf8');
@@ -159,8 +160,9 @@ test('modified, unreceipted, foreign and symlink legacy files survive sync witho
 test('packed artifact contains the sole inline source and initializes and upgrades workspaces', async (t) => {
   const { root, workspace, run } = fixture(t);
   // Exercise the actual payload/package builder, not a raw checkout npm pack.
-  const payload = await buildApplicationPayload(path.join(root, 'payload'), 'b'.repeat(40));
-  const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'));
+  const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), 'b'.repeat(40));
+  const payload = await buildApplicationPayload(path.join(root, 'payload'), 'b'.repeat(40), { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+  const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'), { testContextRoot: generated.testContextRoot });
   assert.equal(payload.manifest.files.some((f) => f.path.endsWith('/rules/buildr/core.md')), false);
   assert.equal(payload.manifest.files.some((f) => f.path.endsWith('/workspace/AGENTS.md')), true);
   const extracted = spawnSync('tar', ['-xzf', artifact.tarball, '-C', root], { encoding: 'utf8', timeout: 60000 });

@@ -10,13 +10,11 @@ import {
   TASK_RECORD_HTTP_DEFINITIONS,
   TASK_RECORD_HTTP_SCHEMAS,
 } from '../../src/task/interfaces/http/task-record-http-contracts.ts';
+import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const workspaceProductRoot = path.resolve(serviceRoot, '../..');
-const outputs = Object.freeze([
-  path.join(serviceRoot, 'src/task/interfaces/http/generated/task-record-http-dto.ts'),
-  path.join(workspaceProductRoot, 'services/buildr-web/src/api/generated/task-record-http-dto.ts'),
-]);
+const defaultOutputs = contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts');
 
 function body(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema: _draft, $id: _identity, title: _title, $defs: _defs, ...value } = schema;
@@ -40,7 +38,7 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     TaskRetrospectiveDocumentResponse: body(TASK_RECORD_HTTP_SCHEMAS.retrospectiveDocumentResponse),
     TaskErrorResponse: body(TASK_RECORD_HTTP_SCHEMAS.errorResponse),
   };
-  const projection = {
+  const projection: Parameters<typeof compile>[0] = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'TaskRecordHttpDtoProjection',
     type: 'object',
@@ -76,14 +74,30 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
   ].join('\n');
 }
 
-export async function checkTaskRecordHttpDto(): Promise<string[]> {
+export async function checkTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
   const expected = await renderTaskRecordHttpDto();
+  const selected = contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot);
+  const outputs = [selected.backend, selected.web];
   return outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
+}
+
+export async function writeTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
+  const expected = await renderTaskRecordHttpDto();
+  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
+  for (const output of outputs) {
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, expected);
+  }
+  return outputs;
 }
 
 async function main(): Promise<void> {
   const check = process.argv.includes('--check');
+  const outputRoot = cliOutputRoot(process.argv.slice(2));
   const expected = await renderTaskRecordHttpDto();
+  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot) : defaultOutputs;
+  const outputs = [selected.backend, selected.web];
   if (check) {
     const drift = outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
     if (drift.length) {
@@ -92,9 +106,7 @@ async function main(): Promise<void> {
     }
     return;
   }
-  for (const output of outputs) {
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, expected);
+  for (const output of await writeTaskRecordHttpDto(outputRoot)) {
     console.log(`Generated ${path.relative(workspaceProductRoot, output)}`);
   }
 }

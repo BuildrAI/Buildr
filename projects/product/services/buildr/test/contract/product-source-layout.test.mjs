@@ -28,14 +28,11 @@ const canonicalServiceEntries = [
   'src',
   'test',
   'tools',
-  'web-dist',
 ];
 const deferredPackageFiles = [
   'launchers/build.mjs',
   'launchers/manage.mjs',
   'targets/runtime/skills/buildr/SKILL.md',
-  'targets/test-context/index.js',
-  'targets/test-context/index.d.ts',
 ];
 const canonicalBridge = '#!/bin/sh\nset -eu\nproject_root=$(CDPATH= cd "${0%/*}" && pwd)\nexec "$project_root/services/buildr/tools/development/run-development-cli" "$@"\n';
 
@@ -97,4 +94,20 @@ test('结构 verifier 拒绝 scripts 根和未获许可的 package 遗留', () =
     'Buildr Service root must not retain scripts',
     'Buildr Service package/ contains non-deferred file: manifest.yml',
   ]);
+});
+
+test('结构 verifier 拒绝重新跟踪可重建生成物', () => {
+  const trackedFiles = [
+    'projects/product/services/buildr/web-dist/index.html',
+    'projects/product/services/buildr/package/targets/test-context/index.js',
+    'projects/product/services/buildr/src/task/interfaces/http/generated/task-record-http-dto.ts',
+    'projects/product/services/buildr-web/src/api/generated/task-record-http-dto.ts',
+  ];
+  assert.deepEqual(validateProductSourceLayout({
+    projectEntries: canonicalProjectEntries,
+    serviceEntries: canonicalServiceEntries,
+    packageFiles: deferredPackageFiles,
+    trackedFiles,
+    bridgeSource: canonicalBridge,
+  }), trackedFiles.map((file) => `generated artifact must not be tracked: ${file}`));
 });
