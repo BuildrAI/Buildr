@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.mjs';
 import {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
-import { binaryResponse, textResponse } from './responses.mjs';
+import { binaryResponse, textResponse } from './responses.ts';
 
 const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');
 const STATIC_CONTENT_TYPES = new Map([
@@ -22,7 +22,7 @@ const STATIC_CONTENT_TYPES = new Map([
   ['.map', 'application/json; charset=utf-8'],
 ]);
 
-export function resolveDistFile(pathname, staticRoot = DEFAULT_STATIC_ROOT) {
+export function resolveDistFile(pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT) {
   const root = path.resolve(staticRoot || DEFAULT_STATIC_ROOT);
   let decoded;
   try {
@@ -32,17 +32,17 @@ export function resolveDistFile(pathname, staticRoot = DEFAULT_STATIC_ROOT) {
   }
   if (!decoded.startsWith('/') || decoded.includes('\0')) return null;
   const relative = decoded.slice(1);
-  if (!relative || relative.split('/').some((part) => part === '..')) return null;
+  if (!relative || relative.split('/').some((part: any) => part === '..')) return null;
   const resolved = path.resolve(root, relative);
   const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
   if (resolved !== root && !resolved.startsWith(rootWithSep)) return null;
   return resolved;
 }
 
-export function injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot = DEFAULT_STATIC_ROOT) {
+export function injectedIndexHtml(sessionToken: any, previewIdentity: any, webProfile: any, staticRoot: any = DEFAULT_STATIC_ROOT) {
   const indexPath = path.join(path.resolve(staticRoot || DEFAULT_STATIC_ROOT), 'index.html');
   if (!fs.existsSync(indexPath)) {
-    const error = new Error('Buildr Web dist 缺失，请先运行 npm run build:web。');
+    const error: Error & Record<string, any> = new Error('Buildr Web dist 缺失，请先运行 npm run build:web。');
     error.code = 'web_dist_missing';
     error.status = 503;
     throw error;
@@ -54,7 +54,7 @@ export function injectedIndexHtml(sessionToken, previewIdentity, webProfile, sta
     .replace('__BUILDR_WEB_PROFILE__', profile);
 }
 
-export function serveDistAsset(response, pathname, staticRoot = DEFAULT_STATIC_ROOT) {
+export function serveDistAsset(response: any, pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT) {
   const filePath = resolveDistFile(pathname, staticRoot);
   if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
   const contentType = STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';

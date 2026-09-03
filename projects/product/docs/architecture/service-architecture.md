@@ -25,7 +25,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
-| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/task/`、`src/verification/` 与 `src/web/` 已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续按 Workspace/System、Agent Assets、Infrastructure/Bootstrap 和工具测试边界纵向迁移；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
@@ -86,7 +86,7 @@ bin/buildr.mjs
 }
 ```
 
-`bin/buildr.mjs` 是固定且极薄的 Node.js 进程入口，只负责加载并调用 `src/bootstrap/cli/main.mjs`，以及保留最外层的失败兜底。CLI 解析、模块装配和业务调用都不进入 `bin/`。
+`bin/buildr.mjs` 是固定且极薄的 Node.js 进程入口，只负责加载并调用 `src/bootstrap/cli/main.ts`，以及保留最外层的失败兜底。CLI 解析、模块装配和业务调用都不进入 `bin/`。
 
 ## `src` 目标结构
 
@@ -94,13 +94,13 @@ bin/buildr.mjs
 src/
   bootstrap/
     cli/
-      main.mjs                 # 创建运行上下文、注册并分发 CLI 命令
+      main.ts                  # 创建运行上下文、注册并分发 CLI 命令
       registry.mjs             # CLI 命令表和路由
       help.mjs                 # CLI Help 输出
       diagnostics.mjs          # CLI 失败和诊断输出
 
   task/
-    module.mjs                 # 模块公开注册入口
+    module.ts                  # 模块公开注册入口
     domain/                    # Task 领域对象和规则
     application/               # Task 用例和流程编排
     persistence/               # Task 数据读写和对象映射，模块所有权优先于存储介质
@@ -152,7 +152,7 @@ misc/
 
 具有稳定职责但不属于业务管理对象的 Buildr 自身能力，进入 `system/` 下的明确子模块；`system/` 不能作为无法归类内容的杂物间。
 
-当前开发源码允许 `.mjs` 与 `.ts` 渐进共存。新建或真实拆分的生产模块可以采用仅含可擦除类型语法的 `.ts`；不得为了目录迁移批量改写未触达 `.mjs`，也不得引入第二套 TypeScript 运行入口、路径别名或运行时转换器。
+当前开发源码允许迁移期间 `.mjs` 与 `.ts` 共存，但人工维护的生产源码以 `.ts` 为收敛目标。每轮沿完整模块边界迁移并通过严格类型检查与原有行为验证；不得只批量改扩展名，也不得引入第二套 TypeScript 运行入口、路径别名或运行时转换器。
 
 ## `task` 模块
 
@@ -281,19 +281,22 @@ Bootstrap 恰好安装一次 `agent-assets/module.mjs`。旧的 `src/application
 ```text
 web/
   application/
-    instance-lifecycle.mjs    # 默认实例启动、复用、交接与清理编排
-    preview-lifecycle.mjs     # Preview 实例和 Environment resource 编排
-    scheduled-maintenance.mjs # 运行期间的定时维护
+    instance-lifecycle.ts     # 默认实例启动、复用、交接与清理编排
+    preview-lifecycle.ts      # Preview 实例编排
   infrastructure/
-    instance-runtime.mjs      # Web 专属 receipt、锁、健康与退出适配
+    instance-runtime.ts       # Web 专属 receipt、锁、健康与退出适配
+    directory-picker.ts       # 平台目录选择适配
   interfaces/cli/
-    web.mjs                   # buildr web 与 preview command contributions
-  module.mjs                  # 向 Bootstrap 注册生命周期能力
+    web.ts                    # buildr web 与 preview command contributions
+  module.ts                   # 向 Bootstrap 注册生命周期能力
   http/
-    server.mjs                # 创建、监听和关闭 Node.js HTTP Server
-    router.mjs
-    session.mjs
-    static-files.mjs
+    server.ts                 # 创建、监听和关闭 Node.js HTTP Server
+    router.ts
+    session.ts
+    static-files.ts
+    responses.ts
+    read-executor.ts
+    read-worker.ts
 ```
 
 模块内部默认在这些技术层中保持扁平，由文件名表达默认实例、Preview 和 maintenance 能力；只有某项能力形成多个需要独立维护的私有协作者时才增加子目录，不为了目录对称创建单文件层级。
@@ -337,7 +340,7 @@ task/application
 
 `web/application/` 和 `web/http/` 保持分开：Application 决定是否启动、复用哪个实例以及何时清理，HTTP 负责具体如何创建和运行 Server。这样实例生命周期不会与 Node.js HTTP 实现混在一起。
 
-Web Runtime Host 已完整迁入上述 `web/` 技术层：默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理由 `web/application/`、`web/infrastructure/`、`web/interfaces/cli/` 与 `web/module.mjs` 负责；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管由 `web/http/` 负责。公共 Host 只分发 Bootstrap 装配的 HTTP contribution，不导入 Workspace、Task、Change、Publication 或 Installation 的业务 Controller，也不取得业务 writer authority。旧 `interfaces/local-app/http` 与 `interfaces/local-app/runtime` 实现路径已退出。
+Web Runtime Host 已完整迁入上述 `web/` TypeScript 技术层：默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、异常恢复和清理由 `web/application/`、`web/infrastructure/`、`web/interfaces/cli/` 与 `web/module.ts` 负责；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管由 `web/http/` 负责。公共 Host 只分发 Bootstrap 装配的 HTTP contribution，不导入 Workspace、Task、Change、Publication 或 Installation 的业务 Controller，也不取得业务 writer authority。旧 `interfaces/local-app/http` 与 `interfaces/local-app/runtime` 实现路径已退出。
 
 未来引入 Electron 时按真实形态演进：Electron 只是桌面 Launcher 时继续复用 `web/`；Electron 成为独立运行载体时再新增 `desktop/` 或相应 Electron Interface。当前不提前将 `web/` 抽象成含义模糊的 `app/` 或 `runtime/`。
 
@@ -583,11 +586,11 @@ infrastructure → infrastructure；不得反向依赖业务模块
 ```text
 bin/buildr.mjs
     ↓
-src/bootstrap/cli/main.mjs
+src/bootstrap/cli/main.ts
     ↓
 src/bootstrap/cli/registry.mjs
     ↓
-对应模块 interfaces/cli/<command>.mjs
+对应模块 interfaces/cli/<command>.ts 或尚未迁移的 `.mjs`
     ↓
 对应模块 Application 或公开入口
     ↓
@@ -601,21 +604,21 @@ CLI 命令完成后进程退出，不需要 HTTP Server。
 ```text
 bin/buildr.mjs
     ↓
-bootstrap/cli/main.mjs
+bootstrap/cli/main.ts
     ↓
 bootstrap/cli/registry.mjs
     ↓
-web/interfaces/cli/web.mjs
+web/interfaces/cli/web.ts
     ↓
-web/application/instance-lifecycle.mjs
+web/application/instance-lifecycle.ts
     ↓
-web/http/server.mjs
+web/http/server.ts
 ```
 
 对应职责为：
 
 - `bootstrap/cli/registry.mjs` 统一发现并分发 Web command descriptor；
-- `web/interfaces/cli/web.mjs` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
+- `web/interfaces/cli/web.ts` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
 - `web/application` 判断复用还是创建 Web 实例，并管理实例生命周期；
 - `web/http` 创建 HTTP Server，拥有 Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管，并只分发模块 HTTP contribution。
 
@@ -714,7 +717,7 @@ docs/         维护者与公开文档
 
 ```text
 bin/buildr.mjs
-    → 保留为稳定薄入口，内部转交 src/bootstrap/cli/main.mjs
+    → 保留为稳定薄入口，内部转交 src/bootstrap/cli/main.ts
 
 src/interfaces/cli/
     → 公共 Host 迁入 src/bootstrap/cli/
@@ -722,11 +725,11 @@ src/interfaces/cli/
 
 src/bootstrap/
     → 已接管进程、CLI Host、模块 registry 和显式组装
-    → 已迁移模块通过各自 module.mjs 提供窄 requires/provides/contributions
+    → 已迁移模块通过各自 module.ts 或尚未迁移的 module.mjs 提供窄 requires/provides/contributions
     → legacy-runtime-module.mjs 与临时 compatibility Facade 已退出
 
-src/web/http/server.mjs
-    → 已删除；公共 HTTP 宿主迁入 src/web/http/
+src/web/http/*.mjs
+    → 已迁移为 src/web/http/*.ts；公共 HTTP 宿主仍位于 src/web/http/
     → 业务 HTTP Controller 已按所有权迁入对应模块 interfaces/http/
 
 src/web/runtime/
@@ -777,17 +780,17 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与父任务协调（Task Parent Coordination）各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
 | Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
 | Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
-| Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
-| Web HTTP 公共宿主与静态托管 | `src/web/http/server.mjs`、`router.mjs`、`session.mjs`、`static-files.mjs`、`responses.mjs`、`read-executor.mjs`、`read-worker.mjs`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | buildr-web-http、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
+| Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.ts` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排；该模块已全部使用 TypeScript | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
+| Web HTTP 公共宿主与静态托管 | `src/web/http/server.ts`、`router.ts`、`session.ts`、`static-files.ts`、`responses.ts`、`read-executor.ts`、`read-worker.ts`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | buildr-web-http、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |
 | System Installation | `src/system/installation/`；release version 规则位于 `domain/release-version.mjs` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
 | 遗留入口与临时 Facade | 旧 `src/web/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
 | 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
-| Change | `src/task/change/module.mjs`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
-| OpenSpec convergence | `src/task/openspec/module.mjs`、`src/task/openspec/application/` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
+| Change | `src/task/change/module.ts`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
+| OpenSpec convergence | `src/task/openspec/module.ts`、`src/task/openspec/application/*.ts` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
 | Publication | `src/system/publication/module.mjs`、`src/system/publication/application/`、HTTP contribution | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |
-| Project Verification | `src/verification/application/`与`src/verification/domain/`，由Bootstrap和Task Verification消费 | 只校验、读取和更新Project测试地图；不选择或执行测试，不维护execution/evidence/resource lifecycle。Task验证报告writer仍归Task模块 | project/task verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
+| Project Verification | `src/verification/**/*.ts`，由Bootstrap和Task Verification消费 | 只校验、读取和更新Project测试地图；正式验证进程、deadline和资源协调技术机制也已纳入严格类型检查。Task验证报告writer仍归Task模块 | project/task verification unit/integration、architecture boundaries、`product.delivery` | `migrated` | — |
 
 ### 全局生产 residual 最终收敛
 

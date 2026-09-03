@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-function parseProcessLineage(output) {
-  return String(output || '').split('\n').flatMap((line) => {
+function parseProcessLineage(output: any) {
+  return String(output || '').split('\n').flatMap((line: any) => {
     const match = line.trim().match(/^(\d+)\s+(\d+)(?:\s+(.+))?$/u);
     return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), startedAt: match[3]?.trim() || null }] : [];
   });
@@ -14,19 +14,19 @@ function listProcesses() {
   return parseProcessLineage(result.stdout);
 }
 
-function sameInstance(expected, current) {
+function sameInstance(expected: any, current: any) {
   return !expected.startedAt || !current.startedAt || expected.startedAt === current.startedAt;
 }
 
-export function createOwnedDescendantTracker(rootPid, { intervalMs = 50, platform = process.platform } = {}) {
+export function createOwnedDescendantTracker(rootPid: any, { intervalMs = 50, platform = process.platform }: any = {}) {
   const owned = new Map([[rootPid, { pid: rootPid, startedAt: null }]]);
-  let timer = null;
-  let sampleError = null;
+  let timer: any = null;
+  let sampleError: any = null;
   const sample = () => {
     if (platform === 'win32') return;
     try {
       const rows = listProcesses();
-      const byPid = new Map(rows.map((row) => [row.pid, row]));
+      const byPid = new Map(rows.map((row: any) => [row.pid, row]));
       const active = new Map();
       for (const item of owned.values()) {
         const current = byPid.get(item.pid);
@@ -44,7 +44,7 @@ export function createOwnedDescendantTracker(rootPid, { intervalMs = 50, platfor
       }
       owned.clear();
       for (const [pid, row] of active) owned.set(pid, { pid, startedAt: row.startedAt || null });
-    } catch (error) {
+    } catch (error: any) {
       sampleError = error.message;
     }
   };
@@ -64,15 +64,15 @@ export function createOwnedDescendantTracker(rootPid, { intervalMs = 50, platfor
   };
 }
 
-function alive(pid, kill) {
-  try { kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+function alive(pid: any, kill: any) {
+  try { kill(pid, 0); return true; } catch (error: any) { return error.code !== 'ESRCH'; }
 }
 
-export async function terminateOwnedProcess({ pid, processes = [], platform = process.platform, kill = process.kill, killTree = spawnSync, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), graceMs = 2_000, confirmMs = 1_000 } = {}) {
-  const descendants = processes.filter((item) => Number.isInteger(item.pid) && item.pid !== pid);
+export async function terminateOwnedProcess({ pid, processes = [], platform = process.platform, kill = process.kill, killTree = spawnSync, wait = (ms: any) => new Promise((resolve: any) => setTimeout(resolve, ms)), graceMs = 2_000, confirmMs = 1_000 }: any = {}) {
+  const descendants = processes.filter((item: any) => Number.isInteger(item.pid) && item.pid !== pid);
   const groupTarget = platform === 'win32' ? pid : -pid;
-  const signal = (target, value) => {
-    try { kill(target, value); return null; } catch (error) { return error.code === 'ESRCH' ? null : error.message; }
+  const signal = (target: any, value: any) => {
+    try { kill(target, value); return null; } catch (error: any) { return error.code === 'ESRCH' ? null : error.message; }
   };
   const groupWasAlive = alive(groupTarget, kill);
   const termError = !groupWasAlive ? null : platform === 'win32'
@@ -82,7 +82,7 @@ export async function terminateOwnedProcess({ pid, processes = [], platform = pr
     })()
     : signal(groupTarget, 'SIGTERM');
   if (groupWasAlive) await wait(graceMs);
-  const forced = [];
+  const forced: any[] = [];
   if (alive(groupTarget, kill)) {
     const error = platform === 'win32' ? (() => {
       const result = killTree('taskkill', ['/pid', String(pid), '/t', '/f'], { encoding: 'utf8' });
@@ -95,7 +95,7 @@ export async function terminateOwnedProcess({ pid, processes = [], platform = pr
     if (error) forced.push({ target: item.pid, error });
   }
   const deadline = Date.now() + confirmMs;
-  const remaining = [];
+  const remaining: any[] = [];
   while (Date.now() < deadline && alive(groupTarget, kill)) await wait(25);
   if (alive(groupTarget, kill)) remaining.push(groupTarget);
   for (const item of descendants) if (alive(item.pid, kill)) remaining.push(item.pid);
@@ -105,6 +105,6 @@ export async function terminateOwnedProcess({ pid, processes = [], platform = pr
     termError: termError || null,
     forced,
     remaining,
-    observed: [pid, ...descendants.map((item) => item.pid)],
+    observed: [pid, ...descendants.map((item: any) => item.pid)],
   };
 }

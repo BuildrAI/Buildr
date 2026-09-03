@@ -1,17 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { applyCanonicalPlan } from './canonical-applier.mjs';
-import { createConvergencePlan } from './convergence-planner.mjs';
-import { observeConvergence } from './convergence-observer.mjs';
-import { CONVERGENCE_PLAN_SCHEMA, CONVERGENCE_RECEIPT_SCHEMA, createConvergenceReceipt, convergenceDigest, convergenceIdentity, convergencePlanIdentity, normalizeConvergenceText, validateConvergenceReceipt } from './convergence-model.mjs';
-import { deterministicSyncPlanIdentity } from './deterministic-sync.mjs';
-import { inspectChangeChecklist } from './change-checklist.mjs';
+import { applyCanonicalPlan } from './canonical-applier.ts';
+import { createConvergencePlan } from './convergence-planner.ts';
+import { observeConvergence } from './convergence-observer.ts';
+import { CONVERGENCE_PLAN_SCHEMA, CONVERGENCE_RECEIPT_SCHEMA, createConvergenceReceipt, convergenceDigest, convergenceIdentity, convergencePlanIdentity, normalizeConvergenceText, validateConvergenceReceipt } from './convergence-model.ts';
+import { deterministicSyncPlanIdentity } from './deterministic-sync.ts';
+import { inspectChangeChecklist } from './change-checklist.ts';
 
-export function convergenceReceiptPath(changeRoot) {
+export function convergenceReceiptPath(changeRoot: any) {
   return path.join(changeRoot, '.buildr', 'convergence-receipt.json');
 }
 
-function publicReceipt(projectRoot, file, receipt) {
+function publicReceipt(projectRoot: any, file: any, receipt: any) {
   return {
     path: path.relative(projectRoot, file).split(path.sep).join('/'),
     identity: receipt.convergenceIdentity,
@@ -20,26 +20,26 @@ function publicReceipt(projectRoot, file, receipt) {
   };
 }
 
-function releaseTransactionReceipt(file, { io }) {
+function releaseTransactionReceipt(file: any, { io }: any) {
   if (!io.existsSync(file)) return;
   io.rmSync(file);
   const directory = path.dirname(file);
   if (io.existsSync(directory) && io.readdirSync(directory).length === 0) io.rmdirSync(directory);
 }
 
-function result(status, context, startedAt, execution, extra = {}) {
+function result(status: any, context: any, startedAt: any, execution: any, extra: any = {}) {
   return {
     status,
     change: context.change,
     project: context.project,
     durationMs: Date.now() - startedAt,
-    commandCount: execution.reduce((sum, item) => sum + (item.commandCount || 0), 0),
+    commandCount: execution.reduce((sum: any, item: any) => sum + (item.commandCount || 0), 0),
     execution,
     ...extra,
   };
 }
 
-export function canonicalSnapshots({ projectRoot, delta, io }) {
+export function canonicalSnapshots({ projectRoot, delta, io }: any) {
   const snapshots = new Map();
   for (const capability of [...delta.capabilities.keys()].sort()) {
     const file = path.join(projectRoot, 'openspec', 'specs', capability, 'spec.md');
@@ -52,8 +52,8 @@ export function canonicalSnapshots({ projectRoot, delta, io }) {
   return snapshots;
 }
 
-function canonicalSafelyExtendsExpected({ projectRoot, receipt, io }) {
-  return receipt.files.every((item) => {
+function canonicalSafelyExtendsExpected({ projectRoot, receipt, io }: any) {
+  return receipt.files.every((item: any) => {
     const file = path.resolve(projectRoot, item.path);
     if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`)) return false;
     if (item.expectedExists === false) return !io.existsSync(file);
@@ -66,7 +66,7 @@ function canonicalSafelyExtendsExpected({ projectRoot, receipt, io }) {
   });
 }
 
-function planFromReceipt(receipt) {
+function planFromReceipt(receipt: any) {
   return {
     schemaVersion: CONVERGENCE_PLAN_SCHEMA,
     algorithmVersion: receipt.algorithmVersion,
@@ -76,23 +76,23 @@ function planFromReceipt(receipt) {
     project: receipt.project,
     deltaDigest: receipt.deltaDigest,
     executableIdentity: receipt.executableIdentity,
-    status: receipt.operations.every((item) => item.status === 'already-applied') ? 'already-applied' : 'safe',
+    status: receipt.operations.every((item: any) => item.status === 'already-applied') ? 'already-applied' : 'safe',
     operations: receipt.operations,
     blocked: [],
     files: receipt.files,
   };
 }
 
-function legacyReceiptPlanIdentity(receipt) {
+function legacyReceiptPlanIdentity(receipt: any) {
   if (typeof receipt.planIdentity === 'string' && receipt.planIdentity) return receipt.planIdentity;
   const transitionIdentities = [...new Set((Array.isArray(receipt.transitions) ? receipt.transitions : [])
-    .filter((item) => ['sync-plan', 'sync-apply'].includes(item?.stage))
-    .map((item) => item.planIdentity)
-    .filter((identity) => typeof identity === 'string' && identity))];
+    .filter((item: any) => ['sync-plan', 'sync-apply'].includes(item?.stage))
+    .map((item: any) => item.planIdentity)
+    .filter((identity: any) => typeof identity === 'string' && identity))];
   return transitionIdentities.length === 1 ? transitionIdentities[0] : null;
 }
 
-function migrateLegacyReceipt({ context, executableIdentity, io }) {
+function migrateLegacyReceipt({ context, executableIdentity, io }: any) {
   const oldReceiptFile = path.join(context.changeRoot, '.buildr', 'deterministic-convergence.json');
   const oldPlanFile = path.join(context.changeRoot, '.buildr', 'deterministic-sync-plan.json');
   const recoveryFile = path.join(context.changeRoot, '.buildr', 'convergence-recovery.json');
@@ -121,19 +121,19 @@ function migrateLegacyReceipt({ context, executableIdentity, io }) {
     || !Array.isArray(oldPlan.files) || oldPlan.files.length === 0) {
     return { status: 'recovery-unprovable', code: 'legacy-identity-chain-incomplete' };
   }
-  const files = oldPlan.files.map((item) => ({
+  const files = oldPlan.files.map((item: any) => ({
     path: item.path,
     beforeDigest: item.beforeDigest,
     expectedDigest: item.expectedDigest,
     beforeContent: item.before,
     expectedContent: item.expected,
   }));
-  if (files.some((item) => convergenceDigest(normalizeConvergenceText(item.beforeContent)) !== item.beforeDigest
+  if (files.some((item: any) => convergenceDigest(normalizeConvergenceText(item.beforeContent)) !== item.beforeDigest
     || convergenceDigest(normalizeConvergenceText(item.expectedContent)) !== item.expectedDigest)) {
     return { status: 'recovery-unprovable', code: 'legacy-content-digest-mismatch' };
   }
   const identity = convergenceIdentity({ change: context.change, project: context.project, deltaDigest: oldReceipt.deltaHash, files, executableIdentity });
-  const plan = {
+  const plan: any = {
     schemaVersion: CONVERGENCE_PLAN_SCHEMA,
     algorithmVersion: 2,
     convergenceIdentity: identity,
@@ -164,13 +164,13 @@ export function runOpenSpecConvergence({
   writeReceipt,
   releaseReceipt = null,
   io = fs,
-}) {
+}: any) {
   const startedAt = Date.now();
-  const execution = [];
-  const release = releaseReceipt || ((file) => releaseTransactionReceipt(file, { io }));
+  const execution: any[] = [];
+  const release = releaseReceipt || ((file: any) => releaseTransactionReceipt(file, { io }));
   if (!context.archived) {
     const checklist = inspectChangeChecklist(context.changeRoot, { io });
-    const incomplete = checklist.exists && checklist.remaining > 0;
+    const incomplete = checklist.exists && (checklist.remaining ?? 0) > 0;
     execution.push({ id: 'checklist', status: incomplete ? 'blocked' : 'passed', durationMs: 0, commandCount: 0 });
     if (incomplete) {
       return result('blocked', context, startedAt, execution, {
@@ -182,7 +182,7 @@ export function runOpenSpecConvergence({
     }
   }
   let receiptFile = convergenceReceiptPath(context.changeRoot);
-  let receipt = null;
+  let receipt: any = null;
   if (context.archived && !io.existsSync(receiptFile)) {
     return result('passed', context, startedAt, execution, {
       disposition: 'archived',
@@ -193,7 +193,7 @@ export function runOpenSpecConvergence({
   }
   if (io.existsSync(receiptFile)) {
     try { receipt = validateConvergenceReceipt(JSON.parse(io.readFileSync(receiptFile, 'utf8'))); }
-    catch (error) { return result('recovery-unprovable', context, startedAt, execution, { code: 'convergence-receipt-invalid', message: error.message, nextActions: ['人工核对 receipt 与 canonical 文件；不得删除 sidecar 后继续。'] }); }
+    catch (error: any) { return result('recovery-unprovable', context, startedAt, execution, { code: 'convergence-receipt-invalid', message: error.message, nextActions: ['人工核对 receipt 与 canonical 文件；不得删除 sidecar 后继续。'] }); }
   } else {
     const legacy = migrateLegacyReceipt({ context, executableIdentity, io });
     if (legacy.status === 'recovery-unprovable') return result('recovery-unprovable', context, startedAt, execution, { code: legacy.code, nextActions: ['人工核对历史 sidecar identity chain 与 canonical 文件。'] });
@@ -209,7 +209,7 @@ export function runOpenSpecConvergence({
     try {
       release(receiptFile);
       execution.push({ id: 'receipt-release', status: 'passed', durationMs: 0, commandCount: 0 });
-    } catch (error) {
+    } catch (error: any) {
       execution.push({ id: 'receipt-release', status: 'blocked', durationMs: 0, commandCount: 0 });
       return result('blocked', context, startedAt, execution, {
         code: 'convergence-receipt-release-failed', disposition: 'archived',
@@ -252,7 +252,7 @@ export function runOpenSpecConvergence({
     });
     execution.push({ id: 'plan', status: plan.status === 'blocked' ? 'blocked' : 'passed', durationMs: Date.now() - planStartedAt, commandCount: 0 });
     if (plan.status === 'blocked') return result('blocked', context, startedAt, execution, { code: 'semantic-resolution-required', blocked: plan.blocked, operations: plan.operations, effects: [], nextActions: ['解决 delta 或 active Change 语义冲突后重新运行 converge。'] });
-    const validation = validateProjected({ files: plan.files.map((item) => ({ path: item.path, content: item.expectedContent, exists: item.expectedExists !== false })) });
+    const validation = validateProjected({ files: plan.files.map((item: any) => ({ path: item.path, content: item.expectedContent, exists: item.expectedExists !== false })) });
     execution.push({ id: 'projected-validation', ...validation });
     if (validation.status !== 'passed') return result('blocked', context, startedAt, execution, { code: validation.code, validation, nextActions: ['修正 Change artifacts 使 projected Project 通过 strict validation。'] });
     receipt = { ...createConvergenceReceipt({ plan, executableIdentity }), validation };
@@ -294,7 +294,7 @@ export function runOpenSpecConvergence({
   try {
     release(receiptFile);
     execution.push({ id: 'receipt-release', status: 'passed', durationMs: 0, commandCount: 0 });
-  } catch (error) {
+  } catch (error: any) {
     execution.push({ id: 'receipt-release', status: 'blocked', durationMs: 0, commandCount: 0 });
     return result('blocked', context, startedAt, execution, {
       code: 'convergence-receipt-release-failed', disposition: 'archived',

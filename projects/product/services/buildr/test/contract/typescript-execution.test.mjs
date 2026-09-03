@@ -38,7 +38,7 @@ test('TypeScript production source has a low-cost affected verification owner', 
   assert.ok(typecheck.inputs.includes('tsconfig.json'));
 });
 
-test('CLI identity is the first native TypeScript slice and the old path is retired', () => {
+test('CLI identity remains native TypeScript and the old path is retired', () => {
   assert.equal(fs.existsSync('src/bootstrap/cli/identity.ts'), true);
   assert.equal(fs.existsSync('src/bootstrap/cli/identity.mjs'), false);
   assert.match(read('src/bootstrap/cli/registry.mjs'), /from '\.\/identity\.ts'/);

@@ -8,58 +8,58 @@ import { execFileSync } from 'node:child_process';
 export const VERIFICATION_RESOURCE_LEASE_SCHEMA = 'buildr.verification-resource-lease/v1';
 export const VERIFICATION_RESOURCE_TICKET_SCHEMA = 'buildr.verification-resource-ticket/v1';
 
-function safeIdentity(value, fallback) {
+function safeIdentity(value: any, fallback: any) {
   const normalized = String(value || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
   return (normalized || fallback).slice(0, 80);
 }
 
-function digest(value) {
+function digest(value: any) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-function scopedIdentity(value, fallback) {
+function scopedIdentity(value: any, fallback: any) {
   const raw = String(value || fallback);
   return `${safeIdentity(raw, fallback).slice(0, 60)}-${digest(raw).slice(0, 12)}`;
 }
 
-function atomicWriteJson(file, value) {
+function atomicWriteJson(file: any, value: any) {
   const temporary = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   fs.renameSync(temporary, file);
 }
 
-function registerTicketDirectory(temporary, directory, ticket) {
+function registerTicketDirectory(temporary: any, directory: any, ticket: any) {
   fs.mkdirSync(temporary, { mode: 0o700 });
   try {
     atomicWriteJson(path.join(temporary, 'ticket.json'), ticket);
     fs.renameSync(temporary, directory);
-  } catch (error) {
+  } catch (error: any) {
     fs.rmSync(temporary, { recursive: true, force: true });
     throw error;
   }
 }
 
-function replaceExpiredLeaseDirectory(directory, stale) {
+function replaceExpiredLeaseDirectory(directory: any, stale: any) {
   fs.renameSync(directory, stale);
   fs.rmSync(stale, { recursive: true, force: true });
 }
 
-function releaseLeaseDirectory(directory, released) {
+function releaseLeaseDirectory(directory: any, released: any) {
   fs.renameSync(directory, released);
   fs.rmSync(released, { recursive: true, force: true });
 }
 
-function ownerMatches(value, owner) {
+function ownerMatches(value: any, owner: any) {
   return value?.taskId === owner.taskId
     && value?.environmentId === owner.environmentId
     && value?.runId === owner.runId;
 }
 
-function readJson(file) {
+function readJson(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-export function resolveVerificationCoordinationRoot(executionRoot, env = process.env) {
+export function resolveVerificationCoordinationRoot(executionRoot: any, env: any = process.env) {
   if (env.BUILDR_VERIFICATION_COORDINATION_ROOT) {
     if (!path.isAbsolute(env.BUILDR_VERIFICATION_COORDINATION_ROOT)) throw new Error('BUILDR_VERIFICATION_COORDINATION_ROOT must be absolute');
     return path.resolve(env.BUILDR_VERIFICATION_COORDINATION_ROOT);
@@ -73,8 +73,8 @@ export function resolveVerificationCoordinationRoot(executionRoot, env = process
   }
 }
 
-export function coordinatedResourcesFromLimits(limits = {}) {
-  return Object.fromEntries(Object.entries(limits.resources || {}).map(([id, capacity]) => [id, {
+export function coordinatedResourcesFromLimits(limits: any = {}) {
+  return Object.fromEntries(Object.entries(limits.resources || {}).map(([id, capacity]: any) => [id, {
     id,
     strategy: 'coordinated',
     capacity,
@@ -82,10 +82,10 @@ export function coordinatedResourcesFromLimits(limits = {}) {
   }]));
 }
 
-export function createVerificationResourceCoordinator(options) {
+export function createVerificationResourceCoordinator(options: any) {
   const root = path.resolve(options.root);
   const definitions = Array.isArray(options.resources)
-    ? Object.fromEntries(options.resources.map((resource) => [resource.id, resource]))
+    ? Object.fromEntries(options.resources.map((resource: any) => [resource.id, resource]))
     : { ...(options.resources || {}) };
   const owner = {
     workspaceId: safeIdentity(options.owner?.workspaceId, 'workspace'),
@@ -101,11 +101,11 @@ export function createVerificationResourceCoordinator(options) {
   const waitTimeoutMs = options.waitTimeoutMs ?? 600_000;
   const now = options.now ?? Date.now;
   const ticketOrder = options.ticketOrder ?? (() => process.hrtime.bigint().toString().padStart(24, '0'));
-  const delay = options.delay ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const delay = options.delay ?? ((milliseconds: any) => new Promise((resolve: any) => setTimeout(resolve, milliseconds)));
   const timers = options.timers ?? { setInterval, clearInterval };
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
 
-  function leaseValue(resource, slot, token, recovered = false) {
+  function leaseValue(resource: any, slot: any, token: any, recovered: any = false) {
     const timestamp = now();
     return {
       schemaVersion: VERIFICATION_RESOURCE_LEASE_SCHEMA,
@@ -120,13 +120,13 @@ export function createVerificationResourceCoordinator(options) {
     };
   }
 
-  function resourceRoot(resource) {
+  function resourceRoot(resource: any) {
     const directory = path.join(root, digest(`${owner.workspaceId}:${owner.projectId}:${resource}`));
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     return directory;
   }
 
-  function ticketValue(resource, token) {
+  function ticketValue(resource: any, token: any) {
     const timestamp = now();
     return {
       schemaVersion: VERIFICATION_RESOURCE_TICKET_SCHEMA,
@@ -140,7 +140,7 @@ export function createVerificationResourceCoordinator(options) {
     };
   }
 
-  function createTicket(resource) {
+  function createTicket(resource: any) {
     const waitersRoot = path.join(resourceRoot(resource), 'waiters');
     fs.mkdirSync(waitersRoot, { recursive: true, mode: 0o700 });
     const token = crypto.randomUUID();
@@ -161,7 +161,7 @@ export function createVerificationResourceCoordinator(options) {
     return { directory, ticket, heartbeat };
   }
 
-  function removeTicket(ticket, suffix) {
+  function removeTicket(ticket: any, suffix: any) {
     const file = path.join(ticket.directory, 'ticket.json');
     const current = readJson(file);
     if (!current || current.token !== ticket.ticket.token || !ownerMatches(current, owner)) return false;
@@ -169,13 +169,13 @@ export function createVerificationResourceCoordinator(options) {
     try {
       releaseLeaseDirectory(ticket.directory, removed);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'ENOENT') return false;
       throw error;
     }
   }
 
-  function expireTicket(directory, ticket) {
+  function expireTicket(directory: any, ticket: any) {
     const file = path.join(directory, 'ticket.json');
     const current = readJson(file);
     if (!current || current.token !== ticket.token || Date.parse(current.expiresAt) > now()) return false;
@@ -183,16 +183,16 @@ export function createVerificationResourceCoordinator(options) {
     try {
       releaseLeaseDirectory(directory, expired);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'ENOENT') return false;
       throw error;
     }
   }
 
-  function validTickets(resource) {
+  function validTickets(resource: any) {
     const waitersRoot = path.join(resourceRoot(resource), 'waiters');
     fs.mkdirSync(waitersRoot, { recursive: true, mode: 0o700 });
-    const tickets = [];
+    const tickets: any[] = [];
     for (const entry of fs.readdirSync(waitersRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const directory = path.join(waitersRoot, entry.name);
@@ -204,10 +204,10 @@ export function createVerificationResourceCoordinator(options) {
       }
       tickets.push({ directory, ticket });
     }
-    return tickets.sort((left, right) => left.ticket.order.localeCompare(right.ticket.order) || left.ticket.token.localeCompare(right.ticket.token));
+    return tickets.sort((left: any, right: any) => left.ticket.order.localeCompare(right.ticket.order) || left.ticket.token.localeCompare(right.ticket.token));
   }
 
-  function availableSlots(resource, definition) {
+  function availableSlots(resource: any, definition: any) {
     const directory = resourceRoot(resource);
     let available = 0;
     for (let slot = 0; slot < definition.capacity; slot += 1) {
@@ -222,14 +222,14 @@ export function createVerificationResourceCoordinator(options) {
     return available;
   }
 
-  function ticketEligible(resource, definition, ticket) {
+  function ticketEligible(resource: any, definition: any, ticket: any) {
     const current = readJson(path.join(ticket.directory, 'ticket.json'));
     if (!current || current.token !== ticket.ticket.token || !ownerMatches(current, owner)) throw new Error(`Verification resource wait ownership lost: ${resource}`);
-    const index = validTickets(resource).findIndex((item) => item.ticket.token === ticket.ticket.token);
+    const index = validTickets(resource).findIndex((item: any) => item.ticket.token === ticket.ticket.token);
     return index >= 0 && index < availableSlots(resource, definition);
   }
 
-  function tryClaim(resource, definition) {
+  function tryClaim(resource: any, definition: any) {
     const currentResourceRoot = resourceRoot(resource);
     for (let slot = 0; slot < definition.capacity; slot += 1) {
       const directory = path.join(currentResourceRoot, `slot-${slot}`);
@@ -239,7 +239,7 @@ export function createVerificationResourceCoordinator(options) {
         const lease = leaseValue(resource, slot, token);
         atomicWriteJson(path.join(directory, 'lease.json'), lease);
         return { directory, lease };
-      } catch (error) {
+      } catch (error: any) {
         if (error.code !== 'EEXIST') throw error;
       }
       const file = path.join(directory, 'lease.json');
@@ -252,15 +252,15 @@ export function createVerificationResourceCoordinator(options) {
         const lease = leaseValue(resource, slot, token, true);
         atomicWriteJson(file, lease);
         return { directory, lease };
-      } catch (error) {
+      } catch (error: any) {
         if (!['ENOENT', 'EEXIST'].includes(error.code)) throw error;
       }
     }
     return null;
   }
 
-  async function releaseClaims(claims) {
-    const results = [];
+  async function releaseClaims(claims: any) {
+    const results: any[] = [];
     for (const claim of [...claims].reverse()) {
       if (claim.strategy !== 'coordinated') {
         results.push({ resource: claim.resource, status: 'not-applicable' });
@@ -276,18 +276,18 @@ export function createVerificationResourceCoordinator(options) {
       try {
         releaseLeaseDirectory(claim.directory, released);
         results.push({ resource: claim.resource, slot: claim.slot, status: 'released' });
-      } catch (error) {
+      } catch (error: any) {
         results.push({ resource: claim.resource, slot: claim.slot, status: 'release-failed', message: error.message });
       }
     }
     return results.reverse();
   }
 
-  async function acquire(resourceIds = [], acquireOptions = {}) {
+  async function acquire(resourceIds: any = [], acquireOptions: any = {}) {
     const startedAt = now();
-    const claims = [];
+    const claims: any[] = [];
     try {
-      for (const resource of [...new Set(resourceIds)].sort()) {
+      for (const resource of [...new Set<string>(resourceIds)].sort()) {
         const definition = definitions[resource];
         if (!definition) throw new Error(`Unknown verification resource: ${resource}`);
         if (definition.authorization === 'explicit' && !(acquireOptions.authorizedResources || []).includes(resource)) {
@@ -299,7 +299,7 @@ export function createVerificationResourceCoordinator(options) {
         }
         if (definition.strategy !== 'coordinated' || !Number.isInteger(definition.capacity) || definition.capacity < 1) throw new Error(`Invalid coordinated verification resource: ${resource}`);
         const ticket = createTicket(resource);
-        let claimed = null;
+        let claimed: any = null;
         try {
           while (!claimed) {
             if (acquireOptions.signal?.aborted) throw new Error(`Verification resource wait cancelled: ${resource}`);
@@ -333,7 +333,7 @@ export function createVerificationResourceCoordinator(options) {
           status: 'acquired',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       await releaseClaims(claims);
       throw error;
     }

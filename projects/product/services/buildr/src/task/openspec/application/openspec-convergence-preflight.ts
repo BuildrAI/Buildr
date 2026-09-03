@@ -1,5 +1,5 @@
-import { createConvergencePlan } from './convergence-planner.mjs';
-import { CONVERGENCE_ALGORITHM_VERSION, convergenceDigest } from './convergence-model.mjs';
+import { createConvergencePlan } from './convergence-planner.ts';
+import { CONVERGENCE_ALGORITHM_VERSION, convergenceDigest } from './convergence-model.ts';
 
 const IDENTITY_CONFLICT_CODES = new Set([
   'added-identity-conflict',
@@ -7,7 +7,7 @@ const IDENTITY_CONFLICT_CODES = new Set([
   'rename-not-unique',
 ]);
 
-export function openSpecPreflightBlockerCategory(blocker) {
+export function openSpecPreflightBlockerCategory(blocker: any) {
   if (blocker.code === 'active-change-conflict' || String(blocker.code || '').startsWith('openspec_contract.active_change')) return 'active-change-conflict';
   if (blocker.reason === 'scenario-identities-omitted') return 'scenario-omission';
   if (IDENTITY_CONFLICT_CODES.has(blocker.code)) return 'identity-conflict';
@@ -15,18 +15,18 @@ export function openSpecPreflightBlockerCategory(blocker) {
   return 'semantic-resolution-required';
 }
 
-function portableActiveChanges(activeChanges) {
+function portableActiveChanges(activeChanges: any) {
   return [...activeChanges]
-    .map((item) => ({
+    .map((item: any) => ({
       change: item.change,
       status: item.status,
       deltaDigest: item.deltaDigest || null,
       diagnosticCode: item.diagnosticCode || null,
     }))
-    .sort((left, right) => left.change.localeCompare(right.change));
+    .sort((left: any, right: any) => left.change.localeCompare(right.change));
 }
 
-export function openSpecReadinessIdentity({ plan, activeChanges, canonicalObservation }) {
+export function openSpecReadinessIdentity({ plan, activeChanges, canonicalObservation }: any) {
   return convergenceDigest({
     schemaVersion: 'buildr.openspec-convergence-preflight-identity/v1',
     algorithmVersion: CONVERGENCE_ALGORITHM_VERSION,
@@ -51,7 +51,7 @@ export function runOpenSpecConvergencePreflight({
   validateProjected,
   startedAt = Date.now(),
   commandCountOffset = 0,
-}) {
+}: any) {
   const planStartedAt = Date.now();
   const plan = createConvergencePlan({
     change: context.change,
@@ -62,7 +62,7 @@ export function runOpenSpecConvergencePreflight({
     executableIdentity,
     activeConflicts,
   });
-  const execution = commandCountOffset > 0 ? [{
+  const execution: any[] = commandCountOffset > 0 ? [{
     id: 'input-observation',
     status: 'passed',
     durationMs: 0,
@@ -74,12 +74,12 @@ export function runOpenSpecConvergencePreflight({
     durationMs: Date.now() - planStartedAt,
     commandCount: 0,
   });
-  let validation = null;
-  let blockers = plan.blocked.map((item) => ({ category: openSpecPreflightBlockerCategory(item), ...item }));
+  let validation: any = null;
+  let blockers = plan.blocked.map((item: any) => ({ category: openSpecPreflightBlockerCategory(item), ...item }));
 
   if (plan.status !== 'blocked') {
     validation = validateProjected({
-      files: plan.files.map((item) => ({
+      files: plan.files.map((item: any) => ({
         path: item.path,
         content: item.expectedContent,
         exists: item.expectedExists !== false,
@@ -118,7 +118,7 @@ export function runOpenSpecConvergencePreflight({
       identity: canonicalObservation.identity,
       fileCount: canonicalObservation.files.length,
     },
-    canonicalFiles: plan.files.map((item) => ({
+    canonicalFiles: plan.files.map((item: any) => ({
       path: item.path,
       beforeExists: item.beforeExists,
       beforeDigest: item.beforeDigest,
@@ -127,7 +127,7 @@ export function runOpenSpecConvergencePreflight({
     blockers,
     validation,
     durationMs: Date.now() - startedAt,
-    commandCount: execution.reduce((sum, item) => sum + (item.commandCount || 0), 0),
+    commandCount: execution.reduce((sum: any, item: any) => sum + (item.commandCount || 0), 0),
     execution,
     effects: [],
     nextActions: status === 'ready'

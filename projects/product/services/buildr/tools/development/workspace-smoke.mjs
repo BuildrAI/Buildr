@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const buildrEntry = path.join(serviceRoot, 'bin/buildr.mjs');

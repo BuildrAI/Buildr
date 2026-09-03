@@ -5,15 +5,15 @@ import process from 'node:process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
-import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
+import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.ts';
 import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.mjs';
 import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/system/publication/interfaces/http/publication-http-contracts.mjs';
 import { TASK_RECORD_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-record-http-contracts.ts';
 import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
 import { WORKSPACE_HTTP_OPERATIONS } from '../../src/workspace/interfaces/http/workspace-http-contracts.mjs';
 import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs';
-import { inspectHttpOperationCoverage, ownedHttpOperations } from '../../src/web/http/http-operation-coverage.mjs';
+import { inspectHttpOperationCoverage, ownedHttpOperations } from '../../src/web/http/http-operation-coverage.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';
 
 function operation(catalog, id) {

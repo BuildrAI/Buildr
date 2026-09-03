@@ -8,7 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { copyPreparedGitRepository, copyPreparedWorkspace } from '../helpers/prepared-fixtures.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');

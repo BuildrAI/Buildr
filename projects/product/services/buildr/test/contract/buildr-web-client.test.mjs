@@ -22,9 +22,9 @@ test('公共 API client 不读取 DOM session，LocalSessionAdapter 负责写头
 });
 
 test('Buildr Web 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白名单入口', () => {
-  const server = read('src/web/http/server.mjs');
-  const router = read('src/web/http/router.mjs');
-  const staticFiles = read('src/web/http/static-files.mjs');
+  const server = read('src/web/http/server.ts');
+  const router = read('src/web/http/router.ts');
+  const staticFiles = read('src/web/http/static-files.ts');
   assert.match(staticFiles, /web-dist/);
   assert.match(staticFiles, /resolveDistFile/);
   assert.match(router, /serveDistAsset|injectedIndexHtml/);
@@ -36,7 +36,7 @@ test('Buildr Web 应用壳只为 Runtime 注入的 development profile 显示开
   const index = read('../buildr-web/index.html');
   const layout = read('../buildr-web/src/app/AppLayout.tsx');
   const styles = read('../buildr-web/src/styles.css');
-  const staticFiles = read('src/web/http/static-files.mjs');
+  const staticFiles = read('src/web/http/static-files.ts');
   assert.match(index, /meta name="buildr-web-profile" content="__BUILDR_WEB_PROFILE__"/);
   assert.match(staticFiles, /\['released', 'development'\]\.includes\(webProfile\?\.profile\)/);
   assert.match(staticFiles, /replace\('__BUILDR_WEB_PROFILE__', profile\)/);

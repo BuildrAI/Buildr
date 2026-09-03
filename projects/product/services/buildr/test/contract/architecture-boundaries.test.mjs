@@ -77,13 +77,13 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
     'src/web/module.ts',
     'src/web/application/instance-lifecycle.ts',
     'src/web/application/preview-lifecycle.ts',
-    'src/web/infrastructure/instance-runtime.mjs',
+    'src/web/infrastructure/instance-runtime.ts',
     'src/web/interfaces/cli/web.ts',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
   for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-maintenance.mjs']) {
     assert.equal(fs.existsSync(path.join(productRoot, 'src/web/runtime', legacy)), false);
   }
-  const host = fs.readFileSync(path.join(productRoot, 'src/web/http/server.mjs'), 'utf8');
+  const host = fs.readFileSync(path.join(productRoot, 'src/web/http/server.ts'), 'utf8');
   assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/);
   const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.ts'), 'utf8');
   assert.doesNotMatch(lifecycle, /ensureRegisteredTarget\(runtime,/);
@@ -131,7 +131,7 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   const serviceDomain = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/service.mjs'), 'utf8');
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
-    'src/web/http/server.mjs',
+    'src/web/http/server.ts',
     '../buildr-web/src/styles.css',
     '../buildr-web/src/main.tsx',
     '../buildr-web/src/App.tsx',

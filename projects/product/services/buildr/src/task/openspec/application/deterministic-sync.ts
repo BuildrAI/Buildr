@@ -5,22 +5,22 @@ import path from 'node:path';
 export const DETERMINISTIC_SYNC_PLAN_SCHEMA = 'buildr.openspec-sync-plan/v1';
 export const DETERMINISTIC_SYNC_RESULT_SCHEMA = 'buildr.openspec-sync-result/v1';
 
-function normalize(value) {
+function normalize(value: any) {
   return String(value).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n*$/, '\n');
 }
 
-function digest(value) {
+function digest(value: any) {
   return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 }
 
-export function deterministicSyncContentDigest(value) {
+export function deterministicSyncContentDigest(value: any) {
   return digest(normalize(value));
 }
 
-export function parseCanonicalSpec(content) {
+export function parseCanonicalSpec(content: any) {
   const source = normalize(content);
   const matches = [...source.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
-  const blocks = [];
+  const blocks: any[] = [];
   const identities = new Map();
   for (let index = 0; index < matches.length; index += 1) {
     const title = matches[index][1].trim();
@@ -33,36 +33,36 @@ export function parseCanonicalSpec(content) {
   return { source, prefix: normalize(source.slice(0, matches[0]?.index ?? source.length)), blocks, identities };
 }
 
-function renderCanonical(document, replacements, removals, additions) {
+function renderCanonical(document: any, replacements: any, removals: any, additions: any) {
   const kept = document.blocks
-    .filter((item) => !removals.has(item.title))
-    .map((item) => replacements.get(item.title) || item.block);
-  return normalize([document.prefix.trimEnd(), ...kept.map((item) => item.trimEnd()), ...additions.map((item) => item.trimEnd())]
+    .filter((item: any) => !removals.has(item.title))
+    .map((item: any) => replacements.get(item.title) || item.block);
+  return normalize([document.prefix.trimEnd(), ...kept.map((item: any) => item.trimEnd()), ...additions.map((item: any) => item.trimEnd())]
     .filter(Boolean).join('\n\n'));
 }
 
-function scenarioIdentities(block) {
-  const names = [...normalize(block).matchAll(/^#### Scenario:\s*(.+?)\s*$/gm)].map((match) => match[1].trim());
+function scenarioIdentities(block: any) {
+  const names = [...normalize(block).matchAll(/^#### Scenario:\s*(.+?)\s*$/gm)].map((match: any) => match[1].trim());
   return { names, unique: new Set(names).size === names.length };
 }
 
-export function deterministicSyncPlanIdentity(plan) {
+export function deterministicSyncPlanIdentity(plan: any) {
   return digest(JSON.stringify({ change: plan.change, project: plan.project, deltaHash: plan.deltaHash, files: plan.files, operations: plan.operations }));
 }
 
-export function reverseDeterministicSyncPlan(plan) {
+export function reverseDeterministicSyncPlan(plan: any) {
   if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== deterministicSyncPlanIdentity(plan)) {
     throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
   }
-  const reversed = {
+  const reversed: any = {
     schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA,
     change: plan.change,
     project: plan.project,
     deltaHash: plan.deltaHash,
     status: 'safe',
-    operations: (plan.operations || []).map((item) => ({ ...item, recovery: 'restore-before' })),
+    operations: (plan.operations || []).map((item: any) => ({ ...item, recovery: 'restore-before' })),
     blocked: [],
-    files: (plan.files || []).map((item) => ({
+    files: (plan.files || []).map((item: any) => ({
       path: item.path,
       beforeDigest: item.expectedDigest,
       expectedDigest: item.beforeDigest,
@@ -74,12 +74,12 @@ export function reverseDeterministicSyncPlan(plan) {
   return reversed;
 }
 
-export function createDeterministicSyncPlan({ change, project, projectRoot, delta, baseline, capabilityPurposes = new Map() }) {
+export function createDeterministicSyncPlan({ change, project, projectRoot, delta, baseline, capabilityPurposes = new Map() }: any) {
   const grouped = new Map();
   for (const operation of delta.operations) grouped.set(operation.capability, [...(grouped.get(operation.capability) || []), operation]);
-  const operations = [];
-  const files = [];
-  const blocked = [];
+  const operations: any[] = [];
+  const files: any[] = [];
+  const blocked: any[] = [];
 
   for (const [capability, capabilityOperations] of grouped) {
     const file = path.join(projectRoot, 'openspec', 'specs', capability, 'spec.md');
@@ -89,8 +89,8 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
     const document = parseCanonicalSpec(before);
     const replacements = new Map();
     const removals = new Set();
-    const additions = [];
-    const baselineTargets = new Map((baseline.targets || []).filter((item) => item.capability === capability).map((item) => [item.title, item]));
+    const additions: any[] = [];
+    const baselineTargets = new Map<string, any>((baseline.targets || []).filter((item: any) => item.capability === capability).map((item: any) => [item.title, item]));
 
     if (!exists && (!purpose || purpose.length < 50)) blocked.push({ capability, requirement: null, operation: 'CREATE_CAPABILITY', code: 'semantic-resolution-required' });
 
@@ -99,7 +99,7 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
       const copies = document.identities.get(title) || [];
       let status = 'safe';
       let reason = 'unique-structural-result';
-      const fail = (code, details = {}) => { status = 'blocked'; reason = code; blocked.push({ capability, requirement: title, operation: operation.type, code, ...details }); };
+      const fail = (code: any, details: any = {}) => { status = 'blocked'; reason = code; blocked.push({ capability, requirement: title, operation: operation.type, code, ...details }); };
       if (copies.length > 1) fail('semantic-resolution-required');
       else if (operation.type === 'ADDED') {
         if (copies.length === 0) additions.push(operation.requirement);
@@ -109,12 +109,12 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
         const target = baselineTargets.get(operation.title);
         const baselineScenarios = scenarioIdentities(target?.content || '');
         const deltaScenarios = scenarioIdentities(operation.requirement);
-        const omitted = baselineScenarios.names.filter((name) => !deltaScenarios.names.includes(name));
+        const omitted = baselineScenarios.names.filter((name: any) => !deltaScenarios.names.includes(name));
         if (!target || target.state !== 'present' || copies[0] !== target.content) fail('baseline-or-canonical-drift');
         else if (!baselineScenarios.unique || !deltaScenarios.unique) fail('semantic-resolution-required');
         else if (omitted.length) fail('semantic-resolution-required', {
           reason: 'scenario-identities-omitted',
-          omittedScenarioIdentities: [...omitted].sort((left, right) => left.localeCompare(right)),
+          omittedScenarioIdentities: [...omitted].sort((left: any, right: any) => left.localeCompare(right)),
         });
         else if (copies[0] === normalize(operation.requirement)) { status = 'already-applied'; reason = 'canonical-equals-delta'; }
         else replacements.set(operation.title, normalize(operation.requirement));
@@ -134,15 +134,15 @@ export function createDeterministicSyncPlan({ change, project, projectRoot, delt
     const after = renderCanonical(document, replacements, removals, additions);
     files.push({ path: path.relative(projectRoot, file).split(path.sep).join('/'), beforeDigest: digest(before), expectedDigest: digest(after), before, expected: after });
   }
-  const plan = { schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA, change, project, deltaHash: delta.hash, status: blocked.length ? 'blocked' : operations.every((item) => item.status === 'already-applied') ? 'already-applied' : 'safe', operations, blocked, files };
+  const plan: any = { schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA, change, project, deltaHash: delta.hash, status: blocked.length ? 'blocked' : operations.every((item: any) => item.status === 'already-applied') ? 'already-applied' : 'safe', operations, blocked, files };
   plan.identity = deterministicSyncPlanIdentity(plan);
   return plan;
 }
 
-export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity = plan.identity, io = fs, validateExpected = null }) {
+export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity = plan.identity, io = fs, validateExpected = null }: any) {
   if (plan.schemaVersion !== DETERMINISTIC_SYNC_PLAN_SCHEMA || plan.identity !== expectedIdentity || deterministicSyncPlanIdentity(plan) !== plan.identity) throw new Error('OpenSpec deterministic sync receipt is stale or invalid.');
   if (plan.status === 'blocked') return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'blocked', identity: plan.identity, effects: [], blocked: plan.blocked };
-  const prepared = [];
+  const prepared: any[] = [];
   for (const item of plan.files) {
     const file = path.resolve(projectRoot, item.path);
     if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`)) throw new Error('OpenSpec sync target escapes Project root.');
@@ -154,11 +154,11 @@ export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity
   // Prepare every temporary file before the first canonical rename. A failed
   // preparation therefore has batch-zero effects. Rename failures are rolled
   // back from the receipt-bound before images.
-  const temporaries = [];
-  const committed = [];
-  let validationEvidence = null;
+  const temporaries: any[] = [];
+  const committed: any[] = [];
+  let validationEvidence: any = null;
   try {
-    for (const item of prepared.filter((entry) => entry.changed)) {
+    for (const item of prepared.filter((entry: any) => entry.changed)) {
       io.mkdirSync(path.dirname(item.file), { recursive: true });
       const temporary = `${item.file}.buildr-sync-${process.pid}-${temporaries.length}`;
       io.writeFileSync(temporary, item.content);
@@ -168,7 +168,7 @@ export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity
     const validation = validateExpected?.({
       projectRoot,
       plan,
-      files: prepared.map((item) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), content: item.content, digest: digest(item.content) })),
+      files: prepared.map((item: any) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), content: item.content, digest: digest(item.content) })),
     }) || null;
     validationEvidence = validation;
     if (validation && validation.status !== 'passed') {
@@ -176,10 +176,10 @@ export function applyDeterministicSyncPlan({ projectRoot, plan, expectedIdentity
       return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'blocked', identity: plan.identity, effects: [], blocked: [{ operation: 'VALIDATE_EXPECTED', code: 'expected-tree-invalid' }], validation };
     }
     for (const item of temporaries) { io.renameSync(item.temporary, item.file); committed.push(item); }
-  } catch (error) {
+  } catch (error: any) {
     for (const item of temporaries) if (io.existsSync(item.temporary)) io.rmSync(item.temporary, { force: true });
-    for (const item of committed.reverse()) io.writeFileSync(item.file, plan.files.find((entry) => path.resolve(projectRoot, entry.path) === item.file).before);
+    for (const item of committed.reverse()) io.writeFileSync(item.file, plan.files.find((entry: any) => path.resolve(projectRoot, entry.path) === item.file).before);
     throw error;
   }
-  return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'passed', identity: plan.identity, effects: prepared.filter((item) => item.changed).map((item) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), digest: digest(item.content) })), validation: validationEvidence };
+  return { schemaVersion: DETERMINISTIC_SYNC_RESULT_SCHEMA, status: 'passed', identity: plan.identity, effects: prepared.filter((item: any) => item.changed).map((item: any) => ({ path: path.relative(projectRoot, item.file).split(path.sep).join('/'), digest: digest(item.content) })), validation: validationEvidence };
 }

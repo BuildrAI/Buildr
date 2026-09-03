@@ -1,34 +1,34 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
-import { createOwnedDescendantTracker, terminateOwnedProcess } from './owned-process.mjs';
-import { resolveVerificationCommandTimeout } from '../domain/verification-deadline.mjs';
+import { createOwnedDescendantTracker, terminateOwnedProcess } from './owned-process.ts';
+import { resolveVerificationCommandTimeout } from '../domain/verification-deadline.ts';
 
 const OUTPUT_LIMIT = 256 * 1024;
 const EXIT_CLOSE_GRACE_MS = 10_000;
 
-function appendBounded(current, chunk) {
+function appendBounded(current: any, chunk: any) {
   const value = `${current}${chunk}`;
   if (value.length <= OUTPUT_LIMIT) return value;
   const half = Math.floor(OUTPUT_LIMIT / 2);
   return `${value.slice(0, half)}\n...[truncated ${value.length - OUTPUT_LIMIT} bytes]...\n${value.slice(-half)}`;
 }
 
-export function executeVerificationCommand(step, options = {}) {
+export function executeVerificationCommand(step: any, options: any = {}) {
   const [command, ...args] = step.command.argv;
   const timeoutMs = resolveVerificationCommandTimeout(step.command.timeoutMs);
   const started = Date.now();
-  return new Promise((resolve) => {
-    let child;
-    let tracker;
+  return new Promise((resolve: any) => {
+    let child: any;
+    let tracker: any;
     let stdout = '';
     let stderr = '';
     let settled = false;
     let terminating = false;
-    let exitResult = null;
-    let timeout = null;
-    let closeTimeout = null;
+    let exitResult: any = null;
+    let timeout: any = null;
+    let closeTimeout: any = null;
 
-    const finish = (status, exitCode, signal = null, failureCode = null, processCleanup = null) => {
+    const finish = (status: any, exitCode: any, signal: any = null, failureCode: any = null, processCleanup: any = null) => {
       if (settled) return;
       settled = true;
       if (timeout) clearTimeout(timeout);
@@ -59,7 +59,7 @@ export function executeVerificationCommand(step, options = {}) {
       });
     };
 
-    const terminate = async (status, failureCode, message) => {
+    const terminate = async (status: any, failureCode: any, message: any) => {
       if (settled || terminating) return;
       terminating = true;
       stderr = appendBounded(stderr, `${message}\n`);
@@ -76,19 +76,19 @@ export function executeVerificationCommand(step, options = {}) {
       });
       tracker = createOwnedDescendantTracker(child.pid, { intervalMs: 50 });
       options.onSpawn?.({ pid: child.pid, processGroupId: process.platform === 'win32' ? null : child.pid });
-    } catch (error) {
+    } catch (error: any) {
       finish('failed', 1, null, 'spawn-failed', { status: 'failed', ownership: 'unavailable', error: error.message });
       return;
     }
-    child.stdout.on('data', (chunk) => { stdout = appendBounded(stdout, chunk.toString()); });
-    child.stderr.on('data', (chunk) => { stderr = appendBounded(stderr, chunk.toString()); });
-    child.on('error', (error) => finish('failed', 1, null, 'spawn-failed', { status: 'failed', ownership: 'runner-owned', error: error.message }));
-    child.on('exit', (code, signal) => {
+    child.stdout.on('data', (chunk: any) => { stdout = appendBounded(stdout, chunk.toString()); });
+    child.stderr.on('data', (chunk: any) => { stderr = appendBounded(stderr, chunk.toString()); });
+    child.on('error', (error: any) => finish('failed', 1, null, 'spawn-failed', { status: 'failed', ownership: 'runner-owned', error: error.message }));
+    child.on('exit', (code: any, signal: any) => {
       exitResult = { code, signal };
       closeTimeout = setTimeout(() => finish('failed', 1, signal, 'process-close-timeout', { status: 'failed', ownership: 'runner-owned', reason: 'stdio-close-timeout' }), EXIT_CLOSE_GRACE_MS);
       closeTimeout.unref?.();
     });
-    child.on('close', async (code, signal) => {
+    child.on('close', async (code: any, signal: any) => {
       if (terminating || settled) return;
       const processCleanup = await cleanup();
       const finalCode = Number.isInteger(code) ? code : exitResult?.code ?? 1;

@@ -74,7 +74,7 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
 test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒绝 filesystem path 字段语义', () => {
   const client = read('../buildr-web/src/api/client.ts');
   const adapter = read('../buildr-web/src/api/LocalSessionAdapter.ts');
-  const session = read('src/web/http/session.mjs');
+  const session = read('src/web/http/session.ts');
   assert.match(adapter, /x-buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
   assert.match(client, /sessionAdapter\.writeHeaders/);
@@ -111,7 +111,7 @@ test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 art
 test('Change 仅作为 Task-scoped 只读内容', () => {
   const change = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
   const app = read('../buildr-web/src/App.tsx');
-  const server = read('src/web/http/server.mjs');
+  const server = read('src/web/http/server.ts');
   assert.match(change, /\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/changes/);
   assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
   assert.doesNotMatch(app, /path=["']\/changes["']/);
@@ -122,8 +122,8 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const app = read('../buildr-web/src/App.tsx');
   const layout = read('../buildr-web/src/app/AppLayout.tsx');
   const index = read('../buildr-web/index.html');
-  const server = read('src/web/http/server.mjs');
-  const staticFiles = read('src/web/http/static-files.mjs');
+  const server = read('src/web/http/server.ts');
+  const staticFiles = read('src/web/http/static-files.ts');
   const publicationHttp = read('src/system/publication/interfaces/http/publication-http.mjs');
   const detail = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
   const publications = read('../buildr-web/src/pages/ArticlesPage.tsx');
@@ -190,9 +190,9 @@ test('任务详情只使用概览、原型、证据三个一级视图，复盘�
 test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
   const source = read('../buildr-web/src/pages/TaskDetailPage.tsx');
   const prototype = read('../buildr-web/src/pages/task-detail/PrototypeTab.tsx');
-  const server = read('src/web/http/server.mjs');
-  const responses = read('src/web/http/responses.mjs');
-  const changeHttp = read('src/task/change/interfaces/http/change-http.mjs');
+  const server = read('src/web/http/server.ts');
+  const responses = read('src/web/http/responses.ts');
+  const changeHttp = read('src/task/change/interfaces/http/change-http.ts');
   const styles = read('../buildr-web/src/styles.css');
   assert.match(source, /if \(tab === 'prototype'\) void refreshPrototype\(\)/);
   assert.match(source, /\/ui-prototypes`, \{ signal \}\)/);
@@ -303,7 +303,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const taskReadLifecycle = read('../buildr-web/src/api/taskReadLifecycle.ts');
   const tasks = read('../buildr-web/src/pages/TasksPage.tsx');
   const taskDto = read('../buildr-web/src/api/generated/task-record-http-dto.ts');
-  const server = read('src/web/http/server.mjs');
+  const server = read('src/web/http/server.ts');
   assert.match(tasks, /new AbortController\(\)/);
   assert.match(tasks, /matchesTaskQuery/);
   assert.match(tasks, /hasChildren/);

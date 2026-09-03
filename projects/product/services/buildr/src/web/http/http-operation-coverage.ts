@@ -14,8 +14,8 @@ export const DEFERRED_HTTP_OPERATIONS = Object.freeze([
   Object.freeze({ id: 'task.change-and-ui-prototypes', owner: 'task-change', disposition: 'deferred', reason: 'Change detail and sandboxed UI prototype responses retain their dedicated authority.' }),
 ]);
 
-export function ownedHttpOperations(owner, operations) {
-  return operations.map((operation) => Object.freeze({
+export function ownedHttpOperations(owner: any, operations: any) {
+  return operations.map((operation: any) => Object.freeze({
     owner,
     disposition: operation.responseKind === 'binary' ? 'migrated-binary' : 'migrated-json',
     responseKind: operation.responseKind || 'json',
@@ -23,10 +23,10 @@ export function ownedHttpOperations(owner, operations) {
   }));
 }
 
-export function inspectHttpOperationCoverage(operationGroups, dispositions = [...DEFERRED_HTTP_OPERATIONS, ...NON_HTTP_SYSTEM_DISPOSITIONS]) {
+export function inspectHttpOperationCoverage(operationGroups: any, dispositions: any = [...DEFERRED_HTTP_OPERATIONS, ...NON_HTTP_SYSTEM_DISPOSITIONS]) {
   const entries = [...operationGroups.flat(), ...dispositions];
   const counts = new Map();
-  const invalid = [];
+  const invalid: any[] = [];
   for (const entry of entries) {
     counts.set(entry.id, (counts.get(entry.id) || 0) + 1);
     if (!entry.id || !entry.owner || !ALLOWED.has(entry.disposition)) invalid.push(entry.id || '<missing>');
@@ -34,13 +34,13 @@ export function inspectHttpOperationCoverage(operationGroups, dispositions = [..
     if (entry.disposition === 'migrated-json' && (!entry.requestSchemaId || !entry.successSchemaId || !entry.errorSchemaId)) invalid.push(entry.id);
     if (entry.disposition === 'migrated-binary' && (!entry.requestSchemaId || entry.successSchemaId !== null || !entry.errorSchemaId)) invalid.push(entry.id);
   }
-  const duplicates = [...counts].filter(([, count]) => count !== 1).map(([id]) => id).sort();
+  const duplicates = [...counts].filter(([, count]: any) => count !== 1).map(([id]: any) => id).sort();
   const blockers = [...new Set([...invalid, ...duplicates])].sort();
   return Object.freeze({
     schemaVersion: 'buildr.http-operation-coverage/v1',
     status: blockers.length ? 'blocked' : 'aligned',
     operationCount: counts.size,
-    dispositions: Object.freeze(Object.fromEntries([...ALLOWED].map((item) => [item, entries.filter((entry) => entry.disposition === item).map((entry) => entry.id).sort()]))),
+    dispositions: Object.freeze(Object.fromEntries([...ALLOWED].map((item: any) => [item, entries.filter((entry: any) => entry.disposition === item).map((entry: any) => entry.id).sort()]))),
     blockers: Object.freeze(blockers),
     runtimeBlocking: false,
   });

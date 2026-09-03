@@ -25,7 +25,7 @@ import { registerInfrastructure } from '../infrastructure/index.mjs';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.mjs';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.mjs';
 import { createPublicationModule } from '../system/publication/module.mjs';
-import { createOpenSpecModule } from '../task/openspec/module.mjs';
+import { createOpenSpecModule } from '../task/openspec/module.ts';
 import { createChangeModule } from '../task/change/module.ts';
 import { VERIFICATION_DECLARATION, createVerificationModule } from '../verification/module.ts';
 import * as webProfileContract from '../system/installation/contracts/web-profile.mjs';

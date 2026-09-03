@@ -89,9 +89,9 @@ const requiredRuntime = [
   'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
   'task/interfaces/cli/task-verification.ts',
   'task/interfaces/cli/git-worktree.ts',
-  'web/http/server.mjs', 'web/http/router.mjs', 'web/http/session.mjs', 'web/http/static-files.mjs', 'web/http/responses.mjs', 'web/module.ts',
+  'web/http/server.ts', 'web/http/router.ts', 'web/http/session.ts', 'web/http/static-files.ts', 'web/http/responses.ts', 'web/module.ts',
   'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
-  'web/infrastructure/instance-runtime.mjs',
+  'web/infrastructure/instance-runtime.ts',
   'web/interfaces/cli/web.ts',
   'system/doctor/module.mjs', 'system/doctor/application/diagnostics.mjs', 'agent-assets/application/package-maintenance.mjs',
   'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.mjs',
@@ -117,8 +117,8 @@ const requiredRuntime = [
   'task/interfaces/http/task-lifecycle-core.ts',
   'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
   'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
-  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.mjs',
-  'task/openspec/module.mjs', 'task/change/module.ts', 'task/change/application/change-application.ts',
+  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.ts',
+  'task/openspec/module.ts', 'task/change/module.ts', 'task/change/application/change-application.ts',
   'system/publication/module.mjs', 'system/publication/application/publication-application.mjs',
   'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.ts',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
@@ -171,15 +171,15 @@ const allowedTargets = {
 };
 const allowedCrossModulePorts = new Set([
   'agent-assets/module.mjs -> workspace/module.mjs',
-  'web/infrastructure/instance-runtime.mjs -> system/installation/module.mjs',
+  'web/infrastructure/instance-runtime.ts -> system/installation/module.mjs',
   'web/module.ts -> system/installation/module.mjs',
   'web/module.ts -> workspace/module.mjs',
-  'bootstrap/cli/registry.mjs -> task/openspec/module.mjs',
+  'bootstrap/cli/registry.mjs -> task/openspec/module.ts',
   'bootstrap/runtime.mjs -> system/publication/module.mjs',
-  'bootstrap/runtime.mjs -> task/openspec/module.mjs',
+  'bootstrap/runtime.mjs -> task/openspec/module.ts',
   'bootstrap/runtime.mjs -> task/change/module.ts',
-  'task/openspec/module.mjs -> workspace/module.mjs',
-  'task/change/module.ts -> task/openspec/module.mjs',
+  'task/openspec/module.ts -> workspace/module.mjs',
+  'task/change/module.ts -> task/openspec/module.ts',
   'task/change/module.ts -> workspace/module.mjs',
   'system/publication/module.mjs -> workspace/module.mjs',
 ]);
@@ -234,7 +234,7 @@ for (const file of graph.keys()) visitCycle(file);
 
 const bootstrapRuntimeConsumers = new Set([
   'bootstrap/cli/registry.mjs',
-  'web/http/read-worker.mjs',
+  'web/http/read-worker.ts',
 ]);
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');

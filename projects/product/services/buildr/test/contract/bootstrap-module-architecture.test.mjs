@@ -54,10 +54,10 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.doesNotMatch(cliHost, /task\/interfaces\/(?:cli|http)/);
   assert.match(cliHost, /runtimeContributions\(runtime, 'cli'\)/);
 
-  const httpHost = read('src/web/http/server.mjs');
+  const httpHost = read('src/web/http/server.ts');
   assert.doesNotMatch(httpHost, /task\/interfaces\/(?:cli|http)|task-(?:record|review|retrospective)-http|taskRetrospectiveMatch/);
   assert.match(httpHost, /createLocalWorkspaceRequestRouter/);
-  const httpRouter = read('src/web/http/router.mjs');
+  const httpRouter = read('src/web/http/router.ts');
   assert.doesNotMatch(httpRouter, /task\/interfaces\/(?:cli|http)|task-(?:record|review|retrospective)-http|taskRetrospectiveMatch/);
   assert.match(httpRouter, /for \(const contribution of httpContributions\)/);
   assert.match(httpRouter, /contribution\.handle\(/);
@@ -393,6 +393,6 @@ test('Task 生命周期核心只保留模块内扁平技术层', () => {
 
   assert.equal(fs.existsSync(path.join(root, 'src/task/interfaces/http/task-lifecycle-core.ts')), true);
 
-  const host = read('src/web/http/server.mjs');
+  const host = read('src/web/http/server.ts');
   assert.doesNotMatch(host, /recordParentPlan|reconcileParentPlan|readTaskEnvironmentCurrent|taskDevelopmentMatch|taskVerificationMatch/);
 });

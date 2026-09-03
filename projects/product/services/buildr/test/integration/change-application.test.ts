@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { registerChangeApplication } from '../../src/task/change/application/change-application.ts';
-import { inspectChangeChecklist } from '../../src/task/openspec/application/change-checklist.mjs';
+import { inspectChangeChecklist } from '../../src/task/openspec/application/change-checklist.ts';
 
 type Project = { id: string; code: string; name: string; source: { type: string; path: string } };
 type ChangeSummary = {

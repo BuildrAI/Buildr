@@ -20,7 +20,7 @@ import {
   waitForBuildrWebInstanceExit,
   writeBuildrWebInstance,
   readLauncherIdentityFromEnvironment,
-} from '../infrastructure/instance-runtime.mjs';
+} from '../infrastructure/instance-runtime.ts';
 import {
   listPreviews,
   readPreviewIdentityFromEnvironment,

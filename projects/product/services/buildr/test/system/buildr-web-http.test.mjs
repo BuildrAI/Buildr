@@ -4,7 +4,7 @@ import process from 'node:process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';
 

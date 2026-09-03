@@ -26,12 +26,12 @@ import {
   uninstallNpmLauncher,
 } from '../../src/system/installation/infrastructure/npm-launcher.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import {
   clearBuildrWebInstance,
   writeBuildrWebInstance,
-} from '../../src/web/infrastructure/instance-runtime.mjs';
+} from '../../src/web/infrastructure/instance-runtime.ts';
 import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
 
 const SOURCE_COMMIT = 'd4361952d7111f131b5923fedcf4b58077719eb6';

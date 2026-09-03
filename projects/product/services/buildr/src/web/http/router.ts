@@ -1,26 +1,26 @@
 import process from 'node:process';
 
-import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.mjs';
-import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse } from './responses.mjs';
-import { assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.mjs';
-import { injectedIndexHtml, serveDistAsset } from './static-files.mjs';
+import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
+import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse } from './responses.ts';
+import { assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.ts';
+import { injectedIndexHtml, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
   BUILDR_WEB_HTTP_SCHEMAS,
   buildrWebOperation,
   validateBuildrWebHttp,
-} from './buildr-web-http-contracts.mjs';
+} from './buildr-web-http-contracts.ts';
 
 const WORKSPACE_ID = '[0-9a-fA-F-]{36}';
 
-function workspaceApiMatch(pathname) {
+function workspaceApiMatch(pathname: any) {
   return pathname.match(new RegExp(`^/api/v1/workspaces/(${WORKSPACE_ID})(/.*)?$`));
 }
 
-function contributionRespond(response) {
+function contributionRespond(response: any) {
   return Object.freeze({
-    binary: (content, contentType) => binaryResponse(response, 200, content, contentType),
-    uiPrototypeHtml: (content) => uiPrototypeHtmlResponse(response, content),
+    binary: (content: any, contentType: any) => binaryResponse(response, 200, content, contentType),
+    uiPrototypeHtml: (content: any) => uiPrototypeHtmlResponse(response, content),
   });
 }
 
@@ -39,11 +39,11 @@ export function createLocalWorkspaceRequestRouter({
   shutdown,
   submitTaskRead,
   staticRoot,
-}) {
-  const validateRequest = (id, value) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
+}: any) {
+  const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/settings|/articles(?:/${taskIdPattern})?|/tasks(?:/${taskIdPattern}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?/?$`);
 
-  return async function routeLocalWorkspaceRequest(request, response) {
+  return async function routeLocalWorkspaceRequest(request: any, response: any) {
     const requestUrl = new URL(request.url || '/', origin() || 'http://127.0.0.1');
     const pathname = requestUrl.pathname;
     if (isClosing() && pathname !== '/api/v1/health') {
@@ -106,7 +106,7 @@ export function createLocalWorkspaceRequestRouter({
     const apiMatch = workspaceApiMatch(pathname);
     if (apiMatch) {
       if (requestUrl.searchParams.has('target') || requestUrl.searchParams.has('path') || requestUrl.searchParams.has('root')) {
-        const error = new Error('Workspace API 只接受已登记 workspaceId，不接受 filesystem path。');
+        const error: Error & Record<string, any> = new Error('Workspace API 只接受已登记 workspaceId，不接受 filesystem path。');
         error.code = 'target_forbidden';
         error.status = 400;
         throw error;
@@ -123,16 +123,16 @@ export function createLocalWorkspaceRequestRouter({
           searchParams: requestUrl.searchParams,
           root,
           authorizeWrite: () => assertWriteRequest(request, origin(), sessionToken),
-          readBody: (allowed, label) => readAllowedJsonBody(request, allowed, label),
+          readBody: (allowed: any, label: any) => readAllowedJsonBody(request, allowed, label),
           readJsonBody: () => readJsonBody(request),
-          submitTaskRead: (operation, taskId, input = {}) => submitTaskRead(request, response, operation, root, taskId, input),
+          submitTaskRead: (operation: any, taskId: any, input: any = {}) => submitTaskRead(request, response, operation, root, taskId, input),
           respond: contributionRespond(response),
         });
         if (contributedResponse === true) return;
         if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
       }
       if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
-        const error = new Error('Task API 不接受 query 参数。');
+        const error: Error & Record<string, any> = new Error('Task API 不接受 query 参数。');
         error.code = 'task_api_query_forbidden';
         error.status = 400;
         throw error;

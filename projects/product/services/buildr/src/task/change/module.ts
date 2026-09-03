@@ -1,6 +1,6 @@
 import { registerChangeApplication, type ChangeRuntime, type OpenSpecQuery, type ProjectQuery, type WorktreeQuery } from './application/change-application.ts';
-import { createChangeHttpContribution } from './interfaces/http/change-http.mjs';
-import { OPENSPEC_QUERY } from '../openspec/module.mjs';
+import { createChangeHttpContribution } from './interfaces/http/change-http.ts';
+import { OPENSPEC_QUERY } from '../openspec/module.ts';
 import { PROJECT_APPLICATION } from '../../workspace/module.mjs';
 import { TASK_WORKTREE_PROVIDER } from '../infrastructure/git-worktree-provider.ts';
 

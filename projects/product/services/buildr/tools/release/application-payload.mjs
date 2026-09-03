@@ -19,7 +19,7 @@ import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const MAIN_ENTRY = path.join(serviceRoot, 'tools/release/application-payload-entry.mjs');
-const WORKER_ENTRY = path.join(serviceRoot, 'src/web/http/read-worker.mjs');
+const WORKER_ENTRY = path.join(serviceRoot, 'src/web/http/read-worker.ts');
 const RESOURCE_SOURCES = Object.freeze([
   ['resources', 'product/resources', { exclude: new Set(['installation']) }],
   ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],

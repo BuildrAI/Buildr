@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import process from 'node:process';
-import { executeVerificationCommand } from '../../src/verification/infrastructure/process-executor.mjs';
+import { executeVerificationCommand } from '../../src/verification/infrastructure/process-executor.ts';
 
 test('formal command executor returns passed with clean owned cleanup', async () => {
   const result = await executeVerificationCommand({ name: 'process-success', command: { argv: [process.execPath, '-e', 'process.stdout.write("ok")'], timeoutMs: 1_000 } });

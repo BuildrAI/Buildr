@@ -1,4 +1,4 @@
-export function jsonResponse(response, status, value) {
+export function jsonResponse(response: any, status: any, value: any) {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
@@ -7,7 +7,7 @@ export function jsonResponse(response, status, value) {
   response.end(`${JSON.stringify(value)}\n`);
 }
 
-export function textResponse(response, status, content, contentType) {
+export function textResponse(response: any, status: any, content: any, contentType: any) {
   response.writeHead(status, {
     'content-type': contentType,
     'cache-control': 'no-store',
@@ -21,7 +21,7 @@ export function textResponse(response, status, content, contentType) {
   response.end(content);
 }
 
-export function binaryResponse(response, status, content, contentType) {
+export function binaryResponse(response: any, status: any, content: any, contentType: any) {
   response.writeHead(status, {
     'content-type': contentType,
     'cache-control': 'no-store',
@@ -30,7 +30,7 @@ export function binaryResponse(response, status, content, contentType) {
   response.end(content);
 }
 
-export function uiPrototypeHtmlResponse(response, content) {
+export function uiPrototypeHtmlResponse(response: any, content: any) {
   response.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
@@ -41,7 +41,7 @@ export function uiPrototypeHtmlResponse(response, content) {
   response.end(content);
 }
 
-export function apiError(response, error) {
+export function apiError(response: any, error: any) {
   if (response.destroyed || response.writableEnded) return;
   const status = Number.isInteger(error.status) ? error.status : 500;
   jsonResponse(response, status, {

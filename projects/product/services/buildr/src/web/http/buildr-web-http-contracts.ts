@@ -3,11 +3,11 @@ import { compileJsonSchemaCatalog } from '../../infrastructure/contracts/json-sc
 const DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT = 'https://schemas.buildr.ai/http/local-app';
 const text = { type: 'string', minLength: 1 };
-const nullable = (value) => ({ anyOf: [value, { type: 'null' }] });
-const closed = (properties, required = []) => ({ type: 'object', additionalProperties: false, properties, ...(required.length ? { required } : {}) });
-const schema = (id, title, body) => Object.freeze({ $schema: DRAFT, $id: `${ROOT}/${id}/v1`, title, ...body });
+const nullable = (value: any) => ({ anyOf: [value, { type: 'null' }] });
+const closed = (properties: any, required: any = []) => ({ type: 'object', additionalProperties: false, properties, ...(required.length ? { required } : {}) });
+const schema = (id: any, title: any, body: any) => Object.freeze({ $schema: DRAFT, $id: `${ROOT}/${id}/v1`, title, ...body });
 
-export const BUILDR_WEB_HTTP_SCHEMAS = Object.freeze({
+export const BUILDR_WEB_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
   emptyRequest: schema('empty/request', 'BuildrWebEmptyRequest', closed({})),
   quitRequest: schema('quit/request', 'BuildrWebQuitRequest', closed({})),
   healthResponse: schema('health/response', 'BuildrWebHealthResponse', closed({
@@ -25,7 +25,7 @@ export const BUILDR_WEB_HTTP_SCHEMAS = Object.freeze({
   }, ['error'])),
 });
 
-const jsonOperation = (id, method, path, request, success) => Object.freeze({
+const jsonOperation = (id: any, method: any, path: any, request: any, success: any) => Object.freeze({
   id, owner: 'web-http', method, path, disposition: 'migrated-json', responseKind: 'json',
   requestSchemaId: BUILDR_WEB_HTTP_SCHEMAS[request].$id,
   successSchemaId: BUILDR_WEB_HTTP_SCHEMAS[success].$id,
@@ -40,20 +40,20 @@ export const BUILDR_WEB_HTTP_OPERATIONS = Object.freeze([
 
 export const BUILDR_WEB_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(BUILDR_WEB_HTTP_SCHEMAS));
 
-export function validateBuildrWebHttp(schemaId, value, operationId) {
+export function validateBuildrWebHttp(schemaId: any, value: any, operationId: any) {
   const result = BUILDR_WEB_HTTP_VALIDATORS.validate(schemaId, value);
   if (result.valid) return value;
-  const item = result.errors.find((entry) => entry.keyword === 'additionalProperties') || result.errors[0] || {};
+  const item = result.errors.find((entry: any) => entry.keyword === 'additionalProperties') || result.errors[0] || {};
   const field = item.params?.additionalProperty || String(item.instancePath || '').split('/').filter(Boolean)[0] || null;
-  const error = new Error(`Buildr Web HTTP 请求不符合契约${field ? `：${field}` : ''}。`);
+  const error: Error & Record<string, any> = new Error(`Buildr Web HTTP 请求不符合契约${field ? `：${field}` : ''}。`);
   error.code = item.keyword === 'additionalProperties' ? 'local_app_http_field_forbidden' : 'local_app_http_request_invalid';
   error.status = 400;
   error.details = { operationId, schemaId, ...(field ? { field } : {}), keyword: item.keyword || 'schema' };
   throw error;
 }
 
-export function buildrWebOperation(id) {
-  const operation = BUILDR_WEB_HTTP_OPERATIONS.find((item) => item.id === id);
+export function buildrWebOperation(id: any) {
+  const operation = BUILDR_WEB_HTTP_OPERATIONS.find((item: any) => item.id === id);
   if (!operation) throw new Error(`Buildr Web HTTP operation 未注册：${id}`);
   return operation;
 }

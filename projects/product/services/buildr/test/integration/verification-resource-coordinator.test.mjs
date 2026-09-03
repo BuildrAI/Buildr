@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createVerificationResourceCoordinator } from '../../src/verification/infrastructure/resource-coordinator.mjs';
+import { createVerificationResourceCoordinator } from '../../src/verification/infrastructure/resource-coordinator.ts';
 import { executePlan, FULL_PLAN_RESOURCE_ID } from '../../test/verification/plan-runner.mjs';
 
 function fixture(context) {

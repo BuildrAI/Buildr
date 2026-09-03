@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { validateProjectedOpenSpecTree } from '../../src/task/openspec/application/projected-validator.mjs';
+import { validateProjectedOpenSpecTree } from '../../src/task/openspec/application/projected-validator.ts';
 
 test('投射验证通过受管文件操作构造并清理临时Project', (t) => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-projected-validator-test-'));

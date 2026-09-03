@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { registerOpenSpecApplication } from '../../src/task/openspec/application/openspec-application.mjs';
+import { registerOpenSpecApplication } from '../../src/task/openspec/application/openspec-application.ts';
 
 function deltaSpec(statement = '系统 MUST 保持可移植 identity。') {
   return `## ADDED Requirements\n\n### Requirement: Portable delta identity\n${statement}\n\n#### Scenario: works\n- **WHEN** delta 被解析\n- **THEN** identity MUST 可用\n`;

@@ -32,8 +32,8 @@ test('runtime resources use payload resolver and SQLite is a static Node builtin
   assert.match(sqlite, /import \{ DatabaseSync \} from 'node:sqlite'/);
   assert.doesNotMatch(sqlite, /await import\('node:sqlite'\)/);
   assert.match(sqlite, /resolveProductResource\('product\/src\/infrastructure\/sqlite\/migrations'\)/);
-  assert.match(read('src/web/http/static-files.mjs'), /resolveProductResource\('product\/web-dist'\)/);
-  assert.match(read('src/web/http/read-executor.mjs'), /resolveProductResource\('runtime\/read-worker\.cjs'/);
+  assert.match(read('src/web/http/static-files.ts'), /resolveProductResource\('product\/web-dist'\)/);
+  assert.match(read('src/web/http/read-executor.ts'), /resolveProductResource\('runtime\/read-worker\.cjs'/);
 });
 
 test('npm pack path consumes frozen payload and admits only Launcher icon resources', () => {

@@ -10,7 +10,7 @@ import { createRuntime } from '../../src/bootstrap/runtime.mjs';
 import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.mjs';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.mjs';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.mjs';
-import { createLocalWorkspaceServer } from '../../src/web/http/server.mjs';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/workspace/module.mjs';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding } from '../../src/system/installation/module.mjs';

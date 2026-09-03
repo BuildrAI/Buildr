@@ -1,9 +1,9 @@
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
-export function createChangeHttpContribution(application) {
+export function createChangeHttpContribution(application: any) {
   return Object.freeze({
     id: 'change.http',
-    handle: ({ request, suffix, root, respond }) => {
+    handle: ({ request, suffix, root, respond }: any) => {
       const detail = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
       if (request.method === 'GET' && detail) {
         application.inspectTaskRecord(root, detail[1]);

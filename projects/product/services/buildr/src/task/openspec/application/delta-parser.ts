@@ -1,8 +1,8 @@
-export function normalizeOpenSpecContractText(content) {
+export function normalizeOpenSpecContractText(content: any) {
   return String(content).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
 }
 
-export function parseOpenSpecRequirementBlocks(content) {
+export function parseOpenSpecRequirementBlocks(content: any) {
   const normalized = normalizeOpenSpecContractText(content);
   const matches = [...normalized.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
   const requirements = new Map();
@@ -16,7 +16,7 @@ export function parseOpenSpecRequirementBlocks(content) {
   return requirements;
 }
 
-export function openSpecSection(content, name) {
+export function openSpecSection(content: any, name: any) {
   const normalized = normalizeOpenSpecContractText(content);
   const header = new RegExp(`^## ${name}\\s*$`, 'm');
   const match = header.exec(normalized);
@@ -27,8 +27,8 @@ export function openSpecSection(content, name) {
   return normalized.slice(match.index + match[0].length, nextMatch ? nextMatch.index : normalized.length);
 }
 
-export function parseOpenSpecDeltaSpec(content, capability) {
-  const operations = [];
+export function parseOpenSpecDeltaSpec(content: any, capability: any) {
+  const operations: any[] = [];
   for (const [section, type] of [['ADDED Requirements', 'ADDED'], ['MODIFIED Requirements', 'MODIFIED'], ['REMOVED Requirements', 'REMOVED']]) {
     const requirements = parseOpenSpecRequirementBlocks(openSpecSection(content, section));
     for (const [title, requirement] of requirements) operations.push({ type, capability, title, requirement });

@@ -28,8 +28,8 @@ for (const entry of packageManifest.files.filter((file) => file === 'src/' || fi
 }
 productionFiles.sort();
 const allowed = new Map([
-  ['src/infrastructure/testing/context-runtime/node-test.mjs', new Set(['defaultNodeTestContextRuntime'])],
-  ['src/infrastructure/testing/context-runtime/node-runner.mjs', new Set(['runHost'])],
+  ['src/infrastructure/testing/context-runtime/node-test.ts', new Set(['defaultNodeTestContextRuntime'])],
+  ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runHost'])],
   ['src/infrastructure/filesystem/index.mjs', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
@@ -38,7 +38,7 @@ const allowed = new Map([
   ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
-  ['src/web/infrastructure/instance-runtime.mjs', new Set([
+  ['src/web/infrastructure/instance-runtime.ts', new Set([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
@@ -50,7 +50,7 @@ const allowed = new Map([
   ['src/task/application/finish/task-finish-bootstrap-recovery.mjs', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/verification/infrastructure/resource-coordinator.mjs', new Set([
+  ['src/verification/infrastructure/resource-coordinator.ts', new Set([
     'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
   ])],
   ['src/verification/application/verification-application.mjs', new Set(['withRetainedControllerPlanArgs'])],

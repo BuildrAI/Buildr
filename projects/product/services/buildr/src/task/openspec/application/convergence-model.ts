@@ -5,22 +5,22 @@ export const CONVERGENCE_PLAN_SCHEMA = 'buildr.openspec-convergence-plan/v1';
 export const CONVERGENCE_RECEIPT_SCHEMA = 'buildr.openspec-convergence-receipt/v3';
 export const CONVERGENCE_RESULT_SCHEMA = 'buildr.openspec-convergence-result/v1';
 
-export function normalizeConvergenceText(value) {
+export function normalizeConvergenceText(value: any) {
   return String(value).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n*$/, '\n');
 }
 
-export function convergenceDigest(value) {
+export function convergenceDigest(value: any) {
   const serialized = typeof value === 'string' ? value : stableJson(value);
   return `sha256-${crypto.createHash('sha256').update(serialized).digest('hex')}`;
 }
 
-export function stableJson(value) {
+export function stableJson(value: any): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key: any) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
 }
 
-export function portableExecutableIdentity({ projectRoot, executable, version, sha256 }) {
+export function portableExecutableIdentity({ projectRoot, executable, version, sha256 }: any) {
   const normalizedRoot = String(projectRoot).replaceAll('\\', '/').replace(/\/$/, '');
   const normalizedExecutable = String(executable).replaceAll('\\', '/');
   const relative = normalizedExecutable.startsWith(`${normalizedRoot}/`) ? normalizedExecutable.slice(normalizedRoot.length + 1) : null;
@@ -32,18 +32,18 @@ export function portableExecutableIdentity({ projectRoot, executable, version, s
   };
 }
 
-export function convergenceIdentity({ change, project, deltaDigest, files, executableIdentity, algorithmVersion = CONVERGENCE_ALGORITHM_VERSION }) {
+export function convergenceIdentity({ change, project, deltaDigest, files, executableIdentity, algorithmVersion = CONVERGENCE_ALGORITHM_VERSION }: any) {
   return convergenceDigest({
     algorithmVersion,
     change,
     project,
     deltaDigest,
     executableIdentity,
-    files: [...files].map(({ path, beforeDigest, beforeExists = true }) => ({ path, beforeDigest, beforeExists })).sort((a, b) => a.path.localeCompare(b.path)),
+    files: [...files].map(({ path, beforeDigest, beforeExists = true }: any) => ({ path, beforeDigest, beforeExists })).sort((a: any, b: any) => a.path.localeCompare(b.path)),
   });
 }
 
-export function convergencePlanIdentity(plan) {
+export function convergencePlanIdentity(plan: any) {
   return convergenceDigest({
     schemaVersion: plan.schemaVersion,
     algorithmVersion: plan.algorithmVersion,
@@ -58,7 +58,7 @@ export function convergencePlanIdentity(plan) {
   });
 }
 
-export function createConvergenceReceipt({ plan, executableIdentity, now = new Date().toISOString() }) {
+export function createConvergenceReceipt({ plan, executableIdentity, now = new Date().toISOString() }: any) {
   if (plan.schemaVersion !== CONVERGENCE_PLAN_SCHEMA || convergencePlanIdentity(plan) !== plan.planIdentity) throw new Error('OpenSpec convergence plan identity is invalid.');
   return {
     schemaVersion: CONVERGENCE_RECEIPT_SCHEMA,
@@ -82,7 +82,7 @@ export function createConvergenceReceipt({ plan, executableIdentity, now = new D
   };
 }
 
-export function validateConvergenceReceipt(receipt) {
+export function validateConvergenceReceipt(receipt: any) {
   if (!receipt || receipt.schemaVersion !== CONVERGENCE_RECEIPT_SCHEMA) throw new Error('Unsupported OpenSpec convergence receipt schema.');
   if (!['planned-not-applied', 'applied-and-matched', 'state-unknown', 'archived'].includes(receipt.disposition)) throw new Error('OpenSpec convergence receipt disposition is invalid.');
   if (receipt.retention !== undefined && receipt.retention !== 'transaction') throw new Error('OpenSpec convergence receipt retention is invalid.');
@@ -94,7 +94,7 @@ export function validateConvergenceReceipt(receipt) {
     change: receipt.change,
     project: receipt.project,
     deltaDigest: receipt.deltaDigest,
-    status: receipt.operations?.every((item) => item.status === 'already-applied') ? 'already-applied' : 'safe',
+    status: receipt.operations?.every((item: any) => item.status === 'already-applied') ? 'already-applied' : 'safe',
     operations: receipt.operations || [],
     blocked: [],
     files: receipt.files,

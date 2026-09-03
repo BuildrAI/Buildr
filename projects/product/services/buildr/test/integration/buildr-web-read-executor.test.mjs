@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.mjs';
+import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.ts';
 
 function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }) {
   let created = 0;
