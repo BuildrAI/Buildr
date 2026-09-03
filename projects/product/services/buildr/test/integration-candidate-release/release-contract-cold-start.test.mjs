@@ -22,7 +22,7 @@ test('release contract runs from a clean checkout before dependencies are instal
     'tools/release/release-files.mjs',
     'tools/release/release-notes.mjs',
     'src/system/installation/domain/release-version.ts',
-    'src/infrastructure/filesystem/filesystem-path-identity.mjs',
+    'src/infrastructure/filesystem/filesystem-path-identity.ts',
   ]) {
     const target = path.join(cleanService, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });

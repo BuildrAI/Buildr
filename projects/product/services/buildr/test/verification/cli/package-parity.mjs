@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
+import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
 import { createCandidatePackage, readSharedCandidatePackage } from '../release/candidate-package.mjs';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');

@@ -5,9 +5,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { atomicWriteJson } from '../../../infrastructure/filesystem/index.mjs';
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
-import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
+import { atomicWriteJson } from '../../../infrastructure/filesystem/index.ts';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
 import {
   createNpmLauncherBinding,
   DEFAULT_NPM_LAUNCHER_WEB_PORT,
@@ -15,7 +15,7 @@ import {
   readAndInspectNpmLauncherBinding,
   validateNpmLauncherBinding,
 } from './launcher-binding.ts';
-import { resolveProductResource } from '../../../infrastructure/product-resources/index.mjs';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 
 function quoteShell(value: any) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;

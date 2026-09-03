@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   applyWorkspaceSqliteMigration,
   loadWorkspaceSqliteMigrations,
-} from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
+} from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 
 function databaseBeforeParentHistory() {
   const database = new DatabaseSync(':memory:');

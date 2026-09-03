@@ -5,8 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 
 const SERVICE_ROOT = path.resolve(import.meta.dirname, '../..');
 

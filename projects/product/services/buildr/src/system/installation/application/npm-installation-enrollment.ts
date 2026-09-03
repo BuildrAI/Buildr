@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
@@ -15,7 +15,7 @@ import {
   resolveApplicationPayloadRoot,
   readApplicationPayloadManifest,
   resolveProductRoot,
-} from '../../../infrastructure/product-resources/index.mjs';
+} from '../../../infrastructure/product-resources/index.ts';
 
 function requiredAbsoluteFile(value: any, label: any) {
   if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`${label} must be an explicit absolute path.`);

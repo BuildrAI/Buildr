@@ -46,9 +46,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/verification/worker-budget.mjs",
       "src/bootstrap/**",
       "src/infrastructure/content/**",
-      "src/infrastructure/final-doctor-process.mjs",
-      "src/infrastructure/git/checkout-identity.mjs",
-      "src/infrastructure/process.mjs",
+      "src/infrastructure/final-doctor-process.ts",
+      "src/infrastructure/git/checkout-identity.ts",
+      "src/infrastructure/process.ts",
       "buildr",
       "tools/development/run-development-cli"
     ],
@@ -174,7 +174,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/task-pre-create-git-capability-graph.test.mjs",
       "test/integration/web-dist-verification.test.mjs",
       "src/bootstrap/**",
-      "src/infrastructure/contracts/json-schema-validator.mjs",
+      "src/infrastructure/contracts/json-schema-validator.ts",
       "src/task/module.ts",
       "src/task/interfaces/http/**",
       "src/agent-assets/infrastructure/runtime/**",
@@ -211,7 +211,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/workspace-management-fence.test.mjs",
       "test/integration/workspace-sqlite.test.mjs",
       "src/workspace/**",
-      "src/infrastructure/index.mjs",
+      "src/infrastructure/index.ts",
       "src/infrastructure/sqlite/**"
     ],
     "inputExclusions": []
@@ -267,9 +267,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "verification.yml",
       "task-finish.yml",
       "src/infrastructure/sqlite/migrations/**",
-      "src/bootstrap/module-registry.mjs",
-      "src/bootstrap/runtime.mjs",
-      "src/bootstrap/cli/registry.mjs",
+      "src/bootstrap/module-registry.ts",
+      "src/bootstrap/runtime.ts",
+      "src/bootstrap/cli/registry.ts",
       "src/task/module.ts",
       "src/web/http/server.ts",
       ".github/workflows/publish.yml",
@@ -400,8 +400,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/service-product.test.mjs",
       "test/system/workspace-manifest-registry.test.mjs",
       "src/workspace/**",
-      "src/infrastructure/platform.mjs",
-      "src/infrastructure/product-layout.mjs",
+      "src/infrastructure/platform.ts",
+      "src/infrastructure/product-layout.ts",
       "test/helpers/prepared-fixtures.mjs",
       "test/helpers/workspace-product-suite.mjs",
       "test/verification/system-suites.mjs",
@@ -505,7 +505,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/buildr-web-launcher.test.mjs",
       "test/system/workspace-app-process.test.mjs",
       "src/web/**",
-      "src/infrastructure/process.mjs",
+      "src/infrastructure/process.ts",
       "package/launchers/**",
       "tools/development/run-isolated-workspace-smoke.mjs",
       "tools/development/workspace-smoke.mjs",
@@ -627,7 +627,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "test/integration/process-infrastructure.test.mjs",
       "test/integration/workspace-sqlite.test.mjs",
-      "src/infrastructure/process.mjs",
+      "src/infrastructure/process.ts",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/sqlite/**",
       "test/verification/host-node.mjs",
@@ -766,7 +766,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/agent-assets/application/skills.ts",
       "src/workspace/**",
       "src/system/doctor/**",
-      "src/bootstrap/cli/help.mjs",
+      "src/bootstrap/cli/help.ts",
       "resources/manifest.yml"
     ],
     "inputExclusions": []
@@ -953,7 +953,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/infrastructure/contracts/public-json.ts",
       "src/task/application/finish/task-finish-result-projection.mjs",
       "src/task/application/finish/task-finish-self-bootstrap-projection.mjs",
-      "src/infrastructure/product-layout.mjs",
+      "src/infrastructure/product-layout.ts",
       "test/verification/cli/package-parity.mjs",
       "package.json",
       "package-lock.json"
@@ -991,7 +991,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/agent-assets/application/package-maintenance/**",
       "src/agent-assets/application/package-maintenance.ts",
       "src/workspace/application/workspace-operations.ts",
-      "src/infrastructure/product-layout.mjs",
+      "src/infrastructure/product-layout.ts",
       "package.json",
       "package-lock.json",
       "test/verification/release/**",
@@ -1092,12 +1092,12 @@ export const VERIFICATION_DELEGATED_INPUTS = Object.freeze([
 
 export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST = Object.freeze([
   {
-    "path": "src/infrastructure/contracts/declaration-intake.mjs",
+    "path": "src/infrastructure/contracts/declaration-intake.ts",
     "owner": "unit",
     "reason": "The trigger is pure declaration selection glue; declaration Application and CLI behavior have separate owners."
   },
   {
-    "path": "src/infrastructure/product-resources/index.mjs",
+    "path": "src/infrastructure/product-resources/index.ts",
     "owner": "application-payload-release",
     "reason": "The resource resolver is exercised directly by the application payload release verifier."
   }

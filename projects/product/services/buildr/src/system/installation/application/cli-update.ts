@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import {
   RELEASE_TRACKS,
@@ -18,7 +18,7 @@ import {
   findRegisteredProductInstallation,
   inspectProductUpdateAuthority,
 } from '../infrastructure/installation-registry.ts';
-import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
+import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 
 function run(command: any, args: any, options: any = {}) {
   const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });

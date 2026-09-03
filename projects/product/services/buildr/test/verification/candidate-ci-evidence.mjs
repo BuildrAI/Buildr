@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
+import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.mjs';
 import {
   CANDIDATE_CI_HOST_NODE_TUPLES,

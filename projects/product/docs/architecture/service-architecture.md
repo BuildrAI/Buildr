@@ -25,8 +25,8 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
-| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；除 Infrastructure/Bootstrap 外的生产业务模块均已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续收敛 Infrastructure/Bootstrap 和工具测试边界；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
-| Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/` 生产源码已全部收敛为 TypeScript | 后续收敛工具、测试和最小兼容入口；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.ts`、`runtime.ts` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
 | Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.ts` 已全部迁移为 TypeScript | Agent Assets、Task Change、Task OpenSpec、System Publication 与 Project Verification 已由各自模块拥有 |
@@ -429,7 +429,7 @@ SQLite migrations 继续作为 Workspace 数据库的一套全局、只追加、
 
 ```text
 task/persistence/task-record-repository.ts
-infrastructure/sqlite/workspace-sqlite.mjs
+infrastructure/sqlite/workspace-sqlite.ts
 infrastructure/sqlite/migrations/NNNN_<change>.sql
 ```
 
@@ -448,20 +448,20 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
       diagnostics.mjs          # CLI 错误和诊断输出
 ```
 
-`bin/buildr.mjs` 启动一个 Node.js 进程并转交 `bootstrap/cli/main.mjs`。Bootstrap 随后完成运行上下文创建、模块导入与注册、CLI 路由注册和请求分发。普通 CLI 命令完成后进程退出；执行 `buildr web` 时，同一个进程继续承载 HTTP Server。
+`bin/buildr.mjs` 启动一个 Node.js 进程并转交 `bootstrap/cli/main.ts`。Bootstrap 随后完成运行上下文创建、模块导入与注册、CLI 路由注册和请求分发。普通 CLI 命令完成后进程退出；执行 `buildr web` 时，同一个进程继续承载 HTTP Server。
 
 `bootstrap/cli/` 统一拥有 CLI 进程入口、公共解析、命令 registry、Help、诊断和分发。Task、Workspace、Agent Assets、Web、System 等模块分别在自身 `interfaces/cli/` 中拥有模块特有的参数、DTO、输出和错误映射，并通过模块公开入口向统一 Host 贡献 command descriptor。所有 CLI Adapter 必须保持薄，真实行为继续由对应模块的 Application 或明确公开能力承担。
 
-当前没有必要创建 `bootstrap/web.mjs`。只有未来出现真正独立的 Electron、Worker 或其他可执行进程时，再增加相应 Bootstrap 入口。
+当前没有必要创建 `bootstrap/web.ts`。只有未来出现真正独立的 Electron、Worker 或其他可执行进程时，再增加相应 Bootstrap 入口。
 
-原 `application/compose-runtime.mjs` 的组装职责已经迁入 `bootstrap/`。当前 `bootstrap/runtime.mjs`、`module-registry.mjs` 与模块公开入口共同完成显式装配；`legacy-runtime-module.mjs` 已删除。保留在组合 Runtime 上的既有进程内调用由模块声明的正式 runtime port 投射，不再携带临时 owner、scope 或退出元数据，也不形成第二 composition root。
+原 `application/compose-runtime.mjs` 的组装职责已经迁入 `bootstrap/`。当前 `bootstrap/runtime.ts`、`module-registry.ts` 与模块公开入口共同完成显式装配；`legacy-runtime-module.mjs` 已删除。保留在组合 Runtime 上的既有进程内调用由模块声明的正式 runtime port 投射，不再携带临时 owner、scope 或退出元数据，也不形成第二 composition root。
 
 ## 模块公开入口与注册
 
 业务模块使用根部 `module.mjs` 或已迁移的 `module.ts` 作为公开注册入口，例如：
 
 ```text
-bootstrap/cli/main.mjs
+bootstrap/cli/main.ts
     ↓ import
 task/module.ts
     ↓ createTaskModule({ taskStore, workspaceReader, clock, ... })
@@ -589,7 +589,7 @@ bin/buildr.mjs
     ↓
 src/bootstrap/cli/main.ts
     ↓
-src/bootstrap/cli/registry.mjs
+src/bootstrap/cli/registry.ts
     ↓
 对应模块 interfaces/cli/<command>.ts 或尚未迁移的 `.mjs`
     ↓
@@ -607,7 +607,7 @@ bin/buildr.mjs
     ↓
 bootstrap/cli/main.ts
     ↓
-bootstrap/cli/registry.mjs
+bootstrap/cli/registry.ts
     ↓
 web/interfaces/cli/web.ts
     ↓
@@ -618,7 +618,7 @@ web/http/server.ts
 
 对应职责为：
 
-- `bootstrap/cli/registry.mjs` 统一发现并分发 Web command descriptor；
+- `bootstrap/cli/registry.ts` 统一发现并分发 Web command descriptor；
 - `web/interfaces/cli/web.ts` 解析 `--target`、`--port`、`--no-open` 等模块特有参数并映射结果；
 - `web/application` 判断复用还是创建 Web 实例，并管理实例生命周期；
 - `web/http` 创建 HTTP Server，拥有 Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管，并只分发模块 HTTP contribution。
@@ -776,7 +776,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 | 能力单元 | 当前 owner 与主要入口 | writer / authority | Verification owner | 处置 | deferred 理由与触发条件 |
 |----------|----------------------|--------------------|--------------------|------|--------------------------|
-| Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.mjs`、`module-registry.mjs`、`bootstrap/cli/` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
+| Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.ts`、`module-registry.ts`、`bootstrap/cli/*.ts` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
 | 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
 | Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与父任务协调（Task Parent Coordination）各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
 | Workspace Control Plane | `src/workspace/**/*.ts`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
@@ -799,7 +799,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 | 原职责 | 最终 owner | Verification owner | 处置 |
 |--------|------------|--------------------|------|
-| Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
+| Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.ts` | declaration-intake unit、Project测试地图integration | `migrated` |
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.ts` | public-json-contracts system、architecture verification | `migrated` |
 | 旧 internal workflow route inventory/router | 已删除且不提供替代聚合层 | Task lifecycle contract、architecture verification | `migrated`（已删除） |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.ts` | Git Worktree contract、CLI architecture | `migrated` |

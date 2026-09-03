@@ -1,5 +1,5 @@
 import { defineTestContext } from '../../../test-context.mjs';
-import { createRuntime } from '../../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../../src/bootstrap/runtime.ts';
 import { createTestContextPool } from '../runtime.mjs';
 import { TEST_CONTEXT_PROVIDERS } from '../registry.mjs';
 import { TASK_LIFECYCLE_CONTEXT_KEY } from '../profiles.mjs';

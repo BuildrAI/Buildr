@@ -12,7 +12,7 @@ import {
   createExactNodePathEnvironment,
   findExecutableOnPath,
   quoteWindowsCommandArgument,
-} from '../../src/infrastructure/process.mjs';
+} from '../../src/infrastructure/process.ts';
 
 test('共享进程基础层保留参数并只为 Windows command shim 启用 shell', () => {
   const args = ['--version'];

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { classifyDeclarationMaintenance, declarationIntakeGapNextAction, declarationIntakeNextAction } from '../../src/infrastructure/contracts/declaration-intake.mjs';
+import { classifyDeclarationMaintenance, declarationIntakeGapNextAction, declarationIntakeNextAction } from '../../src/infrastructure/contracts/declaration-intake.ts';
 
 test('Declaration Intake trigger稳定表达Project-only与多Service只读边界', () => {
   const projectOnly = declarationIntakeNextAction({ trigger: 'first-task-scope', project: 'demo' });

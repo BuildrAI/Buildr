@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
+import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 const OPERATIONS = new Set(['reviews', 'verification', 'coordination']);

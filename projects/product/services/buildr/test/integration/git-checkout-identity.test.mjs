@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { normalizeFilesystemPath, sameFilesystemPath, sameGitCheckoutIdentity } from '../../src/infrastructure/git/checkout-identity.mjs';
+import { normalizeFilesystemPath, sameFilesystemPath, sameGitCheckoutIdentity } from '../../src/infrastructure/git/checkout-identity.ts';
 
 test('Windows 文件系统路径统一盘符、扩展路径与 UNC 拼写', () => {
   assert.equal(

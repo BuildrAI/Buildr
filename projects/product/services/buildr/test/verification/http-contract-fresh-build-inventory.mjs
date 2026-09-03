@@ -12,7 +12,7 @@ function family(id, generator, sources, outputs) {
 }
 
 export const HTTP_CONTRACT_FRESH_BUILD_SUPPORT = Object.freeze([
-  entry('buildr', 'src/infrastructure/contracts/json-schema-validator.mjs'),
+  entry('buildr', 'src/infrastructure/contracts/json-schema-validator.ts'),
 ]);
 
 export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES = Object.freeze([

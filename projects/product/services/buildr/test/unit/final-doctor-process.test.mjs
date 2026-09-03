@@ -6,7 +6,7 @@ import {
   classifyFinalDoctorResult,
   finalDoctorArgs,
   runFinalDoctor,
-} from '../../src/infrastructure/final-doctor-process.mjs';
+} from '../../src/infrastructure/final-doctor-process.ts';
 
 test('final Doctor runner始终请求bounded compact JSON', () => {
   let observed = null;

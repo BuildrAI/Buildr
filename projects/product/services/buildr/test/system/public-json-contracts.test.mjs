@@ -7,7 +7,7 @@ import { after, before, describe, test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../src/infrastructure/contracts/public-json.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

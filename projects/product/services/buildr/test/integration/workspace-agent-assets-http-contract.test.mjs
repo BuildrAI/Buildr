@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { AGENT_ASSETS_HTTP_OPERATIONS, AGENT_ASSETS_HTTP_VALIDATORS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
 import { WORKSPACE_HTTP_OPERATIONS, WORKSPACE_HTTP_VALIDATORS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';

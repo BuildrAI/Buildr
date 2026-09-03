@@ -11,11 +11,11 @@ import {
   inspectCurrentInstanceReadiness,
 } from '../../src/system/installation/application/product-installation-status.ts';
 import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.ts';
-import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
+import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 import {
   acquireExclusiveFileLock,
   releaseExclusiveFileLock,
-} from '../../src/infrastructure/filesystem/index.mjs';
+} from '../../src/infrastructure/filesystem/index.ts';
 import {
   PRODUCT_INSTALLATION_REGISTRY_SCHEMA,
   createProductUpdateAuthority,

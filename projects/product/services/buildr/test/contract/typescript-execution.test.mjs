@@ -41,5 +41,5 @@ test('TypeScript production source has a low-cost affected verification owner', 
 test('CLI identity remains native TypeScript and the old path is retired', () => {
   assert.equal(fs.existsSync('src/bootstrap/cli/identity.ts'), true);
   assert.equal(fs.existsSync('src/bootstrap/cli/identity.mjs'), false);
-  assert.match(read('src/bootstrap/cli/registry.mjs'), /from '\.\/identity\.ts'/);
+  assert.match(read('src/bootstrap/cli/registry.ts'), /from '\.\/identity\.ts'/);
 });

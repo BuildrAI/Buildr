@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 const releaseVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 

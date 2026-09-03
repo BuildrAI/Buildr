@@ -3,22 +3,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { observeGitCheckoutIdentity } from '../git/checkout-identity.mjs';
-import { resolveControllerSourceRoot, resolveProductResource } from '../product-resources/index.mjs';
+import { observeGitCheckoutIdentity } from '../git/checkout-identity.ts';
+import { resolveControllerSourceRoot, resolveProductResource } from '../product-resources/index.ts';
 
 const MIGRATION_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/u;
 const MIGRATIONS_ROOT = resolveProductResource('product/src/infrastructure/sqlite/migrations');
 const BUSY_TIMEOUT_MS = 5_000;
-const RETIRED_TASK_EXECUTION_RECORDS_PATH = ['.buildr', 'local', 'task-execution-records'];
-const RETIRED_TASK_ASSET_REVIEW_PATH = ['.buildr', 'asset-review'];
-let defaultMigrationScripts = null;
+const RETIRED_TASK_EXECUTION_RECORDS_PATH: any[] = ['.buildr', 'local', 'task-execution-records'];
+const RETIRED_TASK_ASSET_REVIEW_PATH: any[] = ['.buildr', 'asset-review'];
+let defaultMigrationScripts: any = null;
 
-function digest(bytes) {
+function digest(bytes: any): any  {
   return `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`;
 }
 
-function structuredStoreError(code, message, status = 409, details = undefined, nextAction = undefined) {
-  const error = new Error(message);
+function structuredStoreError(code: any, message: any, status: any = 409, details: any = undefined, nextAction: any = undefined): any  {
+  const error: Error & Record<string, any> = new Error(message);
   error.code = code;
   error.status = status;
   error.details = details;
@@ -27,51 +27,51 @@ function structuredStoreError(code, message, status = 409, details = undefined, 
   return error;
 }
 
-export function loadWorkspaceSqliteMigrations(root = MIGRATIONS_ROOT) {
+export function loadWorkspaceSqliteMigrations(root: any = MIGRATIONS_ROOT): any  {
   const defaultRoot = path.resolve(root) === path.resolve(MIGRATIONS_ROOT);
   if (defaultRoot && defaultMigrationScripts) return defaultMigrationScripts;
   let entries;
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
-  } catch (error) {
+  } catch (error: any) {
     throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration assets 无法读取：${error.message}`, 500, { root }, '恢复随 Buildr package 交付的 migration scripts。');
   }
-  const scripts = entries.map((entry) => {
+  const scripts = entries.map((entry: any) => {
     if (!entry.isFile() || entry.isSymbolicLink()) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration asset 必须是普通文件：${entry.name}。`, 500, { root, name: entry.name });
     const match = entry.name.match(MIGRATION_PATTERN);
     if (!match) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration 文件名不合法：${entry.name}。`, 500, { root, name: entry.name });
     const bytes = fs.readFileSync(path.join(root, entry.name));
     return { version: Number(match[1]), name: entry.name, checksum: digest(bytes), sql: bytes.toString('utf8') };
-  }).sort((left, right) => left.version - right.version || left.name.localeCompare(right.name));
+  }).sort((left: any, right: any) => left.version - right.version || left.name.localeCompare(right.name));
   if (!scripts.length || scripts[0].version !== 0) throw structuredStoreError('workspace_store_schema_assets_invalid', 'SQLite migrations 必须从 0000 开始。', 500, { root });
   for (let index = 0; index < scripts.length; index += 1) {
     if (scripts[index].version !== index) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration version 必须连续；期望 ${String(index).padStart(4, '0')}，实际为 ${scripts[index].name}。`, 500, { root, expectedVersion: index, actualVersion: scripts[index].version });
     if (index > 0 && scripts[index - 1].name === scripts[index].name) throw structuredStoreError('workspace_store_schema_assets_invalid', `SQLite migration 名称重复：${scripts[index].name}。`, 500, { root });
   }
-  if (defaultRoot) defaultMigrationScripts = Object.freeze(scripts.map((script) => Object.freeze(script)));
+  if (defaultRoot) defaultMigrationScripts = Object.freeze(scripts.map((script: any) => Object.freeze(script)));
   return defaultRoot ? defaultMigrationScripts : scripts;
 }
 
-function sqliteFailure(error, details = {}) {
+function sqliteFailure(error: any, details: any = {}): any  {
   const message = String(error?.message || error);
   if (/busy|locked/iu.test(message)) return structuredStoreError('workspace_store_database_busy', 'Workspace structured store 当前正被其他 writer 占用。', 409, details, '稍后重试当前操作。');
   if (/malformed|not a database|disk image/iu.test(message)) return structuredStoreError('workspace_store_database_corrupt', 'Workspace structured store 已损坏或不是有效 SQLite 数据库。', 409, details, '运行 Buildr Doctor 检查数据库；不要自动删除或从旧 Task 文件恢复。');
   return structuredStoreError('workspace_store_database_failed', `Workspace structured store 操作失败：${message}`, 500, details, '保留数据库现场并运行 Buildr Doctor。');
 }
 
-function tableNames(database) {
-  return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((row) => row.name);
+function tableNames(database: any): any  {
+  return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((row: any) => row.name);
 }
 
-function hasMigrationLedger(database) {
+function hasMigrationLedger(database: any): any  {
   return tableNames(database).includes('schema_migrations');
 }
 
-function appliedMigrations(database) {
+function appliedMigrations(database: any): any  {
   return database.prepare('SELECT version, name, checksum, applied_at AS appliedAt FROM schema_migrations ORDER BY version').all();
 }
 
-function validateAppliedMigrations(database, scripts, { allowPending }) {
+function validateAppliedMigrations(database: any, scripts: any, { allowPending }: any): any  {
   if (!hasMigrationLedger(database)) {
     const tables = tableNames(database);
     if (tables.length) throw structuredStoreError('workspace_store_schema_ledger_missing', 'Workspace structured store 已有 schema，但缺少 migration ledger。', 409, { tables }, '保留现场并检查数据库来源；Buildr 不会猜测或接管未知 schema。');
@@ -90,7 +90,7 @@ function validateAppliedMigrations(database, scripts, { allowPending }) {
   return { applied, pending };
 }
 
-export function applyWorkspaceSqliteMigration(database, script) {
+export function applyWorkspaceSqliteMigration(database: any, script: any): any  {
   const rebuildsReferencedTable = script.sql.includes('-- buildr:foreign-keys-off');
   try {
     if (rebuildsReferencedTable) {
@@ -106,7 +106,7 @@ export function applyWorkspaceSqliteMigration(database, script) {
     database.prepare('INSERT INTO schema_migrations(version, name, checksum, applied_at) VALUES (?, ?, ?, ?)').run(script.version, script.name, script.checksum, new Date().toISOString());
     database.exec('COMMIT');
     if (rebuildsReferencedTable) database.exec('PRAGMA foreign_keys = ON;');
-  } catch (error) {
+  } catch (error: any) {
     try { database.exec('ROLLBACK'); } catch {}
     if (rebuildsReferencedTable) {
       try { database.exec('PRAGMA foreign_keys = ON;'); } catch {}
@@ -116,19 +116,19 @@ export function applyWorkspaceSqliteMigration(database, script) {
   }
 }
 
-function configure(database, { writable }) {
+function configure(database: any, { writable }: any): any  {
   try {
     database.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}; PRAGMA foreign_keys = ON;`);
     if (writable) database.exec('PRAGMA journal_mode = WAL;');
     const foreignKeys = database.prepare('PRAGMA foreign_keys').get()?.foreign_keys;
     if (foreignKeys !== 1) throw structuredStoreError('workspace_store_foreign_keys_disabled', 'Workspace structured store 无法启用 foreign keys。', 500);
-  } catch (error) {
+  } catch (error: any) {
     if (error.structuredStoreBusiness) throw error;
     throw sqliteFailure(error);
   }
 }
 
-function cleanupRetiredLocalData(root, relativePath, label) {
+function cleanupRetiredLocalData(root: any, relativePath: any, label: any): any  {
   const target = path.join(root, ...relativePath);
   if (!fs.existsSync(target)) return;
   try {
@@ -138,7 +138,7 @@ function cleanupRetiredLocalData(root, relativePath, label) {
       throw new Error('retired path is not an owned canonical directory');
     }
     fs.rmSync(target, { recursive: true, force: false });
-  } catch (error) {
+  } catch (error: any) {
     throw structuredStoreError(
       'workspace_store_retired_local_data_cleanup_failed',
       `已删除${label}数据库结构，但旧本机数据目录清理失败：${error.message}`,
@@ -149,16 +149,16 @@ function cleanupRetiredLocalData(root, relativePath, label) {
   }
 }
 
-export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitCheckoutIdentity, sourceRoot = null } = {}) {
-  const operationScopes = [];
+export function registerWorkspaceSqlite(runtime: any, { observeCheckout = observeGitCheckoutIdentity, sourceRoot = null }: any = {}): any  {
+  const operationScopes: any[] = [];
   let writerSourceRoot = sourceRoot ? path.resolve(sourceRoot) : null;
 
-  function runtimeSourceCheckout() {
+  function runtimeSourceCheckout(): any  {
     writerSourceRoot ||= path.resolve(resolveControllerSourceRoot());
     return { root: writerSourceRoot, checkout: observeCheckout(writerSourceRoot) };
   }
 
-  function isCandidateValidationWorkspace(source, target) {
+  function isCandidateValidationWorkspace(source: any, target: any): any  {
     return Boolean(
       source?.linkedWorktree
       && target?.linkedWorktree
@@ -167,7 +167,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     );
   }
 
-  function assertStructuredStoreWriterProvenance(root, targetCheckout) {
+  function assertStructuredStoreWriterProvenance(root: any, targetCheckout: any): any  {
     if (!targetCheckout) return;
     const source = runtimeSourceCheckout();
     if (!source.checkout?.linkedWorktree || !targetCheckout || source.checkout.gitCommonDirectory !== targetCheckout.gitCommonDirectory) return;
@@ -185,17 +185,17 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     );
   }
 
-  function workspaceOperationIdentity(targetRoot) {
+  function workspaceOperationIdentity(targetRoot: any): any  {
     const root = path.resolve(targetRoot);
     try { return fs.realpathSync(root); } catch { return root; }
   }
 
-  function activeOperationScope(targetRoot) {
+  function activeOperationScope(targetRoot: any): any  {
     const scope = operationScopes.at(-1);
     return scope?.identity === workspaceOperationIdentity(targetRoot) ? scope : null;
   }
 
-  function withWorkspaceStructuredStoreOperation(targetRoot, operation) {
+  function withWorkspaceStructuredStoreOperation(targetRoot: any, operation: any): any  {
     const root = path.resolve(targetRoot);
     const identity = workspaceOperationIdentity(root);
     const active = operationScopes.at(-1);
@@ -205,7 +205,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (result && typeof result.then === 'function') throw structuredStoreError('workspace_store_operation_scope_async_forbidden', 'Workspace operation scope 当前只支持同步 Application action。', 500);
       return result;
     }
-    const scope = { root, identity, canonicalRoot: null, memo: new Map() };
+    const scope: any = { root, identity, canonicalRoot: null, memo: new Map() };
     operationScopes.push(scope);
     try {
       const result = operation();
@@ -216,7 +216,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     }
   }
 
-  function memoizeWorkspaceOperation(targetRoot, key, read) {
+  function memoizeWorkspaceOperation(targetRoot: any, key: any, read: any): any  {
     const scope = activeOperationScope(targetRoot);
     if (!scope) return read();
     if (scope.memo.has(key)) return scope.memo.get(key);
@@ -226,7 +226,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return value;
   }
 
-  function withWorkspaceStructuredStoreReadCompatibility(targetRoot, operation) {
+  function withWorkspaceStructuredStoreReadCompatibility(targetRoot: any, operation: any): any  {
     const root = path.resolve(targetRoot);
     const identity = workspaceOperationIdentity(root);
     const active = operationScopes.at(-1);
@@ -242,7 +242,7 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
         active.allowPendingRead = previous;
       }
     }
-    const scope = { root, identity, canonicalRoot: null, allowPendingRead: true, memo: new Map() };
+    const scope: any = { root, identity, canonicalRoot: null, allowPendingRead: true, memo: new Map() };
     operationScopes.push(scope);
     try {
       const result = operation();
@@ -253,12 +253,12 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     }
   }
 
-  function assertCanonicalStructuredWorkspace(targetRoot, { writable = false } = {}) {
+  function assertCanonicalStructuredWorkspace(targetRoot: any, { writable = false }: any = {}): any  {
     const root = path.resolve(targetRoot);
     const scope = activeOperationScope(root);
     if (scope?.canonicalRoot) return scope.canonicalRoot;
     try { runtime.assertInitializedBuildrWorkspace(root); }
-    catch (error) { throw structuredStoreError('workspace_store_workspace_invalid', error.message, 409, { target: root }, '显式选择一个已初始化的 canonical Workspace。'); }
+    catch (error: any) { throw structuredStoreError('workspace_store_workspace_invalid', error.message, 409, { target: root }, '显式选择一个已初始化的 canonical Workspace。'); }
     if (writable) {
       const checkout = observeCheckout(root);
       if (checkout?.linkedWorktree && !isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, checkout)) {
@@ -270,15 +270,15 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
     return root;
   }
 
-  function workspaceStructuredStorePathAtRoot(root) {
+  function workspaceStructuredStorePathAtRoot(root: any): any  {
     return path.join(root, '.buildr', 'local', 'workspace.sqlite');
   }
 
-  function workspaceStructuredStorePath(targetRoot) {
+  function workspaceStructuredStorePath(targetRoot: any): any  {
     return workspaceStructuredStorePathAtRoot(assertCanonicalStructuredWorkspace(targetRoot));
   }
 
-  function openWorkspaceStructuredStore(targetRoot, { writable = false, allowPendingRead = false } = {}) {
+  function openWorkspaceStructuredStore(targetRoot: any, { writable = false, allowPendingRead = false }: any = {}): any  {
     const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
     let candidateValidation = false;
     if (writable) {
@@ -303,8 +303,8 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);
         validateAppliedMigrations(database, scripts, { allowPending: false });
-        if (scripts.some((script) => script.name === '0025_drop_task_execution_records.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_EXECUTION_RECORDS_PATH, 'Task Execution Record');
-        if (scripts.some((script) => script.name === '0030_refactor_task_retrospective_documents.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_ASSET_REVIEW_PATH, 'Task Retrospective');
+        if (scripts.some((script: any) => script.name === '0025_drop_task_execution_records.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_EXECUTION_RECORDS_PATH, 'Task Execution Record');
+        if (scripts.some((script: any) => script.name === '0030_refactor_task_retrospective_documents.sql')) cleanupRetiredLocalData(root, RETIRED_TASK_ASSET_REVIEW_PATH, 'Task Retrospective');
       }
       return {
         root,
@@ -315,19 +315,19 @@ export function registerWorkspaceSqlite(runtime, { observeCheckout = observeGitC
         migrationRequired: state.pending.length > 0,
         scripts,
       };
-    } catch (error) {
+    } catch (error: any) {
       try { database?.close(); } catch {}
       if (error.structuredStoreBusiness) throw error;
       throw sqliteFailure(error, { path: path.relative(root, file).split(path.sep).join('/') });
     }
   }
 
-  function inspectWorkspaceStructuredStore(targetRoot) {
+  function inspectWorkspaceStructuredStore(targetRoot: any): any  {
     const opened = openWorkspaceStructuredStore(targetRoot, { writable: false });
     if (!opened.present) return { status: 'uninitialized', version: null, integrity: null };
     try {
       const integrityRows = opened.database.prepare('PRAGMA integrity_check').all();
-      const messages = integrityRows.map((row) => row.integrity_check);
+      const messages = integrityRows.map((row: any) => row.integrity_check);
       if (messages.length !== 1 || messages[0] !== 'ok') throw structuredStoreError('workspace_store_integrity_failed', 'Workspace structured store integrity check 未通过。', 409, { findings: messages.slice(0, 10) }, '保留数据库现场并从可证明的本地备份恢复或显式重置。');
       return { status: 'healthy', version: opened.version, integrity: 'ok' };
     } finally {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { handleTaskRecordHttpRequest } from '../../src/task/interfaces/http/task-record-http.ts';
 import {

@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.mjs';
-import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../../src/bootstrap/runtime.mjs';
+import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.ts';
+import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
@@ -43,13 +43,13 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task 内部 Adapter', () => {
   assert.match(read('bin/buildr.mjs'), /src\/bootstrap\/cli\/main\.ts/);
   assert.equal(fs.existsSync(path.join(root, 'src/application/compose-runtime.mjs')), false);
-  const bootstrap = read('src/bootstrap/runtime.mjs');
+  const bootstrap = read('src/bootstrap/runtime.ts');
   assert.match(bootstrap, /createModuleRegistry/);
   assert.doesNotMatch(bootstrap, /registerLegacyRuntime|legacy-runtime-module/);
   assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
   assert.doesNotMatch(bootstrap, /registerTaskRecord(?:Repository|Application)/);
 
-  const cliHost = read('src/bootstrap/cli/registry.mjs');
+  const cliHost = read('src/bootstrap/cli/registry.ts');
   assert.match(cliHost, /from '..\/..\/task\/module\.ts'/);
   assert.doesNotMatch(cliHost, /task\/interfaces\/(?:cli|http)/);
   assert.match(cliHost, /runtimeContributions\(runtime, 'cli'\)/);
@@ -295,7 +295,7 @@ test('Agent Assets 旧全局路径与 legacy runtime 已经退出', () => {
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 
   assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
-  assert.match(read('src/bootstrap/runtime.mjs'), /createAgentAssetsModule/);
+  assert.match(read('src/bootstrap/runtime.ts'), /createAgentAssetsModule/);
 });
 
 test('System Installation module owns installation identity, update and npm Launcher boundaries', () => {
@@ -311,7 +311,7 @@ test('System Installation module owns installation identity, update and npm Laun
   assert.equal(typeof application.releaseAwareness, 'function');
   assert.equal(typeof application.buildInstallationInventory, 'function');
 
-  const cliHost = read('src/bootstrap/cli/registry.mjs');
+  const cliHost = read('src/bootstrap/cli/registry.ts');
   assert.match(cliHost, /from '..\/..\/system\/installation\/module\.ts'/);
   assert.doesNotMatch(cliHost, /system\/installation\/(?:application|infrastructure|interfaces)/);
   for (const relative of [

@@ -5,7 +5,7 @@ import {
   readApplicationPayloadManifest,
   resolveApplicationPayloadRoot,
   resolveProductRoot,
-} from '../../../infrastructure/product-resources/index.mjs';
+} from '../../../infrastructure/product-resources/index.ts';
 import { readCurrentInstallationOrigin, runtimeIdentityForOrigin } from './installation-origin.ts';
 
 export function readCurrentProductIdentity() {

@@ -7,7 +7,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain } from './release-selection.mjs';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.mjs';
 

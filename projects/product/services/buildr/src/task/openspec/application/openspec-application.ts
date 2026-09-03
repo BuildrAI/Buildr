@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../../workspace/domain/source-root.ts';
 import process from 'node:process';
-import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { CONVERGENCE_RECEIPT_SCHEMA, portableExecutableIdentity } from './convergence-model.ts';
 import { canonicalSnapshots, convergenceReceiptPath, runOpenSpecConvergence } from './openspec-converge.ts';

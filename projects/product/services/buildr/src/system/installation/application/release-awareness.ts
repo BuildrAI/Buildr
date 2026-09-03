@@ -5,14 +5,14 @@ import process from 'node:process';
 import {
   atomicWriteJson,
   withExclusiveFileLock,
-} from '../../../infrastructure/filesystem/index.mjs';
+} from '../../../infrastructure/filesystem/index.ts';
 import {
   compareVersions,
   defaultReleaseTrack,
   parseSemver,
 } from '../domain/release-version.ts';
-import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.mjs';
-import { spawnCommandSync } from '../../../infrastructure/process.mjs';
+import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
+import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { inspectProductUpdateAuthority } from '../infrastructure/installation-registry.ts';
 
 export const RELEASE_AWARENESS_SCHEMA = 'buildr.release-awareness/v1';

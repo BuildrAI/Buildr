@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
+import { runFinalDoctor } from '../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
 import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
 import { capabilityKey, validateCapabilityIdentity } from '../infrastructure/runtime/skills/manifests.ts';

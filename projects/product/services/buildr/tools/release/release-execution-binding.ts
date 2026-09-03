@@ -5,8 +5,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 export const releaseExecutionBindingSchema = 'buildr.release-execution-binding/v2';
 

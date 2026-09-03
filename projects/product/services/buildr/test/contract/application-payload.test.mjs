@@ -24,11 +24,11 @@ test('payload toolchain is exact and npm runtime bundle stays CommonJS without s
   assert.match(builder, /bundle\.warnings\.length/);
   assert.match(builder, /formatMessagesSync\(bundle\.warnings/);
   assert.match(builder, /application payload bundle emitted warnings/);
-  assert.match(read('src/bootstrap/cli/registry.mjs'), /from '\.\/identity\.ts'/);
+  assert.match(read('src/bootstrap/cli/registry.ts'), /from '\.\/identity\.ts'/);
 });
 
 test('runtime resources use payload resolver and SQLite is a static Node builtin', () => {
-  const sqlite = read('src/infrastructure/sqlite/workspace-sqlite.mjs');
+  const sqlite = read('src/infrastructure/sqlite/workspace-sqlite.ts');
   assert.match(sqlite, /import \{ DatabaseSync \} from 'node:sqlite'/);
   assert.doesNotMatch(sqlite, /await import\('node:sqlite'\)/);
   assert.match(sqlite, /resolveProductResource\('product\/src\/infrastructure\/sqlite\/migrations'\)/);

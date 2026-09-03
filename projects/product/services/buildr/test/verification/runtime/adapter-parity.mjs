@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { parseSkillsManifest } from '../../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/agent-assets/infrastructure/runtime/skills/projection-files.ts';
-import { findExecutableOnPath } from '../../../src/infrastructure/process.mjs';
+import { findExecutableOnPath } from '../../../src/infrastructure/process.ts';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.mjs';
 
 const harness = new RuntimeVerificationHarness();

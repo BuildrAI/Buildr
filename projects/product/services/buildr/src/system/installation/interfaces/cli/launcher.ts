@@ -7,7 +7,7 @@ import {
   repairNpmLauncher,
   uninstallNpmLauncher,
 } from '../../infrastructure/npm-launcher.ts';
-import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../../infrastructure/product-resources/index.mjs';
+import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../../infrastructure/product-resources/index.ts';
 import { readCurrentInstallationOrigin } from '../../infrastructure/installation-origin.ts';
 
 function currentNpmRegistration(runtime: any) {

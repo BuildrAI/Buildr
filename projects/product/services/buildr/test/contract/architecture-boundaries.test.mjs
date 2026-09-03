@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../../src/bootstrap/runtime.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -42,7 +42,7 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
       if (entry.isDirectory()) visit(file);
       else if (entry.name.endsWith('.mjs') && /import \* as platform/.test(fs.readFileSync(file, 'utf8'))) {
         const relative = path.relative(productRoot, file).split(path.sep).join('/');
-        if (relative !== 'src/bootstrap/runtime.mjs') violations.push(relative);
+        if (relative !== 'src/bootstrap/runtime.ts') violations.push(relative);
       }
     }
   };
@@ -87,7 +87,7 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
   assert.doesNotMatch(host, /registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/);
   const lifecycle = fs.readFileSync(path.join(productRoot, 'src/web/application/instance-lifecycle.ts'), 'utf8');
   assert.doesNotMatch(lifecycle, /ensureRegisteredTarget\(runtime,/);
-  const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
+  const registry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.ts'), 'utf8');
   assert.doesNotMatch(registry, /key: "web preview|key: "web"/);
 });
 
@@ -119,7 +119,7 @@ test('旧 Task Development、Finish 与 Terminal Delivery runtime 已整体退�
     [],
   );
   assert.equal(fs.existsSync(path.join(productRoot, 'src/bootstrap/legacy-runtime-module.mjs')), false);
-  const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.mjs'), 'utf8');
+  const cliRegistry = fs.readFileSync(path.join(productRoot, 'src/bootstrap/cli/registry.ts'), 'utf8');
   assert.doesNotMatch(cliRegistry, /key: ["']task (?:finish (?:inspect|rollover|reconcile|run)|delivery inspect)/);
 });
 

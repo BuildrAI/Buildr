@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { resolveProductResource } from '../../infrastructure/product-resources/index.mjs';
+import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 import { binaryResponse, textResponse } from './responses.ts';
 
 const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');

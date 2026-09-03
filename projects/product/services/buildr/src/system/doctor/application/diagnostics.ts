@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from '../../../infrastructure/process.mjs';
+import { execFileSync } from '../../../infrastructure/process.ts';
 import { createRuntimeDiagnostics } from './runtime-diagnostics.ts';
 import { createScopeDiagnostics } from './scope-diagnostics.ts';
 import { createServiceDiagnostics } from './service-diagnostics.ts';

@@ -11,8 +11,8 @@ import {
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
 } from '../../src/system/installation/infrastructure/installation-origin.ts';
-import { currentProductInvocation, productInvocationArgs } from '../../src/infrastructure/product-invocation/index.mjs';
-import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
+import { currentProductInvocation, productInvocationArgs } from '../../src/infrastructure/product-invocation/index.ts';
+import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
 function npmOrigin(version = '1.2.3') {
   return createInstallationOrigin({

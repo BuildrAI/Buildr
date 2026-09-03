@@ -7,10 +7,10 @@ import test from 'node:test';
 
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.ts';
-import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.mjs';
-import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
+import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.ts';
+import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.ts';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.mjs';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';
 
@@ -125,8 +125,8 @@ test('payload verify runs from a clean tree with no node_modules or esbuild', as
     for (const relative of [
       'tools/release/application-payload.mjs',
       'tools/build/generated-artifacts.ts',
-      'src/infrastructure/product-resources/index.mjs',
-      'src/infrastructure/filesystem/filesystem-path-identity.mjs',
+      'src/infrastructure/product-resources/index.ts',
+      'src/infrastructure/filesystem/filesystem-path-identity.ts',
     ]) {
       const target = path.join(cleanRoot, relative);
       fs.mkdirSync(path.dirname(target), { recursive: true });

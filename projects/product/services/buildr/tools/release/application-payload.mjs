@@ -13,8 +13,8 @@ import {
   canonicalApplicationPayloadIdentity,
   validateApplicationPayloadManifest,
   verifyApplicationPayload,
-} from '../../src/infrastructure/product-resources/index.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+} from '../../src/infrastructure/product-resources/index.ts';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

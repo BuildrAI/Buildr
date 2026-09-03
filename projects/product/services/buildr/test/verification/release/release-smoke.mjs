@@ -9,14 +9,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { buildApplicationPayload } from '../../../tools/release/application-payload.mjs';
 import { createReleaseArtifact, readReleaseArtifact } from '../../../tools/release/release-artifact.mjs';
 import { officialRegistry } from '../../../tools/release/registry-version-state.mjs';
 import { readSharedCandidatePackage } from './candidate-package.mjs';
 import { buildGeneratedArtifactSet } from '../../../tools/build/artifact-set.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.mjs';
-import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.mjs';
+import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageName = '@buildr-ai/buildr';

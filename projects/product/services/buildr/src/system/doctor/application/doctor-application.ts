@@ -1,7 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.mjs';
+import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.ts';
 

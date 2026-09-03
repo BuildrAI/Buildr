@@ -3,9 +3,9 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.mjs';
+import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.mjs';
 
 test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确的 API 边界', async (t) => {

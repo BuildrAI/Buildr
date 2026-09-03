@@ -11,10 +11,10 @@ import {
   buildReleaseAwareness,
   readReleaseAwarenessState,
 } from '../../src/system/installation/application/release-awareness.ts';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.ts';
 import { createProductUpdateAuthority } from '../../src/system/installation/infrastructure/installation-registry.ts';
-import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
+import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
 function origin(channel, version = '1.0.0') {
   const runtimeRole = channel === 'npm' ? 'host' : channel === 'platform' ? 'product' : 'development';

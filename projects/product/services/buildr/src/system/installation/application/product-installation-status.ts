@@ -10,7 +10,7 @@ import {
 } from '../infrastructure/installation-origin.ts';
 import { registeredProductInstallations } from '../infrastructure/installation-registry.ts';
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../../workspace/module.ts';
-import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.mjs';
+import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
 import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
 

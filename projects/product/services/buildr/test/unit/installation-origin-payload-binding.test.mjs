@@ -5,7 +5,7 @@ import {
   createInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
 } from '../../src/system/installation/infrastructure/installation-origin.ts';
-import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.mjs';
+import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
 function manifest() {
   const value = {

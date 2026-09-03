@@ -1,4 +1,4 @@
-import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.mjs';
+import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const ROOT = 'https://schemas.buildr.ai/http/agent-assets';

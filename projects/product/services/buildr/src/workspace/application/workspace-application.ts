@@ -1,7 +1,7 @@
 import { createWorkspace, isWorkspaceId } from '../domain/workspace.ts';
 import process from 'node:process';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
-import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
+import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.ts';
 
 const declarationIntakeAction: any = declarationIntakeNextAction;
 

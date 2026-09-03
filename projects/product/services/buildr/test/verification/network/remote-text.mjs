@@ -6,8 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { fetchRemoteText, remoteTextTimeouts } from '../../../src/infrastructure/network/fetch-remote-text.mjs';
-import { streamRemoteText } from '../../../src/infrastructure/network/stream-remote-text.mjs';
+import { fetchRemoteText, remoteTextTimeouts } from '../../../src/infrastructure/network/fetch-remote-text.ts';
+import { streamRemoteText } from '../../../src/infrastructure/network/stream-remote-text.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr = path.join(productRoot, 'bin', 'buildr.mjs');

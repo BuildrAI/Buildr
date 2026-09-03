@@ -1,6 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 
-import { createRuntime } from '../../bootstrap/runtime.mjs';
+import { createRuntime } from '../../bootstrap/runtime.ts';
 
 const runtime = createRuntime();
 const operations: Readonly<Record<string, string>> = Object.freeze({

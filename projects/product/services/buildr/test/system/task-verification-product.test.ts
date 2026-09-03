@@ -5,7 +5,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import YAML from 'yaml';
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..'); const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');

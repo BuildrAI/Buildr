@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 const githubApi = 'https://api.github.com';
 

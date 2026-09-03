@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createModuleRegistry, defineModule } from '../../src/bootstrap/module-registry.mjs';
+import { createModuleRegistry, defineModule } from '../../src/bootstrap/module-registry.ts';
 
 test('module registry resolves named dependencies and exposes closed contributions', () => {
   const dependency = Object.freeze({ value: 42 });

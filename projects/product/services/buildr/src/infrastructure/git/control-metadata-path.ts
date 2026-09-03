@@ -1,17 +1,17 @@
 import path from 'node:path';
 
-function normalize(value) {
+function normalize(value: any): any  {
   return path.posix.normalize(String(value || '').replaceAll('\\', '/')).replace(/^\.\//u, '');
 }
 
-function insideOpenSpecChange(segments, controlIndex) {
+function insideOpenSpecChange(segments: any, controlIndex: any): any  {
   for (let index = 0; index + 1 < controlIndex; index += 1) {
     if (segments[index] === 'openspec' && segments[index + 1] === 'changes') return true;
   }
   return false;
 }
 
-export function controlMetadataPath(value) {
+export function controlMetadataPath(value: any): any  {
   const normalized = normalize(value);
   if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) return false;
   const segments = normalized.split('/');

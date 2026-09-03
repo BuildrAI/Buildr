@@ -8,10 +8,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   releasePublishAuthority,
   releaseWorkflowPath,

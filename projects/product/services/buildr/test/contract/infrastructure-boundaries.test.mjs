@@ -7,8 +7,8 @@ const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Task', () => {
-  const sqliteFiles = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite')).filter((name) => name.endsWith('.mjs')).sort();
-  assert.deepEqual(sqliteFiles, ['workspace-sqlite.mjs']);
+  const sqliteFiles = fs.readdirSync(path.join(root, 'src/infrastructure/sqlite')).filter((name) => name.endsWith('.ts')).sort();
+  assert.deepEqual(sqliteFiles, ['workspace-sqlite.ts']);
   for (const relative of [
     'src/infrastructure/sqlite/parent-coordination-repository.mjs',
     'src/infrastructure/sqlite/task-development-repository.mjs',
@@ -30,8 +30,8 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
 });
 
 test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persistence', () => {
-  const infrastructure = read('src/infrastructure/index.mjs');
-  const bootstrap = read('src/bootstrap/runtime.mjs');
+  const infrastructure = read('src/infrastructure/index.ts');
+  const bootstrap = read('src/bootstrap/runtime.ts');
   const taskModule = read('src/task/module.ts');
   assert.match(infrastructure, /registerWorkspaceInfrastructure/);
   assert.match(infrastructure, /registerWorkspaceSqlite/);
@@ -50,7 +50,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
 });
 
 test('SQLite migration 仍由 Infrastructure 单一 runner 提供有序脚本', async () => {
-  const { loadWorkspaceSqliteMigrations } = await import('../../src/infrastructure/sqlite/workspace-sqlite.mjs');
+  const { loadWorkspaceSqliteMigrations } = await import('../../src/infrastructure/sqlite/workspace-sqlite.ts');
   const first = loadWorkspaceSqliteMigrations();
   const second = loadWorkspaceSqliteMigrations();
   assert.ok(first.length > 0);

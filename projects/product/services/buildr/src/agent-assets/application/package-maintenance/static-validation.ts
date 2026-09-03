@@ -333,7 +333,7 @@ export function createPackageStaticValidator(deps: any): any  {
       if (existsFile(file) && /task-overview|inspectTaskOverview|\/overview/.test(fs.readFileSync(file, 'utf8'))) problems.push(`Retired Task Overview surface remains in ${relative}.`);
     }
     for (const relative of [
-      'src/bootstrap/runtime.mjs',
+      'src/bootstrap/runtime.ts',
       'src/task/application/task-review-application.ts',
       'src/task/application/task-verification-application.ts',
       'src/task/application/task-environment-application.mjs',

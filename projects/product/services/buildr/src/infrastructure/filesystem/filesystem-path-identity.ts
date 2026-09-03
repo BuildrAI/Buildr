@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-export function normalizeFilesystemPath(value, platform = process.platform) {
+export function normalizeFilesystemPath(value: any, platform: any = process.platform): any  {
   const pathApi = platform === 'win32' ? path.win32 : path.posix;
   let normalized = String(value);
   if (platform === 'win32') {
@@ -16,19 +16,19 @@ export function normalizeFilesystemPath(value, platform = process.platform) {
   return platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-function filesystemPathCandidates(value) {
-  const candidates = [path.resolve(value)];
+function filesystemPathCandidates(value: any): any  {
+  const candidates: any[] = [path.resolve(value)];
   for (const realpath of [fs.realpathSync, fs.realpathSync.native]) {
     try { candidates.push(realpath(value)); } catch { /* retain the other observable forms */ }
   }
-  return new Set(candidates.map((candidate) => normalizeFilesystemPath(candidate)));
+  return new Set(candidates.map((candidate: any) => normalizeFilesystemPath(candidate)));
 }
 
-export function sameFilesystemPath(left, right) {
+export function sameFilesystemPath(left: any, right: any): any  {
   try {
     const leftCandidates = filesystemPathCandidates(left);
     const rightCandidates = filesystemPathCandidates(right);
-    if ([...leftCandidates].some((candidate) => rightCandidates.has(candidate))) return true;
+    if ([...leftCandidates].some((candidate: any) => rightCandidates.has(candidate))) return true;
     const leftStat = fs.statSync(left, { bigint: true });
     const rightStat = fs.statSync(right, { bigint: true });
     return leftStat.ino !== 0n && rightStat.ino !== 0n && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;

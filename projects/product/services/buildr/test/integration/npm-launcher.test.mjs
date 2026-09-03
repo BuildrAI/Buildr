@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createNpmPackStaging } from '../../tools/release/release-artifact.mjs';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';

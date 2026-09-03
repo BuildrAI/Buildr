@@ -7,7 +7,7 @@ import {
   APPLICATION_PAYLOAD_SCHEMA_VERSION,
   canonicalApplicationPayloadIdentity,
   validateApplicationPayloadManifest,
-} from '../../src/infrastructure/product-resources/index.mjs';
+} from '../../src/infrastructure/product-resources/index.ts';
 import { createNpmInstallationOrigin } from '../../tools/release/release-artifact.mjs';
 
 function manifest() {

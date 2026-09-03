@@ -6,9 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
-import { APPLICATION_PAYLOAD_MANIFEST, verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.mjs';
+import { spawnCommandSync } from '../../src/infrastructure/process.ts';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { APPLICATION_PAYLOAD_MANIFEST, verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.ts';
 import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

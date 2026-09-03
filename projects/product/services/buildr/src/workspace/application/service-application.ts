@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { createService } from '../domain/service.ts';
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
-import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
+import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.ts';
 
 const declarationIntakeAction: any = declarationIntakeNextAction;
 

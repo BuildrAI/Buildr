@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { createRequire } from 'node:module';
 import { normalizeProductPath } from './planner.mjs';
 import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.ts';
 
 const require = createRequire(import.meta.url);
 

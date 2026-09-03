@@ -4,10 +4,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { normalizeGitWorktreeCleanupDelivery, type GitWorktreeCleanupDeliveryInput, type GitWorktreeReviewedDelivery } from '../domain/git-worktree.ts';
-import { spawnSync } from '../../infrastructure/process.mjs';
-import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
+import { spawnSync } from '../../infrastructure/process.ts';
+import { sameFilesystemPath } from '../../infrastructure/git/checkout-identity.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
-import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.mjs';
+import { controlMetadataPath } from '../../infrastructure/git/control-metadata-path.ts';
 
 export const GIT_WORKTREE_PROVIDER_CAPABILITY = 'buildr.git-worktree-provider/v1';
 export const GIT_WORKTREE_EVIDENCE_SCHEMA = 'buildr.git-worktree-evidence/v1';

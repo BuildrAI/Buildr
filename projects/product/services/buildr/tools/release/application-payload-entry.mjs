@@ -6,7 +6,7 @@ import {
   verifyApplicationPayload,
   resolveApplicationPayloadRoot,
   resolveProductRoot,
-} from '../../src/infrastructure/product-resources/index.mjs';
+} from '../../src/infrastructure/product-resources/index.ts';
 import { enrollProductInstallation, readCurrentInstallationOrigin } from '../../src/system/installation/module.ts';
 import { reportCliFailure, runCli } from '../../src/bootstrap/cli/main.ts';
 

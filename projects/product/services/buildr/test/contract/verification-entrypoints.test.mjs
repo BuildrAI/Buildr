@@ -277,7 +277,7 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   const packageManifest = JSON.parse(read('package.json'));
   const hostNode = read('test/verification/host-node.mjs');
   const cliSmoke = read('test/verification/host-node/cli-smoke.mjs');
-  const policy = read('src/infrastructure/network/verification-network-policy.mjs');
+  const policy = read('src/infrastructure/network/verification-network-policy.ts');
   const workflow = read('../../../../.github/workflows/verify.yml');
   const hostJob = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
   assert.deepEqual(packageManifest.bundleDependencies, ['ajv', 'yaml']);

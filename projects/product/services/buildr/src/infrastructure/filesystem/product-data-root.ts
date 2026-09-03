@@ -2,11 +2,11 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-function resolvePath(value, platform) {
+function resolvePath(value: any, platform: any): any  {
   return platform === 'win32' ? path.win32.resolve(value) : path.resolve(value);
 }
 
-export function productDataRoot(options = {}) {
+export function productDataRoot(options: any = {}): any  {
   const platform = options.platform || process.platform;
   const env = options.env || process.env;
   const home = options.home || os.homedir();

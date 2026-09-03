@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from '../../../infrastructure/process.mjs';
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { execFileSync, spawnSync } from '../../../infrastructure/process.ts';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import YAML from 'yaml';
 import { createProject as createProjectEntity } from '../../domain/project.ts';
 import { createService as createServiceEntity } from '../../domain/service.ts';
-import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.mjs';
+import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.ts';
 import { parseProjectsManifest, renderProjectsManifest } from '../../persistence/project-manifest-repository.ts';
 
 const declarationIntakeAction: any = declarationIntakeNextAction;

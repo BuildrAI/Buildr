@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
+import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   createCandidatePackage,
   CANDIDATE_PACK_METADATA_ENV,

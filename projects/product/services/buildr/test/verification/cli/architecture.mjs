@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { validateVerificationRegistry } from '../planner.mjs';
 import { verificationSteps } from '../registry.mjs';
 import { validateProductSourceLayout } from './product-source-layout.mjs';
-import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.mjs';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.ts';
 
 const reportOnly = process.argv.includes('--report');
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -84,9 +84,9 @@ if (!entryContent.includes("from '../src/bootstrap/cli/main.ts'")) problems.push
 if (/function\s+(?:doctor|packageCheck|createProject|skillsAdd|componentInstall)\b/.test(entryContent)) problems.push('bin/buildr.mjs contains product implementation');
 
 const requiredRuntime = [
-  'bootstrap/cli/main.ts', 'bootstrap/cli/registry.mjs', 'bootstrap/cli/help.mjs',
-  'bootstrap/cli/diagnostics.mjs', 'bootstrap/cli/identity.ts',
-  'bootstrap/runtime.mjs', 'bootstrap/module-registry.mjs',
+  'bootstrap/cli/main.ts', 'bootstrap/cli/registry.ts', 'bootstrap/cli/help.ts',
+  'bootstrap/cli/diagnostics.ts', 'bootstrap/cli/identity.ts',
+  'bootstrap/runtime.ts', 'bootstrap/module-registry.ts',
   'task/interfaces/cli/task-verification.ts',
   'task/interfaces/cli/git-worktree.ts',
   'web/http/server.ts', 'web/http/router.ts', 'web/http/session.ts', 'web/http/static-files.ts', 'web/http/responses.ts', 'web/module.ts',
@@ -121,9 +121,9 @@ const requiredRuntime = [
   'task/openspec/module.ts', 'task/change/module.ts', 'task/change/application/change-application.ts',
   'system/publication/module.ts', 'system/publication/application/publication-application.ts',
   'agent-assets/application/runtime.ts', 'agent-assets/application/runtime-projection.ts', 'infrastructure/contracts/public-json.ts',
-  'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
-  'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.ts',
-  'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
+  'infrastructure/platform.ts', 'infrastructure/product-layout.ts', 'infrastructure/process.ts', 'infrastructure/filesystem/index.ts',
+  'infrastructure/contracts/declaration-intake.ts', 'system/installation/domain/release-version.ts',
+  'infrastructure/index.ts', 'infrastructure/sqlite/workspace-sqlite.ts',
   'agent-assets/infrastructure/runtime/adapter-contract.ts', 'agent-assets/infrastructure/runtime/render-claude-code.ts',
   'system/doctor/application/scope-diagnostics.ts', 'system/doctor/application/service-diagnostics.ts',
   'system/doctor/application/runtime-diagnostics.ts', 'agent-assets/application/package-maintenance/static-validation.ts',
@@ -174,10 +174,10 @@ const allowedCrossModulePorts = new Set([
   'web/infrastructure/instance-runtime.ts -> system/installation/module.ts',
   'web/module.ts -> system/installation/module.ts',
   'web/module.ts -> workspace/module.ts',
-  'bootstrap/cli/registry.mjs -> task/openspec/module.ts',
-  'bootstrap/runtime.mjs -> system/publication/module.ts',
-  'bootstrap/runtime.mjs -> task/openspec/module.ts',
-  'bootstrap/runtime.mjs -> task/change/module.ts',
+  'bootstrap/cli/registry.ts -> task/openspec/module.ts',
+  'bootstrap/runtime.ts -> system/publication/module.ts',
+  'bootstrap/runtime.ts -> task/openspec/module.ts',
+  'bootstrap/runtime.ts -> task/change/module.ts',
   'task/openspec/module.ts -> workspace/module.ts',
   'task/change/module.ts -> task/openspec/module.ts',
   'task/change/module.ts -> workspace/module.ts',
@@ -187,10 +187,10 @@ const allowedCrossModulePorts = new Set([
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime.mjs') {
+  if (/import\s+\*\s+as\s+platform\b/.test(content) && relative !== 'bootstrap/runtime.ts') {
     problems.push(`wide platform namespace import: src/${relative}`);
   }
-  if (relative !== 'bootstrap/runtime.mjs' && /from\s+['"][^'"]*infrastructure\/platform\.mjs['"]/.test(content)) {
+  if (relative !== 'bootstrap/runtime.ts' && /from\s+['"][^'"]*infrastructure\/platform\.ts['"]/.test(content)) {
     problems.push(`composition-only platform registry import: src/${relative}`);
   }
   if (/const\s+(register[A-Za-z0-9_]+)\s*=\s*\(\.\.\.args\)\s*=>\s*runtime\.\1\(\.\.\.args\)/.test(content)) {
@@ -233,13 +233,13 @@ const visitCycle = (file, stack = []) => {
 for (const file of graph.keys()) visitCycle(file);
 
 const bootstrapRuntimeConsumers = new Set([
-  'bootstrap/cli/registry.mjs',
+  'bootstrap/cli/registry.ts',
   'web/http/read-worker.ts',
 ]);
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   const content = fs.readFileSync(file, 'utf8');
-  if (/(?:from\s+|import\()['"][^'"]*bootstrap\/runtime\.mjs/.test(content) && !bootstrapRuntimeConsumers.has(relative)) {
+  if (/(?:from\s+|import\()['"][^'"]*bootstrap\/runtime\.ts/.test(content) && !bootstrapRuntimeConsumers.has(relative)) {
     problems.push(`new Bootstrap runtime consumer outside the explicit runtime-port baseline: src/${relative}`);
   }
 }
@@ -319,7 +319,7 @@ if (JSON.stringify(packageJson.exports) !== JSON.stringify(expectedPackageExport
 }
 if (!packageJson.files?.includes('test-context.mjs')) problems.push('npm package must include the public Test Context facade');
 
-const registry = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.mjs');
+const registry = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.ts');
 if (fs.existsSync(registry)) {
   const source = fs.readFileSync(registry, 'utf8');
   if (!source.includes('COMMAND_REGISTRY')) problems.push('command registry must expose one explicit COMMAND_REGISTRY');
@@ -346,7 +346,7 @@ const taskRecordApplication = path.join(sourceRoot, 'task', 'application', 'task
 const taskRecordInterface = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.ts');
 const taskRecordHttpInterface = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.ts');
 const taskRecordModule = path.join(sourceRoot, 'task', 'module.ts');
-const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.mjs');
+const bootstrapRuntime = path.join(sourceRoot, 'bootstrap', 'runtime.ts');
 const legacyRuntimeModule = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
 for (const relative of [
   'domain/task-record/task-record.ts',

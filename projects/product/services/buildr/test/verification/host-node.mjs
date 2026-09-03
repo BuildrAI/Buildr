@@ -9,7 +9,7 @@ import { executePlan } from './plan-runner.mjs';
 import { createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
-import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
+import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot = path.resolve(productRoot, '../..');

@@ -1,23 +1,23 @@
-import { spawnSync } from './process.mjs';
+import { spawnSync } from './process.ts';
 
 export const FINAL_DOCTOR_MAX_BUFFER = 4 * 1024 * 1024;
 const DIAGNOSTIC_PREVIEW_LIMIT = 16 * 1024;
 
-export function finalDoctorArgs(agent, targetRoot) {
+export function finalDoctorArgs(agent: any, targetRoot: any): any  {
   return ['doctor', '--agent', agent, '--target', targetRoot, '--json', '--detail', 'compact'];
 }
 
-function output(result) {
+function output(result: any): any  {
   return [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
 }
 
-function boundedDiagnostic(result) {
+function boundedDiagnostic(result: any): any  {
   const detail = output(result);
   if (detail.length <= DIAGNOSTIC_PREVIEW_LIMIT) return detail;
   return `${detail.slice(0, DIAGNOSTIC_PREVIEW_LIMIT)}\n… Doctor diagnostic truncated (${Buffer.byteLength(detail)} bytes).`;
 }
 
-export function classifyFinalDoctorResult(result) {
+export function classifyFinalDoctorResult(result: any): any  {
   const errorCode = result?.error?.code || result?.errorCode || null;
   if (errorCode === 'ENOBUFS') {
     return {
@@ -46,7 +46,7 @@ export function classifyFinalDoctorResult(result) {
   return { status: 'passed', code: 'doctor.passed', message: '最终 Doctor 通过。', diagnostic: '' };
 }
 
-export function runFinalDoctor({ invocation = null, executable, cliPath, agent, targetRoot, cwd, spawn = spawnSync }) {
+export function runFinalDoctor({ invocation = null, executable, cliPath, agent, targetRoot, cwd, spawn = spawnSync }: any): any  {
   const selected = invocation || { command: executable, argsPrefix: cliPath ? [cliPath] : [] };
   const result = spawn(selected.command, [...selected.argsPrefix, ...finalDoctorArgs(agent, targetRoot)], {
     cwd,

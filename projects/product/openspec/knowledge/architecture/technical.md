@@ -179,7 +179,7 @@ Agent直接读取当前Task、代码、Git、文件、运行现场和所需专�
 
 - Product checkout 由 `.node-version` 固定 development Node `24.15.0`。
 - npm package 的 Host Node 范围由 `package.json#engines.node` 声明，当前为 `>=24.15.0 <25`。
-- 后端迁移期间允许 `.mjs` 与仅含可擦除类型语法的 `.ts` 共存，并通过严格 `noEmit` typecheck 约束；除 Infrastructure/Bootstrap 外的生产业务模块均已完成 TypeScript 收敛，后续继续按完整纵向边界迁移。
+- 后端 `src/` 生产源码已全部使用仅含可擦除类型语法的 `.ts`，并通过严格 `noEmit` typecheck 约束；`.mjs` 只暂留于工具、测试和明确兼容入口，继续按边界迁移。
 - 正式 npm package 使用锁定 bundler 将同一模块图冻结为单一 CommonJS Application Payload；tarball 不运行 TypeScript compiler，也不携带开发类型工具链。
 
 ### Buildr Web 交接

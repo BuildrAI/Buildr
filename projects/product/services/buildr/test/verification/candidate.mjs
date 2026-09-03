@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { executePlan } from './plan-runner.mjs'; import { parseVerificationSchedulingMode } from './dag-scheduler.mjs';
 import { admitVerificationPlanBudget, createVerificationAdmissionPlan, createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile } from './registry.mjs';
-import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.mjs';
+import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { CANDIDATE_TOTAL_BUDGET_MS, CORE_TOTAL_BUDGET_MS } from './timing/budgets.mjs';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.mjs';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'); const projectRoot = path.resolve(productRoot, '../..');

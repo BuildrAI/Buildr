@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { productDataRoot } from '../../infrastructure/filesystem/product-data-root.mjs';
+import { productDataRoot } from '../../infrastructure/filesystem/product-data-root.ts';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 

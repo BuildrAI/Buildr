@@ -6,7 +6,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 
 export { execFileSync, spawnSync };
 
-export function findExecutableOnPath(executable, options = {}) {
+export function findExecutableOnPath(executable: any, options: any = {}): any  {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const pathValue = env.PATH || '';
@@ -29,7 +29,7 @@ export function findExecutableOnPath(executable, options = {}) {
   return null;
 }
 
-export function buildCommandInvocation(executable, args, options = {}) {
+export function buildCommandInvocation(executable: any, args: any, options: any = {}): any  {
   const platform = options.platform ?? process.platform;
   const windowsShim = platform === 'win32' && /\.(?:cmd|bat)$/i.test(executable);
   return {
@@ -39,14 +39,14 @@ export function buildCommandInvocation(executable, args, options = {}) {
   };
 }
 
-export function quoteWindowsCommandArgument(value) {
+export function quoteWindowsCommandArgument(value: any): any  {
   const argument = String(value);
   if (argument.length === 0) return '""';
   if (!/[\s"]/u.test(argument)) return argument;
   return `"${argument.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\+)$/u, '$1$1')}"`;
 }
 
-export function spawnCommandSync(executable, args, options = {}) {
+export function spawnCommandSync(executable: any, args: any, options: any = {}): any  {
   const { platform = process.platform, ...spawnOptions } = options;
   const invocation = buildCommandInvocation(executable, args, { platform });
   return spawnSync(invocation.executable, invocation.args, {
@@ -55,30 +55,30 @@ export function spawnCommandSync(executable, args, options = {}) {
   });
 }
 
-function realExecutable(value, label) {
+function realExecutable(value: any, label: any): any  {
   if (!path.isAbsolute(value || '')) throw new Error(`${label} must be an absolute executable path.`);
   try {
     fs.accessSync(value, fs.constants.X_OK);
     return fs.realpathSync(value);
-  } catch (error) {
+  } catch (error: any) {
     throw new Error(`${label} is not executable: ${value} (${error.code || error.message})`);
   }
 }
 
-export function createExactNodePathEnvironment(sourceEnv, bin, options = {}) {
+export function createExactNodePathEnvironment(sourceEnv: any, bin: any, options: any = {}): any  {
   const platform = options.platform ?? process.platform;
   const pathApi = platform === 'win32' ? path.win32 : path;
-  const inheritedEnv = { ...sourceEnv };
-  const matchingKeys = Object.keys(inheritedEnv).filter((key) => key.toLowerCase() === 'path');
+  const inheritedEnv: any = { ...sourceEnv };
+  const matchingKeys = Object.keys(inheritedEnv).filter((key: any) => key.toLowerCase() === 'path');
   const sourceKey = platform === 'win32'
-    ? matchingKeys.find((key) => key === 'PATH') ?? matchingKeys[0]
+    ? matchingKeys.find((key: any) => key === 'PATH') ?? matchingKeys[0]
     : 'PATH';
   const inheritedPath = String(inheritedEnv[sourceKey] ?? '');
   if (platform === 'win32') for (const key of matchingKeys) delete inheritedEnv[key];
   const normalizedBin = pathApi.resolve(bin);
-  const pathEntries = [
+  const pathEntries: any[] = [
     bin,
-    ...inheritedPath.split(pathApi.delimiter).filter(Boolean).filter((entry) => {
+    ...inheritedPath.split(pathApi.delimiter).filter(Boolean).filter((entry: any) => {
       const normalizedEntry = pathApi.resolve(entry);
       return platform === 'win32'
         ? normalizedEntry.toLowerCase() !== normalizedBin.toLowerCase()
@@ -88,8 +88,8 @@ export function createExactNodePathEnvironment(sourceEnv, bin, options = {}) {
   return { env: { ...inheritedEnv, PATH: pathEntries.join(pathApi.delimiter) }, pathEntries };
 }
 
-export function createExactNodeExecutionEnvironment(options = {}) {
-  const inheritedEnv = { ...(options.env ?? process.env) };
+export function createExactNodeExecutionEnvironment(options: any = {}): any  {
+  const inheritedEnv: any = { ...(options.env ?? process.env) };
   const nodeExecutable = realExecutable(options.nodeExecutable ?? process.execPath, 'Node executable');
   const bin = path.dirname(nodeExecutable);
   const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
@@ -122,7 +122,7 @@ export function createExactNodeExecutionEnvironment(options = {}) {
     }
   }
   if (options.expectedVersion && version !== options.expectedVersion) throw new Error(`Exact Node version ${version} does not match required ${options.expectedVersion}.`);
-  const audit = {
+  const audit: any = {
     schemaVersion: 'buildr.exact-node-execution-environment/v1',
     executable: reportedExecutable,
     version,

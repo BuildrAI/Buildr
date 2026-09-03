@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { spawnSync } from '../process.mjs';
-import { normalizeFilesystemPath, sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
+import { spawnSync } from '../process.ts';
+import { normalizeFilesystemPath, sameFilesystemPath } from '../filesystem/filesystem-path-identity.ts';
 
-export { normalizeFilesystemPath, sameFilesystemPath } from '../filesystem/filesystem-path-identity.mjs';
+export { normalizeFilesystemPath, sameFilesystemPath } from '../filesystem/filesystem-path-identity.ts';
 
-function gitPath(root, argument) {
+function gitPath(root: any, argument: any): any  {
   const observed = spawnSync('git', ['-C', root, 'rev-parse', argument], {
     encoding: 'utf8',
     timeout: 5000,
@@ -18,14 +18,14 @@ function gitPath(root, argument) {
   return { value, identity: normalizeFilesystemPath(resolved) };
 }
 
-export function sameGitCheckoutIdentity(left, right) {
+export function sameGitCheckoutIdentity(left: any, right: any): any  {
   return Boolean(left && right
     && (left.gitDirectoryIdentity === right.gitDirectoryIdentity || sameFilesystemPath(left.gitDirectory, right.gitDirectory))
     && (left.gitCommonDirectoryIdentity === right.gitCommonDirectoryIdentity || sameFilesystemPath(left.gitCommonDirectory, right.gitCommonDirectory))
     && left.linkedWorktree === right.linkedWorktree);
 }
 
-export function observeGitCheckoutIdentity(root) {
+export function observeGitCheckoutIdentity(root: any): any  {
   const checkoutRoot = gitPath(root, '--show-toplevel');
   const gitDirectory = gitPath(root, '--git-dir');
   const gitCommonDirectory = gitPath(root, '--git-common-dir');

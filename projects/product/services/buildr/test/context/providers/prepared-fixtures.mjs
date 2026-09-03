@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-import { createRuntime } from '../../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../../src/bootstrap/runtime.ts';
 import {
   GIT_REPOSITORY_CONTEXT_KEY,
   PROJECT_FOUNDATION_CONTEXT_KEY,

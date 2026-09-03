@@ -6,7 +6,7 @@ import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 
 import { buildrWebDataRoot } from '../../workspace/module.ts';
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';

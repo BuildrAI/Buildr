@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
-import { runFinalDoctor } from '../../infrastructure/final-doctor-process.mjs';
+import { runFinalDoctor } from '../../infrastructure/final-doctor-process.ts';
 
 export function blockingSyncSourceIssues(plan: any): any  {
   return (plan?.components?.errors || []).filter((item: any) => item.required === true);
@@ -18,7 +18,7 @@ import {
   skillProjectionOwnershipReceiptTarget,
 } from '../infrastructure/runtime/skills/projection-files.ts';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.ts';
-import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../infrastructure/git/checkout-identity.mjs';
+import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../infrastructure/git/checkout-identity.ts';
 
 export function registerApplicationRuntime(runtime: any): any  {
   const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);

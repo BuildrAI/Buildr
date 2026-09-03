@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { spawnCommandSync } from '../../src/infrastructure/process.mjs';
+import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { releasePublishAuthority } from './release-authority.mjs';
 
 const WORKFLOW = '.github/workflows/verify.yml';

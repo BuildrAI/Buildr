@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import YAML from 'yaml';
-import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesystem/index.mjs';
+import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesystem/index.ts';
 import { buildApplicationPayload } from '../../tools/release/application-payload.mjs';
 import { createReleaseArtifact } from '../../tools/release/release-artifact.mjs';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.mjs';

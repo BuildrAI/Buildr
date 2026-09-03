@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from '../../infrastructure/process.mjs';
+import { execFileSync, spawnSync } from '../../infrastructure/process.ts';
 import { checkClaudeCodeRuntime } from '../infrastructure/runtime/check-claude-code.ts';
 import { checkCodexRuntime } from '../infrastructure/runtime/check-codex.ts';
 import {
@@ -12,7 +12,7 @@ import {
   renderClaudeCodeRules,
   resolveRuleScope,
 } from '../infrastructure/runtime/render-claude-code-rules.ts';
-import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../infrastructure/product-layout.mjs';
+import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../infrastructure/product-layout.ts';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { createPackageOutput } from './package-maintenance/output.ts';

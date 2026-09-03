@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { buildCommandInvocation, findExecutableOnPath as resolveExecutableOnPath, spawnSync } from '../../infrastructure/process.mjs';
+import { buildCommandInvocation, findExecutableOnPath as resolveExecutableOnPath, spawnSync } from '../../infrastructure/process.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
 export function registerDomainsCommands(runtime: any): any  {

@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright-core';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.mjs';

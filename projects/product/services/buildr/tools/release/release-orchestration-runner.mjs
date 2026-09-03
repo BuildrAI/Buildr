@@ -7,8 +7,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { closeoutReleaseGitResources, reconcilePublishedReleaseWithDev } from './release-git-convergence.mjs';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.mjs';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.mjs';

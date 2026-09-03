@@ -13,7 +13,7 @@ import {
   validateProjectCapabilitiesDocument,
 } from '../infrastructure/runtime/skills/manifests.ts';
 import { selectedProviderImpacts } from '../infrastructure/runtime/skills/capabilities.ts';
-import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 export function registerDomainsSkills(runtime: any): any  {
   const doctor = (...args: any[]) => runtime.doctor(...args);

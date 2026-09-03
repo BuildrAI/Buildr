@@ -74,7 +74,7 @@ Task Record与保留的专业模块共用`.buildr/local/workspace.sqlite`，但�
 
 唯一verification registry对target至少15秒的日常Integration/System owner保存公共结果、确定性反例、保留真实边界与审计处置；planner派生27项primary evidence map并在执行前验证闭合。2026-08-24现场plan-only显示daily-full为52 steps、1,036秒目标工作量与259秒数学下限，Product Artifact Candidate为66 steps、1,398秒目标工作量、349.5秒下限与唯一tarball。Candidate CI的`core-*`仅为macOS平台shard命名，不是daily-full membership。
 
-本Service的通用技术机制由`src/infrastructure/index.mjs`统一组装；`workspace-sqlite.mjs`是SQLite connection、operation scope、全局migration、锁与事务的唯一owner。Task Execution Record Persistence已删除。
+本Service的通用技术机制由`src/infrastructure/index.ts`统一组装；`workspace-sqlite.ts`是SQLite connection、operation scope、全局migration、锁与事务的唯一owner。Task Execution Record Persistence已删除。
 
 Task Entry Snapshot与`task next`已经删除。智能体（Agent）读取当前Task、现场和对应Skill，自行选择工作位置、Review、Verification、父任务协调、OpenSpec、Git或任务收尾能力；Application不维护统一下一步或跨专业准入。
 

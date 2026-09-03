@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { withExclusiveFileLock } from '../../infrastructure/filesystem/index.mjs';
+import { withExclusiveFileLock } from '../../infrastructure/filesystem/index.ts';
 
 export const WORKSPACE_MANAGEMENT_SCHEMA = 'buildr.workspace-web-management/v1';
 const OWNER_SCHEMA = 'buildr.workspace-web-management-owner/v1';

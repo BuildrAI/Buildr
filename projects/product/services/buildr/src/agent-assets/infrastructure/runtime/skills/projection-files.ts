@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from '../../../../infrastructure/process.mjs';
+import { spawnSync } from '../../../../infrastructure/process.ts';
 
 export const RUNTIME_SKILL_PROJECTION_SCHEMA_V1 = 'buildr.runtime-skill-projection/v1';
 export const RUNTIME_SKILL_PROJECTION_SCHEMA = 'buildr.skill-projection/v2';

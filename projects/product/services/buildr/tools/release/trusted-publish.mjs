@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { releasePublishAuthority } from './release-authority.mjs';
 
 export function authorityFailureDiagnostic(output, authority = releasePublishAuthority) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
-import { productDataRoot } from '../../src/infrastructure/filesystem/product-data-root.mjs';
+import { productDataRoot } from '../../src/infrastructure/filesystem/product-data-root.ts';
 import {
   assertLauncherWebProfile,
   defaultWebDataRoot,

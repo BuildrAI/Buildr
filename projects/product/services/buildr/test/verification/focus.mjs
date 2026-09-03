@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { executePlan, printPlan } from './plan-runner.mjs';
 import { createVerificationPlan } from './planner.mjs';
 import { resolveVerificationExecutionProfile, VERIFICATION_GROUPS, verificationSteps } from './registry.mjs';

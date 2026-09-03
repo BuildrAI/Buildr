@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-import { spawnCommandSync } from '../../../infrastructure/process.mjs';
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.mjs';
+import { spawnCommandSync } from '../../../infrastructure/process.ts';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import {
   readApplicationPayloadManifest,
   validateApplicationPayloadManifest,
-} from '../../../infrastructure/product-resources/index.mjs';
+} from '../../../infrastructure/product-resources/index.ts';
 
 export const INSTALLATION_ORIGIN_SCHEMA = 'buildr.installation-origin/v2';
 export const INSTALLATION_CHANNELS = Object.freeze(['npm', 'development', 'unknown']);

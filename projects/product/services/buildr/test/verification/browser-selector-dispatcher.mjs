@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { executeVerificationCommand } from '../../src/verification/infrastructure/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.mjs';

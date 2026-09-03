@@ -19,7 +19,7 @@ import { runHostedReleaseTransaction } from '../../tools/release/release-transac
 import { createReleaseContext } from '../../tools/release/release-readiness.mjs';
 import { createReleaseTransactionEvidence, inspectHostedReleaseTransaction, validateReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.mjs';
 import { ensureReleaseTag, inspectReleaseTag } from '../../tools/release/release-tag-ensure.mjs';
-import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.mjs';
+import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runId = 987;

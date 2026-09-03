@@ -30,11 +30,11 @@ productionFiles.sort();
 const allowed = new Map([
   ['src/infrastructure/testing/context-runtime/node-test.ts', new Set(['defaultNodeTestContextRuntime'])],
   ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runHost'])],
-  ['src/infrastructure/filesystem/index.mjs', new Set([
+  ['src/infrastructure/filesystem/index.ts', new Set([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/workspace/persistence/workspace-registry-repository.ts', new Set(['withWorkspaceRegistryMutation'])],
-  ['src/infrastructure/sqlite/workspace-sqlite.mjs', new Set(['cleanupRetiredLocalData'])],
+  ['src/infrastructure/sqlite/workspace-sqlite.ts', new Set(['cleanupRetiredLocalData'])],
   ['src/system/installation/infrastructure/npm-launcher.ts', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],

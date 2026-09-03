@@ -6,7 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { inspectLocalWebToolchain, buildWebDist } from '../../tools/build/web-dist.ts';
 import { createGeneratedArtifactManifest, createOwnedArtifactStaging, inventoryGeneratedArtifact } from '../../tools/build/generated-artifacts.ts';
 

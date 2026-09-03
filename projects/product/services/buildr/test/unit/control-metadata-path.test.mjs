@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { controlMetadataPath } from '../../src/infrastructure/git/control-metadata-path.mjs';
+import { controlMetadataPath } from '../../src/infrastructure/git/control-metadata-path.ts';
 
 test('只把 Workspace 根与 OpenSpec Change 的 .buildr 识别为控制元数据', () => {
   assert.equal(controlMetadataPath('.buildr/local/workspace.sqlite'), true);

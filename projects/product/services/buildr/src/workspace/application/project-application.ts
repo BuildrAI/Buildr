@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { createProject } from '../domain/project.ts';
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
-import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.mjs';
+import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.ts';
 
 export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
   const error: Error & Record<string, any> = new Error(message);

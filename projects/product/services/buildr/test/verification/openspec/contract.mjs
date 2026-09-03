@@ -7,7 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
-import { spawnCommandSync } from '../../../src/infrastructure/process.mjs';
+import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
 import { resolveVerificationWorkerBudget } from '../worker-budget.mjs';
 import { createConvergencePlan } from '../../../src/task/openspec/application/convergence-planner.ts';
 import { createConvergenceReceipt } from '../../../src/task/openspec/application/convergence-model.ts';

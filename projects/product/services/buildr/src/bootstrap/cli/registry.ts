@@ -1,8 +1,8 @@
 import process from 'node:process';
-import { createRuntime, runtimeContributions } from '../runtime.mjs';
-import { registerCommandHelp } from './help.mjs';
+import { createRuntime, runtimeContributions } from '../runtime.ts';
+import { registerCommandHelp } from './help.ts';
 import { isVersionRequest, printVersion } from './identity.ts';
-import { printCliError } from './diagnostics.mjs';
+import { printCliError } from './diagnostics.ts';
 import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
 import { createOpenSpecCliContributions } from '../../task/openspec/module.ts';
 import { createWorkspaceCliContributions } from '../../workspace/module.ts';
@@ -17,9 +17,9 @@ const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-c
 const AGENT_ASSETS_SOURCE_COMMAND_SLOT = Symbol('agent-assets-source-command-contributions');
 const OPENSPEC_MODULE_COMMAND_SLOT = Symbol('openspec-module-command-contributions');
 
-const AGENT_ASSETS_PACKAGE_COMMANDS = new Set(['package check', 'package build']);
-const AGENT_ASSETS_RUNTIME_COMMANDS = new Set(['runtime list', 'commands check', 'commands add', 'commands remove']);
-const AGENT_ASSETS_SOURCE_COMMANDS = new Set([
+const AGENT_ASSETS_PACKAGE_COMMANDS: any = new Set(['package check', 'package build']);
+const AGENT_ASSETS_RUNTIME_COMMANDS: any = new Set(['runtime list', 'commands check', 'commands add', 'commands remove']);
+const AGENT_ASSETS_SOURCE_COMMANDS: any = new Set([
   'component list',
   'component check',
   'component install',
@@ -40,13 +40,13 @@ const AGENT_ASSETS_SOURCE_COMMANDS = new Set([
   'skills render',
   'rules render',
 ]);
-const OPENSPEC_MODULE_COMMANDS = new Set([
+const OPENSPEC_MODULE_COMMANDS: any = new Set([
   'openspec converge',
   'openspec convergence preflight',
   'openspec convergence inspect',
 ]);
 
-const COMMAND_ROUTES = [
+const COMMAND_ROUTES: any[] = [
   {
     key: "init",
     surface: "primary",
@@ -59,8 +59,8 @@ const COMMAND_ROUTES = [
       "未提供 --description 时写入明确 TODO，并由 doctor 提示补全。",
       "--help 只输出帮助，不会写入文件。"
     ],
-    match: ({ domain }) => domain === 'init',
-    run: (r, c) => r.initBuildr(c.argv.slice(3)),
+    match: ({ domain }: any) => domain === 'init',
+    run: (r: any, c: any) => r.initBuildr(c.argv.slice(3)),
   },
   {
     key: "bootstrap guide",
@@ -71,12 +71,12 @@ const COMMAND_ROUTES = [
       "",
       "输出最小 bootstrap 指南。"
     ],
-    match: ({ domain, action }) => domain === 'bootstrap' && action === 'guide',
-    run: (r) => r.bootstrapGuide(),
+    match: ({ domain, action }: any) => domain === 'bootstrap' && action === 'guide',
+    run: (r: any) => r.bootstrapGuide(),
   },
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
-  ...['inspect', 'validate', 'update'].map((operation) => ({
+  ...['inspect', 'validate', 'update'].map((operation: any) => ({
     key: `project verification ${operation}`,
     surface: 'agent-machine',
     summary: operation === 'inspect' ? '读取 Project 测试地图。' : operation === 'validate' ? '校验 Agent 形成的 verification.yml 候选。' : '按已观察版本更新 Project 测试地图。',
@@ -85,8 +85,8 @@ const COMMAND_ROUTES = [
       : operation === 'validate'
         ? 'Usage: buildr project verification validate <project> --file <candidate.yml> [--target <workspace>] [--json]'
         : 'Usage: buildr project verification update <project> --file <candidate.yml> --expected-identity <identity|absent> [--target <workspace>] [--json]', '', 'Task Verification Skill 指导 Agent 从真实测试代码、构建脚本、CI 与说明形成候选；Application 只校验和维护测试地图。'],
-    match: ({ domain, action, runtimeId }) => domain === 'project' && action === 'verification' && runtimeId === operation,
-    run: (r, c) => r.projectVerificationCommand(operation, c.argv.slice(5)),
+    match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'verification' && runtimeId === operation,
+    run: (r: any, c: any) => r.projectVerificationCommand(operation, c.argv.slice(5)),
   })),
   TASK_MODULE_COMMAND_SLOT,
   {
@@ -98,15 +98,15 @@ const COMMAND_ROUTES = [
       "",
       "从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。"
     ],
-    match: ({ domain, action }) => domain === 'mutation' && action === 'recover',
-    run: (r, c) => r.mutationRecover(c.argv.slice(4)),
+    match: ({ domain, action }: any) => domain === 'mutation' && action === 'recover',
+    run: (r: any, c: any) => r.mutationRecover(c.argv.slice(4)),
   },
   AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
   OPENSPEC_MODULE_COMMAND_SLOT,
   AGENT_ASSETS_SOURCE_COMMAND_SLOT,
 ];
 
-const COMMAND_GROUPS = [
+const COMMAND_GROUPS: any[] = [
   {
     key: "project daily-progress",
     surface: "agent-machine",
@@ -157,18 +157,18 @@ const COMMAND_GROUPS = [
   },
 ];
 
-function executableCommand(descriptor) {
+function executableCommand(descriptor: any): any  {
   return Object.freeze({ ...descriptor, executable: true, replacement: descriptor.replacement || null });
 }
 
-const SPECIAL_COMMANDS = [
+const SPECIAL_COMMANDS: any[] = [
   executableCommand({
     key: 'help',
     surface: 'primary',
     summary: '查询 canonical command 或 aggregate topic。',
     help: ['Usage: buildr help [command ...]', '', '查询由 command catalog 声明的 canonical command 或 aggregate topic。'],
-    match: ({ runtime, rawArgs }) => runtime.isHelpRequest(rawArgs),
-    run: (runtime, context) => {
+    match: ({ runtime, rawArgs }: any) => runtime.isHelpRequest(rawArgs),
+    run: (runtime: any, context: any) => {
       const helpArgs = context.rawArgs[0] === 'help' ? context.rawArgs.slice(1) : context.rawArgs;
       if (runtime.printHelp(helpArgs)) return;
       process.exit(printCliError(context.rawArgs, { candidates: commandCandidates(context.commandRegistry), helpTopic: context.rawArgs[0] === 'help' }));
@@ -183,36 +183,36 @@ const SPECIAL_COMMANDS = [
       '',
       '输出当前实际执行的 Buildr CLI package identity。也可使用 buildr --version 或 buildr -V。',
     ],
-    match: ({ rawArgs }) => isVersionRequest(rawArgs),
-    run: (_runtime, context) => printVersion(context.rawArgs),
+    match: ({ rawArgs }: any) => isVersionRequest(rawArgs),
+    run: (_runtime: any, context: any) => printVersion(context.rawArgs),
   }),
 ];
 
-function createCommandRegistry(moduleContributions) {
-  const agentAssetsPackageContributions = moduleContributions.filter((route) => AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key));
-  const agentAssetsRuntimeContributions = moduleContributions.filter((route) => AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key));
-  const agentAssetsSourceContributions = moduleContributions.filter((route) => AGENT_ASSETS_SOURCE_COMMANDS.has(route.key));
-  const workspaceDailyProgressContributions = moduleContributions.filter((route) => route.key.startsWith('project daily-progress '));
-  const nonAgentAssetsContributions = moduleContributions.filter((route) => (
+function createCommandRegistry(moduleContributions: any): any  {
+  const agentAssetsPackageContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key));
+  const agentAssetsRuntimeContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key));
+  const agentAssetsSourceContributions = moduleContributions.filter((route: any) => AGENT_ASSETS_SOURCE_COMMANDS.has(route.key));
+  const workspaceDailyProgressContributions = moduleContributions.filter((route: any) => route.key.startsWith('project daily-progress '));
+  const nonAgentAssetsContributions = moduleContributions.filter((route: any) => (
     !AGENT_ASSETS_PACKAGE_COMMANDS.has(route.key)
     && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
     && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
     && !OPENSPEC_MODULE_COMMANDS.has(route.key)
     && !route.key.startsWith('project daily-progress ')
   ));
-  const routes = COMMAND_ROUTES.flatMap((route) => {
+  const routes = COMMAND_ROUTES.flatMap((route: any) => {
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
     if (route === WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT) return workspaceDailyProgressContributions;
-    if (route === OPENSPEC_MODULE_COMMAND_SLOT) return moduleContributions.filter((item) => OPENSPEC_MODULE_COMMANDS.has(item.key));
+    if (route === OPENSPEC_MODULE_COMMAND_SLOT) return moduleContributions.filter((item: any) => OPENSPEC_MODULE_COMMANDS.has(item.key));
     if (route === TASK_MODULE_COMMAND_SLOT) return nonAgentAssetsContributions;
     return [route];
   });
   return Object.freeze([...SPECIAL_COMMANDS, ...routes.map(executableCommand)]);
 }
 
-function createCommandCatalog(commandRegistry) {
+function createCommandCatalog(commandRegistry: any): any  {
   return Object.freeze([...commandRegistry, ...COMMAND_GROUPS.map(Object.freeze), ...WEB_CLI_GROUPS]);
 }
 
@@ -228,21 +228,21 @@ export const COMMAND_REGISTRY = createCommandRegistry([
 ]);
 export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 
-function commandCandidates(commandRegistry) {
-  return commandRegistry.map((item) => item.key);
+function commandCandidates(commandRegistry: any): any  {
+  return commandRegistry.map((item: any) => item.key);
 }
 
-export function dispatch(argv = process.argv) {
+export function dispatch(argv: any = process.argv): any  {
   const runtime = createRuntime();
   const commandRegistry = createCommandRegistry(runtimeContributions(runtime, 'cli'));
   const commandCatalog = createCommandCatalog(commandRegistry);
   registerCommandHelp(runtime, commandCatalog);
   const rawArgs = argv.slice(2);
   const [domain, action, runtimeId, ...args] = rawArgs;
-  const context = { argv, rawArgs, domain, action, runtimeId, args, runtime, commandRegistry, commandCatalog };
-  const direct = commandRegistry.find((item) => !item.requiresAgent && item.match(context));
+  const context: any = { argv, rawArgs, domain, action, runtimeId, args, runtime, commandRegistry, commandCatalog };
+  const direct = commandRegistry.find((item: any) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);
-  const agent = commandRegistry.find((item) => item.requiresAgent && item.match(context));
+  const agent = commandRegistry.find((item: any) => item.requiresAgent && item.match(context));
   if (agent && runtime.isSupportedAgent(runtimeId)) return agent.run(runtime, context);
   process.exit(printCliError(rawArgs, { candidates: commandCandidates(commandRegistry) }));
 }
