@@ -288,7 +288,7 @@ export function createPackageStaticValidator(deps: any): any  {
     for (const legacyRepository of ['task-verification-repository.mjs', 'task-review-repository.ts']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
-    for (const required of ['test/verification/onboarding/repository.mjs', 'test/verification/onboarding/init.mjs', 'test/verification/onboarding/service-branch.mjs', 'test/verification/network/remote-text.mjs', 'test/verification/cli/architecture.mjs', 'test/verification/cli/compatibility.mjs', 'test/verification/cli/package-parity.mjs', 'test/verification/release/open-source-candidate.mjs', 'tools/release/release-contract.mjs']) {
+    for (const required of ['test/verification/onboarding/repository.ts', 'test/verification/onboarding/init.ts', 'test/verification/onboarding/service-branch.ts', 'test/verification/network/remote-text.ts', 'test/verification/cli/architecture.ts', 'test/verification/cli/compatibility.ts', 'test/verification/cli/package-parity.ts', 'test/verification/release/open-source-candidate.ts', 'tools/release/release-contract.ts']) {
       if (!existsFile(path.join(root, required))) problems.push(`Development checkout verification is missing: ${required}`);
     }
 

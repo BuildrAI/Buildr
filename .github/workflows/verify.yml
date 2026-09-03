@@ -48,7 +48,7 @@ jobs:
           BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
         shell: bash
         run: |
-          node test/verification/browser-selector-dispatcher.mjs --output "${RUNNER_TEMP}/development-browser-plan.json"
+          node test/verification/browser-selector-dispatcher.ts --output "${RUNNER_TEMP}/development-browser-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
       - name: Install product dependencies
         run: npm ci
@@ -111,7 +111,7 @@ jobs:
         id: windows-plan
         shell: bash
         run: |
-          node test/verification/changed.mjs --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
+          node test/verification/changed.ts --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.steps.length > 0) + "\n");' "${RUNNER_TEMP}/development-windows-plan.json"
       - name: Install product dependencies
         if: steps.windows-plan.outputs.selected == 'true'
@@ -433,7 +433,7 @@ jobs:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
           BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-ci-aggregate.json
-        run: node test/verification/candidate-ci.mjs aggregate
+        run: node test/verification/candidate-ci.ts aggregate
       - name: Upload aggregate result
         if: always()
         uses: actions/upload-artifact@v7

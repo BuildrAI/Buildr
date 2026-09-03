@@ -1,0 +1,245 @@
+#!/usr/bin/env node
+
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { registerCommandHelp } from '../../../src/bootstrap/cli/help.ts';
+import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.ts';
+
+const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const cli: any = path.join(productRoot, 'bin', 'buildr.mjs');
+
+function run(args: any, options: any = {}): any  {
+  return spawnSync(process.execPath, [cli, ...args], {
+    cwd: options.cwd || productRoot,
+    encoding: 'utf8',
+    env: { ...process.env, ...(options.env || {}) },
+  });
+}
+
+const helpTopics: any[] = [[], ...COMMAND_CATALOG.map((item: any) => item.key.split(' '))];
+const helpRuntime: any = registerCommandHelp({}, COMMAND_CATALOG);
+const originalLog: any = console.log;
+let renderedHelp: any = '';
+console.log = (...parts: any[]) => { renderedHelp += `${parts.join(' ')}\n`; };
+try {
+  for (const topic of helpTopics) {
+    renderedHelp = '';
+    assert.equal(helpRuntime.isHelpRequest(topic.length === 0 ? [] : [...topic, '--help']), true);
+    assert.equal(helpRuntime.printHelp(topic), true, `help topic is not registered: ${topic.join(' ')}`);
+    assert.match(renderedHelp, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
+  }
+} finally {
+  console.log = originalLog;
+}
+
+const publicHelpTopics: any[] = [
+  [], ['init'], ['web'], ['web', 'preview', 'start'], ['task', 'environment', 'prepare'],
+  ['task', 'verification', 'record'], ['task', 'delivery'], ['task', 'delivery', 'inspect'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
+  ['openspec', 'convergence', 'inspect'],
+];
+const helpCwd: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-help-'));
+try {
+  for (const topic of publicHelpTopics) {
+    const cwd: any = helpCwd;
+    const result: any = run([...topic, '--help'], { cwd });
+    assert.equal(result.status, 0, `help failed: buildr ${topic.join(' ')}`);
+    assert.match(result.stdout, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
+    assert.equal(result.stderr, '', `help wrote stderr: buildr ${topic.join(' ')}`);
+    assert.deepEqual(fs.readdirSync(cwd), [], `help changed filesystem: buildr ${topic.join(' ')}`);
+    if (topic.length > 0) {
+      const commandHelp: any = run(['help', ...topic], { cwd });
+      assert.equal(commandHelp.status, 0, `command help failed: buildr help ${topic.join(' ')}`);
+      assert.equal(commandHelp.stdout, result.stdout, `help forms differ: ${topic.join(' ')}`);
+      assert.equal(commandHelp.stderr, '');
+    }
+  }
+} finally {
+  fs.rmSync(helpCwd, { recursive: true, force: true });
+}
+
+const rootHelp: any = run([]);
+assert.equal(rootHelp.status, 0);
+assert.match(rootHelp.stdout, /^  web\s/m);
+assert.doesNotMatch(rootHelp.stdout, /^  app(?:\s|$)/m);
+assert.equal(COMMAND_CATALOG.some((item: any) => item.key === 'app' || item.key.startsWith('app ')), false);
+const taskHelp: any = run(['help', 'task']);
+assert.equal(taskHelp.status, 0, taskHelp.stderr);
+assert.match(taskHelp.stdout, /create\|inspect\|update\|activate\|complete\|abandon/);
+assert.doesNotMatch(taskHelp.stdout, /复盘来源可重复|终态不可重开或继续修改/);
+const taskCreateHelp: any = run(['help', 'task', 'create']);
+assert.doesNotMatch(taskCreateHelp.stdout, /复盘来源可重复/);
+assert.match(taskCreateHelp.stdout, /不创建Change、branch、commit或专业记录/);
+const taskUpdateHelp: any = run(['help', 'task', 'update']);
+assert.match(taskUpdateHelp.stdout, /终态事实更正必须提供--reason和当前--expected-record/);
+assert.match(taskUpdateHelp.stdout, /不执行Git、验证、交付或清理/);
+const taskAbandonHelp: any = run(['help', 'task', 'abandon']);
+assert.match(taskAbandonHelp.stdout, /终态事实仍可通过带原因的统一update显式更正/);
+const verificationRecordHelp: any = run(['help', 'task', 'verification', 'record']);
+assert.match(verificationRecordHelp.stdout, /--expected-report <absent\|sha256-digest>/);
+assert.match(verificationRecordHelp.stdout, /只保存报告，不执行测试、Git、交付、Task完成或清理/);
+const surfaceHeadings: any = {
+  primary: 'Primary workspace commands:',
+  'agent-machine': 'Agent machine commands:',
+  maintenance: 'Product maintenance commands:',
+};
+for (const [surface, heading] of Object.entries(surfaceHeadings)) {
+  const start: any = rootHelp.stdout.indexOf(heading);
+  assert.notEqual(start, -1, `root help is missing ${surface} section`);
+  const later: any = Object.values(surfaceHeadings)
+    .map((candidate: any) => rootHelp.stdout.indexOf(candidate, start + heading.length))
+    .filter((index: any) => index !== -1);
+  const section: any = rootHelp.stdout.slice(start, later.length ? Math.min(...later) : undefined);
+  for (const descriptor of COMMAND_REGISTRY.filter((item: any) => item.surface === surface)) {
+    assert.match(section, new RegExp(`^  ${descriptor.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s`, 'm'), `${descriptor.key} is not rendered in ${surface}`);
+  }
+}
+
+const removedHelpCwd: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
+try {
+  const removedCommands: any[] = [
+    { key: 'openspec audit', args: ['openspec', 'audit', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec baseline create', args: ['openspec', 'baseline', 'create', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec check', args: ['openspec', 'check', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-plan', args: ['openspec', 'sync-plan', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'openspec sync-apply', args: ['openspec', 'sync-apply', 'demo', '--target', removedHelpCwd, '--json'] },
+    { key: 'skills migrate-project-assets', args: ['skills', 'migrate-project-assets', '--target', removedHelpCwd, '--check', '--json'] },
+    { key: 'app', args: ['app', '--json'] },
+    { key: 'app preview start', args: ['app', 'preview', 'start', 'legacy', '--json'] },
+  ];
+  for (const command of removedCommands) {
+    const result: any = run(command.args, { cwd: removedHelpCwd });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error.code, 'cli.unknown_command');
+    assert.deepEqual(fs.readdirSync(removedHelpCwd), [], `removed command wrote files: ${command.key}`);
+    assert.equal(COMMAND_REGISTRY.some((item: any) => item.key === command.key), false);
+  }
+} finally {
+  fs.rmSync(removedHelpCwd, { recursive: true, force: true });
+}
+
+for (const args of [['app', '--help'], ['help', 'app']]) {
+  const result: any = run(args);
+  assert.equal(result.status, 2);
+  assert.match(`${result.stdout}${result.stderr}`, /Unknown (?:command|help topic): app/);
+}
+const removedAppJson: any = run(['app', '--json']);
+assert.equal(removedAppJson.status, 2);
+assert.equal(JSON.parse(removedAppJson.stdout).error.code, 'cli.unknown_command');
+assert.equal(JSON.parse(removedAppJson.stdout).suggestions.includes('app'), false);
+
+for (const [args, expected] of [
+  [['unknown'], /Unknown command: unknown/],
+  [['help', 'unknown'], /Unknown help topic: unknown/],
+  [['-v'], /Unknown option: -v/],
+  [['project', 'create'], /Missing project ref/],
+  [['service', 'create'], /Missing service ref/],
+  [['render', 'unsupported'], /Unsupported Agent runtime: unsupported/],
+  [['commands', 'add', 'demo', '--unknown'], /Unknown argument: --unknown/],
+]) {
+  const result: any = run(args);
+  assert.notEqual(result.status, 0, `invalid command unexpectedly passed: ${args.join(' ')}`);
+  assert.match(`${result.stdout}${result.stderr}`, expected, `invalid command diagnostic drifted: ${args.join(' ')}`);
+}
+
+const packageVersion: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8')).version;
+for (const args of [['--version'], ['-V'], ['version']]) {
+  const result: any = run(args);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.trim(), packageVersion);
+  assert.equal(result.stderr, '');
+}
+const versionJson: any = run(['version', '--json']);
+assert.equal(versionJson.status, 0);
+const versionIdentity: any = JSON.parse(versionJson.stdout);
+assert.deepEqual(Object.keys(versionIdentity), [
+  'schemaVersion', 'package', 'version', 'protocolIdentity', 'applicationPayloadDigest',
+  'channel', 'runtime', 'installationIdentity', 'sourceCommit',
+]);
+assert.equal(versionIdentity.schemaVersion, 'buildr.version/v1');
+assert.equal(versionIdentity.package, '@buildr-ai/buildr');
+assert.equal(versionIdentity.version, packageVersion);
+assert.equal(versionIdentity.protocolIdentity, 'buildr.web-protocol/v1');
+assert.equal(versionIdentity.applicationPayloadDigest, null);
+assert.equal(versionIdentity.channel, 'development');
+assert.match(versionIdentity.installationIdentity, /^sha256-[a-f0-9]{64}$/);
+assert.match(versionIdentity.sourceCommit, /^[a-f0-9]{40}$/);
+assert.deepEqual(Object.keys(versionIdentity.runtime), [
+  'role', 'executable', 'version', 'platform', 'architecture', 'identity',
+]);
+assert.equal(versionIdentity.runtime.role, 'development');
+assert.equal(path.isAbsolute(versionIdentity.runtime.executable), true);
+assert.equal(versionIdentity.runtime.version, process.versions.node);
+assert.equal(versionIdentity.runtime.platform, process.platform);
+assert.equal(versionIdentity.runtime.architecture, process.arch);
+assert.match(versionIdentity.runtime.identity, /^sha256-[a-f0-9]{64}$/);
+const unknownJson: any = run(['doctr', '--json']);
+assert.equal(unknownJson.status, 2);
+assert.equal(unknownJson.stderr, '');
+assert.equal(JSON.parse(unknownJson.stdout).schemaVersion, 'buildr.cli-error/v1');
+assert.equal(JSON.parse(unknownJson.stdout).error.code, 'cli.unknown_command');
+assert.deepEqual(JSON.parse(unknownJson.stdout).suggestions, ['doctor']);
+const finishStatus: any = run(['task', 'finish', 'status', '--json']);
+assert.equal(finishStatus.status, 2);
+assert.equal(JSON.parse(finishStatus.stdout).error.code, 'cli.unknown_command');
+assert.equal(JSON.parse(finishStatus.stdout).suggestions.some((item: any) => item.startsWith('task finish')), false, '提示不得推荐已退役的收尾入口');
+assert.equal(JSON.parse(finishStatus.stdout).help, 'buildr --help');
+
+const omitPrepareAgent: any = run(['task', 'environment', 'prepare', 'demo', '--json']);
+assert.equal(omitPrepareAgent.status, 2);
+assert.equal(omitPrepareAgent.stderr, '');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).schemaVersion, 'buildr.cli-error/v1');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).error.code, 'cli.unknown_command');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).suggestions.some((item: any) => item.includes('task environment')), false);
+
+const invalidInspect: any = run(['worktree', 'inspect', 'demo', '--agent', 'codex']);
+assert.notEqual(invalidInspect.status, 0);
+assert.match(`${invalidInspect.stdout}${invalidInspect.stderr}`, /Unknown argument: --agent/);
+
+const runtime: any = run(['runtime', 'list', '--json']);
+assert.equal(runtime.status, 0);
+const runtimeJson: any = JSON.parse(runtime.stdout);
+assert.deepEqual(runtimeJson.supportedAgents, ['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
+assert.deepEqual(runtimeJson.adapterTraitCatalog.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
+assert.equal(runtimeJson.agents.codex.traits.rules.kind, 'native-recursive');
+assert.equal(runtimeJson.agents.codex.traits.skills.root, '.agents');
+assert.equal(runtimeJson.agents['claude-code'].traits.rules.kind, 'reference-bridge');
+assert.equal(runtimeJson.agents['claude-code'].traits.skills.root, '.claude');
+assert.equal(runtimeJson.agents.cursor.traits.rules.format, 'cursor-mdc');
+assert.equal(runtimeJson.agents.qoder.traits.rules.format, 'qoder-markdown');
+assert.equal(runtimeJson.agents.trae.traits.rules.format, 'trae-markdown');
+assert.equal(runtimeJson.agents['trae-work'].traits.rules.placement, 'root-index');
+assert.equal(runtimeJson.agents.workbuddy.traits.rules.placement, 'root-index');
+
+const ordinaryCliRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-demand-start-'));
+try {
+  const appData: any = path.join(ordinaryCliRoot, 'app-data');
+  const ordinary: any = run(['runtime', 'list', '--json'], { env: { BUILDR_APP_DATA_DIR: appData } });
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  assert.equal(fs.existsSync(appData), false, 'ordinary CLI must not start Buildr Web or create instance state');
+} finally {
+  fs.rmSync(ordinaryCliRoot, { recursive: true, force: true });
+}
+
+const workspace: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-compat-'));
+try {
+  let result: any = run(['init', '--agent', 'codex', '--target', workspace, '--name', 'compat', '--profile', 'team']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Buildr onboarding 已完成：codex/);
+  result = run(['project', 'create', 'demo', '--target', workspace]);
+  assert.equal(result.status, 0, result.stderr);
+  result = run(['doctor', '--agent', 'codex', '--target', workspace, '--json', '--detail', 'full']);
+  assert.equal(result.status, 0, result.stderr);
+  const doctor: any = JSON.parse(result.stdout);
+  assert.equal(doctor.ok, true);
+  assert.equal(doctor.projectRegistry.projects[0].name, 'demo');
+  assert.equal(doctor.runtime.codex[0].environmentChecks.installation.status, 'not-checked');
+  assert.equal(doctor.runtime.codex[0].activation.rules, 'path-read');
+} finally {
+  fs.rmSync(workspace, { recursive: true, force: true });
+}
+
+console.log(`CLI compatibility verification passed: ${helpTopics.length} in-process help contracts, ${publicHelpTopics.length} public help entrypoints, package identity, actionable failures, JSON discovery, and workspace mutation.`);

@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: Web 实例生命周期必须由窄模块拥有
-Buildr MUST 由 `web/application` 唯一编排默认实例与 Preview 的启动、复用、停止、维护、异常恢复和资源清理，并 MUST 通过 `web/module.mjs` 向既有 Bootstrap 贡献生命周期能力和 CLI commands；Bootstrap 与 HTTP Host MUST NOT 重复维护这些策略。
+Buildr MUST 由 `web/application` 唯一编排默认实例与 Preview 的启动、复用、停止、维护、异常恢复和资源清理，并 MUST 通过 `web/module.ts` 向既有 Bootstrap 贡献生命周期能力和 CLI commands；Bootstrap 与 HTTP Host MUST NOT 重复维护这些策略。
 
 #### Scenario: Bootstrap 启动 Web 命令
 - **WHEN** CLI Host 分发 `buildr web` 或 `buildr web preview` 命令

@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import test from 'node:test';
 
 import { createReleaseTaskEvidenceCorrelation, inspectReleaseTaskEvidenceCorrelation, validateReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.ts';
-import { createReleaseTransactionContext } from '../../tools/release/release-transaction-evidence.mjs';
+import { createReleaseTransactionContext } from '../../tools/release/release-transaction-evidence.ts';
 
 const digest = (letter: string): string => `sha256-${letter.repeat(64)}`;
 const sha = (letter: string): string => letter.repeat(40);

@@ -18,13 +18,13 @@ impacts:
     sourceIdentities:
       - services/buildr/tools/release/release-execution-binding.ts
       - services/buildr/tools/release/release-preparation-binding.ts
-      - services/buildr/tools/release/release-transaction-runner.mjs
-      - services/buildr/tools/release/release-orchestration-runner.mjs
+      - services/buildr/tools/release/release-transaction-runner.ts
+      - services/buildr/tools/release/release-orchestration-runner.ts
   - type: workflow
     target: skills/buildr-release/SKILL.md
     reason: 发布Skill直接组合Worktree、Release Preparation、Node与retained controller。
     status: updated
     sourceIdentities:
-      - services/buildr/tools/release/release-readiness.mjs
+      - services/buildr/tools/release/release-readiness.ts
       - services/buildr/tools/release/release-task-evidence-correlation.ts
 unresolvedItems: []

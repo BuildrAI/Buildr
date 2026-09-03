@@ -1137,7 +1137,7 @@ Buildr Web Runtime MUST 提供 Project-scoped 与 Task-scoped 只读每日演进
 - **AND** MUST NOT 扫描 Git 或合成不存在的日期文件
 
 ### Requirement: Web HTTP Host 必须按职责拆分
-Buildr Web HTTP MUST保留 `server.mjs` 作为唯一 server lifecycle/组装入口，并 MUST将请求路由、session/request security、静态资源处理和 response mapping 拆为独立窄模块。拆分后的依赖 MUST从 server 单向指向这些模块，router MUST不拥有 listen、Secret 生成或 resource cleanup。
+Buildr Web HTTP MUST保留 `server.ts` 作为唯一 server lifecycle/组装入口，并 MUST将请求路由、session/request security、静态资源处理和 response mapping 拆为独立窄模块。拆分后的依赖 MUST从 server 单向指向这些模块，router MUST不拥有 listen、Secret 生成或 resource cleanup。
 
 #### Scenario: 创建本机 Web Server
 - **WHEN** Web module 调用 `createLocalWorkspaceServer`
@@ -1147,7 +1147,7 @@ Buildr Web HTTP MUST保留 `server.mjs` 作为唯一 server lifecycle/组装入�
 #### Scenario: 架构验证职责边界
 - **WHEN** architecture verifier 检查 `src/web/http`
 - **THEN** router、session/request security、static files 与 responses MUST具有独立 owner 文件
-- **AND** `server.mjs` MUST不重新内联这些职责
+- **AND** `server.ts` MUST不重新内联这些职责
 
 ### Requirement: Web HTTP 拆分必须保持安全与响应行为
 结构迁移 MUST保持现有 Session token、Origin、JSON content type、32 KiB body limit、instance Secret、loopback bind、静态路径穿越防护、CSP/安全 headers、shutdown、route order、HTTP status/body 与 error mapping 行为等价。

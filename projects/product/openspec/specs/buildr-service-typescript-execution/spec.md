@@ -2,28 +2,28 @@
 
 ## Purpose
 
-定义 Buildr Service 后端 TypeScript 的静态约束、Node 24 原生开发执行、混合模块加载、测试入口与正式发布物等价边界。
+定义 Buildr Service 后端 TypeScript 的静态约束、Node 24 原生开发执行、单一源码权威、测试入口与正式发布物等价边界。
 
 ## Requirements
 
 ### Requirement: Buildr Service 必须提供受约束的后端 TypeScript 静态检查
-Buildr Service MUST为全部人工维护的后端、工具和测试`.ts`源码提供稳定typecheck入口，并 MUST启用`strict`、`noEmit`、`NodeNext`、`verbatimModuleSyntax`与`erasableSyntaxOnly`等约束。typecheck MUST先通过声明的生成入口物化所需DTO或公共库输出，再检查`src/**/*.ts`、`tools/**/*.ts`和`test/**/*.ts`；目录遗漏 MUST NOT使已迁移工具绕过静态检查。TypeScript compiler与Node类型 MUST只作为开发依赖，正式runtime dependency不得因此增加。
+Buildr Service MUST为全部人工维护的后端、工具和测试`.ts`源码提供稳定typecheck入口。`src/**/*.ts`与`tools/**/*.ts` MUST启用`strict`、`noEmit`、`NodeNext`、`verbatimModuleSyntax`与`erasableSyntaxOnly`等约束；`test/**/*.ts`在过渡期可以由独立配置只检查语法与模块解析，其行为正确性仍必须由真实测试运行证明。typecheck MUST先通过声明的生成入口物化所需DTO或公共库输出，目录遗漏 MUST NOT使已迁移源码绕过对应检查。TypeScript compiler与Node类型 MUST只作为开发依赖，正式runtime dependency不得因此增加。
 
 #### Scenario: 对后端 TypeScript 执行静态检查
 - **WHEN** 维护者在Product固定Node环境中从不含生成物的干净checkout运行Buildr Service typecheck
-- **THEN** 入口 MUST先生成所需ignored输入并让全部已登记`.ts`源码通过严格no-emit检查
-- **AND** 不可擦除语法、隐式不安全类型、不符合NodeNext的模块引用或未覆盖的人工TypeScript目录 MUST使检查失败
+- **THEN** 入口 MUST先生成所需ignored输入，并让生产与工具源码通过严格no-emit检查、测试源码通过独立过渡检查
+- **AND** 不可擦除语法、生产或工具的隐式不安全类型、不符合NodeNext的模块引用或未覆盖的人工TypeScript目录 MUST使检查失败
 
 #### Scenario: 正式运行依赖保持不变
 - **WHEN** Application Payload生成runtime package metadata或npm Candidate inventory
 - **THEN** TypeScript compiler、Node类型包、generator和development scripts MUST NOT成为正式运行依赖
 - **AND** 正式包 MUST只携带所需生成JavaScript、公共声明与冻结资源
 
-### Requirement: Development checkout 必须原生执行混合 TypeScript 模块图
-Buildr development checkout MUST 使用 Product 声明的 Node 24.15.0 原生加载仅含可擦除类型语法的 `.ts`。`.mjs` 与 `.ts` MUST 使用显式相对扩展名互相引用，不得依赖额外 loader、路径别名或运行时转换器。
+### Requirement: Development checkout 必须原生执行 TypeScript 源码图
+Buildr development checkout MUST 使用 Product 声明的 Node 24.15.0 原生加载仅含可擦除类型语法的 `.ts`。人工维护的生产、工具和普通测试源码 MUST 使用显式 `.ts` 相对扩展名，不得依赖额外 loader、路径别名或运行时转换器。
 
-#### Scenario: MJS 入口加载 TypeScript 模块
-- **WHEN** 固定 Node 从稳定 `bin/buildr.mjs` 进入 CLI Host，且执行路径包含 `.mjs -> .ts -> .mjs` 依赖
+#### Scenario: 稳定入口加载 TypeScript 模块
+- **WHEN** 固定 Node 从稳定 `bin/buildr.mjs` 进入 CLI Host，并继续执行 `.ts` 源码图
 - **THEN** 代表性 CLI 命令 MUST 成功并保持既有输出协议
 - **AND** 进程 MUST NOT加载 `tsx`、`ts-node` 或自定义 loader
 
@@ -45,18 +45,18 @@ Buildr Application Payload MUST 在构建阶段吸收被引用的 `.ts` 并继�
 - **THEN** 已安装 `buildr` MUST 由兼容 Host Node 通过 CommonJS Application Payload 执行代表性 CLI 命令
 - **AND** tarball inventory MUST NOT包含后端 `.ts`、TypeScript compiler或 Node 类型包
 
-### Requirement: TypeScript 采用必须保持渐进且不改变公开行为
-本轮 TypeScript 基础 MUST 只迁移用于证明执行闭环的最小真实生产切片。未触达 `.mjs` MUST 保持原状，迁移 MUST NOT 改变公开 CLI、HTTP、JSON、错误、数据模型、SQLite、事务、writer authority、运行副作用或 Verification 选择语义。
+### Requirement: TypeScript 源码权威必须闭合且不改变公开行为
+人工维护的 `src/`、`tools/`和普通 `test/` 实现 MUST 以 `.ts` 为唯一源码权威。迁移 MUST NOT 改变公开 CLI、HTTP、JSON、错误、数据模型、SQLite、事务、writer authority、运行副作用或 Verification 选择语义。Git tracked `.mjs` MUST 只能是稳定公共薄入口、自举更新前兼容入口或专门证明 JavaScript 消费兼容性的夹具，并由闭合允许清单约束。
 
-#### Scenario: 最小参考切片完成迁移
-- **WHEN** CLI identity 参考切片从 `.mjs` 迁移到 `.ts`
+#### Scenario: 源码模块完成迁移
+- **WHEN** 生产、工具或普通测试模块从 `.mjs` 迁移到 `.ts`
 - **THEN** 全部直接 import、测试和 Verification owner selector MUST 原子更新到新扩展名
 - **AND** 旧路径 MUST 不再作为实现或兼容副本存在
 
-#### Scenario: 未触达模块保持原状
-- **WHEN** 本 Change 完成
-- **THEN** 除明确参考切片外的既有 `.mjs` MUST NOT 因建立 TypeScript 基础被批量重命名或改写
-- **AND** 产品材料 MUST NOT 声称这些未触达模块已经获得完整 TypeScript 类型安全
+#### Scenario: 非 TypeScript 文件保持闭合允许清单
+- **WHEN** verifier 扫描 Git tracked Buildr Service 文件
+- **THEN** 除 `bin/buildr.mjs`、`test-context.mjs`、`package/launchers/manage.mjs` 与明确 JavaScript 兼容夹具外不得出现 `.mjs`
+- **AND** 新的生产、工具或普通测试 `.mjs` MUST 使静态检查失败
 
 ### Requirement: 独立公共ESM library必须与CLI Payload采用不同编译目标
 Buildr Service MAY为规范明确声明的独立公共package subpath从TypeScript authority向显式ignored或隔离目标生成标准ESM JavaScript与`.d.ts`，但 MUST保持CLI Application Payload的单一CommonJS bundle与正式Host Node启动模型。公共library生成物 MUST不依赖CLI bundle、Buildr Workspace或TypeScript runtime，MUST不进入Git tracked tree，raw library `.ts` MUST不进入正式Candidate tarball。

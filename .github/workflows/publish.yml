@@ -73,13 +73,13 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/contract-input" "${RUNNER_TEMP}/contract"
           node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync(process.argv[1], `${process.env.BUILDR_RELEASE_CONTEXT}\n`, { mode: 0o600 });' "${RUNNER_TEMP}/contract-input/release-context.json"
-          node tools/release/release-readiness.mjs validate-context \
+          node tools/release/release-readiness.ts validate-context \
             --input "${RUNNER_TEMP}/contract-input/release-context.json" \
             --output "${RUNNER_TEMP}/contract/release-context.json"
       - name: Resolve the npm-only release contract
         id: contract
         run: >-
-          node tools/release/release-contract.mjs "v${{ inputs.version }}"
+          node tools/release/release-contract.ts "v${{ inputs.version }}"
           --source-commit "${{ inputs.source_commit }}"
           --output "${RUNNER_TEMP}/contract/release-contract.json"
       - name: Confirm the frozen dispatch identity
@@ -95,7 +95,7 @@ jobs:
           ' "${RUNNER_TEMP}/contract/release-context.json" "${{ inputs.context_digest }}" "${{ inputs.source_commit }}" "${{ inputs.candidate_tree }}" "${{ inputs.candidate_run_id }}"
       - name: Freeze release notes
         run: >-
-          node tools/release/release-notes.mjs
+          node tools/release/release-notes.ts
           "${{ steps.contract.outputs.version }}"
           ../../../../CHANGELOG.md
           > "${RUNNER_TEMP}/contract/release-notes.md"
@@ -143,8 +143,8 @@ jobs:
         run: |
           node --input-type=module -e '
             import fs from "node:fs";
-            import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
-            import { releaseContextIdentity } from "./tools/release/release-readiness.mjs";
+            import { readReleaseArtifact } from "./tools/release/release-artifact.ts";
+            import { releaseContextIdentity } from "./tools/release/release-readiness.ts";
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const aggregate = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
             const artifact = readReleaseArtifact(process.argv[3]).manifest;
@@ -185,7 +185,7 @@ jobs:
           export BUILDR_CANDIDATE_TARBALL="$(find "${RUNNER_TEMP}/candidate" -maxdepth 1 -name '*.tgz' -print -quit)"
           export BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm-pack.json"
           export BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/release-artifact.json"
-          node test/verification/host-node.mjs
+          node test/verification/host-node.ts
 
   launcher:
     needs: [contract, candidate]
@@ -217,7 +217,7 @@ jobs:
       - name: Verify explicit local Launcher lifecycle from the same tarball
         env:
           BUILDR_RELEASE_ARTIFACT_MANIFEST: ${{ runner.temp }}/candidate/release-artifact.json
-        run: node test/verification/release/release-smoke.mjs
+        run: node test/verification/release/release-smoke.ts
 
   release:
     needs: [contract, candidate, host-node, launcher]
@@ -257,21 +257,21 @@ jobs:
         run: |
           node --input-type=module -e '
             import fs from "node:fs";
-            import { readReleaseArtifact } from "./tools/release/release-artifact.mjs";
+            import { readReleaseArtifact } from "./tools/release/release-artifact.ts";
             const context = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
             const artifact = readReleaseArtifact(process.argv[2]).manifest;
             for (const field of ["sourceCommit", "filename", "size", "sha256", "integrity", "applicationPayloadDigest"]) if (artifact[field] !== context.artifact[field]) throw new Error(`Protected transaction artifact ${field} does not match frozen context`);
           ' "${RUNNER_TEMP}/contract/release-context.json" "${RUNNER_TEMP}/candidate/release-artifact.json"
       - name: Prove current hosted publishing authority without retaining credentials
         run: >-
-          node tools/release/release-authority-oidc-probe.mjs
+          node tools/release/release-authority-oidc-probe.ts
           --source-commit "${{ inputs.source_commit }}"
           --workflow-sha256 "${{ inputs.workflow_sha256 }}"
           --output "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Recheck final source and authority convergence before tag mutation
         run: |
-          node tools/release/release-readiness.mjs evaluate --stage pre-tag --input "${RUNNER_TEMP}/contract/release-context.json" --output "${RUNNER_TEMP}/contract/release-readiness-pre-tag.json"
-          node tools/release/release-convergence.mjs \
+          node tools/release/release-readiness.ts evaluate --stage pre-tag --input "${RUNNER_TEMP}/contract/release-context.json" --output "${RUNNER_TEMP}/contract/release-readiness-pre-tag.json"
+          node tools/release/release-convergence.ts \
             --repo ../../../.. \
             --version "${{ inputs.version }}" \
             --candidate-base "${{ inputs.candidate_base }}" \
@@ -280,20 +280,20 @@ jobs:
             --authority-evidence "${RUNNER_TEMP}/contract/release-authority.json"
       - name: Preflight immutable release tag
         run: >-
-          node tools/release/release-tag-ensure.mjs preflight
+          node tools/release/release-tag-ensure.ts preflight
           "v${{ inputs.version }}"
           "${{ inputs.source_commit }}"
           --repo ../../../..
       - name: Snapshot official Registry artifact and both dist-tags
         id: registry_before
         run: >-
-          node tools/release/registry-version-state.mjs
+          node tools/release/registry-version-state.ts
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/release-artifact.json"
           --snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"
       - name: Create or reuse the immutable release tag
         run: >-
-          node tools/release/release-tag-ensure.mjs ensure
+          node tools/release/release-tag-ensure.ts ensure
           "v${{ inputs.version }}"
           "${{ inputs.source_commit }}"
           --repo ../../../..
@@ -301,20 +301,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          node tools/release/github-release-ensure.mjs preflight
+          node tools/release/github-release-ensure.ts preflight
           "v${{ inputs.version }}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
       - name: Publish the frozen npm tarball
         if: steps.registry_before.outputs.published != 'true'
         run: >-
-          node tools/release/trusted-publish.mjs
+          node tools/release/trusted-publish.ts
           "$(find "${RUNNER_TEMP}/candidate" -maxdepth 1 -name '*.tgz' -print -quit)"
           --access public
           --tag "${{ needs.contract.outputs.npm_tag }}"
       - name: Confirm official Registry integrity and both dist-tags
         run: >-
-          node tools/release/registry-version-state.mjs
+          node tools/release/registry-version-state.ts
           "${{ needs.contract.outputs.version }}"
           --manifest "${RUNNER_TEMP}/candidate/release-artifact.json"
           --tag "${{ needs.contract.outputs.npm_tag }}"
@@ -326,18 +326,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
-          node tools/release/github-release-ensure.mjs ensure
+          node tools/release/github-release-ensure.ts ensure
           "v${{ inputs.version }}"
           "${RUNNER_TEMP}/contract/release-notes.md"
           "${{ needs.contract.outputs.prerelease }}"
       - name: Smoke exact package from the official Registry
         env:
           BUILDR_RELEASE_PACKAGE_SPEC: "@buildr-ai/buildr@${{ needs.contract.outputs.version }}"
-        run: node test/verification/release/release-smoke.mjs
+        run: node test/verification/release/release-smoke.ts
       - name: Finalize correlated release evidence
         if: always()
         run: >-
-          node tools/release/release-transaction-evidence.mjs finalize
+          node tools/release/release-transaction-evidence.ts finalize
           --context "${RUNNER_TEMP}/contract/release-context.json"
           --output "${RUNNER_TEMP}/contract/release-transaction-evidence.json"
           --outcome "${{ job.status }}"

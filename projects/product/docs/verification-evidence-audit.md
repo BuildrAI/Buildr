@@ -16,7 +16,7 @@
 ## 2. 审计入口
 
 ```bash
-npm run test:audit:verification -- src/task/application/finish/task-finish-run.mjs
+npm run test:audit:verification -- src/task/application/finish/task-finish-run.ts
 npm run test:audit:verification -- --base <commit>^ --head <commit>
 ```
 
@@ -160,7 +160,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 | --- | --- | --- | ---: | ---: |
 | `prepare-parent-by-default` | `product.delivery` | affected | 15→15 | 45.687s |
 | `reconcile-cleaned-empty-finish-carriers` | `product.delivery` | affected | 10→10 | 88.692s |
-| `optimize-golden-lifecycle-execution-paths` | `product.delivery` | full / `execution-graph-change`，由 `test/verification/registry.mjs` 触发 | 53→53 | 320.841s |
+| `optimize-golden-lifecycle-execution-paths` | `product.delivery` | full / `execution-graph-change`，由 `test/verification/registry.ts` 触发 | 53→53 | 320.841s |
 
 此可复核小样本的 Full 升级率为 1/3（33.3%）；selected step 中位数为15、P90为53；正式墙钟中位数为88.692秒、nearest-rank P90为320.841秒。唯一 Full reason 是 `execution-graph-change`。五个最常出现的重型 owner 并列各2次：`integration-self-bootstrap`、`capability-cli-integration`、`commands-cli-integration`、`openspec-convergence-recovery`、`managed-data-integrity`；其中四项来自技能/资源投影样本，`integration-self-bootstrap`来自自举收尾样本，Full 样本自然包含全部日常 owner。
 
@@ -184,7 +184,7 @@ Unit 的实际粒度是：只要计划选择 `unit` step，就运行完整低成
 
 三个真实普通 Task 的 scope、step count 与 owner集合均未变化，所以本轮没有可归因的执行时间收益。新增的两个变化是安全修正，不是降本：
 
-- `test/verification/ownership.mjs`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
+- `test/verification/ownership.ts`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
 - 未知高风险 `src/task/application/**`：affected 7 steps → blocked；通用 Unit/CLI architecture owner不能再掩盖缺失的领域 primary owner。
 
 因此当前正式结论是：在这个近期小样本中，普通 Task 没有无理由进入 Full；唯一升级由 execution graph authority 变更触发。选择规则不是主要瓶颈，剩余成本来自被正确选择的真实 primary owner，尤其是 Finish、self-bootstrap、Workspace/Worktree、进程和 capability/OpenSpec runtime 边界。继续降本必须优化这些 owner 内部的真实准备或主体成本，不能通过放宽 Full、删除证据、缓存被测选择结果或提高全局并发取得。

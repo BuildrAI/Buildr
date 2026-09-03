@@ -131,7 +131,7 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 
 #### Scenario: 从 npm executable 启动普通 CLI
 - **WHEN** 用户通过开发 checkout、npm tarball 或 Application Payload 执行 `buildr` 命令
-- **THEN** `bin/buildr.mjs` MUST 只委托 `src/bootstrap/cli/main.mjs` 并保留最外层失败兜底
+- **THEN** `bin/buildr.mjs` MUST 只委托 `src/bootstrap/cli/main.ts` 并保留最外层失败兜底
 - **AND** Bootstrap MUST 创建同一组模块与公共 CLI Host后分发命令
 - **AND** 普通命令的帮助、输出、错误码、退出码和完成后退出行为 MUST 保持等价
 
@@ -141,7 +141,7 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND** Bootstrap MUST NOT 创建第二个 CLI Host或改变现有 HTTP Server、端口、Session、安全和实例生命周期语义
 
 ### Requirement: 模块必须通过显式窄合约参与组装
-每个已迁移业务模块 MUST 通过根部唯一 `module.ts` 或 `module.mjs` 人工源码提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
+每个业务模块 MUST 通过根部唯一 `module.ts` 人工源码提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
 
 #### Scenario: Bootstrap 创建 Task Record 模块
 - **WHEN** Bootstrap 装配 Task Record
@@ -193,7 +193,7 @@ Buildr Service MUST将公共 contract 技术机制、release version 与 Web HTT
 - **AND** 本 Change MUST NOT恢复旧顶层实现或第二 writer
 
 ### Requirement: 退役任务模块不得保留人工源码或兼容转发
-Task Overview、Task Development、Task Planning Identity、Task Environment、Task Execution Record、legacy Task Finish 与 Terminal Delivery 的 Domain、Application、Persistence、Interface、fixture、helper 和专属测试 MUST直接删除。`src/task` 中保留的 Task Record、Task Review、Task Verification 与父任务协调（Task Parent Coordination）Domain、Application、Repository、CLI、HTTP 和 module ports MUST使用 TypeScript 单一人工源码并通过 strict typecheck；现有未触达共享 MJS 组合与验证基础 MAY渐进保留，MUST NOT通过仅修改扩展名伪装 TypeScript 迁移。
+Task Overview、Task Development、Task Planning Identity、Task Environment、Task Execution Record、legacy Task Finish 与 Terminal Delivery 的 Domain、Application、Persistence、Interface、fixture、helper 和专属测试 MUST直接删除。`src/task` 中保留的 Task Record、Task Review、Task Verification 与父任务协调（Task Parent Coordination）Domain、Application、Repository、CLI、HTTP 和 module ports MUST使用 TypeScript 单一人工源码并通过 strict typecheck；共享生产组合与验证基础也 MUST 使用 TypeScript 单一人工源码。
 
 #### Scenario: 扫描生产与测试源码
 - **WHEN** source layout verification 扫描受影响路径

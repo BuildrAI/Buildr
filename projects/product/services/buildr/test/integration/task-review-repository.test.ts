@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createBuildrApplicationTest } from '../context/buildr-node-test.mjs';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.ts';
 
 const test = createBuildrApplicationTest('integration-task-review-repository');
 

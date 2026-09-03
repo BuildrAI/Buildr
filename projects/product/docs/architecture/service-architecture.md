@@ -24,7 +24,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
-| Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
+| Service 根工程职责 | `src/`、`tools/` 与普通 `test/` 已收敛为 TypeScript；`bin/buildr.mjs`、`test-context.mjs`、自举用 `package/launchers/manage.mjs` 及 5 个 JavaScript 兼容夹具构成受验证的最小 `.mjs` 允许清单 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/` 生产源码已全部收敛为 TypeScript | 后续收敛工具、测试和最小兼容入口；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.ts`、`runtime.ts` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
@@ -95,9 +95,9 @@ src/
   bootstrap/
     cli/
       main.ts                  # 创建运行上下文、注册并分发 CLI 命令
-      registry.mjs             # CLI 命令表和路由
-      help.mjs                 # CLI Help 输出
-      diagnostics.mjs          # CLI 失败和诊断输出
+      registry.ts              # CLI 命令表和路由
+      help.ts                  # CLI Help 输出
+      diagnostics.ts           # CLI 失败和诊断输出
 
   task/
     module.ts                  # 模块公开注册入口
@@ -109,14 +109,14 @@ src/
     openspec/                  # Task OpenSpec 解析、收敛和内部 CLI
 
   workspace/
-    module.mjs
+    module.ts
     domain/
     application/
     persistence/
     interfaces/
 
   agent-assets/
-    module.mjs
+    module.ts
     application/
     infrastructure/
     interfaces/cli/
@@ -152,7 +152,7 @@ misc/
 
 具有稳定职责但不属于业务管理对象的 Buildr 自身能力，进入 `system/` 下的明确子模块；`system/` 不能作为无法归类内容的杂物间。
 
-当前开发源码允许迁移期间 `.mjs` 与 `.ts` 共存，但人工维护的生产源码以 `.ts` 为收敛目标。每轮沿完整模块边界迁移并通过严格类型检查与原有行为验证；不得只批量改扩展名，也不得引入第二套 TypeScript 运行入口、路径别名或运行时转换器。
+当前人工维护的生产、工具和普通测试源码已收敛为 `.ts`。生产与工具代码通过严格类型检查；测试代码暂由独立过渡配置检查语法与模块解析，并以真实测试运行证明行为。不得引入第二套 TypeScript 运行入口、路径别名或运行时转换器。
 
 ## `task` 模块
 
@@ -442,10 +442,10 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
 ```text
   bootstrap/
     cli/
-      main.mjs                 # CLI Host：组装 runtime、注册命令、分发请求
-      registry.mjs             # 命令注册表
-      help.mjs                 # Help 输出
-      diagnostics.mjs          # CLI 错误和诊断输出
+      main.ts                  # CLI Host：组装 runtime、注册命令、分发请求
+      registry.ts              # 命令注册表
+      help.ts                  # Help 输出
+      diagnostics.ts           # CLI 错误和诊断输出
 ```
 
 `bin/buildr.mjs` 启动一个 Node.js 进程并转交 `bootstrap/cli/main.ts`。Bootstrap 随后完成运行上下文创建、模块导入与注册、CLI 路由注册和请求分发。普通 CLI 命令完成后进程退出；执行 `buildr web` 时，同一个进程继续承载 HTTP Server。
@@ -458,7 +458,7 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
 
 ## 模块公开入口与注册
 
-业务模块使用根部 `module.mjs` 或已迁移的 `module.ts` 作为公开注册入口，例如：
+业务模块使用根部 `module.ts` 作为公开注册入口，例如：
 
 ```text
 bootstrap/cli/main.ts
@@ -470,7 +470,7 @@ Task Application、CLI/HTTP contributions、diagnostics、lifecycle
 
 这是显式的轻量组装机制，作用类似 Spring 的 `@Configuration`，但不提供依赖扫描或自动注入。Node.js 仍然先按 ESM 规则 `import` 模块，再显式调用创建或注册函数；注册不会让其他文件自动获得可直接使用的 Import。
 
-它的价值是让 Bootstrap 依赖模块公开入口，不逐个了解模块内部文件。`module.mjs` 只公开稳定组装能力，不承载业务规则，也不要求为每个小目录建立注册文件。当前技术栈使用 ESM 显式注册已经足够，第一轮不引入额外的 DI 或模块扫描框架。
+它的价值是让 Bootstrap 依赖模块公开入口，不逐个了解模块内部文件。`module.ts` 只公开稳定组装能力，不承载业务规则，也不要求为每个小目录建立注册文件。当前技术栈使用 ESM 显式注册已经足够，不引入额外的 DI 或模块扫描框架。
 
 模块公开入口遵守以下最小契约：
 
@@ -591,7 +591,7 @@ src/bootstrap/cli/main.ts
     ↓
 src/bootstrap/cli/registry.ts
     ↓
-对应模块 interfaces/cli/<command>.ts 或尚未迁移的 `.mjs`
+对应模块 interfaces/cli/<command>.ts
     ↓
 对应模块 Application 或公开入口
     ↓
@@ -726,7 +726,7 @@ src/interfaces/cli/
 
 src/bootstrap/
     → 已接管进程、CLI Host、模块 registry 和显式组装
-    → 已迁移模块通过各自 module.ts 或尚未迁移的 module.mjs 提供窄 requires/provides/contributions
+    → 所有模块通过各自 module.ts 提供窄 requires/provides/contributions
     → legacy-runtime-module.mjs 与临时 compatibility Facade 已退出
 
 src/web/http/*.mjs
@@ -787,7 +787,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | System Installation | `src/system/installation/**/*.ts`；release version 规则位于 `domain/release-version.ts` | installation identity/origin/update/status/npm lifecycle 与 Launcher 唯一 writer；Release Awareness 与 release tools 复用同一版本 Domain | installation/npm-launcher/release artifact tests | `migrated` | — |
 | System Doctor 与 Diagnostic 装配 | `src/system/doctor/`；各模块提供 `diagnostics` contribution | Doctor 只读观察和聚合，不拥有任何业务 writer | Doctor/system suites、`product.delivery` | `migrated` | — |
 | 遗留入口与临时 Facade | 旧 `src/web/{http,runtime}`、`src/application/doctor*`、`src/bootstrap/legacy-runtime-module.mjs` | 不保留 writer、转发实现或第二注册路径 | architecture verification、Application Payload validation | `migrated`（已删除） | — |
-| 发布物一致性 | `tools/release/application-payload.mjs`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
+| 发布物一致性 | `tools/release/application-payload.ts`、package static validation 与 verification registry | Application Payload 是 runtime/read Worker/`web-dist` 的唯一发布清单 | `product.release-artifact-set`、`product.delivery` | `migrated` | — |
 | Change | `src/task/change/module.ts`、`src/task/change/application/`、`src/task/change/interfaces/http/` | Task Change Application 继续拥有 Change 查询与 Task-scoped Change read model；通过 OpenSpec Query 读取 checklist | change application integration、architecture verification | `migrated` | — |
 | OpenSpec convergence | `src/task/openspec/module.ts`、`src/task/openspec/application/*.ts` | OpenSpec canonical apply/converge/sync/recovery authority 保持唯一；模块公开 CLI 与窄 Query，不并入 Change writer | `product.openspec-convergence-journey`、`product.archive-lifecycle` | `migrated` | — |
 | Publication | `src/system/publication/**/*.ts` | System Publication 只读拥有 publication/asset read model；不依赖 Change/OpenSpec，不拥有 writer | publication application integration、`product.delivery` | `migrated` | — |

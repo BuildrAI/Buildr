@@ -575,7 +575,7 @@
 ## 发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）
 
 - 定义：Publication成功后，对matching frozen release selection、正式release/main refs与current remote dev执行的只读幂等核验；证明baseline和全部ordered `sourceDevCommit`仍由current dev包含，不创建main→dev merge或任何dev写入。
-- 适用范围：`release-git-convergence.mjs reconcile-dev`、release lifecycle的Publication后阶段与closeout前置。
+- 适用范围：`release-git-convergence.ts reconcile-dev`、release lifecycle的Publication后阶段与closeout前置。
 - 避免混用：不是main→dev convergence、tree equality、branch merge policy、release branch回灌或Task Finish Delivery；通过只证明发布集合的dev来源与identity currentness。
 - 来源：canonical `openspec/specs/open-source-release-governance/spec.md`与`openspec/specs/release-collection-model/spec.md`。
 

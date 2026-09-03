@@ -13,7 +13,7 @@ Buildr Service 使用根目录 `resources/` 保存会被产品读取、复制、
 
 ## Deferred package 子树
 
-`package/targets/runtime/skills/buildr/` 暂由后续 Agent Assets Contribution 决定最终 authority；`package/launchers/build.mjs` 与 `package/launchers/manage.mjs` 暂由后续 System Contribution 拆分正式安装和开发职责。除这两类外，`package/` 不接受新内容。
+`package/targets/runtime/skills/buildr/` 暂由后续 Agent Assets Contribution 决定最终 authority；`package/launchers/build.ts` 与 `package/launchers/manage.ts` 暂由后续 System Contribution 拆分正式安装和开发职责。除这两类外，`package/` 不接受新内容。
 
 退出条件是对应 Contribution 提供新的唯一 owner、迁移全部 consumer，并通过根目录结构、npm/Application Payload inventory 与行为等价验证。迁移期间不建立旧资源路径的副本、symlink 或 fallback。
 

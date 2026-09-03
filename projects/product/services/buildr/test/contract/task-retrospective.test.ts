@@ -59,7 +59,7 @@ test('旧复盘 Application、Driver、能力契约和持久化实现已退出',
     'src/task/domain/task-retrospective.mjs',
     'src/task/interfaces/http/task-retrospective-http.mjs',
     'src/task/interfaces/internal/task-retrospective-driver.mjs',
-    'src/task/persistence/task-retrospective-repository.mjs',
+    'src/task/persistence/task-retrospective-repository.ts',
     'resources/workspace/skills/contracts/buildr/task-retrospective/v2.md',
   ]) assert.equal(fs.existsSync(path.resolve(relative)), false, relative);
 });

@@ -106,14 +106,14 @@ Workspace E2E 位于 `test/verification/workspace/`，保留 `workspace-lifecycl
 ## 维护验证
 
 ```bash
-node test/verification/cli/architecture.mjs
+node test/verification/cli/architecture.ts
 npm test
 npm run test:changed -- --plan
 npm run test:focus -- group:cli
 npm run test:focus -- group:runtime
-node test/verification/cli/compatibility.mjs
-node test/verification/cli/package-parity.mjs
-node test/verification/integrity/managed-mutations.mjs
+node test/verification/cli/compatibility.ts
+node test/verification/cli/package-parity.ts
+node test/verification/integrity/managed-mutations.ts
 ```
 
 架构 verifier 检查生命周期目录、薄入口、`src` import 方向、无 owner 的 shared、关键 facade、完整 runtime inventory、command descriptor schema/唯一 key/surface/help/replacement、verification registry、Candidate required gates 和 npm 边界。CLI compatibility 直接遍历 catalog 验证 retained leaf/aggregate help，并验证已删除 route 返回标准 unknown-command 且零写入。mutation verifier 递归扫描全部发布 runtime module 的直接写入白名单；package parity 从 tarball 安装并比较 checkout/npm 行为。

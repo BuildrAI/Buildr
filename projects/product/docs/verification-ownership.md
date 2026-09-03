@@ -1,6 +1,6 @@
 # Buildr测试框架与Task Verification实践
 
-本文说明Buildr当前如何开发、分层和选择测试，以及Task Verification怎样使用Project测试地图。机器可执行的当前事实以[verification.yml](../verification.yml)和唯一[verification registry](../services/buildr/test/verification/registry.mjs)为准；本文不复制step清单或耗时快照。
+本文说明Buildr当前如何开发、分层和选择测试，以及Task Verification怎样使用Project测试地图。机器可执行的当前事实以[verification.yml](../verification.yml)和唯一[verification registry](../services/buildr/test/verification/registry.ts)为准；本文不复制step清单或耗时快照。
 
 ## 测试模型
 

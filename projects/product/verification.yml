@@ -75,8 +75,8 @@ testing:
       - services/buildr/tools/build/**
       - services/buildr/tools/contracts/**
       - services/buildr/tools/testing/**
-      - services/buildr/test/verification/web-dist.mjs
-      - services/buildr/test/verification/browser-selector-dispatcher.mjs
+      - services/buildr/test/verification/web-dist.ts
+      - services/buildr/test/verification/browser-selector-dispatcher.ts
     testRoots:
       - services/buildr/test/browser-smoke/**
       - services/buildr-web/test/**

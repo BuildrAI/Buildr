@@ -57,7 +57,7 @@ test-context.mjs            package顶层稳定facade
 package/targets/test-context/
 ├── *.js                    ignored本地输出或Candidate暂存中的标准ESM
 └── *.d.ts                  ignored本地输出或Candidate暂存中的类型声明
-tools/testing/test-context-build.mjs
+tools/testing/test-context-build.ts
                            generate/check唯一生成入口
 ```
 
@@ -271,7 +271,7 @@ Buildr测试层现在在公共Test Context Runtime之上注册三类可复用准
 
 ## 11. Verification Control Plane
 
-`test/context/dispositions.mjs`为registry中每个step保存唯一Context处置：
+`test/context/dispositions.ts`为registry中每个step保存唯一Context处置：
 
 | disposition | 含义 |
 | --- | --- |
@@ -388,11 +388,11 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 ## 19. 维护不变量
 
 - 公共Runtime在`src/infrastructure/testing/context-runtime/`，不依赖Buildr领域；Buildr provider在`test/context/providers/`。
-- `test/context/runtime.mjs`只拥有Buildr immutable filesystem seed adapter，不是第二套通用Runtime。
+- `test/context/runtime.ts`只拥有Buildr immutable filesystem seed adapter，不是第二套通用Runtime。
 - Context复用不改变execution boundary或primary evidence owner。
 - shared seed只读，mutation发生在lease-owned state/sandbox。
 - outer scheduler是Host/resource budget authority，inner runner只消费grant。
 - unknown owner、无效Context、不可满足资源、污染和失真预算都在安全边界失败。
 - daily-full性能目标不能削弱Product Artifact Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Published Release readback/convergence证据。
 
-相关入口：`test-context.mjs`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.mjs`、`test/verification/planner.mjs`、`test/verification/dag-scheduler.mjs`、`test/verification/executor.mjs`。
+相关入口：`test-context.mjs`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.ts`、`test/verification/planner.ts`、`test/verification/dag-scheduler.ts`、`test/verification/executor.ts`。

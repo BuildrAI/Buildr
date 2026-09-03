@@ -659,7 +659,7 @@ Buildr Product MAY 继续在 `test/verification/` 使用 Fast、Changed、Focus�
 
 #### Scenario: Product Candidate 使用 DAG
 - **WHEN** `npm run test:candidate` 根据 Product verification registry 生成有依赖的 plan
-- **THEN** `test/verification/dag-scheduler.mjs` MAY 有界调度依赖、并发 class 与 workspace-saturating resources
+- **THEN** `test/verification/dag-scheduler.ts` MAY 有界调度依赖、并发 class 与 workspace-saturating resources
 - **AND** 该 DAG MUST 不出现在 `buildr.project-verification/v2` 或 Task Verification Result
 
 #### Scenario: installed CLI 执行 Project capability

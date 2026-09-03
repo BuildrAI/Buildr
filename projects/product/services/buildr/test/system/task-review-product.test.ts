@@ -9,7 +9,7 @@ import test, { after } from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.mjs';
+import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.ts';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..');
 const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');

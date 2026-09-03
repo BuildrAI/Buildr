@@ -179,7 +179,7 @@ Agent直接读取当前Task、代码、Git、文件、运行现场和所需专�
 
 - Product checkout 由 `.node-version` 固定 development Node `24.15.0`。
 - npm package 的 Host Node 范围由 `package.json#engines.node` 声明，当前为 `>=24.15.0 <25`。
-- 后端 `src/` 生产源码已全部使用仅含可擦除类型语法的 `.ts`，并通过严格 `noEmit` typecheck 约束；`.mjs` 只暂留于工具、测试和明确兼容入口，继续按边界迁移。
+- 后端 `src/` 生产源码与 `tools/` 由严格 `noEmit` TypeScript 检查；普通测试已迁移为 `.ts` 并通过独立过渡配置完成语法与模块解析，真实行为继续由测试运行验证。Git 仅保留 `bin/buildr.mjs`、`test-context.mjs`、自举更新前兼容用 `package/launchers/manage.mjs` 与 5 个证明 JavaScript 消费兼容性的夹具，并由静态允许清单阻止扩张。
 - 正式 npm package 使用锁定 bundler 将同一模块图冻结为单一 CommonJS Application Payload；tarball 不运行 TypeScript compiler，也不携带开发类型工具链。
 
 ### Buildr Web 交接
@@ -208,7 +208,7 @@ Project `preparation.yml` 描述已知准备配方，`verification.yml`使用v4�
 
 多Project Task仍只有一个聚合Content Target和一个任务验证报告。报告保存每个Project实际使用的测试地图identity、检查与gap；Agent负责判断整体覆盖和结论，不让单Project通过代表整个Task。Current Knowledge继续保存按Project完整覆盖的最小dispositions，但不成为Task Verification固定前置。
 
-Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.mjs`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，向ignored本地目录或Candidate staging确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，Git不保存编译副本。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
+Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.ts`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，向ignored本地目录或Candidate staging确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，Git不保存编译副本。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
 
 Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 artifact。正式发布不重新构建 Application Payload 或重新 `npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
 

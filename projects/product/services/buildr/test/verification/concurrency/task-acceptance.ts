@@ -5,8 +5,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
-import { processesOverlap, spawnSupervised } from '../../helpers/child-process-supervisor.mjs';
-import { materializeCleanProductSource } from '../../helpers/clean-product-source.mjs';
+import { processesOverlap, spawnSupervised } from '../../helpers/child-process-supervisor.ts';
+import { materializeCleanProductSource } from '../../helpers/clean-product-source.ts';
 import { assertPreviewStopOwner, previewOwnerForWorktree, type PreviewCaller, type TaskPreviewWorktree } from '../../../src/web/application/preview-lifecycle.ts';
 
 type JsonObject = Record<string, unknown>;

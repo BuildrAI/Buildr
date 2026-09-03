@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { writeRuntimeSystemDto } from '../contracts/runtime-system-dto.mjs';
-import { writeTaskProfessionalHttpDto } from '../contracts/task-professional-dto.mjs';
+import { writeRuntimeSystemDto } from '../contracts/runtime-system-dto.ts';
+import { writeTaskProfessionalHttpDto } from '../contracts/task-professional-dto.ts';
 import { writeTaskRecordHttpDto } from '../contracts/task-record-dto.ts';
-import { writeWorkspaceAgentAssetsDtos } from '../contracts/workspace-agent-assets-dto.mjs';
-import { buildTestContext } from '../testing/test-context-build.mjs';
+import { writeWorkspaceAgentAssetsDtos } from '../contracts/workspace-agent-assets-dto.ts';
+import { buildTestContext } from '../testing/test-context-build.ts';
 import { createGeneratedArtifactManifest, type GeneratedArtifactManifest } from './generated-artifacts.ts';
 import { buildWebDist } from './web-dist.ts';
 

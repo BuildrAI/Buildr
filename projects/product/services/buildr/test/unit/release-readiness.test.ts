@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createReleaseContext, evaluateReleaseReadiness, validateReleaseContext } from '../../tools/release/release-readiness.mjs';
+import { createReleaseContext, evaluateReleaseReadiness, validateReleaseContext } from '../../tools/release/release-readiness.ts';
 
 const digest = (letter: string): string => `sha256-${letter.repeat(64)}`;
 const sha = (letter: string): string => letter.repeat(40);

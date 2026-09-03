@@ -8,7 +8,7 @@ import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { registerGitWorktreeProvider } from '../../src/task/infrastructure/git-worktree-provider.ts';
-import { materializeCleanProductSource } from '../helpers/clean-product-source.mjs';
+import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 
 type JsonObject = Record<string, unknown>;
 type RepositoryResult = JsonObject & {

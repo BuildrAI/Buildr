@@ -32,7 +32,7 @@ async function runInternalProductAction(argv: string[]): Promise<boolean> {
     if (result.action === 'skipped') console.warn(`Buildr npm update authority was not enrolled: ${result.reason}.`);
     else {
       try {
-        const { refreshInstalledNpmLauncher } = await import('../../system/installation/infrastructure/npm-launcher.ts');
+        const { refreshInstalledNpmLauncher } = await import('../../system/installation/module.ts');
         const refresh: unknown = Reflect.apply(refreshInstalledNpmLauncher, undefined, [{ registration: { status: 'installed', entry: result.entry } }]);
         if (refresh && typeof refresh === 'object' && !Array.isArray(refresh) && 'action' in refresh && refresh.action === 'blocked' && 'reason' in refresh) {
           console.warn(`Buildr Web Launcher binding was not refreshed: ${String(refresh.reason)}.`);
