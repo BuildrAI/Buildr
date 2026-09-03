@@ -30,7 +30,7 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES = Object.freeze([
   ]),
   family('workspace-agent-assets', 'tools/contracts/workspace-agent-assets-dto.mjs', [
     'src/workspace/interfaces/http/workspace-http-contracts.ts',
-    'src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs',
+    'src/agent-assets/interfaces/http/agent-assets-http-contracts.ts',
   ], [
     ['buildr', 'src/workspace/interfaces/http/generated/workspace-http-dto.ts'],
     ['buildr-web', 'src/api/generated/workspace-http-dto.ts'],

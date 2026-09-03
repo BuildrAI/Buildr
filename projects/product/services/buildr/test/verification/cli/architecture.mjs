@@ -93,8 +93,8 @@ const requiredRuntime = [
   'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
   'web/infrastructure/instance-runtime.ts',
   'web/interfaces/cli/web.ts',
-  'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.mjs',
-  'agent-assets/application/package-maintenance/package-assets.mjs', 'workspace/application/workspace-operations.ts',
+  'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.ts',
+  'agent-assets/application/package-maintenance/package-assets.ts', 'workspace/application/workspace-operations.ts',
   'workspace/module.ts', 'workspace/application/workspace-application.ts',
   'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
   'workspace/application/project-daily-progress-application.ts',
@@ -115,26 +115,26 @@ const requiredRuntime = [
   'task/interfaces/cli/task-record.ts', 'task/interfaces/cli/task-review.ts',
   'task/interfaces/http/task-record-http.ts', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
-  'agent-assets/module.mjs', 'agent-assets/interfaces/cli/agent-assets.mjs',
-  'agent-assets/application/rules.mjs', 'agent-assets/application/skills.mjs',
-  'agent-assets/application/commands.mjs', 'agent-assets/application/components.mjs', 'task/openspec/application/openspec-application.ts',
+  'agent-assets/module.ts', 'agent-assets/interfaces/cli/agent-assets.ts',
+  'agent-assets/application/rules.ts', 'agent-assets/application/skills.ts',
+  'agent-assets/application/commands.ts', 'agent-assets/application/components.ts', 'task/openspec/application/openspec-application.ts',
   'task/openspec/module.ts', 'task/change/module.ts', 'task/change/application/change-application.ts',
   'system/publication/module.ts', 'system/publication/application/publication-application.ts',
-  'agent-assets/application/runtime.mjs', 'agent-assets/application/runtime-projection.mjs', 'infrastructure/contracts/public-json.ts',
+  'agent-assets/application/runtime.ts', 'agent-assets/application/runtime-projection.ts', 'infrastructure/contracts/public-json.ts',
   'infrastructure/platform.mjs', 'infrastructure/product-layout.mjs', 'infrastructure/process.mjs', 'infrastructure/filesystem/index.mjs',
   'infrastructure/contracts/declaration-intake.mjs', 'system/installation/domain/release-version.ts',
   'infrastructure/index.mjs', 'infrastructure/sqlite/workspace-sqlite.mjs',
-  'agent-assets/infrastructure/runtime/adapter-contract.mjs', 'agent-assets/infrastructure/runtime/render-claude-code.mjs',
+  'agent-assets/infrastructure/runtime/adapter-contract.ts', 'agent-assets/infrastructure/runtime/render-claude-code.ts',
   'system/doctor/application/scope-diagnostics.ts', 'system/doctor/application/service-diagnostics.ts',
-  'system/doctor/application/runtime-diagnostics.ts', 'agent-assets/application/package-maintenance/static-validation.mjs',
-  'agent-assets/application/package-maintenance/smoke-checks.mjs', 'agent-assets/application/package-maintenance/verification-registry.mjs',
-  'agent-assets/application/package-maintenance/output.mjs',
+  'system/doctor/application/runtime-diagnostics.ts', 'agent-assets/application/package-maintenance/static-validation.ts',
+  'agent-assets/application/package-maintenance/smoke-checks.ts', 'agent-assets/application/package-maintenance/verification-registry.ts',
+  'agent-assets/application/package-maintenance/output.ts',
 ];
 for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke = path.join(sourceRoot, 'agent-assets/application/package-maintenance/smoke-checks.mjs');
+const packageSmoke = path.join(sourceRoot, 'agent-assets/application/package-maintenance/smoke-checks.ts');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
@@ -170,7 +170,7 @@ const allowedTargets = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts = new Set([
-  'agent-assets/module.mjs -> workspace/module.ts',
+  'agent-assets/module.ts -> workspace/module.ts',
   'web/infrastructure/instance-runtime.ts -> system/installation/module.ts',
   'web/module.ts -> system/installation/module.ts',
   'web/module.ts -> workspace/module.ts',
@@ -245,9 +245,9 @@ for (const file of sourceFiles) {
 }
 
 const facadeLimits = new Map([
-  ['src/agent-assets/infrastructure/runtime/render-claude-code.mjs', 100],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code.ts', 100],
   ['src/system/doctor/application/diagnostics.ts', 250],
-  ['src/agent-assets/application/package-maintenance.mjs', 550],
+  ['src/agent-assets/application/package-maintenance.ts', 550],
   ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.mjs', 100],
 ]);
@@ -257,7 +257,7 @@ for (const [relative, limit] of facadeLimits) {
   else if (lineCount(file) > limit) problems.push(`${relative} must remain a composition facade (found ${lineCount(file)} lines, limit ${limit})`);
 }
 
-for (const module of ['arguments.mjs', 'manifests.mjs', 'contributions.mjs', 'sources.mjs', 'render-plan.mjs']) {
+for (const module of ['arguments.ts', 'manifests.ts', 'contributions.ts', 'sources.ts', 'render-plan.ts']) {
   if (!fs.existsSync(path.join(sourceRoot, 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
 }
 const workspaceVerificationRoot = path.join(productRoot, 'test', 'verification', 'workspace');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateTaskRecordSkillCommands } from '../../src/agent-assets/application/package-maintenance/static-validation.mjs';
+import { validateTaskRecordSkillCommands } from '../../src/agent-assets/application/package-maintenance/static-validation.ts';
 
 const content = `说明文字不构成命令契约。
 buildr task create <id>

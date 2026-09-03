@@ -103,7 +103,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/system/doctor/application/diagnostics.ts",
       "src/system/doctor/application/result-model.ts",
       "src/system/doctor/application/scope-diagnostics.ts",
-      "src/agent-assets/application/package-maintenance/verification-registry.mjs"
+      "src/agent-assets/application/package-maintenance/verification-registry.ts"
     ],
     "inputExclusions": []
   },
@@ -287,7 +287,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "tools/release/release-contract.mjs",
       "tools/release/trusted-publish.mjs",
       "src/system/installation/domain/release-version.ts",
-      "src/agent-assets/infrastructure/runtime/render-claude-code.mjs",
+      "src/agent-assets/infrastructure/runtime/render-claude-code.ts",
       "test/verification/candidate.mjs",
       "test/verification/candidate-ci.mjs",
       "test/verification/candidate-ci-evidence.mjs",
@@ -464,7 +464,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/system/workspace-runtime-recovery.test.mjs",
       "src/system/installation/application/cli-update.ts",
       "src/system/installation/application/release-awareness.ts",
-      "src/agent-assets/application/runtime-projection.mjs",
+      "src/agent-assets/application/runtime-projection.ts",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/network/**",
       "src/agent-assets/infrastructure/runtime/**",
@@ -574,7 +574,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "runtime-adapter-contract": {
     "inputs": [
       "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.mjs",
+      "src/agent-assets/application/runtime.ts",
       "src/system/doctor/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-contract.mjs",
       "package/targets/runtime/**",
@@ -744,11 +744,11 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "capability-cli-integration": {
     "inputs": [
       "test/capability-cli.integration.mjs",
-      "src/agent-assets/application/package-maintenance/package-assets.mjs",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/package-maintenance/package-assets.ts",
+      "src/agent-assets/application/skills.ts",
       "src/system/doctor/application/capability-diagnostics.ts",
-      "src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs",
-      "src/agent-assets/application/package-maintenance/static-validation.mjs",
+      "src/agent-assets/application/package-maintenance/builtin-lifecycle.ts",
+      "src/agent-assets/application/package-maintenance/static-validation.ts",
       "src/agent-assets/infrastructure/runtime/skills/**",
       "resources/workspace/skills/**",
       "package/targets/runtime/skills/**",
@@ -761,9 +761,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "commands.yml",
       "test/commands-cli.integration.mjs",
-      "src/agent-assets/application/commands.mjs",
-      "src/agent-assets/application/components.mjs",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/commands.ts",
+      "src/agent-assets/application/components.ts",
+      "src/agent-assets/application/skills.ts",
       "src/workspace/**",
       "src/system/doctor/**",
       "src/bootstrap/cli/help.mjs",
@@ -816,7 +816,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "package-commands": {
     "inputs": [
       "resources/workspace/commands/**",
-      "src/agent-assets/application/commands.mjs",
+      "src/agent-assets/application/commands.ts",
       "src/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
@@ -824,7 +824,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "package-rules": {
     "inputs": [
       "resources/workspace/rules/**",
-      "src/agent-assets/application/rules.mjs",
+      "src/agent-assets/application/rules.ts",
       "src/agent-assets/infrastructure/runtime/**",
       "src/agent-assets/application/package-maintenance/**"
     ],
@@ -834,7 +834,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
     "inputs": [
       "resources/workspace/skills/**",
       "package/targets/runtime/skills/**",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/skills.ts",
       "src/agent-assets/infrastructure/runtime/skills/**",
       "src/agent-assets/application/package-maintenance/**"
     ],
@@ -845,7 +845,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "package/targets/runtime/**",
       "resources/workspace/rules/**",
       "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.mjs",
+      "src/agent-assets/application/runtime.ts",
       "src/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
@@ -863,7 +863,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "runtime-adapter-parity": {
     "inputs": [
       "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.mjs",
+      "src/agent-assets/application/runtime.ts",
       "src/system/doctor/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-parity.mjs",
       "test/verification/runtime/fixture.mjs",
@@ -875,9 +875,9 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "workspace-lifecycle": {
     "inputs": [
       "src/workspace/**",
-      "src/agent-assets/application/commands.mjs",
-      "src/agent-assets/application/rules.mjs",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/commands.ts",
+      "src/agent-assets/application/rules.ts",
+      "src/agent-assets/application/skills.ts",
       "test/verification/workspace/fixture.mjs",
       "test/verification/workspace/workspace-lifecycle.mjs"
     ],
@@ -885,7 +885,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   },
   "ownership-recovery": {
     "inputs": [
-      "src/agent-assets/application/components.mjs",
+      "src/agent-assets/application/components.ts",
       "src/agent-assets/application/package-maintenance/**",
       "test/verification/workspace/fixture.mjs",
       "test/verification/workspace/ownership-recovery.mjs"
@@ -895,7 +895,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "runtime-reconciliation": {
     "inputs": [
       "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.mjs",
+      "src/agent-assets/application/runtime.ts",
       "test/verification/workspace/fixture.mjs",
       "test/verification/workspace/runtime-reconciliation.mjs",
       "package/targets/runtime/**",
@@ -936,8 +936,8 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/workspace/interfaces/cli/**",
       "src/task/interfaces/cli/**",
       "src/infrastructure/contracts/public-json.ts",
-      "src/agent-assets/application/runtime.mjs",
-      "src/agent-assets/infrastructure/runtime/adapter-contract.mjs",
+      "src/agent-assets/application/runtime.ts",
+      "src/agent-assets/infrastructure/runtime/adapter-contract.ts",
       "test/verification/cli/compatibility.mjs",
       "docs/cli-reference.md"
     ],
@@ -976,7 +976,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/infrastructure/product-invocation/**",
       "src/bootstrap/cli/main.ts",
       "tools/release/application-payload-entry.mjs",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/skills.ts",
       "test/verification/network/**"
     ],
     "inputExclusions": []
@@ -989,7 +989,7 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/interfaces/cli/**",
       "src/system/installation/application/cli-update.ts",
       "src/agent-assets/application/package-maintenance/**",
-      "src/agent-assets/application/package-maintenance.mjs",
+      "src/agent-assets/application/package-maintenance.ts",
       "src/workspace/application/workspace-operations.ts",
       "src/infrastructure/product-layout.mjs",
       "package.json",
@@ -1002,12 +1002,12 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   "managed-data-integrity": {
     "inputs": [
       "src/agent-assets/application/package-maintenance/**",
-      "src/agent-assets/application/package-maintenance.mjs",
+      "src/agent-assets/application/package-maintenance.ts",
       "src/workspace/application/workspace-operations.ts",
-      "src/agent-assets/application/commands.mjs",
-      "src/agent-assets/application/components.mjs",
-      "src/agent-assets/application/rules.mjs",
-      "src/agent-assets/application/skills.mjs",
+      "src/agent-assets/application/commands.ts",
+      "src/agent-assets/application/components.ts",
+      "src/agent-assets/application/rules.ts",
+      "src/agent-assets/application/skills.ts",
       "src/workspace/**",
       "src/system/doctor/**",
       "src/infrastructure/filesystem/**",

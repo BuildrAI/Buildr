@@ -56,22 +56,22 @@ const allowed = new Map([
   ['src/verification/application/verification-application.mjs', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.mjs', new Set(['atomicWriteFile'])],
   ['src/workspace/interfaces/cli/workspace.ts', new Set(['createProject', 'createService'])],
-  ['src/agent-assets/application/rules.mjs', new Set(['rulesRemoveUnsafe'])],
-  ['src/agent-assets/application/skills.mjs', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
-  ['src/agent-assets/application/components.mjs', new Set(['removeComponentMember', 'installComponentMember'])],
-  ['src/agent-assets/application/package-maintenance/package-assets.mjs', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
-  ['src/agent-assets/application/package-maintenance.mjs', new Set(['syncPackageBuiltins'])],
-  ['src/agent-assets/application/package-maintenance/builtin-lifecycle.mjs', new Set(['builtinUninstallUnsafe'])],
-  ['src/agent-assets/application/package-maintenance/output.mjs', new Set(['buildPackageOutput', 'packageBuild'])],
-  ['src/agent-assets/application/package-maintenance/smoke-checks.mjs', new Set([
+  ['src/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
+  ['src/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
+  ['src/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
+  ['src/agent-assets/application/package-maintenance/package-assets.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
+  ['src/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
+  ['src/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
+  ['src/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
+  ['src/agent-assets/application/package-maintenance/smoke-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
   ['src/workspace/application/workspace-operations.ts', new Set(['mutationRecover'])],
-  ['src/agent-assets/infrastructure/runtime/adapter-contract.mjs', new Set(['reconcileRuntimePlan'])],
-  ['src/agent-assets/infrastructure/runtime/skills/render-plan.mjs', new Set(['applySkillRenderPlan'])],
-  ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.mjs', new Set(['applyRulesRenderPlan'])],
+  ['src/agent-assets/infrastructure/runtime/adapter-contract.ts', new Set(['reconcileRuntimePlan'])],
+  ['src/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
+  ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.ts', new Set(['applyRulesRenderPlan'])],
 ]);
 
 const violations = [];

@@ -25,7 +25,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
 | Service 根工程职责 | `bin/`、`src/`、`test/`、`resources/`、`tools/`、`docs/` 已按工程职责收敛；`bin/buildr.mjs` 保持稳定薄入口 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
-| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/task/`、`src/verification/`、`src/web/`、`src/workspace/` 与 `src/system/` 已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续按 Agent Assets、Infrastructure/Bootstrap 和工具测试边界纵向迁移；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；除 Infrastructure/Bootstrap 外的生产业务模块均已收敛为 TypeScript，development checkout 继续支持其余 `.mjs`/`.ts` 混合加载 | 后续收敛 Infrastructure/Bootstrap 和工具测试边界；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
@@ -227,29 +227,30 @@ Agent Assets 平台迁移已经完成，当前生产结构为：
 ```text
 agent-assets/
   application/
-    rules.mjs
-    skills.mjs
-    commands.mjs
-    components.mjs
-    runtime.mjs
-    runtime-projection.mjs
-    package-maintenance.mjs
+    rules.ts
+    skills.ts
+    commands.ts
+    components.ts
+    runtime.ts
+    runtime-projection.ts
+    package-maintenance.ts
     package-maintenance/       # Builtin、package sync、receipt 与验证私有协作者
   infrastructure/
     runtime/
-      adapter-contract.mjs
-      projection.mjs
-      check-runtime.mjs
-      render-claude-code.mjs
-      render-claude-code-rules.mjs
+      adapter-contract.ts
+      projection.ts
+      check-runtime.ts
+      render-claude-code.ts
+      render-claude-code-rules.ts
       skills/                  # source、Capability Binding、render plan 与 receipt
   interfaces/
     cli/
-      agent-assets.mjs        # Agent Assets command contributions
-  module.mjs                  # Bootstrap 唯一装配入口
+      agent-assets.ts         # Agent Assets command contributions
+    http/                     # Agent Assets HTTP 契约与 Adapter
+  module.ts                   # Bootstrap 唯一装配入口
 ```
 
-本模块当前没有独立 Domain、Persistence 或 HTTP Controller，因此不创建空目录。Rule、Skill、Command 和 Component 的 manifest/内容仍是 Workspace 源资产，不因代码归入 Agent Assets 而变成独立数据库领域对象；模块专属 CLI descriptor 位于 `interfaces/cli/`，仍由公共 CLI Host 统一解析和分发。若后续出现 Agent Assets HTTP 协议，再按真实职责建立 `interfaces/http/`。
+本模块当前没有独立 Domain 或 Persistence，因此不创建空目录。Rule、Skill、Command 和 Component 的 manifest/内容仍是 Workspace 源资产，不因代码归入 Agent Assets 而变成独立数据库领域对象；模块专属 CLI 与 HTTP Adapter 位于 `interfaces/`，仍由公共 Host 统一解析和分发。
 
 | 概念 | 含义 |
 |------|------|
@@ -268,7 +269,7 @@ agent-assets/
 - Workspace 是 Skill 的统一源；
 - Agent Runtime 是可重建结果，不是源资产。
 
-Bootstrap 恰好安装一次 `agent-assets/module.mjs`。旧的 `src/application/domains/{rules,skills,commands,components,runtime}.mjs`、`src/application/package-maintenance*`、`src/application/runtime.mjs` 和 `src/infrastructure/runtime/` 已退出；`legacy-runtime-module` 不再逐项注册这些能力。通用文件系统、进程、网络、Git 和原子写入机制继续属于全局 Infrastructure，Agent Assets Infrastructure 只保留 Agent runtime adapter、投射计划、冲突检查和 receipt 等专属技术语义。
+Bootstrap 恰好安装一次 `agent-assets/module.ts`。旧的 `src/application/domains/{rules,skills,commands,components,runtime}.mjs`、`src/application/package-maintenance*`、`src/application/runtime.mjs` 和 `src/infrastructure/runtime/` 已退出；`legacy-runtime-module` 不再逐项注册这些能力。通用文件系统、进程、网络、Git 和原子写入机制继续属于全局 Infrastructure，Agent Assets Infrastructure 只保留 Agent runtime adapter、投射计划、冲突检查和 receipt 等专属技术语义。
 
 产品入口 `buildr` Skill 与 Workspace Builtin、package runtime source 的长期合并或删除关系，仍作为后续产品重构线索保留；本次平台迁移只收敛现有实现所有权，不改变三者的产品语义或 writer authority。
 
@@ -779,7 +780,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 | 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
 | Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与父任务协调（Task Parent Coordination）各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
 | Workspace Control Plane | `src/workspace/**/*.ts`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
-| Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
+| Agent Assets | `src/agent-assets/**/*.ts` | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.ts` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排；该模块已全部使用 TypeScript | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
 | Web HTTP 公共宿主与静态托管 | `src/web/http/server.ts`、`router.ts`、`session.ts`、`static-files.ts`、`responses.ts`、`read-executor.ts`、`read-worker.ts`、Application Payload 中的 `web-dist` | Server 只拥有 loopback/listen/close 与资源生命周期；Router、Session/请求安全、响应、静态文件和只读执行资源各有窄 owner；`buildr-web` 仍是前端源码/构建 owner | buildr-web-http、Web HTTP architecture contract、web-dist/browser smoke、release artifact set | `migrated` | — |
 | 业务 HTTP Controller | Workspace、Task、Change、Publication、System Installation 各模块 HTTP contribution | writer 与 Read Model 继续归各业务模块，公共 Host 只分发 | HTTP/system suites、`product.delivery` | `migrated` | — |

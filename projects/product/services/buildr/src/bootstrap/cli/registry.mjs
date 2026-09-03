@@ -7,7 +7,7 @@ import { createGitWorktreeCliContributions, createTaskRecordCliContributions, cr
 import { createOpenSpecCliContributions } from '../../task/openspec/module.ts';
 import { createWorkspaceCliContributions } from '../../workspace/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.ts';
-import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.mjs';
+import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');

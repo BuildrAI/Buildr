@@ -8,7 +8,7 @@ import {
   PACKAGE_VERIFIER_ENV,
   PACKAGE_VERIFIERS,
   selectPackageVerifiers,
-} from '../../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
+} from '../../../src/agent-assets/application/package-maintenance/verification-registry.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const selector = process.argv[2];

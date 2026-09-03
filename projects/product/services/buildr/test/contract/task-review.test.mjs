@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.mjs';
+import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
 
 const read = (relative) => fs.readFileSync(path.resolve(relative), 'utf8');
 
@@ -59,7 +59,7 @@ test('Task Review Application 是唯一 repository writer caller', () => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(file);
-      else if (file.endsWith('static-validation.mjs')) continue;
+      else if (/static-validation\.(?:mjs|ts)$/.test(file)) continue;
       else if (/\.(?:mjs|js|ts)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskReviewResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
     }
   };

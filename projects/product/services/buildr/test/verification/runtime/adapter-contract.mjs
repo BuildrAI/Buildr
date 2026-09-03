@@ -22,11 +22,11 @@ import {
   selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
   validateRuntimePlan,
-} from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.mjs';
-import { validateSkillPublication } from '../../../src/agent-assets/infrastructure/runtime/skills/publication.mjs';
-import { resolveSkillContributions } from '../../../src/agent-assets/infrastructure/runtime/render-claude-code.mjs';
-import { assembleRuntimeProjection } from '../../../src/agent-assets/infrastructure/runtime/projection.mjs';
-import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/agent-assets/infrastructure/runtime/check-runtime.mjs';
+} from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { validateSkillPublication } from '../../../src/agent-assets/infrastructure/runtime/skills/publication.ts';
+import { resolveSkillContributions } from '../../../src/agent-assets/infrastructure/runtime/render-claude-code.ts';
+import { assembleRuntimeProjection } from '../../../src/agent-assets/infrastructure/runtime/projection.ts';
+import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/agent-assets/infrastructure/runtime/check-runtime.ts';
 
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot = path.resolve(productRoot, '../../../..');

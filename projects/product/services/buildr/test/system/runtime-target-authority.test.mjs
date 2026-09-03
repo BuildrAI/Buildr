@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.mjs';
-import { createAgentAssetsCliContributions } from '../../src/agent-assets/interfaces/cli/agent-assets.mjs';
+import { createAgentAssetsCliContributions } from '../../src/agent-assets/interfaces/cli/agent-assets.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.mjs';
 
 function git(root, args) {

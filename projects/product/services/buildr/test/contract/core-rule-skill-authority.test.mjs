@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 const core = fs.readFileSync('resources/workspace/AGENTS.md', 'utf8');
-const staticValidation = fs.readFileSync('src/agent-assets/application/package-maintenance/static-validation.mjs', 'utf8');
+const staticValidation = fs.readFileSync('src/agent-assets/application/package-maintenance/static-validation.ts', 'utf8');
 
 test('Core 以责任和结果边界约束 Buildr 治理', () => {
   assert.match(core, /## 责任与治理/);

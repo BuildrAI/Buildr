@@ -1,4 +1,4 @@
-import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
+import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.ts';
 import { assertVerificationContextDispositionCoverage, verificationContextDisposition } from '../context/dispositions.mjs';
 import { TEST_CONTEXT_KEYS, TASK_LIFECYCLE_CONTEXT_KEY, testContextProfileByKey } from '../context/profiles.mjs';
 import { verificationStepOwnership } from './ownership.mjs';

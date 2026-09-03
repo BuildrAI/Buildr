@@ -6,8 +6,8 @@ import test from 'node:test';
 import { createRuntimeDiagnostics } from '../../src/system/doctor/application/runtime-diagnostics.ts';
 import { createScopeDiagnostics } from '../../src/system/doctor/application/scope-diagnostics.ts';
 import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/system/doctor/application/result-model.ts';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.mjs';
-import { blockingSyncSourceIssues } from '../../src/agent-assets/application/runtime-projection.mjs';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.ts';
+import { blockingSyncSourceIssues } from '../../src/agent-assets/application/runtime-projection.ts';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {
   assert.deepEqual(selectPackageVerifiers().map((item) => item.id), PACKAGE_VERIFIERS.map((item) => item.id));

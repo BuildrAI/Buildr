@@ -9,7 +9,7 @@ import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_RUNTIME,
-} from '../../src/agent-assets/module.mjs';
+} from '../../src/agent-assets/module.ts';
 import {
   TASK_RECORD_APPLICATION,
   TASK_RECORD_RUNTIME_PORT,

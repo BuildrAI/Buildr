@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { WORKSPACE_HTTP_SCHEMAS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';
-import { AGENT_ASSETS_HTTP_SCHEMAS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.mjs';
+import { AGENT_ASSETS_HTTP_SCHEMAS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');

@@ -4,7 +4,7 @@ import {
   AGENT_ASSETS_RUNTIME,
   createAgentAssetsModule,
   createAgentAssetsRuntimeModule,
-} from '../agent-assets/module.mjs';
+} from '../agent-assets/module.ts';
 import {
   TASK_RECORD_RUNTIME_PORT,
   TASK_RECORD_MODULE,

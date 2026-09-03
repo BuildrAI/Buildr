@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { retireOrphanedBuiltinSkills } from '../../src/agent-assets/application/package-maintenance/builtin-retirement.mjs';
+import { retireOrphanedBuiltinSkills } from '../../src/agent-assets/application/package-maintenance/builtin-retirement.ts';
 
 function run(options = {}) {
   const targetRoot = '/workspace';
