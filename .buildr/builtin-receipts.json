@@ -264,6 +264,46 @@
           "integrity": "sha256-1cc6e7099aedd0e7288099c47a1ac0fcb57bc815c15426b04640674bb8566bca"
         }
       ]
+    },
+    {
+      "type": "skill",
+      "id": "ux-design-laws",
+      "target": "skills/buildr/ux-design-laws",
+      "integrity": "sha256-663b202594df88e549a3f4ad4edb6016afb88bfac8b3dca9533a0ff8d64716bb",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-553bd301687df0156aca9772b70769f11c1330d516006d04dac98704ab5521f6"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "integrity": "sha256-66b083c0a041048eeb8418488ace97e85277bd25bf9ff21597c120e22fbfa13a"
+        },
+        {
+          "path": "references/actions-and-feedback.md",
+          "integrity": "sha256-d305d57499851e768fd399beb69eab80936464b5ec6d178d059c36bce3cb664b"
+        },
+        {
+          "path": "references/foundations-and-strategy.md",
+          "integrity": "sha256-6f83ae194ebe87ecc31f12d54c3b0fca680b5fe78335af6a113520c3a1ad1c84"
+        },
+        {
+          "path": "references/information-and-decisions.md",
+          "integrity": "sha256-f72d555e88d77bc332907675dfa8a226779f54db44e3a94e72db0f5366d71599"
+        },
+        {
+          "path": "references/journey-motivation-and-memory.md",
+          "integrity": "sha256-88b79a015b047bbcada01d2eae4ee40d3b882dd64dc4defc29b6af3023a8aa65"
+        },
+        {
+          "path": "references/law-index.md",
+          "integrity": "sha256-cefc0fe5f7ef96d7e421216f8538233db008012e0217cb00838e0f17e9b1aea6"
+        },
+        {
+          "path": "references/visual-perception-and-layout.md",
+          "integrity": "sha256-e7d1f7a60935b9ec3ebc97377b7bb2f7bf4ded1d5de36d6b53989119641a7d16"
+        }
+      ]
     }
   ]
 }

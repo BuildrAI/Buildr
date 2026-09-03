@@ -485,6 +485,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: agent-first-design
+  - id: ux-design-laws
+    assetIdentity: buildr:skill:ux-design-laws
+    sourceIdentity: package:skills/buildr/ux-design-laws
+    source: buildr
+    path: buildr/ux-design-laws
+    description: 设计或审查用户界面、交互流程、信息层级与操作反馈时使用；依据用户目标和真实界面选择相关心理学法则，给出有优先级的设计方案、依据、权衡与验证方法。不用于仅实现既定设计稿、直接生成页面原型，或替代无障碍检查与用户研究。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: ux-design-laws
 contracts:
   - id: buildr.terminology-governance
     version: 1
