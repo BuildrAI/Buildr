@@ -38,11 +38,11 @@ Application 只校验 schema、Project/Service scope、安全相对路径和候�
 报告必须说明内容版本、实际检查、`focus|task-related|full`选择、具体测试目标、`command|agent`来源、结果、摘要、耗时（可得时）、未覆盖项和结论。只有一句“测试通过”不构成有意义报告。使用：
 
 ```text
-buildr task verification record <task-id> --report <json-file> --target <canonical-workspace> --json
 buildr task verification inspect <task-id> [--content-identity <identity>] --target <canonical-workspace> --json
+buildr task verification record <task-id> --report <json-file> --expected-report <absent|sha256-digest> --target <canonical-workspace> --json
 ```
 
-Application从Task scope读取当前项目测试地图identity，确认实际检查属于Task且testing family与可用地图一致，生成系统完成时间，并原子整值替换唯一current报告。地图缺失或损坏时不否定已完成的真实测试：Application把相关检查标记为“地图不可用”，并追加明确未覆盖项；智能体不能把它说成已由地图声明。
+记录前先用`inspect`读取真实current槽位：不存在时使用`absent`，存在时使用返回的`reportDigest`作为`--expected-report`。Application从Task scope读取当前项目测试地图identity，确认实际检查属于Task且testing family与可用地图一致，生成系统完成时间；Repository在同一事务内比较已观察摘要并原子整值替换唯一current报告。冲突时保持current不变，智能体必须重新读取真实报告和当前内容后决定重做或替换，不能自动重试。摘要只是调用参数，不进入报告业务事实。地图缺失或损坏时不否定已完成的真实测试：Application把相关检查标记为“地图不可用”，并追加明确未覆盖项；智能体不能把它说成已由地图声明。
 
 `passed`至少需要一个实际检查且所有检查均通过；只有未覆盖项不能写成`passed`。`not-passed`必须有失败检查；`incomplete`用于没有失败检查但仍有未覆盖项的情况。只有调用方在`inspect`时提供当前内容identity，Application才能判断内容是`current`还是`stale`；未提供时内容适用性为`unknown`。历史执行日志不迁移为新成功事实。
 
