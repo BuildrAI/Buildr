@@ -330,7 +330,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     return inside(executionRoot, candidate) ? candidate : null;
   }
 
-  function resolveTaskScopedChange(targetRoot: string, taskId: string, reference: unknown, options: { includeContent?: boolean; allowMissingTask?: boolean } = {}): ChangeResolution {
+  function resolveTaskScopedChange(targetRoot: string, taskId: string, reference: unknown, options: { includeContent?: boolean; allowMissingTask?: boolean; taskRecordObserved?: boolean } = {}): ChangeResolution {
     const includeContent = options.includeContent || false;
     const allowMissingTask = options.allowMissingTask || false;
     assertObject(reference, 'change_reference_invalid', 'Task-scoped Change reference 必须是对象。');
@@ -338,10 +338,11 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     for (const field of Object.keys(reference)) if (!allowed.has(field)) throw changeError('change_reference_field_forbidden', `Task-scoped Change reference 不支持字段：${field}。`);
     const projectCode = assertSafeSegment(reference.project, 'Project code');
     const changeCode = assertSafeSegment(reference.change, 'Change code');
-    let taskAvailable = true;
-    try { runtime.readTaskRecordPersistence(targetRoot, taskId); } catch (error) {
-      if (!allowMissingTask || !(error instanceof Error && 'code' in error && error.code === 'task_record_not_found')) throw error;
-      taskAvailable = false;
+    let taskAvailable = options.taskRecordObserved === true;
+    if (!taskAvailable) {
+      try { runtime.readTaskRecordPersistence(targetRoot, taskId); taskAvailable = true; } catch (error) {
+        if (!allowMissingTask || !(error instanceof Error && 'code' in error && error.code === 'task_record_not_found')) throw error;
+      }
     }
     const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
     const candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null;

@@ -10,7 +10,7 @@ const read = (relative: string) => fs.readFileSync(path.join(root, relative), 'u
 test('task-verification v4 keeps Agent orchestration and minimal Applications', () => {
   const skill = read('resources/workspace/skills/buildr/task-verification/SKILL.md');
   const contract = read('resources/workspace/skills/contracts/buildr/task-verification/v4.md');
-  for (const value of ['buildr.task-verification/v4', 'buildr.project-verification/v4', 'project verification inspect', 'project verification validate', 'project verification update', 'task verification record', 'task verification inspect', 'Maven、Gradle、npm、Playwright、Browser、HTTP', '不生成计划或统一运行测试']) assert.ok(`${skill}\n${contract}`.includes(value), value);
+  for (const value of ['buildr.task-verification/v4', 'buildr.project-verification/v4', 'project verification inspect', 'project verification validate', 'project verification update', 'task verification record', 'task verification inspect', '--expected-report', 'reportDigest', 'Maven、Gradle、npm、Playwright、Browser、HTTP', '不生成计划或统一运行测试']) assert.ok(`${skill}\n${contract}`.includes(value), value);
   for (const value of ['buildr verification plan', 'buildr verification run', 'task verification reconcile', 'Candidate lease', 'proceed / blocked']) assert.equal(skill.includes(value), false, value);
 });
 

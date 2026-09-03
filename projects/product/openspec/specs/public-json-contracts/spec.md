@@ -72,34 +72,6 @@ Buildr CLI MUST 在无法匹配命令且输入请求 `--json` 时输出登记的
 - **THEN** 两者 MUST 使用相同 schema identity、error code 和字段类型
 - **AND** schema coverage registry MUST 在任一新 JSON family 未登记时失败
 
-### Requirement: Verification run 必须提供稳定公开 JSON identity
-`buildr verification run --json` MUST输出`buildr.verification-execution/v1`，并 MUST在成功、capability failure、formal execution record backpressure/seal failure与调用前invalid request路径保持单一stdout JSON object。Payload MUST区分transient execution status、Project/declaration identity、requested target identity、实际checks、精确capability/resource authorization、真实timing、target stability、Environment execution context与evidence lifecycle；并 MUST以additive `executionRecord` summary表达`not-applicable|not-opened|retained|blocked|attention`、portable record identity/outcome/lifecycle/body summary、transient cleanup、diagnostic与next action。公开checks MUST只投影portable capability identity、outcome、timing、resource/target摘要与有界failure summary；完整stdout/stderr MUST只进入Execution Record受控正文，且无论Task内外都 MUST NOT出现在公共JSON。Payload MUST NOT包含Workspace Node字段，不得暴露SQLite/database、正文locator、本机持久化路径，也 MUST NOT声称current Result、Candidate completeness、Result adoption或required assurance。
-
-#### Scenario: 验证成功输出 JSON
-- **WHEN** 所有显式command capabilities完成且target observation保持稳定
-- **THEN** Task外JSON MUST返回`status: passed`、compact checks、declaration、duration、transient evidence reference与`executionRecord.status: not-applicable`
-- **AND** formal Task JSON只有在execution record retained且transient cleanup得到明确处置后才能返回`status: passed`与portable record summary
-
-#### Scenario: 验证业务失败输出 JSON
-- **WHEN** capability执行失败、资源等待失败、target drift、execution context在启动后失稳或formal record无法安全retained
-- **THEN** stdout MUST仍返回同一`buildr.verification-execution/v1` family的失败摘要并以非零状态退出
-- **AND** payload MUST包含已完成compact checks、具体有界failures、execution record/transient cleanup状态和可用结构化诊断，且 MUST NOT写current Result
-
-#### Scenario: capability 产生大体量输出
-- **WHEN** formal Verification capability产生完整stdout/stderr并成功或失败结束
-- **THEN** Execution Record body MUST保留受控完整输出，公共JSON MUST只返回record identity、outcome与有界摘要
-- **AND** 公共stdout上的单一JSON object MUST不包含check级stdout/stderr字段或原始输出字节
-
-#### Scenario: formal record backpressure
-- **WHEN** execution record quota reservation在producer启动前被拒绝
-- **THEN** JSON MUST返回`status: failed`、空checks与`executionRecord.status: blocked`
-- **AND** MUST提供portable diagnostic与唯一next action，不得暴露quota SQL或数据库路径
-
-#### Scenario: invalid request
-- **WHEN** 参数、v2 declaration、capability identity、invocation kind、执行根或授权不合法
-- **THEN** JSON MUST返回`status: failed`、空checks与`executionRecord.status: not-opened`
-- **AND** MUST不生成execution record、transient evidence、current Result或误报completed execution
-
 ### Requirement: Task Record CLI 必须提供稳定公开 JSON identity
 `buildr task create|inspect|update|complete|abandon --json` MUST返回 `buildr.task-record-result/v2` 顶层 identity，并 MUST至少包含 operation、status、taskId、record、`recordDigest: string|null`、diagnostic、effects 与 nextActions；checkout 和 npm tarball CLI MUST保持 schema parity。v2 MUST删除 canonical path，且 MUST NOT暴露 database path、table、row id、SQL 或 storage internals。非空 `recordDigest` 是 current normalized logical record 的响应级 evidence，不属于持久 Task Record schema；记录不存在或无法形成有效 read model 时为 `null`。
 
@@ -224,24 +196,6 @@ Buildr MUST只登记`buildr.parent-coordination-result/v4`的closed inspect响�
 - **THEN** 当前响应 MUST使用`historicalPlan: null`和真实Task关系
 - **AND** MUST不回填或读取Handoff
 
-### Requirement: ExecRecord GC CLI 必须提供稳定公共 JSON
-Buildr MUST 提供 `buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]`。`--json` MUST使用登记的 ExecRecord GC schema，并 MUST直接投射同一次 Application result；CLI MUST NOT接受 Task/owner/path、retention override、force、failure disposition 或 cleanup shell 输入。
-
-#### Scenario: headless dry-run
-- **WHEN** automation 使用 `--dry-run --json` 调用 ExecRecord GC
-- **THEN** CLI MUST返回 machine-readable stable schema、Workspace 级 counts 与 bounded selected actions
-- **AND** MUST不执行 mutation或输出正文 locator、本机绝对路径和 SQLite 细节
-
-#### Scenario: 手动执行 bounded GC
-- **WHEN** caller 使用合法 limit 调用非 dry-run CLI
-- **THEN** CLI MUST调用 Task Execution Record Application 完成同一 bounded GC operation
-- **AND** 非 JSON 输出 MUST只给出简洁计数摘要，不改变 Application authority
-
-#### Scenario: 非法策略输入
-- **WHEN** caller 提供越界 limit、force、owner、path 或 retention override
-- **THEN** CLI MUST在 GC mutation 前拒绝请求并返回稳定 input diagnostic
-- **AND** MUST NOT创建第二策略或绕过固定 retention
-
 ### Requirement: Buildr Web 术语迁移不得机械重命名已发布 JSON identity
 Buildr MUST 将公开帮助、文档和用户可见字段说明迁移为 Buildr Web，但 MUST 保留本次任务前已经发布并参与兼容读取的 JSON schema id、protocol identity 与 closed payload field。只有独立规范证明用户价值、版本迁移与兼容读取时，未来 Change 才能修改这些 identity。
 
@@ -282,32 +236,6 @@ Installation origin、installation registry、Launcher binding、installation st
 - **WHEN** Host Node、entry、prefix、origin、payload 或 ownership 任一不匹配
 - **THEN** JSON MUST 将 Launcher 标为 stale/invalid，列出稳定 reason code 与 repair action
 - **AND** MUST NOT把可执行成功或版本相同解释为 identity current
-
-### Requirement: Execution record CLI readback 必须提供closed portable JSON
-Buildr MUST为Task execution record CLI list与inspect登记稳定public JSON schema identity。List payload MUST包含Task、requested view、observedAt与有界records；inspect payload MUST包含matching portable record、可选compact Verification summary、available body filenames、diagnostic与next actions。两类payload MUST复用Task Execution Record Application值语义，MUST不暴露SQLite、body locator、本机路径、raw command、resource token或mutation action。
-
-#### Scenario: list JSON
-- **WHEN** Agent使用`task execution-record list --json`
-- **THEN** stdout MUST为单一closed JSON object并返回稳定排序records
-- **AND** open与terminal record MUST保持各自真实lifecycle/outcome，不推断Result采用状态
-
-#### Scenario: inspect JSON
-- **WHEN** Agent使用matching Task/record调用`task execution-record inspect --json`
-- **THEN** stdout MUST为单一closed JSON object并返回portable compact facts与正文文件名
-- **AND** open record没有正文时 MUST明确返回summary unavailable而不是伪造terminal facts
-
-### Requirement: Verification active duplicate 必须返回非执行JSON结果
-当`verification run --json`发现相同invocation identity的active record且未提供`--retry`时，Buildr MUST返回同一`buildr.verification-execution/v1` family中的非执行结果，包含`status: active`、existing record/run/invocation identity、空checks、零duration执行事实与指向list/inspect的next actions。Payload MUST不声称existing execution已经passed/failed，也MUST不包含transient evidence locator或新record effect。
-
-#### Scenario: 默认请求命中active execution
-- **WHEN** matching active record已存在且caller未显式retry
-- **THEN** JSON MUST返回existing portable identity与`executionRecord.status: active`
-- **AND** checks MUST为空且不得创建新evidence、record或capability side effect
-
-#### Scenario: 显式retry正常执行
-- **WHEN** caller提供`--retry`
-- **THEN** JSON MUST按新run返回正常execution envelope与独立execution record summary
-- **AND** payload MUST不覆盖或内联旧active execution结果
 
 ### Requirement: Buildr update 双轨道 JSON 必须使用 v2 identity
 `buildr update check --json` MUST输出 `buildr.update-check/v2`，`buildr update --json` MUST输出 `buildr.update/v2`；两者 MUST用 closed 双轨道结构替代 v1 单一 `available.version` 语义。
@@ -411,3 +339,19 @@ Buildr MUST为Parent启动就绪投影和planning refresh operation登记closed 
 - **WHEN** caller请求公开JSON
 - **THEN** payload MUST只包含Parent Coordination owner允许的事实
 - **AND** MUST不包含研发回执或旧收尾字段
+
+### Requirement: Task Verification record 冲突必须使用稳定公开 JSON
+`buildr task verification record --json` MUST要求调用方提供最近一次 `inspect` 观察到的 `absent|reportDigest`。摘要不匹配时，CLI MUST返回同一 Task Verification operation result family、稳定 conflict diagnostic 与最新 `currentReportDigest`，并 MUST保持 current 报告不变。
+
+#### Scenario: 两个调用方基于同一摘要写入
+- **WHEN** 第一个调用方写入成功后第二个调用方提交相同旧摘要
+- **THEN** 第二个 JSON 结果 MUST为 blocked 并包含最新 `currentReportDigest`
+- **AND** current Verification Report MUST仍是第一个调用方写入的内容
+
+### Requirement: Task Record JSON 必须局部表达引用可用性
+Task Record inspect、detail 和 list JSON MUST始终返回结构有效的 Task Record，并以响应级 `referenceDiagnostics` 局部表达当前 Project、Service 或 Change 不可用。诊断 MUST包含 Task 与引用 identity，MUST不写回 Task Record，也不得形成统一健康状态。
+
+#### Scenario: 历史引用不可用
+- **WHEN** Task Record 内一个 Project、Service 或 Change 当前不存在、已迁移或暂时不可解析
+- **THEN** CLI 与 Buildr Web JSON MUST返回完整顶层 Task Record 和对应局部诊断
+- **AND** 其他引用、Parent/Child、状态与结果 MUST保持可读

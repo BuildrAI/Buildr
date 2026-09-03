@@ -23,6 +23,10 @@ export type TaskRecordApplicationRuntime = TaskRecordRepository & {
 };
 type TaskRelations = { parent: TaskRelation | null; children: TaskRelation[] };
 type TaskEffect = { type: string; taskId: string };
+export type TaskReferenceDiagnostic = {
+  taskId: string; kind: 'project' | 'service' | 'change'; reference: string;
+  code: string; message: string; details?: unknown;
+};
 type TaskCreateInput = Record<string, unknown>;
 type TaskUpdateInput = Record<string, unknown>;
 type MutateInput = { expectedRecordDigest?: unknown };
@@ -139,12 +143,13 @@ function readModel(persistence: TaskPersistence, changeReferences: ChangeResolut
   return { record: persistence.record, recordDigest: persistence.recordDigest, changeReferences, taskRelations, retrospectiveDocument: retrospectiveDocument(persistence.record) };
 }
 
-function storedView(view: TaskView) {
+function storedView(view: TaskView, referenceDiagnostics: TaskReferenceDiagnostic[] = []) {
   return {
     record: view.record,
     recordDigest: view.recordDigest,
     taskRelations: view.taskRelations,
     retrospectiveDocument: retrospectiveDocument(view.record),
+    referenceDiagnostics,
   };
 }
 
@@ -174,25 +179,67 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     return filters;
   }
 
-  function validateScopeReferences(targetRoot: string, record: TaskRecord): TaskRecord {
+  function assertScopeReferencesAvailable(targetRoot: string, projectCodes: string[], services: TaskServiceReference[]): void {
     const projects = runtime.readProjectRegistryRecord(targetRoot);
     if (projects.registry.migrationRequired) throw taskRecordError('task_record_project_registry_migration_required', 'Project registry 需要先完成 canonical 迁移。', 409, undefined, '先运行 canonical buildr sync <agent>。');
-    const requiredProjects = new Set([
-      ...record.scope.projects,
-      ...record.scope.services.map((item) => item.project),
-      ...record.changes.map((item) => item.project),
-    ]);
+    const requiredProjects = new Set([...projectCodes, ...services.map((item) => item.project)]);
     for (const projectCode of requiredProjects) {
       if (!projects.projects[projectCode]) throw taskRecordError('task_record_project_not_found', `Project 不存在：${projectCode}。`, 409, { project: projectCode }, '修正 Task scope 或先登记 Project。');
     }
     const serviceRecords = new Map<string, { services: Record<string, unknown> }>();
-    for (const service of record.scope.services) {
+    for (const service of services) {
       if (!serviceRecords.has(service.project)) serviceRecords.set(service.project, runtime.readServiceRegistryRecord(targetRoot, service.project));
       if (!serviceRecords.get(service.project)?.services[service.service]) {
         throw taskRecordError('task_record_service_not_found', `Service 不存在：${service.project}/${service.service}。`, 409, service, '修正 Task scope 或先登记 Service。');
       }
     }
-    return record;
+  }
+
+  function referenceDiagnostic(taskIdValue: string, kind: TaskReferenceDiagnostic['kind'], reference: string, code: string, message: string, details?: unknown): TaskReferenceDiagnostic {
+    return { taskId: taskIdValue, kind, reference, code, message, ...(details === undefined ? {} : { details }) };
+  }
+
+  function inspectReferenceAvailability(targetRoot: string, record: TaskRecord): TaskReferenceDiagnostic[] {
+    const diagnostics: TaskReferenceDiagnostic[] = [];
+    const projectCodes = [...new Set([...record.scope.projects, ...record.scope.services.map((item) => item.project), ...record.changes.map((item) => item.project)])].sort();
+    let projects: ReturnType<TaskRecordApplicationRuntime['readProjectRegistryRecord']> | null = null;
+    try { projects = runtime.readProjectRegistryRecord(targetRoot); }
+    catch (error) {
+      const failure = errorFields(error);
+      for (const project of projectCodes) diagnostics.push(referenceDiagnostic(record.taskId, 'project', project, failure.code, failure.message, failure.details));
+    }
+    if (projects?.registry.migrationRequired) {
+      for (const project of projectCodes) diagnostics.push(referenceDiagnostic(record.taskId, 'project', project, 'task_record_project_registry_migration_required', 'Project registry 需要先完成 canonical 迁移。'));
+    }
+    const availableProjects = new Set(projects && !projects.registry.migrationRequired ? Object.keys(projects.projects) : []);
+    for (const project of projectCodes) {
+      if (projects && !projects.registry.migrationRequired && !availableProjects.has(project)) diagnostics.push(referenceDiagnostic(record.taskId, 'project', project, 'task_record_project_unavailable', `Project 当前不可用：${project}。`, { project }));
+    }
+    const serviceRegistries = new Map<string, { services: Record<string, unknown> } | null>();
+    for (const service of record.scope.services) {
+      const reference = serviceKey(service);
+      if (!availableProjects.has(service.project)) {
+        diagnostics.push(referenceDiagnostic(record.taskId, 'service', reference, 'task_record_service_project_unavailable', `Service 所属 Project 当前不可用：${reference}。`, service));
+        continue;
+      }
+      if (!serviceRegistries.has(service.project)) {
+        try { serviceRegistries.set(service.project, runtime.readServiceRegistryRecord(targetRoot, service.project)); }
+        catch (error) {
+          const failure = errorFields(error);
+          serviceRegistries.set(service.project, null);
+          diagnostics.push(referenceDiagnostic(record.taskId, 'service', reference, failure.code, failure.message, failure.details));
+          continue;
+        }
+      }
+      const registry = serviceRegistries.get(service.project);
+      if (registry && !registry.services[service.service]) diagnostics.push(referenceDiagnostic(record.taskId, 'service', reference, 'task_record_service_unavailable', `Service 当前不可用：${reference}。`, service));
+    }
+    for (const resolution of resolveChangeReferences(targetRoot, record.taskId, record.changes, { taskRecordObserved: true })) {
+      if (resolution.availability === 'available') continue;
+      const reference = changeKey(resolution.reference);
+      diagnostics.push(referenceDiagnostic(record.taskId, 'change', reference, resolution.diagnostic?.code || 'task_change_unavailable', resolution.diagnostic?.message || `OpenSpec Change 当前不可用：${reference}。`, resolution.diagnostic?.details));
+    }
+    return diagnostics;
   }
 
   function resolveChangeReferences(targetRoot: string, taskIdValue: string, changes: TaskChangeReference[], options: Record<string, unknown> = {}): ChangeResolution[] {
@@ -217,9 +264,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
   }
 
   function readCurrent(targetRoot: string, taskIdValue: string): TaskPersistence {
-    const persistence = runtime.readTaskRecordPersistence(targetRoot, taskIdValue);
-    validateScopeReferences(persistence.root, persistence.record);
-    return persistence;
+    return runtime.readTaskRecordPersistence(targetRoot, taskIdValue);
   }
 
   function result(operation: string, status: string, persistence: TaskPersistence, effects: TaskEffect[] = []) {
@@ -230,7 +275,8 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
       taskId: persistence.record.taskId,
       record: persistence.record,
       recordDigest: persistence.recordDigest,
-      changeReferences: resolveChangeReferences(persistence.root, persistence.record.taskId, persistence.record.changes),
+      changeReferences: resolveChangeReferences(persistence.root, persistence.record.taskId, persistence.record.changes, { taskRecordObserved: true }),
+      referenceDiagnostics: inspectReferenceAvailability(persistence.root, persistence.record),
       taskRelations: view.taskRelations,
       retrospectiveDocument: retrospectiveDocument(view.record),
       diagnostic: null,
@@ -249,6 +295,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
   function queryTaskRecordViews(targetRoot: string, input: unknown = {}) {
     const filters = normalizedQueryFilters(input);
     const persistence = runtime.queryTaskRecordViewPersistence(targetRoot, filters);
+    const tasks = persistence.views.map((view) => storedView(view, inspectReferenceAvailability(persistence.root, view.record)));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordList, {
       filters: {
         q: filters.q ?? '', project: filters.project ?? null,
@@ -260,14 +307,14 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
         services: persistence.filterOptions.services.map(serviceKey),
       },
       totalTaskCount: persistence.totalTaskCount,
-      tasks: persistence.views.map(storedView),
-      diagnostics: [],
+      tasks,
+      diagnostics: tasks.flatMap((view) => view.referenceDiagnostics),
     });
   }
 
   function inspectTaskRecordView(targetRoot: string, taskIdValue: unknown) {
     const view = runtime.readTaskRecordViewPersistence(targetRoot, taskId(taskIdValue, 'taskId'));
-    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordView, { taskId: view.record.taskId, ...storedView(view) });
+    return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordView, { taskId: view.record.taskId, ...storedView(view, inspectReferenceAvailability(view.root, view.record)) });
   }
 
   function inspectTaskRecord(targetRoot: string, taskIdValue: string) {
@@ -299,7 +346,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
       status, result: null, createdAt: timestamp, updatedAt: timestamp,
     }, { expectedTaskId: taskIdValue });
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
-    validateScopeReferences(root, record);
+    assertScopeReferencesAvailable(root, [...record.scope.projects, ...record.changes.map((item) => item.project)], record.scope.services);
     assertChangeReferencesAvailable(root, taskIdValue, record.changes, { allowMissingTask: true });
     try {
       const written = runtime.createTaskRecordPersistence(root, record);
@@ -378,19 +425,19 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     return values;
   }
 
-  function mutate(targetRoot: string, taskIdValue: string, operation: string, input: MutateInput, build: (record: TaskRecord, context: TaskMutationContext) => unknown, addedChanges: TaskChangeReference[] = [], allowedStatuses: TaskRecordStatus[] = ['todo', 'active']) {
+  function mutate(targetRoot: string, taskIdValue: string, operation: string, input: MutateInput, build: (record: TaskRecord, context: TaskMutationContext) => unknown, additions: { projects?: string[]; services?: TaskServiceReference[]; changes?: TaskChangeReference[] } = {}, allowedStatuses: TaskRecordStatus[] = ['todo', 'active']) {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     try {
       let changed = false;
       const written = runtime.mutateTaskRecordPersistence(root, taskIdValue, (current, context) => {
-        validateScopeReferences(root, current.record);
         assertExpectedDigest(current, input.expectedRecordDigest);
         if (!allowedStatuses.includes(current.record.status)) {
           const terminal = ['completed', 'abandoned'].includes(current.record.status);
           throw taskRecordError(terminal ? 'task_record_terminal' : 'task_record_status_transition_invalid', `Task ${taskIdValue} 当前为 ${current.record.status}，不能执行 ${operation}。`, 409, { status: current.record.status, operation }, `运行 buildr task inspect ${taskIdValue} 查看当前状态。`);
         }
         const candidate = normalizeTaskRecord(build(current.record, context), { expectedTaskId: taskIdValue });
-        validateScopeReferences(root, candidate);
+        const addedChanges = additions.changes || [];
+        assertScopeReferencesAvailable(root, [...(additions.projects || []), ...addedChanges.map((item) => item.project)], additions.services || []);
         assertChangeReferencesAvailable(root, taskIdValue, addedChanges);
         const same = JSON.stringify({ ...candidate, updatedAt: current.record.updatedAt }) === JSON.stringify(current.record);
         if (same) return null;
@@ -464,12 +511,12 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
         next.resultHistory = [...(current.resultHistory || []), { status: current.status, title: current.title, intent: current.intent, scope: current.scope, changes: current.changes, parentTaskId: current.parentTaskId, ...(current.isParent ? { isParent: true as const } : {}), result: current.result, recordUpdatedAt: current.updatedAt, correctedAt: nowIso(), reason }];
       }
       return next;
-    }, operations.addChanges, ['todo', 'active', 'completed', 'abandoned']);
+    }, { projects: operations.addProjects, services: operations.addServices, changes: operations.addChanges }, ['todo', 'active', 'completed', 'abandoned']);
   }
 
   function activateTaskRecord(targetRoot: string, taskIdValue: string, input: unknown = {}) {
     assertFields(input, new Set(['expectedRecordDigest']), 'Task activate');
-    return mutate(targetRoot, taskIdValue, 'activate', { expectedRecordDigest: input.expectedRecordDigest }, (current) => ({ ...current, status: 'active' }), [], ['todo']);
+    return mutate(targetRoot, taskIdValue, 'activate', { expectedRecordDigest: input.expectedRecordDigest }, (current) => ({ ...current, status: 'active' }), {}, ['todo']);
   }
 
   function completeTaskRecord(targetRoot: string, taskIdValue: string, input: unknown) {

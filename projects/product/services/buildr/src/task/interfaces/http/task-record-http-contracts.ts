@@ -90,12 +90,21 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
       documentDigest: { type: 'string', pattern: '^sha256-[0-9a-f]{64}$' },
     }, ['state', 'documentDigest'])),
   }, ['path', 'registered']),
+  ReferenceDiagnostic: closed({
+    taskId: { $ref: '#/$defs/TaskId' },
+    kind: { enum: ['project', 'service', 'change'] },
+    reference: nonEmptyText,
+    code: nonEmptyText,
+    message: nonEmptyText,
+    details: true,
+  }, ['taskId', 'kind', 'reference', 'code', 'message']),
   StoredTaskView: closed({
     record: { $ref: '#/$defs/TaskRecord' },
     recordDigest: nonEmptyText,
     taskRelations: { $ref: '#/$defs/TaskRelations' },
     retrospectiveDocument: { $ref: '#/$defs/RetrospectiveDocumentReference' },
-  }, ['record', 'recordDigest', 'taskRelations', 'retrospectiveDocument']),
+    referenceDiagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
+  }, ['record', 'recordDigest', 'taskRelations', 'retrospectiveDocument', 'referenceDiagnostics']),
   ErrorResponse: closed({
     error: closed({ code: nonEmptyText, message: nonEmptyText, details: true }, ['code', 'message']),
   }, ['error']),
@@ -107,12 +116,13 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
     record: { $ref: '#/$defs/TaskRecord' },
     recordDigest: nonEmptyText,
     changeReferences: arrayOf({ type: 'object', additionalProperties: true }),
+    referenceDiagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
     taskRelations: { $ref: '#/$defs/TaskRelations' },
     retrospectiveDocument: { $ref: '#/$defs/RetrospectiveDocumentReference' },
     diagnostic: { type: 'null' },
     effects: arrayOf(closed({ type: nonEmptyText, taskId: { $ref: '#/$defs/TaskId' } }, ['type', 'taskId'])),
     nextActions: arrayOf(nonEmptyText),
-  }, ['schemaVersion', 'operation', 'status', 'taskId', 'record', 'recordDigest', 'changeReferences', 'taskRelations', 'retrospectiveDocument', 'diagnostic', 'effects', 'nextActions']),
+  }, ['schemaVersion', 'operation', 'status', 'taskId', 'record', 'recordDigest', 'changeReferences', 'referenceDiagnostics', 'taskRelations', 'retrospectiveDocument', 'diagnostic', 'effects', 'nextActions']),
 });
 
 const defs = TASK_RECORD_HTTP_DEFINITIONS;
@@ -139,7 +149,7 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
     filterOptions: closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ type: 'string', pattern: QUALIFIED_PATTERN }) }, ['projects', 'services']),
     totalTaskCount: { type: 'integer', minimum: 0 },
     tasks: arrayOf({ $ref: '#/$defs/StoredTaskView' }),
-    diagnostics: arrayOf(closed({ taskId: { $ref: '#/$defs/TaskId' }, code: nonEmptyText, message: nonEmptyText, details: true }, ['message'])),
+    diagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
   }, ['schemaVersion', 'filters', 'filterOptions', 'totalTaskCount', 'tasks', 'diagnostics']), defs),
   detailRequest: schema('detail/request', 'TaskDetailRequest', closed({}), defs),
   detailResponse: schema('detail/response', 'TaskDetailResponse', closed({
@@ -149,7 +159,8 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
     recordDigest: nonEmptyText,
     taskRelations: { $ref: '#/$defs/TaskRelations' },
     retrospectiveDocument: { $ref: '#/$defs/RetrospectiveDocumentReference' },
-  }, ['schemaVersion', 'taskId', 'record', 'recordDigest', 'taskRelations', 'retrospectiveDocument']), defs),
+    referenceDiagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
+  }, ['schemaVersion', 'taskId', 'record', 'recordDigest', 'taskRelations', 'retrospectiveDocument', 'referenceDiagnostics']), defs),
   updateRequest: schema('update/request', 'TaskUpdateRequest', {
     ...closed({
       expectedRecordDigest: nonEmptyText,

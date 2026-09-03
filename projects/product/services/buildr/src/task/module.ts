@@ -1,17 +1,17 @@
 import { registerTaskRecordApplication, type TaskRecordApplicationRuntime } from './application/task-record-application.ts';
-import { registerTaskReviewApplication } from './application/task-review-application.ts';
-import { registerTaskVerificationApplication } from './application/task-verification-application.ts';
-import { registerParentCoordinationApplication } from './application/parent-coordination-application.ts';
+import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from './application/task-review-application.ts';
+import { registerTaskVerificationApplication, type VerificationApplicationRuntime } from './application/task-verification-application.ts';
+import { registerParentCoordinationApplication, type ParentCoordinationApplicationRuntime } from './application/parent-coordination-application.ts';
 import { registerTaskRecordRepository, type RepositoryRuntime } from './persistence/task-record-repository.ts';
 import { registerTaskRecordRetrospectiveDocument } from './persistence/task-record-retrospective-document.ts';
-import { registerTaskReviewRepository } from './persistence/task-review-repository.ts';
-import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
+import { registerTaskReviewRepository, type TaskReviewRepositoryRuntime } from './persistence/task-review-repository.ts';
+import { registerTaskVerificationRepository, type TaskVerificationRepositoryRuntime } from './persistence/task-verification-repository.ts';
 import { registerGitWorktreeProvider, TASK_WORKTREE_PROVIDER, type GitWorktreeProviderRuntime, type GitWorktreeRuntime } from './infrastructure/git-worktree-provider.ts';
 import { taskRecordCommand, type TaskCommandRuntime } from './interfaces/cli/task-record.ts';
-import { taskReviewCommand } from './interfaces/cli/task-review.ts';
+import { taskReviewCommand, type TaskReviewCliRuntime } from './interfaces/cli/task-review.ts';
 import { gitWorktreeCommand, type GitWorktreeCliRuntime } from './interfaces/cli/git-worktree.ts';
-import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
-import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.ts';
+import { taskVerificationCommand, type TaskVerificationCliRuntime } from './interfaces/cli/task-verification.ts';
+import { parentCoordinationCommand, type ParentCoordinationCliRuntime } from './interfaces/cli/parent-coordination.ts';
 import {
   createParentCoordinationHttpContribution,
   createTaskVerificationHttpContribution,
@@ -143,26 +143,26 @@ export function createWorktreeProviderModule(runtime: GitWorktreeRuntime) {
 function taskVerificationCliContributions() {
   return Object.freeze([
     {
-      key: 'task verification inspect', surface: 'agent-machine', summary: '读取开发完成后保存的任务验证报告。',
-      help: ['Usage: buildr task verification inspect <task-id> [--content-identity <identity>] [--target <canonical-workspace>] [--json]', '', '报告包含实际检查、选择范围、结果、未覆盖项和结论；开发过程中的临时测试不进入该报告。'],
+      key: 'task verification inspect', surface: 'agent-machine', summary: '只读查看开发完成后保存的任务验证报告。',
+      help: ['Usage: buildr task verification inspect <task-id> [--content-identity <identity>] [--target <canonical-workspace>] [--json]', '', '只读返回报告、reportDigest与适用性，不写报告，不执行测试、Git、交付、Task完成或清理。'],
       match: ({ domain, action, runtimeId }: CliMatch) => domain === 'task' && action === 'verification' && runtimeId === 'inspect',
-      run: (runtime: DynamicRuntime, context: CliContext) => taskVerificationCommand(runtime, 'inspect', context.argv.slice(5)),
+      run: (runtime: TaskVerificationCliRuntime, context: CliContext) => taskVerificationCommand(runtime, 'inspect', context.argv.slice(5)),
     },
     {
       key: 'task verification record', surface: 'agent-machine', summary: '保存一份绑定当前内容版本的有意义任务验证报告。',
-      help: ['Usage: buildr task verification record <task-id> --report <json-file> [--target <canonical-workspace>] [--json]', '', 'Agent 直接调用项目命令、Playwright、Browser 或 HTTP 工具完成验证后提交报告；Application 不生成计划或代跑测试。'],
+      help: ['Usage: buildr task verification record <task-id> --report <json-file> --expected-report <absent|sha256-digest> [--target <canonical-workspace>] [--json]', '', '先inspect当前槽位并提交其absent或reportDigest；冲突后重新读取真实报告和当前内容再判断，不自动重试。', 'Agent直接运行项目测试；该命令只保存报告，不执行测试、Git、交付、Task完成或清理。'],
       match: ({ domain, action, runtimeId }: CliMatch) => domain === 'task' && action === 'verification' && runtimeId === 'record',
-      run: (runtime: DynamicRuntime, context: CliContext) => taskVerificationCommand(runtime, 'record', context.argv.slice(5)),
+      run: (runtime: TaskVerificationCliRuntime, context: CliContext) => taskVerificationCommand(runtime, 'record', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }
 
 function parentCoordinationCliContributions() {
   return Object.freeze([Object.freeze({
-    key: 'task parent inspect', surface: 'primary', summary: '查看整体目标、真实子任务结果、完成观察身份和历史父计划。',
-    help: ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]'],
+    key: 'task parent inspect', surface: 'primary', summary: '只读查看整体目标、真实子任务结果、完成观察身份和历史父计划。',
+    help: ['Usage: buildr task parent inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读返回父任务协调（Task Parent Coordination）事实；不写Task，不执行Git、验证、交付或清理。'],
     match: ({ domain, action, runtimeId, operation }: CliMatch) => domain === 'task' && action === 'parent' && runtimeId === 'inspect' && !operation,
-    run: (runtime: DynamicRuntime, context: CliContext) => parentCoordinationCommand(runtime, context.argv.slice(5)),
+    run: (runtime: ParentCoordinationCliRuntime, context: CliContext) => parentCoordinationCommand(runtime, context.argv.slice(5)),
   })]);
 }
 
@@ -212,7 +212,7 @@ export function createGitWorktreeCliContributions(application: GitWorktreeCliRun
 export function createTaskRecordCliContributions(application: TaskCommandRuntime | null = null) {
   return Object.freeze([
     {
-      key: 'task create', surface: 'primary', summary: '创建 active 正式 Task，或以 --status todo 只保存待办意向；复盘来源可重复。',
+      key: 'task create', surface: 'primary', summary: '创建 active 正式 Task，或以 --status todo 只保存待办意向。',
       help: [
         'Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
@@ -231,20 +231,20 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'inspect', context.argv.slice(4)),
     },
     {
-      key: 'task update', surface: 'primary', summary: '至少提供一个明确 setter/add/remove；只允许修改 todo 或 active Task。',
+      key: 'task update', surface: 'primary', summary: '按当前摘要修改任务事实；支持带原因的终态事实更正。',
       help: [
         'Usage: buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--title <text>] [--intent <text>] [--parent-task] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
-        '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 todo 或 active Task，todo 拒绝 Change。',
+        '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。四种状态均可显式更正；终态事实更正必须提供--reason和当前--expected-record，todo拒绝Change。',
         '--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。',
-        '不接受 --input、patch、完整 next-state、expected revision 或专业模块字段。',
+        '只更新Task Record SQLite；不接受--input、patch、完整next-state、expected revision或专业模块字段，不执行Git、验证、交付或清理。',
       ],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'update',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'update', context.argv.slice(4)),
     },
     {
       key: 'task activate', surface: 'primary', summary: '把todo Task单向激活为active；该动作自身不执行Git或研发工作。',
-      help: ['Usage: buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '只执行 todo -> active。Agent 必须先读取当前 Task Record，并使用其摘要避免覆盖并发修改。'],
+      help: ['Usage: buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '只写Task Record的todo -> active。Agent必须先读取当前摘要；不执行Git、验证、交付或清理。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'activate',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'activate', context.argv.slice(4)),
     },
@@ -255,7 +255,7 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'complete', context.argv.slice(4)),
     },
     {
-      key: 'task abandon', surface: 'primary', summary: '把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。',
+      key: 'task abandon', surface: 'primary', summary: '把 todo 或 active Task 标记为 abandoned；终态事实可由统一 update 带原因更正。',
       help: ['Usage: buildr task abandon <task-id> --reason <text> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '把todo或active Task标记为abandoned；终态事实仍可通过带原因的统一update显式更正。', '该动作只更新顶层Task Record，不执行Git或其他专业动作。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'abandon',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'abandon', context.argv.slice(4)),
@@ -263,7 +263,7 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
   ].map(Object.freeze));
 }
 
-export function createTaskReviewCliContributions(application: DynamicRuntime | null = null) {
+export function createTaskReviewCliContributions(application: TaskReviewCliRuntime | null = null) {
   return Object.freeze([
     {
       key: 'task review inspect', surface: 'agent-machine',
@@ -271,10 +271,10 @@ export function createTaskReviewCliContributions(application: DynamicRuntime | n
       help: [
         'Usage: buildr task review inspect <task-id> [--target <canonical-workspace>] [--json]',
         '',
-        '只读返回 Planning/Completion 两个可选槽位及 response-only resultDigest；不判断对当前现场的适用性。',
+        '只读返回 Planning/Completion 两个可选槽位及 response-only resultDigest；不写Review，不执行Git、验证、交付、Task完成或清理。',
       ],
       match: ({ domain, action, runtimeId }: CliMatch) => domain === 'task' && action === 'review' && runtimeId === 'inspect',
-      run: (runtime: DynamicRuntime, context: CliContext) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'inspect', context.argv.slice(5)),
+      run: (runtime: TaskReviewCliRuntime, context: CliContext) => taskReviewCommand(application || runtime, 'inspect', context.argv.slice(5)),
     },
     {
       key: 'task review record', surface: 'agent-machine',
@@ -283,10 +283,10 @@ export function createTaskReviewCliContributions(application: DynamicRuntime | n
         'Usage: buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> [--target <canonical-workspace>] [--json]',
         '',
         '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
-        '中断、缺少审查对象 identity、并发冲突或结论不完整时不写入。',
+        '中断、缺少审查对象identity、并发冲突或结论不完整时不写入。该命令只写Review current，不执行Git、验证、交付、Task完成或清理。',
       ],
       match: ({ domain, action, runtimeId }: CliMatch) => domain === 'task' && action === 'review' && runtimeId === 'record',
-      run: (runtime: DynamicRuntime, context: CliContext) => taskReviewCommand(application || pick(runtime, [...TASK_REVIEW_APPLICATION_METHODS, 'taskReviewResultPath']), 'record', context.argv.slice(5)),
+      run: (runtime: TaskReviewCliRuntime, context: CliContext) => taskReviewCommand(application || runtime, 'record', context.argv.slice(5)),
     },
   ].map(Object.freeze));
 }
@@ -345,19 +345,19 @@ function createTaskReviewModule(requires: RuntimeRequires) {
   const privateComposition = {
     ...requires[TASK_RECORD_PERSISTENCE_READ],
     ...requires['workspace.structured-store'],
-  };
+  } as DynamicRuntime & TaskReviewRepositoryRuntime & TaskReviewApplicationRuntime;
   registerTaskReviewRepository(privateComposition);
   registerTaskReviewApplication(privateComposition);
 
   const application = pick(privateComposition, TASK_REVIEW_APPLICATION_METHODS);
   const persistenceRead = pick(privateComposition, TASK_REVIEW_PERSISTENCE_READ_METHODS);
-  const cliPort = Object.freeze({ ...application, taskReviewResultPath: persistenceRead.taskReviewResultPath });
+  const cliPort = Object.freeze({ ...application, taskReviewResultPath: persistenceRead.taskReviewResultPath }) as TaskReviewCliRuntime;
   const runtimePortValue = Object.freeze({
     methods: Object.freeze({ ...application, ...pick(privateComposition, TASK_REVIEW_RUNTIME_PORT_METHODS) }),
     testSupportProperties: Object.freeze({
       taskReviewSerialize: Object.freeze({
         get: () => privateComposition.taskReviewSerialize,
-        set: (value: unknown) => { privateComposition.taskReviewSerialize = value; },
+        set: (value: TaskReviewRepositoryRuntime['taskReviewSerialize']) => { privateComposition.taskReviewSerialize = value; },
       }),
     }),
   });
@@ -394,7 +394,7 @@ export function createTaskVerificationModule(runtime: DynamicRuntime, { verifica
       ...(verificationDeclaration ? [verificationDeclaration] : []),
     ]),
     create(requires: RuntimeRequires) {
-      const composition = taskPrivateComposition(runtime, requires);
+      const composition = taskPrivateComposition(runtime, requires) as DynamicRuntime & VerificationApplicationRuntime & TaskVerificationRepositoryRuntime;
       Object.defineProperty(composition, 'taskVerificationSerialize', { configurable: true, writable: true, value: undefined });
       registerTaskVerificationRepository(composition);
       registerTaskVerificationApplication(composition);
@@ -403,7 +403,7 @@ export function createTaskVerificationModule(runtime: DynamicRuntime, { verifica
       const testSupportProperties = {
         taskVerificationSerialize: Object.freeze({
           get: () => composition.taskVerificationSerialize,
-          set: (value: unknown) => { composition.taskVerificationSerialize = value; },
+          set: (value: TaskVerificationRepositoryRuntime['taskVerificationSerialize']) => { composition.taskVerificationSerialize = value; },
         }),
       };
       return Object.freeze({
@@ -426,7 +426,7 @@ export function createParentCoordinationModule(runtime: DynamicRuntime) {
     id: PARENT_COORDINATION_MODULE_ID,
     requires: Object.freeze([TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ]),
     create(requires: RuntimeRequires) {
-      const composition = taskPrivateComposition(runtime, requires);
+      const composition = taskPrivateComposition(runtime, requires) as DynamicRuntime & ParentCoordinationApplicationRuntime;
       registerParentCoordinationApplication(composition);
       const application = pick(composition, PARENT_COORDINATION_APPLICATION_METHODS);
       const testSupportProperties = {};

@@ -73,26 +73,6 @@ Buildr Product MUST 由快速检查或 HTTP integration 持有 API 参数、状�
 - **THEN** changed planner MUST 选择对应资源 browser integration
 - **AND** browser MUST 使用真实交互和可见结果断言，不得以实现源码包含特定函数调用文本作为替代
 
-### Requirement: Task Browser Smoke 必须区分 active currentness 与 terminal delivery
-自动 Browser Smoke MUST 使用独立 fixture 覆盖 active unknown、active ready/current、真实 stale、completed delivered 与 completed unproven，并 MUST 对 terminal 研发/证据主文案、四页签、技术详情层级和安全 HTTP 行为形成可重复 assertion。手工浏览器检查 MUST NOT 被报告为自动 E2E。
-
-#### Scenario: active unknown fixture
-- **WHEN** active Task 的 Environment unavailable
-- **THEN** Browser Smoke MUST 断言研发状态仍为 unknown 且不出现 delivered
-
-#### Scenario: completed delivered fixture
-- **WHEN** fixture 含 matching Task、Development handoff、Review/Verification Results 与成功 Finish completion
-- **THEN** Browser Smoke MUST 断言“已交付”、交付时证据关联和 cleanup 正常文案
-- **AND** MUST 断言页面未把历史实时轴显示为 current
-
-#### Scenario: completed unproven fixture
-- **WHEN** completed Task 缺少 matching successful Finish
-- **THEN** Browser Smoke MUST 断言“交付未经证明”且不使用 delivered 样式
-
-#### Scenario: 真实 stale fixture
-- **WHEN** active Result target 与 current target identity 不一致
-- **THEN** Browser Smoke MUST 断言真实 stale 文案，而不是 unknown 或 delivered
-
 ### Requirement: Browser 测试 DOM 钩子策略必须在 UI 重设计中显式遵守
 Buildr Web UI 重设计 MUST 按经确认的钩子策略处理 browser smoke 使用的稳定 DOM id / `data-*` 选择器：若策略为保留，实现 MUST 尽量不破坏既有钩子；若策略为重写，同一 Change MUST 同步更新 `product/buildr` 的 browser smoke 选择器，并使受影响 selector 在生产托管路径下重新通过。未确认策略前，实现 MUST NOT 大规模删除或重命名既有测试钩子。
 
@@ -187,14 +167,6 @@ Buildr Web 将主导航从侧栏改为顶栏后，browser smoke 与集成测试 
 - **THEN** Verification preparation closure MUST不包含`buildr-web` Browser辅助Recipe
 - **AND** MUST不安装Buildr Web依赖、构建staging dist或启动Chrome
 
-### Requirement: Browser verification 的公开结果必须命名为 Buildr Web
-Browser smoke、selector dispatcher、verification registry、测试报告和错误诊断 MUST 使用 Buildr Web 术语，并 MUST 保持现有隔离 Workspace、独立 Data Root、随机 loopback 端口和 Browser 资源容量约束。
-
-#### Scenario: 读取 Browser verification 结果
-- **WHEN** 用户或 Agent 查看 Browser verification registry、CLI 输出或 Execution Record
-- **THEN** 可见能力名称 MUST 为 Buildr Web Browser Smoke
-- **AND** 验证行为与资源隔离事实 MUST 与迁移前等价
-
 ### Requirement: Browser dispatcher 与 cleanup 必须异步有界并保留阶段诊断
 Buildr Web Browser dispatcher MUST使用异步owned-process runner执行web-dist验证与isolated Browser smoke，并 MUST记录`web-dist`、`fixture`、`browser`、`assertions`与`cleanup`阶段的开始、结束、耗时和失败。Browser、HTTP server与Preview cleanup MUST各自有bounded deadline，外层capability deadline MUST继续作为最终owned-process兜底。
 
@@ -217,3 +189,24 @@ Buildr Web Browser dispatcher MUST使用异步owned-process runner执行web-dist
 - **WHEN** released、development或其他Task的Buildr Web实例正在运行且不属于本次lineage
 - **THEN** Browser cleanup MUST保留这些实例
 - **AND** MUST继续使用隔离Data Root与随机loopback端口完成本次验证
+
+### Requirement: Task Browser Smoke 必须覆盖目录默认值与读取竞态
+Task Browser Smoke MUST通过生产托管 `web-dist` 验证首次进入只显示 open Tasks、复盘筛选可查看 terminal Tasks、较旧响应不能覆盖较新筛选、空 Workspace 与筛选无结果保持不同文案，以及详情 Task ID hook 唯一。
+
+#### Scenario: 默认目录与复盘筛选
+- **WHEN** fixture 同时包含 open、completed、abandoned 和带复盘状态的 Task
+- **THEN** 首次列表 MUST只显示 open Task
+- **AND** 选择复盘状态后 MUST显示匹配 terminal Task
+
+#### Scenario: 延迟旧请求
+- **WHEN** Browser 使旧 list 请求晚于新筛选请求完成
+- **THEN** 页面 MUST保持新筛选的数据、计数与空态
+- **AND** 旧请求结果 MUST被丢弃
+
+#### Scenario: 两种空状态
+- **WHEN** 空 Workspace 首次打开，或非空 Workspace 的当前筛选无结果
+- **THEN** 页面 MUST分别显示“还没有正式任务记录”和“当前筛选没有匹配任务”
+
+#### Scenario: 详情 DOM ID
+- **WHEN** 任意 Task 详情加载完成
+- **THEN** Browser MUST断言 `#task-detail-id` 数量为一且内容匹配 URL Task

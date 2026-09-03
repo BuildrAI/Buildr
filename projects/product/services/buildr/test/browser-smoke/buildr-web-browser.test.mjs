@@ -356,6 +356,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const runtime = createRuntime();
   let registry = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
+  const otherWorkspaceId = registry.workspaces.find((item) => item.rootPath === otherRoot).workspace.id;
   const instance = createLocalWorkspaceServer(runtime, {
     targetRoot: workspaceRoot,
     webProfile: { profile: 'development' },
@@ -648,7 +649,53 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 8, '默认目录显示全部任务；未完成排在前面');
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 5, '默认目录只显示todo与active任务');
+    assert.equal(await page.locator('#task-detail-id').count(), 1, '任务详情ID钩子必须唯一');
+    await page.locator('#task-filter-q').fill('绝对不会命中的任务');
+    await page.locator('#task-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-empty').innerText(), /当前筛选没有匹配任务/);
+    await page.locator('#task-filter-q').clear();
+    process.stderr.write('[buildr-browser] selector=task phase=filtered-empty-verified\n');
+    await page.goto(`${url}/workspaces/${otherWorkspaceId}/tasks`);
+    await page.locator('#task-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-empty').innerText(), /还没有正式任务记录/);
+    await page.goto(`${workspaceUrl}/tasks`);
+    await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
+    process.stderr.write('[buildr-browser] selector=task phase=empty-workspace-verified\n');
+    let markDelayedActiveStarted;
+    const delayedActiveStarted = new Promise((resolve) => { markDelayedActiveStarted = resolve; });
+    const taskListRoute = /\/tasks(?:\?|$)/;
+    let delayNextTaskList = true;
+    const observedTaskRequests = [];
+    const observeTaskRequest = (request) => { if (request.url().includes('/tasks')) observedTaskRequests.push(request.url()); };
+    page.on('request', observeTaskRequest);
+    await page.route(taskListRoute, async (route) => {
+      if (!delayNextTaskList) return route.continue();
+      delayNextTaskList = false;
+      markDelayedActiveStarted();
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try { await route.continue(); } catch {}
+    });
+    await openTaskFilterPanel(page);
+    await selectAntdOption(page, 'task-filter-status', '全部');
+    await applyTaskFilters(page);
+    await Promise.race([
+      delayedActiveStarted,
+      page.waitForTimeout(5000).then(() => { throw new Error(`delayed Task list request was not observed: ${observedTaskRequests.join(', ')}`); }),
+    ]);
+    await openTaskFilterPanel(page);
+    await selectAntdOption(page, 'task-filter-status', '已完成');
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 3);
+    await page.waitForTimeout(1000);
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 3, '旧active请求不得覆盖新的completed结果');
+    await page.unroute(taskListRoute);
+    page.off('request', observeTaskRequest);
+    await openTaskFilterPanel(page);
+    await page.locator('#task-filter-clear').click();
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
+    process.stderr.write('[buildr-browser] selector=task phase=request-race-verified\n');
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);

@@ -66,6 +66,21 @@ assert.equal(rootHelp.status, 0);
 assert.match(rootHelp.stdout, /^  web\s/m);
 assert.doesNotMatch(rootHelp.stdout, /^  app(?:\s|$)/m);
 assert.equal(COMMAND_CATALOG.some((item) => item.key === 'app' || item.key.startsWith('app ')), false);
+const taskHelp = run(['help', 'task']);
+assert.equal(taskHelp.status, 0, taskHelp.stderr);
+assert.match(taskHelp.stdout, /create\|inspect\|update\|activate\|complete\|abandon/);
+assert.doesNotMatch(taskHelp.stdout, /复盘来源可重复|终态不可重开或继续修改/);
+const taskCreateHelp = run(['help', 'task', 'create']);
+assert.doesNotMatch(taskCreateHelp.stdout, /复盘来源可重复/);
+assert.match(taskCreateHelp.stdout, /不创建Change、branch、commit或专业记录/);
+const taskUpdateHelp = run(['help', 'task', 'update']);
+assert.match(taskUpdateHelp.stdout, /终态事实更正必须提供--reason和当前--expected-record/);
+assert.match(taskUpdateHelp.stdout, /不执行Git、验证、交付或清理/);
+const taskAbandonHelp = run(['help', 'task', 'abandon']);
+assert.match(taskAbandonHelp.stdout, /终态事实仍可通过带原因的统一update显式更正/);
+const verificationRecordHelp = run(['help', 'task', 'verification', 'record']);
+assert.match(verificationRecordHelp.stdout, /--expected-report <absent\|sha256-digest>/);
+assert.match(verificationRecordHelp.stdout, /只保存报告，不执行测试、Git、交付、Task完成或清理/);
 const surfaceHeadings = {
   primary: 'Primary workspace commands:',
   'agent-machine': 'Agent machine commands:',

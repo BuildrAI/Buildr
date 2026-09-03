@@ -331,7 +331,7 @@ Buildr 登记、展示、诊断和恢复
 6. 同步规范、实现、测试、Skill 和 current knowledge 中真正受影响的资产；
 7. 增加至少一条 alternate path 或 unrelated failure isolation 验证；
 8. 不为追求“更智能”而放松授权、目标身份、证据真实性、共享历史和安全删除边界；
-9. 完成后形成可核验 Contribution Handoff，由 Parent 动态读取结果，不手工维护第二份进度表。
+9. 完成后在Child Task记录真实结果，由Parent动态读取，不形成Contribution Handoff或手工维护第二份进度表。
 
 ## 迁移与兼容原则
 
@@ -348,7 +348,7 @@ Buildr 登记、展示、诊断和恢复
 Parent Task 的最终集成验收至少满足：
 
 - 所有现存硬门禁已完成分类，并能说明不变量、伤害、作用范围和安全降级；
-- Workspace、Project、Service、Task、Environment、Development、Verification、Finish、OpenSpec、Doctor 与测试不再存在互相冲突的责任描述；
+- Workspace、Project、Service、Task Record、Worktree、Project preparation、Review、Verification、默认Task Finish、OpenSpec、Doctor与测试不再存在互相冲突的责任描述；
 - Agent 可以选择 Buildr 自动化、直接 Git、PR/CI 或其他已授权路径，并通过统一观察与对账形成相同专业结果；
 - Buildr 内部登记缺失、局部模块失败或可重建 evidence 丢失，不再否定外部权威事实或阻止无关工作；
 - Delivery、Activation、Cleanup 与 Diagnostics 在规范、实现、CLI JSON、Buildr Web 和测试中保持正交；
@@ -374,11 +374,11 @@ Parent Task 的最终集成验收至少满足：
 
 ## 维护方式
 
-本文只维护稳定目标、工作包边界和最终验收。具体 Child 状态、Change 进度、验证结果和交付事实由 Task Record、Parent/Child、Development、Review、Verification、Finish 与 OpenSpec 各自 authority 提供，不在本文勾选进度。
+本文只维护稳定目标、工作包边界和最终验收。具体Child状态、Change进度、验证结果和交付事实由Task Record、Parent/Child、Review、Verification、Git、默认Task Finish、具体资源owner与OpenSpec各自authority提供，不在本文勾选进度。
 
 当某个工作包完成后：
 
 - 以实现和 canonical specs 更新 current knowledge；
-- 如果目标方向发生实质变化，显式 reconcile Parent Plan 和本文；
+- 如果目标方向发生实质变化，更新父任务目标或其具名计划文档和本文；
 - 如果工作包被放弃或替代，记录原因并调整依赖，不伪装为已完成；
 - 全部工作包完成后，由 Parent 执行最终集成验收，再决定 Parent Task 终态。

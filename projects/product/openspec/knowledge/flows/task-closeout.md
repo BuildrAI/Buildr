@@ -24,7 +24,7 @@ flowchart TB
 | 有 | 有 | 完成 Git 交付、已有任务登记与资源善后 |
 | 无 | 无 | 完成成果自身的交付，不制造提交或任务 |
 
-已有任务使用 `task inspect` 和 `task complete`；受管资源交给 `task environment cleanup`。这些命令不是每次必跑清单。没有对应任务或资源就不调用；多仓库按实际 Git 边界分别处理。
+已有任务使用 `task inspect` 和 `task complete`；Task Worktree使用`worktree inspect|cleanup`，其他资源交给各自创建者或明确owner清理。这些命令不是每次必跑清单。没有对应任务或资源就不调用；多仓库按实际 Git 边界分别处理。
 
 ## 检查只保护具体动作
 
@@ -42,20 +42,20 @@ flowchart TB
 
 ## 旧数据和资源
 
-历史任务、旧运行和已有提交不迁移为虚假成功，不批量删除。旧运行不再推进五阶段；历史读取、原资源归属和删除安全能力保留。不能证明安全的资源保留并报告。
+历史任务、旧运行和已有提交不迁移为虚假成功，不批量删除。已退役模块不再推进或提供兼容读取；仍由当前owner持有的资源按真实归属和删除安全处理。不能证明安全的资源保留并报告。
 
 ## 实现入口
 
 - 方法：`services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md`
-- 独立结果：`services/buildr/src/task/application/task-terminal-delivery-application.mjs`
-- 资源安全：`services/buildr/src/task/application/task-environment-application.mjs` 和 `services/buildr/src/task/infrastructure/git-worktree-provider.mjs`
-- 父任务贡献：`services/buildr/src/task/application/parent-coordination-application.mjs`
-- 发布关联：`services/buildr/tools/release/release-task-evidence-correlation.mjs`
+- 任务结果：`services/buildr/src/task/application/task-record-application.ts`
+- Worktree资源安全：`services/buildr/src/task/infrastructure/git-worktree-provider.ts`
+- 父任务协调：`services/buildr/src/task/application/parent-coordination-application.ts`
+- 发布关联：`services/buildr/tools/release/release-task-evidence-correlation.ts`
 
 首次实践及统计口径保留在设计技能的历史案例中；它不代表现行执行入口。
 
 ## 清理与必要补测
 
-智能体（Agent）先核验本次成果完整进入约定位置，再向已有 `task environment cleanup` 成对提供逐仓 `--expected-source <selector>=<完整源提交>` 和 `--delivered-ref <selector>=<完整交付提交>`。应用保护当前删除对象：源版本不变、没有未保存内容、交付提交仍由保留分支持有，随后删除工作树和本地任务分支。源提交编号不在目标历史中不再否定调用者已核验的交付；提交存在和任务完成状态都不能单独证明业务成果等价。不新增证明文件、流程或授权队列。
+智能体（Agent）先核验本次成果完整进入约定位置，再向`worktree cleanup`成对提供逐仓`--expected-source <selector>=<完整源提交>`和`--delivered-ref <selector>=<完整交付提交>`。Git Worktree provider保护当前删除对象：源版本不变、没有未保存内容、交付提交仍由保留分支持有，随后删除工作树和本地任务分支。源提交编号不在目标历史中不再否定调用者已核验的交付；提交存在和任务完成状态都不能单独证明业务成果等价。不新增证明文件、流程或授权队列。
 
 内容及相关运行条件未改变时复用已有验证。只有冲突处理、集成修改或已知问题实际影响行为时，才选择最小充分的已有检查，并在推进目标分支前执行且通过；不因进入收尾或生成新提交而重复验证。测试条数不代替风险与运行成本判断。

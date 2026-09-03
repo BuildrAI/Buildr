@@ -123,7 +123,7 @@ const COMMAND_GROUPS = [
     surface: "primary",
     summary: "Task Manager只管理Task Record；专业动作由对应Skill和Interface处理。",
     help: [
-      "Usage: buildr task <create|inspect|update|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task <create|inspect|update|activate|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
       "",
       "Task Manager只管理canonical Workspace中的Task Record；专业事实由各自Application读取。",
       "它不执行开发、Review、Verification、Git、交付、cleanup或publication，也不接受完整next-state文档。",

@@ -35,6 +35,7 @@ export interface TaskRecordMutationResponse {
   changeReferences: {
     [k: string]: unknown | undefined;
   }[];
+  referenceDiagnostics: ReferenceDiagnostic[];
   taskRelations: TaskRelations;
   retrospectiveDocument: RetrospectiveDocumentReference;
   diagnostic: null;
@@ -105,6 +106,14 @@ export interface TaskResultHistoryEntry {
   correctedAt: string;
   reason: string;
 }
+export interface ReferenceDiagnostic {
+  taskId: TaskId;
+  kind: 'project' | 'service' | 'change';
+  reference: string;
+  code: string;
+  message: string;
+  details?: unknown;
+}
 export interface TaskRelations {
   parent: TaskRelationSummary | null;
   children: TaskRelationSummary[];
@@ -145,18 +154,14 @@ export interface TaskListResponse {
   };
   totalTaskCount: number;
   tasks: StoredTaskView[];
-  diagnostics: {
-    taskId?: TaskId;
-    code?: string;
-    message: string;
-    details?: unknown;
-  }[];
+  diagnostics: ReferenceDiagnostic[];
 }
 export interface StoredTaskView {
   record: TaskRecord;
   recordDigest: string;
   taskRelations: TaskRelations;
   retrospectiveDocument: RetrospectiveDocumentReference;
+  referenceDiagnostics: ReferenceDiagnostic[];
 }
 export interface TaskDetailRequest {}
 export interface TaskDetailResponse {
@@ -166,6 +171,7 @@ export interface TaskDetailResponse {
   recordDigest: string;
   taskRelations: TaskRelations;
   retrospectiveDocument: RetrospectiveDocumentReference;
+  referenceDiagnostics: ReferenceDiagnostic[];
 }
 export interface TaskUpdateRequest {
   expectedRecordDigest: string;

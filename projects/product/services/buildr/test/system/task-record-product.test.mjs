@@ -250,6 +250,41 @@ test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均
   assert.notDeepEqual(original, current.record);
 });
 
+test('历史Project、Service或Change不可用时Task仍可读并允许移除引用或修改无关字段', (t) => {
+  const { root } = fixture(t, 'task-reference-availability');
+  const runtime = createRuntime();
+  const created = runtime.createTaskRecord(root, { taskId: 'historical-references', title: '历史引用', intent: '引用以后可能迁移', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] });
+  fs.writeFileSync(path.join(root, 'projects', 'manifest.yml'), 'schemaVersion: buildr.projects/v2\nprojects: {}\n');
+
+  const inspected = runtime.inspectTaskRecord(root, 'historical-references');
+  assert.equal(inspected.recordDigest, created.recordDigest);
+  assert.deepEqual(inspected.record.scope, created.record.scope);
+  assert.deepEqual(new Set(inspected.referenceDiagnostics.map((item) => item.kind)), new Set(['project', 'service', 'change']));
+  const cliInspected = json(['task', 'inspect', 'historical-references', '--target', root]);
+  assert.deepEqual(cliInspected.record, inspected.record);
+  assert.deepEqual(cliInspected.referenceDiagnostics, inspected.referenceDiagnostics);
+  const detail = runtime.inspectTaskRecordView(root, 'historical-references');
+  assert.deepEqual(detail.record, inspected.record);
+  assert.deepEqual(detail.referenceDiagnostics, inspected.referenceDiagnostics);
+  const listed = runtime.queryTaskRecordViews(root).tasks.find((item) => item.record.taskId === 'historical-references');
+  assert.deepEqual(listed.record, inspected.record);
+  assert.deepEqual(listed.referenceDiagnostics, inspected.referenceDiagnostics);
+
+  const renamed = runtime.updateTaskRecord(root, 'historical-references', { expectedRecordDigest: inspected.recordDigest, title: '历史引用仍可读' });
+  assert.equal(renamed.record.title, '历史引用仍可读');
+  const cleaned = runtime.updateTaskRecord(root, 'historical-references', {
+    expectedRecordDigest: renamed.recordDigest,
+    removeProjects: ['demo'], removeServices: ['demo/api'], removeChanges: ['demo/same-change'],
+  });
+  assert.deepEqual(cleaned.record.scope, { projects: [], services: [] });
+  assert.deepEqual(cleaned.record.changes, []);
+  assert.deepEqual(cleaned.referenceDiagnostics, []);
+
+  assert.throws(() => runtime.updateTaskRecord(root, 'historical-references', { expectedRecordDigest: cleaned.recordDigest, addProjects: ['missing'] }), { code: 'task_record_project_not_found' });
+  assert.throws(() => runtime.updateTaskRecord(root, 'historical-references', { expectedRecordDigest: cleaned.recordDigest, addServices: ['missing/api'] }), { code: 'task_record_project_not_found' });
+  assert.throws(() => runtime.updateTaskRecord(root, 'historical-references', { expectedRecordDigest: cleaned.recordDigest, addChanges: ['missing/change'] }), { code: 'task_record_project_not_found' });
+});
+
 test('CLI 完成动作沿用观察到的记录摘要并拒绝覆盖并发更新', (t) => {
   const { root } = fixture(t, 'completion-cas');
   const runtime = createRuntime();

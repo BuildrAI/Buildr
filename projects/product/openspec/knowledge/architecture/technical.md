@@ -16,7 +16,7 @@ Product Project: projects/product/
           ├── bin/buildr.mjs           │  稳定薄 CLI 入口
           ├── src/bootstrap/           │  唯一进程组装入口
           ├── src/workspace/           │  Workspace / Project / Service
-          ├── src/task/                │  Task 及其生命周期
+          ├── src/task/                │  Task Record / Review / Verification / Parent Coordination / Worktree
           ├── src/agent-assets/        │  Rule / Skill / Component 与 runtime 投射
           ├── src/verification/        │  Project 验证执行
           ├── src/web/                 │  Buildr Web Runtime 与本机 HTTP Host

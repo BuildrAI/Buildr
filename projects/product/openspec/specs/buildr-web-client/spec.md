@@ -56,43 +56,12 @@ Buildr MUST 将 Buildr Web 的发布所需文件定义为 `buildr` 内构建产�
 - **AND** MUST NOT 依赖 `buildr-web` 源码目录中的开发依赖在运行时可用
 
 ### Requirement: Buildr Web 必须只提交显式协调动作
-Buildr Web MUST通过同一Application API提交reconciliation与final acceptance，不得自动创建/完成/abandon Child、自动改写Change或根据页面状态同步Parent Plan。
+Buildr Web MUST只通过Task Record Application提交用户明确触发的关系更新、普通任务完成或带完整验收与授权的父任务完成；不得自动创建、完成或abandon Child，不得自动改写Change，也不得维护Parent Plan reconciliation。
 
 #### Scenario: 用户确认Parent reconciliation
-- **WHEN** 用户基于current identity提交完整next Plan
-- **THEN** UI MUST展示Application实际effects与新的identity
-- **AND** 后续Child专业动作 MUST保持独立
-
-### Requirement: Buildr Web 必须展示统一与分专业 execution record 视图
-Buildr Web Task 详情 MUST 提供一个共享 execution record 浏览器，支持“全部”“Verification”“Finish”三种筛选并展示多次执行、失败、重试、outcome、lifecycle、resolution、target、producer、时间与正文状态。Verification Result 区块 MUST 提供进入 Verification 视图的入口，Finish current/terminal 区块 MUST 提供进入 Finish 视图的入口；所有入口 MUST 使用同一 API authority 与 record identity，MUST NOT 把 execution record outcome 表达为当前 Result 或交付事实。
-
-#### Scenario: 从统一入口查看
-- **WHEN** 用户打开 Task 的 execution record 浏览器并切换筛选
-- **THEN** Web MUST 分别请求 `all`、`verification` 或 `finish` view
-- **AND** MUST 清晰显示当前筛选与空态
-
-#### Scenario: 从 Verification 区块进入
-- **WHEN** 用户在 Verification Result 区块选择查看执行记录
-- **THEN** Web MUST 打开同一浏览器的 Verification view
-- **AND** 当前 Result 展示 MUST 保持独立
-
-#### Scenario: 从 Finish 区块进入
-- **WHEN** 用户在 Finish current/terminal 区块选择查看执行记录
-- **THEN** Web MUST 打开同一浏览器的 Finish view
-- **AND** Finish current/terminal 展示 MUST 保持独立
-
-### Requirement: Buildr Web 必须按需展示受限正文
-Buildr Web MUST 在用户选择 record 后按需读取 detail，并只为 detail 声明的正文 filename 请求内容。Web MUST 展示 stored/response truncation、cleaned 或 unavailable 状态和 integrity failure diagnostic；MUST NOT 构造、显示或接受 locator、任意 path 或 cleanup action。
-
-#### Scenario: 打开正文文件
-- **WHEN** 用户选择 available record 的一个已声明 filename
-- **THEN** Web MUST 请求 Task-scoped body-file API 并以文本预览显示返回内容
-- **AND** MUST 标识任何 stored 或 response truncation
-
-#### Scenario: 正文不可用
-- **WHEN** record 已 cleaned、open、attention damaged 或 body read 失败
-- **THEN** Web MUST 保留 metadata 可见并显示安全 diagnostic
-- **AND** MUST NOT 尝试扫描或猜测正文路径
+- **WHEN** 用户基于current Task Record与父子快照提交完整验收和明确授权
+- **THEN** UI MUST展示Application实际结果或冲突
+- **AND** 后续Child专业动作与状态 MUST保持独立
 
 ### Requirement: Buildr Web UI 重设计必须遵守离线 CSP 与生产托管边界
 Buildr Web UI 重设计 MUST 仅修改 `product/buildr-web` 内的视觉、布局与动效实现，MUST 继续由 `product/buildr` 消费构建产物目录 `web-dist` 做同源托管，并 MUST 遵守既有离线 CSP：不得引入 CDN、远程字体或远程脚本。若使用自定义字体，字体文件 MUST 作为同源静态资产随构建产物提供。正式完成证据 MUST 来自 `buildr web`（或测试夹具中的等价 Buildr Web HTTP server）托管的构建产物，MUST NOT 将 Vite 开发服务器或 HMR 会话当作交付完成条件。

@@ -350,6 +350,68 @@ export function createPackageStaticValidator(deps) {
     }
   }
 
+  function validateTaskCurrentContractResidue(context) {
+    const { root, problems } = context;
+    const productRoot = path.resolve(root, '../..');
+    const activeChangesRoot = path.join(productRoot, 'openspec', 'changes');
+    const activeChangeDirectories = existsDirectory(activeChangesRoot)
+      ? fs.readdirSync(activeChangesRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== 'archive').map((entry) => entry.name)
+      : [];
+    const capabilityHasActiveDelta = (capability) => activeChangeDirectories.some((change) => existsFile(path.join(activeChangesRoot, change, 'specs', capability, 'spec.md')));
+    const currentRoots = [
+      path.join(productRoot, 'openspec', 'specs'),
+      path.join(productRoot, 'openspec', 'knowledge'),
+      path.join(productRoot, 'docs'),
+    ];
+    const positiveResidues = [
+      ['CREATE TABLE task_execution_records', 'Task Execution Record schema creation'],
+      ['buildr task execution-record', 'Task Execution Record CLI'],
+      ['Task internal workflow catalog/router 位于', 'Task internal workflow router'],
+      ['Task专属Environment Plan', 'Task Environment Plan'],
+      ['task environment cleanup', 'Task Environment cleanup'],
+      ['task-terminal-delivery-application.mjs', 'retired terminal delivery implementation'],
+      ['task-environment-application.mjs', 'retired Task Environment implementation'],
+      ['task-record-repository.mjs', 'stale Task Record implementation path'],
+      ['parent-coordination-application.mjs', 'stale Parent Coordination implementation path'],
+      ['buildr.task-verification/v3', 'retired Task Verification v3 contract'],
+      ['buildr.project-verification/v3', 'retired Project Verification v3 declaration'],
+      ['Execution Record reconciliation', 'retired Execution Record reconciliation'],
+    ];
+    for (const currentRoot of currentRoots) {
+      if (!existsDirectory(currentRoot)) continue;
+      for (const file of collectFiles(currentRoot)) {
+        const relative = toPosixRelative(productRoot, file);
+        if (!/\.md$/u.test(relative) || relative.startsWith('docs/archive/')) continue;
+        const capability = relative.match(/^openspec\/specs\/([^/]+)\/spec\.md$/u)?.[1] || null;
+        if (capability && capabilityHasActiveDelta(capability)) continue;
+        const content = fs.readFileSync(file, 'utf8');
+        for (const [pattern, label] of positiveResidues) {
+          if (content.includes(pattern)) problems.push(`Current Task contract must not require ${label}: ${relative}`);
+        }
+      }
+    }
+
+    const taskSource = path.join(root, 'src', 'task');
+    for (const file of collectFiles(taskSource)) {
+      if (!file.endsWith('.ts')) continue;
+      const relative = toPosixRelative(root, file);
+      const content = fs.readFileSync(file, 'utf8');
+      if (content.includes('@ts-nocheck')) problems.push(`Current Task TypeScript must not disable checking: ${relative}`);
+      if (/\bany\b/u.test(content)) problems.push(`Current Task TypeScript public boundary must not use any: ${relative}`);
+    }
+
+    const ownershipFiles = [path.join(root, 'test', 'verification'), path.resolve(productRoot, 'verification.yml')];
+    const staleTaskPath = /src\/task\/(?:module|(?:domain|application|persistence|interfaces\/cli|interfaces\/http)\/(?:task-record|task-review|task-verification|parent-coordination)(?:-[a-z-]+)?)\.mjs/gu;
+    for (const entry of ownershipFiles) {
+      const files = existsDirectory(entry) ? collectFiles(entry) : existsFile(entry) ? [entry] : [];
+      for (const file of files) {
+        const content = fs.readFileSync(file, 'utf8');
+        const matches = [...content.matchAll(staleTaskPath)].map((match) => match[0]);
+        for (const match of matches) problems.push(`Task verification ownership must use the current TypeScript path ${match.replace(/\.mjs$/u, '.ts')}: ${toPosixRelative(productRoot, file)}`);
+      }
+    }
+  }
+
   function validateTaskVerificationPromptRetirement(context) {
     const { root, problems } = context;
     const files = [
@@ -1063,6 +1125,8 @@ export function createPackageStaticValidator(deps) {
           'buildr project verification update <project>',
           'buildr task verification record <task-id>',
           'buildr task verification inspect <task-id>',
+          '--expected-report',
+          'reportDigest',
           '不列举每个测试文件',
           'Maven、Gradle、npm、Playwright、Browser、HTTP',
           'Buildr 不生成计划或统一运行测试',
@@ -1348,6 +1412,7 @@ export function createPackageStaticValidator(deps) {
     validatePackageMetadata(context);
     validateTaskEnvironmentAuthorityResidue(context);
     validateTaskLifecycleRetirement(context);
+    validateTaskCurrentContractResidue(context);
     validateTaskVerificationPromptRetirement(context);
     validateTaskReviewAuthority(context);
     validateMappedEntries(context);

@@ -697,27 +697,6 @@ Buildr Web生成Start Work Agent prompt时 MUST要求Agent在任务分流前只�
 - **THEN** prompt MUST触发Project与该Service的Declaration Intake
 - **AND** MUST不检查或安装未选择Service
 
-### Requirement: mutation 必须使用 current identity 并受界面安全保护
-Parent Plan reconciliation与final acceptance mutation MUST使用expected current identity；Buildr Web HTTP MUST另外执行same-origin、session与closed JSON校验。
-
-#### Scenario: 陈旧页面提交reconciliation
-- **WHEN** expected Parent Plan identity与current不一致
-- **THEN** Application MUST返回conflict且零写入
-- **AND** client MUST刷新current read model后再决定
-
-### Requirement: Task Preview Server 必须禁用 scheduled maintenance
-Buildr Task Preview Server MUST 在创建任何 scheduled maintenance 之前根据显式 preview identity 禁用调度。Preview MUST NOT注册 ExecRecord GC timer、执行 startup GC 或在后台读取/修改 Workspace execution records；该边界 MUST适用于直接 server factory 测试与由 `BUILDR_LOCAL_APP_PREVIEW` 启动的真实 preview。
-
-#### Scenario: Task Preview 启动并持续运行
-- **WHEN** Local HTTP Server 以有效 preview identity 启动并跨过一个或多个整点
-- **THEN** server MUST从未创建或调用 scheduled maintenance scheduler
-- **AND** execution record SQLite rows 与正文 MUST不因 preview 进程而变化
-
-#### Scenario: 正式 server 与 preview 并存
-- **WHEN** 默认 Local HTTP Server 和 Task Preview Server 同时运行
-- **THEN** 只有默认正式实例 MUST拥有 scheduled maintenance
-- **AND** preview MUST不共享、接管或补跑正式实例的 timer
-
 ### Requirement: 当前本机浏览器产品必须采用 Buildr Web 分层术语
 当前用户能力 MUST 命名为 Buildr Web（本机 Web 界面）；`buildr-web` Service MUST 命名为 Buildr Web Frontend Service；`buildr` Service 中负责 loopback HTTP、session、安全与 Application 调用的部分 MUST 命名为 Buildr Web Runtime；平台图形入口 MUST 命名为 Buildr Web Launcher。Buildr Desktop MUST 保留给未来真正的桌面应用，当前产品、帮助、页面与 Launcher MUST NOT 使用该名称。
 
@@ -1285,3 +1264,28 @@ Buildr Web MUST以Task Record为任务目标和结果authority，按需读取Rev
 - **WHEN** 用户通过现有Task Record动作完成Task
 - **THEN** 页面 MUST展示Task Record保存的结果
 - **AND** MUST不要求或查询Development、Environment、Finish history或Retrospective结果证明
+
+### Requirement: Buildr Web 任务目录必须默认聚焦未结束任务
+Buildr Web Task 列表首次进入和清除筛选 MUST使用 `status=open`，并 MUST保留 `all|completed|abandoned` 等显式状态选择。选择 `pending-decision|decided` 复盘筛选时 MUST自动切换页面状态为 `all`。后端省略 status 的 `all` 语义 MUST保持不变。
+
+#### Scenario: 首次进入列表
+- **WHEN** Workspace 同时包含 todo、active 与 terminal Tasks
+- **THEN** 页面首个 Task list 请求 MUST携带 `status=open`
+- **AND** 表格 MUST只显示 todo 与 active Tasks
+
+#### Scenario: 查看等待决定的复盘
+- **WHEN** 用户选择 `pending-decision` 复盘筛选
+- **THEN** 页面 MUST把 status 切换为 `all` 并显示匹配的 terminal Tasks
+
+#### Scenario: 新旧请求交错完成
+- **WHEN** 新筛选响应先于旧请求返回
+- **THEN** 页面 MUST只采用最新请求结果
+- **AND** 旧响应 MUST不覆盖 tasks、diagnostics、filter options 或空状态
+
+### Requirement: Buildr Web Task 详情必须使用唯一 DOM identity
+Task 详情加载态与已加载视图 MUST不同时生成重复 `id="task-detail-id"`。真实任务编号的 DOM hook MUST在每个页面最多出现一次。
+
+#### Scenario: 打开已加载详情
+- **WHEN** Browser 打开任意 Task detail
+- **THEN** `#task-detail-id` MUST恰好匹配一个元素并显示当前 Task ID
+- **AND** Task Record facts 内的重复展示 MUST使用不同 hook 或无 ID

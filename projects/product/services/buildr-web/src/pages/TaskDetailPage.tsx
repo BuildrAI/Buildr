@@ -2,7 +2,7 @@ import { ParentCompletionFields } from './task-detail/ParentCompletionFields';
 import { emptyParentCompletionDraft, parentCompletionInput } from './task-detail/parentCoordination';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Input, Modal, Select } from 'antd';
+import { Alert, Button, Input, Modal, Select } from 'antd';
 import { api, taskProfessionalApi, tasksApi, type ApiError } from '../api';
 import { createTaskReadLifecycle, isTaskReadCancelled } from '../api/taskReadLifecycle';
 import { useAppShell } from '../app/AppShellContext';
@@ -523,6 +523,14 @@ export function TaskDetailPage() {
       <div id="task-detail-alert" className={`alert${alert ? '' : ' hidden'}${alert?.error ? ' error' : ''}`} role="status">
         {alert?.message || ''}
       </div>
+      {data.referenceDiagnostics.length ? (
+        <Alert
+          id="task-reference-diagnostics"
+          type="warning"
+          showIcon
+          message={`部分历史引用当前不可用：${data.referenceDiagnostics.map((item) => `${item.reference}（${item.message}）`).join('；')}`}
+        />
+      ) : null}
       <nav className="detail-tabs" aria-label="任务详情">
         <div className="detail-tabs-list">
           {TABS.map((tab) => (
@@ -591,7 +599,7 @@ export function TaskDetailPage() {
               </div>
             </div>
             <dl className="read-facts detail-facts">
-              <Fact label="任务 ID" value={<span id="task-detail-id">{record.taskId}</span>} />
+              <Fact label="任务 ID" value={<span id="task-record-id">{record.taskId}</span>} />
               <div>
                 <dt>Parent Task</dt>
                 <dd id="task-detail-parent">

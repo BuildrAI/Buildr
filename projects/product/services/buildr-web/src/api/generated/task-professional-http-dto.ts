@@ -1,7 +1,7 @@
 /* eslint-disable */
 // Generated from Task Professional HTTP JSON Schema. Do not edit.
 // Run: npm run contracts:professional:generate
-// Source Schema Identity: sha256-d0bd6f048b25badd576a9c2b09406983ce6e2e5686000b538af87189fc18001c
+// Source Schema Identity: sha256-31c8c815fedfd22d02ffc400f5404a8d7b1863e6ba87a0f6826a302e735eeb75
 
 export interface TaskProfessionalHttpDtoProjection {
   reviewsRequest: ReviewsRequest;

@@ -1,6 +1,6 @@
 # 服务分层与模块组织
 
-本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。第一轮计划迁移已经进入当前实现；仍未确定最终归属的生产职责必须在迁移台账中显式标记为 `deferred`，不能因暂不移动而成为无 owner 遗留。文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代 Parent 的 Contribution Handoff 与最终集成验收。
+本文记录 Buildr Service 的工程目录、源码模块和技术分层共识，同时维护已经进入当前源码树的迁移基线。第一轮计划迁移已经进入当前实现；仍未确定最终归属的生产职责必须在迁移台账中显式标记为 `deferred`，不能因暂不移动而成为无 owner 遗留。文中的“已迁移”只表示对应结构切片已经落入当前实现，不替代 OpenSpec 对产品行为和架构性变更的规范，也不替代父任务基于真实子任务结果完成最终集成验收。
 
 本文是长期架构方向和迁移边界，不是单次实施 authority。每个进入实现的独立结构切片必须绑定 Task-scoped OpenSpec Change；父任务只负责协调总体结果、架构不变量、能力贡献、依赖和最终验收，不替代子任务的 Change、审查、验证或交付。
 
@@ -419,13 +419,13 @@ Infrastructure 不理解 Task、Workspace、Agent Assets 或 Doctor 等业务语
 
 SQLite migrations 继续作为 Workspace 数据库的一套全局、只追加、有序 DDL schema 管理，统一放在 `infrastructure/sqlite/migrations/`。业务表的事实所有权仍属于相应模块；migration 文件集中排序不表示 Infrastructure 取得业务 writer authority。
 
-通用 Infrastructure 边界已经在当前源码树收敛：Workspace SQLite 连接和 migration ledger、全局有序 DDL migrations、filesystem、Git、process、network、platform 与产品调用适配均由 `src/infrastructure/` 提供；Task、Workspace 等业务 Repository 已继续迁回所属模块。历史 Infrastructure Child 没有建立 Contribution binding，不能事后用 Child completed 或 Git commit 冒充交付证明；最终架构收敛 Child 必须基于 current tree 重新验证该边界，并以自己的 matching Contribution Handoff 显式 supersede 旧 Contribution。
+通用 Infrastructure 边界已经在当前源码树收敛：Workspace SQLite 连接和 migration ledger、全局有序 DDL migrations、filesystem、Git、process、network、platform 与产品调用适配均由 `src/infrastructure/` 提供；Task、Workspace 等业务 Repository 已继续迁回所属模块。历史 Infrastructure Child 没有独立交付结果时，不能事后用 Child completed 或 Git commit 冒充交付证明；最终架构收敛 Child 必须基于 current tree 重新验证该边界，并在自身Task结果中说明覆盖关系。
 
 例如：
 
 ```text
-task/persistence/task-record-repository.mjs
-infrastructure/sqlite/workspace-database.mjs
+task/persistence/task-record-repository.ts
+infrastructure/sqlite/workspace-sqlite.mjs
 infrastructure/sqlite/migrations/NNNN_<change>.sql
 ```
 
@@ -454,12 +454,12 @@ infrastructure/sqlite/migrations/NNNN_<change>.sql
 
 ## 模块公开入口与注册
 
-业务模块可以使用根部 `module.mjs` 作为公开注册入口，例如：
+业务模块使用根部 `module.mjs` 或已迁移的 `module.ts` 作为公开注册入口，例如：
 
 ```text
 bootstrap/cli/main.mjs
     ↓ import
-task/module.mjs
+task/module.ts
     ↓ createTaskModule({ taskStore, workspaceReader, clock, ... })
 Task Application、CLI/HTTP contributions、diagnostics、lifecycle
 ```
@@ -531,7 +531,7 @@ Repository、DAO、Mapper 是同一持久映射层的不同技术表达。没有
 | 约束 | 具体含义 |
 |------|----------|
 | 事实所有权 | Task Record 的字段、状态含义和关系属于 `task` 模块，不因为数据存放在 SQLite 就属于 `infrastructure` |
-| 唯一 writer | `task/persistence/task-record-repository.mjs` 是当前 Task Record 数据写入入口；CLI、HTTP 和 Doctor 不各自编写更新 SQL |
+| 唯一 writer | `task/persistence/task-record-repository.ts` 是当前 Task Record 数据写入入口；CLI、HTTP 和 Doctor 不各自编写更新 SQL |
 | 规则不重复 | “哪些状态允许完成”等规则只在 Task Domain/Application 定义，CLI 和 HTTP 只转换请求与结果 |
 | 无循环依赖 | 可以形成 `bootstrap → task → infrastructure`，但不能由 `infrastructure` 反向 Import `task`；模块互相调用也不能形成闭环 |
 
@@ -685,7 +685,7 @@ current `release-<version>`模型使用以下协作边界；selection、Candidat
 | `tools/release` | 人工selection、Git provenance、readiness/convergence adapter | 输出baseline、selection chain、release HEAD/tree与closed findings |
 | `src/system/installation` | SemVer、package/version、release track、installation identity | 通过Domain/Application公开能力复用版本语义 |
 | `src/verification` | Product Candidate、execution evidence与唯一tarball | 消费精确release source，输出matching Candidate/artifact identity |
-| `src/task` | Task、Environment、Development、Verification、Finish、Parent | 只提供各Application的current read model，不保存release正文 |
+| `src/task` | Task Record、Review、Verification、父任务协调与Worktree provider | 只提供各自Application/read model或窄Git位置能力，不保存release正文 |
 | self-bootstrap runner | matching retained Activation与Diagnostics | 提供closed result/readback，不写Delivery或Publication |
 | Bootstrap | 唯一composition root | 只装配窄requires/provides与接口，不实现发布业务规则 |
 | protected `publish.yml` | tag、npm、dist-tag、GitHub Release、Registry readback | 消费matching context和唯一tarball，输出transaction evidence |
@@ -766,7 +766,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 
 ## 迁移台账与第一轮完成定义
 
-迁移台账按生产职责和能力单元维护，不为 Parent Plan 枚举每个生产文件。每个能力单元至少记录稳定名称、事实 owner、职责边界、主要入口、writer/authority、目标模块以及 `migrated|deferred` 处置。
+迁移台账按生产职责和能力单元维护，不在父任务计划中枚举每个生产文件。每个能力单元至少记录稳定名称、事实owner、职责边界、主要入口、writer/authority、目标模块以及`migrated|deferred`处置。
 
 第一轮完整能力台账如下。`Verification owner` 表示当前证明该边界的测试或 Project capability，不表示 Verification 取得业务 authority。
 
@@ -797,18 +797,18 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 |--------|------------|--------------------|------|
 | Declaration Intake next-action contract | `src/infrastructure/contracts/declaration-intake.mjs` | declaration-intake unit、Project测试地图integration | `migrated` |
 | Public JSON schema identity 与 envelope helper | `src/infrastructure/contracts/public-json.ts` | public-json-contracts system、architecture verification | `migrated` |
-| Internal workflow route inventory/router | 已随Retrospective Driver删除 | Task Retrospective contract、architecture verification | `migrated`（已删除） |
+| 旧 internal workflow route inventory/router | 已删除且不提供替代聚合层 | Task lifecycle contract、architecture verification | `migrated`（已删除） |
 | Git Worktree CLI Adapter | `src/task/interfaces/cli/git-worktree.ts` | Git Worktree contract、CLI architecture | `migrated` |
 | Release Version Domain | `src/system/installation/domain/release-version.mjs` | release awareness、release contract/cold-start | `migrated` |
 
 完整 JSON Schema、Ajv、DTO 自动生成与 buildr-web typed client 仍属于后续 `evolve-buildr-http-contract-system`，不因本次 identity/envelope 结构迁移而被视为完成。
 
-Child Task 对自己实际移动、拆分、新增和删除的文件承担精确清单、影响范围、验证证据和旧入口退出责任。Parent Plan 只保存能力贡献、依赖和最终验收，不复制 Child 文件清单、状态、Result 或 checklist。
+Child Task 对自己实际移动、拆分、新增和删除的文件承担精确清单、影响范围、验证证据和旧入口退出责任。父任务通过自身目标、可读计划文档、直接Child关系和真实结果协调，不维护Parent Plan mutation或Contribution Handoff。
 
 第一轮只有在以下条件同时成立时完成：
 
 - 所有生产职责都已进入迁移台账并得到 `migrated|deferred` 处置；
-- 所有计划迁移的能力单元均有 matching Child Contribution Handoff，或已显式 superseded；
+- 所有计划迁移的能力单元均有matching Child结果或明确的放弃/替代处置；
 - 没有重复实现、无 owner 的遗留代码或无退出条件的迁移 Facade；
 - Parent 已按最终架构、行为兼容性、数据 authority、发布物和验证证据完成显式集成验收。
 
@@ -872,13 +872,13 @@ Verification 的公开契约演进（完整 JSON Schema/Ajv/DTO/Typed Client）�
 
 建立一个“Buildr 服务分层和模块组织重构”父任务，并在父任务的 intent 和 scope 中引用本文件，作为结构目标、迁移边界和验收依据。Parent只维护目标、关系和自己的结果判断，不要求Parent Plan、Environment或Development作为协调前置。
 
-Parent Plan 只包含总体 outcome、architecture invariants、Contribution Map、真实 dependencies 和 final acceptance。它不保存 Child 状态、完整 Requirement、文件或 migration 清单、测试 Result，也不使用 Markdown checkbox 表达进度。只有上述协调事实实质变化时才显式 reconcile。
+父任务计划写入其intent或具名可读文档，说明总体目标、架构约束、真实依赖和最终验收；直接Child状态与结果继续由Task Record读取，不建立Parent Plan mutation、Contribution Map或第二进度表。
 
 子任务按能够独立交付和验证的结构切片建立，并通过直接`parentTaskId`关联父任务。一个一级模块可以根据实际范围拆成多个子任务；不要求一个目录对应一个子任务。Child只有在真实需要时创建，并按自身目标选择OpenSpec、工作位置、Review、Verification、Git与收尾能力，不补造统一流程记录。
 
 第一轮子任务只承担结构迁移。需要改变功能、系统行为、产品设计或验证体系的问题，另行建立后续任务，不混入当前结构迁移子任务。
 
-Child completed 不等于 Parent 已完成。Agent从真实Child结果、代码、Git和外部系统重新检查总体目标；只有用户明确授权父任务完成时，Parent管理才记录结果。Task Review、Verification、Development和Finish保持独立，由Agent按实际目标组合。
+Child completed 不等于 Parent 已完成。Agent从真实Child结果、代码、Git和外部系统重新检查总体目标；只有用户明确授权父任务完成时，Parent管理才记录结果。Task Review、Verification、Git、默认Task Finish与具体资源owner保持独立，由Agent按实际目标组合。
 
 ## 重构观察与反馈
 

@@ -1,14 +1,24 @@
-// @ts-nocheck -- Legacy JavaScript boundary migrated to a single TypeScript source; typing is outside this change.
-import { projectParentPlan } from '../domain/parent-coordination.ts';
+import { projectParentPlan, type ProjectedParentPlan } from '../domain/parent-coordination.ts';
+import type { TaskPersistence, TaskRecordRepository } from '../persistence/task-record-repository.ts';
 
-export function registerParentCoordinationApplication(runtime) {
-  function inspectParentCoordination(targetRoot, taskId) {
+export type ParentCoordinationApplicationRuntime = Pick<TaskRecordRepository, 'readParentTaskContext' | 'readTaskRecordPersistence'> & {
+  inspectParentCoordination?: (targetRoot: string, taskId: string) => unknown;
+};
+
+function errorCode(error: unknown): string {
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return 'parent_plan_invalid';
+  const value = Object.fromEntries(Object.entries(error));
+  return typeof value.code === 'string' ? value.code : 'parent_plan_invalid';
+}
+
+export function registerParentCoordinationApplication<T extends ParentCoordinationApplicationRuntime>(runtime: T): T {
+  function inspectParentCoordination(targetRoot: string, taskId: string) {
     const context = runtime.readParentTaskContext(targetRoot, taskId);
-    let historicalPlan = null;
+    let historicalPlan: ProjectedParentPlan | null = null;
     let diagnostic = context.diagnostic;
     if (context.legacyPlan) {
       try { historicalPlan = projectParentPlan(context.legacyPlan); }
-      catch (error) { diagnostic = { code: error.code, message: '历史父计划不可读；当前任务关系和成果不受影响。' }; }
+      catch (error: unknown) { diagnostic = { code: errorCode(error), message: '历史父计划不可读；当前任务关系和成果不受影响。' }; }
     }
     const { parent, children, isParent } = context;
     const openChildren = children.filter((child) => ['todo', 'active'].includes(child.status));
@@ -29,6 +39,5 @@ export function registerParentCoordinationApplication(runtime) {
       historicalPlan, diagnostic, effects: [],
     };
   }
-  Object.assign(runtime, { inspectParentCoordination });
-  return runtime;
+  return Object.assign(runtime, { inspectParentCoordination });
 }

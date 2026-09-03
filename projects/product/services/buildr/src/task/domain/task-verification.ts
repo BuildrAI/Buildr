@@ -1,7 +1,37 @@
 export const TASK_VERIFICATION_REPORT_SCHEMA = 'buildr.task-verification-report/v1';
 export const TASK_VERIFICATION_OUTCOMES = Object.freeze(['passed', 'not-passed', 'incomplete'] as const);
 
+export type TaskVerificationOutcome = typeof TASK_VERIFICATION_OUTCOMES[number];
+export type TaskVerificationDeclarationStatus = 'ready' | 'absent' | 'invalid';
+export type TaskVerificationSelection = 'focus' | 'task-related' | 'full' | 'legacy';
+export type TaskVerificationSource = 'command' | 'agent' | 'legacy';
+export type TaskVerificationCheckOutcome = 'passed' | 'failed';
+export type TaskVerificationMapStatus = 'declared' | 'map-unavailable';
+export type TaskVerificationScope = { projects: string[]; services: Array<{ project: string; service: string }> };
+export type TaskVerificationDeclarationReference = { project: string; path: string; identity: string; status: TaskVerificationDeclarationStatus; summary?: string };
+export type TaskVerificationCheck = {
+  id: string; project: string; service?: string; testing: string; selection: TaskVerificationSelection;
+  targets: string[]; source: TaskVerificationSource; outcome: TaskVerificationCheckOutcome;
+  summary: string; mapStatus: TaskVerificationMapStatus; durationMs?: number;
+};
+export type TaskVerificationGap = { testing: string; reason: string; project?: string; service?: string };
+export type TaskVerificationReport = {
+  schemaVersion: typeof TASK_VERIFICATION_REPORT_SCHEMA;
+  taskId: string;
+  scope: TaskVerificationScope;
+  content: { identity: string; summary: string };
+  declarations: TaskVerificationDeclarationReference[];
+  checks: TaskVerificationCheck[];
+  gaps: TaskVerificationGap[];
+  conclusion: { outcome: TaskVerificationOutcome; summary: string };
+  completedAt: string;
+};
+
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|file:\/\/)/;
+
+function oneOf(value: unknown, allowed: readonly string[]): value is string {
+  return typeof value === 'string' && allowed.includes(value);
+}
 
 export function taskVerificationError(code: string, message: string, status = 400, details: unknown = undefined, nextAction: string | undefined = undefined) {
   const error = new Error(message) as Error & Record<string, unknown>;
@@ -11,12 +41,12 @@ export function taskVerificationError(code: string, message: string, status = 40
   return error;
 }
 
-function object(value: unknown, field: string): Record<string, any> {
+function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw taskVerificationError('task_verification_field_invalid', `${field} 必须是对象。`, 400, { field });
-  return value as Record<string, any>;
+  return value as Record<string, unknown>;
 }
 
-function closed(value: Record<string, any>, allowed: Set<string>, field: string) {
+function closed(value: Record<string, unknown>, allowed: ReadonlySet<string>, field: string): void {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw taskVerificationError('task_verification_field_forbidden', `${field ? `${field}.` : ''}${key} 不受支持。`, 400, { field: field ? `${field}.${key}` : key });
 }
 
@@ -38,18 +68,18 @@ function timestamp(value: unknown, field: string): string {
   return normalized;
 }
 
-function normalizeDeclaration(value: unknown, index: number) {
+function normalizeDeclaration(value: unknown, index: number): TaskVerificationDeclarationReference {
   const field = `declarations[${index}]`; const item = object(value, field);
   closed(item, new Set(['project', 'path', 'identity', 'status', 'summary']), field);
   const status = item.status ?? 'ready';
-  if (!['ready', 'absent', 'invalid'].includes(status)) throw taskVerificationError('task_verification_declaration_status_invalid', `${field}.status 不受支持。`, 400, { field: `${field}.status` });
+  if (!oneOf(status, ['ready', 'absent', 'invalid'])) throw taskVerificationError('task_verification_declaration_status_invalid', `${field}.status 不受支持。`, 400, { field: `${field}.status` });
   return {
-    project: text(item.project, `${field}.project`, true), path: text(item.path, `${field}.path`, true), identity: text(item.identity, `${field}.identity`), status,
+    project: text(item.project, `${field}.project`, true), path: text(item.path, `${field}.path`, true), identity: text(item.identity, `${field}.identity`), status: status as TaskVerificationDeclarationStatus,
     ...(item.summary == null ? {} : { summary: text(item.summary, `${field}.summary`, true) }),
   };
 }
 
-function normalizeScope(value: unknown) {
+function normalizeScope(value: unknown): TaskVerificationScope {
   const scope = object(value, 'scope'); closed(scope, new Set(['projects', 'services']), 'scope');
   const projects = texts(scope.projects, 'scope.projects').sort((left, right) => left.localeCompare(right));
   if (new Set(projects).size !== projects.length) throw taskVerificationError('task_verification_scope_duplicate', 'scope.projects 不能重复。', 400);
@@ -57,31 +87,31 @@ function normalizeScope(value: unknown) {
   const services = scope.services.map((value: unknown, index: number) => {
     const field = `scope.services[${index}]`; const item = object(value, field); closed(item, new Set(['project', 'service']), field);
     return { project: text(item.project, `${field}.project`, true), service: text(item.service, `${field}.service`, true) };
-  }).sort((left: any, right: any) => `${left.project}/${left.service}`.localeCompare(`${right.project}/${right.service}`));
-  if (new Set(services.map((item: any) => `${item.project}/${item.service}`)).size !== services.length) throw taskVerificationError('task_verification_scope_duplicate', 'scope.services 不能重复。', 400);
+  }).sort((left, right) => `${left.project}/${left.service}`.localeCompare(`${right.project}/${right.service}`));
+  if (new Set(services.map((item) => `${item.project}/${item.service}`)).size !== services.length) throw taskVerificationError('task_verification_scope_duplicate', 'scope.services 不能重复。', 400);
   return { projects, services };
 }
 
-export function normalizeTaskVerificationCheck(value: unknown, index: number) {
+export function normalizeTaskVerificationCheck(value: unknown, index: number): TaskVerificationCheck {
   const field = `checks[${index}]`; const item = object(value, field);
   closed(item, new Set(['id', 'project', 'service', 'testing', 'selection', 'targets', 'source', 'outcome', 'summary', 'durationMs', 'mapStatus']), field);
-  if (!['focus', 'task-related', 'full', 'legacy'].includes(item.selection)) throw taskVerificationError('task_verification_selection_invalid', `${field}.selection 不受支持。`, 400, { field: `${field}.selection` });
-  if (!['command', 'agent', 'legacy'].includes(item.source)) throw taskVerificationError('task_verification_source_invalid', `${field}.source 不受支持。`, 400, { field: `${field}.source` });
-  if (!['passed', 'failed'].includes(item.outcome)) throw taskVerificationError('task_verification_check_outcome_invalid', `${field}.outcome 必须是 passed 或 failed。`, 400, { field: `${field}.outcome` });
+  if (!oneOf(item.selection, ['focus', 'task-related', 'full', 'legacy'])) throw taskVerificationError('task_verification_selection_invalid', `${field}.selection 不受支持。`, 400, { field: `${field}.selection` });
+  if (!oneOf(item.source, ['command', 'agent', 'legacy'])) throw taskVerificationError('task_verification_source_invalid', `${field}.source 不受支持。`, 400, { field: `${field}.source` });
+  if (!oneOf(item.outcome, ['passed', 'failed'])) throw taskVerificationError('task_verification_check_outcome_invalid', `${field}.outcome 必须是 passed 或 failed。`, 400, { field: `${field}.outcome` });
   const mapStatus = item.mapStatus ?? 'declared';
-  if (!['declared', 'map-unavailable'].includes(mapStatus)) throw taskVerificationError('task_verification_check_map_status_invalid', `${field}.mapStatus 不受支持。`, 400, { field: `${field}.mapStatus` });
-  if (item.durationMs !== undefined && (!Number.isInteger(item.durationMs) || item.durationMs < 0)) throw taskVerificationError('task_verification_duration_invalid', `${field}.durationMs 必须是非负整数。`, 400, { field: `${field}.durationMs` });
+  if (!oneOf(mapStatus, ['declared', 'map-unavailable'])) throw taskVerificationError('task_verification_check_map_status_invalid', `${field}.mapStatus 不受支持。`, 400, { field: `${field}.mapStatus` });
+  if (item.durationMs !== undefined && (typeof item.durationMs !== 'number' || !Number.isInteger(item.durationMs) || item.durationMs < 0)) throw taskVerificationError('task_verification_duration_invalid', `${field}.durationMs 必须是非负整数。`, 400, { field: `${field}.durationMs` });
   return {
     id: text(item.id, `${field}.id`, true), project: text(item.project, `${field}.project`, true),
     ...(item.service == null ? {} : { service: text(item.service, `${field}.service`, true) }),
-    testing: text(item.testing, `${field}.testing`, true), selection: item.selection,
-    targets: texts(item.targets, `${field}.targets`, 1), source: item.source, outcome: item.outcome,
-    summary: text(item.summary, `${field}.summary`, true), mapStatus,
-    ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs }),
+    testing: text(item.testing, `${field}.testing`, true), selection: item.selection as TaskVerificationSelection,
+    targets: texts(item.targets, `${field}.targets`, 1), source: item.source as TaskVerificationSource, outcome: item.outcome as TaskVerificationCheckOutcome,
+    summary: text(item.summary, `${field}.summary`, true), mapStatus: mapStatus as TaskVerificationMapStatus,
+    ...(item.durationMs === undefined ? {} : { durationMs: item.durationMs as number }),
   };
 }
 
-export function normalizeTaskVerificationGap(value: unknown, index: number) {
+export function normalizeTaskVerificationGap(value: unknown, index: number): TaskVerificationGap {
   const field = `gaps[${index}]`; const item = object(value, field);
   closed(item, new Set(['testing', 'reason', 'project', 'service']), field);
   return {
@@ -92,7 +122,7 @@ export function normalizeTaskVerificationGap(value: unknown, index: number) {
   };
 }
 
-export function normalizeTaskVerificationReport(value: unknown, { expectedTaskId = null }: { expectedTaskId?: string | null } = {}) {
+export function normalizeTaskVerificationReport(value: unknown, { expectedTaskId = null }: { expectedTaskId?: string | null } = {}): TaskVerificationReport {
   const report = object(value, 'Task Verification Report');
   closed(report, new Set(['schemaVersion', 'taskId', 'scope', 'content', 'declarations', 'checks', 'gaps', 'conclusion', 'completedAt']), '');
   if (report.schemaVersion !== TASK_VERIFICATION_REPORT_SCHEMA) throw taskVerificationError('task_verification_schema_unsupported', `schemaVersion 必须是 ${TASK_VERIFICATION_REPORT_SCHEMA}。`, 409);
@@ -105,7 +135,7 @@ export function normalizeTaskVerificationReport(value: unknown, { expectedTaskId
   const gaps = Array.isArray(report.gaps) ? report.gaps.map(normalizeTaskVerificationGap) : (() => { throw taskVerificationError('task_verification_field_invalid', 'gaps 必须是数组。'); })();
   if (!checks.length && !gaps.length) throw taskVerificationError('task_verification_report_empty', '验证报告至少需要一项实际检查或未覆盖说明。', 400);
   const conclusion = object(report.conclusion, 'conclusion'); closed(conclusion, new Set(['outcome', 'summary']), 'conclusion');
-  if (!(TASK_VERIFICATION_OUTCOMES as readonly string[]).includes(conclusion.outcome)) throw taskVerificationError('task_verification_conclusion_invalid', 'conclusion.outcome 不受支持。', 400);
+  if (!oneOf(conclusion.outcome, TASK_VERIFICATION_OUTCOMES)) throw taskVerificationError('task_verification_conclusion_invalid', 'conclusion.outcome 不受支持。', 400);
   const failed = checks.some((item) => item.outcome === 'failed');
   if (conclusion.outcome === 'passed' && (!checks.length || failed)) throw taskVerificationError('task_verification_conclusion_inconsistent', 'passed 结论至少需要一项实际检查且所有检查均通过。', 400);
   if (conclusion.outcome === 'not-passed' && !failed) throw taskVerificationError('task_verification_conclusion_inconsistent', 'not-passed 结论至少需要一项 failed 检查。', 400);
@@ -114,7 +144,7 @@ export function normalizeTaskVerificationReport(value: unknown, { expectedTaskId
     schemaVersion: TASK_VERIFICATION_REPORT_SCHEMA, taskId, scope,
     content: { identity: text(content.identity, 'content.identity', true), summary: text(content.summary, 'content.summary', true) },
     declarations, checks, gaps,
-    conclusion: { outcome: conclusion.outcome, summary: text(conclusion.summary, 'conclusion.summary', true) },
+    conclusion: { outcome: conclusion.outcome as TaskVerificationOutcome, summary: text(conclusion.summary, 'conclusion.summary', true) },
     completedAt: timestamp(report.completedAt, 'completedAt'),
   };
 }

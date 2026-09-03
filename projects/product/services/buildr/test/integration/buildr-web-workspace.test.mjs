@@ -311,11 +311,15 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /value: 'pending-decision', label: '等待决定'/);
   assert.match(tasks, /value: 'decided', label: '已经决定'/);
   assert.doesNotMatch(tasks, /value: 'handled'|value: 'no-action'/);
-  assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
+  assert.match(tasks, /useState<TaskStatusFilter>\('open'\)/);
+  assert.match(tasks, /setDraftStatus\('open'\)/);
+  assert.match(tasks, /generation !== requestGeneration\.current/);
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
   assert.doesNotMatch(taskDto, /childTaskIds|childTaskCount|storedChangeReferences/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
+  assert.match(tasks, /当前筛选没有匹配任务/);
+  assert.match(detail, /id="task-record-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(detail, /tasksApi\.list\(\{ status: 'active' \}\)/);
   assert.match(detail, /addEventListener\('focus'|onFocus.*loadParentOptions/);

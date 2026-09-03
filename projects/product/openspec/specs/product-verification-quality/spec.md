@@ -1395,7 +1395,7 @@ Buildr Product verification MUST通过公共Node Test Context Runtime注册至�
 - **AND** 预建Context MUST NOT跳过、替代或重复该主证据
 
 ### Requirement: Buildr层级并发必须约束Context Worker Host
-Verification scheduler MUST把实际worker/process grant传递给Context-aware runner；runner Host数量、Context parallel safety和owner resource demand MUST共同限制并发，Execution Record MUST区分Host、Context与测试体成本。
+Verification scheduler MUST把实际worker/process grant传递给Context-aware runner；runner Host数量、Context parallel safety和owner resource demand MUST共同限制并发，execution timing evidence MUST区分Host、Context与测试体成本。
 
 #### Scenario: Core owner取得有限grant
 - **WHEN** Context owner取得workers等于N的execution grant
@@ -1447,7 +1447,7 @@ Buildr MUST将Task read models、coordination、execution records、Finish Appli
 - **AND** 本次测试 MUST不得因Runtime静默重建而记录为passed
 
 ### Requirement: Context迁移必须报告逐owner成本与残余预算
-Context-aware owner的Execution Record MUST聚合create、cache-hit、wait、acquire/release、test body、reset、dirty/evict/destroy、seed prepare、sandbox materialize/cleanup和wall-clock。迁移验收 MUST在同一tree运行focused多轮、至少三轮无外部竞争Core以及一次Core/affected竞争，并 MUST同时证明Core/Candidate membership与Release黄金owner不退化。
+Context-aware owner的timing report MUST聚合create、cache-hit、wait、acquire/release、test body、reset、dirty/evict/destroy、seed prepare、sandbox materialize/cleanup和wall-clock。迁移验收 MUST在同一tree运行focused多轮、至少三轮无外部竞争Core以及一次Core/affected竞争，并 MUST同时证明Core/Candidate membership与Release黄金owner不退化。
 
 #### Scenario: focused owner迁移有净收益
 - **WHEN** 同一owner在matching tree完成多轮成功执行
@@ -1457,7 +1457,7 @@ Context-aware owner的Execution Record MUST聚合create、cache-hit、wait、acq
 #### Scenario: Core仍高于180秒
 - **WHEN** 三轮干净Core中位数或可证明必要下限仍超过180秒
 - **THEN** Child MUST保存残余长尾、必要owner与诚实预算建议
-- **AND** MUST NOT删除无替代primary evidence、隐藏失败或声称目标已完成
+- **AND** MUST不删除无替代primary evidence、隐藏失败或声称目标已完成
 
 ### Requirement: 日常 Core 慢 owner 必须具有闭合 primary evidence map
 Buildr Product MUST 从唯一 verification registry 为日常 Core 中的慢 Integration/System owner 派生 primary evidence map。每项 MUST 明确待证明事实、公共可观察结果、反例、证据角色和唯一 `primaryEvidenceOwner`；primary owner 不存在、多个 owner 同时声称同一主证据或 supporting owner 无法解析到 primary owner时，contract MUST在执行前失败关闭。
@@ -1640,22 +1640,22 @@ Buildr Product MUST 由唯一 ownership authority 声明 Full scope pattern、�
 - **AND** MUST NOT 返回空集合、affected passed 或静默忽略
 
 ### Requirement: 选择优化必须形成代表性 before/after 审计
-Buildr Product MUST 以近期代表性普通 Task、真实 planner 输出和 sealed Execution Record 形成 before/after 审计，至少报告 Full 升级率、selected step 数、墙钟中位数与 P90、Full reason 分布、最常选择的重型 owner、各 evidence layer 的实际选择粒度和数据缺口。结论 MUST 区分选择过宽、必要 owner 过重、环境等待与尚未证明。
+Buildr Product MUST以近期代表性普通Task、真实planner输出和受控timing result形成before/after审计，至少报告Full升级率、selected step数、墙钟中位数与P90、Full reason分布、最常选择的重型owner、各evidence layer的实际选择粒度和数据缺口。结论 MUST区分选择过宽、必要owner过重、环境等待与尚未证明。
 
 #### Scenario: 审计证明选择过宽
-- **WHEN** 同一组代表性路径在修正前无必要地升级 Full 或选择无关 sibling owner
-- **THEN** 报告 MUST 给出相同样本的 before/after scope、step、reason 与墙钟证据
-- **AND** Candidate 与 Release-only 覆盖 MUST 证明没有下降
+- **WHEN** 同一组代表性路径在修正前无必要地升级Full或选择无关sibling owner
+- **THEN** 报告 MUST给出相同样本的before/after scope、step、reason与墙钟证据
+- **AND** Candidate与Release-only覆盖 MUST证明没有下降
 
 #### Scenario: 审计证明选择不是主要瓶颈
-- **WHEN** 普通样本已保持窄 affected 且重型 owner 都具有不可替代 primary evidence
-- **THEN** 报告 MUST 明确选择不是主要瓶颈并列出剩余重型 owner、公共结果与实测成本
-- **AND** MUST NOT 以架构清晰、单次波动或预设数字冒充执行时间收益
+- **WHEN** 普通样本已保持窄affected且重型owner都具有不可替代primary evidence
+- **THEN** 报告 MUST明确选择不是主要瓶颈并列出剩余重型owner、公共结果与实测成本
+- **AND** MUST不以架构清晰、单次波动或预设数字冒充执行时间收益
 
 #### Scenario: 历史记录字段不完整
-- **WHEN** 近期 Execution Record 缺少 changed paths、selection trace 或 timing 字段
-- **THEN** 报告 MUST 将对应数据标记为 missing，并可对冻结路径使用当前真实 planner 重放选择
-- **AND** MUST NOT 估算、伪造或把当前重放描述为历史原始输出
+- **WHEN** 近期timing result缺少changed paths、selection trace或timing字段
+- **THEN** 报告 MUST将对应数据标记为missing，并可对冻结路径使用当前真实planner重放选择
+- **AND** MUST不估算、伪造或把当前重放描述为历史原始输出
 
 ### Requirement: 选择验收必须保持对象 authority 与状态隔离
 Changed selection 变更 MUST 通过真实 affected/Full 反例、一次完整 daily-full、一次完整 Product Artifact Candidate 及一次无真实外部发布副作用的 Release contract/smoke 验收。失败后重跑 MUST NOT 污染 retained Workspace、Git fixture、进程、端口、SQLite 或用户 profile。
@@ -1669,66 +1669,6 @@ Changed selection 变更 MUST 通过真实 affected/Full 反例、一次完整 d
 - **WHEN** 任一 verifier 失败并在修复后重跑
 - **THEN** 新执行 MUST 使用独立或已证明清理的 execution state
 - **AND** retained Workspace、其他 Task、Git fixture、端口、进程和用户 profile MUST 保持未污染
-
-### Requirement: Buildr Product 必须通过统一高级 provider 接入 Workspace Plan
-Buildr Product MUST提供稳定provider adapter，把closed Verification Request映射到现有唯一registry/planner并返回统一Plan与execution units。registry MUST继续唯一持有step、dependency、profile、resource、budget、Context和primary owner；公开declaration与Plan MUST NOT复制内部DAG。
-
-#### Scenario: Product affected计划
-- **WHEN** Task Delivery Request使用affected且changed paths有可信owner
-- **THEN** adapter MUST返回direct、dependency与必要full reasons的统一Plan
-- **AND** selected step identities MUST来自真实registry而不是第二份declaration graph
-
-#### Scenario: Product full与Candidate
-- **WHEN** Request分别要求Task Delivery full或Product Artifact Candidate full
-- **THEN** adapter MUST保持daily-full与Candidate-only artifact evidence的既有差异
-- **AND** MUST NOT因通用Plan contract把Candidate或Release-only证据下放到日常full
-
-### Requirement: Product provider 必须保持 Plan 与执行 authority 可审计
-provider MUST为每个selected item返回evidence boundary、proves、selection reason、trigger/parent、execution identity与resource needs；Execution Record MUST绑定matching provider/plan identity。provider MUST NOT写Task Verification Result、改变Task状态或暴露Context内部生命周期。
-
-#### Scenario: registry dependency进入公开Plan
-- **WHEN** 内部DAG因selected owner扩张dependency step
-- **THEN** 公开Plan MUST把该item标记为dependency并引用parent
-- **AND** MUST NOT输出完整DAG、未选step或Context cache结构
-
-#### Scenario: provider identity 漂移
-- **WHEN** registry、planner或adapter identity在Plan后改变
-- **THEN** 旧Plan MUST变为stale并在执行前失败关闭
-- **AND** MUST重新计划而不是沿用旧execution units
-
-### Requirement: Product live声明必须采用v3高级provider边界
-
-Buildr Product live `verification.yml` MUST使用closed `buildr.project-verification/v3`。正式Product registry能力 MUST通过稳定`product.verification` capability和`buildr.product-verification/v1` provider投射统一Request、Plan和execution units；Browser条件能力 MUST保持独立command capability与真实resource/preparation边界。Product declaration MUST不把Quick开发反馈或registry内部step逐项复制为正式capability。
-
-#### Scenario: Product Task Delivery affected
-
-- **WHEN** Product live v3 declaration收到`task-delivery`、`affected` Request与可信changed paths
-- **THEN** `product.verification` provider MUST形成包含direct/dependency选择原因的统一Plan
-- **AND** registry、ownership或planner authority变化 MUST显式升级full或blocked，不得返回空passed
-
-#### Scenario: Product Artifact Candidate full
-
-- **WHEN** Product live v3 declaration收到`product-candidate`、`full` Request
-- **THEN** provider MUST选择完整daily evidence与Candidate artifact evidence并返回provider identity
-- **AND** declaration MUST不复制内部profile membership、DAG、budget或primary owner
-
-#### Scenario: Published Release只形成release-only验证计划
-
-- **WHEN** Product live v3 declaration收到`published-release`、`release-only` Request
-- **THEN** provider MUST只选择已登记release contract/smoke evidence并明确其Plan identity
-- **AND** 该结果 MUST不冒充真实publish transaction、published install或registry readback authority
-
-#### Scenario: Browser capability独立选择
-
-- **WHEN** changed paths命中Buildr Web、tracked web-dist或browser selector authority
-- **THEN** planner MUST选择独立`product.browser-smoke` command capability及browser resource claim
-- **AND** 非Browser Product full或Candidate MUST不因declaration重复而无条件执行第二份Browser graph
-
-#### Scenario: Quick不进入正式usable target
-
-- **WHEN** 维护者审查Product live v3 declaration
-- **THEN** `product.fast`与`test:fast` MUST只保留为开发反馈入口而不成为`task-delivery|product-candidate|published-release` capability
-- **AND** 正式evidence MUST由provider或独立声明能力产生
 
 ### Requirement: Product 重型验证必须声明真实资源与 readiness 边界
 Buildr Product verification owner MUST按真实启动的Task lifecycle、Workspace pressure与App runtime声明资源，并 MUST为进程型step记录有界phase、readiness与cleanup诊断。资源声明 MUST只用于压力节流，不得改变required coverage、Full全局capacity或建立共享状态锁。
@@ -1772,30 +1712,35 @@ Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO�
 - **AND** Fast 静态检查 MUST不冒充该 System evidence
 
 ### Requirement: 退役任务能力必须具有无残留验收
-Product verification MUST覆盖fresh/升级SQLite、Task Record、OpenSpec、Review、Verification、父任务协调、Buildr Web与发布回归，并证明Task Overview、Task Environment、Task Development、Planning Identity、Task Candidate、Development Handoff、旧Finish、Contribution协调与Execution Record没有运行时入口、current表、能力绑定、兼容转发或专属owner。
+Product verification MUST覆盖 fresh/升级 SQLite、Task Record、OpenSpec、Review、Verification、父任务协调、Buildr Web 与发布回归，并证明 Task Overview、Task Environment、Task Development、Planning Identity、Task Candidate、Development Handoff、旧 Finish、Contribution 协调与 Execution Record 没有运行时入口、current 表、能力绑定、兼容转发或专属 owner。Static validation MUST另外扫描非归档 canonical specs、current knowledge、架构/CLI 文档与当前测试 ownership，拒绝对这些能力的正向要求和已迁移 Task `.mjs` 路径；archive、连续 migration 和明确 legacy fixture MUST排除。
 
 #### Scenario: 完整受影响验证
 - **WHEN** 最终任务系统收敛完成
-- **THEN** 类型、Unit、Component、Contract、Integration、System、适用Browser、package和OpenSpec检查 MUST通过
-- **AND** Product/Release Candidate模型 MUST保持独立且可用
+- **THEN** 类型、Unit、Component、Contract、Integration、System、适用 Browser、package 和 OpenSpec 检查 MUST通过
+- **AND** Product/Release Candidate 模型 MUST保持独立且可用
+
+#### Scenario: 当前规范重新正向要求退役能力
+- **WHEN** 非归档当前资产新增 Task Overview、Environment、Development、Execution Record、旧 Finish 或内部 workflow router 的正向要求
+- **THEN** package/static verification MUST失败并报告具体文件与命中项
+- **AND** 历史 archive、migration 和 legacy fixture MUST不产生误报
 
 ### Requirement: 专属 Integration slice 必须保持当前能力的唯一 primary ownership
-Verification registry MUST为仍存在的Task Record、Review、Verification与父任务协调实现选择唯一primary owner。Task Overview、Retrospective Application、Task Entry、Environment、Task Development、Planning Identity、旧Finish和Contribution协调 MUST没有空step、shard或路径映射。
+Verification registry MUST为仍存在的 Task Record、Review、Verification 与父任务协调实现选择唯一 primary owner。Task Overview、Retrospective Application、Task Entry、Environment、Task Development、Planning Identity、旧 Finish、Execution Record 与 Contribution 协调 MUST没有空 step、shard 或当前路径映射；Task 当前实现映射 MUST使用真实 `.ts` 路径。
 
 #### Scenario: changed paths命中Task实现
-- **WHEN** affected selection命中当前保留的Task实现
-- **THEN** MUST选择覆盖该实现的现有owner
-- **AND** MUST不选择已退役Task能力的owner
+- **WHEN** affected selection 命中当前保留的 Task 实现
+- **THEN** MUST选择覆盖该 `.ts` 实现的现有 owner
+- **AND** MUST不选择已退役 Task 能力 owner 或旧 `.mjs` 路径
 
 #### Scenario: changed paths命中Task read或专业实现
-- **WHEN** affected selection命中Task Record或保留专业reader
-- **THEN** MUST选择该实现当前唯一owner
-- **AND** MUST不选择Overview、Environment、Development或Finish专属owner
+- **WHEN** affected selection 命中 Task Record、Review、Verification 或父任务协调
+- **THEN** MUST选择该实现当前唯一 owner
+- **AND** MUST不选择 Overview、Environment、Development、Finish 或 Execution Record 专属 owner
 
 #### Scenario: 本机复盘文档能力变化
-- **WHEN** Task Record复盘摘要、固定文件读取或Buildr Web复盘卡片发生改变
-- **THEN** MUST由Task Record Integration/System和适用Browser owner证明
-- **AND** MUST不重建Task Retrospective专属slice
+- **WHEN** Task Record 复盘摘要、固定文件读取或 Buildr Web 复盘卡片发生改变
+- **THEN** MUST由 Task Record Integration/System 和适用 Browser owner 证明
+- **AND** MUST不重建 Task Retrospective 专属 slice
 
 ### Requirement: 开发反馈、产品候选与发布验证必须分离
 Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、current release HEAD/tree上的完整Product Candidate与显式dispatch的正式发布验证。直接Git交付或self-bootstrap successor推送`dev` MUST不自动启动完整Product verification；只有维护者明确选择并形成新release SHA时才重新运行完整Candidate。

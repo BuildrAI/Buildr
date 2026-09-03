@@ -400,38 +400,38 @@ Buildr MUST交付一个`task-review` workspace Skill，并通过selected`buildr.
 - **AND** MUST NOT 以空列表或概括性 passed 隐藏覆盖缺口
 
 ### Requirement: Skill 必须区分 Capability Declaration、Execution 与 Result
-Skill MUST 把 Project declaration 作为已有能力事实，把完整 stdout/stderr、耗时、资源等待和诊断作为 transient Execution Evidence，把current Result作为Workspace-local Task fact。Skill MUST NOT将三者合并成一个schema，也 MUST NOT把execution summary path写入Result。
+Skill MUST把Project测试地图作为稳定测试体系事实，把Agent直接调用项目工具取得的输出、耗时和诊断作为本次执行事实，把current Task Verification Report作为Workspace-local Task fact。Skill MUST不将三者合并成一个schema，也 MUST不把完整执行输出或本机路径写入Report。
 
 #### Scenario: command execution 成功
-- **WHEN** Skill 通过 `buildr verification run` 执行显式 command capabilities
-- **THEN** Skill MUST读取transient summary并提炼每项capability的current facts
-- **AND** 全部 consumer 完成后 MUST 请求 cleanup exact execution boundary
+- **WHEN** Agent依据测试地图直接执行显式项目测试入口
+- **THEN** Agent MUST读取真实结果并在开发完成后提炼有意义报告
+- **AND** 测试工具自己的资源与清理由对应owner处理
 
 #### Scenario: execution 中断
-- **WHEN** runner 或 Agent operation 中断且完整结论未形成
-- **THEN** Skill MUST 保留已有 current Result
-- **AND** MUST 如实报告本次 transient execution 未形成新 current
+- **WHEN** 项目runner或Agent operation中断且完整结论未形成
+- **THEN** Skill MUST保留已有current Report
+- **AND** MUST如实报告本次执行未形成新current
 
 ### Requirement: Buildr 产品入口必须路由 v3 Verification authority
-Buildr product Skill、task-triage 和相关 builtin descriptions MUST 将测试、验证、能力声明和实现完成验证意图路由到 selected `buildr.task-verification/v3` provider，并 MUST 删除 v2、成熟度晋级、三层 assurance 与 Candidate reuse 的路由文本。
+Buildr product Skill、task-triage和相关builtin descriptions MUST将测试地图维护、已有测试执行与开发完成报告意图路由到selected `buildr.task-verification/v4` provider，并 MUST不恢复v3 Request/Plan、Candidate reuse或Execution Record流程。
 
 #### Scenario: runtime 发现 Task Verification
-- **WHEN** supported Agent runtime 完成 Buildr sync/render
-- **THEN** runtime MUST 发现 v3 `task-verification` Skill、contract、Project v2 reference/template 与 binding
-- **AND** 不得同时投射 v2 contract 或 v1 reference
+- **WHEN** supported Agent runtime完成Buildr sync/render
+- **THEN** runtime MUST发现v4 `task-verification` Skill、contract、Project v4 reference/template与binding
+- **AND** MUST不同时投射旧v3 contract/reference
 
 ### Requirement: 测试建设与 Task Verification 必须使用独立入口
-Buildr product Skill、task-triage 和 builtin descriptions MUST 将测试框架设计、测试分层、编排策略和为实现任务开发测试的意图路由到 `project-testing`；将 Project 能力声明、已有能力执行、transient evidence 和 current Task Verification Result 路由到 selected `buildr.task-verification/v3` provider。两个 Skill MAY 在同一任务中先后使用，但 MUST NOT 互相维护状态、声明 provider dependency 或接管对方 authority。
+Buildr product Skill、task-triage和builtin descriptions MUST将测试框架设计、测试分层、编排策略和为实现任务开发测试的意图路由到`project-testing`；将Project测试地图维护、已有测试选择/直接执行和current Task Verification Report路由到selected `buildr.task-verification/v4` provider。两个Skill MAY在同一任务中先后使用，但 MUST不互相维护状态、声明provider dependency或接管对方authority。
 
 #### Scenario: 实现完成后补充测试再验证任务
-- **WHEN** Agent 完成功能实现，需要先开发项目测试，再形成正式 Task Verification Result
-- **THEN** Agent MUST 先使用 `project-testing` 按项目约定补充适量测试
-- **AND** 测试入口稳定并已由 Project 声明后 MUST 使用 `task-verification` 选择和执行 capability
+- **WHEN** Agent完成功能实现，需要先开发项目测试，再形成正式Task Verification Report
+- **THEN** Agent MUST先使用`project-testing`按项目约定补充适量测试
+- **AND** 测试入口稳定后 MUST使用`task-verification`选择并直接执行已有工具，最后保存报告
 
 #### Scenario: runtime 发现两个独立 Skill
-- **WHEN** supported Agent runtime 完成 Buildr sync 或 render
-- **THEN** runtime MUST 同时发现 `project-testing` 与 `task-verification`
-- **AND** `project-testing` MUST 不提供 Task Verification capability binding 或 Result authority
+- **WHEN** supported Agent runtime完成Buildr sync或render
+- **THEN** runtime MUST同时发现`project-testing`与`task-verification`
+- **AND** `project-testing` MUST不提供Task Verification capability binding或Result authority
 
 ### Requirement: Git Operations 只执行 consumer 已选定的 Git Operation
 Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected `buildr.git-operations/v1` provider 为一次已选定 Git Operation 提供授权边界、安全默认值、操作前后 identity 与最小 Result。直接用户或上游 consumer MUST 决定 repository、operation、相关 ref、scope、目标和顺序；provider MUST NOT 接管 Task Development、Task Finish、验证、交付编排或语义决策。

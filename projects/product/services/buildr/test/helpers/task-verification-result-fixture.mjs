@@ -1,5 +1,7 @@
 export function recordVerificationResultFromEvidence(runtime, root, taskId, input) {
+  const current = runtime.inspectTaskVerification(root, taskId).slot.reportDigest || 'absent';
   return runtime.recordTaskVerification(root, taskId, {
+    expectedReportDigest: current,
     contentIdentity: input.targetIdentity,
     contentSummary: input.targetSummary,
     checks: input.capabilities.map((item) => ({

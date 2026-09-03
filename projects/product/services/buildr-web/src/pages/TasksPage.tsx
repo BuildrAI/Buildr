@@ -84,13 +84,13 @@ export function TasksPage() {
   const catalogsLoaded = useRef(false);
 
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<TaskStatusFilter>('all');
+  const [status, setStatus] = useState<TaskStatusFilter>('open');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState<BooleanFilter>('all');
   const [retrospectiveState, setRetrospectiveState] = useState<RetrospectiveFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('all');
+  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('open');
   const [draftProject, setDraftProject] = useState('');
   const [draftService, setDraftService] = useState('');
   const [draftHasChildren, setDraftHasChildren] = useState<BooleanFilter>('all');
@@ -104,7 +104,7 @@ export function TasksPage() {
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
     : filterServices;
 
-  const filtersActive = status !== 'all' || Boolean(project) || Boolean(service)
+  const filtersActive = status !== 'open' || Boolean(project) || Boolean(service)
     || hasChildren !== 'all' || retrospectiveState !== 'all';
 
   const syncFilterDraft = () => {
@@ -116,7 +116,7 @@ export function TasksPage() {
   };
 
   const resetFilterDraft = () => {
-    setDraftStatus('all');
+    setDraftStatus('open');
     setDraftProject('');
     setDraftService('');
     setDraftHasChildren('all');
@@ -439,7 +439,7 @@ export function TasksPage() {
               description={errorMessage
                 || (totalTaskCount === 0
                   ? '当前工作空间还没有正式任务记录。正式任务由 Agent 创建。'
-                  : '没有符合当前筛选条件的任务。')}
+                  : '当前筛选没有匹配任务。')}
             />
           ) : null}
         </div>
