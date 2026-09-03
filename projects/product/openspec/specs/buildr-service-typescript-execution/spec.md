@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: Buildr Service 必须提供受约束的后端 TypeScript 静态检查
-Buildr Service MUST为全部人工维护的后端、工具和测试`.ts`源码提供稳定typecheck入口。`src/**/*.ts`与`tools/**/*.ts` MUST启用`strict`、`noEmit`、`NodeNext`、`verbatimModuleSyntax`与`erasableSyntaxOnly`等约束；`test/**/*.ts`在过渡期可以由独立配置只检查语法与模块解析，其行为正确性仍必须由真实测试运行证明。typecheck MUST先通过声明的生成入口物化所需DTO或公共库输出，目录遗漏 MUST NOT使已迁移源码绕过对应检查。TypeScript compiler与Node类型 MUST只作为开发依赖，正式runtime dependency不得因此增加。
+Buildr Service MUST为全部人工维护的后端、工具和测试`.ts`源码提供稳定typecheck入口。`src/**/*.ts`、`tools/**/*.ts`与`package/launchers/**/*.ts` MUST启用`strict`、`noEmit`、`NodeNext`、`verbatimModuleSyntax`与`erasableSyntaxOnly`等约束；`test/**/*.ts`在过渡期可以由独立配置只检查语法与模块解析，其行为正确性仍必须由真实测试运行证明。typecheck MUST先通过声明的生成入口物化所需DTO或公共库输出，目录遗漏 MUST NOT使已迁移源码绕过对应检查。TypeScript compiler与Node类型 MUST只作为开发依赖，正式runtime dependency不得因此增加。
 
 #### Scenario: 对后端 TypeScript 执行静态检查
 - **WHEN** 维护者在Product固定Node环境中从不含生成物的干净checkout运行Buildr Service typecheck

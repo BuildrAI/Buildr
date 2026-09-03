@@ -234,7 +234,8 @@ Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让
 
 #### Scenario: 开发者准备 Buildr checkout
 - **WHEN** 开发者从 Buildr Service checkout 执行 `npm run install:development`
-- **THEN** Buildr MUST只将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
+- **THEN** Buildr MUST先通过唯一开发准备入口生成当前 HTTP DTO 与 ignored `web-dist`，再将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
+- **AND** 干净 checkout 缺少任一生成输入时必须在 Launcher 变更前生成或明确失败，不得安装一个启动后返回 `web_dist_missing` 的 Launcher
 - **AND** MUST NOT创建或覆盖默认 PATH CLI、npm installation 或 npm-owned `Buildr Web` Launcher
 
 ### Requirement: npm 与 development 安装必须拥有明确更新责任

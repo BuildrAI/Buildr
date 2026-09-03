@@ -25,7 +25,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | 切片 | 已落地内容 | 仍保留的后续边界 |
 |------|------------|------------------|
 | Service 根工程职责 | `src/`、`tools/` 与普通 `test/` 已收敛为 TypeScript；`bin/buildr.mjs`、`test-context.mjs`、自举用 `package/launchers/manage.mjs` 及 5 个 JavaScript 兼容夹具构成受验证的最小 `.mjs` 允许清单 | `web-dist/`与`package/targets/test-context/`只作为ignored本地构建输出，`package/`其他内容只保留明确owner和退出条件 |
-| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/` 生产源码已全部收敛为 TypeScript | 后续收敛工具、测试和最小兼容入口；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
+| TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；`src/`、`tools/`与`package/launchers/` 已全部纳入严格 TypeScript 检查 | 普通测试由独立过渡配置和真实运行验证；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.ts`、`runtime.ts` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
 | Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
@@ -678,7 +678,7 @@ tools/
   release/
 ```
 
-`tools/development/` 负责使用声明的 Node/npm 运行源码 checkout、启动 Development CLI、安装或更新 Development Launcher，以及其他只服务 Buildr 开发环境的工具。
+`tools/development/` 负责使用声明的 Node/npm 运行源码 checkout、启动 Development CLI、生成 ignored HTTP DTO 与 `web-dist`、安装或更新 Development Launcher，以及其他只服务 Buildr 开发环境的工具。Development Launcher manager 必须在 Launcher 变更前完成这一准备，使干净 checkout 可直接启动 Web。
 
 `tools/release/` 是 checkout-only 发布编排边界，负责 release selection/provenance、readiness/convergence adapter、构建 npm 发布物，以及版本、Tag、Registry、GitHub Release和Release Artifact的检查或受保护入口。它不取得System Installation、Verification、Task/Finish/self-bootstrap或Bootstrap的writer authority；tag、npm、dist-tag和GitHub Release公共mutation仍只由protected publish workflow执行。
 

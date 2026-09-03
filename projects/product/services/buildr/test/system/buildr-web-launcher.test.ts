@@ -138,9 +138,12 @@ test('web launcher CLI只读投影npm-owned Launcher target', (t: any) => {
 
 test('development installer直接调用内部manager而不是npm-owned公开Launcher', () => {
   const installer: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'tools', 'development', 'install-buildr-development'), 'utf8');
-  assert.match(installer, /package\/launchers\/manage\.mjs" install --channel development/u);
+  const manager: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'launchers', 'manage.ts'), 'utf8');
+  assert.match(installer, /package\/launchers\/manage\.ts" install --channel development/u);
   assert.doesNotMatch(installer, /bin\/buildr\.mjs" web launcher/u);
   assert.doesNotMatch(installer, /install-buildr-cli|command -v buildr|buildr --version/u);
+  assert.match(manager, /import \{ prepareDevelopmentWeb \} from '\.\.\/\.\.\/tools\/development\/prepare-development-web\.ts'/u);
+  assert.ok(manager.indexOf("if (action === 'install') await prepareDevelopmentWeb()") < manager.indexOf("action === 'install' ? await installLauncher(options)"));
 });
 
 test('Buildr Web Dev builder拒绝覆盖非空输出目录', (t: any) => {
