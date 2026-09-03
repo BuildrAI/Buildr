@@ -18,7 +18,7 @@ function fixture(t) {
   const runtime = t.buildrContexts.application;
   runtime.createTaskRecordPersistence(root, {
     schemaVersion: 'buildr.task-record/v3', taskId: 'demo-task', title: 'Demo', intent: 'Verify Review SQLite authority',
-    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, childTaskIds: [], retrospective: null, status: 'active', result: null,
+    scope: { projects: [], services: [] }, changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
   });
   return { root: fs.realpathSync(root), runtime };
@@ -86,7 +86,7 @@ test('损坏current与terminal Task均fail closed，terminal仍可读取既有Re
   opened.database.prepare("UPDATE task_review_current SET subject_identity = 'planning:identity-1' WHERE task_id = 'demo-task' AND review_type = 'planning'").run();
   opened.database.close();
   const task = runtime.readTaskRecordPersistence(root, 'demo-task');
-  runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done', noChange: false }, updatedAt: '2026-08-02T00:00:02.000Z' });
+  runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done' }, updatedAt: '2026-08-02T00:00:02.000Z' });
   assert.equal(runtime.inspectTaskReview(root, 'demo-task').slots.planning.present, true);
   assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', runtime.inspectTaskReview(root, 'demo-task').slots.planning.resultDigest)), (error) => error.code === 'task_review_task_terminal');
 });

@@ -385,11 +385,11 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** MUST不阻塞其他不依赖Review的Task工作
 
 ### Requirement: Runtime投射必须来自Workspace source
-更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST NOT作为长期编辑authority。
+更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST不作为长期编辑authority。
 
 #### Scenario: 自举同步
-- **WHEN** Formal Finish交付包含Skill或contract source变化
-- **THEN** self-bootstrap MUST按冻结Contribution执行适用sync/render
+- **WHEN** Buildr Task的真实Git交付包含Skill或contract source变化并命中self-bootstrap范围
+- **THEN** self-bootstrap MUST按当前delivered ref与真实变化执行适用sync/render
 - **AND** 最终Doctor MUST证明selected Agent graph与projection ready
 
 ### Requirement: 产品入口 Buildr Skill 分离宿主身份与投射目标
@@ -430,35 +430,6 @@ Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace
 - **WHEN** 用户要求开始执行已有 todo
 - **THEN** Task Triage MUST 先完成当前事实确认与 Git 基线收敛，再调用 activate
 - **AND** 任一前置门禁 blocked 时 MUST 保持 todo 不变
-
-### Requirement: Task Finish Skill 必须为 bootstrap recovery取得单独明确授权
-
-Task Finish Skill MUST只在retained Finish Result或Execution Record证明existing run停止于受支持的`product-phase-provider` preflight/prepare边界、无交付副作用，且repair checkout current、clean、committed时提出bootstrap recovery。调用前MUST展示run、冻结Candidate/generation与Content Target、source commit、retained-writer边界、将创建或复用的capsule、候选provider并非sandbox以及恢复限制，并MUST取得用户对该run的单独明确授权。
-
-#### Scenario: 观察到合格retained provider defect
-
-- **WHEN** retained Result闭合支持的failure predicate且repair checkout满足authority条件
-- **THEN** Skill MUST说明retained Application/repository/state machine仍是canonical owner
-- **AND** MUST说明ES module会执行受验证provider模块及其本地依赖闭包，而不是只执行一个导出函数
-- **AND** MUST等待用户明确授权后才增加`--bootstrap-recovery`
-
-#### Scenario: 同一run后续blocked恢复
-
-- **WHEN** 已授权bootstrap run在provider authority仍有效时进入普通blocked phase
-- **THEN** Skill MUST复用同一run、capsule与current Product resume token
-- **AND** MUST NOT创建新Candidate、Verification、Review、handoff或递归修复Task
-
-#### Scenario: provider authority撤销后的terminal恢复
-
-- **WHEN** capsule revocation已证明authority撤销且只剩terminal persistence未完成
-- **THEN** Skill MUST使用产品返回的same-run retained-only resume动作
-- **AND** MUST NOT尝试恢复、重建或重新加载capsule
-
-#### Scenario: 恢复不合格
-
-- **WHEN** failure evidence不完整、origin/phase不支持、已有副作用、authority漂移或故障位于CLI/registry/Application/repository/migration层
-- **THEN** Skill MUST保留普通Finish blocker并停止
-- **AND** MUST NOT推断临时runtime、tarball、source path、alternate writer或人工Git旁路
 
 ### Requirement: 产品入口 Buildr Skill 必须主动解释 GA 与 RC 更新
 产品入口 Buildr Skill MUST 在用户要求完整检查、安装状态检查或更新 Buildr 时运行 `buildr update check --json`，读取 stable/candidate 轨道，并用普通用户可理解的语言告知可用更新和请求用户选择。

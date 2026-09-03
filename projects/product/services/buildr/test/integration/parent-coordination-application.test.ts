@@ -18,7 +18,7 @@ function fixture(t) {
   const runtime = t.buildrContexts.application;
   const create = (taskId, options = {}) => runtime.createTaskRecord(root, { taskId, title: taskId, intent: `Deliver ${taskId}`, projects: [], services: [], changes: [], ...options });
   const inspect = (taskId) => runtime.inspectTaskRecord(root, taskId);
-  const complete = (taskId, input = {}) => runtime.completeTaskRecord(root, taskId, { summary: 'Observed completed result', noChange: false, ...input });
+  const complete = (taskId, input = {}) => runtime.completeTaskRecord(root, taskId, { expectedRecordDigest: inspect(taskId).recordDigest, summary: 'Observed completed result', ...input });
   const input = (taskId) => {
     const view = runtime.inspectParentCoordination(root, taskId);
     return { expectedRecordDigest: view.recordDigest, parentCompletion: {
@@ -69,9 +69,9 @@ test('result changes after observation are rejected even when parent record dige
 
 test('relationship changes are rejected and parent identity survives detaching the last child', (t) => {
   const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
-  const stale = f.input('parent'); f.runtime.updateTaskRecord(f.root, 'child', { parentTaskId: null });
+  const stale = f.input('parent'); f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, parentTaskId: null });
   assert.equal(f.inspect('parent').record.isParent, true);
-  assert.throws(() => f.complete('parent', stale), { code: 'task_record_conflict' });
+  assert.throws(() => f.complete('parent', stale), { code: 'parent_completion_conflict' });
   assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
 });
 
@@ -84,7 +84,7 @@ test('nested parent completion requires separate authorization and leaves ancest
 
 test('abandoned child requires explicit disposition and is not rewritten as delivered', (t) => {
   const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
-  f.runtime.abandonTaskRecord(f.root, 'child', { reason: 'Its goal was covered by the existing artifact.' });
+  f.runtime.abandonTaskRecord(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, reason: 'Its goal was covered by the existing artifact.' });
   const evidence = f.input('parent'); evidence.parentCompletion.acceptance.children[0].summary = 'Covered by reviewed existing artifact; no work remains.';
   f.complete('parent', evidence); assert.equal(f.inspect('child').record.status, 'abandoned');
 });
@@ -108,7 +108,7 @@ test('child identity punctuation does not make an otherwise complete acceptance 
   for (const id of ['child-a', 'child.a', 'child_a']) { f.create(id, { parentTaskId: 'parent' }); f.complete(id); }
   assert.equal(f.complete('parent', f.input('parent')).record.status, 'completed');
 });
-test('legacy Parent Plan remains readable and still requires explicit completion authorization', (t) => {
+test('legacy Parent Plan remains readable but does not create current parent identity or completion gates', (t) => {
   const f = fixture(t); f.create('legacy-parent');
   const opened = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
   const content = {
@@ -120,9 +120,9 @@ test('legacy Parent Plan remains readable and still requires explicit completion
   opened.database.prepare('UPDATE tasks SET legacy_parent_plan_json = ? WHERE task_id = ?').run(historical, 'legacy-parent');
   opened.database.close();
   const view = f.runtime.inspectParentCoordination(f.root, 'legacy-parent');
-  assert.equal(view.isParent, true);
+  assert.equal(view.isParent, false);
   assert.equal(view.historicalPlan.outcome, content.outcome);
-  assert.throws(() => f.complete('legacy-parent'), { code: 'parent_completion_authorization_required' });
+  assert.equal(f.complete('legacy-parent').record.status, 'completed');
   const after = f.runtime.openWorkspaceStructuredStore(f.root, { writable: false });
   assert.equal(after.database.prepare('SELECT legacy_parent_plan_json FROM tasks WHERE task_id = ?').get('legacy-parent').legacy_parent_plan_json, historical);
   after.database.close();
@@ -141,9 +141,9 @@ test('更正父任务保留阶段结果和子任务，update完成仍要求明�
   assert.deepEqual(reopened.record.resultHistory[0].result, before.record.result);
   assert.equal(reopened.record.resultHistory[0].recordUpdatedAt, before.record.updatedAt);
   assert.equal(f.inspect('child').record.status, 'completed');
-  assert.throws(() => update({ status: 'completed', summary: 'All done', noChange: false }), { code: 'parent_completion_authorization_required' });
-  assert.throws(() => update({ status: 'completed', intent: 'Shrink the goal', summary: 'All done', noChange: false, ...f.input('parent') }), { code: 'task_record_completion_context_changed' });
-  const completed = update({ status: 'completed', summary: 'Full goal accepted', noChange: false, ...f.input('parent') });
+  assert.throws(() => update({ status: 'completed', summary: 'All done' }), { code: 'parent_completion_authorization_required' });
+  assert.throws(() => update({ status: 'completed', intent: 'Shrink the goal', summary: 'All done', ...f.input('parent') }), { code: 'task_record_completion_context_changed' });
+  const completed = update({ status: 'completed', summary: 'Full goal accepted', ...f.input('parent') });
   assert.equal(completed.record.status, 'completed'); assert.equal(completed.record.resultHistory.length, 1);
   assert.throws(() => update({ intent: 'A different goal', reason: 'Edit' }), { code: 'task_record_completion_context_changed' });
 });
@@ -155,7 +155,7 @@ test('已完成任务可更正父关系，保留成果、旧关系并拒绝并�
   const linked = f.runtime.updateTaskRecord(f.root, 'child', input);
   assert.equal(linked.record.status, 'completed'); assert.deepEqual(linked.record.result, before.record.result);
   assert.equal(linked.record.resultHistory[0].parentTaskId, null);
-  assert.deepEqual(f.inspect('parent').record.childTaskIds, ['child']); assert.equal(f.inspect('parent').record.status, 'active');
+  assert.deepEqual(f.runtime.inspectTaskRecordView(f.root, 'parent').taskRelations.children.map((child) => child.taskId), ['child']); assert.equal(f.inspect('parent').record.status, 'active');
   assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { ...input, title: 'Stale overwrite' }), { code: 'task_record_conflict' });
   for (const field of ['taskId', 'resultHistory', 'createdAt', 'result']) assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, title: 'Invalid', [field]: [] }), { code: 'task_record_field_forbidden' });
   assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, parentTaskId: 'child', reason: 'Invalid cycle' }));
@@ -169,22 +169,23 @@ test('统一更新支持四种状态，保留结果一致性和撤回历史', (t
   const update = (input) => f.runtime.updateTaskRecord(f.root, 'task', { expectedRecordDigest: f.inspect('task').recordDigest, ...input });
   assert.throws(() => f.runtime.updateTaskRecord(f.root, 'task', { status: 'todo' }), { code: 'task_record_digest_required' });
   assert.equal(update({ status: 'todo' }).record.status, 'todo');
-  assert.throws(() => update({ status: 'completed', summary: 'Changed', noChange: false }), { code: 'task_record_todo_completion_requires_no_change' });
-  assert.equal(update({ status: 'active' }).record.status, 'active');
-  assert.equal(update({ status: 'completed', summary: 'Delivered', noChange: false }).record.status, 'completed');
+  assert.equal(update({ status: 'completed', summary: 'Changed' }).record.status, 'completed');
+  assert.equal(update({ status: 'active', reason: 'User resumes the work' }).record.status, 'active');
+  assert.equal(update({ status: 'completed', summary: 'Delivered' }).record.status, 'completed');
   const abandoned = update({ status: 'abandoned', reason: 'User corrects the disposition' });
   assert.deepEqual(abandoned.record.result, { summary: 'User corrects the disposition' });
-  assert.equal(abandoned.record.resultHistory[0].result.summary, 'Delivered');
+  assert.equal(abandoned.record.resultHistory[1].result.summary, 'Delivered');
   const reopened = update({ status: 'active', reason: 'User resumes the work' });
-  assert.equal(reopened.record.resultHistory.length, 2); assert.equal(reopened.record.result, null);
+  assert.equal(reopened.record.resultHistory.length, 3); assert.equal(reopened.record.result, null);
 });
 
-test('旧父计划尚未标记父身份时，也不能沿用完成状态更换目标', (t) => {
+test('旧父计划不再建立当前父身份，终态事实仍按普通任务显式更正', (t) => {
   const f = fixture(t); f.create('legacy'); f.complete('legacy');
   const opened = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
   opened.database.prepare('UPDATE tasks SET legacy_parent_plan_json = ? WHERE task_id = ?').run(JSON.stringify({ outcome: 'Historical parent goal' }), 'legacy');
   opened.database.close();
   const before = f.inspect('legacy');
-  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'legacy', { expectedRecordDigest: before.recordDigest, intent: 'A new goal', reason: 'Correction' }), { code: 'task_record_completion_context_changed' });
-  assert.equal(f.inspect('legacy').recordDigest, before.recordDigest);
+  const corrected = f.runtime.updateTaskRecord(f.root, 'legacy', { expectedRecordDigest: before.recordDigest, intent: 'A corrected goal', reason: 'User corrects the historical goal' });
+  assert.equal(corrected.record.intent, 'A corrected goal');
+  assert.equal(corrected.record.resultHistory[0].intent, before.record.intent);
 });

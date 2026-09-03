@@ -55,9 +55,9 @@ Task Finish的canonical Result由SQLite current/terminal authority决定；CLI�
 
 `buildr.task-record-result/v5`覆盖六个Task Record动作，返回closed v3 `record`、`recordDigest`、Parent/Child `taskRelations`与`retrospectiveDocument`路径/登记摘要。Task不再返回复盘来源/后续关系。
 
-`buildr.parent-coordination-result/v3`覆盖Parent coordination actions，并直接替代v2。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、紧凑`plan`摘要、Parent status/final acceptance、紧凑Planning Review、直接Children摘要与唯一顶层`contributions`。每个work item只在顶层Contribution Map出现一次，`expectedChild`规范化为`expectation.child`；Child只返回`boundContributions`与协调所需delivery摘要，不返回完整Contribution Handoff。`startup.next`是唯一下一步，依赖阻塞继续由`blockers`和各Contribution eligibility表达；完整`dependencyBlockers`只属于独立`buildr.parent-startup-readiness/v2`。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
+`buildr.parent-coordination-result/v4`只读返回Task目标、当前Record摘要、`parent|child|ordinary` mode、直接Children结果、完成观察身份、已保存父任务完成依据和可选旧Parent Plan历史。它不读取Review、Verification、Development、Finish、Contribution或交付状态，不推断依赖和完成比例，也不传播任何Task状态。
 
-Buildr Web stored-state projection使用详情v3和列表v5，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。`open`只是查询语义，不持久。列表不读取Markdown正文；`recordDigest`、`childTaskCount`与关系摘要都不进入Task Record schema。
+Buildr Web stored-state projection使用详情v3和列表v5，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。`open`只是查询语义，不持久。列表不读取Markdown正文；`recordDigest`与关系摘要都不进入Task Record schema，反向Children只存在于`taskRelations`查询投影。
 
 
 ## Doctor v1 结果语义

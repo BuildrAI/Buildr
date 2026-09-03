@@ -497,7 +497,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
     const task = parseJson(productCommand(execute, root, nodeExecutable, ['task', 'inspect', taskId, '--target', root, '--json'], 'task-inspect', active), 'self-bootstrap-closeout.task-invalid', '无法读取任务。');
-    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || task.record.result?.noChange !== false || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成且有实际交付的产品任务。');
+    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成的产品任务；实际交付由明确提交和远端Git事实证明。');
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths);
     if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');

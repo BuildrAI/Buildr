@@ -159,10 +159,11 @@ try {
   assert.throws(() => assertPreviewStopOwner(previewOwners[1], wrongCaller), (error) => error instanceof Error && 'code' in error && error.code === 'preview_stop_owner_mismatch');
 
   for (const taskId of taskIds) {
+    const observed = parseObject(run(['task', 'inspect', taskId, '--target', workspace, '--json']).stdout);
     const completed = parseObject(run([
       'task', 'complete', taskId,
       '--summary', '并发能力验收完成',
-      '--no-change',
+      '--expected-record', String(Reflect.get(observed, 'recordDigest')),
       '--target', workspace,
       '--json',
     ]).stdout);

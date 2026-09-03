@@ -8,7 +8,11 @@ export function validateTaskRecordSkillCommands(content) {
       problems.push(`task-manager Skill must document "buildr task ${action}".`);
     }
   }
-  if (!content.includes('--expected-record')) problems.push('task-manager Skill must document --expected-record for version-checked mutations.');
+  for (const action of ['update', 'activate', 'complete', 'abandon']) {
+    if (!new RegExp(`\\bbuildr\\s+task\\s+${action}\\b[^\\n]*--expected-record`).test(content)) {
+      problems.push(`task-manager Skill must document --expected-record on "buildr task ${action}".`);
+    }
+  }
   return problems;
 }
 
@@ -270,6 +274,17 @@ export function createPackageStaticValidator(deps) {
         if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Environment retirement migration must delete without preserving data: ${forbidden}`);
       }
     }
+    const taskRecordFinalizationMigration = path.join(root, 'src', 'infrastructure', 'sqlite', 'migrations', '0031_finalize_task_record.sql');
+    if (!existsFile(taskRecordFinalizationMigration)) problems.push('Workspace SQLite Task Record finalization migration is missing.');
+    else {
+      const sql = fs.readFileSync(taskRecordFinalizationMigration, 'utf8');
+      for (const required of ['ALTER TABLE tasks RENAME TO tasks_v3', 'DROP TABLE terminal_contribution_reconciliations', 'DROP TABLE tasks_v3']) {
+        if (!sql.includes(required)) problems.push(`Workspace SQLite Task Record finalization migration must include: ${required}`);
+      }
+      for (const forbidden of ['schema_version TEXT', 'result_no_change INTEGER', 'CREATE TABLE terminal_contribution_reconciliations']) {
+        if (sql.includes(forbidden)) problems.push(`Workspace SQLite Task Record finalization migration must remove retired state: ${forbidden}`);
+      }
+    }
     for (const legacyRepository of ['task-verification-repository.mjs', 'task-review-repository.ts']) {
       if (existsFile(path.join(root, 'src', 'infrastructure', 'filesystem', legacyRepository))) problems.push(`Task current-record filesystem repository must not remain: ${legacyRepository}`);
     }
@@ -308,8 +323,14 @@ export function createPackageStaticValidator(deps) {
     for (const relative of [
       'src/infrastructure/sqlite/task-lifecycle-repository.mjs',
       'src/application/task-lifecycle-read-model/task-lifecycle-read-model-application.mjs',
+      'src/task/application/task-overview-application.ts',
+      'src/task/persistence/task-overview-repository.ts',
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Retired Task Lifecycle runtime path must not remain: ${relative}`);
+    }
+    for (const relative of ['src/task/module.ts', 'src/task/interfaces/http/task-lifecycle-core.ts', 'src/task/interfaces/http/task-professional-http-contracts.ts', '../buildr-web/src/api/task-professional.ts']) {
+      const file = path.join(root, relative);
+      if (existsFile(file) && /task-overview|inspectTaskOverview|\/overview/.test(fs.readFileSync(file, 'utf8'))) problems.push(`Retired Task Overview surface remains in ${relative}.`);
     }
     for (const relative of [
       'src/bootstrap/runtime.mjs',

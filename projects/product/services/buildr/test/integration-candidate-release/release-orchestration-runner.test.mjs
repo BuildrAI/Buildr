@@ -44,7 +44,7 @@ function closeoutDependencies(overrides = {}) {
     invokeRetainedController: (_controller, args) => {
       calls.push(args);
       if (args[0] === 'task' && args[1] === 'complete') {
-        task = { ...task, status: 'completed', result: { summary: 'done', noChange: true } };
+        task = { ...task, status: 'completed', result: { summary: 'done' } };
         return { status: 'completed', recordDigest: digest('9'), effects: [{ type: 'task-completed' }], nextActions: [] };
       }
       if (args[0] === 'worktree' && args[1] === 'cleanup') {
@@ -94,7 +94,8 @@ test('closeout completes every owner in order and emits compact timeline output'
     candidateAttempts: [{ runId: 42, runAttempt: 1, status: 'failed', rerunScope: ['windows'], evidence: [] }, { runId: 42, runAttempt: 2, status: 'passed', rerunScope: ['windows'], aggregateIdentity: digest('3'), evidence: [{ id: 'macos', disposition: 'reused', originRunId: 42, originRunAttempt: 1, identity: digest('c') }] }],
   }, fixture.dependencies);
   assert.equal(value.status, 'passed');
-  assert.equal(fixture.getTask().result.noChange, true);
+  assert.deepEqual(fixture.getTask().result, { summary: 'done' });
+  assert.equal(fixture.calls[0].includes('--no-change'), false);
   assert.equal(fixture.getGitCloseoutInput().publicationEvidence.identity, digest('4'));
   assert.ok(fixture.calls[0].includes('--expected-record'));
   assert.deepEqual(fixture.calls[1].slice(3, 7), ['--expected-source', `workspace=${commit('a')}`, '--delivered-ref', `workspace=${commit('a')}`]);
@@ -186,7 +187,7 @@ test('merge-to-dispatch and post-Publication closeout recover as one end-to-end 
   };
   const interrupted = await runReleaseOrchestration(closeoutOptions, fixture.dependencies);
   assert.equal(interrupted.status, 'blocked');
-  assert.equal(fixture.getTask().result.noChange, true);
+  assert.deepEqual(fixture.getTask().result, { summary: 'done' });
   const closed = await runReleaseOrchestration(closeoutOptions, fixture.dependencies);
   assert.equal(closed.status, 'passed');
   assert.equal(closed.lifecycle.phase, 'closed');

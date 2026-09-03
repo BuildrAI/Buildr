@@ -8,7 +8,7 @@ import { isTaskRecordId, normalizeTaskRecord, taskRecordError, type TaskRecord, 
 type SqlRow = Record<string, SQLOutputValue>;
 export type TaskPersistence = { root: string; record: TaskRecord; recordDigest: string };
 export type TaskRelation = { taskId: string; title: string; status: TaskRecordStatus };
-export type TaskView = TaskPersistence & { childTaskCount: number; taskRelations: { parent: TaskRelation | null; children: TaskRelation[] } };
+export type TaskView = TaskPersistence & { taskRelations: { parent: TaskRelation | null; children: TaskRelation[] } };
 export type TaskQueryFilters = { q?: string; project?: string; service?: TaskServiceReference; status?: string; hasChildren?: string; retrospectiveState?: string };
 type StructuredStore = { present: boolean; database: DatabaseSync };
 export type RepositoryRuntime = {
@@ -23,7 +23,6 @@ export type TaskRecordRepository = {
   ensureTaskRecordDirectory(targetRoot: string, taskId: string, io?: Pick<typeof fs, 'existsSync' | 'mkdirSync' | 'lstatSync'>): string;
   readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
   prepareTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
-  listTaskRecordPersistence(targetRoot: string): { root: string; records: TaskPersistence[]; diagnostics: [] };
   queryTaskRecordViewPersistence(targetRoot: string, filters?: TaskQueryFilters): { root: string; views: TaskView[]; totalTaskCount: number; filterOptions: { projects: string[]; services: TaskServiceReference[] } };
   readTaskRecordViewPersistence(targetRoot: string, taskId: string): TaskView;
   createTaskRecordPersistence(targetRoot: string, value: unknown): TaskPersistence;
@@ -32,7 +31,8 @@ export type TaskRecordRepository = {
 };
 
 function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null) {
-  return { parent, children, isParent: parent.isParent === true || children.length > 0 || legacyPlan !== null, legacyPlan, diagnostic, recordDigest: digestRecord(parent), snapshotIdentity: digestRecord({ parent, children, legacyPlan }) };
+  const relevant = (record: TaskRecord) => ({ taskId: record.taskId, title: record.title, intent: record.intent, scope: record.scope, changes: record.changes, parentTaskId: record.parentTaskId, isParent: record.isParent === true, status: record.status, result: record.result });
+  return { parent, children, isParent: parent.isParent === true || children.length > 0, legacyPlan, diagnostic, recordDigest: digestRecord(parent), snapshotIdentity: digestRecord({ parent: relevant(parent), children: children.map(relevant) }) };
 }
 
 function stringColumn(row: SqlRow, field: string): string {
@@ -95,24 +95,23 @@ function resultValue(row: SqlRow): unknown {
   if (status === 'completed') {
     const parentCompletionJson = nullableStringColumn(row, 'parent_completion_json');
     const parentCompletion: unknown = parentCompletionJson === null ? undefined : JSON.parse(parentCompletionJson);
-    return { summary, noChange: numberColumn(row, 'result_no_change') === 1, ...(parentCompletion === undefined ? {} : { parentCompletion }) };
+    return { summary, ...(parentCompletion === undefined ? {} : { parentCompletion }) };
   }
   return { summary };
 }
 
-function recordValue(row: SqlRow, { projects = [], services = [], changes = [], childTaskIds = [] }: { projects?: string[]; services?: TaskServiceReference[]; changes?: Array<{ project: string; change: string }>; childTaskIds?: string[] } = {}): TaskRecord {
+function recordValue(row: SqlRow, { projects = [], services = [], changes = [] }: { projects?: string[]; services?: TaskServiceReference[]; changes?: Array<{ project: string; change: string }> } = {}): TaskRecord {
   const retrospectiveState = nullableStringColumn(row, 'retrospective_state');
   const resultHistory: unknown = JSON.parse(nullableStringColumn(row, 'result_history_json') || '[]');
   return normalizeTaskRecord({
-    schemaVersion: stringColumn(row, 'schema_version'),
+    schemaVersion: 'buildr.task-record/v3',
     taskId: stringColumn(row, 'task_id'),
     title: stringColumn(row, 'title'),
     intent: stringColumn(row, 'intent'),
     scope: { projects, services },
     changes,
     parentTaskId: nullableStringColumn(row, 'parent_task_id'),
-    childTaskIds,
-    ...(numberColumn(row, 'is_parent') === 1 || childTaskIds.length ? { isParent: true } : {}),
+    ...(numberColumn(row, 'is_parent') === 1 ? { isParent: true } : {}),
     retrospective: retrospectiveState === null ? null : {
       state: retrospectiveState,
       documentDigest: nullableStringColumn(row, 'retrospective_document_digest'),
@@ -131,8 +130,7 @@ export function readTaskRecordFromDatabase(database: DatabaseSync, taskId: strin
   const projects = database.prepare('SELECT project FROM task_projects WHERE task_id = ? ORDER BY project').all(taskId).map((item) => stringColumn(item, 'project'));
   const services = database.prepare('SELECT project, service FROM task_services WHERE task_id = ? ORDER BY project, service').all(taskId).map((item) => ({ project: stringColumn(item, 'project'), service: stringColumn(item, 'service') }));
   const changes = database.prepare('SELECT project, change_name AS change FROM task_changes WHERE task_id = ? ORDER BY project, change_name').all(taskId).map((item) => ({ project: stringColumn(item, 'project'), change: stringColumn(item, 'change') }));
-  const childTaskIds = database.prepare('SELECT task_id FROM tasks WHERE parent_task_id = ? ORDER BY task_id').all(taskId).map((item) => stringColumn(item, 'task_id'));
-  return recordValue(row, { projects, services, changes, childTaskIds });
+  return recordValue(row, { projects, services, changes });
 }
 
 function persistence(root: string, record: TaskRecord): TaskPersistence {
@@ -192,8 +190,7 @@ function taskViewQuery(filters: TaskQueryFilters = {}, taskId: string | null = n
     parameters.push(filters.retrospectiveState);
   }
   return {
-    sql: `SELECT t.*, parent.title AS parent_title, parent.status AS parent_status,
-      (SELECT COUNT(*) FROM tasks child_count WHERE child_count.parent_task_id = t.task_id) AS child_task_count
+    sql: `SELECT t.*, parent.title AS parent_title, parent.status AS parent_status
       FROM tasks t LEFT JOIN tasks parent ON parent.task_id = t.parent_task_id
       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
       ORDER BY t.updated_at DESC, t.task_id`,
@@ -216,11 +213,9 @@ function taskViews(database: DatabaseSync, rows: SqlRow[], root: string): TaskVi
       projects: projects.get(rowTaskId) || [],
       services: services.get(rowTaskId) || [],
       changes: changes.get(rowTaskId) || [],
-      childTaskIds: childRows.map((child) => stringColumn(child, 'task_id')),
     });
     return {
       ...persistence(root, record),
-      childTaskCount: numberColumn(row, 'child_task_count'),
       taskRelations: {
         parent: nullableStringColumn(row, 'parent_task_id') ? { taskId: stringColumn(row, 'parent_task_id'), title: stringColumn(row, 'parent_title'), status: statusColumn(row, 'parent_status') } : null,
         children: childRows.map((child) => ({ taskId: stringColumn(child, 'task_id'), title: stringColumn(child, 'title'), status: statusColumn(child, 'status') })),
@@ -230,10 +225,10 @@ function taskViews(database: DatabaseSync, rows: SqlRow[], root: string): TaskVi
 }
 
 function insertRecord(database: DatabaseSync, record: TaskRecord): void {
-  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json, retrospective_state, retrospective_document_digest)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    record.taskId, record.schemaVersion, record.title, record.intent, record.status,
-    record.result?.summary ?? null, record.status === 'completed' && record.result ? Number(record.result.noChange === true) : null,
+  database.prepare(`INSERT INTO tasks(task_id, title, intent, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json, retrospective_state, retrospective_document_digest)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    record.taskId, record.title, record.intent, record.status,
+    record.result?.summary ?? null,
     record.createdAt, record.updatedAt, record.parentTaskId, Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []),
     record.retrospective?.state ?? null, record.retrospective?.documentDigest ?? null,
   );
@@ -269,9 +264,8 @@ function insertRelations(database: DatabaseSync, record: TaskRecord): void {
 }
 
 function replaceRecord(database: DatabaseSync, record: TaskRecord): void {
-  database.prepare(`UPDATE tasks SET schema_version = ?, title = ?, intent = ?, status = ?, result_summary = ?, result_no_change = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ?, retrospective_state = ?, retrospective_document_digest = ? WHERE task_id = ?`).run(
-    record.schemaVersion, record.title, record.intent, record.status, record.result?.summary ?? null,
-    record.status === 'completed' && record.result ? Number(record.result.noChange === true) : null, record.createdAt, record.updatedAt, record.parentTaskId,
+  database.prepare(`UPDATE tasks SET title = ?, intent = ?, status = ?, result_summary = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ?, retrospective_state = ?, retrospective_document_digest = ? WHERE task_id = ?`).run(
+    record.title, record.intent, record.status, record.result?.summary ?? null, record.createdAt, record.updatedAt, record.parentTaskId,
     Number(record.isParent === true), record.result?.parentCompletion ? JSON.stringify(record.result.parentCompletion) : null, JSON.stringify(record.resultHistory || []),
     record.retrospective?.state ?? null, record.retrospective?.documentDigest ?? null, record.taskId,
   );
@@ -378,11 +372,6 @@ export function registerTaskRecordRepository<T extends RepositoryRuntime>(runtim
     return readTaskRecordFromStore(targetRoot, taskId, { writable: true });
   }
 
-  function listTaskRecordPersistence(targetRoot: string): { root: string; records: TaskPersistence[]; diagnostics: [] } {
-    const query = queryTaskRecordViewPersistence(targetRoot);
-    return { root: query.root, records: query.views.map(({ childTaskCount, taskRelations, ...record }) => record), diagnostics: [] };
-  }
-
   function queryTaskRecordViewPersistence(targetRoot: string, filters: TaskQueryFilters = {}): { root: string; views: TaskView[]; totalTaskCount: number; filterOptions: { projects: string[]; services: TaskServiceReference[] } } {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     let opened: StructuredStore | undefined;
@@ -458,7 +447,6 @@ export function registerTaskRecordRepository<T extends RepositoryRuntime>(runtim
         const nextValue = mutator(current, { parentContext: () => parentContext(database, root, taskId, currentRecord) });
         if (!nextValue) return current;
         const next = normalizeTaskRecord(nextValue, { expectedTaskId: taskId });
-        if (JSON.stringify(next.childTaskIds) !== JSON.stringify(currentRecord.childTaskIds)) throw taskRecordError('task_record_children_read_only', 'childTaskIds 是由 Child Task 关系派生的只读投影。', 409, { taskId });
         if (next.parentTaskId !== currentRecord.parentTaskId) assertParentRelation(database, taskId, next.parentTaskId);
         replaceRecord(database, next);
         const updated = readTaskRecordFromDatabase(database, taskId);
@@ -483,7 +471,6 @@ export function registerTaskRecordRepository<T extends RepositoryRuntime>(runtim
     ensureTaskRecordDirectory,
     readTaskRecordPersistence,
     prepareTaskRecordPersistence,
-    listTaskRecordPersistence,
     queryTaskRecordViewPersistence,
     readTaskRecordViewPersistence,
     createTaskRecordPersistence,

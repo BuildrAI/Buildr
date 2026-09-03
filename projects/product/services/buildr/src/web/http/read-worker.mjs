@@ -4,7 +4,6 @@ import { createRuntime } from '../../bootstrap/runtime.mjs';
 
 const runtime = createRuntime();
 const operations = Object.freeze({
-  overview: 'inspectTaskOverview',
   reviews: 'inspectTaskReview',
   verification: 'inspectTaskVerificationView',
   coordination: 'inspectParentCoordination',

@@ -86,17 +86,22 @@ Review Result MUST 保持轻量且只保存可移植 reviewed/uncovered 引用�
 - **AND** Review Application MUST不生成兼容`planning.yml`或`completion.yml`
 
 ### Requirement: Review current row 必须保存稳定查询字段
-Repository MUST在同一row保存完整`result_json`、同一Result的`subject_identity`、`outcome`与`updated_at`，只用于定位、Overview摘要与一致性校验，不保存applicability、gate或第二份正文。
+Repository MUST在同一row保存完整`result_json`、同一Result的`subject_identity`、`outcome`与`updated_at`，只用于专业inspect定位与一致性校验，不保存applicability、gate、Overview摘要或第二份正文。
 
 #### Scenario: 记录 Review Result
 - **WHEN** Application形成新的完整Planning或Completion Result
 - **THEN** repository MUST在单一transaction中原子比较、替换并写后验证
 - **AND** subject/outcome/time与Result JSON不一致时 MUST rollback
 
+#### Scenario: 读取 Review
+- **WHEN** CLI或Buildr Web请求Review详情
+- **THEN** Application MUST返回两个独立槽位的完整保存结果或missing
+- **AND** MUST不调用Task Overview或其他专业Application
+
 #### Scenario: 读取 Overview
-- **WHEN** Task Overview查询Review摘要
-- **THEN** repository MUST通过两个LEFT JOIN返回presence、subject、outcome与updated time
-- **AND** MUST不反序列化或复制完整findings到Overview
+- **WHEN** 调用方请求旧Task Overview路径
+- **THEN** route MUST不存在且Review repository MUST不被调用
+- **AND** Review detail MUST继续通过自身inspect读取
 
 ### Requirement: Task Review Application 必须是 Buildr Web 与专业 consumer 的唯一 Result writer
 Buildr MUST由共享Application实现`inspect|record`，CLI与HTTP读接口复用该Application。Buildr Web只读展示并在前端形成Agent指令；后端不提供Review prompt或直接writer。

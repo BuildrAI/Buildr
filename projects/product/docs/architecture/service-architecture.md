@@ -28,7 +28,7 @@ Buildr Service 根目录按工程职责组织，`src` 内部优先按业务或�
 | TypeScript 执行基础 | 固定 Node.js 24.15.0，采用 `strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`、`noEmit`；development checkout 支持 `.mjs`/`.ts` 混合加载，CLI identity 是首个生产 `.ts` 切片 | 未触达 `.mjs` 不批量转换；正式 npm Application Payload 继续由锁定 bundler 生成，不直接发布或运行 `.ts` |
 | Bootstrap 与模块合约 | `src/bootstrap/cli/`、`module-registry.mjs`、`runtime.mjs` 是唯一显式组装入口；模块通过窄 `requires`、`provides`、CLI/HTTP/Diagnostic contribution、runtime port 和 lifecycle 合约注册；`legacy-runtime-module.mjs` 与临时 compatibility Facade 已删除 | 新模块继续直接接入该显式合约，不再恢复第二 composition root |
 | 通用 Infrastructure | SQLite 连接与全局 migration、filesystem、Git、process、network、platform、product invocation 等通用机制已收敛到 `src/infrastructure/` | Agent runtime 专属投射继续归 Agent Assets；历史 Infrastructure Child 缺少 Contribution binding，由最终架构收敛 Child 基于 current tree 重新验证并显式 supersede |
-| Task 参考与专业能力 | Task Record、Review、Retrospective、Environment、Verification、Overview和Parent Coordination由`src/task/`显式注册；Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
+| Task 参考与专业能力 | Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档读取由`src/task/`显式注册；Task Overview、Task Environment、Task Development、Planning Identity、旧Task Finish、Terminal Delivery、Entry Snapshot与Task Execution Record均已退役 | HTTP Controller与Diagnostic Read Model通过模块contribution参与最终组装 |
 | Workspace Core 与 Daily Progress | Workspace、Project、Service、Project Daily Progress 的 Domain、Application、manifest/YAML Repository、CLI/HTTP Adapter 和 `workspace/module.mjs` 已迁移 | Agent Assets、Task Change、Task OpenSpec、System Publication 与 Project Verification 已由各自模块拥有 |
 | Web Runtime Host | 默认实例、Preview、端口、PID、锁、Secret、Launcher 交接、scheduled maintenance、异常恢复和清理位于 `src/web/{application,infrastructure,interfaces/cli}`；HTTP Server、Router、Session、安全边界、bounded read executor 与 `web-dist` 静态托管位于 `src/web/http/` | 公共 Host 只处理传输和安全机制；业务路由由 Workspace、Task、Change、Publication 与 Installation 的 HTTP contribution 提供 |
 | System Doctor | Doctor 命令、Application 编排、结果模型和各类诊断已迁入 `src/system/doctor/`；Bootstrap 最后装配所有模块的 Diagnostic/Read Model contribution | Doctor 保持只读聚合，不取得任何业务 writer authority |
@@ -156,7 +156,7 @@ misc/
 
 ## `task` 模块
 
-`task/`管理Task Record、Review、Verification、Parent Coordination和复盘文档确定性读取边界；不再包含Task Environment、Development、Retrospective Application、Finish或Task Execution Record。
+`task/`管理Task Record、Review、Verification、父任务协调（Task Parent Coordination）和复盘文档确定性读取边界；不再包含Task Overview、Task Environment、Development、Retrospective Application、Finish或Task Execution Record。
 
 这里的 `task` 是领域或功能模块名称，不只是 `domain/` 层。与 Task 相关的领域模型、应用用例、持久化映射和接口入口都归入 `task/`，再在模块内部按技术职责分层。
 
@@ -188,7 +188,7 @@ task/
 
 具体分类根据真实职责逐步形成，不要求一次性建立完整目录，也不为了视觉整齐增加空层、单文件目录或无实际边界的转发文件。
 
-当前Task专业模块包括Review、Verification、Overview和Parent Coordination。复盘是按需纯Skill；正文写入本机ignored Markdown，Task Record只维护摘要和人的决定状态。研发过程由Agent依据目标、真实现场与专业Skill组合。
+当前Task专业模块包括Review、Verification和父任务协调（Task Parent Coordination）。独立Task Overview已删除，Task详情直接读取Task Record与关系投影。复盘是按需纯Skill；正文写入本机ignored Markdown，Task Record只维护摘要和人的决定状态。
 
 Task Record 的 Domain、Application、Persistence和Interface均使用TypeScript并直接位于对应技术层。旧Retrospective Domain/Application/Repository/HTTP/Driver、Task Finish、Terminal Delivery与统一Task Environment实现已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
 
@@ -774,7 +774,7 @@ Task Record 是首个纵向参考切片；其后 Task 生命周期、Workspace�
 |----------|----------------------|--------------------|--------------------|------|--------------------------|
 | Bootstrap composition 与 CLI Host | `src/bootstrap/runtime.mjs`、`module-registry.mjs`、`bootstrap/cli/` | 唯一模块安装、capability/contribution registry 与公共 CLI 分发；无业务 writer | Bootstrap/architecture contract、`product.delivery` | `migrated` | — |
 | 通用 Infrastructure | `src/infrastructure/`；SQLite ledger/migrations、filesystem、Git、process、network、platform、product invocation | 只拥有跨模块技术机制；业务 Repository、DAO、Mapper 与表语义归所属模块 | workspace-sqlite、architecture boundaries、`product.delivery` | `migrated` | — |
-| Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与Parent Coordination各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
+| Task 核心能力 | `src/task/module.ts` 及 `domain/`、`application/`、`persistence/`、`interfaces/` | Task Record、Review、Verification与父任务协调（Task Parent Coordination）各自保留唯一事实边界；复盘只有Task Record文档摘要和只读文件入口 | Task contract/integration suites、`product.delivery` | `migrated` | — |
 | Workspace Control Plane | `src/workspace/module.mjs`、`workspace/application/`、`src/infrastructure/product-resources/` | Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake 编排各自唯一 writer；product-resources 只拥有 manifest/path/enumeration 技术能力；Task 引用只读校验 | workspace/project/declaration/package contract 与 integration suites、`product.delivery` | `migrated` | — |
 | Agent Assets | `src/agent-assets/module.mjs`、`application/`、`application/package-maintenance/`、专属 runtime infrastructure | Rule、Skill、Command、Component、Builtin、Package Assets 与投射继续区分源资产和可重建 runtime authority | capability contracts、package static validation、managed-mutations、`product.delivery` | `migrated` | — |
 | Web 实例生命周期 | `src/web/application/`、`infrastructure/`、`interfaces/cli/`、`module.mjs` | 只拥有实例启动/复用/维护、Preview、端口、PID、锁与 Secret 编排 | Web runtime integration/browser selectors、`product.delivery` | `migrated` | — |
@@ -874,7 +874,7 @@ Verification 的公开契约演进（完整 JSON Schema/Ajv/DTO/Typed Client）�
 
 Parent Plan 只包含总体 outcome、architecture invariants、Contribution Map、真实 dependencies 和 final acceptance。它不保存 Child 状态、完整 Requirement、文件或 migration 清单、测试 Result，也不使用 Markdown checkbox 表达进度。只有上述协调事实实质变化时才显式 reconcile。
 
-子任务按能够独立交付和验证的结构切片建立，并通过 Parent/Child 关系关联父任务。一个一级模块可以根据实际范围拆成多个子任务，例如 `system/installation` 和 `system/doctor` 可以分别迁移；不要求一个目录对应一个子任务。Child 只有在真实需要时创建，并按自身目标选择OpenSpec、Environment、Development、Review、Verification与Finish能力，不补造统一流程记录。
+子任务按能够独立交付和验证的结构切片建立，并通过直接`parentTaskId`关联父任务。一个一级模块可以根据实际范围拆成多个子任务；不要求一个目录对应一个子任务。Child只有在真实需要时创建，并按自身目标选择OpenSpec、工作位置、Review、Verification、Git与收尾能力，不补造统一流程记录。
 
 第一轮子任务只承担结构迁移。需要改变功能、系统行为、产品设计或验证体系的问题，另行建立后续任务，不混入当前结构迁移子任务。
 

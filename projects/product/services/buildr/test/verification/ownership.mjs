@@ -87,7 +87,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "test/integration/workspace-management-fence.test.mjs",
       "test/integration/workspace-sqlite.test.mjs",
       "test/integration/self-bootstrap-closeout.test.mjs",
-      "test/integration/task-overview-repository.test.ts",
       "test/integration/parent-coordination-application.test.ts",
       "test/integration/parent-coordination-repository.test.ts",
       "test/integration/publication-application.test.mjs",
@@ -231,13 +230,10 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
   },
   "integration-task-read-models": {
     "inputs": [
-      "src/task/application/task-entry-snapshot-application.mjs",
-      "src/task/application/task-overview-application.mjs",
-      "src/task/persistence/task-overview-repository.mjs",
-      "src/task/persistence/task-overview-repository.ts",
-      "test/integration/task-overview-repository.test.ts",
       "src/task/persistence/task-record-retrospective-document.ts",
-      "src/task/application/task-overview-application.ts",
+      "src/task/application/task-review-application.ts",
+      "src/task/persistence/task-review-repository.ts",
+      "test/integration/task-review-repository.test.ts",
       "test/system/task-record-product.test.mjs"
     ],
     "inputExclusions": []
@@ -446,7 +442,6 @@ export const VERIFICATION_STEP_OWNERSHIP = Object.freeze(Object.fromEntries(
       "src/task/domain/terminal-contribution-reconciliation.mjs",
       "src/task/application/task-verification-application.mjs",
       "src/task/application/task-review-application.ts",
-      "src/task/application/task-overview-application.ts",
       "src/task/application/parent-coordination-application.ts",
       "src/task/persistence/parent-coordination-repository.mjs",
       "src/task/persistence/terminal-contribution-reconciliation-repository.mjs",

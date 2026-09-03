@@ -219,7 +219,7 @@ async function closeout(options, dependencies) {
   const invokeRetained = dependencies.invokeRetainedController ?? defaultInvokeRetained;
   const activeLifecycle = createReleaseLifecycle({
     version: options.version,
-    releaseTask: { taskId: options.releaseTask, status: taskResult.record.status, recordDigest: taskResult.recordDigest, noChange: taskResult.record.result?.noChange ?? null },
+    releaseTask: { taskId: options.releaseTask, status: taskResult.record.status, recordDigest: taskResult.recordDigest },
     selection: { status: context.selection.status, generation, identity: context.selection.identity },
     candidate: { status: context.candidate.status, identity: context.candidate.aggregateIdentity },
     readiness: { status: 'ready', contextDigest: context.identity },
@@ -230,13 +230,13 @@ async function closeout(options, dependencies) {
   if (activeLifecycle.status !== 'passed' || activeLifecycle.phase !== 'closed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle }, steps, activeLifecycle, '恢复release lifecycle closed事实后重试。');
 
   let taskCompletion;
-  if (taskResult.record.status === 'completed' && taskResult.record.result?.noChange === true) taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
+  if (taskResult.record.status === 'completed') taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
   else if (taskResult.record.status === 'active') {
-    taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--no-change', '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
+    taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
     taskResult = inspectTask(root, options.releaseTask);
   } else taskCompletion = { status: 'blocked', effects: [], nextActions: [`Release Task状态${taskResult.record.status}不能作为closeout完成事实。`] };
-  steps.push(step('task-record', 'complete-no-change', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
-  if (taskResult.record.status !== 'completed' || taskResult.record.result?.noChange !== true) return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion }, steps, taskCompletion, '恢复Task no-change completion后重试。');
+  steps.push(step('task-record', 'complete', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
+  if (taskResult.record.status !== 'completed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion }, steps, taskCompletion, '恢复Task completion后重试。');
 
   const worktreeCleanup = invokeRetained(controller, [
     'worktree', 'cleanup', options.releaseTask,
@@ -250,7 +250,7 @@ async function closeout(options, dependencies) {
   const doctor = normalizeDoctorResult(invokeRetained(controller, ['doctor', '--target', root, '--json', '--detail', 'compact', ...(options.agent ? ['--agent', options.agent] : [])]));
   steps.push(step('doctor', 'inspect', doctor));
   if (!doctorIsReady(doctor)) return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion, worktreeCleanup, doctor }, steps, doctor, '修复Doctor blocker后以同一closeout恢复。');
-  const completedLifecycle = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest, noChange: true } });
+  const completedLifecycle = createReleaseLifecycle({ ...activeLifecycle.facts, version: options.version, releaseTask: { taskId: options.releaseTask, status: 'completed', recordDigest: taskResult.recordDigest } });
   return result(options, 'closeout', 'passed', { evidence, context, reconciliation, gitCloseout, lifecycle: completedLifecycle, taskCompletion, worktreeCleanup, doctor }, steps, []);
 }
 

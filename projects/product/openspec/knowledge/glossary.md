@@ -265,8 +265,8 @@
 ## OpenSpec 收敛检查（OpenSpec Convergence Inspect）
 
 - 定义：对仍存在的未决Convergence transaction，只读比较Receipt中的before/expected与canonical actual的恢复诊断动作。
-- 适用范围：`buildr openspec convergence inspect`；只有Converge中断、恢复不确定或终态释放失败且Task Environment现场仍在时使用。
-- 避免混用：不是`OpenSpec Audit`、正常验收或长期漂移检查；事务未开始或Change已归档时返回`not-applicable`，Environment cleanup后不得追索。
+- 适用范围：`buildr openspec convergence inspect`；只有Converge中断、恢复不确定或终态释放失败且事务回执仍在时使用。
+- 避免混用：不是`OpenSpec Audit`、正常验收或长期漂移检查；事务未开始或Change已归档时返回`not-applicable`。
 - 来源：[OpenSpec确定性同步规范](../specs/openspec-deterministic-sync/spec.md)
 
 ## OpenSpec 收敛回执（OpenSpec Convergence Receipt）
@@ -286,8 +286,8 @@
 ## 任务记录（Task Record）
 
 - 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、scope、Change、顶层状态、终态摘要，以及可选本机复盘文档的摘要与决定状态。
-- 适用范围：Workspace Structured Store 中的 closed v3 Task、Parent/Children，以及 create、inspect、update、activate、complete、abandon。
-- 避免混用：Parent/Child只表达协调层级。Task Record不保存复盘正文、处置说明、来源关系、Environment、action item或其他专业事实。
+- 适用范围：Workspace Structured Store中的closed v3 Task、直接父任务/子任务关系，以及create、inspect、update、activate、complete、abandon。
+- 避免混用：父任务/子任务只表达协调层级。Task Record不保存复盘正文、处置说明、来源关系、环境、action item或其他专业事实。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
 ## 项目每日演进（Project Daily Progress）
@@ -323,11 +323,11 @@
 - 适用范围：提交、推送、PR、部署、配置、内容发布与其他真实业务交付。
 - 避免混用：不是Buildr持久状态或Task完成的替代证明；每个系统仍拥有自己的权威事实。
 
-## 任务管理器（Task Manager）
+## 任务记录技能（Task Record Skill，ID `task-manager`）
 
-- 定义：`buildr.task-record/v3` 的默认 Skill provider，帮助 Agent 通过产品动作创建、恢复、激活和维护 Task Record。
+- 定义：`task-manager`只是随包技能（Skill）的现有稳定标识，不是独立应用或流程总管；它作为`buildr.task-record/v3`默认提供方，指导智能体（Agent）调用产品动作创建、读取和维护任务记录（Task Record）。
 - 适用范围：用户明确管理正式 Task Record，或 `task-triage` 判断正式持久交付即将首次写入的时点。
-- 避免混用：不是所有任务的 dispatcher，不拥有 Task Environment 或任何专业阶段；Buildr Web 是同一 Application 的人类客户端，不通过 Task Manager 写入。
+- 避免混用：不是所有任务的dispatcher，不拥有任何专业阶段；Buildr Web是同一Application的人类客户端，不通过Skill写入。
 - 来源：[Task Record capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-record/v3.md)
 
 ## 父任务 / 子任务（Parent Task / Child Task）
@@ -335,28 +335,21 @@
 - 定义：父任务组织整体目标和独立成果；子任务表达其中可独立交付的目标、范围与结果。一个任务可以同时是父任务和上级的子任务。
 - 适用范围：真实独立交付的协调，计划使用原文档或任务目标说明。
 - 避免混用：不是智能体临时并行分工；子任务完成、总体验收与父任务完成授权相互独立。父任务必须取得明确用户授权才可完成。
-- 来源：[父子管理](flows/parent-child-management.md)
+- 来源：[父任务协调](flows/task-parent-coordination.md)
 
 ## 协调任务（Coordinating Task）
 
-- 定义：通过Parent/Child关系管理一个或多个直接子Task的普通Task。
+- 定义：通过直接父任务/子任务关系管理一个或多个独立子Task的普通Task。
 - 适用范围：用Task本身承载整体意图，并通过直接Children拆分可独立交付的工作。
 - 避免混用：不是独立Board Domain、总调度器或状态聚合器；其终态仍由人或Agent明确决定。
 - 来源：[任务生命周期架构讨论稿](../../docs/roadmap/task-lifecycle-architecture.md)
 
-## 任务环境（Task Environment）
+## 统一任务环境（Task Environment）
 
-- 定义：某个正式 Task 的Buildr-managed checkout、Preparation、runtime projection、持久资源、正式环境证据与cleanup authority，由同一Task ID、唯一环境回执及实际checkout/provider/probe facts确定。
-- 适用范围：共享执行根或`.worktrees/<task-id>`checkout、Agent登记的环境准备计划及其显式executable、CLI、Agent runtime投射、动态资源和cleanup。
-- 避免混用：不是Workspace、保留工作区、Agent runtime、Task Record或普通工作的通用许可；Git worktree只是可选provider，retained Buildr的实现版本也不是该Environment的源码版本。
-- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
-
-## 环境准备计划（Environment Preparation Plan）
-
-- 定义：Agent按正式Task完整Project/Service scope从Project Environment Preparation Declaration选择Recipe后，由Application解析并保存的Task级执行快照；Plan v2绑定Declaration与Recipe identity及规范化Step。
-- 适用范围：Task Environment首次准备、幂等恢复、只读漂移检查，以及Receipt中的Declaration/Scope/Recipe/Step审计事实。
-- 避免混用：不是Project长期声明、技术栈注册表、Task Record字段或Verification Result；Agent负责选择“本Task需要什么”，Environment负责解析、安全执行、保存和恢复。
-- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
+- 当前定位：已退役的旧聚合模块。Buildr不再保存统一环境计划、回执、就绪状态、资源清单或总清理结论。
+- 当前替代：Git工作树、项目准备、进程或预览资源、发布环境分别由各自真实所有者维护；智能体（Agent）按目标和现场选择是否使用。
+- 避免混用：缺少统一任务环境不构成任务、编辑、构建、测试、审查、验证或交付的阻塞条件。
+- 来源：[Task Environment specification](../specs/task-environments/spec.md)
 
 ## 项目环境准备声明（Project Environment Preparation Declaration）
 
@@ -379,48 +372,6 @@
 - 避免混用：不是package manager adapter、递归manifest扫描、Verification capability或跨Task共享输出；语言和工具差异由Project/Service wrapper与明确executable表达。
 - 来源：[Project Environment Preparation Declaration specification](../specs/project-environment-preparation-declarations/spec.md)
 
-## 保留工作区 Buildr 环境管理器（Retained Buildr Environment Manager）
-
-- 定义：从 canonical retained Workspace 运行 Task Environment Application 的受信 Buildr source/CLI 执行角色，负责会产生持久效果的环境 prepare、资源管理和 cleanup。
-- 适用范围：Buildr 自举任务需要由候选 checkout 之外的稳定入口管理 Task Environment 时；Environment Receipt 记录其执行 identity。
-- 避免混用：不是 Task Environment 的 source baseline、Candidate identity、retained target revision 或独立 lifecycle authority；matching Receipt 的只读 `inspect` 使用其登记 controller 做 probe，不要求 Buildr Web 等读取方成为 manager；现有 schema/code 中的 `controller` 只是内部实现字段名，不作为产品术语继续扩散。
-- 来源：[Task Environment specification](../specs/task-environments/spec.md) 与 [Task lifecycle architecture roadmap](../../docs/roadmap/task-lifecycle-architecture.md)
-
-## 环境回执（Environment Receipt）
-
-- 定义：Task Environment Application在canonical Workspace SQLite的`task_environment_current`中按Task ID维护的本机事实，独占ready/blocked、resolved Plan、Declaration/Scope/Recipe/Step、Task checkout/provider、执行根、真实probes、资源和cleanup结果；旧schema仅作legacy只读解析。
-- 适用范围：按 Task ID prepare/inspect/cleanup，以及 Verification、Preview、Finish 等正式消费者的执行绑定。
-- 避免混用：不是 Task Record，也不保存 Agent session、凭证、任意 cleanup 命令或完整 Git provider receipt；其中的 controller identity 只是创建指纹，不是 lifecycle generation；不要把任何旧文件或已退役的跨专业投影当作 Environment authority。
-- 来源：[Task Environment specification](../specs/task-environments/spec.md)
-
-## Task checkout
-
-- 定义：Task Environment 为某个工作范围登记并实际探测的源码 checkout；Git 场景由 start point、branch、HEAD、checkout/registration/clean 等 provider evidence 表达当前版本。
-- 适用范围：Environment probe、Review、Verification与实现源码的执行边界。
-- 避免混用：不等于 canonical retained Workspace checkout；retained Workspace 前进不会自动更新、rebase 或失效 Task checkout。
-- 来源：[Task Environment specification](../specs/task-environments/spec.md)
-
-## 环境管理器（Environment Manager）
-
-- 定义：从 canonical retained Workspace 的可信 Buildr source 执行 Task Environment mutation 的 Buildr；Git-backed source 必须对规定实现输入保持 clean。
-- 适用范围：Environment prepare、Task-owned resource register/release 与已授权 cleanup。
-- 避免混用：不是 Task checkout 的版本基础，不拥有 Candidate、Review 或 Verification evidence；candidate Buildr 可只读 inspect，但不能管理自己的 Environment。
-- 来源：[Task Environment capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-environment/v1.md)
-
-## 控制器实现指纹（Controller Identity）
-
-- 定义：Environment Receipt 创建时记录的 Buildr 实现 content fingerprint，保留用于兼容展示或诊断。
-- 适用范围：`buildr.task-environment-receipt/v2` 的 `controller.identity` 字段与公开 read model。
-- 避免混用：不表示 Task checkout 版本、Environment ready、动态资源 ownership、Verification applicability 或 lifecycle generation；retained Buildr 升级后不自动改写。
-- 来源：[Task Environment specification](../specs/task-environments/spec.md)
-
-## 任务验证工作区（Task Validation Workspace）
-
-- 定义：某个 Task Environment 中用于验证该任务候选能力和实现的实际工作区根；Git 场景通常是 `.worktrees/<task-id>`，共享根场景可以与 canonical Workspace 相同。
-- 适用范围：候选 Skill、CLI、功能、runtime 和实现的任务内验证。
-- 避免混用：不称为“开发 Workspace”，也不因候选在其中通过就表示 retained runtime 已同步生效。
-- 来源：[Task Environment specification](../specs/task-environments/spec.md)
-
 ## Git 操作约定（Git Operations）
 
 - 定义：`buildr.git-operations/v1` 的 Skill-only 无状态能力，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result。能力名称使用复数 Git Operations；一次具体动作使用单数 Git Operation。
@@ -431,15 +382,15 @@
 ## Git 工作树提供方（Git worktree provider）
 
 - 定义：`buildr.git-worktree-provider/v1` 的窄 provider，只创建、检查和清理 Git checkout/branch，并保存 repository、HEAD、clean、registration 与 Git effects evidence。
-- 适用范围：Task Environment 需要隔离 Git checkout，或用户明确管理 task worktree 时。
-- 避免混用：不判断 Environment ready，不拥有 Runtime/CLI/依赖、projection、动态资源、恢复或总 cleanup。
+- 适用范围：智能体或用户明确需要隔离Git checkout，或明确管理task worktree时。
+- 避免混用：不判断统一就绪，不拥有Runtime/CLI/依赖、projection、动态资源、恢复或总cleanup。
 - 来源：[Git worktree provider contract](../../services/buildr/resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)
 
 ## 任务范围 Change 引用解析器（Task-scoped Change Reference Resolver）
 
-- 定义：按 canonical Workspace、Task ID 和限定 `{project, change}` 从 matching Task Environment 候选或 retained Project 安全解析 Change 的共享只读能力。
+- 定义：按canonical Workspace、Task ID和限定`{project, change}`从matching Task Worktree或retained Project安全解析Change的共享只读能力。
 - 适用范围：Task Record 引用校验和 Task 详情中的关联 Change。
-- 避免混用：不接受调用方路径，不扫描全部 Task Environment，也不改变全局 retained-only Change 索引。
+- 避免混用：不接受调用方路径，不扫描任意工作目录，也不改变全局retained-only Change索引。
 - 来源：[Change asset indexing specification](../specs/change-asset-indexing/spec.md)
 
 ## 任务审查（Task Review）
@@ -553,14 +504,14 @@
 
 - 定义：面向正式Task开发完成验证的专业能力。Agent读取Task、当前改动和项目测试地图，直接调用项目测试工具，并通过唯一Application保存或查询有意义的完成报告。
 - 适用范围：记录内容版本、实际检查、选择范围、目标、结果、未覆盖项、结论和完成时间，并检查内容或测试地图是否变化。
-- 避免混用：不替代 Task Review、Task Environment 或业务验收，不开发缺失测试，也不拥有统一推进决定或Task顶层状态。
+- 避免混用：不替代Task Review或业务验收，不开发缺失测试，也不拥有统一推进决定或Task顶层状态。
 - 来源：[Task Verification capability contract](../../services/buildr/resources/workspace/skills/contracts/buildr/task-verification/v4.md)
 
 ## 任务验证报告（Task Verification Report）
 
 - 定义：Workspace SQLite中按Task ID唯一的`buildr.task-verification-report/v1` current row，绑定Task、内容版本和实际项目测试地图，记录Agent真实执行的检查、选择范围、目标、结果、未覆盖项、整体结论和完成时间。
 - 适用范围：CLI、Skill和Buildr Web共用的current验证事实；读取时根据内容版本与测试地图identity派生`current / stale / unknown`。
-- 避免混用：不是执行日志、测试计划、审批、历史清单或状态机；不保存完整输出、Environment Receipt、风险决定、推进决定或Candidate生成权。
+- 避免混用：不是执行日志、测试计划、审批、历史清单或状态机；不保存完整输出、环境事实、风险决定、推进决定或Candidate生成权。
 - 来源：[Task Verification specification](../specs/task-verification/spec.md)
 
 ## 当前认知结果（Current Knowledge Result）
@@ -572,10 +523,10 @@
 
 ## Parent Plan
 
-- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父子管理见[说明](flows/parent-child-management.md)。
+- 当前定位：旧父子协调模式的历史概念，相关写入与固定流程已退役；既有内容保留只读。当前父任务协调见[说明](flows/task-parent-coordination.md)。
 
 - 定义：已从旧父子协调模型一次迁入`tasks.legacy_parent_plan_json`的历史计划。
-- 适用范围：Parent Coordination只读展示，帮助人和Agent理解旧任务当时的计划。
+- 适用范围：父任务协调（Task Parent Coordination）只读展示，帮助人和Agent理解旧任务当时的计划。
 - 避免混用：不是当前计划、Child状态、验收门禁或可写流程；不得迁回其他模块。
 - 来源：[父子任务改造前梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)
 

@@ -51,20 +51,6 @@ test('Buildr Web 已解析 Workspace root 的 Task 读取不观察 Git', async (
   assert.deepEqual(body.tasks.map((item) => item.record.taskId), ['read-without-git']);
 });
 
-test('Buildr Web 专业 Task overview 使用默认 bounded Worker executor', async (t) => {
-  const { base, root } = fixture(t, 'task-local-app-bounded-worker');
-  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-bounded-worker'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
-  const writer = createRuntime();
-  writer.createTaskRecord(root, { taskId: 'bounded-read', title: '有界读取', intent: '验证默认 Worker executor', projects: [], services: [], changes: [] });
-  const instance = createLocalWorkspaceServer(createRuntime(), { targetRoot: root });
-  t.after(() => new Promise((resolve) => instance.server.close(resolve)));
-  const { url, initialWorkspaceId } = await instance.ready;
-  const response = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/bounded-read/overview`);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.schemaVersion, 'buildr.task-overview/v2');
-});
-
 test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创建入口', async (t) => {
   const { base, root } = fixture(t, 'task-local-app');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data'); t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -73,9 +59,9 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   const created = runtime.createTaskRecord(root, { taskId: 'app-task', title: '页面任务', intent: '验证轻量读取 %_ literal', parentTaskId: 'app-parent', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] });
   const staleDigest = created.recordDigest;
   let bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  const insertBulk = bulkStore.database.prepare('INSERT INTO tasks(task_id, schema_version, title, intent, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const insertBulk = bulkStore.database.prepare('INSERT INTO tasks(task_id, title, intent, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
   bulkStore.database.exec('BEGIN');
-  for (let index = 0; index < 200; index += 1) insertBulk.run(`bulk-${String(index).padStart(3, '0')}`, 'buildr.task-record/v3', `批量任务 ${index}`, '固定查询次数夹具', 'active', '2026-08-05T00:00:00.000Z', '2026-08-05T00:00:00.000Z');
+  for (let index = 0; index < 200; index += 1) insertBulk.run(`bulk-${String(index).padStart(3, '0')}`, `批量任务 ${index}`, '固定查询次数夹具', 'active', '2026-08-05T00:00:00.000Z', '2026-08-05T00:00:00.000Z');
   bulkStore.database.exec('COMMIT'); bulkStore.database.close();
   const openStore = runtime.openWorkspaceStructuredStore.bind(runtime);
   let preparedStatements = 0;
@@ -98,7 +84,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   bulkStore = runtime.openWorkspaceStructuredStore(root, { writable: true }); bulkStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'bulk-%'").run(); bulkStore.database.close();
   runtime.createTaskRecord(root, { taskId: 'app-retrospective', title: '已复盘任务', intent: '验证复盘筛选', projects: [], services: [], changes: [] });
   const retrospectiveTask = runtime.inspectTaskRecord(root, 'app-retrospective');
-  const retrospectiveCompleted = runtime.completeTaskRecord(root, 'app-retrospective', { expectedRecordDigest: retrospectiveTask.recordDigest, summary: '复盘筛选夹具', noChange: false });
+  const retrospectiveCompleted = runtime.completeTaskRecord(root, 'app-retrospective', { expectedRecordDigest: retrospectiveTask.recordDigest, summary: '复盘筛选夹具' });
   const retrospectivePath = path.join(root, '.buildr', 'local', 'task-retrospectives', 'app-retrospective.md');
   fs.mkdirSync(path.dirname(retrospectivePath), { recursive: true });
   fs.writeFileSync(retrospectivePath, '# 复盘\n\n列表筛选验证。\n');
@@ -109,7 +95,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
     retrospectiveDocumentDigest: retrospectiveDocument.actualDigest,
   });
   const readExecutor = {
-    run: (operation, input) => Promise.resolve(runtime[{ overview: 'inspectTaskOverview', reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
+    run: (operation, input) => Promise.resolve(runtime[{ reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
     close: async () => {},
   };
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });
@@ -130,8 +116,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   };
 
   let response = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v5'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
-  const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.deepEqual(parentReadModel.record.childTaskIds, ['app-task']); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
-  assert.equal(parentReadModel.childTaskCount, 1);
+  const parentReadModel = response.body.tasks.find((item) => item.record.taskId === 'app-parent'); assert.equal(parentReadModel.taskRelations.children[0].taskId, 'app-task'); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
   response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no&retrospectiveState=missing`);
   assert.deepEqual(response.body.tasks.map((item) => item.record.taskId), ['app-task']);
   assert.deepEqual(response.body.filters, { q: '轻量', project: 'demo', service: 'demo/api', status: 'active', hasChildren: 'no', retrospectiveState: 'missing' });
@@ -144,7 +129,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   response = await request(`${endpoint}?status=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint = `${endpoint}/app-task`;
-  response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v3'); assert.deepEqual(response.body.storedChangeReferences, [{ project: 'demo', change: 'same-change' }]); assert.equal('changeReferences' in response.body, false);
+  response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v3'); assert.deepEqual(response.body.record.changes, [{ project: 'demo', change: 'same-change' }]); assert.equal('storedChangeReferences' in response.body, false);
   const coordinationEndpoint = `${endpoint}/app-parent/coordination`;
   response = await request(coordinationEndpoint); assert.equal(response.status, 200); assert.equal(response.body.schemaVersion, 'buildr.parent-coordination-result/v4'); assert.equal(response.body.mode, 'parent');
   response = await request(coordinationEndpoint, { method: 'PATCH', headers: writeHeaders, body: '{}' }); assert.equal(response.status, 404);
@@ -160,16 +145,11 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   response = await request(`${url}/api/v1/workspaces/${initialWorkspaceId}/prompts/task-verification`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'app-task' }) }); assert.equal(response.status, 404, 'Buildr Web不得暴露Task Verification后端prompt');
   assert.equal(reviewReads, 1, 'Reviews GET 应只读取一次 Review');
   assert.equal(verificationReads, 1, 'Verification GET 应只读取一次 Verification');
-  const concurrent = await Promise.all([
-    request(`${taskEndpoint}/overview`),
-    request(`${taskEndpoint}/reviews`),
-    request(`${taskEndpoint}/verification`),
-  ]);
-  assert.deepEqual(concurrent.map((item) => item.status), [200, 200, 200]);
+  const concurrent = await Promise.all([request(`${taskEndpoint}/reviews`), request(`${taskEndpoint}/verification`)]);
+  assert.deepEqual(concurrent.map((item) => item.status), [200, 200]);
   assert.equal(reviewReads, 2, '并发读取Review只调用所属Application');
   assert.equal(verificationReads, 2, '并发读取Verification只调用所属Application');
-  response = await request(`${taskEndpoint}/overview?target=${encodeURIComponent(root)}`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'target_forbidden');
-  response = await request(`${endpoint}/missing-task/overview`); assert.equal(response.status, 404); assert.equal(response.body.error.code, 'task_overview_not_found');
+  response = await request(`${taskEndpoint}/overview`); assert.equal(response.status, 404);
   const retrospectiveEndpoint = `${endpoint}/app-retrospective/retrospective-document`;
   const recordBeforeRead = runtime.inspectTaskRecord(root, 'app-retrospective');
   response = await request(retrospectiveEndpoint); assert.equal(response.status, 200); assert.equal(response.body.content, '# 复盘\n\n列表筛选验证。\n'); assert.equal(response.body.effectiveState, 'pending-decision');
@@ -196,7 +176,7 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
   response = await request(`${endpoint}?filter=active`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_forbidden');
 
   const latest = (await request(taskEndpoint)).body;
-  response = await request(`${taskEndpoint}/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: latest.recordDigest, summary: '页面确认完成', noChange: false }) });
+  response = await request(`${taskEndpoint}/complete`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: latest.recordDigest, summary: '页面确认完成' }) });
   assert.equal(response.status, 200); assert.equal(response.body.record.status, 'completed');
   const completedSnapshot = response.body;
   response = await request(taskEndpoint, { method: 'PATCH', headers: writeHeaders, body: JSON.stringify({ expectedRecordDigest: completedSnapshot.recordDigest, title: '缺少更正原因' }) }); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_field_invalid');

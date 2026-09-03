@@ -85,7 +85,7 @@ services/buildr/
 | 模块 | 拥有的主要职责 | 公开协作边界 |
 |------|----------------|--------------|
 | `workspace/` | Workspace、Project、Service、Project Daily Progress、registry 与 source 解析 | Workspace/Project query、CLI/HTTP/Diagnostic contribution |
-| `task/` | Task Record、Review、任务验证报告、Parent Coordination与复盘文档只读边界 | 专业Application、窄read capability、CLI/HTTP/Diagnostic contribution；复盘分析由Skill和Agent完成 |
+| `task/` | Task Record、Review、任务验证报告、父任务协调（Task Parent Coordination）与复盘文档只读边界 | 专业Application、窄read capability、CLI/HTTP/Diagnostic contribution；复盘分析由Skill和Agent完成 |
 | `agent-assets/` | Rule、Skill、Command、Component、Builtin/package maintenance 和 Agent runtime 投射 | runtime projection、capability binding、CLI contribution |
 | `verification/` | Project verification declaration、capability execution、资源协调和 transient evidence | verification Application 与 execution result |
 | `web/` | Buildr Web 实例、Preview、session、安全、静态文件和本机 HTTP Host | loopback HTTP、业务 HTTP contribution 分发 |
@@ -203,7 +203,7 @@ Buildr 自举只在 matching Task Delivery 后，由专用 self-bootstrap runner
 | Product Candidate | 对冻结源码、平台、Host Node、Task lifecycle 和 package artifact 做闭合验证 | verification registry 与 Candidate gate |
 | 正式发布 | 证明同一 Candidate artifact、发布授权、Registry/GitHub readback 和安装 smoke | protected release transaction |
 
-Project `preparation.yml` 描述已知环境准备配方，`verification.yml`使用v4测试地图描述稳定测试能力族。地图只登记测试族、适用scope、代码与测试位置、完整入口、选择提示和资源要求，不登记每个测试文件。Agent结合Task目标与当前改动选择并直接调用Maven、npm、Playwright、Browser、HTTP或项目自有runner；Task Verification Application不生成Plan、不执行测试，只保存或查询开发完成后的任务验证报告。Task Environment只保存自身准备结果，两者不复制对方authority。
+Project `preparation.yml` 描述已知准备配方，`verification.yml`使用v4测试地图描述稳定测试能力族。地图只登记测试族、适用scope、代码与测试位置、完整入口、选择提示和资源要求，不登记每个测试文件。Agent结合Task目标与当前改动选择并直接调用Maven、npm、Playwright、Browser、HTTP或项目自有runner；Task Verification Application不生成Plan、不执行测试，只保存或查询开发完成后的任务验证报告。准备的实际执行结果由对应Project、Service或外部工具拥有，不进入Task Record或统一环境状态。
 
 多Project Task仍只有一个聚合Content Target和一个任务验证报告。报告保存每个Project实际使用的测试地图identity、检查与gap；Agent负责判断整体覆盖和结论，不让单Project通过代表整个Task。Current Knowledge继续保存按Project完整覆盖的最小dispositions，但不成为Task Verification固定前置。
 

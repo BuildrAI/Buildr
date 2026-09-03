@@ -6,9 +6,9 @@ const content = `说明文字不构成命令契约。
 buildr task create <id>
 buildr task inspect <id>
 buildr task update <id> --expected-record <recordDigest>
-buildr task activate <id>
+buildr task activate <id> --expected-record <recordDigest>
 buildr task complete <id> --expected-record <recordDigest>
-buildr task abandon <id>
+buildr task abandon <id> --expected-record <recordDigest>
 `;
 
 test('任务包契约接受不改变命令的文案和占位符变化', () => {

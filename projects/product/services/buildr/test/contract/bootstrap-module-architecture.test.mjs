@@ -170,12 +170,6 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
-    id: 'task-overview',
-    requires: ['task-record.persistence-read'],
-    provides: ['task-overview.application', 'task-overview.runtime-port'],
-    contributions: { cli: [], http: ['task-overview.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'system-installation',
     requires: [],
     provides: [SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION],
@@ -230,7 +224,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http',
     'task-review.http', 'task-verification.http',
-    'task-parent-coordination.http', 'task-overview.http', 'system-installation.release-awareness.http',
+    'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
 
   const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);

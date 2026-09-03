@@ -44,7 +44,9 @@ flowchart TB
 - Task Environment Application、Plan、Receipt、`ready / blocked / cleaned`、恢复和总cleanup；
 - Environment CLI、HTTP、Buildr Web页签、Doctor声明检查和能力绑定；
 - `task_development_current`、`task_finish_current`、`task_environment_current`及旧数据；
-- Release、OpenSpec、Review、Verification、Finish和Overview对Environment read model的依赖。
+- Release、OpenSpec、Review、Verification、Finish和Overview对Environment read model的依赖；
+- 独立Task Overview Application、Repository、HTTP接口、客户端与专属测试；
+- Task Record中的`noChange`、反向`childTaskIds`、重复详情字段、SQLite行级`schema_version`和无消费者的旧贡献协调表。
 
 删除项不保留兼容转发、双读或历史current表。已归档Change仍是历史设计证据，但不参与当前运行。
 
@@ -63,3 +65,5 @@ flowchart TB
 普通代码修改直接在已有工作区完成。需要隔离时创建Worktree；需要准备时调用对应Project/Service入口；需要Preview时由Preview能力启动和停止。Review、Verification、OpenSpec与交付始终可以在没有环境记录的情况下独立工作。
 
 未来只有出现新的独立消费者、不可重新观察的长期事实或新的具体副作用风险时，才新增窄Application；不预先恢复统一任务环境。
+
+`task-manager`只是现有任务记录技能（Task Record Skill）的稳定标识，不是应用或流程总管。本轮保持Skill清单和能力绑定不变；是否重构全部Buildr Skills另行只读审查。

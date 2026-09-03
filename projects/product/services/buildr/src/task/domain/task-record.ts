@@ -13,12 +13,15 @@ export type ParentCompletion = {
   authorization: { source: string; statement: string };
   recordedAt?: string;
 };
-export type TaskRecordResult = null | { summary: string; noChange?: boolean; parentCompletion?: ParentCompletion };
+export type TaskRecordResult = null | { summary: string; parentCompletion?: ParentCompletion };
 export type TaskRecordHistory = {
   status: 'completed' | 'abandoned';
   title: string;
   intent: string;
   parentTaskId: string | null;
+  scope?: { projects: string[]; services: TaskServiceReference[] };
+  changes?: TaskChangeReference[];
+  isParent?: true;
   result: Exclude<TaskRecordResult, null>;
   recordUpdatedAt: string;
   correctedAt: string;
@@ -32,7 +35,6 @@ export type TaskRecord = {
   scope: { projects: string[]; services: TaskServiceReference[] };
   changes: TaskChangeReference[];
   parentTaskId: string | null;
-  childTaskIds: string[];
   isParent?: true;
   retrospective: TaskRetrospectiveReference | null;
   status: TaskRecordStatus;
@@ -177,9 +179,8 @@ function normalizeResult(status: TaskRecordStatus, value: unknown): TaskRecordRe
   }
   const result = object(value, 'result');
   if (status === 'completed') {
-    closed(result, new Set(['summary', 'noChange', 'parentCompletion']), 'result');
-    if (typeof result.noChange !== 'boolean') throw taskRecordError('task_record_result_invalid', 'completed Task 的 result.noChange 必须是 boolean。', 400, { field: 'result.noChange' });
-    return { summary: nonEmptyText(result.summary, 'result.summary'), noChange: result.noChange,
+    closed(result, new Set(['summary', 'parentCompletion']), 'result');
+    return { summary: nonEmptyText(result.summary, 'result.summary'),
       ...(result.parentCompletion === undefined ? {} : { parentCompletion: normalizeParentCompletion(result.parentCompletion, { saved: true }) }) };
   }
   closed(result, new Set(['summary']), 'result');
@@ -230,19 +231,24 @@ function normalizeResultHistory(value: unknown = []): TaskRecordHistory[] {
   if (!Array.isArray(value)) throw taskRecordError('task_record_history_invalid', 'resultHistory 必须是数组。');
   return value.map((entry) => {
     const item = object(entry, 'resultHistory');
-    closed(item, new Set(['status', 'title', 'intent', 'parentTaskId', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']), 'resultHistory');
+    closed(item, new Set(['status', 'title', 'intent', 'parentTaskId', 'scope', 'changes', 'isParent', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']), 'resultHistory');
     if (item.status !== 'completed' && item.status !== 'abandoned') throw taskRecordError('task_record_history_invalid', '结果历史只保存被更正的终态。');
     const result = normalizeResult(item.status, item.result);
     if (result === null) throw taskRecordError('task_record_history_invalid', '结果历史必须保存终态结果。');
+    const scope = item.scope === undefined ? undefined : object(item.scope, 'resultHistory.scope');
+    if (scope) closed(scope, new Set(['projects', 'services']), 'resultHistory.scope');
     return { status: item.status, title: nonEmptyText(item.title, 'resultHistory.title'), intent: nonEmptyText(item.intent, 'resultHistory.intent'),
       parentTaskId: optionalTaskId(item.parentTaskId, 'resultHistory.parentTaskId'), result,
+      ...(scope ? { scope: { projects: stringIdentities(scope.projects, 'resultHistory.scope.projects'), services: qualifiedIdentities(scope.services, 'resultHistory.scope.services', 'service').map((value) => ({ project: value.project, service: value.identity })) } } : {}),
+      ...(item.changes === undefined ? {} : { changes: qualifiedIdentities(item.changes, 'resultHistory.changes', 'change').map((value) => ({ project: value.project, change: value.identity })) }),
+      ...(item.isParent === true ? { isParent: true } : {}),
       recordUpdatedAt: timestamp(item.recordUpdatedAt, 'resultHistory.recordUpdatedAt'), correctedAt: timestamp(item.correctedAt, 'resultHistory.correctedAt'), reason: nonEmptyText(item.reason, 'resultHistory.reason') };
   });
 }
 
 export function normalizeTaskRecord(value: unknown, { expectedTaskId = null }: { expectedTaskId?: string | null } = {}): TaskRecord {
   const record = object(value, 'Task Record');
-  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'childTaskIds', 'isParent', 'retrospective', 'status', 'result', 'resultHistory', 'createdAt', 'updatedAt']), '');
+  closed(record, new Set(['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'isParent', 'retrospective', 'status', 'result', 'resultHistory', 'createdAt', 'updatedAt']), '');
   if (record.isParent !== undefined && typeof record.isParent !== 'boolean') throw taskRecordError('task_record_field_invalid', 'isParent 必须是 boolean。');
   if (record.schemaVersion !== TASK_RECORD_SCHEMA) {
     throw taskRecordError('task_record_schema_unsupported', `Task Record schemaVersion 必须是 ${TASK_RECORD_SCHEMA}。`, 409, { field: 'schemaVersion', actual: record.schemaVersion });
@@ -280,7 +286,6 @@ export function normalizeTaskRecord(value: unknown, { expectedTaskId = null }: {
     },
     changes,
     parentTaskId: optionalTaskId(record.parentTaskId, 'parentTaskId'),
-    childTaskIds: taskIds(record.childTaskIds, 'childTaskIds'),
     ...(record.isParent === true ? { isParent: true } : {}),
     retrospective: normalizeRetrospective(record.status, record.retrospective),
     status: record.status,

@@ -12,11 +12,9 @@ import {
   TASK_REVIEW_MODULE,
   TASK_VERIFICATION_RUNTIME_PORT,
   PARENT_COORDINATION_RUNTIME_PORT,
-  TASK_OVERVIEW_RUNTIME_PORT,
   createWorktreeProviderModule,
   createTaskVerificationModule,
   createParentCoordinationModule,
-  createTaskOverviewModule,
 } from '../task/module.ts';
 import { createModuleRegistry } from './module-registry.mjs';
 import { createWebModule } from '../web/module.ts';
@@ -108,7 +106,6 @@ export function createRuntime() {
   installTaskReviewModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);
   installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createTaskOverviewModule(runtime), TASK_OVERVIEW_RUNTIME_PORT);
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   registry.install(createSystemDoctorModule(runtime, {

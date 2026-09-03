@@ -1,19 +1,9 @@
-import { Button } from 'antd';
-
 import './TaskOutcomeSummary.css';
 
-type OutcomeFact = { status: string; summary: string; source: string };
-
-export type TaskUserSummary = {
-  goal: { status: string; title: string; intent: string };
-  result: OutcomeFact;
-  attention: Array<{ owner: string; scope: string; summary: string }>;
-};
+import type { TaskRecord } from '../../api/generated/task-record-http-dto';
 
 type Props = {
-  summary?: TaskUserSummary | null;
-  loading: boolean;
-  onRefresh: () => void;
+  record: TaskRecord;
 };
 
 const statusLabel: Record<string, string> = {
@@ -28,26 +18,25 @@ function tone(status: string) {
   return 'neutral';
 }
 
-function OutcomeCard({ label, value }: { label: string; value: OutcomeFact }) {
+function OutcomeCard({ label, value }: { label: string; value: { status: string; summary: string } }) {
   return <article className={`task-outcome-card ${tone(value.status)}`} data-outcome-status={value.status}>
     <span>{label}</span><strong>{statusLabel[value.status] || value.status}</strong><p>{value.summary}</p>
   </article>;
 }
 
-export function TaskOutcomeSummary({ summary, loading, onRefresh }: Props) {
+export function TaskOutcomeSummary({ record }: Props) {
+  const result = record.status === 'completed'
+    ? { status: 'completed', summary: record.result?.summary || '任务已完成。' }
+    : record.status === 'abandoned'
+      ? { status: 'abandoned', summary: record.result?.summary || '任务已放弃。' }
+      : record.status === 'active'
+        ? { status: 'in-progress', summary: '任务正在进行。' }
+        : { status: 'not-started', summary: '任务尚未开始。' };
   return <section className="panel task-outcome-summary" id="task-outcome-summary" aria-live="polite">
     <div className="panel-heading">
-      <div><p className="eyebrow">任务结果</p><h2>{summary?.goal.title || '目标与结果'}</h2></div>
-      <Button onClick={onRefresh} disabled={loading}>{loading ? '读取中…' : '刷新'}</Button>
+      <div><p className="eyebrow">任务结果</p><h2>{record.title}</h2></div>
     </div>
-    <p className="task-outcome-goal">{summary?.goal.intent || '正在读取当前任务目标与专业结果。'}</p>
-    {summary ? <>
-      <div className="task-outcome-grid">
-        <OutcomeCard label="任务结果" value={summary.result} />
-      </div>
-      {summary.attention.length ? <div className="task-outcome-attention"><h3>局部关注事项</h3>
-        {summary.attention.map((item, index) => <div key={`${item.owner}-${item.scope}-${index}`}><p>{item.summary}</p></div>)}
-      </div> : null}
-    </> : null}
+    <p className="task-outcome-goal">{record.intent}</p>
+    <div className="task-outcome-grid"><OutcomeCard label="任务结果" value={result} /></div>
   </section>;
 }

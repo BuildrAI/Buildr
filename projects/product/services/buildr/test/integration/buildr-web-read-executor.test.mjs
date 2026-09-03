@@ -48,10 +48,10 @@ test('固定容量与 FIFO 队列限制并发且不重复派发', async () => {
   const metrics = { calls: 0, active: 0, maxActive: 0, started: [] };
   const executor = createBoundedBuildrWebReadExecutor({ workerCount: 2, queueLimit: 1, workerFactory: fakeWorkerFactory({ metrics }) });
   try {
-    const first = executor.run('overview', input('task-a'));
+    const first = executor.run('coordination', input('task-a'));
     const second = executor.run('reviews', input('task-b'));
     const third = executor.run('verification', input('task-c'));
-    await assert.rejects(executor.run('overview', input('task-d')), (error) => error.code === 'local_app_read_queue_full');
+    await assert.rejects(executor.run('coordination', input('task-d')), (error) => error.code === 'local_app_read_queue_full');
     const results = await Promise.all([first, second, third]);
     assert.deepEqual(results.map((item) => item.taskId), ['task-a', 'task-b', 'task-c']);
     assert.equal(metrics.calls, 3);
@@ -67,7 +67,7 @@ test('取消排队和运行中的读取都不重试，运行中取消会回收 W
   const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ delayMs: (workerId) => workerId === 1 ? 1000 : 20, metrics }) });
   try {
     const runningController = new AbortController();
-    const running = executor.run('overview', input('task-running', runningController.signal));
+    const running = executor.run('coordination', input('task-running', runningController.signal));
     const queuedController = new AbortController();
     const queued = executor.run('reviews', input('task-queued', queuedController.signal));
     queuedController.abort();
@@ -89,7 +89,7 @@ test('Worker failure 只结算当前请求并恢复固定容量', async () => {
   const metrics = { calls: 0, active: 0, maxActive: 0, started: [] };
   const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ failFirst: true, metrics }) });
   try {
-    await assert.rejects(executor.run('overview', input('task-failed')), (error) => error.code === 'worker_crashed');
+    await assert.rejects(executor.run('coordination', input('task-failed')), (error) => error.code === 'worker_crashed');
     const recovered = await executor.run('reviews', input('task-recovered'));
     assert.equal(recovered.taskId, 'task-recovered');
     assert.equal(metrics.calls, 2);

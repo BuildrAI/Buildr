@@ -17,7 +17,7 @@ const read = (relative) => fs.readFileSync(path.join(serviceRoot, relative), 'ut
 
 const governanceInvariants = Object.freeze([
   { id: 'action-local-doctor-readiness', owner: 'integration-declarations', files: ['test/integration/core-diagnostics-and-package.test.mjs'] },
-  { id: 'delivery-activation-cleanup-orthogonality', owner: 'integration-task-read-models', files: ['test/integration/task-overview-repository.test.ts'] },
+  { id: 'task-read-model-independence', owner: 'integration-task-read-models', files: ['test/integration/task-review-repository.test.ts'] },
   { id: 'parent-contribution-read-model', owner: 'integration-task-coordination', files: ['test/integration/parent-coordination-application.test.ts'] },
 ]);
 

@@ -456,13 +456,12 @@ const legacyTaskRecordConsumers = new Set([
   'workspace/application/project-daily-progress-application.mjs',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.ts',
-  'task/persistence/task-overview-repository.ts',
   'task/persistence/task-record-retrospective-document.ts',
   'task/persistence/task-verification-repository.ts',
   'web/http/server.mjs',
   'web/application/preview-lifecycle.ts',
 ]);
-const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|listTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|listTaskRecords|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
+const legacyTaskRecordMethod = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
 for (const file of sourceFiles) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join('/');
   if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;

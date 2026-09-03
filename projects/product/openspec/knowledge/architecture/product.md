@@ -35,7 +35,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Buildr Application Payload 与分发载体：CLI、Core/Application、Buildr Web Runtime和正式静态资源、SQLite migrations、package baseline、生产依赖、版本与协议identity只形成一份公共负载；唯一正式载体是npm package。本机Launcher只是显式安装的图形投射，绑定同一npm安装，不复制Node、Buildr或业务实现。
 - Work Assets：工作事实与工作方法；Rules、Skills、Commands、Specs 等只是当前示例。
 - Change：规范驱动的变更管理；Brief 提供人类入口，标准 artifacts 保持规范 authority。
-- Task Record：正式 Task 的最小顶层事实。closed v3 表达 todo/active/终态、Parent/Children，以及可选本机复盘文档的摘要与`pending-decision|decided`。todo 只是 data-only 意向，`open` 是 todo + active 查询。Buildr Web 只观察和有限维护已有 Task，不创建/激活。
+- Task Record：正式Task的最小顶层事实。closed v3表达todo/active/终态、直接`parentTaskId`、显式`isParent`、结果摘要、更正历史，以及可选本机复盘文档摘要；反向Children只查询派生。todo只是data-only意向，`open`是todo + active查询。Buildr Web只观察和有限维护已有Task，不创建/激活。
 - 项目每日演进：按已登记 Project 保存的本机日历日 Git 提交摘要；权威是 ignored YAML 文件，不进 Structured Store。日摘要回答新增、更新、删除与弊端；自己的提交可挂 0..N 个本机 Task，他人提交必须展示且禁止挂 Task。产品读取路径不生成摘要、不扫描 Git、不内置 cron；Web 只读展示。
 - Task-scoped Change Reference Resolver：只在明确 Task context 中从 matching Worktree或retained Project解析限定Change；全局Change索引保持retained-only。
 - Task Review：一个 `buildr.task-review/v2` capability 通过同一 Result 模型维护 Planning/Completion 两个可选 current 槽位。Agent依据真实方案或完成结果动态审查，确定性 Application只负责inspect、带摘要比较的原子record和最小Result；它不判断适用性，也不依赖Development或成为其他模块门禁。
@@ -44,8 +44,8 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - Task Retrospective：可选纯Skill。用户明确要求后，Agent只基于当前可见事实生成`.buildr/local/task-retrospectives/<task-id>.md`；Task Record只登记文档SHA-256和`pending-decision|decided`。查看零写入，建议不自动修改资产或创建Task；用户决定继续时复用或创建普通Task并在目标中说明来源。
 - 任务收尾（Task Finish）：由智能体依据技能组合已有工具完成成果交付、已有任务结果登记和安全善后。无任务不创建，多仓库逐项保留结果；参与者和实现职责见 [任务收尾](../flows/task-closeout.md)。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
-- 父子管理使用目标、可读计划与真实任务结果，不传播环境、验证或交付事实。人明确授权父任务完成，完整说明见[父子管理](../flows/parent-child-management.md)。
-- Task coordination：当前只组合普通Task、Parent/Child、各专业公开read model与Buildr Web动态投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。Overview只给人查看Task Record、Review与Verification并列事实。旧Parent Plan迁入Task-owned只读历史字段；原聚合表已删除。
+- 父任务协调（Task Parent Coordination）使用目标、可读计划与真实任务结果，不传播工作位置、验证或交付事实。人明确授权父任务完成，完整说明见[父任务协调](../flows/task-parent-coordination.md)。
+- Task coordination：当前只组合普通Task、父任务/子任务关系、各专业公开read model与Buildr Web页面投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。独立Task Overview已删除；旧Parent Plan只作为Task-owned历史字段读取。
 
 ## 产品边界
 

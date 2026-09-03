@@ -369,7 +369,7 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
   assert.equal(second.identity, first.identity);
   const closed = createReleaseLifecycle({
     version: '0.1.0-rc.5',
-    releaseTask: { taskId, status: 'completed', recordDigest: `sha256-${'4'.repeat(64)}`, noChange: true },
+    releaseTask: { taskId, status: 'completed', recordDigest: `sha256-${'4'.repeat(64)}` },
     selection: { status: 'frozen', generation: frozen.generation, identity: frozen.selectionIdentity },
     candidate: { status: 'passed', identity: candidateIdentity },
     readiness: { status: 'ready', contextDigest },
@@ -443,7 +443,7 @@ test('发布编排真实调用Git closeout并把精确交付映射直接交给Wo
     invokeRetainedController: (_controller, args) => {
       controllerCalls.push(args);
       if (args[0] === 'task' && args[1] === 'complete') {
-        task = { ...task, status: 'completed', result: { summary: 'closed', noChange: true } };
+        task = { ...task, status: 'completed', result: { summary: 'closed' } };
         return { status: 'completed', effects: [{ type: 'task-completed' }] };
       }
       if (args[0] === 'worktree' && args[1] === 'cleanup') {

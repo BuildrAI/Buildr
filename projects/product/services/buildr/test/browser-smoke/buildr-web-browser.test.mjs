@@ -604,7 +604,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       capabilities: [{ project: 'demo', capability: 'demo.browser', outcome: 'passed', facts: ['旧目标验证事实。'] }],
       coverageGaps: [], conclusion: { outcome: 'passed', summary: '旧目标曾通过。' }, declarationRoot: workspaceRoot,
     });
-    runtime.completeTaskRecord(workspaceRoot, 'browser-delivered', { summary: '浏览器交付完成', noChange: false });
+    runtime.completeTaskRecord(workspaceRoot, 'browser-delivered', { expectedRecordDigest: runtime.inspectTaskRecord(workspaceRoot, 'browser-delivered').recordDigest, summary: '浏览器交付完成' });
     await page.goto(`${workspaceUrl}/tasks/browser-parent`);
     await page.waitForFunction((id) => document.getElementById('task-detail-id')?.textContent === id, 'browser-parent');
     await page.getByRole('button', { name: '原型', exact: true }).click();
@@ -641,8 +641,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.frameLocator('#task-prototype-frame').locator('#prototype-detail-heading').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-prototype-title').innerText(), '原型任务详情');
     // Coordination consumes real task outcomes without a Parent development workflow.
-    runtime.completeTaskRecord(workspaceRoot, 'browser-contribution-delivered', { summary: '贡献交付子任务已完成', noChange: false });
-    runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { summary: '顶层标记完成，实际交付仍需核对', noChange: false });
+    runtime.completeTaskRecord(workspaceRoot, 'browser-contribution-delivered', { expectedRecordDigest: runtime.inspectTaskRecord(workspaceRoot, 'browser-contribution-delivered').recordDigest, summary: '贡献交付子任务已完成' });
+    runtime.completeTaskRecord(workspaceRoot, 'browser-unproven', { expectedRecordDigest: runtime.inspectTaskRecord(workspaceRoot, 'browser-unproven').recordDigest, summary: '顶层标记完成，实际交付仍需核对' });
     // Review and Verification remain independent facts without an Environment record.
     prepareEvidenceFixture(runtime, workspaceRoot, 'browser-task');
 
@@ -727,7 +727,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await openTaskActionModal(page, 'task-complete-action');
     await page.locator('#task-complete-form').waitFor({ state: 'visible' });
     await page.locator('#task-complete-summary').fill('页面确认完成');
-    await selectAntdOption(page, 'task-complete-no-change', '有交付变更');
+    assert.equal(await page.locator('#task-complete-no-change').count(), 0, '完成结果不再保存交付分类');
     await page.locator('#task-complete-form').getByRole('button', { name: '确认完成', exact: true }).click();
     await page.locator('.ant-modal-confirm').waitFor({ state: 'visible' });
     await confirmAntModal(page);
@@ -849,7 +849,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: '环境', exact: true }).count(), 0);
     assert.equal(await page.locator('#task-environment-panel').count(), 0);
 
-    runtime.updateTaskRecord(workspaceRoot, 'browser-task', { intent: '另一客户端已经更新' });
+    runtime.updateTaskRecord(workspaceRoot, 'browser-task', { expectedRecordDigest: runtime.inspectTaskRecord(workspaceRoot, 'browser-task').recordDigest, intent: '另一客户端已经更新' });
     await openTaskActionModal(page, 'task-edit-action');
     await page.locator('#task-edit-form').waitFor({ state: 'visible' });
     await page.locator('#task-edit-title').fill('陈旧页面不得覆盖');

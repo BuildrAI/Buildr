@@ -12,7 +12,6 @@ function active(overrides: Record<string, unknown> = {}) {
     scope: { projects: ['demo'], services: [{ project: 'demo', service: 'api' }] },
     changes: [{ project: 'demo', change: 'change-one' }],
     parentTaskId: null,
-    childTaskIds: [],
     retrospective: null,
     status: 'active',
     result: null,
@@ -35,12 +34,11 @@ test('Task Record v3 规范化 todo/active/terminal 事实并保持限定 identi
   assert.deepEqual(normalizeTaskRecord(active()), active());
   assert.deepEqual(normalizeTaskRecord(active({ status: 'todo', changes: [] })).result, null);
   assert.deepEqual(normalizeTaskRecord(active({
-    status: 'completed', result: { summary: '已交付', noChange: false }, updatedAt: '2026-08-01T01:00:00.000Z',
-  })).result, { summary: '已交付', noChange: false });
+    status: 'completed', result: { summary: '已交付' }, updatedAt: '2026-08-01T01:00:00.000Z',
+  })).result, { summary: '已交付' });
   assert.deepEqual(normalizeTaskRecord(active({
     status: 'abandoned', result: { summary: '目标取消' }, updatedAt: '2026-08-01T01:00:00.000Z',
   })).result, { summary: '目标取消' });
-  assert.throws(() => normalizeTaskRecord(active({ status: 'completed', result: { summary: '缺少 noChange' } })), (error) => hasCode(error, 'task_record_result_invalid'));
   assert.throws(() => normalizeTaskRecord(active({ status: 'active', result: { summary: '不应存在' } })), (error) => hasCode(error, 'task_record_result_invalid'));
   assert.throws(() => normalizeTaskRecord(active({ status: 'todo' })), (error) => hasCode(error, 'task_record_todo_change_forbidden'));
 });
@@ -58,8 +56,7 @@ test('Task identity、当前记录引用去重与时间关系 fail closed', () =
   assert.throws(() => normalizeTaskRecord(active(), { expectedTaskId: 'other-task' }), (error) => hasCode(error, 'task_record_identity_mismatch'));
   assert.throws(() => normalizeTaskRecord(active({ changes: [{ project: 'demo', change: 'same' }, { project: 'demo', change: 'same' }] })), (error) => hasCode(error, 'task_record_reference_duplicate'));
   assert.throws(() => normalizeTaskRecord(active({ parentTaskId: '../parent' })), (error) => hasCode(error, 'task_record_identity_invalid'));
-  assert.throws(() => normalizeTaskRecord(active({ childTaskIds: ['child-b', 'child-b'] })), (error) => hasCode(error, 'task_record_reference_duplicate'));
-  assert.deepEqual(normalizeTaskRecord(active({ parentTaskId: 'parent-task', childTaskIds: ['child-b', 'child-a'] })).childTaskIds, ['child-a', 'child-b']);
+  assert.throws(() => normalizeTaskRecord(active({ childTaskIds: ['child-a'] })), (error) => hasCode(error, 'task_record_field_forbidden'));
   assert.throws(() => normalizeTaskRecord(active({ retrospectiveSourceTaskIds: ['source-a'] })), (error) => hasCode(error, 'task_record_field_forbidden'));
   assert.doesNotThrow(() => normalizeTaskRecord(active({ changes: [{ project: 'demo', change: 'same' }, { project: 'other', change: 'same' }] })));
   assert.throws(() => normalizeTaskRecord(active({ updatedAt: '2026-07-31T23:59:59.000Z' })), (error) => hasCode(error, 'task_record_timestamp_invalid'));
@@ -69,7 +66,7 @@ test('Task Record v3 只在终态保存复盘文档摘要与两种决定状态',
   const documentDigest = `sha256-${'a'.repeat(64)}`;
   const pending = normalizeTaskRecord(active({
     status: 'completed',
-    result: { summary: '已交付', noChange: false },
+    result: { summary: '已交付' },
     retrospective: { state: 'pending-decision', documentDigest },
   }));
   assert.deepEqual(pending.retrospective, { state: 'pending-decision', documentDigest });

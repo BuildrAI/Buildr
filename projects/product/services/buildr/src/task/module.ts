@@ -2,12 +2,10 @@ import { registerTaskRecordApplication, type TaskRecordApplicationRuntime } from
 import { registerTaskReviewApplication } from './application/task-review-application.ts';
 import { registerTaskVerificationApplication } from './application/task-verification-application.ts';
 import { registerParentCoordinationApplication } from './application/parent-coordination-application.ts';
-import { registerTaskOverviewApplication } from './application/task-overview-application.ts';
 import { registerTaskRecordRepository, type RepositoryRuntime } from './persistence/task-record-repository.ts';
 import { registerTaskRecordRetrospectiveDocument } from './persistence/task-record-retrospective-document.ts';
 import { registerTaskReviewRepository } from './persistence/task-review-repository.ts';
 import { registerTaskVerificationRepository } from './persistence/task-verification-repository.ts';
-import { registerTaskOverviewRepository } from './persistence/task-overview-repository.ts';
 import { registerGitWorktreeProvider, TASK_WORKTREE_PROVIDER, type GitWorktreeProviderRuntime, type GitWorktreeRuntime } from './infrastructure/git-worktree-provider.ts';
 import { taskRecordCommand, type TaskCommandRuntime } from './interfaces/cli/task-record.ts';
 import { taskReviewCommand } from './interfaces/cli/task-review.ts';
@@ -16,7 +14,6 @@ import { taskVerificationCommand } from './interfaces/cli/task-verification.ts';
 import { parentCoordinationCommand } from './interfaces/cli/parent-coordination.ts';
 import {
   createParentCoordinationHttpContribution,
-  createTaskOverviewHttpContribution,
   createTaskVerificationHttpContribution,
 } from './interfaces/http/task-lifecycle-core.ts';
 import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE, type TaskHttpInput } from './interfaces/http/task-record-http.ts';
@@ -38,9 +35,6 @@ export const TASK_VERIFICATION_RUNTIME_PORT = 'task-verification.runtime-port';
 export const PARENT_COORDINATION_MODULE_ID = 'task-parent-coordination';
 export const PARENT_COORDINATION_APPLICATION = 'task-parent-coordination.application';
 export const PARENT_COORDINATION_RUNTIME_PORT = 'task-parent-coordination.runtime-port';
-export const TASK_OVERVIEW_MODULE_ID = 'task-overview';
-export const TASK_OVERVIEW_APPLICATION = 'task-overview.application';
-export const TASK_OVERVIEW_RUNTIME_PORT = 'task-overview.runtime-port';
 
 type RuntimeMember = unknown;
 type DynamicRuntime = Record<string, RuntimeMember>;
@@ -54,12 +48,10 @@ type TaskRecordModuleRequires = {
   'change.resolver': Pick<TaskRecordApplicationRuntime, 'resolveTaskScopedChange'>;
   'workspace.operation-memoizer': Pick<TaskRecordApplicationRuntime, 'memoizeWorkspaceOperation'>;
 };
-type SharedTaskComposition = DynamicRuntime
-  & Parameters<typeof registerTaskOverviewRepository>[0]
-  & Parameters<typeof registerTaskOverviewApplication>[0];
+type SharedTaskComposition = DynamicRuntime;
 
 const APPLICATION_METHODS = Object.freeze([
-  'listTaskRecords', 'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
+  'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
   'inspectTaskRetrospectiveDocument',
   'createTaskRecord', 'updateTaskRecord', 'activateTaskRecord', 'completeTaskRecord',
   'abandonTaskRecord',
@@ -67,7 +59,7 @@ const APPLICATION_METHODS = Object.freeze([
 
 const PERSISTENCE_READ_METHODS = Object.freeze([
   'assertCanonicalTaskWorkspace', 'taskRecordDirectory', 'ensureTaskRecordDirectory',
-  'readTaskRecordPersistence', 'prepareTaskRecordPersistence', 'listTaskRecordPersistence',
+  'readTaskRecordPersistence', 'prepareTaskRecordPersistence',
   'queryTaskRecordViewPersistence', 'readTaskRecordViewPersistence', 'readParentTaskContext',
   'taskRetrospectiveDocumentPath', 'readTaskRetrospectiveDocumentPersistence',
 ]);
@@ -97,8 +89,6 @@ const TASK_VERIFICATION_PERSISTENCE_METHODS = Object.freeze([
 const PARENT_COORDINATION_APPLICATION_METHODS = Object.freeze([
   'inspectParentCoordination',
 ]);
-const TASK_OVERVIEW_APPLICATION_METHODS = Object.freeze(['inspectTaskOverview']);
-const TASK_OVERVIEW_PERSISTENCE_METHODS = Object.freeze(['readTaskOverviewPersistence']);
 
 function pick(source: object, methods: readonly string[]): Readonly<DynamicRuntime> {
   return Object.freeze(Object.fromEntries(methods.map((method) => [method, Reflect.get(source, method)])));
@@ -229,21 +219,21 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
         '省略 --status 时创建active；--status todo只写SQLite，拒绝Change，不执行Git或创建专业记录。',
         '任务复盘文档由Agent按用户要求生成到固定本机路径，Task创建不自动生成或登记复盘。',
         '--parent 只接受当前 Workspace 中已存在且 active 的 Task；副作用是在本地 structured store 中原子创建 Task 及其直接 Parent 关系。',
-        '不创建Change、branch、commit或专业记录，也不自动改变Parent/Child状态。',
+        '不创建Change、branch、commit或专业记录，也不自动改变父任务/子任务状态。',
       ],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'create',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'create', context.argv.slice(4)),
     },
     {
-      key: 'task inspect', surface: 'primary', summary: '只读返回 Task Record、直接 Parent/Children 摘要和响应级 recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。',
-      help: ['Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读返回 Task Record、直接 Parent/Children 摘要和响应级 recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。'],
+      key: 'task inspect', surface: 'primary', summary: '只读返回Task Record、直接父任务/子任务摘要和响应级recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。',
+      help: ['Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读返回Task Record、直接父任务/子任务摘要和响应级recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'inspect',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'inspect', context.argv.slice(4)),
     },
     {
       key: 'task update', surface: 'primary', summary: '至少提供一个明确 setter/add/remove；只允许修改 todo 或 active Task。',
       help: [
-        'Usage: buildr task update <task-id> [--title <text>] [--intent <text>] [--parent-task] [--expected-record <recordDigest>] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--title <text>] [--intent <text>] [--parent-task] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
         '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。只允许修改 todo 或 active Task，todo 拒绝 Change。',
         '--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。',
@@ -254,19 +244,19 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
     },
     {
       key: 'task activate', surface: 'primary', summary: '把todo Task单向激活为active；该动作自身不执行Git或研发工作。',
-      help: ['Usage: buildr task activate <task-id> [--target <canonical-workspace>] [--json]', '', '只执行 todo -> active。Agent 必须在调用前通过 Task Triage 完成当前事实确认与 Git 基线门禁。'],
+      help: ['Usage: buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '只执行 todo -> active。Agent 必须先读取当前 Task Record，并使用其摘要避免覆盖并发修改。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'activate',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'activate', context.argv.slice(4)),
     },
     {
-      key: 'task complete', surface: 'primary', summary: '完成 todo/active Task；todo 只允许 --no-change。',
-      help: ['Usage: buildr task complete <task-id> --summary <text> [--no-change] [--parent-completion <json-file>] [--expected-record <recordDigest>] [--target <canonical-workspace>] [--json]', '', '父任务必须提供 --parent-completion 与 --expected-record：当前观察、总体验收、逐子任务处置和明确用户授权。', 'active 可正常完成；todo 只允许 --no-change，否则必须先 activate。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
+      key: 'task complete', surface: 'primary', summary: '以明确结果摘要完成 todo 或 active Task。',
+      help: ['Usage: buildr task complete <task-id> --summary <text> --expected-record <recordDigest> [--parent-completion <json-file>] [--target <canonical-workspace>] [--json]', '', '父任务必须同时提供 --parent-completion：包含当前观察、总体验收、逐子任务处置和明确用户授权。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'complete',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'complete', context.argv.slice(4)),
     },
     {
       key: 'task abandon', surface: 'primary', summary: '把 todo 或 active Task 单向标记为 abandoned；终态不可重开或继续修改。',
-      help: ['Usage: buildr task abandon <task-id> --reason <text> [--target <canonical-workspace>] [--json]', '', '把todo或active Task单向标记为abandoned；终态不可重开或继续修改。', '该动作只更新顶层Task Record，不执行Git或其他专业动作。'],
+      help: ['Usage: buildr task abandon <task-id> --reason <text> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '把todo或active Task标记为abandoned；终态事实仍可通过带原因的统一update显式更正。', '该动作只更新顶层Task Record，不执行Git或其他专业动作。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'abandon',
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'abandon', context.argv.slice(4)),
     },
@@ -449,26 +439,6 @@ export function createParentCoordinationModule(runtime: DynamicRuntime) {
           cli: parentCoordinationCliContributions(),
           http: [createParentCoordinationHttpContribution(TASK_RECORD_ID_SOURCE)],
         },
-      });
-    },
-  });
-}
-
-export function createTaskOverviewModule(runtime: DynamicRuntime) {
-  return Object.freeze({
-    id: TASK_OVERVIEW_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_PERSISTENCE_READ]),
-    create(requires: RuntimeRequires) {
-      const composition = taskPrivateComposition(runtime, requires);
-      registerTaskOverviewRepository(composition);
-      registerTaskOverviewApplication(composition);
-      const application = pick(composition, TASK_OVERVIEW_APPLICATION_METHODS);
-      return Object.freeze({
-        provides: {
-          [TASK_OVERVIEW_APPLICATION]: application,
-          [TASK_OVERVIEW_RUNTIME_PORT]: runtimePort(pick(composition, [...TASK_OVERVIEW_PERSISTENCE_METHODS, ...TASK_OVERVIEW_APPLICATION_METHODS])),
-        },
-        contributions: { http: [createTaskOverviewHttpContribution(TASK_RECORD_ID_SOURCE)] },
       });
     },
   });

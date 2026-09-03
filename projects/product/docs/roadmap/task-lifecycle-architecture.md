@@ -29,7 +29,7 @@ Application只保存长期需要的业务事实，并保护具体写入的身份
 - `task_development_current`、`task_finish_current`与`task_environment_current`由连续SQLite migration直接删除，包括已有数据；不建立history、backup、summary或replacement表。
 - Task Candidate、准备Plan、Environment Receipt、统一决定、研发交接和旧机器收尾记录均不再是产品事实。
 - `task environment *`CLI、Environment HTTP、Buildr Web Environment页签和相关能力绑定删除，不提供兼容转发。
-- Task Overview只组合Task Record、Review、Verification等当前专业事实；缺少某一专业row不影响其他事实。
+- 独立Task Overview已删除。Buildr Web详情直接展示Task Record与关系投影，Review、Verification和父任务协调按需读取；缺少某一专业结果不影响其他事实。
 
 ## 完整使用方式
 
@@ -50,7 +50,8 @@ Agent按现场独立选择：
 
 ## 已完成阶段
 
-- Task Record、Parent/Child、Task Review、Task Verification、Worktree与Preview形成独立责任边界；Task Retrospective已收窄为纯Skill、本机Markdown和Task Record两态摘要。
+- Task Record、父任务协调（Task Parent Coordination）、Task Review、Task Verification、Worktree与Preview形成独立责任边界；Task Retrospective已收窄为纯Skill、本机Markdown和Task Record两态摘要。
+- Task Record只保存目标、范围、Change、Parent、显式父身份、顶层状态、结果摘要、更正历史和复盘摘要；所有非创建写入使用当前摘要保护。反向Children与数量只查询派生，`noChange`不再保存。
 - 任务研发、任务规划身份、旧Task Finish Application和统一Task Environment已经退役。
 - 普通任务不创建环境记录；局部准备或清理失败不撤销已成立成果。
 

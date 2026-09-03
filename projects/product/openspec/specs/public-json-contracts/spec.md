@@ -186,56 +186,43 @@ Public JSON registry、CLI command registry、help、schema validation 与 check
 - **AND** stdout MUST 不混入普通日志
 
 ### Requirement: Task JSON 必须稳定表达 Parent 与直接 Children
-Task Record operation JSON MUST 使用新的 major schema identity，并 MUST 在 record 中明确返回 nullable `parentTaskId` 与排序后的 `childTaskIds`。该 read model MUST NOT 暴露数据库 row id、SQL、路径、祖先闭包或递归 Task 正文。
+Task Record operation JSON MUST在record中返回nullable `parentTaskId`与显式`isParent`，并在独立`taskRelations`查询投影中返回排序后的直接Children摘要。`childTaskIds`、Child数量、数据库row、SQL、路径、祖先闭包或递归Task正文 MUST不进入Task Record schema。
 
 #### Scenario: 独立 Task JSON
-- **WHEN** create/inspect/list 返回没有 Parent 和 Children 的 Task
-- **THEN** record MUST 包含 `parentTaskId: null` 与空 `childTaskIds`
-- **AND** schema registry MUST 验证字段和 major identity
+- **WHEN** create、inspect或list返回没有Parent和Children的Task
+- **THEN** record MUST包含`parentTaskId: null`
+- **AND** `taskRelations.children` MUST为空
 
 #### Scenario: Parent 与 Child JSON
-- **WHEN** inspect 返回存在直接层级关系的 Task
-- **THEN** Child MUST 返回直接 `parentTaskId`，Parent MUST 返回排序后的直接 `childTaskIds`
-- **AND** MUST NOT 递归嵌入关联 Task record
+- **WHEN** inspect返回存在直接层级关系的Task
+- **THEN** Child record MUST返回直接`parentTaskId`，Parent view MUST在`taskRelations.children`返回排序摘要
+- **AND** MUST不返回`childTaskIds`或递归record
 
 #### Scenario: 旧 JSON consumer
-- **WHEN** 新字段改变 closed Task Record shape
-- **THEN** 产品 MUST 提升公开 Task operation schema major
-- **AND** docs、registry 与 contract tests MUST 同步更新
+- **WHEN** consumer仍要求record内`childTaskIds`或旧schema shape
+- **THEN** 当前closed schema MUST拒绝该字段
+- **AND** consumer MUST迁移到`taskRelations.children`
 
 ### Requirement: Parent coordination JSON 必须closed且登记
-Buildr MUST登记Parent Plan、Contribution binding、Contribution Handoff、coordination inspect/mutation Result的stable public JSON identities；响应 MUST不暴露SQLite path或本机绝对路径。
+Buildr MUST只登记`buildr.parent-coordination-result/v4`的closed inspect响应；响应 MUST包含Task ID、record digest、`parent|child|ordinary` mode、Parent状态、目标、结果、Parent来源、直接Children、完成观察、可选旧计划历史、局部诊断与零effects。
 
 #### Scenario: inspect public JSON
 - **WHEN** client请求Parent coordination read model
-- **THEN** response MUST包含schemaVersion、Parent Plan identity、Child/Contribution facts、prerequisites、diagnostics与零effects
-- **AND** public registry MUST拒绝未登记或开放payload字段
+- **THEN** response MUST通过closed专业HTTP Schema并使用生成DTO
+- **AND** MUST不包含Contribution、Handoff、Development、Review、Verification、交付或环境字段
 
 ### Requirement: legacy absence 必须是明确contract
-没有Parent Plan或Contribution Handoff MUST以closed absent/legacy状态表达，不得用缺字段异常、filesystem fallback或自动upgrade掩盖。
+旧Parent Plan不存在 MUST以`historicalPlan: null`表达；存在时只作为历史内容返回。它 MUST不改变当前`mode`、`isParent`、完成观察或Task状态。
+
+#### Scenario: 只有旧Parent Plan
+- **WHEN**普通Task仅保存`legacy_parent_plan_json`
+- **THEN** Parent coordination MUST保持ordinary或child当前身份
+- **AND** MUST不要求父任务完成授权
 
 #### Scenario: 旧Task JSON
-- **WHEN** inspect读取旧Task/Receipt
-- **THEN** response MUST返回legacy mode与可操作diagnostic
-- **AND** MUST保持原Task read model兼容
-
-### Requirement: Task Execution Record 查询必须提供稳定 portable JSON
-Buildr MUST 为 Task-scoped execution record list、detail 与 body-file read 登记稳定 v1 public JSON identity。List MUST 表达 requested view 与 records；detail MUST 表达单条 portable record 和可用正文文件；body-file read MUST 表达 record/file identity、完整性 metadata、内容与截断状态。三类 payload MUST 使用 closed 字段白名单，且 MUST NOT 暴露 SQLite、database row、body locator、本机路径、resource token 或 mutation action。
-
-#### Scenario: list 与 detail JSON
-- **WHEN** Buildr Web HTTP 返回 execution record list 或 detail
-- **THEN** payload MUST 分别使用已登记的 v1 schema identity
-- **AND** 同一 record 在不同 view 中 MUST 保持相同 record identity 与 metadata 语义
-
-#### Scenario: body-file JSON
-- **WHEN** Buildr Web HTTP 成功读取 execution record 正文文件
-- **THEN** payload MUST 返回 UTF-8 content、digest、stored size、stored truncation、response bytes 与 response truncation
-- **AND** payload MUST NOT 返回 locator 或任何可用于读取其他文件的路径
-
-#### Scenario: 无效或不可用正文
-- **WHEN** filename 不受支持、record 不属于 Task、正文已 cleaned 或完整性校验失败
-- **THEN** HTTP MUST 返回统一 diagnostic envelope 与准确 status
-- **AND** MUST NOT 在错误 details 中泄漏正文 locator 或绝对路径
+- **WHEN**历史Task没有旧Parent Plan或Contribution Handoff
+- **THEN** 当前响应 MUST使用`historicalPlan: null`和真实Task关系
+- **AND** MUST不回填或读取Handoff
 
 ### Requirement: ExecRecord GC CLI 必须提供稳定公共 JSON
 Buildr MUST 提供 `buildr task execution-record gc [--target <canonical-workspace>] [--dry-run] [--limit <1..500>] [--json]`。`--json` MUST使用登记的 ExecRecord GC schema，并 MUST直接投射同一次 Application result；CLI MUST NOT接受 Task/owner/path、retention override、force、failure disposition 或 cleanup shell 输入。
@@ -347,24 +334,6 @@ Buildr MUST为Task execution record CLI list与inspect登记稳定public JSON sc
 - **THEN** schema coverage MUST证明 compact/full 都返回合法结构
 - **AND** Registry失败 fixture MUST证明既有 health 字段保持不变
 
-### Requirement: Execution Record recover 必须返回稳定公共 JSON
-`buildr task execution-record recover --json` MUST返回 `buildr.task-execution-record-recover-result/v1` 单一 JSON object，包含 operation、status、Task/record identity、recovery mode、portable record、transient cleanup、diagnostic、effects 与 next actions。结果 MUST不包含 SQLite/database、body locator、canonical Workspace或临时绝对路径、正文、secret、raw command、resource token或任意用户自由文本。
-
-#### Scenario: terminal evidence 恢复成功
-- **WHEN** recover 使用合法 summary 成功 seal 原 record
-- **THEN** JSON MUST返回 `status: recovered`、`mode: terminal-evidence` 与真实 terminal outcome/lifecycle
-- **AND** effects MUST只描述原 record seal与 owned transient cleanup
-
-#### Scenario: 需要用户授权
-- **WHEN** terminal evidence 不可用且没有 unknown outcome 授权
-- **THEN** JSON MUST返回 `status: authorization-required`、零 effects与稳定 diagnostic
-- **AND** next actions MUST说明授权的精确影响且不得声称原 producer 已结束
-
-#### Scenario: unknown 已授权处置
-- **WHEN** unknown outcome 授权成功终结原 record
-- **THEN** JSON MUST返回 `status: attention`、`mode: authorized-unknown` 与 `outcome: unknown`
-- **AND** MUST明确该 record 不是 Verification Result且后续普通 invocation 可重新执行
-
 ### Requirement: 每日演进 JSON 必须声明稳定 schema identity
 Buildr 每日演进 CLI 与本机 HTTP 的 `--json` / JSON 响应 MUST 在顶层声明非空 `schemaVersion`，并为 record、inspect、list 与 Web 读取使用稳定 `buildr.<payload>/v<major>` identity。同一 major 内 MUST 只做兼容扩展。payload MUST 包含 Project、日期、日摘要四问、提交（作者、`authorship`、可选 Task 关联）、变更文件与未解析 Task 引用；MUST NOT 暴露本机绝对路径、SQLite 路径或 Git working tree path。Task 关联计数 MAY 为 0。
 
@@ -377,19 +346,6 @@ Buildr 每日演进 CLI 与本机 HTTP 的 `--json` / JSON 响应 MUST 在顶层
 - **WHEN** 已保存文件引用的 Task 在读取时已不存在
 - **THEN** JSON MUST 将该引用标为未解析
 - **AND** MUST NOT 删除文件中的 Task ID
-
-### Requirement: Parent Coordination 必须只发布单一 v3 紧凑结果
-Buildr MUST 让全部 Parent coordination action 与业务错误返回 `buildr.parent-coordination-result/v3`，并 MUST 在同一结果中只保留一份 Plan、work item、binding、next action 与最终验收 readiness 表达。v2 MUST 在本版本终止，不得保留 alias、compatibility adapter 或按入口返回不同 major。
-
-#### Scenario: Agent读取大型Parent
-- **WHEN** Agent通过checkout或npm package运行任一`task parent` action并请求JSON
-- **THEN** payload MUST声明`buildr.parent-coordination-result/v3`
-- **AND** checkout、npm与HTTP MUST返回同一字段语义且不包含v2重复字段
-
-#### Scenario: v2消费者迁移
-- **WHEN** 消费者从v2升级到v3
-- **THEN** migration MUST要求使用`plan`、顶层`contributions`、`prerequisitesSatisfied`、`startup.next`与`boundContributions`
-- **AND** MUST不提供继续请求v2的开关或fallback
 
 ### Requirement: 公共 JSON identity 与 envelope 必须有唯一技术 owner
 Buildr MUST 将当前公共 JSON schema identity registry 与 envelope helper 归入 Infrastructure Contracts 的唯一生产 owner；所有现有调用者 MUST复用该 owner，且本次结构迁移 MUST NOT改变任何已登记 identity、payload 字段、stdout/stderr 或退出行为。

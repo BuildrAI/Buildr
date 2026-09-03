@@ -38,7 +38,7 @@ buildr sync <agent> --target <dir>
 buildr skill install <agent> --target <dir>
 ```
 
-如果安装后Buildr Skill可用，后续按Buildr Skill工作。本指南只保留Skill不可用时的最小兜底流程。Task Record、Development、Verification、Review与Retrospective current records都由对应Application保存到Workspace SQLite，不进入Git或跨机器同步；不要读取、迁移或生成旧Task YAML。Git Operations只处理用户或上游consumer明确选择的普通Git内容。Environment、Finish、mutations、worktree/runtime、Candidate与delivery source继续遵守各自owner边界。
+如果安装后Buildr Skill可用，后续按Buildr Skill工作。本指南只保留Skill不可用时的最小兜底流程。Task Record、Verification与Review current records由对应Application保存到Workspace SQLite，不进入Git或跨机器同步；复盘正文只在本机Markdown中。不要读取、迁移或生成旧Task YAML。Git Operations只处理用户或上游consumer明确选择的Git内容；Worktree、Preview、发布和其他副作用继续遵守各自owner边界。
 ## 最小兜底
 
 优先使用 Buildr CLI 完成用户指令。workspace 必须完成初始化；未初始化时使用上面的 `buildr init --agent <agent>`，其成功输出已包含最终 doctor，不再重复执行。已有 workspace 中，`buildr doctor --agent <agent> --json` 是最小兜底流程的默认事实入口。不要省略 `--agent`；未指定 Agent 时 doctor 会检查所有支持的 runtime。

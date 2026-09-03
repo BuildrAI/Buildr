@@ -13,16 +13,17 @@ const outputs = Object.freeze([
   path.join(productRoot, 'services/buildr-web/src/api/generated/task-professional-http-dto.ts'),
 ]);
 
-function body(schema) {
+function body(schema, definitionName) {
   const { $schema: _draft, $id: _identity, title: _title, ...value } = schema;
-  return value;
+  return JSON.parse(JSON.stringify(value).replaceAll('"#/$defs/', `"#/$defs/${definitionName}/$defs/`));
 }
 
 export async function renderTaskProfessionalHttpDto() {
   const sourceIdentity = `sha256-${crypto.createHash('sha256').update(JSON.stringify(Object.values(TASK_PROFESSIONAL_HTTP_SCHEMAS))).digest('hex')}`;
-  const definitions = Object.fromEntries(Object.entries(TASK_PROFESSIONAL_HTTP_SCHEMAS).map(([name, value]) => [
-    name[0].toUpperCase() + name.slice(1), body(value),
-  ]));
+  const definitions = Object.fromEntries(Object.entries(TASK_PROFESSIONAL_HTTP_SCHEMAS).map(([name, value]) => {
+    const definitionName = name[0].toUpperCase() + name.slice(1);
+    return [definitionName, body(value, definitionName)];
+  }));
   const projection = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: 'TaskProfessionalHttpDtoProjection',

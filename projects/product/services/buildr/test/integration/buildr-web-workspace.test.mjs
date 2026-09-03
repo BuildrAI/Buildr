@@ -314,7 +314,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
-  assert.match(taskDto, /childTaskCount/);
+  assert.doesNotMatch(taskDto, /childTaskIds|childTaskCount|storedChangeReferences/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(detail, /tasksApi\.list\(\{ status: 'active' \}\)/);

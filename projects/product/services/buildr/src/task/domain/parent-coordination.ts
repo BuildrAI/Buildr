@@ -3,7 +3,6 @@ import crypto from 'node:crypto';
 
 export const LEGACY_PARENT_PLAN_SCHEMA = 'buildr.parent-plan/v1';
 export const PARENT_PLAN_SCHEMA = 'buildr.parent-plan/v2';
-export const CONTRIBUTION_HANDOFF_SCHEMA = 'buildr.contribution-handoff/v1';
 
 const ID = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const MAX_ITEMS = 128;
@@ -48,6 +47,7 @@ function list(value, field, normalize, key = (item) => item) {
 }
 
 function strings(value, field) { return list(value, field, text); }
+function referenceList(value, field) { return list(value ?? [], field, id); }
 
 function legacyContribution(value, field) {
   const item = object(value, field);
@@ -158,31 +158,4 @@ export function projectParentPlan(value) {
     })),
     finalAcceptance: plan.finalAcceptance,
   };
-}
-
-export function normalizePlannedContributionBindings(value) {
-  return list(value ?? [], 'plannedContributions', (item, field) => {
-    const binding = object(item, field); closed(binding, new Set(['parentTaskId', 'contributionId']), field);
-    return { parentTaskId: id(binding.parentTaskId, `${field}.parentTaskId`), contributionId: id(binding.contributionId, `${field}.contributionId`) };
-  }, (item) => `${item.parentTaskId}/${item.contributionId}`);
-}
-
-function referenceList(value, field) { return list(value ?? [], field, id); }
-function summaryList(value, field) {
-  return list(value ?? [], field, (item, itemField) => { const entry = object(item, itemField); closed(entry, new Set(['contributionId', 'summary']), itemField); return { contributionId: id(entry.contributionId, `${itemField}.contributionId`), summary: text(entry.summary, `${itemField}.summary`) }; }, (item) => item.contributionId);
-}
-function supersededList(value, field) {
-  return list(value ?? [], field, (item, itemField) => { const entry = object(item, itemField); closed(entry, new Set(['contributionId', 'deliveredByContributionId', 'reason']), itemField); return { contributionId: id(entry.contributionId, `${itemField}.contributionId`), deliveredByContributionId: id(entry.deliveredByContributionId, `${itemField}.deliveredByContributionId`), reason: text(entry.reason, `${itemField}.reason`) }; }, (item) => item.contributionId);
-}
-
-export function normalizeContributionHandoff(value) {
-  const handoff = object(value, 'contributionHandoff');
-  closed(handoff, new Set(['schemaVersion', 'identity', 'parentTaskId', 'planned', 'delivered', 'extra', 'residual', 'superseded', 'affected', 'nextAction']), 'contributionHandoff');
-  if (handoff.schemaVersion !== CONTRIBUTION_HANDOFF_SCHEMA) throw parentCoordinationError('contribution_handoff_schema_unsupported', `contributionHandoff.schemaVersion 必须是 ${CONTRIBUTION_HANDOFF_SCHEMA}。`, 409);
-  const payload = { schemaVersion: CONTRIBUTION_HANDOFF_SCHEMA, parentTaskId: id(handoff.parentTaskId, 'contributionHandoff.parentTaskId'), planned: referenceList(handoff.planned, 'contributionHandoff.planned'), delivered: referenceList(handoff.delivered, 'contributionHandoff.delivered'), extra: summaryList(handoff.extra, 'contributionHandoff.extra'), residual: summaryList(handoff.residual, 'contributionHandoff.residual'), superseded: supersededList(handoff.superseded, 'contributionHandoff.superseded'), affected: summaryList(handoff.affected, 'contributionHandoff.affected'), nextAction: text(handoff.nextAction, 'contributionHandoff.nextAction') };
-  const planned = new Set(payload.planned);
-  for (const delivered of payload.delivered) if (!planned.has(delivered)) throw parentCoordinationError('contribution_handoff_delivered_not_planned', 'delivered必须属于planned；跨计划交付使用extra。', 409, { contributionId: delivered });
-  const identity = parentCoordinationDigest(payload);
-  if (handoff.identity !== identity) throw parentCoordinationError('contribution_handoff_identity_mismatch', 'Contribution Handoff identity与内容不一致。', 409, { expected: identity, actual: handoff.identity });
-  return { identity, ...payload };
 }

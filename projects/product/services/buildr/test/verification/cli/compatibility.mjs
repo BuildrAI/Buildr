@@ -177,9 +177,8 @@ const omitPrepareAgent = run(['task', 'environment', 'prepare', 'demo', '--json'
 assert.equal(omitPrepareAgent.status, 2);
 assert.equal(omitPrepareAgent.stderr, '');
 assert.equal(JSON.parse(omitPrepareAgent.stdout).schemaVersion, 'buildr.cli-error/v1');
-assert.equal(JSON.parse(omitPrepareAgent.stdout).error.code, 'task_environment_cli.syntax');
-assert.match(JSON.parse(omitPrepareAgent.stdout).error.message, /--agent is required/);
-assert.match(JSON.parse(omitPrepareAgent.stdout).help, /--agent <adapter>/);
+assert.equal(JSON.parse(omitPrepareAgent.stdout).error.code, 'cli.unknown_command');
+assert.equal(JSON.parse(omitPrepareAgent.stdout).suggestions.some((item) => item.includes('task environment')), false);
 
 const invalidInspect = run(['worktree', 'inspect', 'demo', '--agent', 'codex']);
 assert.notEqual(invalidInspect.status, 0);

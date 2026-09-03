@@ -43,10 +43,12 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row) => ({ ...row })), migrations.map(({ version, name }) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row) => row.name), [
-    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_services', 'task_verification_current', 'tasks', 'terminal_contribution_reconciliations',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
   ]);
   assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => row.name === 'parent_task_id' && row.notnull === 0));
+  assert.equal(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row) => ['schema_version', 'result_no_change'].includes(row.name)), false);
+  assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'terminal_contribution_reconciliations'").get().count, 0);
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
   assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row) => row.name === 'tasks_parent_task_idx'));
   for (const table of ['task_verification_current', 'task_review_current']) {
@@ -279,7 +281,7 @@ test('version 1 Task Store 原位升级到 latest 且保留既有 Task', (t) => 
   upgraded.database.close();
   const record = runtime.readTaskRecordPersistence(root, 'existing-task').record;
   assert.equal(record.parentTaskId, null);
-  assert.deepEqual(record.childTaskIds, []);
+  assert.equal('childTaskIds' in record, false);
 });
 
 test('version 2 Parent 关系原位迁入 tasks.parent_task_id 并删除关系表', (t) => {
@@ -303,7 +305,7 @@ test('version 2 Parent 关系原位迁入 tasks.parent_task_id 并删除关系�
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
   upgraded.database.close();
   assert.equal(runtime.readTaskRecordPersistence(root, 'child-task').record.parentTaskId, 'parent-task');
-  assert.deepEqual(runtime.readTaskRecordPersistence(root, 'parent-task').record.childTaskIds, ['child-task']);
+  assert.deepEqual(runtime.readTaskRecordViewPersistence(root, 'parent-task').taskRelations.children.map((child) => child.taskId), ['child-task']);
 });
 
 test('version 3 current schema连续升级且不迁移旧YAML', (t) => {
@@ -389,12 +391,12 @@ test('Task Review v2 migration迁移两槽位且遇到不一致历史row完整�
   invalid.close();
 });
 
-test('v19 数据库可直接完成任务，升级不绕过版本和状态检查', async (t) => {
+test('v19 数据库先升级并观察当前摘要，再完成任务且不绕过并发检查', async (t) => {
   const migrations = loadWorkspaceSqliteMigrations();
   for (const scenario of [
     { name: '正常完成', status: 'active' },
     { name: '陈旧版本', status: 'active', expectedRecordDigest: 'sha256-stale', error: 'task_record_conflict' },
-    { name: '待办不得报告有改动完成', status: 'todo', error: 'task_record_todo_completion_requires_no_change' },
+    { name: '待办可直接形成明确结果', status: 'todo' },
     { name: '升级失败保留任务', status: 'active', failMigration: true, error: 'workspace_store_database_failed' },
   ]) {
     await t.test(scenario.name, (child) => {
@@ -413,16 +415,21 @@ test('v19 数据库可直接完成任务，升级不绕过版本和状态检查'
 
       const runtime = createRuntime();
       assert.throws(() => runtime.inspectTaskRecord(root, 'upgrade-task'), (error) => error.code === 'workspace_store_migration_required');
-      const complete = () => runtime.completeTaskRecord(root, 'upgrade-task', {
-        summary: '成果已交付', noChange: false,
-        ...(scenario.expectedRecordDigest ? { expectedRecordDigest: scenario.expectedRecordDigest } : {}),
-      });
-      if (scenario.error) assert.throws(complete, (error) => error.code === scenario.error);
-      else {
+      if (scenario.failMigration) {
+        assert.throws(() => runtime.prepareTaskRecordPersistence(root, 'upgrade-task'), (error) => error.code === scenario.error);
+      } else {
+        const prepared = runtime.prepareTaskRecordPersistence(root, 'upgrade-task');
+        const complete = () => runtime.completeTaskRecord(root, 'upgrade-task', {
+          expectedRecordDigest: scenario.expectedRecordDigest || prepared.recordDigest,
+          summary: '成果已交付',
+        });
+        if (scenario.error) assert.throws(complete, (error) => error.code === scenario.error);
+        else {
         const result = complete();
         assert.equal(result.record.status, 'completed');
-        assert.deepEqual(result.record.result, { summary: '成果已交付', noChange: false });
+        assert.deepEqual(result.record.result, { summary: '成果已交付' });
         assert.equal(runtime.inspectTaskRecord(root, 'upgrade-task').recordDigest, result.recordDigest);
+        }
       }
       const after = new DatabaseSync(file, { readOnly: true });
       try {
@@ -430,10 +437,13 @@ test('v19 数据库可直接完成任务，升级不绕过版本和状态检查'
         const record = after.prepare("SELECT * FROM tasks WHERE task_id = 'upgrade-task'").get();
         if (scenario.error) {
           // Schema upgrades may add columns; a rejected completion must preserve every existing business field.
-          const preservedFields = Object.keys(before).filter((key) => key !== 'schema_version');
+          const preservedFields = scenario.failMigration
+            ? Object.keys(before)
+            : ['task_id', 'title', 'intent', 'status', 'result_summary', 'created_at', 'updated_at', 'parent_task_id'];
           assert.deepEqual(Object.fromEntries(preservedFields.map((key) => [key, record[key]])), Object.fromEntries(preservedFields.map((key) => [key, before[key]])));
           if (!scenario.failMigration) {
-            assert.equal(record.schema_version, 'buildr.task-record/v3');
+            assert.equal('schema_version' in record, false);
+            assert.equal('result_no_change' in record, false);
             assert.equal(record.is_parent, 0);
             assert.equal(record.parent_completion_json, null);
           }
@@ -640,6 +650,51 @@ test('Task Retrospective重构migration直接删除旧正文、处置与来源�
   });
   assert.equal(database.prepare("SELECT status FROM tasks WHERE task_id = 'retrospective-followup'").get().status, 'todo');
   assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, retirement.version);
+  database.close();
+});
+
+test('Task Record最终收窄migration保留业务事实并删除重复列和旧贡献协调数据', () => {
+  const database = new DatabaseSync(':memory:');
+  const migrations = loadWorkspaceSqliteMigrations();
+  const finalization = migrations.find((migration) => migration.name === '0031_finalize_task_record.sql');
+  for (const migration of migrations.filter((item) => item.version < finalization.version)) applyWorkspaceSqliteMigration(database, migration);
+  const history = JSON.stringify([{
+    status: 'completed', title: '旧标题', intent: '旧目标', parentTaskId: null,
+    result: { summary: '旧结果', noChange: false }, recordUpdatedAt: '2026-09-03T00:30:00.000Z',
+    correctedAt: '2026-09-03T00:45:00.000Z', reason: '用户更正目标',
+  }]);
+  database.prepare(`INSERT INTO tasks(
+    task_id, schema_version, title, intent, status, result_summary, result_no_change,
+    created_at, updated_at, parent_task_id, is_parent, result_history_json,
+    retrospective_state, retrospective_document_digest
+  ) VALUES (?, 'buildr.task-record/v3', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    'final-parent', '最终父任务', '保留目标', 'completed', '当前结果', 0,
+    '2026-09-03T00:00:00.000Z', '2026-09-03T01:00:00.000Z', null, 1, history,
+    'decided', `sha256-${'a'.repeat(64)}`,
+  );
+  database.prepare(`INSERT INTO tasks(task_id, schema_version, title, intent, status, result_summary, result_no_change, created_at, updated_at, parent_task_id)
+    VALUES ('final-child', 'buildr.task-record/v3', '子任务', '保留关系', 'active', NULL, NULL, '2026-09-03T00:00:00.000Z', '2026-09-03T01:00:00.000Z', 'final-parent')`).run();
+  database.prepare("INSERT INTO task_projects(task_id, project) VALUES ('final-parent', 'product')").run();
+  database.prepare("INSERT INTO task_services(task_id, project, service) VALUES ('final-parent', 'product', 'buildr')").run();
+  database.prepare("INSERT INTO task_changes(task_id, project, change_name) VALUES ('final-parent', 'product', 'finalize-agent-first-task-system')").run();
+  database.prepare("INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES ('final-parent', 'planning', '{}', 'plan', 'accepted', '2026-09-03T01:00:00.000Z')").run();
+  database.prepare("INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES ('final-parent', '{}', 'content', 'passed', '2026-09-03T01:00:00.000Z')").run();
+  database.prepare("INSERT INTO terminal_contribution_reconciliations VALUES ('final-child', 'final-parent', 'plan', 'record', '{}', '2026-09-03T01:00:00.000Z')").run();
+
+  applyWorkspaceSqliteMigration(database, finalization);
+
+  assert.equal(database.prepare("PRAGMA table_info(tasks)").all().some((row) => ['schema_version', 'result_no_change'].includes(row.name)), false);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'terminal_contribution_reconciliations'").get().count, 0);
+  const parent = database.prepare("SELECT * FROM tasks WHERE task_id = 'final-parent'").get();
+  assert.equal(parent.title, '最终父任务'); assert.equal(parent.intent, '保留目标'); assert.equal(parent.result_summary, '当前结果');
+  assert.equal(parent.is_parent, 1); assert.equal(parent.retrospective_state, 'decided');
+  assert.equal(JSON.parse(parent.result_history_json)[0].result.noChange, undefined);
+  assert.equal(database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'final-child'").get().parent_task_id, 'final-parent');
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_projects WHERE task_id = 'final-parent'").get().count, 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_services WHERE task_id = 'final-parent'").get().count, 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_changes WHERE task_id = 'final-parent'").get().count, 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_review_current WHERE task_id = 'final-parent'").get().count, 1);
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_verification_current WHERE task_id = 'final-parent'").get().count, 1);
   database.close();
 });
 

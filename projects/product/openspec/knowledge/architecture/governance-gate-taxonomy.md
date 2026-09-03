@@ -30,15 +30,13 @@
 
 | gate / source | action | consumer | invariant / harm | authority | scope | fallback | 当前判断 | 后续 owner |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Environment execution target identity mismatch | 在指定worktree写入或执行 | Task Environment consumer | 放行会写入未授权或错误对象 | matching Environment Receipt / allowed execution roots | 本次指定写入或执行 | 重新解析matching target或取得新授权；不得搜索相似worktree猜测 | Hard Gate | Task Environment |
-| 没有 Formal Task Environment | 普通或 Task 外工作 | Verification Preparation Admission | 不存在应被该 admission 消费的正式环境，强行阻断会制造全局许可 | 当前调用上下文 | 不适用 formal result 的动作 | 返回 not-applicable/ready，不创建虚假 Receipt | 非门禁 | `development-evidence-flow` |
 | Doctor 聚合 `health.ready` | Agent 的所有工作 | Doctor / Agent | 聚合健康不是所有专业动作的共同 authority，作为总许可会扩大局部故障 | 各 Diagnostic owner | 只约束实际消费故障组件的动作 | 返回分项 blocked/attention/advice，保留不相关动作 | 聚合值不得成为全局 Hard Gate | `doctor-sync-isolation` |
 | required capability provider 不可用或 identity 不一致 | 调用该 capability | Capability routing consumer | 放行会调用未知或不匹配 provider | capability contract + selected binding | 当前 capability consumer | 修复 binding 或选择已授权 provider；不影响不消费该 capability 的动作 | Hard Gate，动作局部 | `doctor-sync-isolation`、对应专业 Contribution |
 | optional capability 不可用 | 使用增强能力 | Capability routing consumer | 核心结果仍可由基础路径成立，阻断会把增强项变成许可 | capability contract | 仅增强路径 | degraded/advice，使用基础路径并诚实报告缺失 | Advice 或 Attention | `doctor-sync-isolation` |
-| 路径 ownership、授权、共享历史或不可逆删除无法证明 | 写入、push、覆盖或删除 | Git / Environment / asset writers | 放行会越权、覆盖他人工作或造成不可恢复损失 | Git、filesystem ownership与Task/Environment authority | 当前高风险副作用 | 停止；精确解析目标和ownership，必要时请求授权 | Hard Gate，保留 | 各专业owner |
+| 路径 ownership、授权、共享历史或不可逆删除无法证明 | 写入、push、覆盖或删除 | Git / resource / asset writers | 放行会越权、覆盖他人工作或造成不可恢复损失 | Git、filesystem ownership与具体资源authority | 当前高风险副作用 | 停止；精确解析目标和ownership，必要时请求授权 | Hard Gate，保留 | 各专业owner |
 
 ## 代表性证明与迁移边界
 
-当前证明集中在Environment目标身份、Formal Verification preparation、capability routing和具体Git/删除副作用。测试断言结构化结果与不变量，不把聚合流程状态当作统一门禁。
+当前证明集中在capability routing和具体Git、资源、数据删除副作用。测试断言结构化结果与不变量，不把聚合流程状态当作统一门禁。
 
 后续 Contribution 按表中 owner 迁移各自模块，并在实现处保留专业 closed Result；不得为统一术语新增全局 evaluator、SQLite gate 表或第二套进度 authority。最终 Parent acceptance 才检查跨模块一致性。

@@ -10,7 +10,7 @@ import { TASK_PROFESSIONAL_HTTP_SCHEMAS, TASK_PROFESSIONAL_HTTP_VALIDATORS } fro
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-test('Task professional HTTP routes使用严格请求契约并保持错误边界', async (t) => {
+test('Task professional HTTP routes删除Overview与旧Retrospective入口并保持404边界', async (t) => {
   const { base, root } = fixture(t, 'task-professional-contract');
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-professional-contract');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
@@ -21,23 +21,14 @@ test('Task professional HTTP routes使用严格请求契约并保持错误边界
   const { url, initialWorkspaceId, sessionToken } = await instance.ready;
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/professional-task`;
   let response = await fetch(`${endpoint}/overview`);
-  let body = await response.json();
-  assert.equal(response.status, 200);
-  assert.equal(TASK_PROFESSIONAL_HTTP_VALIDATORS.validate(TASK_PROFESSIONAL_HTTP_SCHEMAS.overviewResponse.$id, body).valid, true);
-
-  response = await fetch(`${endpoint}/overview?unexpected=true`);
-  body = await response.json();
-  assert.equal(response.status, 400);
-  assert.equal(body.error.code, 'task_api_query_forbidden');
+  assert.equal(response.status, 404);
 
   response = await fetch(`${endpoint}/retrospective`, {
     method: 'PATCH',
     headers: { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' },
     body: JSON.stringify({ expectedCurrentDigest: 'sha256-current', unexpected: true }),
   });
-  body = await response.json();
-  assert.equal(response.status, 400);
-  assert.equal(body.error.code, 'task_api_field_forbidden');
+  assert.equal(response.status, 404);
 
   response = await fetch(`${endpoint}/execution-records`);
   assert.equal(response.status, 404);

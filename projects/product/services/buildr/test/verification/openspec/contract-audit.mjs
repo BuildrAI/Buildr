@@ -136,7 +136,7 @@ for (const change of [...archivedChanges.values()].sort((left, right) => left.en
 const mismatched = [...changedCapabilities].filter((capability) => {
   const expected = replay.get(capability) || baseCanonical(capability);
   const actual = actualCanonical(capability);
-  return expected.exists !== actual.exists || (expected.exists && normalizeOpenSpecContractText(expected.content) !== normalizeOpenSpecContractText(actual.content));
+  return expected.exists !== actual.exists || (expected.exists && normalizeOpenSpecContractText(withoutPurposeBody(expected.content)) !== normalizeOpenSpecContractText(withoutPurposeBody(actual.content)));
 });
 if (mismatched.length) {
   console.error(`OpenSpec contract audit found Archived Change delta/canonical mismatch: ${mismatched.join(', ')}`);

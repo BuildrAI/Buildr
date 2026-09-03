@@ -47,10 +47,8 @@ export function createReleaseLifecycle(input) {
     taskId: required(input?.releaseTask?.taskId, TASK, 'releaseTask.taskId'),
     status: status(input?.releaseTask?.status, 'releaseTask'),
     recordDigest: optionalDigest(input?.releaseTask?.recordDigest, 'releaseTask.recordDigest'),
-    noChange: input?.releaseTask?.noChange ?? null,
   };
   if (!['active', 'completed'].includes(releaseTask.status)) throw new Error('releaseTask.status must be active or completed.');
-  if (releaseTask.status === 'completed' && releaseTask.noChange !== true) throw new Error('Completed releaseTask must record noChange=true.');
   const selection = {
     status: status(input?.selection?.status, 'selection'),
     generation: positiveInteger(input?.selection?.generation, 'selection.generation'),

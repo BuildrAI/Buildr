@@ -1,26 +1,7 @@
-import type { ParentCompletion, TaskRecord } from '../../api/generated/task-record-http-dto';
+import type { ParentCompletion } from '../../api/generated/task-record-http-dto';
+import type { CoordinationResponse } from '../../api/generated/task-professional-http-dto';
 
-export type ParentCoordinationChild = Pick<TaskRecord, 'taskId' | 'title' | 'intent' | 'status' | 'result' | 'updatedAt'>;
-export type ParentCoordinationResult = {
-  taskId?: string;
-  recordDigest?: string;
-  mode?: 'parent' | 'child' | 'ordinary';
-  isParent?: boolean;
-  objective?: string;
-  result?: TaskRecord['result'];
-  parentStatus?: string;
-  parentSource?: TaskRecord | null;
-  children?: ParentCoordinationChild[];
-  completion?: {
-    snapshotIdentity: string;
-    authorizationRequired: boolean;
-    openChildTaskIds: string[];
-    evidence: ParentCompletion | null;
-    summary: string;
-  };
-  historicalPlan?: unknown;
-  diagnostic?: { code?: string; message?: string } | null;
-};
+export type ParentCoordinationResult = Partial<CoordinationResponse>;
 
 export type ParentCompletionDraft = { summary: string; children: Record<string, string>; confirmed: boolean };
 export const emptyParentCompletionDraft = (): ParentCompletionDraft => ({ summary: '', children: {}, confirmed: false });

@@ -34,7 +34,7 @@ const allowed = new Map([
     'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
   ['src/workspace/persistence/workspace-registry-repository.mjs', new Set(['withWorkspaceRegistryMutation'])],
-  ['src/infrastructure/sqlite/workspace-sqlite.mjs', new Set(['cleanupRetiredTaskExecutionRecords'])],
+  ['src/infrastructure/sqlite/workspace-sqlite.mjs', new Set(['cleanupRetiredLocalData'])],
   ['src/system/installation/infrastructure/npm-launcher.mjs', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],

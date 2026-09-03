@@ -295,7 +295,7 @@ function directFixture(t) {
   git(current.root, 'push', 'origin', 'dev');
   const deliveredRef = git(current.root, 'rev-parse', 'HEAD');
   const taskId = 'direct-closeout';
-  const options = { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { noChange: false, summary: 'Delivered.' }, scope: { projects: ['product'] } } } } };
+  const options = { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { summary: 'Delivered.' }, scope: { projects: ['product'] } } } } };
   const input = { workspaceRoot: current.root, taskId, baseRef: current.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment };
   return { ...current, input, options };
 }

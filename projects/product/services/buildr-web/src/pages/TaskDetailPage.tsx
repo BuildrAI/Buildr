@@ -48,8 +48,6 @@ export function TaskDetailPage() {
   const href = (path: string) => workspaceHref(workspaceId, path);
 
   const [data, setData] = useState<TaskDetailData | null>(null);
-  const [overviewData, setOverviewData] = useState<any>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
   const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
   const currentCoordination = coordinationData?.taskId === taskId ? coordinationData : null;
@@ -75,7 +73,6 @@ export function TaskDetailPage() {
   const [completionRecordDigest, setCompletionRecordDigest] = useState('');
   const [completionDraft, setCompletionDraft] = useState(emptyParentCompletionDraft);
   const [completeSummary, setCompleteSummary] = useState('');
-  const [completeNoChange, setCompleteNoChange] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
   const [actionModal, setActionModal] = useState<null | 'edit' | 'complete' | 'abandon'>(null);
   const [documentReference, setDocumentReference] = useState<TaskDocumentReference | null>(null);
@@ -94,7 +91,6 @@ export function TaskDetailPage() {
   const taskIdRef = useRef(taskId);
   taskIdRef.current = taskId;
   const prototypeRequestRef = useRef(0);
-  const overviewRequestRef = useRef(0);
   const coordinationRequestRef = useRef(0);
   const reviewRequestRef = useRef(0);
   const verificationRequestRef = useRef(0);
@@ -121,7 +117,6 @@ export function TaskDetailPage() {
     }
     setParentOptions(options);
     setParentOptionsLoaded(false);
-    setCompleteNoChange(record.status === 'todo' ? 'true' : '');
   }, [setBreadcrumbParts]);
 
   const loadBriefs = useCallback(async (references: TaskDetailData['record']['changes']) => {
@@ -158,24 +153,6 @@ export function TaskDetailPage() {
     void loadBriefs(detail.record.changes);
   }, [taskId, setWorkspace, applyRecord, loadBriefs]);
 
-  const refreshOverview = useCallback(async () => {
-    const requestId = ++overviewRequestRef.current;
-    const currentTaskId = taskId;
-    setOverviewLoading(true);
-    try {
-      const next = await taskReadLifecycleRef.current.run(currentTaskId, 'overview', (signal) => (
-        taskProfessionalApi.overview(currentTaskId, { signal })
-      ));
-      if (overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) setOverviewData(next);
-    } catch (err) {
-      if (!isTaskReadCancelled(err) && overviewRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setOverviewData({ error: `${(err as ApiError).code || 'task_overview_read_failed'}：${err instanceof Error ? err.message : '读取失败'}` });
-      }
-    } finally {
-      if (overviewRequestRef.current === requestId) setOverviewLoading(false);
-    }
-  }, [taskId]);
-
   const refreshCoordination = useCallback(async () => {
     const requestId = ++coordinationRequestRef.current;
     const currentTaskId = taskId;
@@ -183,7 +160,7 @@ export function TaskDetailPage() {
     try {
       const next = await taskReadLifecycleRef.current.run(currentTaskId, 'coordination', (signal) => (
         taskProfessionalApi.coordination(currentTaskId, { signal })
-      )) as ParentCoordinationResult;
+      ));
       if (coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) setCoordinationData(next);
     } catch (err) {
       if (!isTaskReadCancelled(err) && coordinationRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
@@ -259,7 +236,6 @@ export function TaskDetailPage() {
   const selectTab = useCallback((tab: TaskTab) => {
     setActiveTab(tab);
     if (tab === 'overview') {
-      void refreshOverview();
       void refreshCoordination();
     }
     if (tab === 'prototype') void refreshPrototype();
@@ -267,14 +243,13 @@ export function TaskDetailPage() {
       void refreshReview();
       void refreshVerification();
     }
-  }, [refreshOverview, refreshCoordination, refreshPrototype, refreshReview, refreshVerification]);
+  }, [refreshCoordination, refreshPrototype, refreshReview, refreshVerification]);
 
   useEffect(() => {
     setPageError(null);
     setAlert(null);
     setData(null);
     setActiveTab('overview');
-    setOverviewData(null);
     setCoordinationData(null);
     setPrototypeData(null);
     setPrototypeError(null);
@@ -282,19 +257,16 @@ export function TaskDetailPage() {
     setVerificationData(null);
     setBriefs([]);
     setCompleteSummary('');
-    setCompleteNoChange('');
     setAbandonReason('');
     setActionModal(null);
     setDocumentReference(null);
     projectRegistryRef.current = null;
     setEditState('可以修改');
     prototypeRequestRef.current += 1;
-    overviewRequestRef.current += 1;
     coordinationRequestRef.current += 1;
     reviewRequestRef.current += 1;
     verificationRequestRef.current += 1;
     setPrototypeLoading(false);
-    setOverviewLoading(false);
     setCoordinationLoading(false);
     setReviewLoading(false);
     setVerificationLoading(false);
@@ -302,7 +274,7 @@ export function TaskDetailPage() {
     let cancelled = false;
     void (async () => {
       try {
-        await Promise.all([refresh(), refreshOverview(), refreshCoordination()]);
+        await Promise.all([refresh(), refreshCoordination()]);
       } catch (err) {
         if (!cancelled && taskIdRef.current === taskId) {
           setPageError(err instanceof Error ? err.message : '任务不可用');
@@ -313,12 +285,11 @@ export function TaskDetailPage() {
       cancelled = true;
       taskReadLifecycleRef.current.abortTask(taskId);
     };
-  }, [taskId, refresh, refreshOverview, refreshCoordination]);
+  }, [taskId, refresh, refreshCoordination]);
 
   focusRefreshRef.current = () => {
     const tab = activeTabRef.current;
     if (tab === 'overview') {
-      void refreshOverview();
       void refreshCoordination();
     }
     if (tab === 'evidence') {
@@ -438,7 +409,7 @@ export function TaskDetailPage() {
   const openComplete = async () => {
     if (!data) return;
     try {
-      const snapshot = await taskProfessionalApi.coordination(taskId) as ParentCoordinationResult;
+      const snapshot = await taskProfessionalApi.coordination(taskId);
       setCompletionSnapshot(snapshot);
       setCompletionRecordDigest(snapshot.recordDigest || data.recordDigest);
       setCompletionDraft(emptyParentCompletionDraft());
@@ -448,7 +419,7 @@ export function TaskDetailPage() {
 
   const onComplete = async (event: FormEvent) => {
     event.preventDefault();
-    if (!data || !completeNoChange || !completionSnapshot) return;
+    if (!data || !completionSnapshot) return;
     try {
       const parentCompletion = completionSnapshot.isParent ? parentCompletionInput(completionSnapshot, completionDraft, taskId) : undefined;
       const ok = await confirmModal({
@@ -460,7 +431,6 @@ export function TaskDetailPage() {
       await tasksApi.complete(taskId, {
         expectedRecordDigest: completionRecordDigest,
         summary: completeSummary,
-        noChange: completeNoChange === 'true',
         ...(parentCompletion ? { parentCompletion } : {}),
       });
       setActionModal(null);
@@ -530,7 +500,7 @@ export function TaskDetailPage() {
   const record = data.record;
   const terminal = !['todo', 'active'].includes(record.status);
   const resultText = record.result
-    ? `${record.result.summary}${record.status === 'completed' ? `（${record.result.noChange ? '无需变更' : '有交付变更'}）` : ''}`
+    ? record.result.summary
     : record.status === 'todo' ? '待办，尚未启动' : '进行中';
 
   return (
@@ -590,9 +560,7 @@ export function TaskDetailPage() {
         />
         {!currentCoordination?.isParent && (
         <TaskOutcomeSummary
-          summary={overviewData?.userSummary}
-          loading={overviewLoading}
-          onRefresh={() => { void refreshOverview(); }}
+          record={record}
         />
         )}
         <RetrospectiveDocumentCard
@@ -603,22 +571,6 @@ export function TaskDetailPage() {
         />
         <details className={`task-technical-overview${currentCoordination?.mode === 'parent' ? ' parent-mode' : ' ordinary-mode'}`} open={!record.isParent}>
           <summary>技术事实、Change 与 Task Record</summary>
-        <section className="panel" id="task-professional-overview" aria-live="polite">
-          <div className="panel-heading">
-            <div>
-              <h2>专业进展摘要</h2>
-              <p className="section-copy">一次只读查询组合各专业最近保存事实；顶层状态仍由 Task Record 管理。</p>
-            </div>
-            <Button onClick={() => { void refreshOverview(); }} disabled={overviewLoading}>{overviewLoading ? '读取中…' : '刷新摘要'}</Button>
-          </div>
-          {overviewData?.error ? <p className="alert error">{overviewData.error}</p> : (
-            <dl className="read-facts detail-facts">
-              <Fact label="规划审查" value={overviewData?.reviews?.planning?.present ? `${overviewData.reviews.planning.outcome} · ${formatDateTime(overviewData.reviews.planning.updatedAt)}` : '尚未记录'} />
-              <Fact label="完成审查" value={overviewData?.reviews?.completion?.present ? `${overviewData.reviews.completion.outcome} · ${formatDateTime(overviewData.reviews.completion.updatedAt)}` : '尚未记录'} />
-              <Fact label="正式验证" value={overviewData?.verification?.present ? `${overviewData.verification.outcome} · ${formatDateTime(overviewData.verification.updatedAt)}` : '尚未记录'} />
-            </dl>
-          )}
-        </section>
         <section id="task-change-briefs" className="task-change-briefs" aria-live="polite">
           {briefs.map((item, index) => {
             if (item.kind === 'empty') {
@@ -635,7 +587,7 @@ export function TaskDetailPage() {
             <div className="panel-heading">
               <div>
                 <h2>任务记录（Task Record）</h2>
-                <p className="section-copy">只展示顶层任务事实；Parent/Child 表达管理层级，不自动推断状态或专业结果。</p>
+                <p className="section-copy">只展示顶层任务事实；父任务/子任务（Parent/Child Task）表达协调层级，不自动推断状态或专业结果。</p>
               </div>
             </div>
             <dl className="read-facts detail-facts">
@@ -710,7 +662,7 @@ export function TaskDetailPage() {
         </details>
         <section id="task-terminal-note" className={`empty-state${terminal ? '' : ' hidden'}`}>
           <h2>这是终态任务记录</h2>
-          <p>顶层事实与 Parent/Child 关系保持只读，不提供重开、重新挂接或自动处置关联 Task 的入口。专业模块仍由各自权威来源管理。</p>
+          <p>顶层事实与父任务/子任务关系保持只读，不提供重开、重新挂接或自动处置关联Task的入口。专业模块仍由各自权威来源管理。</p>
         </section>
       </div>
 
@@ -775,22 +727,6 @@ export function TaskDetailPage() {
           <label>
             完成摘要
             <Input.TextArea id="task-complete-summary" rows={3} required value={completeSummary} onChange={(event) => setCompleteSummary(event.target.value)} />
-          </label>
-          <label>
-            是否无需交付变更
-            <Select
-              id="task-complete-no-change"
-              style={{ width: '100%' }}
-              placeholder="请选择"
-              value={completeNoChange || undefined}
-              onChange={(value) => setCompleteNoChange(value || '')}
-              options={record.status === 'todo'
-                ? [{ value: 'true', label: '确认无需变更' }]
-                : [
-                    { value: 'false', label: '有交付变更' },
-                    { value: 'true', label: '确认无需变更' },
-                  ]}
-            />
           </label>
           {completionSnapshot?.isParent && <ParentCompletionFields snapshot={completionSnapshot} value={completionDraft} onChange={setCompletionDraft} />}
           <div className="actions">

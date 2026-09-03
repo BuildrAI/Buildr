@@ -29,7 +29,7 @@ Product Candidate是发布体系的完整候选验证对象，不是任务开发
 
 - Unit保持纯逻辑；Component只组装有界Application；Integration穿过真实filesystem、Git、SQLite或进程边界；System覆盖完整用户入口。
 - 每个测试文件只有一个primary owner。general suite排除已经由领域slice持有的文件。
-- Task Record、Task Overview、Review、Verification与Parent Coordination各自使用独立owner。复盘文档读取与两态登记由Task Record测试覆盖；复盘分析是纯Skill，不再拥有独立Application测试slice。已删除的任务研发、任务规划身份、Environment和旧收尾Application没有测试slice、System owner或Candidate shard。
+- Task Record、Review、Verification与父任务协调（Task Parent Coordination）各自使用独立owner。Task Overview没有独立owner或测试slice；任务详情页面投影由Task Record及专业reader测试覆盖。复盘文档读取与两态登记由Task Record测试覆盖；复盘分析是纯Skill。已删除的任务研发、任务规划身份、Environment和旧收尾Application没有测试slice、System owner或Candidate shard。
 - self-bootstrap仍是独立真实生命周期owner；Product/Release Candidate、tarball、npm、Launcher和发布事务保持自己的Release owner。
 - Browser只在用户可见路径需要时运行，并使用本机Chrome/Chromium与隔离Workspace。
 

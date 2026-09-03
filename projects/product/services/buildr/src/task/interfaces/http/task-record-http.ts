@@ -46,7 +46,6 @@ export type TaskHttpInput = {
 function invalidContractInput(operationId: string, label: string, errors: readonly ValidationIssue[]): HttpBusinessError {
   const errorItem = errors.find((item) => item.keyword === 'additionalProperties')
     || errors.find((item) => item.params?.missingProperty === 'expectedRecordDigest')
-    || errors.find((item) => item.params?.missingProperty === 'noChange')
     || errors.find((item) => item.keyword === 'minProperties')
     || errors[0]
     || {};
@@ -65,9 +64,6 @@ function invalidContractInput(operationId: string, label: string, errors: readon
   } else if (operationId === 'task-record.update' && errorItem.keyword === 'minProperties') {
     code = 'task_record_update_empty';
     message = 'Task update 至少需要一个明确 mutation。';
-  } else if (operationId === 'task-record.complete' && field === 'noChange') {
-    code = 'task_record_no_change_required';
-    message = 'complete 必须明确提供 noChange boolean。';
   } else if (operationId === 'task-record.list') {
     code = 'task_record_filter_invalid';
   } else if (field && /Services$/.test(field)) {

@@ -58,7 +58,7 @@
 
 - 保持现有文件的原路径和原内容，不迁移、不重写、不删除或重新接管。
 - 只作为历史过程和来源线索，不再承担当前任务工作状态或导航职责。
-- 当前 Task、Parent/Child、Development、Review 与 Verification 状态必须通过各专业 Application/read model、Buildr Web、canonical specs 和有效 evidence 核实。
+- 当前Task、父任务协调（Task Parent Coordination）、Review与Verification事实必须通过各自Application/read model、Buildr Web、canonical specs和有效evidence核实。
 - 不创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`。
 
 ## Roadmap 规则
@@ -84,7 +84,7 @@
 
 - 新增当前产品说明时，优先更新 `docs/buildr-product.md`。
 - 新增当前实现事实时，按影响更新 `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/` 或 `services/` 中真正相关的资产；不生成空文档。
-- 正式 Task 的协调和进度使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话汇报；不要创建第二份 Board authority。既有 `task-boards/` 与 `task-cockpits/` 页面保持原路径和原内容，只作为历史旁证。
+- 正式Task的协调和进度使用Task Record、父任务/子任务关系、各专业公开read model、Buildr Web与对话汇报；不要创建第二份Board authority。既有`task-boards/`与`task-cockpits/`页面保持原路径和原内容，只作为历史旁证。
 - 新增规范性行为时，更新 `openspec/specs/` 或创建 OpenSpec change。
 - 新增尚未进入实现的详细产品方向时，维护 `docs/roadmap/` 并保持非当前事实声明。
 - 新增 Agent runtime adapter 前，先按 `services/buildr/docs/agent-runtime-adapter-contribution.md` 取得目标 Agent 的版本化证据；进入实现后仍必须创建独立 OpenSpec change。

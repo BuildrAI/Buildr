@@ -5,7 +5,6 @@
 export type TaskId = string;
 export type TaskResult = null | {
   summary: string;
-  noChange?: boolean;
   parentCompletion?: ParentCompletion;
 };
 export type QualifiedServiceInput = string | QualifiedService;
@@ -56,7 +55,6 @@ export interface TaskRecord {
   };
   changes: QualifiedChange[];
   parentTaskId: TaskId | null;
-  childTaskIds: TaskId[];
   isParent?: boolean;
   retrospective: {
     state: 'pending-decision' | 'decided';
@@ -96,6 +94,12 @@ export interface TaskResultHistoryEntry {
   title: string;
   intent: string;
   parentTaskId: TaskId | null;
+  scope?: {
+    projects: string[];
+    services: QualifiedService[];
+  };
+  changes?: QualifiedChange[];
+  isParent?: true;
   result: TaskResult;
   recordUpdatedAt: string;
   correctedAt: string;
@@ -151,10 +155,8 @@ export interface TaskListResponse {
 export interface StoredTaskView {
   record: TaskRecord;
   recordDigest: string;
-  storedChangeReferences: QualifiedChange[];
   taskRelations: TaskRelations;
   retrospectiveDocument: RetrospectiveDocumentReference;
-  childTaskCount: number;
 }
 export interface TaskDetailRequest {}
 export interface TaskDetailResponse {
@@ -162,17 +164,14 @@ export interface TaskDetailResponse {
   taskId: TaskId;
   record: TaskRecord;
   recordDigest: string;
-  storedChangeReferences: QualifiedChange[];
   taskRelations: TaskRelations;
   retrospectiveDocument: RetrospectiveDocumentReference;
-  childTaskCount: number;
 }
 export interface TaskUpdateRequest {
   expectedRecordDigest: string;
   status?: 'todo' | 'active' | 'completed' | 'abandoned';
   reason?: string;
   summary?: string;
-  noChange?: boolean;
   parentCompletion?: ParentCompletion;
   addChanges?: QualifiedChange[];
   removeChanges?: QualifiedChange[];
@@ -191,7 +190,6 @@ export interface TaskUpdateRequest {
 export interface TaskCompleteRequest {
   expectedRecordDigest: string;
   summary: string;
-  noChange: boolean;
   parentCompletion?: ParentCompletion;
 }
 export interface TaskAbandonRequest {

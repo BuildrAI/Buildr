@@ -35,10 +35,6 @@ function readContribution(id: string, taskIdSource: string, operation: string, s
   });
 }
 
-export function createTaskOverviewHttpContribution(taskIdSource: string) {
-  return readContribution('task-overview.http', taskIdSource, 'overview', '^/tasks/<task-id>/overview$', undefined, 'task-overview.detail');
-}
-
 export function createTaskVerificationHttpContribution(taskIdSource: string) {
   return readContribution('task-verification.http', taskIdSource, 'verification', '^/tasks/<task-id>/verification$', undefined, 'task-verification.detail');
 }

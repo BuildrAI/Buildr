@@ -1,7 +1,6 @@
 import type { ApiClient } from './client';
 import type {
   CoordinationResponse,
-  OverviewResponse,
   ReviewsResponse,
   VerificationResponse,
 } from './generated/task-professional-http-dto';
@@ -18,9 +17,6 @@ function taskPath(taskId: string, suffix: string): string {
 
 export function createTaskProfessionalClient(client: ApiClient) {
   return Object.freeze({
-    overview(taskId: string, options: ReadOptions = {}): Promise<OverviewResponse> {
-      return typed(client(taskPath(taskId, '/overview'), options));
-    },
     reviews(taskId: string, options: ReadOptions = {}): Promise<ReviewsResponse> {
       return typed(client(taskPath(taskId, '/reviews'), options));
     },

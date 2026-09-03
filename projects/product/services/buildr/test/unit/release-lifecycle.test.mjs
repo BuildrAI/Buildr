@@ -24,7 +24,7 @@ test('readiness keeps the unique release Task active while awaiting publication 
   assert.equal(lifecycle.phase, 'awaiting-publication-authorization');
   assert.equal(lifecycle.status, 'active');
   assert.match(lifecycle.recoveryIdentity, /^sha256-/u);
-  assert.throws(() => createReleaseLifecycle(input({ releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1'), noChange: true } })), /must remain active/u);
+  assert.throws(() => createReleaseLifecycle(input({ releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1') } })), /must remain active/u);
 });
 
 test('same generation and context keep a stable recovery identity across transient publication attempts', () => {
@@ -61,14 +61,14 @@ test('closed lifecycle requires zero intermediate resources and a verified retai
   assert.equal(closed.phase, 'closed');
   assert.equal(closed.status, 'passed');
   const completed = createReleaseLifecycle(input({
-    releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1'), noChange: true },
+    releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1') },
     publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
     convergence: { status: 'passed', recoveryIdentity: digest('6') },
     closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'retained-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' } },
   }));
   assert.equal(completed.status, 'passed');
   assert.throws(() => createReleaseLifecycle(input({
-    releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1'), noChange: true },
+    releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1') },
     publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
     convergence: { status: 'passed', recoveryIdentity: digest('6') },
     closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: null },

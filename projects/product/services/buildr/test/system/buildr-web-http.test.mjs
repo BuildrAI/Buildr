@@ -26,16 +26,12 @@ test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确�
   const development = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/development`);
   assert.equal(development.status, 404);
   const overview = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/overview`);
-  assert.equal(overview.status, 200);
-  assert.equal((await overview.json()).schemaVersion, 'buildr.task-overview/v2');
+  assert.equal(overview.status, 404);
   const prototypes = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-prototypes`);
   assert.equal(prototypes.status, 200);
   assert.deepEqual(await prototypes.json(), { taskId: 'http-read', prototypes: [], diagnostics: [] });
   const legacyPreviews = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-previews`);
   assert.equal(legacyPreviews.status, 404);
-  const missing = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/missing/overview`);
-  assert.equal(missing.status, 404);
-  assert.equal((await missing.json()).error.code, 'task_overview_not_found');
 });
 
 test('Buildr Web Runtime HTTP 只读每日演进，不接受路径也不写入', async (t) => {
@@ -116,7 +112,7 @@ test('Buildr Web Runtime HTTP owner 传播 read executor 错误并保持写请�
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });
   t.after(() => new Promise((resolve) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, sessionToken } = await instance.ready;
-  const failed = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-errors/overview`);
+  const failed = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-errors/reviews`);
   assert.equal(failed.status, 500);
   assert.equal((await failed.json()).error.code, 'local_app_http_test_failure');
   const rejectedWrite = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-errors`, {

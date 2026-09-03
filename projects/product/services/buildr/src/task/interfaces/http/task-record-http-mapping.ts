@@ -22,7 +22,6 @@ export function mapTaskUpdateRequest(input: TaskUpdateRequest): TaskUpdateReques
   if (Object.hasOwn(input, 'status')) result.status = input.status;
   if (Object.hasOwn(input, 'reason')) result.reason = input.reason;
   if (Object.hasOwn(input, 'summary')) result.summary = input.summary;
-  if (Object.hasOwn(input, 'noChange')) result.noChange = input.noChange;
   if (Object.hasOwn(input, 'parentCompletion')) result.parentCompletion = input.parentCompletion;
   if (Object.hasOwn(input, 'title')) result.title = input.title;
   if (Object.hasOwn(input, 'intent')) result.intent = input.intent;
@@ -43,7 +42,6 @@ export function mapTaskCompleteRequest(input: TaskCompleteRequest): TaskComplete
   return {
     expectedRecordDigest: input.expectedRecordDigest,
     summary: input.summary,
-    noChange: input.noChange,
     ...(Object.hasOwn(input, 'parentCompletion') ? { parentCompletion: input.parentCompletion } : {}),
   };
 }

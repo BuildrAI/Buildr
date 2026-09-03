@@ -251,19 +251,6 @@ Service CLI MUST 使用 `code`、`name`、`description`、`type`、`source` 与 
 - **WHEN** Agent 使用 JSON 输出创建或登记 Service
 - **THEN** 输出 MUST 包含稳定 Domain、registry revision 与 declared/observed 分离结果
 
-### Requirement: Worktree CLI 必须与 Task Environment CLI 分离
-
-Buildr MUST只保留`buildr worktree create|inspect|cleanup`作为Git位置和删除安全公共命令。CLI MUST NOT提供`task environment`、Plan、Receipt、ready、恢复、资源登记或总cleanup动作。
-
-#### Scenario: 用户明确管理 Git worktree
-- **WHEN** 用户运行`worktree create|inspect|cleanup`
-- **THEN** CLI MUST只返回`buildr.git-worktree-result/v1`
-- **AND** MUST NOT要求或生成Task Environment记录
-
-#### Scenario: 调用已删除的环境路由
-- **WHEN** 调用方运行`task environment *`、`worktree context|adopt`或旧Environment参数
-- **THEN** CLI MUST作为不存在或不支持的命令拒绝
-
 ### Requirement: CLI 必须提供最小 Task Review Result 管理入口
 Buildr CLI MUST 公开 `buildr task review inspect <task-id>` 与 `buildr task review record <task-id>`，并 MUST 只把解析后的 canonical target、current target identity 或完整语义字段交给 Task Review Application。CLI MUST NOT 执行 Review、生成 plan/Candidate identity、接受 caller path 或写完整 next-state YAML。
 
@@ -483,43 +470,22 @@ Buildr CLI MUST 只将 `web` 注册为当前本机 Web 产品的 executable doma
 - **AND** Buildr Web Runtime MUST 只在 `buildr web` 或其明确 preview/Launcher 启动路径中按需启动
 
 ### Requirement: OpenSpec Semantic Readiness Preflight必须提供公共CLI与JSON契约
-Buildr CLI MUST让`buildr openspec convergence preflight <change> --project <project> --target <task-execution-root> --json`返回`buildr.openspec-convergence-preflight/v1`，并以`ready|blocked`表达当前语义就绪结果。Command catalog、topic help、dispatch、unknown-command candidates、JSON registry与验证 MUST从同一command descriptor发现该入口。
+Buildr CLI MUST让`buildr openspec convergence preflight <change> --project <project> --target <actual-work-root> --json`返回`buildr.openspec-convergence-preflight/v1`，并以`ready|blocked`表达当前语义就绪结果。Command catalog、topic help、dispatch、JSON registry与验证 MUST从同一command descriptor发现该入口。
 
 #### Scenario: Preflight ready
 - **WHEN** 当前delta、canonical、active Changes和executable可形成唯一且strict有效的expected Project
-- **THEN** JSON MUST包含change、project、status、readinessIdentity、convergence/plan identity、delta/executable/algorithm identity、activeChange observations、operations、validation、duration、commandCount、`effects: []`和nextActions
-- **AND**命令 MUST以成功状态退出
+- **THEN** JSON MUST包含change、project、status、identity、operations、validation、duration、effects与nextActions
+- **AND** 命令 MUST以成功状态退出
 
 #### Scenario: Preflight blocked
 - **WHEN** planner、active conflict scan或projected strict validation返回blocker
-- **THEN** JSON MUST返回`blocked`、稳定category、底层code、最小identity引用和`effects: []`
-- **AND**命令 MUST以非零状态退出且不得创建Receipt、修改canonical或archive Change
+- **THEN** JSON MUST返回blocked、稳定category、底层code、最小identity引用与零effects
+- **AND** 命令 MUST以非零状态退出且不创建Receipt、修改canonical或archive Change
 
 #### Scenario: Planning root或Change无效
-- **WHEN** Project、Task execution root、OpenSpec executable或active Change不能安全解析
-- **THEN** CLI MUST在任何持久写入前返回具体diagnostic和matching Environment execution root提示
+- **WHEN** Project、实际工作根、OpenSpec executable或active Change不能安全解析
+- **THEN** CLI MUST在任何持久写入前返回具体diagnostic和实际工作根修复提示
 - **AND** MUST不扫描或猜测其他worktree
-
-### Requirement: Parent Coordination CLI必须公开planning refresh
-Buildr CLI MUST公开`task parent refresh-planning <task-id>`，并只接收Task identity、canonical target与输出模式；该命令MUST不接收planning JSON、Review digest、gate正文或Child状态。
-
-#### Scenario: 查看refresh帮助
-- **WHEN** 用户运行Parent Coordination topic help或`task parent refresh-planning --help`
-- **THEN** help MUST展示命令用途、必需Task ID和canonical target
-- **AND** MUST明确该动作消费saved Parent Plan与current Planning Review
-
-#### Scenario: candidate CLI尝试写canonical Workspace
-- **WHEN** refresh由Task worktree candidate CLI指向retained canonical Workspace
-- **THEN** writer provenance guard MUST保持零写入并返回retained controller route
-- **AND** CLI MUST不绕过Development writer authority
-
-### Requirement: Parent Plan CLI必须提供输入discoverability
-Parent Plan record/reconcile CLI MUST为closed输入提供机器可读schema与example发现方式，并与实际Application validation保持同步。
-
-#### Scenario: Agent发现Parent Plan输入
-- **WHEN** Agent请求Parent Plan record或reconcile的schema/example
-- **THEN** CLI MUST返回outcome、architectureDecisions、包含完整实施指令与边界的contributions、finalAcceptance的v2 closed shape及最小合法样例
-- **AND** Agent MUST不需要读取产品源码、测试或SQLite来构造输入
 
 ### Requirement: CLI 必须登记每日演进 Agent-machine 命令
 Buildr CLI MUST 将 Project 每日演进的 `record`、`inspect` 与 `list` 登记为 `agent-machine` 产品表面，并 MUST 要求显式 Project。`record` MUST 接受 closed payload 或等价结构化输入，覆盖日摘要、提交列表、变更文件与可选 Task 关联；他人提交带 Task 时 MUST 失败。`inspect`/`list` MUST 只读。这些命令 MUST NOT 被描述为 primary 人类主路径，也 MUST NOT 提供定时调度或现场 Git 扫描。
@@ -528,32 +494,6 @@ Buildr CLI MUST 将 Project 每日演进的 `record`、`inspect` 与 `list` 登�
 - **WHEN** 用户或 Agent 查看 CLI 帮助中的 Agent-machine 命令
 - **THEN** 帮助 MUST 能发现每日演进 record/inspect/list
 - **AND** MUST 说明它们写本机文件、可选关联本机 Task，不进入 Git 或 Task SQLite
-
-### Requirement: Parent Plan CLI 必须发现 v2 并稳定区分计划与运行事实
-`task parent record|reconcile --schema|--example` MUST 只公开 v2 input；`record` MUST 拒绝 v1 新写入，`reconcile` MUST 允许以 current v1 identity 显式提交完整 v2 完成升级。`inspect` JSON MUST 分别返回 stored Plan schema、rich work-item projection、expected Child、eligibility 与 actual Child binding/delivery facts。
-
-#### Scenario: 发现 v2 schema
-- **WHEN** Agent 调用 `task parent record --schema` 或 `--example`
-- **THEN** CLI MUST 返回包含 priority/title/objective/directions/boundaries/expectedChild/dependencies 的 v2 closed input
-- **AND** MUST 不再推荐 `plannedChildTaskId`
-
-#### Scenario: inspect expected 与 actual
-- **WHEN** 一个 work item 同时具有 expected Child 文本和真实 active Child binding
-- **THEN** JSON MUST 在不同字段返回预计信息与 actual Child identity/status
-- **AND** MUST 不用 `plannedChildTaskId` 或 UI 推导真实状态
-
-### Requirement: Parent coordination CLI 必须只输出v3 canonical字段
-`task parent inspect|record|refresh-planning|bind-child|reconcile|accept --json` MUST只输出Parent Coordination v3，并 MUST让业务blocked路径使用同一v3 envelope。非JSON人类可读行为可以保持不变。
-
-#### Scenario: inspect成功
-- **WHEN** Agent运行`task parent inspect <task-id> --json`
-- **THEN** stdout MUST是单一v3对象且stderr为空
-- **AND** MUST不包含任何已删除v2字段
-
-#### Scenario: mutation被拒绝
-- **WHEN** Parent action因identity、状态或输入冲突被拒绝
-- **THEN** stdout MUST仍是单一v3 blocked对象并保持非零退出
-- **AND** diagnostic与effects MUST保持准确
 
 ### Requirement: Project CLI必须提供测试地图维护入口
 Buildr MUST提供`project verification inspect|validate|update <project>`。`validate`和`update` MUST接收Agent生成的候选文件；`update` MUST要求expected identity并在冲突时零写入。CLI MUST不扫描项目自动生成地图或执行测试。
@@ -578,3 +518,16 @@ CLI registry与internal workflow router MUST不登记`__internal task-developmen
 - **WHEN** Agent调用任一已删除CLI或internal route
 - **THEN** CLI MUST返回非零unknown command/route诊断
 - **AND** Task Record、SQLite、Git和文件 MUST保持不变
+
+### Requirement: Parent Coordination CLI必须只提供v4只读结果
+`task parent inspect --json` MUST输出Parent Coordination v4 closed对象。旧`record|refresh-planning|bind-child|reconcile|accept`命令 MUST不存在且不提供兼容转发。
+
+#### Scenario: inspect成功
+- **WHEN** Agent运行`task parent inspect <task-id> --json`
+- **THEN** stdout MUST是单一v4对象且stderr为空
+- **AND** MUST不包含v3 Contribution或Handoff字段
+
+#### Scenario: mutation被拒绝
+- **WHEN** 调用方运行任一旧Parent mutation
+- **THEN** CLI MUST返回标准unknown-command错误与非零退出
+- **AND** MUST保持Task与专业事实零写入

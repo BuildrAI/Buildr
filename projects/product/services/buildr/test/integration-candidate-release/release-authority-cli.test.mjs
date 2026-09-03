@@ -247,10 +247,9 @@ test('release transaction runner binds preparation inputs to the final frozen so
     scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }] },
     changes: [],
     parentTaskId: null,
-    childTaskIds: [],
     retrospective: null,
     status: 'completed',
-    result: { summary: `${title} completed`, noChange: false },
+    result: { summary: `${title} completed` },
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:01:00.000Z',
   });

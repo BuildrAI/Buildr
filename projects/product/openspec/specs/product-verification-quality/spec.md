@@ -897,39 +897,6 @@ Release smoke、fresh build和其他高成本lifecycle verifier MUST记录阶段
 - **THEN** timing evidence MUST至少区分准备、安装/构建、启动与状态演进、卸载/最终Doctor以及harness cleanup中的适用阶段
 - **AND** 每个阶段的性能预算 MUST保持非阻断
 
-### Requirement: 开发反馈、候选门禁与发布验证必须分离
-Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、current `release-<version>` HEAD/tree上的分布式完整Candidate与显式dispatch release workflow的正式发布物验证；Formal Finish或self-bootstrap successor直接推送`dev` MUST NOT自动启动GitHub Product verification，普通发布准备 MUST NOT无条件在本机和GitHub重复完整Candidate。Release创建后`dev`前进 MUST NOT使release自动变化；只有维护者明确选择并形成新release SHA时才重新运行完整Candidate。
-
-#### Scenario: PR向Dev提交开发修改
-- **WHEN** 外部贡献、普通feature branch或需要hosted跨平台反馈的修改通过PR进入`dev`
-- **THEN** CI MUST运行可解释的changed/affected反馈并保留适用Windows高风险结果
-- **AND** 该反馈 MUST NOT被描述为完整Candidate或自动进入既有release集合
-
-#### Scenario: Dev收到新提交
-- **WHEN** Formal Finish把已完成正式Verification的source commit推送到`dev`，或self-bootstrap runner随后推送retained Workspace activation successor
-- **THEN** GitHub `Verify Buildr` MUST NOT因该`dev` push自动启动
-- **AND** source commit的正确性 MUST由current Task Verification与Finish remote readback证明
-- **AND** successor的收敛 MUST由self-bootstrap runner的精确delta、push readback、development identity与最终Doctor证明
-- **AND** release owner MUST等待维护者明确选择，不得把该commit自动纳入release
-
-#### Scenario: 准备候选版
-- **WHEN** current release HEAD/tree冻结并需要进入`main`
-- **THEN** GitHub分布式aggregate gate MUST作为该release source的完整Candidate权威
-- **AND** 本地默认验证 MUST使用changed/focus/affected结果
-- **AND** 只有验证框架自身变化、故障诊断或GitHub不可用等明确场景才要求额外本地完整Candidate
-- **AND** Candidate evidence与唯一tarball MUST绑定同一release source SHA/tree
-
-#### Scenario: 正式发布
-- **WHEN** maintainer对已收敛到`main`且matching current release Candidate的source明确授权发布
-- **THEN** 本机 MUST只dispatch一次正式release workflow并跟踪同一run
-- **AND** workflow MUST在审批前验证matching Candidate与冻结tarball，并只让唯一protected transaction执行tag与npm/GitHub mutation
-- **AND** workflow MUST NOT重跑完整Product Candidate或生成第二份可发布bytes
-
-#### Scenario: 迁移分支保护
-- **WHEN** 新aggregate check尚未在实际release PR head SHA上通过并完成回读
-- **THEN** 旧required contexts MUST继续保留
-- **AND** 新gate稳定后才可切换required contexts并删除旧名称
-
 ### Requirement: Tag publish Host Node 验证必须在隔离 runner 中准备自身依赖
 Buildr正式release workflow的每个Host Node job MUST在独立runner上依据current package lockfile准备checkout verification harness所需依赖，再执行同一冻结正式tarball的Host Node、CLI、Web与Workspace runtime role验证。每个job MUST显式提供同一candidate artifact中的tarball、`npm-pack` metadata与release artifact manifest，并由verifier在安装后identity验证前核对三者绑定的filename、version、application payload digest与immutable bytes。Job MUST NOT假设其他job的工作目录、`node_modules`或进程状态可见，且依赖准备与输入绑定 MUST NOT重建、修改或替换被冻结的tarball。
 
@@ -1210,19 +1177,6 @@ Buildr Product MUST 让治理测试优先断言 machine-readable authority、aut
 - **WHEN** Application、CLI、HTTP或正式Result把局部失败扩大为无关动作阻塞，或把claimed success当作专业事实
 - **THEN** 对应最低充分行为测试 MUST失败
 - **AND** Skill文本仍包含正确说明 MUST NOT使该失败通过
-
-### Requirement: 前序治理贡献必须具有跨路径一致性矩阵
-Buildr Product MUST 为自动路径、Agent直接路径、PR/CI路径、正式事实对账和unrelated failure isolation维护一个可执行的结果不变量集合。集合 MUST复用各专业owner的最低充分测试，不得创建第二份Task、Parent、Verification或Release authority；每项关键事实 MUST只有一个primary evidence owner，辅助测试可以验证组合一致性。
-
-#### Scenario: 多条合法路径形成同一结果
-- **WHEN** 自动Finish、Agent直接Git/PR后对账或CI交付产生可独立核验的matching事实
-- **THEN** 测试 MUST证明Delivery投影使用相同Task Contribution与remote identity不变量
-- **AND** Activation、Environment Cleanup与Diagnostics MUST保持正交，不得反向撤销Delivery
-
-#### Scenario: 无关模块失败
-- **WHEN** Doctor、optional capability、Declaration、UI读取或其他局部owner返回与当前动作无关的attention或failure
-- **THEN** 测试 MUST证明当前不消费该owner的安全动作仍可继续
-- **AND** 真实authorization、identity、shared history、external side effect与cleanup ownership门禁 MUST继续失败关闭
 
 ### Requirement: 开发反馈、完整Candidate与正式Release不得重复主证据
 Buildr Product MUST让focused/changed/affected开发反馈、冻结release source上的完整Product Candidate与正式Release artifact验证各自只承担其primary evidence；同一执行内每个verification step MUST去重，同一release source SHA/tree MUST只有一个matching Candidate generation和一个不可变tarball，正式publish MUST消费该tarball及matching Candidate evidence而不得重跑完整Candidate regression。
@@ -1818,22 +1772,58 @@ Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO�
 - **AND** Fast 静态检查 MUST不冒充该 System evidence
 
 ### Requirement: 退役任务能力必须具有无残留验收
-Product verification MUST覆盖fresh/升级SQLite、Task/OpenSpec/Review/Verification/Environment/Web无Development运行、退役CLI/HTTP/route缺失、package inventory与Product Candidate回归。
+Product verification MUST覆盖fresh/升级SQLite、Task Record、OpenSpec、Review、Verification、父任务协调、Buildr Web与发布回归，并证明Task Overview、Task Environment、Task Development、Planning Identity、Task Candidate、Development Handoff、旧Finish、Contribution协调与Execution Record没有运行时入口、current表、能力绑定、兼容转发或专属owner。
 
 #### Scenario: 完整受影响验证
-- **WHEN** 删除任务研发与旧Finish实现完成
-- **THEN** 类型、Unit、Component、Contract、Integration、System、Browser、package和OpenSpec检查 MUST通过
-- **AND** release candidate相关检查 MUST证明Product Candidate模型未变
+- **WHEN** 最终任务系统收敛完成
+- **THEN** 类型、Unit、Component、Contract、Integration、System、适用Browser、package和OpenSpec检查 MUST通过
+- **AND** Product/Release Candidate模型 MUST保持独立且可用
 
 ### Requirement: 专属 Integration slice 必须保持当前能力的唯一 primary ownership
-Verification registry MUST为仍存在的Task Overview、Record、Review、Verification与Parent Coordination实现选择唯一primary owner，不得保留Retrospective、Task Entry、Environment、Task Development、Planning Identity或旧Finish的空step、shard或路径映射。
+Verification registry MUST为仍存在的Task Record、Review、Verification与父任务协调实现选择唯一primary owner。Task Overview、Retrospective Application、Task Entry、Environment、Task Development、Planning Identity、旧Finish和Contribution协调 MUST没有空step、shard或路径映射。
 
-#### Scenario: changed paths命中Task read或专业实现
+#### Scenario: changed paths命中Task实现
 - **WHEN** affected selection命中当前保留的Task实现
 - **THEN** MUST选择覆盖该实现的现有owner
 - **AND** MUST不选择已退役Task能力的owner
+
+#### Scenario: changed paths命中Task read或专业实现
+- **WHEN** affected selection命中Task Record或保留专业reader
+- **THEN** MUST选择该实现当前唯一owner
+- **AND** MUST不选择Overview、Environment、Development或Finish专属owner
 
 #### Scenario: 本机复盘文档能力变化
 - **WHEN** Task Record复盘摘要、固定文件读取或Buildr Web复盘卡片发生改变
 - **THEN** MUST由Task Record Integration/System和适用Browser owner证明
 - **AND** MUST不重建Task Retrospective专属slice
+
+### Requirement: 开发反馈、产品候选与发布验证必须分离
+Buildr release workflow MUST区分PR到`dev`的changed/affected反馈、current release HEAD/tree上的完整Product Candidate与显式dispatch的正式发布验证。直接Git交付或self-bootstrap successor推送`dev` MUST不自动启动完整Product verification；只有维护者明确选择并形成新release SHA时才重新运行完整Candidate。
+
+#### Scenario: Dev收到新提交
+- **WHEN** Agent直接交付Task source commit或self-bootstrap successor到`dev`
+- **THEN** GitHub完整Product verification MUST不因push自动启动
+- **AND** 交付与自举分别由Git readback、Task Verification和self-bootstrap结果证明
+
+#### Scenario: 准备候选版
+- **WHEN** current release HEAD/tree冻结并需要进入`main`
+- **THEN** 分布式aggregate MUST作为该release source的完整Candidate权威
+- **AND** 普通changed/affected反馈 MUST不冒充完整Candidate
+
+#### Scenario: 正式发布
+- **WHEN** maintainer对matching current release Candidate明确授权发布
+- **THEN** runner MUST只dispatch一次正式workflow并消费唯一tarball
+- **AND** protected transaction MUST独占公共发布mutation
+
+### Requirement: 跨路径结果不变量必须复用真实owner
+Buildr Product MUST让Agent直接Git/PR、CI、发布与资源清理路径复用各专业owner的最低充分测试，不得创建第二份Task、Parent、Verification、Delivery或Release authority。
+
+#### Scenario: 多条合法路径形成结果
+- **WHEN** 直接Git、PR/CI或发布形成可独立核验的事实
+- **THEN** 测试 MUST分别核对Task Record、Git remote、Verification、Publication与资源owner结果
+- **AND** 任一局部清理失败 MUST不撤销其他已经成立的事实
+
+#### Scenario: 无关模块失败
+- **WHEN** optional capability、Doctor、Declaration或UI读取发生无关失败
+- **THEN** 当前不消费该owner的安全动作 MUST继续可用
+- **AND** authorization、identity、shared history和具体删除安全仍 MUST失败关闭
