@@ -6,8 +6,8 @@
   "visualReview": "pending",
   "artifact": {
     "path": "/Users/chenjun/Buildr/.worktrees/create-buildr-system-overview-diagram/projects/product/knowledge/archify/system/buildr-system-overview.html",
-    "sha256": "c9ec59287d5c030e132ea2afc1e0d9247022a8538c301f2558d9a986a9bc3210",
-    "bytes": 727702
+    "sha256": "0f85eb6bf23d3b05d655daf750ed9a8bd7b923542a41634547179a78c51ba1d1",
+    "bytes": 727688
   },
   "state": {
     "detail": "read",

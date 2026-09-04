@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/BuildrAI/Buildr.git",
-      "revision": "5b4ea5c647b4f42d497829bbbacd261e9f96b1cf"
+      "revision": "0266251de864724f5767d6912ec9f844f355a2b1"
     },
     "viewBox": [1300, 820]
   },
@@ -96,11 +96,11 @@
       "size": [220, 84],
       "sources": [
         {
-          "path": "projects/product/services/buildr/src/bootstrap/runtime.mjs",
+          "path": "projects/product/services/buildr/src/bootstrap/runtime.ts",
           "label": "运行组装"
         },
         {
-          "path": "projects/product/services/buildr/src/bootstrap/module-registry.mjs",
+          "path": "projects/product/services/buildr/src/bootstrap/module-registry.ts",
           "label": "模块注册"
         }
       ]
@@ -114,7 +114,7 @@
       "size": [210, 76],
       "sources": [
         {
-          "path": "projects/product/services/buildr/src/workspace/module.mjs",
+          "path": "projects/product/services/buildr/src/workspace/module.ts",
           "label": "模块入口"
         },
         {
@@ -154,7 +154,7 @@
       "size": [210, 76],
       "sources": [
         {
-          "path": "projects/product/services/buildr/src/agent-assets/module.mjs",
+          "path": "projects/product/services/buildr/src/agent-assets/module.ts",
           "label": "模块入口"
         },
         {
@@ -172,11 +172,11 @@
       "size": [210, 84],
       "sources": [
         {
-          "path": "projects/product/services/buildr/src/system/installation/module.mjs",
+          "path": "projects/product/services/buildr/src/system/installation/module.ts",
           "label": "System Installation"
         },
         {
-          "path": "projects/product/services/buildr/src/system/publication/module.mjs",
+          "path": "projects/product/services/buildr/src/system/publication/module.ts",
           "label": "Publication"
         },
         {
@@ -237,7 +237,7 @@
       "size": [220, 86],
       "sources": [
         {
-          "path": "projects/product/services/buildr/src/agent-assets/module.mjs",
+          "path": "projects/product/services/buildr/src/agent-assets/module.ts",
           "label": "投射入口"
         },
         {
