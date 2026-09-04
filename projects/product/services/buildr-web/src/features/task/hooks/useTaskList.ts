@@ -20,7 +20,6 @@ export function useTaskList(input: {
   onWorkspace(payload: WorkspacePayload): void;
 }) {
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
-  const [diagnostics, setDiagnostics] = useState<Array<{ message: string }>>([]);
   const [totalTaskCount, setTotalTaskCount] = useState(0);
   const [filterProjects, setFilterProjects] = useState<string[]>([]);
   const [filterServices, setFilterServices] = useState<string[]>([]);
@@ -63,18 +62,17 @@ export function useTaskList(input: {
         catalogsLoaded.current = true;
       }
       setTasks([...data.tasks].sort((left, right) => rank(left.record.status) - rank(right.record.status) || right.record.updatedAt.localeCompare(left.record.updatedAt)));
-      setDiagnostics(data.diagnostics);
       setTotalTaskCount(data.totalTaskCount);
       setFilterProjects(data.filterOptions.projects);
       setFilterServices(data.filterOptions.services);
     } catch (error) {
       if ((error as Error).name === 'AbortError' || generation.current !== current) return;
-      setTasks([]); setDiagnostics([]); setErrorMessage(error instanceof Error ? error.message : '读取失败');
+      setTasks([]); setErrorMessage(error instanceof Error ? error.message : '读取失败');
     } finally {
       if (generation.current === current) setLoading(false);
     }
   }, [input.workspaceId, filtersKey, input.onWorkspace]);
 
   useEffect(() => { void load(); return () => controller.current?.abort(); }, [load]);
-  return { tasks, diagnostics, totalTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, errorMessage, reload: load };
+  return { tasks, totalTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, errorMessage, reload: load };
 }

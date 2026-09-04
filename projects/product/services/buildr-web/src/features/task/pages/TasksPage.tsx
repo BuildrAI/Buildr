@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, Empty, Form, Input, Select, Typography } from 'antd';
+import { Button, Empty, Form, Input, Select, Typography } from 'antd';
 import type { TaskListRequest } from '../api/generated/task-dto';
 import { useTaskList, type TaskListItem } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -69,7 +69,7 @@ export function TasksPage() {
     setWorkspace(workspace);
     setBreadcrumbParts([workspace.workspace.name, '任务']);
   }, [setWorkspace, setBreadcrumbParts]);
-  const { tasks, diagnostics, totalTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, errorMessage } = useTaskList({ workspaceId, filters, onWorkspace });
+  const { tasks, totalTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, errorMessage } = useTaskList({ workspaceId, filters, onWorkspace });
 
   const draftServiceOptions = draftProject
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
@@ -230,7 +230,7 @@ export function TasksPage() {
   );
 
   const showTable = visibleTasks.length > 0 && !errorMessage;
-  const showEmpty = !loading && (Boolean(errorMessage) || (visibleTasks.length === 0 && diagnostics.length === 0));
+  const showEmpty = !loading && (Boolean(errorMessage) || visibleTasks.length === 0);
 
   return (
     <>
@@ -262,16 +262,6 @@ export function TasksPage() {
         />
       </section>
       <section className="resource-list-section">
-        <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">
-          {diagnostics.length ? (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message={`有 ${diagnostics.length} 条历史引用诊断，任务列表读取正常：${diagnostics.map((item) => item.message).join('；')}`}
-            />
-          ) : null}
-        </div>
         <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>
           <TaskTable tasks={visibleTasks} selectedTaskId={selectedTaskId} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={(id) => navigate(href(`/tasks/${encodeURIComponent(id)}`))} />
         </div>

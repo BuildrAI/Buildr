@@ -602,6 +602,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
+    const staleChangeRoot: any = path.join(workspaceRoot, 'projects', 'demo', 'openspec', 'changes', 'stale-history');
+    writeChange(path.join(workspaceRoot, 'projects', 'demo'), 'stale-history', '历史引用');
+    const staleReferenceTask: any = runtime.createTask(workspaceRoot, { taskId: 'browser-stale-reference', title: '历史引用任务', intent: '验证终态历史引用不占用任务列表', projects: ['demo'], services: [], changes: ['demo/stale-history'] });
+    runtime.abandonTask(workspaceRoot, 'browser-stale-reference', { expectedRecordDigest: staleReferenceTask.recordDigest, reason: '构造已放弃历史任务' });
+    fs.rmSync(staleChangeRoot, { recursive: true });
     prepareEvidenceFixture(runtime, workspaceRoot, 'browser-delivered');
     prepareEvidenceFixture(runtime, workspaceRoot, 'browser-stale');
     recordVerificationResultFromEvidence(runtime, workspaceRoot, 'browser-stale', {
@@ -700,6 +705,16 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await applyTaskFilters(page);
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
     process.stderr.write('[buildr-browser] selector=task phase=request-race-verified\n');
+    await openTaskFilterPanel(page);
+    await selectAntdOption(page, 'task-filter-status', '已放弃');
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 1);
+    assert.match(await page.locator('#task-table-body').innerText(), /历史引用任务/);
+    assert.equal(await page.locator('#task-diagnostics').count(), 0, '历史引用诊断只保留在任务详情，不占用任务列表');
+    await openTaskFilterPanel(page);
+    await page.locator('#task-filter-clear').click();
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);
