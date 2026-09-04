@@ -12,6 +12,7 @@ export type WorkspaceResponse = WorkspaceReadResponseWorkspaceReadResponse;
 export type ProjectResponse = ProjectHttpResponseProjectReadResponse;
 export type ProjectMetadataUpdate = { revision: string; name?: string; description?: string };
 export type ServiceMetadataUpdate = { revision: string; name?: string; description?: string; type?: string };
+export type WorkspaceDocument = { path?: string; name: string; exists: boolean; content: string | null };
 
 export function createWorkspaceClient(api: ApiClient) {
   return {
@@ -42,6 +43,9 @@ export function createWorkspaceClient(api: ApiClient) {
     updateProject(projectCode: string, input: ProjectMetadataUpdate): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}`, { method: 'PUT', body: JSON.stringify(input) }) as Promise<ProjectResponse>;
     },
+    projectDocument(projectCode: string, documentPath: string): Promise<WorkspaceDocument> {
+      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/documents/${documentPath}`) as Promise<WorkspaceDocument>;
+    },
     services(projectCode: string): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services`) as Promise<ProjectResponse>;
     },
@@ -50,6 +54,9 @@ export function createWorkspaceClient(api: ApiClient) {
     },
     updateService(projectCode: string, serviceCode: string, input: ServiceMetadataUpdate): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}`, { method: 'PUT', body: JSON.stringify(input) }) as Promise<ProjectResponse>;
+    },
+    serviceDocument(projectCode: string, serviceCode: string, documentPath: string): Promise<WorkspaceDocument> {
+      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}/documents/${documentPath}`) as Promise<WorkspaceDocument>;
     },
   };
 }

@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
-import { workspaceApi } from '../api';
-import { useAppShell } from '../app/AppShellContext';
-import { confirmModal } from '../lib/confirm';
-import { workspaceHomePath } from '../lib/labels';
-
-type WorkspaceEntry = (Awaited<ReturnType<typeof workspaceApi.listRegistered>>['workspaces'])[number];
-type Registry = Awaited<ReturnType<typeof workspaceApi.listRegistered>>;
+import { useAppShell } from '../../../app/AppShellContext';
+import { confirmModal } from '../../../lib/confirm';
+import { workspaceHomePath } from '../../../lib/labels';
+import { useWorkspaceCatalog, type WorkspaceEntry } from '../hooks/useWorkspaceCatalog';
 
 function healthLabel(status: string): string {
   if (status === 'ready') return '可用';
@@ -21,35 +18,23 @@ export function WorkspacesPage() {
   const [searchParams] = useSearchParams();
   const stayOnCatalog = searchParams.get('catalog') === '1';
   const { openAgentAction, setBreadcrumbParts } = useAppShell();
-  const [registry, setRegistry] = useState<Registry | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const onOpenWorkspace = useCallback((workspaceId: string, replace: boolean) => {
+    navigate(workspaceHomePath(workspaceId), { replace });
+  }, [navigate]);
+  const onRecoveryPrompt = useCallback((prompt: string) => {
+    openAgentAction('workspace-recovery', { prompt });
+  }, [openAgentAction]);
+  const { registry, message, setMessage, adding, remove, pick } = useWorkspaceCatalog({
+    stayOnCatalog,
+    onOpenWorkspace,
+    onRecoveryPrompt,
+  });
 
   useEffect(() => {
     setBreadcrumbParts(['工作空间']);
   }, [setBreadcrumbParts]);
 
-  const load = useCallback(async () => {
-    const next = await workspaceApi.listRegistered();
-    setRegistry(next);
-    return next;
-  }, []);
-
-  useEffect(() => {
-    void load()
-      .then((next) => {
-        if (stayOnCatalog) return;
-        const ready = (next.workspaces || []).filter(
-          (entry) => entry.status === 'ready' && entry.workspace?.id,
-        );
-        if (ready.length === 1 && ready[0].workspace?.id) {
-          navigate(workspaceHomePath(ready[0].workspace.id), { replace: true });
-        }
-      })
-      .catch((error: Error) => setMessage(error.message));
-  }, [load, navigate, stayOnCatalog]);
-
-  const removeWorkspace = async (entry: WorkspaceEntry, revision: string) => {
+  const removeWorkspace = async (entry: WorkspaceEntry) => {
     const ok = await confirmModal({
       title: '移除工作空间',
       content: `只从 Buildr Web 移除“${entry.workspace?.name || entry.rootPath}”，不会删除目录。继续吗？`,
@@ -57,31 +42,10 @@ export function WorkspacesPage() {
       okButtonProps: { danger: true },
     });
     if (!ok) return;
-    await workspaceApi.remove({ revision, rootPath: entry.rootPath });
-    await load();
+    await remove(entry);
   };
 
-  const pickWorkspace = async () => {
-    if (!registry) return;
-    setAdding(true);
-    try {
-      const result = await workspaceApi.pick({ revision: registry.revision });
-      if (!result.canceled && result.status === 'canonical' && result.registry) {
-        setRegistry(result.registry);
-        await load();
-        if (result.registry.lastOpenedWorkspaceId) {
-          navigate(workspaceHomePath(result.registry.lastOpenedWorkspaceId));
-        }
-      } else if (!result.canceled) {
-        setMessage(result.message || '该目录暂时不能登记。');
-        if (result.prompt) openAgentAction('workspace-recovery', { prompt: result.prompt });
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '添加工作空间失败。');
-    } finally {
-      setAdding(false);
-    }
-  };
+  const pickWorkspace = () => pick();
 
   const empty = registry !== null && registry.workspaces.length === 0;
 
@@ -141,7 +105,7 @@ export function WorkspacesPage() {
                 size="small"
                 type="text"
                 danger
-                onClick={() => void removeWorkspace(entry, registry!.revision)}
+                onClick={() => void removeWorkspace(entry)}
               >
                 移除
               </Button>

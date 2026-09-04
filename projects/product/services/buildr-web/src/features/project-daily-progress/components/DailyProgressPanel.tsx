@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { Button, DatePicker } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { api } from '../../api';
-import { workspaceHref } from '../../lib/labels';
-import { taskStatusLabel } from '../../lib/taskLabels';
+import { api } from '../../../api';
+import { workspaceHref } from '../../../lib/labels';
+import { taskStatusLabel } from '../../../lib/taskLabels';
 
 dayjs.locale('zh-cn');
 

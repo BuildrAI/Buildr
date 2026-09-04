@@ -2,17 +2,17 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './app/AppLayout';
 import { ArticleDetailPage } from './pages/ArticleDetailPage';
 import { ArticlesPage } from './pages/ArticlesPage';
-import { ProjectDetailPage } from './pages/ProjectDetailPage';
-import { ProjectEditPage } from './pages/ProjectEditPage';
-import { ProjectsSection } from './pages/ProjectsSection';
-import { ServiceDetailPage } from './pages/ServiceDetailPage';
-import { ServiceEditPage } from './pages/ServiceEditPage';
-import { ServicesPage } from './pages/ServicesPage';
+import { ProjectDetailPage } from './features/project/pages/ProjectDetailPage';
+import { ProjectEditPage } from './features/project/pages/ProjectEditPage';
+import { ProjectsSection } from './features/project/pages/ProjectsSection';
+import { ServiceDetailPage } from './features/service/pages/ServiceDetailPage';
+import { ServiceEditPage } from './features/service/pages/ServiceEditPage';
+import { ServicesPage } from './features/service/pages/ServicesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TaskChangeDetailPage } from './pages/TaskChangeDetailPage';
 import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';
-import { WorkspacesPage } from './pages/WorkspacesPage';
+import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
 
 export function App() {
   return (

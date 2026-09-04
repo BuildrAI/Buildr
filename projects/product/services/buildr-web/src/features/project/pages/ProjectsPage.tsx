@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { workspaceApi, type ProjectResponse } from '../api';
-import { useAppShell } from '../app/AppShellContext';
-import { workspaceHref } from '../lib/labels';
+import { workspaceApi, type ProjectResponse } from '../../../api';
+import { useAppShell } from '../../../app/AppShellContext';
+import { workspaceHref } from '../../../lib/labels';
 
 type Project = NonNullable<ProjectResponse['projects']>[number];
 

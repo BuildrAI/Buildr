@@ -66,6 +66,8 @@ buildr/
 
 `buildr-web` Service是前端源码和正式构建过程的authority；本地开发可向Buildr Service的ignored `web-dist/`物化，Browser与Candidate则生成到隔离staging。Application Payload和npm打包只消费本次Candidate冻结结果，不读取tracked或陈旧本地输出。
 
+Buildr Web 的 Workspace、Project、Service 前端分别位于 `src/features/workspace/`、`project/`、`service/`，各自拥有路由页面、页面局部组件和确有复杂状态的Hook，不合成统一CRUD功能。Project Daily Progress继续位于独立`features/project-daily-progress/`并由Project详情组合；Project与Service详情只共享`features/shared/hooks/useMarkdownDocumentViewer.ts`中的Markdown加载、路径和历史状态。共享`src/api/workspace.ts`仍是唯一Workspace HTTP Client，`src/pages/`与`src/components/`不保留这些领域的第二份页面或局部组件。
+
 上述根工程职责已经迁入当前目录。`package/` 不再承担通用产品源码或资源 authority，只保留仍有明确兼容 owner 的内容，并在对应后续切片满足退出条件后收敛。
 
 ### 保留稳定的根目录 `bin`

@@ -1,28 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Tabs } from 'antd';
-import { api, workspaceApi, type ProjectResponse } from '../api';
-import { useAppShell } from '../app/AppShellContext';
-import { MarkdownHost } from '../components/MarkdownHost';
+import { workspaceApi, type ProjectResponse } from '../../../api';
+import { useAppShell } from '../../../app/AppShellContext';
+import { MarkdownHost } from '../../../components/MarkdownHost';
+import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
+import { workspaceHref } from '../../../lib/labels';
+import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
+import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../shared/hooks/useMarkdownDocumentViewer';
 import { ProjectEditModal } from '../components/ProjectEditModal';
-import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../lib/projectDocuments';
-import { workspaceHref } from '../lib/labels';
-import { DailyProgressPanel } from './project-detail/DailyProgressPanel';
 
 type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
-
-type ProjectDocument = {
-  path?: string;
-  name: string;
-  exists: boolean;
-  content: string | null;
-};
 
 const DOC_TABS = [
   { key: 'README.md', label: 'README.md' },
   { key: 'AGENTS.md', label: 'AGENTS.md' },
   { key: 'daily-progress', label: '每日演进' },
 ] as const;
+
+const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${path}`;
 
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
@@ -31,47 +27,14 @@ export function ProjectDetailPage() {
   const [data, setData] = useState<ProjectDetail | null>(null);
   const [serviceCount, setServiceCount] = useState('—');
   const [activeTab, setActiveTab] = useState<string>('README.md');
-  const [viewPath, setViewPath] = useState('README.md');
-  const [viewHistory, setViewHistory] = useState<string[]>(['README.md']);
-  const [viewDoc, setViewDoc] = useState<ProjectDocument | null>(null);
-  const [docLoading, setDocLoading] = useState(false);
-  const [docMessage, setDocMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
 
-  async function fetchDocument(docPath: string): Promise<ProjectDocument> {
-    return api(
-      `/api/v1/projects/${encodeURIComponent(projectCode)}/documents/${encodeProjectDocumentPath(docPath)}`,
-    ) as Promise<ProjectDocument>;
-  }
-
-  async function openDocument(docPath: string, options: { pushHistory?: boolean; replaceHistory?: boolean } = {}) {
-    setDocLoading(true);
-    setDocMessage(null);
-    try {
-      const doc = await fetchDocument(docPath);
-      setViewDoc(doc);
-      setViewPath(doc.path || docPath);
-      if (options.replaceHistory) {
-        setViewHistory([doc.path || docPath]);
-      } else if (options.pushHistory !== false) {
-        setViewHistory((history) => {
-          const nextPath = doc.path || docPath;
-          if (history[history.length - 1] === nextPath) return history;
-          return [...history, nextPath];
-        });
-      }
-      if (!doc.exists || doc.content == null) {
-        setDocMessage(`项目内未找到 ${doc.path || docPath}`);
-      }
-    } catch (err) {
-      setViewDoc(null);
-      setDocMessage(err instanceof Error ? err.message : `无法打开 ${docPath}`);
-    } finally {
-      setDocLoading(false);
-    }
-  }
+  const fetchDocument = useCallback(async (docPath: string): Promise<MarkdownDocument> => {
+    return workspaceApi.projectDocument(projectCode, encodeProjectDocumentPath(docPath));
+  }, [projectCode]);
+  const documents = useMarkdownDocumentViewer(fetchDocument, projectDocumentMissingMessage);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +44,7 @@ export function ProjectDetailPage() {
           workspaceApi.read(),
           workspaceApi.project(projectCode) as Promise<ProjectDetail>,
           workspaceApi.services(projectCode),
-          api(`/api/v1/projects/${encodeURIComponent(projectCode)}/documents/README.md`) as Promise<ProjectDocument>,
+          workspaceApi.projectDocument(projectCode, 'README.md') as Promise<MarkdownDocument>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
@@ -89,38 +52,28 @@ export function ProjectDetailPage() {
         setBreadcrumbParts([workspace.workspace.name, '项目', projectData.project.name]);
         setData(projectData);
         setServiceCount(`${(servicesData.services ?? []).length} 个已登记服务`);
-        setViewDoc(readme);
-        setViewPath(readme.path || 'README.md');
-        setViewHistory([readme.path || 'README.md']);
+        documents.reset(readme);
         setActiveTab('README.md');
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : '项目不存在');
       }
     })();
     return () => { cancelled = true; };
-  }, [projectCode, setWorkspace, setBreadcrumbParts]);
+  }, [projectCode, setWorkspace, setBreadcrumbParts, documents.reset]);
 
   const onTabChange = (key: string) => {
     setActiveTab(key);
     if (key === 'daily-progress') return;
-    void openDocument(key, { replaceHistory: true, pushHistory: false });
+    void documents.open(key, { replaceHistory: true, pushHistory: false });
   };
 
   const onRelativeLinkClick = (linkHref: string) => {
-    const resolved = resolveProjectMarkdownHref(viewPath, linkHref);
+    const resolved = resolveProjectMarkdownHref(documents.path, linkHref);
     if (!resolved) {
-      setDocMessage('仅支持打开项目内的 .md 文档链接。');
+      documents.setMessage('仅支持打开项目内的 .md 文档链接。');
       return;
     }
-    void openDocument(resolved, { pushHistory: true });
-  };
-
-  const onDocumentBack = () => {
-    if (viewHistory.length <= 1) return;
-    const nextHistory = viewHistory.slice(0, -1);
-    const previous = nextHistory[nextHistory.length - 1];
-    setViewHistory(nextHistory);
-    void openDocument(previous, { pushHistory: false });
+    void documents.open(resolved, { pushHistory: true });
   };
 
   if (error) {
@@ -146,7 +99,7 @@ export function ProjectDetailPage() {
   }
 
   const project = data.project;
-  const showBack = viewHistory.length > 1;
+  const showBack = documents.history.length > 1;
   const entryMissingId = activeTab === 'README.md' || activeTab === 'AGENTS.md'
     ? `project-document-missing-${activeTab.replace('.', '-')}`
     : undefined;
@@ -180,10 +133,10 @@ export function ProjectDetailPage() {
         />
         {showBack && activeTab !== 'daily-progress' ? (
           <div className="project-document-toolbar">
-            <button type="button" className="back-link project-document-back" id="project-document-back" onClick={onDocumentBack}>
+            <button type="button" className="back-link project-document-back" id="project-document-back" onClick={documents.back}>
               ← 返回上一篇
             </button>
-            <span className="project-document-path" id="project-document-path">{viewPath}</span>
+            <span className="project-document-path" id="project-document-path">{documents.path}</span>
           </div>
         ) : null}
         {activeTab === 'daily-progress' ? (
@@ -197,11 +150,11 @@ export function ProjectDetailPage() {
           id={`project-document-${activeTab.replace('.', '-')}`}
           className="project-document-body"
         >
-          {docLoading ? (
+          {documents.loading ? (
             <p className="page-copy">正在读取…</p>
-          ) : viewDoc?.exists && viewDoc.content != null ? (
+          ) : documents.document?.exists && documents.document.content != null ? (
             <MarkdownHost
-              markdown={viewDoc.content}
+              markdown={documents.document.content}
               className="project-document-content markdown-body"
               options={{
                 headingOffset: 1,
@@ -212,11 +165,11 @@ export function ProjectDetailPage() {
             />
           ) : (
             <p className="artifact-missing" id={entryMissingId}>
-              {docMessage || `项目根目录未找到 ${viewPath}`}
+              {documents.message || `项目根目录未找到 ${documents.path}`}
             </p>
           )}
-          {docMessage && viewDoc?.exists ? (
-            <p className="page-copy project-document-hint" role="status">{docMessage}</p>
+          {documents.message && documents.document?.exists ? (
+            <p className="page-copy project-document-hint" role="status">{documents.message}</p>
           ) : null}
         </div>
         )}

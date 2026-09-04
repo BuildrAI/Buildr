@@ -1,105 +1,22 @@
-import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { workspaceApi, type ProjectResponse } from '../api';
-import { useAppShell } from '../app/AppShellContext';
+import { useAppShell } from '../../../app/AppShellContext';
+import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
 import { ServiceEditModal } from '../components/ServiceEditModal';
-import { serviceTypeLabel, workspaceHref } from '../lib/labels';
-
-type Project = NonNullable<ProjectResponse['projects']>[number];
-type Service = NonNullable<ProjectResponse['services']>[number];
+import { useServiceCatalog, type Service } from '../hooks/useServiceCatalog';
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody id="service-table-body" {...props} />
 );
 
 export function ServicesPage() {
-  const { workspaceId, setWorkspace, openAgentAction, setBreadcrumbParts } = useAppShell();
+  const { workspaceId, openAgentAction } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectCode, setProjectCode] = useState('');
-  const [projectName, setProjectName] = useState('');
-  const [services, setServices] = useState<Service[]>([]);
-  const [count, setCount] = useState('正在读取');
-  const [title, setTitle] = useState('请选择项目');
-  const [copy, setCopy] = useState('选择项目后显示服务。');
-  const [emptyText, setEmptyText] = useState('选择项目后显示服务。');
-  const [migrationMessage, setMigrationMessage] = useState('');
-  const [loaded, setLoaded] = useState(false);
   const [editServiceCode, setEditServiceCode] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [workspace, data] = await Promise.all([
-          workspaceApi.read(),
-          workspaceApi.listProjects(),
-        ]);
-        if (cancelled) return;
-        setWorkspace(workspace);
-        setBreadcrumbParts([workspace.workspace.name, '服务']);
-        const nextProjects = data.projects ?? [];
-        setProjects(nextProjects);
-        const requested = searchParams.get('project');
-        const selected = nextProjects.find((project) => project.code === requested) || nextProjects[0];
-        if (selected) {
-          setProjectCode(selected.code);
-        } else {
-          setTitle('尚无所属项目');
-          setCount('0 个项目');
-          setCopy('请先让 Agent 创建项目，再登记服务。');
-          setEmptyText('请先让 Agent 创建项目，再登记服务。');
-          setLoaded(true);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setTitle('读取失败');
-          setCopy(err instanceof Error ? err.message : '读取失败');
-          setLoaded(true);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [setWorkspace, setBreadcrumbParts]);
-
-  useEffect(() => {
-    if (!projectCode) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await workspaceApi.services(projectCode);
-        if (cancelled) return;
-        const project = data.project;
-        const nextServices = data.services ?? [];
-        if (!project) throw new Error('项目响应缺少 project。');
-        setProjectName(project.name || projectCode);
-        setServices(nextServices);
-        setTitle(`${project.name || projectCode}的服务`);
-        setCopy('目录负责资源定位与关联跳转；稳定元数据可在弹框中编辑。');
-        setCount(`${nextServices.length} 个服务`);
-        setEmptyText(`项目“${project.name || projectCode}”暂未登记服务。服务只在需要管理代码仓、应用、模块或可执行资产时添加；你也可以直接回到“开始”页推进项目范围工作。`);
-        setMigrationMessage(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
-        setLoaded(true);
-      } catch (err) {
-        if (!cancelled) {
-          setCount('读取失败');
-          setTitle('无法读取服务');
-          setCopy(err instanceof Error ? err.message : '读取失败');
-          setServices([]);
-          setLoaded(true);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [projectCode]);
-
-  const onProjectChange = (code: string) => {
-    setProjectCode(code);
-    setSearchParams(code ? { project: code } : {});
-  };
+  const catalog = useServiceCatalog();
+  const { projects, projectCode, projectName, services, count, title, copy, emptyText, migrationMessage, loaded } = catalog;
 
   const columns: ColumnsType<Service> = [
     {
@@ -166,7 +83,7 @@ export function ServicesPage() {
               loading={projects.length === 0 && !loaded}
               placeholder={projects.length === 0 ? '正在读取项目…' : undefined}
               value={projectCode || undefined}
-              onChange={onProjectChange}
+              onChange={catalog.selectProject}
               options={projects.map((project) => ({
                 value: project.code,
                 label: `${project.name}（${project.code}）`,
@@ -202,11 +119,7 @@ export function ServicesPage() {
         serviceCode={editServiceCode}
         onClose={() => setEditServiceCode(null)}
         onSaved={(saved) => {
-          setServices((items) => items.map((item) => (
-            item.code === saved.code
-              ? { ...item, name: saved.name, description: saved.description, type: saved.type }
-              : item
-          )));
+          catalog.updateService(saved);
         }}
       />
     </>

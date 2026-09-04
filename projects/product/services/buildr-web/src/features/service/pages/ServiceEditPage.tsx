@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Space, Typography } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../api';
-import { useAppShell } from '../app/AppShellContext';
-import { workspaceHref } from '../lib/labels';
+import { workspaceApi, type ProjectResponse } from '../../../api';
+import { useAppShell } from '../../../app/AppShellContext';
+import { workspaceHref } from '../../../lib/labels';
 
 type ServiceEditData = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
 

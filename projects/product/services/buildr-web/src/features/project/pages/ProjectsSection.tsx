@@ -1,5 +1,5 @@
 import { useOutlet } from 'react-router-dom';
-import { useResizableListWidth } from '../lib/useResizableListWidth';
+import { useResizableListWidth } from '../../../lib/useResizableListWidth';
 import { ProjectsPage } from './ProjectsPage';
 
 const STORAGE_KEY = 'buildr.web.projects-list-width';
