@@ -5,7 +5,7 @@
       "type": "skill",
       "id": "agent-first-design",
       "target": "skills/buildr/agent-first-design",
-      "integrity": "sha256-0c07a7246cddc4adda4c5aa54dfc7e12a11c2da222fb4556e75f1ab6419cac15",
+      "integrity": "sha256-3e1785134fd411eff4544f697015729ca3fb33e40dbb89085187fa46377ddd10",
       "files": [
         {
           "path": "SKILL.md",
@@ -13,7 +13,7 @@
         },
         {
           "path": "references/task-closeout.md",
-          "integrity": "sha256-1eba11145e3ce56e4b1a3e476d751b5685b55401d50da2120ca8d9e9a2b0d6f0"
+          "integrity": "sha256-8ca16f10638e8733b2b5a8cf8500f3440f1a284194325d5bf1424a85cde6413d"
         }
       ]
     },
@@ -245,11 +245,11 @@
       "type": "skill",
       "id": "terminology-governance",
       "target": "skills/buildr/terminology-governance",
-      "integrity": "sha256-3cdbe2e57f855bd05db83ac11fb480c2e4625e9c5ffb294d4403dfef0f932b4c",
+      "integrity": "sha256-538fc64f8f14daaadd3676bc51dc7ebb653636b6e86ec7bb110c8231e894ea35",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-9fbdfd890782ffc7b38333388c96ad2cab9726b1b4de023d0bab395579c7ba64"
+          "integrity": "sha256-ef48de8ed3f1b274c6693e4d75c67351480fd254f4a6ee7604e66e473781e9ba"
         }
       ]
     },
