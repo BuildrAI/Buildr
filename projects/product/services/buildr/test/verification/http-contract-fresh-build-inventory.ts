@@ -20,7 +20,7 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
     'src/task/interfaces/http/task-http-schema.ts',
   ], [
     ['buildr', 'src/task/application/generated/task-dto.ts'],
-    ['buildr-web', 'src/features/task-record/api/generated/task-dto.ts'],
+    ['buildr-web', 'src/features/task/api/generated/task-dto.ts'],
   ]),
   family('task-professional', 'tools/contracts/task-professional-dto.ts', [
     'src/task/interfaces/http/task-professional-http-contracts.ts',

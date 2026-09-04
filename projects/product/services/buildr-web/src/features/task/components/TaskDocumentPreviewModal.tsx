@@ -1,24 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin } from 'antd';
-import { useTaskDetail } from '../hooks/useTaskDetail';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import type { TaskDocumentReference } from '../../../lib/taskDocumentLinks';
-
-type ProjectDocument = {
-  path?: string;
-  name: string;
-  exists: boolean;
-  content: string | null;
-};
+import type { ProjectDocument } from '../hooks/useTaskArtifacts';
 
 type Props = {
   reference: TaskDocumentReference | null;
   onClose: () => void;
+  loadDocument(reference: TaskDocumentReference, documentPath: string): Promise<ProjectDocument>;
 };
 
-export function TaskDocumentPreviewModal({ reference, onClose }: Props) {
-  const taskDetail = useTaskDetail();
+export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: Props) {
   const [documentPath, setDocumentPath] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [document, setDocument] = useState<ProjectDocument | null>(null);
@@ -32,7 +25,7 @@ export function TaskDocumentPreviewModal({ reference, onClose }: Props) {
     setLoading(true);
     setMessage(null);
     try {
-      const next = await taskDetail.projectDocument(reference, encodeProjectDocumentPath(nextPath)) as ProjectDocument;
+      const next = await loadDocument(reference, encodeProjectDocumentPath(nextPath));
       if (requestId !== requestRef.current) return;
       const resolvedPath = next.path || nextPath;
       setDocument(next);

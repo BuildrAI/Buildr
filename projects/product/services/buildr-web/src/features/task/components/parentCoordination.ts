@@ -1,4 +1,4 @@
-import type { ParentCompletion } from '../api/generated/task-record-dto';
+import type { ParentCompletion } from '../api/generated/task-dto';
 import type { CoordinationResponse } from '../../../api/generated/task-professional-http-dto';
 
 export type ParentCoordinationResult = Partial<CoordinationResponse>;

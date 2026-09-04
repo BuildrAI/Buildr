@@ -2,4 +2,4 @@ node_modules
 dist
 *.local
 src/api/generated/
-src/features/task-record/api/generated/
+src/features/task/api/generated/

@@ -11,7 +11,7 @@ import type {
   TaskRetrospectiveDocumentResponse,
   TaskUpdateRequest,
   TaskUpdateResponse,
-} from './generated/task-record-dto';
+} from './generated/task-dto';
 
 type ReadOptions = Pick<RequestInit, 'signal'>;
 
@@ -28,13 +28,19 @@ function typed<T>(request: Promise<unknown>): Promise<T> {
   return request as Promise<T>;
 }
 
-export function createTasksClient(client: ApiClient) {
+export function createTaskClient(client: ApiClient) {
   return Object.freeze({
     list(input: TaskListRequest = {}, options: ReadOptions = {}): Promise<TaskListResponse> {
       return typed(client(`/api/v1/tasks${queryString(input)}`, options));
     },
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
+    },
+    change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
+      return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);
+    },
+    prototypes(taskId: string, options: ReadOptions = {}): Promise<unknown> {
+      return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/ui-prototypes`, options);
     },
     retrospectiveDocument(taskId: string, options: ReadOptions = {}): Promise<TaskRetrospectiveDocumentResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/retrospective-document`, options));
@@ -60,5 +66,5 @@ export function createTasksClient(client: ApiClient) {
   });
 }
 
-export type TasksClient = ReturnType<typeof createTasksClient>;
-export const taskRecordApi = createTasksClient(api);
+export type TaskClient = ReturnType<typeof createTaskClient>;
+export const taskApi = createTaskClient(api);

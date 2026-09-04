@@ -1,6 +1,6 @@
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { taskStatusLabel } from '../../../lib/taskLabels';
-import type { TaskRecord } from '../api/generated/task-record-dto';
+import type { TaskRecord } from '../api/generated/task-dto';
 
 export function TaskOverview({ record, onRelativeLink }: { record: TaskRecord; onRelativeLink(href: string): void }) {
   return <section className="detail-page-header"><div className="detail-title-row"><div className="detail-title-copy">

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { emptyParentCompletionDraft, parentCompletionInput } from '../src/features/task-record/components/parentCoordination.ts';
+import { emptyParentCompletionDraft, parentCompletionInput } from '../src/features/task/components/parentCoordination.ts';
 const snapshot = { isParent: true, children: [{ taskId: 'child', status: 'completed' }], completion: { snapshotIdentity: 'current-snapshot', openChildTaskIds: [] } };
 test('the confirmation is never authorized by default', () => {
   assert.throws(() => parentCompletionInput(snapshot, emptyParentCompletionDraft(), 'parent'));

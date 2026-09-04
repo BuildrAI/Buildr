@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '../../../api';
-import { taskRecordApi } from '../api/task-record-api';
-import type { TaskListRequest, TaskListResponse } from '../api/generated/task-record-dto';
+import { taskApi } from '../api/task-api';
+import type { TaskListRequest, TaskListResponse } from '../api/generated/task-dto';
 
 type WorkspacePayload = { rootPath: string; workspace: { name: string } };
 type ProjectInfo = { code: string; name: string };
@@ -44,7 +44,7 @@ export function useTaskList(input: {
     setErrorMessage(null);
     try {
       const [data, workspace, projectPayload] = await Promise.all([
-        taskRecordApi.list(input.filters, { signal: abort.signal }),
+        taskApi.list(input.filters, { signal: abort.signal }),
         workspaceLoaded.current ? undefined : api('/api/v1/workspace', { signal: abort.signal }) as Promise<WorkspacePayload>,
         catalogsLoaded.current ? undefined : api('/api/v1/projects', { signal: abort.signal }) as Promise<{ projects: ProjectInfo[] }>,
       ]);

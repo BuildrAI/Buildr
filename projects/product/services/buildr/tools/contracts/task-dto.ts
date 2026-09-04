@@ -16,8 +16,8 @@ const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const workspaceProductRoot = path.resolve(serviceRoot, '../..');
 function taskDtoOutputPaths(outputRoot?: string) {
   return {
-    backend: contractOutputPaths('task/application', 'task-dto.ts', outputRoot, 'features/task-record/api').backend,
-    web: contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api').web,
+    backend: contractOutputPaths('task/application', 'task-dto.ts', outputRoot, 'features/task/api').backend,
+    web: contractOutputPaths('task/application', 'task-dto.ts', outputRoot, 'features/task/api').web,
   };
 }
 

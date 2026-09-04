@@ -103,7 +103,7 @@ test('结构 verifier 拒绝重新跟踪可重建生成物', () => {
     'projects/product/services/buildr/web-dist/index.html',
     'projects/product/services/buildr/package/targets/test-context/index.js',
     'projects/product/services/buildr/src/task/application/generated/task-dto.ts',
-    'projects/product/services/buildr-web/src/features/task-record/api/generated/task-dto.ts',
+    'projects/product/services/buildr-web/src/features/task/api/generated/task-dto.ts',
   ];
   assert.deepEqual(validateProductSourceLayout({
     projectEntries: canonicalProjectEntries,

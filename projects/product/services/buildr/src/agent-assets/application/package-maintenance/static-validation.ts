@@ -1063,7 +1063,7 @@ export function createPackageStaticValidator(deps: any): any  {
         } catch {
           // Shared frontmatter validation reports the original error.
         }
-        for (const relative of ['../buildr-web/src/features/task-record/pages/TasksPage.tsx', '../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx']) {
+        for (const relative of ['../buildr-web/src/features/task/pages/TasksPage.tsx', '../buildr-web/src/features/task/pages/TaskDetailPage.tsx']) {
           const webFile = path.join(root, relative);
           if (!existsFile(webFile)) {
             problems.push(`Task Manager Buildr Web asset is missing: ${relative}.`);

@@ -10,8 +10,8 @@ import { ServiceEditPage } from './pages/ServiceEditPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TaskChangeDetailPage } from './pages/TaskChangeDetailPage';
-import { TaskDetailPage } from './features/task-record/pages/TaskDetailPage';
-import { TasksSection } from './features/task-record/pages/TasksSection';
+import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
+import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './pages/WorkspacesPage';
 
 export function App() {

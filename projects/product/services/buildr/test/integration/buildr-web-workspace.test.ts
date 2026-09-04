@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createTaskReadLifecycle } from '../../../buildr-web/src/features/task-record/hooks/useTaskRequestLifecycle.ts';
+import { createTaskReadLifecycle } from '../../../buildr-web/src/features/task/hooks/useTaskRequestLifecycle.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -148,12 +148,13 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
 });
 
 test('任务详情只使用概览、原型、证据三个一级视图，复盘文档位于概览', () => {
-  const source: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const coordination: any = read('../buildr-web/src/features/task-record/components/ParentCoordinationPanel.tsx');
-  const evidence: any = read('../buildr-web/src/features/task-record/components/EvidenceTab.tsx');
-  const retrospective: any = read('../buildr-web/src/features/task-record/components/RetrospectiveDocumentCard.tsx');
-  const completeModal: any = read('../buildr-web/src/features/task-record/components/TaskCompleteModal.tsx');
-  const evidenceHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskEvidence.ts');
+  const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const coordination: any = read('../buildr-web/src/features/task/components/ParentCoordinationPanel.tsx');
+  const evidence: any = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
+  const retrospective: any = read('../buildr-web/src/features/task/components/RetrospectiveDocumentCard.tsx');
+  const completeModal: any = read('../buildr-web/src/features/task/components/TaskCompleteModal.tsx');
+  const evidenceHook: any = read('../buildr-web/src/features/task/hooks/useTaskEvidence.ts');
+  const retrospectiveHook: any = read('../buildr-web/src/features/task/hooks/useTaskRetrospective.ts');
   const styles: any = read('../buildr-web/src/styles.css');
   assert.equal(source.match(/data-task-tab=\{tab\.id\}/g)?.length, 1);
   assert.match(source, /id: 'overview', label: '概览'/);
@@ -174,15 +175,15 @@ test('任务详情只使用概览、原型、证据三个一级视图，复盘�
   assert.match(retrospective, /task-retrospective-document-card/);
   assert.match(retrospective, /本机文档/);
   assert.match(retrospective, /MarkdownHost[\s\S]*document\.content|document\.content[\s\S]*MarkdownHost/);
-  assert.match(evidenceHook, /retrospectiveDocument: taskRecordApi\.retrospectiveDocument/);
-  assert.match(retrospective, /retrospectiveState: 'decided'/);
+  assert.match(retrospectiveHook, /taskApi\.retrospectiveDocument\(taskId\)/);
+  assert.match(retrospectiveHook, /retrospectiveState: 'decided'/);
   assert.match(retrospective, /我已完成决定/);
   assert.doesNotMatch(retrospective, /no-action|handled|重新打开/);
   assert.doesNotMatch(source, /openAgentAction\('task-retrospective'/);
-  assert.match(source, /if \(tab === 'evidence'\) \{[\s\S]*refreshReview\(\);[\s\S]*refreshVerification\(\);/);
+  assert.match(source, /if \(tab === 'evidence'\) \{[\s\S]*evidence\.refreshReview\(\);[\s\S]*evidence\.refreshVerification\(\);/);
   assert.match(evidence, /reviewType === 'planning'|openAgentAction\('task-review'/);
   assert.match(evidence, /openAgentAction\('task-review', \{ taskId, reviewType \}\)/);
-  assert.match(evidence, /stateText = slot\.present \? '已记录' : '未记录'/);
+  assert.match(evidence, /stateText = present \? '已记录' : '未记录'/);
   assert.match(evidenceHook, /taskProfessionalApi\.reviews\(taskId, \{ signal \}\)/);
   assert.doesNotMatch(source, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
   assert.doesNotMatch(evidence, /node:fs|YAML\.parse|YAML\.stringify|writeFileSync|recordTaskReview/);
@@ -191,15 +192,15 @@ test('任务详情只使用概览、原型、证据三个一级视图，复盘�
 });
 
 test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
-  const source: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const prototype: any = read('../buildr-web/src/features/task-record/components/PrototypeTab.tsx');
-  const detailHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskDetail.ts');
+  const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const prototype: any = read('../buildr-web/src/features/task/components/PrototypeTab.tsx');
+  const artifactsHook: any = read('../buildr-web/src/features/task/hooks/useTaskArtifacts.ts');
   const server: any = read('src/web/http/server.ts');
   const responses: any = read('src/web/http/responses.ts');
   const changeHttp: any = read('src/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
-  assert.match(source, /if \(tab === 'prototype'\) void refreshPrototype\(\)/);
-  assert.match(detailHook, /\/ui-prototypes/);
+  assert.match(source, /if \(tab === 'prototype'\) void artifacts\.refreshPrototype\(\)/);
+  assert.match(artifactsHook, /'ui-prototypes'/);
   assert.match(prototype, /界面原型/);
   assert.match(prototype, /用于约束后续页面和交互开发/);
   assert.match(prototype, /原型页面列表/);
@@ -224,19 +225,19 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
 });
 
 test('任务研发页签、客户端调用与专属样式已退出', () => {
-  const detail: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const evidenceHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskEvidence.ts');
+  const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const evidenceHook: any = read('../buildr-web/src/features/task/hooks/useTaskEvidence.ts');
   const styles: any = read('../buildr-web/src/styles.css');
-  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task-record/components/DevelopmentTab.tsx')), false);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task/components/DevelopmentTab.tsx')), false);
   assert.doesNotMatch(detail, /taskProfessionalApi\.development|DevelopmentTab|data-task-panel="development"/);
   assert.doesNotMatch(styles, /\.development-axis-grid|\.development-planning-list/);
 });
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
-  const source: any = read('../buildr-web/src/features/task-record/components/EvidenceTab.tsx');
+  const source: any = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
   const actions: any = read('../buildr-web/src/app/AgentActionDrawer.tsx');
-  const detail: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const evidenceHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskEvidence.ts');
+  const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const evidenceHook: any = read('../buildr-web/src/features/task/hooks/useTaskEvidence.ts');
   assert.match(source, /任务验证报告（Task Verification Report）/);
   assert.match(source, /内容适用性/);
   assert.match(source, /测试地图适用性/);
@@ -249,15 +250,15 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
 });
 
 test('任务详情面向用户的核心术语使用中文或中英文并列', () => {
-  const source: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const evidence: any = read('../buildr-web/src/features/task-record/components/EvidenceTab.tsx');
-  const tasks: any = read('../buildr-web/src/features/task-record/pages/TasksPage.tsx');
+  const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const evidence: any = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
+  const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
   const change: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
   assert.match(source, /任务记录（Task Record）/);
   assert.match(evidence, /方案审查（Planning Review）/);
   assert.match(evidence, /完成审查（Completion Review）/);
   assert.doesNotMatch(source, />Task Record</);
-  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task-record/components/EnvironmentTab.tsx')), false);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/features/task/components/EnvironmentTab.tsx')), false);
   assert.doesNotMatch(evidence, />Planning Review</);
   assert.doesNotMatch(evidence, />Completion Review</);
   assert.doesNotMatch(evidence, />Verification Result</);
@@ -279,7 +280,7 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
 
 test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
   const change: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
-  const tasks: any = read('../buildr-web/src/features/task-record/pages/TasksPage.tsx');
+  const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
   const app: any = read('../buildr-web/src/App.tsx');
   assert.doesNotMatch(change, /openAgentAction|continue-change|review-change|associate-change/);
   assert.doesNotMatch(tasks, /创建任务记录|task-create-form/);
@@ -287,17 +288,17 @@ test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
 });
 
 test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
-  const detail: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const prototype: any = read('../buildr-web/src/features/task-record/components/TaskDocumentPreviewModal.tsx');
-  const overview: any = read('../buildr-web/src/features/task-record/components/TaskOverview.tsx');
-  const detailHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskDetail.ts');
+  const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const prototype: any = read('../buildr-web/src/features/task/components/TaskDocumentPreviewModal.tsx');
+  const overview: any = read('../buildr-web/src/features/task/components/TaskOverview.tsx');
+  const artifactsHook: any = read('../buildr-web/src/features/task/hooks/useTaskArtifacts.ts');
   const resolver: any = read('../buildr-web/src/lib/taskDocumentLinks.ts');
   const sharedResolver: any = read('../buildr-web/src/lib/workspaceMarkdownReferences.ts');
   assert.match(overview, /id="task-detail-intent"[\s\S]*MarkdownHost/);
-  assert.match(detail, /resolveTaskDocumentReference/);
-  assert.match(detailHook, /projects:.*\/api\/v1\/projects/);
+  assert.match(artifactsHook, /resolveTaskDocumentReference/);
+  assert.match(artifactsHook, /api\('\/api\/v1\/projects'\)/);
   assert.match(detail, /TaskDocumentPreviewModal/);
-  assert.match(detailHook, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
+  assert.match(artifactsHook, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
   assert.match(prototype, /resolveProjectMarkdownHref/);
   assert.match(prototype, /相关资料/);
   assert.match(resolver, /resolveWorkspaceMarkdownReference\(href, allowedProjects, projects\)/);
@@ -307,11 +308,13 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
 });
 
 test('任务列表使用可取消的服务端筛选，详情首屏只读轻量视图并延迟读取 Parent 候选', () => {
-  const detail: any = read('../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx');
-  const taskReadLifecycle: any = read('../buildr-web/src/features/task-record/hooks/useTaskRequestLifecycle.ts');
-  const tasks: any = read('../buildr-web/src/features/task-record/pages/TasksPage.tsx');
-  const listHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskList.ts');
-  const taskDto: any = read('../buildr-web/src/features/task-record/api/generated/task-dto.ts');
+  const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
+  const taskReadLifecycle: any = read('../buildr-web/src/features/task/hooks/useTaskRequestLifecycle.ts');
+  const detailHook: any = read('../buildr-web/src/features/task/hooks/useTaskDetail.ts');
+  const actionsHook: any = read('../buildr-web/src/features/task/hooks/useTaskActions.ts');
+  const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
+  const listHook: any = read('../buildr-web/src/features/task/hooks/useTaskList.ts');
+  const taskDto: any = read('../buildr-web/src/features/task/api/generated/task-dto.ts');
   const server: any = read('src/web/http/server.ts');
   assert.match(listHook, /new AbortController\(\)/);
   assert.match(tasks, /matchesTaskQuery/);
@@ -330,10 +333,11 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /当前筛选没有匹配任务/);
   assert.match(detail, /id="task-record-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
-  assert.match(detail, /taskDetailApi\.list\(\{ status: 'active' \}\)/);
-  assert.match(detail, /addEventListener\('focus'|onFocus.*loadParentOptions/);
-  assert.match(detail, /taskReadLifecycle\.abortTask\(taskId\)/);
-  assert.match(detail, /focusRefreshRef\.current/);
+  assert.match(actionsHook, /taskApi\.list\(\{ status: 'active' \}\)/);
+  assert.match(detail, /addEventListener\('focus'/);
+  assert.match(actionsHook, /loadParentOptions/);
+  assert.match(detailHook, /lifecycle\.abortTask\(taskId\)/);
+  assert.match(detail, /activeTabRef\.current/);
   assert.match(taskReadLifecycle, /pending\.get\(key\)/);
   assert.match(taskReadLifecycle, /entry\.controller\.abort\(\)/);
   assert.match(detail, /打开时检查当前状态/);
@@ -341,16 +345,23 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
 });
 
-test('Task Record feature 只保留 pages、hooks、components、api 四类职责', () => {
-  const featureRoot = path.join(productRoot, '../buildr-web/src/features/task-record');
+test('Task feature 只保留 pages、hooks、components、api 四类职责', () => {
+  const featureRoot = path.join(productRoot, '../buildr-web/src/features/task');
   assert.deepEqual(fs.readdirSync(featureRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(), ['api', 'components', 'hooks', 'pages']);
   const globalApi = read('../buildr-web/src/api/index.ts');
-  assert.doesNotMatch(globalApi, /features\/task-record/);
+  assert.doesNotMatch(globalApi, /features\/task/);
   for (const directory of ['pages', 'components']) {
     for (const name of fs.readdirSync(path.join(featureRoot, directory))) {
       if (!name.endsWith('.ts') && !name.endsWith('.tsx')) continue;
       const source = fs.readFileSync(path.join(featureRoot, directory, name), 'utf8');
-      assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/api['"]|\btaskRecordApi\.|\btaskProfessionalApi\.|\bapi\(/, `${directory}/${name}`);
+      assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/api['"]|\btaskApi\.|\btaskProfessionalApi\.|\bapi\(/, `${directory}/${name}`);
     }
   }
+  const detailHook = read('../buildr-web/src/features/task/hooks/useTaskDetail.ts');
+  const actionsHook = read('../buildr-web/src/features/task/hooks/useTaskActions.ts');
+  const evidence = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
+  assert.match(detailHook, /useState<TaskDetailResponse \| null>/);
+  assert.match(actionsHook, /export function useTaskActions/);
+  assert.doesNotMatch(evidence, /\bany\b/);
+  assert.equal(fs.existsSync(path.join(featureRoot, 'hooks/useTaskMutations.ts')), false);
 });

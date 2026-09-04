@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { taskProfessionalApi } from '../../../api';
-import { taskRecordApi } from '../api/task-record-api';
+import type { CoordinationResponse, ReviewsResponse, VerificationResponse } from '../../../api/generated/task-professional-http-dto';
 import type { ParentCoordinationResult } from '../components/parentCoordination';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
@@ -10,31 +10,31 @@ type ApiFailure = Error & { code?: string };
 export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) {
   const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
-  const [reviewData, setReviewData] = useState<any>(null);
+  const [reviewData, setReviewData] = useState<ReviewsResponse | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [verificationData, setVerificationData] = useState<any>(null);
+  const [verificationData, setVerificationData] = useState<VerificationResponse | null>(null);
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const coordinationRequest = useRef(0);
   const reviewRequest = useRef(0);
   const verificationRequest = useRef(0);
 
-  const run = <T,>(operation: string, request: (signal: AbortSignal) => Promise<T>) => lifecycle && taskId
+  const run = useCallback(<T,>(operation: string, request: (signal: AbortSignal) => Promise<T>) => lifecycle && taskId
     ? lifecycle.run(taskId, operation, request)
-    : request(new AbortController().signal);
+    : request(new AbortController().signal), [lifecycle, taskId]);
 
   const refreshCoordination = useCallback(async () => {
     if (!taskId) return;
     const requestId = ++coordinationRequest.current;
     setCoordinationLoading(true);
     try {
-      const next = await run('coordination', (signal) => taskProfessionalApi.coordination(taskId, { signal }));
-      if (coordinationRequest.current === requestId) setCoordinationData(next);
+      const next: CoordinationResponse = await run('coordination', (signal) => taskProfessionalApi.coordination(taskId, { signal }));
+      if (coordinationRequest.current === requestId) setCoordinationData(next as ParentCoordinationResult);
     } catch (error) {
       if (!isTaskReadCancelled(error) && coordinationRequest.current === requestId) setCoordinationData({ diagnostic: { code: (error as ApiFailure).code || 'parent_coordination_read_failed', message: error instanceof Error ? error.message : '读取失败' } });
     } finally { if (coordinationRequest.current === requestId) setCoordinationLoading(false); }
-  }, [taskId, lifecycle]);
+  }, [taskId, run]);
 
   const refreshReview = useCallback(async () => {
     if (!taskId) return;
@@ -46,7 +46,7 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
     } catch (error) {
       if (!isTaskReadCancelled(error) && reviewRequest.current === requestId) setReviewError(`${(error as ApiFailure).code || 'task_review_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
     } finally { if (reviewRequest.current === requestId) setReviewLoading(false); }
-  }, [taskId, lifecycle]);
+  }, [taskId, run]);
 
   const refreshVerification = useCallback(async () => {
     if (!taskId) return;
@@ -58,19 +58,22 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
     } catch (error) {
       if (!isTaskReadCancelled(error) && verificationRequest.current === requestId) setVerificationError(`${(error as ApiFailure).code || 'task_verification_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
     } finally { if (verificationRequest.current === requestId) setVerificationLoading(false); }
-  }, [taskId, lifecycle]);
+  }, [taskId, run]);
 
   const resetEvidence = useCallback(() => {
     coordinationRequest.current += 1; reviewRequest.current += 1; verificationRequest.current += 1;
     setCoordinationData(null); setCoordinationLoading(false); setReviewData(null); setReviewLoading(false); setReviewError(null); setVerificationData(null); setVerificationLoading(false); setVerificationError(null);
   }, []);
 
+  useEffect(() => {
+    resetEvidence();
+    if (taskId) void refreshCoordination();
+  }, [taskId, resetEvidence, refreshCoordination]);
+
   return {
     coordinationData, coordinationLoading, reviewData, reviewLoading, reviewError,
     verificationData, verificationLoading, verificationError,
     refreshCoordination, refreshReview, refreshVerification,
     resetEvidence,
-    retrospectiveDocument: taskRecordApi.retrospectiveDocument,
-    updateRetrospective: taskRecordApi.update,
   };
 }

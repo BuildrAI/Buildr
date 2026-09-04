@@ -13,7 +13,7 @@ test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
 
 test('Browser dispatcher selects only affected resource selectors', () => {
   const plan: any = selectBrowserSelectors([
-    'services/buildr-web/src/features/task-record/pages/TaskDetailPage.tsx',
+    'services/buildr-web/src/features/task/pages/TaskDetailPage.tsx',
     'services/buildr-web/src/pages/ProjectDetailPage.tsx',
   ]);
   assert.equal(plan.status, 'selected');

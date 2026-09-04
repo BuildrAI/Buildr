@@ -183,9 +183,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/contracts/**",
       "services/buildr-web/src/api/**",
       "services/buildr-web/src/App.tsx",
-      "services/buildr-web/src/features/task-record/pages/TasksPage.tsx",
-      "services/buildr-web/src/features/task-record/pages/TaskDetailPage.tsx",
-      "services/buildr-web/src/features/task-record/components/shared.tsx",
+      "services/buildr-web/src/features/task/**",
       "test/verification/web-dist.ts",
       "resources/workspace/skills/buildr/task-manager/**",
       "resources/workspace/skills/buildr/task-triage/**"

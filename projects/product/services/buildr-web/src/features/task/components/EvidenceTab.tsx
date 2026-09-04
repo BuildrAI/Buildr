@@ -5,14 +5,15 @@ import {
   formatDateTime,
   reviewMethodLabel,
 } from '../../../lib/taskLabels';
+import type { ReviewsResponse, VerificationResponse } from '../../../api/generated/task-professional-http-dto';
 import { Fact, TechnicalDetails } from './shared';
 
 type Props = {
   active: boolean;
   taskId: string;
   taskActive: boolean;
-  reviewData: any;
-  verificationData: any;
+  reviewData: ReviewsResponse | null;
+  verificationData: VerificationResponse | null;
   reviewLoading: boolean;
   verificationLoading: boolean;
   reviewError: string | null;
@@ -22,14 +23,22 @@ type Props = {
   openAgentAction: (action: string, context?: Record<string, unknown>) => void;
 };
 
-function ReviewList({
+function diagnosticMessage(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || !('diagnostic' in value)) return null;
+  const diagnostic = value.diagnostic;
+  return diagnostic && typeof diagnostic === 'object' && 'message' in diagnostic && typeof diagnostic.message === 'string'
+    ? diagnostic.message
+    : null;
+}
+
+function ReviewList<T>({
   title,
   values,
-  describe = (value: any) => String(value),
+  describe = (value: T) => String(value),
 }: {
   title: string;
-  values: any[];
-  describe?: (value: any) => string;
+  values: T[];
+  describe?: (value: T) => string;
 }) {
   return (
     <section className="review-evidence-section">
@@ -56,13 +65,15 @@ function ReviewSlotCard({
   openAgentAction,
 }: {
   reviewType: 'planning' | 'completion';
-  slot: any;
+  slot: ReviewsResponse['slots']['planning'];
   taskId: string;
   taskActive: boolean;
   openAgentAction: Props['openAgentAction'];
 }) {
-  const cardClass = slot.present ? 'present' : 'missing';
-  const stateText = slot.present ? '已记录' : '未记录';
+  const result = slot.result;
+  const present = slot.present && result !== null && slot.resultDigest !== null;
+  const cardClass = present ? 'present' : 'missing';
+  const stateText = present ? '已记录' : '未记录';
 
   return (
     <article className={`review-slot-card ${cardClass}`}>
@@ -71,28 +82,28 @@ function ReviewSlotCard({
           <p className="eyebrow">{reviewType === 'planning' ? '方案对象' : '完成结果'}</p>
           <h3>{reviewType === 'planning' ? '方案审查（Planning Review）' : '完成审查（Completion Review）'}</h3>
         </div>
-        <span className={`state review-state ${slot.present ? 'present' : 'missing'}`}>{stateText}</span>
+        <span className={`state review-state ${present ? 'present' : 'missing'}`}>{stateText}</span>
       </div>
-      {!slot.present ? (
+      {!present || !result ? (
         <div className="review-slot-empty">尚未形成完整结果；不会创建空占位记录。</div>
       ) : (
         <>
           <dl className="read-facts review-facts">
-            <Fact label="审查对象身份" value={slot.result.subjectIdentity} />
-            <Fact label="执行方式" value={reviewMethodLabel(slot.result.method)} />
-            <Fact label="完成时间" value={formatDateTime(slot.result.completedAt)} />
-            <Fact label="结果摘要（resultDigest）" value={slot.resultDigest} />
+            <Fact label="审查对象身份" value={result.subjectIdentity} />
+            <Fact label="执行方式" value={reviewMethodLabel(result.method)} />
+            <Fact label="完成时间" value={formatDateTime(result.completedAt)} />
+            <Fact label="结果摘要（resultDigest）" value={slot.resultDigest || ''} />
           </dl>
-          <div className={`review-conclusion ${slot.result.conclusion.outcome}`}>
-            <strong>{slot.result.conclusion.outcome === 'accepted' ? '已接受' : '要求修改'}</strong>
-            <p>{slot.result.conclusion.summary}</p>
+          <div className={`review-conclusion ${result.conclusion.outcome}`}>
+            <strong>{result.conclusion.outcome === 'accepted' ? '已接受' : '要求修改'}</strong>
+            <p>{result.conclusion.summary}</p>
           </div>
           <div className="review-evidence-grid">
-            <ReviewList title="已审阅" values={slot.result.reviewed} />
-            <ReviewList title="未覆盖" values={slot.result.uncovered} describe={(item) => `${item.subject}：${item.reason}`} />
-            <ReviewList title="发现" values={slot.result.findings} />
+            <ReviewList title="已审阅" values={result.reviewed} />
+            <ReviewList title="未覆盖" values={result.uncovered} describe={(item) => `${item.subject}：${item.reason}`} />
+            <ReviewList title="发现" values={result.findings} />
           </div>
-          <TechnicalDetails value={`${slot.resultDigest} · ${slot.path}`} />
+          <TechnicalDetails value={`${slot.resultDigest || ''} · ${slot.path}`} />
         </>
       )}
       <div className="review-slot-actions">
@@ -121,11 +132,12 @@ export function EvidenceTab({
   onRefreshVerification,
   openAgentAction,
 }: Props) {
-  const reviewDiagnostic = reviewError || reviewData?.diagnostic?.message || null;
-  const verificationDiagnostic = verificationError || verificationData?.diagnostic?.message || null;
+  const reviewDiagnostic = reviewError || diagnosticMessage(reviewData);
+  const verificationDiagnostic = verificationError || diagnosticMessage(verificationData);
   const slot = verificationData?.slot;
-  const verificationClass = slot?.present ? slot.applicability.status : 'missing';
-  const verificationState = slot?.present ? applicabilityLabel(slot.applicability.status) : '未记录';
+  const verificationPresent = Boolean(slot?.present && slot.report && slot.applicability && slot.reportDigest);
+  const verificationClass = verificationPresent && slot?.applicability ? slot.applicability.status : 'missing';
+  const verificationState = verificationPresent && slot?.applicability ? applicabilityLabel(slot.applicability.status) : '未记录';
 
   return (
     <section id="task-evidence-panel" className={active ? '' : 'hidden'} data-task-panel="evidence" aria-live="polite">
@@ -200,9 +212,9 @@ export function EvidenceTab({
                   <p className="eyebrow">当前报告</p>
                   <h3>任务验证报告</h3>
                 </div>
-                <span className={`state review-state ${slot.present ? slot.applicability.status : 'missing'}`}>{verificationState}</span>
+                <span className={`state review-state ${verificationClass}`}>{verificationState}</span>
               </div>
-              {!slot.present ? (
+              {!verificationPresent || !slot.report || !slot.applicability ? (
                 <div className="review-slot-empty">尚未形成开发完成后的验证报告；开发中可以继续按需运行测试。</div>
               ) : (
                 <>
@@ -212,7 +224,7 @@ export function EvidenceTab({
                     <Fact label="内容适用性" value={applicabilityLabel(slot.applicability.content.status)} />
                     <Fact label="测试地图适用性" value={applicabilityLabel(slot.applicability.declarations.status)} />
                     <Fact label="完成时间" value={formatDateTime(slot.report.completedAt)} />
-                    <Fact label="报告摘要（reportDigest）" value={slot.reportDigest} />
+                    <Fact label="报告摘要（reportDigest）" value={slot.reportDigest || ''} />
                   </dl>
                   <div className={`review-conclusion ${slot.report.conclusion.outcome}`}>
                     <strong>{slot.report.conclusion.outcome === 'passed' ? '已通过' : slot.report.conclusion.outcome === 'not-passed' ? '未通过' : '未完成'}</strong>

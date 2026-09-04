@@ -3,7 +3,7 @@ import type {
   TaskDetailResponse,
   TaskRecord,
   TaskRelationSummary,
-} from '../api/generated/task-record-dto';
+} from '../api/generated/task-dto';
 
 export function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
