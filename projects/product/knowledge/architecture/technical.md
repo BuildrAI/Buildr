@@ -2,7 +2,7 @@
 
 本文是 Buildr 已实现技术架构的入口，帮助维护者快速判断：源码由谁拥有、模块如何协作、数据写在哪里、运行时如何形成，以及关键流程应继续阅读哪份文档。
 
-本文不是行为规范、迁移台账或实现清单。规范性行为以 [OpenSpec specs](../../specs/) 为准；单个 Service 的详细职责见 [Buildr Service](../services/buildr.md) 与 [Buildr Web Frontend Service](../services/buildr-web.md)；源码目录和分层约定见 [服务分层与模块组织](../../../docs/architecture/service-architecture.md)。
+本文不是行为规范、迁移台账或实现清单。规范性行为以 [OpenSpec specs](../../openspec/specs/) 为准；单个 Service 的详细职责见 [Buildr Service](../services/buildr.md) 与 [Buildr Web Frontend Service](../services/buildr-web.md)；源码目录和分层约定见 [服务分层与模块组织](../../docs/architecture/service-architecture.md)。
 
 ## 一页架构图
 
@@ -212,7 +212,7 @@ Buildr Product内部验证分成控制面与执行面。`test/verification/{owne
 
 Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 artifact。正式发布不重新构建 Application Payload 或重新 `npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
 
-Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md)。
+Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)。
 
 ## 跨模块不变量
 
@@ -233,13 +233,13 @@ Buildr Product自身的测试runner仍属于项目测试架构，可按Project�
 | 想了解的问题 | 继续阅读 |
 |--------------|----------|
 | 产品角色、领域模型和产品边界 | [产品架构](product.md) |
-| Buildr Service 工程目录与模块分层 | [服务分层与模块组织](../../../docs/architecture/service-architecture.md) |
+| Buildr Service 工程目录与模块分层 | [服务分层与模块组织](../../docs/architecture/service-architecture.md) |
 | Buildr Service 详细接口、数据和运行事实 | [Buildr Service](../services/buildr.md) |
-| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](../../../services/buildr/docs/verification-framework.md) |
+| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md) |
 | Buildr Web 前端源码、构建和消费边界 | [Buildr Web Frontend Service](../services/buildr-web.md) |
 | OpenSpec 从提案到归档的跨模块流程 | [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md) |
 | npm Candidate、发布与安装事实链 | [Buildr npm 发布流程](../flows/open-source-release.md) |
 | Project Daily Progress 的写入与展示 | [项目每日演进](../flows/project-daily-progress.md) |
-| Task Finish 的规范性行为 | [Task closeout orchestration specification](../../specs/task-closeout-orchestration/spec.md) |
+| Task Finish 的规范性行为 | [Task closeout orchestration specification](../../openspec/specs/task-closeout-orchestration/spec.md) |
 | 人和 Agent 共用的 canonical 名称 | [术语表](../glossary.md) |
-| 文档区域的权威分工 | [Buildr 文档说明](../../../docs/document-index.md) |
+| 文档区域的权威分工 | [Buildr 文档说明](../../docs/document-index.md) |

@@ -481,7 +481,7 @@ workspaceFiles:
 
 projectDirectories:
   - openspec/specs
-  - openspec/knowledge
+  - knowledge
   - openspec/changes
   - services
 

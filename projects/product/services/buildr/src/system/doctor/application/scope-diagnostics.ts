@@ -160,7 +160,7 @@ export function createScopeDiagnostics(deps: any) {
     return {
       agentsFile: existsFile(path.join(projectRoot, 'AGENTS.md')),
       openspecSpecs: existsDirectory(path.join(projectRoot, 'openspec', 'specs')),
-      openspecKnowledge: existsDirectory(path.join(projectRoot, 'openspec', 'knowledge')),
+      knowledge: existsDirectory(path.join(projectRoot, 'knowledge')),
       openspecChanges: existsDirectory(path.join(projectRoot, 'openspec', 'changes')),
       capabilities: existsFile(path.join(projectRoot, 'capabilities.yml')),
       commandsContext: existsFile(path.join(projectRoot, 'commands.yml')),
@@ -173,7 +173,7 @@ export function createScopeDiagnostics(deps: any) {
     const labels: Record<string, string> = {
       agentsFile: 'AGENTS.md',
       openspecSpecs: 'openspec/specs',
-      openspecKnowledge: 'openspec/knowledge',
+      knowledge: 'knowledge',
       openspecChanges: 'openspec/changes',
       capabilities: 'capabilities.yml',
       servicesMetadata: 'services/manifest.yml',

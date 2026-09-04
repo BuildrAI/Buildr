@@ -7,6 +7,6 @@ Buildr 架构分为产品架构和技术架构，两者通过核心流程与 Ser
 - [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md)：跨产品与技术视角的核心变更流程。
 - [项目每日演进](../flows/project-daily-progress.md)：同步代码、Agent 收集当日 Git、本机落盘与只读展示。
 - [Buildr Service](../services/buildr.md)：可执行产品实现的职责与运行边界。
+- [Archify 技术图](../archify/index.md)：当前态模型的可视化入口，包含 Buildr 系统全景图源码和可浏览投影。
 
-规范性行为以 [OpenSpec specs](../../specs/) 为准。
-
+规范性行为以 [OpenSpec specs](../../openspec/specs/) 为准。

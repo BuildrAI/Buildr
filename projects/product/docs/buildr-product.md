@@ -203,7 +203,7 @@ Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projec
 
 Buildr 当前 MVP 已验证文件系统、Git、CLI、Buildr Skill、bootstrap guide 和 Agent runtime 渲染可以支撑人和 Agent 共同维护工作资产。
 
-当前事实以 [Buildr current knowledge](../openspec/knowledge/overview.md) 为准；规范性行为以 [OpenSpec specs](../openspec/specs/) 为准。
+当前事实以 [Buildr current knowledge](../knowledge/overview.md) 为准；规范性行为以 [OpenSpec specs](../openspec/specs/) 为准。
 
 MVP 不解决完整企业云服务、权限系统、托管 Web/SaaS、多用户协作、代码托管平台集成、跨机器自动恢复、系统级 hook 或所有 Agent adapter。
 
@@ -219,7 +219,7 @@ Buildr 的数据完整性保护是不可卸载的 CLI core：资产 identity、s
 
 ## Roadmap
 
-本节只概括后续产品方向。详细设计候选见 [Roadmap 资料](roadmap/)；这些资料不是当前产品事实、可执行资产或已经批准的实施契约。当前实现以 [Buildr current knowledge](../openspec/knowledge/overview.md) 为准，规范性行为以 [OpenSpec specs](../openspec/specs/) 为准；具体方向进入实现前仍需创建独立 OpenSpec change。
+本节只概括后续产品方向。详细设计候选见 [Roadmap 资料](roadmap/)；这些资料不是当前产品事实、可执行资产或已经批准的实施契约。当前实现以 [Buildr current knowledge](../knowledge/overview.md) 为准，规范性行为以 [OpenSpec specs](../openspec/specs/) 为准；具体方向进入实现前仍需创建独立 OpenSpec change。
 
 后续产品方向包括：
 

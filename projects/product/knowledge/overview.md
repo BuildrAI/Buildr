@@ -1,6 +1,6 @@
 # Buildr Product 当前认知
 
-本文是 Buildr Product 已实现当前事实的入口。产品定位和解释见 [Buildr Product](../../docs/buildr-product.md)，规范行为以 [canonical specs](../specs/) 和 active Change delta specs 为准。
+本文是 Buildr Product 已实现当前事实的入口。产品定位和解释见 [Buildr Product](../docs/buildr-product.md)，规范行为以 [canonical specs](../openspec/specs/) 和 active Change delta specs 为准。
 
 ## 当前产品
 
@@ -26,6 +26,7 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 
 - [术语表](glossary.md)
 - [架构入口](architecture/index.md)
+- [Archify 技术图](archify/index.md)
 - [产品架构](architecture/product.md)
 - [技术架构](architecture/technical.md)
 - [项目每日演进](flows/project-daily-progress.md)

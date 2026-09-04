@@ -76,7 +76,7 @@ flowchart TB
 
 旧 `task parent record|reconcile|bind-child|refresh-planning|reconcile-child-delivery|accept` 及研发内对应写动作已退役。旧父计划只作为任务记录中的历史内容读取；旧贡献协调表及其数据已经删除，历史读取不重新启动旧流程、不补造新证据。
 
-只有显式`isParent`或当前真实子关系建立父任务身份；旧父计划本身不再建立当前父身份。历史完成记录没有保存授权依据时，明确显示缺失，不回填、不重开、不改变原完成时间。改造前结构见[现状梳理](../../../docs/archive/2026-08-30-parent-child-task-audit.md)。
+只有显式`isParent`或当前真实子关系建立父任务身份；旧父计划本身不再建立当前父身份。历史完成记录没有保存授权依据时，明确显示缺失，不回填、不重开、不改变原完成时间。改造前结构见[现状梳理](../../docs/archive/2026-08-30-parent-child-task-audit.md)。
 
 ## 简化与执行成本
 

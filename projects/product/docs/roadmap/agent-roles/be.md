@@ -7,7 +7,7 @@
 未来实现需要决定如何让角色获得以下上下文，而不是由本文直接触发加载：
 
 1. 当前组织、项目和服务仓，以及当前目录和上层相关 `AGENTS.md`。
-2. 相关项目 `openspec/knowledge/`、`openspec/specs/` 和当前 `openspec/changes/<change-id>/`。
+2. 相关项目 `knowledge/`、`openspec/specs/` 和当前 `openspec/changes/<change-id>/`。
 3. 用户任务意图和语义影响；只有改变业务语义时才维护对应 change 交付物。
 4. 代码开发所需的任务 worktree。
 

@@ -119,7 +119,12 @@ test('自举 Brief、impact evidence 与 current knowledge 使用真实目标且
   assert.ok(impact.impacts.every((item: any) => item.target && item.reason && item.status !== 'pending'));
   for (const item of impact.impacts) {
     const target: any = item.type === 'brief' ? path.join(changeRoot, 'brief.md') : path.join(PRODUCT_ROOT, item.target);
-    assert.equal(fs.existsSync(target), true, item.target);
+    const migratedTarget: any = item.type === 'brief' || !item.target.startsWith('openspec/knowledge/')
+      ? target
+      : path.join(PRODUCT_ROOT, item.target.replace(/^openspec\/knowledge\//, 'knowledge/'));
+    // Archived impact evidence remains immutable; its historical knowledge path may resolve to the migrated current asset.
+    if (!fs.existsSync(target)) assert.equal(fs.existsSync(migratedTarget), true, item.target);
+    else assert.equal(fs.existsSync(target), true, item.target);
   }
 });
 
@@ -131,15 +136,15 @@ test('正式 Change 可从 active 或唯一 archived identity 解析', () => {
 });
 
 test('Context 四层模型、知识导航和 Service 局部术语边界保持一致', () => {
-  const glossary: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/glossary.md'));
-  const productArchitecture: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/product.md'));
-  const service: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/services/buildr.md'));
+  const glossary: any = read(path.join(PRODUCT_ROOT, 'knowledge/glossary.md'));
+  const productArchitecture: any = read(path.join(PRODUCT_ROOT, 'knowledge/architecture/product.md'));
+  const service: any = read(path.join(PRODUCT_ROOT, 'knowledge/services/buildr.md'));
   for (const term of ['工作信息空间', 'Workspace', '工作资产', '共享工作环境', '上下文（Context）', '任务上下文', '上下文窗口']) {
     assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
   }
   assert.match(glossary, /位于 Workspace 不表示它已经被 Buildr 治理/);
   assert.match(productArchitecture, /Task Context[\s\S]*Context Window/);
   assert.match(service, /当前不重定义 Project glossary/);
-  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/product.md')), true);
-  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'openspec/knowledge/architecture/technical.md')), true);
+  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/architecture/product.md')), true);
+  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/architecture/technical.md')), true);
 });

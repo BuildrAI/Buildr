@@ -360,7 +360,7 @@ export function createPackageStaticValidator(deps: any): any  {
     const capabilityHasActiveDelta = (capability: any) => activeChangeDirectories.some((change: any) => existsFile(path.join(activeChangesRoot, change, 'specs', capability, 'spec.md')));
     const currentRoots: any[] = [
       path.join(productRoot, 'openspec', 'specs'),
-      path.join(productRoot, 'openspec', 'knowledge'),
+      path.join(productRoot, 'knowledge'),
       path.join(productRoot, 'docs'),
     ];
     const positiveResidues: any[] = [

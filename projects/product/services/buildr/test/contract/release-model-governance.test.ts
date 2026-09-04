@@ -83,9 +83,9 @@ test('source release Skill blocks incomplete migration and does not retain the o
 });
 
 test('current knowledge, checklist and architecture use the same release identity and owners', () => {
-  const flow: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/flows/open-source-release.md'));
-  const service: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/services/buildr.md'));
-  const glossary: any = read(path.join(PRODUCT_ROOT, 'openspec/knowledge/glossary.md'));
+  const flow: any = read(path.join(PRODUCT_ROOT, 'knowledge/flows/open-source-release.md'));
+  const service: any = read(path.join(PRODUCT_ROOT, 'knowledge/services/buildr.md'));
+  const glossary: any = read(path.join(PRODUCT_ROOT, 'knowledge/glossary.md'));
   const checklist: any = read(path.join(SERVICE_ROOT, 'docs/release-checklist.md'));
   const architecture: any = read(path.join(PRODUCT_ROOT, 'docs/architecture/service-architecture.md'));
 
