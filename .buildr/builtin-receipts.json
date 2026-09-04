@@ -213,11 +213,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-4cff8a774acfdee786d5c59c90fdf37038bb967e2a1718b4b19192f937f02f24",
+      "integrity": "sha256-5c53c2bba316b87fe6c2f19601b86ebe09c8acd0fe084bae23980e9604f39468",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-d637d2c3d86be088b75fcefb977741b2a08750d861baa8455df4939a120e73f1"
+          "integrity": "sha256-cc4c671394cd22833c61845511b2158e4a34716aa790a46ff68023097b9e95a9"
         },
         {
           "path": "references/project-verification-v4.md",
