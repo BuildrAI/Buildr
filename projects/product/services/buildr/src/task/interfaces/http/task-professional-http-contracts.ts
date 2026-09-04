@@ -1,5 +1,5 @@
 import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.ts';
-import { TASK_RECORD_HTTP_DEFINITIONS } from './task-record-http-contracts.ts';
+import { TASK_RECORD_HTTP_DEFINITIONS } from './task-record-http-schema.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const CONTRACT_ROOT = 'https://schemas.buildr.ai/http/task-professional';

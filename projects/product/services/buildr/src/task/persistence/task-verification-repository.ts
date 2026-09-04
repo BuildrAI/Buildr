@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
+import { transactionDatabase, type TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 import { normalizeTaskVerificationReport, taskVerificationError, type TaskVerificationReport } from '../domain/task-verification.ts';
-import type { TaskPersistence } from './task-record-repository.ts';
+type TaskPersistence = { root: string; record: { taskId: string } };
 
 const locator = (taskId: string) => `workspace-sqlite:task-verification/${taskId}`;
 const digest = (value: string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
@@ -20,7 +21,7 @@ export type TaskVerificationRepositoryRuntime = {
   taskVerificationSerialize?: (report: TaskVerificationReport) => string;
   taskVerificationReportPath?: (targetRoot: string, taskId: string) => string;
   readTaskVerificationReportPersistence?: (targetRoot: string, taskId: string, options?: { optional?: boolean }) => VerificationPersistence | null;
-  writeTaskVerificationReportPersistence?: (targetRoot: string, report: TaskVerificationReport, options: { expectedReportDigest: string }) => VerificationPersistence & { created: boolean };
+  writeTaskVerificationReportPersistence?: (targetRoot: string, report: TaskVerificationReport, options: { expectedReportDigest: string }, transaction: TransactionContext) => VerificationPersistence & { created: boolean };
   renderTaskVerificationReport?: typeof renderTaskVerificationReport;
 };
 
@@ -52,30 +53,28 @@ export function registerTaskVerificationRepository<T extends TaskVerificationRep
     } catch (error: unknown) { const failure = errorFields(error); if (failure.taskVerificationBusiness || failure.structuredStoreBusiness) throw error; throw taskVerificationError('task_verification_read_failed', `Task Verification Report 读取失败：${failure.message}`, 500, { taskId }); }
     finally { try { opened?.database?.close(); } catch {} }
   }
-  function writeTaskVerificationReportPersistence(targetRoot: string, value: TaskVerificationReport, { expectedReportDigest }: { expectedReportDigest: string }): VerificationPersistence & { created: boolean } {
-    const report = normalizeTaskVerificationReport(value); const task = runtime.readTaskRecordPersistence(targetRoot, report.taskId); let opened: StructuredStore | undefined;
+  function writeTaskVerificationReportPersistence(targetRoot: string, value: TaskVerificationReport, { expectedReportDigest }: { expectedReportDigest: string }, transaction: TransactionContext): VerificationPersistence & { created: boolean } {
+    const report = normalizeTaskVerificationReport(value); const task = runtime.readTaskRecordPersistence(targetRoot, report.taskId);
     let stage = 'serialization';
     try {
       const serialized = (runtime.taskVerificationSerialize || renderTaskVerificationReport)(report);
       decode(serialized, report.taskId);
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true }); opened.database.exec('BEGIN IMMEDIATE'); stage = 'current-read';
-      const existing = opened.database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(report.taskId);
+      const database = transactionDatabase(transaction); stage = 'current-read';
+      const existing = database.prepare('SELECT result_json FROM task_verification_current WHERE task_id = ?').get(report.taskId);
       if (existing) decode(stringColumn(existing, 'result_json'), report.taskId);
       const currentReportDigest = existing ? digest(stringColumn(existing, 'result_json')) : 'absent';
       if (expectedReportDigest !== currentReportDigest) throw taskVerificationError('task_verification_current_conflict', 'Task Verification current 已变化，拒绝覆盖。', 409, { taskId: report.taskId, expectedReportDigest, currentReportDigest }, '重新inspect真实报告和当前内容后决定是否重做或替换。');
       stage = 'mutation';
-      opened.database.prepare(`INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?)
+      database.prepare(`INSERT INTO task_verification_current(task_id, result_json, target_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(task_id) DO UPDATE SET result_json = excluded.result_json, target_identity = excluded.target_identity, outcome = excluded.outcome, updated_at = excluded.updated_at`).run(report.taskId, serialized, report.content.identity, report.conclusion.outcome, report.completedAt);
       stage = 'post-read';
-      const row = opened.database.prepare('SELECT result_json, target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = ?').get(report.taskId);
+      const row = database.prepare('SELECT result_json, target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = ?').get(report.taskId);
       if (!row) throw new Error('post-read missing');
       const writtenSerialized = stringColumn(row, 'result_json');
       const written = decode(writtenSerialized, report.taskId);
       if (writtenSerialized !== serialized || stringColumn(row, 'target_identity') !== written.content.identity || stringColumn(row, 'outcome') !== written.conclusion.outcome || stringColumn(row, 'updated_at') !== written.completedAt) throw new Error('post-read mismatch');
-      stage = 'commit'; opened.database.exec('COMMIT');
       return { root: task.root, file: locator(report.taskId), report: written, reportDigest: digest(writtenSerialized), observedAt: written.completedAt, created: !existing };
-    } catch (error: unknown) { try { opened?.database?.exec('ROLLBACK'); } catch {} const failure = errorFields(error); if (failure.taskVerificationBusiness || failure.structuredStoreBusiness) throw error; throw taskVerificationError('task_verification_write_failed', `Task Verification Report 写入失败：${failure.message}`, 500, { taskId: report.taskId, stage, rollback: { status: 'restored' } }); }
-    finally { try { opened?.database?.close(); } catch {} }
+    } catch (error: unknown) { const failure = errorFields(error); if (failure.taskVerificationBusiness || failure.structuredStoreBusiness) throw error; throw taskVerificationError('task_verification_write_failed', `Task Verification Report 写入失败：${failure.message}`, 500, { taskId: report.taskId, stage, rollback: { status: 'restored' } }); }
   }
   return Object.assign(runtime, { taskVerificationReportPath, readTaskVerificationReportPersistence, writeTaskVerificationReportPersistence, renderTaskVerificationReport });
 }

@@ -5,17 +5,17 @@ const productRoot = path.resolve(serviceRoot, '../..');
 
 export type ContractOutputPaths = { backend: string; web: string };
 
-export function contractOutputPaths(backendRelative: string, filename: string, outputRoot?: string): ContractOutputPaths {
+export function contractOutputPaths(backendRelative: string, filename: string, outputRoot?: string, webRelative = 'api'): ContractOutputPaths {
   if (outputRoot) {
     const root = path.resolve(outputRoot);
     return {
       backend: path.join(root, 'buildr', 'src', backendRelative, 'generated', filename),
-      web: path.join(root, 'buildr-web', 'src', 'api', 'generated', filename),
+      web: path.join(root, 'buildr-web', 'src', webRelative, 'generated', filename),
     };
   }
   return {
     backend: path.join(serviceRoot, 'src', backendRelative, 'generated', filename),
-    web: path.join(productRoot, 'services', 'buildr-web', 'src', 'api', 'generated', filename),
+    web: path.join(productRoot, 'services', 'buildr-web', 'src', webRelative, 'generated', filename),
   };
 }
 

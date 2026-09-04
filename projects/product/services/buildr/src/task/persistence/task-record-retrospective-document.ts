@@ -2,10 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { isTaskRecordId, taskRecordError } from '../domain/task-record.ts';
-
 const MAX_DOCUMENT_BYTES = 256 * 1024;
 const RETROSPECTIVE_DOCUMENT_ROOT: readonly string[] = Object.freeze(['.buildr', 'local', 'task-retrospectives']);
+const isTaskRecordId = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(value);
+const taskRecordError = (code: string, message: string, status = 500, details?: unknown) => Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
 
 export type TaskRecordRuntime = {
   assertCanonicalTaskWorkspace(targetRoot: string): string;

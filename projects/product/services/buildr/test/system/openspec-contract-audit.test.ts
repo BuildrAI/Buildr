@@ -87,6 +87,20 @@ test('候选审计可重放先新增后移除且最终不存在的历史 capabil
   assert.match(result.stdout, /demo associated with current candidate Archived Change deltas/);
 });
 
+test('候选审计按 Requirement 依赖重放同日新增与后续纠偏', (t: any) => {
+  const value: any = fixture(t);
+  fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST keep the corrected result.\n');
+  const correction: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-a-correction');
+  const introduction: any = path.join(value.productRoot, 'openspec', 'changes', 'archive', '2026-07-27-z-introduction');
+  write(path.join(correction, 'specs', 'demo', 'spec.md'), '## MODIFIED Requirements\n\n### Requirement: Candidate\nSystem MUST keep the corrected result.\n');
+  write(path.join(introduction, 'specs', 'demo', 'spec.md'), '## ADDED Requirements\n\n### Requirement: Candidate\nSystem MUST keep the initial result.\n');
+  git(value.root, ['add', '.']);
+  git(value.root, ['commit', '-m', 'converged same-day correction']);
+  const result: any = runAudit(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /demo associated with current candidate Archived Change deltas/);
+});
+
 test('候选审计拒绝Archived Change delta与当前canonical不匹配', (t: any) => {
   const value: any = fixture(t);
   fs.appendFileSync(value.spec, '\n### Requirement: Candidate\nSystem MUST preserve a different result.\n');

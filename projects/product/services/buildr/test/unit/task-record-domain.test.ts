@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes, TASK_RECORD_SCHEMA } from '../../src/task/domain/task-record.ts';
+import { Task, TASK_RECORD_SCHEMA } from '../../src/task/domain/task.ts';
+import { TaskChange } from '../../src/task/domain/task-change.ts';
+import { TaskProject } from '../../src/task/domain/task-project.ts';
+import { TaskService } from '../../src/task/domain/task-service.ts';
+import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes } from '../../src/task/application/task-record-validation.ts';
 
 function active(overrides: Record<string, unknown> = {}) {
   return {
@@ -88,4 +92,17 @@ test('有效 Project 集合合并显式 Project、Service 与 Change，只有空
   const workspaceOnly = normalizeTaskRecord(active({ scope: { projects: [], services: [] }, changes: [] }));
   assert.deepEqual(taskRecordEffectiveProjectCodes(workspaceOnly), []);
   assert.equal(isWorkspaceOnlyTaskRecord(workspaceOnly), true);
+});
+
+test('Task 与三类关系领域对象只表达所属表的数据字段', () => {
+  const record = normalizeTaskRecord(active());
+  const task = new Task({ ...record, isParent: false, resultHistory: [] });
+  assert.equal(task.taskId, record.taskId);
+  assert.deepEqual({ ...new TaskProject(record.taskId, 'demo') }, { taskId: record.taskId, project: 'demo' });
+  assert.deepEqual({ ...new TaskService(record.taskId, 'demo', 'api') }, { taskId: record.taskId, project: 'demo', service: 'api' });
+  assert.deepEqual({ ...new TaskChange(record.taskId, 'demo', 'change-one') }, { taskId: record.taskId, project: 'demo', change: 'change-one' });
+  for (const value of [Task, TaskProject, TaskService, TaskChange]) {
+    assert.equal('fromRecord' in value, false);
+    assert.equal('from' in value, false);
+  }
 });

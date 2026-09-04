@@ -102,8 +102,8 @@ test('结构 verifier 拒绝重新跟踪可重建生成物', () => {
   const trackedFiles: any[] = [
     'projects/product/services/buildr/web-dist/index.html',
     'projects/product/services/buildr/package/targets/test-context/index.js',
-    'projects/product/services/buildr/src/task/interfaces/http/generated/task-record-http-dto.ts',
-    'projects/product/services/buildr-web/src/api/generated/task-record-http-dto.ts',
+    'projects/product/services/buildr/src/task/application/generated/task-record-dto.ts',
+    'projects/product/services/buildr-web/src/features/task-record/api/generated/task-record-dto.ts',
   ];
   assert.deepEqual(validateProductSourceLayout({
     projectEntries: canonicalProjectEntries,

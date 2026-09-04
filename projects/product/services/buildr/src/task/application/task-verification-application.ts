@@ -2,11 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../workspace/domain/source-root.ts';
-import { taskRecordEffectiveProjectCodes } from '../domain/task-record.ts';
+import { taskRecordEffectiveProjectCodes } from './task-record-validation.ts';
 import { normalizeTaskVerificationCheck, normalizeTaskVerificationGap, normalizeTaskVerificationReport, taskVerificationError, type TaskVerificationCheck, type TaskVerificationDeclarationReference, type TaskVerificationGap, type TaskVerificationReport } from '../domain/task-verification.ts';
-import type { TaskPersistence } from '../persistence/task-record-repository.ts';
+import type { TaskPersistence } from './task-record-dto.ts';
 import type { TaskVerificationRepositoryRuntime } from '../persistence/task-verification-repository.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
+import type { TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 
 const digest = (value: Buffer | string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 type ProjectSource = Parameters<typeof resolveSourceRoot>[1];
@@ -20,7 +21,9 @@ type VerificationSlot = {
   path: string; present: boolean; report: TaskVerificationReport | null; reportDigest: string | null;
   applicability: VerificationApplicability | null; observedAt?: string;
 };
-export type VerificationApplicationRuntime = TaskVerificationRepositoryRuntime & {
+export type VerificationApplicationRuntime = Omit<TaskVerificationRepositoryRuntime, 'readTaskRecordPersistence'> & {
+  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  runWorkspaceTransaction<T>(targetRoot: string, action: (context: TransactionContext) => T): T;
   readProjectRegistryPersistence(targetRoot: string): { registry: { projects: Record<string, { source: ProjectSource; workspaceId?: string }> } };
   readServiceRegistryPersistence?(targetRoot: string, project: { source: ProjectSource; workspaceId?: string }, workspaceId?: string): { registry?: { services?: Record<string, unknown> } };
   parseProjectVerification(content: string, source: string): unknown;
@@ -139,7 +142,13 @@ export function registerTaskVerificationApplication<T extends VerificationApplic
     const expectedReportDigest = typeof input.expectedReportDigest === 'string' ? input.expectedReportDigest.trim() : '';
     if (expectedReportDigest !== 'absent' && !/^sha256-[a-f0-9]{64}$/u.test(expectedReportDigest)) throw taskVerificationError('task_verification_expected_digest_invalid', 'expectedReportDigest 必须是 absent 或 sha256 digest。', 400, { field: 'expectedReportDigest' });
     if (!runtime.writeTaskVerificationReportPersistence) throw new Error('Task Verification write port is unavailable.');
-    const written = runtime.writeTaskVerificationReportPersistence(task.root, report, { expectedReportDigest });
+    let written;
+    try {
+      written = runtime.runWorkspaceTransaction(task.root, (transaction) => runtime.writeTaskVerificationReportPersistence!(task.root, report, { expectedReportDigest }, transaction));
+    } catch (error) {
+      if (error instanceof Error && 'taskVerificationBusiness' in error && error.taskVerificationBusiness === true) throw error;
+      throw taskVerificationError('task_verification_write_failed', `Task Verification Report 写入失败：${error instanceof Error ? error.message : String(error)}`, 500, { taskId, stage: 'commit', rollback: { status: 'restored' } });
+    }
     return result('record', 'recorded', taskId, slot(task, report.content.identity), [{ type: written.created ? 'created' : 'updated', path: written.file }]);
   }
   const inspectTaskVerificationView = (targetRoot: string, taskId: string) => inspectTaskVerification(targetRoot, taskId);

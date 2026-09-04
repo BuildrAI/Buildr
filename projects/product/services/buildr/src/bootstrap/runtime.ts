@@ -38,7 +38,7 @@ function methodPort(runtime: any, methods: any): any  {
 
 function taskRecordDependencies(runtime: any): any  {
   return {
-    'workspace.structured-store': methodPort(runtime, ['assertCanonicalStructuredWorkspace', 'openWorkspaceStructuredStore']),
+    'workspace.structured-store': methodPort(runtime, ['assertCanonicalStructuredWorkspace', 'openWorkspaceStructuredStore', 'prepareWorkspaceStructuredStore', 'runWorkspaceTransaction', 'runWorkspaceSqliteRead']),
     'project-service.reader': methodPort(runtime, ['readProjectRegistryRecord', 'readServiceRegistryRecord']),
     'change.resolver': methodPort(runtime, ['resolveTaskScopedChange']),
     'workspace.operation-memoizer': Object.freeze({

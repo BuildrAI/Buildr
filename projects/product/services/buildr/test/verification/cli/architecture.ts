@@ -109,9 +109,10 @@ const requiredRuntime: any[] = [
   'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
   'task/persistence/task-review-repository.ts',
   'task/persistence/task-verification-repository.ts',
-  'task/module.ts', 'task/domain/task-record.ts',
+  'task/module.ts', 'task/domain/task.ts', 'task/domain/task-project.ts', 'task/domain/task-service.ts', 'task/domain/task-change.ts',
   'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
-  'task/application/task-record-application.ts', 'task/persistence/task-record-repository.ts',
+  'task/application/task-record-application.ts', 'task/application/task-record-dto.ts', 'task/application/task-record-validation.ts', 'task/persistence/task-repository.ts',
+  'task/persistence/task-project-repository.ts', 'task/persistence/task-service-repository.ts', 'task/persistence/task-change-repository.ts',
   'task/interfaces/cli/task-record.ts', 'task/interfaces/cli/task-review.ts',
   'task/interfaces/http/task-record-http.ts', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
@@ -379,12 +380,15 @@ if (fs.existsSync(taskRecordHttpInterface)) {
 }
 if (fs.existsSync(taskRecordModule)) {
   const source: any = fs.readFileSync(taskRecordModule, 'utf8');
-  const repositoryIndex: any = source.indexOf('registerTaskRecordRepository(privateComposition)');
-  const applicationIndex: any = source.indexOf('registerTaskRecordApplication(documentRuntime)');
+  const repositoryIndex: any = source.indexOf('taskRepository: createTaskRepository()');
+  const applicationIndex: any = source.indexOf('registerTaskRecordApplication(privateComposition');
   for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_RUNTIME_PORT']) {
     if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
   }
   if (repositoryIndex === -1 || applicationIndex === -1 || repositoryIndex > applicationIndex) problems.push('Task Record module must privately compose repository before application');
+  for (const repository of ['createTaskRepository()', 'createTaskProjectRepository()', 'createTaskServiceRepository()', 'createTaskChangeRepository()']) {
+    if (!source.includes(repository)) problems.push(`Task Record module must compose ${repository}`);
+  }
 }
 if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
 if (fs.existsSync(bootstrapRuntime)) {

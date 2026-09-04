@@ -42,6 +42,10 @@ test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名
   assert.equal(runtime.handleTaskRetrospective, undefined);
   assert.equal(runtime.listTaskRetrospectives, undefined);
   assert.throws(() => runtime.createTaskRecord(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error: any) => error.code === 'task_record_already_exists');
+  const duplicate: any = json(['task', 'create', 'multi-task', '--title', '重复', '--intent', '不得覆盖', '--target', root], 1);
+  assert.equal(duplicate.status, 'blocked');
+  assert.equal(duplicate.record.taskId, 'multi-task');
+  assert.equal(duplicate.recordDigest, runtime.inspectTaskRecord(root, 'multi-task').recordDigest);
   const syntax: any = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
 });
 

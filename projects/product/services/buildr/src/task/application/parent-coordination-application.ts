@@ -1,7 +1,14 @@
 import { projectParentPlan, type ProjectedParentPlan } from '../domain/parent-coordination.ts';
-import type { TaskPersistence, TaskRecordRepository } from '../persistence/task-record-repository.ts';
+import type { TaskPersistence, TaskRecord } from './task-record-dto.ts';
 
-export type ParentCoordinationApplicationRuntime = Pick<TaskRecordRepository, 'readParentTaskContext' | 'readTaskRecordPersistence'> & {
+type ParentContext = {
+  parent: TaskRecord; children: TaskRecord[]; isParent: boolean; legacyPlan: unknown;
+  diagnostic: { code: string; message: string } | null; recordDigest: string; snapshotIdentity: string;
+};
+
+export type ParentCoordinationApplicationRuntime = {
+  readParentTaskContext(targetRoot: string, taskId: string): ParentContext;
+  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
   inspectParentCoordination?: (targetRoot: string, taskId: string) => unknown;
 };
 

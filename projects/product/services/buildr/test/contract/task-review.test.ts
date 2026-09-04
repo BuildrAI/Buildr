@@ -60,7 +60,7 @@ test('Task Review Application 是唯一 repository writer caller', () => {
       const file: any = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(file);
       else if (/static-validation\.(?:mjs|ts)$/.test(file)) continue;
-      else if (/\.(?:mjs|js|ts)$/.test(entry.name) && fs.readFileSync(file, 'utf8').includes('.writeTaskReviewResultPersistence(')) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
+      else if (/\.(?:mjs|js|ts)$/.test(entry.name) && /\.writeTaskReviewResultPersistence!?\(/.test(fs.readFileSync(file, 'utf8'))) callers.push(path.relative(sourceRoot, file).split(path.sep).join('/'));
     }
   };
   visit(sourceRoot);

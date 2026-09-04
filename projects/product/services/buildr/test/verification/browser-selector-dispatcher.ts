@@ -99,7 +99,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');
-      else if (/\/(?:pages\/)?(?:[Tt]ask|[Tt]asks)|task-detail/.test(originalValue) || originalValue.includes('/pages/Task') || originalValue.includes('/pages/task-detail')) add(plan, 'task', originalValue, 'Task page, tab or lifecycle interaction changed.');
+      else if (/\/(?:pages\/)?(?:[Tt]ask|[Tt]asks)|task-record/.test(originalValue) || originalValue.includes('/pages/Task')) add(plan, 'task', originalValue, 'Task page, tab or lifecycle interaction changed.');
       else if (originalValue.includes('/pages/Article') || originalValue.includes('/pages/Articles') || originalValue.includes('/articles')) add(plan, 'articles', originalValue, 'Articles page or publication interaction changed.');
       else if (value.endsWith('/main.tsx') || value.endsWith('/App.tsx') || value.endsWith('/AppLayout.tsx') || value.endsWith('/index.html')) {
         add(plan, 'shell', originalValue, 'Global app bootstrap or router changed.');

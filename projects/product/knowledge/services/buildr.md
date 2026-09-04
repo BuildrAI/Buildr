@@ -48,7 +48,7 @@ Buildr Service 是 Product Project 的可执行应用实现，负责 Bootstrap c
 
 - Workspace/Project/Service、Rules、Skills、Commands 和 Components 使用 YAML manifests/registries。
 - Workspace Structured Store使用每个Workspace root自身的`.buildr/local/workspace.sqlite`，由随npm package交付的连续SQL migrations、checksum ledger和Doctor管理。它是Buildr Local单机数据，不进入Git或同步；未来Server/Cloud不复用数据库文件作为共享协议。Buildr Web registry已解析root后的read-only Application path只读取该root，不执行Git/worktree provenance观察或`git rev-parse`；writable、migration和mutation path仍执行writer guard。自举 candidate runtime 在与 retained Workspace 共享 Git common-dir 时，只能写入自己的 linked Task Validation Workspace store；写 retained canonical store 或 peer checkout 会在创建目录、SQLite、WAL/SHM、ledger 或业务 row 前被 provenance guard 拒绝。验证 store 从完整 migration chain 建立，数据不回灌主库；最终集成后的 retained runtime 才能升级主库。
-- Task Record使用closed `buildr.task-record/v3`，由`src/task/module.ts`在私有组装对象中创建唯一Repository/Application，并贡献CLI/HTTP Adapter。记录保存目标、scope、Change、`parentTaskId`、显式`isParent`、顶层状态、结果摘要、更正历史与可选复盘文档摘要；反向Children只由查询投影。全部非创建写入比较当前`recordDigest`，不保存`noChange`、Git、验证、环境、发布或执行事实。
+- Task Record使用closed `buildr.task-record/v3`，由`src/task/module.ts`组装`Task`领域对象、Application、`tasks`主表Repository及Project/Service/Change三个关系Repository，并贡献CLI/HTTP Adapter。四个Repository复用一个同步SQLite事务；记录保存目标、scope、Change、`parentTaskId`、显式`isParent`、顶层状态、结果摘要、更正历史与可选复盘文档摘要；反向Children只由查询投影。全部非创建写入比较当前`recordDigest`以拒绝陈旧页面，但摘要不持久化也不承诺跨版本字节相同。
 - Task Review 使用 Workspace SQLite 中的`(task_id, planning|completion)`两个可选current slots与closed `buildr.task-review-result/v2` schema。Result只保存subject identity、真实method、reviewed/uncovered、findings、局部结论和完成时间；`inspect`只返回保存事实，不推导current/stale。`record`要求`absent|resultDigest`并在同一SQLite写事务中比较后整值替换，冲突零写入。Application不生成prompt，也不成为Verification、任务收尾或Parent门禁。v1 current rows一次迁入v2，不双读、不建历史表。
 - Task Retrospective是可选纯Skill。Agent基于当前可见Task、Git、代码、测试、Review、Verification和工具结果形成自由Markdown，缺少耗时或Token时明确说明；完整正文只写`.buildr/local/task-retrospectives/<task-id>.md`。SQLite不保存正文、处置说明、时间或专用来源关系。
 - Task Verification v4把Project`verification.yml`作为测试地图。开发中的验证由Agent直接调用项目工具且不写Task报告；开发完成后Task Verification Application只提供`record|inspect`，保存实际checks、gaps和结论。
@@ -74,13 +74,13 @@ Task Record与保留的专业模块共用`.buildr/local/workspace.sqlite`，但�
 
 唯一verification registry对target至少15秒的日常Integration/System owner保存公共结果、确定性反例、保留真实边界与审计处置；planner派生27项primary evidence map并在执行前验证闭合。2026-08-24现场plan-only显示daily-full为52 steps、1,036秒目标工作量与259秒数学下限，Product Artifact Candidate为66 steps、1,398秒目标工作量、349.5秒下限与唯一tarball。Candidate CI的`core-*`仅为macOS平台shard命名，不是daily-full membership。
 
-本Service的通用技术机制由`src/infrastructure/index.ts`统一组装；`workspace-sqlite.ts`是SQLite connection、operation scope、全局migration、锁与事务的唯一owner。Task Execution Record Persistence已删除。
+本Service的通用技术机制由`src/infrastructure/index.ts`统一组装；`workspace-sqlite.ts`拥有SQLite connection、operation scope、全局migration与锁，`sqlite/transaction.ts`拥有普通同步业务事务的`BEGIN IMMEDIATE`、提交、回滚和连接关闭。Migration保留自己的特殊编排。Task Execution Record Persistence已删除。
 
 Task Entry Snapshot与`task next`已经删除。智能体（Agent）读取当前Task、现场和对应Skill，自行选择工作位置、Review、Verification、父任务协调、OpenSpec、Git或任务收尾能力；Application不维护统一下一步或跨专业准入。
 
 随包`task-manager`只维护Task Record及明确的Parent/Child关系，不调用专业writer。父任务协调直接读取Task目标、关系和真实子任务结果；旧Parent Plan已由一次SQLite migration复制到`tasks.legacy_parent_plan_json`供只读历史展示。旧父计划写入口与fallback均不存在。
 
-Task Record以TypeScript Domain/Application/SQLite repository构成独立writer，并拥有复盘文档固定路径读取器；Task Review与Task Verification继续使用各自Domain/Application/repository并只共享Task ID。旧Retrospective Domain/Application/repository、`__internal task-retrospective` Driver、route inventory、独立capability contract和binding均已删除。`task-retrospective`只作为可选Skill消费`buildr.task-record/v3`。
+Task Record以TypeScript Domain/Application及四个SQLite Repository构成独立writer，并拥有复盘文档固定路径读取器。`task.ts`只定义Task主表字段及归属Task的Result、History、ParentCompletion和Retrospective数据对象；三个关系对象各自携带`taskId`。Application集中业务校验、摘要、父子关系、批量查询和四表事务编排；Repository只访问所属表。Task Review与Task Verification的普通写入同样由各自Application选择公共事务。HTTP JSON Schema生成Application与Buildr Web DTO，运行时只校验请求，响应由类型检查与真实Contract Test验证。旧Retrospective Domain/Application/repository、`__internal task-retrospective` Driver、route inventory、独立capability contract和binding均已删除。`task-retrospective`只作为可选Skill消费`buildr.task-record/v3`。
 
 Service source使用Node.js ESM并支持`>=24.15.0 <25`；Product checkout以`.node-version`锁定精确development Node `24.15.0`。后端TypeScript采用`strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`和`noEmit`，并把修改的产品实现与测试迁入同一类型检查。Task Verification v4不再提供通用plan/run/reconcile；Agent直接调用Project测试工具，Application只维护Project测试地图和开发完成后的Task报告。Buildr Product自身的changed planner、Browser dispatcher、Candidate DAG和资源协调继续属于Project测试实现，不进入通用Task Verification接口。
 

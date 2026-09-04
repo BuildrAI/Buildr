@@ -1,5 +1,6 @@
 import { registerWorkspaceInfrastructure } from './filesystem/index.ts';
 import { registerWorkspaceSqlite } from './sqlite/workspace-sqlite.ts';
+import { registerSqliteTransaction } from './sqlite/transaction.ts';
 
 /**
  * The Infrastructure composition root owns technical mechanisms only. Business
@@ -14,6 +15,7 @@ export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([
   Object.freeze({ id: 'process', owner: 'src/infrastructure/process.ts' }),
   Object.freeze({ id: 'product-resources', owner: 'src/infrastructure/product-resources/index.ts' }),
   Object.freeze({ id: 'sqlite', owner: 'src/infrastructure/sqlite/workspace-sqlite.ts' }),
+  Object.freeze({ id: 'sqlite-transaction', owner: 'src/infrastructure/sqlite/transaction.ts' }),
   Object.freeze({ id: 'test-context-runtime', owner: 'src/infrastructure/testing/context-runtime/index.ts' }),
   Object.freeze({ id: 'migration', owner: 'src/infrastructure/sqlite/migrations' }),
 ]);
@@ -21,5 +23,6 @@ export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([
 export function registerInfrastructure(runtime: any, options: any = {}): any  {
   registerWorkspaceInfrastructure(runtime);
   registerWorkspaceSqlite(runtime, options);
+  registerSqliteTransaction(runtime);
   return runtime;
 }

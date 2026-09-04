@@ -10,7 +10,7 @@ import {
   inspectTaskRecordHttpContractCoverage,
   TASK_RECORD_HTTP_OPERATIONS,
   TASK_RECORD_HTTP_VALIDATORS,
-} from '../../src/task/interfaces/http/task-record-http-contracts.ts';
+} from '../../src/task/interfaces/http/task-record-http-schema.ts';
 import { checkTaskRecordHttpDto } from '../../tools/contracts/task-record-dto.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';

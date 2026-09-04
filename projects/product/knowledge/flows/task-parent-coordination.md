@@ -91,9 +91,9 @@ flowchart TB
 
 ## 实现与验证范围
 
-- 身份与完成：`src/task/domain/task-record.ts`、`src/task/application/task-record-application.ts`、`src/task/persistence/task-record-repository.ts`。
+- 身份与完成：`src/task/domain/task.ts`、`src/task/application/task-record-application.ts`、`src/task/persistence/task-repository.ts`及三个关系Repository。
 - 当前摘要：`src/task/application/parent-coordination-application.ts`。
-- 人类入口：`services/buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx`、`ParentCompletionFields.tsx` 及任务详情。
+- 人类入口：`services/buildr-web/src/features/task-record/components/ParentCoordinationPanel.tsx`、`ParentCompletionFields.tsx`及任务详情。
 - 智能体入口：随包 `task-manager`，由分流、研发、审查及收尾技能按职责引用。
 
 关键验收覆盖无授权、普通与历史父任务、嵌套关系、未结束子任务、被放弃范围、结果漂移、明确完成、普通任务不回归和历史只读。具体执行结果由本次实际测试报告提供，不把文档列出案例当作已通过。

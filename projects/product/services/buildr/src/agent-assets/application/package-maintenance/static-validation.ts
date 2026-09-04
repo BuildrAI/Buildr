@@ -455,7 +455,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (!/\.(?:mjs|js|ts)$/.test(file)) continue;
         if (path.resolve(file) === path.resolve(root, 'src/agent-assets/application/package-maintenance/static-validation.ts')) continue;
         const content = fs.readFileSync(file, 'utf8');
-        if (content.includes('.writeTaskReviewResultPersistence(')) writerCallers.push(toPosixRelative(root, file));
+        if (/\.writeTaskReviewResultPersistence!?\(/.test(content)) writerCallers.push(toPosixRelative(root, file));
       }
     }
     if (JSON.stringify(writerCallers) !== JSON.stringify(['src/task/application/task-review-application.ts'])) {
@@ -463,9 +463,15 @@ export function createPackageStaticValidator(deps: any): any  {
     }
 
     for (const relative of [
-      'src/task/domain/task-record.ts',
+      'src/task/domain/task.ts',
+      'src/task/domain/task-project.ts',
+      'src/task/domain/task-service.ts',
+      'src/task/domain/task-change.ts',
       'src/task/application/task-record-application.ts',
-      'src/task/persistence/task-record-repository.ts',
+      'src/task/persistence/task-repository.ts',
+      'src/task/persistence/task-project-repository.ts',
+      'src/task/persistence/task-service-repository.ts',
+      'src/task/persistence/task-change-repository.ts',
       'src/task/domain/task-environment.mjs',
       'src/task/application/task-environment-application.mjs',
       'src/task/persistence/task-environment-repository.mjs',
@@ -1055,7 +1061,7 @@ export function createPackageStaticValidator(deps: any): any  {
         } catch {
           // Shared frontmatter validation reports the original error.
         }
-        for (const relative of ['../buildr-web/src/pages/TasksPage.tsx', '../buildr-web/src/pages/TaskDetailPage.tsx']) {
+        for (const relative of ['../buildr-web/src/features/task-record/pages/TasksPage.tsx', '../buildr-web/src/features/task-record/pages/TaskDetailPage.tsx']) {
           const webFile = path.join(root, relative);
           if (!existsFile(webFile)) {
             problems.push(`Task Manager Buildr Web asset is missing: ${relative}.`);

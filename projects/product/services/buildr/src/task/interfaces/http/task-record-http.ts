@@ -1,18 +1,13 @@
-import { TASK_RECORD_ID_SOURCE } from '../../domain/task-record.ts';
+import { TASK_RECORD_ID_SOURCE } from '../../application/task-record-validation.ts';
 import type {
   TaskAbandonRequest,
   TaskCompleteRequest,
   TaskUpdateRequest,
-} from './generated/task-record-http-dto.ts';
-import {
-  mapTaskAbandonRequest,
-  mapTaskCompleteRequest,
-  mapTaskUpdateRequest,
-} from './task-record-http-mapping.ts';
+} from '../../application/generated/task-record-dto.ts';
 import {
   TASK_RECORD_HTTP_OPERATIONS,
   TASK_RECORD_HTTP_VALIDATORS,
-} from './task-record-http-contracts.ts';
+} from './task-record-http-schema.ts';
 
 export { TASK_RECORD_ID_SOURCE };
 
@@ -116,21 +111,21 @@ export async function handleTaskRecordHttpRequest({ request, suffix, searchParam
   if (request.method === 'PATCH' && taskMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update'), 'Task update');
-    return { status: 200, body: runtime.updateTaskRecord(root, taskMatch[1], mapTaskUpdateRequest(input)) };
+    return { status: 200, body: runtime.updateTaskRecord(root, taskMatch[1], input) };
   }
 
   const taskCompleteMatch = suffix.match(TASK_COMPLETE_PATH);
   if (request.method === 'POST' && taskCompleteMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.complete', await readBody<TaskCompleteRequest>(null, 'Task complete'), 'Task complete');
-    return { status: 200, body: runtime.completeTaskRecord(root, taskCompleteMatch[1], mapTaskCompleteRequest(input)) };
+    return { status: 200, body: runtime.completeTaskRecord(root, taskCompleteMatch[1], input) };
   }
 
   const taskAbandonMatch = suffix.match(TASK_ABANDON_PATH);
   if (request.method === 'POST' && taskAbandonMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.abandon', await readBody<TaskAbandonRequest>(null, 'Task abandon'), 'Task abandon');
-    return { status: 200, body: runtime.abandonTaskRecord(root, taskAbandonMatch[1], mapTaskAbandonRequest(input)) };
+    return { status: 200, body: runtime.abandonTaskRecord(root, taskAbandonMatch[1], input) };
   }
 
   return null;

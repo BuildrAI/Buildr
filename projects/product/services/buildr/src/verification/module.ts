@@ -13,7 +13,9 @@ export function createVerificationModule(runtime: any) {
     id: VERIFICATION_MODULE_ID,
     requires: Object.freeze([]),
     create() {
-      registerProjectVerificationApplication(runtime);
+      registerProjectVerificationApplication(runtime, {
+        atomicWriteFile: (file: string, content: string) => runtime.atomicWriteFile(file, content),
+      });
       const application = Object.freeze({
         inspectProjectVerification: (...args: any[]) => runtime.inspectProjectVerification(...args),
         validateProjectVerificationCandidate: (...args: any[]) => runtime.validateProjectVerificationCandidate(...args),

@@ -2,7 +2,10 @@ import { registerTaskRecordApplication, type TaskRecordApplicationRuntime } from
 import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from './application/task-review-application.ts';
 import { registerTaskVerificationApplication, type VerificationApplicationRuntime } from './application/task-verification-application.ts';
 import { registerParentCoordinationApplication, type ParentCoordinationApplicationRuntime } from './application/parent-coordination-application.ts';
-import { registerTaskRecordRepository, type RepositoryRuntime } from './persistence/task-record-repository.ts';
+import { createTaskRepository } from './persistence/task-repository.ts';
+import { createTaskProjectRepository } from './persistence/task-project-repository.ts';
+import { createTaskServiceRepository } from './persistence/task-service-repository.ts';
+import { createTaskChangeRepository } from './persistence/task-change-repository.ts';
 import { registerTaskRecordRetrospectiveDocument } from './persistence/task-record-retrospective-document.ts';
 import { registerTaskReviewRepository, type TaskReviewRepositoryRuntime } from './persistence/task-review-repository.ts';
 import { registerTaskVerificationRepository, type TaskVerificationRepositoryRuntime } from './persistence/task-verification-repository.ts';
@@ -43,7 +46,7 @@ type CliMatch = { domain?: string; action?: string; runtimeId?: string; operatio
 type CliContext = { argv: string[] };
 type HttpContributionInput = Record<string, unknown>;
 type TaskRecordModuleRequires = {
-  'workspace.structured-store': RepositoryRuntime;
+  'workspace.structured-store': Pick<TaskRecordApplicationRuntime, 'assertCanonicalStructuredWorkspace' | 'prepareWorkspaceStructuredStore' | 'runWorkspaceSqliteRead' | 'runWorkspaceTransaction'>;
   'project-service.reader': Pick<TaskRecordApplicationRuntime, 'readProjectRegistryRecord' | 'readServiceRegistryRecord'>;
   'change.resolver': Pick<TaskRecordApplicationRuntime, 'resolveTaskScopedChange'>;
   'workspace.operation-memoizer': Pick<TaskRecordApplicationRuntime, 'memoizeWorkspaceOperation'>;
@@ -298,16 +301,17 @@ function createTaskRecordModule(requires: TaskRecordModuleRequires) {
     requires['change.resolver'],
     requires['workspace.operation-memoizer'],
   );
-  const repositoryRuntime = registerTaskRecordRepository(privateComposition);
-  const documentRuntime = registerTaskRecordRetrospectiveDocument(repositoryRuntime);
-  const applicationRuntime = registerTaskRecordApplication(documentRuntime);
+  Object.assign(privateComposition, {
+    taskRepository: createTaskRepository(),
+    taskProjectRepository: createTaskProjectRepository(),
+    taskServiceRepository: createTaskServiceRepository(),
+    taskChangeRepository: createTaskChangeRepository(),
+  });
+  const applicationRuntime = registerTaskRecordApplication(privateComposition as TaskRecordApplicationRuntime);
+  registerTaskRecordRetrospectiveDocument(applicationRuntime);
 
   const application = pick(applicationRuntime, APPLICATION_METHODS);
   const persistenceRead = pick(applicationRuntime, PERSISTENCE_READ_METHODS);
-  const cliPort = Object.freeze({
-    ...application,
-    readTaskRecordPersistence: persistenceRead.readTaskRecordPersistence,
-  });
   const runtimePortValue = Object.freeze({
     methods: Object.freeze({ ...application, ...persistenceRead, ...pick(privateComposition, TEST_SUPPORT_METHODS) }),
     testSupportMethods: TEST_SUPPORT_METHODS,

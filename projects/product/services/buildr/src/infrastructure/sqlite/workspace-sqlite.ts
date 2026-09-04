@@ -335,6 +335,15 @@ export function registerWorkspaceSqlite(runtime: any, { observeCheckout = observ
     }
   }
 
+  function prepareWorkspaceStructuredStore(targetRoot: any): any {
+    const opened = openWorkspaceStructuredStore(targetRoot, { writable: true });
+    try {
+      return { root: opened.root, present: opened.present, version: opened.version };
+    } finally {
+      opened.database.close();
+    }
+  }
+
   Object.assign(runtime, {
     assertCanonicalStructuredWorkspace,
     withWorkspaceStructuredStoreOperation,
@@ -342,6 +351,7 @@ export function registerWorkspaceSqlite(runtime: any, { observeCheckout = observ
     withWorkspaceStructuredStoreReadCompatibility,
     workspaceStructuredStorePath,
     openWorkspaceStructuredStore,
+    prepareWorkspaceStructuredStore,
     inspectWorkspaceStructuredStore,
     loadWorkspaceSqliteMigrations,
   });

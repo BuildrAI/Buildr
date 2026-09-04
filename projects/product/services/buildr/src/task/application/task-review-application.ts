@@ -2,12 +2,15 @@ import path from 'node:path';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { normalizeTaskReviewResult, taskReviewError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
-import type { TaskPersistence } from '../persistence/task-record-repository.ts';
+import type { TaskPersistence } from './task-record-dto.ts';
 import type { TaskReviewPersistence, TaskReviewRepositoryRuntime } from '../persistence/task-review-repository.ts';
+import type { TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 
 type ReviewSlot = { path: string; present: boolean; result: TaskReviewResult | null; resultDigest: string | null; observedAt: string | null };
 type ReviewSlots = { planning: ReviewSlot; completion: ReviewSlot };
-export type TaskReviewApplicationRuntime = TaskReviewRepositoryRuntime & {
+export type TaskReviewApplicationRuntime = Omit<TaskReviewRepositoryRuntime, 'readTaskRecordPersistence'> & {
+  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  runWorkspaceTransaction<T>(targetRoot: string, action: (context: TransactionContext) => T): T;
   prepareTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
   inspectTaskReview?: (targetRoot: string, taskId: string, input?: unknown) => unknown;
   recordTaskReview?: (targetRoot: string, taskId: string, input: unknown) => unknown;
@@ -86,7 +89,7 @@ export function registerTaskReviewApplication<T extends TaskReviewApplicationRun
     const expectedCurrentDigest = typeof input.expectedCurrentDigest === 'string' ? input.expectedCurrentDigest.trim() : '';
     if (expectedCurrentDigest !== 'absent' && !/^sha256-[a-f0-9]{64}$/u.test(expectedCurrentDigest)) throw taskReviewError('task_review_expected_digest_invalid', 'expectedCurrentDigest 必须是absent或sha256 digest。', 400, { field: 'expectedCurrentDigest' });
     if (!runtime.writeTaskReviewResultPersistence) throw new Error('Task Review write port is unavailable.');
-    const written = runtime.writeTaskReviewResultPersistence(task.root, result, { expectedCurrentDigest });
+    const written = runtime.runWorkspaceTransaction(task.root, (transaction) => runtime.writeTaskReviewResultPersistence!(task.root, result, { expectedCurrentDigest }, transaction));
     const reviewSlots = slots(task.root, task.record.taskId);
     return operationResult('record', 'recorded', task.record.taskId, reviewSlots, [{
       type: written.created ? 'created' : 'updated',

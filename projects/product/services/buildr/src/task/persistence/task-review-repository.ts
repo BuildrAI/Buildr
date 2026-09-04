@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import { transactionDatabase, type TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError, type TaskReviewBusinessError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
-import type { TaskPersistence } from './task-record-repository.ts';
+type TaskPersistence = { root: string; record: { taskId: string } };
 
 type SqlRow = Record<string, SQLOutputValue>;
 type StructuredStore = { present: boolean; database: DatabaseSync };
@@ -14,7 +15,7 @@ export type TaskReviewRepositoryRuntime = {
   taskReviewDirectory?: (targetRoot: string, taskId: string) => string;
   taskReviewResultPath?: (targetRoot: string, taskId: string, reviewType: TaskReviewType) => string;
   readTaskReviewResultPersistence?: (targetRoot: string, taskId: string, reviewType: TaskReviewType, options?: { optional?: boolean }) => TaskReviewPersistence | null;
-  writeTaskReviewResultPersistence?: (targetRoot: string, result: TaskReviewResult, options: { expectedCurrentDigest: string }) => TaskReviewPersistence & { created: boolean };
+  writeTaskReviewResultPersistence?: (targetRoot: string, result: TaskReviewResult, options: { expectedCurrentDigest: string }, transaction: TransactionContext) => TaskReviewPersistence & { created: boolean };
   renderTaskReviewResult?: typeof renderTaskReviewResult;
 };
 
@@ -75,7 +76,7 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
     } catch (error) { throw asError(error, '读取', taskId, reviewType); }
     finally { try { opened?.database?.close(); } catch {} }
   }
-  function writeTaskReviewResultPersistence(targetRoot: string, result: TaskReviewResult, { expectedCurrentDigest }: { expectedCurrentDigest: string }): TaskReviewPersistence & { created: boolean } {
+  function writeTaskReviewResultPersistence(targetRoot: string, result: TaskReviewResult, { expectedCurrentDigest }: { expectedCurrentDigest: string }, transaction: TransactionContext): TaskReviewPersistence & { created: boolean } {
     const task = runtime.readTaskRecordPersistence(targetRoot, result.taskId);
     let normalized: TaskReviewResult;
     let serialized: string;
@@ -88,32 +89,27 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
       const failure = errorFields(error);
       throw taskReviewError('task_review_write_failed', `Task Review Result 写入失败（serialization）：${failure.message}`, 500, { taskId: task.record.taskId, reviewType: result.reviewType, stage: 'serialization', path: locator(task.record.taskId, result.reviewType), rollback: { status: 'not-required' } }, '原current未变化；修复serialization后重试。');
     }
-    let opened;
     let stage = 'mutation';
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: true });
-      const database = opened.database;
-      database.exec('BEGIN IMMEDIATE');
-      const current = database.prepare('SELECT result_json FROM task_review_current WHERE task_id = ? AND review_type = ?').get(normalized.taskId, normalized.reviewType);
-      if (current) decode(stringColumn(current, 'result_json'), normalized.taskId, normalized.reviewType);
-      const existed = Boolean(current);
-      const currentDigest = current ? digest(stringColumn(current, 'result_json')) : 'absent';
-      if (expectedCurrentDigest !== currentDigest) throw taskReviewError('task_review_current_conflict', 'Task Review current已变化，拒绝覆盖。', 409, { taskId: normalized.taskId, reviewType: normalized.reviewType, expectedCurrentDigest, currentDigest }, '重新inspect current slot后决定是否重做或替换Review。');
-      database.prepare(`INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(task_id, review_type) DO UPDATE SET result_json = excluded.result_json, subject_identity = excluded.subject_identity, outcome = excluded.outcome, updated_at = excluded.updated_at`)
-        .run(normalized.taskId, normalized.reviewType, serialized, normalized.subjectIdentity, normalized.conclusion.outcome, normalized.completedAt);
-      stage = 'post-read';
-      const row = database.prepare('SELECT result_json, subject_identity, outcome, updated_at FROM task_review_current WHERE task_id = ? AND review_type = ?').get(normalized.taskId, normalized.reviewType);
-      if (!row) throw taskReviewError('task_review_post_read_mismatch', 'Task Review Result写后读取不存在。', 500, { taskId: normalized.taskId, reviewType: normalized.reviewType });
-      const rowSerialized = stringColumn(row, 'result_json');
-      const written = decode(rowSerialized, normalized.taskId, normalized.reviewType);
-      if (stringColumn(row, 'subject_identity') !== written.subjectIdentity || stringColumn(row, 'outcome') !== written.conclusion.outcome || stringColumn(row, 'updated_at') !== written.completedAt) throw taskReviewError('task_review_post_read_mismatch', 'Task Review Result与查询字段写后读取不一致。', 500, { taskId: normalized.taskId, reviewType: normalized.reviewType });
-      database.exec('COMMIT');
+      const database = transactionDatabase(transaction);
+        const current = database.prepare('SELECT result_json FROM task_review_current WHERE task_id = ? AND review_type = ?').get(normalized.taskId, normalized.reviewType);
+        if (current) decode(stringColumn(current, 'result_json'), normalized.taskId, normalized.reviewType);
+        const existed = Boolean(current);
+        const currentDigest = current ? digest(stringColumn(current, 'result_json')) : 'absent';
+        if (expectedCurrentDigest !== currentDigest) throw taskReviewError('task_review_current_conflict', 'Task Review current已变化，拒绝覆盖。', 409, { taskId: normalized.taskId, reviewType: normalized.reviewType, expectedCurrentDigest, currentDigest }, '重新inspect current slot后决定是否重做或替换Review。');
+        database.prepare(`INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(task_id, review_type) DO UPDATE SET result_json = excluded.result_json, subject_identity = excluded.subject_identity, outcome = excluded.outcome, updated_at = excluded.updated_at`)
+          .run(normalized.taskId, normalized.reviewType, serialized, normalized.subjectIdentity, normalized.conclusion.outcome, normalized.completedAt);
+        stage = 'post-read';
+        const row = database.prepare('SELECT result_json, subject_identity, outcome, updated_at FROM task_review_current WHERE task_id = ? AND review_type = ?').get(normalized.taskId, normalized.reviewType);
+        if (!row) throw taskReviewError('task_review_post_read_mismatch', 'Task Review Result写后读取不存在。', 500, { taskId: normalized.taskId, reviewType: normalized.reviewType });
+        const rowSerialized = stringColumn(row, 'result_json');
+        const written = decode(rowSerialized, normalized.taskId, normalized.reviewType);
+        if (stringColumn(row, 'subject_identity') !== written.subjectIdentity || stringColumn(row, 'outcome') !== written.conclusion.outcome || stringColumn(row, 'updated_at') !== written.completedAt) throw taskReviewError('task_review_post_read_mismatch', 'Task Review Result与查询字段写后读取不一致。', 500, { taskId: normalized.taskId, reviewType: normalized.reviewType });
       return { ...persistence(task.root, normalized.taskId, normalized.reviewType, rowSerialized, written, row), created: !existed };
     } catch (error: unknown) {
-      try { opened?.database?.exec('ROLLBACK'); } catch {}
       throw asError(error, `写入（${stage}）`, task.record.taskId, result.reviewType, stage);
-    } finally { try { opened?.database?.close(); } catch {} }
+    }
   }
   Object.assign(runtime, { taskReviewDirectory, taskReviewResultPath, readTaskReviewResultPersistence, writeTaskReviewResultPersistence, renderTaskReviewResult });
   return runtime;

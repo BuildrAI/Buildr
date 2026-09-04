@@ -96,6 +96,8 @@ services/buildr/
 
 模块只公开协作者真正需要的窄能力。公共 CLI Host、HTTP Host 和 Doctor 不重新实现业务语义，也不取得专业 writer authority。
 
+Task Record的`Task`及其Result、History、ParentCompletion和Retrospective只表达主表数据，Project、Service与Change关系对象各自携带`taskId`。Application使用明确DTO，并通过公共同步SQLite事务直接协调四个单表Repository；列表关系按全部`taskId`批量读取。HTTP Schema生成后端Application DTO与前端feature DTO；生产运行时校验请求，响应由严格类型和真实HTTP Contract Test验证。
+
 ### 通用基础设施
 
 `src/infrastructure/` 只提供通用技术机制：

@@ -1,7 +1,6 @@
 import { createApiClient } from './client';
 import { LocalSessionAdapter } from './LocalSessionAdapter';
 import { getWorkspaceId } from './workspaceState';
-import { createTasksClient } from './tasks';
 import { createTaskProfessionalClient } from './task-professional';
 import { createWorkspaceClient } from './workspace';
 import { createAgentAssetsClient } from './agentAssets';
@@ -20,7 +19,6 @@ export const api = createApiClient({
   getWorkspaceId,
 });
 
-export const tasksApi = createTasksClient(api);
 export const taskProfessionalApi = createTaskProfessionalClient(api);
 export const workspaceApi = createWorkspaceClient(api);
 export const agentAssetsApi = createAgentAssetsClient(api);

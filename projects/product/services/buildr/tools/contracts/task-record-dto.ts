@@ -9,12 +9,12 @@ import { compile } from 'json-schema-to-typescript';
 import {
   TASK_RECORD_HTTP_DEFINITIONS,
   TASK_RECORD_HTTP_SCHEMAS,
-} from '../../src/task/interfaces/http/task-record-http-contracts.ts';
+} from '../../src/task/interfaces/http/task-record-http-schema.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const workspaceProductRoot = path.resolve(serviceRoot, '../..');
-const defaultOutputs = contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts');
+const defaultOutputs = contractOutputPaths('task/application', 'task-record-dto.ts', undefined, 'features/task-record/api');
 
 function body(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema: _draft, $id: _identity, title: _title, $defs: _defs, ...value } = schema;
@@ -76,14 +76,14 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
 
 export async function checkTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
   const expected = await renderTaskRecordHttpDto();
-  const selected = contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot);
+  const selected = contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api');
   const outputs = [selected.backend, selected.web];
   return outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
 }
 
 export async function writeTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
   const expected = await renderTaskRecordHttpDto();
-  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected = outputRoot ? contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api') : defaultOutputs;
   const outputs = [selected.backend, selected.web];
   for (const output of outputs) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   const check = process.argv.includes('--check');
   const outputRoot = cliOutputRoot(process.argv.slice(2));
   const expected = await renderTaskRecordHttpDto();
-  const selected = outputRoot ? contractOutputPaths('task/interfaces/http', 'task-record-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected = outputRoot ? contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api') : defaultOutputs;
   const outputs = [selected.backend, selected.web];
   if (check) {
     const drift = outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);

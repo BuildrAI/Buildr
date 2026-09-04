@@ -25,16 +25,17 @@
 | 目录 / 文件 | 职责 |
 |-------------|------|
 | `src/app/` | 应用壳：布局、全局 Context、跨页壳层交互 |
-| `src/pages/` | 路由页面及其**页面内组件** |
+| `src/features/` | 已迁移业务功能：同一 feature 内聚页面、页面内组件、Hook、能力级 Client、纯逻辑和生成 DTO |
+| `src/pages/` | 尚未迁移到 feature 的路由页面及其**页面内组件**；不得与已迁移 feature 并行保存同一页面 |
 | `src/components/` | **公共组件**：跨页复用、无路由绑定的展示/交互组件 |
-| `src/api/` | HTTP / session / workspace 数据访问，不含 UI |
+| `src/api/` | 通用 HTTP/session/workspace transport 与尚未迁移能力的 Client，不含 UI；不得反向依赖 feature |
 | `src/lib/` | 纯工具、标签映射、与 UI 弱耦合的共享逻辑 |
 | `src/store/` | **仅在已获准引入正式全局 Store 后**使用；按领域存放，缺省不创建 |
 | `src/theme.ts` | Ant Design 主题 token |
 | `src/styles.css` | 全局与壳层补充样式；非组件私有样式的默认入口 |
 | `src/App.tsx` / `src/main.tsx` | 路由装配与应用启动，保持薄 |
 
-- 新功能优先沿现有边界扩展；不得为图省事在 `pages/` 内复制 `api/` 客户端，或在 `api/` 内引入 React 组件。
+- 已迁移到 `features/` 的能力继续在同一 feature 内扩展；尚未迁移的功能沿现有 `pages/api` 边界扩展。不得为图省事复制 Client，或在 `api/` 内引入 React 组件与 Hook。
 - 纯函数、格式化、文案映射优先放 `lib/`，不要塞进组件文件底部无限膨胀。
 
 ### 组件分层：页面内组件 vs 公共组件
@@ -43,7 +44,7 @@
 
 | 类型 | 落位 | 判定 |
 |------|------|------|
-| 页面内组件（Page-local） | `src/pages/<PageName>/` 或与页面对应的子目录（如 `pages/task-detail/`） | 只服务某一个路由页面或其子 Tab；可依赖该页的路由参数、页面状态与业务文案 |
+| 页面内组件（Page-local） | `src/features/<feature>/components/`，或尚未迁移页面对应的 `src/pages/<PageName>/` 子目录 | 只服务所属 feature/路由页面或其子 Tab；可依赖对应业务 DTO、页面状态与业务文案 |
 | 公共组件（Shared） | `src/components/` | 被两个及以上页面/壳层使用，或明确设计为通用 UI；不得绑定单一路由或单一页面的业务语义 |
 
 约定：

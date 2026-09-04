@@ -1,7 +1,28 @@
-import { normalizeTaskRecord, normalizeParentCompletion, taskRecordError, type ParentCompletion, type TaskChangeReference, type TaskRecord, type TaskRecordBusinessError, type TaskRecordStatus, type TaskRetrospectiveDocumentState, type TaskServiceReference } from '../domain/task-record.ts';
-import type { TaskMutationContext, TaskPersistence, TaskQueryFilters, TaskRecordRepository, TaskRelation, TaskView } from '../persistence/task-record-repository.ts';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { normalizeTaskRecord, normalizeParentCompletion, taskRecordError } from './task-record-validation.ts';
+import { Task } from '../domain/task.ts';
+import { TaskChange } from '../domain/task-change.ts';
+import { TaskProject } from '../domain/task-project.ts';
+import { TaskService } from '../domain/task-service.ts';
+import type { SqliteContext, TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
+import type { TaskRepository } from '../persistence/task-repository.ts';
+import type { ParentCompletion, TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord, TaskRecordBusinessError, TaskRecordStatus, TaskRelation, TaskRetrospectiveDocumentState, TaskServiceReference, TaskView } from './task-record-dto.ts';
+import type { TaskProjectRepository } from '../persistence/task-project-repository.ts';
+import type { TaskServiceRepository } from '../persistence/task-service-repository.ts';
+import type { TaskChangeRepository } from '../persistence/task-change-repository.ts';
 import type { TaskRetrospectiveDocument } from '../persistence/task-record-retrospective-document.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
+import type {
+  TaskAbandonInputDto,
+  TaskActivateInputDto,
+  TaskCompleteInputDto,
+  TaskCreateInputDto,
+  TaskListInputDto,
+  TaskUpdateInputDto,
+} from './task-record-dto.ts';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 
@@ -14,7 +35,16 @@ type ChangeResolution = {
   retainedBaseline: unknown;
   diagnostic?: { code: string; message: string; details?: unknown };
 };
-export type TaskRecordApplicationRuntime = TaskRecordRepository & {
+export type TaskMutationContext = { parentContext(): ReturnType<typeof parentContextShape> };
+export type TaskRecordApplicationRuntime = {
+  assertCanonicalStructuredWorkspace(targetRoot: string, options?: { writable?: boolean }): string;
+  prepareWorkspaceStructuredStore(targetRoot: string): { root: string; present: boolean; version: number | null };
+  runWorkspaceSqliteRead<T>(targetRoot: string, action: (context: SqliteContext) => T): T;
+  runWorkspaceTransaction<T>(targetRoot: string, action: (context: TransactionContext) => T): T;
+  taskRepository: TaskRepository;
+  taskProjectRepository: TaskProjectRepository;
+  taskServiceRepository: TaskServiceRepository;
+  taskChangeRepository: TaskChangeRepository;
   readProjectRegistryRecord(targetRoot: string): { registry: { migrationRequired: boolean }; projects: Record<string, unknown> };
   readServiceRegistryRecord(targetRoot: string, project: string): { services: Record<string, unknown> };
   resolveTaskScopedChange(targetRoot: string, taskId: string, change: TaskChangeReference, options: Record<string, unknown>): ChangeResolution;
@@ -27,9 +57,7 @@ export type TaskReferenceDiagnostic = {
   taskId: string; kind: 'project' | 'service' | 'change'; reference: string;
   code: string; message: string; details?: unknown;
 };
-type TaskCreateInput = Record<string, unknown>;
-type TaskUpdateInput = Record<string, unknown>;
-type MutateInput = { expectedRecordDigest?: unknown };
+type MutateInput = { expectedRecordDigest?: string };
 type NormalizedUpdate = {
   operations: {
     status?: TaskRecordStatus;
@@ -47,7 +75,7 @@ type NormalizedUpdate = {
     retrospectiveDocumentDigest?: string;
     clearRetrospective: boolean;
   };
-  expectedRecordDigest?: unknown;
+  expectedRecordDigest?: string;
 };
 
 function errorFields(error: unknown): { code: string; message: string; details?: unknown; taskRecordBusiness: boolean } {
@@ -157,8 +185,206 @@ function effect(type: string, taskId: string): TaskEffect {
   return { type, taskId };
 }
 
+function digestRecord(record: unknown): string {
+  return `sha256-${crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex')}`;
+}
+
+function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null) {
+  const relevant = (record: TaskRecord) => ({ taskId: record.taskId, title: record.title, intent: record.intent, scope: record.scope, changes: record.changes, parentTaskId: record.parentTaskId, isParent: record.isParent === true, status: record.status, result: record.result });
+  return { parent, children, isParent: parent.isParent === true || children.length > 0, legacyPlan, diagnostic, recordDigest: digestRecord(parent), snapshotIdentity: digestRecord({ parent: relevant(parent), children: children.map(relevant) }) };
+}
+
 export function registerTaskRecordApplication(runtime: TaskRecordApplicationRuntime) {
-  function normalizedQueryFilters(input: unknown = {}): TaskQueryFilters {
+  const tasks = runtime.taskRepository;
+  const projects = runtime.taskProjectRepository;
+  const services = runtime.taskServiceRepository;
+  const changes = runtime.taskChangeRepository;
+
+  function assertCanonicalTaskWorkspace(targetRoot: string): string {
+    try { return runtime.assertCanonicalStructuredWorkspace(targetRoot); }
+    catch (error) {
+      const failure = errorFields(error);
+      const raw = error && typeof error === 'object' ? Object.fromEntries(Object.entries(error)) : {};
+      const code = raw.code === 'workspace_store_workspace_not_canonical' ? 'task_record_workspace_not_canonical' : raw.code === 'workspace_store_workspace_invalid' ? 'task_record_workspace_invalid' : String(raw.code || 'workspace_store_failed');
+      throw taskRecordError(code, failure.message, typeof raw.status === 'number' ? raw.status : 500, raw.details, typeof raw.nextAction === 'string' ? raw.nextAction : undefined);
+    }
+  }
+
+  function taskRecordDirectory(targetRoot: string, taskIdValue: string): string {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    const normalized = taskId(taskIdValue, 'taskId');
+    const recordsRoot = path.join(root, '.buildr', 'tasks');
+    const directory = path.resolve(recordsRoot, normalized);
+    if (path.dirname(directory) !== recordsRoot) throw taskRecordError('task_record_path_escape', 'Task 专业记录路径逃逸。', 400, { taskId: normalized });
+    return directory;
+  }
+
+  function ensureTaskRecordDirectory(targetRoot: string, taskIdValue: string, io: Pick<typeof fs, 'existsSync' | 'mkdirSync' | 'lstatSync'> = fs): string {
+    const directory = taskRecordDirectory(targetRoot, taskIdValue);
+    for (const candidate of [path.dirname(directory), directory]) {
+      if (!io.existsSync(candidate)) io.mkdirSync(candidate);
+      const stat = io.lstatSync(candidate);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw taskRecordError('task_record_directory_invalid', 'Task 专业记录容器必须是普通目录。', 409, { taskId: taskIdValue });
+    }
+    return directory;
+  }
+
+  function domainTask(record: TaskRecord): Task {
+    return new Task({
+      taskId: record.taskId, title: record.title, intent: record.intent, status: record.status,
+      parentTaskId: record.parentTaskId, isParent: record.isParent === true, result: record.result,
+      resultHistory: record.resultHistory || [], retrospective: record.retrospective,
+      createdAt: record.createdAt, updatedAt: record.updatedAt,
+    });
+  }
+
+  function recordWith(task: Task, taskProjects: readonly TaskProject[], taskServices: readonly TaskService[], taskChanges: readonly TaskChange[]): TaskRecord {
+    return normalizeTaskRecord({
+      schemaVersion: 'buildr.task-record/v3', taskId: task.taskId, title: task.title, intent: task.intent,
+      scope: {
+        projects: taskProjects.map((item) => item.project),
+        services: taskServices.map((item) => ({ project: item.project, service: item.service })),
+      },
+      changes: taskChanges.map((item) => ({ project: item.project, change: item.change })),
+      parentTaskId: task.parentTaskId, ...(task.isParent ? { isParent: true } : {}),
+      retrospective: task.retrospective, status: task.status, result: task.result,
+      ...(task.resultHistory.length ? { resultHistory: task.resultHistory } : {}),
+      createdAt: task.createdAt, updatedAt: task.updatedAt,
+    }, { expectedTaskId: task.taskId });
+  }
+
+  function recordFrom(context: SqliteContext, task: Task): TaskRecord {
+    return recordWith(task, projects.read(context, task.taskId), services.read(context, task.taskId), changes.read(context, task.taskId));
+  }
+
+  function persistence(root: string, context: SqliteContext, task: Task): TaskPersistence {
+    const record = recordFrom(context, task);
+    return { root, record, recordDigest: digestRecord(record) };
+  }
+
+  function readIn(context: SqliteContext, root: string, taskIdValue: string): TaskPersistence {
+    const task = tasks.read(context, taskIdValue);
+    if (!task) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404, { taskId: taskIdValue }, `运行 buildr task create ${taskIdValue} 创建正式 Task Record。`);
+    return persistence(root, context, task);
+  }
+
+  function relationMap(context: SqliteContext, taskIds: string[]) {
+    return tasks.relations(context, taskIds);
+  }
+
+  function readTaskRecordPersistence(targetRoot: string, taskIdValue: string): TaskPersistence {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    taskId(taskIdValue, 'taskId');
+    return runtime.runWorkspaceSqliteRead(root, (context) => readIn(context, root, taskIdValue));
+  }
+
+  function prepareTaskRecordPersistence(targetRoot: string, taskIdValue: string): TaskPersistence {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    runtime.prepareWorkspaceStructuredStore(root);
+    return runtime.runWorkspaceSqliteRead(root, (context) => readIn(context, root, taskIdValue));
+  }
+
+  function readTaskRecordViewPersistence(targetRoot: string, taskIdValue: string): TaskView {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    return runtime.runWorkspaceSqliteRead(root, (context) => {
+      const current = readIn(context, root, taskIdValue);
+      return { ...current, taskRelations: relationMap(context, [taskIdValue]).get(taskIdValue) || { parent: null, children: [] } };
+    });
+  }
+
+  function queryTaskRecordViewPersistence(targetRoot: string, filters: TaskQueryFilters = {}) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    return runtime.runWorkspaceSqliteRead(root, (context) => {
+      let scopedIds: string[] | undefined;
+      if (filters.project) scopedIds = projects.findTaskIds(context, filters.project);
+      if (filters.service) {
+        const serviceIds = new Set(services.findTaskIds(context, filters.service));
+        scopedIds = scopedIds ? scopedIds.filter((id) => serviceIds.has(id)) : [...serviceIds];
+      }
+      const found = tasks.readMany(context, { q: filters.q, status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState, ...(scopedIds ? { taskIds: scopedIds } : {}) });
+      const ids = found.map((item) => item.taskId);
+      const projectValues = projects.readMany(context, ids);
+      const serviceValues = services.readMany(context, ids);
+      const changeValues = changes.readMany(context, ids);
+      const relations = relationMap(context, ids);
+      const views = found.map((task) => {
+        const record = recordWith(task, projectValues.get(task.taskId) || [], serviceValues.get(task.taskId) || [], changeValues.get(task.taskId) || []);
+        return { root, record, recordDigest: digestRecord(record), taskRelations: relations.get(task.taskId) || { parent: null, children: [] } };
+      });
+      return { root, views, totalTaskCount: tasks.count(context), filterOptions: { projects: projects.listOptions(context), services: services.listOptions(context).map((item) => ({ project: item.project, service: item.service })) } };
+    });
+  }
+
+  function parentContext(context: SqliteContext, root: string, taskIdValue: string, current?: TaskRecord) {
+    const parent = current || readIn(context, root, taskIdValue).record;
+    const childTasks = tasks.readMany(context).filter((item) => item.parentTaskId === taskIdValue);
+    const childIds = childTasks.map((item) => item.taskId);
+    const childProjects = projects.readMany(context, childIds);
+    const childServices = services.readMany(context, childIds);
+    const childChanges = changes.readMany(context, childIds);
+    const children = childTasks.map((item) => recordWith(item, childProjects.get(item.taskId) || [], childServices.get(item.taskId) || [], childChanges.get(item.taskId) || [])).sort((a, b) => a.taskId.localeCompare(b.taskId));
+    let legacyPlan = null; let diagnostic = null;
+    try { legacyPlan = tasks.legacyParentPlan(context, taskIdValue); }
+    catch { diagnostic = { code: 'parent_history_unreadable', message: '旧研发记录不可读；任务关系和结果仍可读取。' }; }
+    return parentContextShape(parent, children, legacyPlan, diagnostic);
+  }
+
+  function readParentTaskContext(targetRoot: string, taskIdValue: string) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    return runtime.runWorkspaceSqliteRead(root, (context) => parentContext(context, root, taskIdValue));
+  }
+
+  function assertParentRelation(context: SqliteContext, taskIdValue: string, parentTaskId: string | null): void {
+    if (parentTaskId === null) return;
+    if (parentTaskId === taskIdValue) throw taskRecordError('task_record_parent_self_reference', 'Task 不能把自己设为 Parent Task。', 409, { taskId: taskIdValue, parentTaskId });
+    const parent = tasks.read(context, parentTaskId);
+    if (!parent) throw taskRecordError('task_record_parent_not_found', `Parent Task 不存在：${parentTaskId}。`, 409, { taskId: taskIdValue, parentTaskId });
+    if (parent.status !== 'active') throw taskRecordError('task_record_parent_terminal', `Parent Task ${parentTaskId} 已是 ${parent.status}，不能接收新的 Child Task。`, 409, { taskId: taskIdValue, parentTaskId, status: parent.status });
+    const visited = new Set<string>();
+    let cursor: string | null | undefined = parentTaskId;
+    while (cursor) {
+      if (cursor === taskIdValue) throw taskRecordError('task_record_parent_cycle', 'Parent Task 关系会形成循环。', 409, { taskId: taskIdValue, parentTaskId });
+      if (visited.has(cursor)) throw taskRecordError('task_record_parent_graph_invalid', '既有 Parent Task 关系包含循环，无法安全修改。', 409);
+      visited.add(cursor); cursor = tasks.parentId(context, cursor);
+    }
+  }
+
+  function createTaskRecordPersistence(targetRoot: string, record: TaskRecord): TaskPersistence {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    return runtime.runWorkspaceTransaction(root, (context) => {
+      if (tasks.read(context, record.taskId)) throw taskRecordError('task_record_already_exists', `Task Record 已存在：${record.taskId}。`, 409, { taskId: record.taskId });
+      assertParentRelation(context, record.taskId, record.parentTaskId);
+      tasks.insert(context, domainTask(record));
+      projects.insert(context, record.scope.projects.map((project) => new TaskProject(record.taskId, project)));
+      services.insert(context, record.scope.services.map((service) => new TaskService(record.taskId, service.project, service.service)));
+      changes.insert(context, record.changes.map((change) => new TaskChange(record.taskId, change.project, change.change)));
+      if (record.parentTaskId) tasks.markParent(context, record.parentTaskId);
+      return readIn(context, root, record.taskId);
+    });
+  }
+
+  function mutateTaskRecordPersistence(targetRoot: string, taskIdValue: string, mutator: (current: TaskPersistence, context: TaskMutationContext) => unknown): TaskPersistence {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    return runtime.runWorkspaceTransaction(root, (context) => {
+      const current = readIn(context, root, taskIdValue);
+      const nextValue = mutator(current, { parentContext: () => parentContext(context, root, taskIdValue, current.record) });
+      if (!nextValue) return current;
+      const next = normalizeTaskRecord(nextValue, { expectedTaskId: taskIdValue });
+      if (next.parentTaskId !== current.record.parentTaskId) assertParentRelation(context, taskIdValue, next.parentTaskId);
+      tasks.update(context, domainTask(next));
+      projects.replace(context, taskIdValue, next.scope.projects.map((project) => new TaskProject(taskIdValue, project)));
+      services.replace(context, taskIdValue, next.scope.services.map((service) => new TaskService(taskIdValue, service.project, service.service)));
+      changes.replace(context, taskIdValue, next.changes.map((change) => new TaskChange(taskIdValue, change.project, change.change)));
+      if (next.parentTaskId) tasks.markParent(context, next.parentTaskId);
+      return readIn(context, root, taskIdValue);
+    });
+  }
+
+  function writeTaskRecordPersistence(targetRoot: string, record: TaskRecord): TaskPersistence {
+    return mutateTaskRecordPersistence(targetRoot, record.taskId, () => record);
+  }
+
+  function normalizedQueryFilters(input: TaskListInputDto = {}): TaskQueryFilters {
     assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']), 'Task query');
     const filters: TaskQueryFilters = {};
     if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
@@ -264,11 +490,11 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
   }
 
   function readCurrent(targetRoot: string, taskIdValue: string): TaskPersistence {
-    return runtime.readTaskRecordPersistence(targetRoot, taskIdValue);
+    return readTaskRecordPersistence(targetRoot, taskIdValue);
   }
 
   function result(operation: string, status: string, persistence: TaskPersistence, effects: TaskEffect[] = []) {
-    const view = runtime.readTaskRecordViewPersistence(persistence.root, persistence.record.taskId);
+    const view = readTaskRecordViewPersistence(persistence.root, persistence.record.taskId);
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordResult, {
       operation,
       status,
@@ -292,9 +518,9 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     }
   }
 
-  function queryTaskRecordViews(targetRoot: string, input: unknown = {}) {
+  function queryTaskRecordViews(targetRoot: string, input: TaskListInputDto = {}) {
     const filters = normalizedQueryFilters(input);
-    const persistence = runtime.queryTaskRecordViewPersistence(targetRoot, filters);
+    const persistence = queryTaskRecordViewPersistence(targetRoot, filters);
     const tasks = persistence.views.map((view) => storedView(view, inspectReferenceAvailability(persistence.root, view.record)));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordList, {
       filters: {
@@ -313,7 +539,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
   }
 
   function inspectTaskRecordView(targetRoot: string, taskIdValue: unknown) {
-    const view = runtime.readTaskRecordViewPersistence(targetRoot, taskId(taskIdValue, 'taskId'));
+    const view = readTaskRecordViewPersistence(targetRoot, taskId(taskIdValue, 'taskId'));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordView, { taskId: view.record.taskId, ...storedView(view, inspectReferenceAvailability(view.root, view.record)) });
   }
 
@@ -323,7 +549,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     return runtime.memoizeWorkspaceOperation(targetRoot, `task-record:inspect:${taskIdValue}`, read);
   }
 
-  function createTaskRecord(targetRoot: string, input: TaskCreateInput) {
+  function createTaskRecord(targetRoot: string, input: TaskCreateInputDto) {
     assertFields(input, new Set(['taskId', 'title', 'intent', 'projects', 'services', 'changes', 'parentTaskId', 'isParent', 'status']), 'Task create');
     const taskIdValue = taskId(input.taskId, 'taskId');
     const requestedStatus = input.status ?? 'active';
@@ -345,20 +571,25 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
       retrospective: null,
       status, result: null, createdAt: timestamp, updatedAt: timestamp,
     }, { expectedTaskId: taskIdValue });
-    const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
+    const root = assertCanonicalTaskWorkspace(targetRoot);
     assertScopeReferencesAvailable(root, [...record.scope.projects, ...record.changes.map((item) => item.project)], record.scope.services);
     assertChangeReferencesAvailable(root, taskIdValue, record.changes, { allowMissingTask: true });
     try {
-      const written = runtime.createTaskRecordPersistence(root, record);
+      const written = createTaskRecordPersistence(root, record);
       return result('create', 'created', written, [effect('created', written.record.taskId)]);
     } catch (error) {
       const failure = errorFields(error);
       if (failure.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record 创建失败：${failure.message}`, 500, { taskId: taskIdValue }, '保留数据库现场并运行 Buildr Doctor 后重试。');
+      const raw = error && typeof error === 'object' ? Object.fromEntries(Object.entries(error)) : {};
+      if (raw.structuredStoreBusiness === true) {
+        const code = raw.code === 'workspace_store_workspace_not_canonical' ? 'task_record_workspace_not_canonical' : raw.code === 'workspace_store_workspace_invalid' ? 'task_record_workspace_invalid' : String(raw.code || 'workspace_store_failed');
+        throw taskRecordError(code, failure.message, typeof raw.status === 'number' ? raw.status : 500, raw.details, typeof raw.nextAction === 'string' ? raw.nextAction : undefined);
+      }
+      throw taskRecordError('task_record_database_failed', `Task Record 创建失败：${failure.message}`, 500, { taskId: taskIdValue }, '保留数据库现场并运行 Buildr Doctor 后重试。');
     }
   }
 
-  function normalizedUpdate(input: TaskUpdateInput): NormalizedUpdate {
+  function normalizedUpdate(input: TaskUpdateInputDto): NormalizedUpdate {
     assertFields(input, new Set(['expectedRecordDigest', 'status', 'reason', 'summary', 'parentCompletion', 'title', 'intent', 'parentTaskId', 'isParent', 'addProjects', 'removeProjects', 'addServices', 'removeServices', 'addChanges', 'removeChanges', 'retrospectiveState', 'retrospectiveDocumentDigest', 'clearRetrospective']), 'Task update');
     if (input.isParent !== undefined && input.isParent !== true) throw taskRecordError('task_record_parent_role_permanent', '父任务身份不能清除。');
     const requestedStatus = input.status;
@@ -426,10 +657,10 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
   }
 
   function mutate(targetRoot: string, taskIdValue: string, operation: string, input: MutateInput, build: (record: TaskRecord, context: TaskMutationContext) => unknown, additions: { projects?: string[]; services?: TaskServiceReference[]; changes?: TaskChangeReference[] } = {}, allowedStatuses: TaskRecordStatus[] = ['todo', 'active']) {
-    const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
+    const root = assertCanonicalTaskWorkspace(targetRoot);
     try {
       let changed = false;
-      const written = runtime.mutateTaskRecordPersistence(root, taskIdValue, (current, context) => {
+      const written = mutateTaskRecordPersistence(root, taskIdValue, (current, context) => {
         assertExpectedDigest(current, input.expectedRecordDigest);
         if (!allowedStatuses.includes(current.record.status)) {
           const terminal = ['completed', 'abandoned'].includes(current.record.status);
@@ -448,11 +679,16 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     } catch (error) {
       const failure = errorFields(error);
       if (failure.taskRecordBusiness) throw error;
-      throw taskRecordError('task_record_write_failed', `Task Record ${operation} 失败：${failure.message}`, 500, { taskId: taskIdValue }, '保留数据库现场并运行 Buildr Doctor 后重试。');
+      const raw = error && typeof error === 'object' ? Object.fromEntries(Object.entries(error)) : {};
+      if (raw.structuredStoreBusiness === true) {
+        const code = raw.code === 'workspace_store_workspace_not_canonical' ? 'task_record_workspace_not_canonical' : raw.code === 'workspace_store_workspace_invalid' ? 'task_record_workspace_invalid' : String(raw.code || 'workspace_store_failed');
+        throw taskRecordError(code, failure.message, typeof raw.status === 'number' ? raw.status : 500, raw.details, typeof raw.nextAction === 'string' ? raw.nextAction : undefined);
+      }
+      throw taskRecordError('task_record_database_failed', `Task Record ${operation} 失败：${failure.message}`, 500, { taskId: taskIdValue }, '保留数据库现场并运行 Buildr Doctor 后重试。');
     }
   }
 
-  function updateTaskRecord(targetRoot: string, taskIdValue: string, input: TaskUpdateInput) {
+  function updateTaskRecord(targetRoot: string, taskIdValue: string, input: TaskUpdateInputDto) {
     const { operations, expectedRecordDigest } = normalizedUpdate(input);
     const retrospectiveOnly = operations.retrospectiveState !== undefined || operations.clearRetrospective;
     const retrospectiveDocumentRead = operations.retrospectiveState === undefined
@@ -514,18 +750,18 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     }, { projects: operations.addProjects, services: operations.addServices, changes: operations.addChanges }, ['todo', 'active', 'completed', 'abandoned']);
   }
 
-  function activateTaskRecord(targetRoot: string, taskIdValue: string, input: unknown = {}) {
+  function activateTaskRecord(targetRoot: string, taskIdValue: string, input: TaskActivateInputDto) {
     assertFields(input, new Set(['expectedRecordDigest']), 'Task activate');
     return mutate(targetRoot, taskIdValue, 'activate', { expectedRecordDigest: input.expectedRecordDigest }, (current) => ({ ...current, status: 'active' }), {}, ['todo']);
   }
 
-  function completeTaskRecord(targetRoot: string, taskIdValue: string, input: unknown) {
+  function completeTaskRecord(targetRoot: string, taskIdValue: string, input: TaskCompleteInputDto) {
     assertFields(input, new Set(['expectedRecordDigest', 'summary', 'parentCompletion']), 'Task complete');
     text(input.summary, 'summary');
     return mutate(targetRoot, taskIdValue, 'complete', { expectedRecordDigest: input.expectedRecordDigest }, (current, transaction) => completedRecord(current, transaction, input));
   }
 
-  function completedRecord(current: TaskRecord, transaction: TaskMutationContext, input: Record<string, unknown>): TaskRecord {
+  function completedRecord(current: TaskRecord, transaction: TaskMutationContext, input: TaskCompleteInputDto | TaskUpdateInputDto): TaskRecord {
     const currentTaskId = current.taskId;
     const summary = text(input.summary, 'summary');
     const context = transaction.parentContext();
@@ -542,7 +778,7 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     return { ...current, ...(context.isParent ? { isParent: true } : {}), status: 'completed', result: { summary, ...(parentCompletion ? { parentCompletion } : {}) } };
   }
 
-  function abandonTaskRecord(targetRoot: string, taskIdValue: string, input: unknown) {
+  function abandonTaskRecord(targetRoot: string, taskIdValue: string, input: TaskAbandonInputDto) {
     assertFields(input, new Set(['expectedRecordDigest', 'reason']), 'Task abandon');
     const summary = text(input.reason, 'reason');
     return mutate(targetRoot, taskIdValue, 'abandon', { expectedRecordDigest: input.expectedRecordDigest }, (current) => ({ ...current, status: 'abandoned', result: { summary } }));
@@ -560,5 +796,12 @@ export function registerTaskRecordApplication(runtime: TaskRecordApplicationRunt
     };
   }
 
-  return Object.assign(runtime, { queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, inspectTaskRetrospectiveDocument, createTaskRecord, updateTaskRecord, activateTaskRecord, completeTaskRecord, abandonTaskRecord });
+  return Object.assign(runtime, {
+    assertCanonicalTaskWorkspace, taskRecordDirectory, ensureTaskRecordDirectory,
+    readTaskRecordPersistence, prepareTaskRecordPersistence, queryTaskRecordViewPersistence,
+    readTaskRecordViewPersistence, readParentTaskContext, createTaskRecordPersistence,
+    mutateTaskRecordPersistence, writeTaskRecordPersistence,
+    queryTaskRecordViews, inspectTaskRecord, inspectTaskRecordView, inspectTaskRetrospectiveDocument,
+    createTaskRecord, updateTaskRecord, activateTaskRecord, completeTaskRecord, abandonTaskRecord,
+  });
 }

@@ -51,6 +51,7 @@ const generatedTrackedPatterns: any[] = [
   /^projects\/product\/services\/buildr\/package\/targets\/test-context\//u,
   /^projects\/product\/services\/buildr\/src\/(?:agent-assets|task|web|workspace)\/.*\/generated\/.*-dto\.ts$/u,
   /^projects\/product\/services\/buildr-web\/src\/api\/generated\/.*-dto\.ts$/u,
+  /^projects\/product\/services\/buildr-web\/src\/features\/[^/]+\/.*\/generated\/.*-dto\.ts$/u,
 ];
 
 export function validateProductSourceLayout({ projectEntries, serviceEntries, packageFiles = [], trackedFiles = [], bridgeSource }: any): any  {

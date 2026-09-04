@@ -102,32 +102,40 @@ function actualCanonical(capability: any): any  {
 }
 
 const executableIdentity: any = { sourceKind: 'candidate-verifier', reference: 'product-candidate', version: '1', sha256: 'archived-delta-replay' };
-for (const change of [...archivedChanges.values()].sort((left: any, right: any) => left.entry.localeCompare(right.entry))) {
-  const canonicalFiles: any = new Map();
-  const capabilityPurposes: any = new Map();
-  for (const capability of change.capabilities.keys()) {
-    const current: any = replay.get(capability) || baseCanonical(capability);
-    replay.set(capability, current);
-    canonicalFiles.set(capability, { path: `openspec/specs/${capability}/spec.md`, ...current });
-    const actual: any = actualCanonical(capability);
-    const purpose: any = openSpecSection(actual.content, 'Purpose').trim();
-    if (purpose) capabilityPurposes.set(capability, purpose);
-    else if (!actual.exists) capabilityPurposes.set(
-      capability,
-      `Historical replay placeholder for removed capability ${capability}; the final candidate does not retain this capability.`,
-    );
+const pendingChanges: any[] = [...archivedChanges.values()].sort((left: any, right: any) => left.entry.localeCompare(right.entry));
+while (pendingChanges.length) {
+  let selectedIndex = -1;
+  let selectedPlan: any = null;
+  const blockedPlans: any[] = [];
+  for (const [index, change] of pendingChanges.entries()) {
+    const canonicalFiles: any = new Map();
+    const capabilityPurposes: any = new Map();
+    for (const capability of change.capabilities.keys()) {
+      const current: any = replay.get(capability) || baseCanonical(capability);
+      canonicalFiles.set(capability, { path: `openspec/specs/${capability}/spec.md`, ...current });
+      const actual: any = actualCanonical(capability);
+      const purpose: any = openSpecSection(actual.content, 'Purpose').trim();
+      if (purpose) capabilityPurposes.set(capability, purpose);
+      else if (!actual.exists) capabilityPurposes.set(capability, `Historical replay placeholder for removed capability ${capability}; the final candidate does not retain this capability.`);
+    }
+    const deltaDigest: any = `sha256-${crypto.createHash('sha256').update([...change.capabilities.values()].map((item: any) => item.content).join('\0')).digest('hex')}`;
+    const plan: any = createConvergencePlan({
+      change: change.entry.replace(/^\d{4}-\d{2}-\d{2}-/, ''), project: 'product',
+      delta: { hash: deltaDigest, operations: change.operations, capabilities: change.capabilities },
+      canonicalFiles, capabilityPurposes, executableIdentity, activeConflicts: [],
+    });
+    if (plan.status === 'blocked') { blockedPlans.push({ change, plan }); continue; }
+    selectedIndex = index;
+    selectedPlan = plan;
+    break;
   }
-  const deltaDigest: any = `sha256-${crypto.createHash('sha256').update([...change.capabilities.values()].map((item: any) => item.content).join('\0')).digest('hex')}`;
-  const plan: any = createConvergencePlan({
-    change: change.entry.replace(/^\d{4}-\d{2}-\d{2}-/, ''), project: 'product',
-    delta: { hash: deltaDigest, operations: change.operations, capabilities: change.capabilities },
-    canonicalFiles, capabilityPurposes, executableIdentity, activeConflicts: [],
-  });
-  if (plan.status === 'blocked') {
-    console.error(`OpenSpec contract audit could not replay Archived Change ${change.entry}: ${plan.blocked.map((item: any) => item.code).join(', ')}`);
+  if (selectedIndex < 0) {
+    const failure: any = blockedPlans[0];
+    console.error(`OpenSpec contract audit could not replay Archived Change ${failure.change.entry}: ${failure.plan.blocked.map((item: any) => item.code).join(', ')}`);
     process.exit(1);
   }
-  for (const item of plan.files) {
+  pendingChanges.splice(selectedIndex, 1);
+  for (const item of selectedPlan.files) {
     const match: any = item.path.match(/^openspec\/specs\/([^/]+)\/spec\.md$/);
     if (match) replay.set(match[1], { exists: item.expectedExists !== false, content: item.expectedExists === false ? '' : item.expectedContent });
   }

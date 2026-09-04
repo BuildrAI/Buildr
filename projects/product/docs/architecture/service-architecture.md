@@ -165,13 +165,21 @@ misc/
 ```text
 task/
   domain/
-    task-record.ts
+    task.ts
+    task-project.ts
+    task-service.ts
+    task-change.ts
     task-review.ts
   application/
     task-record-application.ts
+    task-record-validation.ts
+    task-record-dto.ts
     task-review-application.ts
   persistence/
-    task-record-repository.ts
+    task-repository.ts
+    task-project-repository.ts
+    task-service-repository.ts
+    task-change-repository.ts
     task-record-retrospective-document.ts
     task-review-repository.ts
   interfaces/
@@ -190,7 +198,7 @@ task/
 
 当前Task专业模块包括Review、Verification和父任务协调（Task Parent Coordination）。独立Task Overview已删除，Task详情直接读取Task Record与关系投影。复盘是按需纯Skill；正文写入本机ignored Markdown，Task Record只维护摘要和人的决定状态。
 
-Task Record 的 Domain、Application、Persistence和Interface均使用TypeScript并直接位于对应技术层。旧Retrospective Domain/Application/Repository/HTTP/Driver、Task Finish、Terminal Delivery与统一Task Environment实现已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
+Task Record 的 Domain、Application、Persistence和Interface均使用TypeScript并直接位于对应技术层。`task.ts`只定义Task字段及归属Task的Result、History、ParentCompletion与Retrospective数据对象；`TaskProject`、`TaskService`与`TaskChange`各自携带`taskId`。Application拥有输入规范化、业务规则、摘要、父子检查和事务范围，并直接协调四个单表Repository；Infrastructure的`sqlite/transaction.ts`统一执行普通业务事务。旧Retrospective Domain/Application/Repository/HTTP/Driver、Task Finish、Terminal Delivery与统一Task Environment实现已经直接删除，不保留转发入口或兼容投影。默认`task-finish` Skill由Agent编排Git交付、Task结果登记，以及Worktree和具体资源owner的安全清理，本身不形成Application状态。
 
 ## `workspace` 模块
 
@@ -428,8 +436,12 @@ SQLite migrations 继续作为 Workspace 数据库的一套全局、只追加、
 例如：
 
 ```text
-task/persistence/task-record-repository.ts
+task/persistence/task-repository.ts
+task/persistence/task-project-repository.ts
+task/persistence/task-service-repository.ts
+task/persistence/task-change-repository.ts
 infrastructure/sqlite/workspace-sqlite.ts
+infrastructure/sqlite/transaction.ts
 infrastructure/sqlite/migrations/NNNN_<change>.sql
 ```
 
@@ -535,7 +547,7 @@ Repository、DAO、Mapper 是同一持久映射层的不同技术表达。没有
 | 约束 | 具体含义 |
 |------|----------|
 | 事实所有权 | Task Record 的字段、状态含义和关系属于 `task` 模块，不因为数据存放在 SQLite 就属于 `infrastructure` |
-| 唯一 writer | `task/persistence/task-record-repository.ts` 是当前 Task Record 数据写入入口；CLI、HTTP 和 Doctor 不各自编写更新 SQL |
+| 唯一 writer | Task Record Application在一个同步事务内协调`task-repository.ts`及三个关系Repository；CLI、HTTP和Doctor不各自编写更新SQL |
 | 规则不重复 | “哪些状态允许完成”等规则只在 Task Domain/Application 定义，CLI 和 HTTP 只转换请求与结果 |
 | 无循环依赖 | 可以形成 `bootstrap → task → infrastructure`，但不能由 `infrastructure` 反向 Import `task`；模块互相调用也不能形成闭环 |
 
