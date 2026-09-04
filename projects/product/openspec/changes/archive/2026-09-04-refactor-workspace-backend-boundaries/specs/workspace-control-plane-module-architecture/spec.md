@@ -1,10 +1,4 @@
-# workspace-control-plane-module-architecture Specification
-
-## Purpose
-
-定义 Workspace、Agent Assets 与产品资源 Infrastructure 的模块 owner、协作入口和行为等价约束。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Workspace Control Plane 必须有唯一业务 owner
 Buildr Service MUST 将 Workspace/Project/Service registry、onboarding、mutation recovery 与 declaration-intake application 编排归入 Workspace owner；Workspace owner MUST 不拥有 Agent Assets、Task、Verification 或 Public JSON Contract 的 writer。Workspace、Project 与 Service MUST保持各自独立的领域和Application边界。Workspace module MUST使用只包含已声明依赖的私有组合对象装配Repository、Application与Workspace Management Fence，并 MUST NOT 将内部能力写入进程级共享runtime或通过未声明的任意方法查找取得能力。
@@ -24,31 +18,6 @@ Buildr Service MUST 将 Workspace/Project/Service registry、onboarding、mutati
 - **WHEN** 架构验证扫描 Workspace Repository、Application、Fence 与 module composition
 - **THEN** 每个实现 MUST 只访问其Runtime type或构造边界声明的依赖
 - **AND** 验证 MUST允许模块私有组合使用受约束的方法登记，并拒绝进程级共享runtime mutation、隐式全局方法或未声明依赖
-
-### Requirement: Agent Assets 与产品资源技术能力必须分离
-Buildr Service MUST 将 Builtin、Component、Skill、Command package maintenance 与 runtime projection 编排归入 Agent Assets owner；manifest 读取、产品资源路径映射、文件枚举/复制等通用产品资源能力 MUST 归入 Infrastructure product-resources，且后者 MUST NOT 解释 Agent Assets 业务语义。
-
-#### Scenario: package maintenance owner
-- **WHEN** Agent 执行 `package check`、`package build`、资产同步或 runtime projection
-- **THEN** 调用 MUST 通过 Agent Assets 的 Application/module 入口完成
-- **AND** package maintenance MUST 保持原有 manifest、source、projection 和 writer authority
-
-#### Scenario: product resource query
-- **WHEN** Agent Assets 需要读取产品 manifest 或随包资源
-- **THEN** MUST 使用 product-resources 提供的受约束 resource/path capability
-- **AND** product-resources MUST NOT 创建 Workspace、Task 或 Agent Assets 业务事实
-
-### Requirement: 结构迁移必须保持外部行为等价
-Workspace Control Plane 结构迁移 MUST 保持现有 `init`、mutation recovery、`package check/build`、`sync`、`render`、Doctor、Environment preparation、runtime projection、错误映射和安全边界行为等价。
-
-#### Scenario: CLI 行为等价
-- **WHEN** 在相同 fixture 上运行迁移前后代表性 Workspace、package、sync 与 render 命令
-- **THEN** 命令入口、成功/失败分类、JSON shape、写入 authority 和预期资源结果 MUST 等价
-
-#### Scenario: 旧路径清理
-- **WHEN** 新 owner 已接管全部调用点并通过结构与行为验证
-- **THEN** 旧全局 `package-assets`、`workspace-operations` 路径 MUST 被删除或明确不再可导入
-- **AND** 静态架构检查 MUST 不发现旧路径引用、重复 writer 或新的循环依赖
 
 ### Requirement: Workspace Query 必须是稳定窄的只读入口
 Workspace owner MUST 提供面向后续Task Execution/Verification的稳定Workspace/Project Query；Query MUST只返回必要identity、registry与规范化路径事实，不暴露业务Persistence、SQLite、writer、Repository或可变 runtime handle。Workspace、Project 与 Service MUST先保持独立Application边界；每个领域只有在职责混杂且实际体量需要时才拆分Query/Command文件，不得为目录对称机械拆分。

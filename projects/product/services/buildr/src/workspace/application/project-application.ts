@@ -5,6 +5,17 @@ import { createProject } from '../domain/project.ts';
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.ts';
 
+export type ProjectApplicationRuntime = {
+  getWorkspace(targetRoot: string): any;
+  projectsManifestPath(targetRoot: string): string;
+  readProjectRegistryPersistence(targetRoot: string, options?: any): any;
+  observeProjectGit(root: string, remote: string): any;
+  sameGitIdentity(left: string, right: string): boolean;
+  withWorkspaceMutation(root: string, operation: string, affectedPaths: string[], action: () => any): any;
+  writeProjectRegistry(file: string, projects: any): void;
+  crypto: { randomUUID(): string };
+};
+
 export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
   const error: Error & Record<string, any> = new Error(message);
   error.code = code;
@@ -63,7 +74,7 @@ export function compareProjectGit(project: any, observed: any, sameGitIdentity: 
   return { status: findings.some((finding: any) => finding.status === 'error') ? 'error' : findings.length ? 'drift' : 'aligned', findings };
 }
 
-export function registerProjectApplication(runtime: any) {
+export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
   function readProjectRegistryRecord(targetRoot: any) {
     let workspace;
     let persistence;

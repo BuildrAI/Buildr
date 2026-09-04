@@ -214,6 +214,8 @@ Workspace 是管理入口，Project 和 Service 是其中具有独立身份与�
 
 Workspace Core 已完成 TypeScript 迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、onboarding、mutation recovery、declaration-intake 编排、CLI/HTTP Adapter 和 `workspace/module.ts` 均位于上述模块。该模块公开 Workspace、Project、Service Application、窄 Workspace/Project Query 以及 CLI、HTTP、Diagnostic contribution；Web 和后续 Task 通过公开 Query/registration port 接入，不再保留临时 compatibility Facade。
 
+Workspace、Project与Service保持三个独立领域和Application边界。只有原`workspace-application.ts`同时承担Registry、metadata、Prompt、Getting Started与诊断且体量过大，因此按真实读写职责拆为`workspace-query-application.ts`和`workspace-command-application.ts`；当前Project、Service与Project Daily Progress Application职责和体量仍可维护，不为Query/Command目录对称机械拆分。各Manifest/Registry Repository与Workspace Management Fence继续独立，并通过明确Runtime type接入`workspace/module.ts`的私有组合；Bootstrap只通过显式runtime port保留当前内部调用兼容，不再由Workspace实现直接向进程级共享runtime注册方法。
+
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.ts`，用例位于 `application/project-daily-progress-application.ts`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.ts`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.ts` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 
 Change、OpenSpec、Publication、Project Verification 和其他 Workspace 范围能力不因作用于 Project/Service 就自动归入 `workspace/`。其中 Change 与 OpenSpec 已归入 `task/`，Publication 已归入 `system/`，Project Verification 已归入 `verification/`；这些模块通过窄 capability 与 contribution 接入 Bootstrap，不复制 Workspace writer。

@@ -34,6 +34,7 @@ import {
   PROJECT_APPLICATION,
   SERVICE_APPLICATION,
   WORKSPACE_QUERY,
+  WORKSPACE_RUNTIME_PORT,
   WORKSPACE_APPLICATION,
 } from '../../src/workspace/module.ts';
 
@@ -74,7 +75,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'workspace-core',
     requires: [AGENT_ASSETS_RUNTIME],
-    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, PROJECT_DAILY_PROGRESS_APPLICATION],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: {
       cli: ['project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
       http: ['workspace-core.http'],
@@ -102,13 +103,13 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'publication',
-    requires: ['project.application'],
+    requires: [WORKSPACE_QUERY],
     provides: ['publication.application'],
     contributions: { cli: [], http: ['publication.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'openspec',
-    requires: ['project.application'],
+    requires: [WORKSPACE_QUERY],
     provides: ['openspec.application', 'openspec.query'],
     contributions: {
       cli: ['openspec converge', 'openspec convergence preflight', 'openspec convergence inspect'],
@@ -123,7 +124,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'change',
-    requires: ['openspec.query', 'project.application', TASK_WORKTREE_PROVIDER],
+    requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
     provides: ['change.application'],
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -260,6 +261,23 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const webLifecycle: any = runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE);
   assert.equal(typeof webLifecycle.startBuildrWeb, 'function');
   assert.equal(typeof webLifecycle.manageBuildrWebPreview, 'function');
+});
+
+test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
+  const moduleSource = read('src/workspace/module.ts');
+  assert.match(moduleSource, /const privateComposition = Object\.assign\(Object\.create\(runtime\), agentRuntime\)/);
+  assert.match(moduleSource, /registerWorkspaceQueryApplication\(privateComposition\)/);
+  assert.match(moduleSource, /registerWorkspaceCommandApplication\(privateComposition\)/);
+  assert.match(moduleSource, /registerProjectApplication\(privateComposition\)/);
+  assert.match(moduleSource, /registerServiceApplication\(privateComposition\)/);
+  assert.doesNotMatch(moduleSource, /registerWorkspace(?:Query|Command)Application\(runtime\)/);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-query-application.ts')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-command-application.ts')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-query-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-command-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-query-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-command-application.ts')), false);
 });
 
 test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {

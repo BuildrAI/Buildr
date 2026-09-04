@@ -3,7 +3,25 @@ import path from 'node:path';
 import process from 'node:process';
 import { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './workspace-root-gitignore-entries.ts';
 
-export function registerWorkspaceOperations(runtime: any) {
+type WorkspaceOperationMethod =
+  | 'positionalArgs' | 'syncPackageComponents' | 'syncPackageBuiltins' | 'readPackageManifest'
+  | 'parseManifestFileEntry' | 'parseYamlDocument' | 'diagnoseRules' | 'assertName' | 'assertAgentId'
+  | 'renderSkillsManifestYaml' | 'renderProjectsYaml' | 'renderRulesManifestYaml' | 'renderCommandsManifestYaml'
+  | 'renderComponentsManifestYaml' | 'trackWrite' | 'printResult' | 'optionValue' | 'ensureDirectory'
+  | 'atomicWriteJson' | 'mutationStateRoot' | 'mutationLockPath' | 'mutationRecoveryReceiptPath'
+  | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget' | 'withWorkspaceMutation' | 'productRoot'
+  | 'writeMappedFileIfMissing' | 'appendGitignoreEntries' | 'hasFlag' | 'toPosixRelative'
+  | 'existsDirectory' | 'existsFile' | 'ensureRootRequiredBlock' | 'assertInitializedBuildrWorkspace'
+  | 'addDoctorFinding' | 'createWorkspaceId' | 'renderWorkspaceManifest' | 'diagnoseWorkspaceMetadata';
+
+export type WorkspaceOperationsRuntime = Record<WorkspaceOperationMethod, (...args: any[]) => any> & {
+  SUPPORTED_AGENT_IDS: string[];
+  UNSUPPORTED_AGENT_GUIDANCE: { message: string; nextStep: string };
+  isSupportedAgent(agent: string): boolean;
+  syncRuntime(agent: string, args: string[]): void;
+};
+
+export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime) {
   const { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, isSupportedAgent } = runtime;
   const positionalArgs = (...args: any[]) => runtime.positionalArgs(...args);
   const syncPackageComponents = (...args: any[]) => runtime.syncPackageComponents(...args);

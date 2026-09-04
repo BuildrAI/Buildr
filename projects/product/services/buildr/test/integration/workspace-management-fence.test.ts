@@ -9,6 +9,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
+import { registerWorkspaceQueryApplication } from '../../src/workspace/application/workspace-query-application.ts';
+import { registerWorkspaceCommandApplication } from '../../src/workspace/application/workspace-command-application.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 
 const RELEASED: any = { channel: 'npm', runtime: { role: 'host' } };
@@ -39,7 +41,9 @@ function workspace(base: any, name: any, id: any = crypto.randomUUID()): any  {
 function runtimeFor(identity: any, profile: any, profiles: any): any  {
   const runtime: any = createRuntime();
   registerWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: profile, resolveWebProfile });
+  registerWorkspaceQueryApplication(runtime);
   registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
+  registerWorkspaceCommandApplication(runtime);
   return runtime;
 }
 

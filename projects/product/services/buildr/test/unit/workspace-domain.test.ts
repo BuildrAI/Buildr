@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createWorkspace, isWorkspaceId } from '../../src/workspace/domain/workspace.ts';
-import { resolveWorkspaceIdentity } from '../../src/workspace/application/workspace-application.ts';
+import { resolveWorkspaceIdentity } from '../../src/workspace/application/workspace-query-application.ts';
 
 const WORKSPACE_ID: any = 'f2f40b71-2382-5906-82bd-76a7927b59f3';
 

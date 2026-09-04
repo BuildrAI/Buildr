@@ -95,7 +95,7 @@ const requiredRuntime: any[] = [
   'web/interfaces/cli/web.ts',
   'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.ts',
   'agent-assets/application/package-maintenance/package-assets.ts', 'workspace/application/workspace-operations.ts',
-  'workspace/module.ts', 'workspace/application/workspace-application.ts',
+  'workspace/module.ts', 'workspace/application/workspace-query-application.ts', 'workspace/application/workspace-command-application.ts',
   'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
   'workspace/application/project-daily-progress-application.ts',
   'workspace/domain/workspace.ts', 'workspace/domain/project.ts', 'workspace/domain/service.ts',

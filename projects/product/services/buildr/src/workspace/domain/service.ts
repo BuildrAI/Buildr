@@ -3,20 +3,26 @@ import { normalizeSourceLocation, SOURCE_ROOT_ATTACHED } from './source-root.ts'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-function requiredText(value: any, field: any) {
+export type WorkspaceServiceSource = { type: 'workspace'; path: string };
+export type GitServiceSource = { type: 'git'; root?: 'attached'; path: string; git: { url: string; remote: string; integrationBranch: string } };
+export type ServiceSource = WorkspaceServiceSource | GitServiceSource;
+export type ServiceInput = { id: string; workspaceId: string; projectId: string; projectCode: string; code: string; name: string; description: string; type: string; source: any };
+export type Service = Readonly<Omit<ServiceInput, 'projectCode' | 'source'> & { source: ServiceSource }>;
+
+function requiredText(value: unknown, field: string) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Service.${field} must be a non-empty string.`);
   return value.trim();
 }
 
-export function isServiceId(value: any) {
+export function isServiceId(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export function isServiceCode(value: any) {
+export function isServiceCode(value: unknown): value is string {
   return typeof value === 'string' && CODE_PATTERN.test(value);
 }
 
-export function createServiceSource(source: any, projectCode: any, code: any) {
+export function createServiceSource(source: any, projectCode: string, code: string): ServiceSource {
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('Service.source must be an object.');
   const type = requiredText(source.type, 'source.type');
   if (!['workspace', 'git'].includes(type)) throw new Error('Service.source.type must be workspace or git.');
@@ -24,11 +30,11 @@ export function createServiceSource(source: any, projectCode: any, code: any) {
   const sourcePath = location.path;
   if (type === 'workspace') {
     if (source.git !== undefined) throw new Error('Service.source.git is only supported for git sources.');
-    return Object.freeze({ type, path: sourcePath });
+    return Object.freeze({ type: 'workspace', path: sourcePath });
   }
   if (!source.git || typeof source.git !== 'object' || Array.isArray(source.git)) throw new Error('Service.source.git is required for git sources.');
   return Object.freeze({
-    type,
+    type: 'git',
     ...(location.root === SOURCE_ROOT_ATTACHED ? { root: SOURCE_ROOT_ATTACHED } : {}),
     path: sourcePath,
     git: Object.freeze({
@@ -39,7 +45,7 @@ export function createServiceSource(source: any, projectCode: any, code: any) {
   });
 }
 
-export function createService({ id, workspaceId, projectId, projectCode, code, name, description, type, source }: any) {
+export function createService({ id, workspaceId, projectId, projectCode, code, name, description, type, source }: ServiceInput): Service {
   if (!isServiceId(id)) throw new Error('Service.id must be a UUID.');
   if (!isServiceId(workspaceId)) throw new Error('Service.workspaceId must be a UUID.');
   if (!isServiceId(projectId)) throw new Error('Service.projectId must be a UUID.');

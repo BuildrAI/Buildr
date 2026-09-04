@@ -9,6 +9,15 @@ import {
 } from '../domain/project-daily-progress.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
+export type ProjectDailyProgressApplicationRuntime = {
+  readProjectRegistryRecord(targetRoot: string): any;
+  inspectTask(targetRoot: string, taskId: string): any;
+  writeDailyProgressDocument(targetRoot: string, document: any): any;
+  readDailyProgressDocument(targetRoot: string, project: string, date: string): any;
+  listDailyProgressDates(targetRoot: string, project: string): string[];
+  listDailyProgressDocuments(targetRoot: string): any[];
+};
+
 function assertObject(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw dailyProgressError('daily_progress_input_invalid', `${label} 必须是对象。`);
@@ -29,7 +38,7 @@ function identity(value: any, field: any) {
   return value.trim();
 }
 
-export function registerProjectDailyProgressApplication(runtime: any) {
+export function registerProjectDailyProgressApplication(runtime: ProjectDailyProgressApplicationRuntime) {
   function registeredProject(targetRoot: any, projectCode: any) {
     const code = identity(projectCode, 'project');
     const record = runtime.readProjectRegistryRecord(targetRoot);

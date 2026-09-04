@@ -7,6 +7,17 @@ import { declarationIntakeNextAction } from '../../infrastructure/contracts/decl
 
 const declarationIntakeAction: any = declarationIntakeNextAction;
 
+export type ServiceApplicationRuntime = {
+  readProjectRegistryRecord(targetRoot: string): any;
+  readServiceRegistryPersistence(targetRoot: string, project: any, workspaceId: string): any;
+  observeProjectGit(root: string, remote: string): any;
+  sameGitIdentity(left: string, right: string): boolean;
+  crypto: { randomUUID(): string };
+  withWorkspaceMutation(root: string, operation: string, affectedPaths: string[], action: () => any): any;
+  serviceDomainManifestPath(root: string, project: any): string;
+  writeServiceRegistry(file: string, projectId: string, services: any, projectCode?: string): void;
+};
+
 export function serviceError(code: any, message: any, status: any = 400, details: any = undefined) {
   const error: Error & Record<string, any> = new Error(message);
   error.code = code;
@@ -59,7 +70,7 @@ export function compareServiceGit(service: any, observed: any, sameGitIdentity: 
   return { status: findings.some((finding: any) => finding.status === 'error') ? 'error' : findings.length ? 'drift' : 'aligned', findings };
 }
 
-export function registerServiceApplication(runtime: any) {
+export function registerServiceApplication(runtime: ServiceApplicationRuntime) {
   function parentRecord(targetRoot: any, projectCode: any) {
     const projects = runtime.readProjectRegistryRecord(targetRoot);
     if (projects.registry.migrationRequired) throw serviceError('service_project_migration_required', 'Project registry 需要先迁移，才能使用 Service Domain。', 409);

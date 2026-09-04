@@ -1,7 +1,7 @@
 import { registerChangeApplication, type ChangeRuntime, type OpenSpecQuery, type ProjectQuery, type WorktreeQuery } from './application/change-application.ts';
 import { createChangeHttpContribution } from './interfaces/http/change-http.ts';
 import { OPENSPEC_QUERY } from '../openspec/module.ts';
-import { PROJECT_APPLICATION } from '../../workspace/module.ts';
+import { WORKSPACE_QUERY } from '../../workspace/module.ts';
 import { TASK_WORKTREE_PROVIDER } from '../infrastructure/git-worktree-provider.ts';
 
 export const CHANGE_MODULE_ID = 'change';
@@ -30,7 +30,7 @@ function openSpecDependency(requires: ChangeModuleRequires): OpenSpecQuery {
 }
 
 function projectDependency(requires: ChangeModuleRequires): ProjectQuery {
-  const value = dependency(requires, PROJECT_APPLICATION);
+  const value = dependency(requires, WORKSPACE_QUERY);
   if (typeof value.projectDetail !== 'function' || typeof value.listProjects !== 'function') throw new Error('Project Query dependency is invalid.');
   const projectDetail = value.projectDetail;
   const listProjects = value.listProjects;
@@ -58,7 +58,7 @@ function runtimeMethod(runtime: ChangeRuntime, method: string): Callable {
 export function createChangeModule(runtime: ChangeRuntime) {
   return Object.freeze({
     id: CHANGE_MODULE_ID,
-    requires: Object.freeze([OPENSPEC_QUERY, PROJECT_APPLICATION, TASK_WORKTREE_PROVIDER]),
+    requires: Object.freeze([OPENSPEC_QUERY, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER]),
     create(requires: ChangeModuleRequires) {
       registerChangeApplication(runtime, {
         openSpecQuery: openSpecDependency(requires),

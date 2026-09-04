@@ -9,6 +9,11 @@ import { resolveSourceRoot } from '../domain/source-root.ts';
 export const SERVICES_SCHEMA_V1 = 'buildr.services/v1';
 export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';
 
+export type ServiceManifestRepositoryRuntime = {
+  assertInitializedBuildrWorkspace(root: string): void;
+  atomicWriteFile(file: string, content: string): void;
+};
+
 function plainObject(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value;
@@ -115,7 +120,7 @@ export function serviceManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerServiceManifestRepository(runtime: any) {
+export function registerServiceManifestRepository(runtime: ServiceManifestRepositoryRuntime) {
   function serviceDomainManifestPath(targetRoot: any, project: any) {
     const projectRoot = typeof project === 'string'
       ? path.join(path.resolve(targetRoot), 'projects', project)

@@ -8,6 +8,31 @@ export const WORKSPACE_MANAGEMENT_SCHEMA = 'buildr.workspace-web-management/v1';
 const OWNER_SCHEMA = 'buildr.workspace-web-management-owner/v1';
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 
+type WebProfile = {
+  profile: 'released' | 'development';
+  channel: string;
+  runtimeRole: string;
+  identity: string;
+  dataRoot: string;
+};
+
+export type WorkspaceManagementFenceRuntime = {
+  readWorkspacePersistence(targetRoot: string): any;
+  currentProductIdentity(): any;
+  currentWebProfile(): WebProfile;
+  readWorkspaceRegistryFile(file: string): any;
+  workspaceRegistryPath(): string;
+  atomicWriteJson(file: string, value: unknown, options?: { mode?: number }): void;
+  removePath(file: string): void;
+  readWorkspaceRegistryPersistence(): any;
+};
+
+export type WorkspaceManagementFenceOptions = {
+  oppositeWebProfile?: (profile: WebProfile, identity: any, options?: any) => WebProfile;
+  peerProfiles?: Partial<Record<'released' | 'development', WebProfile>>;
+  webProfileOptions?: any;
+};
+
 function managementError(code: any, message: any, details: any = undefined) {
   const error: Error & Record<string, any> = new Error(message);
   error.code = code;
@@ -80,9 +105,10 @@ function sameOwner(left: any, right: any) {
     && left?.runtimeRole === right?.runtimeRole;
 }
 
-export function registerWorkspaceManagementFence(runtime: any, options: any = {}) {
+export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFenceRuntime, options: WorkspaceManagementFenceOptions = {}) {
   const oppositeWebProfile = options.oppositeWebProfile;
   if (typeof oppositeWebProfile !== 'function') throw new Error('Workspace Management Fence requires the System Installation Web Profile contract.');
+  const resolveOppositeWebProfile = oppositeWebProfile;
   function managementIdentity(targetRoot: any) {
     const root = canonicalRoot(targetRoot);
     const persistence = runtime.readWorkspacePersistence(root);
@@ -98,7 +124,7 @@ export function registerWorkspaceManagementFence(runtime: any, options: any = {}
   function peerRegistry(profile: any) {
     const peerName = profile.profile === 'released' ? 'development' : 'released';
     const peer = options.peerProfiles?.[peerName]
-      || oppositeWebProfile(profile, runtime.currentProductIdentity(), options.webProfileOptions);
+      || resolveOppositeWebProfile(profile, runtime.currentProductIdentity(), options.webProfileOptions);
     const file = path.join(peer.dataRoot, 'workspace-registry.json');
     return { profile: peer, observation: runtime.readWorkspaceRegistryFile(file) };
   }

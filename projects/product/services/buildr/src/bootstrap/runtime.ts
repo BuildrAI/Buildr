@@ -18,7 +18,7 @@ import {
 } from '../task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
 import { createWebModule } from '../web/module.ts';
-import { createWorkspaceModule, WORKSPACE_QUERY } from '../workspace/module.ts';
+import { createWorkspaceModule, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT } from '../workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.ts';
 import { registerInfrastructure } from '../infrastructure/index.ts';
@@ -95,6 +95,7 @@ export function createRuntime(): any  {
     webProfileContract,
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
   }));
+  Object.assign(runtime, registry.provide(WORKSPACE_RUNTIME_PORT).methods);
   registry.install(createAgentAssetsModule(runtime));
   registerProjectGitObserver(runtime);
   registry.install(createPublicationModule(runtime));

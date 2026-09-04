@@ -8,6 +8,13 @@ import { createWorkspace } from '../domain/workspace.ts';
 export const WORKSPACE_SCHEMA_V1 = 'buildr.workspace/v1';
 export const WORKSPACE_DESCRIPTION_TODO = 'TODO: 请补充 Workspace 的管理范围和用途。';
 
+export type WorkspaceManifestRepositoryRuntime = {
+  assertInitializedBuildrWorkspace(root: string): void;
+  existsFile(file: string): boolean;
+  parseYamlDocument(content: string, label: string): any;
+  atomicWriteFile(file: string, content: string): void;
+};
+
 const CANONICAL_FIELDS = new Set(['schemaVersion', 'id', 'name', 'description', 'kind', 'profile', 'runtime']);
 
 function parseYaml(content: any, label: any) {
@@ -99,7 +106,7 @@ export function workspaceManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerWorkspaceManifestRepository(runtime: any) {
+export function registerWorkspaceManifestRepository(runtime: WorkspaceManifestRepositoryRuntime) {
   function workspaceMetadataPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), '.buildr', 'workspace.yml');
   }

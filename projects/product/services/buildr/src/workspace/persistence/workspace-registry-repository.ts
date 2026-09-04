@@ -7,6 +7,21 @@ import { productDataRoot } from '../../infrastructure/filesystem/product-data-ro
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
+type ProductIdentity = Record<string, any>;
+type WebProfile = { dataRoot: string } & Record<string, any>;
+
+export type WorkspaceRegistryRepositoryRuntime = {
+  atomicWriteJson(file: string, value: unknown): void;
+  ensureDirectory(directory: string): void;
+};
+
+export type WorkspaceRegistryRepositoryOptions = {
+  productIdentity?: ProductIdentity;
+  readProductIdentity?: () => ProductIdentity;
+  resolveWebProfile?: (identity: ProductIdentity, options: WorkspaceRegistryRepositoryOptions) => WebProfile;
+  webProfile?: WebProfile;
+};
+
 function registryRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
@@ -51,7 +66,7 @@ export function readWorkspaceRegistryFile(file: any) {
   }
 }
 
-export function registerWorkspaceRegistryRepository(runtime: any, options: any = {}) {
+export function registerWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepositoryRuntime, options: WorkspaceRegistryRepositoryOptions = {}) {
   const productIdentity = options.productIdentity || options.readProductIdentity?.();
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');

@@ -1,6 +1,6 @@
 import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
 import { registerOpenSpecApplication } from './application/openspec-application.ts';
-import { PROJECT_APPLICATION } from '../../workspace/module.ts';
+import { WORKSPACE_QUERY } from '../../workspace/module.ts';
 
 export const OPENSPEC_MODULE_ID = 'openspec';
 export const OPENSPEC_APPLICATION = 'openspec.application';
@@ -69,9 +69,9 @@ export function createOpenSpecCliContributions(application: any = null) {
 export function createOpenSpecModule(runtime: any) {
   return Object.freeze({
     id: OPENSPEC_MODULE_ID,
-    requires: Object.freeze([PROJECT_APPLICATION]),
+    requires: Object.freeze([WORKSPACE_QUERY]),
     create(requires: any) {
-      registerOpenSpecApplication(runtime, { projectQuery: requires[PROJECT_APPLICATION] });
+      registerOpenSpecApplication(runtime, { projectQuery: requires[WORKSPACE_QUERY] });
       const application = methodPort(runtime, APPLICATION_METHODS);
       const query = Object.freeze({
         inspectChangeChecklist,

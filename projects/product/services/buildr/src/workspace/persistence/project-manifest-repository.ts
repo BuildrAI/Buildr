@@ -8,6 +8,11 @@ import { createProject, isProjectCode } from '../domain/project.ts';
 export const PROJECTS_SCHEMA_V1 = 'buildr.projects/v1';
 export const PROJECTS_SCHEMA_V2 = 'buildr.projects/v2';
 
+export type ProjectManifestRepositoryRuntime = {
+  assertInitializedBuildrWorkspace(root: string): void;
+  atomicWriteFile(file: string, content: string): void;
+};
+
 function plainObject(value: any, label: any) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value;
@@ -109,7 +114,7 @@ export function projectManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerProjectManifestRepository(runtime: any) {
+export function registerProjectManifestRepository(runtime: ProjectManifestRepositoryRuntime) {
   function projectsManifestPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), 'projects', 'manifest.yml');
   }

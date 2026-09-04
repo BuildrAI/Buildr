@@ -9,6 +9,13 @@ import {
   normalizeDailyProgressDocument,
 } from '../domain/project-daily-progress.ts';
 
+export type ProjectDailyProgressRepositoryRuntime = {
+  existsFile(file: string): boolean;
+  existsDirectory(directory: string): boolean;
+  parseYamlDocument(content: string, label: string): any;
+  atomicWriteFile(file: string, content: string): void;
+};
+
 function dailyProgressRoot(targetRoot: any) {
   return path.join(targetRoot, '.buildr', 'daily-progress');
 }
@@ -36,7 +43,7 @@ function serializeDocument(document: any) {
   }, { lineWidth: 0 });
 }
 
-export function registerProjectDailyProgressRepository(runtime: any) {
+export function registerProjectDailyProgressRepository(runtime: ProjectDailyProgressRepositoryRuntime) {
   function readDailyProgressDocument(targetRoot: any, project: any, date: any) {
     const file = dailyProgressFile(targetRoot, project, date);
     if (!runtime.existsFile(file)) return { present: false, incompatible: false, document: null };
