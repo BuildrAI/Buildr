@@ -4,27 +4,19 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from '../../infrastructure/process.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 
-export type SourceCreationRuntime = {
+export type WorkspaceSourceGitRuntime = {
   readGitRemote(root: string, remote: string): string | null;
-  sameGitIdentity(left: string, right: string): boolean;
   existsDirectory(directory: string): boolean;
   gitignoreLines(root: string): string[];
   appendGitignoreEntries(file: string, patterns: string[]): boolean;
   toPosixRelative(root: string, file: string): string;
 };
 
-export type AttachedSource = {
+export type AttachedGitRoot = {
   rootPath: string;
-  source: { type: 'git'; root: 'attached'; path: string; git: { url: string; remote: string; integrationBranch: string } };
+  url: string;
+  integrationBranch: string;
 };
-
-export function isGitUrl(value: string) {
-  return /^(https?:\/\/|ssh:\/\/|git@)/.test(value) || /\.git$/.test(value);
-}
-
-export function isProjectGitUrl(value: string) {
-  return /^(https?:\/\/|ssh:\/\/|git@|file:\/\/)/.test(value);
-}
 
 export function gitOutput(args: string[], cwd: string) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
@@ -34,7 +26,7 @@ export function gitCurrentBranch(repoPath: string) {
   try { return gitOutput(['symbolic-ref', '--short', 'HEAD'], repoPath) || 'HEAD'; } catch { return 'HEAD'; }
 }
 
-export function gitDefaultBranch(runtime: Pick<SourceCreationRuntime, 'readGitRemote'>, repoPath: string, remote = 'origin') {
+export function gitDefaultBranch(runtime: Pick<WorkspaceSourceGitRuntime, 'readGitRemote'>, repoPath: string, remote = 'origin') {
   const remoteUrl = runtime.readGitRemote(repoPath, remote);
   if (remoteUrl) {
     const result = spawnSync('git', ['ls-remote', '--symref', remoteUrl, 'HEAD'], { cwd: repoPath, encoding: 'utf8', timeout: 30000 });
@@ -55,10 +47,6 @@ export function assertGitBranch(value: string | null | undefined) {
   if (result.status !== 0) throw new Error(`Invalid Git branch: ${value}`);
 }
 
-export function defaultAssetDescription(kind: 'Project' | 'Service', id: string) {
-  return `TODO: 补充 ${kind} ${id} 的用途说明。`;
-}
-
 export function inferRepoKind(assetRoot: string) {
   return fs.existsSync(path.join(assetRoot, '.git')) ? 'git' : 'workspace';
 }
@@ -68,7 +56,14 @@ function pathInside(parent: string, child: string) {
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
-export function attachedGitSource(runtime: SourceCreationRuntime, rawPath: string, targetRoot: string, remote: string, integrationBranch: string | null, label: string): AttachedSource {
+export function inspectAttachedGitRoot(
+  runtime: Pick<WorkspaceSourceGitRuntime, 'readGitRemote' | 'existsDirectory'>,
+  rawPath: string,
+  targetRoot: string,
+  remote: string,
+  integrationBranch: string | null,
+  label: string,
+): AttachedGitRoot {
   const requested = path.resolve(rawPath);
   if (!path.isAbsolute(rawPath) || path.normalize(rawPath) !== rawPath) throw new Error(`${label} --attach must be a normalized absolute path.`);
   if (!runtime.existsDirectory(requested)) throw new Error(`${label} attached root does not exist: ${rawPath}`);
@@ -83,10 +78,10 @@ export function attachedGitSource(runtime: SourceCreationRuntime, rawPath: strin
   if (!url) throw new Error(`${label} attached root is missing declared remote ${remote}: ${rawPath}`);
   const branch = integrationBranch || gitDefaultBranch(runtime, actual, remote) || gitCurrentBranch(actual);
   assertGitBranch(branch);
-  return { rootPath: actual, source: { type: 'git', root: 'attached', path: actual, git: { url, remote, integrationBranch: branch } } };
+  return { rootPath: actual, url, integrationBranch: branch };
 }
 
-export function gitBoundaryFor(runtime: Pick<SourceCreationRuntime, 'existsDirectory'>, targetRoot: string, item: any) {
+export function gitBoundaryFor(runtime: Pick<WorkspaceSourceGitRuntime, 'existsDirectory'>, targetRoot: string, item: any) {
   if (!runtime.existsDirectory(path.join(item.assetRoot, '.git'))) return null;
   const projectRoot = path.join(targetRoot, 'projects', item.project);
   if (item.type === 'project') {
@@ -98,7 +93,7 @@ export function gitBoundaryFor(runtime: Pick<SourceCreationRuntime, 'existsDirec
   return null;
 }
 
-export function ensureGitBoundaries(runtime: SourceCreationRuntime, targetRoot: string, items: any[]) {
+export function ensureGitBoundaries(runtime: WorkspaceSourceGitRuntime, targetRoot: string, items: any[]) {
   const changed: string[] = [];
   for (const item of items) {
     const boundary = gitBoundaryFor(runtime, targetRoot, item);
@@ -110,21 +105,18 @@ export function ensureGitBoundaries(runtime: SourceCreationRuntime, targetRoot: 
   return [...new Set(changed)];
 }
 
-export function gitBoundaryIgnored(runtime: Pick<SourceCreationRuntime, 'gitignoreLines'>, boundary: { repoRoot: string; pattern: string } | null) {
+export function gitBoundaryIgnored(runtime: Pick<WorkspaceSourceGitRuntime, 'gitignoreLines'>, boundary: { repoRoot: string; pattern: string } | null) {
   return !boundary || runtime.gitignoreLines(boundary.repoRoot).includes(boundary.pattern);
 }
 
-export function registerSourceCreationSupport(runtime: SourceCreationRuntime) {
+export function registerWorkspaceSourceGit(runtime: WorkspaceSourceGitRuntime) {
   return Object.assign(runtime, {
-    isGitUrl,
-    isProjectGitUrl,
     gitOutput,
     gitCurrentBranch,
     gitDefaultBranch: (repoPath: string, remote = 'origin') => gitDefaultBranch(runtime, repoPath, remote),
     assertGitBranch,
-    defaultAssetDescription,
     inferRepoKind,
-    attachedGitSource: (rawPath: string, targetRoot: string, remote: string, integrationBranch: string | null, label: string) => attachedGitSource(runtime, rawPath, targetRoot, remote, integrationBranch, label),
+    inspectAttachedGitRoot: (rawPath: string, targetRoot: string, remote: string, integrationBranch: string | null, label: string) => inspectAttachedGitRoot(runtime, rawPath, targetRoot, remote, integrationBranch, label),
     gitBoundaryFor: (targetRoot: string, item: any) => gitBoundaryFor(runtime, targetRoot, item),
     ensureGitBoundaries: (targetRoot: string, items: any[]) => ensureGitBoundaries(runtime, targetRoot, items),
     gitBoundaryIgnored: (boundary: { repoRoot: string; pattern: string } | null) => gitBoundaryIgnored(runtime, boundary),

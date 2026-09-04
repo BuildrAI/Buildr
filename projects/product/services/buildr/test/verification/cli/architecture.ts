@@ -97,7 +97,7 @@ const requiredRuntime: any[] = [
   'agent-assets/application/package-maintenance/package-assets.ts', 'workspace/application/workspace-operations.ts',
   'workspace/module.ts', 'workspace/application/workspace-query-application.ts', 'workspace/application/workspace-command-application.ts',
   'workspace/application/project-creation-application.ts', 'workspace/application/service-creation-application.ts',
-  'workspace/application/source-creation-support.ts',
+  'workspace/application/source-creation-policy.ts', 'workspace/infrastructure/workspace-source-git.ts',
   'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
   'workspace/application/project-daily-progress-application.ts',
   'workspace/domain/workspace.ts', 'workspace/domain/project.ts', 'workspace/domain/service.ts',

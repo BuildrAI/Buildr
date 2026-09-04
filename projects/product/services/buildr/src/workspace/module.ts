@@ -17,9 +17,10 @@ import { createWorkspaceHttpContribution } from './interfaces/http/workspace-htt
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
 import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.ts';
 import type { WorkspaceManagementFenceRuntime } from './infrastructure/workspace-management-fence.ts';
-import { registerSourceCreationSupport, type SourceCreationRuntime } from './application/source-creation-support.ts';
+import { registerSourceCreationPolicy, type SourceCreationPolicyRuntime } from './application/source-creation-policy.ts';
 import { registerProjectCreationApplication, type ProjectCreationRuntime } from './application/project-creation-application.ts';
 import { registerServiceCreationApplication, type ServiceCreationRuntime } from './application/service-creation-application.ts';
+import { registerWorkspaceSourceGit, type WorkspaceSourceGitRuntime } from './infrastructure/workspace-source-git.ts';
 
 type DynamicRuntime = Record<string, any>;
 type WorkspacePrivateComposition = DynamicRuntime
@@ -35,7 +36,8 @@ type WorkspacePrivateComposition = DynamicRuntime
   & ServiceApplicationRuntime
   & ProjectDailyProgressApplicationRuntime
   & WorkspaceManagementFenceRuntime
-  & SourceCreationRuntime
+  & SourceCreationPolicyRuntime
+  & WorkspaceSourceGitRuntime
   & ProjectCreationRuntime
   & ServiceCreationRuntime;
 
@@ -224,7 +226,8 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);
       registerProjectDailyProgressApplication(privateComposition);
-      registerSourceCreationSupport(privateComposition);
+      registerWorkspaceSourceGit(privateComposition);
+      registerSourceCreationPolicy(privateComposition);
       registerProjectCreationApplication(privateComposition);
       registerServiceCreationApplication(privateComposition);
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
