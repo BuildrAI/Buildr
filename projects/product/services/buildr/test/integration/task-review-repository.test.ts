@@ -16,7 +16,7 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
-  runtime.createTaskRecordPersistence(root, {
+  runtime.createTaskPersistence(root, {
     schemaVersion: 'buildr.task-record/v3', taskId: 'demo-task', title: 'Demo', intent: 'Verify Review SQLite authority',
     scope: { projects: [], services: [] }, changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
@@ -85,8 +85,8 @@ test('损坏current与terminal Task均fail closed，terminal仍可读取既有Re
   opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
   opened.database.prepare("UPDATE task_review_current SET subject_identity = 'planning:identity-1' WHERE task_id = 'demo-task' AND review_type = 'planning'").run();
   opened.database.close();
-  const task = runtime.readTaskRecordPersistence(root, 'demo-task');
-  runtime.writeTaskRecordPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done' }, updatedAt: '2026-08-02T00:00:02.000Z' });
+  const task = runtime.readTask(root, 'demo-task');
+  runtime.writeTaskPersistence(root, { ...task.record, status: 'completed', result: { summary: 'done' }, updatedAt: '2026-08-02T00:00:02.000Z' });
   assert.equal(runtime.inspectTaskReview(root, 'demo-task').slots.planning.present, true);
   assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', runtime.inspectTaskReview(root, 'demo-task').slots.planning.resultDigest)), (error) => error.code === 'task_review_task_terminal');
 });

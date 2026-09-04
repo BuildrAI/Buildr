@@ -1,32 +1,32 @@
-import { TASK_RECORD_ID_SOURCE } from '../../application/task-record-validation.ts';
+import { TASK_ID_SOURCE } from '../../application/task-validation.ts';
 import type {
   TaskAbandonRequest,
   TaskCompleteRequest,
   TaskUpdateRequest,
-} from '../../application/generated/task-record-dto.ts';
+} from '../../application/generated/task-dto.ts';
 import {
-  TASK_RECORD_HTTP_OPERATIONS,
-  TASK_RECORD_HTTP_VALIDATORS,
-} from './task-record-http-schema.ts';
+  TASK_HTTP_OPERATIONS,
+  TASK_HTTP_VALIDATORS,
+} from './task-http-schema.ts';
 
-export { TASK_RECORD_ID_SOURCE };
+export { TASK_ID_SOURCE };
 
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']);
-const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})$`);
-const TASK_RETROSPECTIVE_DOCUMENT_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/retrospective-document$`);
-const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/complete$`);
-const TASK_ABANDON_PATH = new RegExp(`^/tasks/(${TASK_RECORD_ID_SOURCE})/abandon$`);
-const OPERATIONS = new Map(TASK_RECORD_HTTP_OPERATIONS.map((operation) => [operation.id, operation]));
+const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})$`);
+const TASK_RETROSPECTIVE_DOCUMENT_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/retrospective-document$`);
+const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/complete$`);
+const TASK_ABANDON_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/abandon$`);
+const OPERATIONS = new Map(TASK_HTTP_OPERATIONS.map((operation) => [operation.id, operation]));
 type ValidationIssue = { keyword?: string; instancePath?: string; params?: { missingProperty?: string; additionalProperty?: string } };
 type HttpBusinessError = Error & { code: string; status: number; details?: unknown };
 type HttpResult = { status: number; body: unknown };
 type TaskHttpRuntime = {
-  queryTaskRecordViews(root: string, input: unknown): unknown;
+  queryTasks(root: string, input: unknown): unknown;
   inspectTaskRetrospectiveDocument(root: string, taskId: string): unknown;
-  inspectTaskRecordView(root: string, taskId: string): unknown;
-  updateTaskRecord(root: string, taskId: string, input: unknown): unknown;
-  completeTaskRecord(root: string, taskId: string, input: unknown): unknown;
-  abandonTaskRecord(root: string, taskId: string, input: unknown): unknown;
+  inspectTaskView(root: string, taskId: string): unknown;
+  updateTask(root: string, taskId: string, input: unknown): unknown;
+  completeTask(root: string, taskId: string, input: unknown): unknown;
+  abandonTask(root: string, taskId: string, input: unknown): unknown;
 };
 export type TaskHttpInput = {
   request: { method?: string };
@@ -70,7 +70,7 @@ function invalidContractInput(operationId: string, label: string, errors: readon
 function validateRequest<T>(operationId: string, value: T, label: string): T {
   const operation = OPERATIONS.get(operationId);
   if (!operation) throw new Error(`Task Record HTTP operation未注册：${operationId}。`);
-  const result = TASK_RECORD_HTTP_VALIDATORS.validate(operation.requestSchemaId, value);
+  const result = TASK_HTTP_VALIDATORS.validate(operation.requestSchemaId, value);
   if (!result.valid) throw invalidContractInput(operationId, label, result.errors);
   return value;
 }
@@ -90,9 +90,9 @@ function taskQueryInput(searchParams: URLSearchParams): Record<string, string> {
   return { ...validateRequest('task-record.list', input, 'Task list') };
 }
 
-export async function handleTaskRecordHttpRequest({ request, suffix, searchParams, root, runtime, authorizeWrite, readBody }: TaskHttpInput): Promise<HttpResult | null> {
+export async function handleTaskHttpRequest({ request, suffix, searchParams, root, runtime, authorizeWrite, readBody }: TaskHttpInput): Promise<HttpResult | null> {
   if (request.method === 'GET' && suffix === '/tasks') {
-    return { status: 200, body: runtime.queryTaskRecordViews(root, taskQueryInput(searchParams)) };
+    return { status: 200, body: runtime.queryTasks(root, taskQueryInput(searchParams)) };
   }
 
   const retrospectiveDocumentMatch = suffix.match(TASK_RETROSPECTIVE_DOCUMENT_PATH);
@@ -106,26 +106,26 @@ export async function handleTaskRecordHttpRequest({ request, suffix, searchParam
 
   const taskMatch = suffix.match(TASK_RECORD_PATH);
   if (request.method === 'GET' && taskMatch) {
-    return { status: 200, body: runtime.inspectTaskRecordView(root, taskMatch[1]) };
+    return { status: 200, body: runtime.inspectTaskView(root, taskMatch[1]) };
   }
   if (request.method === 'PATCH' && taskMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update'), 'Task update');
-    return { status: 200, body: runtime.updateTaskRecord(root, taskMatch[1], input) };
+    return { status: 200, body: runtime.updateTask(root, taskMatch[1], input) };
   }
 
   const taskCompleteMatch = suffix.match(TASK_COMPLETE_PATH);
   if (request.method === 'POST' && taskCompleteMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.complete', await readBody<TaskCompleteRequest>(null, 'Task complete'), 'Task complete');
-    return { status: 200, body: runtime.completeTaskRecord(root, taskCompleteMatch[1], input) };
+    return { status: 200, body: runtime.completeTask(root, taskCompleteMatch[1], input) };
   }
 
   const taskAbandonMatch = suffix.match(TASK_ABANDON_PATH);
   if (request.method === 'POST' && taskAbandonMatch) {
     authorizeWrite();
     const input = validateRequest('task-record.abandon', await readBody<TaskAbandonRequest>(null, 'Task abandon'), 'Task abandon');
-    return { status: 200, body: runtime.abandonTaskRecord(root, taskAbandonMatch[1], input) };
+    return { status: 200, body: runtime.abandonTask(root, taskAbandonMatch[1], input) };
   }
 
   return null;

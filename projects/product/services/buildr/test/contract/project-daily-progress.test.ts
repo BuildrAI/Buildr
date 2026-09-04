@@ -8,10 +8,10 @@ const read: any = (relative: any) => fs.readFileSync(path.join(root, relative), 
 
 test('每日演进 Application 不扫描 Git、不写 Task Record、不暴露路径', () => {
   const application: any = read('src/workspace/application/project-daily-progress-application.ts');
-  for (const required of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress', 'inspectTaskRecord', 'readProjectRegistryRecord']) {
+  for (const required of ['recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress', 'inspectTask', 'readProjectRegistryRecord']) {
     assert.ok(application.includes(required), required);
   }
-  for (const forbidden of ['node:fs', 'createTaskRecord', 'updateTaskRecord', 'observeProjectGit', 'git log', 'commit author']) {
+  for (const forbidden of ['node:fs', 'createTask', 'updateTask', 'observeProjectGit', 'git log', 'commit author']) {
     assert.equal(application.includes(forbidden), false, forbidden);
   }
 });

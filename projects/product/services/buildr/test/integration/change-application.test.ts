@@ -23,8 +23,8 @@ type Prototype = { id: string; title: string; path: string; lifecycle: string; p
 type ChangeRuntime = {
   listProjects(): { projects: Project[] };
   projectDetail(root: string, code: string): { project: Project };
-  readTaskRecordPersistence(root: string, taskId: string): { record: { taskId: string } };
-  inspectTaskRecord(root: string, taskId: string): { record: { taskId: string; changes: Array<{ project: string; change: string }> } };
+  readTask(root: string, taskId: string): { record: { taskId: string } };
+  inspectTask(root: string, taskId: string): { record: { taskId: string; changes: Array<{ project: string; change: string }> } };
   inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): {
     status: string;
     repositories: Array<{ selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string }>;
@@ -54,8 +54,8 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
       if (code !== project.code) throw Object.assign(new Error(`Project 不存在：${code}。`), { code: 'project_not_found', status: 404 });
       return { project };
     },
-    readTaskRecordPersistence: (_target, taskId) => ({ record: { taskId } }),
-    inspectTaskRecord: (_target, taskId) => ({ record: { taskId, changes: [] } }),
+    readTask: (_target, taskId) => ({ record: { taskId } }),
+    inspectTask: (_target, taskId) => ({ record: { taskId, changes: [] } }),
     inspectGitWorktrees: () => ({ status: 'blocked', repositories: [] }),
     listChanges: unavailable,
     changeDetail: unavailable,
@@ -133,7 +133,7 @@ test('Task UI Prototype使用Worktree owner并由Change内容决定展示', (t) 
     'screens/task.html': '<!doctype html><html><head><title>Task Prototype</title></head><body><!-- buildr:ui-prototype --></body></html>',
     'screens/incomplete.html': '<!-- buildr:ui-prototype --><title>Incomplete</title>',
   });
-  runtime.inspectTaskRecord = (_target, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'previewed' }] } });
+  runtime.inspectTask = (_target, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'previewed' }] } });
   runtime.inspectGitWorktrees = () => ({
     status: 'ready',
     repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }],

@@ -6,8 +6,8 @@ import {
   createAgentAssetsRuntimeModule,
 } from '../agent-assets/module.ts';
 import {
-  TASK_RECORD_RUNTIME_PORT,
-  TASK_RECORD_MODULE,
+  TASK_RUNTIME_PORT,
+  TASK_MODULE,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_MODULE,
   TASK_VERIFICATION_RUNTIME_PORT,
@@ -36,7 +36,7 @@ function methodPort(runtime: any, methods: any): any  {
   return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => runtime[method](...args)])));
 }
 
-function taskRecordDependencies(runtime: any): any  {
+function taskDependencies(runtime: any): any  {
   return {
     'workspace.structured-store': methodPort(runtime, ['assertCanonicalStructuredWorkspace', 'openWorkspaceStructuredStore', 'prepareWorkspaceStructuredStore', 'runWorkspaceTransaction', 'runWorkspaceSqliteRead']),
     'project-service.reader': methodPort(runtime, ['readProjectRegistryRecord', 'readServiceRegistryRecord']),
@@ -47,9 +47,9 @@ function taskRecordDependencies(runtime: any): any  {
   };
 }
 
-function installTaskRecordModule(runtime: any, registry: any): any  {
-  const descriptor = registry.install(TASK_RECORD_MODULE);
-  const runtimePort = registry.provide(TASK_RECORD_RUNTIME_PORT);
+function installTaskModule(runtime: any, registry: any): any  {
+  const descriptor = registry.install(TASK_MODULE);
+  const runtimePort = registry.provide(TASK_RUNTIME_PORT);
   Object.assign(runtime, runtimePort.methods);
   return descriptor;
 }
@@ -86,7 +86,7 @@ function installTaskRuntimeModule(runtime: any, registry: any, definition: any, 
 
 export function createRuntime(): any  {
   const runtime: any = { ...platform };
-  const registry = createModuleRegistry({ capabilities: taskRecordDependencies(runtime) });
+  const registry = createModuleRegistry({ capabilities: taskDependencies(runtime) });
   registerInfrastructure(runtime);
   registerProductInvocation(runtime);
   registry.install(createAgentAssetsRuntimeModule(runtime));
@@ -101,7 +101,7 @@ export function createRuntime(): any  {
   registry.install(createOpenSpecModule(runtime));
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
-  installTaskRecordModule(runtime, registry);
+  installTaskModule(runtime, registry);
   registry.install(createVerificationModule(runtime));
   installTaskReviewModule(runtime, registry);
   installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);

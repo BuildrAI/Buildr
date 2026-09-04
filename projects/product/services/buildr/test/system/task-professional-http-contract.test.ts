@@ -15,7 +15,7 @@ test('Task professional HTTP routes删除Overview与旧Retrospective入口并保
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data-professional-contract');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime: any = createRuntime();
-  runtime.createTaskRecord(root, { taskId: 'professional-task', title: '专业契约', intent: '验证专业 HTTP contract', projects: [], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'professional-task', title: '专业契约', intent: '验证专业 HTTP contract', projects: [], services: [], changes: [] });
   const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, sessionToken }: any = await instance.ready;

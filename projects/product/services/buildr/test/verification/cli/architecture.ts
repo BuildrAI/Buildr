@@ -111,10 +111,10 @@ const requiredRuntime: any[] = [
   'task/persistence/task-verification-repository.ts',
   'task/module.ts', 'task/domain/task.ts', 'task/domain/task-project.ts', 'task/domain/task-service.ts', 'task/domain/task-change.ts',
   'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
-  'task/application/task-record-application.ts', 'task/application/task-record-dto.ts', 'task/application/task-record-validation.ts', 'task/persistence/task-repository.ts',
+  'task/application/task-query-application.ts', 'task/application/task-command-application.ts', 'task/application/task-dto.ts', 'task/application/task-validation.ts', 'task/persistence/task-repository.ts',
   'task/persistence/task-project-repository.ts', 'task/persistence/task-service-repository.ts', 'task/persistence/task-change-repository.ts',
-  'task/interfaces/cli/task-record.ts', 'task/interfaces/cli/task-review.ts',
-  'task/interfaces/http/task-record-http.ts', 'task/interfaces/http/task-review-http.ts',
+  'task/interfaces/cli/task.ts', 'task/interfaces/cli/task-review.ts',
+  'task/interfaces/http/task-http.ts', 'task/interfaces/http/task-review-http.ts',
   'task/interfaces/http/task-lifecycle-core.ts',
   'agent-assets/module.ts', 'agent-assets/interfaces/cli/agent-assets.ts',
   'agent-assets/application/rules.ts', 'agent-assets/application/skills.ts',
@@ -343,9 +343,10 @@ if (fs.existsSync(registry)) {
   if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
-const taskRecordApplication: any = path.join(sourceRoot, 'task', 'application', 'task-record-application.ts');
-const taskRecordInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-record.ts');
-const taskRecordHttpInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-record-http.ts');
+const taskQueryApplication: any = path.join(sourceRoot, 'task', 'application', 'task-query-application.ts');
+const taskCommandApplication: any = path.join(sourceRoot, 'task', 'application', 'task-command-application.ts');
+const taskInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task.ts');
+const taskRecordHttpInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-http.ts');
 const taskRecordModule: any = path.join(sourceRoot, 'task', 'module.ts');
 const bootstrapRuntime: any = path.join(sourceRoot, 'bootstrap', 'runtime.ts');
 const legacyRuntimeModule: any = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
@@ -353,36 +354,35 @@ for (const relative of [
   'domain/task-record/task-record.ts',
   'application/task-record/task-record-application.ts',
   'infrastructure/sqlite/task-record-repository.ts',
-  'interfaces/cli/task-record.ts',
+  'interfaces/cli/task.ts',
 ]) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
 }
 for (const relative of ['task/domain/record', 'task/application/record', 'task/persistence/record']) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`redundant Task Record terminal directory must be removed: src/${relative}`);
 }
-if (fs.existsSync(taskRecordApplication)) {
-  const source: any = fs.readFileSync(taskRecordApplication, 'utf8');
-  if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskRecordCommand/.test(source)) {
-    problems.push('Task Record Application must not own CLI parsing, output, or process exit state');
-  }
+for (const application of [taskQueryApplication, taskCommandApplication]) {
+  if (!fs.existsSync(application)) continue;
+  const source: any = fs.readFileSync(application, 'utf8');
+  if (/node:process|process\.(?:stdout|stderr|exitCode)|parseCli|taskCommand/.test(source)) problems.push('Task Application must not own CLI parsing, output, or process exit state');
 }
-if (fs.existsSync(taskRecordInterface)) {
-  const source: any = fs.readFileSync(taskRecordInterface, 'utf8');
-  if (!source.includes('export function taskRecordCommand') || !source.includes('runtime.createTaskRecord')) {
+if (fs.existsSync(taskInterface)) {
+  const source: any = fs.readFileSync(taskInterface, 'utf8');
+  if (!source.includes('export function taskCommand') || !source.includes('runtime.createTask')) {
     problems.push('Task Record CLI interface must adapt registry actions to the shared Application');
   }
 }
 if (fs.existsSync(taskRecordHttpInterface)) {
   const source: any = fs.readFileSync(taskRecordHttpInterface, 'utf8');
-  for (const symbol of ['handleTaskRecordHttpRequest', 'runtime.queryTaskRecordViews', 'runtime.inspectTaskRecordView', 'runtime.updateTaskRecord', 'runtime.completeTaskRecord', 'runtime.abandonTaskRecord']) {
+  for (const symbol of ['handleTaskHttpRequest', 'runtime.queryTasks', 'runtime.inspectTaskView', 'runtime.updateTask', 'runtime.completeTask', 'runtime.abandonTask']) {
     if (!source.includes(symbol)) problems.push(`Task Record HTTP interface must own ${symbol}`);
   }
 }
 if (fs.existsSync(taskRecordModule)) {
   const source: any = fs.readFileSync(taskRecordModule, 'utf8');
   const repositoryIndex: any = source.indexOf('taskRepository: createTaskRepository()');
-  const applicationIndex: any = source.indexOf('registerTaskRecordApplication(privateComposition');
-  for (const required of ['TASK_RECORD_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_RECORD_APPLICATION', 'TASK_RECORD_PERSISTENCE_READ', 'TASK_RECORD_RUNTIME_PORT']) {
+  const applicationIndex: any = source.indexOf('registerTaskQueryApplication(privateComposition');
+  for (const required of ['TASK_MODULE', 'requires:', 'provides:', 'contributions:', 'TASK_QUERY_APPLICATION', 'TASK_COMMAND_APPLICATION', 'TASK_RUNTIME_PORT']) {
     if (!source.includes(required)) problems.push(`Task Record module must expose ${required}`);
   }
   if (repositoryIndex === -1 || applicationIndex === -1 || repositoryIndex > applicationIndex) problems.push('Task Record module must privately compose repository before application');
@@ -393,7 +393,7 @@ if (fs.existsSync(taskRecordModule)) {
 if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
 if (fs.existsSync(bootstrapRuntime)) {
   const source: any = fs.readFileSync(bootstrapRuntime, 'utf8');
-  for (const required of ["from '../task/module.ts'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskRecordModule', '__bootstrapContributions']) {
+  for (const required of ["from '../task/module.ts'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskModule', '__bootstrapContributions']) {
     if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
   }
   if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
@@ -464,12 +464,12 @@ const legacyTaskRecordConsumers: any = new Set([
   'workspace/application/project-daily-progress-application.ts',
   'task/application/task-verification-application.ts',
   'task/infrastructure/git-worktree-provider.ts',
-  'task/persistence/task-record-retrospective-document.ts',
+  'task/persistence/task-retrospective-document.ts',
   'task/persistence/task-verification-repository.ts',
   'web/http/server.ts',
   'web/application/preview-lifecycle.ts',
 ]);
-const legacyTaskRecordMethod: any = /\.(?:assertCanonicalTaskWorkspace|taskRecordDirectory|ensureTaskRecordDirectory|readTaskRecordPersistence|prepareTaskRecordPersistence|queryTaskRecordViewPersistence|readTaskRecordViewPersistence|createTaskRecordPersistence|mutateTaskRecordPersistence|writeTaskRecordPersistence|queryTaskRecordViews|inspectTaskRecord|inspectTaskRecordView|createTaskRecord|updateTaskRecord|activateTaskRecord|completeTaskRecord|abandonTaskRecord)\(/;
+const legacyTaskRecordMethod: any = /\.(?:assertCanonicalTaskWorkspace|taskDirectory|ensureTaskDirectory|readTask|prepareTask|queryTaskViews|readTaskView|createTaskPersistence|mutateTaskPersistence|writeTaskPersistence|queryTasks|inspectTask|inspectTaskView|createTask|updateTask|activateTask|completeTask|abandonTask)\(/;
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
   if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
@@ -520,7 +520,7 @@ if (fs.existsSync(dailyProgressApplication)) {
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
     problems.push('Daily Progress Application must not own CLI parsing, output, or process exit state');
   }
-  if (!source.includes('runtime.writeDailyProgressDocument') || !source.includes('runtime.inspectTaskRecord')) {
+  if (!source.includes('runtime.writeDailyProgressDocument') || !source.includes('runtime.inspectTask')) {
     problems.push('Daily Progress Application must write files through the store and only inspect Task Record');
   }
 }

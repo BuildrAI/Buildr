@@ -17,7 +17,7 @@ function fixture(t: any) {
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'services', 'manifest.yml'), 'schemaVersion: buildr.services/v2\nprojectId: 22222222-2222-4222-8222-222222222222\nservices: {}\n');
   fs.writeFileSync(path.join(root, 'projects', 'demo', 'verification.yml'), YAML.stringify({ schemaVersion: 'buildr.project-verification/v4', testing: [{ id: 'demo-unit', title: 'Demo unit', scope: { project: 'demo', services: [] }, purpose: 'Validate demo', sourcePaths: ['src/**'], testRoots: ['test/**'], full: { kind: 'command', argv: ['mvn', 'test'], cwd: '.' }, requirements: [] }] }));
   const runtime = t.buildrContexts.application;
-  runtime.createTaskRecordPersistence(root, { schemaVersion: 'buildr.task-record/v3', taskId: 'demo-task', title: 'Demo', intent: 'Verify report', scope: { projects: ['demo'], services: [] }, changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' });
+  runtime.createTaskPersistence(root, { schemaVersion: 'buildr.task-record/v3', taskId: 'demo-task', title: 'Demo', intent: 'Verify report', scope: { projects: ['demo'], services: [] }, changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' });
   return { root, runtime };
 }
 

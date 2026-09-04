@@ -13,7 +13,7 @@ test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确�
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const writer: any = createRuntime();
-  writer.createTaskRecord(root, { taskId: 'http-read', title: 'HTTP 只读', intent: '验证 HTTP owner', projects: [], services: [], changes: [] });
+  writer.createTask(root, { taskId: 'http-read', title: 'HTTP 只读', intent: '验证 HTTP owner', projects: [], services: [], changes: [] });
   const reader: any = createRuntime();
   registerWorkspaceSqlite(reader, { observeCheckout: () => { throw new Error('HTTP read 不得观察 Git/worktree provenance'); } });
   const instance: any = createLocalWorkspaceServer(reader, { targetRoot: root });
@@ -39,7 +39,7 @@ test('Buildr Web Runtime HTTP 只读每日演进，不接受路径也不写入',
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime: any = createRuntime();
-  runtime.createTaskRecord(root, { taskId: 'http-progress', title: 'HTTP 每日演进', intent: '验证只读 API', projects: ['demo'], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'http-progress', title: 'HTTP 每日演进', intent: '验证只读 API', projects: ['demo'], services: [], changes: [] });
   runtime.recordProjectDailyProgress(root, {
     project: 'demo',
     date: '2026-08-18',
@@ -104,7 +104,7 @@ test('Buildr Web Runtime HTTP owner 传播 read executor 错误并保持写请�
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime: any = createRuntime();
-  runtime.createTaskRecord(root, { taskId: 'http-errors', title: 'HTTP 错误', intent: '验证错误边界', projects: [], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'http-errors', title: 'HTTP 错误', intent: '验证错误边界', projects: [], services: [], changes: [] });
   const readExecutor: any = {
     run: async () => { throw Object.assign(new Error('受控 read failure'), { code: 'local_app_http_test_failure' }); },
     close: async () => {},

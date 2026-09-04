@@ -30,7 +30,7 @@ after(() => cleanupLocalTaskLifecycleSystemContext());
 
 function fixture(t) {
   const { base, root } = copyTaskLifecycleWorkspace(t, 'task-review-product');
-  createRuntime().createTaskRecord(root, { taskId: 'review-task', title: 'Review Task', intent: '验证宽而薄的 Review Result', projects: [], services: [], changes: ['demo/review-change'] });
+  createRuntime().createTask(root, { taskId: 'review-task', title: 'Review Task', intent: '验证宽而薄的 Review Result', projects: [], services: [], changes: ['demo/review-change'] });
   return { base, root };
 }
 
@@ -113,10 +113,10 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   response = await request(`${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
   assert.equal(response.status, 404, 'Buildr Web must not expose direct Review Result writer');
 
-  runtime.ensureTaskRecordDirectory(root, 'review-task');
+  runtime.ensureTaskDirectory(root, 'review-task');
   const environmentFile = path.join(root, '.buildr', 'tasks', 'review-task', 'environment.json');
   fs.writeFileSync(environmentFile, '{"owner":"environment-fixture"}\n');
-  const taskBefore = runtime.inspectTaskRecord(root, 'review-task');
+  const taskBefore = runtime.inspectTask(root, 'review-task');
   const environmentBytes = fs.readFileSync(environmentFile);
   runtime.recordTaskReview(root, 'review-task', {
     reviewType: 'planning', subjectIdentity: 'plan:local-app', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Plan accepted' }, expectedCurrentDigest: 'absent',
@@ -125,14 +125,14 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   assert.equal(response.body.slots.planning.present, true);
   assert.equal('applicability' in response.body.slots.planning, false);
   assert.equal(response.body.slots.completion.present, false);
-  const taskAfter = runtime.inspectTaskRecord(root, 'review-task');
+  const taskAfter = runtime.inspectTask(root, 'review-task');
   assert.equal(taskAfter.recordDigest, taskBefore.recordDigest);
   assert.deepEqual(taskAfter.record, taskBefore.record);
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);
 
   response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning' }) });
   assert.equal(response.status, 404);
-  const taskAtEnd = runtime.inspectTaskRecord(root, 'review-task');
+  const taskAtEnd = runtime.inspectTask(root, 'review-task');
   assert.equal(taskAtEnd.recordDigest, taskBefore.recordDigest);
   assert.deepEqual(taskAtEnd.record, taskBefore.record);
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);

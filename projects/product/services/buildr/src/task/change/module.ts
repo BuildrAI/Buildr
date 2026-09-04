@@ -67,7 +67,7 @@ export function createChangeModule(runtime: ChangeRuntime) {
       });
       const application = Object.freeze({
         ...Object.fromEntries(METHODS.map((method) => [method, runtimeMethod(runtime, method)])),
-        inspectTaskRecord: runtimeMethod(runtime, 'inspectTaskRecord'),
+        inspectTask: runtimeMethod(runtime, 'inspectTask'),
       });
       return Object.freeze({
         provides: { [CHANGE_APPLICATION]: application },

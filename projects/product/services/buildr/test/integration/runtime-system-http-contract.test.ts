@@ -9,7 +9,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.ts';
 import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.ts';
 import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/system/publication/interfaces/http/publication-http-contracts.ts';
-import { TASK_RECORD_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-record-http-schema.ts';
+import { TASK_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-http-schema.ts';
 import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
 import { WORKSPACE_HTTP_OPERATIONS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';
 import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
@@ -116,7 +116,7 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
   assert.deepEqual(input, before);
 
   const coverage: any = inspectHttpOperationCoverage([
-    ownedHttpOperations('task-record', TASK_RECORD_HTTP_OPERATIONS),
+    ownedHttpOperations('task-record', TASK_HTTP_OPERATIONS),
     ownedHttpOperations('task-professional', TASK_PROFESSIONAL_HTTP_OPERATIONS),
     ownedHttpOperations('workspace', WORKSPACE_HTTP_OPERATIONS),
     ownedHttpOperations('agent-assets', AGENT_ASSETS_HTTP_OPERATIONS),

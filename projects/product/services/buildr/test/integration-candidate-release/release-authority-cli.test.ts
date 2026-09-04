@@ -239,7 +239,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, contents);
   }
-  const completeTaskRecord: any = (taskId: any, title: any) => ({
+  const completeTask: any = (taskId: any, title: any) => ({
     schemaVersion: 'buildr.task-record/v3',
     taskId,
     title,
@@ -254,13 +254,13 @@ test('release transaction runner binds preparation inputs to the final frozen so
     updatedAt: '2026-08-20T00:01:00.000Z',
   });
   const releaseTask: any = {
-    ...completeTaskRecord('release-fixture', 'Release fixture'),
+    ...completeTask('release-fixture', 'Release fixture'),
     status: 'active',
     result: null,
   };
-  const supportTask: any = completeTaskRecord('support-fixture', 'Support fixture');
+  const supportTask: any = completeTask('support-fixture', 'Support fixture');
   const runtime: any = {
-    inspectTaskRecord: (_repo: any, taskId: any) => ({ record: taskId === releaseTask.taskId ? releaseTask : supportTask, recordDigest: digest('1') }),
+    inspectTask: (_repo: any, taskId: any) => ({ record: taskId === releaseTask.taskId ? releaseTask : supportTask, recordDigest: digest('1') }),
   };
   const currentRun: any = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
   const candidateRun: any = { repository: { full_name: 'BuildrAI/Buildr' }, event: 'pull_request', status: 'completed', conclusion: 'success', path: '.github/workflows/verify.yml', head_sha: candidateSourceCommit, run_attempt: 1, html_url: 'https://github.com/BuildrAI/Buildr/actions/runs/654' };

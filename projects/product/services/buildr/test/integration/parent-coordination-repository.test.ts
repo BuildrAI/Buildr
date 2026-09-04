@@ -32,9 +32,9 @@ function fixture(t, childCount = 32) {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
-  runtime.createTaskRecordPersistence(root, record('parent-task'));
+  runtime.createTaskPersistence(root, record('parent-task'));
   for (let index = 0; index < childCount; index += 1) {
-    runtime.createTaskRecordPersistence(root, record(`child-${String(index).padStart(2, '0')}`, 'parent-task'));
+    runtime.createTaskPersistence(root, record(`child-${String(index).padStart(2, '0')}`, 'parent-task'));
   }
   return { root: fs.realpathSync(root), runtime };
 }
@@ -60,7 +60,7 @@ test('父子摘要批量读取真实记录，不随子任务数量增加查询�
   const one = runtime.inspectParentCoordination(root, 'parent-task');
   const oneCount = queries.length;
   assert.equal(one.children.length, 1);
-  for (let index = 1; index < 32; index += 1) runtime.createTaskRecordPersistence(root, record(`child-${String(index).padStart(2, '0')}`, 'parent-task'));
+  for (let index = 1; index < 32; index += 1) runtime.createTaskPersistence(root, record(`child-${String(index).padStart(2, '0')}`, 'parent-task'));
   queries = [];
   const many = runtime.inspectParentCoordination(root, 'parent-task');
   assert.equal(queries.length, oneCount);

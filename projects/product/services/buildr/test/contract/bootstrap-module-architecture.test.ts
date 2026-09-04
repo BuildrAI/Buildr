@@ -11,9 +11,9 @@ import {
   AGENT_ASSETS_RUNTIME,
 } from '../../src/agent-assets/module.ts';
 import {
-  TASK_RECORD_APPLICATION,
-  TASK_RECORD_RUNTIME_PORT,
-  TASK_RECORD_PERSISTENCE_READ,
+  TASK_QUERY_APPLICATION,
+  TASK_RUNTIME_PORT,
+  TASK_COMMAND_APPLICATION,
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_PERSISTENCE_READ,
@@ -128,13 +128,13 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
-    id: 'task-record',
+    id: 'task',
     requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer'],
-    provides: [TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ, TASK_RECORD_RUNTIME_PORT],
+    provides: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
-      http: ['task-record.http'],
-      diagnostics: ['task-record.diagnostics'],
+      http: ['task.http'],
+      diagnostics: ['task.diagnostics'],
     },
     lifecycle: 'none',
   }, {
@@ -145,7 +145,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-review',
-    requires: [TASK_RECORD_PERSISTENCE_READ, 'workspace.structured-store'],
+    requires: [TASK_QUERY_APPLICATION, 'workspace.structured-store'],
     provides: [TASK_REVIEW_APPLICATION, TASK_REVIEW_PERSISTENCE_READ, TASK_REVIEW_RUNTIME_PORT],
     contributions: {
       cli: ['task review inspect', 'task review record'],
@@ -155,13 +155,13 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-verification',
-    requires: ['task-record.persistence-read', VERIFICATION_DECLARATION],
+    requires: [TASK_QUERY_APPLICATION, VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
     contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-parent-coordination',
-    requires: ['task-record.application', 'task-record.persistence-read'],
+    requires: [TASK_QUERY_APPLICATION],
     provides: ['task-parent-coordination.application', 'task-parent-coordination.runtime-port'],
     contributions: {
       cli: ['task parent inspect'],
@@ -222,7 +222,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task-record.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
@@ -243,17 +243,17 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const agentRuntime: any = runtimeProvide(runtime, AGENT_ASSETS_RUNTIME);
   assert.equal(typeof agentRuntime.getRuntimeAdapter, 'function');
   assert.equal(typeof agentRuntime.assembleRuntimeProjection, 'function');
-  const application: any = runtimeProvide(runtime, TASK_RECORD_APPLICATION);
-  const persistenceRead: any = runtimeProvide(runtime, TASK_RECORD_PERSISTENCE_READ);
-  assert.equal(typeof application.inspectTaskRecord, 'function');
-  assert.equal(typeof application.inspectTaskRetrospectiveDocument, 'function');
-  assert.equal(typeof application.createTaskRecord, 'function');
-  assert.equal(typeof persistenceRead.readTaskRecordPersistence, 'function');
-  assert.equal(typeof persistenceRead.readTaskRetrospectiveDocumentPersistence, 'function');
-  assert.equal(persistenceRead.createTaskRecordPersistence, undefined);
+  const taskQuery: any = runtimeProvide(runtime, TASK_QUERY_APPLICATION);
+  const command: any = runtimeProvide(runtime, TASK_COMMAND_APPLICATION);
+  assert.equal(typeof taskQuery.inspectTask, 'function');
+  assert.equal(typeof taskQuery.inspectTaskRetrospectiveDocument, 'function');
+  assert.equal(typeof taskQuery.readTask, 'function');
+  assert.equal(taskQuery.createTask, undefined);
+  assert.equal(typeof command.createTask, 'function');
+  assert.equal(command.inspectTask, undefined);
 
-  const runtimePort: any = runtimeProvide(runtime, TASK_RECORD_RUNTIME_PORT);
-  assert.deepEqual(runtimePort.testSupportMethods, ['createTaskRecordPersistence', 'mutateTaskRecordPersistence', 'writeTaskRecordPersistence']);
+  const runtimePort: any = runtimeProvide(runtime, TASK_RUNTIME_PORT);
+  assert.deepEqual(runtimePort.testSupportMethods, ['createTaskPersistence', 'mutateTaskPersistence', 'writeTaskPersistence']);
   assert.equal(runtimePort.owner, undefined);
   assert.equal(runtimePort.exit, undefined);
 
@@ -359,7 +359,7 @@ test('Task Retrospective独立模块已经退出，文档读取归属Task Record
   assert.equal(runtime.recordTaskRetrospective, undefined);
   assert.equal(runtime.handleTaskRetrospective, undefined);
   assert.equal(runtime.listTaskRetrospectives, undefined);
-  assert.equal(typeof runtimeProvide(runtime, TASK_RECORD_APPLICATION).inspectTaskRetrospectiveDocument, 'function');
+  assert.equal(typeof runtimeProvide(runtime, TASK_QUERY_APPLICATION).inspectTaskRetrospectiveDocument, 'function');
 });
 
 test('Task Retrospective 旧全局技术层路径已经退出', () => {

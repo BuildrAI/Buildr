@@ -7,14 +7,21 @@ import process from 'node:process';
 import { compile } from 'json-schema-to-typescript';
 
 import {
-  TASK_RECORD_HTTP_DEFINITIONS,
-  TASK_RECORD_HTTP_SCHEMAS,
-} from '../../src/task/interfaces/http/task-record-http-schema.ts';
+  TASK_HTTP_DEFINITIONS,
+  TASK_HTTP_SCHEMAS,
+} from '../../src/task/interfaces/http/task-http-schema.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const workspaceProductRoot = path.resolve(serviceRoot, '../..');
-const defaultOutputs = contractOutputPaths('task/application', 'task-record-dto.ts', undefined, 'features/task-record/api');
+function taskDtoOutputPaths(outputRoot?: string) {
+  return {
+    backend: contractOutputPaths('task/application', 'task-dto.ts', outputRoot, 'features/task-record/api').backend,
+    web: contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api').web,
+  };
+}
+
+const defaultOutputs = taskDtoOutputPaths();
 
 function body(schema: Record<string, unknown>): Record<string, unknown> {
   const { $schema: _draft, $id: _identity, title: _title, $defs: _defs, ...value } = schema;
@@ -23,20 +30,20 @@ function body(schema: Record<string, unknown>): Record<string, unknown> {
 
 export async function renderTaskRecordHttpDto(): Promise<string> {
   const definitions = {
-    ...TASK_RECORD_HTTP_DEFINITIONS,
-    TaskListRequest: body(TASK_RECORD_HTTP_SCHEMAS.listRequest),
-    TaskListResponse: body(TASK_RECORD_HTTP_SCHEMAS.listResponse),
-    TaskDetailRequest: body(TASK_RECORD_HTTP_SCHEMAS.detailRequest),
-    TaskDetailResponse: body(TASK_RECORD_HTTP_SCHEMAS.detailResponse),
-    TaskUpdateRequest: body(TASK_RECORD_HTTP_SCHEMAS.updateRequest),
-    TaskUpdateResponse: body(TASK_RECORD_HTTP_SCHEMAS.updateResponse),
-    TaskCompleteRequest: body(TASK_RECORD_HTTP_SCHEMAS.completeRequest),
-    TaskCompleteResponse: body(TASK_RECORD_HTTP_SCHEMAS.completeResponse),
-    TaskAbandonRequest: body(TASK_RECORD_HTTP_SCHEMAS.abandonRequest),
-    TaskAbandonResponse: body(TASK_RECORD_HTTP_SCHEMAS.abandonResponse),
-    TaskRetrospectiveDocumentRequest: body(TASK_RECORD_HTTP_SCHEMAS.retrospectiveDocumentRequest),
-    TaskRetrospectiveDocumentResponse: body(TASK_RECORD_HTTP_SCHEMAS.retrospectiveDocumentResponse),
-    TaskErrorResponse: body(TASK_RECORD_HTTP_SCHEMAS.errorResponse),
+    ...TASK_HTTP_DEFINITIONS,
+    TaskListRequest: body(TASK_HTTP_SCHEMAS.listRequest),
+    TaskListResponse: body(TASK_HTTP_SCHEMAS.listResponse),
+    TaskDetailRequest: body(TASK_HTTP_SCHEMAS.detailRequest),
+    TaskDetailResponse: body(TASK_HTTP_SCHEMAS.detailResponse),
+    TaskUpdateRequest: body(TASK_HTTP_SCHEMAS.updateRequest),
+    TaskUpdateResponse: body(TASK_HTTP_SCHEMAS.updateResponse),
+    TaskCompleteRequest: body(TASK_HTTP_SCHEMAS.completeRequest),
+    TaskCompleteResponse: body(TASK_HTTP_SCHEMAS.completeResponse),
+    TaskAbandonRequest: body(TASK_HTTP_SCHEMAS.abandonRequest),
+    TaskAbandonResponse: body(TASK_HTTP_SCHEMAS.abandonResponse),
+    TaskRetrospectiveDocumentRequest: body(TASK_HTTP_SCHEMAS.retrospectiveDocumentRequest),
+    TaskRetrospectiveDocumentResponse: body(TASK_HTTP_SCHEMAS.retrospectiveDocumentResponse),
+    TaskErrorResponse: body(TASK_HTTP_SCHEMAS.errorResponse),
   };
   const projection: Parameters<typeof compile>[0] = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -76,14 +83,14 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
 
 export async function checkTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
   const expected = await renderTaskRecordHttpDto();
-  const selected = contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api');
+  const selected = taskDtoOutputPaths(outputRoot);
   const outputs = [selected.backend, selected.web];
   return outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
 }
 
 export async function writeTaskRecordHttpDto(outputRoot?: string): Promise<string[]> {
   const expected = await renderTaskRecordHttpDto();
-  const selected = outputRoot ? contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api') : defaultOutputs;
+  const selected = outputRoot ? taskDtoOutputPaths(outputRoot) : defaultOutputs;
   const outputs = [selected.backend, selected.web];
   for (const output of outputs) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -96,7 +103,7 @@ async function main(): Promise<void> {
   const check = process.argv.includes('--check');
   const outputRoot = cliOutputRoot(process.argv.slice(2));
   const expected = await renderTaskRecordHttpDto();
-  const selected = outputRoot ? contractOutputPaths('task/application', 'task-record-dto.ts', outputRoot, 'features/task-record/api') : defaultOutputs;
+  const selected = outputRoot ? taskDtoOutputPaths(outputRoot) : defaultOutputs;
   const outputs = [selected.backend, selected.web];
   if (check) {
     const drift = outputs.filter((output) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);

@@ -5,7 +5,7 @@ import { Task, TASK_RECORD_SCHEMA } from '../../src/task/domain/task.ts';
 import { TaskChange } from '../../src/task/domain/task-change.ts';
 import { TaskProject } from '../../src/task/domain/task-project.ts';
 import { TaskService } from '../../src/task/domain/task-service.ts';
-import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes } from '../../src/task/application/task-record-validation.ts';
+import { isWorkspaceOnlyTaskRecord, normalizeTaskRecord, taskRecordEffectiveProjectCodes } from '../../src/task/application/task-validation.ts';
 
 function active(overrides: Record<string, unknown> = {}) {
   return {

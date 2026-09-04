@@ -23,8 +23,8 @@ function fixture(t: any): any  {
   } finally {
     console.log = previousLog;
   }
-  runtime.createTaskRecord(root, { taskId: 'task-one', title: 'First', intent: 'First intent', projects: ['demo'], services: [], changes: [] });
-  runtime.createTaskRecord(root, { taskId: 'task-two', title: 'Second', intent: 'Second intent', projects: ['demo'], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'task-one', title: 'First', intent: 'First intent', projects: ['demo'], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'task-two', title: 'Second', intent: 'Second intent', projects: ['demo'], services: [], changes: [] });
   return { root: fs.realpathSync(root), runtime };
 }
 
@@ -85,7 +85,7 @@ test('未登记 Project 与非法日期 fail closed 且不创建目录', (t: any
 
 test('合法 record 写入 v2 YAML、覆盖重跑，且不写 Task Record', (t: any) => {
   const { root, runtime }: any = fixture(t);
-  const before: any = runtime.inspectTaskRecord(root, 'task-one').recordDigest;
+  const before: any = runtime.inspectTask(root, 'task-one').recordDigest;
   const recorded: any = runtime.recordProjectDailyProgress(root, {
     project: 'demo',
     date: '2026-08-18',
@@ -120,7 +120,7 @@ test('合法 record 写入 v2 YAML、覆盖重跑，且不写 Task Record', (t: 
   assert.equal(overwritten.itemCount, 1);
   assert.equal(YAML.parse(fs.readFileSync(file, 'utf8')).commits[0].sha, 'def5678');
   assert.equal(fs.readFileSync(other, 'utf8'), 'keep\n');
-  assert.equal(runtime.inspectTaskRecord(root, 'task-one').recordDigest, before);
+  assert.equal(runtime.inspectTask(root, 'task-one').recordDigest, before);
 });
 
 test('缺失 Task 或他人提交挂 Task 整次失败且不覆盖已有文件', (t: any) => {
@@ -221,5 +221,5 @@ test('CLI record/inspect/list 使用稳定 JSON schema 且 discovery 可用', (t
   const schema: any = spawnSync(process.execPath, [buildr, 'project', 'daily-progress', 'record', '--schema', '--json'], { encoding: 'utf8' });
   assert.equal(schema.status, 0, schema.stderr);
   assert.equal(JSON.parse(schema.stdout).schemaVersion, 'buildr.project-daily-progress-input-schema/v1');
-  assert.equal(runtime.inspectTaskRecord(root, 'task-one').record.taskId, 'task-one');
+  assert.equal(runtime.inspectTask(root, 'task-one').record.taskId, 'task-one');
 });

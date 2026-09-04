@@ -26,7 +26,7 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/task/persistence/task-project-repository.ts',
     'src/task/persistence/task-service-repository.ts',
     'src/task/persistence/task-change-repository.ts',
-    'src/task/persistence/task-record-retrospective-document.ts',
+    'src/task/persistence/task-retrospective-document.ts',
     'src/task/persistence/task-review-repository.ts',
     'src/task/persistence/task-verification-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
@@ -44,7 +44,7 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
   for (const registration of [
     'registerTaskVerificationRepository',
     'createTaskRepository', 'createTaskProjectRepository', 'createTaskServiceRepository', 'createTaskChangeRepository',
-    'registerTaskReviewRepository', 'registerTaskRecordRetrospectiveDocument',
+    'registerTaskReviewRepository', 'registerTaskRetrospectiveDocument',
   ]) assert.match(taskModule, new RegExp(registration));
   assert.doesNotMatch(taskModule, /registerParentCoordinationRepository/);
   assert.match(bootstrap, /registerInfrastructure/);
@@ -54,9 +54,9 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
 });
 
 test('Task Record 事务由 Application 编排且 Repository 只访问所属表', () => {
-  const application = read('src/task/application/task-record-application.ts');
-  assert.match(application, /runWorkspaceTransaction/);
-  for (const owner of ['taskRepository', 'taskProjectRepository', 'taskServiceRepository', 'taskChangeRepository']) assert.match(application, new RegExp(owner));
+  const command = read('src/task/application/task-command-application.ts');
+  assert.match(command, /runWorkspaceTransaction/);
+  for (const owner of ['taskRepository', 'taskProjectRepository', 'taskServiceRepository', 'taskChangeRepository']) assert.match(command, new RegExp(owner));
   for (const [file, ownedTable] of [
     ['src/task/persistence/task-repository.ts', 'tasks'],
     ['src/task/persistence/task-project-repository.ts', 'task_projects'],

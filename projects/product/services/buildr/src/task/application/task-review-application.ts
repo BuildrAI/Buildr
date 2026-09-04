@@ -2,16 +2,16 @@ import path from 'node:path';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { normalizeTaskReviewResult, taskReviewError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
-import type { TaskPersistence } from './task-record-dto.ts';
+import type { TaskPersistence } from './task-dto.ts';
 import type { TaskReviewPersistence, TaskReviewRepositoryRuntime } from '../persistence/task-review-repository.ts';
 import type { TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 
 type ReviewSlot = { path: string; present: boolean; result: TaskReviewResult | null; resultDigest: string | null; observedAt: string | null };
 type ReviewSlots = { planning: ReviewSlot; completion: ReviewSlot };
-export type TaskReviewApplicationRuntime = Omit<TaskReviewRepositoryRuntime, 'readTaskRecordPersistence'> & {
-  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+export type TaskReviewApplicationRuntime = Omit<TaskReviewRepositoryRuntime, 'readTask'> & {
+  readTask(targetRoot: string, taskId: string): TaskPersistence;
   runWorkspaceTransaction<T>(targetRoot: string, action: (context: TransactionContext) => T): T;
-  prepareTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  prepareTask(targetRoot: string, taskId: string): TaskPersistence;
   inspectTaskReview?: (targetRoot: string, taskId: string, input?: unknown) => unknown;
   recordTaskReview?: (targetRoot: string, taskId: string, input: unknown) => unknown;
 };
@@ -63,13 +63,13 @@ export function registerTaskReviewApplication<T extends TaskReviewApplicationRun
   }
 
   function inspectTaskReview(targetRoot: string, taskId: string, input: unknown = {}) {
-    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    const task = runtime.readTask(targetRoot, taskId);
     return operationResult('inspect', 'inspected', task.record.taskId, slots(task.root, task.record.taskId, input));
   }
 
   function recordTaskReview(targetRoot: string, taskId: string, input: unknown) {
     assertFields(input, new Set(['reviewType', 'subjectIdentity', 'method', 'reviewed', 'uncovered', 'findings', 'conclusion', 'expectedCurrentDigest']), 'Task Review record');
-    const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
+    const task = runtime.prepareTask(targetRoot, taskId);
     if (task.record.status !== 'active') {
       throw taskReviewError('task_review_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能记录新的 Review Result。`, 409, { status: task.record.status }, `运行 buildr task review inspect ${taskId} 查看已有结果。`);
     }

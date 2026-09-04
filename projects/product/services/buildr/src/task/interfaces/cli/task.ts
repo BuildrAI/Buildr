@@ -3,8 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
-import type { TaskRecord, TaskRecordBusinessError } from '../../application/task-record-dto.ts';
-import type { TaskAbandonInputDto, TaskActivateInputDto, TaskCompleteInputDto, TaskCreateInputDto, TaskUpdateInputDto } from '../../application/task-record-dto.ts';
+import type { TaskRecord, TaskRecordBusinessError } from '../../application/task-dto.ts';
+import type { TaskAbandonInputDto, TaskActivateInputDto, TaskCompleteInputDto, TaskCreateInputDto, TaskUpdateInputDto } from '../../application/task-dto.ts';
 
 type TaskAction = 'create' | 'inspect' | 'update' | 'activate' | 'complete' | 'abandon';
 type CliValue = string | true;
@@ -16,19 +16,19 @@ type TaskCliResult = {
   [field: string]: unknown;
 };
 export type TaskCommandRuntime = {
-  createTaskRecord(targetRoot: string, input: TaskCreateInputDto): TaskCliResult;
-  inspectTaskRecord(targetRoot: string, taskId: string): TaskCliResult;
-  updateTaskRecord(targetRoot: string, taskId: string, input: TaskUpdateInputDto): TaskCliResult;
-  activateTaskRecord(targetRoot: string, taskId: string, input: TaskActivateInputDto): TaskCliResult;
-  completeTaskRecord(targetRoot: string, taskId: string, input: TaskCompleteInputDto): TaskCliResult;
-  abandonTaskRecord(targetRoot: string, taskId: string, input: TaskAbandonInputDto): TaskCliResult;
+  createTask(targetRoot: string, input: TaskCreateInputDto): TaskCliResult;
+  inspectTask(targetRoot: string, taskId: string): TaskCliResult;
+  updateTask(targetRoot: string, taskId: string, input: TaskUpdateInputDto): TaskCliResult;
+  activateTask(targetRoot: string, taskId: string, input: TaskActivateInputDto): TaskCliResult;
+  completeTask(targetRoot: string, taskId: string, input: TaskCompleteInputDto): TaskCliResult;
+  abandonTask(targetRoot: string, taskId: string, input: TaskAbandonInputDto): TaskCliResult;
 };
 
 function syntax(message: string, usage: string) {
   return Object.assign(new Error(message), { code: 'task_record_cli.syntax', status: 400, usage });
 }
 
-function parseTaskRecordCli(action: TaskAction, args: string[]) {
+function parseTaskCli(action: TaskAction, args: string[]) {
   const usages = {
     create: 'buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
     inspect: 'buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
@@ -83,7 +83,7 @@ function digestFromDetails(details: unknown): string | null {
 
 function blockedResult(runtime: TaskCommandRuntime, operation: TaskAction, taskId: string, targetRoot: string, error: TaskRecordBusinessError): TaskCliResult {
   let current: TaskCliResult | null = null;
-  try { current = runtime.inspectTaskRecord(targetRoot, taskId); } catch {}
+  try { current = runtime.inspectTask(targetRoot, taskId); } catch {}
   return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordResult, {
     operation,
     status: 'blocked',
@@ -96,7 +96,7 @@ function blockedResult(runtime: TaskCommandRuntime, operation: TaskAction, taskI
   });
 }
 
-function printTaskRecordResult(payload: TaskCliResult, json: boolean): TaskCliResult {
+function printTaskResult(payload: TaskCliResult, json: boolean): TaskCliResult {
   if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else if (payload.status === 'blocked' && payload.diagnostic) console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}\nNext: ${payload.nextActions[0]}`);
   else {
@@ -127,13 +127,13 @@ function changeValue(value: string): { project: string; change: string } {
   return { project, change };
 }
 
-export function taskRecordCommand(runtime: TaskCommandRuntime, action: TaskAction, args: string[]): TaskCliResult {
-  const parsed = parseTaskRecordCli(action, args);
+export function taskCommand(runtime: TaskCommandRuntime, action: TaskAction, args: string[]): TaskCliResult {
+  const parsed = parseTaskCli(action, args);
   try {
     let payload: TaskCliResult;
-    if (action === 'create') payload = runtime.createTaskRecord(parsed.targetRoot, { taskId: parsed.taskId, title: textValue(parsed.one('--title')) || '', intent: textValue(parsed.one('--intent')) || '', status: textValue(parsed.one('--status')) as TaskCreateInputDto['status'], ...(parsed.one('--parent-task') ? { isParent: true } : {}), parentTaskId: textValue(parsed.one('--parent')), projects: parsed.many('--project'), services: parsed.many('--service').map(serviceValue), changes: parsed.many('--change').map(changeValue) });
-    else if (action === 'inspect') payload = runtime.inspectTaskRecord(parsed.targetRoot, parsed.taskId);
-    else if (action === 'update') payload = runtime.updateTaskRecord(parsed.targetRoot, parsed.taskId, {
+    if (action === 'create') payload = runtime.createTask(parsed.targetRoot, { taskId: parsed.taskId, title: textValue(parsed.one('--title')) || '', intent: textValue(parsed.one('--intent')) || '', status: textValue(parsed.one('--status')) as TaskCreateInputDto['status'], ...(parsed.one('--parent-task') ? { isParent: true } : {}), parentTaskId: textValue(parsed.one('--parent')), projects: parsed.many('--project'), services: parsed.many('--service').map(serviceValue), changes: parsed.many('--change').map(changeValue) });
+    else if (action === 'inspect') payload = runtime.inspectTask(parsed.targetRoot, parsed.taskId);
+    else if (action === 'update') payload = runtime.updateTask(parsed.targetRoot, parsed.taskId, {
       status: textValue(parsed.one('--status')) as TaskUpdateInputDto['status'], reason: textValue(parsed.one('--reason')), summary: textValue(parsed.one('--summary')),
       ...(parsed.one('--parent-completion') ? { parentCompletion: readJsonFile(parsed.one('--parent-completion')) as TaskUpdateInputDto['parentCompletion'] } : {}),
       expectedRecordDigest: textValue(parsed.one('--expected-record')) || '', ...(parsed.one('--parent-task') ? { isParent: true } : {}),
@@ -144,10 +144,10 @@ export function taskRecordCommand(runtime: TaskCommandRuntime, action: TaskActio
       addServices: parsed.many('--add-service').map(serviceValue), removeServices: parsed.many('--remove-service').map(serviceValue),
       addChanges: parsed.many('--add-change').map(changeValue), removeChanges: parsed.many('--remove-change').map(changeValue),
     });
-    else if (action === 'activate') payload = runtime.activateTaskRecord(parsed.targetRoot, parsed.taskId, { expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
-    else if (action === 'complete') payload = runtime.completeTaskRecord(parsed.targetRoot, parsed.taskId, { ...(parsed.one('--parent-completion') ? { parentCompletion: readJsonFile(parsed.one('--parent-completion')) as TaskCompleteInputDto['parentCompletion'] } : {}), summary: textValue(parsed.one('--summary')) || '', expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
-    else payload = runtime.abandonTaskRecord(parsed.targetRoot, parsed.taskId, { reason: textValue(parsed.one('--reason')) || '', expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
-    return printTaskRecordResult(payload, parsed.json);
+    else if (action === 'activate') payload = runtime.activateTask(parsed.targetRoot, parsed.taskId, { expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
+    else if (action === 'complete') payload = runtime.completeTask(parsed.targetRoot, parsed.taskId, { ...(parsed.one('--parent-completion') ? { parentCompletion: readJsonFile(parsed.one('--parent-completion')) as TaskCompleteInputDto['parentCompletion'] } : {}), summary: textValue(parsed.one('--summary')) || '', expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
+    else payload = runtime.abandonTask(parsed.targetRoot, parsed.taskId, { reason: textValue(parsed.one('--reason')) || '', expectedRecordDigest: textValue(parsed.one('--expected-record')) || '' });
+    return printTaskResult(payload, parsed.json);
   } catch (error) {
     if (!(error instanceof Error) || !('taskRecordBusiness' in error) || error.taskRecordBusiness !== true || !('code' in error) || typeof error.code !== 'string' || !('status' in error) || typeof error.status !== 'number') throw error;
     const taskRecordBusiness: true = true;
@@ -159,7 +159,7 @@ export function taskRecordCommand(runtime: TaskCommandRuntime, action: TaskActio
       ...('nextAction' in error && typeof error.nextAction === 'string' ? { nextAction: error.nextAction } : {}),
     });
     const payload = blockedResult(runtime, action, parsed.taskId, parsed.targetRoot, businessError);
-    printTaskRecordResult(payload, parsed.json);
+    printTaskResult(payload, parsed.json);
     process.exitCode = 1;
     return payload;
   }

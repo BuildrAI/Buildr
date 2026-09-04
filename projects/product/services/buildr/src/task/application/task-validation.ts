@@ -2,11 +2,11 @@ import { TASK_RECORD_SCHEMA, type ParentCompletion } from '../domain/task.ts';
 import type {
   TaskRecord, TaskRecordBusinessError, TaskRecordHistory, TaskRecordResult,
   TaskRecordStatus, TaskRetrospectiveDocumentState, TaskRetrospectiveReference,
-} from './task-record-dto.ts';
+} from './task-dto.ts';
 
-export const TASK_RECORD_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+export const TASK_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
-const TASK_ID_PATTERN = new RegExp(`^${TASK_RECORD_ID_SOURCE}$`);
+const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
 const SCOPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA256_PATTERN = /^sha256-[0-9a-f]{64}$/u;
 

@@ -42,7 +42,7 @@ export function registerProjectDailyProgressApplication(runtime: any) {
 
   function resolveTask(targetRoot: any, taskId: any) {
     try {
-      const inspected = runtime.inspectTaskRecord(targetRoot, taskId);
+      const inspected = runtime.inspectTask(targetRoot, taskId);
       return { taskId, title: inspected.record.title, status: inspected.record.status, resolved: true };
     } catch (error: any) {
       if (error.code === 'task_record_not_found') {
@@ -196,7 +196,7 @@ export function registerProjectDailyProgressApplication(runtime: any) {
 
   function inspectTaskDailyProgress(targetRoot: any, taskIdValue: any) {
     const taskId = identity(taskIdValue, 'taskId');
-    const task = runtime.inspectTaskRecord(targetRoot, taskId);
+    const task = runtime.inspectTask(targetRoot, taskId);
     const registry = runtime.readProjectRegistryRecord(targetRoot);
     const items: any[] = [];
     for (const document of runtime.listDailyProgressDocuments(targetRoot)) {

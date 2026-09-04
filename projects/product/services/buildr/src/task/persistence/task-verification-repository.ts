@@ -1,8 +1,6 @@
 import crypto from 'node:crypto';
 import { transactionDatabase, type TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 import { normalizeTaskVerificationReport, taskVerificationError, type TaskVerificationReport } from '../domain/task-verification.ts';
-type TaskPersistence = { root: string; record: { taskId: string } };
-
 const locator = (taskId: string) => `workspace-sqlite:task-verification/${taskId}`;
 const digest = (value: string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 
@@ -15,8 +13,7 @@ type VerificationPersistence = {
   observedAt: string; created?: boolean;
 };
 export type TaskVerificationRepositoryRuntime = {
-  assertCanonicalTaskWorkspace(targetRoot: string): string;
-  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  assertCanonicalStructuredWorkspace(targetRoot: string): string;
   openWorkspaceStructuredStore(targetRoot: string, options: { writable: boolean }): StructuredStore;
   taskVerificationSerialize?: (report: TaskVerificationReport) => string;
   taskVerificationReportPath?: (targetRoot: string, taskId: string) => string;
@@ -38,23 +35,23 @@ function decode(serialized: string, taskId: string): TaskVerificationReport { re
 export function renderTaskVerificationReport(report: TaskVerificationReport): string { return JSON.stringify(normalizeTaskVerificationReport(report, { expectedTaskId: report.taskId })); }
 
 export function registerTaskVerificationRepository<T extends TaskVerificationRepositoryRuntime>(runtime: T): T & Required<Pick<TaskVerificationRepositoryRuntime, 'taskVerificationReportPath' | 'readTaskVerificationReportPersistence' | 'writeTaskVerificationReportPersistence' | 'renderTaskVerificationReport'>> {
-  function taskVerificationReportPath(targetRoot: string, taskId: string) { runtime.assertCanonicalTaskWorkspace(targetRoot); return locator(taskId); }
+  function taskVerificationReportPath(targetRoot: string, taskId: string) { runtime.assertCanonicalStructuredWorkspace(targetRoot); return locator(taskId); }
   function readTaskVerificationReportPersistence(targetRoot: string, taskId: string, { optional = true }: { optional?: boolean } = {}): VerificationPersistence | null {
-    const task = runtime.readTaskRecordPersistence(targetRoot, taskId); let opened: StructuredStore | undefined;
+    const root = runtime.assertCanonicalStructuredWorkspace(targetRoot); let opened: StructuredStore | undefined;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: false });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
       const row = opened.present ? opened.database.prepare('SELECT result_json, target_identity, outcome, updated_at FROM task_verification_current WHERE task_id = ?').get(taskId) : null;
       if (!row) { if (optional) return null; throw taskVerificationError('task_verification_not_found', `Task Verification Report 不存在：${taskId}。`, 404); }
       const serialized = stringColumn(row, 'result_json');
       const report = decode(serialized, taskId);
       const observedAt = stringColumn(row, 'updated_at');
       if (stringColumn(row, 'target_identity') !== report.content.identity || stringColumn(row, 'outcome') !== report.conclusion.outcome || observedAt !== report.completedAt) throw taskVerificationError('task_verification_query_fields_inconsistent', 'Task Verification Report 查询字段不一致。', 409, { taskId });
-      return { root: task.root, file: locator(taskId), report, reportDigest: digest(serialized), observedAt };
+      return { root, file: locator(taskId), report, reportDigest: digest(serialized), observedAt };
     } catch (error: unknown) { const failure = errorFields(error); if (failure.taskVerificationBusiness || failure.structuredStoreBusiness) throw error; throw taskVerificationError('task_verification_read_failed', `Task Verification Report 读取失败：${failure.message}`, 500, { taskId }); }
     finally { try { opened?.database?.close(); } catch {} }
   }
   function writeTaskVerificationReportPersistence(targetRoot: string, value: TaskVerificationReport, { expectedReportDigest }: { expectedReportDigest: string }, transaction: TransactionContext): VerificationPersistence & { created: boolean } {
-    const report = normalizeTaskVerificationReport(value); const task = runtime.readTaskRecordPersistence(targetRoot, report.taskId);
+    const report = normalizeTaskVerificationReport(value); const root = runtime.assertCanonicalStructuredWorkspace(targetRoot);
     let stage = 'serialization';
     try {
       const serialized = (runtime.taskVerificationSerialize || renderTaskVerificationReport)(report);
@@ -73,7 +70,7 @@ export function registerTaskVerificationRepository<T extends TaskVerificationRep
       const writtenSerialized = stringColumn(row, 'result_json');
       const written = decode(writtenSerialized, report.taskId);
       if (writtenSerialized !== serialized || stringColumn(row, 'target_identity') !== written.content.identity || stringColumn(row, 'outcome') !== written.conclusion.outcome || stringColumn(row, 'updated_at') !== written.completedAt) throw new Error('post-read mismatch');
-      return { root: task.root, file: locator(report.taskId), report: written, reportDigest: digest(writtenSerialized), observedAt: written.completedAt, created: !existing };
+      return { root, file: locator(report.taskId), report: written, reportDigest: digest(writtenSerialized), observedAt: written.completedAt, created: !existing };
     } catch (error: unknown) { const failure = errorFields(error); if (failure.taskVerificationBusiness || failure.structuredStoreBusiness) throw error; throw taskVerificationError('task_verification_write_failed', `Task Verification Report 写入失败：${failure.message}`, 500, { taskId: report.taskId, stage, rollback: { status: 'restored' } }); }
   }
   return Object.assign(runtime, { taskVerificationReportPath, readTaskVerificationReportPersistence, writeTaskVerificationReportPersistence, renderTaskVerificationReport });

@@ -311,7 +311,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const taskReadLifecycle: any = read('../buildr-web/src/features/task-record/hooks/useTaskRequestLifecycle.ts');
   const tasks: any = read('../buildr-web/src/features/task-record/pages/TasksPage.tsx');
   const listHook: any = read('../buildr-web/src/features/task-record/hooks/useTaskList.ts');
-  const taskDto: any = read('../buildr-web/src/features/task-record/api/generated/task-record-dto.ts');
+  const taskDto: any = read('../buildr-web/src/features/task-record/api/generated/task-dto.ts');
   const server: any = read('src/web/http/server.ts');
   assert.match(listHook, /new AbortController\(\)/);
   assert.match(tasks, /matchesTaskQuery/);

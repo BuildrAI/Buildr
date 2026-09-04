@@ -16,9 +16,9 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# fixture\n');
   fs.writeFileSync(path.join(root, '.buildr/workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Parent coordination fixture\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
-  const create = (taskId, options = {}) => runtime.createTaskRecord(root, { taskId, title: taskId, intent: `Deliver ${taskId}`, projects: [], services: [], changes: [], ...options });
-  const inspect = (taskId) => runtime.inspectTaskRecord(root, taskId);
-  const complete = (taskId, input = {}) => runtime.completeTaskRecord(root, taskId, { expectedRecordDigest: inspect(taskId).recordDigest, summary: 'Observed completed result', ...input });
+  const create = (taskId, options = {}) => runtime.createTask(root, { taskId, title: taskId, intent: `Deliver ${taskId}`, projects: [], services: [], changes: [], ...options });
+  const inspect = (taskId) => runtime.inspectTask(root, taskId);
+  const complete = (taskId, input = {}) => runtime.completeTask(root, taskId, { expectedRecordDigest: inspect(taskId).recordDigest, summary: 'Observed completed result', ...input });
   const input = (taskId) => {
     const view = runtime.inspectParentCoordination(root, taskId);
     return { expectedRecordDigest: view.recordDigest, parentCompletion: {
@@ -69,7 +69,7 @@ test('result changes after observation are rejected even when parent record dige
 
 test('relationship changes are rejected and parent identity survives detaching the last child', (t) => {
   const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
-  const stale = f.input('parent'); f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, parentTaskId: null });
+  const stale = f.input('parent'); f.runtime.updateTask(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, parentTaskId: null });
   assert.equal(f.inspect('parent').record.isParent, true);
   assert.throws(() => f.complete('parent', stale), { code: 'parent_completion_conflict' });
   assert.throws(() => f.complete('parent'), { code: 'parent_completion_authorization_required' });
@@ -84,7 +84,7 @@ test('nested parent completion requires separate authorization and leaves ancest
 
 test('abandoned child requires explicit disposition and is not rewritten as delivered', (t) => {
   const f = fixture(t); f.create('parent'); f.create('child', { parentTaskId: 'parent' });
-  f.runtime.abandonTaskRecord(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, reason: 'Its goal was covered by the existing artifact.' });
+  f.runtime.abandonTask(f.root, 'child', { expectedRecordDigest: f.inspect('child').recordDigest, reason: 'Its goal was covered by the existing artifact.' });
   const evidence = f.input('parent'); evidence.parentCompletion.acceptance.children[0].summary = 'Covered by reviewed existing artifact; no work remains.';
   f.complete('parent', evidence); assert.equal(f.inspect('child').record.status, 'abandoned');
 });
@@ -132,7 +132,7 @@ test('更正父任务保留阶段结果和子任务，update完成仍要求明�
   const f = fixture(t); f.create('parent', { isParent: true }); f.create('child', { parentTaskId: 'parent' }); f.complete('child');
   f.complete('parent', f.input('parent'));
   const before = f.inspect('parent');
-  const update = (input) => f.runtime.updateTaskRecord(f.root, 'parent', { expectedRecordDigest: f.inspect('parent').recordDigest, ...input });
+  const update = (input) => f.runtime.updateTask(f.root, 'parent', { expectedRecordDigest: f.inspect('parent').recordDigest, ...input });
   assert.throws(() => update({ status: 'active' }));
   assert.equal(f.inspect('parent').recordDigest, before.recordDigest);
   const reopened = update({ status: 'active', intent: 'Continue the entire roadmap', reason: 'User corrects a stage completion' });
@@ -152,22 +152,22 @@ test('已完成任务可更正父关系，保留成果、旧关系并拒绝并�
   const f = fixture(t); f.create('parent', { isParent: true }); f.create('child'); f.complete('child');
   const before = f.inspect('child');
   const input = { expectedRecordDigest: before.recordDigest, parentTaskId: 'parent', reason: 'User groups completed work under the overall goal' };
-  const linked = f.runtime.updateTaskRecord(f.root, 'child', input);
+  const linked = f.runtime.updateTask(f.root, 'child', input);
   assert.equal(linked.record.status, 'completed'); assert.deepEqual(linked.record.result, before.record.result);
   assert.equal(linked.record.resultHistory[0].parentTaskId, null);
-  assert.deepEqual(f.runtime.inspectTaskRecordView(f.root, 'parent').taskRelations.children.map((child) => child.taskId), ['child']); assert.equal(f.inspect('parent').record.status, 'active');
-  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { ...input, title: 'Stale overwrite' }), { code: 'task_record_conflict' });
-  for (const field of ['taskId', 'resultHistory', 'createdAt', 'result']) assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, title: 'Invalid', [field]: [] }), { code: 'task_record_field_forbidden' });
-  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'child', { expectedRecordDigest: linked.recordDigest, parentTaskId: 'child', reason: 'Invalid cycle' }));
+  assert.deepEqual(f.runtime.inspectTaskView(f.root, 'parent').taskRelations.children.map((child) => child.taskId), ['child']); assert.equal(f.inspect('parent').record.status, 'active');
+  assert.throws(() => f.runtime.updateTask(f.root, 'child', { ...input, title: 'Stale overwrite' }), { code: 'task_record_conflict' });
+  for (const field of ['taskId', 'resultHistory', 'createdAt', 'result']) assert.throws(() => f.runtime.updateTask(f.root, 'child', { expectedRecordDigest: linked.recordDigest, title: 'Invalid', [field]: [] }), { code: 'task_record_field_forbidden' });
+  assert.throws(() => f.runtime.updateTask(f.root, 'child', { expectedRecordDigest: linked.recordDigest, parentTaskId: 'child', reason: 'Invalid cycle' }));
   assert.equal(f.inspect('child').recordDigest, linked.recordDigest);
-  const same = f.runtime.updateTaskRecord(f.root, 'child', { ...input, expectedRecordDigest: linked.recordDigest });
+  const same = f.runtime.updateTask(f.root, 'child', { ...input, expectedRecordDigest: linked.recordDigest });
   assert.deepEqual(same.effects, []); assert.equal(same.record.resultHistory.length, 1);
 });
 
 test('统一更新支持四种状态，保留结果一致性和撤回历史', (t) => {
   const f = fixture(t); f.create('task');
-  const update = (input) => f.runtime.updateTaskRecord(f.root, 'task', { expectedRecordDigest: f.inspect('task').recordDigest, ...input });
-  assert.throws(() => f.runtime.updateTaskRecord(f.root, 'task', { status: 'todo' }), { code: 'task_record_digest_required' });
+  const update = (input) => f.runtime.updateTask(f.root, 'task', { expectedRecordDigest: f.inspect('task').recordDigest, ...input });
+  assert.throws(() => f.runtime.updateTask(f.root, 'task', { status: 'todo' }), { code: 'task_record_digest_required' });
   assert.equal(update({ status: 'todo' }).record.status, 'todo');
   assert.equal(update({ status: 'completed', summary: 'Changed' }).record.status, 'completed');
   assert.equal(update({ status: 'active', reason: 'User resumes the work' }).record.status, 'active');
@@ -185,7 +185,7 @@ test('旧父计划不再建立当前父身份，终态事实仍按普通任务�
   opened.database.prepare('UPDATE tasks SET legacy_parent_plan_json = ? WHERE task_id = ?').run(JSON.stringify({ outcome: 'Historical parent goal' }), 'legacy');
   opened.database.close();
   const before = f.inspect('legacy');
-  const corrected = f.runtime.updateTaskRecord(f.root, 'legacy', { expectedRecordDigest: before.recordDigest, intent: 'A corrected goal', reason: 'User corrects the historical goal' });
+  const corrected = f.runtime.updateTask(f.root, 'legacy', { expectedRecordDigest: before.recordDigest, intent: 'A corrected goal', reason: 'User corrects the historical goal' });
   assert.equal(corrected.record.intent, 'A corrected goal');
   assert.equal(corrected.record.resultHistory[0].intent, before.record.intent);
 });

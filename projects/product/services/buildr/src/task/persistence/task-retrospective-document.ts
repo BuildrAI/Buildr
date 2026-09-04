@@ -7,12 +7,13 @@ const RETROSPECTIVE_DOCUMENT_ROOT: readonly string[] = Object.freeze(['.buildr',
 const isTaskRecordId = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(value);
 const taskRecordError = (code: string, message: string, status = 500, details?: unknown) => Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
 
-export type TaskRecordRuntime = {
+export type TaskRuntime = {
   assertCanonicalTaskWorkspace(targetRoot: string): string;
-  readTaskRecordPersistence(targetRoot: string, taskId: string): { root: string; record: { taskId: string; retrospective: null | { state: 'pending-decision' | 'decided'; documentDigest: string } } };
   taskRetrospectiveDocumentPath?: (targetRoot: string, taskId: string) => { absolutePath: string; relativePath: string };
-  readTaskRetrospectiveDocumentPersistence?: (targetRoot: string, taskId: string) => TaskRetrospectiveDocument;
+  readTaskRetrospectiveDocumentPersistence?: (task: TaskDocumentOwner) => TaskRetrospectiveDocument;
 };
+
+export type TaskDocumentOwner = { root: string; record: { taskId: string; retrospective: null | { state: 'pending-decision' | 'decided'; documentDigest: string } } };
 
 export type TaskRetrospectiveDocument = {
   taskId: string;
@@ -25,16 +26,16 @@ export type TaskRetrospectiveDocument = {
   effectiveState: 'missing' | 'pending-decision' | 'decided';
   diagnostic: null | { code: string; message: string };
 };
-export type TaskRecordDocumentPersistence = {
+export type TaskDocumentPersistence = {
   taskRetrospectiveDocumentPath(targetRoot: string, taskId: string): { absolutePath: string; relativePath: string };
-  readTaskRetrospectiveDocumentPersistence(targetRoot: string, taskId: string): TaskRetrospectiveDocument;
+  readTaskRetrospectiveDocumentPersistence(task: TaskDocumentOwner): TaskRetrospectiveDocument;
 };
 
 function digest(bytes: Uint8Array): string {
   return `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}`;
 }
 
-export function registerTaskRecordRetrospectiveDocument<T extends TaskRecordRuntime>(runtime: T): T & TaskRecordDocumentPersistence {
+export function registerTaskRetrospectiveDocument<T extends TaskRuntime>(runtime: T): T & TaskDocumentPersistence {
   function taskRetrospectiveDocumentPath(targetRoot: string, taskId: string): { absolutePath: string; relativePath: string } {
     const root = runtime.assertCanonicalTaskWorkspace(targetRoot);
     if (!isTaskRecordId(taskId)) {
@@ -60,8 +61,8 @@ export function registerTaskRecordRetrospectiveDocument<T extends TaskRecordRunt
     };
   }
 
-  function readTaskRetrospectiveDocumentPersistence(targetRoot: string, taskId: string): TaskRetrospectiveDocument {
-    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+  function readTaskRetrospectiveDocumentPersistence(task: TaskDocumentOwner): TaskRetrospectiveDocument {
+    const taskId = task.record.taskId;
     const resolved = taskRetrospectiveDocumentPath(task.root, task.record.taskId);
     const registered = task.record.retrospective;
     let descriptor: number | undefined;

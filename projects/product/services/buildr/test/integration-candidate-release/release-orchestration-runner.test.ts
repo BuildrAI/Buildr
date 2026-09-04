@@ -39,7 +39,7 @@ function closeoutDependencies(overrides: any = {}): any  {
       gitCloseoutInput = input;
       return { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'retained-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' }, effects: [{ type: 'selection-cleaned' }], nextActions: [] };
     },
-    inspectTaskRecord: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '8' : '9') }),
+    inspectTask: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '8' : '9') }),
     resolveRetainedController: () => ({ executable: '/node', argsPrefix: ['/workspace/projects/product/services/buildr/bin/buildr.mjs'], workspaceRoot: '/workspace' }),
     invokeRetainedController: (_controller: any, args: any) => {
       calls.push(args);

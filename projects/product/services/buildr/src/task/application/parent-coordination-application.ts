@@ -1,5 +1,5 @@
 import { projectParentPlan, type ProjectedParentPlan } from '../domain/parent-coordination.ts';
-import type { TaskPersistence, TaskRecord } from './task-record-dto.ts';
+import type { TaskPersistence, TaskRecord } from './task-dto.ts';
 
 type ParentContext = {
   parent: TaskRecord; children: TaskRecord[]; isParent: boolean; legacyPlan: unknown;
@@ -8,7 +8,7 @@ type ParentContext = {
 
 export type ParentCoordinationApplicationRuntime = {
   readParentTaskContext(targetRoot: string, taskId: string): ParentContext;
-  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  readTask(targetRoot: string, taskId: string): TaskPersistence;
   inspectParentCoordination?: (targetRoot: string, taskId: string) => unknown;
 };
 
@@ -34,7 +34,7 @@ export function registerParentCoordinationApplication<T extends ParentCoordinati
       mode: isParent ? 'parent' : parent.parentTaskId ? 'child' : 'ordinary',
       parentStatus: parent.status, isParent,
       objective: parent.intent, result: parent.result,
-      parentSource: parent.parentTaskId ? runtime.readTaskRecordPersistence(targetRoot, parent.parentTaskId).record : null,
+      parentSource: parent.parentTaskId ? runtime.readTask(targetRoot, parent.parentTaskId).record : null,
       children: children.map((child) => ({ taskId: child.taskId, title: child.title, intent: child.intent, status: child.status, scope: child.scope, isParent: child.isParent === true, result: child.result, updatedAt: child.updatedAt })),
       completion: {
         snapshotIdentity: context.snapshotIdentity,

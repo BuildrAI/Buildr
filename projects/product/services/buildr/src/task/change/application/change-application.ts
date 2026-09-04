@@ -39,8 +39,8 @@ type ChangeResolution = {
   diagnostic: { code: string; message: string } | null;
 };
 export type ChangeRuntime = {
-  readTaskRecordPersistence(root: string, taskId: string): unknown;
-  inspectTaskRecord(root: string, taskId: string): { record: { changes: ChangeReference[] } };
+  readTask(root: string, taskId: string): unknown;
+  inspectTask(root: string, taskId: string): { record: { changes: ChangeReference[] } };
   [key: string]: unknown;
 };
 type ChangeApplicationOptions = { openSpecQuery?: OpenSpecQuery; projectQuery?: ProjectQuery; worktreeQuery?: WorktreeQuery };
@@ -340,7 +340,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     const changeCode = assertSafeSegment(reference.change, 'Change code');
     let taskAvailable = options.taskRecordObserved === true;
     if (!taskAvailable) {
-      try { runtime.readTaskRecordPersistence(targetRoot, taskId); taskAvailable = true; } catch (error) {
+      try { runtime.readTask(targetRoot, taskId); taskAvailable = true; } catch (error) {
         if (!allowMissingTask || !(error instanceof Error && 'code' in error && error.code === 'task_record_not_found')) throw error;
       }
     }
@@ -371,7 +371,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   }
 
   function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
-    const task = runtime.inspectTaskRecord(targetRoot, taskId);
+    const task = runtime.inspectTask(targetRoot, taskId);
     const prototypes: TaskPrototype[] = [];
     const diagnostics: PrototypeDiagnostic[] = [];
     for (const reference of task.record.changes) {

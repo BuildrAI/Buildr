@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { writeRuntimeSystemDto } from '../contracts/runtime-system-dto.ts';
 import { writeTaskProfessionalHttpDto } from '../contracts/task-professional-dto.ts';
-import { writeTaskRecordHttpDto } from '../contracts/task-record-dto.ts';
+import { writeTaskRecordHttpDto } from '../contracts/task-dto.ts';
 import { writeWorkspaceAgentAssetsDtos } from '../contracts/workspace-agent-assets-dto.ts';
 import { buildTestContext } from '../testing/test-context-build.ts';
 import { createGeneratedArtifactManifest, type GeneratedArtifactManifest } from './generated-artifacts.ts';

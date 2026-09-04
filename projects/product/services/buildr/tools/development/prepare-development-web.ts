@@ -5,7 +5,7 @@ import process from 'node:process';
 
 import { writeRuntimeSystemDto } from '../contracts/runtime-system-dto.ts';
 import { writeTaskProfessionalHttpDto } from '../contracts/task-professional-dto.ts';
-import { writeTaskRecordHttpDto } from '../contracts/task-record-dto.ts';
+import { writeTaskRecordHttpDto } from '../contracts/task-dto.ts';
 import { writeWorkspaceAgentAssetsDtos } from '../contracts/workspace-agent-assets-dto.ts';
 import { buildWebDist } from '../build/web-dist.ts';
 

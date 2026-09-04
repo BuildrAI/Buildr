@@ -438,7 +438,7 @@ test('发布编排真实调用Git closeout并把精确交付映射直接交给Wo
   const dependencies: any = {
     inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence: orchestrationEvidence }),
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('9'), recoveryIdentity: digest('8'), effects: [], nextActions: [] }),
-    inspectTaskRecord: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '7' : '6') }),
+    inspectTask: () => ({ record: task, recordDigest: digest(task.status === 'active' ? '7' : '6') }),
     resolveRetainedController: () => ({ executable: process.execPath, argsPrefix: [], workspaceRoot: data.controller }),
     invokeRetainedController: (_controller: any, args: any) => {
       controllerCalls.push(args);

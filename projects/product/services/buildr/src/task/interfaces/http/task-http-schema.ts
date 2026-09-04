@@ -23,7 +23,7 @@ const schema = (id: string, title: string, body: JsonSchema, definitions?: Recor
   ...(definitions ? { $defs: definitions } : {}),
 });
 
-export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
+export const TASK_HTTP_DEFINITIONS = Object.freeze({
   TaskId: { type: 'string', pattern: TASK_ID_PATTERN },
   QualifiedService: closed({ project: nonEmptyText, service: nonEmptyText }, ['project', 'service']),
   QualifiedChange: closed({ project: nonEmptyText, change: nonEmptyText }, ['project', 'change']),
@@ -125,9 +125,9 @@ export const TASK_RECORD_HTTP_DEFINITIONS = Object.freeze({
   }, ['schemaVersion', 'operation', 'status', 'taskId', 'record', 'recordDigest', 'changeReferences', 'referenceDiagnostics', 'taskRelations', 'retrospectiveDocument', 'diagnostic', 'effects', 'nextActions']),
 });
 
-const defs = TASK_RECORD_HTTP_DEFINITIONS;
+const defs = TASK_HTTP_DEFINITIONS;
 
-export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
+export const TASK_HTTP_SCHEMAS = Object.freeze({
   listRequest: schema('list/request', 'TaskListRequest', closed({
     q: { type: 'string' },
     project: nonEmptyText,
@@ -208,19 +208,19 @@ export const TASK_RECORD_HTTP_SCHEMAS = Object.freeze({
   errorResponse: schema('error/response', 'TaskErrorResponse', { $ref: '#/$defs/ErrorResponse' }, defs),
 });
 
-type TaskRecordHttpSchemaKey = keyof typeof TASK_RECORD_HTTP_SCHEMAS;
-function operation(id: string, method: string, path: string, request: TaskRecordHttpSchemaKey, success: TaskRecordHttpSchemaKey) {
+type TaskHttpSchemaKey = keyof typeof TASK_HTTP_SCHEMAS;
+function operation(id: string, method: string, path: string, request: TaskHttpSchemaKey, success: TaskHttpSchemaKey) {
   return Object.freeze({
     id,
     method,
     path,
-    requestSchemaId: TASK_RECORD_HTTP_SCHEMAS[request].$id,
-    successSchemaId: TASK_RECORD_HTTP_SCHEMAS[success].$id,
-    errorSchemaId: TASK_RECORD_HTTP_SCHEMAS.errorResponse.$id,
+    requestSchemaId: TASK_HTTP_SCHEMAS[request].$id,
+    successSchemaId: TASK_HTTP_SCHEMAS[success].$id,
+    errorSchemaId: TASK_HTTP_SCHEMAS.errorResponse.$id,
   });
 }
 
-export const TASK_RECORD_HTTP_OPERATIONS = Object.freeze([
+export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.list', 'GET', '/tasks', 'listRequest', 'listResponse'),
   operation('task-record.detail', 'GET', '/tasks/:taskId', 'detailRequest', 'detailResponse'),
   operation('task-record.update', 'PATCH', '/tasks/:taskId', 'updateRequest', 'updateResponse'),
@@ -229,11 +229,11 @@ export const TASK_RECORD_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
 ]);
 
-const allSchemas = Object.freeze(Object.values(TASK_RECORD_HTTP_SCHEMAS));
-export const TASK_RECORD_HTTP_VALIDATORS = compileJsonSchemaCatalog(allSchemas);
+const allSchemas = Object.freeze(Object.values(TASK_HTTP_SCHEMAS));
+export const TASK_HTTP_VALIDATORS = compileJsonSchemaCatalog(allSchemas);
 
-export function inspectTaskRecordHttpContractCoverage(routeIds: string[]) {
-  const migrated = new Set(TASK_RECORD_HTTP_OPERATIONS.map((operation) => operation.id));
+export function inspectTaskHttpContractCoverage(routeIds: string[]) {
+  const migrated = new Set(TASK_HTTP_OPERATIONS.map((operation) => operation.id));
   const unmigrated = [...new Set(routeIds)].filter((routeId) => !migrated.has(routeId)).sort();
   return Object.freeze({
     schemaVersion: 'buildr.task-record-http-contract-coverage/v1',

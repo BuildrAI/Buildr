@@ -8,7 +8,7 @@ import type {
   TaskListResponse,
   TaskUpdateRequest,
   TaskUpdateResponse,
-} from './generated/task-record-dto.ts';
+} from './generated/task-dto.ts';
 import { TASK_RECORD_SCHEMA, type ParentCompletion, type TaskResult, type TaskResultHistory, type TaskRetrospective, type TaskRetrospectiveDocumentState, type TaskStatus } from '../domain/task.ts';
 
 export { TASK_RECORD_SCHEMA };

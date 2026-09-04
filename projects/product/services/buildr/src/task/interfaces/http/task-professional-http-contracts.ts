@@ -1,5 +1,5 @@
 import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.ts';
-import { TASK_RECORD_HTTP_DEFINITIONS } from './task-record-http-schema.ts';
+import { TASK_HTTP_DEFINITIONS } from './task-http-schema.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const CONTRACT_ROOT = 'https://schemas.buildr.ai/http/task-professional';
@@ -127,7 +127,7 @@ const COORDINATION_RESPONSE = closed({
 }, ['schemaVersion', 'operation', 'status', 'taskId', 'recordDigest', 'mode', 'parentStatus', 'isParent', 'objective', 'result', 'parentSource', 'children', 'completion', 'historicalPlan', 'diagnostic', 'effects']);
 
 const COORDINATION_DEFINITIONS = Object.freeze({
-  ...TASK_RECORD_HTTP_DEFINITIONS,
+  ...TASK_HTTP_DEFINITIONS,
   TaskScope: closed({
     projects: array(NON_EMPTY), services: array({ $ref: '#/$defs/QualifiedService' }),
   }, ['projects', 'services']),

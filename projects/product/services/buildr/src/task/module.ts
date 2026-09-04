@@ -1,4 +1,5 @@
-import { registerTaskRecordApplication, type TaskRecordApplicationRuntime } from './application/task-record-application.ts';
+import { registerTaskQueryApplication, type TaskQueryApplicationRuntime } from './application/task-query-application.ts';
+import { registerTaskCommandApplication, type TaskCommandApplicationRuntime } from './application/task-command-application.ts';
 import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from './application/task-review-application.ts';
 import { registerTaskVerificationApplication, type VerificationApplicationRuntime } from './application/task-verification-application.ts';
 import { registerParentCoordinationApplication, type ParentCoordinationApplicationRuntime } from './application/parent-coordination-application.ts';
@@ -6,11 +7,11 @@ import { createTaskRepository } from './persistence/task-repository.ts';
 import { createTaskProjectRepository } from './persistence/task-project-repository.ts';
 import { createTaskServiceRepository } from './persistence/task-service-repository.ts';
 import { createTaskChangeRepository } from './persistence/task-change-repository.ts';
-import { registerTaskRecordRetrospectiveDocument } from './persistence/task-record-retrospective-document.ts';
+import { registerTaskRetrospectiveDocument } from './persistence/task-retrospective-document.ts';
 import { registerTaskReviewRepository, type TaskReviewRepositoryRuntime } from './persistence/task-review-repository.ts';
 import { registerTaskVerificationRepository, type TaskVerificationRepositoryRuntime } from './persistence/task-verification-repository.ts';
-import { registerGitWorktreeProvider, TASK_WORKTREE_PROVIDER, type GitWorktreeProviderRuntime, type GitWorktreeRuntime } from './infrastructure/git-worktree-provider.ts';
-import { taskRecordCommand, type TaskCommandRuntime } from './interfaces/cli/task-record.ts';
+import { registerGitWorktreeProvider, TASK_WORKTREE_PROVIDER, type GitWorktreeRuntime } from './infrastructure/git-worktree-provider.ts';
+import { taskCommand, type TaskCommandRuntime } from './interfaces/cli/task.ts';
 import { taskReviewCommand, type TaskReviewCliRuntime } from './interfaces/cli/task-review.ts';
 import { gitWorktreeCommand, type GitWorktreeCliRuntime } from './interfaces/cli/git-worktree.ts';
 import { taskVerificationCommand, type TaskVerificationCliRuntime } from './interfaces/cli/task-verification.ts';
@@ -19,13 +20,13 @@ import {
   createParentCoordinationHttpContribution,
   createTaskVerificationHttpContribution,
 } from './interfaces/http/task-lifecycle-core.ts';
-import { handleTaskRecordHttpRequest, TASK_RECORD_ID_SOURCE, type TaskHttpInput } from './interfaces/http/task-record-http.ts';
+import { handleTaskHttpRequest, TASK_ID_SOURCE, type TaskHttpInput } from './interfaces/http/task-http.ts';
 import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.ts';
 
-export const TASK_RECORD_MODULE_ID = 'task-record';
-export const TASK_RECORD_APPLICATION = 'task-record.application';
-export const TASK_RECORD_PERSISTENCE_READ = 'task-record.persistence-read';
-export const TASK_RECORD_RUNTIME_PORT = 'task-record.runtime-port';
+export const TASK_MODULE_ID = 'task';
+export const TASK_QUERY_APPLICATION = 'task.query-application';
+export const TASK_COMMAND_APPLICATION = 'task.command-application';
+export const TASK_RUNTIME_PORT = 'task.runtime-port';
 export const TASK_REVIEW_MODULE_ID = 'task-review';
 export const TASK_REVIEW_APPLICATION = 'task-review.application';
 export const TASK_REVIEW_PERSISTENCE_READ = 'task-review.persistence-read';
@@ -44,31 +45,27 @@ type DynamicRuntime = Record<string, RuntimeMember>;
 type RuntimeRequires = Record<string, DynamicRuntime>;
 type CliMatch = { domain?: string; action?: string; runtimeId?: string; operation?: string };
 type CliContext = { argv: string[] };
-type HttpContributionInput = Record<string, unknown>;
-type TaskRecordModuleRequires = {
-  'workspace.structured-store': Pick<TaskRecordApplicationRuntime, 'assertCanonicalStructuredWorkspace' | 'prepareWorkspaceStructuredStore' | 'runWorkspaceSqliteRead' | 'runWorkspaceTransaction'>;
-  'project-service.reader': Pick<TaskRecordApplicationRuntime, 'readProjectRegistryRecord' | 'readServiceRegistryRecord'>;
-  'change.resolver': Pick<TaskRecordApplicationRuntime, 'resolveTaskScopedChange'>;
-  'workspace.operation-memoizer': Pick<TaskRecordApplicationRuntime, 'memoizeWorkspaceOperation'>;
+type TaskModuleRequires = {
+  'workspace.structured-store': Pick<TaskQueryApplicationRuntime & TaskCommandApplicationRuntime, 'assertCanonicalStructuredWorkspace' | 'prepareWorkspaceStructuredStore' | 'runWorkspaceSqliteRead' | 'runWorkspaceTransaction'>;
+  'project-service.reader': Pick<TaskQueryApplicationRuntime & TaskCommandApplicationRuntime, 'readProjectRegistryRecord' | 'readServiceRegistryRecord'>;
+  'change.resolver': Pick<TaskQueryApplicationRuntime & TaskCommandApplicationRuntime, 'resolveTaskScopedChange'>;
+  'workspace.operation-memoizer': Pick<TaskQueryApplicationRuntime, 'memoizeWorkspaceOperation'>;
 };
 type SharedTaskComposition = DynamicRuntime;
 
-const APPLICATION_METHODS = Object.freeze([
-  'queryTaskRecordViews', 'inspectTaskRecord', 'inspectTaskRecordView',
-  'inspectTaskRetrospectiveDocument',
-  'createTaskRecord', 'updateTaskRecord', 'activateTaskRecord', 'completeTaskRecord',
-  'abandonTaskRecord',
+const TASK_QUERY_METHODS = Object.freeze([
+  'queryTasks', 'inspectTask', 'inspectTaskView', 'inspectTaskRetrospectiveDocument',
+  'assertCanonicalTaskWorkspace', 'taskDirectory', 'ensureTaskDirectory',
+  'readTask', 'prepareTask', 'readTaskView', 'readParentTaskContext',
 ]);
 
-const PERSISTENCE_READ_METHODS = Object.freeze([
-  'assertCanonicalTaskWorkspace', 'taskRecordDirectory', 'ensureTaskRecordDirectory',
-  'readTaskRecordPersistence', 'prepareTaskRecordPersistence',
-  'queryTaskRecordViewPersistence', 'readTaskRecordViewPersistence', 'readParentTaskContext',
-  'taskRetrospectiveDocumentPath', 'readTaskRetrospectiveDocumentPersistence',
+const TASK_COMMAND_METHODS = Object.freeze([
+  'createTask', 'updateTask', 'activateTask', 'completeTask',
+  'abandonTask',
 ]);
 
 const TEST_SUPPORT_METHODS = Object.freeze([
-  'createTaskRecordPersistence', 'mutateTaskRecordPersistence', 'writeTaskRecordPersistence',
+  'createTaskPersistence', 'mutateTaskPersistence', 'writeTaskPersistence',
 ]);
 
 const TASK_REVIEW_APPLICATION_METHODS = Object.freeze([
@@ -212,7 +209,7 @@ export function createGitWorktreeCliContributions(application: GitWorktreeCliRun
   ].map(Object.freeze));
 }
 
-export function createTaskRecordCliContributions(application: TaskCommandRuntime | null = null) {
+export function createTaskCliContributions(application: TaskCommandRuntime | null = null) {
   return Object.freeze([
     {
       key: 'task create', surface: 'primary', summary: '创建 active 正式 Task，或以 --status todo 只保存待办意向。',
@@ -225,13 +222,13 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
         '不创建Change、branch、commit或专业记录，也不自动改变父任务/子任务状态。',
       ],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'create',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'create', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'create', context.argv.slice(4)),
     },
     {
       key: 'task inspect', surface: 'primary', summary: '只读返回Task Record、直接父任务/子任务摘要和响应级recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。',
       help: ['Usage: buildr task inspect <task-id> [--target <canonical-workspace>] [--json]', '', '只读返回Task Record、直接父任务/子任务摘要和响应级recordDigest，不递归展开整棵树，不暴露数据库路径；数据库尚未初始化时保持零写入。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'inspect',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'inspect', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'inspect', context.argv.slice(4)),
     },
     {
       key: 'task update', surface: 'primary', summary: '按当前摘要修改任务事实；支持带原因的终态事实更正。',
@@ -243,25 +240,25 @@ export function createTaskRecordCliContributions(application: TaskCommandRuntime
         '只更新Task Record SQLite；不接受--input、patch、完整next-state、expected revision或专业模块字段，不执行Git、验证、交付或清理。',
       ],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'update',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'update', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'update', context.argv.slice(4)),
     },
     {
       key: 'task activate', surface: 'primary', summary: '把todo Task单向激活为active；该动作自身不执行Git或研发工作。',
       help: ['Usage: buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '只写Task Record的todo -> active。Agent必须先读取当前摘要；不执行Git、验证、交付或清理。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'activate',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'activate', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'activate', context.argv.slice(4)),
     },
     {
       key: 'task complete', surface: 'primary', summary: '以明确结果摘要完成 todo 或 active Task。',
       help: ['Usage: buildr task complete <task-id> --summary <text> --expected-record <recordDigest> [--parent-completion <json-file>] [--target <canonical-workspace>] [--json]', '', '父任务必须同时提供 --parent-completion：包含当前观察、总体验收、逐子任务处置和明确用户授权。', '该动作只更新顶层 Task Record，不执行 Finish、Verification、Git、publication 或 cleanup。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'complete',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'complete', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'complete', context.argv.slice(4)),
     },
     {
       key: 'task abandon', surface: 'primary', summary: '把 todo 或 active Task 标记为 abandoned；终态事实可由统一 update 带原因更正。',
       help: ['Usage: buildr task abandon <task-id> --reason <text> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]', '', '把todo或active Task标记为abandoned；终态事实仍可通过带原因的统一update显式更正。', '该动作只更新顶层Task Record，不执行Git或其他专业动作。'],
       match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'abandon',
-      run: (runtime: TaskCommandRuntime, context: CliContext) => taskRecordCommand(application || runtime, 'abandon', context.argv.slice(4)),
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'abandon', context.argv.slice(4)),
     },
   ].map(Object.freeze));
 }
@@ -294,7 +291,7 @@ export function createTaskReviewCliContributions(application: TaskReviewCliRunti
   ].map(Object.freeze));
 }
 
-function createTaskRecordModule(requires: TaskRecordModuleRequires) {
+function createTaskModule(requires: TaskModuleRequires) {
   const privateComposition = Object.assign({},
     requires['workspace.structured-store'],
     requires['project-service.reader'],
@@ -307,47 +304,48 @@ function createTaskRecordModule(requires: TaskRecordModuleRequires) {
     taskServiceRepository: createTaskServiceRepository(),
     taskChangeRepository: createTaskChangeRepository(),
   });
-  const applicationRuntime = registerTaskRecordApplication(privateComposition as TaskRecordApplicationRuntime);
-  registerTaskRecordRetrospectiveDocument(applicationRuntime);
-
-  const application = pick(applicationRuntime, APPLICATION_METHODS);
-  const persistenceRead = pick(applicationRuntime, PERSISTENCE_READ_METHODS);
+  const queryRuntime = registerTaskQueryApplication(privateComposition as TaskQueryApplicationRuntime);
+  registerTaskRetrospectiveDocument(queryRuntime);
+  const commandRuntime = registerTaskCommandApplication(queryRuntime as unknown as TaskQueryApplicationRuntime & TaskCommandApplicationRuntime);
+  const query = pick(queryRuntime, TASK_QUERY_METHODS);
+  const command = pick(commandRuntime, TASK_COMMAND_METHODS);
+  const interfaceRuntime = Object.freeze({ ...query, ...command });
   const runtimePortValue = Object.freeze({
-    methods: Object.freeze({ ...application, ...persistenceRead, ...pick(privateComposition, TEST_SUPPORT_METHODS) }),
+    methods: Object.freeze({ ...query, ...command, ...pick(commandRuntime, TEST_SUPPORT_METHODS) }),
     testSupportMethods: TEST_SUPPORT_METHODS,
   });
   return Object.freeze({
     provides: {
-      [TASK_RECORD_APPLICATION]: application,
-      [TASK_RECORD_PERSISTENCE_READ]: persistenceRead,
-      [TASK_RECORD_RUNTIME_PORT]: runtimePortValue,
+      [TASK_QUERY_APPLICATION]: query,
+      [TASK_COMMAND_APPLICATION]: command,
+      [TASK_RUNTIME_PORT]: runtimePortValue,
     },
     contributions: {
-      cli: createTaskRecordCliContributions(applicationRuntime),
+      cli: createTaskCliContributions(interfaceRuntime as TaskCommandRuntime),
       http: [Object.freeze({
-        id: 'task-record.http',
-        taskIdSource: TASK_RECORD_ID_SOURCE,
-        handle: (input: Omit<TaskHttpInput, 'runtime'>) => handleTaskRecordHttpRequest({ ...input, runtime: applicationRuntime }),
+        id: 'task.http',
+        taskIdSource: TASK_ID_SOURCE,
+        handle: (input: Omit<TaskHttpInput, 'runtime'>) => handleTaskHttpRequest({ ...input, runtime: interfaceRuntime as TaskHttpInput['runtime'] }),
       })],
-      diagnostics: [Object.freeze({ id: 'task-record.diagnostics', readModel: Object.freeze({ application, persistenceRead }) })],
+      diagnostics: [Object.freeze({ id: 'task.diagnostics', readModel: Object.freeze({ query }) })],
     },
   });
 }
 
-export const TASK_RECORD_MODULE = Object.freeze({
-  id: TASK_RECORD_MODULE_ID,
+export const TASK_MODULE = Object.freeze({
+  id: TASK_MODULE_ID,
   requires: Object.freeze([
     'workspace.structured-store',
     'project-service.reader',
     'change.resolver',
     'workspace.operation-memoizer',
   ]),
-  create: createTaskRecordModule,
+  create: createTaskModule,
 });
 
 function createTaskReviewModule(requires: RuntimeRequires) {
   const privateComposition = {
-    ...requires[TASK_RECORD_PERSISTENCE_READ],
+    ...requires[TASK_QUERY_APPLICATION],
     ...requires['workspace.structured-store'],
   } as DynamicRuntime & TaskReviewRepositoryRuntime & TaskReviewApplicationRuntime;
   registerTaskReviewRepository(privateComposition);
@@ -384,7 +382,7 @@ function createTaskReviewModule(requires: RuntimeRequires) {
 export const TASK_REVIEW_MODULE = Object.freeze({
   id: TASK_REVIEW_MODULE_ID,
   requires: Object.freeze([
-    TASK_RECORD_PERSISTENCE_READ,
+    TASK_QUERY_APPLICATION,
     'workspace.structured-store',
   ]),
   create: createTaskReviewModule,
@@ -394,7 +392,7 @@ export function createTaskVerificationModule(runtime: DynamicRuntime, { verifica
   return Object.freeze({
     id: TASK_VERIFICATION_MODULE_ID,
     requires: Object.freeze([
-      TASK_RECORD_PERSISTENCE_READ,
+      TASK_QUERY_APPLICATION,
       ...(verificationDeclaration ? [verificationDeclaration] : []),
     ]),
     create(requires: RuntimeRequires) {
@@ -418,7 +416,7 @@ export function createTaskVerificationModule(runtime: DynamicRuntime, { verifica
         },
         contributions: {
           cli: taskVerificationCliContributions(),
-          http: [createTaskVerificationHttpContribution(TASK_RECORD_ID_SOURCE)],
+          http: [createTaskVerificationHttpContribution(TASK_ID_SOURCE)],
         },
       });
     },
@@ -428,7 +426,7 @@ export function createTaskVerificationModule(runtime: DynamicRuntime, { verifica
 export function createParentCoordinationModule(runtime: DynamicRuntime) {
   return Object.freeze({
     id: PARENT_COORDINATION_MODULE_ID,
-    requires: Object.freeze([TASK_RECORD_APPLICATION, TASK_RECORD_PERSISTENCE_READ]),
+    requires: Object.freeze([TASK_QUERY_APPLICATION]),
     create(requires: RuntimeRequires) {
       const composition = taskPrivateComposition(runtime, requires) as DynamicRuntime & ParentCoordinationApplicationRuntime;
       registerParentCoordinationApplication(composition);
@@ -441,7 +439,7 @@ export function createParentCoordinationModule(runtime: DynamicRuntime) {
         },
         contributions: {
           cli: parentCoordinationCliContributions(),
-          http: [createParentCoordinationHttpContribution(TASK_RECORD_ID_SOURCE)],
+          http: [createParentCoordinationHttpContribution(TASK_ID_SOURCE)],
         },
       });
     },

@@ -21,14 +21,14 @@ test('Buildr Application Context restores descriptors and reuses one worker asse
   try {
     const first: any = await runtime.acquire({ application: buildrApplicationContext }, { testId: 'application-first' });
     const application: any = first.values.application;
-    const original: any = application.inspectTaskRecord;
-    application.inspectTaskRecord = () => ({ injected: true });
+    const original: any = application.inspectTask;
+    application.inspectTask = () => ({ injected: true });
     application.transientTestProperty = 'must-be-removed';
     await first.release({ outcome: 'passed' });
 
     const second: any = await runtime.acquire({ application: buildrApplicationContext }, { testId: 'application-second' });
     assert.equal(second.values.application, application);
-    assert.equal(second.values.application.inspectTaskRecord, original);
+    assert.equal(second.values.application.inspectTask, original);
     assert.equal(Object.hasOwn(second.values.application, 'transientTestProperty'), false);
     await second.release({ outcome: 'passed' });
 

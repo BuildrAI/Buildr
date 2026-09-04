@@ -16,11 +16,11 @@ export const HTTP_CONTRACT_FRESH_BUILD_SUPPORT: any = Object.freeze([
 ]);
 
 export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
-  family('task-record', 'tools/contracts/task-record-dto.ts', [
-    'src/task/interfaces/http/task-record-http-schema.ts',
+  family('task-record', 'tools/contracts/task-dto.ts', [
+    'src/task/interfaces/http/task-http-schema.ts',
   ], [
-    ['buildr', 'src/task/application/generated/task-record-dto.ts'],
-    ['buildr-web', 'src/features/task-record/api/generated/task-record-dto.ts'],
+    ['buildr', 'src/task/application/generated/task-dto.ts'],
+    ['buildr-web', 'src/features/task-record/api/generated/task-dto.ts'],
   ]),
   family('task-professional', 'tools/contracts/task-professional-dto.ts', [
     'src/task/interfaces/http/task-professional-http-contracts.ts',

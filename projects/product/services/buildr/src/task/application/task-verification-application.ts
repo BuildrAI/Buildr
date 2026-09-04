@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveSourceRoot } from '../../workspace/domain/source-root.ts';
-import { taskRecordEffectiveProjectCodes } from './task-record-validation.ts';
+import { taskRecordEffectiveProjectCodes } from './task-validation.ts';
 import { normalizeTaskVerificationCheck, normalizeTaskVerificationGap, normalizeTaskVerificationReport, taskVerificationError, type TaskVerificationCheck, type TaskVerificationDeclarationReference, type TaskVerificationGap, type TaskVerificationReport } from '../domain/task-verification.ts';
-import type { TaskPersistence } from './task-record-dto.ts';
+import type { TaskPersistence } from './task-dto.ts';
 import type { TaskVerificationRepositoryRuntime } from '../persistence/task-verification-repository.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import type { TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
@@ -21,15 +21,15 @@ type VerificationSlot = {
   path: string; present: boolean; report: TaskVerificationReport | null; reportDigest: string | null;
   applicability: VerificationApplicability | null; observedAt?: string;
 };
-export type VerificationApplicationRuntime = Omit<TaskVerificationRepositoryRuntime, 'readTaskRecordPersistence'> & {
-  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+export type VerificationApplicationRuntime = Omit<TaskVerificationRepositoryRuntime, 'readTask'> & {
+  readTask(targetRoot: string, taskId: string): TaskPersistence;
   runWorkspaceTransaction<T>(targetRoot: string, action: (context: TransactionContext) => T): T;
   readProjectRegistryPersistence(targetRoot: string): { registry: { projects: Record<string, { source: ProjectSource; workspaceId?: string }> } };
   readServiceRegistryPersistence?(targetRoot: string, project: { source: ProjectSource; workspaceId?: string }, workspaceId?: string): { registry?: { services?: Record<string, unknown> } };
   parseProjectVerification(content: string, source: string): unknown;
   validateProjectVerification(declaration: unknown, input: { projectCode: string; services: string[] }): string[];
   normalizeProjectVerification(declaration: unknown, input: { projectCode: string; services: string[] }): ProjectVerificationMap;
-  prepareTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  prepareTask(targetRoot: string, taskId: string): TaskPersistence;
   inspectTaskVerification?: (targetRoot: string, taskId: string, input?: unknown) => unknown;
   inspectTaskVerificationView?: (targetRoot: string, taskId: string) => unknown;
   recordTaskVerification?: (targetRoot: string, taskId: string, input: unknown) => unknown;
@@ -127,13 +127,13 @@ export function registerTaskVerificationApplication<T extends VerificationApplic
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult, { operation, status, taskId, slot: reportSlot, diagnostic: null, effects, nextActions: [] });
   }
   function inspectTaskVerification(targetRoot: string, taskId: string, input: unknown = {}) {
-    assertInput(input, new Set(['contentIdentity']), 'Task Verification inspect'); const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    assertInput(input, new Set(['contentIdentity']), 'Task Verification inspect'); const task = runtime.readTask(targetRoot, taskId);
     const contentIdentity = typeof input.contentIdentity === 'string' ? input.contentIdentity : undefined;
     return result('inspect', 'inspected', taskId, slot(task, contentIdentity));
   }
   function recordTaskVerification(targetRoot: string, taskId: string, input: unknown) {
     assertInput(input, new Set(['contentIdentity', 'contentSummary', 'checks', 'gaps', 'conclusion', 'expectedReportDigest']), 'Task Verification record');
-    const task = runtime.prepareTaskRecordPersistence(targetRoot, taskId);
+    const task = runtime.prepareTask(targetRoot, taskId);
     if (task.record.status !== 'active') throw taskVerificationError('task_verification_task_terminal', `Task ${taskId} 已是 ${task.record.status}，不能记录新的验证报告。`, 409, { status: task.record.status });
     const observedDeclarations = observeDeclarations(task);
     const checks = bindChecks(task, observedDeclarations, normalizeCallerChecks(input.checks));

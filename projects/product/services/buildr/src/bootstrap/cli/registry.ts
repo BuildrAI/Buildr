@@ -3,7 +3,7 @@ import { createRuntime, runtimeContributions } from '../runtime.ts';
 import { registerCommandHelp } from './help.ts';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.ts';
-import { createGitWorktreeCliContributions, createTaskRecordCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
+import { createGitWorktreeCliContributions, createTaskCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
 import { createOpenSpecCliContributions } from '../../task/openspec/module.ts';
 import { createWorkspaceCliContributions } from '../../workspace/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.ts';
@@ -220,7 +220,7 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
   ...createAgentAssetsCliContributions(),
   ...createGitWorktreeCliContributions(),
-  ...createTaskRecordCliContributions(),
+  ...createTaskCliContributions(),
   ...createTaskReviewCliContributions(),
   ...createOpenSpecCliContributions(),
   ...createInstallationCliContributions(),

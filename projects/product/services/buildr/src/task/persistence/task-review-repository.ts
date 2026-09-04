@@ -2,14 +2,11 @@ import crypto from 'node:crypto';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import { transactionDatabase, type TransactionContext } from '../../infrastructure/sqlite/transaction.ts';
 import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError, type TaskReviewBusinessError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
-type TaskPersistence = { root: string; record: { taskId: string } };
-
 type SqlRow = Record<string, SQLOutputValue>;
 type StructuredStore = { present: boolean; database: DatabaseSync };
 export type TaskReviewPersistence = { root: string; file: string; content: string; resultDigest: string; result: TaskReviewResult; subjectIdentity: string; outcome: string; observedAt: string; created?: boolean };
 export type TaskReviewRepositoryRuntime = {
-  assertCanonicalTaskWorkspace(targetRoot: string): string;
-  readTaskRecordPersistence(targetRoot: string, taskId: string): TaskPersistence;
+  assertCanonicalStructuredWorkspace(targetRoot: string): string;
   openWorkspaceStructuredStore(targetRoot: string, options: { writable: boolean }): StructuredStore;
   taskReviewSerialize?: ((result: TaskReviewResult) => string) | null;
   taskReviewDirectory?: (targetRoot: string, taskId: string) => string;
@@ -56,14 +53,14 @@ function persistence(root: string, taskId: string, reviewType: TaskReviewType, s
 export function renderTaskReviewResult(result: TaskReviewResult) { return JSON.stringify(normalizeTaskReviewResult(result, { expectedTaskId: result.taskId, expectedReviewType: result.reviewType })); }
 
 export function registerTaskReviewRepository<T extends TaskReviewRepositoryRuntime>(runtime: T): T {
-  function taskReviewDirectory(targetRoot: string, taskId: string) { runtime.assertCanonicalTaskWorkspace(targetRoot); return `workspace-sqlite:task-review/${taskId}`; }
-  function taskReviewResultPath(targetRoot: string, taskId: string, reviewTypeValue: unknown) { const reviewType = assertTaskReviewType(reviewTypeValue); runtime.assertCanonicalTaskWorkspace(targetRoot); return locator(taskId, reviewType); }
+  function taskReviewDirectory(targetRoot: string, taskId: string) { runtime.assertCanonicalStructuredWorkspace(targetRoot); return `workspace-sqlite:task-review/${taskId}`; }
+  function taskReviewResultPath(targetRoot: string, taskId: string, reviewTypeValue: unknown) { const reviewType = assertTaskReviewType(reviewTypeValue); runtime.assertCanonicalStructuredWorkspace(targetRoot); return locator(taskId, reviewType); }
   function readTaskReviewResultPersistence(targetRoot: string, taskId: string, reviewTypeValue: unknown, { optional = true }: { optional?: boolean } = {}): TaskReviewPersistence | null {
     const reviewType = assertTaskReviewType(reviewTypeValue);
-    const task = runtime.readTaskRecordPersistence(targetRoot, taskId);
+    const root = runtime.assertCanonicalStructuredWorkspace(targetRoot);
     let opened;
     try {
-      opened = runtime.openWorkspaceStructuredStore(task.root, { writable: false });
+      opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
       const row = opened.database.prepare('SELECT result_json, subject_identity, outcome, updated_at FROM task_review_current WHERE task_id = ? AND review_type = ?').get(taskId, reviewType);
       if (!row) {
         if (optional) return null;
@@ -72,22 +69,22 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
       const serialized = stringColumn(row, 'result_json');
       const result = decode(serialized, taskId, reviewType);
       if (stringColumn(row, 'subject_identity') !== result.subjectIdentity || stringColumn(row, 'outcome') !== result.conclusion.outcome || stringColumn(row, 'updated_at') !== result.completedAt) throw taskReviewError('task_review_query_fields_inconsistent', `${locator(taskId, reviewType)} 查询字段与Result不一致。`, 409, { taskId, reviewType });
-      return persistence(task.root, taskId, reviewType, serialized, result, row);
+      return persistence(root, taskId, reviewType, serialized, result, row);
     } catch (error) { throw asError(error, '读取', taskId, reviewType); }
     finally { try { opened?.database?.close(); } catch {} }
   }
   function writeTaskReviewResultPersistence(targetRoot: string, result: TaskReviewResult, { expectedCurrentDigest }: { expectedCurrentDigest: string }, transaction: TransactionContext): TaskReviewPersistence & { created: boolean } {
-    const task = runtime.readTaskRecordPersistence(targetRoot, result.taskId);
+    const root = runtime.assertCanonicalStructuredWorkspace(targetRoot);
     let normalized: TaskReviewResult;
     let serialized: string;
     try {
-      normalized = normalizeTaskReviewResult(result, { expectedTaskId: task.record.taskId, expectedReviewType: result.reviewType });
+      normalized = normalizeTaskReviewResult(result, { expectedTaskId: result.taskId, expectedReviewType: result.reviewType });
       serialized = (runtime.taskReviewSerialize || renderTaskReviewResult)(normalized);
-      normalized = normalizeTaskReviewResult(JSON.parse(serialized), { expectedTaskId: task.record.taskId, expectedReviewType: result.reviewType });
+      normalized = normalizeTaskReviewResult(JSON.parse(serialized), { expectedTaskId: result.taskId, expectedReviewType: result.reviewType });
       serialized = JSON.stringify(normalized);
     } catch (error: unknown) {
       const failure = errorFields(error);
-      throw taskReviewError('task_review_write_failed', `Task Review Result 写入失败（serialization）：${failure.message}`, 500, { taskId: task.record.taskId, reviewType: result.reviewType, stage: 'serialization', path: locator(task.record.taskId, result.reviewType), rollback: { status: 'not-required' } }, '原current未变化；修复serialization后重试。');
+      throw taskReviewError('task_review_write_failed', `Task Review Result 写入失败（serialization）：${failure.message}`, 500, { taskId: result.taskId, reviewType: result.reviewType, stage: 'serialization', path: locator(result.taskId, result.reviewType), rollback: { status: 'not-required' } }, '原current未变化；修复serialization后重试。');
     }
     let stage = 'mutation';
     try {
@@ -106,9 +103,9 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
         const rowSerialized = stringColumn(row, 'result_json');
         const written = decode(rowSerialized, normalized.taskId, normalized.reviewType);
         if (stringColumn(row, 'subject_identity') !== written.subjectIdentity || stringColumn(row, 'outcome') !== written.conclusion.outcome || stringColumn(row, 'updated_at') !== written.completedAt) throw taskReviewError('task_review_post_read_mismatch', 'Task Review Result与查询字段写后读取不一致。', 500, { taskId: normalized.taskId, reviewType: normalized.reviewType });
-      return { ...persistence(task.root, normalized.taskId, normalized.reviewType, rowSerialized, written, row), created: !existed };
+      return { ...persistence(root, normalized.taskId, normalized.reviewType, rowSerialized, written, row), created: !existed };
     } catch (error: unknown) {
-      throw asError(error, `写入（${stage}）`, task.record.taskId, result.reviewType, stage);
+      throw asError(error, `写入（${stage}）`, result.taskId, result.reviewType, stage);
     }
   }
   Object.assign(runtime, { taskReviewDirectory, taskReviewResultPath, readTaskReviewResultPersistence, writeTaskReviewResultPersistence, renderTaskReviewResult });

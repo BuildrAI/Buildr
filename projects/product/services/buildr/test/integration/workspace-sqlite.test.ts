@@ -112,8 +112,8 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   const validationStore: any = runtime.openWorkspaceStructuredStore(validation, { writable: true });
   assert.equal(validationStore.version, loadWorkspaceSqliteMigrations().at(-1).version);
   validationStore.database.close();
-  runtime.createTaskRecord(validation, { taskId: 'candidate-validation-probe', title: 'Candidate validation', intent: 'Verify isolated Task data.', projects: [], services: [], changes: [] });
-  assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
+  runtime.createTask(validation, { taskId: 'candidate-validation-probe', title: 'Candidate validation', intent: 'Verify isolated Task data.', projects: [], services: [], changes: [] });
+  assert.equal(runtime.readTask(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
   assert.equal(fs.existsSync(path.join(validation, '.buildr', 'local', 'workspace.sqlite')), true);
   assert.equal(fs.existsSync(retainedStore), false);
 
@@ -123,9 +123,9 @@ test('候选 runtime 只能写自身 linked validation Workspace，不能污染 
   );
   const peerRuntime: any = createRuntime();
   registerWorkspaceSqlite(peerRuntime, { sourceRoot: peerCandidateSource, observeCheckout: (root: any) => checkouts.get(path.resolve(root)) || null });
-  peerRuntime.createTaskRecord(peerValidation, { taskId: 'candidate-validation-probe', title: 'Peer candidate validation', intent: 'Verify concurrent isolated Task data.', projects: [], services: [], changes: [] });
-  assert.equal(peerRuntime.readTaskRecordPersistence(peerValidation, 'candidate-validation-probe').record.title, 'Peer candidate validation');
-  assert.equal(runtime.readTaskRecordPersistence(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
+  peerRuntime.createTask(peerValidation, { taskId: 'candidate-validation-probe', title: 'Peer candidate validation', intent: 'Verify concurrent isolated Task data.', projects: [], services: [], changes: [] });
+  assert.equal(peerRuntime.readTask(peerValidation, 'candidate-validation-probe').record.title, 'Peer candidate validation');
+  assert.equal(runtime.readTask(validation, 'candidate-validation-probe').record.title, 'Candidate validation');
   assert.equal(fs.existsSync(path.join(peerValidation, '.buildr', 'local', 'workspace.sqlite')), true);
   assert.equal(fs.existsSync(retainedStore), false);
 });
@@ -232,22 +232,22 @@ test('operation scope 只复用单次action的canonical与owner Application read
   const runtime: any = createRuntime();
   let checkoutObservations: any = 0;
   registerWorkspaceSqlite(runtime, { observeCheckout: () => { checkoutObservations += 1; return null; } });
-  runtime.createTaskRecord(root, { taskId: 'operation-scope', title: 'Operation scope', intent: 'Verify bounded memoization.', projects: [], services: [], changes: [] });
+  runtime.createTask(root, { taskId: 'operation-scope', title: 'Operation scope', intent: 'Verify bounded memoization.', projects: [], services: [], changes: [] });
   assert.ok(checkoutObservations > 0, 'writable action 必须观察 provenance');
   checkoutObservations = 0;
 
   let taskReads: any = 0;
-  const readTaskRecordPersistence: any = runtime.readTaskRecordPersistence;
-  runtime.readTaskRecordPersistence = (...args: any[]) => { taskReads += 1; return readTaskRecordPersistence(...args); };
+  const readTask: any = runtime.readTask;
+  runtime.readTask = (...args: any[]) => { taskReads += 1; return readTask(...args); };
   runtime.withWorkspaceStructuredStoreOperation(root, () => {
     assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
     assert.equal(runtime.assertCanonicalStructuredWorkspace(root), root);
-    assert.deepEqual(runtime.inspectTaskRecord(root, 'operation-scope'), runtime.inspectTaskRecord(root, 'operation-scope'));
+    assert.deepEqual(runtime.inspectTask(root, 'operation-scope'), runtime.inspectTask(root, 'operation-scope'));
   });
   assert.equal(checkoutObservations, 0, '只读 action 不得观察 canonical Workspace provenance');
   assert.equal(taskReads, 0, 'Task模块内部读取保持私有且没有跨专业兼容Facade');
 
-  runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTaskRecord(root, 'operation-scope'));
+  runtime.withWorkspaceStructuredStoreOperation(root, () => runtime.inspectTask(root, 'operation-scope'));
   assert.equal(checkoutObservations, 0, '下一只读 action 仍不得观察 canonical Workspace provenance');
   assert.equal(taskReads, 0, '新operation中的Task模块内部读取也不经过可替换的兼容Facade');
 
@@ -279,7 +279,7 @@ test('version 1 Task Store 原位升级到 latest 且保留既有 Task', (t: any
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
   assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'existing-task'").get().parent_task_id, null);
   upgraded.database.close();
-  const record: any = runtime.readTaskRecordPersistence(root, 'existing-task').record;
+  const record: any = runtime.readTask(root, 'existing-task').record;
   assert.equal(record.parentTaskId, null);
   assert.equal('childTaskIds' in record, false);
 });
@@ -304,8 +304,8 @@ test('version 2 Parent 关系原位迁入 tasks.parent_task_id 并删除关系�
   assert.equal(upgraded.database.prepare("SELECT parent_task_id FROM tasks WHERE task_id = 'child-task'").get().parent_task_id, 'parent-task');
   assert.equal(upgraded.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'task_parent_relations'").get().count, 0);
   upgraded.database.close();
-  assert.equal(runtime.readTaskRecordPersistence(root, 'child-task').record.parentTaskId, 'parent-task');
-  assert.deepEqual(runtime.readTaskRecordViewPersistence(root, 'parent-task').taskRelations.children.map((child: any) => child.taskId), ['child-task']);
+  assert.equal(runtime.readTask(root, 'child-task').record.parentTaskId, 'parent-task');
+  assert.deepEqual(runtime.readTaskView(root, 'parent-task').taskRelations.children.map((child: any) => child.taskId), ['child-task']);
 });
 
 test('version 3 current schema连续升级且不迁移旧YAML', (t: any) => {
@@ -323,7 +323,7 @@ test('version 3 current schema连续升级且不迁移旧YAML', (t: any) => {
   fs.writeFileSync(legacy, 'legacy: inert\n');
 
   const runtime: any = createRuntime();
-  const prepared: any = runtime.prepareTaskRecordPersistence(root, 'existing-task');
+  const prepared: any = runtime.prepareTask(root, 'existing-task');
   assert.equal(prepared.record.title, 'Existing');
   const upgraded: any = runtime.openWorkspaceStructuredStore(root, { writable: false });
   assert.equal(upgraded.version, migrations.at(-1).version);
@@ -414,12 +414,12 @@ test('v19 数据库先升级并观察当前摘要，再完成任务且不绕过�
       } finally { database.close(); }
 
       const runtime: any = createRuntime();
-      assert.throws(() => runtime.inspectTaskRecord(root, 'upgrade-task'), (error: any) => error.code === 'workspace_store_migration_required');
+      assert.throws(() => runtime.inspectTask(root, 'upgrade-task'), (error: any) => error.code === 'workspace_store_migration_required');
       if (scenario.failMigration) {
-        assert.throws(() => runtime.prepareTaskRecordPersistence(root, 'upgrade-task'), (error: any) => error.code === scenario.error);
+        assert.throws(() => runtime.prepareTask(root, 'upgrade-task'), (error: any) => error.code === scenario.error);
       } else {
-        const prepared: any = runtime.prepareTaskRecordPersistence(root, 'upgrade-task');
-        const complete: any = () => runtime.completeTaskRecord(root, 'upgrade-task', {
+        const prepared: any = runtime.prepareTask(root, 'upgrade-task');
+        const complete: any = () => runtime.completeTask(root, 'upgrade-task', {
           expectedRecordDigest: scenario.expectedRecordDigest || prepared.recordDigest,
           summary: '成果已交付',
         });
@@ -428,7 +428,7 @@ test('v19 数据库先升级并观察当前摘要，再完成任务且不绕过�
         const result: any = complete();
         assert.equal(result.record.status, 'completed');
         assert.deepEqual(result.record.result, { summary: '成果已交付' });
-        assert.equal(runtime.inspectTaskRecord(root, 'upgrade-task').recordDigest, result.recordDigest);
+        assert.equal(runtime.inspectTask(root, 'upgrade-task').recordDigest, result.recordDigest);
         }
       }
       const after: any = new DatabaseSync(file, { readOnly: true });
