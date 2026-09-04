@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Empty, Form, Input, Select, Typography } from 'antd';
 import type { TaskListRequest } from '../api/generated/task-dto';
-import { useTaskList, type TaskListItem } from '../hooks/useTaskList';
+import { useTaskList } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { TaskTable } from '../components/TaskTable';
@@ -22,25 +22,6 @@ function serviceOptionLabel(key: string, serviceNames: Record<string, string>): 
   return slash >= 0 ? key.slice(slash + 1) : key;
 }
 
-function matchesTaskQuery(item: TaskListItem, raw: string): boolean {
-  const text = raw.trim().replace(/^#/, '');
-  if (!text) return true;
-  const lowered = text.toLowerCase();
-  const tokens = [...new Set(lowered.split(/[^0-9a-z\u0080-\uffff]+/).filter(Boolean))];
-  const needles = tokens.length ? tokens : [lowered];
-  const compactId = item.record.taskId.toLowerCase().replace(/[-_.]/g, '');
-  const fields = [
-    item.record.title,
-    item.record.intent,
-    item.record.taskId,
-    compactId,
-  ].map((value) => value.toLowerCase());
-  return needles.every((needle) => {
-    const compact = needle.replace(/[-_.]/g, '');
-    return fields.some((field) => field.includes(needle) || (compact.length > 0 && field.includes(compact)));
-  });
-}
-
 export function TasksPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
   const { taskId: selectedTaskId } = useParams();
@@ -48,6 +29,7 @@ export function TasksPage() {
   const href = (path: string) => workspaceHref(workspaceId, path);
 
   const [q, setQ] = useState('');
+  const [query, setQuery] = useState('');
   const [status, setStatus] = useState<TaskStatusFilter>('open');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
@@ -61,6 +43,7 @@ export function TasksPage() {
   const [draftRetrospectiveState, setDraftRetrospectiveState] = useState<RetrospectiveFilter>('all');
 
   const filters: TaskListRequest = {
+    ...(query ? { q: query } : {}),
     ...(project ? { project } : {}), ...(service ? { service } : {}),
     ...(status !== 'all' ? { status } : {}), ...(hasChildren !== 'all' ? { hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
@@ -69,7 +52,7 @@ export function TasksPage() {
     setWorkspace(workspace);
     setBreadcrumbParts([workspace.workspace.name, '任务']);
   }, [setWorkspace, setBreadcrumbParts]);
-  const { tasks, totalTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, errorMessage } = useTaskList({ workspaceId, filters, onWorkspace });
+  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore } = useTaskList({ workspaceId, filters, onWorkspace });
 
   const draftServiceOptions = draftProject
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
@@ -103,10 +86,27 @@ export function TasksPage() {
     setFilterOpen(false);
   };
 
-  const visibleTasks = useMemo(
-    () => tasks.filter((item) => matchesTaskQuery(item, q)),
-    [tasks, q],
-  );
+  const visibleTasks = tasks;
+  const prefetchTaskId = hasMore && visibleTasks.length >= 40
+    ? visibleTasks[Math.max(0, visibleTasks.length - 11)]?.record.taskId
+    : undefined;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setQuery(q.trim()), 200);
+    return () => window.clearTimeout(timeout);
+  }, [q]);
+
+  useEffect(() => {
+    if (!prefetchTaskId || loadingMore || loadMoreError || typeof IntersectionObserver === 'undefined') return;
+    const row = document.querySelector<HTMLElement>('#task-table-body [data-task-prefetch="true"]');
+    const root = document.querySelector<HTMLElement>('.resource-list-host .resource-list-section');
+    if (!row) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMore();
+    }, { root, threshold: 0.1 });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [prefetchTaskId, loadingMore, loadMoreError, loadMore]);
 
   useEffect(() => {
     setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
@@ -241,7 +241,7 @@ export function TasksPage() {
         </div>
         <div className="task-toolbar-meta">
           <span id="tasks-state" className="count-label">
-            {loading ? '正在读取…' : (errorMessage ? '读取失败' : `${visibleTasks.length} 个任务`)}
+            {loading ? '正在读取…' : (errorMessage ? '读取失败' : (visibleTasks.length < matchingTaskCount ? `已加载 ${visibleTasks.length} / 共 ${matchingTaskCount} 个任务` : `${matchingTaskCount} 个任务`))}
           </span>
           <div className="task-list-tools">
             <TaskFilters open={filterOpen} active={filtersActive} content={filterPopup} onOpenChange={(open) => {
@@ -263,7 +263,11 @@ export function TasksPage() {
       </section>
       <section className="resource-list-section">
         <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>
-          <TaskTable tasks={visibleTasks} selectedTaskId={selectedTaskId} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={(id) => navigate(href(`/tasks/${encodeURIComponent(id)}`))} />
+          <TaskTable tasks={visibleTasks} selectedTaskId={selectedTaskId} prefetchTaskId={prefetchTaskId} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={(id) => navigate(href(`/tasks/${encodeURIComponent(id)}`))} />
+          <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
+            {loadingMore ? '正在继续读取…' : null}
+            {loadMoreError ? <Button size="small" onClick={retryLoadMore}>继续读取失败，重试</Button> : null}
+          </div>
         </div>
         <div id="task-empty" className={`empty-state${showEmpty ? '' : ' hidden'}`}>
           {showEmpty ? (

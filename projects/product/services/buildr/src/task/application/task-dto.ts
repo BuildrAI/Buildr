@@ -47,7 +47,7 @@ export type TaskRecordBusinessError = Error & {
 export type TaskPersistence = { root: string; record: TaskRecord; recordDigest: string };
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
 export type TaskView = TaskPersistence & { taskRelations: { parent: TaskRelation | null; children: TaskRelation[] } };
-export type TaskQueryFilters = { q?: string; project?: string; service?: TaskServiceReference; status?: string; hasChildren?: string; retrospectiveState?: string };
+export type TaskQueryFilters = { q?: string; project?: string; service?: TaskServiceReference; status?: string; hasChildren?: string; retrospectiveState?: string; pageSize?: number; cursor?: string };
 
 export type TaskCreateInputDto = {
   taskId: string;

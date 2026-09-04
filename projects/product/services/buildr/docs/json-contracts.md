@@ -30,7 +30,7 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v5` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v3` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v2`（v1只读兼容）/ `buildr.contribution-handoff/v1` |
-| Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v5` |
+| Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v6` |
 | Buildr Web Task本机复盘文档读取 | `buildr.task-retrospective-document/v1` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
 | `task finish run/inspect`（缺省或`--detail compact`） | `buildr.task-finish-compact-result/v1` |
@@ -57,7 +57,7 @@ Task Finish的canonical Result由SQLite current/terminal authority决定；CLI�
 
 `buildr.parent-coordination-result/v4`只读返回Task目标、当前Record摘要、`parent|child|ordinary` mode、直接Children结果、完成观察身份、已保存父任务完成依据和可选旧Parent Plan历史。它不读取Review、Verification、Development、Finish、Contribution或交付状态，不推断依赖和完成比例，也不传播任何Task状态。
 
-Buildr Web stored-state projection使用详情v3和列表v5，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。`open`只是查询语义，不持久。列表不读取Markdown正文；`recordDigest`与关系摘要都不进入Task Record schema，反向Children只存在于`taskRelations`查询投影。
+Buildr Web stored-state projection使用详情v3和列表v6，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。列表v6增加可选`pageSize`/`cursor`与`matchingTaskCount`/`hasMore`/`nextCursor`；未提供分页参数的Application调用仍返回全部匹配Task。`open`只是查询语义，不持久。列表不读取Markdown正文或解析Project、Service、Git、Worktree与OpenSpec Change当前性；`recordDigest`与关系摘要都不进入Task Record schema，反向Children只存在于`taskRelations`查询投影。
 
 
 ## Doctor v1 结果语义

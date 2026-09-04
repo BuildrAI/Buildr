@@ -9,6 +9,7 @@ import { TaskProject } from '../domain/task-project.ts';
 import { TaskService } from '../domain/task-service.ts';
 import type { SqliteContext } from '../../infrastructure/sqlite/transaction.ts';
 import type { TaskRepository } from '../persistence/task-repository.ts';
+import type { TaskTableCursor } from '../persistence/task-repository.ts';
 import type { TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord, TaskServiceReference, TaskView } from './task-dto.ts';
 import type { TaskProjectRepository } from '../persistence/task-project-repository.ts';
 import type { TaskServiceRepository } from '../persistence/task-service-repository.ts';
@@ -18,6 +19,7 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contra
 import type { TaskListInputDto } from './task-dto.ts';
 
 const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
+const MAX_TASK_PAGE_SIZE = 100;
 
 type ChangeResolution = {
   schemaVersion: string;
@@ -131,6 +133,41 @@ function digestRecord(record: unknown): string {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex')}`;
 }
 
+function taskStatusRank(status: string): number {
+  return status === 'todo' ? 0 : status === 'active' ? 1 : 2;
+}
+
+function cursorIdentity(filters: TaskQueryFilters): string {
+  return digestRecord({
+    q: filters.q ?? '', project: filters.project ?? null,
+    service: filters.service ? serviceKey(filters.service) : null,
+    status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
+    pageSize: filters.pageSize ?? null,
+  });
+}
+
+function decodeTaskCursor(raw: string, expectedIdentity: string): TaskTableCursor {
+  try {
+    const value = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Record<string, unknown>;
+    if (value.v !== 1 || value.query !== expectedIdentity || !Number.isInteger(value.statusRank) || Number(value.statusRank) < 0 || Number(value.statusRank) > 2
+      || typeof value.updatedAt !== 'string' || !value.updatedAt || typeof value.taskId !== 'string') throw new Error('invalid cursor');
+    const normalizedTaskId = taskId(value.taskId, 'cursor.taskId');
+    return { statusRank: Number(value.statusRank), updatedAt: value.updatedAt, taskId: normalizedTaskId };
+  } catch {
+    throw taskRecordError('task_record_filter_invalid', 'cursor 无效或与当前 Task query 不匹配。', 400, { field: 'cursor' });
+  }
+}
+
+function encodeTaskCursor(filters: TaskQueryFilters, task: Task): string {
+  return Buffer.from(JSON.stringify({
+    v: 1,
+    query: cursorIdentity(filters),
+    statusRank: taskStatusRank(task.status),
+    updatedAt: task.updatedAt,
+    taskId: task.taskId,
+  }), 'utf8').toString('base64url');
+}
+
 function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null) {
   const relevant = (record: TaskRecord) => ({ taskId: record.taskId, title: record.title, intent: record.intent, scope: record.scope, changes: record.changes, parentTaskId: record.parentTaskId, isParent: record.isParent === true, status: record.status, result: record.result });
   return { parent, children, isParent: parent.isParent === true || children.length > 0, legacyPlan, diagnostic, recordDigest: digestRecord(parent), snapshotIdentity: digestRecord({ parent: relevant(parent), children: children.map(relevant) }) };
@@ -233,7 +270,11 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
         const serviceIds = new Set(services.findTaskIds(context, filters.service));
         scopedIds = scopedIds ? scopedIds.filter((id) => serviceIds.has(id)) : [...serviceIds];
       }
-      const found = tasks.readMany(context, { q: filters.q, status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState, ...(scopedIds ? { taskIds: scopedIds } : {}) });
+      const tableFilters = { q: filters.q, status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState, ...(scopedIds ? { taskIds: scopedIds } : {}) };
+      const cursor = filters.cursor ? decodeTaskCursor(filters.cursor, cursorIdentity(filters)) : undefined;
+      const fetched = tasks.readMany(context, { ...tableFilters, ...(cursor ? { cursor } : {}), ...(filters.pageSize ? { limit: filters.pageSize + 1 } : {}) });
+      const hasMore = Boolean(filters.pageSize && fetched.length > filters.pageSize);
+      const found = hasMore ? fetched.slice(0, filters.pageSize) : fetched;
       const ids = found.map((item) => item.taskId);
       const projectValues = projects.readMany(context, ids);
       const serviceValues = services.readMany(context, ids);
@@ -243,7 +284,16 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
         const record = recordWith(task, projectValues.get(task.taskId) || [], serviceValues.get(task.taskId) || [], changeValues.get(task.taskId) || []);
         return { root, record, recordDigest: digestRecord(record), taskRelations: relations.get(task.taskId) || { parent: null, children: [] } };
       });
-      return { root, views, totalTaskCount: tasks.count(context), filterOptions: { projects: projects.listOptions(context), services: services.listOptions(context).map((item) => ({ project: item.project, service: item.service })) } };
+      return {
+        root,
+        views,
+        totalTaskCount: tasks.count(context),
+        matchingTaskCount: filters.pageSize ? tasks.countMatching(context, tableFilters) : found.length,
+        pageSize: filters.pageSize ?? null,
+        hasMore,
+        nextCursor: hasMore && found.length ? encodeTaskCursor(filters, found[found.length - 1]) : null,
+        filterOptions: { projects: projects.listOptions(context), services: services.listOptions(context).map((item) => ({ project: item.project, service: item.service })) },
+      };
     });
   }
 
@@ -266,7 +316,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, (context) => parentContext(context, root, taskIdValue));
   }
   function normalizedQueryFilters(input: TaskListInputDto = {}): TaskQueryFilters {
-    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']), 'Task query');
+    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState', 'pageSize', 'cursor']), 'Task query');
     const filters: TaskQueryFilters = {};
     if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
     if (input.project !== undefined && String(input.project).trim()) filters.project = text(input.project, 'project');
@@ -282,6 +332,15 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     if (input.retrospectiveState !== undefined) {
       if (typeof input.retrospectiveState !== 'string' || !['missing', 'pending-decision', 'decided', 'all'].includes(input.retrospectiveState)) throw taskRecordError('task_record_filter_invalid', 'retrospectiveState只支持missing、pending-decision、decided或all。', 400, { field: 'retrospectiveState', value: input.retrospectiveState });
       filters.retrospectiveState = input.retrospectiveState;
+    }
+    if (input.pageSize !== undefined) {
+      const normalizedPageSize = typeof input.pageSize === 'number' ? input.pageSize : Number(String(input.pageSize));
+      if (!Number.isInteger(normalizedPageSize) || normalizedPageSize < 1 || normalizedPageSize > MAX_TASK_PAGE_SIZE) throw taskRecordError('task_record_filter_invalid', `pageSize 只支持 1-${MAX_TASK_PAGE_SIZE} 的整数。`, 400, { field: 'pageSize', value: input.pageSize });
+      filters.pageSize = normalizedPageSize;
+    }
+    if (input.cursor !== undefined) {
+      if (!filters.pageSize || typeof input.cursor !== 'string' || !input.cursor.trim()) throw taskRecordError('task_record_filter_invalid', 'cursor 必须与 pageSize 一起提供。', 400, { field: 'cursor' });
+      filters.cursor = input.cursor.trim();
     }
     return filters;
   }
@@ -370,7 +429,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
   function queryTasks(targetRoot: string, input: TaskListInputDto = {}) {
     const filters = normalizedQueryFilters(input);
     const persistence = queryTaskViews(targetRoot, filters);
-    const tasks = persistence.views.map((view) => storedView(view, inspectReferenceAvailability(persistence.root, view.record)));
+    const tasks = persistence.views.map((view) => storedView(view));
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordList, {
       filters: {
         q: filters.q ?? '', project: filters.project ?? null,
@@ -382,8 +441,12 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
         services: persistence.filterOptions.services.map(serviceKey),
       },
       totalTaskCount: persistence.totalTaskCount,
+      matchingTaskCount: persistence.matchingTaskCount,
+      pageSize: persistence.pageSize,
+      hasMore: persistence.hasMore,
+      nextCursor: persistence.nextCursor,
       tasks,
-      diagnostics: tasks.flatMap((view) => view.referenceDiagnostics),
+      diagnostics: [],
     });
   }
 

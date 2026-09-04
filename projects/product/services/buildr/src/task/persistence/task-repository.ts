@@ -5,7 +5,10 @@ import { Task, type ParentCompletion, type TaskResultHistory, type TaskRetrospec
 
 type SqlRow = Record<string, SQLOutputValue>;
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
-export type TaskTableQuery = { q?: string; status?: string; hasChildren?: string; retrospectiveState?: string; taskIds?: string[] };
+export type TaskTableCursor = { statusRank: number; updatedAt: string; taskId: string };
+export type TaskTableQuery = { q?: string; status?: string; hasChildren?: string; retrospectiveState?: string; taskIds?: string[]; limit?: number; cursor?: TaskTableCursor };
+
+const STATUS_RANK_SQL = "CASE status WHEN 'todo' THEN 0 WHEN 'active' THEN 1 ELSE 2 END";
 
 function taskRecordError(code: string, message: string, status = 500, details?: unknown): Error {
   return Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
@@ -81,7 +84,7 @@ function appendSearch(conditions: string[], parameters: SQLInputValue[], raw: st
   parameters.push(...needles.flatMap((needle) => [needle, needle, needle]));
 }
 
-function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
+function conditions(input: TaskTableQuery = {}, includeCursor = true): { sql: string; parameters: SQLInputValue[] } {
   const conditions: string[] = [];
   const parameters: SQLInputValue[] = [];
   if (input.taskIds) {
@@ -95,7 +98,25 @@ function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputV
   if (input.hasChildren === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM tasks child WHERE child.parent_task_id = tasks.task_id)');
   if (input.retrospectiveState === 'missing') conditions.push('retrospective_state IS NULL');
   else if (input.retrospectiveState && input.retrospectiveState !== 'all') { conditions.push('retrospective_state = ?'); parameters.push(input.retrospectiveState); }
-  return { sql: `SELECT * FROM tasks ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY updated_at DESC, task_id`, parameters };
+  if (includeCursor && input.cursor) {
+    conditions.push(`(${STATUS_RANK_SQL} > ? OR (${STATUS_RANK_SQL} = ? AND (updated_at < ? OR (updated_at = ? AND task_id > ?))))`);
+    parameters.push(input.cursor.statusRank, input.cursor.statusRank, input.cursor.updatedAt, input.cursor.updatedAt, input.cursor.taskId);
+  }
+  return { sql: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', parameters };
+}
+
+function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
+  const clause = conditions(input);
+  const limit = input.limit === undefined ? '' : ' LIMIT ?';
+  return {
+    sql: `SELECT * FROM tasks ${clause.sql} ORDER BY ${STATUS_RANK_SQL}, updated_at DESC, task_id${limit}`,
+    parameters: input.limit === undefined ? clause.parameters : [...clause.parameters, input.limit],
+  };
+}
+
+function countQuery(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
+  const clause = conditions(input, false);
+  return { sql: `SELECT COUNT(*) AS count FROM tasks ${clause.sql}`, parameters: clause.parameters };
 }
 
 export function createTaskRepository() {
@@ -116,6 +137,13 @@ export function createTaskRepository() {
       const db = database(context);
       if (!db) return 0;
       const row = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
+      return row ? numberColumn(row, 'count') : 0;
+    },
+    countMatching(context: SqliteContext, input: TaskTableQuery = {}): number {
+      const db = database(context);
+      if (!db) return 0;
+      const statement = countQuery(input);
+      const row = db.prepare(statement.sql).get(...statement.parameters);
       return row ? numberColumn(row, 'count') : 0;
     },
     relations(context: SqliteContext, taskIds: string[]): Map<string, { parent: TaskRelation | null; children: TaskRelation[] }> {

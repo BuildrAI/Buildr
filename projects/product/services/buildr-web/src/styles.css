@@ -505,6 +505,15 @@ a {
   -ms-overflow-style: none;
 }
 
+.task-load-more-state {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+
 .resource-list-host .ant-table-container,
 .resource-list-host .ant-table-content {
   border: 0 !important;

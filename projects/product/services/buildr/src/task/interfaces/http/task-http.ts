@@ -11,7 +11,7 @@ import {
 
 export { TASK_ID_SOURCE };
 
-const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']);
+const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState', 'pageSize', 'cursor']);
 const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})$`);
 const TASK_RETROSPECTIVE_DOCUMENT_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/retrospective-document$`);
 const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/complete$`);

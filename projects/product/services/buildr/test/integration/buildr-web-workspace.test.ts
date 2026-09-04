@@ -317,7 +317,13 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const taskDto: any = read('../buildr-web/src/features/task/api/generated/task-dto.ts');
   const server: any = read('src/web/http/server.ts');
   assert.match(listHook, /new AbortController\(\)/);
-  assert.match(tasks, /matchesTaskQuery/);
+  assert.doesNotMatch(tasks, /matchesTaskQuery/);
+  assert.match(tasks, /query \? \{ q: query \}/);
+  assert.match(listHook, /pageSize: TASK_PAGE_SIZE/);
+  assert.match(listHook, /cursor/);
+  assert.match(listHook, /attemptedCursors/);
+  assert.match(tasks, /IntersectionObserver/);
+  assert.match(tasks, /visibleTasks\.length - 11/);
   assert.match(tasks, /hasChildren/);
   assert.match(tasks, /retrospectiveState/);
   assert.match(tasks, /value: 'pending-decision', label: '等待决定'/);
@@ -329,6 +335,8 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
   assert.doesNotMatch(taskDto, /childTaskIds|childTaskCount|storedChangeReferences/);
+  assert.match(taskDto, /matchingTaskCount/);
+  assert.match(taskDto, /nextCursor/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.match(tasks, /当前筛选没有匹配任务/);
   assert.doesNotMatch(tasks, /task-diagnostics|历史引用诊断/);

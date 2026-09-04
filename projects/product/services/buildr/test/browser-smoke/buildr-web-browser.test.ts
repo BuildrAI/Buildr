@@ -665,6 +665,57 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-empty').innerText(), /当前筛选没有匹配任务/);
     await page.locator('#task-filter-q').clear();
     process.stderr.write('[buildr-browser] selector=task phase=filtered-empty-verified\n');
+
+    let paginationStore: any = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
+    const insertPaginationTask: any = paginationStore.database.prepare('INSERT INTO tasks(task_id, title, intent, status, result_summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    paginationStore.database.exec('BEGIN');
+    for (let index: any = 0; index < 60; index += 1) {
+      insertPaginationTask.run(`browser-page-${String(index).padStart(2, '0')}`, `滚动续载任务 ${index}`, '验证 50/40 信息流分页', 'completed', '分页浏览器夹具', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+    }
+    paginationStore.database.exec('COMMIT');
+    paginationStore.database.close();
+    const paginationRequests: any[] = [];
+    const observePaginationRequest: any = (request: any) => {
+      const requestUrl: any = new URL(request.url());
+      if (requestUrl.pathname.endsWith('/tasks')) paginationRequests.push(requestUrl);
+    };
+    page.on('request', observePaginationRequest);
+    const paginationRoute: any = /\/tasks(?:\?|$)/;
+    let failNextPaginationRequest: any = true;
+    await page.route(paginationRoute, async (route: any) => {
+      const requestUrl: any = new URL(route.request().url());
+      if (failNextPaginationRequest && requestUrl.searchParams.has('cursor')) {
+        failNextPaginationRequest = false;
+        expectedBrowserErrors.add(requestUrl.href);
+        return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'browser_pagination_fixture_failed', message: '续载夹具失败' } }) });
+      }
+      return route.continue();
+    });
+    await openTaskFilterPanel(page);
+    await selectAntdOption(page, 'task-filter-status', '全部');
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 50);
+    assert.match(await page.locator('#tasks-state').innerText(), /已加载 50 \/ 共 \d+ 个任务/);
+    const prefetchRow: any = page.locator('#task-table-body [data-task-prefetch="true"]');
+    await prefetchRow.scrollIntoViewIfNeeded();
+    await page.locator('#task-load-more-state').getByRole('button', { name: '继续读取失败，重试', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 50, '续载失败不得清空或替换已加载 Task');
+    await page.locator('#task-load-more-state').getByRole('button', { name: '继续读取失败，重试', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length > 50);
+    const loadedTaskIds: any[] = await page.locator('#task-table-body tr.ant-table-row').evaluateAll((rows: any[]) => rows.map((row: any) => row.getAttribute('data-task-id')));
+    assert.equal(new Set(loadedTaskIds).size, loadedTaskIds.length, '滚动追加不得产生重复 Task');
+    assert.equal(paginationRequests.some((requestUrl: any) => requestUrl.searchParams.get('pageSize') === '50' && requestUrl.searchParams.has('cursor')), true, '第40条附近必须使用cursor预取下一批');
+    await page.unroute(paginationRoute);
+    page.off('request', observePaginationRequest);
+    paginationStore = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
+    paginationStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'browser-page-%'").run();
+    paginationStore.database.close();
+    await openTaskFilterPanel(page);
+    await page.locator('#task-filter-clear').click();
+    await applyTaskFilters(page);
+    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
+    process.stderr.write('[buildr-browser] selector=task phase=infinite-scroll-verified\n');
+
     await page.goto(`${url}/workspaces/${otherWorkspaceId}/tasks`);
     await page.locator('#task-empty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-empty').innerText(), /还没有正式任务记录/);

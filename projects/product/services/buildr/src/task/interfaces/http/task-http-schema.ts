@@ -135,9 +135,11 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     status: { enum: ['open', 'todo', 'active', 'completed', 'abandoned', 'all'] },
     hasChildren: { enum: ['yes', 'no', 'all'] },
     retrospectiveState: { enum: ['missing', 'pending-decision', 'decided', 'all'] },
+    pageSize: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$' },
+    cursor: nonEmptyText,
   }), defs),
   listResponse: schema('list/response', 'TaskListResponse', closed({
-    schemaVersion: { const: 'buildr.task-record-list/v5' },
+    schemaVersion: { const: 'buildr.task-record-list/v6' },
     filters: closed({
       q: { type: 'string' },
       project: nullable(nonEmptyText),
@@ -148,9 +150,13 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     }, ['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']),
     filterOptions: closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ type: 'string', pattern: QUALIFIED_PATTERN }) }, ['projects', 'services']),
     totalTaskCount: { type: 'integer', minimum: 0 },
+    matchingTaskCount: { type: 'integer', minimum: 0 },
+    pageSize: nullable({ type: 'integer', minimum: 1, maximum: 100 }),
+    hasMore: { type: 'boolean' },
+    nextCursor: nullable(nonEmptyText),
     tasks: arrayOf({ $ref: '#/$defs/StoredTaskView' }),
     diagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
-  }, ['schemaVersion', 'filters', 'filterOptions', 'totalTaskCount', 'tasks', 'diagnostics']), defs),
+  }, ['schemaVersion', 'filters', 'filterOptions', 'totalTaskCount', 'matchingTaskCount', 'pageSize', 'hasMore', 'nextCursor', 'tasks', 'diagnostics']), defs),
   detailRequest: schema('detail/request', 'TaskDetailRequest', closed({}), defs),
   detailResponse: schema('detail/response', 'TaskDetailResponse', closed({
     schemaVersion: { const: 'buildr.task-record-view/v3' },

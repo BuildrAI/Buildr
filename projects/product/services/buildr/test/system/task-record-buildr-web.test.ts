@@ -73,7 +73,33 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
       const value: any = Reflect.get(database, field); return typeof value === 'function' ? value.bind(database) : value;
     } }) };
   };
-  const bulkView: any = runtime.queryTasks(root); assert.equal(bulkView.tasks.length, 202); assert.equal(bulkView.totalTaskCount, 202); assert.equal(preparedStatements, 8, '列表 SQL 次数必须与 Task 数量无关');
+  const resolveTaskScopedChange: any = runtime.resolveTaskScopedChange.bind(runtime);
+  let referenceResolutionReads: any = 0;
+  runtime.resolveTaskScopedChange = () => { referenceResolutionReads += 1; throw new Error('Task list 不得解析 Change 当前性'); };
+  const bulkView: any = runtime.queryTasks(root);
+  assert.equal(bulkView.tasks.length, 202); assert.equal(bulkView.totalTaskCount, 202); assert.equal(bulkView.matchingTaskCount, 202);
+  assert.equal(bulkView.pageSize, null); assert.equal(bulkView.hasMore, false); assert.equal(bulkView.nextCursor, null);
+  assert.equal(preparedStatements, 8, '未分页列表 SQL 次数必须与 Task 数量无关');
+  assert.equal(referenceResolutionReads, 0, '列表不得按 stored Change reference 解析 Git、Worktree 或 OpenSpec 当前性');
+  assert.deepEqual(bulkView.diagnostics, []); assert.equal(bulkView.tasks.every((item: any) => item.referenceDiagnostics.length === 0), true);
+  runtime.resolveTaskScopedChange = resolveTaskScopedChange;
+  preparedStatements = 0;
+  const firstPage: any = runtime.queryTasks(root, { pageSize: '50' });
+  assert.equal(firstPage.tasks.length, 50); assert.equal(firstPage.matchingTaskCount, 202); assert.equal(firstPage.pageSize, 50); assert.equal(firstPage.hasMore, true); assert.ok(firstPage.nextCursor);
+  assert.equal(preparedStatements, 9, '分页列表只增加一次完整匹配计数查询');
+  const pagedIds: any[] = firstPage.tasks.map((item: any) => item.record.taskId);
+  let cursor: any = firstPage.nextCursor;
+  let finalPage: any = firstPage;
+  while (cursor) {
+    finalPage = runtime.queryTasks(root, { pageSize: '50', cursor });
+    pagedIds.push(...finalPage.tasks.map((item: any) => item.record.taskId));
+    cursor = finalPage.nextCursor;
+  }
+  assert.equal(pagedIds.length, 202); assert.equal(new Set(pagedIds).size, 202, '相同 updatedAt 的分页边界不得重复或遗漏 Task');
+  assert.equal(finalPage.hasMore, false); assert.equal(finalPage.nextCursor, null);
+  assert.throws(() => runtime.queryTasks(root, { q: 'different', pageSize: '50', cursor: firstPage.nextCursor }), (error: any) => error.code === 'task_record_filter_invalid');
+  assert.throws(() => runtime.queryTasks(root, { pageSize: '101' }), (error: any) => error.code === 'task_record_filter_invalid');
+  assert.throws(() => runtime.queryTasks(root, { cursor: firstPage.nextCursor }), (error: any) => error.code === 'task_record_filter_invalid');
   preparedStatements = 0; runtime.inspectTaskView(root, 'app-task'); assert.equal(preparedStatements, 5, '详情轻量视图不得扫描或解析其他 Task');
   runtime.openWorkspaceStructuredStore = openStore;
   assert.deepEqual(runtime.queryTasks(root, { q: '%_' }).tasks.map((item: any) => item.record.taskId), ['app-task'], 'SQL wildcard 必须按普通文本匹配');
@@ -115,18 +141,21 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
     }
   };
 
-  let response: any = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v5'); assert.equal(response.body.totalTaskCount, 3); assert.deepEqual(new Set(response.body.tasks.map((item: any) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
+  let response: any = await request(endpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-list/v6'); assert.equal(response.body.totalTaskCount, 3); assert.equal(response.body.matchingTaskCount, 3); assert.equal(response.body.pageSize, null); assert.deepEqual(new Set(response.body.tasks.map((item: any) => item.record.taskId)), new Set(['app-parent', 'app-task', 'app-retrospective']));
   const parentReadModel: any = response.body.tasks.find((item: any) => item.record.taskId === 'app-parent'); assert.equal(parentReadModel.taskRelations.children[0].taskId, 'app-task'); assert.equal(parentReadModel.taskRelations.children[0].status, 'active');
   response = await request(`${endpoint}?q=%E8%BD%BB%E9%87%8F&project=demo&service=demo%2Fapi&status=active&hasChildren=no&retrospectiveState=missing`);
   assert.deepEqual(response.body.tasks.map((item: any) => item.record.taskId), ['app-task']);
   assert.deepEqual(response.body.filters, { q: '轻量', project: 'demo', service: 'demo/api', status: 'active', hasChildren: 'no', retrospectiveState: 'missing' });
   assert.deepEqual(response.body.filterOptions, { projects: ['demo'], services: ['demo/api'] });
+  response = await request(`${endpoint}?pageSize=2`); assert.equal(response.body.tasks.length, 2); assert.equal(response.body.matchingTaskCount, 3); assert.equal(response.body.hasMore, true); assert.ok(response.body.nextCursor);
+  const secondPage: any = await request(`${endpoint}?pageSize=2&cursor=${encodeURIComponent(response.body.nextCursor)}`); assert.equal(secondPage.body.tasks.length, 1); assert.equal(secondPage.body.hasMore, false); assert.equal(secondPage.body.nextCursor, null);
   response = await request(`${endpoint}?hasChildren=yes`); assert.deepEqual(response.body.tasks.map((item: any) => item.record.taskId), ['app-parent']);
   response = await request(`${endpoint}?retrospectiveState=pending-decision`); assert.deepEqual(response.body.tasks.map((item: any) => item.record.taskId), ['app-retrospective']);
   response = await request(`${endpoint}?retrospectiveState=missing`); assert.deepEqual(new Set(response.body.tasks.map((item: any) => item.record.taskId)), new Set(['app-parent', 'app-task']));
   response = await request(`${endpoint}?hasRetrospective=yes`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_forbidden');
   response = await request(`${endpoint}?retrospectiveState=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?status=invalid`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
+  response = await request(`${endpoint}?pageSize=101`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_record_filter_invalid');
   response = await request(`${endpoint}?q=a&q=b`); assert.equal(response.status, 400); assert.equal(response.body.error.code, 'task_api_query_invalid');
   const taskEndpoint: any = `${endpoint}/app-task`;
   response = await request(taskEndpoint); assert.equal(response.body.schemaVersion, 'buildr.task-record-view/v3'); assert.deepEqual(response.body.record.changes, [{ project: 'demo', change: 'same-change' }]); assert.equal('storedChangeReferences' in response.body, false);
