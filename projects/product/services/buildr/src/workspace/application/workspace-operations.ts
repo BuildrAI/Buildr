@@ -7,7 +7,7 @@ type WorkspaceOperationMethod =
   | 'positionalArgs' | 'syncPackageComponents' | 'syncPackageBuiltins' | 'readPackageManifest'
   | 'parseManifestFileEntry' | 'parseYamlDocument' | 'diagnoseRules' | 'assertName' | 'assertAgentId'
   | 'renderSkillsManifestYaml' | 'renderProjectsYaml' | 'renderRulesManifestYaml' | 'renderCommandsManifestYaml'
-  | 'renderComponentsManifestYaml' | 'trackWrite' | 'printResult' | 'optionValue' | 'ensureDirectory'
+  | 'renderComponentsManifestYaml' | 'trackWrite' | 'optionValue' | 'ensureDirectory'
   | 'atomicWriteJson' | 'mutationStateRoot' | 'mutationLockPath' | 'mutationRecoveryReceiptPath'
   | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget' | 'withWorkspaceMutation' | 'productRoot'
   | 'writeMappedFileIfMissing' | 'appendGitignoreEntries' | 'hasFlag' | 'toPosixRelative'
@@ -38,7 +38,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const renderCommandsManifestYaml = (...args: any[]) => runtime.renderCommandsManifestYaml(...args);
   const renderComponentsManifestYaml = (...args: any[]) => runtime.renderComponentsManifestYaml(...args);
   const trackWrite = (...args: any[]) => runtime.trackWrite(...args);
-  const printResult = (...args: any[]) => runtime.printResult(...args);
   const optionValue = (...args: any[]) => runtime.optionValue(...args);
   const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
   const atomicWriteJson = (...args: any[]) => runtime.atomicWriteJson(...args);
@@ -61,6 +60,13 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const createWorkspaceId = (...args: any[]) => runtime.createWorkspaceId(...args);
   const renderWorkspaceManifest = (...args: any[]) => runtime.renderWorkspaceManifest(...args);
   const diagnoseWorkspaceMetadata = (...args: any[]) => runtime.diagnoseWorkspaceMetadata(...args);
+
+  function printResult(title: string, targetRoot: string, created: string[], changed: string[] = [], nextActions: string[] = []) {
+    console.log(title);
+    if (created.length) { console.log('Created:'); for (const file of created) console.log(`  ${file}`); }
+    if (changed.length) { console.log('Updated:'); for (const file of changed) console.log(`  ${file}`); }
+    for (const action of nextActions) console.log(`Next: ${action}`);
+  }
 
   function bootstrapGuide() {
     const guidePath = path.join(productRoot(), 'docs', 'bootstrap-guide.md');

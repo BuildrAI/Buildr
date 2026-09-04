@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-workspace-cli-creation
+operation: assess
+treeIdentity: 3e86c7f97c56caaa0a9f1ea2492bb4558d33e0c3
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-workspace-cli-creation/brief.md
+    reason: 解释Workspace、Project、Service CLI及创建用例职责迁移
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-cli-creation/proposal.md
+      - openspec/changes/refactor-workspace-cli-creation/design.md
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 需要记录三个领域CLI和Project/Service创建Application边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-cli-creation/specs/product-source-layout/spec.md
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 需要更新Buildr Service的Workspace CLI与writer owner事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-cli-creation/specs/workspace-control-plane-module-architecture/spec.md
+unresolvedItems: []

@@ -207,7 +207,9 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
   const workspaceSymlinkSegment = (...args: any[]) => runtime.workspaceSymlinkSegment(...args);
   const collectFiles = (...args: any[]) => runtime.collectFiles(...args);
   const isGitUrl = (...args: any[]) => runtime.isGitUrl(...args);
-  const trackWrite = (...args: any[]) => runtime.trackWrite(...args);
+  function trackWrite(targetRoot: string, file: string, content: string, created: string[]): void {
+    if (writeIfMissing(file, content)) created.push(path.relative(targetRoot, file).split(path.sep).join('/'));
+  }
 
   function optionValue(args: any, name: any, fallback: any): any  {
     const index = args.indexOf(name);
@@ -278,6 +280,18 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
     if (value === null || value === undefined) return {};
     if (typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a YAML mapping.`);
     return value;
+  }
+
+  function quoteYaml(value: any): string {
+    if (Array.isArray(value)) return JSON.stringify(value.map((item: any) => String(item)));
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    return JSON.stringify(String(value));
+  }
+
+  function parseYamlValue(value: any): any {
+    const document = YAML.parseDocument(value, { uniqueKeys: true, prettyErrors: true });
+    if (document.errors.length) throw new Error(`Invalid YAML value: ${value} (${document.errors.map((error: any) => error.message).join('; ')})`);
+    return document.toJS();
   }
 
   function mutationStateRoot(targetRoot: any): any  {
@@ -655,6 +669,6 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
     result.findings.push({ status, code, message, domain, scope, affectedActions, ownershipUnit, ...extra });
   }
 
-  Object.assign(runtime, { optionValue, optionValueRaw, withResolvedTarget, withOption, skillScopeForRuleScope, ensureDirectory, copyDirectory, removePath, atomicWriteFile, atomicWriteJson, parseYamlDocument, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, writeMappedFileIfMissing, appendGitignoreEntries, hasFlag, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
+  Object.assign(runtime, { optionValue, optionValueRaw, withResolvedTarget, withOption, skillScopeForRuleScope, ensureDirectory, copyDirectory, removePath, atomicWriteFile, atomicWriteJson, parseYamlDocument, quoteYaml, parseYamlValue, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, trackWrite, writeMappedFileIfMissing, appendGitignoreEntries, hasFlag, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
   return runtime;
 }

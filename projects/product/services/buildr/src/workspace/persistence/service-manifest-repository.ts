@@ -12,6 +12,8 @@ export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';
 export type ServiceManifestRepositoryRuntime = {
   assertInitializedBuildrWorkspace(root: string): void;
   atomicWriteFile(file: string, content: string): void;
+  existsFile(file: string): boolean;
+  quoteYaml(value: any): string;
 };
 
 function plainObject(value: any, label: any) {
@@ -120,6 +122,68 @@ export function serviceManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
+export function parseServicesYaml(content: string) {
+  const parsed = parseYaml(content, 'legacy services.yml');
+  return parsed.services && typeof parsed.services === 'object' && !Array.isArray(parsed.services) ? parsed.services : parsed;
+}
+
+export function parseServicesManifestYaml(content: string) {
+  const manifest = parseYaml(content, 'services/manifest.yml');
+  if (!manifest.services || typeof manifest.services !== 'object' || Array.isArray(manifest.services)) manifest.services = {};
+  return manifest;
+}
+
+export function renderServicesManifestYaml(manifest: any, quoteYaml: (value: any) => string = (value) => JSON.stringify(String(value))) {
+  if (manifest.schemaVersion === SERVICES_SCHEMA_V2) return renderServicesDomainManifest(manifest.projectId, manifest.services || {});
+  const services = manifest.services || {};
+  const names = Object.keys(services).sort();
+  const lines = [`schemaVersion: ${SERVICES_SCHEMA_V1}`, `project: ${quoteYaml(manifest.project)}`];
+  if (!names.length) return `${lines.concat('services: {}').join('\n')}\n`;
+  lines.push('services:');
+  for (const name of names) {
+    const service = services[name];
+    lines.push(`  ${name}:`);
+    for (const key of ['title', 'description', 'type', 'path']) if (service[key] !== undefined) lines.push(`    ${key}: ${quoteYaml(service[key])}`);
+    if (service.repo) {
+      lines.push('    repo:');
+      for (const key of ['kind', 'url', 'remote', 'defaultBranch', 'branch']) if (service.repo[key] !== undefined) lines.push(`      ${key}: ${quoteYaml(service.repo[key])}`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+export function validateServicesManifest(manifest: any, expectedProject: string) {
+  if (manifest?.schemaVersion === SERVICES_SCHEMA_V2) {
+    try { parseServicesManifest(YAML.stringify(manifest), { projectCode: expectedProject }); return []; } catch (error: any) { return [error.message]; }
+  }
+  const errors: string[] = [];
+  if (manifest.schemaVersion !== SERVICES_SCHEMA_V1) errors.push(`services/manifest.yml schemaVersion must be ${SERVICES_SCHEMA_V1}.`);
+  if (manifest.project !== expectedProject) errors.push(`services/manifest.yml project must be ${expectedProject}.`);
+  if (!manifest.services || typeof manifest.services !== 'object' || Array.isArray(manifest.services)) return [...errors, 'services/manifest.yml services must be an object.'];
+  for (const [serviceName, raw] of Object.entries(manifest.services as Record<string, any>)) {
+    const label = `services.${serviceName}`;
+    if (!isServiceCode(serviceName)) errors.push(`${label} key must contain only letters, digits, dots, underscores, or dashes.`);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { errors.push(`${label} must be an object.`); continue; }
+    const service = raw as Record<string, any>;
+    for (const key of Object.keys(service)) if (!new Set(['title', 'description', 'type', 'path', 'repo']).has(key)) errors.push(`${label}.${key} is not a supported services/manifest.yml field.`);
+    if (!service.title || typeof service.title !== 'string') errors.push(`${label}.title is required.`);
+    if (!service.description || typeof service.description !== 'string') errors.push(`${label}.description is required.`);
+    if (!service.type || typeof service.type !== 'string') errors.push(`${label}.type is required.`);
+    if (service.path !== `services/${serviceName}`) errors.push(`${label}.path must be services/${serviceName}.`);
+    if (!service.repo || typeof service.repo !== 'object' || Array.isArray(service.repo)) { errors.push(`${label}.repo is required.`); continue; }
+    for (const key of Object.keys(service.repo)) if (!new Set(['kind', 'url', 'remote', 'defaultBranch', 'branch']).has(key)) errors.push(`${label}.repo.${key} is not a supported repo field.`);
+    if (!['workspace', 'git'].includes(service.repo.kind)) errors.push(`${label}.repo.kind must be workspace or git.`);
+    if (service.repo.kind === 'workspace') for (const key of ['url', 'remote', 'defaultBranch', 'branch']) if (service.repo[key] !== undefined) errors.push(`${label}.repo.${key} is only supported for git-managed Services.`);
+    if (service.repo.kind === 'git') {
+      if (service.repo.url !== undefined && typeof service.repo.url !== 'string') errors.push(`${label}.repo.url must be a string when provided.`);
+      if (service.repo.remote !== undefined && typeof service.repo.remote !== 'string') errors.push(`${label}.repo.remote must be a string when provided.`);
+      if (service.repo.defaultBranch !== undefined && typeof service.repo.defaultBranch !== 'string') errors.push(`${label}.repo.defaultBranch must be a string when provided.`);
+      if (service.repo.branch !== undefined && (typeof service.repo.branch !== 'string' || !service.repo.branch)) errors.push(`${label}.repo.branch must be a non-empty string when provided.`);
+    }
+  }
+  return errors;
+}
+
 export function registerServiceManifestRepository(runtime: ServiceManifestRepositoryRuntime) {
   function serviceDomainManifestPath(targetRoot: any, project: any) {
     const projectRoot = typeof project === 'string'
@@ -137,6 +201,43 @@ export function registerServiceManifestRepository(runtime: ServiceManifestReposi
   function writeServiceRegistry(file: any, projectId: any, services: any, projectCode: any = path.basename(path.dirname(path.dirname(file)))) {
     runtime.atomicWriteFile(file, renderServicesDomainManifest(projectId, services, projectCode));
   }
-  Object.assign(runtime, { serviceDomainManifestPath, readServiceRegistryPersistence, writeServiceRegistry, parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision });
+
+  function servicesManifestPath(projectRoot: string) {
+    return path.join(projectRoot, 'services', 'manifest.yml');
+  }
+
+  function readServicesManifestForWrite(projectRoot: string, projectName: string) {
+    const file = servicesManifestPath(projectRoot);
+    if (!runtime.existsFile(file)) return { schemaVersion: SERVICES_SCHEMA_V1, project: projectName, services: {} };
+    const manifest = parseServicesManifestYaml(fs.readFileSync(file, 'utf8'));
+    const errors = validateServicesManifest(manifest, projectName)
+      .filter((message) => !message.endsWith('.title is required.'))
+      .filter((message) => !message.endsWith('.description is required.'))
+      .filter((message) => !message.endsWith('.type is required.'));
+    if (errors.length) throw new Error(`services/manifest.yml is invalid:\n- ${errors.join('\n- ')}`);
+    return manifest;
+  }
+
+  function writeServicesManifest(projectRoot: string, manifest: any) {
+    const file = servicesManifestPath(projectRoot);
+    runtime.atomicWriteFile(file, renderServicesManifestYaml(manifest, runtime.quoteYaml));
+    return file;
+  }
+
+  function updateServicesManifest(projectRoot: string, projectName: string, serviceName: string, metadata: any) {
+    const manifest = readServicesManifestForWrite(projectRoot, projectName);
+    manifest.schemaVersion = SERVICES_SCHEMA_V1;
+    manifest.project = projectName;
+    manifest.services[serviceName] = metadata;
+    return writeServicesManifest(projectRoot, manifest);
+  }
+
+  Object.assign(runtime, {
+    serviceDomainManifestPath, readServiceRegistryPersistence, writeServiceRegistry,
+    parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision,
+    parseServicesYaml, parseServicesManifestYaml,
+    renderServicesManifestYaml: (manifest: any) => renderServicesManifestYaml(manifest, runtime.quoteYaml),
+    validateServicesManifest, servicesManifestPath, readServicesManifestForWrite, writeServicesManifest, updateServicesManifest,
+  });
   return runtime;
 }

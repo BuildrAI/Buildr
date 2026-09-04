@@ -151,3 +151,28 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project/project.mjs')), false);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service/service.mjs')), false);
 });
+
+test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
+  const adapters = [
+    'src/workspace/interfaces/cli/workspace.ts',
+    'src/workspace/interfaces/cli/project.ts',
+    'src/workspace/interfaces/cli/service.ts',
+  ];
+  for (const relative of adapters) {
+    const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
+    assert.ok(lines(relative).length <= 80, `${relative} must remain a thin CLI adapter`);
+    assert.doesNotMatch(source, /from ['"].*(?:domain|persistence)|\bYAML\b|execFileSync|spawnSync|writeProjectRegistry|writeServiceRegistry/);
+  }
+  const workspaceCli = fs.readFileSync(path.join(productRoot, adapters[0]), 'utf8');
+  assert.doesNotMatch(workspaceCli, /createProject|createService/);
+  for (const relative of [
+    'src/workspace/application/project-creation-application.ts',
+    'src/workspace/application/service-creation-application.ts',
+  ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
+  const projectRepository = fs.readFileSync(path.join(productRoot, 'src/workspace/persistence/project-manifest-repository.ts'), 'utf8');
+  const serviceRepository = fs.readFileSync(path.join(productRoot, 'src/workspace/persistence/service-manifest-repository.ts'), 'utf8');
+  assert.match(projectRepository, /function parseProjectsYaml/);
+  assert.match(projectRepository, /function writeProjectsRegistry/);
+  assert.match(serviceRepository, /function parseServicesManifestYaml/);
+  assert.match(serviceRepository, /function writeServicesManifest/);
+});

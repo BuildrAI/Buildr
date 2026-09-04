@@ -77,7 +77,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [AGENT_ASSETS_RUNTIME],
     provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: {
-      cli: ['project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
+      cli: ['init', 'bootstrap guide', 'mutation recover', 'project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
       http: ['workspace-core.http'],
       diagnostics: ['workspace.diagnostics'],
     },
@@ -201,7 +201,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'project create', 'service create',
+    'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
     'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',

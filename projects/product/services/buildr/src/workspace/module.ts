@@ -9,12 +9,17 @@ import { registerProjectManifestRepository, type ProjectManifestRepositoryRuntim
 import { registerServiceManifestRepository, type ServiceManifestRepositoryRuntime } from './persistence/service-manifest-repository.ts';
 import { registerWorkspaceRegistryRepository, type WorkspaceRegistryRepositoryRuntime } from './persistence/workspace-registry-repository.ts';
 import { registerProjectDailyProgressRepository, type ProjectDailyProgressRepositoryRuntime } from './persistence/project-daily-progress-repository.ts';
-import { registerWorkspaceCliAdapter } from './interfaces/cli/workspace.ts';
+import { projectCreateCommand } from './interfaces/cli/project.ts';
+import { serviceCreateCommand } from './interfaces/cli/service.ts';
+import { workspaceCommand } from './interfaces/cli/workspace.ts';
 import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.ts';
 import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.ts';
 import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
 import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.ts';
 import type { WorkspaceManagementFenceRuntime } from './infrastructure/workspace-management-fence.ts';
+import { registerSourceCreationSupport, type SourceCreationRuntime } from './application/source-creation-support.ts';
+import { registerProjectCreationApplication, type ProjectCreationRuntime } from './application/project-creation-application.ts';
+import { registerServiceCreationApplication, type ServiceCreationRuntime } from './application/service-creation-application.ts';
 
 type DynamicRuntime = Record<string, any>;
 type WorkspacePrivateComposition = DynamicRuntime
@@ -29,7 +34,10 @@ type WorkspacePrivateComposition = DynamicRuntime
   & ProjectApplicationRuntime
   & ServiceApplicationRuntime
   & ProjectDailyProgressApplicationRuntime
-  & WorkspaceManagementFenceRuntime;
+  & WorkspaceManagementFenceRuntime
+  & SourceCreationRuntime
+  & ProjectCreationRuntime
+  & ServiceCreationRuntime;
 
 export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-root-gitignore-entries.ts';
 export { createProject, createProjectSource, isProjectCode, isProjectId } from './domain/project.ts';
@@ -68,15 +76,15 @@ const WORKSPACE_METHODS = Object.freeze([
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
-  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata',
+  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initBuildr', 'bootstrapGuide', 'mutationRecover',
 ]);
 const PROJECT_METHODS = Object.freeze([
   'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectMigrationPlan',
-  'migrateProjectRegistry', 'updateProjectMetadata', 'generateProjectCreatePrompt',
+  'migrateProjectRegistry', 'updateProjectMetadata', 'generateProjectCreatePrompt', 'createProjectAsset',
 ]);
 const SERVICE_METHODS = Object.freeze([
   'readServiceRegistryRecord', 'listServices', 'serviceDetail', 'serviceDocument', 'serviceMigrationPlan',
-  'migrateServiceRegistry', 'updateServiceMetadata', 'generateServiceCreatePrompt',
+  'migrateServiceRegistry', 'updateServiceMetadata', 'generateServiceCreatePrompt', 'createServiceAsset',
 ]);
 const PROJECT_DAILY_PROGRESS_METHODS = Object.freeze([
   'recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress',
@@ -91,8 +99,34 @@ function pick(source: any, methods: any) {
   return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => source[method](...args)])));
 }
 
-export function createWorkspaceCliContributions() {
+export function createWorkspaceCliContributions(applications: { workspace?: any; project?: any; service?: any; dailyProgress?: any } = {}) {
   return Object.freeze([
+    Object.freeze({
+      key: 'init', surface: 'primary',
+      summary: '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
+      help: [
+        'Usage: buildr init [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--target <dir>] [--name <name>] [--description <text>] [--profile <personal|team|company>]', '',
+        '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
+        '不传 --agent 时只初始化源资产；已有 workspace 的日常更新继续使用 buildr sync <agent>。',
+        '未提供 --description 时写入明确 TODO，并由 doctor 提示补全。',
+        '--help 只输出帮助，不会写入文件。',
+      ],
+      match: ({ domain }: any) => domain === 'init',
+      run: (runtime: any, context: any) => workspaceCommand(applications.workspace || runtime, 'init', context.argv.slice(3)),
+    }),
+    Object.freeze({
+      key: 'bootstrap guide', surface: 'primary', summary: '输出最小 bootstrap 指南。',
+      help: ['Usage: buildr bootstrap guide', '', '输出最小 bootstrap 指南。'],
+      match: ({ domain, action }: any) => domain === 'bootstrap' && action === 'guide',
+      run: (runtime: any) => workspaceCommand(applications.workspace || runtime, 'bootstrap-guide'),
+    }),
+    Object.freeze({
+      key: 'mutation recover', surface: 'agent-machine',
+      summary: '从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。',
+      help: ['Usage: buildr mutation recover <transaction-id> [--target <dir>]', '', '从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。'],
+      match: ({ domain, action }: any) => domain === 'mutation' && action === 'recover',
+      run: (runtime: any, context: any) => workspaceCommand(applications.workspace || runtime, 'mutation-recover', context.argv.slice(4)),
+    }),
     Object.freeze({
       key: 'project create', surface: 'primary',
       summary: '创建或登记 Project，并把 UUID、workspaceId、code、name、description 与 source 写入 projects/manifest.yml。',
@@ -106,7 +140,7 @@ export function createWorkspaceCliContributions() {
         'Project baseline 包含 commands.yml；它只引用 workspace Command catalog，不复制 executable、probe 或 install hint。',
       ],
       match: ({ domain, action }: any) => domain === 'project' && action === 'create',
-      run: (runtime: any, context: any) => runtime.createProject(context.argv.slice(4)),
+      run: (runtime: any, context: any) => projectCreateCommand(applications.project || runtime, context.argv.slice(4)),
     }),
     Object.freeze({
       key: 'service create', surface: 'primary',
@@ -121,7 +155,7 @@ export function createWorkspaceCliContributions() {
         'Service 规则入口是 Service 目录中的 AGENTS.md，不在 Service registry 中记录规则路径。',
       ],
       match: ({ domain, action }: any) => domain === 'service' && action === 'create',
-      run: (runtime: any, context: any) => runtime.createService(context.argv.slice(4)),
+      run: (runtime: any, context: any) => serviceCreateCommand(applications.service || runtime, context.argv.slice(4)),
     }),
     Object.freeze({
       key: 'project daily-progress record', surface: 'agent-machine',
@@ -135,7 +169,7 @@ export function createWorkspaceCliContributions() {
         '该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。',
       ],
       match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'record', context.argv.slice(5)),
+      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'record', context.argv.slice(5)),
     }),
     Object.freeze({
       key: 'project daily-progress inspect', surface: 'agent-machine',
@@ -147,7 +181,7 @@ export function createWorkspaceCliContributions() {
         '文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。',
       ],
       match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'inspect', context.argv.slice(5)),
+      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'inspect', context.argv.slice(5)),
     }),
     Object.freeze({
       key: 'project daily-progress list', surface: 'agent-machine',
@@ -158,7 +192,7 @@ export function createWorkspaceCliContributions() {
         '只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。',
       ],
       match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(runtime, 'list', context.argv.slice(5)),
+      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'list', context.argv.slice(5)),
     }),
   ]);
 }
@@ -190,7 +224,9 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);
       registerProjectDailyProgressApplication(privateComposition);
-      registerWorkspaceCliAdapter(privateComposition);
+      registerSourceCreationSupport(privateComposition);
+      registerProjectCreationApplication(privateComposition);
+      registerServiceCreationApplication(privateComposition);
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
 
       const workspace = Object.freeze({
@@ -201,6 +237,8 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       const service = pick(privateComposition, SERVICE_METHODS);
       const query = pick(privateComposition, WORKSPACE_QUERY_METHODS);
       const dailyProgress = pick(privateComposition, PROJECT_DAILY_PROGRESS_METHODS);
+      privateComposition.createProject = (args: string[]) => projectCreateCommand(project as any, args);
+      privateComposition.createService = (args: string[]) => serviceCreateCommand(service as any, args);
       const runtimeMethods = Object.freeze(Object.fromEntries(
         Object.entries(privateComposition).filter(([, value]) => typeof value === 'function'),
       ));
@@ -214,7 +252,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
           [PROJECT_DAILY_PROGRESS_APPLICATION]: dailyProgress,
         },
         contributions: {
-          cli: createWorkspaceCliContributions(),
+          cli: createWorkspaceCliContributions({ workspace, project, service, dailyProgress }),
           http: [createWorkspaceHttpContribution(Object.freeze({ ...workspace, ...project, ...service, ...dailyProgress }))],
           diagnostics: [Object.freeze({ id: 'workspace.diagnostics', readModel: Object.freeze({ workspace, project, service, dailyProgress }) })],
         },

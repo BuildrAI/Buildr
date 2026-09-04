@@ -11,6 +11,9 @@ import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
+const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
+const WORKSPACE_BOOTSTRAP_COMMAND_SLOT = Symbol('workspace-bootstrap-command-contribution');
+const WORKSPACE_MUTATION_COMMAND_SLOT = Symbol('workspace-mutation-command-contribution');
 const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
 const AGENT_ASSETS_RUNTIME_COMMAND_SLOT = Symbol('agent-assets-runtime-command-contributions');
@@ -45,35 +48,11 @@ const OPENSPEC_MODULE_COMMANDS: any = new Set([
   'openspec convergence preflight',
   'openspec convergence inspect',
 ]);
+const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'bootstrap guide', 'mutation recover']);
 
 const COMMAND_ROUTES: any[] = [
-  {
-    key: "init",
-    surface: "primary",
-    summary: "首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。",
-    help: [
-      "Usage: buildr init [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--target <dir>] [--name <name>] [--description <text>] [--profile <personal|team|company>]",
-      "",
-      "首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。",
-      "不传 --agent 时只初始化源资产；已有 workspace 的日常更新继续使用 buildr sync <agent>。",
-      "未提供 --description 时写入明确 TODO，并由 doctor 提示补全。",
-      "--help 只输出帮助，不会写入文件。"
-    ],
-    match: ({ domain }: any) => domain === 'init',
-    run: (r: any, c: any) => r.initBuildr(c.argv.slice(3)),
-  },
-  {
-    key: "bootstrap guide",
-    surface: "primary",
-    summary: "输出最小 bootstrap 指南。",
-    help: [
-      "Usage: buildr bootstrap guide",
-      "",
-      "输出最小 bootstrap 指南。"
-    ],
-    match: ({ domain, action }: any) => domain === 'bootstrap' && action === 'guide',
-    run: (r: any) => r.bootstrapGuide(),
-  },
+  WORKSPACE_INIT_COMMAND_SLOT,
+  WORKSPACE_BOOTSTRAP_COMMAND_SLOT,
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   ...['inspect', 'validate', 'update'].map((operation: any) => ({
@@ -89,18 +68,7 @@ const COMMAND_ROUTES: any[] = [
     run: (r: any, c: any) => r.projectVerificationCommand(operation, c.argv.slice(5)),
   })),
   TASK_MODULE_COMMAND_SLOT,
-  {
-    key: "mutation recover",
-    surface: "agent-machine",
-    summary: "从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。",
-    help: [
-      "Usage: buildr mutation recover <transaction-id> [--target <dir>]",
-      "",
-      "从完整 transaction journal 和 backup 恢复操作前源资产；不会猜测或接受半完成新状态。"
-    ],
-    match: ({ domain, action }: any) => domain === 'mutation' && action === 'recover',
-    run: (r: any, c: any) => r.mutationRecover(c.argv.slice(4)),
-  },
+  WORKSPACE_MUTATION_COMMAND_SLOT,
   AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
   OPENSPEC_MODULE_COMMAND_SLOT,
   AGENT_ASSETS_SOURCE_COMMAND_SLOT,
@@ -198,9 +166,13 @@ function createCommandRegistry(moduleContributions: any): any  {
     && !AGENT_ASSETS_RUNTIME_COMMANDS.has(route.key)
     && !AGENT_ASSETS_SOURCE_COMMANDS.has(route.key)
     && !OPENSPEC_MODULE_COMMANDS.has(route.key)
+    && !WORKSPACE_PRIMARY_COMMANDS.has(route.key)
     && !route.key.startsWith('project daily-progress ')
   ));
   const routes = COMMAND_ROUTES.flatMap((route: any) => {
+    if (route === WORKSPACE_INIT_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'init');
+    if (route === WORKSPACE_BOOTSTRAP_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'bootstrap guide');
+    if (route === WORKSPACE_MUTATION_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'mutation recover');
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
     if (route === AGENT_ASSETS_SOURCE_COMMAND_SLOT) return agentAssetsSourceContributions;
