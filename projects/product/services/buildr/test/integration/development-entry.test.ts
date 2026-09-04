@@ -30,6 +30,7 @@ function run(entry: any, args: any, env: any): any  {
   const inheritedEnv: any = { ...process.env };
   delete executionEnv.BUILDR_TEST_CWD;
   delete inheritedEnv.BUILDR_NODE;
+  delete inheritedEnv.NVM_DIR;
   return spawnSync(entry, args, {
     encoding: 'utf8',
     cwd,
@@ -50,6 +51,31 @@ test('Project bridge 只使用 PATH 中与 Product .node-version 完全一致的
   const result: any = run(projectBridge, ['doctor', '--json'], { PATH: `${oldBin}:${currentBin}` });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^current\|.*bin\/buildr\.mjs doctor --json\n$/u);
+});
+
+test('hostile PATH 下优先使用显式 NVM_DIR 中的 Product 精确 Node', { skip: process.platform === 'win32' }, () => {
+  const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-nvm-'));
+  const hostileBin: any = path.join(fixture, 'hostile');
+  const nvmRoot: any = path.join(fixture, 'nvm');
+  fakeNode(path.join(hostileBin, 'node'), '24.19.0', 'hostile');
+  fakeNode(path.join(nvmRoot, 'versions/node/v24.15.0/bin/node'), '24.15.0', 'nvm-exact');
+
+  const result: any = run(projectBridge, ['doctor', '--json'], { NVM_DIR: nvmRoot, PATH: hostileBin });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^nvm-exact\|.*bin\/buildr\.mjs doctor --json\n$/u);
+  assert.doesNotMatch(result.stdout, /hostile/u);
+});
+
+test('不匹配的显式 NVM_DIR 候选不会覆盖 PATH 中的精确 Node', { skip: process.platform === 'win32' }, () => {
+  const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-nvm-mismatch-'));
+  const exactBin: any = path.join(fixture, 'exact');
+  const nvmRoot: any = path.join(fixture, 'nvm');
+  fakeNode(path.join(exactBin, 'node'), '24.15.0', 'path-exact');
+  fakeNode(path.join(nvmRoot, 'versions/node/v24.15.0/bin/node'), '24.19.0', 'nvm-wrong');
+
+  const result: any = run(projectBridge, ['doctor'], { NVM_DIR: nvmRoot, PATH: exactBin });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^path-exact\|.*bin\/buildr\.mjs doctor\n$/u);
 });
 
 test('Workspace legacy runtime.node 不影响 development main process 的 Product Node', { skip: process.platform === 'win32' }, () => {

@@ -40,6 +40,10 @@ if [ "${BUILDR_NODE+x}" = x ]; then
   exit 1
 fi
 
+if [ "${NVM_DIR+x}" = x ] && [ -n "$NVM_DIR" ]; then
+  select_node "$NVM_DIR/versions/node/v$required_version/bin/node"
+fi
+
 old_ifs=$IFS
 IFS=:
 for path_entry in ${PATH:-}; do

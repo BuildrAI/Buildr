@@ -20,7 +20,7 @@
 - `rules render`、`runtime check` 和 `skills render` 支持当前 adapter 主路径。
 - Supported runtime adapter 由静态 registry 和声明式 RuntimePlan contract 管理；Component 必须验证自身完整性但不能扩展 adapter。
 - `package check` 和 `package build` 校验、构建 Buildr 产品随包资产。
-- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备默认复用changed/affected结果，current `release-<version>` HEAD/tree由GitHub分布式Candidate形成正式门禁。
+- `tools/development/run-development-npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备默认复用changed/affected结果，current `release-<version>` HEAD/tree由GitHub分布式Candidate形成正式门禁。
 - Buildr mutation 具备严格 identity、scope/ownership 路径保护、atomic writer、workspace transaction、失败回滚和 doctor recovery；package output 使用 receipt/integrity 安全替换。
 - bootstrap guide 在 Skill 不可用时提供纯文本兜底入口。
 
@@ -74,27 +74,27 @@ npm run test:component
 npm run test:contract
 npm run test:integration
 npm run test:system
-npm run test:focus -- integration-candidate-release
+tools/development/run-development-npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json
 ```
 
 已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归。拥有Git base时，仅package与lockfile三个明确version字段变化按affected选择；依赖、scripts、engines、其他lockfile结构、解析失败以及没有base的显式paths仍保持full：
 
 ```bash
-npm run test:changed -- --plan
-npm run test:changed -- --base origin/dev
-npm run test:changed -- docs/buildr-product.md
+tools/development/run-development-npm run test:changed -- --plan
+tools/development/run-development-npm run test:changed -- --base origin/dev
+tools/development/run-development-npm run test:changed -- docs/buildr-product.md
 npm run --silent test:changed -- --json docs/buildr-product.md
 ```
 
 需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代冻结目标的正式 delivery plan：
 
 ```bash
-npm run test:focus -- --list
-npm run test:focus -- group:cli
-npm run test:focus -- group:runtime
-npm run test:focus -- package-skills
-npm run test:focus -- --plan group:openspec
+tools/development/run-development-npm run test:focus -- --list
+tools/development/run-development-npm run test:focus -- group:cli
+tools/development/run-development-npm run test:focus -- group:runtime
+tools/development/run-development-npm run test:focus -- package-skills
+tools/development/run-development-npm run test:focus -- --plan group:openspec
 npm run --silent test:focus -- --json release-tarball-smoke
 ```
 
@@ -107,14 +107,14 @@ Candidate CI在单个bootstrap job中复用checkout、依赖与Workspace Node，
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
 ```bash
-npm run test:focus -- workspace-lifecycle
-npm run test:focus -- ownership-recovery runtime-reconciliation
+tools/development/run-development-npm run test:focus -- workspace-lifecycle
+tools/development/run-development-npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
 正式任务在所有rebase、冲突解决和内容修改结束后，通过Task Verification对最终冻结Candidate执行唯一delivery-required `product.delivery`。`product.release-artifact-set`只在维护者明确要求独立release诊断时显式选择，不自动与普通delivery叠加。普通任务由changed planner运行affected；全局验证owner变化时同一plan运行full。本地完整入口保留给验证系统自身变化、明确全量要求、诊断或GitHub不可用；普通发布准备不再与GitHub重复执行。current `release-<version>` HEAD/tree以GitHub `Candidate gate`为正式完整源码Candidate，tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
 
 ```bash
-npm run test:candidate
+tools/development/run-development-npm run test:candidate
 ```
 
 同一SHA的暂态失败使用`node tools/release/candidate-failed-shard-retry.ts inspect --run-id <id> --source-commit <sha>`核验run、source与失败边界，维护者确认后以同参数执行`retry --confirm`，由唯一owner调用GitHub“重新运行失败作业”。每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate；新attempt终态必须回读`Candidate gate`以及aggregate中的run/attempt identity。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；Windows runtime、Workspace lifecycle、Task workflow与fresh build各自形成并行恢复边界，因此wall-clock由最长shard主导，而不是把它们串成一条长作业。
@@ -127,7 +127,7 @@ Candidate 总耗时、Workspace E2E suites 和已识别的高耗时专项阶段�
 
 Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与推送且没有后续 consumer 后，使用 `node test/verification/timing/cleanup-evidence.ts <timing-summary.json>` 清理。该入口只接受位于系统临时目录、名称匹配当前 run kind、summary 归属一致且不是符号链接的精确 evidence 目录；caller-managed evidence 和边界不明路径会 fail closed。
 
-调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
+调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration tools/development/run-development-npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
 
 Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
 

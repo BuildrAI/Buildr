@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: eliminate-predictable-product-invocation-retries
+operation: reconcile
+treeIdentity: git:e40f62290fe24b3f90275a377ed748b52c43d9a3+working-tree
+impacts:
+  - type: brief
+    target: openspec/changes/eliminate-predictable-product-invocation-retries/brief.md
+    reason: 说明首次 invocation 选择、保护边界与验收结果
+    status: updated
+    sourceIdentities:
+      - openspec/changes/eliminate-predictable-product-invocation-retries/proposal.md
+      - openspec/changes/eliminate-predictable-product-invocation-retries/design.md
+  - type: flow
+    target: docs/verification-ownership.md
+    reason: 当前 Product 验证入口需要从裸 npm 更新为 repository-owned wrapper
+    status: updated
+    sourceIdentities:
+      - openspec/changes/eliminate-predictable-product-invocation-retries/specs/product-verification-quality/spec.md
+  - type: service
+    target: services/buildr/docs/release-checklist.md
+    reason: Candidate Agent 指引需要使用精确 development Node wrapper
+    status: updated
+    sourceIdentities:
+      - openspec/changes/eliminate-predictable-product-invocation-retries/specs/npm-cli-package/spec.md
+unresolvedItems: []

@@ -11,7 +11,7 @@ export type TaskVerificationCliRuntime = {
   recordTaskVerification(targetRoot: string, taskId: string, input: unknown): VerificationResult;
 };
 type Parsed = { taskId: string; targetRoot: string; json: boolean; contentIdentity?: string; reportFile?: string; expectedReportDigest?: string; usage: string };
-type CliErrorFields = { code: string; message: string; details?: unknown; nextAction?: string; taskVerificationBusiness?: boolean; taskRecordBusiness?: boolean };
+type CliErrorFields = { code: string; message: string; details?: unknown; nextAction?: string; taskVerificationBusiness?: boolean; taskRecordBusiness?: boolean; structuredStoreBusiness?: boolean };
 
 function errorFields(error: unknown): CliErrorFields {
   if (!(error instanceof Error)) return { code: 'task_verification_failed', message: String(error) };
@@ -22,6 +22,7 @@ function errorFields(error: unknown): CliErrorFields {
     ...(typeof fields.nextAction === 'string' ? { nextAction: fields.nextAction } : {}),
     ...(fields.taskVerificationBusiness === true ? { taskVerificationBusiness: true } : {}),
     ...(fields.taskRecordBusiness === true ? { taskRecordBusiness: true } : {}),
+    ...(fields.structuredStoreBusiness === true ? { structuredStoreBusiness: true } : {}),
   };
 }
 function syntax(message: string, usage: string) { const error = new Error(message) as Error & Record<string, unknown>; Object.assign(error, { code: 'task_verification_cli.syntax', status: 400, usage }); return error; }
@@ -36,12 +37,18 @@ function parse(operation: TaskVerificationOperation, args: string[]): Parsed {
     ...(typeof values.get('--report') === 'string' ? { reportFile: values.get('--report') as string } : {}),
     ...(typeof values.get('--expected-report') === 'string' ? { expectedReportDigest: values.get('--expected-report') as string } : {}), usage };
 }
-function blocked(runtime: TaskVerificationCliRuntime, operation: TaskVerificationOperation, parsed: Parsed, error: CliErrorFields) { let slot: VerificationSlot = { path: null, present: false, report: null, reportDigest: null, applicability: null }; try { slot = runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId).slot; } catch {} return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult, { operation, status: 'blocked', taskId: parsed.taskId, slot, diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, effects: [], nextActions: [error.nextAction || '检查报告内容、Task 与当前项目测试地图后重试。'] }); }
+export function taskVerificationRecoveryAction(operation: TaskVerificationOperation, targetRoot: string, error: CliErrorFields) {
+  if (error.code !== 'workspace_store_writer_provenance_forbidden') return error.nextAction || '检查报告内容、Task 与当前项目测试地图后重试。';
+  const retainedBridge = path.join(targetRoot, 'projects', 'product', 'buildr');
+  if (fs.statSync(retainedBridge, { throwIfNoEntry: false })?.isFile()) return `使用canonical retained Buildr入口 ${retainedBridge} 重新执行 task verification ${operation} 的同一组参数；不要绕过provenance或重新运行已经完成的测试。`;
+  return error.nextAction || '使用canonical Workspace当前合法的installed或retained Buildr重新执行同一报告动作；不要绕过provenance或重新运行已经完成的测试。';
+}
+function blocked(runtime: TaskVerificationCliRuntime, operation: TaskVerificationOperation, parsed: Parsed, error: CliErrorFields) { let slot: VerificationSlot = { path: null, present: false, report: null, reportDigest: null, applicability: null }; try { slot = runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId).slot; } catch {} return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult, { operation, status: 'blocked', taskId: parsed.taskId, slot, diagnostic: { code: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) }, effects: [], nextActions: [taskVerificationRecoveryAction(operation, parsed.targetRoot, error)] }); }
 function print<T extends VerificationResult>(payload: T, json: boolean): T { if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`); else if (payload.status === 'blocked' && payload.diagnostic) console.error(`[${payload.diagnostic.code}] ${payload.diagnostic.message}`); else console.log(`Task ${payload.taskId} verification ${payload.status}.`); return payload; }
 export function taskVerificationCommand(runtime: TaskVerificationCliRuntime, operation: TaskVerificationOperation, args: string[]) {
   const parsed = parse(operation, args);
   try {
     const payload = operation === 'inspect' ? runtime.inspectTaskVerification(parsed.targetRoot, parsed.taskId, { ...(parsed.contentIdentity ? { contentIdentity: parsed.contentIdentity } : {}) }) : (() => { if (!parsed.reportFile) throw syntax('--report is required.', parsed.usage); if (!parsed.expectedReportDigest) throw syntax('--expected-report is required.', parsed.usage); const report: unknown = JSON.parse(fs.readFileSync(path.resolve(parsed.reportFile), 'utf8')); if (!report || typeof report !== 'object' || Array.isArray(report)) throw syntax('--report 必须包含JSON对象。', parsed.usage); return runtime.recordTaskVerification(parsed.targetRoot, parsed.taskId, { ...report, expectedReportDigest: parsed.expectedReportDigest }); })();
     return print(payload, parsed.json);
-  } catch (error: unknown) { const failure = errorFields(error); if (!failure.taskVerificationBusiness && !failure.taskRecordBusiness && failure.code !== 'task_verification_cli.syntax') throw error; const payload = blocked(runtime, operation, parsed, failure); print(payload, parsed.json); process.exitCode = 1; return payload; }
+  } catch (error: unknown) { const failure = errorFields(error); if (!failure.taskVerificationBusiness && !failure.taskRecordBusiness && !failure.structuredStoreBusiness && failure.code !== 'task_verification_cli.syntax') throw error; const payload = blocked(runtime, operation, parsed, failure); print(payload, parsed.json); process.exitCode = 1; return payload; }
 }

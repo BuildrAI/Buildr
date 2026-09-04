@@ -16,12 +16,14 @@ Product Candidate是发布体系的完整候选验证对象，不是任务开发
 
 ## 当前入口
 
-- `npm run typecheck`：strict TypeScript、Test Context投射和no-emit检查。
-- `npm run test:unit`、`test:component`、`test:contract`、`test:integration`、`test:system`：直接测试层。
-- `npm run test:changed`：按当前改动选择affected owner；验证架构自身变化可升级为full。
-- `npm run test:focus -- <selector>`：明确诊断一个或多个owner。
-- `npm run test:browser:changed`或具体Browser selector：真实Buildr Web浏览器验证。
-- `npm run test:candidate`：完整Product Candidate；冻结唯一tarball并运行平台、安装与兼容性证据。
+- `tools/development/run-development-npm run typecheck`：strict TypeScript、Test Context投射和no-emit检查。
+- `tools/development/run-development-npm run test:unit`、`test:component`、`test:contract`、`test:integration`、`test:system`：直接测试层。
+- `tools/development/run-development-npm run test:changed`：按当前改动选择affected owner；验证架构自身变化可升级为full。
+- `tools/development/run-development-npm run test:focus -- <selector>`：明确诊断一个或多个owner。
+- `tools/development/run-development-npm run test:browser:changed`或具体Browser selector：真实Buildr Web浏览器验证。
+- `tools/development/run-development-npm run test:candidate`：完整Product Candidate；冻结唯一tarball并运行平台、安装与兼容性证据。
+
+以上命令从`projects/product/services/buildr`执行；Agent必须保留Project `verification.yml`声明的wrapper、`argv`与`cwd`，不得简化为系统PATH上的裸`node`或`npm`。已正确激活Product精确Node的维护者仍可使用等价npm script作为兼容入口。
 
 具体命令、依赖、selection、资源需求和预算只在registry维护，文档不复制动态inventory。
 
