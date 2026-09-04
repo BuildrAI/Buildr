@@ -265,10 +265,10 @@ export function TasksPage() {
         <div id="task-diagnostics" className={diagnostics.length ? '' : 'hidden'} role="status">
           {diagnostics.length ? (
             <Alert
-              type="error"
+              type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message={`有 ${diagnostics.length} 条诊断：${diagnostics.map((item) => item.message).join('；')}`}
+              message={`有 ${diagnostics.length} 条历史引用诊断，任务列表读取正常：${diagnostics.map((item) => item.message).join('；')}`}
             />
           ) : null}
         </div>

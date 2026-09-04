@@ -242,14 +242,16 @@ function projectContext(projectQuery: ProjectQuery, targetRoot: string, projectC
   };
 }
 
+function archivedChangeCode(directory: string): string {
+  return directory.match(/^\d{4}-\d{2}-\d{2}-(?:\d{2}-)?(.+)$/)?.[1] || directory;
+}
+
 function buildChangeAtProjectRoot(targetRoot: string, project: Project, projectRoot: string, directory: string, lifecycle: ChangeLifecycle, includeContent: boolean, inspectChecklist: InspectChecklist): ChangeModel | null {
   const changesRoot = path.join(projectRoot, 'openspec', 'changes');
   const changeRoot = lifecycle === 'active' ? path.join(changesRoot, directory) : path.join(changesRoot, 'archive', directory);
   const identityFile = path.join(changeRoot, '.openspec.yaml');
   if (!isDirectory(changeRoot) || !isFile(identityFile)) return null;
-  const code = lifecycle === 'archived'
-    ? directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory
-    : directory;
+  const code = lifecycle === 'archived' ? archivedChangeCode(directory) : directory;
   const proposal = artifact(path.join(changeRoot, 'proposal.md'), targetRoot, includeContent);
   const brief = {
     kind: 'buildr-companion',
@@ -286,7 +288,7 @@ function findLogicalChange(targetRoot: string, project: Project, projectRoot: st
   const active = buildChangeAtProjectRoot(targetRoot, project, projectRoot, code, 'active', includeContent, inspectChecklist);
   if (active) return active;
   const archivedDirectories = readDirectories(path.join(changesRoot, 'archive'))
-    .filter((directory) => (directory.match(/^\d{4}-\d{2}-\d{2}-(.+)$/)?.[1] || directory) === code)
+    .filter((directory) => archivedChangeCode(directory) === code)
     .sort((left, right) => right.localeCompare(left));
   for (const directory of archivedDirectories) {
     const archived = buildChangeAtProjectRoot(targetRoot, project, projectRoot, directory, 'archived', includeContent, inspectChecklist);

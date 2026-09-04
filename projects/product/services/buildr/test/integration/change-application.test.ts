@@ -101,6 +101,19 @@ test('Change read model直接投影当前active与archived artifacts', (t) => {
   assert.throws(() => runtime.changeDetail(root, 'product', 'active~..'), /不合法/);
 });
 
+test('带两位归档序号的Change仍以原始code解析', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeChange(projectRoot, 'archive/2026-09-03-01-finalize-flow', { 'proposal.md': '# Finalize Flow\n' });
+
+  const listed = runtime.listChanges(root);
+  assert.deepEqual(listed.changes.map(({ code, lifecycle }) => [code, lifecycle]), [['finalize-flow', 'archived']]);
+  const resolved = runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'finalize-flow' });
+  assert.equal(resolved.availability, 'available');
+  assert.equal(resolved.workingCopy?.provenance, 'retained-archive');
+  assert.equal(resolved.workingCopy?.change.code, 'finalize-flow');
+});
+
 test('Task-scoped Change优先使用matching Worktree，缺失时仍可读取retained Change', (t) => {
   const { root, runtime, projectRoot } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

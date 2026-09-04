@@ -331,6 +331,8 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(taskDto, /childTaskIds|childTaskCount|storedChangeReferences/);
   assert.match(tasks, /totalTaskCount|还没有正式任务记录/);
   assert.match(tasks, /当前筛选没有匹配任务/);
+  assert.match(tasks, /type="warning"/);
+  assert.match(tasks, /历史引用诊断，任务列表读取正常/);
   assert.match(detail, /id="task-record-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(actionsHook, /taskApi\.list\(\{ status: 'active' \}\)/);
