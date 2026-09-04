@@ -25,8 +25,8 @@
 
 ## 5. 验证与收敛
 
-- [ ] 5.1 使用限定范围检索确认当前代码、Skill、spec、docs 和 tests 不再把新 current knowledge 解析为旧路径；历史 archive 旧路径仅保留为历史旁证
-- [ ] 5.2 运行 `openspec validate reorganize-product-knowledge-root --strict` 和 Buildr convergence preflight，修复 planning 与 canonical path 诊断
-- [ ] 5.3 使用最新 Product tree 重新验证并交付 `knowledge/archify/system/` 的 Archify JSON/HTML，完成 9/9 showcase 和多尺寸 visual-check
-- [ ] 5.4 运行受影响的 current knowledge、terminology、Doctor、路径契约和文档/静态检查，记录实际结果与未覆盖范围
-- [ ] 5.5 复核最终变更只包含当前态知识主干、首图迁移和对应路径消费者，未引入图表治理、自动对齐或产品业务行为变化
+- [x] 5.1 使用限定范围检索确认当前代码、Skill、spec、docs 和 tests 不再把新 current knowledge 解析为旧路径；历史 archive 旧路径仅保留为历史旁证
+- [x] 5.2 运行 `openspec validate reorganize-product-knowledge-root --strict` 和 Buildr convergence preflight，修复 planning 与 canonical path 诊断
+- [x] 5.3 使用最新 Product tree 重新验证并交付 `knowledge/archify/system/` 的 Archify JSON/HTML，完成 9/9 showcase 和多尺寸 visual-check
+- [x] 5.4 运行受影响的 current knowledge、terminology、Doctor、路径契约和文档/静态检查，记录实际结果与未覆盖范围
+- [x] 5.5 复核最终变更只包含当前态知识主干、首图迁移和对应路径消费者，未引入图表治理、自动对齐或产品业务行为变化

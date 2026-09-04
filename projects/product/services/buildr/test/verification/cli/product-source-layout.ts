@@ -19,6 +19,7 @@ const allowedProjectRootEntries: any = new Set([
   'capabilities.yml',
   'commands.yml',
   'docs',
+  'knowledge',
   'openspec',
   'preparation.yml',
   'services',

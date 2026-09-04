@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Buildr 系统全景",
+    "locale": "zh-CN",
+    "output": "buildr-system-overview.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/BuildrAI/Buildr.git",
+      "revision": "f16a5d1a6a9727fe07ec92157986702121e2bc36"
+    },
+    "viewBox": [1300, 820]
+  },
+  "components": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "人",
+      "sublabel": "目标、判断、授权与验收",
+      "pos": [40, 120],
+      "size": [180, 76],
+      "sources": [
+        {
+          "path": "projects/product/knowledge/architecture/product.md",
+          "label": "产品架构"
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "智能体（Agent）",
+      "sublabel": "理解目标并组合专业能力",
+      "pos": [40, 430],
+      "size": [180, 76],
+      "sources": [
+        {
+          "path": "projects/product/knowledge/overview.md",
+          "label": "当前产品"
+        },
+        {
+          "path": "projects/product/services/buildr/resources/workspace/AGENTS.md",
+          "label": "工作空间规则"
+        }
+      ]
+    },
+    {
+      "id": "buildrWeb",
+      "type": "frontend",
+      "label": "Buildr Web 前端",
+      "sublabel": "React / Vite 源码 → web-dist",
+      "pos": [250, 120],
+      "size": [210, 76],
+      "sources": [
+        {
+          "path": "projects/product/services/manifest.yml",
+          "label": "Service registry"
+        },
+        {
+          "path": "projects/product/knowledge/services/buildr-web.md",
+          "label": "前端 Service"
+        }
+      ]
+    },
+    {
+      "id": "interfaces",
+      "type": "backend",
+      "label": "Buildr 交互入口",
+      "sublabel": "CLI / loopback HTTP / 静态托管",
+      "tag": "同一 Application Payload",
+      "pos": [250, 430],
+      "size": [210, 80],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/bin/buildr.mjs",
+          "label": "CLI 入口"
+        },
+        {
+          "path": "projects/product/services/buildr/src/web/module.ts",
+          "label": "Web Runtime"
+        },
+        {
+          "path": "projects/product/knowledge/architecture/technical.md",
+          "label": "技术架构"
+        }
+      ]
+    },
+    {
+      "id": "bootstrap",
+      "type": "backend",
+      "label": "Bootstrap",
+      "sublabel": "唯一进程组装入口",
+      "tag": "requires / provides / contributions",
+      "pos": [490, 300],
+      "size": [220, 84],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/bootstrap/runtime.mjs",
+          "label": "运行组装"
+        },
+        {
+          "path": "projects/product/services/buildr/src/bootstrap/module-registry.mjs",
+          "label": "模块注册"
+        }
+      ]
+    },
+    {
+      "id": "workspaceModule",
+      "type": "backend",
+      "label": "工作空间核心模块",
+      "sublabel": "Workspace / Project / Service",
+      "pos": [750, 70],
+      "size": [210, 76],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/workspace/module.mjs",
+          "label": "模块入口"
+        },
+        {
+          "path": "projects/product/openspec/specs/buildr-workspace-management/spec.md",
+          "label": "能力规范"
+        }
+      ]
+    },
+    {
+      "id": "taskModule",
+      "type": "backend",
+      "label": "Task 模块",
+      "sublabel": "Record / Review / Verification / Parent",
+      "pos": [750, 240],
+      "size": [210, 76],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/task/module.ts",
+          "label": "模块入口"
+        },
+        {
+          "path": "projects/product/openspec/specs/task-record/spec.md",
+          "label": "Task Record"
+        },
+        {
+          "path": "projects/product/openspec/specs/task-verification/spec.md",
+          "label": "Task Verification"
+        }
+      ]
+    },
+    {
+      "id": "agentAssetsModule",
+      "type": "backend",
+      "label": "智能体资产模块",
+      "sublabel": "Rule / Skill / Command / Component",
+      "pos": [750, 410],
+      "size": [210, 76],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/agent-assets/module.mjs",
+          "label": "模块入口"
+        },
+        {
+          "path": "projects/product/openspec/specs/agent-assets-module-architecture/spec.md",
+          "label": "模块规范"
+        }
+      ]
+    },
+    {
+      "id": "supportModules",
+      "type": "backend",
+      "label": "系统能力模块",
+      "sublabel": "Installation / Doctor / Publication",
+      "pos": [750, 580],
+      "size": [210, 84],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/system/installation/module.mjs",
+          "label": "System Installation"
+        },
+        {
+          "path": "projects/product/services/buildr/src/system/publication/module.mjs",
+          "label": "Publication"
+        },
+        {
+          "path": "projects/product/knowledge/architecture/technical.md",
+          "label": "模块总览"
+        }
+      ]
+    },
+    {
+      "id": "projectSources",
+      "type": "external",
+      "label": "项目源事实",
+      "sublabel": "OpenSpec / code / registries",
+      "tag": "规范与实现来源",
+      "pos": [1060, 65],
+      "size": [220, 86],
+      "sources": [
+        {
+          "path": "projects/product/AGENTS.md",
+          "label": "Product 边界"
+        },
+        {
+          "path": "projects/product/knowledge/overview.md",
+          "label": "当前认知"
+        },
+        {
+          "path": "projects/product/services/manifest.yml",
+          "label": "Service registry"
+        }
+      ]
+    },
+    {
+      "id": "localState",
+      "type": "database",
+      "label": "Buildr 本机事实",
+      "sublabel": "workspace.sqlite / Task 结果",
+      "tag": "本机 authority",
+      "pos": [1060, 235],
+      "size": [220, 86],
+      "sources": [
+        {
+          "path": "projects/product/openspec/specs/workspace-structured-data-store/spec.md",
+          "label": "Structured Store"
+        },
+        {
+          "path": "projects/product/knowledge/architecture/technical.md",
+          "label": "数据与写入权"
+        }
+      ]
+    },
+    {
+      "id": "agentRuntime",
+      "type": "cloud",
+      "label": "Agent Runtime 投射",
+      "sublabel": "Rule / Skill / Command / binding",
+      "tag": "可重建投射",
+      "pos": [1060, 405],
+      "size": [220, 86],
+      "sources": [
+        {
+          "path": "projects/product/services/buildr/src/agent-assets/module.mjs",
+          "label": "投射入口"
+        },
+        {
+          "path": "projects/product/openspec/specs/workspace-first-runtime-projection/spec.md",
+          "label": "Runtime 投射"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Buildr Product：治理事实与可执行产品",
+      "wraps": [
+        "buildrWeb",
+        "interfaces",
+        "bootstrap",
+        "workspaceModule",
+        "taskModule",
+        "agentAssetsModule",
+        "supportModules"
+      ],
+      "pad": 30
+    }
+  ],
+  "connections": [
+    {
+      "id": "humanToAgent",
+      "from": "human",
+      "to": "agent",
+      "label": "目标、判断与授权",
+      "variant": "emphasis",
+      "labelAt": [130, 214]
+    },
+    {
+      "id": "humanToWeb",
+      "from": "human",
+      "to": "buildrWeb",
+      "label": "查看与有限操作",
+      "labelAt": [235, 214]
+    },
+    {
+      "id": "agentToInterfaces",
+      "from": "agent",
+      "to": "interfaces",
+      "label": "Skill 与 CLI 调用",
+      "variant": "emphasis",
+      "labelAt": [235, 524]
+    },
+    {
+      "id": "webToInterfaces",
+      "from": "buildrWeb",
+      "to": "interfaces",
+      "label": "web-dist / 同源 HTTP",
+      "labelAt": [355, 214]
+    },
+    {
+      "id": "interfacesToBootstrap",
+      "from": "interfaces",
+      "to": "bootstrap",
+      "label": "进入同一组装入口",
+      "variant": "emphasis"
+    },
+    {
+      "id": "bootstrapToWorkspace",
+      "from": "bootstrap",
+      "to": "workspaceModule"
+    },
+    {
+      "id": "bootstrapToTask",
+      "from": "bootstrap",
+      "to": "taskModule"
+    },
+    {
+      "id": "bootstrapToAgentAssets",
+      "from": "bootstrap",
+      "to": "agentAssetsModule"
+    },
+    {
+      "id": "bootstrapToSupport",
+      "from": "bootstrap",
+      "to": "supportModules"
+    },
+    {
+      "id": "workspaceToSources",
+      "from": "workspaceModule",
+      "to": "projectSources",
+      "label": "解析 registry 与来源",
+      "route": "orthogonal-h",
+      "labelAt": [1010, 165]
+    },
+    {
+      "id": "taskToLocal",
+      "from": "taskModule",
+      "to": "localState",
+      "label": "写入专业事实",
+      "route": "orthogonal-h"
+    },
+    {
+      "id": "agentAssetsToRuntime",
+      "from": "agentAssetsModule",
+      "to": "agentRuntime",
+      "label": "投射 runtime",
+      "variant": "dashed",
+      "route": "orthogonal-h"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "职责",
+      "items": [
+        "人负责目标、判断、授权与验收",
+        "智能体负责理解目标并组合专业能力",
+        "Buildr维护长期资产、必要事实与具体动作安全"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "事实边界",
+      "items": [
+        "OpenSpec与代码分别承担规范和实现事实",
+        "模块按各自职责读取或维护源事实，不共享一个总 writer",
+        "Bootstrap只组装，业务模块拥有自己的语义和写入权"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "交付形态",
+      "items": [
+        "buildr-web单向构建正式web-dist",
+        "CLI、Web Runtime、migrations、resources与web-dist进入同一npm package",
+        "Agent Assets从受管源资产生成可重建runtime投射"
+      ]
+    }
+  ]
+}

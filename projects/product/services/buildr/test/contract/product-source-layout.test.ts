@@ -14,6 +14,7 @@ const canonicalProjectEntries: any[] = [
   'capabilities.yml',
   'commands.yml',
   'docs',
+  'knowledge',
   'openspec',
   'services',
 ];
