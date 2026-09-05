@@ -210,6 +210,12 @@ builtins:
       description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: code-architecture
+      path: resources/workspace/skills/buildr/code-architecture
+      target: skills/buildr/code-architecture
+      description: 为任意技术栈的新功能代码组织、模块重构、文件拆并和结构审查提供架构指导；明确分层、对象职责和类型归属，并输出目录、对象、关键方法及调用关系级代码地图。
+      required: false
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
@@ -448,6 +454,8 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
   - resources/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - resources/workspace/skills/buildr/declaration-intake/SKILL.md => skills/buildr/declaration-intake/SKILL.md copy
+  - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
+  - resources/workspace/skills/buildr/code-architecture/references/examples.md => skills/buildr/code-architecture/references/examples.md copy
   - resources/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
   - resources/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy
