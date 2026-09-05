@@ -35,6 +35,22 @@
     },
     {
       "type": "skill",
+      "id": "code-architecture",
+      "target": "skills/buildr/code-architecture",
+      "integrity": "sha256-6eefddedc6742b3fc7c79461ed1c1f3699aabac61b59704a33825b8f4e8d5e7c",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-c33c6a66303105ee61fd0dc9eed8c6820ef846d297c73e53b2686e20ecaa8ec5"
+        },
+        {
+          "path": "references/examples.md",
+          "integrity": "sha256-f9a21ceb9806a6b2baace600e0137a7dc6c7ea2c1970ba9a2aac7dc033d51c5d"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "current-knowledge-maintenance",
       "target": "skills/buildr/current-knowledge-maintenance",
       "integrity": "sha256-d4c6b1d15795ab44623e8d19cfe1b47403dae958c6427c6986941203c498d250",

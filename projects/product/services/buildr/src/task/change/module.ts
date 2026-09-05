@@ -60,14 +60,17 @@ export function createChangeModule(runtime: ChangeRuntime) {
     id: CHANGE_MODULE_ID,
     requires: Object.freeze([OPENSPEC_QUERY, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER]),
     create(requires: ChangeModuleRequires) {
-      registerChangeApplication(runtime, {
+      const registered = registerChangeApplication(runtime, {
         openSpecQuery: openSpecDependency(requires),
         projectQuery: projectDependency(requires),
         worktreeQuery: worktreeDependency(requires),
       });
       const application = Object.freeze({
         ...Object.fromEntries(METHODS.map((method) => [method, runtimeMethod(runtime, method)])),
-        inspectTask: runtimeMethod(runtime, 'inspectTask'),
+        inspectTask: (...args: Parameters<typeof registered.inspectTask>) => registered.inspectTask(...args),
+        taskScopedChangeDetail: (...args: Parameters<typeof registered.taskScopedChangeDetail>) => registered.taskScopedChangeDetail(...args),
+        taskUiPrototypes: (...args: Parameters<typeof registered.taskUiPrototypes>) => registered.taskUiPrototypes(...args),
+        taskUiPrototype: (...args: Parameters<typeof registered.taskUiPrototype>) => registered.taskUiPrototype(...args),
       });
       return Object.freeze({
         provides: { [CHANGE_APPLICATION]: application },

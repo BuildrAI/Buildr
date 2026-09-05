@@ -1,3 +1,10 @@
+import type { ExecutableIdentity } from './convergence-model.ts';
+import type { LegacyReceipt } from './openspec-converge.ts';
+import type { ContractBaseline, SyncPlan } from './deterministic-sync.ts';
+type RecoveryInput = { projectRoot: string; change: string; project: string; newDeltaHash: string; receipt: LegacyReceipt | null; baseline: ContractBaseline | null; syncPlan: SyncPlan | null; executableIdentity: ExecutableIdentity; io?: typeof fs };
+type RecoveryFile = { path: string; beforeDigest: string; expectedDigest: string; currentDigest: string; state: string };
+type RecoveryPlan = { schemaVersion: string; status: string; identity: string; change: string; project: string; oldDeltaHash: string; newDeltaHash: string; oldPlanIdentity?: string; reversePlanIdentity?: string; baselineIdentity: string; executableIdentity: ExecutableIdentity; files: RecoveryFile[] };
+type RecoveryReceipt = ReturnType<typeof createConvergenceRecoveryReceipt> & { history?: ReturnType<typeof createConvergenceRecoveryReceipt>[] };
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,11 +17,11 @@ import {
 
 export const CONVERGENCE_RECOVERY_SCHEMA = 'buildr.openspec-convergence-recovery/v1';
 
-function digest(value: any) {
+function digest(value: unknown) {
   return `sha256-${crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')}`;
 }
 
-function blocked(status: any, code: any, message: any, evidence: any = {}) {
+function blocked(status: string, code: string, message: string, evidence: Record<string, unknown> = {}) {
   return { schemaVersion: CONVERGENCE_RECOVERY_SCHEMA, status, code, message, effects: [], ...evidence };
 }
 
@@ -28,14 +35,14 @@ export function inspectConvergenceRecovery({
   syncPlan,
   executableIdentity,
   io = fs,
-}: any) {
+}: RecoveryInput) {
   const required = [
     ['convergence-receipt', receipt],
     ['contract-baseline', baseline],
     ['deterministic-sync-plan', syncPlan],
   ];
-  const missingEvidence = required.filter(([, value]: any) => !value).map(([name]: any) => name);
-  if (missingEvidence.length) {
+  const missingEvidence = required.filter(([, value]) => !value).map(([name]) => name);
+  if (!receipt || !baseline || !syncPlan) {
     return blocked('recovery-unprovable', 'convergence-recovery-evidence-missing', 'OpenSpec convergence recovery evidence is incomplete.', { missingEvidence });
   }
   if (receipt.change !== change || receipt.project !== project || baseline.change !== change || baseline.project !== project
@@ -50,10 +57,10 @@ export function inspectConvergenceRecovery({
     return blocked('recovery-unprovable', 'convergence-recovery-chain-mismatch', 'OpenSpec baseline, sync plan, and convergence receipt do not form one identity chain.');
   }
   const receiptPlanIdentities = (receipt.transitions || [])
-    .filter((item: any) => item.stage === 'sync-plan' || item.stage === 'sync-apply')
-    .map((item: any) => item.planIdentity)
+    .filter((item) => item.stage === 'sync-plan' || item.stage === 'sync-apply')
+    .map((item) => item.planIdentity)
     .filter(Boolean);
-  if (receiptPlanIdentities.length < 2 || receiptPlanIdentities.some((identity: any) => identity !== syncPlan.identity)) {
+  if (receiptPlanIdentities.length < 2 || receiptPlanIdentities.some((identity) => identity !== syncPlan.identity)) {
     return blocked('recovery-unprovable', 'convergence-recovery-plan-receipt-mismatch', 'The convergence receipt does not bind the deterministic sync plan used by both planning and apply stages.');
   }
   const receiptExecutable = receipt.openspecExecutableIdentity;
@@ -64,7 +71,7 @@ export function inspectConvergenceRecovery({
     return blocked('recovery-unprovable', 'convergence-recovery-files-missing', 'OpenSpec deterministic sync plan does not contain restorable files.');
   }
 
-  const files: any[] = [];
+  const files: RecoveryFile[] = [];
   for (const item of syncPlan.files) {
     const file = path.resolve(projectRoot, item.path);
     if (!file.startsWith(`${path.resolve(projectRoot)}${path.sep}`) || !io.existsSync(file)) {
@@ -77,13 +84,13 @@ export function inspectConvergenceRecovery({
     const state = currentDigest === item.expectedDigest ? 'post-sync' : currentDigest === item.beforeDigest ? 'pre-sync' : 'drifted';
     files.push({ path: item.path, beforeDigest: item.beforeDigest, expectedDigest: item.expectedDigest, currentDigest, state });
   }
-  if (files.some((item: any) => item.state === 'drifted') || new Set(files.map((item: any) => item.state)).size > 1) {
+  if (files.some((item) => item.state === 'drifted') || new Set(files.map((item) => item.state)).size > 1) {
     return blocked('semantic-resolution-required', 'convergence-recovery-canonical-drift', 'Canonical specs no longer match one provable pre-sync or post-sync state.', { files });
   }
 
   const canonicalState = files[0].state;
-  const reversePlan: any = reverseDeterministicSyncPlan(syncPlan);
-  const identityFiles = files.map(({ path: filePath, beforeDigest, expectedDigest }: any) => ({ path: filePath, beforeDigest, expectedDigest }));
+  const reversePlan = reverseDeterministicSyncPlan(syncPlan);
+  const identityFiles = files.map(({ path: filePath, beforeDigest, expectedDigest }) => ({ path: filePath, beforeDigest, expectedDigest }));
   const identity = digest({ change, project, oldDeltaHash: receipt.deltaHash, newDeltaHash, oldPlanIdentity: syncPlan.identity, files: identityFiles, executableIdentity });
   return {
     schemaVersion: CONVERGENCE_RECOVERY_SCHEMA,
@@ -105,7 +112,7 @@ export function inspectConvergenceRecovery({
   };
 }
 
-export function createConvergenceRecoveryReceipt(plan: any, stage: any = 'planned', transitions: any = []) {
+export function createConvergenceRecoveryReceipt(plan: RecoveryPlan, stage: string = 'planned', transitions: unknown[] = []) {
   if (plan?.schemaVersion !== CONVERGENCE_RECOVERY_SCHEMA || plan.status !== 'recoverable-stale-receipt' || !plan.identity) {
     throw new Error('OpenSpec convergence recovery plan is invalid.');
   }
@@ -126,7 +133,7 @@ export function createConvergenceRecoveryReceipt(plan: any, stage: any = 'planne
   };
 }
 
-export function continueConvergenceRecoveryReceipt(plan: any, existing: any = null) {
+export function continueConvergenceRecoveryReceipt(plan: RecoveryPlan, existing: RecoveryReceipt | null = null) {
   if (!existing) return { status: 'ready', receipt: createConvergenceRecoveryReceipt(plan), disposition: 'created' };
   if (existing.identity === plan.identity) return { status: 'ready', receipt: existing, disposition: 'resumed' };
   if (existing.stage !== 'completed' || existing.newDeltaHash !== plan.oldDeltaHash) {

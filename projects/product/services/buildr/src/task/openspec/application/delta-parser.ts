@@ -1,11 +1,18 @@
-export function normalizeOpenSpecContractText(content: any) {
+export type DeltaOperation = { capability: string } & (
+  | { type: 'ADDED' | 'MODIFIED' | 'REMOVED'; title: string; requirement: string; from?: never; to?: never }
+  | { type: 'RENAMED'; from: string; to: string; title?: never; requirement?: never }
+  | { type: 'RENAMED_SCENARIO'; requirement: string; from: string; to: string; title?: never }
+);
+export type OpenSpecDelta = { hash: string; operations: DeltaOperation[]; capabilities: Map<string, { file: string; content: string; operations: DeltaOperation[] }> };
+
+export function normalizeOpenSpecContractText(content: unknown) {
   return String(content).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '\n');
 }
 
-export function parseOpenSpecRequirementBlocks(content: any) {
+export function parseOpenSpecRequirementBlocks(content: string) {
   const normalized = normalizeOpenSpecContractText(content);
   const matches = [...normalized.matchAll(/^### Requirement:\s*(.+?)\s*$/gm)];
-  const requirements = new Map();
+  const requirements = new Map<string, string>();
   for (let index = 0; index < matches.length; index += 1) {
     const title = matches[index][1].trim();
     if (!title) continue;
@@ -16,7 +23,7 @@ export function parseOpenSpecRequirementBlocks(content: any) {
   return requirements;
 }
 
-export function openSpecSection(content: any, name: any) {
+export function openSpecSection(content: string, name: string) {
   const normalized = normalizeOpenSpecContractText(content);
   const header = new RegExp(`^## ${name}\\s*$`, 'm');
   const match = header.exec(normalized);
@@ -27,9 +34,9 @@ export function openSpecSection(content: any, name: any) {
   return normalized.slice(match.index + match[0].length, nextMatch ? nextMatch.index : normalized.length);
 }
 
-export function parseOpenSpecDeltaSpec(content: any, capability: any) {
-  const operations: any[] = [];
-  for (const [section, type] of [['ADDED Requirements', 'ADDED'], ['MODIFIED Requirements', 'MODIFIED'], ['REMOVED Requirements', 'REMOVED']]) {
+export function parseOpenSpecDeltaSpec(content: string, capability: string) {
+  const operations: DeltaOperation[] = [];
+  for (const [section, type] of [['ADDED Requirements', 'ADDED'], ['MODIFIED Requirements', 'MODIFIED'], ['REMOVED Requirements', 'REMOVED']] as const) {
     const requirements = parseOpenSpecRequirementBlocks(openSpecSection(content, section));
     for (const [title, requirement] of requirements) operations.push({ type, capability, title, requirement });
   }

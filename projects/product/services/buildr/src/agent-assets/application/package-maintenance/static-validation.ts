@@ -1,4 +1,30 @@
+import { stripTypeScriptTypes } from 'node:module';
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../infrastructure/runtime/skills/manifests.ts';
+
+// Type erasure preserves executable text, so English prose and string literals
+// containing the word do not count as unsafe type annotations.
+export function hasExplicitAnyType(content: string): boolean {
+  const erased = stripTypeScriptTypes(content);
+  const tokens = content.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\$]|\$(?!\{))*`/gu, (literal) => ' '.repeat(literal.length));
+  return [...tokens.matchAll(/\bany\b/gu)].some((match) => {
+    const end = match.index + 3;
+    if (/^\s*(?:\??\s*:|\()/u.test(tokens.slice(end))) return false;
+    return erased.slice(match.index, end) !== 'any';
+  });
+}
+
+export function validateTaskVerificationSkillCommands(content: string): string[] {
+  const problems: string[] = [];
+  for (const action of ['inspect', 'record']) {
+    const command = new RegExp(`(?:\\bbuildr|<selected-writer-buildr>)\\s+task\\s+verification\\s+${action}\\b[^\\n]*`, 'g');
+    const matches = [...content.matchAll(command)];
+    if (!matches.length) problems.push(`task-verification Skill must document task verification ${action}.`);
+    if (action === 'record' && !matches.some(([line]) => /--expected-report\b/u.test(line))) {
+      problems.push('task-verification Skill must document --expected-report on task verification record.');
+    }
+  }
+  return problems;
+}
 
 // Validate the advertised command contract, not prose or placeholder spelling.
 export function validateTaskRecordSkillCommands(content: any): any  {
@@ -398,7 +424,7 @@ export function createPackageStaticValidator(deps: any): any  {
       const relative = toPosixRelative(root, file);
       const content = fs.readFileSync(file, 'utf8');
       if (content.includes('@ts-nocheck')) problems.push(`Current Task TypeScript must not disable checking: ${relative}`);
-      if (/\bany\b/u.test(content)) problems.push(`Current Task TypeScript public boundary must not use any: ${relative}`);
+      if (hasExplicitAnyType(content)) problems.push(`Current Task TypeScript must not use explicit any: ${relative}`);
     }
 
     const ownershipFiles: any[] = [path.join(root, 'test', 'verification'), path.resolve(productRoot, 'verification.yml')];
@@ -495,11 +521,11 @@ export function createPackageStaticValidator(deps: any): any  {
       }
     }
 
-    const localServer = path.join(root, 'src', 'web', 'http', 'router.mjs');
+    const localServer = path.join(root, 'src', 'web', 'http', 'router.ts');
     if (!existsFile(localServer)) problems.push('Task Review Buildr Web interface is missing.');
     else {
       const content = fs.readFileSync(localServer, 'utf8');
-      const readWorker = path.join(root, 'src', 'web', 'http', 'read-worker.mjs');
+      const readWorker = path.join(root, 'src', 'web', 'http', 'read-worker.ts');
       const readWorkerContent = existsFile(readWorker) ? fs.readFileSync(readWorker, 'utf8') : '';
       const taskReviewHttp = path.join(root, 'src', 'task', 'interfaces', 'http', 'task-review-http.ts');
       const taskReviewHttpContent = existsFile(taskReviewHttp) ? fs.readFileSync(taskReviewHttp, 'utf8') : '';
@@ -1125,14 +1151,13 @@ export function createPackageStaticValidator(deps: any): any  {
         }
       }
       if (skill.id === 'task-verification') {
+        problems.push(...validateTaskVerificationSkillCommands(skillContent));
         for (const requiredText of [
           '`buildr.task-verification/v4`',
           'buildr.project-verification/v4',
           'buildr project verification inspect <project>',
           'buildr project verification validate <project>',
           'buildr project verification update <project>',
-          'buildr task verification record <task-id>',
-          'buildr task verification inspect <task-id>',
           '--expected-report',
           'reportDigest',
           '不列举每个测试文件',

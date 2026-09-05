@@ -1,10 +1,15 @@
 import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
-import { registerOpenSpecApplication } from './application/openspec-application.ts';
+import { registerOpenSpecApplication, type OpenSpecRuntime } from './application/openspec-application.ts';
 import { WORKSPACE_QUERY } from '../../workspace/module.ts';
 
 export const OPENSPEC_MODULE_ID = 'openspec';
 export const OPENSPEC_APPLICATION = 'openspec.application';
 export const OPENSPEC_QUERY = 'openspec.query';
+
+type OpenSpecApplication = ReturnType<typeof registerOpenSpecApplication>;
+type CliApplication = Pick<OpenSpecApplication, 'openspecConverge' | 'openspecConvergencePreflight' | 'openspecConvergenceInspect'>;
+type CliMatch = { domain?: string; action?: string; runtimeId?: string };
+type CliContext = { argv: string[] };
 
 const APPLICATION_METHODS = Object.freeze([
   'normalizeOpenSpecContractText', 'openSpecContractHash', 'openSpecContractChangePath',
@@ -16,17 +21,21 @@ const APPLICATION_METHODS = Object.freeze([
   'detectOpenSpecActiveConflicts', 'openSpecContractContext', 'openSpecExecutableIdentity',
   'observeOpenSpecCanonicalProject', 'openSpecConvergencePlanningInputs',
   'openspecConverge', 'openspecConvergencePreflight', 'openspecConvergenceInspect',
-]);
+] as const);
 
-function methodPort(source: any, methods: any) {
-  return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => source[method](...args)])));
+function methodPort<K extends keyof OpenSpecApplication>(source: OpenSpecApplication, methods: readonly K[]): Readonly<Pick<OpenSpecApplication, K>> {
+  return Object.freeze(Object.fromEntries(methods.map((method) => [method, (...args: unknown[]) => {
+    const fn = source[method];
+    if (typeof fn !== 'function') throw new Error(`OpenSpec application method is missing: ${method}`);
+    return Reflect.apply(fn, source, args);
+  }]))) as Readonly<Pick<OpenSpecApplication, K>>;
 }
 
-function invoke(application: any, method: any, args: any) {
+function invoke(application: CliApplication | null, method: keyof CliApplication, args: { runtime: CliApplication; argv: string[] }) {
   return (application || args.runtime)[method](args.argv);
 }
 
-export function createOpenSpecCliContributions(application: any = null) {
+export function createOpenSpecCliContributions(application: CliApplication | null = null) {
   return Object.freeze([
     Object.freeze({
       key: 'openspec converge', surface: 'maintenance',
@@ -37,8 +46,8 @@ export function createOpenSpecCliContributions(application: any = null) {
         '--target 使用Agent已核对的当前Workspace或matching Worktree真实根；不会自动搜索或选择其他worktree。',
         '产品内部完成确定性规划、隔离 strict validation、条件式原子应用、写后确认和 archive --skip-specs。',
       ],
-      match: ({ domain, action }: any) => domain === 'openspec' && action === 'converge',
-      run: (runtime: any, context: any) => invoke(application, 'openspecConverge', { runtime, argv: context.argv.slice(4) }),
+      match: ({ domain, action }: CliMatch) => domain === 'openspec' && action === 'converge',
+      run: (runtime: CliApplication, context: CliContext) => invoke(application, 'openspecConverge', { runtime, argv: context.argv.slice(4) }),
     }),
     Object.freeze({
       key: 'openspec convergence preflight', surface: 'maintenance',
@@ -49,8 +58,8 @@ export function createOpenSpecCliContributions(application: any = null) {
         '--target 使用Agent已核对的当前Workspace或matching Worktree真实根；不会自动搜索或选择其他worktree。',
         '只读检查当前语义就绪性；不会写canonical、Receipt或archive。ready会在delta、canonical、active Changes或executable变化后失效，最终converge始终重新检查。',
       ],
-      match: ({ domain, action, runtimeId }: any) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',
-      run: (runtime: any, context: any) => invoke(application, 'openspecConvergencePreflight', { runtime, argv: context.argv.slice(5) }),
+      match: ({ domain, action, runtimeId }: CliMatch) => domain === 'openspec' && action === 'convergence' && runtimeId === 'preflight',
+      run: (runtime: CliApplication, context: CliContext) => invoke(application, 'openspecConvergencePreflight', { runtime, argv: context.argv.slice(5) }),
     }),
     Object.freeze({
       key: 'openspec convergence inspect', surface: 'maintenance',
@@ -60,19 +69,19 @@ export function createOpenSpecCliContributions(application: any = null) {
         '',
         '只读检查当前事务 Receipt；不会写 canonical、Receipt 或 archive，也不用于归档后的长期审计。',
       ],
-      match: ({ domain, action, runtimeId }: any) => domain === 'openspec' && action === 'convergence' && runtimeId === 'inspect',
-      run: (runtime: any, context: any) => invoke(application, 'openspecConvergenceInspect', { runtime, argv: context.argv.slice(5) }),
+      match: ({ domain, action, runtimeId }: CliMatch) => domain === 'openspec' && action === 'convergence' && runtimeId === 'inspect',
+      run: (runtime: CliApplication, context: CliContext) => invoke(application, 'openspecConvergenceInspect', { runtime, argv: context.argv.slice(5) }),
     }),
   ]);
 }
 
-export function createOpenSpecModule(runtime: any) {
+export function createOpenSpecModule(runtime: OpenSpecRuntime) {
   return Object.freeze({
     id: OPENSPEC_MODULE_ID,
     requires: Object.freeze([WORKSPACE_QUERY]),
-    create(requires: any) {
-      registerOpenSpecApplication(runtime, { projectQuery: requires[WORKSPACE_QUERY] });
-      const application = methodPort(runtime, APPLICATION_METHODS);
+    create(requires: { [WORKSPACE_QUERY]: NonNullable<Parameters<typeof registerOpenSpecApplication>[1]>['projectQuery'] }) {
+      const registered = registerOpenSpecApplication(runtime, { projectQuery: requires[WORKSPACE_QUERY] });
+      const application = methodPort(registered, APPLICATION_METHODS);
       const query = Object.freeze({
         inspectChangeChecklist,
         parseChangeChecklistText,

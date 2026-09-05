@@ -503,6 +503,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: ux-design-laws
+  - id: code-architecture
+    assetIdentity: buildr:skill:code-architecture
+    sourceIdentity: package:skills/buildr/code-architecture
+    source: buildr
+    path: buildr/code-architecture
+    description: 为任意技术栈的新功能代码组织、模块重构、文件拆并和结构审查提供架构指导；明确分层、对象职责和类型归属，并输出目录、对象、关键方法及调用关系级代码地图。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: code-architecture
 contracts:
   - id: buildr.terminology-governance
     version: 1

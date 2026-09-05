@@ -1,9 +1,13 @@
+import type { registerChangeApplication } from '../../application/change-application.ts';
+
+type ChangeHttpApplication = Pick<ReturnType<typeof registerChangeApplication>, 'inspectTask' | 'taskScopedChangeDetail' | 'taskUiPrototypes' | 'taskUiPrototype'>;
+type ChangeHttpInput = { request: { method?: string }; suffix: string; root: string; respond: { uiPrototypeHtml(html: string): unknown } };
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
-export function createChangeHttpContribution(application: any) {
+export function createChangeHttpContribution(application: ChangeHttpApplication) {
   return Object.freeze({
     id: 'change.http',
-    handle: ({ request, suffix, root, respond }: any) => {
+    handle: ({ request, suffix, root, respond }: ChangeHttpInput) => {
       const detail = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})$`));
       if (request.method === 'GET' && detail) {
         application.inspectTask(root, detail[1]);

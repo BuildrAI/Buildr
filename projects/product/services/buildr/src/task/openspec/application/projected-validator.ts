@@ -4,11 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 
-const diagnosticDigest = (value: any) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
+type ProjectedFile = { path: string; content: string; exists?: boolean; digest?: string };
+type ProjectedIo = { ensureDirectory(path: string): unknown; copyDirectory(from: string, to: string): unknown; atomicWriteFile(path: string, content: string): unknown; existsFile(path: string): boolean; removePath(path: string): unknown };
+type ProjectedInput = { projectRoot: string; files?: ProjectedFile[]; executable: string; copyDirectory: ProjectedIo['copyDirectory']; atomicWriteFile: ProjectedIo['atomicWriteFile']; removePath: ProjectedIo['removePath']; spawn?: typeof spawnCommandSync; mode?: string };
+const diagnosticDigest = (value: string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 
 // Legacy recovery callers keep this adapter during the convergence receipt
 // migration. New transactions use validateProjectedOpenSpec below.
-export function validateProjectedOpenSpecTree({ projectRoot, delta, files, executable, includeBaselineTargets = false, collectBaselineTargets, io, spawn = spawnCommandSync }: any) {
+export function validateProjectedOpenSpecTree<T = unknown>({ projectRoot, delta, files, executable, includeBaselineTargets = false, collectBaselineTargets, io, spawn = spawnCommandSync }: { projectRoot: string; delta: unknown; files: ProjectedFile[]; executable: string; includeBaselineTargets?: boolean; collectBaselineTargets?: (root: string, delta: unknown) => T; io: ProjectedIo; spawn?: typeof spawnCommandSync }) {
   const startedAt = Date.now();
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-projected-'));
   try {
@@ -20,11 +23,11 @@ export function validateProjectedOpenSpecTree({ projectRoot, delta, files, execu
     const version = spawn(executable, ['--version'], { cwd: temporaryProject, encoding: 'utf8' });
     const validation = spawn(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: temporaryProject, encoding: 'utf8' });
     const output = `${validation.stdout || ''}${validation.stderr || ''}`;
-    let baselineTargets: any = null;
-    let baselineError: any = null;
+    let baselineTargets: T | null = null;
+    let baselineError: string | null = null;
     if (validation.status === 0 && includeBaselineTargets) {
-      try { baselineTargets = collectBaselineTargets(temporaryProject, delta); }
-      catch (error: any) { baselineError = error.message; }
+      try { baselineTargets = collectBaselineTargets!(temporaryProject, delta); }
+      catch (error) { baselineError = error instanceof Error ? error.message : String(error); }
     }
     const passed = validation.status === 0 && !baselineError;
     return {
@@ -33,7 +36,7 @@ export function validateProjectedOpenSpecTree({ projectRoot, delta, files, execu
       executable,
       version: version.status === 0 ? version.stdout.trim() : null,
       durationMs: Date.now() - startedAt,
-      expectedDigests: Object.fromEntries(files.map((item: any) => [item.path, item.digest])),
+      expectedDigests: Object.fromEntries(files.map((item) => [item.path, item.digest])),
       baselineTargets,
       diagnostic: { bytes: Buffer.byteLength(output), sha256: diagnosticDigest(output), preview: baselineError || output.slice(0, 2000), truncated: output.length > 2000 },
     };
@@ -42,7 +45,7 @@ export function validateProjectedOpenSpecTree({ projectRoot, delta, files, execu
   }
 }
 
-export function validateProjectedOpenSpec({ projectRoot, files = [], executable, copyDirectory, atomicWriteFile, removePath, spawn = spawnCommandSync, mode = 'projected' }: any) {
+export function validateProjectedOpenSpec({ projectRoot, files = [], executable, copyDirectory, atomicWriteFile, removePath, spawn = spawnCommandSync, mode = 'projected' }: ProjectedInput) {
   const startedAt = Date.now();
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-openspec-convergence-'));
   try {
@@ -69,7 +72,7 @@ export function validateProjectedOpenSpec({ projectRoot, files = [], executable,
   }
 }
 
-export function validateActualOpenSpec({ projectRoot, executable, spawn = spawnCommandSync }: any) {
+export function validateActualOpenSpec({ projectRoot, executable, spawn = spawnCommandSync }: { projectRoot: string; executable: string; spawn?: typeof spawnCommandSync }) {
   const startedAt = Date.now();
   if (!path.isAbsolute(executable) || !fs.existsSync(executable)) return { status: 'blocked', code: 'openspec-executable-unavailable', durationMs: 0, commandCount: 0 };
   const validation = spawn(executable, ['validate', '--all', '--strict', '--no-interactive'], { cwd: projectRoot, encoding: 'utf8' });

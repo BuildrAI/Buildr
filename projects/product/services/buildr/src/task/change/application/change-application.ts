@@ -306,7 +306,7 @@ function decodeRef(ref: unknown): { lifecycle: ChangeLifecycle; directory: strin
   return { lifecycle, directory };
 }
 
-export function registerChangeApplication(runtime: ChangeRuntime, options: ChangeApplicationOptions = {}): ChangeRuntime {
+export function registerChangeApplication(runtime: ChangeRuntime, options: ChangeApplicationOptions = {}) {
   const { openSpecQuery, projectQuery, worktreeQuery } = options;
   if (!openSpecQuery || typeof openSpecQuery.inspectChangeChecklist !== 'function') {
     throw changeError('change_openspec_query_missing', 'Change Application requires the OpenSpec Query capability.');
@@ -522,7 +522,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     };
   }
 
-  Object.assign(runtime, {
+  return Object.assign(runtime, {
     listProjectChanges,
     listChanges,
     changeDetail,
@@ -533,5 +533,4 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     taskUiPrototypes,
     taskUiPrototype,
   });
-  return runtime;
 }
