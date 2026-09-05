@@ -62,7 +62,7 @@ Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature�
 
 #### Scenario: 判断是否抽取Hook
 - **WHEN**页面包含多阶段请求、导航历史或多个相互约束的状态
-- **THEN**实现 MUST按该状态边界抽取领域Hook或真实共享Hook
+- **THEN**实现 MUST在页面内方法、页面内Hook、独立领域Hook或真实共享Hook之间按阅读成本和复用范围选择，不要求每个Hook独立文件
 - **AND**职责和体量可维护的小页面 MUST NOT仅为目录对称建立空Hook或统一CRUD抽象
 
 #### Scenario: Project与Service浏览Markdown文档

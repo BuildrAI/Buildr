@@ -7,7 +7,8 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { registerWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.ts';
+import { createWorkspaceManifestRepository } from '../../src/workspace/persistence/workspace-manifest-repository.ts';
+import { createWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
 import { registerWorkspaceQueryApplication } from '../../src/workspace/application/workspace-query-application.ts';
 import { registerWorkspaceCommandApplication } from '../../src/workspace/application/workspace-command-application.ts';
@@ -40,7 +41,9 @@ function workspace(base: any, name: any, id: any = crypto.randomUUID()): any  {
 
 function runtimeFor(identity: any, profile: any, profiles: any): any  {
   const runtime: any = createRuntime();
-  registerWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: profile, resolveWebProfile });
+  runtime.workspaceRepository = createWorkspaceManifestRepository(runtime);
+  runtime.registryRepository = createWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: profile, resolveWebProfile });
+  Object.assign(runtime, runtime.workspaceRepository, runtime.registryRepository);
   registerWorkspaceQueryApplication(runtime);
   registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
   registerWorkspaceCommandApplication(runtime);
@@ -158,4 +161,13 @@ test('Preview只有在closed owner精确匹配Workspace时才跳过ordinary chan
   assert.deepEqual(development.assertWorkspaceManagementAccess(root), {
     status: 'preview', claimed: false, identity: null, profile: null,
   });
+});
+
+test('Workspace runtime port excludes private composition helpers and repositories', () => {
+  const runtime = createRuntime();
+  for (const name of ['sourceFiles', 'projectRepository', 'serviceRepository', 'readWorkspaceRecord', 'publicWorkspace', 'recoveryPrompt', 'validateServiceRegistryFile', 'cloneSourceRepository']) {
+    assert.equal(runtime[name], undefined, name);
+  }
+  assert.equal(typeof runtime.getWorkspace, 'function');
+  assert.equal(typeof runtime.createProject, 'function');
 });

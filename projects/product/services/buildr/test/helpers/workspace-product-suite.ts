@@ -8,6 +8,7 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { renderWorkspaceManifest } from '../../src/workspace/persistence/workspace-manifest-repository.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { stopPreview } from '../../src/web/application/preview-lifecycle.ts';
 import { copyPreparedWorkspace } from './prepared-fixtures.ts';
@@ -347,7 +348,7 @@ suiteTest('manifest-registry', 'legacy migration 复用 Skills UUID，失败时�
 
   const conflictRoot: any = path.join(temporaryRoot(t), 'conflict');
   writeLegacyWorkspace(conflictRoot, crypto.randomUUID());
-  const canonical: any = runtime.renderWorkspaceManifest({ workspace: { id: crypto.randomUUID(), name: 'Conflict', description: 'Conflict workspace', runtime: { node: { version: process.versions.node } } } });
+  const canonical: any = renderWorkspaceManifest({ workspace: { id: crypto.randomUUID(), name: 'Conflict', description: 'Conflict workspace', runtime: { node: { version: process.versions.node } } } });
   fs.writeFileSync(path.join(conflictRoot, '.buildr', 'workspace.yml'), canonical);
   const conflictMetadataHash: any = sha256(path.join(conflictRoot, '.buildr', 'workspace.yml'));
   const conflictSkillsHash: any = sha256(path.join(conflictRoot, 'skills', 'manifest.yml'));

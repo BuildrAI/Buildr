@@ -6,7 +6,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
-import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../shared/hooks/useMarkdownDocumentViewer';
+import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ServiceEditModal } from '../components/ServiceEditModal';
 
 type ServiceDetail = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };

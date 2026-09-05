@@ -13,7 +13,6 @@ function source(relative: string) {
 test('Workspace、Project与Service前端保持独立Feature并共享唯一Workspace Client', () => {
   const expected = [
     'features/workspace/pages/WorkspacesPage.tsx',
-    'features/workspace/hooks/useWorkspaceCatalog.ts',
     'features/project/pages/ProjectsPage.tsx',
     'features/project/pages/ProjectDetailPage.tsx',
     'features/project/components/ProjectEditModal.tsx',
@@ -21,7 +20,7 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'features/service/pages/ServiceDetailPage.tsx',
     'features/service/components/ServiceEditModal.tsx',
     'features/project-daily-progress/components/DailyProgressPanel.tsx',
-    'features/shared/hooks/useMarkdownDocumentViewer.ts',
+    'lib/useMarkdownDocumentViewer.ts',
     'api/workspace.ts',
   ];
   for (const relative of expected) assert.equal(fs.existsSync(path.join(webSource, relative)), true, `missing ${relative}`);

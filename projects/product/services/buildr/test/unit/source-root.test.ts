@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import { createProjectSource } from '../../src/workspace/domain/project.ts';
 import { createServiceSource } from '../../src/workspace/domain/service.ts';
-import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../../src/workspace/domain/source-root.ts';
+import { resolveSourceRoot } from '../../src/workspace/infrastructure/workspace-source-filesystem.ts';
+import { sourceIdentity, sourceOwnership, sourceRootKind } from '../../src/workspace/domain/source-root.ts';
 
 test('managed source 保持旧shape并解析到Workspace', () => {
   const source: any = createProjectSource({ type: 'workspace', path: 'projects/demo' }, 'demo');

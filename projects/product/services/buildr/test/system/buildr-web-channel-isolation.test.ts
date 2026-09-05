@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
+import { createWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -159,7 +159,7 @@ test('released Root中的健康legacy development实例不会被released启动�
   const before: any = fs.readFileSync(file);
 
   const runtime: any = createRuntime();
-  registerWorkspaceRegistryRepository(runtime, { productIdentity: releasedIdentity, webProfile: releasedProfile, resolveWebProfile });
+  Object.assign(runtime, createWorkspaceRegistryRepository(runtime, { productIdentity: releasedIdentity, webProfile: releasedProfile, resolveWebProfile }));
   registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
   registerWebInstanceLifecycle(runtime, { readProductIdentity: () => releasedIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
   await assert.rejects(() => runtime.startBuildrWeb(['--no-open', '--port', '0']), (error: any) => error.code === 'web_instance_profile_conflict');

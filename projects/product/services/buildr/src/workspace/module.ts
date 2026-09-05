@@ -4,22 +4,20 @@ import { registerWorkspaceOperations, type WorkspaceOperationsRuntime } from './
 import { registerProjectApplication, type ProjectApplicationRuntime } from './application/project-application.ts';
 import { registerServiceApplication, type ServiceApplicationRuntime } from './application/service-application.ts';
 import { registerProjectDailyProgressApplication, type ProjectDailyProgressApplicationRuntime } from './application/project-daily-progress-application.ts';
-import { registerWorkspaceManifestRepository, type WorkspaceManifestRepositoryRuntime } from './persistence/workspace-manifest-repository.ts';
-import { registerProjectManifestRepository, type ProjectManifestRepositoryRuntime } from './persistence/project-manifest-repository.ts';
-import { registerServiceManifestRepository, type ServiceManifestRepositoryRuntime } from './persistence/service-manifest-repository.ts';
-import { registerWorkspaceRegistryRepository, type WorkspaceRegistryRepositoryRuntime } from './persistence/workspace-registry-repository.ts';
-import { registerProjectDailyProgressRepository, type ProjectDailyProgressRepositoryRuntime } from './persistence/project-daily-progress-repository.ts';
+import { createWorkspaceManifestRepository, type WorkspaceManifestRepositoryRuntime } from './persistence/workspace-manifest-repository.ts';
+import { createProjectManifestRepository, type ProjectManifestRepositoryRuntime } from './persistence/project-manifest-repository.ts';
+import { createServiceManifestRepository, type ServiceManifestRepositoryRuntime } from './persistence/service-manifest-repository.ts';
+import { createWorkspaceRegistryRepository, type WorkspaceRegistryRepositoryRuntime } from './persistence/workspace-registry-repository.ts';
+import { createProjectDailyProgressRepository, type ProjectDailyProgressRepositoryRuntime } from './persistence/project-daily-progress-repository.ts';
 import { projectCreateCommand } from './interfaces/cli/project.ts';
 import { serviceCreateCommand } from './interfaces/cli/service.ts';
 import { workspaceCommand } from './interfaces/cli/workspace.ts';
 import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.ts';
 import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.ts';
-import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+import { defaultAssetDescription, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+import { createWorkspaceSourceFilesystem, resolveSourceRoot } from './infrastructure/workspace-source-filesystem.ts';
 import { registerWorkspaceManagementFence } from './infrastructure/workspace-management-fence.ts';
 import type { WorkspaceManagementFenceRuntime } from './infrastructure/workspace-management-fence.ts';
-import { registerSourceCreationPolicy, type SourceCreationPolicyRuntime } from './application/source-creation-policy.ts';
-import { registerProjectCreationApplication, type ProjectCreationRuntime } from './application/project-creation-application.ts';
-import { registerServiceCreationApplication, type ServiceCreationRuntime } from './application/service-creation-application.ts';
 import { registerWorkspaceSourceGit, type WorkspaceSourceGitRuntime } from './infrastructure/workspace-source-git.ts';
 
 type DynamicRuntime = Record<string, any>;
@@ -36,16 +34,14 @@ type WorkspacePrivateComposition = DynamicRuntime
   & ServiceApplicationRuntime
   & ProjectDailyProgressApplicationRuntime
   & WorkspaceManagementFenceRuntime
-  & SourceCreationPolicyRuntime
-  & WorkspaceSourceGitRuntime
-  & ProjectCreationRuntime
-  & ServiceCreationRuntime;
+  & WorkspaceSourceGitRuntime;
 
-export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-root-gitignore-entries.ts';
+export { WORKSPACE_ROOT_GITIGNORE_ENTRIES } from './application/workspace-operations.ts';
 export { createProject, createProjectSource, isProjectCode, isProjectId } from './domain/project.ts';
 export { createService, createServiceSource, isServiceCode, isServiceId } from './domain/service.ts';
 export { createWorkspace, isWorkspaceId } from './domain/workspace.ts';
-export { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+export { sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
+export { resolveSourceRoot } from './infrastructure/workspace-source-filesystem.ts';
 export { parseProjectsManifest, renderProjectsManifest } from './persistence/project-manifest-repository.ts';
 export { parseServicesManifest, renderServicesDomainManifest } from './persistence/service-manifest-repository.ts';
 export { parseWorkspaceManifest } from './persistence/workspace-manifest-repository.ts';
@@ -56,15 +52,14 @@ export {
   PROJECT_DAILY_PROGRESS_SCHEMA_V1,
   createDailyProgressDocument,
   dailyProgressError,
-  groupDailyProgressCommits,
   isDailyProgressDate,
   isLegacyDailyProgressDocument,
-  localCalendarDate,
   normalizeDailyProgressDate,
   normalizeDailyProgressDocument,
-  normalizeDailyProgressGroup,
   normalizeDailyProgressPayload,
 } from './domain/project-daily-progress.ts';
+
+export { groupDailyProgressCommits, localCalendarDate, normalizeDailyProgressGroup } from './application/project-daily-progress-application.ts';
 
 export const WORKSPACE_MODULE_ID = 'workspace-core';
 export const WORKSPACE_APPLICATION = 'workspace.application';
@@ -78,7 +73,7 @@ const WORKSPACE_METHODS = Object.freeze([
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
-  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initBuildr', 'bootstrapGuide', 'mutationRecover',
+  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initializeWorkspace', 'readBootstrapGuide', 'recoverWorkspaceMutation',
 ]);
 const PROJECT_METHODS = Object.freeze([
   'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectMigrationPlan',
@@ -95,6 +90,23 @@ const WORKSPACE_QUERY_METHODS = Object.freeze([
   'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
   'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
   'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
+]);
+
+// 兼容现有资产同步、Doctor、存储保护调用；每项必须有真实消费者。
+const LEGACY_RUNTIME_METHODS = Object.freeze([
+  'parseWorkspaceManifest', 'readWorkspaceRegistryFile', 'projectsManifestPath', 'readProjectRegistryPersistence',
+  'writeProjectRegistry', 'renderProjectsManifest', 'parseProjectsYaml', 'renderProjectsYaml',
+  'validateProjectsRegistry', 'writeProjectsRegistry', 'readServiceRegistryPersistence', 'writeServiceRegistry',
+  'parseServicesManifest', 'renderServicesDomainManifest', 'parseServicesYaml', 'parseServicesManifestYaml',
+  'renderServicesManifestYaml', 'validateServicesManifest', 'servicesManifestPath', 'writeServicesManifest',
+  'defaultAssetDescription', 'sourceIdentity', 'assertWorkspaceManagementAccess', 'ensureWorkspaceManagementClaim',
+  'diagnoseMutations', 'gitOutput', 'isGitUrl', 'gitCurrentBranch',
+  'gitDefaultBranch', 'inferRepoKind', 'gitBoundaryFor', 'ensureGitBoundaries',
+  'gitBoundaryIgnored', 'ensureRegisteredTarget', 'createProject', 'createService',
+  'initBuildr', 'bootstrapGuide', 'mutationRecover',
+]);
+const TEST_SUPPORT_METHODS = Object.freeze([
+  'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation', 'writeDailyProgressDocument',
 ]);
 
 function pick(source: any, methods: any) {
@@ -206,12 +218,19 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
     create(requires: any) {
       const agentRuntime = agentRuntimeCapability ? requires[agentRuntimeCapability] : {};
       const privateComposition = Object.assign(Object.create(runtime), agentRuntime) as WorkspacePrivateComposition;
-      registerWorkspaceManifestRepository(privateComposition);
-      registerWorkspaceRegistryRepository(privateComposition, { readProductIdentity, resolveWebProfile: webProfileContract?.resolveWebProfile });
-      registerProjectManifestRepository(privateComposition);
-      registerServiceManifestRepository(privateComposition);
-      registerProjectDailyProgressRepository(privateComposition);
+      const workspaceRepository = createWorkspaceManifestRepository(privateComposition);
+      Object.assign(privateComposition, { workspaceRepository }, workspaceRepository);
+      const registryRepository = createWorkspaceRegistryRepository(privateComposition, { readProductIdentity, resolveWebProfile: webProfileContract?.resolveWebProfile });
+      Object.assign(privateComposition, { registryRepository }, registryRepository);
+      const projectRepository = createProjectManifestRepository(privateComposition);
+      Object.assign(privateComposition, { projectRepository }, projectRepository);
+      const serviceRepository = createServiceManifestRepository(privateComposition);
+      Object.assign(privateComposition, { serviceRepository }, serviceRepository);
+      const dailyProgressRepository = createProjectDailyProgressRepository(privateComposition);
+      Object.assign(privateComposition, { dailyProgressRepository }, dailyProgressRepository);
       Object.assign(privateComposition, {
+        sourceFiles: createWorkspaceSourceFilesystem(),
+        defaultAssetDescription,
         resolveSourceRoot,
         resolveProjectRoot: (targetRoot: any, project: any) => resolveSourceRoot(targetRoot, project.source),
         resolveServiceRoot: (targetRoot: any, service: any) => resolveSourceRoot(targetRoot, service.source),
@@ -227,9 +246,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerServiceApplication(privateComposition);
       registerProjectDailyProgressApplication(privateComposition);
       registerWorkspaceSourceGit(privateComposition);
-      registerSourceCreationPolicy(privateComposition);
-      registerProjectCreationApplication(privateComposition);
-      registerServiceCreationApplication(privateComposition);
+
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
 
       const workspace = Object.freeze({
@@ -240,18 +257,23 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       const service = pick(privateComposition, SERVICE_METHODS);
       const query = pick(privateComposition, WORKSPACE_QUERY_METHODS);
       const dailyProgress = pick(privateComposition, PROJECT_DAILY_PROGRESS_METHODS);
+      privateComposition.initBuildr = (args: string[]) => workspaceCommand(workspace as any, 'init', args);
+      privateComposition.bootstrapGuide = () => workspaceCommand(workspace as any, 'bootstrap-guide');
+      privateComposition.mutationRecover = (args: string[]) => workspaceCommand(workspace as any, 'mutation-recover', args);
       privateComposition.createProject = (args: string[]) => projectCreateCommand(project as any, args);
       privateComposition.createService = (args: string[]) => serviceCreateCommand(service as any, args);
-      const runtimeMethods = Object.freeze(Object.fromEntries(
-        Object.entries(privateComposition).filter(([, value]) => typeof value === 'function'),
-      ));
+      const runtimeMethods = Object.freeze({
+        ...workspace, ...project, ...service, ...query, ...dailyProgress,
+        ...pick(privateComposition, LEGACY_RUNTIME_METHODS),
+        ...pick(privateComposition, TEST_SUPPORT_METHODS),
+      });
       return Object.freeze({
         provides: {
           [WORKSPACE_APPLICATION]: workspace,
           [PROJECT_APPLICATION]: project,
           [SERVICE_APPLICATION]: service,
           [WORKSPACE_QUERY]: query,
-          [WORKSPACE_RUNTIME_PORT]: Object.freeze({ methods: runtimeMethods }),
+          [WORKSPACE_RUNTIME_PORT]: Object.freeze({ methods: runtimeMethods, testSupportMethods: TEST_SUPPORT_METHODS }),
           [PROJECT_DAILY_PROGRESS_APPLICATION]: dailyProgress,
         },
         contributions: {

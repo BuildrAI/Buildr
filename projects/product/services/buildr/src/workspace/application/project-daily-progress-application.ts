@@ -1,21 +1,15 @@
+import type { DailyProgressRepository } from '../persistence/project-daily-progress-repository.ts';
 import {
   createDailyProgressDocument,
   dailyProgressError,
-  groupDailyProgressCommits,
-  localCalendarDate,
   normalizeDailyProgressDate,
-  normalizeDailyProgressGroup,
   normalizeDailyProgressPayload,
 } from '../domain/project-daily-progress.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 
-export type ProjectDailyProgressApplicationRuntime = {
+export type ProjectDailyProgressApplicationRuntime = { dailyProgressRepository: DailyProgressRepository;
   readProjectRegistryRecord(targetRoot: string): any;
   inspectTask(targetRoot: string, taskId: string): any;
-  writeDailyProgressDocument(targetRoot: string, document: any): any;
-  readDailyProgressDocument(targetRoot: string, project: string, date: string): any;
-  listDailyProgressDates(targetRoot: string, project: string): string[];
-  listDailyProgressDocuments(targetRoot: string): any[];
 };
 
 function assertObject(value: any, label: any) {
@@ -153,7 +147,7 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
       files: payload.files,
       recordedAt,
     });
-    const written = runtime.writeDailyProgressDocument(targetRoot, document);
+    const written = runtime.dailyProgressRepository.writeDailyProgressDocument(targetRoot, document);
     const commits = hydrateCommits(targetRoot, written.document.commits);
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.dailyProgressRecordResult, {
       operation: 'record',
@@ -181,7 +175,7 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
       ? localCalendarDate()
       : normalizeDailyProgressDate(input.date);
     const group = normalizeDailyProgressGroup(input.group);
-    const read = runtime.readDailyProgressDocument(targetRoot, project.code, date);
+    const read = runtime.dailyProgressRepository.readDailyProgressDocument(targetRoot, project.code, date);
     const commits = read.document ? hydrateCommits(targetRoot, read.document.commits) : [];
     return inspectPayload(project, date, group, read.document, commits, Boolean(read.incompatible));
   }
@@ -189,7 +183,7 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
   function listProjectDailyProgress(targetRoot: any, input: any = {}) {
     assertFields(input, new Set(['project']), '每日演进 list');
     const project = registeredProject(targetRoot, input.project);
-    const dates = runtime.listDailyProgressDates(targetRoot, project.code);
+    const dates = runtime.dailyProgressRepository.listDailyProgressDates(targetRoot, project.code);
     return withJsonSchema(PUBLIC_JSON_SCHEMAS.dailyProgressListResult, {
       operation: 'list',
       status: 'listed',
@@ -208,7 +202,7 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
     const task = runtime.inspectTask(targetRoot, taskId);
     const registry = runtime.readProjectRegistryRecord(targetRoot);
     const items: any[] = [];
-    for (const document of runtime.listDailyProgressDocuments(targetRoot)) {
+    for (const document of runtime.dailyProgressRepository.listDailyProgressDocuments(targetRoot)) {
       const project = registry.projects[document.project];
       if (!project) continue;
       const hydrated = hydrateCommits(targetRoot, document.commits);
@@ -250,4 +244,60 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
     inspectTaskDailyProgress,
   });
   return runtime;
+}
+
+// 查询参数、时钟选择与展示分组属于应用用例。
+export const DAILY_PROGRESS_GROUPS = Object.freeze(['day', 'person', 'task']);
+export const UNLINKED_TASK_LABEL = '未关联任务';
+
+export function localCalendarDate(now: any = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+
+export function normalizeDailyProgressGroup(value: any) {
+  if (value === undefined || value === null || value === '') return 'day';
+  const group = identity(value, 'group');
+  if (!DAILY_PROGRESS_GROUPS.includes(group)) {
+    throw dailyProgressError('daily_progress_group_invalid', 'group 必须是 day、person 或 task。', 400, { field: 'group', value: group });
+  }
+  return group;
+}
+
+
+export function groupDailyProgressCommits(commits: any, group: any) {
+  const mode = normalizeDailyProgressGroup(group);
+  if (mode === 'day') {
+    return [{ key: 'day', label: '按日', commits }];
+  }
+  if (mode === 'person') {
+    const groups = new Map();
+    for (const commit of commits) {
+      const key = commit.authorEmail;
+      const label = `${commit.authorName} · ${commit.authorEmail}`;
+      if (!groups.has(key)) groups.set(key, { key, label, commits: [] });
+      groups.get(key).commits.push(commit);
+    }
+    return [...groups.values()];
+  }
+  const groups = new Map();
+  for (const commit of commits) {
+    if (commit.authorship !== 'self') continue;
+    const refs = commit.tasks || commit.taskIds.map((taskId: any) => ({ taskId }));
+    if (!refs.length) {
+      if (!groups.has('unlinked')) groups.set('unlinked', { key: 'unlinked', label: UNLINKED_TASK_LABEL, commits: [] });
+      groups.get('unlinked').commits.push(commit);
+      continue;
+    }
+    for (const task of refs) {
+      const key = task.taskId;
+      const label = task.resolved === false ? `${task.taskId}（未解析）` : (task.title || task.taskId);
+      if (!groups.has(key)) groups.set(key, { key, label, commits: [] });
+      groups.get(key).commits.push(commit);
+    }
+  }
+  return [...groups.values()];
 }

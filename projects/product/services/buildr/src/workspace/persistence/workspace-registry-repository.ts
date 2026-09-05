@@ -44,7 +44,7 @@ function canonicalRegistry(value: any, label: any) {
   if (!Array.isArray(value.roots) || value.roots.some((root: any) => typeof root !== 'string' || !path.isAbsolute(root))) {
     throw new Error(`${label}.roots must contain absolute paths.`);
   }
-  const roots = [...new Set(value.roots.map((root: any) => path.resolve(root)))];
+  const roots = [...new Set<string>(value.roots.map((root: string) => path.resolve(root)))];
   const lastOpenedRoot = value.lastOpenedRoot === null || value.lastOpenedRoot === undefined
     ? null
     : path.resolve(value.lastOpenedRoot);
@@ -66,7 +66,7 @@ export function readWorkspaceRegistryFile(file: any) {
   }
 }
 
-export function registerWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepositoryRuntime, options: WorkspaceRegistryRepositoryOptions = {}) {
+export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepositoryRuntime, options: WorkspaceRegistryRepositoryOptions = {}) {
   const productIdentity = options.productIdentity || options.readProductIdentity?.();
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');
@@ -87,7 +87,7 @@ export function registerWorkspaceRegistryRepository(runtime: WorkspaceRegistryRe
     }
     if (observed.status === 'invalid') throw new Error(observed.reason);
     const content = fs.readFileSync(file, 'utf8');
-    return { file, content, revision: registryRevision(content), registry: observed.registry };
+    return { file, content, revision: registryRevision(content), registry: observed.registry! };
   }
 
   function writeWorkspaceRegistry(file: any, registry: any) {
@@ -125,7 +125,7 @@ export function registerWorkspaceRegistryRepository(runtime: WorkspaceRegistryRe
     }
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     currentWebProfile: () => webProfile,
     currentProductIdentity: () => productIdentity,
     readWorkspaceRegistryFile,
@@ -135,5 +135,6 @@ export function registerWorkspaceRegistryRepository(runtime: WorkspaceRegistryRe
     withWorkspaceRegistryMutation,
     workspaceRegistryRevision: registryRevision,
   });
-  return runtime;
 }
+
+export type RegistryRepository = ReturnType<typeof createWorkspaceRegistryRepository>;

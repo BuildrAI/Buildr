@@ -235,7 +235,7 @@ test('任务研发页签、客户端调用与专属样式已退出', () => {
 
 test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
   const source: any = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
-  const actions: any = read('../buildr-web/src/app/AgentActionDrawer.tsx');
+  const actions: any = read('../buildr-web/src/features/task/components/TaskAgentAction.tsx');
   const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
   const evidenceHook: any = read('../buildr-web/src/features/task/hooks/useTaskEvidence.ts');
   assert.match(source, /任务验证报告（Task Verification Report）/);
@@ -365,6 +365,12 @@ test('Task feature 只保留 pages、hooks、components、api 四类职责', () 
     for (const name of fs.readdirSync(path.join(featureRoot, directory))) {
       if (!name.endsWith('.ts') && !name.endsWith('.tsx')) continue;
       const source = fs.readFileSync(path.join(featureRoot, directory, name), 'utf8');
+      if (directory === 'components' && name === 'TaskAgentAction.tsx') {
+        // 完整动作表单拥有局部状态和提交；不为它再创建一次性 Hook。
+        assert.doesNotMatch(source, /\bapi\(|\/api\/v1\//);
+        assert.match(source, /taskProfessionalApi\.startWorkPrompt/);
+        continue;
+      }
       assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/api['"]|\btaskApi\.|\btaskProfessionalApi\.|\bapi\(/, `${directory}/${name}`);
     }
   }

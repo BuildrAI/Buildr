@@ -1,9 +1,7 @@
 export const PROJECT_DAILY_PROGRESS_SCHEMA = 'buildr.project-daily-progress/v2';
 export const PROJECT_DAILY_PROGRESS_SCHEMA_V1 = 'buildr.project-daily-progress/v1';
-export const DAILY_PROGRESS_GROUPS = Object.freeze(['day', 'person', 'task']);
 export const COMMIT_AUTHORSHIP = Object.freeze(['self', 'other']);
 export const FILE_CHANGE_KINDS = Object.freeze(['added', 'modified', 'deleted']);
-export const UNLINKED_TASK_LABEL = '未关联任务';
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const IDENTITY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -24,13 +22,6 @@ export function dailyProgressError(code: any, message: any, status: any = 400, d
   if (nextAction !== undefined) error.nextAction = nextAction;
   error.dailyProgressBusiness = true;
   return error;
-}
-
-export function localCalendarDate(now: any = new Date()) {
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 export function isDailyProgressDate(value: any) {
@@ -92,15 +83,6 @@ export function normalizeDailyProgressDate(value: any, field: any = 'date') {
     throw dailyProgressError('daily_progress_date_invalid', `${field} 必须是合法 YYYY-MM-DD 日历日。`, 400, { field, value: date });
   }
   return date;
-}
-
-export function normalizeDailyProgressGroup(value: any) {
-  if (value === undefined || value === null || value === '') return 'day';
-  const group = nonEmptyText(value, 'group');
-  if (!DAILY_PROGRESS_GROUPS.includes(group)) {
-    throw dailyProgressError('daily_progress_group_invalid', 'group 必须是 day、person 或 task。', 400, { field: 'group', value: group });
-  }
-  return group;
 }
 
 function normalizeDaySummary(value: any) {
@@ -229,38 +211,4 @@ export function createDailyProgressDocument({ project, date, daySummary, commits
     commits,
     files,
   });
-}
-
-export function groupDailyProgressCommits(commits: any, group: any) {
-  const mode = normalizeDailyProgressGroup(group);
-  if (mode === 'day') {
-    return [{ key: 'day', label: '按日', commits }];
-  }
-  if (mode === 'person') {
-    const groups = new Map();
-    for (const commit of commits) {
-      const key = commit.authorEmail;
-      const label = `${commit.authorName} · ${commit.authorEmail}`;
-      if (!groups.has(key)) groups.set(key, { key, label, commits: [] });
-      groups.get(key).commits.push(commit);
-    }
-    return [...groups.values()];
-  }
-  const groups = new Map();
-  for (const commit of commits) {
-    if (commit.authorship !== 'self') continue;
-    const refs = commit.tasks || commit.taskIds.map((taskId: any) => ({ taskId }));
-    if (!refs.length) {
-      if (!groups.has('unlinked')) groups.set('unlinked', { key: 'unlinked', label: UNLINKED_TASK_LABEL, commits: [] });
-      groups.get('unlinked').commits.push(commit);
-      continue;
-    }
-    for (const task of refs) {
-      const key = task.taskId;
-      const label = task.resolved === false ? `${task.taskId}（未解析）` : (task.title || task.taskId);
-      if (!groups.has(key)) groups.set(key, { key, label, commits: [] });
-      groups.get(key).commits.push(commit);
-    }
-  }
-  return [...groups.values()];
 }

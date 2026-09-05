@@ -1,7 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import type { ProjectCreationInput } from '../../application/project-creation-application.ts';
+import type { ProjectCreationInput } from '../../application/project-application.ts';
 import { parseCliArguments } from './cli-arguments.ts';
 
 export type ProjectCreationCliApplication = { createProjectAsset(input: ProjectCreationInput): any };

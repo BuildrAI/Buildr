@@ -23,6 +23,12 @@ test('Service metadata update 使用白名单和 revision', () => {
     observeProjectGit: () => null,
     sameGitIdentity: (a: any, b: any) => a === b,
   };
+  runtime.serviceRepository = {
+    readServiceRegistryPersistence: runtime.readServiceRegistryPersistence,
+    serviceDomainManifestPath: runtime.serviceDomainManifestPath,
+    writeServiceRegistry: runtime.writeServiceRegistry,
+  };
+  runtime.sourceFiles = { resolveRoot: () => '/tmp/ws/projects/product/services/api' };
   registerServiceApplication(runtime);
   const result: any = runtime.updateServiceMetadata('/tmp/ws', 'product', 'api', { revision: 'r1', name: 'Public API' });
   assert.equal(result.service.name, 'Public API');

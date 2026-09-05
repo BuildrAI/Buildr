@@ -279,13 +279,15 @@ test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
   assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-query-application.ts')), false);
   assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-command-application.ts')), false);
   assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/source-creation-support.ts')), false);
-  const sourcePolicy = read('src/workspace/application/source-creation-policy.ts');
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-creation-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-creation-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/source-creation-policy.ts')), false);
+  assert.doesNotMatch(moduleSource, /Object\\.entries\\(privateComposition\\)/);
+  assert.match(moduleSource, /projectRepository/);
+  assert.match(moduleSource, /serviceRepository/);
   const sourceGit = read('src/workspace/infrastructure/workspace-source-git.ts');
-  assert.doesNotMatch(sourcePolicy, /node:fs|node:path|infrastructure\/process|gitOutput|gitBoundaryFor/);
   assert.match(sourceGit, /function gitOutput/);
   assert.match(sourceGit, /function inspectAttachedGitRoot/);
-  assert.match(sourceGit, /function gitBoundaryFor/);
-  assert.match(moduleSource, /registerWorkspaceSourceGit\(privateComposition\)[\s\S]*registerSourceCreationPolicy\(privateComposition\)/);
 });
 
 test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {

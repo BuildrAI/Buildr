@@ -4,7 +4,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import { createService, isServiceCode } from '../domain/service.ts';
-import { resolveSourceRoot } from '../domain/source-root.ts';
+import { resolveSourceRoot } from '../infrastructure/workspace-source-filesystem.ts';
 
 export const SERVICES_SCHEMA_V1 = 'buildr.services/v1';
 export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';
@@ -184,7 +184,7 @@ export function validateServicesManifest(manifest: any, expectedProject: string)
   return errors;
 }
 
-export function registerServiceManifestRepository(runtime: ServiceManifestRepositoryRuntime) {
+export function createServiceManifestRepository(runtime: ServiceManifestRepositoryRuntime) {
   function serviceDomainManifestPath(targetRoot: any, project: any) {
     const projectRoot = typeof project === 'string'
       ? path.join(path.resolve(targetRoot), 'projects', project)
@@ -232,12 +232,14 @@ export function registerServiceManifestRepository(runtime: ServiceManifestReposi
     return writeServicesManifest(projectRoot, manifest);
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     serviceDomainManifestPath, readServiceRegistryPersistence, writeServiceRegistry,
     parseServicesManifest, renderServicesDomainManifest, serviceManifestRevision,
+    validateServiceRegistryFile: (file: string, options: any) => parseServicesManifest(fs.readFileSync(file, 'utf8'), options),
     parseServicesYaml, parseServicesManifestYaml,
     renderServicesManifestYaml: (manifest: any) => renderServicesManifestYaml(manifest, runtime.quoteYaml),
     validateServicesManifest, servicesManifestPath, readServicesManifestForWrite, writeServicesManifest, updateServicesManifest,
   });
-  return runtime;
 }
+
+export type ServiceRepository = ReturnType<typeof createServiceManifestRepository>;

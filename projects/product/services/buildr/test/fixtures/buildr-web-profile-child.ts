@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { registerWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
+import { createWorkspaceRegistryRepository } from '../../src/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
@@ -16,7 +16,7 @@ const profiles: any = {
   development: resolveWebProfile({ channel: 'development', runtime: { role: 'development' } }, { dataRoot: process.env.BUILDR_TEST_DEVELOPMENT_ROOT }),
 };
 const runtime: any = createRuntime();
-registerWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: current, resolveWebProfile });
+Object.assign(runtime, createWorkspaceRegistryRepository(runtime, { productIdentity: identity, webProfile: current, resolveWebProfile }));
 registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
 registerWebInstanceLifecycle(runtime, { readProductIdentity: () => identity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
 await runtime.startBuildrWeb(['--no-open', '--port', '0']);

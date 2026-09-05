@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { resolveSourceRoot } from '../../../workspace/domain/source-root.ts';
+import { resolveSourceRoot } from '../../../workspace/module.ts';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';

@@ -66,7 +66,7 @@ buildr/
 
 `buildr-web` Service是前端源码和正式构建过程的authority；本地开发可向Buildr Service的ignored `web-dist/`物化，Browser与Candidate则生成到隔离staging。Application Payload和npm打包只消费本次Candidate冻结结果，不读取tracked或陈旧本地输出。
 
-Buildr Web 的 Workspace、Project、Service 前端分别位于 `src/features/workspace/`、`project/`、`service/`，各自拥有路由页面、页面局部组件和确有复杂状态的Hook，不合成统一CRUD功能。Project Daily Progress继续位于独立`features/project-daily-progress/`并由Project详情组合；Project与Service详情只共享`features/shared/hooks/useMarkdownDocumentViewer.ts`中的Markdown加载、路径和历史状态。共享`src/api/workspace.ts`仍是唯一Workspace HTTP Client，`src/pages/`与`src/components/`不保留这些领域的第二份页面或局部组件。
+Buildr Web 的工作空间（Workspace）、项目（Project）、服务（Service）分别由 `src/features/workspace/`、`project/`、`service/` 拥有页面和局部组件，不合成统一增删改查（CRUD）功能。页面专用且可维护的状态留在页面内；服务目录的多阶段加载继续由 `useServiceCatalog.ts` 承担。项目与服务详情共享 `src/lib/useMarkdownDocumentViewer.ts` 的文档加载和导航。`src/app/AgentActionDrawer.tsx` 仅装配完整领域表单；各表单自己拥有字段和提交，共享 `src/components/AgentActionFeedback.tsx` 的结果、错误与复制反馈，不额外创建一次性状态钩子（Hook）。网络协议集中在已有客户端（Client），`src/api/workspace.ts` 继续共享工作空间相关请求。完整目录和对象职责见[工作空间代码地图（Code Map）](workspace-code-map.md)。
 
 上述根工程职责已经迁入当前目录。`package/` 不再承担通用产品源码或资源 authority，只保留仍有明确兼容 owner 的内容，并在对应后续切片满足退出条件后收敛。
 
@@ -115,6 +115,7 @@ src/
     domain/
     application/
     persistence/
+    infrastructure/
     interfaces/
 
   agent-assets/
@@ -214,9 +215,9 @@ Workspace
 
 Workspace 是管理入口，Project 和 Service 是其中具有独立身份与边界的管理对象。
 
-Workspace Core 已完成 TypeScript 迁移：Workspace、Project、Service 的领域对象、应用用例、manifest/registry Repository、onboarding、mutation recovery、declaration-intake 编排、CLI/HTTP Adapter 和 `workspace/module.ts` 均位于上述模块。该模块公开 Workspace、Project、Service Application、窄 Workspace/Project Query 以及 CLI、HTTP、Diagnostic contribution；Web 和后续 Task 通过公开 Query/registration port 接入，不再保留临时 compatibility Facade。
+工作空间核心（Workspace Core）的领域对象、应用用例、持久化、初始化与恢复、命令行（CLI）和 HTTP 入口均已迁移为 TypeScript。`workspace/module.ts` 私有装配具名仓储（Repository）对象与应用（Application），提供明确的公开方法集合；迁移、资产同步、诊断及少量测试仍依赖的旧方法逐项列明，不通配导出内部函数。
 
-Workspace、Project与Service保持三个独立领域和Application边界。只有原`workspace-application.ts`同时承担Registry、metadata、Prompt、Getting Started与诊断且体量过大，因此按真实读写职责拆为`workspace-query-application.ts`和`workspace-command-application.ts`；Project、Service与Project Daily Progress Application职责和体量仍可维护，不为Query/Command目录对称机械拆分。Project与Service的创建、附接、物化、Git身份冲突和Workspace mutation因副作用生命周期独立，分别由`project-creation-application.ts`、`service-creation-application.ts`拥有；Manifest兼容解析、序列化和写入归对应Repository。跨创建、Agent Assets迁移与System Doctor复用的Git观察、Attached Root技术核验和Gitignore边界归`infrastructure/workspace-source-git.ts`，Application只由`source-creation-policy.ts`形成创建所需的Source业务形状与默认策略。`interfaces/cli/workspace.ts`、`project.ts`、`service.ts`分别只保留所属领域的参数、调用与输出适配，公共Bootstrap不再实现Workspace命令描述或Project/Service业务写入。各Manifest/Registry Repository与Workspace Management Fence继续独立，并通过明确Runtime type接入`workspace/module.ts`的私有组合；Bootstrap只通过显式runtime port保留当前内部调用兼容，不再由Workspace实现直接向进程级共享runtime注册方法。
+工作空间（Workspace）、项目（Project）和服务（Service）保持独立领域（Domain）与应用（Application）边界。应用层共六个文件：工作空间保留查询、变更、初始化与恢复三个职责组；项目和服务各自在一个文件内组织读取、更新、迁移与创建；每日演进独立保留。创建不再单设应用，默认来源策略并回 `domain/source-root.ts`。基础设施层（Infrastructure）保留三个有实际隔离价值的文件：`workspace-source-git.ts` 管理 Git 观察、克隆与附接核验；`workspace-source-filesystem.ts` 管理实际路径、文档读取、复制与暂存；`workspace-management-fence.ts` 防止不同 Web 配置争用同一工作空间。持久化层（Persistence）的五个具名仓储继续各自封装解析、映射和读写，不另拆编解码文件。边界以对象及其方法表达，不要求一个逻辑单元对应一个文件。目录、对象和方法分组见[工作空间代码地图（Code Map）](workspace-code-map.md)。
 
 Project Daily Progress 也已作为 Project-scoped Workspace 能力迁入该模块：纯模型位于 `domain/project-daily-progress.ts`，用例位于 `application/project-daily-progress-application.ts`，ignored YAML 映射和唯一原子 writer 位于 `persistence/project-daily-progress-repository.ts`，CLI/HTTP Adapter 由 `interfaces/` 提供，并统一通过 `workspace/module.ts` 注册命名 Application capability 与 contributions。公共 CLI/HTTP Host 不再直接注册或实现 Daily Progress 业务路由；公开 CLI、HTTP、JSON、YAML schema、Task 引用与 writer authority 保持不变。
 

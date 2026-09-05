@@ -1,19 +1,51 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import type { ServiceRepository } from '../persistence/service-manifest-repository.ts';
+import type { ProjectRepository } from '../persistence/project-manifest-repository.ts';
+import type { WorkspaceSourceFilesystem } from '../infrastructure/workspace-source-filesystem.ts';
+import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 import { createProject } from '../domain/project.ts';
-import { resolveSourceRoot, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
+import { attachedSource, defaultAssetDescription, sourceIdentity, sourceOwnership, sourceRootKind } from '../domain/source-root.ts';
 import { declarationIntakeNextAction } from '../../infrastructure/contracts/declaration-intake.ts';
 
+export type ProjectCreationInput = {
+  targetRoot: string;
+  project: string;
+  repoRef: string | null;
+  attachRef: string | null;
+  name: string | null;
+  description: string | null;
+  remote: string;
+  remoteExplicit: boolean;
+  integrationBranch: string | null;
+};
+
 export type ProjectApplicationRuntime = {
-  getWorkspace(targetRoot: string): any;
-  projectsManifestPath(targetRoot: string): string;
-  readProjectRegistryPersistence(targetRoot: string, options?: any): any;
-  observeProjectGit(root: string, remote: string): any;
+  serviceRepository: ServiceRepository;
+  projectRepository: ProjectRepository;
+  sourceFiles: WorkspaceSourceFilesystem;
+  inspectAttachedGitRoot(rawPath: string, targetRoot: string, remote: string, integrationBranch: string | null, label: string): { rootPath: string; url: string; integrationBranch: string };
+  cloneSourceRepository(repo: string, destination: string, branch?: string | null): void;
+  assertName(value: string, label: string): void;
+  assertGitBranch(value: string | null): void;
+  readPackageManifest(): any;
+  resolveProjectRoot(targetRoot: string, project: any): string;
+  readGitRemote(root: string, remote: string): string | null;
   sameGitIdentity(left: string, right: string): boolean;
-  withWorkspaceMutation(root: string, operation: string, affectedPaths: string[], action: () => any): any;
-  writeProjectRegistry(file: string, projects: any): void;
+  isProjectGitUrl(value: string): boolean;
+  existsDirectory(directory: string): boolean;
+  observeProjectGit(root: string, remote: string): any;
+  withWorkspaceMutation(root: string, operation: string, affected: string[], action: () => any): any;
+  parseManifestFileEntry(entry: any, field: string): any;
+  writeMappedFileIfMissing(targetRoot: string, destinationRoot: string, entry: any, variables: any, created: string[]): void;
+  ensureDirectory(directory: string): void;
+  trackWrite(targetRoot: string, file: string, content: string, created: string[]): void;
+  renderProjectCapabilitiesYaml(): string;
+  renderProjectCommandsYaml(): string;
+  gitDefaultBranch(root: string, remote?: string): string;
+  ensureGitBoundaries(targetRoot: string, items: any[]): string[];
   crypto: { randomUUID(): string };
+  getWorkspace(targetRoot: string): any;
 };
 
 export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
@@ -25,31 +57,6 @@ export function projectError(code: any, message: any, status: any = 400, details
 }
 
 const PROJECT_DOCUMENTS = new Set(['README.md', 'AGENTS.md']);
-
-function inside(parent: any, child: any) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child));
-  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
-}
-
-function normalizeProjectDocumentPath(documentPath: any) {
-  const raw = typeof documentPath === 'string' ? documentPath.trim() : '';
-  if (!raw) throw projectError('project_document_not_allowed', '不支持读取项目文档：<empty>。', 400);
-  if (raw.includes('\0') || raw.includes('\\') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw)) {
-    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
-  }
-  const posix = raw.replace(/\\/g, '/');
-  const normalized = path.posix.normalize(posix);
-  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || path.posix.isAbsolute(normalized)) {
-    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
-  }
-  if (normalized.split('/').some((segment: any) => segment === '' || segment === '.' || segment === '..')) {
-    throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
-  }
-  if (!normalized.endsWith('.md')) {
-    throw projectError('project_document_not_allowed', `不支持读取项目文档：${normalized}。`, 400);
-  }
-  return normalized;
-}
 
 function assertObject(input: any, code: any, message: any) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw projectError(code, message);
@@ -75,6 +82,7 @@ export function compareProjectGit(project: any, observed: any, sameGitIdentity: 
 }
 
 export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
+  // 读取：登记、列表、详情和文档。
   function readProjectRegistryRecord(targetRoot: any) {
     let workspace;
     let persistence;
@@ -82,7 +90,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
       workspace = runtime.getWorkspace(targetRoot);
       const workspaceId = workspace.workspace.id;
       if (!workspaceId) throw projectError('project_workspace_migration_required', 'Workspace metadata 需要先完成 identity 迁移。', 409);
-      persistence = runtime.readProjectRegistryPersistence(targetRoot, { workspaceId });
+      persistence = runtime.projectRepository.readProjectRegistryPersistence(targetRoot, { workspaceId });
     } catch (error: any) {
       if (error.code) throw error;
       throw projectError('project_registry_invalid', error.message, 409, { path: 'projects/manifest.yml' });
@@ -112,7 +120,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
     let observed: any = null;
     let comparison: any = { status: 'not-applicable', findings: [] };
-    const projectRoot = resolveSourceRoot(record.root, project.source);
+    const projectRoot = runtime.sourceFiles.resolveRoot(record.root, project.source);
     if (project.source.type === 'git') {
       observed = runtime.observeProjectGit(projectRoot, project.source.git.remote);
       comparison = compareProjectGit(project, observed, runtime.sameGitIdentity);
@@ -129,33 +137,15 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     };
   }
 
-  function projectDocument(targetRoot: any, code: any, documentPath: any) {
-    const relativePath = normalizeProjectDocumentPath(documentPath);
+  function projectDocument(targetRoot: string, code: string, documentPath: unknown) {
     const record = readProjectRegistryRecord(targetRoot);
-    const project = record.projects[code];
-    if (!project) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
-    const projectRoot = resolveSourceRoot(record.root, project.source);
-    const filePath = path.resolve(projectRoot, relativePath);
-    if (!inside(projectRoot, filePath)) {
-      throw projectError('project_document_path_forbidden', '项目文档路径越界。', 400);
-    }
-    let exists = false;
-    try {
-      exists = fs.statSync(filePath).isFile();
-    } catch {
-      exists = false;
-    }
-    return {
-      schemaVersion: 'buildr.project-document/v1',
-      projectCode: code,
-      path: relativePath,
-      name: path.posix.basename(relativePath),
-      entry: PROJECT_DOCUMENTS.has(relativePath),
-      exists,
-      content: exists ? fs.readFileSync(filePath, 'utf8') : null,
-    };
+    const entity = record.projects[code];
+    if (!entity) throw projectError('project_not_found', `Project 不存在：${code}。`, 404);
+    const document = runtime.sourceFiles.readDocument(runtime.sourceFiles.resolveRoot(record.root, entity.source), documentPath, 'project', projectError);
+    return { schemaVersion: 'buildr.project-document/v1', projectCode: code, ...document, entry: PROJECT_DOCUMENTS.has(document.path) };
   }
 
+  // 变更：迁移和元数据更新。
   function migrateProjectRegistry(targetRoot: any) {
     const before = readProjectRegistryRecord(targetRoot);
     if (!before.registry.migrationRequired) return { ...publicRegistry(before), changed: [] };
@@ -163,7 +153,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     const migrated = Object.values(before.projects).map((legacy: any) => {
       let source = legacy.source;
       if (source.type === 'git') {
-        const observed = runtime.observeProjectGit(resolveSourceRoot(before.root, source), source.git.remote);
+        const observed = runtime.observeProjectGit(runtime.sourceFiles.resolveRoot(before.root, source), source.git.remote);
         const url = source.git.url || observed.remoteUrl;
         const integrationBranch = source.git.integrationBranch || observed.currentBranch;
         source = { ...source, git: { ...source.git, url, integrationBranch } };
@@ -173,7 +163,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     return runtime.withWorkspaceMutation(before.root, 'project.registry.migrate', [before.manifestPath], () => {
       const current = readProjectRegistryRecord(before.root);
       if (current.revision !== before.revision) throw projectError('project_migration_changed', 'Project registry 在迁移预检后发生变化，请重新执行。', 409);
-      runtime.writeProjectRegistry(current.manifestPath, migrated);
+      runtime.projectRepository.writeProjectRegistry(current.manifestPath, migrated);
       const result = readProjectRegistryRecord(before.root);
       if (result.registry.migrationRequired) throw new Error('Project registry migration did not produce canonical v2 data.');
       return { ...publicRegistry(result), changed: ['projects/manifest.yml'] };
@@ -197,7 +187,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     }
     if (typeof input.revision !== 'string' || !input.revision) throw projectError('project_revision_required', 'Project 修改请求必须包含当前 registry revision。');
     if (input.name === undefined && input.description === undefined) throw projectError('project_update_empty', '至少修改 name 或 description。');
-    const manifestPath = runtime.projectsManifestPath(targetRoot);
+    const manifestPath = runtime.projectRepository.projectsManifestPath(targetRoot);
     return runtime.withWorkspaceMutation(targetRoot, `project.metadata.update:${code}`, [manifestPath], () => {
       const current = readProjectRegistryRecord(targetRoot);
       if (current.registry.migrationRequired) throw projectError('project_migration_required', 'Project registry 需要先迁移，当前页面只读。', 409);
@@ -209,11 +199,12 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
         name: input.name === undefined ? existing.name : input.name,
         description: input.description === undefined ? existing.description : input.description,
       });
-      runtime.writeProjectRegistry(current.manifestPath, { ...current.projects, [code]: updated });
+      runtime.projectRepository.writeProjectRegistry(current.manifestPath, { ...current.projects, [code]: updated });
       return projectDetail(targetRoot, code);
     });
   }
 
+  // 指令生成：只读，不创建或修改登记。
   function generateProjectCreatePrompt(input: any) {
     assertObject(input, 'project_prompt_invalid', 'Project prompt 请求必须是对象。');
     const allowed = new Set(['code', 'name', 'description', 'sourceType', 'gitUrl', 'remote', 'integrationBranch']);
@@ -258,7 +249,84 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     };
   }
 
+  // 创建/附接：应用确定顺序与事务范围，技术对象执行物化。
+  function createProjectAsset(input: ProjectCreationInput) {
+    const { targetRoot, project, repoRef, attachRef, remote, integrationBranch } = input;
+    runtime.assertName(project, 'Project');
+    runtime.assertGitBranch(integrationBranch);
+    if (repoRef && attachRef) throw new Error('--repo and --attach are mutually exclusive.');
+    const attachment = attachRef ? attachedSource(runtime.inspectAttachedGitRoot(attachRef, targetRoot, remote, integrationBranch, 'Project'), remote) : null;
+    const registryRecord = readProjectRegistryRecord(targetRoot);
+    if (registryRecord.registry.migrationRequired) throw new Error('Project registry needs migration before project create. Run canonical buildr sync <agent> first.');
+    const existingEntry = registryRecord.projects[project] || null;
+    const projectRoot = attachment?.rootPath || path.join(targetRoot, 'projects', project);
+    const created: string[] = [];
+    const changed: string[] = [];
+
+    if (attachment) {
+      for (const [otherCode, other] of Object.entries(registryRecord.projects)) {
+        if (otherCode === project) continue;
+        let otherRoot;
+        try { otherRoot = runtime.sourceFiles.realpath(runtime.resolveProjectRoot(targetRoot, other)); } catch { continue; }
+        if (sameFilesystemPath(otherRoot, attachment.rootPath)) throw new Error(`Project attached root is already registered by project:${otherCode}.`);
+      }
+    }
+
+    const name = input.name ?? existingEntry?.name ?? project;
+    const description = input.description ?? existingEntry?.description ?? defaultAssetDescription('Project', project);
+    if (repoRef && !runtime.isProjectGitUrl(repoRef)) throw new Error(`Project --repo only supports Git URLs. Project assets must be materialized under projects/${project}; external local Project links are not supported.`);
+    const existingGit = runtime.existsDirectory(projectRoot) ? runtime.observeProjectGit(projectRoot, remote) : null;
+    if (repoRef && runtime.existsDirectory(projectRoot) && !existingGit?.repository) throw new Error(`Project repo target exists but is not a Git repository: projects/${project}`);
+    if (repoRef && runtime.existsDirectory(projectRoot)) {
+      const actualUrl = runtime.readGitRemote(projectRoot, remote);
+      if (!actualUrl || !runtime.sameGitIdentity(actualUrl, repoRef)) throw new Error(`Project repo identity conflicts for ${project}: expected ${repoRef}, actual ${actualUrl || '<missing origin>'}. Buildr will not relink an existing Project.`);
+      if (existingEntry?.source?.type && existingEntry.source.type !== 'git') throw new Error(`Project registry identity conflicts for ${project}: existing source.type is ${existingEntry.source.type}, requested git.`);
+      if (existingEntry?.source?.git?.url && !runtime.sameGitIdentity(existingEntry.source.git.url, repoRef)) throw new Error(`Project registry URL conflicts for ${project}: expected ${repoRef}, recorded ${existingEntry.source.git.url}.`);
+    }
+    if (!repoRef && existingEntry?.source?.type === 'git' && !existingGit?.repository) throw new Error(`Project registry expects a Git repo but materialized Project is not Git-managed: ${project}`);
+    if (!repoRef && (integrationBranch || input.remoteExplicit)) throw new Error('--remote and --integration-branch are only supported for Git Project sources.');
+    if (attachment && existingEntry && (existingEntry.source.root !== 'attached' || !sameFilesystemPath(runtime.sourceFiles.realpath(existingEntry.source.path), attachment.rootPath))) throw new Error(`Project registry identity conflicts for ${project}: existing source is not the requested attached root.`);
+
+    const affected = attachment ? [registryRecord.manifestPath] : [projectRoot, registryRecord.manifestPath, path.join(targetRoot, '.gitignore')];
+    return runtime.withWorkspaceMutation(targetRoot, `project.create:${project}`, affected, () => {
+      return runtime.sourceFiles.withStaging(projectRoot, (staging) => {
+        if (repoRef && !runtime.existsDirectory(projectRoot)) {
+          runtime.cloneSourceRepository(repoRef, staging);
+          runtime.sourceFiles.publish(staging, projectRoot);
+        }
+        if (attachment) {
+          const entity = createProject({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source: attachment.source });
+          runtime.projectRepository.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
+          changed.push(path.relative(targetRoot, registryRecord.manifestPath).split(path.sep).join('/'));
+          return { operation: 'attach', project, targetRoot, created, changed, nextActions: [declarationIntakeNextAction({ trigger: 'project-registered', project })] };
+        }
+        runtime.ensureDirectory(projectRoot);
+        const manifest = runtime.readPackageManifest();
+        for (const relativeDir of manifest.projectDirectories) runtime.ensureDirectory(path.join(projectRoot, relativeDir));
+        for (const rawEntry of manifest.projectFiles) runtime.writeMappedFileIfMissing(targetRoot, projectRoot, runtime.parseManifestFileEntry(rawEntry, 'projectFiles'), { project }, created);
+        runtime.trackWrite(targetRoot, path.join(projectRoot, 'capabilities.yml'), runtime.renderProjectCapabilitiesYaml(), created);
+        runtime.trackWrite(targetRoot, path.join(projectRoot, 'commands.yml'), runtime.renderProjectCommandsYaml(), created);
+        const source = repoRef
+          ? { type: 'git', path: `projects/${project}`, git: { url: repoRef, remote, integrationBranch: integrationBranch || existingEntry?.source?.git?.integrationBranch || runtime.gitDefaultBranch(projectRoot, remote) } }
+          : existingEntry?.source?.type === 'git' ? existingEntry.source : { type: 'workspace', path: `projects/${project}` };
+        const entity = createProject({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source });
+        const serviceRegistryPath = runtime.serviceRepository.servicesManifestPath(projectRoot);
+        const serviceRegistryExists = runtime.sourceFiles.exists(serviceRegistryPath);
+        if (serviceRegistryExists) runtime.serviceRepository.validateServiceRegistryFile(serviceRegistryPath, { workspaceId: registryRecord.workspace.workspace.id, projectId: entity.id, projectCode: project });
+        runtime.projectRepository.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
+        if (!serviceRegistryExists) {
+          runtime.serviceRepository.writeServiceRegistry(serviceRegistryPath, entity.id, {}, project);
+          created.push(path.relative(targetRoot, serviceRegistryPath).split(path.sep).join('/'));
+        }
+        changed.push(path.relative(targetRoot, registryRecord.manifestPath).split(path.sep).join('/'));
+        changed.push(...runtime.ensureGitBoundaries(targetRoot, [{ type: 'project', project, assetRoot: projectRoot }]));
+        return { operation: 'create', project, targetRoot, created, changed, nextActions: [declarationIntakeNextAction({ trigger: 'project-registered', project })] };
+      });
+    });
+  }
+
   Object.assign(runtime, {
+    createProjectAsset,
     readProjectRegistryRecord,
     listProjects,
     projectDetail,

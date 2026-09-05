@@ -96,8 +96,7 @@ const requiredRuntime: any[] = [
   'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.ts',
   'agent-assets/application/package-maintenance/package-assets.ts', 'workspace/application/workspace-operations.ts',
   'workspace/module.ts', 'workspace/application/workspace-query-application.ts', 'workspace/application/workspace-command-application.ts',
-  'workspace/application/project-creation-application.ts', 'workspace/application/service-creation-application.ts',
-  'workspace/application/source-creation-policy.ts', 'workspace/infrastructure/workspace-source-git.ts',
+  'workspace/infrastructure/workspace-source-filesystem.ts', 'workspace/infrastructure/workspace-source-git.ts',
   'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
   'workspace/application/project-daily-progress-application.ts',
   'workspace/domain/workspace.ts', 'workspace/domain/project.ts', 'workspace/domain/service.ts',
@@ -186,6 +185,7 @@ const allowedCrossModulePorts: any = new Set([
   'task/change/module.ts -> task/openspec/module.ts',
   'task/change/module.ts -> workspace/module.ts',
   'system/publication/module.ts -> workspace/module.ts',
+  'verification/module.ts -> workspace/module.ts',
 ]);
 
 for (const file of sourceFiles) {
@@ -421,7 +421,7 @@ else {
   if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
     problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
   }
-  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'registerProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
+  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
     if (!moduleSource.includes(required)) problems.push(`Workspace module must own Daily Progress ${required}`);
   }
 }
@@ -523,7 +523,7 @@ if (fs.existsSync(dailyProgressApplication)) {
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
     problems.push('Daily Progress Application must not own CLI parsing, output, or process exit state');
   }
-  if (!source.includes('runtime.writeDailyProgressDocument') || !source.includes('runtime.inspectTask')) {
+  if (!source.includes('runtime.dailyProgressRepository.writeDailyProgressDocument') || !source.includes('runtime.inspectTask')) {
     problems.push('Daily Progress Application must write files through the store and only inspect Task Record');
   }
 }

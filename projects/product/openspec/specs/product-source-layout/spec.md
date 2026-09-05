@@ -270,5 +270,5 @@ Workspace、Project与Service CLI Adapter MUST分别位于`src/workspace/interfa
 
 #### Scenario: 根据创建副作用边界拆分
 - **WHEN**Project或Service创建用例具有独立Git/filesystem/staging/Manifest mutation与失败清理生命周期
-- **THEN**对应领域 MUST将创建职责放入具名Creation Application并由module直接组合现有capability
+- **THEN**对应领域 MUST由所属Application统一拥有创建职责；是否独立文件取决于重要隔离价值或实际体量，不得仅因存在独立逻辑单元就拆文件
 - **AND**原Application在职责和体量仍可维护时 MUST不为Query/Command目录对称继续拆分

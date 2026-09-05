@@ -171,7 +171,7 @@ export function validateProjectsRegistry(registry: any) {
   return errors;
 }
 
-export function registerProjectManifestRepository(runtime: ProjectManifestRepositoryRuntime) {
+export function createProjectManifestRepository(runtime: ProjectManifestRepositoryRuntime) {
   function projectsManifestPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), 'projects', 'manifest.yml');
   }
@@ -209,7 +209,7 @@ export function registerProjectManifestRepository(runtime: ProjectManifestReposi
     return file;
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     projectsManifestPath,
     readProjectRegistryPersistence,
     writeProjectRegistry,
@@ -222,5 +222,6 @@ export function registerProjectManifestRepository(runtime: ProjectManifestReposi
     readProjectsRegistryForWrite,
     writeProjectsRegistry,
   });
-  return runtime;
 }
+
+export type ProjectRepository = ReturnType<typeof createProjectManifestRepository>;

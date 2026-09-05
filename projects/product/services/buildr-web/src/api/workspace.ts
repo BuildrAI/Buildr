@@ -16,6 +16,15 @@ export type WorkspaceDocument = { path?: string; name: string; exists: boolean; 
 
 export function createWorkspaceClient(api: ApiClient) {
   return {
+    workspaceCreatePrompt(input: { name: string; description: string; targetPath: string }): Promise<{ prompt: string }> {
+      return api('/api/v1/prompts/workspace-create', { method: 'POST', body: JSON.stringify(input) }) as Promise<{ prompt: string }>;
+    },
+    projectCreatePrompt(input: Record<string, string>): Promise<{ prompt: string }> {
+      return api('/api/v1/prompts/project-create', { method: 'POST', body: JSON.stringify(input) }) as Promise<{ prompt: string }>;
+    },
+    serviceCreatePrompt(input: Record<string, string>): Promise<{ prompt: string }> {
+      return api('/api/v1/prompts/service-create', { method: 'POST', body: JSON.stringify(input) }) as Promise<{ prompt: string }>;
+    },
     listRegistered(): Promise<WorkspaceRegistry> {
       return api('/api/v1/workspaces') as Promise<WorkspaceRegistry>;
     },

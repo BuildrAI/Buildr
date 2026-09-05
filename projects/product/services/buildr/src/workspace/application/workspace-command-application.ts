@@ -1,7 +1,9 @@
+import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
+import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import { createWorkspace, isWorkspaceId } from '../domain/workspace.ts';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
 
-export type WorkspaceCommandApplicationRuntime = {
+export type WorkspaceCommandApplicationRuntime = { registryRepository: RegistryRepository; workspaceRepository: WorkspaceRepository;
   path: { resolve(value: string): string };
   crypto: { randomUUID(): string };
   assertInitializedBuildrWorkspace(root: string): void;
@@ -10,16 +12,11 @@ export type WorkspaceCommandApplicationRuntime = {
   publicWorkspace(record: any): any;
   workspaceRegistryEntry(root: string): any;
   recoveryPrompt(rootPath: string, kind: string): string;
-  readWorkspaceRegistryPersistence(): any;
-  withWorkspaceRegistryMutation(revision: string, mutate: (current: any) => any): any;
   canonicalWorkspaceManagementIdentity(root: string): any;
   withWorkspaceManagementClaim(root: string, operation: () => any): any;
   releaseWorkspaceManagementClaim(root: string, workspaceId: string): boolean;
-  workspaceMetadataPath(root: string): string;
   withWorkspaceMutation(root: string, operation: string, affectedPaths: string[], action: () => any): any;
-  renderWorkspaceManifest(input: any): string;
   renderSkillsManifestYaml(input: any): string;
-  writeWorkspaceManifest(file: string, content: string): void;
   atomicWriteFile(file: string, content: string): void;
   existsDirectory(directory: string): boolean;
   registerLocalWorkspace(input: any): any;
@@ -62,7 +59,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     }
     if (!candidate.workspace.id) throw workspaceError('workspace_registry_migration_required', '该 Workspace 需要先完成 canonical metadata 迁移。', 409, { rootPath: root });
     runtime.withWorkspaceManagementClaim(root, () => {
-      runtime.withWorkspaceRegistryMutation(input.revision, (current: any) => {
+      runtime.registryRepository.withWorkspaceRegistryMutation(input.revision, (current: any) => {
         const roots = current.roots;
         if (!roots.includes(root)) {
           for (const existingRoot of roots) {
@@ -95,7 +92,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     if (input.workspaceId !== undefined && !isWorkspaceId(input.workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const requestedRoot = input.rootPath === undefined ? null : runtime.path.resolve(input.rootPath);
     let removed: any = null;
-    runtime.withWorkspaceRegistryMutation(input.revision, (current: any) => {
+    runtime.registryRepository.withWorkspaceRegistryMutation(input.revision, (current: any) => {
       const matches = current.roots.filter((root: any) => requestedRoot ? root === requestedRoot : runtime.workspaceRegistryEntry(root).workspace?.id === input.workspaceId);
       if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记。', 404);
       if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个目录，请按已登记 rootPath 移除。', 409);
@@ -115,7 +112,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
 
   function resolveRegisteredWorkspace(workspaceId: any, { touch = false }: any = {}) {
     if (!isWorkspaceId(workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
-    const persistence = runtime.readWorkspaceRegistryPersistence();
+    const persistence = runtime.registryRepository.readWorkspaceRegistryPersistence();
     const matches = persistence.registry.roots.filter((root: any) => runtime.workspaceRegistryEntry(root).workspace?.id === workspaceId);
     if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记或当前不可用。', 404);
     if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个已登记目录。', 409);
@@ -123,7 +120,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     if (current.workspace.id !== workspaceId) throw workspaceError('workspace_registry_identity_mismatch', '已登记路径中的 Workspace identity 已变化。', 409);
     if (touch && persistence.registry.lastOpenedRoot !== matches[0]) {
       try {
-        runtime.withWorkspaceRegistryMutation(persistence.revision, (currentRegistry: any) => ({ ...currentRegistry, lastOpenedRoot: currentRegistry.roots.includes(matches[0]) ? matches[0] : currentRegistry.lastOpenedRoot }));
+        runtime.registryRepository.withWorkspaceRegistryMutation(persistence.revision, (currentRegistry: any) => ({ ...currentRegistry, lastOpenedRoot: currentRegistry.roots.includes(matches[0]) ? matches[0] : currentRegistry.lastOpenedRoot }));
       } catch (error: any) {
         if (error.code !== 'workspace_registry_revision_conflict') throw error;
       }
@@ -144,7 +141,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
         name: current.workspace.name,
         description: current.workspace.description || WORKSPACE_DESCRIPTION_TODO,
       });
-      const metadataContent = runtime.renderWorkspaceManifest({ workspace, compatibility: current.metadata.compatibility });
+      const metadataContent = runtime.workspaceRepository.renderWorkspaceManifest({ workspace, compatibility: current.metadata.compatibility });
       const skillsContent = runtime.renderSkillsManifestYaml({
         ...current.skills,
         workspaceId,
@@ -152,7 +149,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
       });
       const changed: any[] = [];
       if (current.metadataContent !== metadataContent) {
-        runtime.writeWorkspaceManifest(current.metadataPath, metadataContent);
+        runtime.workspaceRepository.writeWorkspaceManifest(current.metadataPath, metadataContent);
         changed.push('.buildr/workspace.yml');
       }
       if (current.skillsContent !== skillsContent) {
@@ -173,7 +170,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     }
     if (typeof input.revision !== 'string' || !input.revision) throw workspaceError('workspace_revision_required', 'Workspace 修改请求必须包含当前 revision。');
     if (input.name === undefined && input.description === undefined) throw workspaceError('workspace_update_empty', '至少修改 name 或 description。');
-    const metadataPath = runtime.workspaceMetadataPath(targetRoot);
+    const metadataPath = runtime.workspaceRepository.workspaceMetadataPath(targetRoot);
     return runtime.withWorkspaceMutation(targetRoot, 'workspace.metadata.update', [metadataPath], () => {
       const current = runtime.readWorkspaceRecord(targetRoot);
       if (current.migrationRequired) throw workspaceError('workspace_migration_required', 'Workspace metadata 需要先迁移，当前页面只读。', 409);
@@ -185,7 +182,7 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
         name: input.name === undefined ? current.workspace.name : input.name,
         description: input.description === undefined ? current.workspace.description : input.description,
       });
-      runtime.writeWorkspaceManifest(current.metadataPath, runtime.renderWorkspaceManifest({ workspace, compatibility: current.metadata.compatibility }));
+      runtime.workspaceRepository.writeWorkspaceManifest(current.metadataPath, runtime.workspaceRepository.renderWorkspaceManifest({ workspace, compatibility: current.metadata.compatibility }));
       return runtime.publicWorkspace(runtime.readWorkspaceRecord(targetRoot));
     });
   }

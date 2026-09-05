@@ -399,6 +399,38 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-evidence-panel').waitFor({ state: 'visible' });
   });
 
+  if (selected('project') || selected('service') || selected('shell')) await t.test('领域动作表单独立生成指令且不写入登记数据', async () => {
+    const before = runtime.listProjects(workspaceRoot);
+    await page.goto(`${url}/?catalog=1`);
+    await page.locator('#create-workspace-agent').click();
+    await page.locator('#action-name').fill('独立工作空间');
+    await page.locator('#action-description').fill('领域表单重构验证');
+    await page.getByRole('button', { name: '生成工作空间指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /独立工作空间/);
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.goto(`${workspaceUrl}/projects`);
+    await page.locator('#create-project-button').click();
+    await page.locator('#action-name').fill('独立项目');
+    await page.locator('#action-description').fill('项目表单独立输入');
+    await page.getByRole('button', { name: '生成项目指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /独立项目/);
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.goto(`${workspaceUrl}/services`);
+    await page.locator('#create-service-button:not([disabled])').click();
+    await page.locator('#action-project:not([disabled])').waitFor({ state: 'visible' });
+    await page.locator('#action-name').fill('独立服务');
+    await page.locator('#action-description').fill('服务表单独立输入');
+    await page.getByRole('button', { name: '生成服务指令', exact: true }).click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    const prompt = await page.locator('#action-prompt-output').inputValue();
+    assert.match(prompt, /独立服务/);
+    assert.doesNotMatch(prompt, /独立项目|独立工作空间/);
+    await page.getByRole('button', { name: '关闭', exact: true }).click();
+    assert.deepEqual(runtime.listProjects(workspaceRoot), before);
+  });
+
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(url);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });

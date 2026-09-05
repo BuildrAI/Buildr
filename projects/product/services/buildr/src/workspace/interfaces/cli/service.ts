@@ -1,7 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import type { ServiceCreationInput } from '../../application/service-creation-application.ts';
+import type { ServiceCreationInput } from '../../application/service-application.ts';
 import { parseCliArguments } from './cli-arguments.ts';
 
 export type ServiceCreationCliApplication = { createServiceAsset(input: ServiceCreationInput): any };

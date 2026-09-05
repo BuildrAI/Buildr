@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveSourceRoot } from '../workspace/domain/source-root.ts';
+import { resolveSourceRoot } from '../workspace/module.ts';
 import { registerProjectVerificationApplication } from './application/project-verification-application.ts';
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from './domain/project-verification.ts';
 

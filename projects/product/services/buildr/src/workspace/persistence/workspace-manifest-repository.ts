@@ -106,7 +106,7 @@ export function workspaceManifestRevision(content: any) {
   return `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-export function registerWorkspaceManifestRepository(runtime: WorkspaceManifestRepositoryRuntime) {
+export function createWorkspaceManifestRepository(runtime: WorkspaceManifestRepositoryRuntime) {
   function workspaceMetadataPath(targetRoot: any) {
     return path.join(path.resolve(targetRoot), '.buildr', 'workspace.yml');
   }
@@ -142,7 +142,7 @@ export function registerWorkspaceManifestRepository(runtime: WorkspaceManifestRe
     runtime.atomicWriteFile(file, content);
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     workspaceMetadataPath,
     workspaceSkillsManifestPath,
     readWorkspacePersistence,
@@ -151,5 +151,6 @@ export function registerWorkspaceManifestRepository(runtime: WorkspaceManifestRe
     renderWorkspaceManifest,
     workspaceManifestRevision,
   });
-  return runtime;
 }
+
+export type WorkspaceRepository = ReturnType<typeof createWorkspaceManifestRepository>;

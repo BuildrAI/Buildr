@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { groupDailyProgressCommits, localCalendarDate } from '../../src/workspace/application/project-daily-progress-application.ts';
 import {
   createDailyProgressDocument,
   dailyProgressError,
-  groupDailyProgressCommits,
   isDailyProgressDate,
   isLegacyDailyProgressDocument,
-  localCalendarDate,
   normalizeDailyProgressDate,
   normalizeDailyProgressDocument,
   normalizeDailyProgressPayload,

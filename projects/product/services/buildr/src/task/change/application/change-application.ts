@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveSourceRoot } from '../../../workspace/domain/source-root.ts';
+import { resolveSourceRoot } from '../../../workspace/module.ts';
 
 type ChangeLifecycle = 'active' | 'archived';
 type Project = { id: string; code: string; name: string; source: { type?: string; path: string } };

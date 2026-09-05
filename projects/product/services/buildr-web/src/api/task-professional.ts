@@ -17,6 +17,15 @@ function taskPath(taskId: string, suffix: string): string {
 
 export function createTaskProfessionalClient(client: ApiClient) {
   return Object.freeze({
+    startWorkPrompt(input: { projectCode: string; serviceCode: string; goal: string }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/start-work', { method: 'POST', body: JSON.stringify(input) }));
+    },
+    changeCreatePrompt(input: { projectCode: string; goal: string }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/change-create', { method: 'POST', body: JSON.stringify(input) }));
+    },
+    changeActionPrompt(input: { projectCode: unknown; ref: unknown; action: unknown }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/change-action', { method: 'POST', body: JSON.stringify(input) }));
+    },
     reviews(taskId: string, options: ReadOptions = {}): Promise<ReviewsResponse> {
       return typed(client(taskPath(taskId, '/reviews'), options));
     },

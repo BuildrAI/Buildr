@@ -43,7 +43,7 @@ function serializeDocument(document: any) {
   }, { lineWidth: 0 });
 }
 
-export function registerProjectDailyProgressRepository(runtime: ProjectDailyProgressRepositoryRuntime) {
+export function createProjectDailyProgressRepository(runtime: ProjectDailyProgressRepositoryRuntime) {
   function readDailyProgressDocument(targetRoot: any, project: any, date: any) {
     const file = dailyProgressFile(targetRoot, project, date);
     if (!runtime.existsFile(file)) return { present: false, incompatible: false, document: null };
@@ -95,11 +95,12 @@ export function registerProjectDailyProgressRepository(runtime: ProjectDailyProg
     return documents;
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     readDailyProgressDocument,
     writeDailyProgressDocument,
     listDailyProgressDates,
     listDailyProgressDocuments,
   });
-  return runtime;
 }
+
+export type DailyProgressRepository = ReturnType<typeof createProjectDailyProgressRepository>;

@@ -112,6 +112,7 @@ export function gitBoundaryIgnored(runtime: Pick<WorkspaceSourceGitRuntime, 'git
 export function registerWorkspaceSourceGit(runtime: WorkspaceSourceGitRuntime) {
   return Object.assign(runtime, {
     gitOutput,
+    isGitUrl, isProjectGitUrl, cloneSourceRepository,
     gitCurrentBranch,
     gitDefaultBranch: (repoPath: string, remote = 'origin') => gitDefaultBranch(runtime, repoPath, remote),
     assertGitBranch,
@@ -121,4 +122,18 @@ export function registerWorkspaceSourceGit(runtime: WorkspaceSourceGitRuntime) {
     ensureGitBoundaries: (targetRoot: string, items: any[]) => ensureGitBoundaries(runtime, targetRoot, items),
     gitBoundaryIgnored: (boundary: { repoRoot: string; pattern: string } | null) => gitBoundaryIgnored(runtime, boundary),
   });
+}
+
+export function isGitUrl(value: string) {
+  return /^(https?:\/\/|ssh:\/\/|git@)/.test(value) || /\.git$/.test(value);
+}
+
+export function isProjectGitUrl(value: string) {
+  return /^(https?:\/\/|ssh:\/\/|git@|file:\/\/)/.test(value);
+}
+
+export function cloneSourceRepository(repo: string, destination: string, branch: string | null = null) {
+  const args = ['clone'];
+  if (branch) args.push('--branch', branch, '--single-branch');
+  execFileSync('git', [...args, repo, destination], { stdio: 'inherit' });
 }

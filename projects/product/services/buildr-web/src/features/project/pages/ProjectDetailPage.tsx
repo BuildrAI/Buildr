@@ -7,7 +7,7 @@ import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { workspaceHref } from '../../../lib/labels';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
-import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../shared/hooks/useMarkdownDocumentViewer';
+import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditModal } from '../components/ProjectEditModal';
 
 type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };

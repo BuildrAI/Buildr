@@ -22,10 +22,6 @@ export function normalizeSourceLocation(source: any, expectedManagedPath: any, l
   return { root, path: sourcePath };
 }
 
-export function resolveSourceRoot(workspaceRoot: any, source: any) {
-  return sourceRootKind(source) === SOURCE_ROOT_ATTACHED ? source.path : path.resolve(workspaceRoot, source.path);
-}
-
 export function sourceIdentity(entityId: any, source: any) {
   const declaration = source?.type === 'git'
     ? { root: sourceRootKind(source), url: source.git?.url || null, remote: source.git?.remote || null, integrationBranch: source.git?.integrationBranch || null }
@@ -35,4 +31,14 @@ export function sourceIdentity(entityId: any, source: any) {
 
 export function sourceOwnership(source: any) {
   return sourceRootKind(source) === SOURCE_ROOT_ATTACHED ? 'external' : 'workspace-managed';
+}
+
+/** 创建默认文案与附接来源形状，由领域调用方决定何时使用。 */
+export function defaultAssetDescription(kind: 'Project' | 'Service', id: string) {
+  return `TODO: 补充 ${kind} ${id} 的用途说明。`;
+}
+
+export function attachedSource(root: { rootPath: string; url: string; integrationBranch: string }, remote: string) {
+  return { rootPath: root.rootPath, source: { type: 'git' as const, root: 'attached' as const, path: root.rootPath,
+    git: { url: root.url, remote, integrationBranch: root.integrationBranch } } };
 }

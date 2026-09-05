@@ -1,3 +1,5 @@
+import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
+import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import { isWorkspaceId } from '../domain/workspace.ts';
 import process from 'node:process';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
@@ -5,9 +7,7 @@ import { declarationIntakeNextAction } from '../../infrastructure/contracts/decl
 
 const declarationIntakeAction: any = declarationIntakeNextAction;
 
-export type WorkspaceQueryApplicationRuntime = {
-  readWorkspacePersistence(targetRoot: string): any;
-  readWorkspaceRegistryPersistence(): any;
+export type WorkspaceQueryApplicationRuntime = { registryRepository: RegistryRepository; workspaceRepository: WorkspaceRepository;
   existsDirectory(directory: string): boolean;
   listProjects(targetRoot: string): any;
   listServices(targetRoot: string, projectCode: string): any;
@@ -46,7 +46,7 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
   function readWorkspaceRecord(targetRoot: any) {
     let persistence;
     try {
-      persistence = runtime.readWorkspacePersistence(targetRoot);
+      persistence = runtime.workspaceRepository.readWorkspacePersistence(targetRoot);
     } catch (error: any) {
       if (error.code) throw error;
       throw workspaceError('workspace_metadata_invalid', error.message, 409, { path: '.buildr/workspace.yml' });
@@ -104,7 +104,7 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
   }
 
   function listRegisteredWorkspaces() {
-    const persistence = runtime.readWorkspaceRegistryPersistence();
+    const persistence = runtime.registryRepository.readWorkspaceRegistryPersistence();
     const entries = persistence.registry.roots.map(workspaceRegistryEntry);
     const identities = new Map();
     for (const entry of entries) {
@@ -130,7 +130,7 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
         metadataRevision: record.revision,
         workspaceId: record.metadata.canonical ? record.metadata.workspace.id : null,
         skillsWorkspaceId: record.skills.workspaceId,
-        nodeVersion: record.workspace.runtime?.node?.version || null,
+        nodeVersion: null,
       }),
     };
   }

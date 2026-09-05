@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import YAML from 'yaml';
-import { resolveSourceRoot } from '../../workspace/domain/source-root.ts';
+import { resolveSourceRoot } from '../../workspace/module.ts';
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from '../domain/project-verification.ts';
 
 const digest = (value: Buffer | string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
