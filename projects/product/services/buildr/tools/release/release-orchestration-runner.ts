@@ -210,7 +210,7 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
 
   const root: any = path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot);
   const runtime: any = dependencies.runtime ?? createRuntime();
-  const inspectTask: any = dependencies.inspectTaskRecord ?? ((target: any, taskId: any) => runtime.inspectTaskRecord(target, taskId));
+  const inspectTask: any = dependencies.inspectTask ?? ((target: any, taskId: any) => runtime.inspectTask(target, taskId));
   let taskResult: any = inspectTask(root, options.releaseTask);
   let controller: any;
   try { controller = (dependencies.resolveRetainedController ?? resolveRetainedController)(root); } catch (error: any) {

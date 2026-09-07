@@ -154,8 +154,8 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     const repo = fs.realpathSync(path.resolve(option(argv, '--repo')));
     const sourceCommit = option(argv, '--source-commit');
     const runtime = Object.fromEntries(Object.entries(createRuntime()));
-    if (typeof runtime.inspectTaskRecord !== 'function') throw new Error('Task Record runtime port is unavailable.');
-    const taskResult = record(Reflect.apply(runtime.inspectTaskRecord, runtime, [workspace, taskId]), 'Task result');
+    if (typeof runtime.inspectTask !== 'function') throw new Error('Task Record runtime port is unavailable.');
+    const taskResult = record(Reflect.apply(runtime.inspectTask, runtime, [workspace, taskId]), 'Task result');
     const taskValue = record(taskResult.record, 'Task record');
     if (typeof taskValue.taskId !== 'string' || typeof taskValue.status !== 'string') throw new Error('Release Task record is invalid.');
     const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });

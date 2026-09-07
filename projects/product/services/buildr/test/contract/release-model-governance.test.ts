@@ -54,6 +54,19 @@ test('release integrations retain Product Candidate authority without retired ta
   assert.match(release, /MUST不降低或替换任何发布候选门禁/);
 });
 
+test('release owners consume the current Task v3 inspection port', () => {
+  const releaseTools: any = [
+    'release-execution-binding.ts',
+    'release-preparation-binding.ts',
+    'release-task-evidence-correlation.ts',
+    'release-transaction-runner.ts',
+    'release-orchestration-runner.ts',
+  ].map((file: any) => read(path.join(SERVICE_ROOT, 'tools/release', file))).join('\n');
+
+  assert.match(releaseTools, /inspectTask/);
+  assert.doesNotMatch(releaseTools, /inspectTaskRecord/);
+});
+
 test('source release Skill blocks incomplete migration and does not retain the old dev-main recipe', () => {
   const skill: any = read(path.join(WORKSPACE_ROOT, 'skills/buildr-release/SKILL.md'));
   assert.match(skill, /发布模型实现就绪门禁/);
