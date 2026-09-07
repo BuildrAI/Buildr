@@ -497,7 +497,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
     const task = parseJson(productCommand(execute, root, nodeExecutable, ['task', 'inspect', taskId, '--target', root, '--json'], 'task-inspect', active), 'self-bootstrap-closeout.task-invalid', '无法读取任务。');
-    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || task.record.result?.noChange !== false || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成且有实际交付的产品任务。');
+    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成的产品任务；实际交付由明确提交和远端Git事实证明。');
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths);
     if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
@@ -582,7 +582,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
   const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
-  for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}；旧收尾运行已退役。`);
+  for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const nodeExecutable = option(args, '--node-executable');
   if (!nodeExecutable || !sameFilesystemPath(actualNodeExecutable, nodeExecutable)) throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '必须使用保留环境声明的 Node。');
   const detail = option(args, '--detail') || 'compact';

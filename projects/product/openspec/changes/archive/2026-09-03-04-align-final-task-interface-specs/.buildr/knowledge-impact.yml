@@ -1,0 +1,11 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: align-final-task-interface-specs
+operation: reconcile
+treeIdentity: documentation-only
+impacts:
+  - type: brief
+    target: openspec/changes/align-final-task-interface-specs/brief.md
+    reason: 说明最后接口规范对齐
+    status: updated
+    sourceIdentities: [proposal.md, design.md, brief.md]
+unresolvedItems: []

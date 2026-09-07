@@ -1,0 +1,47 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: fix-task-system-final-residuals
+operation: reconcile
+treeIdentity: sha256-133b114391f4f2dc31445426fb271e630f7cf0c632d2c8fde0c7903487119a90
+impacts:
+  - type: brief
+    target: openspec/changes/fix-task-system-final-residuals/brief.md
+    reason: 变更同时影响任务契约、Web、CLI和类型边界，需要完整人类入口。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/fix-task-system-final-residuals/proposal.md
+      - openspec/changes/fix-task-system-final-residuals/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前任务模块边界和严格TypeScript事实需要对齐。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/product-source-layout/spec.md
+      - services/buildr/src/task/module.ts
+  - type: flow
+    target: openspec/knowledge/flows/task-closeout.md
+    reason: 文档仍要求旧Environment cleanup并指向已删除实现。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-environments/spec.md
+      - services/buildr/src/task/infrastructure/git-worktree-provider.ts
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 文档仍声明Task内部workflow router和Task专属Environment Plan。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-lifecycle-core-module-architecture/spec.md
+      - services/buildr/src/task/module.ts
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 退役能力只保留负向定义并需核对当前owner术语。
+    status: aligned
+    sourceIdentities:
+      - openspec/specs/task-environments/spec.md
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 文档包含旧.mjs路径、Contribution Handoff和已删除模块说明。
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task
+      - services/buildr/src/bootstrap
+unresolvedItems: []

@@ -10,7 +10,7 @@ description: Agent 在探索、提案、设计、实现或文档整理中遇到�
 ## 1. 解析范围与权威来源
 
 - 读取 runtime binding 中的 contract、Workspace 与明确 Project context；不得按当前目录猜测 Project。
-- Project canonical glossary 固定解析为 `<project-root>/openspec/knowledge/glossary.md`。Service 特有术语可以位于 `<project-root>/openspec/knowledge/services/<service-code>.md` 的“局部术语”小节。
+- Project canonical glossary 固定解析为 `<project-root>/knowledge/glossary.md`。Service 特有术语可以位于 `<project-root>/knowledge/services/<service-code>.md` 的“局部术语”小节。
 - Task 不创建独立 glossary。Project term 优先于 Service 局部表达；Service 若有不同含义，必须显式说明作用域及与 Project term 的关系。
 - 按 canonical specs、当前实现/registries、current knowledge、active Change artifacts、已确认用户决定的顺序调查；archive 只用于追溯理由。
 
@@ -57,4 +57,3 @@ sourceIdentities: <spec/change/file/tree identities>
 - 不修改 archived Change，不在 archive 后补写术语。
 - 不把 `rg`、`grep`、SQL、语义检索、MCP 或任一工具固化为 Context 模型。
 - 不因 Skill id、description 相似或安装顺序猜测 provider/consumer 关系。
-

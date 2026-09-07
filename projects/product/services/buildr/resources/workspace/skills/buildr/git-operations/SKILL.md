@@ -5,7 +5,7 @@ description: 用户或上游智能体（Agent）已明确选择仓库（reposito
 
 # Git Operations
 
-本 Skill 是 `buildr.git-operations/v1` 的默认 provider。它只帮助 Agent 安全执行 consumer 已经选定的一次 Git Operation；不讲解完整 Git 命令集，不选择交付目标或顺序，不拥有 Task Development、Candidate、Verification、Task Finish 或 workspace sync 状态。
+本 Skill 是 `buildr.git-operations/v1` 的默认 provider。它只帮助 Agent 安全执行 consumer 已经选定的一次 Git Operation；不讲解完整 Git 命令集，不选择交付目标或顺序，不拥有任务验证、任务结果或 workspace sync 状态。
 
 能力名称使用复数 **Git Operations**；一次具体动作称为一个 **Git Operation**。
 
@@ -19,7 +19,7 @@ description: 用户或上游智能体（Agent）已明确选择仓库（reposito
 - 精确 owned paths/hunks 或已授权 commit scope；
 - 获准改变 working tree、local history 和 remote 的具体 effects。
 
-直接用户指令、Task Finish Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序；Buildr自动Finish只是可选consumer，不是唯一授权来源。不得沿用历史轮次的写入授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
+直接用户指令、任务收尾Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序。不得沿用历史轮次的写入授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
 
 ## 2. 保持 operation 单一
 
@@ -30,7 +30,7 @@ description: 用户或上游智能体（Agent）已明确选择仓库（reposito
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
 - workspace update：只有 Buildr Skill 等 consumer 已明确 workspace、upstream、update operation 与授权时才执行；dirty、divergence、冲突、缺失 upstream 或策略不唯一时 `blocked`，不自动 rebase、merge 或继续 sync。
 
-直接Git收尾是Agent选择的复合意图，不是provider自行推断的operation。Agent可按当前事实选择fetch、精确commit、rebase、普通push与远端回读，每一步都保持独立Result。有匹配任务时，智能体在真实交付后通过任务记录应用保存结果，不要求旧收尾对账；Git Operations自身不写Task lifecycle evidence。provider不自动stash；rebase冲突、目标歧义、已共享历史或需要force push时停止。
+直接Git收尾是Agent选择的复合意图，不是provider自行推断的operation。Agent可按当前事实选择fetch、精确commit、rebase、普通push与远端回读，每一步都保持独立Result。有匹配任务时，智能体在真实交付后通过任务记录应用保存结果；Git Operations自身不写Task lifecycle evidence。provider不自动stash；rebase冲突、目标歧义、已共享历史或需要force push时停止。
 
 本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 

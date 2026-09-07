@@ -25,60 +25,40 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 | `update check` | `buildr.update-check/v1` |
 | `openspec converge` | `buildr.openspec-convergence/v1` |
 | `openspec convergence inspect` | `buildr.openspec-convergence-inspect/v1` |
-| `task environment prepare/inspect/cleanup` | `buildr.task-environment-result/v4` |
-| `task environment plan record/inspect` | `buildr.task-environment-plan-result/v2` |
 | `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
-| 长流程缺省compact（Verification、release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
-| `verification plan`（普通） | `buildr.verification-plan/v1` |
-| `verification plan --environment <task-id> --workspace <canonical-workspace>` | `buildr.verification-plan-result/v1` |
-| `verification run --detail full` | `buildr.verification-execution/v1` |
-| `__internal task-retrospective list` | `buildr.task-retrospective-list-result/v1` |
-| `verification cleanup` | `buildr.verification-evidence-cleanup/v1` |
-| `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v4` |
-| `task next` | `buildr.task-entry-snapshot/v1` |
+| 长流程缺省compact（release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
+| `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v5` |
 | `task parent inspect/record/bind-child/reconcile/accept` | `buildr.parent-coordination-result/v3` |
 | Parent coordination嵌套值对象 | `buildr.parent-plan/v2`（v1只读兼容）/ `buildr.contribution-handoff/v1` |
-| Buildr Web Task stored detail/list query | `buildr.task-record-view/v2` / `buildr.task-record-list/v4` |
+| Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v7` |
+| Buildr Web Task本机复盘文档读取 | `buildr.task-retrospective-document/v1` |
 | `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
-| Buildr Web Task execution record list/detail/body file | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-detail-view/v1` / `buildr.task-execution-record-body-file/v1` |
-| `task execution-record list/inspect` | `buildr.task-execution-record-list-view/v1` / `buildr.task-execution-record-inspect-result/v1` |
 | `task finish run/inspect`（缺省或`--detail compact`） | `buildr.task-finish-compact-result/v1` |
 | `task finish run/inspect --detail full` | `buildr.task-finish-result/v2` |
 | `web preview start/list/stop` | `buildr.local-app-preview/v1` |
 
-Task Finish 的canonical v2 Result继续由SQLite current/terminal authority决定；CLI只在JSON输出边界选择detail。缺省或显式`compact`返回closed v1投影，只保留Task/run/status、current phase、handoff/Candidate/Content Target、主失败、next action、matching resume、关键refs、delivery/completion disposition、timing和portable `executionRecord`摘要；完整checks、operations、observations与diagnostics仅由显式`full`返回。`inspect`不读取或列举records。每次真实run/resume独立保留受控diagnostics；record attention不改写已成立的delivery、cleanup、Task terminal或Finish status。Carrier、lease、resume和恢复资源仍只由Finish current管理。`task complete`不是新的JSON contract，而是Task Record terminal status。
-
-`buildr.task-environment-result/v4`统一返回`operation`、`status`、Task ID、Receipt availability/locator、`current-machine`、`observedAt`、Environment read model、ready时的`execution`binding、diagnostic、effects与next actions。read model包含resolved Plan及逐Declaration/Scope/Recipe/Step current与prepared identity、inputs/outputs/required/executed/status/diagnostic；`preparation-step-executed`effect给出本次真实执行。`execution`包含明确workdir、execution/allowed roots与绝对`cliInvocation`。read model不暴露资源cleanup handle或controller CLI私有路径。
-
-`buildr.task-environment-plan-result/v2`统一覆盖Plan`record|inspect`，返回saved Plan v2、Receipt locator、diagnostic、effects与next actions。`record`接收Plan Request，解析当前Task execution root中的Project Declaration，原子替换Plan并将Environment标为blocked但不执行Step；`inspect`只读saved current。
+Task Finish的canonical Result由SQLite current/terminal authority决定；CLI只在JSON输出边界选择detail。缺省或显式`compact`返回closed投影，只保留Task/run/status、主失败、next action、关键refs、delivery/completion disposition与timing，不包含Task Execution Record摘要。
 
 `buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
 
 `buildr.long-running-operation-summary/v1`是closed、最多16384 UTF-8字节的只读投影，固定表达operation、compact detail、terminal/status、Task/run/result identity、至多12个关键阶段、primary failure、cleanup、output boundary与至多一个结构化recovery pointer。它不包含完整checks/context/evidence/operations/effects/diagnostics、stdout/stderr、本机路径、raw argv、secret、lease、resume token或正文，也不成为新的Result authority。展示截断与execution failure正交；收到`running`、stdout丢失或等待超时时，consumer先按pointer回读同一owner，不默认重跑。
 
-`buildr.verification-plan-result/v1`是closed formal Plan envelope，包含raw `buildr.verification-plan/v1`、只读`preparation` preview、零`effects`与下一步。`preparation`投影完整selected capability closure；`action-required`时提供closed Task Environment `planRequest`。Preview不执行Recipe、不启动capability、不写Environment/Execution Record，也不构成execution授权；`verification run --plan`接受raw Plan与envelope，并重新验证current declaration、Environment与closure drift。
+`buildr.project-verification-result/v1`返回Project测试地图的operation、status、path、identity、规范化declaration、errors和effects。`buildr.task-verification-operation-result/v1`返回Task current报告、digest、内容/测试地图适用性、diagnostic和effects。
 
-`buildr.verification-execution/v1`只在`verification run --detail full`显式返回，并继续保存显式 target identity、Project/declaration identity、实际选择的 command capabilities、逐项终态、可选 Task Environment execution binding、精确 capability/resource 授权、资源协调、真实 wall-clock、execution identity 与 transient evidence lifecycle。正式Task run额外返回portable invocation/record/run identity；相同exact invocation已有active时返回`status: active`，没有active但已有terminal时返回原record的passed/failed readback，两者都零执行。terminal full envelope固定`checks: []`、`durationMs: 0`、`timingSource: not-started-existing-terminal`、`executionIdentity: null`且不创建transient evidence。只有显式`--retry`创建同identity独立run，identity输入变化正常执行。完整Result不是 portable Task Result，也不表达固定 assurance、推进决定或 Candidate generation。
-
-`buildr.task-retrospective-list-result/v1`同时返回matching/returned数量、`maxBytes`、实际`returnedBytes`与`truncated`。默认limit为100、字节预算为262144，公共最大值为1048576；item只在完整JSON对象边界加入。`--include-report`请求的正文无法完整容纳时省略正文并标记truncated，单Task `inspect`仍是全文入口。
+`buildr.task-retrospective-document/v1`是Task Record下的只读响应，只读取`.buildr/local/task-retrospectives/<task-id>.md`，返回正文、实际摘要、已登记摘要、已登记状态、派生当前状态和局部诊断。固定上限为256 KiB；请求不接受路径、查询或字节预算，也不产生写入。
 
 `buildr.verification-evidence-cleanup/v1` 只报告 transient execution evidence 的 cleanup 状态。非 transient、identity 不匹配、目录越界或无法证明 provider ownership 的文件不会被删除。
 
-`buildr.task-verification-operation-result/v1` 统一覆盖 current Result 的 `inspect|reconcile|record`。成功时返回 `operation`、`status`、`taskId`、`slot`、`effects` 与 `nextActions`；`slot` 包含 path、present、完整current Result、响应级digest和派生applicability。v2 Result绑定Candidate/generation、Content Target、declarations与Task Execution Record evidence；合法v1 row保持可读但applicability为`legacy-unbound`。没有current Result时inspect返回`unknown`；Candidate、target或declaration identity变化时返回`stale`。业务拒绝返回同一envelope、`status: blocked`、稳定diagnostic和非零退出，且不得覆盖旧slot。
+`buildr.task-verification-operation-result/v1`统一覆盖current报告的`inspect|record`。成功时返回`operation`、`status`、`taskId`、`slot`、`effects`与`nextActions`；`slot`包含path、present、完整current报告、响应级digest和派生applicability。没有报告时返回空slot；调用方内容identity或Project测试地图变化时派生`stale`。业务拒绝返回同一envelope、`status: blocked`、稳定diagnostic和非零退出，且不得覆盖旧slot。
 
 当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
 
-`buildr.task-record-result/v4` 覆盖六个 Task Record 动作，返回 closed v2 `record`、`recordDigest`、Parent/Child `taskRelations`与复盘来源/后续 `retrospectiveRelations`。`record.retrospectiveSourceTaskIds` 只保存 source Task ID；关系摘要补充当前标题和状态。完整 Application 列表仍使用 `buildr.task-record-list/v2`。
+`buildr.task-record-result/v5`覆盖六个Task Record动作，返回closed v3 `record`、`recordDigest`、Parent/Child `taskRelations`与`retrospectiveDocument`路径/登记摘要。Task不再返回复盘来源/后续关系。
 
-`buildr.task-entry-snapshot/v1`是零写入Formal Task入口，只按Task → Environment → Development最早硬前置读取，返回最小identity/current facts、receipt证明的execution/writer route、直接blockers与唯一typed next。它不复制完整Receipt/Result或capability graph，不替代实际owner写前重验。`required`只表示当前authority/identity安全前置；`recommended`是可调整建议。显式`--profile`只增加本次wall-clock、owner read次数与失败/重复尝试事实，不持久化、不影响gate、Candidate或Task status。
+`buildr.parent-coordination-result/v4`只读返回Task目标、当前Record摘要、`parent|child|ordinary` mode、直接Children结果、完成观察身份、已保存父任务完成依据和可选旧Parent Plan历史。它不读取Review、Verification、Development、Finish、Contribution或交付状态，不推断依赖和完成比例，也不传播任何Task状态。
 
-`buildr.parent-coordination-result/v3`覆盖Parent coordination actions，并直接替代v2。根对象返回operation/status/taskId、`parent-plan|child|ordinary|legacy` mode、紧凑`plan`摘要、Parent status/final acceptance、紧凑Planning Review、直接Children摘要与唯一顶层`contributions`。每个work item只在顶层Contribution Map出现一次，`expectedChild`规范化为`expectation.child`；Child只返回`boundContributions`与协调所需delivery摘要，不返回完整Contribution Handoff。`startup.next`是唯一下一步，依赖阻塞继续由`blockers`和各Contribution eligibility表达；完整`dependencyBlockers`只属于独立`buildr.parent-startup-readiness/v2`。它只组合Task Record与Development/Review/Finish Applications已保存事实；Child completed无matching handoff为`unproven`，最终验收不自动完成Parent。ordinary不产生Parent主体；legacy不backfill；Child返回紧凑`parentSource`。
+Buildr Web stored-state projection使用详情v3和列表v7，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。列表v7默认按`active → todo → completed → abandoned`返回全部状态，支持可选`pageSize`/`cursor`与`matchingTaskCount`/`hasMore`/`nextCursor`；首批返回筛选选项，cursor后续批次复用首批统计并返回`filterOptions: null`。未提供分页参数的Application调用仍返回全部匹配Task。`open`只是显式查询语义，不持久；普通搜索的每个有效分词至少3个Unicode字符，`#task-id`执行精确编号查询。列表不读取Markdown正文或解析Project、Service、Git、Worktree与OpenSpec Change当前性；`recordDigest`与关系摘要都不进入Task Record schema，反向Children只存在于`taskRelations`查询投影。
 
-Buildr Web stored-state projection 使用详情 v2 和列表 v4，在既有字段上增加 `retrospectiveRelations`并支持 `open|todo|active|completed|abandoned|all`过滤。`open` 只是查询语义，不持久。这两个视图仍不解析专业 currentness，`recordDigest`、`childTaskCount` 与关系摘要都不进入 Task Record schema。
-
-Task Execution Record 的三个 Buildr Web read model 只读取同一 `task_execution_records` authority。list v1 固定支持 `all|verification|finish`，detail v1 返回 portable metadata 与经完整性验证的 closed正文文件清单，body-file v1 只返回单个白名单文件最多 512 KiB 的 UTF-8 preview 和双重截断状态。三者都不暴露 SQLite、locator、本机路径、reserved quota、resource token 或 mutation；cleaned tombstone 仍可列出，但正文读取返回 unavailable diagnostic。
-
-Agent CLI复用同一list v1，并以`buildr.task-execution-record-inspect-result/v1`返回紧凑Verification终态：record/run/invocation identity、lifecycle/outcome、timing、failure、Project/target/declaration与capability evidence摘要。inspect只从已验证manifest/digest的受控正文提炼；open、cleaned、正文损坏或不可用时返回明确unavailable原因，不扫描SQLite路径或建立第二份状态authority。
 
 ## Doctor v1 结果语义
 

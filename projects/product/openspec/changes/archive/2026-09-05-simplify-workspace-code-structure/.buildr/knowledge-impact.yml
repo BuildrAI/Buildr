@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: simplify-workspace-code-structure
+operation: reconcile
+treeIdentity: ceb8ffab60f2ac045d381f7d2153e054a30697df
+impacts:
+  - type: brief
+    target: openspec/changes/simplify-workspace-code-structure/brief.md
+    reason: 说明减少文件与保留边界的实现范围
+    status: updated
+    sourceIdentities: [openspec/changes/simplify-workspace-code-structure/design.md]
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 合并应用、明确来源技术边界并提供代码地图
+    status: updated
+    sourceIdentities: [services/buildr/src/workspace/module.ts]
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 对齐后端应用和前端领域组件职责
+    status: updated
+    sourceIdentities: [services/buildr/src/workspace/module.ts]
+unresolvedItems: []

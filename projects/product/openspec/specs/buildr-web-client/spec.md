@@ -6,58 +6,6 @@ Buildr Web React 客户端源码位置、构建产物、本机 session adapter �
 
 ## Requirements
 
-### Requirement: Environment Tab必须展示Preparation来源与分层readiness
-Buildr Web Environment Tab MUST从Task Environment saved-current read model展示Plan来源、Project Declaration、scope、Recipe与Step状态、identity、最近观察、diagnostic和本次prepare执行事实。页面 MUST不把同一Step probe复制为多个scope事实。
-
-#### Scenario: 多Service Receipt
-- **WHEN** Receipt包含`buildr`与`buildr-web`两个Service Recipe
-- **THEN** 页面 MUST分别展示两个Recipe及其Step状态
-- **AND** 任一blocked MUST在Environment聚合结论中可见
-
-#### Scenario: task-inline Receipt
-- **WHEN** Plan来源为`task-inline`
-- **THEN** 页面 MUST明确显示该来源没有长期Declaration
-- **AND** MUST提供由Agent初始化Project声明的next action提示而不直接写文件
-
-### Requirement: Task 详情必须展示协调计划与派生 Child 交付
-Buildr Web MUST 在 Task 详情展示 Parent Coordination Application 派生的当前推进状态、推荐下一步、可启动 Contribution、真实启动阻塞、最终验收进度、Parent Plan 治理事实、Child identity/status、planned/delivered/extra/residual/superseded facts 与 final acceptance prerequisites；历史 Task MUST 显示不采用新模型的清晰空态。可启动 Contribution MUST 以 Parent Plan 已保存的 `summary` 作为用户可读名称或计划结果，并同时展示稳定 `id`；Web MUST NOT 维护已知 Contribution 的平行名称字典。页面 MUST 将 `startup` readiness 与 `prerequisitesSatisfied` final acceptance readiness 分开表达，并 MUST 按公开 Planning Review read model 形状展示 outcome、applicability、摘要与时间，不得向用户显示 `undefined`。
-
-#### Scenario: Parent 当前可推进
-- **WHEN** read model 返回 `startup.status=ready`、推荐 next action 和一个或多个 eligible Contribution
-- **THEN** UI MUST 优先展示“当前可推进”、推荐下一步及推荐 Contribution
-- **AND** 每个可启动 Contribution MUST 同时显示其 `summary` 与 `id`
-- **AND** 其他 eligible Contribution MUST 与推荐项明确区分
-
-#### Scenario: Parent 当前被治理条件阻塞
-- **WHEN** read model 返回 `startup.status=blocked` 和 startup blockers
-- **THEN** UI MUST 把这些 blocker 展示为当前推进阻塞
-- **AND** MUST NOT 把尚未交付的全部 Contribution 数量冒充为当前启动阻塞
-
-#### Scenario: Contribution 等待依赖但仍有其他可启动项
-- **WHEN** read model 同时返回 eligible Contribution 和 response-only dependency blockers
-- **THEN** UI MUST 允许用户识别可立即启动项与等待依赖项
-- **AND** MUST NOT 在浏览器重算 dependency readiness
-
-#### Scenario: Child completed 但交付未证明
-- **WHEN** read model 返回 completed Child 和 unproven Contribution
-- **THEN** UI MUST 分别显示 Task 已完成与 Contribution 未证明
-- **AND** MUST NOT 用完成图标暗示全部 planned 范围已交付
-
-#### Scenario: 最终验收条件尚未满足
-- **WHEN** `prerequisitesSatisfied=false` 但 `startup.status=ready`
-- **THEN** UI MUST 显示 Parent 当前仍可启动 eligible Contribution
-- **AND** MUST 将未完成项表达为最终验收进度而非“前置条件未满足”
-
-#### Scenario: Planning Review 已存在
-- **WHEN** read model 返回 Planning Review result 与 applicability
-- **THEN** UI MUST 展示 conclusion outcome、applicability、摘要与 result completedAt
-- **AND** 任一可选字段缺失时 MUST 使用明确空态而不是显示 `undefined`
-
-#### Scenario: 历史 Task 没有 Parent Plan
-- **WHEN** Parent Coordination read model 返回 legacy mode 或 `parent_plan_absent`
-- **THEN** UI MUST 显示该 Task 尚未显式采用 Parent Plan 的清晰空态
-- **AND** MUST NOT 自动 backfill、创建或改写任何 Task 或 Plan
-
 ### Requirement: Buildr Web 必须提供可扩展的 React Web 客户端并保持行为等价
 Buildr Web 客户端 MUST 以 React 实现，源码 MUST 位于 `product/buildr-web` Service 的前端工程根，并 MUST 通过构建产物由本机 Buildr Web HTTP interface（归属 `product/buildr`）同源托管。用户可观察的**已挂载路由 path 与功能交互** MUST 保持等价，包括工作空间列表、开始/设置、任务列表与详情页签、Task-scoped Change、项目、服务、文章、Agent Action 抽屉、退出应用与 preview 身份条；视觉呈现、布局密度与动效 MAY 在经确认的 UI 重设计范围内变化，且 MUST NOT 被解释为对路由或功能交互等价的破坏。客户端 MUST NOT 直连 SQLite、manifest 或文件系统 path，MUST NOT create Task，也 MUST NOT 在页面内执行专业任务。
 
@@ -108,43 +56,12 @@ Buildr MUST 将 Buildr Web 的发布所需文件定义为 `buildr` 内构建产�
 - **AND** MUST NOT 依赖 `buildr-web` 源码目录中的开发依赖在运行时可用
 
 ### Requirement: Buildr Web 必须只提交显式协调动作
-Buildr Web MUST通过同一Application API提交reconciliation与final acceptance，不得自动创建/完成/abandon Child、自动改写Change或根据页面状态同步Parent Plan。
+Buildr Web MUST只通过Task Record Application提交用户明确触发的关系更新、普通任务完成或带完整验收与授权的父任务完成；不得自动创建、完成或abandon Child，不得自动改写Change，也不得维护Parent Plan reconciliation。
 
 #### Scenario: 用户确认Parent reconciliation
-- **WHEN** 用户基于current identity提交完整next Plan
-- **THEN** UI MUST展示Application实际effects与新的identity
-- **AND** 后续Child专业动作 MUST保持独立
-
-### Requirement: Buildr Web 必须展示统一与分专业 execution record 视图
-Buildr Web Task 详情 MUST 提供一个共享 execution record 浏览器，支持“全部”“Verification”“Finish”三种筛选并展示多次执行、失败、重试、outcome、lifecycle、resolution、target、producer、时间与正文状态。Verification Result 区块 MUST 提供进入 Verification 视图的入口，Finish current/terminal 区块 MUST 提供进入 Finish 视图的入口；所有入口 MUST 使用同一 API authority 与 record identity，MUST NOT 把 execution record outcome 表达为当前 Result 或交付事实。
-
-#### Scenario: 从统一入口查看
-- **WHEN** 用户打开 Task 的 execution record 浏览器并切换筛选
-- **THEN** Web MUST 分别请求 `all`、`verification` 或 `finish` view
-- **AND** MUST 清晰显示当前筛选与空态
-
-#### Scenario: 从 Verification 区块进入
-- **WHEN** 用户在 Verification Result 区块选择查看执行记录
-- **THEN** Web MUST 打开同一浏览器的 Verification view
-- **AND** 当前 Result 展示 MUST 保持独立
-
-#### Scenario: 从 Finish 区块进入
-- **WHEN** 用户在 Finish current/terminal 区块选择查看执行记录
-- **THEN** Web MUST 打开同一浏览器的 Finish view
-- **AND** Finish current/terminal 展示 MUST 保持独立
-
-### Requirement: Buildr Web 必须按需展示受限正文
-Buildr Web MUST 在用户选择 record 后按需读取 detail，并只为 detail 声明的正文 filename 请求内容。Web MUST 展示 stored/response truncation、cleaned 或 unavailable 状态和 integrity failure diagnostic；MUST NOT 构造、显示或接受 locator、任意 path 或 cleanup action。
-
-#### Scenario: 打开正文文件
-- **WHEN** 用户选择 available record 的一个已声明 filename
-- **THEN** Web MUST 请求 Task-scoped body-file API 并以文本预览显示返回内容
-- **AND** MUST 标识任何 stored 或 response truncation
-
-#### Scenario: 正文不可用
-- **WHEN** record 已 cleaned、open、attention damaged 或 body read 失败
-- **THEN** Web MUST 保留 metadata 可见并显示安全 diagnostic
-- **AND** MUST NOT 尝试扫描或猜测正文路径
+- **WHEN** 用户基于current Task Record与父子快照提交完整验收和明确授权
+- **THEN** UI MUST展示Application实际结果或冲突
+- **AND** 后续Child专业动作与状态 MUST保持独立
 
 ### Requirement: Buildr Web UI 重设计必须遵守离线 CSP 与生产托管边界
 Buildr Web UI 重设计 MUST 仅修改 `product/buildr-web` 内的视觉、布局与动效实现，MUST 继续由 `product/buildr` 消费构建产物目录 `web-dist` 做同源托管，并 MUST 遵守既有离线 CSP：不得引入 CDN、远程字体或远程脚本。若使用自定义字体，字体文件 MUST 作为同源静态资产随构建产物提供。正式完成证据 MUST 来自 `buildr web`（或测试夹具中的等价 Buildr Web HTTP server）托管的构建产物，MUST NOT 将 Vite 开发服务器或 HMR 会话当作交付完成条件。
@@ -171,18 +88,6 @@ Buildr Web Task 列表 MUST 默认使用 `open` 过滤，并 MUST 提供 `open`�
 - **WHEN** 用户打开 todo Task 详情
 - **THEN** 页面 MUST 允许编辑顶层字段、无变更完成或放弃，并说明尚未进入正式执行
 - **AND** Environment、Development 与 Finish 视图 MUST 不伪造任何占位事实
-
-### Requirement: Buildr Web 必须展示复盘来源与承接关系
-Task 概览 MUST 展示当前 Task 的复盘来源摘要；复盘 Tab MUST 展示以当前 Task 为来源的承接 Task 摘要及当前 status。展示 MUST 使用 Task Record/Retrospective Application read model，不得由 Web 客户端拼接全量 Task 列表。
-
-#### Scenario: 查看复盘来源
-- **WHEN** todo/active Task 具有一个或多个 retrospective source
-- **THEN** 概览 MUST 显示可导航的 source Task ID、title 与 terminal status
-
-#### Scenario: 查看复盘承接结果
-- **WHEN** terminal Task 的复盘已关联一个或多个承接 Task
-- **THEN** 复盘 Tab MUST 在原始报告和处置意见附近显示目标 Task ID、title 与当前 status
-- **AND** 无承接关系时 MUST 显示明确空态而非隐藏原始复盘
 
 ### Requirement: Buildr Web 必须在全局壳层展示 GA 与 RC 更新
 Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并展示 GA/RC 更新提示；提示 MUST 在全局与 Workspace 路由保持一致，不得由各页面重复实现。
@@ -292,104 +197,6 @@ Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机
 - **THEN** 页面 MUST 展示空态并说明由 Agent 生成
 - **AND** MUST NOT 根据 Git 提交或任务列表自动填充
 
-### Requirement: Task 概览必须按 Parent、Child 与普通 Task 差异化展示
-Buildr Web MUST 只在 `parent-plan` mode 展示完整 Parent 核心主体；Child mode MUST 只紧凑展示 Parent 链接、所承接 work item 与 actual binding 状态；ordinary mode MUST 不渲染 Parent coordination、Contribution、Child 或相关空卡片；legacy mode MAY 显示紧凑兼容提示但 MUST NOT占据概览主体。
-
-#### Scenario: 普通 Task
-- **WHEN** Task 没有 Parent、没有 Child 且没有 Parent Plan
-- **THEN** Overview MUST 不显示 Parent 专属模块或空 Parent 卡片
-- **AND** MUST 保持普通 Task 的既有专业摘要与详情可用
-
-#### Scenario: Child Task
-- **WHEN** Task 有 Parent 且 Development 绑定一个或多个 Parent work item
-- **THEN** Overview MUST 显示 Parent title/link、work-item priority/title/objective 与 binding 状态
-- **AND** MUST 不显示完整 Parent outcome、全部 Contributions、架构决策或最终验收主体
-
-### Requirement: Parent Overview 必须以完整计划为核心并折叠技术事实
-Parent Overview MUST 默认依次突出 outcome/current next、全部 work item 的摘要与可选完整详情、architecture decisions 和 final acceptance。每个 work item MUST 可见 priority、title、objective、directions、dependencies、boundaries、expected Child 与 actual Child 状态；Task Record、schema/digest/storage、Environment 与其他技术 evidence MUST 默认折叠或保留在独立 Tab，缺失 Change/Child/blocker/evidence 时 MUST 不显示大块空卡片。
-
-#### Scenario: Parent 有多个 work item
-- **WHEN** Parent Plan 包含多个 priority、完整方向和依赖
-- **THEN** UI MUST 以列表摘要供用户选择并展示选中项完整方向
-- **AND** dependency 与 blocked reason MUST 使用 title 并保留稳定 ID
-
-#### Scenario: 技术事实默认折叠
-- **WHEN** 用户首次打开 Parent Overview
-- **THEN** Task Record、record digest、schema、storage 与 Environment 技术事实 MUST 不占据 Parent 核心计划的默认展开区域
-- **AND** 用户 MUST 仍可通过显式展开或既有 Tab 查看这些事实
-
-### Requirement: Buildr Web 必须直接消费Parent Coordination v3
-Buildr Web MUST只按v3 canonical字段渲染Parent、Child、ordinary与legacy模式，MUST不在API层、类型或组件中保留v2 alias、fallback或第二套进度计算。
-
-#### Scenario: Parent详情加载
-- **WHEN** Task detail读取Parent coordination endpoint
-- **THEN** Web MUST从`plan`、顶层`contributions`、`startup`、`planningReview`、`parentAcceptance`与`prerequisitesSatisfied`渲染现有界面
-- **AND** MUST不读取`parentPlan`、`finalAcceptanceReady`、`plannedContributions`或`nextActions`
-
-#### Scenario: Child详情加载
-- **WHEN** endpoint返回`mode: child`
-- **THEN** Web MUST从紧凑`parentSource`与canonical binding字段渲染Parent来源
-- **AND** MUST不请求或重建完整Parent coordination
-
-### Requirement: 父任务贡献项必须呈现动态迁移进度
-Buildr Web MUST 将 Parent Coordination v3 返回的 Parent Plan Contribution、真实 Child Task、Contribution binding 与 Contribution Handoff 即时组合为只读迁移进度视图，并 MUST 按“进行中 / 已交付”“可启动”“等待依赖”的固定顺序分组。页面 MUST 使用中文呈现用户可见的业务术语、状态、标题、操作和空态；稳定 Contribution ID、Task ID 与内部路由标识 MAY 保留原值。桌面端 MUST 使用“贡献项、实际子任务、贡献交接或依赖、详情入口”的紧凑横向信息结构，顶部 MUST 展示“已交付、剩余工作、已取代、进行中”四项动态摘要，并 MUST 提供只读贡献项详情侧栏。该视图 MUST NOT 写回 Parent Plan、创建第二套进度存储、因普通进度变化触发 Plan reconcile 或使 Planning Review stale。
-
-#### Scenario: 按迁移状态分组
-- **WHEN** 父任务同时存在已关联实际 Child、未关联且 eligible 的 Contribution，以及等待依赖的 Contribution
-- **THEN** UI MUST 依次显示“进行中 / 已交付”“可启动”“等待依赖”三个分组
-- **AND** 每个 Contribution MUST 只出现在一个分组中
-- **AND** UI MUST NOT 按计划优先级创建另一套顶层分组
-
-#### Scenario: 显示四项迁移摘要与事实来源
-- **WHEN** 父任务页面展示动态迁移进度
-- **THEN** 推荐行动区域 MUST 同时显示“已交付、剩余工作、已取代、进行中”四项当前计数
-- **AND** 页面 MUST 明确进度由父任务计划、直接子任务与贡献交接动态派生
-- **AND** 页面 MUST 明确该进度不写回父任务计划
-
-#### Scenario: 桌面端使用紧凑横向进度行
-- **WHEN** 浏览器处于桌面宽度并显示一个 Contribution
-- **THEN** 同一进度行 MUST 依次呈现 Contribution 标识与状态、实际 Child、Contribution Handoff 或依赖摘要以及详情入口
-- **AND** 状态、交付摘要、下一步行动和阻塞原因 MUST 在行内可扫读
-- **AND** UI MUST NOT 把每个 Contribution 默认展开为包含目标、方向和边界的纵向长卡片
-
-#### Scenario: 打开贡献项详情侧栏
-- **WHEN** 用户点击 Contribution 进度行或其详情入口
-- **THEN** UI MUST 打开只读详情侧栏并展示目标、实现方向、边界、依赖、预期 Child 与适用的 Handoff 证明
-- **AND** 关闭侧栏 MUST 返回原父任务页面且不创建独立路由或写入
-
-#### Scenario: 从父任务进入实际子任务
-- **WHEN** Contribution 已通过 binding 关联一个或多个实际 Child Task
-- **THEN** UI MUST 显示每个 Child 的中文任务状态、标题和 Task ID
-- **AND** Child 标题与显式操作 MUST 导航到同一工作空间既有任务详情路由
-- **AND** 点击 Child 导航 MUST NOT 同时打开 Contribution 详情侧栏
-- **AND** 该导航 MUST NOT 创建独立迁移详情页或改变 Parent/Child relation
-
-#### Scenario: Child completed 但没有 Contribution Handoff
-- **WHEN** 实际 Child Task 状态为 `completed` 且 Parent Coordination 返回 `deliveryProven=false` 或没有匹配 delivery
-- **THEN** UI MUST 显示该 Child Task 已完成并同时显示“交付未证明”
-- **AND** UI MUST NOT 将 Contribution 标记为“已交付”或生成交付摘要
-
-#### Scenario: Contribution Handoff 提供交付摘要
-- **WHEN** 匹配 Child 的 Contribution Handoff 包含 `delivered`、`residual`、`superseded` 和 `nextAction`
-- **THEN** UI MUST 以简洁中文标签展示所有非空事实及下一步行动
-- **AND** “已交付”状态 MUST 只由该 matching Contribution Handoff 证明
-
-#### Scenario: Contribution 等待具体依赖
-- **WHEN** Contribution 的 eligibility 返回一个或多个 dependency blocker
-- **THEN** UI MUST 在“等待依赖”分组显示依赖 Contribution 的标题和稳定 ID
-- **AND** UI MUST 显示由 read model 提供的具体阻塞原因，且 MUST NOT 在浏览器重算 readiness
-
-#### Scenario: 窄屏保持完整迁移信息
-- **WHEN** 浏览器处于窄屏宽度
-- **THEN** Contribution 进度行 MUST 降级为单列信息顺序并保持详情入口可操作
-- **AND** 四项迁移摘要 MUST 以两列或单列方式完整显示
-- **AND** Child、交付摘要、下一步行动与阻塞原因 MUST NOT 被隐藏或产生页面水平溢出
-
-#### Scenario: 普通进度只改变动态视图
-- **WHEN** Child Task 状态、binding 或 Contribution Handoff 事实发生普通进度变化而 Parent Plan 协调内容未改变
-- **THEN** 刷新后的页面 MUST 从当前 read model 反映新事实
-- **AND** 页面 MUST NOT 提交 Parent Plan reconcile、Planning Review 更新或任何独立进度写入
-
 ### Requirement: Buildr Web Task 详情必须提供 UI Prototype 视图
 Buildr Web Task 详情 MUST 提供独立“原型”一级视图，按需读取当前 Task 关联 Change 中可发现的一个或多个 UI Prototype 页面，并 MUST 允许用户在页面列表中选择和操作当前页面。页面 MUST 同时说明 UI Prototype 是实现参考而非正式设计、canonical spec 或像素级验收标准。当当前页面可在舞台中展示时，原型舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
 
@@ -445,19 +252,6 @@ Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行每个
 - **THEN** 新窗口 MUST 加载同一 Task-scoped 内容响应
 - **AND** 该文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
 
-### Requirement: Task 概览必须优先展示用户结果与必要决定
-Buildr Web MUST 直接消费Task Overview的用户摘要，在默认概览中优先展示目标、Delivery、Activation、Cleanup、局部attention与必要authorization；MUST将digest、gate match、Receipt、schema和内部状态保留在可展开技术区域或专业Tab。Web MUST NOT重新组合专业payload、推断结果或提供越过专业owner的修复入口。
-
-#### Scenario: 普通用户查看任务结果
-- **WHEN** 用户打开具有Task Overview用户摘要的任务
-- **THEN** 页面 MUST在技术事实之前显示目标和四个正交结果，以及非空attention或authorization
-- **AND** 用户无需理解内部identity、token或Receipt即可判断当前结果和必要决定
-
-#### Scenario: 没有必要授权
-- **WHEN** Overview authorization为空且只有Agent可自行处理的局部诊断
-- **THEN** 页面 MUST不显示人工授权操作
-- **AND** MUST将专业attention指向对应Tab或Agent action而不制造全局阻塞
-
 ### Requirement: Buildr Web 必须统一具名 Workspace 相对 Markdown 引用
 Task、Project与Service页面 MUST使用共享解析规则处理带用户可读名称的Workspace相对`.md`引用，根据已登记Project `source.path`与页面scope解析到Project Document API，并分别表达“引用可解析”与“正文当前可读取”。页面 MUST NOT按目录约定猜测Project、读取绝对路径、扫描Workspace或因正文当前不可读而改写引用。
 
@@ -483,3 +277,73 @@ Task、Project与Service页面 MUST使用共享解析规则处理带用户可读
 - **WHEN** 维护者扫描当前 `buildr-web` 源码、测试和构建配置
 - **THEN** 用户可见旧称 MUST 不再作为 canonical 命名出现
 - **AND** `local-app-*` 仅能出现在明确标注的兼容 identity 或测试 fixture 中
+
+### Requirement: Buildr Web必须在概览按需查看本机复盘文档
+Buildr Web MUST在Task概览显示复盘文档固定本机路径与`无复盘文档|等待你的决定|已经决定`状态。只有Task Record已经登记文档时才提供查看入口；打开正文 MUST调用Task Record只读接口并 MUST不产生写入。
+
+#### Scenario: 只读查看当前复盘
+- **WHEN** 用户打开已登记复盘文档
+- **THEN** 页面 MUST展示Markdown、实际摘要状态和局部漂移提示
+- **AND** Task Record digest MUST保持不变
+
+#### Scenario: 用户明确完成决定
+- **WHEN** 用户查看匹配当前登记摘要的文档并点击“我已完成决定”
+- **THEN** 页面 MUST通过Task Record update提交当前record digest、文档摘要和`decided`
+- **AND** MUST不创建后续Task或处置说明
+
+### Requirement: Task详情必须直接展示Task Record与独立专业事实
+Buildr Web MUST在默认概览直接展示Task Record目标、状态、结果、Change、父子关系和复盘摘要；Review与Verification只在证据页按需独立读取，父任务协调只在适用Task显示。页面 MUST不请求Task Overview、组合统一推进状态或根据专业结果推断Task能否完成。
+
+#### Scenario: 普通Task没有专业结果
+- **WHEN** Task只有Task Record且没有Review或Verification
+- **THEN** 默认概览 MUST正常显示目标和当前结果
+- **AND** 专业结果缺失 MUST不形成Task错误或全局阻塞
+
+#### Scenario: 专业读取失败
+- **WHEN** Review、Verification或父任务协调中的一个读取失败
+- **THEN** 页面 MUST只在对应区域显示局部错误
+- **AND** Task Record及其他已读取事实 MUST继续可见
+
+### Requirement: Buildr Web必须直接消费Parent Coordination v4
+Buildr Web MUST通过生成DTO消费Parent Coordination v4，只展示所属父任务、直接Children、各自状态与结果、旧计划历史、完成观察和已保存授权依据。页面 MUST不重建Contribution、Handoff、依赖、完成比例或推荐下一步。
+
+#### Scenario: Parent详情加载
+- **WHEN** endpoint返回`mode: parent`
+- **THEN** 页面 MUST展示整体目标、直接Children及父任务完成授权边界
+- **AND** MUST不传播或修改任一Child状态
+
+#### Scenario: Child或普通Task详情加载
+- **WHEN** endpoint返回`child|ordinary`
+- **THEN** 页面 MUST只展示适用的Parent链接或不显示父任务区域
+- **AND** MUST不创建父计划空态或进度聚合
+
+### Requirement: Buildr Web Task Record 必须以内聚 feature 组织
+Buildr Web MUST将Task功能组织为`src/features/task/{pages,hooks,components,api}`四个平级目录。`pages` MUST只读取路由、调用Hook并组装组件；`hooks` MUST管理服务器数据、mutation、请求取消、竞态与局部失败；`components` MUST只通过props或页面内专用Hook消费业务数据和回调且不得直接调用后端Client；`api` MUST只封装Task endpoint和generated Task Record DTO且不得依赖React。通用fetch/session/Workspace scope transport MUST保留在`src/api`且不得反向依赖Task feature；Review、Verification、Parent Coordination、Change、UI Prototype与Project Document MUST继续使用各自Client和独立事实边界。
+
+#### Scenario: 构建 Task Record 页面
+- **WHEN** `TasksPage`、`TaskDetailPage`或`TasksSection`加载Task功能
+- **THEN** 页面 MUST通过`useTaskList`、`useTaskDetail`、`useTaskActions`、`useTaskArtifacts`、`useTaskEvidence`或`useTaskRequestLifecycle`消费状态与动作
+- **AND** 页面 MUST不直接调用`api`、`taskApi`或其他后端Client
+- **AND** MUST保持稳定DOM selector、现有路由与用户交互
+
+#### Scenario: 组件展示和提交用户输入
+- **WHEN** Task filter、table、overview、relations、modal、retrospective、document preview、prototype或evidence组件工作
+- **THEN** 组件 MUST只消费props和回调，或调用只服务该组件的页面内Hook，并可以维护纯界面局部状态
+- **AND** 组件 MUST不直接调用任何后端Client或取得服务器数据authority
+
+#### Scenario: 专业结果读取失败
+- **WHEN** Review、Verification、Parent Coordination、Change 或 UI Prototype 的读取失败
+- **THEN** Task Record 与其他已成功读取的事实 MUST继续可见
+- **AND** 失败 MUST由Hook保持在所属页面区域，不得升级为整个Task页面不可用
+
+#### Scenario: 共享 HTTP transport
+- **WHEN** Task Hook发起list、detail、update、complete、abandon或retrospectiveDocument请求
+- **THEN** feature内`task-api.ts` MUST复用`src/api`提供的session、Workspace scope与底层HTTP transport
+- **AND** `src/api/index.ts` MUST不导入Task feature
+- **AND** `api`目录 MUST不依赖React、Hook、Page或Component
+- **AND** generated DTO MUST保留公开Task Record协议身份并生成到`features/task/api/generated/`
+
+#### Scenario: Feature 目录保持最小层级
+- **WHEN** 维护者检查Task前端目录
+- **THEN** `logic`、`list`、`detail`、`actions`、`model`与通用`utils`子目录 MUST不存在
+- **AND** 纯函数 MUST先位于真实使用的Hook或组件，只有出现多处实际复用后才建立具名文件

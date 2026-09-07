@@ -16,7 +16,8 @@
 | [roadmap/workspace-testing-and-verification-framework.md](roadmap/workspace-testing-and-verification-framework.md) | 已实现的Workspace测试能力、Request/Plan、执行、结果、V2兼容与V3迁移架构说明；规范行为以OpenSpec specs为准 |
 | [roadmap/agent-first-governance-refactoring.md](roadmap/agent-first-governance-refactoring.md) | 智能体优先治理目标、门禁判断、跨模块重构工作包与 Parent 最终验收；尚未实现，不是当前事实或行为契约 |
 | [roadmap/task-system-refactoring-discussion.md](roadmap/task-system-refactoring-discussion.md) | 任务系统重构讨论结论、已确认推进方式与未决设想；原则正文只引用随包入口，不作为当前行为契约 |
-| [../openspec/knowledge/overview.md](../openspec/knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
+| [../knowledge/overview.md](../knowledge/overview.md) | 当前已实现事实入口，导航术语、架构、流程和 Service 说明 |
+| [../knowledge/archify/index.md](../knowledge/archify/index.md) | 当前态模型的 Archify 可视化技术图入口 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |
 | [release-checklist.md](../services/buildr/docs/release-checklist.md) | 发布准备和验证清单 |
@@ -34,7 +35,7 @@
 |----------|----------|
 | 产品入口、最小心智模型、快速开始 | `README.md` |
 | 产品定位、为什么、核心概念、协作模型 | `docs/buildr-product.md` |
-| 已经实现的当前事实 | `openspec/knowledge/overview.md` 及其导航的结构化 knowledge |
+| 已经实现的当前事实 | `knowledge/overview.md` 及其导航的结构化 knowledge |
 | 历史任务页面（只作历史旁证，不再创建或维护） | `openspec/knowledge/task-boards/*.html`、`openspec/knowledge/task-cockpits/*.html` |
 | MUST / SHOULD 级产品行为 | `openspec/specs/` |
 | 计划型产品变更 | `openspec/changes/` |
@@ -45,7 +46,7 @@
 
 ## Knowledge 规则
 
-进入 `openspec/knowledge/` 的常规 current-state 文档必须是当前事实：
+进入 `knowledge/` 的常规 current-state 文档必须是当前事实：
 
 - 当前已经实现。
 - Agent 或维护者需要据此判断现状。
@@ -58,7 +59,7 @@
 
 - 保持现有文件的原路径和原内容，不迁移、不重写、不删除或重新接管。
 - 只作为历史过程和来源线索，不再承担当前任务工作状态或导航职责。
-- 当前 Task、Parent/Child、Development、Review 与 Verification 状态必须通过各专业 Application/read model、Buildr Web、canonical specs 和有效 evidence 核实。
+- 当前Task、父任务协调（Task Parent Coordination）、Review与Verification事实必须通过各自Application/read model、Buildr Web、canonical specs和有效evidence核实。
 - 不创建新的 `task-boards/*.html` 或 `task-cockpits/*.html`。
 
 ## Roadmap 规则
@@ -83,8 +84,8 @@
 ## 维护约定
 
 - 新增当前产品说明时，优先更新 `docs/buildr-product.md`。
-- 新增当前实现事实时，按影响更新 `openspec/knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/` 或 `services/` 中真正相关的资产；不生成空文档。
-- 正式 Task 的协调和进度使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话汇报；不要创建第二份 Board authority。既有 `task-boards/` 与 `task-cockpits/` 页面保持原路径和原内容，只作为历史旁证。
+- 新增当前实现事实时，按影响更新 `knowledge/overview.md`、`glossary.md`、`architecture/`、`flows/`、`services/` 或 `archify/` 中真正相关的资产；不生成空文档。
+- 正式Task的协调和进度使用Task Record、父任务/子任务关系、各专业公开read model、Buildr Web与对话汇报；不要创建第二份Board authority。既有`task-boards/`与`task-cockpits/`页面保持原路径和原内容，只作为历史旁证。
 - 新增规范性行为时，更新 `openspec/specs/` 或创建 OpenSpec change。
 - 新增尚未进入实现的详细产品方向时，维护 `docs/roadmap/` 并保持非当前事实声明。
 - 新增 Agent runtime adapter 前，先按 `services/buildr/docs/agent-runtime-adapter-contribution.md` 取得目标 Agent 的版本化证据；进入实现后仍必须创建独立 OpenSpec change。

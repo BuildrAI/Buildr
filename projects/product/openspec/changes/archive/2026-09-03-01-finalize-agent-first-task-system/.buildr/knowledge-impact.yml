@@ -1,0 +1,44 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: finalize-agent-first-task-system
+operation: reconcile
+treeIdentity: implementation
+impacts:
+  - type: brief
+    target: openspec/changes/finalize-agent-first-task-system/brief.md
+    reason: 提供最终任务系统收敛的人类入口与明确边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/finalize-agent-first-task-system/proposal.md
+      - openspec/changes/finalize-agent-first-task-system/design.md
+      - openspec/changes/finalize-agent-first-task-system/brief.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: Task Record、专业HTTP、SQLite与发布依赖发生收窄
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task/domain/task-record.ts
+      - services/buildr/src/task/persistence/task-record-repository.ts
+      - services/buildr/src/task/interfaces/http/task-professional-http-contracts.ts
+      - openspec/knowledge/services/buildr.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: Task详情删除独立Overview读取并直接展示Task Record
+    status: updated
+    sourceIdentities:
+      - services/buildr-web/src/pages/TaskDetailPage.tsx
+      - openspec/knowledge/services/buildr-web.md
+  - type: flow
+    target: openspec/knowledge/flows/task-parent-coordination.md
+    reason: 统一父任务协调术语并删除旧贡献协调语义
+    status: updated
+    sourceIdentities:
+      - openspec/changes/finalize-agent-first-task-system/specs/parent-child-task-coordination/spec.md
+      - openspec/knowledge/flows/task-parent-coordination.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 明确task-manager只是现有Skill标识并把统一Task Environment标为已退役
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+      - services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md
+unresolvedItems: []

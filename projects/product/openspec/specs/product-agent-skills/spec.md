@@ -353,42 +353,13 @@ Buildr `git-operations` Skill MUST 为已授权 commit operation 提供精简的
 - **WHEN** 项目或仓库规则定义了比 workspace 默认格式更具体的提交约定
 - **THEN** Agent MUST 遵循更具体的项目或仓库约定
 
-### Requirement: 产品入口 Buildr Skill 路由 Task Retrospective
-产品内置 Buildr Skill MUST 在用户明确要求记录、查看或处理任务复盘时路由到 selected `buildr.task-retrospective/v2` provider，并 MUST 将复盘报告限制为 terminal Task 的 Agent 执行效率复盘；处理已有报告时 MAY 通过 Task Manager 承接后续改进。
-
-#### Scenario: 用户明确要求任务复盘
-- **WHEN** 用户要求复盘已完成或已放弃 Task 的执行效率
-- **THEN** Buildr Skill MUST 引导 Agent 使用 selected Task Retrospective provider
-- **AND** MUST NOT恢复过程 observation、资产候选或 lifecycle gate
-
-#### Scenario: 用户明确要求处理已有复盘
-- **WHEN** 用户要求处理 pending Retrospective Result
-- **THEN** Buildr Skill MUST 路由同一 v2 provider 执行当前事实重评与 Task 承接
-- **AND** MUST NOT把处理简化为只改 disposition note
-
-#### Scenario: Runtime 找不到 provider
-- **WHEN** capability graph 表示 provider 应存在但 runtime 无法发现
-- **THEN** Buildr Skill MUST 引导 Agent 检查 builtin、workspace source、binding 和 runtime 投射
-
-### Requirement: 产品入口按 current capability 路由复盘意图
-产品入口 Buildr Skill MUST 将明确的 terminal Task 执行效率复盘及其后续处理路由到 `buildr.task-retrospective/v2` selected provider，并 MUST NOT 将 builtin Skill id 当作不可替换入口。
-
-#### Scenario: 路由 Task Retrospective
-- **WHEN** 用户明确要求记录、查看或处理 terminal Task 的执行效率复盘
-- **THEN** Buildr Skill MUST 使用当前 capability graph 的 v2 selected provider
-- **AND** Buildr Skill MUST honor blocked semantics
-
-#### Scenario: 用户替换 provider
-- **WHEN** workspace 绑定兼容的内部 v2 provider
-- **THEN** Buildr Skill MUST 路由到该 provider而不要求 `task-retrospective` Skill id
-
 ### Requirement: Package必须投射Declaration Intake Skill
 Buildr package MUST提供`declaration-intake` workspace Skill，description MUST覆盖声明初始化、刷新及自动触发缺口。Skill MUST声明只读发现、用户授权与owner handoff，并 MUST不成为Preparation或Verification capability provider。
 
 #### Scenario: 授权Preparation写入
 - **WHEN** Intake取得`preparation.yml`精确diff授权
-- **THEN** Agent MUST进入`task-environment` owner流程维护声明
-- **AND** Intake Skill MUST不直接执行Preparation Step
+- **THEN** Agent MUST直接维护Project拥有的准备入口并核对真实wrapper、cwd和scope
+- **AND** Intake Skill MUST不执行准备入口或保存Task级结果
 
 #### Scenario: 授权Verification写入
 - **WHEN** Intake取得`verification.yml`精确diff授权
@@ -396,19 +367,29 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** Intake Skill MUST不执行或开发验证能力
 
 ### Requirement: Task Skills 必须解释协调与专业 authority 边界
-Buildr package MUST更新Task Manager、Triage、Development、Review与Finish Skills，使Agent能发现Parent Plan/Contribution意图、创建独立Child、形成Contribution Handoff、显式reconcile并完成Parent最终验收；Skills MUST NOT引导双写、checkbox同步或自动状态传播。
+`task-review` Skill MUST指导Agent从用户目标、Task、真实subject和专业owner事实动态选择Planning或Completion审查，先inspect current slot，再使用现有代码/Git/文件/测试/Browser/HTTP/外部工具完成审查，最后以CAS record完整Result。Skill MUST不要求Environment、Development、Candidate、Handoff或统一gate；目标不明或审查中断时不得写Result。
+
+#### Scenario: Agent审查普通代码修改
+- **WHEN** 用户要求审查一个没有Development的服务修复Task
+- **THEN** Agent MUST读取Task与真实diff、相关测试和Service规则形成subject identity及Review Result
+- **AND** MUST不要求补造OpenSpec、Candidate或Development Receipt
 
 #### Scenario: runtime Agent读取新流程
-- **WHEN** 用户要求创建Parent或从Contribution启动Child
-- **THEN** matching Skill MUST路由到现有Task/Development/Review/Finish capabilities与Parent coordination actions
-- **AND** MUST明确禁止继承Parent Change和推断delivery
+- **WHEN** runtime Agent命中Task Review意图
+- **THEN** MUST读取投射后的Task Review Skill并直接检查Task、current slot和真实subject
+- **AND** MUST不读取`task next`或要求Development provider
+
+#### Scenario: 专业provider不可用
+- **WHEN** Task Review provider未绑定或不可用
+- **THEN** Agent MUST报告Review动作不可执行且不写Result
+- **AND** MUST不阻塞其他不依赖Review的Task工作
 
 ### Requirement: Runtime投射必须来自Workspace source
-更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST NOT作为长期编辑authority。
+更新后的Skills/contracts MUST从Product package source同步到Workspace source再投射当前Agent runtime；派生`.agents/skills` MUST不作为长期编辑authority。
 
 #### Scenario: 自举同步
-- **WHEN** Formal Finish交付包含Skill或contract source变化
-- **THEN** self-bootstrap MUST按冻结Contribution执行适用sync/render
+- **WHEN** Buildr Task的真实Git交付包含Skill或contract source变化并命中self-bootstrap范围
+- **THEN** self-bootstrap MUST按当前delivered ref与真实变化执行适用sync/render
 - **AND** 最终Doctor MUST证明selected Agent graph与projection ready
 
 ### Requirement: 产品入口 Buildr Skill 分离宿主身份与投射目标
@@ -449,48 +430,6 @@ Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace
 - **WHEN** 用户要求开始执行已有 todo
 - **THEN** Task Triage MUST 先完成当前事实确认与 Git 基线收敛，再调用 activate
 - **AND** 任一前置门禁 blocked 时 MUST 保持 todo 不变
-
-### Requirement: Task Retrospective Skill 必须完成后续落地闭环
-Task Retrospective provider MUST 把 inspect、当前事实重评、承接 Task 选择、来源关系写入和 disposition 更新组成一个可恢复流程。它 MUST 先向用户提供原始报告或不可变引用，且 MUST 在所有 Task 关系成功后才标记 handled。
-
-#### Scenario: 处理待处理复盘
-- **WHEN** 用户要求处理 pending retrospective
-- **THEN** provider MUST 输出原文/引用、当前有效性分析、重新拆分的方向、承接 Task 与丢弃理由
-- **AND** MUST 返回实际 Task IDs、关系 effects 与最终 disposition evidence
-
-#### Scenario: 中途写入失败
-- **WHEN** 任一目标 Task 创建或来源关系 mutation 失败
-- **THEN** provider MUST 保持 retrospective 为 pending 并报告精确恢复动作
-- **AND** MUST NOT把部分完成冒充为 handled
-
-### Requirement: Task Finish Skill 必须为 bootstrap recovery取得单独明确授权
-
-Task Finish Skill MUST只在retained Finish Result或Execution Record证明existing run停止于受支持的`product-phase-provider` preflight/prepare边界、无交付副作用，且repair checkout current、clean、committed时提出bootstrap recovery。调用前MUST展示run、冻结Candidate/generation与Content Target、source commit、retained-writer边界、将创建或复用的capsule、候选provider并非sandbox以及恢复限制，并MUST取得用户对该run的单独明确授权。
-
-#### Scenario: 观察到合格retained provider defect
-
-- **WHEN** retained Result闭合支持的failure predicate且repair checkout满足authority条件
-- **THEN** Skill MUST说明retained Application/repository/state machine仍是canonical owner
-- **AND** MUST说明ES module会执行受验证provider模块及其本地依赖闭包，而不是只执行一个导出函数
-- **AND** MUST等待用户明确授权后才增加`--bootstrap-recovery`
-
-#### Scenario: 同一run后续blocked恢复
-
-- **WHEN** 已授权bootstrap run在provider authority仍有效时进入普通blocked phase
-- **THEN** Skill MUST复用同一run、capsule与current Product resume token
-- **AND** MUST NOT创建新Candidate、Verification、Review、handoff或递归修复Task
-
-#### Scenario: provider authority撤销后的terminal恢复
-
-- **WHEN** capsule revocation已证明authority撤销且只剩terminal persistence未完成
-- **THEN** Skill MUST使用产品返回的same-run retained-only resume动作
-- **AND** MUST NOT尝试恢复、重建或重新加载capsule
-
-#### Scenario: 恢复不合格
-
-- **WHEN** failure evidence不完整、origin/phase不支持、已有副作用、authority漂移或故障位于CLI/registry/Application/repository/migration层
-- **THEN** Skill MUST保留普通Finish blocker并停止
-- **AND** MUST NOT推断临时runtime、tarball、source path、alternate writer或人工Git旁路
 
 ### Requirement: 产品入口 Buildr Skill 必须主动解释 GA 与 RC 更新
 产品入口 Buildr Skill MUST 在用户要求完整检查、安装状态检查或更新 Buildr 时运行 `buildr update check --json`，读取 stable/candidate 轨道，并用普通用户可理解的语言告知可用更新和请求用户选择。
@@ -535,24 +474,6 @@ Buildr package MUST 提供 id 为 `ui-prototype` 的 optional workspace Skill，
 - **WHEN** 维护者检查 `ui-prototype` 的 package manifest 与 Skill 正文
 - **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
 - **AND** MUST 明确区别于正式设计、canonical specs 和真实前端工程中的编码式原型
-
-### Requirement: UI 相关研发流程必须路由原型并默认遵循已有原型
-Task Triage、Task Development 与 Buildr OpenSpec propose、update、apply contributions MUST 在当前任务可能改变前端 UI 时询问用户是否需要 UI Prototype，并 MUST 只在明确确认后路由到 selected `ui-prototype`。一旦 Task 已生成原型，后续正式前端实现 MUST 默认读取并按原型的信息架构、布局和交互开发，除非用户明确要求忽略。询问、产物与忽略选择 MUST NOT 成为 Planning Review、Development、Verification、Finish 或 Task 状态的 gate。
-
-#### Scenario: OpenSpec 方案包含 UI 变化
-- **WHEN** proposal、design 或 delta spec 表明本次 Change 会产生用户可见 UI 变化
-- **THEN** Agent MUST 确认用户是否需要 UI Prototype
-- **AND** 明确需要时 MUST 在正式实现前完成现有 UI 调查、一个或多个原型页面生成与浏览器验证
-
-#### Scenario: 已有原型且用户未忽略
-- **WHEN** 正式前端实现开始前已存在当前 Task 的 UI Prototype，且用户没有明确要求忽略
-- **THEN** Agent MUST 读取全部相关原型并按其开发页面与交互
-- **AND** 需要成为正式行为的确认选择 MUST 写入 design、delta specs、Brief 与 tasks
-
-#### Scenario: 用户跳过生成或明确忽略已有原型
-- **WHEN** 用户不需要生成原型、没有明确确认生成，或明确要求忽略已有原型
-- **THEN** OpenSpec 与 Task Development MUST 继续当前合法阶段
-- **AND** MUST NOT 创建占位文件、waiver、Result、Receipt 或 blocker
 
 ### Requirement: 产品必须提供按需的智能体优先设计技能
 Buildr MUST 提供可选 `agent-first-design` 技能（Skill），在用户设计或改造智能体参与产品交付的软件，或审视智能体工作系统的职责、工作流及门禁时提供已确认范式、关系图和判断方法。技能 MUST 不成为普通开发或收尾的统一前置，也不引入新规则、评分或审批门禁。发现描述与正文 MUST 区分使用智能体开发软件和引入智能体交付产品结果；渐进演进时只指导相关部分，并保留既有业务、安全及授权边界。
@@ -606,3 +527,120 @@ agent-first-design MUST区分研发协作和被开发产品设计；只有智能
 #### Scenario: 职责改造
 - **WHEN** 修改一个模块的方法与职责
 - **THEN** 检查入口、消费者、契约、测试及当前说明，退役无用旧依赖
+
+### Requirement: Task Verification Skill必须指导Agent直接验证并形成报告
+Package MUST投射Task Verification Skill，指导Agent探查项目测试体系、读取v4测试地图、结合Task与当前改动选择具体测试，并直接使用Maven、npm、Playwright、Browser、HTTP或项目runner。Skill MUST区分开发反馈与开发完成验证；只有后者调用Task Verification record。
+
+#### Scenario: 开发过程中运行测试
+- **WHEN** Agent为当前修改运行focused单元或功能测试
+- **THEN** Skill MUST指导Agent修复失败并继续开发
+- **AND** MUST NOT记录Task Verification Report
+
+#### Scenario: 开发完成
+- **WHEN** Agent认为实现完成并准备验证
+- **THEN** Skill MUST指导Agent执行任务相关测试、相关服务低成本完整回归和适用环境冒烟
+- **AND** 形成包含选择理由、实际targets、结果、gaps和结论的报告后调用record
+
+### Requirement: Package 不得投射 Task Development 或旧 Finish Skill 依赖
+Buildr package MUST不再提供`task-development` Skill、`buildr.task-development` contract/provider/binding，也 MUST不在OpenSpec、Current Knowledge、Release或Task Skills中要求Task Planning Identity、Development Receipt、Task Candidate或旧Finish Application。
+
+#### Scenario: 初始化或同步Workspace
+- **WHEN** current package向Agent runtime投射Skills与capability bindings
+- **THEN** 输出 MUST不存在Task Development Skill、contract、provider或consumer dependency
+- **AND** OpenSpec、Review、Verification、Environment与默认task-finish MUST保持可发现
+
+### Requirement: UI相关工作必须由实际入口询问原型并默认遵循已有原型
+Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在当前任务可能改变前端UI时询问用户是否需要UI Prototype，并只在明确确认后路由selected provider。已有原型时Agent MUST默认按其信息架构、布局和交互开发，除非用户明确要求忽略。
+
+#### Scenario: 用户不需要原型
+- **WHEN** 用户明确拒绝本次UI Prototype
+- **THEN** Agent MUST继续当前Task或OpenSpec工作
+- **AND** MUST不创建原型状态或流程门禁
+
+### Requirement: 产品必须投射纯任务复盘Skill
+Buildr package MUST继续投射可选`task-retrospective` Skill，指导Agent按用户明确要求生成固定本机Markdown、登记Task Record文档事实和处理缺失数据。该Skill MUST不提供独立capability，不调用内部Driver，不维护处置队列或专用来源关系。
+
+#### Scenario: 用户明确要求复盘
+- **WHEN** Agent runtime发现终态Task复盘意图
+- **THEN** Agent MUST读取纯Skill并组合当前Task与真实工具
+- **AND** provider缺失 MUST不成为问题，因为不存在可替换Retrospective Application能力
+
+#### Scenario: 用户接受后续行动
+- **WHEN** 用户明确决定复用或创建普通Task
+- **THEN** Skill MUST把精确Task effects交给Task Manager
+- **AND** MUST不创建专用relation、action item或自动修改其他资产
+
+### Requirement: 用户体验设计法则技能必须从真实设计现场形成建议
+Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查界面、交互流程、信息层级、操作反馈，或比较多个设计方案时，要求 Agent 先核对主要用户、首要任务、使用环境、平台、输入方式和可访问的真实界面材料，再形成设计判断。
+
+#### Scenario: 设计新界面或交互流程
+- **WHEN** 用户要求设计新的界面、信息结构或交互流程
+- **THEN** Skill MUST 先建立用户、任务、环境和约束事实，再选择相关法则形成核心流程、关键状态和设计建议
+- **AND** Skill MUST 不因缺少不会改变方向的次要信息而停止推进
+
+#### Scenario: 审查现有界面
+- **WHEN** 用户提供截图、原型、页面、代码或操作路径并要求审查
+- **THEN** Skill MUST 区分已观察事实和待验证推断
+- **AND** Skill MUST 只报告当前材料能够支持的问题与影响
+
+#### Scenario: 只要求分析而未授权原型或实现
+- **WHEN** 用户只要求设计建议、审查或方案权衡
+- **THEN** Skill MUST 停在建议结果，不生成页面原型且不修改代码
+- **AND** 后续原型或实现 MUST 由用户另行明确要求并交给相应能力
+
+### Requirement: 用户体验法则必须按当前问题渐进选择
+`ux-design-laws` Skill MUST 通过可观察信号索引覆盖 Laws of UX 于 2026-09-03 列出的 30 个主题，并把法则卡按基础与策略、信息与决策、视觉感知与布局、操作与反馈、旅程与记忆分组；Agent MUST 先从索引选择相关分组，再只读取会改变当前判断的法则。
+
+#### Scenario: 当前问题只涉及部分法则
+- **WHEN** 界面问题可以由一个或两个分组中的少量法则解释
+- **THEN** Agent MUST 只读取相关分组并引用真正改变建议的法则
+- **AND** Agent MUST 不为展示完整性逐条套用全部 30 个主题
+
+#### Scenario: 多条法则支持同一建议
+- **WHEN** 多条法则对同一证据产生相同设计方向
+- **THEN** Agent MUST 将它们合并为一个可执行建议，而不是重复列出多个同义问题
+
+#### Scenario: 法则之间产生不同设计方向
+- **WHEN** 减少选择、保持熟悉、暴露复杂度或其他法则产生不同方向
+- **THEN** Agent MUST 说明每个方案的用户收益、代价和适用条件，并给出基于当前目标的推荐
+
+### Requirement: 法则建议必须可行动且可验证
+`ux-design-laws` Skill MUST 让每个重要建议包含具体证据、用户影响、一至三条相关法则、具体设计动作、权衡和验证方法，并默认只返回最重要的三至五项。
+
+#### Scenario: 输出界面审查结果
+- **WHEN** Agent 完成界面审查
+- **THEN** 结果 MUST 先说明总体结论，再按任务阻断和严重误解、高频任务效率、视觉与愉悦的顺序排列建议
+- **AND** 每项 MUST 指向页面、流程或输入中的具体观察以及可验证的任务结果
+
+#### Scenario: 缺少交互或用户行为证据
+- **WHEN** 当前材料不能证明响应时间、隐藏状态或真实用户行为
+- **THEN** Agent MUST 把对应判断标为待验证并说明所需证据
+- **AND** Agent MUST 不把法则名称当作问题已经成立的证明
+
+### Requirement: 心理学法则不得覆盖安全和用户利益
+`ux-design-laws` Skill MUST 将法则定义为启发式原则，并使用户明确目标与授权、安全、隐私、无障碍、结果可逆性和任务正确完成优先于效率、审美、动机或转化效果。
+
+#### Scenario: 心理效应可被用于操纵
+- **WHEN** 进度、等待、稀缺、视觉强调或未完成状态可能诱导用户违背自身利益
+- **THEN** Skill MUST 要求界面表达真实状态、保留退出与控制权，并拒绝以法则支持假进度、虚假紧迫感、隐藏退出或不自愿选择
+
+#### Scenario: 容错与安全边界冲突
+- **WHEN** 波斯特尔定律所鼓励的输入容错会接受歧义、越权或不安全数据
+- **THEN** Skill MUST 优先严格验证安全和数据边界，并提供清晰失败与恢复信息
+
+#### Scenario: 审美与真实可用性冲突
+- **WHEN** 美观界面掩盖任务失败、错误或求助
+- **THEN** Skill MUST 要求使用完成率、错误率、完成时间和求助行为等真实证据独立验证可用性
+
+### Requirement: 法则资料必须保持来源与版权边界
+`ux-design-laws` Skill MUST 为每条法则提供原始 Laws of UX 链接，在索引中提供用户学习笔记和官网许可链接，并只交付独立编写的操作性判断，不复制 Laws of UX 的网页正文、图片、案例或完整中文翻译。
+
+#### Scenario: 核对技能参考资料
+- **WHEN** Buildr 验证 `ux-design-laws` 的参考文件
+- **THEN** 每个主题 MUST 具有稳定中文名称、英文名称和官方来源链接
+- **AND** 索引 MUST 记录来源核对日期与 CC BY-NC-ND 4.0 许可边界
+
+#### Scenario: 官网主题发生变化
+- **WHEN** 后续维护发现 Laws of UX 官网新增、移除或重命名主题
+- **THEN** 维护者 MUST 在更新法则卡、索引和验证后才能改变完整性声明
+- **AND** Skill MUST 不通过运行时抓取或镜像自动改变内置内容

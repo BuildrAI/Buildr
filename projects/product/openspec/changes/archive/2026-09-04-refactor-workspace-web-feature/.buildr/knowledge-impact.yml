@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-workspace-web-feature
+operation: assess
+treeIdentity: 8b326e11b3ebf447fe7fbe0efab2e5e062ccfcaa
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-workspace-web-feature/brief.md
+    reason: 解释三个独立前端Feature与按需Hook边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-web-feature/proposal.md
+      - openspec/changes/refactor-workspace-web-feature/design.md
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 需要记录Buildr Web的Workspace、Project、Service前端Feature结构
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-web-feature/specs/buildr-web-service/spec.md
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 需要更新Buildr Web前端领域owner与共享Hook事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-web-feature/specs/buildr-web-service/spec.md
+unresolvedItems: []

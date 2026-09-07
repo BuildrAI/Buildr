@@ -8,7 +8,8 @@
 
 - [Buildr 产品说明](docs/buildr-product.md)
 - [OpenSpec specs](openspec/specs/)
-- [当前实现事实](openspec/knowledge/overview.md)
+- [当前实现事实](knowledge/overview.md)
+- [Archify 技术图](knowledge/archify/index.md)
 - [Buildr Service](services/buildr/README.md)
 - [发布检查清单](services/buildr/docs/release-checklist.md)
 

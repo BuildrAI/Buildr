@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: System Installation MUST拥有唯一模块边界
-Buildr MUST 将 npm installation identity、installation origin/registry、CLI update、installation status、npm lifecycle enrollment、Launcher binding 及 Launcher install/status/repair/uninstall 归入 `src/system/installation`，并 MUST 通过唯一 `module.mjs` 向 Bootstrap 和其他模块公开窄 capability 与 CLI contribution。全局 Infrastructure MUST只保留通用技术机制，不得成为 Installation 业务身份或 Launcher lifecycle 的第二 owner。
+Buildr MUST 将 npm installation identity、installation origin/registry、CLI update、installation status、npm lifecycle enrollment、Launcher binding 及 Launcher install/status/repair/uninstall 归入 `src/system/installation`，并 MUST 通过唯一 `module.ts` 向 Bootstrap 和其他模块公开窄 capability 与 CLI contribution。全局 Infrastructure MUST只保留通用技术机制，不得成为 Installation 业务身份或 Launcher lifecycle 的第二 owner。
 
 #### Scenario: Bootstrap 组装 Installation
 - **WHEN** Buildr 创建普通 CLI 或 Web runtime
@@ -43,7 +43,7 @@ System Installation MUST 将安装与更新编排放在 `application/`，将 ori
 #### Scenario: Application Payload 与 npm package
 - **WHEN** Buildr 构建或验证 Application Payload 和 npm candidate tarball
 - **THEN** payload MUST包含并消费同一 installation origin、registry、identity 与 Launcher implementation
-- **AND** development checkout、Task Environment 与 npm package 的适用入口 MUST保持逻辑身份和运行行为等价
+- **AND** development checkout、matching Worktree与npm package的适用入口 MUST保持逻辑身份和运行行为等价
 
 #### Scenario: 旧入口退出
 - **WHEN** System Installation module 的全部直接消费者已迁移并通过验证

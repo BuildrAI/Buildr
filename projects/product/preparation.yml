@@ -1,40 +1,18 @@
-schemaVersion: buildr.project-environment-preparation/v1
-recipes:
+schemaVersion: buildr.project-preparation/v1
+entries:
   - id: buildr.npm-ci
-    title: Prepare Buildr CLI and Buildr Web Runtime dependencies
+    title: Install Buildr CLI dependencies
     scope:
       kind: service
       service: buildr
-    required: true
-    steps:
-      - id: npm-ci
-        cwd: .
-        executable:
-          kind: project
-          path: services/buildr/tools/development/run-development-npm
-        args: [ci]
-        inputs: [package.json, package-lock.json]
-        outputs:
-          - path: node_modules
-            kind: directory
-        required: true
-        timeoutMs: 300000
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [ci]
   - id: buildr-web.npm-ci
-    title: Prepare Buildr Web Frontend Service dependencies
+    title: Install Buildr Web dependencies
     scope:
       kind: service
       service: buildr-web
-    required: true
-    steps:
-      - id: npm-ci
-        cwd: .
-        executable:
-          kind: project
-          path: services/buildr/tools/development/run-development-npm
-        args: [ci]
-        inputs: [package.json, package-lock.json]
-        outputs:
-          - path: node_modules
-            kind: directory
-        required: true
-        timeoutMs: 300000
+    cwd: services/buildr-web
+    executable: ../buildr/tools/development/run-development-npm
+    args: [ci]

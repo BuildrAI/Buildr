@@ -1,4 +1,4 @@
 interface:
   display_name: "任务管理器"
   short_description: "管理 Task Record，并在需要时交接 Parent 准备"
-  default_prompt: "Use $task-manager to inspect or mutate todo and active Task Records through Buildr product actions, then hand active Parent preparation to task-development when the user asks to prepare or decompose the Parent."
+  default_prompt: "Use $task-manager to inspect or mutate todo and active Task Records through Buildr product actions, including Parent and Child relationships; do not create workflow state for implementation work."

@@ -1,6 +1,6 @@
 # 父子任务改造前梳理
 
-> 2026-08-30，改造前基线 `eea6d5c4801e2632e43a643fe14ab2d4d9d3a0da`。本篇保存历史结构；当前设计见[父子任务管理](../../openspec/knowledge/flows/parent-child-management.md)。
+> 2026-08-30，改造前基线 `eea6d5c4801e2632e43a643fe14ab2d4d9d3a0da`。本篇保存历史结构；当前设计见[父任务协调](../../openspec/knowledge/flows/task-parent-coordination.md)。
 
 **原模型用父任务协调多个独立交付，但把协调计划、子任务分工和总体验收嵌入了研发流程。完成入口缺少独立的用户授权检查。**
 
@@ -100,10 +100,10 @@ Buildr Web 展示专用计划的贡献看板、子任务绑定、贡献结果和
 
 以下入口指向实现文件；首次调查内容以篇首基线为准。同路径文件会随本次改造变化，不能把新实现当作旧行为的证据。
 
-- [完成入口](../../services/buildr/src/task/application/task-record-application.mjs)：`completeTaskRecord`。
-- [协调应用](../../services/buildr/src/task/application/parent-coordination-application.mjs)：`startupReadiness`、`recordParentPlan`、`acceptParentCoordination`。
+- [完成入口](../../services/buildr/src/task/application/task-record-application.ts)：`completeTaskRecord`。
+- [协调应用](../../services/buildr/src/task/application/parent-coordination-application.ts)：`startupReadiness`、`recordParentPlan`、`acceptParentCoordination`。
 - `services/buildr/src/task/persistence/parent-coordination-repository.mjs`（已删除，按本文基线回查）：任务、研发、审查、环境、旧收尾与贡献登记。
-- [父子领域](../../services/buildr/src/task/domain/parent-coordination.mjs)：计划与交接结构、依赖、身份。
+- [父子领域](../../services/buildr/src/task/domain/parent-coordination.ts)：计划与交接结构、依赖、身份。
 - [界面](../../services/buildr-web/src/pages/task-detail/ParentCoordinationPanel.tsx)及[任务详情](../../services/buildr-web/src/pages/TaskDetailPage.tsx)。
 - [现行收尾](../../openspec/knowledge/flows/task-closeout.md)与[总导航](../roadmap/task-system-dependency-audit.md)。
 

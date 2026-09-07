@@ -7,22 +7,29 @@
 ## Requirements
 
 ### Requirement: Project必须能够声明环境准备Recipe
-已登记Project MUST可以在Project根提供可选`preparation.yml`，且存在时MUST使用closed `buildr.project-environment-preparation/v1`。每个Environment Preparation Recipe MUST具有Project内稳定id、明确Project或单一Service scope、至少一个通用Preparation Step与required布尔值；声明MUST NOT保存Task、runtime、Receipt、secret或机器状态。
+
+Project MAY通过`preparation.yml`声明Project/Service真实准备入口，供Agent按需发现并直接调用。声明 MUST不形成Task Plan、Receipt、ready状态或Application执行授权；没有额外准备的Project MAY不提供该文件。
+
+#### Scenario: Project无需额外准备
+- **WHEN** Project真实构建入口不要求额外依赖或代码生成
+- **THEN** Agent MUST直接继续，不创建空Plan或声明
+
+#### Scenario: Project声明准备入口
+- **WHEN** Agent当前动作需要安装依赖或生成代码
+- **THEN** Agent MUST从matching Project/Service根调用声明的真实入口
+- **AND** Buildr MUST不保存Task选择或执行结果
 
 #### Scenario: Project-only Recipe
-- **WHEN** Project没有Service且声明一个Project-scoped Recipe
-- **THEN** Recipe的cwd、inputs、outputs与Project wrapper MUST相对Project execution root解析
-- **AND** Task Environment MUST能够为Project-only Task选择并执行该Recipe
+- **WHEN** Project只有Project-wide准备入口
+- **THEN** Agent MAY在Project根按需调用，不要求虚构Service或Task Plan
 
 #### Scenario: 多Service分别声明
-- **WHEN** Project为`buildr`与`buildr-web`分别声明Service-scoped Recipe
-- **THEN** 每个Recipe MUST拥有独立identity、Steps与readiness
-- **AND** 一个Service失败 MUST不能被另一个Service的ready事实掩盖
+- **WHEN** 多个Service具有不同准备入口
+- **THEN** 声明 MUST分别限定Service root、cwd和真实wrapper
 
 #### Scenario: 非Node wrapper
-- **WHEN** Recipe使用Project或Service内真实wrapper准备Python、Go、Rust或其他环境
-- **THEN** Declaration MUST只保存通用executable、args、inputs、outputs与timeout事实
-- **AND** Buildr MUST不把wrapper解释为内置技术栈adapter
+- **WHEN** Project使用Maven、Python、Go、Rust或其他工具
+- **THEN** Buildr MUST保留声明的真实入口，不推断Node或通用适配器
 
 ### Requirement: Preparation Declaration必须保持closed和owner-scoped
 Preparation Declaration MUST只允许已登记Project及其Service、规范化Project/Service相对路径、受支持executable来源和无shell Steps。Buildr MUST NOT递归扫描manifest来生成Recipe，也 MUST NOT因声明缺失而虚构not-applicable或安装命令。
@@ -46,14 +53,17 @@ Application MUST按规范化closed值计算Declaration identity与每个Recipe i
 - **AND** Agent MUST重新提交当前Recipe选择后才能恢复prepare
 
 ### Requirement: Preparation缺口必须提供Declaration Intake恢复入口
-当Environment Plan Request选择Project declaration但声明缺失、无效或Recipe不匹配时，Task Environment MUST fail closed并返回指向Declaration Intake的next action。`inspect` MUST保持只读且 MUST不运行Intake或写声明。
 
-#### Scenario: 声明缺失
-- **WHEN** `prepare`选择`project-declaration`但Project没有`preparation.yml`
-- **THEN** Environment MUST blocked并指出Project与声明路径
-- **AND** next action MUST让Agent只读发现候选并在用户授权后由`task-environment`维护声明
+Declaration Intake MAY只读指出Project preparation声明缺失、失效或与真实入口不一致；它 MUST不阻塞无关开发动作，也不得把缺口写成Task Environment blocker。
+
+#### Scenario: 声明缺失但当前动作不需要准备
+- **WHEN** Agent能够直接编辑、审查、验证或交付且无需该准备入口
+- **THEN** 声明缺口 MUST不阻塞当前动作
 
 #### Scenario: Recipe缺失
-- **WHEN** Plan Request引用当前声明中不存在的Recipe
-- **THEN** Environment MUST blocked并指出scope与Recipe id
-- **AND** MUST不扫描其他package roots或自动更新声明
+- **WHEN** 当前动作明确需要的Recipe不存在
+- **THEN** 只依赖该Recipe的动作 MUST停止并指向Declaration Intake
+
+#### Scenario: 声明缺失
+- **WHEN** Project没有`preparation.yml`且Agent无法确定必要准备入口
+- **THEN** Declaration Intake MUST报告事实缺口，不创建Environment blocker

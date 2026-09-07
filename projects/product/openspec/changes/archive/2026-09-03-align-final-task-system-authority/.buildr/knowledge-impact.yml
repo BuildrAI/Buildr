@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: align-final-task-system-authority
+operation: reconcile
+treeIdentity: sha256-1a62d122298c3d880aacbe3d621716d2235ba2ba5fa878a751022686c197a90d
+impacts:
+  - type: brief
+    target: openspec/changes/align-final-task-system-authority/brief.md
+    reason: 本Change需要说明两处权威残留和无运行时变化边界。
+    status: updated
+    sourceIdentities:
+      - openspec/changes/align-final-task-system-authority/proposal.md
+      - openspec/changes/align-final-task-system-authority/design.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 当前说明仍包含已退役Environment Application和独立Task Overview组合。
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-lifecycle-core-module-architecture/spec.md
+      - services/buildr/src/task/module.ts
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: 使用既有Task Record、Task Review、Task Verification、Worktree与Preview术语，不产生新定义。
+    status: aligned
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

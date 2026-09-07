@@ -157,37 +157,37 @@ Buildr MUST 通过连续 migration 将 Parent Task 持久化收敛为 nullable `
 - **AND** MUST NOT 需要扫描旧 YAML、关系表或建立递归闭包表
 
 ### Requirement: Task current records 必须使用最小 SQLite current-state schema
-Workspace Structured Store MUST 以独立窄表保存 Task Development current Receipt、Task Verification current Result 与 Planning/Completion Review current Results。每个专业表 MUST 以 `tasks(task_id)` foreign key 绑定 canonical Task；Development 与 Verification 每个 Task 至多一行，Review 每个 Task 与 `planning|completion` type 至多一行。表 MUST 只保存定位/完整性字段和对应 Domain 已验证的完整 closed payload，MUST NOT 建设通用 metadata key/value、history、event、audit、revision、lease、lock、CAS、scheduler 或 sync state。
+Workspace Structured Store MUST只为Task Record、Planning/Completion Review与Task Verification保存当前长期事实。表只保存所属业务字段、定位与完整性字段，不建设Development、Environment、Finish、Contribution、Overview、通用metadata、event、lease、scheduler或sync state。Task Record结果更正历史继续属于Task Record；Review与Verification保持current-only。
 
 #### Scenario: fresh Workspace 初始化 latest schema
-- **WHEN** current runtime 首次 writable 打开新的 canonical Workspace Structured Store
-- **THEN** 连续 migrations MUST 建立三个专业 current-state tables、foreign keys、唯一 slots 与真实读取所需 indexes
-- **AND** MUST NOT 建立旧 YAML import、publication、history 或同步 tables
+- **WHEN** current runtime首次writable打开fresh canonical store
+- **THEN** migrations MUST建立`tasks`、关系表、Review与Verification current表
+- **AND** MUST不建立已退役Task current或聚合表
 
 #### Scenario: 已有 current schema 连续升级
-- **WHEN** 健康数据库已应用到前一 current version
-- **THEN** runner MUST 通过新的连续 migration 原子建立 Task current-state tables并登记匹配 checksum
-- **AND** MUST NOT 修改任何已应用 migration 的 bytes、name 或 checksum
+- **WHEN** 健康数据库应用到前一version
+- **THEN** runner MUST原子应用连续migration并登记checksum
+- **AND** MUST保留当前Task、Review与Verification业务事实
 
 #### Scenario: 不存在的 Task 被专业 writer 引用
-- **WHEN** Development、Verification 或 Review repository 尝试为不存在的 Task ID 写入 current payload
-- **THEN** foreign key 与 Application validation MUST 拒绝 mutation
-- **AND** transaction MUST rollback并保留全部已有 current rows
+- **WHEN** Review或Verification repository尝试为不存在Task写current payload
+- **THEN** foreign key与Application validation MUST拒绝mutation
+- **AND** transaction MUST rollback并保留已有rows
 
 #### Scenario: 专业 current value 被替换
-- **WHEN** 对应 Domain 已验证一份完整新 current value 且 repository 开始 mutation
-- **THEN** repository MUST 在单一 transaction 中替换精确 slot、写后读取验证并提交
-- **AND** 任一失败 MUST rollback并保留最后一份有效 current value及其他专业 slots
+- **WHEN** Domain验证完整新value且repository开始mutation
+- **THEN** repository MUST在单一transaction中比较、替换与写后读取
+- **AND** 任一失败 MUST rollback且不创建通用lock、revision或event row
 
 #### Scenario: terminal Task 的专业事实被读取
-- **WHEN** completed 或 abandoned Task 已存在合法专业 current records
-- **THEN**各专业 Application MUST 仍可只读返回其 current records
-- **AND** Structured Store MUST NOT 因 Task terminal 而删除或隐藏这些 rows
+- **WHEN** terminal Task已有合法Review或Verification current record
+- **THEN** 各Application MUST仍可只读返回
+- **AND** store MUST不删除或隐藏rows
 
 #### Scenario: 旧 File Store records 仍然存在
-- **WHEN** `.buildr/tasks/<task-id>/development.yml`、`verification.yml` 或 `reviews/*.yml` 存在、损坏或与 SQLite 不同
-- **THEN** current runtime MUST 完全忽略这些 files且只读取 SQLite rows
-- **AND** MUST NOT 迁移、双写、重建或因旧 files 存在而阻塞 SQLite mutation
+- **WHEN** 旧Development、Verification或Review YAML存在
+- **THEN** runtime MUST忽略旧文件且只读当前SQLite authority
+- **AND** MUST不迁移、双写、重建或因此阻塞mutation
 
 ### Requirement: canonical Workspace Structured Store 必须验证 writer runtime provenance
 Buildr MUST 在创建数据库、打开 writable connection、应用 migration 或写入 canonical Workspace Structured Store 前，验证 caller runtime source 对 target canonical Workspace 的 writer provenance。Writer runtime source MUST绑定实际加载或启动写入逻辑的controller/code source identity，并 MUST与用于定位Skills、rules、migrations或其他只读资源的application payload root分离；payload environment override、installed payload identity或resource root MUST NOT替代writer source observation。来自与target共享Git common-dir的linked task worktree、候选checkout或无法证明为retained controller的自举runtime MUST在任何SQLite/filesystem mutation前被拒绝；CLI、HTTP、Buildr Web与internal driver MUST经过同一保护边界。该writer规则 MUST NOT延伸为对已解析root的只读Git/worktree观察，也 MUST NOT降低普通用户Workspace对其已安装/retained runtime的合法单库写入能力。
@@ -230,98 +230,6 @@ Buildr MUST 只允许已携带当前 migration assets 的 retained controller �
 - **THEN** runner MUST 依现有连续 migration 规则原子应用新 script 并登记 checksum
 - **AND** MUST NOT 导入 Task Validation Workspace 的任何测试或任务数据
 
-### Requirement: Environment current 必须使用独立窄 SQLite schema
-Workspace Structured Store MUST以独立`task_environment_current` table保存每个正式Task的Environment current Receipt。该表 MUST使用task_id唯一绑定tasks，保存经过Domain校验的receipt_json、可查询status和updated_at；Receipt v3的dependency roots MUST保留在同一JSON current中。repository MUST兼容读取旧v2，但 MUST只允许显式prepare把active current收敛为v3；MUST NOT把Environment字段并入tasks、建设第二张dependency表、通用history/event/audit表或复制facts到其他projection。
-
-#### Scenario: fresh Workspace 初始化 Environment schema
-- **WHEN** current runtime初始化新的Workspace Structured Store
-- **THEN** migrations MUST建立task_environment_current、Task foreign key、JSON validity与唯一current slot
-- **AND** MUST NOT建立Environment file index、dependency root副本表、history或远端同步table
-
-#### Scenario: 已有 Workspace 升级
-- **WHEN** 健康数据库已应用到前一migration version且retained controller执行合法writable action
-- **THEN** runner MUST原子应用pending migrations并登记准硬checksum
-- **AND** MUST保留已有Task、专业current rows、v2/v3 Environment rows与Finish rows，并以Environment current row为唯一authority
-
-#### Scenario: 已有Workspace读取v2 current
-- **WHEN** 健康数据库包含合法v2 Environment Receipt并由新runtime只读访问
-- **THEN** repository MUST保留row bytes并返回兼容read model或legacy blocked diagnostic
-- **AND** GET/inspect MUST NOT因兼容读取自动写v3
-
-#### Scenario: Environment current value 被替换
-- **WHEN** Task Environment Application已观察正式声明并完成root normalization/preparation
-- **THEN** repository MUST在单一transaction中以v3完整替换精确task_id slot，写后读取验证并提交
-- **AND** 任一校验、busy、foreign key或integrity failure MUST rollback并保留最后有效current
-
-#### Scenario: 不存在的 Task 被 Environment writer 引用
-- **WHEN** Environment Application尝试为不存在Task ID写入current
-- **THEN** foreign key与Application validation MUST拒绝mutation
-- **AND** transaction MUST rollback并保留其他Environment rows
-
-### Requirement: Task Finish current 与 terminal facts 必须使用窄 SQLite schema
-Workspace Structured Store MUST通过连续migration建立且只建立`task_finish_current`一张Task Finish专业表。该表 MUST以foreign key绑定`tasks(task_id)`并为每个Task保存唯一current或terminal row。总体status、current phase、run/Development/Candidate/Content Target/target/carrier/gate identity、current failure、resume、cleanup与时间等真实查询字段 MUST使用普通列；恰好五个固定phase及非查询型有界详情 MUST保存为经Domain验证的closed JSON，但MUST NOT承载与普通列冲突的第二状态authority。表 MUST NOT扩展为history、event、audit、scheduler、sync、execution-record或key/value store。
-
-#### Scenario: fresh Workspace 初始化 latest schema
-- **WHEN** current retained runtime首次writable打开新的canonical Workspace Structured Store
-- **THEN** migration chain MUST建立一张Finish专业表、foreign key、每Task唯一slot、受验证固定phase JSON、target lease唯一约束与读取所需indexes
-- **AND** MUST NOT创建旧四表、`.buildr/task-finish` File Store、第二数据库或跨机器同步记录
-
-#### Scenario: 已有数据库连续升级
-- **WHEN** 健康数据库已应用到前一current version并包含旧Finish四表
-- **THEN** retained migration runner MUST通过新的连续script原子迁移可证明的run/completion/lease数据、校验source/target集合、删除旧四表并登记匹配checksum
-- **AND** MUST NOT修改已应用migration bytes、导入validation-store数据、接入execution-record producer或由candidate runtime升级canonical数据库
-
-#### Scenario: current run 阶段更新
-- **WHEN** Domain已验证新的完整run、五阶段、current failure、resume identity与cleanup状态
-- **THEN** repository MUST在单一`BEGIN IMMEDIATE` transaction中原位替换`task_finish_current`完整row、写后读取验证并提交
-- **AND** busy、constraint、I/O、phase集合或payload一致性失败 MUST rollback并保留最后有效状态
-
-#### Scenario: terminal completion 提交
-- **WHEN** Finish证明delivery、remote readback、retained action、Doctor、Environment与Finish-owned cleanup均完成
-- **THEN** Application MUST在同一Task Finish mutation中把该行原位替换为compact terminal state与compact phases JSON并释放内嵌lease；Task Record terminal transition仍由Task Record Application拥有
-- **AND** 任一专业写入或Task terminal transition失败 MUST保持可恢复的同一current row，不能产生缺少matching Finish proof的delivered结论
-
-#### Scenario: 旧数据无法安全收敛
-- **WHEN** 旧run/completion的Task或run identity不一致、phase集合损坏、lease owner无法匹配，或仍有live transient artifact metadata
-- **THEN** migration MUST fail closed并rollback该version的schema、data与ledger effects
-- **AND** 原数据库 MUST完整保留旧四表以便旧runtime完成清理或人工诊断
-
-### Requirement: Task Finish lease 与 transient metadata 必须保持本机有界
-Task Finish target lease MUST内嵌于owner `task_finish_current` row，只保存规范化target identity、不可伪造token与bounded expiry，并由partial unique constraint保证每个target至多一个current owner。acquire、renew与release MUST在事务中使用owner run重观测和token compare-and-set；过期不得仅凭系统时钟转交。Finish-owned carrier/cleanup locator MUST保持在有界current payload，Task Finish MUST NOT再建立per-artifact metadata table或借此接管execution-record producer。所有状态 MUST保持machine-local并排除Git、Work Asset、publication与同步。
-
-#### Scenario: 两个 run 争用同一 target
-- **WHEN** current未过期lease已由另一个Task/run row持有
-- **THEN** acquire MUST因唯一约束与owner token不匹配而blocked
-- **AND** MUST NOT覆盖owner、创建文件lease或依赖last-writer-wins
-
-#### Scenario: 过期 lease 被恢复
-- **WHEN** lease超过bounded expiry且恢复方重新观察owner run、target与remote identity
-- **THEN** Application MAY在transaction中为同一合法run续租，或在证明旧owner不可继续后以新token转移
-- **AND** renew、release或transfer MUST NOT接受旧token修改新owner lease
-
-#### Scenario: Git 或同步发现 Finish 本机状态
-- **WHEN** Git scope、Work Asset discovery或publication遇到SQLite sidecar或Finish-owned transient root
-- **THEN** Buildr MUST将其保持为machine-local excluded data
-- **AND** MUST NOT stage、commit、push、同步或把不同成员的本地Finish状态合并
-
-#### Scenario: Doctor 检查 Finish schema
-- **WHEN** Doctor检查存在的Workspace Structured Store
-- **THEN** Doctor MUST有界报告migration、foreign key、唯一current slot、固定phase JSON、dangling reference、expired lease与cleanup pending状态
-- **AND** MUST NOT要求旧四表、输出完整Task payload/命令日志/数据库页，或自动删除无法证明ownership的文件
-
-### Requirement: 专业 current rows 必须保存读取所需的规范化事实
-Workspace Structured Store MUST 在完整专业 payload之外保存最小可查询事实：Development row 保存最近一次正式 action 的 applicability status/JSON与observed time；Review row 保存 review type、target identity、outcome与updated time；Verification row 保存target identity、outcome与updated time。规范化字段 MUST 与同 row Domain payload一致，MUST NOT复制专业正文、Development gate adoption、Task status、Environment Receipt或Finish association。
-
-#### Scenario: Development action 原子保存
-- **WHEN** Development Application 已形成新的合法 Receipt 与该 action applicability
-- **THEN** repository MUST 在同一 transaction 中写入 `record_json`、applicability fields与observed time并写后验证
-- **AND** 任一字段或post-read失败 MUST rollback整行并保留上一份完整 current value
-
-#### Scenario: Review 或 Verification Result 原子保存
-- **WHEN** Review/Verification Application 记录新的完整 Result
-- **THEN** repository MUST 从同一 Domain value保存result JSON、target identity、outcome与updated time
-- **AND** JSON与规范化字段不一致时 MUST在commit前blocked
-
 ### Requirement: task_lifecycle_current 必须通过连续 migration 安全退役
 Buildr MUST 通过新的连续 migration升级专业 current schema、迁移可证明的 Development applicability、核验 terminal association并最终删除 `task_lifecycle_current`。Migration MUST在删除前以专业表为authority处理冲突，MUST NOT修改任何已登记script bytes/checksum、从 lifecycle覆盖Task/Environment/Result/Finish事实或静默丢弃无法匹配的terminal association。
 
@@ -355,38 +263,86 @@ Buildr MUST 通过新的连续 migration升级专业 current schema、迁移可�
 - **THEN** 旧runtime MUST返回`database-newer-than-runtime`
 - **AND** MUST NOT重建`task_lifecycle_current`、降级schema或继续业务读写
 
-### Requirement: Receipt v5必须继续使用唯一Environment current slot
-Workspace SQLite `task_environment_current` MUST继续作为每个Task唯一Environment authority，并 MUST以完整closed payload持久化Receipt v5。Buildr MUST不为Preparation Declaration、Recipe或Step创建第二套current store、history或lifecycle projection副本。
+### Requirement: Task Review v1 current必须一次迁入v2
+连续SQLite migration MUST原子重建`task_review_current`，把`target_identity`迁为`subject_identity`、v1 Result迁为closed v2，并把`ready|changes-required`映射为`accepted|changes-requested`。迁移 MUST验证row数量、Task/type/subject/outcome/time与JSON一致；MUST不建立dual-read或history表。
 
-#### Scenario: v5 Receipt整值替换
-- **WHEN** prepare或资源lifecycle成功形成新的Receipt v5
-- **THEN** repository MUST在单一transaction中closed-normalize、整值替换并重读确认
-- **AND** 失败 MUST rollback并保留旧current
+#### Scenario: 合法v1 rows升级
+- **WHEN** Workspace同时有Planning和Completion v1 current rows
+- **THEN** migration MUST逐slot保留method、reviewed、uncovered、findings、summary和completedAt
+- **AND** 新runtime MUST只读取v2
 
-#### Scenario: 只读旧版本
-- **WHEN** repository读取v4 Receipt
-- **THEN** reader MUST返回legacy read model
-- **AND** MUST不在GET、inspect或migration open时回写v5
+#### Scenario: 损坏v1 row升级
+- **WHEN** 任一row缺少合法subject identity或outcome
+- **THEN** migration MUST完整rollback并保留v1表与ledger
 
-### Requirement: Task execution record metadata 必须使用独立有界 SQLite schema
-Workspace Structured Store MUST在已退役`task_lifecycle_current`的current migration ledger上，通过下一连续migration建立单张STRICT `task_execution_records`表。该表 MUST以非级联foreign key绑定`tasks(task_id)`，保存closed record/Task identity、owner/kind/run/target/producer、outcome、lifecycle/resolution/body/quota状态、relative locator、digest、stored/original size、truncated、redaction version、reservation与必要retention/cleanup时间事实，并使用稳定唯一键与Task timeline、recent retention、quota/cleanup查询所需indexes。Structured Store MUST NOT建立Consumer/Adoption关系、BLOB/任意JSON payload、通用event/audit/history、execution resource、`task_facts`或新的Task lifecycle聚合表。
+### Requirement: Workspace SQLite 必须删除 Development 与旧 Finish 表
+Buildr MUST通过连续migration直接删除`task_development_current`与`task_finish_current`及全部rows。Migration MUST不建立history、backup、compatibility或replacement表，也 MUST不修改Task Record、Review、Verification、Environment、Retrospective和legacy Parent Plan数据。
 
-#### Scenario: fresh Workspace初始化execution record schema
-- **WHEN**current runtime首次writable打开新的canonical Workspace Structured Store
-- **THEN**连续migration MUST建立`task_execution_records`、closed checks、foreign key、唯一键与查询indexes
-- **AND**MUST NOT创建第二数据库、正文表、通用metadata表或`task_lifecycle_current`
+#### Scenario: 现有Workspace升级
+- **WHEN** retained current runtime打开包含Development与Finish表的健康数据库
+- **THEN** migration MUST在一个版本事务中删除两张表并登记checksum
+- **AND** 其他表的row count与payload MUST保持不变
 
-#### Scenario: 从migration 0010连续升级
-- **WHEN**健康数据库已应用到`0010_add_task_retrospective_disposition.sql`
-- **THEN**migration runner MUST按package中的下一连续script原子建立execution record schema并登记matching checksum
-- **AND**MUST NOT修改任何既有migration bytes、迁移旧YAML/临时文件或补造历史record
+#### Scenario: fresh database初始化
+- **WHEN** current runtime初始化新Workspace Structured Store
+- **THEN** 完整migration chain结束后 MUST不存在两张退役表
+- **AND** MUST不创建任何替代历史表
 
-#### Scenario: row违反closed状态组合
-- **WHEN**repository尝试保存未知owner/kind/status、open terminal outcome、retained缺失body identity或cleaned仍保留locator/quota charge
-- **THEN**SQL CHECK与Domain normalization MUST拒绝mutation并rollback
-- **AND**其他Task records与专业current rows MUST保持不变
+#### Scenario: 旧runtime打开升级数据库
+- **WHEN** 旧runtime不认识删除表的migration
+- **THEN** MUST返回database-newer-than-runtime
+- **AND** MUST不重建退役表或继续写入
 
-#### Scenario: Task进入终态后读取record
-- **WHEN**completed或abandoned Task仍有未到期execution record或cleaned tombstone
-- **THEN**Structured Store MUST继续允许Application读取和按retention处理它们
-- **AND**Task terminal transition MUST NOT级联删除record metadata或body
+### Requirement: Task Environment current必须一次删除
+
+Workspace SQLite MUST通过单一连续migration删除`task_environment_current`及其index。Migration MUST不复制旧rows、不创建history/backup表、不保留view或双读入口；Task、Review、Verification、Retrospective和其他current tables MUST保持不变。
+
+#### Scenario: 升级含旧Environment数据的Workspace
+- **WHEN** migration应用到包含任意`task_environment_current`rows的数据库
+- **THEN** table和rows MUST被直接删除
+- **AND** 其他Task专业记录 MUST保持可读
+
+#### Scenario: 新Workspace建库
+- **WHEN** 全部migration从空库顺序执行
+- **THEN** 最终schema MUST不包含`task_environment_current`及其index
+
+### Requirement: Workspace SQLite 必须收窄 Task Record 并删除无消费者历史表
+Workspace SQLite MUST通过一个连续migration重建`tasks`：删除`schema_version`与`result_no_change`，保留Task identity、title、intent、status、result summary、时间、Parent、`is_parent`、parent completion、result history、legacy Parent Plan与retrospective字段。相同migration MUST删除`terminal_contribution_reconciliations`及其rows，不建立备份、兼容view或replacement。
+
+#### Scenario: 升级当前 Workspace
+- **WHEN** retained runtime首次以writable方式打开0030数据库
+- **THEN** migration MUST原子达到0031并保留全部保留字段、scope/Change关系、Review与Verification rows
+- **AND** MUST删除两个冗余column和旧贡献协调表
+
+#### Scenario: 新 Workspace初始化
+- **WHEN** migration chain从空数据库运行到latest
+- **THEN** 最终schema MUST只包含当前Task表
+- **AND** 旧中间migration文件与ledger checksum MUST保持不变
+
+#### Scenario: 旧 runtime打开0031
+- **WHEN** runtime不认识0031
+- **THEN** MUST返回database-newer-than-runtime
+- **AND** MUST不重建已删除结构或继续写入
+
+### Requirement: Workspace SQLite 必须提供可重建的百万级 Task 查询索引
+Workspace Structured Store MUST 通过连续 migration 为 Task 信息流建立与 `active → todo → completed → abandoned`、`updated_at DESC`、`task_id ASC` 完全一致的可索引排序，并 MUST 建立以 canonical `tasks` 内容为 external content 的 FTS5 trigram 派生索引。派生索引 MUST 不成为 Task authority，且 MUST 能从 `tasks` 完整重建。
+
+#### Scenario: 迁移现有 Workspace
+- **WHEN** retained runtime 首次打开包含既有 Task 的旧 schema Workspace
+- **THEN** migration MUST 在同一原子迁移中创建 feed index、FTS5 table、同步 triggers 并回填全部既有 Task
+- **AND** migration 失败 MUST 回滚且不得改变既有 Task 或 migration ledger
+
+#### Scenario: Task 写入后同步搜索索引
+- **WHEN** Task 在业务事务中创建、修改 title/intent 或删除
+- **THEN** FTS5 派生 row MUST 在同一 SQLite transaction 中插入、替换或删除
+- **AND** 写入失败 MUST与 Task authority mutation 一起回滚
+
+#### Scenario: 当前 Node 不支持 FTS5
+- **WHEN** SQLite runtime 无法创建或读取声明的 FTS5 能力
+- **THEN** Structured Store MUST fail closed 并返回可定位的 migration/runtime diagnostic
+- **AND** MUST NOT 回退为百万级无索引子串扫描
+
+#### Scenario: 核对查询计划
+- **WHEN** verifier 对默认分页、单状态分页、Project/Service、Child、复盘和关键词路径运行 `EXPLAIN QUERY PLAN`
+- **THEN** 查询 MUST 使用已声明的 feed/status/relation/parent/retrospective/FTS 索引完成候选过滤
+- **AND** 默认分页 MUST NOT 使用 `OFFSET` 或为完整 tasks 集合建立临时 ORDER BY B-tree

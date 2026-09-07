@@ -169,18 +169,19 @@ Buildr release workflow MUST 在公开 mutation 前后读取 npm `latest` 与 `n
 - **AND** MUST NOT把该漂移伪装成本次发布的成功副作用
 
 ### Requirement: Publication 必须从已完成 Task 的权威环境事实重建
-Buildr release preparation MUST消费matching active release Task Environment Plan/Receipt中已验证的Service preparation declaration、recipe、inputs与identity。等待授权期间Environment MAY保持ready或由owner清理可释放资源；后续publication MUST从冻结commit、已保存Environment facts和同一权威recipe重建clean hosted environment，并 MUST NOT要求提前完成release Task、恢复旧worktree或在Product根及其他未声明cwd另行运行依赖准备。
+
+Buildr Release MUST在matching release Worktree中使用冻结source的Buildr Service`package.json`、`package-lock.json`和Product exact Node执行`npm ci`。Preparation Result MUST保存source inputs、cwd、command、Node和outcome identity，MUST NOT保存stdout或凭证。无副作用readiness MUST只读取该Result，不得执行依赖安装。
 
 #### Scenario: Release Task Finish 已清理 worktree
-- **WHEN** active release Task已形成current frozen readiness context且publication得到明确授权，无论原execution worktree仍ready或已由owner清理可释放资源
-- **THEN** release runner MUST验证plan identity、`service:product/buildr` recipe、Service lockfile inputs、source commit与同一active Task identity
-- **AND** workflow MUST在冻结Buildr Service root按同一recipe语义重建依赖
+- **WHEN** exact Node在matching release Worktree的Buildr Service root执行`npm ci`成功且inputs未漂移
+- **THEN** Release MUST形成current Preparation binding
+
+- **AND** workflow MUST在冻结Buildr Service root按同一`npm ci`入口重建依赖
 - **AND** MUST NOT完成或重开Task、恢复旧worktree或在`projects/product`执行`npm ci`
 
 #### Scenario: recipe、cwd 或 lockfile 不匹配
-- **WHEN** Environment Receipt缺少required recipe、冻结source缺少Service lockfile、cwd不是声明的Service root或input identity漂移
-- **THEN** release preparation MUST在dispatch或npm mutation前确定性失败
-- **AND** diagnostic MUST指出expected selector、recipe、cwd、input与actual fact
+- **WHEN** `npm ci`失败或source inputs、Node、cwd漂移
+- **THEN** Release MUST只阻塞依赖该准备的readiness，不改变Task、Candidate、Git或Publication事实
 
 ### Requirement: Candidate 与 Release 子进程必须共同冻结 exact Node executable 和 PATH
 Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，development精确版本只约束development checkout入口。
@@ -207,24 +208,22 @@ Buildr MUST由一个共享 execution environment helper同时绑定权威 Node e
 - **AND** MUST不依赖硬编码历史复盘中的 Node 版本恢复
 
 ### Requirement: Release transaction evidence 必须提供正式关联与可验证 readback
-Buildr MUST以 closed release transaction context/evidence schema关联 source release Task、其 retrospective sources、显式 support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry smoke。context MUST由Task/Application与GitHub/Git/npm正式读模型形成；terminal evidence MUST保存在既有 release evidence artifact，并 MUST提供按 publish run读取和验证的 portable inspect结果。
+Buildr MUST以closed release transaction context/evidence schema关联source release Task、显式support Tasks、Candidate source SHA/workflow/run、publish workflow/run、main/dev收敛提交、tag、npm version/dist-tag、GitHub Release与Registry smoke。发布事务 MUST不读取、复制或依赖Task复盘文档、决定状态或来源关系。
 
 #### Scenario: dispatch 正式 release transaction
-- **WHEN** 维护者明确授权 publication 且runner准备dispatch唯一 protected workflow
-- **THEN** runner MUST在dispatch前验证 release/support Tasks、retrospective source、Candidate run/source、Git bridge与Environment binding
-- **AND** workflow input MUST携带 canonical closed context及其 digest
-- **AND** Task Record MUST只保留既有顶层/Parent/retrospective事实，不得复制关联正文
+- **WHEN** 维护者明确授权publication且runner准备dispatch唯一protected workflow
+- **THEN** runner MUST验证release/support Tasks、Candidate run/source、Git bridge与适用准备事实
+- **AND** MUST不查询Retrospective Application、Task复盘关系或本机Markdown
 
 #### Scenario: 读取完成的发布链路
-- **WHEN** 调用方按 publish run ID执行 release transaction inspect
-- **THEN** read model MUST下载同一 run 的正式 evidence artifact并校验 context digest、source/workflow/run/attempt和公共发布事实
-- **AND** result MUST同时返回 release/support Tasks、Candidate、publish、bridge、tag、npm/GitHub Release与Registry smoke关联
-- **AND** 不匹配、缺失或跨 run evidence MUST fail closed
+- **WHEN** 调用方按publish run ID读取release transaction evidence
+- **THEN** read model MUST返回release/support Tasks和公共发布事实
+- **AND** schema MUST不包含`retrospectiveSources`
 
 #### Scenario: transaction 在公共写入前失败
-- **WHEN** workflow 在 tag/npm mutation 前失败
-- **THEN** evidence MUST保留已确认的 context、Candidate与publish run facts及失败阶段
-- **AND** recovery MUST指向同一 transaction run/attempt或明确的新 attempt，不得删除tag、重发旁路 workflow或伪造完成关联
+- **WHEN** Task、Candidate、Git或准备事实不匹配
+- **THEN** runner MUST在tag、npm publish或GitHub Release写入前失败
+- **AND** MUST不通过复盘状态补足或绕过缺失事实
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
 Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen selection完成current main coverage检查与保持release tree不变的历史收敛，并把该post-reconciliation generation作为唯一final source。Buildr MUST只对通过完整Product Candidate的final generation创建一个generation-scoped受保护release→main收敛PR；PR MUST以current generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于Candidate绑定的frozen release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。
@@ -316,16 +315,17 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 - **AND** explicit full MUST从同一run artifact校验后返回完整 portable evidence
 
 ### Requirement: 发布完成必须以零中间资源和正式release ref核验为边界
-Buildr MUST在Publication成功且post-publication dev provenance reconciliation通过后执行幂等closeout，并 MUST把正式远端`release-<version>`作为默认保留的发布事实，把generation carrier、临时convergence worktree、本地release branch、selection lifecycle refs与owned release worktree作为必需清理资源。可选删除正式远端release ref MUST继续要求独立明确授权，但 MUST NOT成为唯一release Task完成门禁。
+
+Publication和dev provenance已成立后，Release closeout MUST从canonical Workspace即时解析retained controller，完成release Task后直接调用Worktree provider cleanup，再运行Doctor。Worktree或Doctor cleanup失败 MUST保留已成立的Publication、Task结果和Git convergence事实。
 
 #### Scenario: 默认保留正式远端release branch
 - **WHEN** Publication、matching dev provenance reconciliation已成立且正式远端release branch精确等于冻结release commit
-- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并清理全部matching中间资源
+- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并完成Task、直接调用Worktree cleanup与Doctor
 - **AND** 未请求正式ref删除 MUST NOT产生blocked或要求新的协调Task
 
 #### Scenario: 中间资源漂移
-- **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership或expected identity无法证明
-- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、reconciliation与其他已清理事实
+- **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership、dirty状态或expected identity无法证明
+- **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、Task completion、reconciliation与其他已清理事实
 - **AND** MUST NOT删除未知branch、worktree、正式release ref或其他version资源
 
 ### Requirement: 发布编排必须保留独立owner与授权边界
@@ -365,12 +365,37 @@ Buildr MUST从Task、Git/PR、GitHub run/attempt、release owner Result、Enviro
 - **AND** compact output MUST只返回关键阶段、timeline identity与inspect pointer，完整timeline只在显式full中展开
 
 ### Requirement: 发布关联必须与旧收尾执行证明解耦
-发布支持任务 MUST以已有完成记录建立关联，MUST不要求旧运行、研发交接或旧自举运行号；发布 MUST继续独立验证冻结源码、候选、唯一产物、目标引用和授权。
+Release transaction MUST只要求release/support Task Record关系、matching Worktree、Release Preparation、current Product Candidate、唯一artifact、Git/main/dev和publication facts。Task Development、Task Candidate、Development Handoff、Task Finish legacy Result或Terminal Delivery MUST不成为关联输入、缺失finding或发布准备条件。
 
-#### Scenario: 直接完成支持任务
-- **WHEN** 支持任务已完成但无旧收尾记录
-- **THEN** 关联不因缺旧证据阻塞
+#### Scenario: support Task直接交付dev
+- **WHEN** support Task通过当前task-finish Skill和Git事实完成交付且Task Record已completed
+- **THEN** release correlation MUST接受其Task、Environment与真实dev source commit
+- **AND** MUST不要求旧Development或Finish run
+
+#### Scenario: Product Candidate校验
+- **WHEN** release进入Product Candidate与publication readiness
+- **THEN** source、generation、CI aggregate与唯一tarball MUST继续按现有发布owner校验
+- **AND** 本变更 MUST不降低或替换任何发布候选门禁
 
 #### Scenario: 发布事实不足
-- **WHEN** 支持任务已完成但发布源码或产物证据不匹配
-- **THEN** 发布仍被对应安全检查阻止
+- **WHEN** Product Candidate、artifact、Git、npm、GitHub或publication事实不足或不匹配
+- **THEN** release MUST按对应owner返回blocked
+- **AND** MUST不从已删除Development/Finish历史补造成功
+
+#### Scenario: 直接完成支持任务
+- **WHEN** support Task已通过真实Git/业务交付并保存Task Record结果
+- **THEN** release correlation MUST接受matching dev source与Task/Environment facts
+- **AND** MUST不要求旧Finish run、Candidate或Handoff
+
+### Requirement: 候选准备必须先演练后正式确认
+Buildr候选准备 MUST把可反复修复的Release Rehearsal与只执行一次的最终Candidate分开。Candidate失败后的代码或流程修复 MUST先在support Task和prospective release tree上反复演练到全绿，再由维护者显式提升为正式release generation并运行一次最终Candidate确认。
+
+#### Scenario: 支持任务修复尚未演练全绿
+- **WHEN** 修复已经交付`dev`但matching prospective release tree的完整Release Rehearsal尚未passed
+- **THEN** 发布流程 MUST保持current正式release freeze不变并继续在同一support Task处理全部演练失败
+- **AND** MUST不请求reopen、创建新正式generation、运行最终Candidate或进入release-to-main
+
+#### Scenario: 演练全绿后进入最终确认
+- **WHEN** matching Release Rehearsal全绿且维护者明确授权promotion
+- **THEN** 发布流程 MUST提升exact rehearsal commit/tree并运行一次final Candidate
+- **AND** 在final Candidate及后续readiness全部成立前 MUST不dispatch publish workflow或产生tag、npm、GitHub Release副作用

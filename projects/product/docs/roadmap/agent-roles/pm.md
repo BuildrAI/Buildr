@@ -17,7 +17,7 @@
 
 1. 当前目录及上层相关 `AGENTS.md`。
 2. 当前项目 `openspec/config.yaml`。
-3. 相关 `openspec/knowledge/` 和 `openspec/specs/`。
+3. 相关 `knowledge/` 和 `openspec/specs/`。
 4. `openspec/changes/` 中已有的相关或冲突变更。
 
 ## OpenSpec 协作设想

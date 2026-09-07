@@ -1,0 +1,24 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: remove-task-verification-backend-prompt
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/remove-task-verification-backend-prompt/brief.md
+    reason: 说明删除边界与用户结果
+    status: updated
+    sourceIdentities:
+      - openspec/changes/remove-task-verification-backend-prompt/proposal.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 删除Task Verification backend prompt接口
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 确认前端本地Agent action为唯一入口
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr-web.md
+unresolvedItems: []

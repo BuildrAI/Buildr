@@ -8,4 +8,4 @@ if ! command -v openspec >/dev/null 2>&1; then
   exit 1
 fi
 
-exec "$product_root/tools/development/run-development-node" test/verification/profile.mjs fast
+exec "$product_root/tools/development/run-development-node" test/verification/profile.ts fast

@@ -1,0 +1,23 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: optimize-task-list-infinite-scroll
+operation: reconcile
+treeIdentity: working-tree@beab4389babe1945529292cbb18e0dedf52fea99
+impacts:
+  - type: brief
+    target: openspec/changes/optimize-task-list-infinite-scroll/brief.md
+    reason: 记录任务信息流分页目标、用户流程、兼容性与验收摘要
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-record/spec.md
+      - openspec/specs/buildr-web-workspace-application/spec.md
+      - services/buildr/src/task/application/task-query-application.ts
+      - services/buildr-web/src/features/task/pages/TasksPage.tsx
+      - services/buildr-web/src/features/task/hooks/useTaskList.ts
+  - type: service
+    target: services/buildr/docs/json-contracts.md
+    reason: Task list公开JSON identity升级并增加分页字段，需要更新现有契约索引与兼容说明
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task/interfaces/http/task-http-schema.ts
+      - services/buildr/src/infrastructure/contracts/public-json.ts
+unresolvedItems: []

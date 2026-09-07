@@ -1,4 +1,6 @@
-# Product 日常验证证据与选择审计
+# Product日常验证证据与选择审计（历史）
+
+> 本文保留Task Execution Record退役前的历史测量，不描述当前产品接口。当前验证结果直接来自Project测试工具和Task Verification Report。
 
 本文记录 `deduplicate-cross-layer-verification-evidence` 对 Buildr Product 日常验证的可复核结论。机器可读事实来自唯一 registry 与 `npm run test:audit:verification`；本文不创建第二套测试、Candidate 或 Release authority。
 
@@ -14,7 +16,7 @@
 ## 2. 审计入口
 
 ```bash
-npm run test:audit:verification -- src/task/application/finish/task-finish-run.mjs
+npm run test:audit:verification -- src/task/application/finish/task-finish-run.ts
 npm run test:audit:verification -- --base <commit>^ --head <commit>
 ```
 
@@ -26,7 +28,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 - 日常 Core 慢 owner primary evidence map；
 - Release-only owner 与日常 `core` profile 的闭合审计。
 
-该入口只读，不运行 verifier，不把 target budget 当作实测。实际 queue、resource wait、prepare/body/cleanup 与 wall-clock 仍以 Execution Record 为准。
+该入口只读，不运行verifier，不把target budget当作实测。当前实际耗时以测试runner本身输出为准。
 
 ## 3. 近期普通任务选择回放
 
@@ -51,21 +53,16 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 
 ## 4. 慢 owner primary evidence map
 
-审计阈值为日常 Core 中 target duration ≥15秒且边界为Integration/System。当前27项全部保留自身为唯一primary owner；审计没有发现可在不丢失公共结果的前提下转给低层owner的第二项主证据。这里“保留”不表示实现已经最优，只表示不能删除其公共事实。
+审计阈值为日常 Core 中 target duration ≥15秒且边界为Integration/System。统一Task Environment、Task Development与旧Finish专属owner删除后，剩余owner继续按各自真实边界提供主证据。这里“保留”不表示实现已经最优，只表示不能删除其公共事实。
 
 | owner | target | 唯一公共事实 / 反例焦点 | 必须保留的真实边界 |
 | --- | ---: | --- | --- |
-| `integration-task-environment` | 15s | stale controller、preparation或repository handoff必须失败 | filesystem、Git、CLI handoff |
 | `integration-self-bootstrap` | 45s | retained checkout或runtime sync漂移必须失败 | retained checkout、Git identity、runtime sync |
-| `integration-task-execution-records` | 20s | body/metadata/recovery/retention不一致必须失败 | SQLite与filesystem body store |
-| `integration-task-development` | 25s | planning/Candidate/Review/Verification identity漂移必须阻断 | CLI、filesystem、Git、SQLite lifecycle |
-| `integration-task-finish` | 20s | bootstrap/readiness/run/diagnostics/SQLite不一致必须阻断 | Finish CLI与SQLite |
-| `integration-task-finish-delivery` | 75s | remote、activation、occupancy或cleanup ownership缺口必须失败 | Git remote、retained activation、cleanup |
 | `system-verification-contracts` | 15s | 公共run违反scheduling/timing/resource contract必须失败 | public verification/Workspace entrypoint |
 | `system-public-json-contracts` | 25s | CLI JSON开放、无版本或不稳定必须失败 | real CLI serialization |
 | `system-workspace-lifecycle` | 55s | Project/Service/catalog/capability持久结果丢失必须失败 | Workspace、Project、Service、Git |
-| `system-task-lifecycle` | 25s | 公共Task/Change/Development/Review/Verification漂移必须失败 | public Task lifecycle |
-| `system-worktree-lifecycle` | 45s | worktree/ref/repository/cleanup ownership错误必须失败 | real Git worktree与Environment |
+| `system-task-lifecycle` | 25s | 公共Task/Change/Review/Verification漂移必须失败 | public Task lifecycle |
+| `system-worktree-lifecycle` | 45s | worktree/ref/repository/cleanup ownership错误必须失败 | real Git worktree |
 | `system-runtime-recovery` | 30s | target authority或runtime projection漂移必须失败 | install、filesystem projection、recovery process |
 | `system-buildr-web-http` | 15s | session/error/cleanup泄漏必须失败 | loopback HTTP与session cleanup |
 | `system-app-process` | 25s | channel/profile/process cleanup泄漏必须失败 | child process、port、profile |
@@ -155,7 +152,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 
 ## 9. affected / Full 选择复核（2026-08-24）
 
-本节使用当前 `origin/dev`、三个 retained 且 body 未截断的正式 Execution Record，以及同一批 frozen changed paths 在本 Change 前后 planner 上的只读回放。历史 Execution Record 没有 step-level selection trace，因此墙钟来自原 record，step、owner、closure 与 Full reason 来自当前 planner 回放；两类事实不混写。
+本节是退役前历史回放；其中原执行记录已随产品能力删除，不再作为current authority。
 
 ### 9.1 近期普通 Task 样本
 
@@ -163,7 +160,7 @@ npm run test:audit:verification -- --base <commit>^ --head <commit>
 | --- | --- | --- | ---: | ---: |
 | `prepare-parent-by-default` | `product.delivery` | affected | 15→15 | 45.687s |
 | `reconcile-cleaned-empty-finish-carriers` | `product.delivery` | affected | 10→10 | 88.692s |
-| `optimize-golden-lifecycle-execution-paths` | `product.delivery` | full / `execution-graph-change`，由 `test/verification/registry.mjs` 触发 | 53→53 | 320.841s |
+| `optimize-golden-lifecycle-execution-paths` | `product.delivery` | full / `execution-graph-change`，由 `test/verification/registry.ts` 触发 | 53→53 | 320.841s |
 
 此可复核小样本的 Full 升级率为 1/3（33.3%）；selected step 中位数为15、P90为53；正式墙钟中位数为88.692秒、nearest-rank P90为320.841秒。唯一 Full reason 是 `execution-graph-change`。五个最常出现的重型 owner 并列各2次：`integration-self-bootstrap`、`capability-cli-integration`、`commands-cli-integration`、`openspec-convergence-recovery`、`managed-data-integrity`；其中四项来自技能/资源投影样本，`integration-self-bootstrap`来自自举收尾样本，Full 样本自然包含全部日常 owner。
 
@@ -187,11 +184,11 @@ Unit 的实际粒度是：只要计划选择 `unit` step，就运行完整低成
 
 三个真实普通 Task 的 scope、step count 与 owner集合均未变化，所以本轮没有可归因的执行时间收益。新增的两个变化是安全修正，不是降本：
 
-- `test/verification/ownership.mjs`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
+- `test/verification/ownership.ts`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
 - 未知高风险 `src/task/application/**`：affected 7 steps → blocked；通用 Unit/CLI architecture owner不能再掩盖缺失的领域 primary owner。
 
 因此当前正式结论是：在这个近期小样本中，普通 Task 没有无理由进入 Full；唯一升级由 execution graph authority 变更触发。选择规则不是主要瓶颈，剩余成本来自被正确选择的真实 primary owner，尤其是 Finish、self-bootstrap、Workspace/Worktree、进程和 capability/OpenSpec runtime 边界。继续降本必须优化这些 owner 内部的真实准备或主体成本，不能通过放宽 Full、删除证据、缓存被测选择结果或提高全局并发取得。
 
-当前日常完整集合仍为52 steps、1036秒目标工作量、容量4的数学下限259秒；Product Candidate仍为66 steps、1398秒目标工作量、数学下限349.5秒。最近当前树正式 daily-full Execution Record 为 `task-exec-f3035c44-9d33-4413-8315-40e6d1ecbc9a`，capability墙钟427.822秒。Candidate与无外部发布副作用的Release contract/smoke仍须在本 Task 的冻结Content Target上现场执行；未执行前不填入当前基线。
+该轮历史daily-full墙钟为427.822秒；原记录标识与正文已不再属于当前产品。
 
 本Change实现树随后因planner/ownership authority变更运行一次真实changed→Full：52 steps全部通过，总墙钟288.354秒，`product-full-execution`等待2ms，最慢owner为`system-task-finish` 81.083秒。该轮比427.822秒历史正式Full快，但step集合没有变化，且是单次transient开发反馈，不能把差值归因于selection实现；它只证明当前完整daily-full在本轮无竞争机器状态下可执行，并保留了超目标owner的逐项warning。

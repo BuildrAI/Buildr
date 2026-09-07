@@ -234,7 +234,8 @@ Buildr MUST 将 npm package 作为唯一正式产品 installation，并 MUST 让
 
 #### Scenario: 开发者准备 Buildr checkout
 - **WHEN** 开发者从 Buildr Service checkout 执行 `npm run install:development`
-- **THEN** Buildr MUST只将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
+- **THEN** Buildr MUST先通过唯一开发准备入口生成当前 HTTP DTO 与 ignored `web-dist`，再将 `Buildr Web Dev` 绑定当前 checkout 和 development runtime
+- **AND** 干净 checkout 缺少任一生成输入时必须在 Launcher 变更前生成或明确失败，不得安装一个启动后返回 `web_dist_missing` 的 Launcher
 - **AND** MUST NOT创建或覆盖默认 PATH CLI、npm installation 或 npm-owned `Buildr Web` Launcher
 
 ### Requirement: npm 与 development 安装必须拥有明确更新责任
@@ -287,7 +288,7 @@ Buildr npm package MUST 包含 application payload 中 Buildr Web 运行所需�
 - **AND** npm pack 与 Launcher install MUST NOT 需要 `projects/product/services/buildr-web` 或重建前端资源
 
 ### Requirement: npm发行版运行时不得依赖development准备事实
-npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、development Environment Receipt、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
+npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry和Web静态负载 MUST只消费已安装package、安装回执、兼容Host Node及随包`web-dist`，并 MUST NOT读取Product源码`preparation.yml`、源码`node_modules`、源码TypeScript或要求用户设置`BUILDR_NODE`。Workspace命令 MAY且在其既有契约要求时 MUST读取目标用户Workspace的Rules、Project declarations、runtime projection与其他权威资产；这些目标Workspace输入 MUST NOT被误判为Product development依赖。
 
 #### Scenario: 用户在普通Workspace运行发行版CLI
 - **WHEN** 用户通过npm installation执行`buildr doctor`、`sync`、`update`或其他发行版命令
@@ -321,3 +322,16 @@ npm安装的Buildr CLI、Launcher与`buildr web`其产品启动、package entry�
 - **WHEN** release artifact检查新增公共library文件
 - **THEN** inventory MUST包含facade、生成JS和`.d.ts`
 - **AND** MUST排除raw Runtime `.ts`、Buildr `test/context` provider、fixtures、verification registry、TypeScript compiler与开发类型依赖
+
+### Requirement: 开发入口必须消费显式版本管理器中的精确 Node
+Product development Node resolver MUST 在未提供 `BUILDR_NODE` 时检查显式 `NVM_DIR` 中与 `.node-version` 精确匹配的 Node，且 MUST 在启动任何 Node 或 npm Product 命令前完成选择。它 MUST NOT 扫描未声明的用户目录、下载 runtime 或接受仅满足 `engines.node` 的其他版本。
+
+#### Scenario: hostile PATH 下 NVM 已安装精确版本
+- **WHEN** PATH 首位 Node 不等于 Product `.node-version`，且 `NVM_DIR/versions/node/v<required>/bin/node` 存在并报告精确版本
+- **THEN** development Node/npm wrapper MUST 首次直接使用该精确 Node及其相邻 npm
+- **AND** MUST NOT 先启动 PATH Node 或产生一次版本失败后再重试
+
+#### Scenario: NVM 候选不匹配
+- **WHEN** `NVM_DIR` 缺少精确版本、候选不可执行或报告不同版本，且其他受控候选也不可用
+- **THEN** resolver MUST 保持非零失败并说明所需精确版本
+- **AND** MUST NOT 选择其他兼容 Node、创建安装或扫描其他用户目录

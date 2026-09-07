@@ -1,0 +1,3 @@
+# 对齐Task模块源码边界
+
+整个Task共享组装尚未迁移TypeScript；本次直接重写的Overview、Repository和HTTP契约已使用严格TypeScript。规范据此对齐，不做只改扩展名的伪迁移。

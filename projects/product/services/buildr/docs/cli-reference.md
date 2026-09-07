@@ -35,25 +35,18 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 |---|---|
 | `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
-| `buildr web preview start|list|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview 使用 ready Task Environment 的任务验证工作区，健康后登记为动态资源，停止确认后释放；不带 Task 时保持独立 checkout preview。 |
+| `buildr web preview start|list|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr project daily-progress record\|inspect\|list --project <code>` | Agent-machine 本机每日演进。`record` 把已构造的四问摘要、提交与变更文件写入 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`；Task 关联可选，他人提交禁止挂 Task，存在的 Task ID 仍须本机已有。`inspect`/`list` 只读。JSON 使用 `buildr.project-daily-progress-*-result/v1`。不进入 Git 或 Task SQLite，读取路径不扫描 Git，也不提供定时调度。 |
 | `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
-| `buildr task environment plan record\|inspect <task-id>` | Agent登记或只读查看覆盖全部Task Service scope的Environment Preparation Plan；`record --input <json-file>`不执行Step。 |
-| `buildr task environment prepare\|inspect\|cleanup <task-id>` | `prepare`必须带`--agent <adapter>`，可选`--plan <json-file>`幂等执行或恢复Plan；省略`--agent`失败且不默认为 Codex。未给`--branch`时默认任务分支为`<adapter>/<task-id>`。`inspect`只读观察；`cleanup`清理正式Task环境。Environment Receipt独占Plan、ready、恢复、资源和总cleanup。 |
-| `buildr worktree create\|inspect\|cleanup <task-id>` | 窄 Git worktree provider。`create` 接受 branch/start point 与显式 Project/Service selectors；`inspect` 复核 checkout/branch/HEAD/clean/registration；`cleanup` 要求每仓 integrated ref。它不判断 Environment ready，也不准备 Runtime、CLI、依赖、projection 或动态资源。 |
-| `buildr verification plan --project <code> --target-identity <identity>` | 在Request identity前把无歧义的Project/Workspace相对changed path统一为Project-relative。普通调用返回raw `buildr.verification-plan/v1`；同时绑定`--environment <task-id> --workspace <canonical-workspace>`时返回`buildr.verification-plan-result/v1`，只读预览全部selected capability准备闭包和closed Environment Plan Request，不执行Recipe、不启动能力、不写Environment或Execution Record。 |
-| `buildr verification run --project <code> --plan <file> --target-identity <identity>` | 执行matching current Verification Plan中的command或registered provider execution units。绑定正式环境时由Receipt固定的retained controller编排正式execution与canonical record，能力仍在候选execution root执行。正式Task的exact invocation已有active或terminal record时默认零执行复用，只有显式`--retry`创建同identity独立run/record。JSON缺省返回`buildr.long-running-operation-summary/v1`；`--detail full`返回既有`buildr.verification-execution/v1`。不写current Result。 |
-| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在 canonical Workspace 的 SQLite 中维护 Task Record v2。`create --status todo` 只保存意向，不接受 Change；`activate` 显式转为 active。`--retrospective-source` 及 update add/remove flags 只关联已有 current 复盘的终态来源 Task，不创建行动项。todo 只能以 `--no-change` 完成；todo/active 都可 abandon，终态不可重开。Parent/Child 仍只表达协调层级。 |
-| `buildr task delivery inspect <task-id>` | 仅凭 Task ID 只读返回 `buildr.task-terminal-delivery/v1`。已交付时包含 Finish run ID、final remote ref 与 cleanup 摘要；旧运行仅展示 run ID、历史 phase 和诊断，不生成恢复执行命令；直接完成的任务显示 completed 且不声称机器验证了交付；历史关联不匹配时保留完成记录并给出 diagnostic。该命令不执行 resume、cleanup 或 Finish，不扩展只查询 Task Record 的 `task inspect`，也不替代按 run identity 查询完整明细的 `task finish inspect --run`。 |
-| `buildr task next <task-id>` | 只读返回closed `buildr.task-entry-snapshot/v1`：Task、matching Environment、Development compact identity/applicability、execution roots、retained controller、blockers与唯一typed next。`required`是authority/identity恢复前置，`recommended`可由用户调整；不自动执行、不展开完整capability graph。`--execution-target`只做receipt核验，`--profile`只增加本次调用耗时/owner read事实。 |
+| `buildr worktree create\|inspect\|cleanup <task-id>` | 窄Git worktree provider。`create`接受branch/start point与显式Project/Service selectors；`inspect`复核checkout/branch/HEAD/clean/registration；`cleanup`要求每仓成对提供expected source与delivered完整提交。它不判断Task完成，也不准备Runtime、CLI、依赖、projection或动态资源。 |
+| `buildr project verification inspect|validate|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
+| `buildr task verification record|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
+| `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在canonical Workspace的SQLite中维护Task Record v3。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
-| `buildr task verification inspect\|reconcile\|record <task-id>` | 通过Application读取或事务整值维护Workspace SQLite中的current Verification Result。`inspect`可带current Candidate、target与declaration identities做纯值比较。Project/Service任务使用`reconcile`读取matching terminal Task Execution Records，独立核验Candidate、target、declarations、checks与target stability后派生facts；调用方不能提交成功声明。`record`仅兼容真正workspace-only的Candidate-bound负向coverage gap。 |
-| `buildr task finish inspect --run <id>` | 只读查询历史收尾结果；支持 compact、full 与 self-bootstrap 历史投影。旧 run、rollover、reconcile 执行入口已退役。新收尾由 task-finish 技能直接处理真实成果、已有任务记录及安全善后。 |
-
-旧收尾记录只读保留；历史资源维护仍保护身份、归属和内容保全。旧执行状态写入口已退役，任务完成仅通过 `task complete` 保存真实结果。
+| `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
@@ -66,21 +59,21 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
-Task Record 使用 closed `buildr.task-record/v2` schema。顶层状态为 `todo|active|completed|abandoned`，查询态 `open` 派生为 todo + active。复盘来源使用独立多对多关系表，只保存 source Task ID；多个复盘可指向同一 Task，一个复盘也可形成多个后续 Task。Task Record 不保存 Environment、Development 或 action item。Parent/Child、Change resolver、`recordDigest` 与旧 `task.yml` inert 语义保持不变。
+Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。只保存Child的`parentTaskId`，反向Children由查询派生；`isParent`保存明确父任务身份。所有非创建写动作都比较当前`recordDigest`。
 
-Task Record、Task Development current Receipt、Task Verification current Result与Planning/Completion Review current Results全部以`.buildr/local/workspace.sqlite`作为单机唯一持久化authority。各专业CLI/Skill/Buildr Web仍调用对应Application；interface不直接打开数据库。旧Task-scoped YAML不读取、不迁移、不双写，Task current records不进入Git或跨机器同步。Git Operations只处理用户或其他consumer明确选择的普通Git内容；产品不再提供Task Metadata Publication入口、contract或runtime Skill。Environment与Finish继续保存各自本机运行/交付事实。
+Task Record、Task Verification与Planning/Completion Review以`.buildr/local/workspace.sqlite`作为单机持久化authority。复盘正文保存在被Git忽略的`.buildr/local/task-retrospectives/`，SQLite只保留Task上的文档摘要和决定状态。旧复盘current/source表、研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task 详情固定为“概览、研发、证据、环境”四个一级视图：研发调用 Task Development Application `inspect`，证据分别调用 Review/Verification reader，环境调用 Environment reader；打开、窗口聚焦或手动刷新时执行有界读取。Development/Review/Verification/Environment 专业区块均不提供 writer；审查和验证仍可生成受限 Agent prompt。Task 关联 Change 的详情通过同一 Task-scoped Resolver 读取任务执行根与 retained baseline；全局 Change 列表仍保持 retained-only。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task详情固定为“概览、原型、证据”三个一级视图；概览包含本机复盘文档轻量卡片，证据分别调用Review/Verification reader。页面没有独立复盘工作台、研发页签或旧机器交付历史。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 
 `service create --integration-branch` 只适用于 Git 来源，`--branch` 仅为兼容别名。Canonical Service Domain 保存 UUID `id`、`workspaceId`、`projectId`、`code`、`name`、`description`、`type` 和 `source`；`source.path` 定位文件系统中的实际 Service，Git source 保存 URL、remote 与稳定 integration branch。当前分支、HEAD、dirty、upstream 与 ahead/behind 只实时观察，不写回 Domain。
 
-Project根可选`preparation.yml`（`buildr.project-environment-preparation/v1`），长期声明Project-wide或Service-scoped Recipe。Agent按Task完整Project/Service scope提交closed`buildr.task-environment-plan-request/v1`；Application解析声明identity并把resolved`buildr.task-environment-plan/v3`与Receipt v6保存到canonical Workspace SQLite唯一`task_environment_current`。`task environment plan record|inspect`管理saved Plan，`prepare --plan <file>`可一次选择并准备。Recipe Step只接受无shell executable、args、所属Project/Service相对cwd、inputs、expected outputs、required和timeout；核心不枚举package manager、不扫描manifest。Plan分离typed Workspace path reference、closed executable authority、基础Task选择与capability辅助准备；Receipt保存解析后的机器路径、runtime invocation及Declaration、Scope、Recipe、Step current/prepared事实。任一required Recipe/Step缺失、漂移或失败都会阻断整体ready。`inspect`只读实时观察且不执行Step、不创建输出、不升级Plan、不回写；Buildr Web GET只读取saved current。旧Plan/Receipt只读兼容，必须显式提供Plan Request才能升级。
+Project根可选`preparation.yml`，长期说明Project-wide或Service-scoped真实准备入口。Agent只在当前动作需要时，从matching Project或Service根直接调用对应wrapper；没有额外准备的Project无需声明空步骤。Buildr不生成Task Plan、不保存选择和执行结果，也不把局部准备失败扩大为统一工作许可。
 
-`project create`、`service create`及Buildr Web对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、Environment declaration/Recipe gap与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，仍由`task-environment`或`task-verification`各自owner维护。
+`project create`、`service create`及Buildr Web对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、准备入口缺口与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，Agent直接维护Project拥有的准备入口；`task-verification`继续维护验证声明。
 
-Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git common-dir 的 `buildr/task-worktrees/<task-id>.json`。它只包含 repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote 和 Git effects。Environment cleanup 先停止已登记资源，再把每仓 delivery identity 交给 provider；明确 abandon 时可以清理可证明属于该 Task 的 dirty checkout。provider 不删除远端分支，也不执行交付、验证或总 cleanup 判断。
+Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git common-dir的`buildr/task-worktrees/<task-id>.json`。它只包含repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote和Git effects。成果交付后，Agent把已核对的逐仓source与delivered完整提交直接交给provider；provider复核source版本、dirty、registration和retained ref后才删除。provider不删除远端分支，也不执行交付或验证判断。
 
 ## Runtime 与诊断
 
@@ -89,7 +82,7 @@ Git provider evidence 使用 `buildr.git-worktree-evidence/v1`，保存在 Git c
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
 | `buildr doctor` | 只读聚合workspace、npm/platform/development/current instance安装身份、main process runtime role、独立Workspace Node声明/runtime、registries、Components和Commands；不要求main process Node等于Workspace Node。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime；不扫描或迁移旧 Task Environment 文件。 |
+| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |
@@ -110,13 +103,13 @@ Buildr 不 render 或安装 Commands，不保存 binary、token、cookie、登�
 
 ## Project 测试能力声明
 
-`projects/<project>/verification.yml` 的新增与模板只接受 closed `buildr.project-verification/v3`。每项 capability family 声明稳定 id、明确 Project/Service scope、proves、evidence、usable targets、discovery、affected/full command/agent/provider入口，以及必要的environment、effects、authorization、resources与`resourceClaims`。自举过渡期只为既有v2保留封闭reader：单一入口按full Task Delivery解释并标记`legacy-declared`，不提供affected、Candidate、Release或provider语义；不要新增v2。声明是Project测试能力事实，不是一次性Plan、Result或`capabilities.yml`中的Skill binding。
+`projects/<project>/verification.yml` 只接受closed `buildr.project-verification/v4`测试地图。每项testing family声明稳定id、Project/Service scope、purpose、sourcePaths、testRoots、完整command或Agent入口、选择指导与requirements，不列举具体测试文件，也不保存一次性计划或运行结果。
 
-`buildr verification run` 不推导固定层级或声明级 DAG，只执行调用方显式选择的 command capabilities。`effects.authorization: explicit` 必须逐项传入 `--authorize-capability <id>`；声明为 explicit 的资源必须逐项传入 `--authorize-resource <id>`。实际 claim 的 `coordinated` 资源才通过有界 coordinator 排队。正式Task对相同Task/target/Project/declaration/capability set生成exact invocation identity；默认在同一repository transaction中active优先、随后terminal，并按`opened_at DESC, record_id DESC`复用latest record。active/terminal复用均不取得resource、不观察target、不启动process或创建transient evidence；terminal负向outcome及`attention`保持非零。只有显式`--retry`创建同identity独立run/record，identity输入变化正常创建首次执行。缺省compact的recovery pointer用于先回读同一Execution Record；stdout丢失、超时或展示截断不授权重跑。完整命令输出、耗时、授权与资源诊断属于 transient execution evidence，仅在`--detail full`或受控正文中展开。命令不创建任务、不调度 Agent，也不写Workspace SQLite current Result。
+Task Verification Skill指导Agent在开发中直接调用Maven、npm、Playwright、Browser、HTTP或Project自有runner；开发完成后扩大到任务相关功能测试和受影响Service完整低成本回归，并将有意义报告通过Application保存。测试失败先修复或如实报告，不生成统一流程状态。
 
 没有声明或没有适用能力时，doctor 不产生 finding，Task Verification 在具体 Result 中报告 coverage gap，不自动开发测试。文件存在时 doctor 只做 closed schema、路径、scope 与资源引用校验，不运行命令或探测测试环境。用户通过 Agent 说“初始化测试声明”或“更新测试声明”时，Agent 只从真实 build scripts、CI、文档和已有测试发现候选，并由用户确认 Project policy。
 
-current Task Result使用`buildr.task-verification-result/v2`，绑定Task、current Candidate/generation、stable Content Target与declarations，并保存由matching terminal Task Execution Records提炼的能力facts、portable evidence identities、coverage gaps、结论与完成时间。Task Verification Application是唯一writer/reader；reconcile完整原子替换，inspect按current Candidate、target与declarations派生`current / stale / unknown`。合法v1 row保持dual-read但标记`legacy-unbound`，不自动回填Candidate或evidence。Task Development只消费Application read model，Finish不直接消费Result。Result不保存stdout/stderr、临时路径、Environment Receipt、风险接受、推进状态或history。
+current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope、Agent提交的实际内容版本和current Project测试地图identity，保存实际checks、选择范围、targets、结果、gaps与结论。Task Verification Application只提供`record|inspect`并整体替换current报告；`inspect`按调用方内容identity与current测试地图派生`current|stale|unknown`。它不创建Execution Record，不保存stdout/stderr或临时路径，也不决定Task完成或交付。
 
 ## Skill capability contracts
 
@@ -127,7 +120,7 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 ## Product maintenance / workflow internal
 
 - `buildr package check/build`：产品 package 维护和构建，不是普通 workspace 日常命令。
-- `buildr openspec converge <change> --project <project> --target <task-execution-root> --json`：Buildr OpenSpec单一收敛事务；target取自matching Task Environment Receipt的`execution.workdir`，不是canonical Workspace。内部完成规划、隔离strict validation、条件式canonical应用、写后确认与`archive --skip-specs`，正常archive后释放本次事务Receipt，结果为`passed|blocked|recovery-unprovable`。
+- `buildr openspec converge <change> --project <project> --target <actual-work-root> --json`：Buildr OpenSpec单一收敛事务；target是Agent已确认的当前Workspace或matching Worktree。内部完成规划、隔离strict validation、条件式canonical应用、写后确认与`archive --skip-specs`，结果为`passed|blocked|recovery-unprovable`。
 - `buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`：只读检查仍存在的未决事务Receipt及before/expected/actual；active Change未开始或Change已归档时返回`not-applicable`。它不写canonical、Receipt或archive，也不用于环境清理后的长期审计。
 - `openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`与`openspec sync-apply`均已删除；旧调用返回标准unknown-command。
 - `openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan` 与 `openspec sync-apply` 均已删除；旧调用返回标准 unknown-command 且不会读取或写入旧 sidecar。确定性 planning/apply 只保留为 `converge` 单一事务的内部步骤。

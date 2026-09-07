@@ -1,0 +1,36 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: scale-task-query-to-million-records
+operation: reconcile
+treeIdentity: working-tree@codex/scale-task-query-to-million-records
+impacts:
+  - type: brief
+    target: openspec/changes/scale-task-query-to-million-records/brief.md
+    reason: 记录百万级查询目标、用户流程、兼容性与非日常benchmark边界
+    status: updated
+    sourceIdentities:
+      - openspec/specs/task-record/spec.md
+      - openspec/specs/buildr-web-workspace-application/spec.md
+      - openspec/specs/workspace-structured-data-store/spec.md
+      - openspec/specs/product-verification-quality/spec.md
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: Task list新增跨表只读repository与FTS5派生索引，需在实现后核对是否影响长期技术架构说明
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task/application/task-query-application.ts
+      - services/buildr/src/task/persistence/task-repository.ts
+      - services/buildr/src/task/persistence/task-list-repository.ts
+      - services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts
+  - type: service
+    target: services/buildr/docs/json-contracts.md
+    reason: Task list response identity和分页元数据语义将升级
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/task/interfaces/http/task-http-schema.ts
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 键集游标、FTS5和standalone均为既有技术说明，不新增或重定义业务术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/changes/scale-task-query-to-million-records/design.md
+unresolvedItems: []

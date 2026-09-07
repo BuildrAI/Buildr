@@ -1,0 +1,52 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-task-review
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-task-review/brief.md
+    reason: 说明Agent-first Review目标、职责、迁移与验收
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-review/proposal.md
+      - openspec/changes/refactor-task-review/design.md
+  - type: overview
+    target: openspec/knowledge/overview.md
+    reason: Task workflow仍把Review写成Development步骤
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/overview.md
+      - openspec/knowledge/flows/openspec-change-lifecycle.md
+  - type: product-architecture
+    target: openspec/knowledge/architecture/product.md
+    reason: 更新Review subject、Agent与Application职责
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/architecture/product.md
+  - type: technical-architecture
+    target: openspec/knowledge/architecture/technical.md
+    reason: 更新v2 CAS、SQLite与模块依赖
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/architecture/technical.md
+      - docs/architecture/service-architecture.md
+  - type: service
+    target: openspec/knowledge/services/buildr.md
+    reason: 更新Review接口、迁移和Development解耦
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr.md
+      - docs/buildr-product.md
+  - type: service
+    target: openspec/knowledge/services/buildr-web.md
+    reason: 更新Review展示与Agent action
+    status: updated
+    sourceIdentities:
+      - openspec/knowledge/services/buildr-web.md
+  - type: glossary
+    target: openspec/knowledge/glossary.md
+    reason: subject identity沿用对象身份术语，不新增正式术语
+    status: not-applicable
+    sourceIdentities:
+      - openspec/knowledge/glossary.md
+unresolvedItems: []

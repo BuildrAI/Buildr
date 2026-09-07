@@ -2,6 +2,21 @@ name: Verify Buildr
 
 on:
   workflow_dispatch:
+    inputs:
+      purpose:
+        description: Candidate execution purpose
+        required: true
+        default: candidate
+        type: choice
+        options: [candidate, release-rehearsal]
+      expected_source_tree:
+        description: Exact source tree required for release rehearsal
+        required: false
+        type: string
+      rehearsal_identity:
+        description: Closed release rehearsal identity
+        required: false
+        type: string
   pull_request:
     branches: [dev, main]
 
@@ -14,6 +29,9 @@ concurrency:
 
 env:
   CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
+  BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
+  BUILDR_RELEASE_REHEARSAL_IDENTITY: ${{ inputs.rehearsal_identity || '' }}
 
 jobs:
   dev-feedback-macos:
@@ -48,7 +66,7 @@ jobs:
           BUILDR_VERIFICATION_BASE: ${{ steps.base.outputs.sha }}
         shell: bash
         run: |
-          node test/verification/browser-selector-dispatcher.mjs --output "${RUNNER_TEMP}/development-browser-plan.json"
+          node test/verification/browser-selector-dispatcher.ts --output "${RUNNER_TEMP}/development-browser-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
       - name: Install product dependencies
         run: npm ci
@@ -111,7 +129,7 @@ jobs:
         id: windows-plan
         shell: bash
         run: |
-          node test/verification/changed.mjs --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
+          node test/verification/changed.ts --json --development-runner windows --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-windows-plan.json"
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.steps.length > 0) + "\n");' "${RUNNER_TEMP}/development-windows-plan.json"
       - name: Install product dependencies
         if: steps.windows-plan.outputs.selected == 'true'
@@ -154,7 +172,8 @@ jobs:
           node-version: 24.15.0
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+      - name: Prepare Candidate artifact environment
+        run: node tools/verification/candidate-environment.ts prepare --profile artifact
       - name: Run cheap Candidate preflight
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -205,11 +224,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - core-task-lifecycle-macos
-          - core-project-task-macos
-          - core-package-runtime-release-macos
-          - core-cli-contract-macos
+        include:
+          - shard: core-task-lifecycle-macos
+            preparation: base
+          - shard: core-project-task-macos
+            preparation: source-runtime
+          - shard: core-package-runtime-release-macos
+            preparation: source-runtime
+          - shard: core-cli-contract-macos
+            preparation: base
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -222,8 +245,11 @@ jobs:
         with:
           node-version: 24.15.0
           cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+          cache-dependency-path: |
+            projects/product/services/buildr/package-lock.json
+            projects/product/services/buildr-web/package-lock.json
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -265,8 +291,11 @@ jobs:
         with:
           node-version: 24.15.0
           cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+          cache-dependency-path: |
+            projects/product/services/buildr/package-lock.json
+            projects/product/services/buildr-web/package-lock.json
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -300,7 +329,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-finish-windows, task-development-windows, fresh-build-windows]
+        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-concurrent-windows]
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -316,11 +345,8 @@ jobs:
           cache-dependency-path: |
             projects/product/services/buildr/package-lock.json
             projects/product/services/buildr-web/package-lock.json
-      - run: npm ci
-      - name: Prepare Buildr Web dependencies for offline fresh build
-        if: matrix.shard == 'fresh-build-windows'
-        working-directory: projects/product/services/buildr-web
-        run: npm ci --ignore-scripts
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Run Windows Candidate shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -375,7 +401,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+      - name: Prepare Candidate Host Node environment
+        run: node tools/verification/candidate-environment.ts prepare --profile host
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -437,7 +464,7 @@ jobs:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
           BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-ci-aggregate.json
-        run: node test/verification/candidate-ci.mjs aggregate
+        run: node test/verification/candidate-ci.ts aggregate
       - name: Upload aggregate result
         if: always()
         uses: actions/upload-artifact@v7

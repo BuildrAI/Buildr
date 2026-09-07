@@ -1,0 +1,3 @@
+# 设计
+
+保留描述当前行为或退役边界的Requirement，删除仍把退役能力当作可调用事实的Requirement。发布与Product Candidate继续由release/verification规范拥有；Parent Coordination v4继续由当前专业HTTP与Buildr Web规范拥有。

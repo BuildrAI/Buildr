@@ -1,0 +1,7 @@
+# Design
+
+Release只组合已有专业事实。Git Worktree provider证明任务checkout归属和版本；Release Preparation在matching release Worktree的Buildr Service root运行冻结source声明的`npm ci`；exact Node由Product `.node-version`与当前runner共同证明。Release context分别保存三者identity，不再用一个Environment identity概括。无副作用readiness只读取已形成的Preparation binding，不在检查阶段安装依赖。
+
+Retained controller不是Environment字段。Closeout从canonical Workspace、retained Product source、当前Product identity与exact Node即时解析CLI invocation，并拒绝`.worktrees`、路径漂移和非retained source。完成Task后，调用Worktree provider的精确cleanup输入；失败只留下release closeout attention，Publication、Task结果和Git convergence事实保持不变。
+
+旧release context、Environment binding和Task environment correlation不双读；当前未发布release必须重新形成新context。历史发布证据作为旧schema归档，不进入current readiness。

@@ -6,13 +6,19 @@
 ## Requirements
 
 ### Requirement: Product 顶层目录必须按生命周期分离
-Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、正式 Web 构建产物、测试验证、checkout-only 工具和文档。`package/` MAY 仅保留具备明确后续 owner、理由和退出条件的 deferred 子树。
+Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、测试验证、checkout-only工具和文档。`web-dist/`与`package/targets/test-context/` MAY仅作为精确ignore、可删除并可重建的本地构建输出存在；`package/` MAY仅保留具备明确后续owner、理由和退出条件的deferred源码子树。Buildr/Buildr Web `src/**/generated/*-dto.ts` MUST由Schema在构建前生成且MUST NOT进入tracked tree。
 
 #### Scenario: 检查完成迁移的 Product checkout
-- **WHEN** 架构 verifier 扫描 Product Service 顶层和 tracked files
-- **THEN** `bin/`、`src/`、`resources/`、`web-dist/`、`test/`、`tools/` 和 `docs/` MUST 各自只包含其声明生命周期内的内容
-- **AND** `package/` MUST 只包含明确 deferred allowlist 内的文件
-- **AND** tracked source、test、package metadata、docs 和 active OpenSpec artifacts MUST NOT 引用已迁移的旧路径
+- **WHEN** architecture verifier扫描Product Service顶层和tracked files
+- **THEN** `bin/`、`src/`、`resources/`、`test/`、`tools/`和`docs/` MUST各自只包含其声明生命周期内的tracked内容
+- **AND** `web-dist/`、`package/targets/test-context/`和已登记DTO generated目录 MUST没有tracked文件并由精确ignore覆盖
+- **AND** `package/`中的其他tracked文件 MUST只属于明确deferred allowlist
+- **AND** tracked source、test、package metadata、docs和active OpenSpec artifacts MUST NOT把本地生成目录描述为源码authority
+
+#### Scenario: 本地构建物化忽略输出
+- **WHEN** 维护者从干净checkout运行声明的开发构建入口
+- **THEN** builder MAY在上述ignored路径物化生成物供本地消费
+- **AND** Git tracked/index状态 MUST不因构建输出改变
 
 ### Requirement: Product 源码必须按职责和依赖方向分层
 Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，并在模块内部使用 `domain/`、`application/`、`persistence/` 和 `interfaces/` 表达技术职责；跨模块平台能力与尚未迁移的能力 MAY 在渐进迁移期间继续位于明确的全局技术层。模块的每个技术层 MUST 默认扁平，并 MUST 由文件名表达具体能力；只有某项能力包含多个需要独立维护的私有协作者、构成真实子模块或存在明确实现分类时，才允许建立末级能力目录。Buildr MUST 保持接口调用应用用例、应用组合领域与持久化能力、纯领域模型不依赖 adapters 的显式边界，并 MUST NOT 为目录对称创建空层、单文件能力目录、重复实现或旧路径兼容 facade。
@@ -36,7 +42,7 @@ Buildr `src/` MUST 优先按真实业务或产品模块组织已迁移能力，�
 
 #### Scenario: Task Record 作为首个纵向切片完成迁移
 - **WHEN** 架构 verifier 检查 Task Record 的 Domain、Application、Persistence、CLI/HTTP Adapter 和模块注册入口
-- **THEN** 这些实现 MUST 仅存在于 `src/task/` 的对应扁平技术层，并由 `src/task/module.mjs` 提供单一运行时注册入口
+- **THEN** 这些实现 MUST 仅存在于 `src/task/` 的对应扁平技术层，并由 `src/task/module.ts` 提供单一运行时注册入口
 - **AND** `src/task/domain/record/`、`src/task/application/record/` 与 `src/task/persistence/record/` MUST 不存在
 - **AND** 旧全局技术层 MUST NOT 保留 Task Record 实现、re-export 或兼容 facade
 - **AND** Task Record 公开 CLI/HTTP/JSON、SQLite schema、事务、错误映射和唯一 writer MUST 保持不变
@@ -93,16 +99,16 @@ Service 产品能力 MUST 将纯 Domain、Application、filesystem/Git Infrastru
 - **AND** MUST NOT 新增直接解析 `services/manifest.yml` 的实现
 
 ### Requirement: Product Project 治理根与可执行 Service 根必须分离
-Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST将npm package、CLI、运行源码、测试、维护脚本和交付源资产放入已登记Buildr Service root。Product Project root MUST不以`task-environment.yml`或其他技术栈准备清单成为Environment Plan authority，并 MUST不包含`package.json`、`package-lock.json`、`node_modules`或编译器入口。
+Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST将npm package、CLI、运行源码、测试、维护脚本和交付源资产放入已登记Buildr Service root。Product Project root MAY包含Agent可读的`preparation.yml`，但 MUST不包含`task-environment.yml`、`package.json`、`package-lock.json`、`node_modules`或编译器入口。
 
 #### Scenario: 检查 Product Project root
 - **WHEN** Agent、CI或release检查`projects/product/`
 - **THEN** root MAY包含OpenSpec、docs、knowledge、Project/Service治理声明和薄`buildr`入口
-- **AND** MUST不包含Project级Task Environment技术栈计划、npm metadata、node_modules、可执行产品源码或第二份Buildr实现
+- **AND** MUST不包含Task级环境计划、npm metadata、node_modules、可执行产品源码或第二份Buildr实现
 
-#### Scenario: Task Environment声明被误作Package root
+#### Scenario: 旧Task Environment声明被误作Package root
 - **WHEN** layout verifier发现`projects/product/task-environment.yml`
-- **THEN** verifier MUST失败并说明Environment Plan由Agent按Task登记
+- **THEN** verifier MUST失败并说明该旧声明已删除，Project准备入口只允许使用`preparation.yml`
 - **AND** MUST不把该文件继续识别为package或Project治理authority
 
 #### Scenario: 检测已废弃 package root 的遗留依赖
@@ -125,7 +131,7 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 
 #### Scenario: 从 npm executable 启动普通 CLI
 - **WHEN** 用户通过开发 checkout、npm tarball 或 Application Payload 执行 `buildr` 命令
-- **THEN** `bin/buildr.mjs` MUST 只委托 `src/bootstrap/cli/main.mjs` 并保留最外层失败兜底
+- **THEN** `bin/buildr.mjs` MUST 只委托 `src/bootstrap/cli/main.ts` 并保留最外层失败兜底
 - **AND** Bootstrap MUST 创建同一组模块与公共 CLI Host后分发命令
 - **AND** 普通命令的帮助、输出、错误码、退出码和完成后退出行为 MUST 保持等价
 
@@ -135,11 +141,11 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND** Bootstrap MUST NOT 创建第二个 CLI Host或改变现有 HTTP Server、端口、Session、安全和实例生命周期语义
 
 ### Requirement: 模块必须通过显式窄合约参与组装
-每个已迁移业务模块 MUST 通过根部 `module.mjs` 提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
+每个业务模块 MUST 通过根部唯一 `module.ts` 人工源码提供稳定 closed descriptor，显式声明有名称的 `requires`、`provides`、CLI/HTTP/diagnostic contributions和可选 lifecycle。Bootstrap MUST 显式选择依赖并装配模块，模块 MUST NOT 通过扫描、导入副作用或任意全局 Runtime lookup取得能力。
 
 #### Scenario: Bootstrap 创建 Task Record 模块
 - **WHEN** Bootstrap 装配 Task Record
-- **THEN** `src/task/module.mjs` MUST 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer和适用的 Parent Coordination Reader等已声明依赖
+- **THEN** `src/task/module.ts` MUST 只接收 Structured Workspace Store、Project/Service Reader、Change Resolver、operation memoizer和适用的 Parent Coordination Reader等已声明依赖
 - **AND** 模块 MUST 提供唯一 Task Record Application API、当前兼容所需的窄 Persistence Read Port及自身 CLI/HTTP contributions
 - **AND** Bootstrap、CLI Host与HTTP Host MUST NOT 直接导入 Task Record内部 Application或Persistence实现
 
@@ -168,27 +174,13 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 - **AND** Task HTTP Adapter MUST调用同一Task Record Application API
 - **AND**公开HTTP path、method、DTO、授权、响应与错误映射 MUST保持等价
 
-### Requirement: 迁移期兼容 Runtime 必须有界且可退出
-尚未迁移能力 MAY 暂时使用由Bootstrap唯一拥有的兼容 Runtime Facade，但该Facade MUST只投射同一真实实现、记录owner、适用调用者与退出条件，并 MUST NOT形成第二实现、第二writer、双读或双写。新的模块化实现 MUST NOT新增对宽Runtime的业务依赖。
-
-#### Scenario: 旧Task能力读取Task Record
-- **WHEN** 尚未迁移的Task Development、Review、Verification、Retrospective、Finish或Environment能力读取Task Record
-- **THEN** 兼容Facade MAY投射Task Record Application API或已确认的窄Persistence Read Port
-- **AND** 调用 MUST仍落到同一Task Record Repository、SQLite连接、事务和writer authority
-- **AND** 架构验证 MUST拒绝基线清单之外新增的宽Runtime消费者
-
-#### Scenario: 后续能力完成模块迁移
-- **WHEN** 对应Parent Contribution已交付并为原调用者提供模块公开Application或Read Port
-- **THEN** 该调用者 MUST退出兼容Facade
-- **AND** 最终 `legacy-exit-and-conformance`验收 MUST删除无剩余owner或无退出条件的Facade
-
 ### Requirement: 第二轮收敛后顶层生产职责必须全部有 owner
-Buildr Service MUST将公共 contract 技术机制、release version、internal workflow route 与 Web HTTP 职责归入明确模块 owner；Bootstrap MUST只负责模块注册、依赖注入、进程入口与生命周期组合。没有独立 owner 的顶层 `src/application`、`src/domain`、`src/interfaces` 生产残留 MUST被删除。
+Buildr Service MUST将公共 contract 技术机制、release version 与 Web HTTP 职责归入明确模块 owner；Bootstrap MUST只负责模块注册、依赖注入、进程入口与生命周期组合。没有独立 owner 的顶层 `src/application`、`src/domain`、`src/interfaces` 生产残留 MUST被删除，已退役的Task internal workflow route MUST NOT保留运行入口或兼容转发。
 
 #### Scenario: Bootstrap 进入 Task internal workflow
-- **WHEN** Bootstrap 处理内部 Task workflow route
-- **THEN** Bootstrap MUST通过 Task module 的公开组装入口调用
-- **AND** MUST NOT直接导入 Task internal runner 或维护独立 route mapping
+- **WHEN** 调用方请求已退役的内部 Task workflow route
+- **THEN** Bootstrap MUST返回入口不存在且保持零副作用
+- **AND** MUST NOT直接导入旧Task internal runner、维护兼容route mapping或转发到其他Task能力
 
 #### Scenario: 扫描最终生产源码布局
 - **WHEN** architecture verifier 枚举 `src` 下生产文件
@@ -199,3 +191,84 @@ Buildr Service MUST将公共 contract 技术机制、release version、internal 
 - **WHEN** 最终收敛验证检查 Task Execution 与 Verification 路径
 - **THEN** 生产实现 MUST继续位于已交付的 Task 与 Verification owner
 - **AND** 本 Change MUST NOT恢复旧顶层实现或第二 writer
+
+### Requirement: 退役任务模块不得保留人工源码或兼容转发
+Task Overview、Task Development、Task Planning Identity、Task Environment、Task Execution Record、legacy Task Finish 与 Terminal Delivery 的 Domain、Application、Persistence、Interface、fixture、helper 和专属测试 MUST直接删除。`src/task` 中保留的 Task Record、Task Review、Task Verification 与父任务协调（Task Parent Coordination）Domain、Application、Repository、CLI、HTTP 和 module ports MUST使用 TypeScript 单一人工源码并通过 strict typecheck；共享生产组合与验证基础也 MUST 使用 TypeScript 单一人工源码。
+
+#### Scenario: 扫描生产与测试源码
+- **WHEN** source layout verification 扫描受影响路径
+- **THEN** 退役模块 MUST没有 `.mjs|.js|.ts` 实现或 compatibility wrapper
+- **AND** `src/task` 保留 TypeScript 源码 MUST没有 `@ts-nocheck`，公共输入 MUST从 `unknown` 收窄且公共边界不得使用无约束 `any`
+
+#### Scenario: 构建Application Payload
+- **WHEN** current TypeScript source 生成 CLI/runtime payload
+- **THEN** 生成 JavaScript 与声明 MUST只作为构建产物
+- **AND** MUST不形成第二人工源码或运行时 TypeScript 依赖
+
+### Requirement: 迁移期兼容 Runtime 必须只覆盖仍存在的能力
+迁移期compatibility port MUST具有明确owner、scope与退出条件，并 MUST不为已退役Task Development、Planning Identity、Environment、Retrospective Application、legacy Finish或Terminal Delivery保留转发、双读或双写。
+
+#### Scenario: 保留能力仍通过兼容port读取Task Record
+- **WHEN** Review或Verification仍通过compatibility port读取Task Record
+- **THEN** port MAY转发到唯一Task Record owner
+- **AND** MUST不恢复Environment、Retrospective Application或其他已退役模块
+
+### Requirement: Task Record 分层实现必须保持明确文件职责
+Task Record MUST在`src/task`的扁平技术层中维护普通Domain数据类、Application DTO与用例、四个单表Repository、HTTP/CLI Interface和唯一模块注册。Infrastructure MUST提供唯一普通SQLite TransactionManager；Application MUST拥有业务规则、完整DTO组装和事务范围并直接组合四个Repository；CLI/HTTP MUST只调用Application。Domain MUST不包含协议解析或业务流程，Repository MUST不调用其他Repository或管理transaction，HTTP MUST不为同形Application DTO保留复制mapping。
+
+#### Scenario: 扫描 Task Record 后端源码
+- **WHEN** 架构 verifier 扫描 `src/task` 的 Task Record import graph 与文件清单
+- **THEN** Domain MUST不依赖Application、Persistence、Interfaces或Infrastructure
+- **AND** `task.ts`、`task-project.ts`、`task-service.ts`与`task-change.ts` MUST是全部Task Record Domain文件
+- **AND** `task-result.ts`、`task-retrospective.ts`、旧`task-record.ts`、旧`task-record-repository.ts`与`task-record-http-mapping.ts` MUST不存在
+- **AND** Interfaces MUST只通过Application API读取或修改Task Record
+
+#### Scenario: Bootstrap 注册 Task Record
+- **WHEN** `src/task/module.ts` 组装 Task Record
+- **THEN** 它 MUST注入同一TransactionManager、四个独立Repository、Project/Service reader、Change resolver与其他明确协作者
+- **AND** 对其他模块公开的Task Record Application与窄兼容读取能力 MUST保持当前调用行为
+
+#### Scenario: 普通业务模块使用 SQLite 事务
+- **WHEN** Task Record、Task Review或Task Verification执行普通SQLite mutation
+- **THEN** 对应Application MUST决定transaction范围并使用Infrastructure TransactionManager
+- **AND** 业务Persistence文件 MUST不再重复实现`BEGIN IMMEDIATE|COMMIT|ROLLBACK`
+
+### Requirement: Workspace 后端分层必须通过私有组合显式装配
+Workspace 模块 MUST 在现有扁平技术层中维护纯 Domain、职责明确的 Repository 与 Application、CLI/HTTP Interface、Workspace Management Fence 与唯一 `module.ts` 组合入口。Workspace、Project、Service MUST分别保持独立领域和Application。`module.ts` MUST 只选择已声明依赖、建立模块私有组合、提供稳定 capability 并组合 Interface contributions；MUST NOT 保存业务实现，或通过进程级共享 runtime method catalog 充当第二 Application。
+
+#### Scenario: 组装 Workspace 后端
+- **WHEN** `src/workspace/module.ts` 创建 Workspace capability
+- **THEN** 它 MUST 以明确依赖和Runtime type组合 Manifest/Registry Repository、Workspace/Project/Service Application 与 Fence
+- **AND** 所属 Interface MUST 消费明确 Application API并贡献 CLI、HTTP或diagnostic descriptor
+- **AND** 公开 capability identity、CLI、HTTP、JSON、YAML、错误、事务与 writer authority MUST保持兼容
+
+#### Scenario: 按职责拆分源文件
+- **WHEN** Workspace Application 文件同时包含独立变化的读取、写入、Prompt生成或diagnostic职责
+- **THEN** 实现 MUST 同时依据层边界、文件变化原因和实际体量决定拆分或合并
+- **AND** 当前职责和体量均超界的Workspace Application MUST拆分Query/Command
+- **AND** Project、Service、Fence或Daily Progress文件在领域独立、职责单一且体量可维护时 MUST NOT仅为目录对称继续拆分
+
+#### Scenario: 过渡 CLI 边界
+- **WHEN** 本切片尚未迁移 Project/Service 创建 CLI 的大文件
+- **THEN** 旧 Adapter MUST 只作为已登记后续子任务的显式过渡边界继续接入
+- **AND** 新 Application、Repository 或其他消费者 MUST NOT新增对该共享 runtime 注册面的依赖
+
+### Requirement: Workspace CLI必须按独立领域调用Application
+Workspace、Project与Service CLI Adapter MUST分别位于`src/workspace/interfaces/cli/`并只负责所属命令的参数解析、Application调用、CLI输出和语法错误。Interface MUST NOT直接解析或写入Workspace/Project/Service Manifest、执行Git clone/copy身份决策、决定Workspace mutation范围或复制Application业务校验。
+
+#### Scenario: Project创建命令
+- **WHEN**用户执行`buildr project create`
+- **THEN**Project CLI Adapter MUST把参数映射为Project Command Application输入
+- **AND**Project Application MUST通过Project Repository与现有Git/filesystem Infrastructure完成创建或附接
+- **AND**CLI MUST不直接导入YAML、Project Domain writer或Manifest Repository实现
+
+#### Scenario: Service创建命令
+- **WHEN**用户执行`buildr service create`
+- **THEN**Service CLI Adapter MUST把参数映射为Service Command Application输入
+- **AND**Service Application MUST通过Service Repository与现有Git/filesystem Infrastructure完成创建、附接或复制
+- **AND**公开命令、参数、输出、错误、Git副作用和next action MUST保持兼容
+
+#### Scenario: 根据创建副作用边界拆分
+- **WHEN**Project或Service创建用例具有独立Git/filesystem/staging/Manifest mutation与失败清理生命周期
+- **THEN**对应领域 MUST由所属Application统一拥有创建职责；是否独立文件取决于重要隔离价值或实际体量，不得仅因存在独立逻辑单元就拆文件
+- **AND**原Application在职责和体量仍可维护时 MUST不为Query/Command目录对称继续拆分

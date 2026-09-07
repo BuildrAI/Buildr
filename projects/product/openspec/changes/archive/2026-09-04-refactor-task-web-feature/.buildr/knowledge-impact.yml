@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-task-web-feature
+operation: reconcile
+treeIdentity: working-tree@784447dd195df8c9cd7fe20eb7a7e0ddd51e88ce
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-task-web-feature/brief.md
+    reason: 说明Task前端feature命名与Hook职责调整
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-web-feature/proposal.md
+      - openspec/changes/refactor-task-web-feature/design.md
+  - type: service
+    target: knowledge/services/buildr-web.md
+    reason: 当前说明仍引用features/task-record和useTaskMutations
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-web-feature/specs/buildr-web-client/spec.md
+  - type: flow
+    target: knowledge/flows/task-parent-coordination.md
+    reason: 当前实现路径随feature目录移动
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-web-feature/specs/buildr-web-client/spec.md
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: Task与Task Record既有定义不变
+    status: aligned
+    sourceIdentities:
+      - knowledge/glossary.md
+unresolvedItems: []

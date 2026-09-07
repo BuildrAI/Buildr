@@ -7,7 +7,7 @@
 ## Requirements
 
 ### Requirement: Web HTTP 公共宿主必须归属 Web 模块
-Buildr MUST 将 Node.js HTTP Server、Router dispatch、Session、Origin 与 request 安全边界、bounded read worker 以及 `web-dist` 静态托管实现放在 `src/web/http/`，并由 `web/module.mjs` 通过窄入口接入 Bootstrap。公共 HTTP 宿主 MUST 只处理通用协议与托管职责，业务请求 MUST 分发给所属模块提供的 HTTP contribution，不得在宿主内重新实现业务 Repository、Mapper、状态规则或 writer。
+Buildr MUST 将 Node.js HTTP Server、Router dispatch、Session、Origin 与 request 安全边界、bounded read worker 以及 `web-dist` 静态托管实现放在 `src/web/http/`，并由 `web/module.ts` 通过窄入口接入 Bootstrap。公共 HTTP 宿主 MUST 只处理通用协议与托管职责，业务请求 MUST 分发给所属模块提供的 HTTP contribution，不得在宿主内重新实现业务 Repository、Mapper、状态规则或 writer。
 
 #### Scenario: 启动默认或 Preview Web 实例
 - **WHEN** Web 实例生命周期 Application 请求启动 Buildr Web Server
@@ -18,7 +18,7 @@ Buildr MUST 将 Node.js HTTP Server、Router dispatch、Session、Origin 与 req
 - **THEN** Host MUST 调用该模块注册的 HTTP contribution，并且 MUST NOT直接读写该模块的业务存储
 
 ### Requirement: System Doctor 必须聚合只读诊断能力
-Buildr MUST 将 Doctor 的用例、结果模型和诊断适配放在 `src/system/doctor/`，并通过 `system/doctor/module.mjs` 注册 Doctor CLI/Application 能力。Doctor MUST 优先消费所属模块公开的 Diagnostic contribution 或 Read Model；只有连接、schema、migration、checksum、文件、进程和安装等物理健康检查可以直接消费相应技术适配。Doctor MUST保持只读，不得取得任何业务 writer authority。
+Buildr MUST 将 Doctor 的用例、结果模型和诊断适配放在 `src/system/doctor/`，并通过 `system/doctor/module.ts` 注册 Doctor CLI/Application 能力。Doctor MUST 优先消费所属模块公开的 Diagnostic contribution 或 Read Model；只有连接、schema、migration、checksum、文件、进程和安装等物理健康检查可以直接消费相应技术适配。Doctor MUST保持只读，不得取得任何业务 writer authority。
 
 #### Scenario: 执行全 Workspace Doctor
 - **WHEN** 用户执行既有 `buildr doctor` 命令

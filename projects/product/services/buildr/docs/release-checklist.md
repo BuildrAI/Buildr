@@ -20,7 +20,7 @@
 - `rules render`、`runtime check` 和 `skills render` 支持当前 adapter 主路径。
 - Supported runtime adapter 由静态 registry 和声明式 RuntimePlan contract 管理；Component 必须验证自身完整性但不能扩展 adapter。
 - `package check` 和 `package build` 校验、构建 Buildr 产品随包资产。
-- `npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备默认复用changed/affected结果，current `release-<version>` HEAD/tree由GitHub分布式Candidate形成正式门禁。
+- `tools/development/run-development-npm run test:focus -- package-<static|workspace|commands|rules|skills|runtime>` 用于维护期间定点重跑 package verifier；正式任务交付由 `product.delivery` 选择 affected/full，Release 准备默认复用changed/affected结果，current `release-<version>` HEAD/tree由GitHub分布式Candidate形成正式门禁。
 - Buildr mutation 具备严格 identity、scope/ownership 路径保护、atomic writer、workspace transaction、失败回滚和 doctor recovery；package output 使用 receipt/integrity 安全替换。
 - bootstrap guide 在 Skill 不可用时提供纯文本兜底入口。
 
@@ -74,27 +74,27 @@ npm run test:component
 npm run test:contract
 npm run test:integration
 npm run test:system
-npm run test:focus -- integration-candidate-release
+tools/development/run-development-npm run test:focus -- integration-candidate-release
 npm run coverage:unit -- --summary /tmp/buildr-unit-coverage.json
 ```
 
 已知改动路径时优先让统一 planner 自动选择受影响 DAG。无路径时读取当前分支相对 upstream（fallback `origin/dev`）以及 staged、unstaged、untracked 改动；`--plan` 只解释计划，`--json` 输出机器可读计划。完整 Unit 因低成本可覆盖全部 `src/**`；重型 Integration/System step 的 inputs 只登记直接实现、入口、测试和资产 owner，不以“最终可由 CLI 到达”为由扩大选择。普通文档改词通常只运行 docs quality；未映射路径直接失败，要求补 owner，不能静默跳过。registry、planner、runner、声明或 timing 等全局 owner 变化时，同一个 Changed plan 扩展为完整回归。拥有Git base时，仅package与lockfile三个明确version字段变化按affected选择；依赖、scripts、engines、其他lockfile结构、解析失败以及没有base的显式paths仍保持full：
 
 ```bash
-npm run test:changed -- --plan
-npm run test:changed -- --base origin/dev
-npm run test:changed -- docs/buildr-product.md
+tools/development/run-development-npm run test:changed -- --plan
+tools/development/run-development-npm run test:changed -- --base origin/dev
+tools/development/run-development-npm run test:changed -- docs/buildr-product.md
 npm run --silent test:changed -- --json docs/buildr-product.md
 ```
 
 需要定位失败或人工重跑领域时使用统一 focus 入口。它按 verifier identity 去重 step/group，只展开真实 artifact 依赖，不自动重复 Fast，也不能替代冻结目标的正式 delivery plan：
 
 ```bash
-npm run test:focus -- --list
-npm run test:focus -- group:cli
-npm run test:focus -- group:runtime
-npm run test:focus -- package-skills
-npm run test:focus -- --plan group:openspec
+tools/development/run-development-npm run test:focus -- --list
+tools/development/run-development-npm run test:focus -- group:cli
+tools/development/run-development-npm run test:focus -- group:runtime
+tools/development/run-development-npm run test:focus -- package-skills
+tools/development/run-development-npm run test:focus -- --plan group:openspec
 npm run --silent test:focus -- --json release-tarball-smoke
 ```
 
@@ -102,22 +102,22 @@ npm run --silent test:focus -- --json release-tarball-smoke
 
 Candidate CI在单个bootstrap job中复用checkout、依赖与Workspace Node，先形成独立preflight evidence，再构建一次绑定精确source SHA的tarball。macOS core按Task lifecycle、Project/Task state、package/runtime/release、CLI/contract四个互斥语义shard运行；Windows runtime/Launcher、Workspace lifecycle、Task workflow、fresh build及四个Host Node tuple并行消费同一registry计划。每个capability都有明显早于job timeout的独立墙钟上限；runner即时输出completion与diagnostic digest，每15秒输出active/elapsed/PID/PGID心跳，超时按owned process group与observed descendants执行TERM→KILL。每个completion原子更新non-aggregate checkpoint，稳定`Candidate gate`仍只接受全部terminal shard的closed evidence，并在macOS checkout上无需`npm ci`聚合source SHA、registry identity、artifact digest和coverage。Host Node和独立Workspace Node identity不得互相替代。
 
-资源受限CI的单个shard仍使用有界并发。产品owned进程、Launcher、Task Environment或Workspace cleanup失败继续阻塞；全部断言和owned cleanup完成后，最外层Windows临时根遇到`EPERM`、`EBUSY`或`ENOTEMPTY`才只warning并保留路径。release smoke与fresh build evidence保存内部阶段耗时，便于定位安装、启动、漂移修复、卸载/Doctor或harness cleanup。
+资源受限CI的单个shard仍使用有界并发。产品owned进程、Launcher、Worktree或Workspace cleanup失败只阻塞对应owner完成；全部断言和owned cleanup完成后，最外层Windows临时根遇到`EPERM`、`EBUSY`或`ENOTEMPTY`才只warning并保留路径。release smoke保存内部阶段耗时，便于定位安装、启动、漂移修复、卸载/Doctor或harness cleanup。
 
 开发期间需要复现跨组件 workspace 生命周期问题时，通过同一个 focus 入口定点运行独立 Workspace E2E suites：
 
 ```bash
-npm run test:focus -- workspace-lifecycle
-npm run test:focus -- ownership-recovery runtime-reconciliation
+tools/development/run-development-npm run test:focus -- workspace-lifecycle
+tools/development/run-development-npm run test:focus -- ownership-recovery runtime-reconciliation
 ```
 
 正式任务在所有rebase、冲突解决和内容修改结束后，通过Task Verification对最终冻结Candidate执行唯一delivery-required `product.delivery`。`product.release-artifact-set`只在维护者明确要求独立release诊断时显式选择，不自动与普通delivery叠加。普通任务由changed planner运行affected；全局验证owner变化时同一plan运行full。本地完整入口保留给验证系统自身变化、明确全量要求、诊断或GitHub不可用；普通发布准备不再与GitHub重复执行。current `release-<version>` HEAD/tree以GitHub `Candidate gate`为正式完整源码Candidate，tag发布不重复源码Candidate，而是验证同一release contract下冻结的唯一npm tarball：
 
 ```bash
-npm run test:candidate
+tools/development/run-development-npm run test:candidate
 ```
 
-同一SHA的暂态失败使用`node tools/release/candidate-failed-shard-retry.mjs inspect --run-id <id> --source-commit <sha>`核验run、source与失败边界，维护者确认后以同参数执行`retry --confirm`，由唯一owner调用GitHub“重新运行失败作业”。每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate；新attempt终态必须回读`Candidate gate`以及aggregate中的run/attempt identity。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；Windows runtime、Workspace lifecycle、Task workflow与fresh build各自形成并行恢复边界，因此wall-clock由最长shard主导，而不是把它们串成一条长作业。
+同一SHA的暂态失败使用`node tools/release/candidate-failed-shard-retry.ts inspect --run-id <id> --source-commit <sha>`核验run、source与失败边界，维护者确认后以同参数执行`retry --confirm`，由唯一owner调用GitHub“重新运行失败作业”。每个shard以唯一逻辑artifact名和`overwrite`替换旧attempt evidence，只重跑失败shard及aggregate；新attempt终态必须回读`Candidate gate`以及aggregate中的run/attempt identity。代码修复产生新SHA后旧evidence必须失效并重新运行完整分布式门禁；Windows runtime、Workspace lifecycle、Task workflow与fresh build各自形成并行恢复边界，因此wall-clock由最长shard主导，而不是把它们串成一条长作业。
 
 Product delivery/full 验证会把每个阶段和总耗时写入 `BUILDR_TIMING_OUTPUT` 指定的 JSON 文件；未显式指定时，每次 Candidate/Changed run 都在系统临时目录创建唯一 evidence 目录，其中包含 `timing.json` 和 diagnostics，结束时直接打印绝对路径，不维护可被并发覆盖的固定 `latest` 文件。summary 的 `evidenceLifecycle` 将这类目录标记为 `transient`、`consumer-finished` 后可清理并提供精确 `cleanupReference`；它只在当前任务 consumer 使用期间保留，不是长期证据库。显式设置 `BUILDR_TIMING_OUTPUT` / `BUILDR_DIAGNOSTICS_OUTPUT` 时标记为 `caller-managed`，由调用方保证路径唯一并决定保留期，CI 总是上传这些证据。summary 还记录 run kind/id、来源仓库与 Product root、HEAD、branch、dirty、候选 fingerprint、每个 step 日志路径以及 Node、平台、架构和 CI 环境。Workspace E2E 直接运行失败时默认保留失败 fixture 并打印位置，成功时清理；需要主动保留成功 fixture 时可设置 `BUILDR_WORKSPACE_E2E_KEEP=1`。
 
@@ -125,9 +125,9 @@ Candidate 总耗时、Workspace E2E suites 和已识别的高耗时专项阶段�
 
 完成报告必须读取正式 delivery plan 的 timing summary；运行显式完整回归时也读取对应 Candidate summary。两者都要核对 status、run kind 和 source identity 与最终候选一致，并说明总耗时、预算状态、最慢阶段、失败阶段（成功时为 none）、retention 和 cleanup status。Focus summary 不得替代正式 delivery；不得把并行 step duration 相加推算整体 wall-clock。分析并行 full 性能时，使用 step 的 `queuedAt`、`startedAt`、`finishedAt` 和 `queueDurationMs` 区分调度等待与 executor 执行耗时；blocked step 读取 `blockedAt`，不得把 `durationMs: 0` 解释为已执行。
 
-Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与推送且没有后续 consumer 后，使用 `node test/verification/timing/cleanup-evidence.mjs <timing-summary.json>` 清理。该入口只接受位于系统临时目录、名称匹配当前 run kind、summary 归属一致且不是符号链接的精确 evidence 目录；caller-managed evidence 和边界不明路径会 fail closed。
+Buildr Product transient evidence 在 Task Finish 捕获摘要、完成集成与推送且没有后续 consumer 后，使用 `node test/verification/timing/cleanup-evidence.ts <timing-summary.json>` 清理。该入口只接受位于系统临时目录、名称匹配当前 run kind、summary 归属一致且不是符号链接的精确 evidence 目录；caller-managed evidence 和边界不明路径会 fail closed。
 
-调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
+调度性能回归可在同一冻结 tree 上交替运行默认 cost 模式与 `BUILDR_VERIFICATION_SCHEDULING=declaration tools/development/run-development-npm run test:candidate`；timing summary 的 `environment.schedulingMode` 标识实际模式。只按多轮总墙钟和关键 step queue/duration 中位数调整 `schedulingCostMs`，不得用 `dependsOn` 固定建议顺序。
 
 Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责矩阵](../../../docs/verification-ownership.md)为维护依据；发现重复时先确认主 owner，再迁移或删除断言。
 
@@ -137,18 +137,18 @@ Product 验证能力、旧 MVP 覆盖迁移与必要交叉以[验证覆盖职责
 
 1. 维护者明确或确认目标`<version>`、精确`<dev-baseline>`和有序选择commit；未指定baseline时，release owner先读取并展示current `dev`的精确commit/tree，取得确认后再创建唯一`release-<version>`。后续只接受明确选择且带`-x`provenance的dev commit。没有`sourceDevCommit`的release-only metadata必须有独立可验证的dev回流证据，当前owner不支持时拒绝。普通dev前进不改变release，冲突不自动解决；freeze同时保存不可变`freezes/<generation>`历史ref，frozen不能直接update。
 2. 唯一身份链为`dev baseline → selection chain → release HEAD/tree → Product Candidate generation → frozen tarball → generation carrier → main → post-publication dev provenance reconciliation → closeout → transaction evidence`。任一上游identity变化使旧Candidate、artifact、readiness和context stale。
-3. `release-<version>`协调Task覆盖selection、完整Candidate、唯一tarball、release→main、readiness、Publication、dev provenance reconciliation与必需closeout，在lifecycle `closed`前保持active/blocked；版本材料、CHANGELOG/README、测试修复或owner修复使用基于current dev的窄support Task完成Development/Verification/Finish并先交付dev，再把delivered commit以`cherry-pick -x`选择到既有release。不得直接修改release再倒灌dev。support terminal、Delivery、Activation、Candidate或readiness通过不使release协调Task completed。release Task Environment只由`service:product/buildr/buildr.npm-ci`在Buildr Service root准备依赖并冻结Plan/declaration/recipe/lockfile/exact Node identities；Task/Environment/Development/Finish/self-bootstrap各自提供current read model，不复制Result或建立旁路store。
-4. 所有selection/reopen/freeze/main reconciliation/local cleanup先从active release Task和ready Environment生成closed execution binding；只在matching `codex/release-<version>` Task worktree执行，正式`release-<version>`仅作为受控ref同步。retained primary worktree、其他Task worktree或陈旧branch/HEAD必须在首次Git写入前失败。
+3. `release-<version>`协调Task覆盖selection、Release Rehearsal、完整Candidate、唯一tarball、release→main、readiness、Publication、dev provenance reconciliation与必需closeout，在lifecycle `closed`前保持active/blocked；版本材料、CHANGELOG/README、测试修复或owner修复使用基于current dev的窄support Task完成并先交付dev。待选提交必须先从current frozen release构造prospective source，使用同一Candidate workflow在干净macOS、Windows与Host Node上演练到完整aggregate全绿；失败继续留在同一support Task，正式selection保持冻结。全绿后只允许一次显式`promote`把exact rehearsal commit/tree提升为新frozen generation，再运行一次final Candidate。不得直接修改release再倒灌dev。support terminal、Delivery、Rehearsal、Candidate或readiness通过不使release协调Task completed。Release Preparation在Buildr Service root使用冻结source、真实`npm ci`和Product exact Node形成独立binding。
+4. 所有selection/reopen/freeze/main reconciliation/local cleanup先从active release Task和matching Worktree evidence生成closed execution binding；只在matching `codex/release-<version>` Task worktree执行，正式`release-<version>`仅作为受控ref同步。retained primary worktree、其他Task worktree或陈旧branch/HEAD必须在首次Git写入前失败。
 5. selection freeze后、Candidate前固定current main。main不是release祖先时，只有main涉及的Product路径均由current dev/release provenance覆盖才创建显式双亲history commit；该commit的tree必须逐字节等于pre-reconciliation release tree。main独有内容必须先由正式Task交付dev，禁止工作树merge、人工解冲突或`ours`。新history commit形成final generation，pre-reconciliation Candidate/tarball即使tree相同也只作为stale历史。
-6. 只在final release HEAD/tree运行分布式Candidate owner集合：preflight、唯一tarball、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple。普通changed/affected反馈不是完整Candidate。随后为final generation创建carrier与唯一release→main受保护PR。Candidate后main前进会使Candidate、tarball、carrier和PR全部stale，必须形成下一generation并完整重跑Candidate。
-6. 准备阶段调用`release-orchestration-runner.mjs prepare-dispatch`；编排器复用transaction readiness owner收集selection、Candidate/artifact、Task correlation、Environment/exact Node、main/dev与workflow facts，返回frozen context digest、Release Phase Timeline identity、collect-all findings、hosted deferred checks与`effects: []`。全部current后进入`awaiting-publication-authorization`，release协调Task仍保持active，不dispatch、不请求`npm-production`审批、不模拟OIDC、不创建tag。
-7. 维护者对current frozen context明确授权后，调用`release-orchestration-runner.mjs dispatch`并提交expected context digest。编排器重验current readiness；digest漂移时旧授权失效且零远端写入，一致时才调用transaction owner。唯一workflow从matching Candidate run下载并验证`candidate-aggregate`与`candidate-package`，Host Node、Launcher和protected job消费同一tarball bytes；不得重建payload、`npm pack`或形成第二份候选物。可逆门禁通过后唯一protected job请求一次`npm-production`审批，并完成OIDC、pre-tag、tag ensure、npm、双dist-tag/integrity、GitHub Release与Registry安装readback。其他job不持有Environment/write权限。
+6. Release Rehearsal与final Candidate只使用同一分布式owner集合：preflight、唯一tarball、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple，并统一通过`candidate-environment.ts`选择`base|artifact|source-runtime|host`准备档位；job不得自行拼装依赖、DTO、Test Context或`web-dist`步骤。普通changed/affected反馈不是完整Candidate。只在promotion与main coverage后的final release HEAD/tree运行一次final Candidate，随后为final generation创建carrier与唯一release→main受保护PR。Candidate后main前进会使Candidate、tarball、carrier和PR全部stale，必须形成下一generation并完整重跑Candidate。
+6. 准备阶段调用`release-orchestration-runner.ts prepare-dispatch`；编排器复用transaction readiness owner收集selection、Candidate/artifact、Task correlation、Worktree、Release Preparation、exact Node、main/dev与workflow facts，返回frozen context digest、Release Phase Timeline identity、collect-all findings、hosted deferred checks与`effects: []`。全部current后进入`awaiting-publication-authorization`，release协调Task仍保持active，不dispatch、不请求`npm-production`审批、不模拟OIDC、不创建tag。
+7. 维护者对current frozen context明确授权后，调用`release-orchestration-runner.ts dispatch`并提交expected context digest。编排器重验current readiness；digest漂移时旧授权失效且零远端写入，一致时才调用transaction owner。唯一workflow从matching Candidate run下载并验证`candidate-aggregate`与`candidate-package`，Host Node、Launcher和protected job消费同一tarball bytes；不得重建payload、`npm pack`或形成第二份候选物。可逆门禁通过后唯一protected job请求一次`npm-production`审批，并完成OIDC、pre-tag、tag ensure、npm、双dist-tag/integrity、GitHub Release与Registry安装readback。其他job不持有publish权限。
 8. `release-evidence-*`绑定selection、release/support Tasks、Candidate、release/main/dev、publish run/attempt、逐步terminal状态、tag、npm/GitHub Release和Registry smoke；inspect校验同一context/run/attempt，并把失败恢复分类为`same-attempt`、`new-attempt`或`blocked-new-version`，不写Task Record、SQLite或旁路store。
-9. Publication成功后运行`release-orchestration-runner.mjs closeout`：按hosted evidence inspect → `reconcile-dev`只读来源核验 → Git closeout → lifecycle closed检查 → retained Task no-change completion → retained Environment cleanup → retained Doctor推进。每步继续由原owner判断成功；来源或identity不可证明时返回`published-but-dev-reconciliation-blocked`或对应owner blocker，保持Publication并返回已成立effects与唯一resume action，不写dev、删tag或unpublish。carrier/local selection cleanup仍需显式授权，正式remote release ref默认保留。
-10. 已发布版本不覆盖；RC问题发新prerelease，GA问题发patch。closeout部分成功后重新调用同一action，只恢复未完成owner；Task已terminal但Environment cleanup或Doctor失败时不重新Publication、Git cleanup或Task complete。每次输出`buildr.release-phase-timeline/v1` identity，按可证明时间区分`machine-execution`、`platform-queue`、`environment-approval`与`human-decision`；Candidate按`runId + runAttempt`记录evidence原attempt、rerun scope与aggregate，缺失边界不估算duration。
+9. Publication成功后运行`release-orchestration-runner.ts closeout`：按hosted evidence inspect → `reconcile-dev`只读来源核验 → Git closeout → lifecycle closed检查 → retained Task结果登记 → Task Worktree cleanup → retained Doctor推进。每步继续由原owner判断成功；来源或identity不可证明时返回`published-but-dev-reconciliation-blocked`或对应owner blocker，保持Publication并返回已成立effects与唯一resume action，不写dev、删tag或unpublish。carrier/local selection cleanup仍需显式授权，正式remote release ref默认保留。
+10. 已发布版本不覆盖；RC问题发新prerelease，GA问题发patch。closeout部分成功后重新调用同一action，只恢复未完成owner；Task已terminal但Worktree cleanup或Doctor失败时不重新Publication、Git cleanup或Task complete。每次输出`buildr.release-phase-timeline/v1` identity，按可证明时间区分`machine-execution`、`platform-queue`、`environment-approval`与`human-decision`；Candidate按`runId + runAttempt`记录evidence原attempt、rerun scope与aggregate，缺失边界不估算duration。
 
 `0.1.0-rc.1`、`0.1.0-rc.2`、`0.1.0-rc.3`、`0.1.0-rc.5`、`0.1.0-rc.6`、`0.1.0-rc.7`、`0.1.0-rc.8`、`0.1.0-rc.12`、`0.1.0-rc.14`、`0.1.0-rc.15`、`0.1.0-rc.18`、`0.1.0-rc.19`、`0.1.0-rc.20`、`0.1.0-rc.21`、`0.1.0-rc.22`和`0.1.0-rc.23`已完成npm发布和GitHub prerelease创建；`0.1.0-rc.4`因发布范围错误已弃用。`v0.1.0-rc.9`tag workflow因Host Node checkout验证依赖缺失而失败；`v0.1.0-rc.10`已补齐独立`npm ci`，但两个Host Node jobs未向verifier传入冻结`release-artifact.json`而确定性失败；`v0.1.0-rc.11`修复Host Node wiring后进入publish job，但frozen Application Payload仍把开发仓用户态`.buildr/workspace.yml`当作必需资源，因该源已被正确移除而在任何公共写入前fail closed。rc.12随后移除全部Workspace、Project与Service用户态配置发布源；`v0.1.0-rc.13`的publish job在安装依赖前加载release contract时因间接依赖`yaml`而失败，同样没有执行任何公共写入。rc.14、rc.15、rc.18、rc.19、rc.20、rc.21、rc.22和rc.23均已修复并发布；rc.15将正式发布收敛为单次transaction与一次`npm-production`审批。rc.16通过源码Candidate gate，但发布任务的closeout evidence在后续正式修复任务交付后不再匹配current `dev`，因此没有创建tag、npm version或GitHub Release；rc.17完成正式验证与自举激活后，因rc.16 squash merge的`main → dev`历史衔接缺失导致新PR冲突，同样没有创建任何公开版本。该历史已在保持`dev`内容不变的前提下修复。rc.20首次Candidate因retained cleanup测试入口递归使一个capability不退出；修复后完整Candidate与发布通过，执行器可观测性和发布关联缺口由后续正式Change治理，不把进程采样或runner暂态当作该根因。rc.22首次Candidate run `32729369444`在任何tag/npm/GitHub Release或正式release transaction前失败，修复通过support Task进入`dev`后按受控reopen/refreeze恢复；原协调Task的提前completed作为历史异常保留。当前仓库候选版本为`0.1.0-rc.24`，准备阶段尚未创建tag、npm version、GitHub Release或正式release transaction。
 
 实际自举workspace如需消费新版产品资产，可独立执行sync并在状态变更后运行当前Agent doctor。`buildr update`只按installation receipt更新当前npm package或development checkout；它不更新Workspace Node。上述能力验证不等于已完成tag、publish或GitHub Release mutation。
 
-使用`task-finish`自动收尾时，必须先由`task-development`完成OpenSpec/current knowledge/runtime内容fixed point，观察stable Content Target并形成verification policy；随后冻结Task Candidate，把明确Candidate identity/generation lease交给formal Task Verification，Completion Review也绑定同一Candidate。Verification target/declarations current且policy facts完整、Current Knowledge非blocked后，Development再记录proceed/必要风险接受并固化current handoff。Finish的`preflight`只聚合handoff/Environment/target/retained问题；`prepare`区分任务贡献（Task Contribution）与交付基线（Delivery Baseline），只在run-owned isolated carrier把原贡献机械应用到最新基线；`verify`只证明contribution/baseline/carrier与handoff等价且formal Verification执行次数为0。target前进时先证明carrier ancestry和全部changed-path after state；完整包含则跳过重复transition，否则凭精确产品token重建isolated carrier。两者都不增加Candidate generation、不重跑Verification/Completion Review；冲突、贡献漂移、不等价或无法证明时必须终止run并返回Development。不得在Finish中converge/archive、rebase原Task、修改贡献、生成Candidate、自动解决冲突或force push。
+完成release支持任务时，Agent直接读取OpenSpec、current knowledge、代码、Git、Review、Verification与具体资源owner当前事实，按目标完成交付和Task结果登记。任务收尾Skill不代跑验证、不收敛Change、不自动解决冲突，也不改变Product/Release Candidate模型。

@@ -34,3 +34,4 @@ CLAUDE.local.md
 # Retired Task asset review data remains untracked
 # Project daily progress machine-local state
 /.buildr/daily-progress/
+# Retired Task asset review path remains ignored until local cleanup

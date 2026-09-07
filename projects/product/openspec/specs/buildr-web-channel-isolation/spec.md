@@ -122,7 +122,7 @@ Buildr MUST让product installation registry、npm/development installation inven
 - **AND** MUST NOT因development registry为空而把npm installation标记为缺失
 
 #### Scenario: Preview回归
-- **WHEN** 两个Task Environment分别启动、列出和停止Buildr Web Preview
+- **WHEN** 两个matching Task Worktree分别启动、列出和停止Buildr Web Preview
 - **THEN** Preview MUST继续使用各自独立instance、lock、registry与resource ownership
 - **AND** MUST不读写released或development ordinary instance state
 

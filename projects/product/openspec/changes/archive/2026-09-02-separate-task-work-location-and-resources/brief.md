@@ -1,0 +1,9 @@
+# 工作位置与资源回归真实 owner
+
+普通任务不再为了编辑、OpenSpec、审查、验证或交付先取得统一任务环境（Task Environment）状态。智能体（Agent）核对当前Git与文件现场后，可以直接工作；需要隔离时才创建明确Worktree，并在返回的真实checkout中继续。
+
+Git Worktree provider只负责多仓checkout、本地分支、实时evidence和删除安全。Task Finish核验成果已经交付后，把逐仓source与delivered完整提交交给Worktree cleanup；provider保护归属、dirty、版本和retained ref，不判断业务完成。
+
+Buildr Web Preview由自身Application保存Task、Workspace、Worktree、Git和进程owner，独立启动、探测和停止，不再登记Environment resource。OpenSpec与Task-scoped Change使用当前Workspace或matching Worktree根；Review、Verification与交付继续读取真实对象。
+
+本Change先迁移消费者并保留Release现有连接。后续独立Change再解除Release依赖并删除Environment Application、Plan/Receipt、Preparation、Web页签和旧数据。

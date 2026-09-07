@@ -65,22 +65,22 @@ Buildr MUST 将 `openspec-contract-guard` 限定为 OpenSpec 1.6.0 未提供的�
 - **AND** version source consistency MUST 由 package 和 Component verification 负责验证
 
 ### Requirement: Buildr OpenSpec sidebars 只表达 Buildr 特有增量
-Buildr MUST 仅在上游 workflow 未覆盖且 Buildr consumer 需要该约束时保留 OpenSpec Skill Contribution，并通过 Component integrity 和组合测试验证固定组合。
+Buildr MUST仅在上游workflow未覆盖且Buildr consumer需要该约束时保留OpenSpec Skill Contribution，并通过Component integrity和组合测试验证固定组合。
 
 #### Scenario: 保留 Buildr 特有 sidebar
-- **WHEN** sidebar 约束 task-worktree 决策、Candidate evidence、proposal planning gate 或 Task Finish convergence gate
-- **THEN** Buildr MUST 保留并验证该 contribution
+- **WHEN** sidebar约束task-worktree决策、Candidate evidence、proposal planning gate或Task Finish convergence gate
+- **THEN** Buildr MUST保留并验证该contribution
 
 #### Scenario: 上游已提供相同路径保证
-- **WHEN** OpenSpec 1.6.0 workflow 已通过 status context 解析 change、artifact paths 和 `changeRoot`
-- **THEN** Buildr MUST 合并或删除只重复该保证的 explore、sync 或 archive sidebar 内容
-- **AND** Buildr MUST NOT 因删减重复文案而移除 task-triage 或 Task Finish 的安全门禁
+- **WHEN** OpenSpec 1.6.0 workflow已通过status context解析change、artifact paths和`changeRoot`
+- **THEN** Buildr MUST合并或删除只重复该保证的explore、sync或archive sidebar内容
+- **AND** Buildr MUST NOT因删减重复文案而移除task-triage或Task Finish的安全门禁
 
 #### Scenario: Sidebar 不建立独立 capability contract
-- **WHEN** sidebar 只作为 OpenSpec Component 固定组合中的自然语言增量且没有可替换 provider
-- **THEN** Buildr MUST 使用 Component member integrity 和 composition tests 保护它
-- **AND** Buildr MUST NOT 为每个 sidebar 创建 `provides`、`requires` 或 binding
-- **AND** 现有 task-worktree、task-verification、git-operations、task-retrospective 和 task-finish capability contracts MUST 保持有效
+- **WHEN** sidebar只作为OpenSpec Component固定组合中的自然语言增量且没有可替换provider
+- **THEN** Buildr MUST使用Component member integrity和composition tests保护它
+- **AND** Buildr MUST NOT为每个sidebar创建`provides`、`requires`或binding
+- **AND** 现有task-worktree、task-verification、git-operations和task-finish capability contracts MUST保持有效，已退役Task Retrospective contract MUST不存在
 
 ### Requirement: Buildr 不将 OpenSpec Stores 作为默认受支持工作流
 Buildr MUST 不因 OpenSpec 1.6.0 包含 Stores beta 而在默认 OpenSpec Component、Buildr Skills 或 Project 资产中声明、创建、迁移或操作 Store。

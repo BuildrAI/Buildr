@@ -1,6 +1,6 @@
 # Buildr 智能体优先治理重构纲领
 
-> 本文描述尚未完成的目标架构与分阶段重构方向，不是当前产品事实、规范行为契约、规则（Rule）、技能（Skill）或智能体运行时（Agent Runtime）资产。每个工作项进入实现前，必须由独立子任务（Child Task）和适用的 OpenSpec Change 收敛需求、设计、规范、实现与验证。
+> 本文保存重构纲领与历史分阶段方向，不是当前产品事实、规范行为契约、规则（Rule）、技能（Skill）或智能体运行时（Agent Runtime）资产。Task Development、Task Candidate与Development Handoff等旧目标已经被后续实现取代；当前行为见[任务生命周期架构](task-lifecycle-architecture.md)。
 
 ## 一句话目标
 
@@ -14,7 +14,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 - 工作空间（Workspace）、项目（Project）与服务（Service）；
 - 规则、技能、命令（Command）、组件（Component）和运行时投射；
-- 正式任务（Formal Task）、任务环境（Task Environment）与父子任务（Parent/Child Task）；
+- 正式任务（Formal Task）、工作树（Worktree）与父子任务（Parent/Child Task）；
 - 任务研发（Task Development）、任务候选（Task Candidate）、任务审查（Task Review）与任务验证（Task Verification）；
 - 任务收尾（Task Finish）、Git/PR 交付、激活（Activation）、清理（Cleanup）和诊断（Diagnostics）；
 - OpenSpec、当前认知（Current Knowledge）与术语治理（Terminology Governance）；
@@ -25,7 +25,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 ## 依据与现状
 
-随包 [内联核心规则](../../services/buildr/resources/workspace/AGENTS.md) 是最高层产品哲学与通用边界。[当前产品架构](../../openspec/knowledge/architecture/product.md) 已经明确：Buildr 采用宽而薄的治理，不成为另一个智能体（Agent），不把推荐流程变成唯一合法路径。
+随包 [内联核心规则](../../services/buildr/resources/workspace/AGENTS.md) 是最高层产品哲学与通用边界。[当前产品架构](../../knowledge/architecture/product.md) 已经明确：Buildr 采用宽而薄的治理，不成为另一个智能体（Agent），不把推荐流程变成唯一合法路径。
 
 但当前产品仍有一批历史契约和实现沿用“先满足 Buildr 内部流程，才能继续工作”的模型：
 
@@ -33,7 +33,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 |---|---|---|
 | Workspace 资产维护 | 默认规则要求 Agent 先使用 Buildr Skill，并通过 manifest-backed CLI 维护源资产 | 工具不可用或自身缺陷会阻止本来安全的资产工作 |
 | Project / Service | Domain 强制固定物理目录，外部仓库必须被物化到 canonical path | Buildr 反向要求用户重组已有仓库和目录 |
-| Task Environment | 正式 Task 在修改、构建、测试前必须取得整体 `ready` | 环境登记问题被扩大为工作许可问题 |
+| 统一Task Environment | 正式 Task 在修改、构建、测试前必须取得整体 `ready` | 已删除；工作位置、准备和资源由独立owner负责 |
 | Task Development | Verification、Candidate、Completion Review 和 handoff 存在固定顺序 | Agent 无法根据风险、成本和上下文选择更优路径 |
 | Task Verification | 内部 Execution Record 容量或重复登记可以阻止验证进程启动 | Buildr 记录能力反向限制真实测试工作 |
 | Doctor | 一个聚合 `ready` 由全部 actionable finding 决定 | 无关模块的 warning/error 可能阻止当前安全动作 |
@@ -53,7 +53,7 @@ Buildr 要从“工作许可和流程控制者”退回到“长期工作资产�
 
 ### 唯一写入者不等于唯一工作路径
 
-Buildr 应用（Buildr Application）可以继续作为某类持久结果的唯一写入者，例如正式任务记录（Task Record）、环境回执（Environment Receipt）、验证结果（Verification Result）或交付证据（Delivery Evidence）。其含义是：
+Buildr 应用（Buildr Application）可以继续作为某类持久结果的唯一写入者，例如正式任务记录（Task Record）、验证结果（Verification Result）或具体资源owner记录。其含义是：
 
 - 所有客户端通过同一 Application 校验并登记事实；
 - 不允许页面、Skill 或 Agent 直接修改 SQLite；
@@ -191,20 +191,11 @@ Buildr 登记、展示、诊断和恢复
 
 验收重点：不会从普通对话或临时操作自动创建 Task；不会通过修复接口篡改已成立交付事实。
 
-### 4. Task Environment
+### 4. 工作位置、Project准备与动态资源
 
-目标：Environment 管理 Buildr 实际拥有的执行环境、共享资源和清理责任，不管理 Agent 的工作许可。
+统一Task Environment已经删除。Agent直接使用已确认Workspace，或在需要隔离时调用Worktree；Project/Service拥有真实准备入口；Preview和其他动态资源由创建能力管理owner与释放。
 
-重构方向：
-
-- `ready` 只约束由 Buildr 准备、执行或声明正式证据的环境路径；
-- Agent 在已有明确代码仓中编辑、构建和测试，不以环境回执为普遍前提；
-- Preparation Declaration 是可复用 Recipe，不是所有 Task 的准入材料；
-- 只有请求 Buildr 确定性准备、租约、共享资源、隔离 runtime 或正式环境证据时，才要求完整 Plan；
-- 缺失计划、回执或投射时，返回局部诊断和可选准备路径；
-- cleanup 继续只删除可证明属于该 Task 的资源；无法证明删除安全仍然硬阻断。
-
-验收重点：外部/直接工作不伪装成 Buildr-managed Environment；Buildr-managed resource 仍可恢复和精确清理。
+验收重点：没有统一`ready`、Plan或Receipt；普通工作无环境记录仍可完成；dirty、owner不明或版本漂移时，具体owner继续拒绝删除。
 
 ### 5. Task Development、Candidate、Review 与 Verification
 
@@ -340,7 +331,7 @@ Buildr 登记、展示、诊断和恢复
 6. 同步规范、实现、测试、Skill 和 current knowledge 中真正受影响的资产；
 7. 增加至少一条 alternate path 或 unrelated failure isolation 验证；
 8. 不为追求“更智能”而放松授权、目标身份、证据真实性、共享历史和安全删除边界；
-9. 完成后形成可核验 Contribution Handoff，由 Parent 动态读取结果，不手工维护第二份进度表。
+9. 完成后在Child Task记录真实结果，由Parent动态读取，不形成Contribution Handoff或手工维护第二份进度表。
 
 ## 迁移与兼容原则
 
@@ -357,7 +348,7 @@ Buildr 登记、展示、诊断和恢复
 Parent Task 的最终集成验收至少满足：
 
 - 所有现存硬门禁已完成分类，并能说明不变量、伤害、作用范围和安全降级；
-- Workspace、Project、Service、Task、Environment、Development、Verification、Finish、OpenSpec、Doctor 与测试不再存在互相冲突的责任描述；
+- Workspace、Project、Service、Task Record、Worktree、Project preparation、Review、Verification、默认Task Finish、OpenSpec、Doctor与测试不再存在互相冲突的责任描述；
 - Agent 可以选择 Buildr 自动化、直接 Git、PR/CI 或其他已授权路径，并通过统一观察与对账形成相同专业结果；
 - Buildr 内部登记缺失、局部模块失败或可重建 evidence 丢失，不再否定外部权威事实或阻止无关工作；
 - Delivery、Activation、Cleanup 与 Diagnostics 在规范、实现、CLI JSON、Buildr Web 和测试中保持正交；
@@ -383,11 +374,11 @@ Parent Task 的最终集成验收至少满足：
 
 ## 维护方式
 
-本文只维护稳定目标、工作包边界和最终验收。具体 Child 状态、Change 进度、验证结果和交付事实由 Task Record、Parent/Child、Development、Review、Verification、Finish 与 OpenSpec 各自 authority 提供，不在本文勾选进度。
+本文只维护稳定目标、工作包边界和最终验收。具体Child状态、Change进度、验证结果和交付事实由Task Record、Parent/Child、Review、Verification、Git、默认Task Finish、具体资源owner与OpenSpec各自authority提供，不在本文勾选进度。
 
 当某个工作包完成后：
 
 - 以实现和 canonical specs 更新 current knowledge；
-- 如果目标方向发生实质变化，显式 reconcile Parent Plan 和本文；
+- 如果目标方向发生实质变化，更新父任务目标或其具名计划文档和本文；
 - 如果工作包被放弃或替代，记录原因并调整依赖，不伪装为已完成；
 - 全部工作包完成后，由 Parent 执行最终集成验收，再决定 Parent Task 终态。

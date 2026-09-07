@@ -20,12 +20,18 @@ Buildr HTTP capability owner MUST 以 Draft 2020-12 JSON Schema 定义本模块�
 - **AND** 未迁移事实 MUST NOT 单独阻止 Buildr 启动、构建、Task 开发或发布
 
 ### Requirement: 服务端请求校验必须严格且不变异
-Buildr MUST 在模块加载或注册时用 Ajv Draft 2020-12 严格编译已登记请求 Schema 并复用 validator。校验 MUST拒绝未知、缺失或非法字段，MUST NOT自动转换类型、填充默认值或删除字段。
+Buildr MUST 在模块加载或注册时用 Ajv Draft 2020-12 严格编译已登记请求 Schema 并复用 validator。校验 MUST拒绝未知、缺失或非法字段，MUST NOT自动转换类型、填充默认值或删除字段。同形 HTTP DTO 与 Application DTO MUST直接传递；只有协议结构与用例输入确实不同时，Interface 才 MUST执行局部显式转换。成功与错误响应 MUST通过生成 DTO、严格类型检查和真实 HTTP Contract Test 校验，生产请求链 MUST NOT默认重复运行响应 validator。
 
 #### Scenario: 合法 DTO 通过校验
-- **WHEN** 请求 DTO 满足对应 operation Schema
-- **THEN** Interface MUST 将原值无变异地交给显式 Application mapping
+- **WHEN** 请求 DTO 满足对应 operation Schema 且与 Application DTO 同形
+- **THEN** Interface MUST 将原值无变异地交给 Application
+- **AND** MUST NOT为同形字段建立复制 mapping
 - **AND** 单次请求 MUST复用已编译 validator 而不是重新编译 Schema
+
+#### Scenario: 协议结构与应用输入不同
+- **WHEN** CLI 文本参数或未来 HTTP 协议结构与 Application DTO 不同
+- **THEN** 对应 Interface MUST在自身边界执行明确转换
+- **AND** Application MUST NOT依赖 CLI 或 HTTP implementation
 
 #### Scenario: 非法 DTO 被拒绝
 - **WHEN** DTO 包含未知字段、缺少必填字段或字段类型/枚举不合法
@@ -37,18 +43,23 @@ Buildr MUST 在模块加载或注册时用 Ajv Draft 2020-12 严格编译已登�
 - **THEN** 对应模块注册/启动 MUST失败并指出 contract identity
 - **AND** 失败 MUST NOT延迟到首个请求才暴露
 
+#### Scenario: HTTP 返回成功或错误响应
+- **WHEN** 真实 HTTP Contract Test 调用已登记 Task Record operation
+- **THEN** 成功与错误 payload MUST通过对应 Schema validator
+- **AND** 生产响应是否校验 MUST NOT成为页面数据有效性或 mutation 正确性的第二 authority
+
 ### Requirement: DTO 生成物必须来自同一 Schema authority
-Buildr MUST 从已登记 Schema 在构建期确定性生成后端与 Buildr Web TypeScript DTO，并 MUST提供 tracked 生成物 drift check。生成物 MUST是投影而不是可独立手改的第二 authority；Buildr Web MUST NOT安装或运行 Ajv。
+Buildr MUST从已登记Schema在构建前确定性生成后端与Buildr Web TypeScript DTO，并 MUST让generator接受显式输出目标。开发输出 MUST位于精确ignored generated目录，正式构建 MUST绑定同一生成批次manifest；生成物 MUST是投影而不是可独立手改的第二authority，MUST不进入Git tracked tree，Buildr Web MUST NOT安装或运行Ajv。
 
 #### Scenario: Schema 生成 DTO
-- **WHEN** 维护者显式运行 contract generation
-- **THEN** 后端与前端 generated DTO MUST由同一当前 Schema 生成
-- **AND** 相同输入与固定工具版本 MUST产生相同字节
+- **WHEN** 维护者在不含DTO生成物的干净checkout运行contract generation或消费方build
+- **THEN** 后端与前端generated DTO MUST由同一当前Schema生成并进入各自ignored目标
+- **AND** 相同输入与固定工具版本向两个新目标生成 MUST产生相同bytes
 
 #### Scenario: tracked DTO 漂移
-- **WHEN** Schema 已变化但任一 tracked generated DTO 尚未更新，或生成物被手工修改
-- **THEN** drift check MUST失败并指出漂移文件
-- **AND** typecheck/正式 Web build 的参考切片门禁 MUST在交付前暴露该漂移
+- **WHEN** typecheck或正式Web build开始时本地DTO不存在或来自旧Schema
+- **THEN** 声明入口 MUST先重新生成并校验当前DTO，再运行消费者检查
+- **AND** 生成失败、输出不闭合或consumer compile失败 MUST返回非零并指出Schema family与目标
 
 ### Requirement: 业务前端必须通过能力级 typed Client 消费契约
 Buildr Web MUST保留通用 fetch/session transport，并 MUST由 Task 能力级 client 使用生成 DTO 暴露 list、detail、update、complete、abandon typed operations。Task 页面 MUST NOT为这些响应维护平行 DTO 或在业务调用点猜测 `unknown` payload。
@@ -59,14 +70,14 @@ Buildr Web MUST保留通用 fetch/session transport，并 MUST由 Task 能力级
 - **AND** 页面状态与 ViewModel MAY保持局部，但 MUST NOT通过大量 `as` 断言重建 HTTP response shape
 
 ### Requirement: 参考流水线必须由真实 HTTP 与正式前端产物验证
-Buildr MUST以真实 HTTP Contract Test 校验参考 operation 的请求、成功响应和错误响应，并 MUST以正式 `web-dist` build 与 Task Browser Smoke 验证 typed Client 到页面链路。生产成功响应是否运行时重复校验 MUST按局部风险决定，不得替代 Contract Test。
+Buildr MUST以真实HTTP Contract Test校验参考operation的请求、成功响应和错误响应，并 MUST以本次隔离生成的正式`web-dist`与Task Browser Smoke验证typed Client到页面链路。生产成功响应是否运行时重复校验 MUST按局部风险决定，不得替代Contract Test。
 
 #### Scenario: Contract Test 执行参考 operation
-- **WHEN** 产品验证运行 Task Record HTTP contract capability
-- **THEN** 测试 MUST通过真实 HTTP host 覆盖五个 operation 的合法与非法输入
-- **AND** 真实成功/错误 payload MUST通过对应 Schema validator
+- **WHEN** 产品验证运行Task Record HTTP contract capability
+- **THEN** 测试 MUST通过真实HTTP host覆盖五个operation的合法与非法输入
+- **AND** 真实成功/错误payload MUST通过对应Schema validator
 
 #### Scenario: 正式页面验收
-- **WHEN** Buildr Web 从正式源码生成 tracked `web-dist` 并运行 Task Browser Smoke
-- **THEN** Task 列表、详情、更新与 terminal action 的既有用户交互 MUST继续成功
-- **AND** 测试 MUST NOT使用页面专用假 DTO 绕过生成类型或 typed Client
+- **WHEN** Buildr Web从正式源码向隔离目标生成`web-dist`并运行Task Browser Smoke
+- **THEN** Task列表、详情、更新与terminal action的既有用户交互 MUST继续成功
+- **AND** 测试 MUST直接消费同一批次生成DTO和Web dist，MUST NOT使用页面专用假DTO或tracked生成物

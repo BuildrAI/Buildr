@@ -1,31 +1,30 @@
 schemaVersion: buildr.knowledge-impact/v1
-change: migrate-buildr-workspace-agent-assets-http-contracts
+change: decouple-release-task-environment
 operation: reconcile
-treeIdentity: sha256-7adf7bcd9cb26ad06ce137c50edf96d779bfc863111d3ab2fa43c93992d61a2f
+treeIdentity: 97c9081e232c1305cda2b3c589b335cc06b2671e
 impacts:
   - type: brief
-    target: openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: 本 Change 横跨 Buildr Service 与 Buildr Web，并改变 HTTP 契约、生成 DTO 与测试入口。
+    target: openspec/changes/decouple-release-task-environment/brief.md
+    reason: Release退出Task Environment连接并直接消费真实owner。
     status: aligned
     sourceIdentities:
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/proposal.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/design.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/workspace-http-contracts/spec.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/specs/agent-assets-http-contracts/spec.md
-      - openspec/changes/archive/2026-08-22-migrate-buildr-workspace-agent-assets-http-contracts/tasks.md
-  - type: technical-architecture
-    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: 需要记录模块 HTTP Interfaces、Infrastructure contract mechanism、Application mapping 与 typed Client 的 authority 边界。
-    status: aligned
-    sourceIdentities:
-      - openspec/specs/infrastructure-boundaries/spec.md
-      - openspec/specs/workspace-control-plane-module-architecture/spec.md
-      - openspec/specs/managed-skill-assets/spec.md
+      - openspec/changes/decouple-release-task-environment/proposal.md
+      - openspec/changes/decouple-release-task-environment/design.md
+      - openspec/changes/decouple-release-task-environment/tasks.md
   - type: service
-    target: openspec/changes/migrate-buildr-workspace-agent-assets-http-contracts/brief.md
-    reason: Buildr Service 与 Buildr Web 的 API、生成 DTO、构建和 smoke 验收入口发生变化。
-    status: aligned
+    target: services/buildr/docs/release-checklist.md
+    reason: Release readiness、dependency preparation、execution binding与closeout输入已变化。
+    status: updated
     sourceIdentities:
-      - services/buildr
-      - services/buildr-web
+      - services/buildr/tools/release/release-execution-binding.ts
+      - services/buildr/tools/release/release-preparation-binding.ts
+      - services/buildr/tools/release/release-transaction-runner.ts
+      - services/buildr/tools/release/release-orchestration-runner.ts
+  - type: workflow
+    target: skills/buildr-release/SKILL.md
+    reason: 发布Skill直接组合Worktree、Release Preparation、Node与retained controller。
+    status: updated
+    sourceIdentities:
+      - services/buildr/tools/release/release-readiness.ts
+      - services/buildr/tools/release/release-task-evidence-correlation.ts
 unresolvedItems: []

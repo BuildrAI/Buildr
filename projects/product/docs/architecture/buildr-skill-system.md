@@ -133,7 +133,7 @@ runtime `SKILL.md` 是 Agent 命中 Skill 后读取的 playbook，也应该让�
 
 Agent runtime 首先根据 Skill description 和用户目标发现入口 Skill。`buildr` 只在 Buildr 管理意图命中后加载；它不会在所有用户 prompt 之前运行，也不负责预先分发其他专业 Skill。
 
-`buildr` 源正文维护自己实际支持的少量内部路由，例如 workspace Git 更新、能力适配和 Task Retrospective。当当前意图需要可替换能力时，它从当前 scope 的 Doctor full capability graph 查找该项 contract 和 selected provider。
+`buildr`源正文维护自己实际支持的少量产品入口，例如workspace Git更新和能力适配。Task Retrospective不再使用内部Driver或独立capability；用户明确要求时由纯Skill组合Task Record与现有工具，并写入本机Markdown。
 
 因此：
 

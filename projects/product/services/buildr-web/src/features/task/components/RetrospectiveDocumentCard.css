@@ -1,0 +1,11 @@
+.retrospective-document-card { margin-bottom: 14px; }
+.retrospective-document-card .panel-heading { align-items: flex-start; }
+.retrospective-document-facts { grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr); }
+.retrospective-document-facts code { overflow-wrap: anywhere; }
+.retrospective-document-loading { display: flex; align-items: center; gap: 8px; padding: 18px 0; }
+.retrospective-document-meta { display: flex; justify-content: space-between; gap: 12px; margin: 12px 0; color: var(--muted); }
+.retrospective-document-meta code { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .retrospective-document-facts { grid-template-columns: 1fr; }
+  .retrospective-document-meta { flex-direction: column; }
+}

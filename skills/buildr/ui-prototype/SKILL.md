@@ -7,7 +7,7 @@ description: 用户已明确确认需要在正式前端开发前查看本次提�
 
 本 Skill 只生成“界面原型（UI Prototype）”：它把当前提案或设计中的 UI 变化放回系统现有完整页面中，供用户、设计师和后续 Agent 在正式开发前对齐预期。
 
-它不是正式设计稿、生产原型、像素级验收标准、Planning Identity、canonical spec 或 Task Verification evidence，也不在真实前端工程中实现编码式原型。正式行为与验收继续由 specs、design、项目实现和正式验证事实决定。
+它不是正式设计稿、生产原型、像素级验收标准、canonical spec 或 Task Verification evidence，也不在真实前端工程中实现编码式原型。正式行为与验收继续由 specs、design、项目实现和正式验证事实决定。
 
 ## 1. 确认执行前提
 

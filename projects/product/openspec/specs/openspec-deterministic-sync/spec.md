@@ -156,19 +156,6 @@ Buildr MUST 维护历史 `baseline`、`check`、`sync-plan`、`sync-apply`及`au
 - **THEN** 正式验证 MUST失败并报告消费者位置
 - **AND** 退役登记 MUST NOT报告当前流程已收敛
 
-### Requirement: Convergence transaction 必须在任何写入前门禁 Change checklist
-Buildr MUST 在 active Change 的 canonical planning、receipt写入、canonical apply和archive之前，以与Change read model相同的Markdown checkbox语义检查现有`tasks.md`。存在任一未完成checkbox时，convergence MUST返回`blocked`与稳定的checklist progress，且不得写receipt、canonical spec或调用archive；Buildr MUST NOT自动勾选、删除或把归档后Task lifecycle evidence解释为Change task完成。
-
-#### Scenario: Change仍有未完成checkbox
-- **WHEN** active Change的`tasks.md`同时包含已完成与未完成checkbox
-- **THEN** `buildr openspec converge` MUST返回`change-checklist-incomplete`及`completed`、`total`、`remaining`
-- **AND** canonical files、convergence receipt与archive lifecycle MUST保持不变
-
-#### Scenario: Change checklist已经闭合
-- **WHEN** active Change的全部checkbox均已完成且其他convergence门禁通过
-- **THEN** transaction MUST继续执行确定性planning、validation、apply、confirmation与archive
-- **AND** archive后Task Development、Task Finish、Environment cleanup与Task terminal evidence MUST由各自authority形成，Task current records MUST只写Workspace SQLite且不得回写archive checkbox
-
 ### Requirement: 全部 Requirements 清退必须删除 canonical capability spec
 当一个现有 capability 的全部 canonical Requirements 都被同一无歧义 delta 安全删除时，deterministic convergence MUST 将目标建模为 expected absent，而不是生成没有 Requirements 的空 spec。Plan 与 receipt MUST 保存 before/expected existence，projected strict validation MUST 在隔离树中删除目标，canonical applier MUST 原子删除目标文件并在批次失败时恢复 before bytes，observer MUST 只在目标文件确实不存在时确认 expected state。
 
@@ -234,35 +221,35 @@ Buildr MUST 提供 OpenSpec Convergence Inspect，只在当前收敛恢复现场
 - **AND** MUST NOT要求读取历史Receipt或在Worktree清理后返回`recovery-unprovable`
 
 ### Requirement: OpenSpec Converge 必须明确使用 Task execution root
-`buildr openspec converge` MUST将 `--target` 表达并校验为当前 Task Environment 允许的 execution root，而不是 canonical Workspace authority root。CLI MUST在 target 中无法解析 active Change 时返回零写入诊断，要求 Agent使用 matching Environment Receipt 的 `execution.workdir`，并 MUST NOT扫描、猜测或自动选择其他 worktree。
+`buildr openspec converge` MUST将`--target`表达并校验为Agent已核对的当前Workspace或matching Worktree实际工作根。CLI MUST在target中无法解析active Change时返回零写入诊断，并 MUST NOT扫描、猜测或自动选择其他worktree。
 
 #### Scenario: CLI 展示 converge target
 - **WHEN** Agent读取 `buildr openspec converge` 的命令帮助
 - **THEN** `--target` MUST显示为 `<task-execution-root>` 或等价明确表述
-- **AND** MUST不使用无法区分 canonical Workspace 与 Task Environment 的 `<workspace>` 或 `<dir>` 占位符
+- **AND** MUST不使用无法区分canonical Workspace与matching Worktree的`<workspace>`或`<dir>`占位符
 
 #### Scenario: canonical Workspace 看不到 active Change
 - **WHEN** Agent把 canonical Workspace 作为 converge target，且 active Change 只存在于 matching Task execution root
 - **THEN** command MUST在 canonical、receipt 与 archive 零写入状态返回 active Change not found 诊断
-- **AND** next action MUST要求从 Environment Receipt 使用 `execution.workdir` 重试，不得自动搜索或修改 canonical Workspace绕过
+- **AND** next action MUST要求Agent回到包含该Change的实际工作根重试，不得自动搜索或修改canonical Workspace绕过
 
 ### Requirement: Deterministic planner必须提供只读语义就绪预检
-Buildr MUST 在 OpenSpec Change 进入 Planning Review 前提供只读 semantic readiness preflight，并 MUST 复用最终 convergence 使用的 active conflict detection、`createConvergencePlan` 与 projected strict validation。Preflight MUST读取当前 delta、canonical specs、全部 active Change observations 和 OpenSpec executable/algorithm identity，但 MUST NOT检查实现期 checklist、创建 Convergence Receipt、写 canonical、确认 actual Project或执行archive。
+Buildr MUST在OpenSpec Change进入apply前提供只读semantic readiness preflight，并复用最终convergence的active conflict detection、planner与projected strict validation。Preflight只证明当前规范语义可执行，不拥有Task Review，也不把Review作为apply许可。
 
 #### Scenario: 当前Change语义就绪
-- **WHEN** delta 与当前 canonical 可产生唯一 plan、没有 active Requirement conflict，且完整 expected Project 通过绑定 executable 的 strict validation
-- **THEN** preflight MUST返回`ready`、同一 planner 产生的operations/files与`effects: []`
-- **AND** MUST不创建sidecar、canonical mutation或archive状态
+- **WHEN** delta与canonical产生唯一plan、没有active conflict且projected strict validation通过
+- **THEN** preflight MUST返回ready、operations/files与零effects
+- **AND** next action MUST进入planning identity/apply，并说明Review由Agent独立判断
 
 #### Scenario: 完整MODIFIED省略既有Scenario
-- **WHEN** planner确认delta省略当前canonical Requirement中的既有Scenario identity
-- **THEN** preflight MUST返回`blocked`与`scenario-omission` category
-- **AND** MUST保留planner的Requirement和`omittedScenarioIdentities`诊断，不得自动补回或删除Scenario
+- **WHEN** planner确认delta省略canonical Requirement的既有Scenario identity
+- **THEN** preflight MUST返回blocked与scenario-omission
+- **AND** MUST保留omittedScenarioIdentities且不自动补回或删除
 
 #### Scenario: Rename或identity无法唯一证明
-- **WHEN** Requirement或Scenario identity重复、rename目标被占用、ADDED identity已有不同内容或其他identity不能唯一解析
-- **THEN** preflight MUST返回`blocked`与`identity-conflict` category及底层planner code
-- **AND** MUST不生成可执行写入资格
+- **WHEN** Requirement或Scenario identity不能唯一解析
+- **THEN** preflight MUST返回blocked与identity-conflict及底层code
+- **AND** MUST不生成可执行写入资格或Review占位
 
 ### Requirement: 语义就绪结果必须绑定当前完整观察
 Preflight MUST 产生稳定`readinessIdentity`，绑定change、project、plan identity、delta digest、canonical before facts、按确定顺序排列的全部active Change id/delta observation，以及OpenSpec executable/algorithm identity。任一输入变化后旧结果 MUST视为陈旧；`converge` MUST始终重新读取当前事实、重新规划和重新验证，并 MUST NOT接受preflight结果作为apply授权。
@@ -276,3 +263,11 @@ Preflight MUST 产生稳定`readinessIdentity`，绑定change、project、plan i
 - **WHEN** 相同规范化delta、canonical、active Change observations、executable与algorithm identity重复执行preflight
 - **THEN** 结果 MUST产生相同readiness identity、plan identity、operations和blocker分类
 - **AND**duration等非identity运行数据 MUST不影响identity
+
+### Requirement: Convergence transaction 必须在任何写入前检查 Change checklist
+Convergence MUST在canonical写入前确认Change checklist已完成。Archive后Task交付、Environment cleanup与Task terminal result由Agent和各自owner形成，不得回写archive checkbox。
+
+#### Scenario: checklist存在未完成项
+- **WHEN** converge观察到未完成任务
+- **THEN** MUST在canonical写入前停止
+- **AND** MUST不创建其他任务流程状态

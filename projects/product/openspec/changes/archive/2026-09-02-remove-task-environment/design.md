@@ -1,0 +1,7 @@
+# Design
+
+删除后没有Task Environment模块。Agent先核对当前Workspace；需要隔离Git位置时调用Worktree，需要依赖或代码生成时读取Project/Service声明并调用真实wrapper/包管理器，需要预览时由Preview保存owner，成果交付后由具体资源owner和Worktree分别清理。
+
+Application只保留不能安全交给通用工具的具体副作用保护：Worktree复核Git common-dir、branch、dirty、source/delivered commits与retained ref；Preview复核Task、Workspace、Worktree evidence、instance secret与PID；Release持有自己的Preparation和closeout事实。没有统一顺序或成功状态。
+
+数据迁移是不可逆删除，但用户已明确授权不保留旧数据。新增migration只删除`task_environment_current`及其index；历史migration文件保留为SQLite版本链证据，不作为可调用schema或双读来源。旧Environment Receipt JSON、Plan和资源记录随表一起删除。

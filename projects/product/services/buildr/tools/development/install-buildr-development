@@ -9,4 +9,4 @@ if [[ -z "$node_executable" || ! -x "$node_executable" ]]; then
   exit 1
 fi
 
-exec "$node_executable" "$service_root/package/launchers/manage.mjs" install --channel development "$@"
+exec "$node_executable" "$service_root/package/launchers/manage.ts" install --channel development "$@"

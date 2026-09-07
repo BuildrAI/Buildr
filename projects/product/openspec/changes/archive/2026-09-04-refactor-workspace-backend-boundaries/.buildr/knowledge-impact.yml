@@ -1,0 +1,25 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-workspace-backend-boundaries
+operation: reconcile
+treeIdentity: implementation-current
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-workspace-backend-boundaries/brief.md
+    reason: 解释按领域、层和文件职责及实际体量收敛Workspace后端的目标、兼容边界与后续切片
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-backend-boundaries/proposal.md
+      - openspec/changes/refactor-workspace-backend-boundaries/design.md
+  - type: technical-architecture
+    target: docs/architecture/service-architecture.md
+    reason: 当前 Workspace 模块说明仍描述 Application capability，但未记录返回式 API 和后续 CLI 过渡边界
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-backend-boundaries/specs/product-source-layout/spec.md
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: Buildr Service 当前说明需要在实现后反映 Workspace 模块显式组合事实
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-workspace-backend-boundaries/specs/workspace-control-plane-module-architecture/spec.md
+unresolvedItems: []

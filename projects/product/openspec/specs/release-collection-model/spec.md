@@ -67,51 +67,18 @@ Release create、update、freeze、reopen、abandon和cleanup MUST分别核验cu
 - **THEN** owner MUST展示精确ref、commit与已成立发布事实并等待独立删除授权
 - **AND** 未获授权、ref漂移或ownership不可证明时 MUST保留remote ref
 
-### Requirement: 发布身份链必须只组合current owner facts
-Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。每个节点 MUST由其专业owner形成current identity或portable read model；下游 MUST只引用最低充分identity/digest，不得复制专业Result正文、caller-claimed success或历史stdout。关联release/support Tasks、Task Environment、Task Development handoff、Task Contribution、Task Finish Delivery、Execution Record与matching self-bootstrap Activation时，release consumer MUST通过唯一组合器形成稳定的release evidence carrier与transaction context identity；该组合器 MUST只保存owner references、identity、digest、status和诊断引用，不得建立旁路SQLite authority或复制专业Result。
-
-#### Scenario: release内容变化
-- **WHEN** current release HEAD或tree不等于Candidate、artifact、readiness或transaction context保存的source
-- **THEN** 所有下游evidence MUST标记stale或blocked并拒绝进入tag/npm mutation
-- **AND** Buildr MUST形成新的matching Candidate generation和唯一tarball，不得拼接旧run证据
-
-#### Scenario: 关联Task与发布事实
-- **WHEN** release transaction需要关联release/support Tasks、Environment、Development、Finish与self-bootstrap
-- **THEN** correlation MUST从各Application的current read model和真实Git/GitHub/npm facts构造closed context
-- **AND** correlation MUST返回唯一carrier/context identity、参与的owner references与digests、source tree/remote identities和可定位的Execution Record/diagnostic refs
-- **AND** 自动Finish、直接Git/PR后的Finish reconcile与matching self-bootstrap MUST映射为同形的evidence roles
-- **AND** Task Record MUST继续只保存既有顶层、Parent与retrospective关系
-- **AND** MUST NOT新增release旁路SQLite slot、复制Result或接受caller提交的完成结论
-
-#### Scenario: 证据缺失或跨运行
-- **WHEN** 任一必需 owner read model 缺失、stale、schema 不受支持、跨 run 或与 source/carrier digest 不一致
-- **THEN** correlation MUST返回结构化 `blocked` 或 `unknown` finding、保留缺失/冲突的 owner reference 与 next action
-- **AND** consumer MUST NOT把该 context 当作 release readiness 或 protected transaction 的通过证据
-- **AND** correlation MUST NOT从历史 stdout、Task Record 状态、文件路径或 caller assertion 猜测缺失事实
-
-#### Scenario: Delivery 已成立但后续维护失败
-- **WHEN** Finish Delivery 已由真实 remote/readback 确认，但 self-bootstrap Activation、Environment Cleanup 或 Diagnostics 尚未成立
-- **THEN** carrier MUST保留独立的 Delivery evidence role 为 current
-- **AND** Activation、Cleanup 与 Diagnostics MUST分别返回其自身的 blocked/attention/unknown 状态
-- **AND** correlation MUST NOT撤销或改写已经成立的 Delivery identity
-
-#### Scenario: portable read model 输出
-- **WHEN** release consumer 请求关联结果
-- **THEN** 输出 MUST包含 schema/version、carrier/context identity、evidence roles、overall status、owner references/digests、source identities、diagnostic refs和next actions
-- **AND** 输出 MUST NOT嵌入专业Result正文、完整stdout、attempt history、本地SQLite路径或 caller 提交的完成布尔值
-
 ### Requirement: 发布模块必须保持唯一owner与窄consumer边界
-`tools/release` MUST只拥有release selection、readiness/convergence adapter、post-publication dev provenance reconciliation和checkout-only Git provenance；`system/installation` MUST拥有SemVer、package/version、release track与installation identity；`verification` MUST拥有Product Candidate、verification evidence和唯一tarball；`task` MUST拥有Task/Environment/Development/Verification/Finish/Execution Record/Parent事实；self-bootstrap runner MUST只拥有matching retained Activation与Diagnostics；Bootstrap MUST是唯一composition root；protected publish workflow MUST独占tag、npm、dist-tag、GitHub Release与Registry readback公共mutation。
+`tools/release` MUST只拥有release selection、task correlation、readiness/convergence adapter、post-publication dev provenance reconciliation和checkout-only Git provenance；`verification` MUST继续拥有Product Candidate、verification evidence和唯一tarball。发布模块 MUST不读取Task Development或旧Finish repository，也 MUST不改变Product Candidate模型。
 
 #### Scenario: 模块消费其他owner事实
-- **WHEN** release readiness、Candidate或transaction需要其他模块的数据
-- **THEN** consumer MUST调用该owner的窄公开read model并核验identity/currentness
-- **AND** MUST NOT跨模块直接写persistence、复制业务规则、恢复旧全局入口或建立第二composition root
+- **WHEN** release readiness需要任务关联
+- **THEN** consumer MUST调用Task Record与Worktree的窄read model并核验真实Git/发布facts
+- **AND** MUST不恢复Development/Finish compatibility role或建立旁路store
 
 #### Scenario: 发布后维护部分失败
-- **WHEN** Publication已成立但Activation、Environment Cleanup、Diagnostics、dev provenance reconciliation或release branch cleanup失败
-- **THEN** 系统 MUST保留已成立的Delivery与Publication事实并按失败owner独立报告恢复动作
-- **AND** 任一维护失败 MUST NOT删除tag、unpublish npm、覆盖GitHub Release或反向改写其他owner的成功事实
+- **WHEN** Publication已成立但Activation、具体资源cleanup、Diagnostics或dev provenance reconciliation失败
+- **THEN** 系统 MUST保留Publication并按失败owner报告恢复动作
+- **AND** MUST不需要或恢复legacy Task Finish Application
 
 ### Requirement: Release selection 必须从精确 dev baseline 创建
 Release owner MUST在 clean checkout 中从维护者指定且可由 `dev` ref 证明的精确 commit 创建唯一 `release-<version>` branch，并记录 immutable baseline ref。创建 MUST不隐含 remote push、Candidate 或 publication。
@@ -139,7 +106,7 @@ Update MUST按调用方给出的单个 source commit 执行 `git cherry-pick -x`
 - **AND** MUST不自动解决、继续选择、reset、rebase、force push 或报告部分成功
 
 ### Requirement: Lifecycle state 必须独立、可重建且 fail closed
-Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref默认保留并核验，本地release branch、全部selection lifecycle refs、owned worktree与generation carrier属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
+Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref和正式远端Tag默认保留并核验；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
 
 #### Scenario: freeze and inspect
 - **WHEN** open集合被要求 freeze
@@ -157,9 +124,19 @@ Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与curren
 - **AND** MUST NOT继续update、移动remote branch、删除历史freeze或自动改变策略
 
 #### Scenario: 正式远端release ref存在时清理本地资源
-- **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，且本地branch、lifecycle refs或owned worktree仍存在
-- **THEN** closeout MUST保留正式远端release ref，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs与owned worktree
+- **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，正式远端Tag与Publication evidence匹配，且本地branch、lifecycle refs、owned worktree或本地同名Tag仍存在
+- **THEN** closeout MUST保留正式远端release ref和正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
 - **AND** remote-tracking projection存在 MUST NOT阻止本地资源清理
+
+#### Scenario: 本地Tag已缺失
+- **WHEN** Publication evidence与正式远端Tag匹配，且本地同名Tag已经不存在
+- **THEN** closeout MUST把本地Tag返回为`already-cleaned`
+- **AND** MUST NOT重复创建、fetch、移动或删除远端Tag
+
+#### Scenario: 本地或远端Tag漂移
+- **WHEN** 正式远端Tag与Publication evidence不匹配，或本地同名Tag存在但与正式远端Tag对象不一致
+- **THEN** closeout MUST在任何本地/中间资源删除前fail closed并报告expected/actual Tag identity
+- **AND** MUST NOT删除、移动或覆盖本地或远端Tag
 
 #### Scenario: abandon and cleanup
 - **WHEN** owner明确abandon一个未发布release集合
@@ -193,17 +170,17 @@ Candidate packaging MUST 只生成一个带 source identity、Candidate generati
 - **AND** workflow MUST 不产生第二份 publishable bytes
 
 ### Requirement: 共享 Release Context 必须只组合current owner facts
-Buildr MUST使用唯一closed builder组合release selection、release HEAD/tree、Product Candidate aggregate、冻结artifact、main/dev、Task correlation、Task Environment、exact Node与publish workflow identity。Builder MUST只保存最低充分owner projection、portable locator与identity/digest，不得复制专业Result正文、stdout、caller-claimed success或旁路persistence。
+
+Buildr MUST使用唯一closed builder组合release selection、release HEAD/tree、Product Candidate aggregate、冻结artifact、main/dev、Task correlation、matching Worktree evidence、Release Preparation、exact Node与publish workflow identity。Builder MUST NOT读取Task Environment ready、Plan、Receipt、controller或runtime投影。
 
 #### Scenario: 构造完整dispatch context
-- **WHEN** selection、Candidate、artifact、main、Task correlation、Environment、Node与workflow facts均可读取
-- **THEN** builder MUST返回closed release context、稳定context digest和每个owner的current identity
-- **AND** 相同规范化输入 MUST产生相同digest，任一owner identity变化 MUST产生不同digest
+- **WHEN** active release Task、matching Worktree、Release Preparation、Candidate、artifact、Git与Node事实全部current
+- **THEN** Release MUST形成不含Environment字段的current context
 
 #### Scenario: 专业事实缺失或漂移
 - **WHEN** 任一必需owner fact缺失、stale、schema不受支持或与release source不一致
 - **THEN** builder MUST保留可读取的其他owner projection并形成对应finding输入
-- **AND** MUST NOT从Task状态、历史stdout、文件路径或caller assertion补造缺失成功
+- **AND** MUST NOT从Task状态、历史stdout、文件路径、caller assertion或旧Environment数据补造缺失成功
 
 ### Requirement: Release Readiness 必须分阶段collect-all且无副作用
 Buildr MUST让`pre-candidate`、`pre-main`、`dispatch-check`与hosted`pre-tag`使用同一context schema、currentness规则和finding codes。每个本地Readiness Result MUST返回stage、context identity、`ready|blocked`、全部findings、hosted deferred checks、next actions与`effects: []`；不得因首个失败丢弃其他finding。
@@ -251,16 +228,16 @@ Release Git owner MUST为每个selection generation使用确定性`codex/release
 - **AND** MUST NOT删除正式release ref、其他generation或ownership不明branch
 
 ### Requirement: Release lifecycle必须派生编排与阶段时间线
-Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Environment与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
+Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Worktree、Preparation与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。
 
 #### Scenario: 等待publication授权
 - **WHEN** selection、Candidate、main tree与readiness均current且尚无matching Publication
 - **THEN** lifecycle MUST返回`awaiting-publication-authorization`、`prepare-dispatch`形成的context/timeline identity和独立`human-decision`等待阶段
 - **AND** Task或readiness时间戳 MUST NOT被解释为维护者已经授权
 
-#### Scenario: terminal Task但Environment cleanup待恢复
-- **WHEN** release facts已经closed且协调Task已no-change completed，但Environment cleanup或Doctor仍blocked
-- **THEN** orchestration projection MUST保持Publication、reconciliation、Git closeout和Task completion为已通过并把next action指向对应cleanup/Doctor owner
+#### Scenario: terminal Task但具体cleanup待恢复
+- **WHEN** release facts已经closed且协调Task已no-change completed，但Worktree、具体资源cleanup或Doctor仍blocked
+- **THEN** orchestration projection MUST保持Publication、reconciliation、Git closeout和Task completion为已通过并把next action指向对应owner
 - **AND** MUST NOT把release lifecycle退回publishing、重开Task或生成新的协调identity
 
 #### Scenario: current generation发生变化
@@ -286,22 +263,25 @@ Release selection MUST继续只从精确 dev baseline 和明确 `cherry-pick -x`
 - **THEN** selection owner MUST返回 fail-closed finding 和 pre-operation identity
 - **AND** MUST不移动 frozen ref、覆盖 release branch 或递增 generation
 
-### Requirement: Release Git mutation 必须绑定matching Task Environment execution root
-Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active `release-<version>`协调Task的ready Task Environment execution root中运行。Consumer MUST从Environment read model构造closed binding，owner MUST独立核验canonical Workspace、Task、worktree provider evidence、repo root、branch、HEAD与runtime/controller identity；retained primary worktree和caller提交的路径声明 MUST NOT成为执行授权。
+### Requirement: Release Git mutation 必须绑定matching Worktree execution root
+
+Release selection、reopen、main coverage/reconciliation与generation carrier准备等checkout-scoped Git mutation MUST只在matching active`release-<version>`Task的provider-owned Worktree中运行。Owner MUST核验canonical Workspace、Task、Worktree evidence、repo root、branch与HEAD；retained primary worktree或caller路径声明 MUST NOT成为执行授权。
 
 #### Scenario: matching release execution root
-- **WHEN** active release Task、ready Environment、provider-owned worktree、release branch与expected HEAD全部匹配
-- **THEN** owner MAY执行已单独授权的selection或reconciliation Git mutation
-- **AND** result MUST返回Environment binding identity与实际execution root disposition
+- **WHEN** active release Task、ready Worktree evidence、release branch与expected HEAD全部匹配
+- **THEN** Release Git owner MAY执行对应Git动作
+
+- **AND** result MUST返回Worktree binding identity与实际execution root disposition
 
 #### Scenario: retained workspace被作为repo输入
-- **WHEN** 调用方把canonical retained primary worktree传给release Git owner
-- **THEN** owner MUST在checkout、merge、commit、ref mutation或remote push前失败关闭
+- **WHEN** 调用方把canonical retained primary worktree作为release mutation repo
+- **THEN** Release MUST在任何Git写入前拒绝
+
 - **AND** retained branch、index与working tree MUST保持不变
 
-#### Scenario: Environment binding漂移
-- **WHEN** Task、Receipt、worktree provider evidence、branch或HEAD不再匹配closed binding
-- **THEN** owner MUST返回current expected/actual identity与唯一Environment恢复动作
+#### Scenario: Worktree binding漂移
+- **WHEN** Task、Worktree evidence、branch或HEAD不再匹配closed binding
+- **THEN** owner MUST返回current expected/actual identity与唯一Worktree恢复动作
 - **AND** MUST NOT扫描其他worktree、切换执行root或回退到retained controller checkout执行Git mutation
 
 ### Requirement: Final release source 必须在 Candidate 前固定
@@ -313,6 +293,49 @@ Release lifecycle MUST把完成current main coverage与历史收敛后的generat
 - **AND** MUST NOT把相同tree、成功aggregate或已下载tarball解释为final source current
 
 #### Scenario: final source已固定
-- **WHEN** main coverage/reconciliation、selection freeze与Environment binding均current
+- **WHEN** main coverage/reconciliation、selection freeze与Worktree binding均current
 - **THEN** 后续完整Candidate MUST只运行在final commit/tree/generation
 - **AND** Candidate通过后release source MUST保持不可变直到main merge或由main drift显式产生下一generation
+
+### Requirement: 发布身份链必须只组合当前发布与任务owner事实
+Buildr MUST以`dev baseline → ordered selection chain → release HEAD/tree → Product Candidate generation → frozen tarball manifest/integrity → main tree → post-publication dev provenance reconciliation → transaction evidence`作为唯一发布身份链。Task correlation MUST只组合release/support Task Record关系、matching Worktree、真实Git/remote和当前发布owner事实。
+
+#### Scenario: 构造发布任务关联
+- **WHEN** release transaction读取Task correlation
+- **THEN** MUST不要求Task Development、Task Candidate、Development Handoff、旧Task Finish或self-bootstrap结果
+- **AND** Product Candidate source、generation、CI aggregate与唯一tarball MUST保持不变
+
+### Requirement: 发布演练必须在正式选择前构造精确预期发布源
+Buildr MUST在不改变正式`release-<version>`、freeze history或公共发布事实的前提下，从current frozen release commit按维护者给出的有序`dev` source commits构造发布演练（Release Rehearsal）commit chain。每个待选commit MUST以`cherry-pick -x`保留来源，演练结果 MUST记录base commit/tree、ordered sources、prospective commit/tree、carrier与稳定identity。
+
+#### Scenario: 构造待选提交的演练源
+- **WHEN** 维护者要求对current frozen release与一个或多个current `dev` commits执行发布演练
+- **THEN** rehearsal owner MUST在owned临时worktree中从frozen commit按顺序生成带`-x`provenance的prospective source
+- **AND** MUST只创建演练lifecycle ref与确定性remote carrier，不得移动正式release branch、current freeze或Task状态
+
+#### Scenario: 演练源发生冲突
+- **WHEN** 任一待选commit不能干净应用、已不属于current dev authority或base freeze漂移
+- **THEN** rehearsal owner MUST在正式release refs零写入状态停止并报告base、source与冲突路径
+- **AND** MUST不自动解决、reset、rebase、force push或扩大待选范围
+
+### Requirement: 失败候选修复必须通过全绿演练原子提升
+Current frozen release的Candidate失败后，Buildr MUST要求修复先在support Task交付`dev`并针对current frozen base形成matching passed Release Rehearsal。Selection owner MUST只通过显式`promote-rehearsal`把该exact rehearsal commit/tree提升为新的正式frozen generation，不得先重新打开集合再用正式Candidate逐次发现问题。
+
+#### Scenario: 全绿演练提升为新generation
+- **WHEN** 维护者明确确认提升matching passed rehearsal，且目标version仍无tag、npm version、GitHub Release或已开始公共mutation的protected transaction
+- **THEN** selection owner MUST重新核验frozen base、ordered source provenance、GitHub run/aggregate、唯一artifact、prospective commit/tree、remote carrier与current dev authority
+- **AND** owner MUST保留旧freeze history，将Task release branch和正式release ref仅以fast-forward移动到exact rehearsal commit，并写入新的current/history freeze
+- **AND** promotion完成后的release commit/tree MUST与rehearsal evidence逐字匹配
+
+#### Scenario: 演练证据缺失或漂移
+- **WHEN** rehearsal未全绿、run或aggregate不匹配、carrier漂移、source不再属于current dev、正式release不是evidence base或出现公共发布事实
+- **THEN** promotion MUST在正式release ref与freeze refs零写入状态失败关闭
+- **AND** MUST不回退到普通reopen/update、caller布尔值、历史stdout或旧Candidate evidence
+
+### Requirement: 演练资源必须由所有者精确清理
+Rehearsal owner MUST只清理identity匹配的临时worktree、本地rehearsal refs与remote carrier，并 MUST保留正式release refs、freeze history、Candidate evidence与支持任务交付。
+
+#### Scenario: 演练提升或放弃后清理
+- **WHEN** matching rehearsal已经提升或维护者明确放弃且owner能够证明全部资源identity
+- **THEN** cleanup MUST删除owned临时资源与remote carrier并报告逐项effects
+- **AND** 任一identity漂移 MUST在删除前fail closed

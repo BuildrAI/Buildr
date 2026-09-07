@@ -1,0 +1,34 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-task-record-layered-slice
+operation: reconcile
+treeIdentity: git:e40f62290fe24b3f90275a377ed748b52c43d9a3+dirty
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-task-record-layered-slice/brief.md
+    reason: 说明 Task Record 前后端分层目标、兼容边界和验收入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-record-layered-slice/proposal.md
+      - openspec/changes/refactor-task-record-layered-slice/design.md
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: Task Record 领域、应用、四表 Persistence 和前端 feature 边界变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-record-layered-slice/design.md
+      - knowledge/architecture/technical.md
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: Buildr Task Record 模块文件与事务边界变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-record-layered-slice/design.md
+      - knowledge/services/buildr.md
+  - type: service
+    target: knowledge/services/buildr-web.md
+    reason: Buildr Web Task Record feature 与共享 transport 边界变化
+    status: updated
+    sourceIdentities:
+      - openspec/changes/refactor-task-record-layered-slice/design.md
+      - knowledge/services/buildr-web.md
+unresolvedItems: []

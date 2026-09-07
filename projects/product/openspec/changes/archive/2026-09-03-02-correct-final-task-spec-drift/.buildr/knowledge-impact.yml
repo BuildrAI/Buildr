@@ -1,0 +1,16 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: correct-final-task-spec-drift
+operation: reconcile
+treeIdentity: documentation-only
+impacts:
+  - type: brief
+    target: openspec/changes/correct-final-task-spec-drift/brief.md
+    reason: 说明写后核对发现的最小规范修复
+    status: updated
+    sourceIdentities: [proposal.md, design.md, brief.md]
+  - type: flow
+    target: openspec/knowledge/flows/task-parent-coordination.md
+    reason: 当前知识已经使用统一父任务协调术语
+    status: aligned
+    sourceIdentities: [openspec/knowledge/flows/task-parent-coordination.md]
+unresolvedItems: []
