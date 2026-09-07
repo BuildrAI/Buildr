@@ -412,7 +412,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
-  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration', name: 'cross-domain technical boundary integration tests', executor: { type: 'node', file: 'test/verification/integration.ts', args: ['--suite', 'general'] }, profiles: ['candidate'], workerDemand: 4, schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
     name: ({
