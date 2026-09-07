@@ -4,6 +4,7 @@ import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from
 import { registerTaskVerificationApplication, type VerificationApplicationRuntime } from './application/task-verification-application.ts';
 import { registerParentCoordinationApplication, type ParentCoordinationApplicationRuntime } from './application/parent-coordination-application.ts';
 import { createTaskRepository } from './persistence/task-repository.ts';
+import { createTaskListRepository } from './persistence/task-list-repository.ts';
 import { createTaskProjectRepository } from './persistence/task-project-repository.ts';
 import { createTaskServiceRepository } from './persistence/task-service-repository.ts';
 import { createTaskChangeRepository } from './persistence/task-change-repository.ts';
@@ -300,6 +301,7 @@ function createTaskModule(requires: TaskModuleRequires) {
   );
   Object.assign(privateComposition, {
     taskRepository: createTaskRepository(),
+    taskListRepository: createTaskListRepository(),
     taskProjectRepository: createTaskProjectRepository(),
     taskServiceRepository: createTaskServiceRepository(),
     taskChangeRepository: createTaskChangeRepository(),

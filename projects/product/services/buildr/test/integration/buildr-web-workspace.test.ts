@@ -329,10 +329,13 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /value: 'pending-decision', label: '等待决定'/);
   assert.match(tasks, /value: 'decided', label: '已经决定'/);
   assert.doesNotMatch(tasks, /value: 'handled'|value: 'no-action'/);
-  assert.match(tasks, /useState<TaskStatusFilter>\('open'\)/);
-  assert.match(tasks, /setDraftStatus\('open'\)/);
+  assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
+  assert.match(tasks, /setDraftStatus\('all'\)/);
   assert.match(listHook, /generation\.current !== current/);
-  assert.match(tasks, /value: 'open', label: '未结束（待办 \+ 进行中）'/);
+  assert.match(tasks, /value: 'open', label: '未结束（进行中 \+ 待办）'/);
+  assert.match(tasks, /isIndexedTaskQuery/);
+  assert.match(tasks, /每个关键词至少输入3个字符/);
+  assert.match(tasks, /id="task-search-hint"/);
   assert.match(tasks, /value: 'todo', label: '待办'/);
   assert.doesNotMatch(taskDto, /childTaskIds|childTaskCount|storedChangeReferences/);
   assert.match(taskDto, /matchingTaskCount/);

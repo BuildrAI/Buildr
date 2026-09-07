@@ -75,8 +75,10 @@ export function useTaskList(input: {
       setTasks(data.tasks);
       setTotalTaskCount(data.totalTaskCount);
       setMatchingTaskCount(data.matchingTaskCount);
-      setFilterProjects(data.filterOptions.projects);
-      setFilterServices(data.filterOptions.services);
+      if (data.filterOptions) {
+        setFilterProjects(data.filterOptions.projects);
+        setFilterServices(data.filterOptions.services);
+      }
       setHasMore(data.hasMore);
       setNextCursor(data.nextCursor);
     } catch (error) {
@@ -107,8 +109,10 @@ export function useTaskList(input: {
       });
       setTotalTaskCount(data.totalTaskCount);
       setMatchingTaskCount(data.matchingTaskCount);
-      setFilterProjects(data.filterOptions.projects);
-      setFilterServices(data.filterOptions.services);
+      if (data.filterOptions) {
+        setFilterProjects(data.filterOptions.projects);
+        setFilterServices(data.filterOptions.services);
+      }
       setHasMore(data.hasMore);
       setNextCursor(data.nextCursor);
     } catch (error) {

@@ -11,6 +11,13 @@ import { TaskFilters } from '../components/TaskFilters';
 type TaskStatusFilter = NonNullable<TaskListRequest['status']>;
 type BooleanFilter = NonNullable<TaskListRequest['hasChildren']>;
 type RetrospectiveFilter = NonNullable<TaskListRequest['retrospectiveState']>;
+const EXACT_TASK_QUERY = /^#[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+
+function isIndexedTaskQuery(value: string): boolean {
+  if (value === '' || EXACT_TASK_QUERY.test(value)) return true;
+  const tokens = [...new Set(value.toLowerCase().split(/[^0-9a-z\u0080-\uffff]+/u).filter(Boolean))];
+  return tokens.length > 0 && tokens.every((token) => [...token].length >= 3);
+}
 
 function projectOptionLabel(code: string, names: Record<string, string>): string {
   return names[code] || code;
@@ -30,13 +37,14 @@ export function TasksPage() {
 
   const [q, setQ] = useState('');
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<TaskStatusFilter>('open');
+  const [queryMessage, setQueryMessage] = useState('');
+  const [status, setStatus] = useState<TaskStatusFilter>('all');
   const [project, setProject] = useState('');
   const [service, setService] = useState('');
   const [hasChildren, setHasChildren] = useState<BooleanFilter>('all');
   const [retrospectiveState, setRetrospectiveState] = useState<RetrospectiveFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('open');
+  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('all');
   const [draftProject, setDraftProject] = useState('');
   const [draftService, setDraftService] = useState('');
   const [draftHasChildren, setDraftHasChildren] = useState<BooleanFilter>('all');
@@ -45,7 +53,7 @@ export function TasksPage() {
   const filters: TaskListRequest = {
     ...(query ? { q: query } : {}),
     ...(project ? { project } : {}), ...(service ? { service } : {}),
-    ...(status !== 'all' ? { status } : {}), ...(hasChildren !== 'all' ? { hasChildren } : {}),
+    status, ...(hasChildren !== 'all' ? { hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
   };
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => {
@@ -58,7 +66,7 @@ export function TasksPage() {
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
     : filterServices;
 
-  const filtersActive = status !== 'open' || Boolean(project) || Boolean(service)
+  const filtersActive = status !== 'all' || Boolean(project) || Boolean(service)
     || hasChildren !== 'all' || retrospectiveState !== 'all';
 
   const syncFilterDraft = () => {
@@ -70,7 +78,7 @@ export function TasksPage() {
   };
 
   const resetFilterDraft = () => {
-    setDraftStatus('open');
+    setDraftStatus('all');
     setDraftProject('');
     setDraftService('');
     setDraftHasChildren('all');
@@ -92,7 +100,11 @@ export function TasksPage() {
     : undefined;
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setQuery(q.trim()), 200);
+    const value = q.trim();
+    const searchable = isIndexedTaskQuery(value);
+    setQueryMessage(searchable ? '' : '每个关键词至少输入3个字符；完整任务编号可使用 #task-id。');
+    if (!searchable) return;
+    const timeout = window.setTimeout(() => setQuery(value), 200);
     return () => window.clearTimeout(timeout);
   }, [q]);
 
@@ -139,12 +151,12 @@ export function TasksPage() {
               }
             }}
             options={[
-              { value: 'open', label: '未结束（待办 + 进行中）' },
-              { value: 'todo', label: '待办' },
+              { value: 'all', label: '全部' },
               { value: 'active', label: '进行中' },
+              { value: 'todo', label: '待办' },
               { value: 'completed', label: '已完成' },
               { value: 'abandoned', label: '已放弃' },
-              { value: 'all', label: '全部' },
+              { value: 'open', label: '未结束（进行中 + 待办）' },
             ]}
           />
         </Form.Item>
@@ -260,6 +272,7 @@ export function TasksPage() {
           value={q}
           onChange={(event) => setQ(event.target.value)}
         />
+        <span id="task-search-hint" className={`task-search-hint${queryMessage ? ' visible' : ''}`} role="status">{queryMessage}</span>
       </section>
       <section className="resource-list-section">
         <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>

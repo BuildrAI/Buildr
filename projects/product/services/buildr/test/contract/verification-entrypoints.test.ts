@@ -41,6 +41,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:changed'], 'node test/verification/changed.ts');
   assert.equal(scripts['test:focus'], 'node test/verification/focus.ts');
   assert.equal(scripts['test:host-node'], 'node test/verification/host-node.ts');
+  assert.equal(scripts['benchmark:task-query-million'], 'node tools/performance/task-query-million.ts');
   assert.equal(scripts['test:daily-full'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full');
   assert.equal(scripts['test:core'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-core');
   assert.equal(scripts['test:candidate'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product');
@@ -51,6 +52,15 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:launcher-platform'], 'node test/verification/release/release-smoke.ts --platform-launcher');
   assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');
   for (const removed of ['test:affected', 'test:package', 'test:workspace', 'test:coverage:unit']) assert.equal(scripts[removed], undefined);
+
+  const benchmarkCommand: any = scripts['benchmark:task-query-million'];
+  for (const [name, command] of Object.entries(scripts)) {
+    if (name === 'benchmark:task-query-million') continue;
+    assert.equal(String(command).includes(benchmarkCommand), false, `${name} must not invoke the million-row benchmark`);
+  }
+  for (const file of ['test/verification/registry.ts', '../../../../.github/workflows/verify.yml', '../../../../.github/workflows/publish.yml']) {
+    assert.doesNotMatch(read(file), /benchmark:task-query-million|task-query-million/u, `${file} must not register the isolated benchmark`);
+  }
 
   const fast: any = read('test/verification/verify-buildr-product-fast');
   assert.match(fast, /run-development-node" test\/verification\/profile\.ts fast/);

@@ -96,6 +96,7 @@
     "test:audit:verification": "node test/verification/audit.ts",
     "test:focus": "node test/verification/focus.ts",
     "test:host-node": "node test/verification/host-node.ts",
+    "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
     "test:daily-full": "npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full",
     "test:core": "npm run artifacts:prepare && bash test/verification/verify-buildr-product-core",
     "test:candidate": "npm run artifacts:prepare && bash test/verification/verify-buildr-product",

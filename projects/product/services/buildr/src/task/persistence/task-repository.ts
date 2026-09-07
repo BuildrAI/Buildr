@@ -5,10 +5,7 @@ import { Task, type ParentCompletion, type TaskResultHistory, type TaskRetrospec
 
 type SqlRow = Record<string, SQLOutputValue>;
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
-export type TaskTableCursor = { statusRank: number; updatedAt: string; taskId: string };
-export type TaskTableQuery = { q?: string; status?: string; hasChildren?: string; retrospectiveState?: string; taskIds?: string[]; limit?: number; cursor?: TaskTableCursor };
-
-const STATUS_RANK_SQL = "CASE status WHEN 'todo' THEN 0 WHEN 'active' THEN 1 ELSE 2 END";
+export type TaskTableQuery = { taskIds?: string[] };
 
 function taskRecordError(code: string, message: string, status = 500, details?: unknown): Error {
   return Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
@@ -73,50 +70,12 @@ function mapTask(row: SqlRow): Task {
   });
 }
 
-function appendSearch(conditions: string[], parameters: SQLInputValue[], raw: string): void {
-  const text = raw.trim().replace(/^#/, '');
-  if (!text) return;
-  const lowered = text.toLowerCase();
-  const tokens = [...new Set(lowered.split(/[^0-9a-z\u0080-\uffff]+/).filter(Boolean))];
-  const needles = tokens.length ? tokens : [lowered];
-  const clause = needles.map(() => '(instr(lower(title), ?) > 0 OR instr(lower(intent), ?) > 0 OR instr(lower(task_id), ?) > 0)').join(' AND ');
-  conditions.push(`(${clause})`);
-  parameters.push(...needles.flatMap((needle) => [needle, needle, needle]));
-}
-
-function conditions(input: TaskTableQuery = {}, includeCursor = true): { sql: string; parameters: SQLInputValue[] } {
-  const conditions: string[] = [];
-  const parameters: SQLInputValue[] = [];
-  if (input.taskIds) {
-    if (!input.taskIds.length) conditions.push('0 = 1');
-    else { conditions.push(`task_id IN (${input.taskIds.map(() => '?').join(', ')})`); parameters.push(...input.taskIds); }
-  }
-  if (input.q) appendSearch(conditions, parameters, input.q);
-  if (input.status === 'open') conditions.push("status IN ('todo', 'active')");
-  else if (input.status && input.status !== 'all') { conditions.push('status = ?'); parameters.push(input.status); }
-  if (input.hasChildren === 'yes') conditions.push('EXISTS (SELECT 1 FROM tasks child WHERE child.parent_task_id = tasks.task_id)');
-  if (input.hasChildren === 'no') conditions.push('NOT EXISTS (SELECT 1 FROM tasks child WHERE child.parent_task_id = tasks.task_id)');
-  if (input.retrospectiveState === 'missing') conditions.push('retrospective_state IS NULL');
-  else if (input.retrospectiveState && input.retrospectiveState !== 'all') { conditions.push('retrospective_state = ?'); parameters.push(input.retrospectiveState); }
-  if (includeCursor && input.cursor) {
-    conditions.push(`(${STATUS_RANK_SQL} > ? OR (${STATUS_RANK_SQL} = ? AND (updated_at < ? OR (updated_at = ? AND task_id > ?))))`);
-    parameters.push(input.cursor.statusRank, input.cursor.statusRank, input.cursor.updatedAt, input.cursor.updatedAt, input.cursor.taskId);
-  }
-  return { sql: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', parameters };
-}
-
 function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
-  const clause = conditions(input);
-  const limit = input.limit === undefined ? '' : ' LIMIT ?';
-  return {
-    sql: `SELECT * FROM tasks ${clause.sql} ORDER BY ${STATUS_RANK_SQL}, updated_at DESC, task_id${limit}`,
-    parameters: input.limit === undefined ? clause.parameters : [...clause.parameters, input.limit],
-  };
-}
-
-function countQuery(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
-  const clause = conditions(input, false);
-  return { sql: `SELECT COUNT(*) AS count FROM tasks ${clause.sql}`, parameters: clause.parameters };
+  if (input.taskIds) {
+    if (!input.taskIds.length) return { sql: 'SELECT * FROM tasks WHERE 0 = 1', parameters: [] };
+    return { sql: `SELECT * FROM tasks WHERE task_id IN (${input.taskIds.map(() => '?').join(', ')}) ORDER BY task_id`, parameters: input.taskIds };
+  }
+  return { sql: 'SELECT * FROM tasks ORDER BY task_id', parameters: [] };
 }
 
 export function createTaskRepository() {
@@ -137,13 +96,6 @@ export function createTaskRepository() {
       const db = database(context);
       if (!db) return 0;
       const row = db.prepare('SELECT COUNT(*) AS count FROM tasks').get();
-      return row ? numberColumn(row, 'count') : 0;
-    },
-    countMatching(context: SqliteContext, input: TaskTableQuery = {}): number {
-      const db = database(context);
-      if (!db) return 0;
-      const statement = countQuery(input);
-      const row = db.prepare(statement.sql).get(...statement.parameters);
       return row ? numberColumn(row, 'count') : 0;
     },
     relations(context: SqliteContext, taskIds: string[]): Map<string, { parent: TaskRelation | null; children: TaskRelation[] }> {

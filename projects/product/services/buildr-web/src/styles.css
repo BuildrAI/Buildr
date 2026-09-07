@@ -514,6 +514,16 @@ a {
   font-size: 12px;
 }
 
+.task-search-hint {
+  display: none;
+  color: var(--soft-muted);
+  font-size: 12px;
+}
+
+.task-search-hint.visible {
+  display: block;
+}
+
 .resource-list-host .ant-table-container,
 .resource-list-host .ant-table-content {
   border: 0 !important;

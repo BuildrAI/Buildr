@@ -15,7 +15,7 @@ import { TaskProject } from '../domain/task-project.ts';
 import { TaskService } from '../domain/task-service.ts';
 import type { SqliteContext } from '../../infrastructure/sqlite/transaction.ts';
 import type { TaskRepository } from '../persistence/task-repository.ts';
-import type { TaskTableCursor } from '../persistence/task-repository.ts';
+import type { TaskListBoundary, TaskListCursor, TaskListRepository, TaskListSearch } from '../persistence/task-list-repository.ts';
 import type { TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord, TaskServiceReference, TaskView } from './task-dto.ts';
 import type { TaskProjectRepository } from '../persistence/task-project-repository.ts';
 import type { TaskServiceRepository } from '../persistence/task-service-repository.ts';
@@ -40,6 +40,7 @@ export type TaskQueryApplicationRuntime = {
   prepareWorkspaceStructuredStore(targetRoot: string): { root: string; present: boolean; version: number | null };
   runWorkspaceSqliteRead<T>(targetRoot: string, action: (context: SqliteContext) => T): T;
   taskRepository: TaskRepository;
+  taskListRepository: TaskListRepository;
   taskProjectRepository: TaskProjectRepository;
   taskServiceRepository: TaskServiceRepository;
   taskChangeRepository: TaskChangeRepository;
@@ -84,10 +85,6 @@ function digestRecord(record: unknown): string {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex')}`;
 }
 
-function taskStatusRank(status: string): number {
-  return status === 'todo' ? 0 : status === 'active' ? 1 : 2;
-}
-
 function cursorIdentity(filters: TaskQueryFilters): string {
   return digestRecord({
     q: filters.q ?? '', project: filters.project ?? null,
@@ -97,26 +94,44 @@ function cursorIdentity(filters: TaskQueryFilters): string {
   });
 }
 
-function decodeTaskCursor(raw: string, expectedIdentity: string): TaskTableCursor {
+type DecodedTaskCursor = { boundary: TaskListCursor; totalTaskCount: number; matchingTaskCount: number };
+
+function decodeTaskCursor(raw: string, expectedIdentity: string): DecodedTaskCursor {
   try {
     const value = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Record<string, unknown>;
-    if (value.v !== 1 || value.query !== expectedIdentity || !Number.isInteger(value.statusRank) || Number(value.statusRank) < 0 || Number(value.statusRank) > 2
-      || typeof value.updatedAt !== 'string' || !value.updatedAt || typeof value.taskId !== 'string') throw new Error('invalid cursor');
+    if (value.v !== 2 || value.query !== expectedIdentity || !Number.isInteger(value.statusRank) || Number(value.statusRank) < 0 || Number(value.statusRank) > 3
+      || typeof value.updatedAt !== 'string' || !value.updatedAt || typeof value.taskId !== 'string'
+      || !Number.isInteger(value.totalTaskCount) || Number(value.totalTaskCount) < 0
+      || !Number.isInteger(value.matchingTaskCount) || Number(value.matchingTaskCount) < 0) throw new Error('invalid cursor');
     const normalizedTaskId = taskId(value.taskId, 'cursor.taskId');
-    return { statusRank: Number(value.statusRank), updatedAt: value.updatedAt, taskId: normalizedTaskId };
+    return {
+      boundary: { statusRank: Number(value.statusRank), updatedAt: value.updatedAt, taskId: normalizedTaskId },
+      totalTaskCount: Number(value.totalTaskCount),
+      matchingTaskCount: Number(value.matchingTaskCount),
+    };
   } catch {
     throw taskRecordError('task_record_filter_invalid', 'cursor 无效或与当前 Task query 不匹配。', 400, { field: 'cursor' });
   }
 }
 
-function encodeTaskCursor(filters: TaskQueryFilters, task: Task): string {
+function encodeTaskCursor(filters: TaskQueryFilters, boundary: TaskListBoundary, totalTaskCount: number, matchingTaskCount: number): string {
   return Buffer.from(JSON.stringify({
-    v: 1,
+    v: 2,
     query: cursorIdentity(filters),
-    statusRank: taskStatusRank(task.status),
-    updatedAt: task.updatedAt,
-    taskId: task.taskId,
+    statusRank: boundary.statusRank,
+    updatedAt: boundary.updatedAt,
+    taskId: boundary.taskId,
+    totalTaskCount,
+    matchingTaskCount,
   }), 'utf8').toString('base64url');
+}
+
+function taskSearch(raw: string | undefined): TaskListSearch | undefined {
+  if (!raw) return undefined;
+  if (raw.startsWith('#')) return { kind: 'task-id', taskId: taskId(raw.slice(1), 'q') };
+  const tokens = [...new Set(raw.toLowerCase().split(/[^0-9a-z\u0080-\uffff]+/u).filter(Boolean))];
+  if (!tokens.length || tokens.some((token) => [...token].length < 3)) throw taskRecordError('task_record_filter_invalid', '普通关键词的每个有效分词至少需要3个字符；完整Task ID可使用#前缀精确查询。', 400, { field: 'q' });
+  return { kind: 'fts', expression: tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(' AND ') };
 }
 
 function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null) {
@@ -125,6 +140,7 @@ function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPl
 }
 export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntime) {
   const tasks = runtime.taskRepository;
+  const taskList = runtime.taskListRepository;
   const projects = runtime.taskProjectRepository;
   const services = runtime.taskServiceRepository;
   const changes = runtime.taskChangeRepository;
@@ -196,18 +212,29 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
   function queryTaskViews(targetRoot: string, filters: TaskQueryFilters = {}) {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     return runtime.runWorkspaceSqliteRead(root, (context) => {
-      let scopedIds: string[] | undefined;
-      if (filters.project) scopedIds = projects.findTaskIds(context, filters.project);
-      if (filters.service) {
-        const serviceIds = new Set(services.findTaskIds(context, filters.service));
-        scopedIds = scopedIds ? scopedIds.filter((id) => serviceIds.has(id)) : [...serviceIds];
+      const decodedCursor = filters.cursor ? decodeTaskCursor(filters.cursor, cursorIdentity(filters)) : null;
+      const tableFilters = {
+        search: taskSearch(filters.q), project: filters.project, service: filters.service,
+        status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState,
+      };
+      if (decodedCursor) {
+        const statusRanks: Record<string, number[]> = { active: [0], todo: [1], completed: [2], abandoned: [3], open: [0, 1], all: [0, 1, 2, 3] };
+        const allowedRanks = statusRanks[filters.status ?? 'all'];
+        if (!allowedRanks?.includes(decodedCursor.boundary.statusRank)) {
+          throw taskRecordError('task_record_filter_invalid', 'cursor 状态与当前 Task query 不匹配。', 400, { field: 'cursor' });
+        }
       }
-      const tableFilters = { q: filters.q, status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState, ...(scopedIds ? { taskIds: scopedIds } : {}) };
-      const cursor = filters.cursor ? decodeTaskCursor(filters.cursor, cursorIdentity(filters)) : undefined;
-      const fetched = tasks.readMany(context, { ...tableFilters, ...(cursor ? { cursor } : {}), ...(filters.pageSize ? { limit: filters.pageSize + 1 } : {}) });
+      const fetched = taskList.readPage(context, {
+        ...tableFilters,
+        ...(decodedCursor ? { cursor: decodedCursor.boundary } : {}),
+        ...(filters.pageSize ? { limit: filters.pageSize + 1 } : {}),
+      });
       const hasMore = Boolean(filters.pageSize && fetched.length > filters.pageSize);
-      const found = hasMore ? fetched.slice(0, filters.pageSize) : fetched;
-      const ids = found.map((item) => item.taskId);
+      const boundaries = hasMore ? fetched.slice(0, filters.pageSize) : fetched;
+      const ids = boundaries.map((item) => item.taskId);
+      const tasksById = new Map(tasks.readMany(context, { taskIds: ids }).map((item) => [item.taskId, item]));
+      const found = ids.map((id) => tasksById.get(id)).filter((item): item is Task => Boolean(item));
+      if (found.length !== ids.length) throw taskRecordError('task_record_database_invalid', 'Task list批量组装缺少已选择的Task。', 500, { expected: ids.length, actual: found.length });
       const projectValues = projects.readMany(context, ids);
       const serviceValues = services.readMany(context, ids);
       const changeValues = changes.readMany(context, ids);
@@ -216,15 +243,17 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
         const record = recordWith(task, projectValues.get(task.taskId) || [], serviceValues.get(task.taskId) || [], changeValues.get(task.taskId) || []);
         return { root, record, recordDigest: digestRecord(record), taskRelations: relations.get(task.taskId) || { parent: null, children: [] } };
       });
+      const totalTaskCount = decodedCursor?.totalTaskCount ?? tasks.count(context);
+      const matchingTaskCount = decodedCursor?.matchingTaskCount ?? (filters.pageSize ? taskList.count(context, tableFilters) : found.length);
       return {
         root,
         views,
-        totalTaskCount: tasks.count(context),
-        matchingTaskCount: filters.pageSize ? tasks.countMatching(context, tableFilters) : found.length,
+        totalTaskCount,
+        matchingTaskCount,
         pageSize: filters.pageSize ?? null,
         hasMore,
-        nextCursor: hasMore && found.length ? encodeTaskCursor(filters, found[found.length - 1]) : null,
-        filterOptions: { projects: projects.listOptions(context), services: services.listOptions(context).map((item) => ({ project: item.project, service: item.service })) },
+        nextCursor: hasMore && boundaries.length ? encodeTaskCursor(filters, boundaries[boundaries.length - 1], totalTaskCount, matchingTaskCount) : null,
+        filterOptions: decodedCursor ? null : { projects: projects.listOptions(context), services: services.listOptions(context).map((item) => ({ project: item.project, service: item.service })) },
       };
     });
   }
@@ -368,10 +397,10 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
         service: filters.service ? serviceKey(filters.service) : null,
         status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
       },
-      filterOptions: {
+      filterOptions: persistence.filterOptions ? {
         projects: persistence.filterOptions.projects,
         services: persistence.filterOptions.services.map(serviceKey),
-      },
+      } : null,
       totalTaskCount: persistence.totalTaskCount,
       matchingTaskCount: persistence.matchingTaskCount,
       pageSize: persistence.pageSize,

@@ -688,14 +688,22 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     // Review and Verification remain independent facts without an Environment record.
     prepareEvidenceFixture(runtime, workspaceRoot, 'browser-task');
 
+    const defaultTaskCount: any = runtime.queryTasks(workspaceRoot, { status: 'all' }).matchingTaskCount;
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), 5, '默认目录只显示todo与active任务');
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), defaultTaskCount, '默认目录必须显示全部四态任务');
     assert.equal(await page.locator('#task-detail-id').count(), 1, '任务详情ID钩子必须唯一');
     await page.locator('#task-filter-q').fill('绝对不会命中的任务');
     await page.locator('#task-empty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-empty').innerText(), /当前筛选没有匹配任务/);
     await page.locator('#task-filter-q').clear();
+    await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
+    await page.locator('#task-filter-q').fill('任务');
+    await page.locator('#task-search-hint').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-search-hint').innerText(), /每个关键词至少输入3个字符/);
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), defaultTaskCount, '短关键词不得触发扫描或替换当前结果');
+    await page.locator('#task-filter-q').clear();
+    await page.locator('#task-search-hint').waitFor({ state: 'hidden' });
     process.stderr.write('[buildr-browser] selector=task phase=filtered-empty-verified\n');
 
     let paginationStore: any = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
@@ -723,9 +731,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       }
       return route.continue();
     });
-    await openTaskFilterPanel(page);
-    await selectAntdOption(page, 'task-filter-status', '全部');
-    await applyTaskFilters(page);
+    await page.reload();
     await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 50);
     assert.match(await page.locator('#tasks-state').innerText(), /已加载 50 \/ 共 \d+ 个任务/);
     const prefetchRow: any = page.locator('#task-table-body [data-task-prefetch="true"]');
@@ -742,10 +748,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     paginationStore = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
     paginationStore.database.prepare("DELETE FROM tasks WHERE task_id LIKE 'browser-page-%'").run();
     paginationStore.database.close();
-    await openTaskFilterPanel(page);
-    await page.locator('#task-filter-clear').click();
-    await applyTaskFilters(page);
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
+    await page.reload();
+    await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
     process.stderr.write('[buildr-browser] selector=task phase=infinite-scroll-verified\n');
 
     await page.goto(`${url}/workspaces/${otherWorkspaceId}/tasks`);
@@ -769,7 +773,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       try { await route.continue(); } catch {}
     });
     await openTaskFilterPanel(page);
-    await selectAntdOption(page, 'task-filter-status', '全部');
+    await selectAntdOption(page, 'task-filter-status', '未结束（进行中 + 待办）');
     await applyTaskFilters(page);
     await Promise.race([
       delayedActiveStarted,
@@ -786,7 +790,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await openTaskFilterPanel(page);
     await page.locator('#task-filter-clear').click();
     await applyTaskFilters(page);
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
+    await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
     process.stderr.write('[buildr-browser] selector=task phase=request-race-verified\n');
     await openTaskFilterPanel(page);
     await selectAntdOption(page, 'task-filter-status', '已放弃');
@@ -797,7 +801,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await openTaskFilterPanel(page);
     await page.locator('#task-filter-clear').click();
     await applyTaskFilters(page);
-    await page.waitForFunction(() => document.querySelectorAll('#task-table-body tr.ant-table-row').length === 5);
+    await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
     assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
     assert.equal(await page.locator('#task-create-form').count(), 0);

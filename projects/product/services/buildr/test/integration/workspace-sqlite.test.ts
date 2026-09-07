@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../../src/bootstrap/runtime.ts';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
+import { buildTaskListCountStatement, buildTaskListPageStatement } from '../../src/task/persistence/task-list-repository.ts';
 
 const SERVICE_ROOT: any = path.resolve(import.meta.dirname, '../..');
 
@@ -43,7 +44,9 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row: any) => ({ ...row })), migrations.map(({ version, name }: any) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row: any) => row.name), [
-    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_services', 'task_verification_current', 'tasks',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current',
+    'task_search', 'task_search_config', 'task_search_data', 'task_search_docsize', 'task_search_idx',
+    'task_services', 'task_verification_current', 'tasks',
   ]);
   assert.equal(fs.existsSync(retiredRecords), false);
   assert.ok(writable.database.prepare("PRAGMA table_info(tasks)").all().some((row: any) => row.name === 'parent_task_id' && row.notnull === 0));
@@ -51,6 +54,10 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.database.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'terminal_contribution_reconciliations'").get().count, 0);
   assert.ok(writable.database.prepare("PRAGMA foreign_key_list(tasks)").all().some((row: any) => row.from === 'parent_task_id' && row.table === 'tasks' && row.on_delete === 'SET NULL'));
   assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row: any) => row.name === 'tasks_parent_task_idx'));
+  assert.ok(writable.database.prepare("PRAGMA index_list(tasks)").all().some((row: any) => row.name === 'tasks_feed_order_idx'));
+  assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'tasks_search_%' ORDER BY name").all().map((row: any) => row.name), [
+    'tasks_search_after_delete', 'tasks_search_after_insert', 'tasks_search_after_update',
+  ]);
   for (const table of ['task_verification_current', 'task_review_current']) {
     assert.ok(writable.database.prepare(`PRAGMA foreign_key_list(${table})`).all().some((row: any) => row.from === 'task_id' && row.table === 'tasks' && row.on_delete === 'CASCADE'));
   }
@@ -695,6 +702,63 @@ test('Task Record最终收窄migration保留业务事实并删除重复列和旧
   assert.equal(database.prepare("SELECT count(*) AS count FROM task_changes WHERE task_id = 'final-parent'").get().count, 1);
   assert.equal(database.prepare("SELECT count(*) AS count FROM task_review_current WHERE task_id = 'final-parent'").get().count, 1);
   assert.equal(database.prepare("SELECT count(*) AS count FROM task_verification_current WHERE task_id = 'final-parent'").get().count, 1);
+  database.close();
+});
+
+test('Task查询索引migration回填既有Task并与authority事务同步', () => {
+  const database: any = new DatabaseSync(':memory:');
+  const migrations: any = loadWorkspaceSqliteMigrations();
+  const queryIndexes: any = migrations.find((migration: any) => migration.name === '0032_add_task_query_indexes.sql');
+  for (const migration of migrations.filter((item: any) => item.version < queryIndexes.version)) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, title, intent, status, created_at, updated_at)
+    VALUES ('indexed-task', '百万任务搜索', '验证派生全文索引', 'active', '2026-09-07T00:00:00.000Z', '2026-09-07T00:00:00.000Z')`).run();
+
+  applyWorkspaceSqliteMigration(database, queryIndexes);
+
+  assert.equal(database.prepare("SELECT task_id FROM task_search WHERE task_search MATCH '任务搜'").get().task_id, 'indexed-task');
+  assert.ok(database.prepare("PRAGMA index_list(tasks)").all().some((row: any) => row.name === 'tasks_feed_order_idx'));
+  database.prepare("UPDATE tasks SET title = '新的查询标题' WHERE task_id = 'indexed-task'").run();
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_search WHERE task_search MATCH '任务搜'").get().count, 0);
+  assert.equal(database.prepare("SELECT task_id FROM task_search WHERE task_search MATCH '查询标'").get().task_id, 'indexed-task');
+
+  database.exec('BEGIN');
+  database.prepare("UPDATE tasks SET title = '回滚内容标题' WHERE task_id = 'indexed-task'").run();
+  database.exec('ROLLBACK');
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_search WHERE task_search MATCH '回滚内'").get().count, 0);
+  assert.equal(database.prepare("SELECT task_id FROM task_search WHERE task_search MATCH '查询标'").get().task_id, 'indexed-task');
+
+  database.prepare("DELETE FROM tasks WHERE task_id = 'indexed-task'").run();
+  assert.equal(database.prepare("SELECT count(*) AS count FROM task_search WHERE task_search MATCH '查询标'").get().count, 0);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, queryIndexes.version);
+  database.close();
+});
+
+test('Task list查询计划使用feed、status、relation、parent和FTS索引', () => {
+  const database: any = new DatabaseSync(':memory:');
+  for (const migration of loadWorkspaceSqliteMigrations()) applyWorkspaceSqliteMigration(database, migration);
+  database.prepare(`INSERT INTO tasks(task_id, title, intent, status, created_at, updated_at)
+    VALUES ('plan-task', '查询计划任务', '验证百万级索引', 'active', '2026-09-07T00:00:00.000Z', '2026-09-07T00:00:00.000Z')`).run();
+  database.prepare("INSERT INTO task_projects(task_id, project) VALUES ('plan-task', 'product')").run();
+  database.prepare("INSERT INTO task_services(task_id, project, service) VALUES ('plan-task', 'product', 'buildr')").run();
+
+  const explain: any = (input: any) => {
+    const statement: any = buildTaskListPageStatement({ ...input, limit: 51 });
+    assert.doesNotMatch(statement.sql, /\bOFFSET\b|task_id IN \(\?,/u);
+    return database.prepare(`EXPLAIN QUERY PLAN ${statement.sql}`).all(...statement.parameters).map((row: any) => row.detail).join('\n');
+  };
+  const defaultPlan: any = explain({});
+  assert.match(defaultPlan, /SCAN tasks USING (?:COVERING )?INDEX tasks_feed_order_idx/);
+  assert.doesNotMatch(defaultPlan, /USE TEMP B-TREE FOR ORDER BY/);
+  assert.match(explain({ status: 'active' }), /SEARCH tasks USING (?:COVERING )?INDEX tasks_status_updated_at_idx \(status=\?\)/);
+  assert.match(explain({ project: 'product' }), /SEARCH scoped_project USING (?:COVERING )?INDEX task_projects_project_idx \(project=\?\)/);
+  assert.match(explain({ service: { project: 'product', service: 'buildr' } }), /SEARCH scoped_service USING (?:COVERING )?INDEX task_services_identity_idx \(project=\? AND service=\?\)/);
+  assert.match(explain({ hasChildren: 'yes' }), /tasks_parent_task_idx/);
+  assert.match(explain({ hasChildren: 'no' }), /tasks_parent_task_idx/);
+  assert.match(explain({ retrospectiveState: 'pending-decision' }), /tasks_retrospective_state_idx/);
+  assert.match(explain({ search: { kind: 'fts', expression: '"查询计"' } }), /SCAN task_search VIRTUAL TABLE INDEX/);
+  const withoutChildrenCount: any = buildTaskListCountStatement({ hasChildren: 'no' });
+  assert.match(withoutChildrenCount.sql, /SELECT DISTINCT parent_task_id/);
+  assert.match(database.prepare(`EXPLAIN QUERY PLAN ${withoutChildrenCount.sql}`).all().map((row: any) => row.detail).join('\n'), /tasks_parent_task_idx/);
   database.close();
 });
 

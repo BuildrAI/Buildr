@@ -139,7 +139,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     cursor: nonEmptyText,
   }), defs),
   listResponse: schema('list/response', 'TaskListResponse', closed({
-    schemaVersion: { const: 'buildr.task-record-list/v6' },
+    schemaVersion: { const: 'buildr.task-record-list/v7' },
     filters: closed({
       q: { type: 'string' },
       project: nullable(nonEmptyText),
@@ -148,7 +148,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
       hasChildren: { enum: ['yes', 'no', 'all'] },
       retrospectiveState: { enum: ['missing', 'pending-decision', 'decided', 'all'] },
     }, ['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']),
-    filterOptions: closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ type: 'string', pattern: QUALIFIED_PATTERN }) }, ['projects', 'services']),
+    filterOptions: nullable(closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ type: 'string', pattern: QUALIFIED_PATTERN }) }, ['projects', 'services'])),
     totalTaskCount: { type: 'integer', minimum: 0 },
     matchingTaskCount: { type: 'integer', minimum: 0 },
     pageSize: nullable({ type: 'integer', minimum: 1, maximum: 100 }),
