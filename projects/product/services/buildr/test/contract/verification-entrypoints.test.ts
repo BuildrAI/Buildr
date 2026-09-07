@@ -45,7 +45,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:daily-full'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full');
   assert.equal(scripts['test:core'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-core');
   assert.equal(scripts['test:candidate'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product');
-  assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
+  assert.equal(scripts['test:candidate:ci'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.ts host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.ts aggregate');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.ts');
