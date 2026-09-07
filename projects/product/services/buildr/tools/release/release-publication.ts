@@ -17,7 +17,7 @@ import { createReleaseTransactionEvidence } from './release-transaction-evidence
 import { containsCredentialMaterial } from './release-authority.ts';
 import { inspectReleaseSourceProvenance } from './release-selection.ts';
 
-const repositoryRoot = path.resolve(import.meta.dirname, '../../../../..');
+export const releasePublicationRepositoryRoot = path.resolve(import.meta.dirname, '../../../../../..');
 
 function save(file: string, value: any): void {
   if (containsCredentialMaterial(value)) throw new Error('Release evidence cannot contain credentials.');
@@ -110,7 +110,7 @@ export async function completePublicationEffects(options: any, dependencies: any
 
 export async function runReleasePublication(options: any, dependencies: any = {}): Promise<any> {
   validateReleaseCheckDefinitions();
-  const repo = path.resolve(options.repo || repositoryRoot);
+  const repo = path.resolve(options.repo || releasePublicationRepositoryRoot);
   const context = validateReleaseContext(options.context);
   const artifact = inspectReleaseConsumerArtifact(options.manifestPath).artifact;
   const phases: any[] = [];
