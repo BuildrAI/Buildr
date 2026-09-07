@@ -461,7 +461,7 @@ test('publish workflow uses one dispatch and one protected release transaction',
   const hostNodeSteps: any = document.jobs['host-node'].steps;
   const checkoutIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/checkout@v7');
   const setupNodeIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/setup-node@v6');
-  const installIndex: any = hostNodeSteps.findIndex((step: any) => step.run === 'npm ci');
+  const installIndex: any = hostNodeSteps.findIndex((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile host');
   const downloadIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/download-artifact@v7');
   const verifierIndex: any = hostNodeSteps.findIndex((step: any) => typeof step.run === 'string' && step.run.includes('test/verification/host-node.ts'));
   const verifierStep: any = hostNodeSteps[verifierIndex];
@@ -476,6 +476,16 @@ test('publish workflow uses one dispatch and one protected release transaction',
   ]) assert.equal(verifierStep.run.includes(binding), true, binding);
   assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
   assert.equal(hostNodeSteps.some((step: any) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
+  const launcherSteps: any = document.jobs.launcher.steps;
+  const launcherPreparationIndex: any = launcherSteps.findIndex((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base');
+  const launcherDownloadIndex: any = launcherSteps.findIndex((step: any) => step.uses === 'actions/download-artifact@v7');
+  const launcherVerificationIndex: any = launcherSteps.findIndex((step: any) => step.run === 'node test/verification/release/release-smoke.ts');
+  assert.equal(launcherPreparationIndex < launcherDownloadIndex, true);
+  assert.equal(launcherDownloadIndex < launcherVerificationIndex, true);
+  for (const job of [document.jobs['host-node'], document.jobs.launcher]) {
+    assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
+    assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
+  }
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);
