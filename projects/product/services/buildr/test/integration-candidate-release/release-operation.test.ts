@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { reconcilePublicationAfterPreparedContext, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
@@ -16,6 +16,24 @@ function git(repo: string, args: string[]) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
+
+test('reprepare releases only a terminal failed Publication pointer for a new unpublished context', () => {
+  const publication = { requested: true, contextIdentity: 'sha256-old', runId: 41 };
+  const context = { identity: 'sha256-new' };
+  const released = reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'failure' });
+  assert.equal(released.publication, null);
+  assert.deepEqual(released.effect, {
+    type: 'stale-publication-pointer-released',
+    previousRunId: 41,
+    previousContextIdentity: 'sha256-old',
+    currentContextIdentity: 'sha256-new',
+    previousConclusion: 'failure',
+    publicState: 'unpublished',
+  });
+  assert.equal(reconcilePublicationAfterPreparedContext(publication, { identity: 'sha256-old' }, null).publication, publication);
+  assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'in_progress', conclusion: null }), /still active/u);
+  assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
+});
 
 test('prepare creates one isolated release, validates before main, and reuses the same Candidate after unrelated dev and Task changes', async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
