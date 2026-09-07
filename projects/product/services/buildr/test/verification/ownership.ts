@@ -722,6 +722,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "CONTRIBUTING.md",
       "SECURITY.md",
       ".github/workflows/publish.yml",
+      "knowledge/archify/**/*.visual-check.json",
       "docs/cli-reference.md",
       "docs/cli-architecture.md",
       "docs/known-limitations.md",

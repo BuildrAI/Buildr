@@ -22,6 +22,31 @@ export function inspectLocalWebToolchain(root = webRoot): {
   return { status: missing.length ? 'blocked' : 'ready', root, tools, missing };
 }
 
+export function resolveAdjacentNpmCli(
+  nodeExecutable = process.execPath,
+  env: NodeJS.ProcessEnv = process.env,
+  platform = process.platform,
+): string {
+  const nodeRoot = path.dirname(nodeExecutable);
+  const candidates = [
+    env.npm_execpath,
+    ...(platform === 'win32'
+      ? [
+          path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+          path.resolve(nodeRoot, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        ]
+      : [
+          path.resolve(nodeRoot, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+          path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        ]),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const npmCli = candidates.find((candidate) => fs.statSync(candidate, { throwIfNoEntry: false })?.isFile());
+  if (!npmCli) {
+    throw new Error(`Exact Node does not provide its adjacent npm CLI: ${candidates.join(', ')}`);
+  }
+  return npmCli;
+}
+
 export function buildWebDist(outputRoot: string, root = webRoot): string {
   const target = path.resolve(outputRoot);
   const toolchain = inspectLocalWebToolchain(root);
@@ -32,10 +57,9 @@ export function buildWebDist(outputRoot: string, root = webRoot): string {
     });
   }
   fs.rmSync(target, { recursive: true, force: true });
-  const npmExecPath = process.env.npm_execpath;
-  const command = npmExecPath ? process.execPath : (process.platform === 'win32' ? 'npm.cmd' : 'npm');
-  const args = [...(npmExecPath ? [npmExecPath] : []), '--prefix', root, 'run', 'build', '--', '--outDir', target];
-  const result = spawnSync(command, args, { cwd: serviceRoot, encoding: 'utf8', env: process.env });
+  const npmCli = resolveAdjacentNpmCli();
+  const args = [npmCli, '--prefix', root, 'run', 'build', '--', '--outDir', target];
+  const result = spawnSync(process.execPath, args, { cwd: serviceRoot, encoding: 'utf8', env: process.env });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw Object.assign(new Error(`Buildr Web staging build failed with exit code ${result.status ?? 'unknown'}: ${(result.stderr || result.stdout || '').trim()}`), {
