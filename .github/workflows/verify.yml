@@ -421,6 +421,8 @@ jobs:
         with:
           node-version-file: projects/product/.node-version
           package-manager-cache: false
-      - run: node tools/verification/candidate-environment.ts prepare --profile base
-      - name: Observe isolated Launcher replacement
-        run: node --test --test-name-pattern="takes over CLI ownership" test/integration/npm-launcher.test.ts
+      - run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - name: Observe Launcher under the normal runtime workload
+        env:
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        run: node test/verification/focus.ts npm-launcher-candidate runtime-adapter-parity system-runtime-recovery
