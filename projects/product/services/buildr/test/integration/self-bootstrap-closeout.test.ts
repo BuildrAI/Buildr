@@ -362,3 +362,22 @@ test('直接激活拒绝把带相同标记的合并提交当作自己的待推�
   assert.equal(git(current.root, 'rev-parse', 'HEAD'), before);
   assert.equal(git(current.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s+/)[0], current.input.deliveredRef);
 });
+
+test('workspace-owned release Skill changes activate the same retained projection runner', (t: any) => {
+  const current: any = fixture(t);
+  const skill = path.join(current.root, 'skills', 'buildr-release', 'SKILL.md');
+  fs.mkdirSync(path.dirname(skill), { recursive: true });
+  fs.writeFileSync(skill, '---\nname: buildr-release\ndescription: Release fixture\n---\nRelease flow.\n');
+  git(current.root, 'add', '--', 'skills/buildr-release/SKILL.md');
+  git(current.root, 'commit', '-m', 'deliver release Skill');
+  git(current.root, 'push', 'origin', 'dev');
+  const deliveredRef = git(current.root, 'rev-parse', 'HEAD');
+  const taskId = 'release-skill-delivery';
+  const performed: any[] = [];
+  const execute = executor(current.root, { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { summary: 'Delivered release Skill.' }, scope: { projects: ['product'] } } } } });
+  const result: any = runDirectSelfBootstrapCloseout({ workspaceRoot: current.root, taskId, baseRef: current.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment,
+    execute: (command: any, args: any, context: any) => { performed.push(args); return execute(command, args, context); } });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.ok(performed.some(args => args.includes('sync')));
+  assert.equal(fs.readFileSync(path.join(current.root, 'skills', 'generated', 'SKILL.md'), 'utf8'), 'v2\n');
+});

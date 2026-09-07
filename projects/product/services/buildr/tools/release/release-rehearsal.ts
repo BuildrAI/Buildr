@@ -11,8 +11,12 @@ import { CANDIDATE_CI_AGGREGATE_SCHEMA } from './candidate-ci-contract.ts';
 import { releasePublishAuthority } from './release-authority.ts';
 import { validateReleaseExecutionBinding } from './release-execution-binding.ts';
 import { inspectReleaseSelection } from './release-selection.ts';
+import { observeUnpublishedRelease } from './release-observation.ts';
+import { readReleaseArtifact } from './release-artifact.ts';
+import { assertReleaseConsumptionCoverage } from './release-consumption.ts';
+import { pushReleaseBranch } from './release-git-convergence.ts';
 
-export const RELEASE_REHEARSAL_PREPARATION_SCHEMA = 'buildr.release-rehearsal-preparation/v1';
+export const RELEASE_REHEARSAL_PREPARATION_SCHEMA = 'buildr.release-rehearsal-preparation/v2';
 export const RELEASE_REHEARSAL_EVIDENCE_SCHEMA = 'buildr.release-rehearsal-evidence/v1';
 const SHA = /^[a-f0-9]{40}$/u;
 
@@ -53,10 +57,11 @@ function updateRefs(commands: string[], repo: string): void {
 }
 
 export function validateReleaseRehearsalPreparation(value: any): any {
-  if (value?.schemaVersion !== RELEASE_REHEARSAL_PREPARATION_SCHEMA || value?.status !== 'prepared') throw new Error('Release rehearsal preparation is invalid.');
+  if (![RELEASE_REHEARSAL_PREPARATION_SCHEMA, 'buildr.release-rehearsal-preparation/v1'].includes(value?.schemaVersion) || value?.status !== 'prepared') throw new Error('Release rehearsal preparation is invalid.');
   const identity = value.identity;
   const projection = { ...value };
   delete projection.identity;
+  if (value.schemaVersion === RELEASE_REHEARSAL_PREPARATION_SCHEMA) delete projection.effects;
   if (identity !== digest(projection)) throw new Error('Release rehearsal preparation identity is invalid.');
   if (!SHA.test(value.base?.commit || '') || !SHA.test(value.base?.tree || '') || !SHA.test(value.prospective?.commit || '') || !SHA.test(value.prospective?.tree || '')) throw new Error('Release rehearsal preparation Git identity is invalid.');
   if (typeof value.devRef !== 'string' || !value.devRef.trim()) throw new Error('Release rehearsal preparation dev ref is invalid.');
@@ -90,37 +95,51 @@ export function prepareReleaseRehearsal(options: { version: string; repo: string
     if (resolved !== source || !ancestor(source, devHead, repo)) throw new Error(`Release rehearsal source is not current dev provenance: ${source}`);
     if (state.selectionChain.some((entry: any) => entry.sourceDevCommit === source)) throw new Error(`Release rehearsal source is already selected: ${source}`);
   }
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-rehearsal-'));
-  let prospectiveCommit: string;
-  try {
-    run('git', ['worktree', 'add', '--detach', temporary, state.releaseHead], repo);
-    for (const source of sources) run('git', ['cherry-pick', '-x', source], temporary);
-    prospectiveCommit = commit('HEAD', temporary);
-  } catch (error) {
-    run('git', ['worktree', 'remove', '--force', temporary], repo, { allowFailure: true });
-    throw error;
-  }
-  run('git', ['worktree', 'remove', temporary], repo);
-  const prospectiveTree = tree(prospectiveCommit, repo);
-  const rehearsalKey = digest({ version: options.version, base: state.releaseHead, sources, prospectiveCommit, prospectiveTree }).slice('sha256-'.length, 'sha256-'.length + 16);
+  const effects: any[] = [];
+  const rehearsalKey = digest({ version: options.version, base: state.releaseHead, sources }).slice(7, 23);
   const carrier = `codex/release-rehearsal-${options.version}-${rehearsalKey}`;
   const localRef = `refs/buildr/release/${options.version}/rehearsals/${rehearsalKey}`;
   const remote = options.remote || 'origin';
-  run('git', ['update-ref', localRef, prospectiveCommit], repo);
-  run('git', ['push', remote, `${prospectiveCommit}:refs/heads/${carrier}`], repo);
-  const result: any = {
-    schemaVersion: RELEASE_REHEARSAL_PREPARATION_SCHEMA,
-    status: 'prepared',
-    version: options.version,
-    devRef: state.devRef,
-    base: { commit: state.releaseHead, tree: state.releaseTree, generation: state.generation, selectionIdentity: state.selectionIdentity },
-    sourceDevCommits: sources,
-    prospective: { commit: prospectiveCommit, tree: prospectiveTree },
-    carrier: { remote, branch: carrier, localRef },
-    effects: [{ type: 'release-rehearsal-carrier-pushed', remote, branch: carrier, commit: prospectiveCommit }, { type: 'release-rehearsal-ref-created', ref: localRef, commit: prospectiveCommit }],
-  };
-  result.identity = digest(result);
-  return result;
+  try {
+    let prospectiveCommit = run('git', ['for-each-ref', '--format=%(objectname)', localRef], repo).stdout || null;
+    const remoteCommit = run('git', ['ls-remote', remote, `refs/heads/${carrier}`], repo).stdout.split(/\s+/u)[0] || null;
+    if (!prospectiveCommit && remoteCommit) {
+      const restored = { type: 'release-rehearsal-ref-restored', ref: localRef, commit: remoteCommit, state: 'unknown' };
+      effects.push(restored);
+      run('git', ['fetch', '--no-tags', remote, `refs/heads/${carrier}:${localRef}`], repo);
+      prospectiveCommit = commit(localRef, repo);
+      restored.state = 'confirmed';
+    }
+    if (!prospectiveCommit) {
+      const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-rehearsal-'));
+      try {
+        run('git', ['worktree', 'add', '--detach', temporary, state.releaseHead], repo);
+        for (const source of sources) run('git', ['cherry-pick', '-x', source], temporary);
+        prospectiveCommit = commit('HEAD', temporary);
+      } finally {
+        // This is solely an algorithm-owned prospective checkout. The support
+        // Task and its implementation worktree are never removed here.
+        run('git', ['worktree', 'remove', '--force', temporary], repo, { allowFailure: true });
+      }
+      const created = { type: 'release-rehearsal-ref-created', ref: localRef, commit: prospectiveCommit, state: 'unknown' };
+      effects.push(created);
+      run('git', ['update-ref', localRef, prospectiveCommit], repo);
+      created.state = 'confirmed';
+    }
+    const chain = run('git', ['rev-list', '--reverse', '--first-parent', `${state.releaseHead}..${prospectiveCommit}`], repo).stdout.split(/\s+/u).filter(Boolean);
+    const selected = chain.map(value => run('git', ['show', '-s', '--format=%B', value], repo).stdout.match(/cherry picked from commit ([a-f0-9]{40})/u)?.[1] || null);
+    if (JSON.stringify(selected) !== JSON.stringify(sources)) throw new Error('Rehearsal carrier has different ordered source provenance.');
+    if (remoteCommit && remoteCommit !== prospectiveCommit) throw new Error('Rehearsal carrier source drifted.');
+    if (!remoteCommit) pushReleaseBranch({ repo, remote, branch: carrier, commit: prospectiveCommit, before: null }, dependencies, effects);
+    const result: any = { schemaVersion: RELEASE_REHEARSAL_PREPARATION_SCHEMA, status: 'prepared', version: options.version, devRef: state.devRef,
+      base: { commit: state.releaseHead, tree: state.releaseTree, generation: state.generation, selectionIdentity: state.selectionIdentity },
+      sourceDevCommits: sources, prospective: { commit: prospectiveCommit, tree: tree(prospectiveCommit, repo) }, carrier: { remote, branch: carrier, localRef } };
+    result.identity = digest(result);
+    return { ...result, effects };
+  } catch (error) {
+    return { status: 'blocked', version: options.version, effects, diagnostic: { message: error instanceof Error ? error.message : String(error) },
+      nextActions: ['保留已生成的演练引用，恢复同一prepare；不用重新创建支持任务或重算已验证提交。'] };
+  }
 }
 
 export function dispatchReleaseRehearsal(preparationValue: any, options: { repo: string; confirm?: boolean }): any {
@@ -137,10 +156,17 @@ export function inspectReleaseRehearsal(preparationValue: any, options: { repo: 
   const runValue = JSON.parse(run('gh', ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${runId}`], options.repo).stdout);
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-rehearsal-evidence-'));
   let aggregate: any = null;
+  let artifact: any = null;
   try {
     if (runValue.status === 'completed') {
       const download = run('gh', ['run', 'download', String(runId), '--repo', releasePublishAuthority.repository, '--name', 'candidate-aggregate', '--dir', temporary], options.repo, { allowFailure: true });
-      if (download.status === 0) aggregate = readJson(path.join(temporary, 'candidate-ci-aggregate.json'));
+      if (download.status === 0) {
+        aggregate = readJson(path.join(temporary, 'candidate-ci-aggregate.json'));
+        const packageRoot = path.join(temporary, 'package');
+        run('gh', ['run', 'download', String(runId), '--repo', releasePublishAuthority.repository, '--name', 'candidate-package', '--dir', packageRoot], options.repo);
+        artifact = readReleaseArtifact(path.join(packageRoot, 'release-artifact.json')).manifest;
+        assertReleaseConsumptionCoverage(aggregate, { sourceCommit: preparation.prospective.commit, sourceTree: preparation.prospective.tree }, artifact);
+      }
     }
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
@@ -157,6 +183,7 @@ export function inspectReleaseRehearsal(preparationValue: any, options: { repo: 
     preparation,
     workflow: { runId, runAttempt: runValue.run_attempt, headSha: runValue.head_sha, status: runValue.status, conclusion: runValue.conclusion },
     aggregate,
+    artifact,
     findings,
     effects: [],
   };
@@ -187,63 +214,75 @@ export function cleanupReleaseRehearsal(preparationValue: any, options: { repo: 
 export function assertNoConflictingPublicationRuns(runs: any[], version: string): void {
   const matching = runs.filter((item: any) => String(item.displayTitle || '').includes(version));
   if (matching.some((item: any) => item.status !== 'completed')) throw new Error(`An active protected publication run already exists for ${version}.`);
-  if (matching.some((item: any) => item.conclusion === 'success')) throw new Error(`A successful protected publication run already exists for ${version}.`);
+  // A terminal run is history. Only current public facts decide whether repair is safe.
 }
 
-function assertUnpublished(version: string, repo: string): void {
-  const tag = run('gh', ['api', `repos/${releasePublishAuthority.repository}/git/ref/tags/v${version}`], repo, { allowFailure: true });
-  if (tag.status === 0) throw new Error(`Release tag v${version} already exists.`);
-  const release = run('gh', ['release', 'view', `v${version}`, '--repo', releasePublishAuthority.repository], repo, { allowFailure: true });
-  if (release.status === 0) throw new Error(`GitHub Release v${version} already exists.`);
-  const registry = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', `@buildr-ai/buildr@${version}`, 'version', '--json'], repo, { allowFailure: true });
-  if (registry.status === 0) throw new Error(`npm version ${version} already exists.`);
-  const publishRuns = JSON.parse(run('gh', ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'publish.yml', '--limit', '30', '--json', 'databaseId,displayTitle,status,conclusion'], repo).stdout || '[]');
-  assertNoConflictingPublicationRuns(publishRuns, version);
+export async function assertUnpublished(version: string, repo: string): Promise<void> {
+  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || run('gh', ['auth', 'token'], repo, { allowFailure: true }).stdout || undefined;
+  const observed = await observeUnpublishedRelease(version, { token });
+  if (observed.status !== 'unpublished') throw Object.assign(new Error('Release version is published, active, or its public state is unknown.'), { observation: observed });
 }
 
-export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: string; executionBinding: any; confirm?: boolean; reason?: string }, dependencies: any = {}): any {
+export async function promoteReleaseRehearsal(evidenceValue: any, options: { repo: string; executionBinding: any; confirm?: boolean; reason?: string }, dependencies: any = {}): Promise<any> {
   const evidence = validateReleaseRehearsalEvidence(evidenceValue);
-  if (options.confirm !== true || !String(options.reason || '').trim()) throw new Error('Release rehearsal promotion requires explicit confirmation and a non-empty reason.');
+  if (options.confirm !== true || !String(options.reason || '').trim()) throw new Error('Release rehearsal promotion requires authorization and a non-empty reason.');
   const repo = path.resolve(options.repo);
   const preparation = evidence.preparation;
-  const binding = (dependencies.validateExecutionBinding || validateReleaseExecutionBinding)(options.executionBinding, { repo });
-  if (binding.version !== preparation.version) throw new Error('Release rehearsal promotion execution binding version mismatches preparation.');
-  const state: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
-  if (state.status !== 'frozen' || state.releaseHead !== preparation.base.commit || state.releaseTree !== preparation.base.tree || state.selectionIdentity !== preparation.base.selectionIdentity) throw new Error('Current frozen release does not match rehearsal base.');
-  const currentBranch = run('git', ['branch', '--show-current'], repo).stdout;
-  const currentHead = commit('HEAD', repo);
-  if (currentBranch !== binding.branch || currentHead !== state.releaseHead) throw new Error('Release rehearsal promotion requires the bound release Task branch at the frozen base.');
-  if (run('git', ['status', '--porcelain=v1', '--untracked-files=all'], repo).stdout) throw new Error('Release rehearsal promotion requires a clean worktree.');
-  const live = (dependencies.inspectRehearsal || inspectReleaseRehearsal)(preparation, { repo, runId: evidence.workflow.runId });
-  if (live.status !== 'passed' || live.identity !== evidence.identity) throw new Error('Release rehearsal evidence is stale or no longer matches GitHub.');
-  const remoteCarrier = run('git', ['ls-remote', preparation.carrier.remote, `refs/heads/${preparation.carrier.branch}`], repo).stdout.split(/\s+/u)[0] || null;
-  if (remoteCarrier !== preparation.prospective.commit) throw new Error('Release rehearsal remote carrier does not match the prospective commit.');
-  (dependencies.assertUnpublished || assertUnpublished)(preparation.version, repo);
-  run('git', ['merge', '--ff-only', preparation.prospective.commit], repo);
-  const newGeneration = state.generation + preparation.sourceDevCommits.length;
-  const formalRef = `refs/heads/release-${preparation.version}`;
-  const frozenRef = `refs/buildr/release/${preparation.version}/frozen`;
-  const historyRef = `refs/buildr/release/${preparation.version}/freezes/${newGeneration}`;
-  updateRefs([
-    `update ${formalRef} ${preparation.prospective.commit} ${state.releaseHead}`,
-    `update ${frozenRef} ${preparation.prospective.commit} ${state.releaseHead}`,
-    `create ${historyRef} ${preparation.prospective.commit}`,
-  ], repo);
-  run('git', ['push', preparation.carrier.remote, `${preparation.prospective.commit}:refs/heads/release-${preparation.version}`], repo);
-  const result: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
-  if (result.status !== 'frozen' || result.releaseHead !== preparation.prospective.commit || result.releaseTree !== preparation.prospective.tree) throw new Error('Promoted release selection does not match rehearsal source.');
-  return {
-    ...result,
-    operation: 'promote-rehearsal',
-    status: 'passed',
-    rehearsalEvidenceIdentity: evidence.identity,
-    executionBindingIdentity: binding.identity,
-    effects: [
-      { type: 'release-rehearsal-promoted', from: state.releaseHead, to: result.releaseHead, generation: result.generation, reason: String(options.reason).trim() },
-      { type: 'formal-release-ref-pushed', remote: preparation.carrier.remote, ref: `refs/heads/release-${preparation.version}`, commit: result.releaseHead },
-    ],
-    nextActions: ['对exact promoted release commit/tree运行一次最终Candidate。'],
-  };
+  const effects: any[] = [];
+  try {
+    const binding = (dependencies.validateExecutionBinding || validateReleaseExecutionBinding)(options.executionBinding, { repo });
+    if (binding.version !== preparation.version) throw new Error('Release rehearsal promotion version mismatches preparation.');
+    const state: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
+    const target = preparation.prospective.commit;
+    const base = preparation.base.commit;
+    if (!['frozen', 'stale'].includes(state.status) || ![base, target].includes(state.releaseHead) || ![base, target].includes(state.freeze.commit)) throw new Error('Current frozen release is outside the prepared promotion states.');
+    if (state.releaseHead === base && state.selectionIdentity !== preparation.base.selectionIdentity) throw new Error('Current frozen selection differs from rehearsal base.');
+    const currentBranch = run('git', ['branch', '--show-current'], repo).stdout;
+    const currentHead = commit('HEAD', repo);
+    if (currentBranch !== binding.branch || ![base, target].includes(currentHead)) throw new Error('Promotion requires the bound release Task branch at the base or exact resumed target.');
+    if (run('git', ['status', '--porcelain=v1', '--untracked-files=all'], repo).stdout) throw new Error('Promotion requires a clean worktree.');
+    const live = await (dependencies.inspectRehearsal || inspectReleaseRehearsal)(preparation, { repo, runId: evidence.workflow.runId });
+    if (live.status !== 'passed' || live.identity !== evidence.identity) throw new Error('Release rehearsal evidence is stale or no longer matches GitHub.');
+    const devHead = commit(preparation.devRef, repo);
+    if (preparation.sourceDevCommits.some((source: string) => !ancestor(source, devHead, repo))) throw new Error('Selected source is no longer contained by dev.');
+    const remoteCarrier = run('git', ['ls-remote', preparation.carrier.remote, `refs/heads/${preparation.carrier.branch}`], repo).stdout.split(/\s+/u)[0] || null;
+    if (remoteCarrier !== target) throw new Error('Release rehearsal carrier does not match the exact source.');
+    const formalRef = `refs/heads/release-${preparation.version}`;
+    const frozenRef = `refs/buildr/release/${preparation.version}/frozen`;
+    const newGeneration = preparation.base.generation + preparation.sourceDevCommits.length;
+    const historyRef = `refs/buildr/release/${preparation.version}/freezes/${newGeneration}`;
+    const remoteFormal = run('git', ['ls-remote', preparation.carrier.remote, formalRef], repo).stdout.split(/\s+/u)[0] || null;
+    const alreadyPromoted = state.releaseHead === target && state.freeze.commit === target && currentHead === target && remoteFormal === target;
+    if (!alreadyPromoted) {
+      await (dependencies.assertUnpublished || assertUnpublished)(preparation.version, repo);
+      if (currentHead !== target) {
+        const merged = { type: 'release-task-fast-forwarded', from: currentHead, to: target, state: 'unknown' };
+        effects.push(merged);
+        run('git', ['merge', '--ff-only', target], repo);
+        merged.state = 'confirmed';
+      }
+      const updates = [];
+      for (const ref of [formalRef, frozenRef, historyRef]) {
+        const current = run('git', ['for-each-ref', '--format=%(objectname)', ref], repo).stdout;
+        if (current && ![base, target].includes(current)) throw new Error(`Promotion ref ${ref} drifted.`);
+        updates.push(current === target ? `verify ${ref} ${target}` : current ? `update ${ref} ${target} ${current}` : `create ${ref} ${target}`);
+      }
+      const updated = { type: 'release-rehearsal-promoted', from: base, to: target, generation: newGeneration, state: 'unknown' };
+      effects.push(updated);
+      updateRefs(updates, repo);
+      updated.state = 'confirmed';
+      if (remoteFormal !== target) pushReleaseBranch({ repo, remote: preparation.carrier.remote, branch: `release-${preparation.version}`, commit: target, before: remoteFormal }, dependencies, effects);
+    }
+    const result: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
+    if (result.status !== 'frozen' || result.releaseHead !== target || result.releaseTree !== preparation.prospective.tree) throw new Error('Promoted release selection does not match rehearsal source.');
+    return { ...result, operation: 'promote-rehearsal', status: 'passed', action: alreadyPromoted ? 'reused' : 'promoted', rehearsalEvidenceIdentity: evidence.identity,
+      candidateRunId: evidence.workflow.runId, artifact: evidence.artifact ?? evidence.aggregate.artifact,
+      effects, nextActions: ['复用此完整Candidate及同一tarball；核验main关系和临发布状态。源码或相关执行输入变化才重新验证。'] };
+  } catch (error) {
+    return { status: 'blocked', operation: 'promote-rehearsal', version: preparation.version, effects,
+      diagnostic: { message: error instanceof Error ? error.message : String(error) },
+      nextActions: ['回读prepared base/target的本地与远端引用，继续同一promotion；不要重建已验证提交或产物。'] };
+  }
 }
 
 function args(argv: string[]): any {
@@ -271,13 +310,14 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
         : action === 'inspect'
           ? inspectReleaseRehearsal(prepared, { repo, runId: Number(values.runid) })
           : action === 'promote'
-            ? promoteReleaseRehearsal(evidence, { repo, executionBinding: readJson(values.executionbinding), confirm: values.confirm, reason: values.reason })
+            ? await promoteReleaseRehearsal(evidence, { repo, executionBinding: readJson(values.executionbinding), confirm: values.confirm, reason: values.reason })
           : action === 'cleanup'
             ? cleanupReleaseRehearsal(prepared, { repo, confirm: values.confirm })
             : null;
     if (!result) throw new Error('Usage: release-rehearsal.ts <prepare|dispatch|inspect|promote|cleanup> ...');
+    if (values.output) { fs.mkdirSync(path.dirname(path.resolve(values.output)), { recursive: true }); fs.writeFileSync(path.resolve(values.output), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 }); }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    if (result.status === 'failed') process.exitCode = 1;
+    if (['failed', 'blocked'].includes(result.status)) process.exitCode = 1;
   } catch (error: unknown) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

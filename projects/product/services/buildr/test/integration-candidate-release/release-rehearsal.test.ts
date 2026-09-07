@@ -27,9 +27,9 @@ test('publication recovery permits only completed unsuccessful runs when public 
   assert.throws(() => assertNoConflictingPublicationRuns([
     { displayTitle: 'Release 1.2.3-rc.1 (active)', status: 'in_progress', conclusion: '' },
   ], version), /active protected publication run/u);
-  assert.throws(() => assertNoConflictingPublicationRuns([
+  assert.doesNotThrow(() => assertNoConflictingPublicationRuns([
     { displayTitle: 'Release 1.2.3-rc.1 (passed)', status: 'completed', conclusion: 'success' },
-  ], version), /successful protected publication run/u);
+  ], version));
 });
 
 function fixture(t: any) {
@@ -57,7 +57,7 @@ function fixture(t: any) {
   return { repo, base, source };
 }
 
-test('release rehearsal builds a prospective -x chain without moving the formal release', (t) => {
+test('release rehearsal builds a prospective -x chain without moving the formal release', async (t) => {
   const { repo, base, source } = fixture(t);
   const binding: any = { version, head: base };
   const prepared: any = prepareReleaseRehearsal({ version, repo, sourceDevCommits: [source], executionBinding: binding }, { validateExecutionBinding: () => binding });
@@ -68,7 +68,7 @@ test('release rehearsal builds a prospective -x chain without moving the formal 
   assert.equal(git(repo, ['ls-remote', 'origin', `refs/heads/${prepared.carrier.branch}`]).split(/\s+/u)[0], prepared.prospective.commit);
 });
 
-test('passed rehearsal promotes the exact commit with the prepared dev ref and cleanup removes only rehearsal refs', (t) => {
+test('passed rehearsal promotes the exact commit with the prepared dev ref and cleanup removes only rehearsal refs', async (t) => {
   const { repo, base, source } = fixture(t);
   const initialBinding: any = { version, head: base };
   git(repo, ['update-ref', 'refs/remotes/origin/dev', source]);
@@ -95,7 +95,7 @@ test('passed rehearsal promotes the exact commit with the prepared dev ref and c
   };
   evidence.identity = digest(evidence);
   const binding: any = { version, branch: `codex/release-${version}`, head: base, identity: `sha256-${'1'.repeat(64)}` };
-  const promoted: any = promoteReleaseRehearsal(evidence, { repo, executionBinding: binding, confirm: true, reason: 'verified rehearsal' }, {
+  const promoted: any = await promoteReleaseRehearsal(evidence, { repo, executionBinding: binding, confirm: true, reason: 'verified rehearsal' }, {
     validateExecutionBinding: () => binding,
     inspectRehearsal: () => evidence,
     assertUnpublished: () => {},

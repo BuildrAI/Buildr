@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
+import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -34,10 +34,10 @@ const expectedDispatchInputs: any = Object.freeze([
   'version',
   'workflow_sha256',
 ]);
-const expectedNeeds: any = Object.freeze(['candidate', 'contract', 'host-node', 'launcher']);
+const expectedNeeds: any = Object.freeze(['candidate', 'contract']);
 
 function defaultExecute(command: any, args: any, options: any = {}): any  {
-  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env });
+  return spawnCommandSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env, timeout: 30_000 });
 }
 
 function command(execute: any, executable: any, args: any, cwd: any): any  {
@@ -117,6 +117,7 @@ function jobAuthority(job: any): any  {
     tagPreflightInvocations: runs.filter((value: any) => value.includes('tools/release/release-tag-ensure.ts preflight')).length,
     tagEnsureInvocations: runs.filter((value: any) => value.includes('tools/release/release-tag-ensure.ts ensure')).length,
     trustedPublishInvocations: runs.filter((value: any) => value.includes('tools/release/trusted-publish.ts')).length,
+    publicationInvocations: runs.filter((value: any) => value.includes('tools/release/release-publication.ts')).length,
     rawPublishInvocations: runs.filter((value: any) => /(^|\s)npm\s+publish(?:\s|$)/m.test(value)).length,
   };
 }
@@ -196,11 +197,12 @@ export function runReleaseAuthorityPreflight(options: any = {}, dependencies: an
     if (release.environment !== expected.environment || release.idTokenPermission !== 'write' || release.contentsPermission !== 'write') findings.push(finding('workflow_release_identity_mismatch', { environment: expected.environment, idTokenPermission: 'write', contentsPermission: 'write' }, release, 'workflow'));
     if (JSON.stringify(release.needs) !== JSON.stringify(expectedNeeds)) findings.push(finding('workflow_release_needs_mismatch', expectedNeeds, release.needs, 'workflow'));
     const invocations: any = {
-      oidcProbeInvocations: 1,
-      preTagInvocations: 1,
-      tagPreflightInvocations: 1,
-      tagEnsureInvocations: 1,
-      trustedPublishInvocations: 1,
+      publicationInvocations: 1,
+      oidcProbeInvocations: 0,
+      preTagInvocations: 0,
+      tagPreflightInvocations: 0,
+      tagEnsureInvocations: 0,
+      trustedPublishInvocations: 0,
       rawPublishInvocations: 0,
     };
     for (const [key, expectedCount] of Object.entries(invocations)) {

@@ -32,6 +32,7 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 - [项目每日演进](flows/project-daily-progress.md)
 - [OpenSpec Change 生命周期](flows/openspec-change-lifecycle.md)
 - [Buildr npm 发布流程](flows/open-source-release.md)
+- [产品验证框架](architecture/verification-framework.md)
 - [Buildr Service](services/buildr.md)
 - [Buildr Web Frontend Service](services/buildr-web.md)
 

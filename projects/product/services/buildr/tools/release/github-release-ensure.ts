@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { requestReleaseJson } from './release-observation.ts';
 
 const githubApi: any = 'https://api.github.com';
 
@@ -25,12 +26,13 @@ async function readJson(response: any, label: any): Promise<any>  {
 }
 
 async function githubRequest(repository: any, route: any, token: any, fetchImpl: any, options: any = {}): Promise<any>  {
-  const response: any = await fetchImpl(`${githubApi}/repos/${repository}${route}`, {
+  const response = await requestReleaseJson(`${githubApi}/repos/${repository}${route}`, {
+    fetchImpl,
     method: options.method ?? 'GET',
     headers: headers(token),
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    ...(options.body ? { body: options.body } : {}),
   });
-  return response;
+  return { status: response.status, json: async () => response.body };
 }
 
 export function assertGitHubRelease(release: any, expected: any): any  {
@@ -101,6 +103,8 @@ async function assertMissingReleaseLatestSafety(repository: any, expected: any, 
 }
 
 export async function ensureGitHubRelease(expected: any, options: any = {}): Promise<any>  {
+  const effects: any[] = [];
+  try {
   const fetchImpl: any = options.fetchImpl ?? fetch;
   const token: any = options.token;
   const mode: any = options.mode ?? 'ensure';
@@ -118,7 +122,10 @@ export async function ensureGitHubRelease(expected: any, options: any = {}): Pro
   if (response.status === 404) {
     const latestSafety: any = await assertMissingReleaseLatestSafety(expected.repository, expected, token, fetchImpl);
     if (mode === 'preflight') return { action: 'release-missing', tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease, mutation: false, ...latestSafety };
-    response = await githubRequest(expected.repository, '/releases', token, fetchImpl, {
+    const created = { type: 'github-release-created', tag: expected.tag, targetCommit: expected.targetCommit, state: 'unknown' };
+    effects.push(created);
+    try {
+      response = await githubRequest(expected.repository, '/releases', token, fetchImpl, {
       method: 'POST',
       body: {
         tag_name: expected.tag,
@@ -129,10 +136,19 @@ export async function ensureGitHubRelease(expected: any, options: any = {}): Pro
         prerelease: expected.prerelease,
         make_latest: expected.prerelease ? 'false' : 'true',
       },
-    });
-    if (response.status !== 201) throw new Error(`GitHub Release creation failed with HTTP ${response.status}.`);
-    release = await readJson(response, 'GitHub Release creation');
-    action = 'created';
+      });
+      if (response.status !== 201) throw new Error(`GitHub Release creation failed with HTTP ${response.status}.`);
+      release = await readJson(response, 'GitHub Release creation');
+      created.state = 'confirmed';
+      action = 'created';
+    } catch (error) {
+      const readback = await githubRequest(expected.repository, `/releases/tags/${encodeURIComponent(expected.tag)}`, token, fetchImpl);
+      if (readback.status !== 200) throw error;
+      release = await readJson(readback, 'GitHub Release creation readback');
+      assertGitHubRelease(release, expected);
+      created.state = 'confirmed';
+      action = 'recovered';
+    }
   } else if (response.status === 200) {
     release = await readJson(response, 'GitHub Release lookup');
     action = 'reused';
@@ -141,7 +157,10 @@ export async function ensureGitHubRelease(expected: any, options: any = {}): Pro
   }
   assertGitHubRelease(release, expected);
   await assertLatestState(expected.repository, expected, token, fetchImpl);
-  return { action: mode === 'preflight' ? 'reusable' : action, tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease, ...(mode === 'preflight' ? { mutation: false } : {}) };
+  return { action: mode === 'preflight' ? 'reusable' : action, tag: expected.tag, targetCommit: tagCommit, prerelease: expected.prerelease, effects, ...(mode === 'preflight' ? { mutation: false } : {}) };
+  } catch (error) {
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { effects });
+  }
 }
 
 async function main(): Promise<any>  {
@@ -164,7 +183,7 @@ async function main(): Promise<any>  {
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   main().catch((error: any) => {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${JSON.stringify({ status: 'blocked', message: error.message, effects: error.effects ?? [], nextActions: ['重新回读同一tag的GitHub Release，匹配时只恢复后续校验。'] })}\n`);
     process.exitCode = 1;
   });
 }

@@ -70,7 +70,9 @@ test('timeline consumes the delivered failed-shard retry and aggregate workflow 
     { name: 'Candidate Windows (runtime-windows)', conclusion: 'success' },
     { name: 'Candidate gate', conclusion: 'failure' },
   ];
-  const execute: any = (_command: any, args: any) => args[0] === 'api'
+  const execute: any = (_command: any, args: any) => args.includes('--log-failed')
+    ? { status: 0, stdout: 'HTTP 503 during artifact download' }
+    : args[0] === 'api'
     ? { status: 0, stdout: JSON.stringify({ repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: 'completed', conclusion: 'failure', path: '.github/workflows/verify.yml@refs/heads/release-1.0.0-rc.1', head_sha: sourceCommit, run_attempt: 1 }) }
     : { status: 0, stdout: JSON.stringify({ jobs }) };
   const retry: any = inspectCandidateFailedShardRetry({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture' }, { execute });

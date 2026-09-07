@@ -65,10 +65,10 @@ export function validateReleaseContext(value: any): any  {
 }
 
 const stageRequired: any = Object.freeze({
-  'pre-candidate': ['selection', 'release', 'preparation', 'node', 'workflow', 'taskCorrelation'],
-  'pre-main': ['selection', 'release', 'candidate', 'artifact', 'preparation', 'node', 'workflow', 'taskCorrelation'],
-  'dispatch-check': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'],
-  'pre-tag': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'],
+  'pre-candidate': ['selection', 'release', 'node', 'workflow', 'taskCorrelation'],
+  'pre-main': ['selection', 'release', 'candidate', 'artifact', 'node', 'workflow', 'taskCorrelation'],
+  'dispatch-check': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'node', 'workflow', 'taskCorrelation'],
+  'pre-tag': ['selection', 'release', 'candidate', 'artifact', 'convergence', 'node', 'workflow', 'taskCorrelation'],
 });
 
 const hostedChecks: any = Object.freeze([

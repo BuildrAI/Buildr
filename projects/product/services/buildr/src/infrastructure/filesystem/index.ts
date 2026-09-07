@@ -39,12 +39,14 @@ function validateExclusiveFileLockRecord(value: any, target: any): any  {
   return value;
 }
 
-function readExclusiveFileLock(file: any, target: any): any  {
+function readExclusiveFileLock(file: any, target: any, options: any = {}): any  {
   try {
     const raw = fs.readFileSync(file, 'utf8');
     let value: any = null;
     try { value = JSON.parse(raw); } catch {}
-    return { raw, record: validateExclusiveFileLockRecord(value, target) };
+    const legacyPid = options.allowLegacyPid === true && /^[1-9]\d*$/u.test(raw.trim()) ? Number(raw.trim()) : null;
+    const legacyOwner = Number.isSafeInteger(legacyPid) ? { pid: legacyPid, createdAt: 'legacy-pid-format' } : null;
+    return { raw, record: validateExclusiveFileLockRecord(value, target) || legacyOwner };
   } catch (error: any) {
     if (error.code === 'ENOENT') return null;
     throw exclusiveFileLockError(`Cannot read exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_read_failed', file, error);
@@ -124,7 +126,7 @@ export function acquireExclusiveFileLock(file: any, target: any, options: any = 
     if (publishExclusiveFileLockCandidate(resolvedFile, record)) {
       return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
     }
-    const observed = readExclusiveFileLock(resolvedFile, resolvedTarget);
+    const observed = readExclusiveFileLock(resolvedFile, resolvedTarget, options);
     if (!observed) continue;
     if (observed.record && !exclusiveFileLockOwnerAlive(observed.record, options)) {
       if (moveAndRemoveExclusiveFileLock(resolvedFile, observed, 'stale')) continue;

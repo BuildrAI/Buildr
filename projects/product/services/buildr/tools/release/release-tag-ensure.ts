@@ -11,7 +11,7 @@ const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
 
 function defaultExecute(command: any, args: any, options: any = {}): any  {
-  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env });
+  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env, timeout: 30_000 });
 }
 
 function invoke(execute: any, executable: any, args: any, cwd: any, { allowFailure = false }: any = {}): any  {
@@ -82,23 +82,40 @@ export function ensureReleaseTag(options: any = {}, dependencies: any = {}): any
   const remote: any = options.remote || 'origin';
   const tag: any = requiredTag(options.tag);
   const sourceCommit: any = requiredCommit(options.sourceCommit);
-  const before: any = inspectReleaseTag({ repo, remote, tag, sourceCommit }, { execute });
-  if (before.status !== 'ready') return { ...before, operation: 'ensure' };
-  if (before.action === 'reuse') return { ...before, operation: 'ensure', status: 'passed', effects: [{ type: 'tag-reused', tag, sourceCommit }] };
+  const effects: any[] = [];
+  try {
+    const before: any = inspectReleaseTag({ repo, remote, tag, sourceCommit }, { execute });
+    if (before.status !== 'ready') return { ...before, operation: 'ensure' };
+    if (before.action === 'reuse') return { ...before, operation: 'ensure', status: 'passed', effects: [{ type: 'tag-reused', tag, sourceCommit, state: 'confirmed' }] };
 
-  invoke(execute, 'git', ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'tag', '-a', tag, sourceCommit, '-m', `Buildr ${tag}`], repo);
-  const push: any = invoke(execute, 'git', ['push', remote, `refs/tags/${tag}`], repo, { allowFailure: true });
-  const after: any = inspectReleaseTag({ repo, remote, tag, sourceCommit }, { execute });
-  if (after.status !== 'ready' || after.action !== 'reuse') {
-    const reason: any = String(push?.stderr ?? push?.stdout ?? '').trim();
-    throw new Error(`Release tag ${tag} push was not confirmed: ${reason || after.diagnostic?.code || 'unknown'}`);
+    const local = invoke(execute, 'git', ['for-each-ref', '--format=%(objectname)', `refs/tags/${tag}`], repo).stdout.trim();
+    if (local) {
+      const target = invoke(execute, 'git', ['rev-parse', `refs/tags/${tag}^{commit}`], repo).stdout.trim();
+      if (target !== sourceCommit) throw new Error(`Local tag ${tag} targets ${target}, not ${sourceCommit}.`);
+      effects.push({ type: 'local-tag-reused', tag, sourceCommit, state: 'confirmed' });
+    } else {
+      const effect = { type: 'local-tag-created', tag, sourceCommit, state: 'unknown' };
+      effects.push(effect);
+      invoke(execute, 'git', ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'tag', '-a', tag, sourceCommit, '-m', `Buildr ${tag}`], repo);
+      effect.state = 'confirmed';
+    }
+    const pushed = { type: 'remote-tag-pushed', tag, sourceCommit, state: 'unknown' };
+    effects.push(pushed);
+    const push: any = invoke(execute, 'git', ['push', remote, `refs/tags/${tag}`], repo, { allowFailure: true });
+    const after: any = inspectReleaseTag({ repo, remote, tag, sourceCommit }, { execute });
+    if (after.status !== 'ready' || after.action !== 'reuse') {
+      pushed.state = after.action === 'create' ? 'not-applied' : 'conflict';
+      throw new Error(`Release tag ${tag} push was not confirmed: ${String(push?.stderr || push?.stdout || after.diagnostic?.code || 'unknown').trim()}`);
+    }
+    pushed.state = 'confirmed';
+    return { ...after, operation: 'ensure', status: 'passed', effects };
+  } catch (error) {
+    return {
+      schemaVersion: 'buildr.release-tag-ensure/v1', operation: 'ensure', status: 'blocked', tag, sourceCommit,
+      effects, diagnostic: { code: 'release-tag-ensure-blocked', message: error instanceof Error ? error.message : String(error) },
+      nextActions: ['回读同一目标tag并恢复未完成推送；保留本地和远端已存在事实，不删除或覆盖tag。'],
+    };
   }
-  return {
-    ...after,
-    operation: 'ensure',
-    status: 'passed',
-    effects: [{ type: push.status === 0 ? 'tag-created' : 'tag-concurrently-reused', tag, sourceCommit }],
-  };
 }
 
 function parseOptions(argv: any): any  {

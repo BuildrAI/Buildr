@@ -8,6 +8,7 @@ import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesyst
 import { parseSemver } from '../../src/system/installation/domain/release-version.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { writeJson } from './release-files.ts';
+import { requestReleaseJson, ReleaseObservationError, isTransientReleaseError } from './release-observation.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const officialRegistry: any = 'https://registry.npmjs.org/';
@@ -22,10 +23,10 @@ async function responseJson(response: any, label: any): Promise<any>  {
 
 export async function registryVersionState(packageName: any, version: any, fetchImpl: any = fetch): Promise<any>  {
   const url: any = new URL(`${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`, officialRegistry);
-  const response: any = await fetchImpl(url, { headers: { accept: 'application/json' } });
+  const response: any = await requestReleaseJson(url, { fetchImpl, headers: { accept: 'application/json' } });
   if (response.status === 404) return { package: packageName, version, published: false, registry: officialRegistry };
   if (response.status !== 200) throw new Error(`Official npm registry version check failed with HTTP ${response.status}.`);
-  const metadata: any = await responseJson(response, 'Official npm registry version check');
+  const metadata: any = response.body;
   if (metadata?.name !== packageName || metadata?.version !== version || typeof metadata?.dist?.integrity !== 'string') {
     throw new Error('Official npm registry version metadata is missing the expected identity or dist.integrity.');
   }
@@ -46,15 +47,16 @@ export function assertRegistryArtifact(state: any, artifact: any): any  {
     throw new Error('Official npm registry package identity does not match the release artifact.');
   }
   if (state.integrity !== artifact.integrity) {
-    throw new Error(`Official npm registry integrity mismatch for ${state.package}@${state.version}.`);
+    throw new ReleaseObservationError(`Official npm registry integrity mismatch for ${state.package}@${state.version}.`, 'registry-integrity-conflict', false, 'conflict');
   }
 }
 
 export async function registryDistTagsState(packageName: any, fetchImpl: any = fetch): Promise<any>  {
   const url: any = new URL(encodeURIComponent(packageName), officialRegistry);
-  const response: any = await fetchImpl(url, { headers: { accept: 'application/json' } });
+  const response: any = await requestReleaseJson(url, { fetchImpl, headers: { accept: 'application/json' } });
   if (response.status !== 200) throw new Error(`Official npm registry dist-tag check failed with HTTP ${response.status}.`);
-  const metadata: any = await responseJson(response, 'Official npm registry dist-tag check');
+  const metadata: any = response.body;
+  if (metadata?.name !== undefined && metadata.name !== packageName) throw new ReleaseObservationError('Official npm registry package identity mismatches.', 'registry-identity-conflict', false, 'conflict');
   return {
     schemaVersion: 'buildr.registry-dist-tags/v1',
     package: packageName,
@@ -98,7 +100,7 @@ export function assertRegistryTagTransition({ packageName, version, npmTag, befo
     }
   }
   const targetAfter: any = observed.tags[npmTag];
-  if (targetAfter !== version) throw new Error(`Official npm registry dist-tag ${npmTag} points to ${targetAfter ?? 'nothing'}, not ${version}.`);
+  if (targetAfter !== version) throw new ReleaseObservationError(`Official npm registry dist-tag ${npmTag} points to ${targetAfter ?? 'nothing'}, not ${version}.`, 'registry-propagation-pending', true);
   const targetAfterParsed: any = parseSemver(targetAfter);
   if (!targetAfterParsed || Boolean(targetAfterParsed.prerelease.length) !== (npmTag === 'next')) {
     throw new Error(`After dist-tag ${npmTag} has the wrong semver type: ${targetAfter}.`);
@@ -112,7 +114,7 @@ export function assertRegistryTagTransition({ packageName, version, npmTag, befo
 
 export async function confirmRegistryRelease({ packageName, version, npmTag, integrity, beforeTags, fetchImpl = fetch }: any): Promise<any>  {
   const versionState: any = await registryVersionState(packageName, version, fetchImpl);
-  if (!versionState.published) throw new Error(`Official npm registry does not contain ${packageName}@${version}.`);
+  if (!versionState.published) throw new ReleaseObservationError(`Official npm registry does not contain ${packageName}@${version}.`, 'registry-propagation-pending', true);
   assertRegistryArtifact(versionState, { packageName, version, integrity });
   const afterTags: any = await registryDistTagsState(packageName, fetchImpl);
   const transition: any = assertRegistryTagTransition({ packageName, version, npmTag, before: beforeTags, after: afterTags });
@@ -123,12 +125,16 @@ export async function waitForRegistryRelease(contract: any, options: any = {}): 
   const attempts: any = options.attempts ?? 12;
   const delayMs: any = options.delayMs ?? 5000;
   const sleep: any = options.sleep ?? ((milliseconds: any) => new Promise((resolve: any) => setTimeout(resolve, milliseconds)));
+  const now = options.now ?? Date.now;
+  const deadline = now() + (options.timeoutMs ?? 60_000);
   let lastError: any;
   for (let attempt: any = 1; attempt <= attempts; attempt += 1) {
     try {
       return await confirmRegistryRelease({ ...contract, fetchImpl: options.fetchImpl ?? fetch });
     } catch (error: any) {
       lastError = error;
+      if (!isTransientReleaseError(error)) throw error;
+      if (now() + delayMs >= deadline) break;
       if (attempt < attempts) await sleep(delayMs);
     }
   }

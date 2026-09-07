@@ -154,11 +154,32 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
+  candidate-plan:
+    name: Candidate plan
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.plan.outputs.source }}
+      artifact: ${{ steps.plan.outputs.artifact }}
+      host: ${{ steps.plan.outputs.host }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: projects/product/.node-version
+          package-manager-cache: false
+      - id: plan
+        working-directory: projects/product/services/buildr
+        run: node test/verification/candidate-ci.ts plan
+
   candidate-bootstrap:
     name: Candidate bootstrap
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
-    runs-on: macos-latest
-    timeout-minutes: 20
+    needs: candidate-plan
+    runs-on: macos-15
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -169,28 +190,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.15.0
+          node-version-file: projects/product/.node-version
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact environment
         run: node tools/verification/candidate-environment.ts prepare --profile artifact
-      - name: Run cheap Candidate preflight
-        env:
-          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
-          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-preflight
-          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-preflight-macos.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-preflight-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        run: npm run test:candidate:ci -- preflight-macos
-      - name: Upload preflight evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: candidate-evidence-preflight-macos
-          path: ${{ runner.temp }}/candidate-evidence
-          if-no-files-found: warn
-          overwrite: true
-
       - name: Build the single Candidate artifact
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -199,12 +203,15 @@ jobs:
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-artifact-macos.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-artifact-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        run: npm run test:candidate:ci -- artifact-macos
+        run: node test/verification/candidate-ci.ts run artifact-macos
       - name: Upload immutable Candidate artifact
         uses: actions/upload-artifact@v7
         with:
           name: candidate-package
-          path: ${{ runner.temp }}/candidate-package
+          path: |
+            ${{ runner.temp }}/candidate-package/*.tgz
+            ${{ runner.temp }}/candidate-package/release-artifact.json
+            ${{ runner.temp }}/candidate-package/npm-pack.json
           if-no-files-found: error
           overwrite: true
       - name: Upload artifact evidence
@@ -212,27 +219,20 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: candidate-evidence-artifact-macos
-          path: ${{ runner.temp }}/candidate-evidence
+          path: |
+            ${{ runner.temp }}/candidate-evidence
+            ${{ runner.temp }}/candidate-artifact-diagnostics
           if-no-files-found: warn
           overwrite: true
 
-  candidate-core-macos:
-    name: Candidate core (${{ matrix.shard }})
-    needs: candidate-bootstrap
-    runs-on: macos-latest
+  candidate-source:
+    name: Candidate source (${{ matrix.shard }})
+    needs: candidate-plan
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - shard: core-task-lifecycle-macos
-            preparation: base
-          - shard: core-project-task-macos
-            preparation: source-runtime
-          - shard: core-package-runtime-release-macos
-            preparation: source-runtime
-          - shard: core-cli-contract-macos
-            preparation: base
+      matrix: ${{ fromJSON(needs.candidate-plan.outputs.source) }}
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -243,151 +243,85 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.15.0
+          node-version-file: projects/product/.node-version
           cache: npm
-          cache-dependency-path: |
-            projects/product/services/buildr/package-lock.json
-            projects/product/services/buildr-web/package-lock.json
-      - name: Prepare Candidate shard environment
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Prepare Candidate source environment
+        run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
+      - name: Run independent source shard
+        env:
+          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-source
+          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-source-diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        run: node test/verification/candidate-ci.ts run ${{ matrix.shard }}
+      - name: Upload source evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-evidence-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/candidate-evidence
+            ${{ runner.temp }}/candidate-source-diagnostics
+          if-no-files-found: warn
+          overwrite: true
+
+  candidate-artifact-consumers:
+    name: Candidate artifact (${{ matrix.shard }})
+    needs: [candidate-plan, candidate-bootstrap]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.candidate-plan.outputs.artifact) }}
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: projects/product/.node-version
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Prepare Candidate artifact consumer environment
         run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
           path: ${{ runner.temp }}/candidate-package
-      - name: Run macOS semantic core shard
+      - name: Run artifact consumer shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
-          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-core-${{ matrix.shard }}
+          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-consumer
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-core-diagnostics-${{ matrix.shard }}
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-consumer-diagnostics
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        run: npm run test:candidate:ci -- ${{ matrix.shard }}
-      - name: Upload core evidence and diagnostics
+        run: node test/verification/candidate-ci.ts run ${{ matrix.shard }}
+      - name: Upload consumer evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: candidate-evidence-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/candidate-evidence
-            ${{ runner.temp }}/candidate-core-diagnostics-${{ matrix.shard }}
-          if-no-files-found: warn
-          overwrite: true
-
-  candidate-runtime-windows:
-    name: Candidate Windows (runtime-windows)
-    needs: candidate-bootstrap
-    runs-on: windows-latest
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: |
-            projects/product/services/buildr/package-lock.json
-            projects/product/services/buildr-web/package-lock.json
-      - name: Prepare Candidate shard environment
-        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
-      - uses: actions/download-artifact@v7
-        with:
-          name: candidate-package
-          path: ${{ runner.temp }}/candidate-package
-      - name: Run Windows runtime shard
-        env:
-          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
-          BUILDR_CANDIDATE_CI_ARTIFACT_DIR: ${{ runner.temp }}/candidate-package
-          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-runtime-windows
-          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-runtime-windows.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-runtime-windows-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        shell: pwsh
-        run: npm run test:candidate:ci -- runtime-windows
-      - name: Upload Windows runtime evidence and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: candidate-evidence-runtime-windows
-          path: |
-            ${{ runner.temp }}/candidate-evidence
-            ${{ runner.temp }}/candidate-runtime-windows-diagnostics
-          if-no-files-found: warn
-          overwrite: true
-
-  candidate-windows:
-    name: Candidate Windows (${{ matrix.shard }})
-    needs: candidate-bootstrap
-    runs-on: windows-latest
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [workspace-lifecycle-windows, task-worktree-recovery-windows, task-concurrent-windows]
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24.15.0
-          cache: npm
-          cache-dependency-path: |
-            projects/product/services/buildr/package-lock.json
-            projects/product/services/buildr-web/package-lock.json
-      - name: Prepare Candidate shard environment
-        run: node tools/verification/candidate-environment.ts prepare --profile base
-      - name: Run Windows Candidate shard
-        env:
-          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
-          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-${{ matrix.shard }}
-          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.shard }}.json
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-${{ matrix.shard }}-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        shell: bash
-        run: npm run test:candidate:ci -- ${{ matrix.shard }}
-      - name: Upload Windows evidence and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: candidate-evidence-${{ matrix.shard }}
-          path: |
-            ${{ runner.temp }}/candidate-evidence
-            ${{ runner.temp }}/candidate-${{ matrix.shard }}-diagnostics
+            ${{ runner.temp }}/candidate-consumer-diagnostics
           if-no-files-found: warn
           overwrite: true
 
   candidate-host-node:
     name: Candidate Host Node (${{ matrix.id }})
-    needs: candidate-bootstrap
+    needs: [candidate-plan, candidate-bootstrap]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - id: host-minimum-macos
-            os: macos-latest
-            node: 24.15.0
-          - id: host-minimum-windows
-            os: windows-latest
-            node: 24.15.0
-          - id: host-current-macos
-            os: macos-latest
-            node: 24.x
-          - id: host-current-windows
-            os: windows-latest
-            node: 24.x
+      matrix: ${{ fromJSON(needs.candidate-plan.outputs.host) }}
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -402,7 +336,7 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate Host Node environment
-        run: node tools/verification/candidate-environment.ts prepare --profile host
+        run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -414,8 +348,7 @@ jobs:
           BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/candidate-host
           BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/candidate-evidence/candidate-ci-evidence-${{ matrix.id }}.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/candidate-host-diagnostics
-        shell: bash
-        run: npm run test:candidate:host -- ${{ matrix.id }}
+        run: node test/verification/candidate-ci.ts host ${{ matrix.id }}
       - name: Upload Host Node evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -430,14 +363,9 @@ jobs:
   candidate-gate:
     name: Candidate gate
     if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
-    needs:
-      - candidate-bootstrap
-      - candidate-core-macos
-      - candidate-runtime-windows
-      - candidate-windows
-      - candidate-host-node
-    runs-on: macos-latest
-    timeout-minutes: 10
+    needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -448,9 +376,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.15.0
+          node-version-file: projects/product/.node-version
+          package-manager-cache: false
       - name: Prepare aggregate evidence directory
-        working-directory: .
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"
       - name: Download all Candidate evidence
         continue-on-error: true
@@ -458,18 +386,17 @@ jobs:
         with:
           pattern: candidate-evidence-*
           path: ${{ runner.temp }}/candidate-evidence
-          merge-multiple: true
       - name: Aggregate the closed Candidate evidence set
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
-          BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-ci-aggregate.json
+          BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-aggregate/candidate-ci-aggregate.json
         run: node test/verification/candidate-ci.ts aggregate
       - name: Upload aggregate result
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: candidate-aggregate
-          path: ${{ runner.temp }}/candidate-ci-aggregate.json
+          path: ${{ runner.temp }}/candidate-aggregate
           if-no-files-found: warn
           overwrite: true

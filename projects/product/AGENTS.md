@@ -41,5 +41,5 @@ Agent 在 `product` Project 中的最小运行规则。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
 - 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户说“收尾”不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
 - self-bootstrap activation 只由 root Rule 指定的唯一 owner 执行；Product Rule 不复制其路径分类、安装、CLI identity 或 Doctor 流程。
-- release tag、npm publication、GitHub Release 和其他发布副作用必须单独获得明确授权；`buildr-release` 与 release checklist 是发布流程 owner，本 Rule 不授权或编排发布动作。
+- release tag、npm publication、GitHub Release 和其他发布副作用必须单独获得明确授权；`buildr-release` 是发布动作 owner，当前流程知识入口是 `knowledge/flows/open-source-release.md`，本 Rule 不授权或编排发布动作。
 - 私有业务 workspace、私有业务规则和私有服务内容不得进入 `resources/` 或正式发布物。

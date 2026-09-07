@@ -24,10 +24,11 @@ Product Project: projects/product/
           ├── src/infrastructure/      │  SQLite / Git / 文件 / 进程 / 网络
           └── web-dist/ <──────────────┘  ignored本地静态输出
 
-Candidate Environment Preparation ── base/artifact/source-runtime/host
-├── Release Rehearsal prospective source ── 同一Candidate DAG
-└── Final Candidate source ── 同一Candidate DAG
-    └── Web dist + Test Context + DTO + manifest
+统一准备：candidate-environment.ts
+├── 源码检查与需要的生成物
+└── 最终源码 → 生成物清单 → 唯一 npm 产物
+    ├── 共享消费配方：候选安装、平台与宿主 Node
+    └── 发布执行器：复核原包、权限、公开写入与恢复
 Buildr npm package
 └── CLI + Application Payload + migrations + resources + frozen web-dist
       ├── 命令行调用
@@ -215,9 +216,9 @@ Project `preparation.yml` 描述已知准备配方，`verification.yml`使用v4�
 
 Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.ts`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，向ignored本地目录或Candidate staging确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，Git不保存编译副本。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
 
-Release Rehearsal与Final Candidate复用同一验证DAG、唯一tarball拓扑和`candidate-environment.ts`准备owner。演练源由current frozen release加有序待选commits形成，完整全绿后才可提升；Final Candidate仍重新构建一份正式tarball，平台和Host Node consumer复用同一artifact。正式发布不重新构建Application Payload或重新`npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
+发布准备、完整候选与受保护发布分别处理内容选择、验证和公开副作用。`release-orchestration-runner.ts` 提供少量操作入口；`candidate-environment.ts` 统一准备；`release-consumption.ts` 声明消费配方和覆盖；`release-publication.ts` 执行分阶段发布与恢复。匹配的完整候选或演练复用同一产物，正式发布不重新打包。详见[发布流程](../flows/open-source-release.md)。
 
-Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)。
+Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](verification-framework.md)。
 
 ## 跨模块不变量
 
@@ -240,7 +241,7 @@ Buildr Product自身的测试runner仍属于项目测试架构，可按Project�
 | 产品角色、领域模型和产品边界 | [产品架构](product.md) |
 | Buildr Service 工程目录与模块分层 | [服务分层与模块组织](../../docs/architecture/service-architecture.md) |
 | Buildr Service 详细接口、数据和运行事实 | [Buildr Service](../services/buildr.md) |
-| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md) |
+| Product测试选择、Context与层级并发 | [Buildr Product Verification Framework](verification-framework.md) |
 | Buildr Web 前端源码、构建和消费边界 | [Buildr Web Frontend Service](../services/buildr-web.md) |
 | OpenSpec 从提案到归档的跨模块流程 | [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md) |
 | npm Candidate、发布与安装事实链 | [Buildr npm 发布流程](../flows/open-source-release.md) |

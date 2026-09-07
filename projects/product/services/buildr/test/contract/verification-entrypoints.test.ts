@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.ts';
 import { createVerificationPlan } from '../../test/verification/planner.ts';
-import { VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.ts';
 import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_FULL_SCOPE_INPUTS,
@@ -231,13 +231,13 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
     'capability CLI integration',
     'Service branch contract',
     'remote Skill timeout contract',
-    'release tarball headless smoke',
+    'release metadata and real platform Launcher consumption',
     'managed data integrity',
     'OpenSpec contract fixtures',
     'documentation quality',
   ]) assert.ok(candidatePlan.steps.some((step: any) => step.name === stage), `candidate verifier must retain ${stage}`);
   for (const excluded of [
-    'integration-candidate-release', 'repository-onboarding',
+    'repository-onboarding',
     'browser-shell', 'browser-project', 'browser-service', 'browser-task', 'browser-change',
   ]) assert.equal(candidatePlan.steps.some((step: any) => step.id === excluded), false, `candidate verifier must exclude ${excluded}`);
   assert.equal(verificationSteps.some((step: any) => step.id.startsWith('browser-')), false);
@@ -305,9 +305,9 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   assert.match(cliSmoke, /ordinary CLI must not start HTTP/);
   assert.match(cliSmoke, /readiness\.productIdentity\?\.applicationPayloadDigest/);
   assert.doesNotMatch(cliSmoke, /npm pack|createReleaseArtifact|buildApplicationPayload/);
-  assert.match(hostJob, /host-minimum-macos[\s\S]*node: 24\.15\.0/);
-  assert.match(hostJob, /host-current-windows[\s\S]*node: 24\.x/);
-  assert.match(hostJob, /npm run test:candidate:host -- \$\{\{ matrix\.id \}\}/);
+  assert.ok(CANDIDATE_CI_HOST_NODE_TUPLES.some((tuple: any) => tuple.id === 'host-minimum-macos' && tuple.requestedNode === '24.15.0'));
+  assert.ok(CANDIDATE_CI_HOST_NODE_TUPLES.some((tuple: any) => tuple.id === 'host-current-windows' && tuple.requestedNode === '24.x'));
+  assert.match(hostJob, /node test\/verification\/candidate-ci\.ts host \$\{\{ matrix\.id \}\}/);
   assert.match(hostJob, /name: candidate-package/);
 });
 
@@ -318,69 +318,24 @@ test('runtime adapter contract uses one run-unique temporary root with owner cle
   assert.match(source, /process\.once\('exit', \(\) => fs\.rmSync\(temporaryRoot, \{ recursive: true, force: true \}\)\)/);
 });
 
-test('distributed Candidate creates one artifact and fans out independent consumers', () => {
-  const workflow: any = read('../../../../.github/workflows/verify.yml');
-  const document: any = YAML.parse(workflow);
-  assert.deepEqual(Object.keys(document.jobs), [
-    'dev-feedback-macos', 'dev-feedback-windows', 'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows',
-    'candidate-windows', 'candidate-host-node', 'candidate-gate',
-  ]);
-  assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
-  assert.equal(document.jobs['candidate-core-macos']['timeout-minutes'], 20);
-  assert.equal(document.jobs['candidate-core-macos'].strategy['fail-fast'], false);
-  assert.deepEqual(document.jobs['candidate-core-macos'].strategy.matrix.include, [
-    { shard: 'core-task-lifecycle-macos', preparation: 'base' },
-    { shard: 'core-project-task-macos', preparation: 'source-runtime' },
-    { shard: 'core-package-runtime-release-macos', preparation: 'source-runtime' },
-    { shard: 'core-cli-contract-macos', preparation: 'base' },
-  ]);
-  const candidateTimeouts: any = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).map((step: any) => step.timeoutMs);
-  assert.ok(candidateTimeouts.every((timeoutMs: any) => Number.isInteger(timeoutMs) && timeoutMs > 0));
-  assert.ok(Math.max(...candidateTimeouts) + 3_000 < document.jobs['candidate-core-macos']['timeout-minutes'] * 60_000);
-  assert.ok(document.jobs['candidate-core-macos']['timeout-minutes'] < 35);
-  const selfBootstrap: any = verificationSteps.find((step: any) => step.id === 'integration-self-bootstrap');
-  assert.ok(selfBootstrap.resources.includes('workspace-saturating'));
-  assert.equal(selfBootstrap.timeoutMs, 360_000);
-  assert.equal(document.jobs['candidate-runtime-windows'].needs, 'candidate-bootstrap');
-  const runtimeWindowsStep: any = document.jobs['candidate-runtime-windows'].steps.find((step: any) => step.name === 'Run Windows runtime shard');
-  assert.equal(runtimeWindowsStep.shell, 'pwsh', 'Windows runtime Candidate must preserve native PowerShell environment semantics');
-  assert.equal(document.jobs['candidate-windows'].needs, 'candidate-bootstrap');
-  assert.equal(document.jobs['candidate-host-node'].needs, 'candidate-bootstrap');
-  assert.deepEqual(document.jobs['candidate-windows'].strategy.matrix.shard, [
-    'workspace-lifecycle-windows',
-    'task-worktree-recovery-windows',
-    'task-concurrent-windows',
-  ]);
-  const windowsJob: any = workflow.slice(workflow.indexOf('  candidate-windows:'), workflow.indexOf('  candidate-host-node:'));
-  assert.doesNotMatch(windowsJob, /fresh-build-windows|task-environment-fresh-build/);
-  assert.equal((workflow.match(/name: candidate-package/g) || []).length, 4, 'one upload and three consumer downloads');
-  assert.equal((workflow.match(/Build the single Candidate artifact/g) || []).length, 1);
-  assert.doesNotMatch(windowsJob, /candidate-package|BUILDR_CANDIDATE_CI_ARTIFACT_DIR/);
-});
-
-test('Candidate workflow checks out one exact source SHA and always aggregates closed evidence', () => {
-  const workflow: any = read('../../../../.github/workflows/verify.yml');
-  const document: any = YAML.parse(workflow);
-  assert.equal(document.env.CANDIDATE_SOURCE_SHA, '${{ github.event.pull_request.head.sha || github.sha }}');
-  assert.equal(document.jobs['candidate-gate'].name, 'Candidate gate');
+test('Candidate source work is independent and all consumers use the one immutable artifact', () => {
+  const document = YAML.parse(read('../../../../.github/workflows/verify.yml'));
+  assert.equal(document.jobs['candidate-source'].needs, 'candidate-plan');
+  assert.equal(document.jobs['candidate-bootstrap'].needs, 'candidate-plan');
+  for (const id of ['candidate-artifact-consumers', 'candidate-host-node']) {
+    assert.deepEqual(document.jobs[id].needs, ['candidate-plan', 'candidate-bootstrap']);
+    assert.equal(document.jobs[id].steps.filter((step: any) => step.with?.name === 'candidate-package').length, 1);
+  }
+  for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
+  assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
+  assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']);
   assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
-  assert.deepEqual(document.jobs['candidate-gate'].needs, [
-    'candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows', 'candidate-windows', 'candidate-host-node',
-  ]);
-  assert.match(workflow, /pattern: candidate-evidence-\*/);
-  assert.match(workflow, /merge-multiple: true/);
-  const candidateWorkflow: any = workflow.slice(workflow.indexOf('  candidate-bootstrap:'));
-  const gate: any = workflow.slice(workflow.indexOf('  candidate-gate:'));
-  assert.match(gate, /runs-on: macos-latest/);
-  assert.match(gate, /node test\/verification\/candidate-ci\.ts aggregate/);
-  assert.doesNotMatch(gate, /npm ci|cache: npm/);
-  assert.equal((candidateWorkflow.match(/overwrite: true/g) || []).length, 8, 'Candidate reruns replace one logical artifact per shard or aggregate');
-  assert.equal((candidateWorkflow.match(/ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}/g) || []).length, 6);
-  assert.doesNotMatch(workflow, /git log --first-parent origin\/dev/);
-  for (const input of [
-    '.github/workflows/verify.yml', 'test/verification/verify-buildr-product-ci',
-    'test/verification/candidate-ci.ts', 'test/verification/candidate-ci-evidence.ts',
-  ]) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input), `${input} must force full changed verification`);
+  for (const [id, job] of Object.entries(document.jobs) as any[]) {
+    if (!id.startsWith('candidate-')) continue;
+    assert.equal(job.steps.find((step: any) => step.uses === 'actions/checkout@v7').with.ref, '${{ env.CANDIDATE_SOURCE_SHA }}');
+  }
+  assert.equal(document.jobs['candidate-plan'].steps.some((step: any) => step.run === 'node test/verification/candidate-ci.ts plan'), true);
+  for (const input of ['.github/workflows/verify.yml', 'test/verification/verify-buildr-product-ci', 'test/verification/candidate-ci.ts', 'test/verification/candidate-ci-evidence.ts']) assert.ok(VERIFICATION_FULL_SCOPE_INPUTS.includes(input));
 });
 
 test('changed ownership authority is physically separate from the Candidate execution graph', () => {

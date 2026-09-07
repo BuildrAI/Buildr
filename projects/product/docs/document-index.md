@@ -20,7 +20,7 @@
 | [../knowledge/archify/index.md](../knowledge/archify/index.md) | 当前态模型的 Archify 可视化技术图入口 |
 | [../openspec/specs/](../openspec/specs/) | 规范性产品行为契约 |
 | [roadmap/](roadmap/) | 尚未实现的产品方向和详细设计候选，不作为当前事实或实施契约 |
-| [release-checklist.md](../services/buildr/docs/release-checklist.md) | 发布准备和验证清单 |
+| [发布流程与恢复](../knowledge/flows/open-source-release.md) | 发布准备、验证复用与失败恢复的权威正文 |
 | [cli-reference.md](../services/buildr/docs/cli-reference.md) | 公开 CLI 命令、参数边界和 canonical onboarding |
 | [cli-architecture.md](../services/buildr/docs/cli-architecture.md) | CLI 内部分层、依赖方向、兼容和维护验证边界 |
 | [agent-runtime-adapters.md](../services/buildr/docs/agent-runtime-adapters.md) | 已接入 Agent runtime adapter 的支持矩阵、接入路径、刷新方式、限制和证据状态 |
@@ -40,7 +40,7 @@
 | MUST / SHOULD 级产品行为 | `openspec/specs/` |
 | 计划型产品变更 | `openspec/changes/` |
 | 尚未进入实现的长期产品方向 | `docs/roadmap/` |
-| 发布检查和公开发布准备 | `services/buildr/docs/release-checklist.md` |
+| 发布检查和公开发布准备 | `knowledge/flows/open-source-release.md` |
 | 公开 CLI reference、内部维护架构、adapter 接入指南与已知限制 | `services/buildr/docs/cli-reference.md`、`services/buildr/docs/cli-architecture.md`、`services/buildr/docs/agent-runtime-adapter-contribution.md`、`services/buildr/docs/known-limitations.md` |
 | 旧设计、旧草案、迁移前原文、历史模板 | `docs/archive/` |
 

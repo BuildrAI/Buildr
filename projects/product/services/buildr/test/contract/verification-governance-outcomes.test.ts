@@ -73,15 +73,10 @@ test('正式Release消费冻结artifact且不重跑完整Product Candidate', () 
   assert.equal(allRuns.includes('npm pack'), false);
   assert.equal(workflow.jobs.candidate.steps.filter((step: any) => step.name === 'Download the matching Candidate aggregate').length, 1);
   assert.equal(workflow.jobs.candidate.steps.filter((step: any) => step.name === 'Download the single frozen Candidate package').length, 1);
-  assert.deepEqual(workflow.jobs.release.needs, ['contract', 'candidate', 'host-node', 'launcher']);
+  assert.deepEqual(workflow.jobs.release.needs, ['contract', 'candidate']);
   assert.equal(workflow.jobs.release.environment, 'npm-production');
   assert.equal(workflow.jobs.release.permissions['id-token'], 'write');
-  for (const name of [
-    'Revalidate frozen bytes before any public mutation',
-    'Confirm official Registry integrity and both dist-tags',
-    'Ensure GitHub Release notes without binary Assets',
-    'Smoke exact package from the official Registry',
-  ]) assert.ok(workflow.jobs.release.steps.some((step: any) => step.name === name), name);
+  assert.ok(workflow.jobs.release.steps.some((step: any) => step.run?.includes('release-publication.ts')));
 });
 
 test('治理质量contract不再用Skill篇幅或章节位置冒充行为证据', () => {

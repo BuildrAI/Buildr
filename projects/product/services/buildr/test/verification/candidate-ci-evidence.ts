@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.ts';
+import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from '../../tools/release/release-consumption.ts';
 import {
   CANDIDATE_CI_AGGREGATE_SCHEMA,
   CANDIDATE_CI_CHECKPOINT_SCHEMA,
@@ -25,6 +26,7 @@ const platformRunner: any = (platform: any = process.platform) => platform === '
 
 function registryProjection(): any  {
   return {
+    consumption: releaseConsumptionIdentity(),
     shards: CANDIDATE_CI_SHARDS,
     platformRepeats: CANDIDATE_CI_PLATFORM_REPEATS,
     hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES,
@@ -32,7 +34,7 @@ function registryProjection(): any  {
       id: item.id,
       dependsOn: item.dependsOn,
       consumesArtifact: item.executor.consumesArtifact === true,
-      executor: item.executor.type,
+      executor: item.executor,
       timeoutMs: item.timeoutMs,
       resources: item.resources,
     })),
@@ -40,8 +42,11 @@ function registryProjection(): any  {
 }
 
 export function candidateCiRegistryIdentity(): any  {
+  validateReleaseCheckDefinitions();
   const validation: any = validateCandidateCiCoverage();
   if (!validation.ok) throw new Error(`Invalid Candidate CI coverage: ${validation.findings.map((item: any) => `${item.step}:${item.code}`).join(', ')}`);
+  const evidenceIds = new Set([...CANDIDATE_CI_SHARDS, ...CANDIDATE_CI_HOST_NODE_TUPLES].map(item => item.id));
+  for (const check of RELEASE_CHECKS) if ('evidence' in check && check.evidence.some(id => !evidenceIds.has(id))) throw new Error(`Release check ${check.id} is not covered by Candidate.`);
   return sha256(registryProjection());
 }
 
@@ -281,6 +286,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     sourceTree: expectedContext.sourceTree,
     rehearsalIdentity: expectedContext.rehearsalIdentity ?? null,
     registryIdentity,
+    consumptionIdentity: releaseConsumptionIdentity(),
     artifact: artifactIdentity,
     workflow: expectedRunId === null ? null : {
       runId: expectedRunId,

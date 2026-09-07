@@ -101,13 +101,13 @@ function productIdentityFor(binding: any): any  {
   };
 }
 
-async function waitFor(check: any, { attempts = 160, intervalMs = 50, message = 'condition' }: any = {}): Promise<any>  {
+async function waitFor(check: any, { attempts = 160, intervalMs = 50, message = 'condition', diagnostic = () => null }: any = {}): Promise<any>  {
   for (let index: any = 0; index < attempts; index += 1) {
     const value: any = await check();
     if (value) return value;
     await new Promise((resolve: any) => setTimeout(resolve, intervalMs));
   }
-  throw new Error(`Timed out waiting for ${message}.`);
+  throw new Error(`Timed out waiting for ${message}. ${JSON.stringify(diagnostic())}`);
 }
 
 const LAUNCHER_HANDOFF_ATTEMPTS: any = 1200;
@@ -127,10 +127,13 @@ function spawnInstalledWeb(entry: any, args: any): any  {
 
 async function waitForChildExit(child: any, label: any): Promise<any>  {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  await Promise.race([
-    once(child, 'exit'),
-    new Promise((_: any, reject: any) => setTimeout(() => reject(new Error(`${label} did not exit: ${child.output.join('')}`)), LAUNCHER_HANDOFF_TIMEOUT_MS)),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      once(child, 'exit'),
+      new Promise((_: any, reject: any) => { timer = setTimeout(() => reject(new Error(`${label} did not exit: ${child.output.join('')}`)), LAUNCHER_HANDOFF_TIMEOUT_MS); }),
+    ]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 test('macOS npm Launcher is an owned projection and repair refreshes drift without copying product bytes', async () => {
@@ -349,7 +352,12 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
     return valueAtFile.pid !== cliReceipt.pid && valueAtFile.launcherIdentity?.bindingIdentity === installed.binding.bindingIdentity
       ? valueAtFile
       : null;
-  }, { attempts: LAUNCHER_HANDOFF_ATTEMPTS, message: 'Launcher-managed replacement receipt' });
+  }, { attempts: LAUNCHER_HANDOFF_ATTEMPTS, message: 'Launcher-managed replacement receipt', diagnostic: () => {
+    const receipt = fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')) : null;
+    return { receipt: receipt ? { pid: receipt.pid, bindingIdentity: receipt.launcherIdentity?.bindingIdentity } : null,
+      expectedBinding: installed.binding.bindingIdentity,
+      processes: [cli, first, second].map(child => ({ pid: child.pid, exitCode: child.exitCode, signal: child.signalCode, output: child.output.join('').slice(-4000) })) };
+  } });
   await waitForChildExit(cli, 'foreground CLI after Launcher handoff');
   assert.notEqual(managed.pid, cliReceipt.pid);
   const managedHealth: any = await fetch(`${managed.url}/api/v1/health`, { headers: { 'x-buildr-instance': managed.secret } }).then((response: any) => response.json());

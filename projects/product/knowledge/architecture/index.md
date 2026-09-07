@@ -10,3 +10,5 @@ Buildr 架构分为产品架构和技术架构，两者通过核心流程与 Ser
 - [Archify 技术图](../archify/index.md)：当前态模型的可视化入口，包含 Buildr 系统全景图源码和可浏览投影。
 
 规范性行为以 [OpenSpec specs](../../openspec/specs/) 为准。
+
+- [产品验证框架](verification-framework.md)：测试边界、选择、资源及发布消费覆盖；完整发布步骤见[发布流程](../flows/open-source-release.md)。

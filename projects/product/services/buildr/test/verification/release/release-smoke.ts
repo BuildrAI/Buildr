@@ -14,7 +14,6 @@ import { buildApplicationPayload } from '../../../tools/release/application-payl
 import { createReleaseArtifact, readReleaseArtifact } from '../../../tools/release/release-artifact.ts';
 import { officialRegistry } from '../../../tools/release/registry-version-state.ts';
 import { readSharedCandidatePackage } from './candidate-package.ts';
-import { buildGeneratedArtifactSet } from '../../../tools/build/artifact-set.ts';
 import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder } from '../timing/phases.ts';
 import { createExactNodeExecutionEnvironment } from '../../../src/infrastructure/process.ts';
 
@@ -332,6 +331,7 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
       fs.mkdirSync(workspace, { recursive: true });
       if (!installTarget) {
         const sourceCommit: any = run('git', ['rev-parse', 'HEAD'], { cwd: productRoot }).trim();
+        const { buildGeneratedArtifactSet } = await import('../../../tools/build/artifact-set.ts');
         const generated: any = await buildGeneratedArtifactSet(path.join(root, 'generated-artifacts'), { sourceIdentity: sourceCommit });
         const payload: any = await buildApplicationPayload(path.join(root, 'application-payload'), sourceCommit, { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
         const artifact: any = createReleaseArtifact(payload.root, packDirectory, { testContextRoot: generated.testContextRoot });

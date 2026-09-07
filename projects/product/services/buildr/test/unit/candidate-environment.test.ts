@@ -6,7 +6,7 @@ import { candidateEnvironmentPlan, CANDIDATE_ENVIRONMENT_PROFILES } from '../../
 const roots = { serviceRoot: '/product/buildr', webRoot: '/product/buildr-web' };
 
 test('Candidate environment profiles are closed and select the minimum preparation recipe', () => {
-  assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'source-runtime', 'host']);
+  assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'source-runtime', 'consumer', 'host', 'publisher']);
   assert.deepEqual(candidateEnvironmentPlan('host', roots).map((item) => item.id), ['buildr-dependencies']);
   assert.deepEqual(candidateEnvironmentPlan('base', roots).map((item) => item.id), [
     'buildr-dependencies',
@@ -15,7 +15,6 @@ test('Candidate environment profiles are closed and select the minimum preparati
   assert.deepEqual(candidateEnvironmentPlan('artifact', roots).map((item) => item.id), [
     'buildr-dependencies',
     'buildr-web-dependencies',
-    'generated-contracts-and-test-context',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('source-runtime', roots).map((item) => item.id), [
     'buildr-dependencies',
@@ -34,4 +33,17 @@ test('source-runtime uses locked installs and the single development web prepara
     { id: 'generated-contracts-and-test-context', executable: 'npm', args: ['run', 'artifacts:prepare'], cwd: roots.serviceRoot },
     { id: 'buildr-web-source-runtime', executable: 'node', args: ['tools/development/prepare-development-web.ts'], cwd: roots.serviceRoot },
   ]);
+});
+
+
+test('artifact consumers install only locked production dependencies and never generate source', () => {
+  for (const profile of ['consumer', 'host']) {
+    const plan = candidateEnvironmentPlan(profile, roots);
+    assert.equal(plan.length, 1);
+    assert.deepEqual(plan[0].args, ['ci', '--omit=dev', '--ignore-scripts']);
+  }
+  const publisher = candidateEnvironmentPlan('publisher', roots);
+  assert.deepEqual(publisher[0].args, ['ci', '--omit=dev', '--ignore-scripts']);
+  assert.ok(publisher[1].args.includes('npm@11.5.1'));
+  assert.ok(!publisher[1].args.includes('--global'));
 });

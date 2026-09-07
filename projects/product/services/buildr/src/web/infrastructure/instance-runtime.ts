@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../infrastructure/filesystem/index.ts';
 
 import { readCurrentProductIdentity, validateNpmLauncherBinding } from '../../system/installation/module.ts';
 import { resolveWebProfile } from '../../system/installation/contracts/web-profile.ts';
@@ -31,27 +32,18 @@ export function buildrWebStartLockPath(profile: any = null) {
 }
 
 export function acquireBuildrWebStartLock(profile: any = null) {
-  const file = buildrWebStartLockPath(profile);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const current = resolvedProfile(profile);
+  const file = buildrWebStartLockPath(current);
   try {
-    const descriptor = fs.openSync(file, 'wx');
-    fs.writeFileSync(descriptor, String(process.pid));
-    fs.closeSync(descriptor);
-    return { file, owner: true };
+    return acquireExclusiveFileLock(file, current.dataRoot, { timeoutMs: 0, allowLegacyPid: true });
   } catch (error: any) {
-    if (error.code !== 'EEXIST') throw error;
-    let ownerPid: any = null;
-    try { ownerPid = Number(fs.readFileSync(file, 'utf8')); } catch {}
-    if (Number.isInteger(ownerPid) && ownerPid > 0) {
-      try { process.kill(ownerPid, 0); return { file, owner: false }; } catch {}
-    }
-    fs.rmSync(file, { force: true });
-    return acquireBuildrWebStartLock(profile);
+    if (error.code === 'buildr_exclusive_file_lock_timeout') return { file, owner: false };
+    throw error;
   }
 }
 
 export function releaseBuildrWebStartLock(lock: any) {
-  if (lock?.owner) fs.rmSync(lock.file, { force: true });
+  return releaseExclusiveFileLock(lock);
 }
 
 export function readBuildrWebInstance(profile: any = null) {

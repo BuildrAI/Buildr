@@ -1,4 +1,6 @@
-# Buildr Product Verification Framework
+# Buildr 产品验证框架（Product Verification Framework）
+
+本文说明测试实现、选择、资源和证据边界；以下代码路径除特别注明外均相对 `services/buildr/`。发布选择、完整候选、同包消费和恢复只在[发布流程](../flows/open-source-release.md)维护。项目测试入口以[验证声明](../../verification.yml)和[执行注册表](../../services/buildr/test/verification/registry.ts)为准。
 
 本文描述 Buildr 当前真实使用的验证架构，以及公共 Node.js Test Context Runtime 的设计、API、执行宿主和接入方式。目标不是只让 Buildr 某一组测试变快，而是建立一套后续 Node.js 项目也能沿用的测试执行基础：测试声明所需 Context，Runtime 按配置身份缓存应用组装，Runner 在多个持久 Worker Host 中并行执行，provider 负责隔离、reset 和污染失效。
 
@@ -281,7 +283,7 @@ Buildr测试层现在在公共Test Context Runtime之上注册三类可复用准
 
 处置包含稳定reason code；registry增删或重命名step而未同步处置会在执行前失败。处置不是profile：同一个`full-lifecycle` owner仍可能属于affected、Core、Candidate、Host Node或Windows显式投影。
 
-- `ownership.mjs`：changed path → primary owner；
+- `ownership.ts`：changed path → primary owner；
 - `registry.mjs`：step、profile、dependency、executor、Context、资源和预算；
 - `planner.mjs`：owner选择、closed validation、关键路径与预算准入；
 - `dag-scheduler.mjs`：dependency/class/named resource/numeric capacity；
@@ -319,26 +321,25 @@ Quick只表示开发期低成本反馈，focus只用于诊断；两者都不冒�
 | Task Delivery | affected | frozen Task Content | affected development evidence |
 | Full Regression | full | Task/current source | complete daily evidence |
 | Product Artifact Candidate | full | exact source + candidate artifact | artifact/package/install compatibility evidence |
-| Published Release | release-only | published artifact/result | publish, install, launcher, smoke, readback |
+| Published Release | release-only | published artifact/result | 当前权限与公开事实、原包发布、官方安装及回读；平台证明复用候选 |
 
 | 入口 | 责任 |
 | --- | --- |
 | `test:fast` | Unit、Component和低成本Static |
 | `test:changed` | affected；unknown path/owner gap执行前失败 |
 | `test:focus` | 指定primary owner定位和计时 |
-| `test:daily-full` | 52-step完整日常证据，不承担Candidate/Release专属旅程 |
+| `test:daily-full` | 完整日常证据，不承担Candidate/Release专属旅程 |
 | `test:core` | 兼容入口；转发到相同daily-full runner与内部`core` profile |
-| `test:candidate` | 66-step Product Artifact Candidate与唯一tarball |
+| `test:candidate` | 完整 Product Artifact Candidate与唯一tarball |
 | Candidate CI | 平台分片、Windows/Host Node和closed aggregate |
 | Release | 冻结source、publication、readback和Git convergence |
 
 affected解决任务相关性，Context解决已选测试的重复环境成本，Host grant解决安全并行。三者互补。
 
-changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是daily-full membership。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
+changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是daily-full membership。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../docs/verification-evidence-audit.md)。
 
-`test:changed -- --json` 的 `selectionAudit.stepSelections` 直接投影同一plan，不重新实现选择算法。每个step列出`selectionKinds`与对应trigger：`direct-owner`关联触发path，`dependency`关联引入它的parent step，`full-scope`关联稳定Full authority reason，profile/admission/explicit分别说明公共入口选择；同时列出execution boundary、primary evidence owner、public outcome和target duration。Full pattern、code和说明只在`ownership.mjs`维护，planner不按文件名另建reason authority。当前稳定code包括execution graph、selection、ownership、runtime、environment、package execution metadata和其他执行基础变化；无法安全局部判断的关键authority保持Full，unknown/unowned高风险production path阻断。
+`test:changed -- --json` 的 `selectionAudit.stepSelections` 直接投影同一plan，不重新实现选择算法。每个step列出`selectionKinds`与对应trigger：`direct-owner`关联触发path，`dependency`关联引入它的parent step，`full-scope`关联稳定Full authority reason，profile/admission/explicit分别说明公共入口选择；同时列出execution boundary、primary evidence owner、public outcome和target duration。Full pattern、code和说明只在`ownership.ts`维护，planner不按文件名另建reason authority。当前稳定code包括execution graph、selection、ownership、runtime、environment、package execution metadata和其他执行基础变化；无法安全局部判断的关键authority保持Full，unknown/unowned高风险production path阻断。
 
-2026-08-24的三个近期`product.delivery`可回放样本中，两个为affected，一个因registry变更以`execution-graph-change`合法Full；before/after step集合没有变化。因此本轮不声明性能收益，现场结论是普通Task选择并非当前主要瓶颈，剩余耗时来自被正确选择的真实primary owner。样本量、missing字段和计算口径以审计报告为准。
 
 ## 14. Evidence
 
@@ -377,7 +378,7 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 
 该历史轮次的结论是180秒低于当时244秒数学下限，不能作为当时52-step集合的可达目标；它建立了Context技术框架，但不是当前预算事实。2026-08-24的current daily-full数学下限已现场复核为259秒，预算360秒。若要进一步下降，必须减少选择放大、消除重复primary evidence或优化真实生命周期body/cleanup；Product Artifact Candidate与Published Release证据不能为追求daily-full数字而下放或删除。
 
-后续跨层证据审计以27个target duration至少15秒的日常Integration/System owner建立了registry派生map。历史普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。该历史树为52 steps、976秒工作量与244秒下限；当前树以本节开头的现场plan-only为准。剩余成本仍需分别审计selection amplification与真实Finish、Workspace、Worktree、进程等owner body/cleanup，详见[审计报告](../../../docs/verification-evidence-audit.md)。
+后续跨层证据审计以27个target duration至少15秒的日常Integration/System owner建立了registry派生map。历史普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。该历史树为52 steps、976秒工作量与244秒下限；当前树以本节开头的现场plan-only为准。剩余成本仍需分别审计selection amplification与真实Finish、Workspace、Worktree、进程等owner body/cleanup，详见[审计报告](../../docs/verification-evidence-audit.md)。
 
 ## 18. 当前能力与下一边界
 
@@ -396,3 +397,13 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 - daily-full性能目标不能削弱Product Artifact Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Published Release readback/convergence证据。
 
 相关入口：`test-context.mjs`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.ts`、`test/verification/planner.ts`、`test/verification/dag-scheduler.ts`、`test/verification/executor.ts`。
+
+## 发布基础设施验证
+
+普通开发使用相关测试和完整低成本回归；发布工具、构建、安装或平台代码变化时，显式选择对应真实场景。`integration-candidate-release` 属于发布专用证据，不进入日常 `core`，完整候选在 macOS、Windows 独立执行其生命周期与故障注入。源码分片只等待自身依赖，产物消费者等待唯一压缩包；聚合区分未运行、失败和已复用的成功结果。
+
+`release-consumption.ts` 是发布消费配方与覆盖关系的唯一声明。候选执行真实平台启动、宿主 Node、包/文档/版本检查和发布 npm 的无写入检查；`release-publication.ts` 消费同一声明完成临发布状态核验、受保护写入和发布后回读。配方对应的执行实现由类型检查和行为测试校验，新增发布检查必须有候选证据或明确的临发布/权限理由。
+
+任务验证报告只登记已执行的事实，不能代替候选聚合或发布事实。执行目录与报告写入者分别选择：工作树运行检查，合法的主工作空间入口登记报告。发布成功后的登记、自举或清理失败分别报告，不重新发布。
+
+历史性能测量见[验证证据审计](../../docs/verification-evidence-audit.md)；它保留当时的执行范围与数字，不代表当前发布耗时。

@@ -113,6 +113,10 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 });
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
+  'integration-candidate-release': primaryEvidence(
+    'A partial Git or Registry write whose retry repeats publication or erases known effects must fail recovery.',
+    'real temporary Git repositories, HTTP services, immutable artifacts and release recovery',
+  ),
   'integration-self-bootstrap': primaryEvidence(
     'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
     'real retained checkout, Git identity, and runtime synchronization',
@@ -196,6 +200,7 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 });
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
+  'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
   'candidate-tarball': 'Produces the unique release Candidate tarball.',
   'application-payload-release': 'Validates the packaged application payload and npm runtime.',
   'npm-launcher-candidate': 'Validates the Launcher against a verified npm Candidate installation.',
@@ -460,7 +465,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, groups: ['release'],  schedulingCostMs: 12000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/*.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.ts' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.ts' }, profiles: ['host-node'], }),
@@ -503,7 +508,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.ts' }, profiles: ['candidate'],   schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'remote-skill-timeout', name: 'remote Skill timeout contract', executor: { type: 'node', file: 'test/verification/network/remote-text.ts' }, profiles: ['candidate'],  concurrencyClass: 'network' }),
-  step({ id: 'release-tarball-smoke', name: 'release tarball headless smoke', executor: { type: 'node', file: 'test/verification/release/release-smoke.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 18000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'release-tarball-smoke', name: 'release metadata and real platform Launcher consumption', executor: { type: 'node', file: 'tools/release/release-consumption.ts', args: ['platform'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], dependsOn: ['candidate-tarball'], schedulingCostMs: 25000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'managed-data-integrity', name: 'managed data integrity', executor: { type: 'node', file: 'test/verification/integrity/managed-data-integrity.ts' }, profiles: ['candidate'], groups: ['package'],  schedulingCostMs: 9000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'docs-quality', name: 'documentation quality', executor: { type: 'node', file: 'test/verification/docs/quality.ts' }, profiles: ['candidate'],  concurrencyClass: 'default' }),
@@ -560,7 +565,7 @@ export const CORE_MACOS_STEP_IDS: any = Object.freeze([
 export const CORE_MACOS_SHARDS: any = Object.freeze([
   candidateShard('core-task-lifecycle-macos', 'macos', 'verification', [
     'integration-self-bootstrap',
-  ], { requiresArtifact: true }),
+  ]),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
     'integration-declarations',
@@ -573,7 +578,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'system-public-json-contracts',
     'system-openspec-contract-audit',
     'openspec-contract-fixtures',
-  ], { requiresArtifact: true }),
+  ]),
   candidateShard('core-package-runtime-release-macos', 'macos', 'verification', [
     'integration-runtime',
     'integration-release',
@@ -599,7 +604,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
     'init-onboarding',
     'cli-compatibility',
     'service-branch-contract',
-  ], { requiresArtifact: true }),
+  ]),
 ]);
 
 export const CANDIDATE_CI_SHARDS: any = Object.freeze([
@@ -623,6 +628,8 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'candidate-tarball',
   ], { producesArtifact: true }),
   ...CORE_MACOS_SHARDS,
+  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release']),
+  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release']),
   candidateShard('runtime-windows', 'windows', 'verification', [
     'system-runtime-recovery',
     'system-app-process',
@@ -645,6 +652,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
 ]);
 
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
+  'integration-candidate-release': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
   'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
   'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
 });
@@ -654,6 +662,8 @@ export const CANDIDATE_CI_HOST_NODE_TUPLES: any = Object.freeze([
   Object.freeze({ id: 'host-minimum-windows', runner: 'windows', requestedNode: '24.15.0', expectation: 'minimum' }),
   Object.freeze({ id: 'host-current-macos', runner: 'macos', requestedNode: '24.x', expectation: 'current' }),
   Object.freeze({ id: 'host-current-windows', runner: 'windows', requestedNode: '24.x', expectation: 'current' }),
+  Object.freeze({ id: 'host-minimum-linux', runner: 'linux', requestedNode: '24.15.0', expectation: 'minimum' }),
+  Object.freeze({ id: 'host-current-linux', runner: 'linux', requestedNode: '24.x', expectation: 'current' }),
 ]);
 
 export const VERIFICATION_TEST_INTENTS: any = Object.freeze(['Development', 'Acceptance', 'Static Conformance', 'Delivery / Release']);

@@ -38,7 +38,7 @@ function git(repo: string, args: string[]): string {
 }
 
 function samePath(left: string, right: string): boolean {
-  try { return fs.realpathSync(path.resolve(left)) === fs.realpathSync(path.resolve(right)); } catch { return false; }
+  return sameFilesystemPath(left, right);
 }
 
 function regularJson(filename: string): unknown {
@@ -115,7 +115,7 @@ export function createReleaseExecutionBinding(input: { version: string; task: Re
   if (samePath(topLevel, path.dirname(commonDir))) throw new Error('Release Git mutation is forbidden in the retained primary worktree.');
   const branch = git(executionRoot, ['branch', '--show-current']);
   const head = git(executionRoot, ['rev-parse', 'HEAD']);
-  if (!samePath(topLevel, executionRoot) || branch !== observed.branch || head !== observed.head || !SHA.test(head)) throw new Error('Release Worktree branch or HEAD identity is invalid.');
+  if (!samePath(topLevel, executionRoot) || branch !== observed.branch || head !== observed.head || !SHA.test(head)) throw new Error(`Release Worktree branch or HEAD identity is invalid: ${JSON.stringify({ topLevel, executionRoot, branch, expectedBranch: observed.branch, head, expectedHead: observed.head })}`);
   const unsigned: Omit<ReleaseExecutionBinding, 'identity'> = {
     schemaVersion: releaseExecutionBindingSchema,
     version: input.version,
@@ -151,6 +151,14 @@ function option(argv: string[], name: string): string {
   const index = argv.indexOf(name);
   if (index < 0 || !argv[index + 1]) throw new Error(`Missing required ${name}.`);
   return argv[index + 1];
+}
+
+export function resolveReleaseExecutionBinding(input: { version: string; workspace: string; repo: string }, runtimeValue: any = createRuntime()): ReleaseExecutionBinding {
+  const workspace = fs.realpathSync(path.resolve(input.workspace));
+  const taskId = `release-${input.version}`;
+  const task = runtimeValue.inspectTask(workspace, taskId)?.record;
+  const worktreeResult = runtimeValue.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
+  return createReleaseExecutionBinding({ version: input.version, task, worktreeResult, workspaceRoot: workspace, repo: input.repo });
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

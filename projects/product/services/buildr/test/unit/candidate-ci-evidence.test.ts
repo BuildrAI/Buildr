@@ -49,7 +49,7 @@ function passedEvidence(workflow: any = null): any  {
   const hosts: any = CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => createCandidateCiEvidence({
     kind: 'host-node',
     id: tuple.id,
-    platform: tuple.runner === 'macos' ? 'darwin' : 'win32',
+    platform: tuple.runner === 'macos' ? 'darwin' : tuple.runner === 'windows' ? 'win32' : 'linux',
     workflow: workflow ? { ...workflow } : null,
     sourceCommit,
     sourceTree,

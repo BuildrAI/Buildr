@@ -1,18 +1,13 @@
 schemaVersion: buildr.component/v1
-id: buildr-self-bootstrap
-kind: integration
-version: 1.2.0
-source: workspace
+id: "buildr-self-bootstrap"
+kind: "integration"
+version: "1.2.1"
+source: "workspace"
 members:
   rules: []
-  skills:
-    - skills/buildr-self-bootstrap-sync
+  skills: ["skills/buildr-self-bootstrap-sync"]
   commandCollections: []
-  skillContributions:
-    - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md
+  skillContributions: ["components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
 contributions:
-  skillFragments:
-    - task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md
-integrity:
-  - skills/buildr-self-bootstrap-sync=sha256-27b64c2b33ccecc3c0024ebcba2b70114835b5be1a9798b92ed5e4ff3018abf9
-  - components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-a053bf6cd2429e3090cd822c816e69fe15874dc42918eebd1cfb298eb7d1edca
+  skillFragments: ["task-finish@append=components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md"]
+integrity: ["skills/buildr-self-bootstrap-sync=sha256-6adc5d827c4867c64a432da9573f40d5b89b0e0c65f58cc15075082dd6476dc0","components/workspace/buildr-self-bootstrap/contributions/task-finish-post-finish.md=sha256-a053bf6cd2429e3090cd822c816e69fe15874dc42918eebd1cfb298eb7d1edca"]
