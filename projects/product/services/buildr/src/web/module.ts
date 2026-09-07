@@ -13,6 +13,7 @@ export const WEB_INSTANCE_LIFECYCLE = 'web.instance-lifecycle';
 
 type WebModuleDependency = {
   ensureRegisteredTarget?(root: string | null): string | null;
+  resolveRegisteredWorkspace?: WebLifecycleOptions['resolveRegisteredWorkspace'];
   readCurrentProductIdentity?(): ReturnType<WebLifecycleOptions['readProductIdentity']>;
   assertCurrentNpmLauncherBinding?: WebLifecycleOptions['assertNpmLauncherBinding'];
 };
@@ -27,7 +28,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       const identity = requires[SYSTEM_INSTALLATION_IDENTITY];
       const launcher = requires[SYSTEM_INSTALLATION_LAUNCHER];
       const workspace = requires[WORKSPACE_APPLICATION];
-      if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget) {
+      if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget || !workspace?.resolveRegisteredWorkspace) {
         throw new Error('Web module dependencies are incomplete.');
       }
       const composition = Object.create(runtime) as WebInstanceLifecycleRuntime;
@@ -35,6 +36,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         httpContributions,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, serverOptions]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
+        resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
         readProductIdentity: identity.readCurrentProductIdentity,
         assertNpmLauncherBinding: launcher.assertCurrentNpmLauncherBinding,
       });

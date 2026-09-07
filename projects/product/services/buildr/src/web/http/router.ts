@@ -25,7 +25,7 @@ function contributionRespond(response: any) {
 }
 
 export function createLocalWorkspaceRequestRouter({
-  runtime,
+  resolveRegisteredWorkspace,
   taskIdPattern,
   sessionToken,
   healthSecret,
@@ -113,7 +113,7 @@ export function createLocalWorkspaceRequestRouter({
       }
       const workspaceId = apiMatch[1];
       const suffix = apiMatch[2] || '';
-      const { rootPath: root } = runtime.resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
+      const { rootPath: root } = resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
       for (const contribution of httpContributions) {
         if (typeof contribution.handle !== 'function') continue;
         const contributedResponse = await contribution.handle({

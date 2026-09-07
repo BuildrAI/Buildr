@@ -6,11 +6,12 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright-core';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
@@ -345,12 +346,6 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   const controller: any = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
-  const controllerRuntime: any = (await import(`${pathToFileURL(path.join(controller.root, 'test', 'helpers', 'runtime-harness.ts')).href}?browser=${Date.now()}`)).createRuntime();
-  controllerRuntime.currentProductInvocation = (options: any = {}) => ({
-    command: process.execPath,
-    argsPrefix: [options.cliPath || controller.cli],
-    kind: options.kind || 'stable-controller',
-  });
   const fixtureProfile: any = createSelectedFixture(workspaceRoot, controller.cli);
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot: any = path.join(base, 'other-workspace');
@@ -359,14 +354,23 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   let registry: any = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
   const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
-  const instance: any = createLocalWorkspaceServer(runtime, {
+  // Fixture writers may use the test adapter; the HTTP host must use production composition.
+  const webRuntime = createProductionRuntime();
+  const workspaceApplication = runtimeProvide(webRuntime, WORKSPACE_APPLICATION);
+  const workspacePorts = {
+    ensureRegisteredTarget: workspaceApplication.ensureRegisteredTarget,
+    resolveRegisteredWorkspace: workspaceApplication.resolveRegisteredWorkspace,
+  };
+  const instance: any = createLocalWorkspaceServer(webRuntime, {
+    ...workspacePorts,
     targetRoot: workspaceRoot,
     webProfile: { profile: 'development' },
     staticRoot: BROWSER_WEB_DIST_ROOT,
   });
   server = instance.server;
   const { url, initialWorkspaceId }: any = await instance.ready;
-  const previewInstance: any = createLocalWorkspaceServer(runtime, {
+  const previewInstance: any = createLocalWorkspaceServer(webRuntime, {
+    ...workspacePorts,
     targetRoot: workspaceRoot,
     staticRoot: BROWSER_WEB_DIST_ROOT,
     previewIdentity: {

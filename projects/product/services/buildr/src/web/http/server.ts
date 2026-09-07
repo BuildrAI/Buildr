@@ -17,9 +17,11 @@ export function createLocalWorkspaceServer(runtime: any, {
   readExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
   ensureRegisteredTarget = runtime.ensureRegisteredTarget,
+  resolveRegisteredWorkspace = runtime.resolveRegisteredWorkspace,
   staticRoot = null,
 }: any = {}) {
   if (typeof ensureRegisteredTarget !== 'function') throw new TypeError('Buildr Web Host requires the Workspace registration port.');
+  if (typeof resolveRegisteredWorkspace !== 'function') throw new TypeError('Buildr Web Host requires the Workspace resolution port.');
   const taskIdSources = [...new Set(httpContributions.map((contribution: any) => contribution.taskIdSource).filter(Boolean))];
   if (taskIdSources.length !== 1) {
     const error: Error & Record<string, any> = new Error(`Buildr Web requires exactly one Task identity contribution; received ${taskIdSources.length}.`);
@@ -51,7 +53,7 @@ export function createLocalWorkspaceServer(runtime: any, {
     Promise.resolve().then(() => routeRequest(request, response)).catch((error: any) => apiError(response, error));
   });
   routeRequest = createLocalWorkspaceRequestRouter({
-    runtime,
+    resolveRegisteredWorkspace,
     taskIdPattern: taskIdSources[0],
     sessionToken,
     healthSecret,
