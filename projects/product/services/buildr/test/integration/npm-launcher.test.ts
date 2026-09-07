@@ -110,8 +110,8 @@ async function waitFor(check: any, { attempts = 160, intervalMs = 50, message = 
   throw new Error(`Timed out waiting for ${message}.`);
 }
 
-const LAUNCHER_HANDOFF_ATTEMPTS: any = 400;
-const LAUNCHER_HANDOFF_TIMEOUT_MS: any = 20000;
+const LAUNCHER_HANDOFF_ATTEMPTS: any = 1200;
+const LAUNCHER_HANDOFF_TIMEOUT_MS: any = 60000;
 
 function spawnInstalledWeb(entry: any, args: any): any  {
   const child: any = spawn(process.execPath, [entry, 'web', ...args], {
