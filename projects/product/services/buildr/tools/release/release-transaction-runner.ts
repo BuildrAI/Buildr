@@ -209,9 +209,9 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const candidateRunId: any = Number(options.candidateRunId);
     if (!Number.isSafeInteger(candidateRunId) || candidateRunId < 1) throw new Error('--candidate-run-id must be a positive GitHub run id.');
     const runtime: any = dependencies.runtime ?? createRuntime();
-    const releaseTaskResult: any = runtime.inspectTaskRecord(repo, options.releaseTask);
+    const releaseTaskResult: any = runtime.inspectTask(repo, options.releaseTask);
     const releaseTask: any = releaseTaskResult?.record;
-    const supportTasks: any = (options.supportTasks ?? []).map((taskId: any) => taskContextProjection(runtime.inspectTaskRecord(repo, taskId)?.record));
+    const supportTasks: any = (options.supportTasks ?? []).map((taskId: any) => taskContextProjection(runtime.inspectTask(repo, taskId)?.record));
     const preparation: any = validateReleasePreparationBinding(options.preparationBinding ?? dependencies.preparationBinding, { repo });
     if (preparation.taskId !== releaseTask.taskId || preparation.sourceCommit !== sourceCommit) throw new Error('Release preparation binding does not match the active release Task/publication source.');
     const candidateRun: any = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');

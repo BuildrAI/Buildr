@@ -162,8 +162,8 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     const repo = path.resolve(option(argv, '--repo'));
     const taskId = `release-${version}`;
     const runtime = Object.fromEntries(Object.entries(createRuntime()));
-    if (typeof runtime.inspectTaskRecord !== 'function' || typeof runtime.inspectGitWorktrees !== 'function') throw new Error('Release execution runtime ports are unavailable.');
-    const taskResult = Reflect.apply(runtime.inspectTaskRecord, runtime, [workspace, taskId]);
+    if (typeof runtime.inspectTask !== 'function' || typeof runtime.inspectGitWorktrees !== 'function') throw new Error('Release execution runtime ports are unavailable.');
+    const taskResult = Reflect.apply(runtime.inspectTask, runtime, [workspace, taskId]);
     const worktreeResult = Reflect.apply(runtime.inspectGitWorktrees, runtime, [{ workspaceRoot: workspace, taskId }]);
     const taskValue = record(record(taskResult, 'Task result').record, 'Task record');
     if (typeof taskValue.taskId !== 'string' || typeof taskValue.status !== 'string') throw new Error('Release Task record is invalid.');

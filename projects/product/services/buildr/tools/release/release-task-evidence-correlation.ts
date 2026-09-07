@@ -12,7 +12,7 @@ type Correlation = {
   source: SourceProjection | null;
   identity: string;
 };
-type Runtime = { inspectTaskRecord(root: string, taskId: string): { record?: Partial<TaskProjection>; recordDigest?: string } };
+type Runtime = { inspectTask(root: string, taskId: string): { record?: Partial<TaskProjection>; recordDigest?: string } };
 
 const DIGEST = /^sha256-[a-f0-9]{64}$/u;
 const TASK = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
@@ -78,7 +78,7 @@ export function inspectReleaseTaskEvidenceCorrelation(value: unknown): { schemaV
 }
 
 function runtimeTask(runtime: Runtime, root: string, taskId: string): TaskProjection {
-  const observed = runtime.inspectTaskRecord(root, taskId);
+  const observed = runtime.inspectTask(root, taskId);
   const value = observed.record || {};
   return { taskId: typeof value.taskId === 'string' ? value.taskId : taskId, title: typeof value.title === 'string' ? value.title : '', status: typeof value.status === 'string' ? value.status : 'unknown', recordDigest: observed.recordDigest || null };
 }
