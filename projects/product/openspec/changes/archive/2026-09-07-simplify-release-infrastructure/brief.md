@@ -24,4 +24,4 @@ rc.30 已发布成功，调查确认准备差异、安装验证加载构建工�
 - [实施清单](tasks.md)
 - [发布集合规范调整](specs/release-collection-model/spec.md)
 - [发布治理规范调整](specs/open-source-release-governance/spec.md)
-- [当前发布流程](../../../knowledge/flows/open-source-release.md)
+- [当前发布流程](https://github.com/BuildrAI/Buildr/blob/dev/projects/product/knowledge/flows/open-source-release.md)
