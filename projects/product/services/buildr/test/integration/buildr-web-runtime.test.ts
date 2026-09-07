@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,8 @@ import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.ts';
 import {
+  acquireBuildrWebStartLock,
+  releaseBuildrWebStartLock,
   clearBuildrWebInstance,
   buildrWebInstancePath,
   buildrWebStartLockPath,
@@ -114,4 +117,30 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
   });
   const preview: any = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
   await new Promise((resolve: any) => preview.server.close(resolve));
+});
+
+
+test('Web start lock preserves incomplete/live owners, recovers a dead legacy PID, and cannot release a successor', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-start-lock-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profile = resolveWebProfile({ channel: 'npm', runtime: { role: 'host' } }, { dataRoot: root });
+  const file = buildrWebStartLockPath(profile);
+  fs.writeFileSync(file, '');
+  assert.equal(acquireBuildrWebStartLock(profile).owner, false);
+  assert.equal(fs.readFileSync(file, 'utf8'), '');
+  fs.writeFileSync(file, String(process.pid));
+  assert.equal(acquireBuildrWebStartLock(profile).owner, false);
+  const exited = spawnSync(process.execPath, ['-e', 'process.exit(0)'], { encoding: 'utf8' });
+  assert.equal(exited.status, 0);
+  fs.writeFileSync(file, String(exited.pid));
+  const first = acquireBuildrWebStartLock(profile);
+  assert.equal(first.owner, true);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).pid, process.pid);
+  assert.equal(acquireBuildrWebStartLock(profile).owner, false);
+  assert.equal(releaseBuildrWebStartLock(first), true);
+  const successor = acquireBuildrWebStartLock(profile);
+  assert.equal(successor.owner, true);
+  assert.equal(releaseBuildrWebStartLock(first), false);
+  assert.equal(acquireBuildrWebStartLock(profile).owner, false);
+  assert.equal(releaseBuildrWebStartLock(successor), true);
 });

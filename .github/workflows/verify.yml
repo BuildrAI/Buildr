@@ -422,6 +422,7 @@ jobs:
           node-version-file: projects/product/.node-version
           package-manager-cache: false
       - run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - run: node --test test/integration/buildr-web-runtime.test.ts
       - name: Observe Launcher under the normal runtime workload
         env:
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
