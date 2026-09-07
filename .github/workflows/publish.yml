@@ -243,6 +243,8 @@ jobs:
           node-version: "24.15.0"
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Prepare Candidate protected environment
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Install supported npm CLI
         run: npm install --global npm@11.5.1
       - uses: actions/download-artifact@v7
