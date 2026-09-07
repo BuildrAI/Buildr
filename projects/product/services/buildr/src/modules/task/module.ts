@@ -54,6 +54,7 @@ type TaskModuleRequires = {
     'runWorkspaceTransaction' | 'readProjectRegistryRecord' | 'readServiceRegistryRecord' | 'memoizeWorkspaceOperation'> & {
       openWorkspaceStructuredStore(targetRoot: string, options: { writable: boolean }): unknown;
       readProjectRegistryPersistence(targetRoot: string): unknown;
+      readServiceRegistryPersistence(targetRoot: string, project: unknown, workspaceId?: string): unknown;
     };
 };
 type SharedTaskComposition = DynamicRuntime;

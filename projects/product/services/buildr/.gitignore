@@ -4,8 +4,8 @@ dist/
 *.tgz
 web-dist/
 package/targets/test-context/
-src/agent-assets/interfaces/http/generated/
-src/task/application/generated/
-src/task/interfaces/http/generated/
+src/modules/agent-assets/interfaces/http/generated/
+src/modules/task/application/generated/
+src/modules/task/interfaces/http/generated/
 src/web/http/generated/
-src/workspace/interfaces/http/generated/
+src/modules/workspace/interfaces/http/generated/

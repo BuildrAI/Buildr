@@ -273,6 +273,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
         'runWorkspaceSqliteRead',
         'runWorkspaceTransaction',
         'readProjectRegistryPersistence',
+        'readServiceRegistryPersistence',
         'readProjectRegistryRecord',
         'readServiceRegistryRecord',
         'memoizeWorkspaceOperation',
