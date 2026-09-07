@@ -59,6 +59,7 @@ export function validateReleaseRehearsalPreparation(value: any): any {
   delete projection.identity;
   if (identity !== digest(projection)) throw new Error('Release rehearsal preparation identity is invalid.');
   if (!SHA.test(value.base?.commit || '') || !SHA.test(value.base?.tree || '') || !SHA.test(value.prospective?.commit || '') || !SHA.test(value.prospective?.tree || '')) throw new Error('Release rehearsal preparation Git identity is invalid.');
+  if (typeof value.devRef !== 'string' || !value.devRef.trim()) throw new Error('Release rehearsal preparation dev ref is invalid.');
   if (!Array.isArray(value.sourceDevCommits) || value.sourceDevCommits.length === 0 || value.sourceDevCommits.some((item: any) => !SHA.test(item))) throw new Error('Release rehearsal preparation requires ordered dev source commits.');
   return value;
 }
@@ -111,6 +112,7 @@ export function prepareReleaseRehearsal(options: { version: string; repo: string
     schemaVersion: RELEASE_REHEARSAL_PREPARATION_SCHEMA,
     status: 'prepared',
     version: options.version,
+    devRef: state.devRef,
     base: { commit: state.releaseHead, tree: state.releaseTree, generation: state.generation, selectionIdentity: state.selectionIdentity },
     sourceDevCommits: sources,
     prospective: { commit: prospectiveCommit, tree: prospectiveTree },
@@ -200,7 +202,7 @@ export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: str
   const preparation = evidence.preparation;
   const binding = (dependencies.validateExecutionBinding || validateReleaseExecutionBinding)(options.executionBinding, { repo });
   if (binding.version !== preparation.version) throw new Error('Release rehearsal promotion execution binding version mismatches preparation.');
-  const state: any = inspectReleaseSelection({ version: preparation.version, repo });
+  const state: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
   if (state.status !== 'frozen' || state.releaseHead !== preparation.base.commit || state.releaseTree !== preparation.base.tree || state.selectionIdentity !== preparation.base.selectionIdentity) throw new Error('Current frozen release does not match rehearsal base.');
   const currentBranch = run('git', ['branch', '--show-current'], repo).stdout;
   const currentHead = commit('HEAD', repo);
