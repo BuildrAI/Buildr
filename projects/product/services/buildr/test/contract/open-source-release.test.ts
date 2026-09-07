@@ -13,6 +13,7 @@ import {
 } from '../../test/verification/release/open-source-candidate.ts';
 import { resolveReleaseContract } from '../../tools/release/release-contract.ts';
 import { extractReleaseNotes } from '../../tools/release/release-notes.ts';
+import { releasePublicationRepositoryRoot } from '../../tools/release/release-publication.ts';
 import { ensureGitHubRelease } from '../../tools/release/github-release-ensure.ts';
 import {
   assertRegistryArtifact,
@@ -438,6 +439,11 @@ test('publish workflow delegates one protected transaction and consumes the Cand
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run?.includes('release-publication.ts')).length, 1);
   assert.equal(document.jobs.release.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher').length, 1);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|npm publish|npm pack|artifacts:prepare|application-payload.*build/);
+});
+
+test('protected publication resolves the Workspace repository root', () => {
+  assert.equal(releasePublicationRepositoryRoot, workspaceRoot);
+  assert.equal(fs.statSync(path.join(releasePublicationRepositoryRoot, '.github', 'workflows', 'publish.yml')).isFile(), true);
 });
 
 test('CI and publish workflows use the supported Node runtime', () => {
