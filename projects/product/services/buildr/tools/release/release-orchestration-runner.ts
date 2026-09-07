@@ -320,6 +320,24 @@ function writeOperation(file: string, value: any): void {
   fs.renameSync(temporary, file);
 }
 
+export function reconcilePublicationAfterPreparedContext(publication: any, context: any, previousRun: any): any {
+  if (!publication?.requested || publication.contextIdentity === context.identity) return { publication, effect: null };
+  if (!publication.contextIdentity || !publication.runId || !previousRun) throw new Error('Previous Publication identity is incomplete; preserve it until the matching run can be read back.');
+  if (previousRun.status !== 'completed') throw new Error('Previous Publication run is still active; preserve it until terminal readback.');
+  if (previousRun.conclusion === 'success') throw new Error('Previous Publication succeeded; reconcile its public facts instead of replacing the context.');
+  return {
+    publication: null,
+    effect: {
+      type: 'stale-publication-pointer-released',
+      previousRunId: publication.runId,
+      previousContextIdentity: publication.contextIdentity,
+      currentContextIdentity: context.identity,
+      previousConclusion: previousRun.conclusion,
+      publicState: 'unpublished',
+    },
+  };
+}
+
 export async function runReleaseOperation(options: any, dependencies: any = {}): Promise<any> {
   let action = options.action;
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
@@ -529,7 +547,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       ...dependencies.orchestrationDependencies, transactionDependencies: { ...dependencies.orchestrationDependencies?.transactionDependencies, candidateEvidence },
     });
     currentEffects.push(...prepared.effects);
-    if (prepared.context) state.context = prepared.context;
+    if (prepared.context) {
+      if (state.publication?.requested && state.publication.contextIdentity !== prepared.context.identity) {
+        const previousRun = state.publication.runId ? readRun(state.publication.runId) : null;
+        const reconciled = reconcilePublicationAfterPreparedContext(state.publication, prepared.context, previousRun);
+        state.publication = reconciled.publication;
+        if (reconciled.effect) currentEffects.push(reconciled.effect);
+      }
+      state.context = prepared.context;
+    }
     writeOperation(file, state);
     return answer(prepared.status, prepared.nextActions, { result: prepared });
   } catch (error: any) {
