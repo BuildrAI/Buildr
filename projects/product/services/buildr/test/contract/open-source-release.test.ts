@@ -539,6 +539,15 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-bootstrap'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
+  const candidateBootstrapSteps: any[] = verifyDocument.jobs['candidate-bootstrap'].steps;
+  const webDependencyInstall: any = candidateBootstrapSteps.find((step: any) => step.name === 'Install Buildr Web dependencies for Candidate artifact');
+  const artifactBuildIndex: any = candidateBootstrapSteps.findIndex((step: any) => step.name === 'Build the single Candidate artifact');
+  assert.deepEqual(webDependencyInstall, {
+    name: 'Install Buildr Web dependencies for Candidate artifact',
+    'working-directory': 'projects/product/services/buildr-web',
+    run: 'npm ci',
+  });
+  assert.equal(candidateBootstrapSteps.indexOf(webDependencyInstall) < artifactBuildIndex, true);
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.doesNotMatch(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /npm run test:changed -- --base/);

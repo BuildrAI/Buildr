@@ -172,6 +172,10 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
+      - name: Install Buildr Web dependencies for Candidate artifact
+        working-directory: projects/product/services/buildr-web
+        run: npm ci
+
       - name: Build the single Candidate artifact
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
