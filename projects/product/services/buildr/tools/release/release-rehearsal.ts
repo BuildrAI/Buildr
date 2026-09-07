@@ -223,7 +223,7 @@ export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: str
     `update ${frozenRef} ${preparation.prospective.commit} ${state.releaseHead}`,
     `create ${historyRef} ${preparation.prospective.commit}`,
   ], repo);
-  const result: any = inspectReleaseSelection({ version: preparation.version, repo });
+  const result: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
   if (result.status !== 'frozen' || result.releaseHead !== preparation.prospective.commit || result.releaseTree !== preparation.prospective.tree) throw new Error('Promoted release selection does not match rehearsal source.');
   return {
     ...result,
