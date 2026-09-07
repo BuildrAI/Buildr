@@ -103,6 +103,7 @@ test('passed rehearsal promotes the exact commit with the prepared dev ref and c
   assert.equal(promoted.status, 'passed');
   assert.equal(promoted.releaseHead, prepared.prospective.commit);
   assert.equal(promoted.releaseTree, prepared.prospective.tree);
+  assert.equal(git(repo, ['ls-remote', 'origin', `refs/heads/release-${version}`]).split(/\s+/u)[0], prepared.prospective.commit);
   assert.equal(git(repo, ['rev-parse', `release-${version}`]), prepared.prospective.commit);
   assert.equal(git(repo, ['rev-parse', `refs/buildr/release/${version}/frozen`]), prepared.prospective.commit);
   assert.equal(git(repo, ['rev-parse', `refs/buildr/release/${version}/freezes/0`]), base);

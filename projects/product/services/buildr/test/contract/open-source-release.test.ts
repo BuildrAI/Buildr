@@ -486,6 +486,9 @@ test('publish workflow uses one dispatch and one protected release transaction',
     assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
+  const releaseSteps: any = document.jobs.release.steps;
+  assert.equal(releaseSteps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base').length, 1);
+  assert.equal(releaseSteps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
   assert.equal(workflow.includes('NPM_TOKEN'), false);
   assert.equal(workflow.includes('--generate-notes'), false);

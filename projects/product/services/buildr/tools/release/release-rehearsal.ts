@@ -229,6 +229,7 @@ export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: str
     `update ${frozenRef} ${preparation.prospective.commit} ${state.releaseHead}`,
     `create ${historyRef} ${preparation.prospective.commit}`,
   ], repo);
+  run('git', ['push', preparation.carrier.remote, `${preparation.prospective.commit}:refs/heads/release-${preparation.version}`], repo);
   const result: any = inspectReleaseSelection({ version: preparation.version, repo, devRef: preparation.devRef });
   if (result.status !== 'frozen' || result.releaseHead !== preparation.prospective.commit || result.releaseTree !== preparation.prospective.tree) throw new Error('Promoted release selection does not match rehearsal source.');
   return {
@@ -237,7 +238,10 @@ export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: str
     status: 'passed',
     rehearsalEvidenceIdentity: evidence.identity,
     executionBindingIdentity: binding.identity,
-    effects: [{ type: 'release-rehearsal-promoted', from: state.releaseHead, to: result.releaseHead, generation: result.generation, reason: String(options.reason).trim() }],
+    effects: [
+      { type: 'release-rehearsal-promoted', from: state.releaseHead, to: result.releaseHead, generation: result.generation, reason: String(options.reason).trim() },
+      { type: 'formal-release-ref-pushed', remote: preparation.carrier.remote, ref: `refs/heads/release-${preparation.version}`, commit: result.releaseHead },
+    ],
     nextActions: ['对exact promoted release commit/tree运行一次最终Candidate。'],
   };
 }
