@@ -112,6 +112,10 @@ test('main coverage recognizes renamed and transient dev paths from commit prove
   const frozen: any = freeze(data);
 
   git(data.retained, 'checkout', '-b', 'main', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/main-history-only.txt'), 'temporary main history\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'add transient main history path');
+  fs.rmSync(path.join(data.retained, 'projects/product/main-history-only.txt'));
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'remove transient main history path');
   fs.writeFileSync(path.join(data.retained, 'projects/product/version.txt'), 'main value\n');
   fs.writeFileSync(path.join(data.retained, 'projects/product/transient.txt'), 'main value\n');
   git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'main changes paths already covered by dev history');
