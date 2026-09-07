@@ -47,7 +47,7 @@ const PRODUCTION_OWNER_BROAD_STEPS: any = new Set([
 ]);
 const PRODUCTION_OWNER_BOUNDARIES: any = new Set(['Static', 'Integration', 'System']);
 
-const CANDIDATE_CI_RUNNERS: any = Object.freeze(['macos', 'windows']);
+const CANDIDATE_CI_RUNNERS: any = Object.freeze(['macos', 'windows', 'linux']);
 const CANDIDATE_CI_PHASES: any = Object.freeze(['preflight', 'artifact', 'verification']);
 
 export function createVerificationEvidenceMap(steps: any = verificationSteps, options: any = {}): any  {
@@ -263,7 +263,7 @@ export function validateCandidateCiCoverage(
     for (const shardId of allowed ?? []) if (!shardIds.has(shardId)) findings.push({ step: id, code: 'candidate_platform_repeat_unknown_shard', value: shardId });
   }
   const tupleIds: any = new Set();
-  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows']);
+  const expectedTuples: any = new Set(['minimum:macos', 'minimum:windows', 'current:macos', 'current:windows', 'minimum:linux', 'current:linux']);
   for (const tuple of hostNodeTuples) {
     if (!tuple.id || tupleIds.has(tuple.id)) findings.push({ step: tuple.id || '<host-node-tuple>', code: 'candidate_host_tuple_duplicate_or_missing_id' });
     tupleIds.add(tuple.id);

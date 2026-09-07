@@ -428,70 +428,70 @@
 - 定义：Buildr Product测试中由ownership、registry、planner、DAG scheduler与executor组成的test-only编排层，负责affected owner选择、执行图、预算准入、依赖、资源需求与exact grant。
 - 适用范围：`test:changed`、`test:focus`、`test:daily-full`、兼容`test:core`、`test:candidate`及Candidate CI对同一registry的执行投影。
 - 避免混用：不是Task Verification、`verification.yml`通用能力schema、Product runtime scheduler或Task lifecycle authority；不拥有测试fixture内容。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试执行面（Test Execution Plane）
 
 - 定义：验证控制面选定step后，实际组装runner、Test Context、Worker Host、sandbox、进程和cleanup的执行机制；当前测试runner为`node:test`，Context生命周期由公共Node Test Context Runtime拥有。
 - 适用范围：Buildr Product直接测试与registry execution；通过Context lifecycle、step timing和diagnostic输出transient evidence。
 - 避免混用：不是生产Application runtime或Verification Result；Context Runtime也不替代assertion/discovery runner，更换Vitest等runner不会自动改变Context与资源语义。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## Node测试上下文运行时（Node Test Context Runtime）
 
 - 定义：供Node.js测试注册Context definition、按配置与依赖identity缓存state、发放test lease，并管理scope、并发安全、reset、dirty/evict和destroy的runner-independent公共组件。
 - 适用范围：`@buildr-ai/buildr/test-context`公共入口、直接`node:test`文件以及一个或多个持久Worker Host；未来其他runner只能通过adapter复用同一生命周期authority。
 - 避免混用：不是Buildr生产Application Runtime、test runner、Verification Control Plane或全局共享可变环境；Context对象只在单个Host进程内共享。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试上下文定义（Test Context Definition）
 
 - 定义：以稳定`id/version`声明scope、dependency、configuration identity、parallel safety及create/acquire/release/reset/inspect/destroy hooks的closed Context contract。
 - 适用范围：Application/DI state、transaction、snapshot、immutable seed、sandbox或worker-owned service provider。
 - 避免混用：不是test case、fixture数据、changed-path owner或资源grant；使用同名id但不同version会形成不同cache identity。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试上下文缓存身份（Test Context Cache Identity）
 
 - 定义：由definition `id/version`、canonical configuration、source identity、dependency identities和所属scope identity共同派生的稳定SHA-256身份，用于决定一个Worker Host内的Context state能否复用。
 - 适用范围：Context cache命中，以及配置或源码变化后的cache miss。
 - 避免混用：不是Git tree identity或跨Host共享键；matching identity只允许复用，不能证明可变state当前无污染。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试上下文处置（Test Context Disposition）
 
 - 定义：verification registry中每个step对Context采用方式的闭合判断，只取`context-runtime | hybrid | full-lifecycle`并带稳定reason code。
 - 适用范围：说明owner完整使用公共Runtime、只复用前置状态，或因stateless/黄金生命周期边界不接入Context。
 - 避免混用：不是测试profile、execution boundary或性能等级；`full-lifecycle`不自动表示Candidate-only，`hybrid`也不允许共享Git refs、SQLite多连接或可变Workspace。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试上下文污染（Dirty Test Context）
 
 - 定义：test lease显式标记或provider检查确认一个缓存state无法安全reset到可复用状态；Runtime在active leases归还后将其evict并执行destroy。
 - 适用范围：process global、property descriptor、database/filesystem marker或provider identity发生不可恢复漂移时的失败关闭与清理。
 - 避免混用：不是普通cache miss或测试失败的同义词；unexpected污染必须使当前测试可见失败，不能静默重建后记录为passed。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试工作进程宿主（Test Worker Host）
 
 - 定义：由Context-aware runner持久维护的Node进程，在`node:test` non-process isolation下连续执行一组文件并保留本进程的module与Context cache。
 - 适用范围：多个Host并行、每Host文件顺序执行、Host数量受outer worker grant约束。
 - 避免混用：不是单个test case、DAG step或跨进程共享内存；多个Host各自拥有matching Context state。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## Buildr测试上下文（Buildr Test Context）
 
 - 定义：Buildr test-only provider以`<id>/vN`稳定key标识、在一次verification plan内最多prepare一次的只读测试基线；provider marker与完整tree identity共同证明其结构和未污染状态。
 - 适用范围：昂贵且不是当前case主要待证事实的Workspace/领域前置环境跨runner复用；当前首个profile为`task-lifecycle/v1`。
 - 避免混用：不是通用上下文（Context）、Task Context、共享可写Workspace、跨plan缓存或测试分类；使用Context不把Integration/System降为Component。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 测试沙箱租约（Test Sandbox Lease）
 
 - 定义：Buildr Test Context Pool为一个worker/case从不可变seed物化的独立可写sandbox及其owner-bound幂等release责任；发放与释放前后检查containment、alias和seed identity。
 - 适用范围：允许并发case复用同一只读Context，同时隔离filesystem、SQLite、Git或Workspace副作用并形成materialize/release timing。
 - 避免混用：不是Execution Resource lease、Task checkout、Git worktree provider或共享Context本身；consumer只能删除自己拥有的sandbox，不能清理outer plan拥有的seed。
-- 来源：[Buildr Product Verification Framework](../services/buildr/docs/verification-framework.md)
+- 来源：[Buildr Product Verification Framework](architecture/verification-framework.md)
 
 ## 项目测试地图（Project Testing Map）
 
@@ -538,16 +538,17 @@
 
 ## 发布演练（Release Rehearsal）
 
-- 定义：正式发布集合变化前，针对current frozen release与有序待选`dev` commits形成的精确prospective commit/tree，运行与Final Candidate相同完整验证图的无公开副作用演练。
-- 适用范围：Candidate失败修复、版本材料或发布owner修复进入正式release selection前的干净macOS、Windows、Host Node、唯一artifact与全部shard验证。
-- 避免混用：不是Development affected反馈、正式release generation、Final Candidate或Publication授权；演练全绿只允许请求一次promotion，不直接改变正式release refs。
+- 定义：使用同一候选实现、精确源码和唯一产物执行的无公开副作用验证，用于发布基础设施变更或必要诊断。
+- 适用范围：候选准备及发布工具验收。
+- 避免混用：不是每次发布额外必跑的一轮；相关输入完全匹配时可直接复用完整结果，不能替代真实发布权限和当前公开状态检查。
+- 来源：[发布流程](flows/open-source-release.md)。
 
 ## 候选环境准备（Candidate Environment Preparation）
 
-- 定义：Candidate与Release Rehearsal作业共用的唯一环境准备owner，按`base|artifact|source-runtime|host`闭合档位集中恢复锁定依赖、DTO、Test Context与源码`web-dist`。
-- 适用范围：GitHub分布式候选验证和与其同构的发布演练。
-- 避免混用：不是Release Preparation、Application Payload或普通开发环境初始化；job只选择档位，不自行拼装相同准备命令。
-- 来源：[Verification ownership](../docs/verification-ownership.md)
+- 定义：由唯一入口按最低充分档位准备锁定依赖、产品/宿主 Node、生成代码、测试上下文、源码前端或产物消费依赖。
+- 适用范围：干净候选、可选演练及发布消费者。
+- 避免混用：构建产物与消费原包分别准备；不要求消费者安装生成工具，也不单独创建依赖安装绑定。
+- 来源：[验证框架](architecture/verification-framework.md)与[发布流程](flows/open-source-release.md)。
 
 ## 发布集合（Release Collection）
 

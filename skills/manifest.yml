@@ -272,7 +272,7 @@ skills:
     runtimePath: capability-adaptation
   - id: buildr-release
     path: buildr-release
-    description: 准备、检查、发布和验证 Buildr 候选版或稳定版时使用，覆盖版本与发布材料更新、dev 到 main 候选收敛、release tag、GitHub Actions、npm dist-tag、GitHub Release、失败恢复和发布后验证；用户提到准备发布、发布 RC、发布候选版、发布稳定版、检查是否可发布、继续或排查 Buildr 发布时触发。
+    description: 准备、检查、发布或恢复 Buildr 版本时使用；核对明确发布内容、完整候选与唯一产物，执行受保护发布并分别报告发布、登记、清理和自举结果。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-release
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-release
   - id: task-verification
@@ -406,7 +406,7 @@ skills:
     runtimePath: project-testing
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
-    description: Buildr自举Workspace的Formal Task Finish成功或只被retained Doctor阻塞后使用；多个Finish carrier并存时先生成只读owner-ordered恢复计划，foreign清除后可基于latest dev有界重试同run，否则按冻结Task Contribution执行self-bootstrap activation并以最终Doctor或same-run resume收敛。
+    description: Buildr自举Workspace取得matching Task delivery result后，用唯一runner完成retained sync、development Buildr Web、入口验证与Doctor；失败只形成Activation attention，不撤销Delivery。普通Workspace update或没有matching Task时不适用。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-self-bootstrap-sync
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
   - id: declaration-intake

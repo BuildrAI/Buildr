@@ -172,7 +172,7 @@ function runHostNode(tupleId: any): any  {
   const artifact: any = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);
   fs.mkdirSync(outputRoot, { recursive: true });
   const startedAtMs: any = Date.now();
-  const result: any = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'test/verification/host-node.ts')], {
+  const result: any = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'tools/release/release-consumption.ts'), 'host'], {
     cwd: productRoot,
     encoding: 'utf8',
     env: {
@@ -184,6 +184,14 @@ function runHostNode(tupleId: any): any  {
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
+  if (result.status === 0 && tupleId === 'host-minimum-linux') {
+    const publishCheck = spawnCommandSync(exactNode.nodeExecutable, [path.join(productRoot, 'tools/release/release-consumption.ts'), 'publisher'], {
+      cwd: productRoot, encoding: 'utf8', env: { ...exactNode.env, ...artifactEnvironment(artifact) }, timeout: 120_000,
+    });
+    if (publishCheck.stdout) process.stdout.write(publishCheck.stdout);
+    if (publishCheck.stderr) process.stderr.write(publishCheck.stderr);
+    if (publishCheck.status !== 0 || publishCheck.error) result.status = publishCheck.status || 1;
+  }
   const finishedAtMs: any = Date.now();
   const evidence: any = createCandidateCiEvidence({
     kind: 'host-node',
@@ -219,7 +227,14 @@ function aggregate(): any  {
 }
 
 if (action === 'plan') {
-  process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
+  const platforms: Record<string, string> = { macos: 'macos-15', windows: 'windows-2025', linux: 'ubuntu-24.04' };
+  const matrices = {
+    source: CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
+    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: 'source-runtime' })),
+    host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-linux' ? 'publisher' : 'host' })),
+  };
+  if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);
+  process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), matrices, shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
 } else if (action === 'run' && id) await runShard(id);
 else if (action === 'host' && id) runHostNode(id);
 else if (action === 'aggregate') aggregate();

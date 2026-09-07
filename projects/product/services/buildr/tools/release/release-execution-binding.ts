@@ -153,6 +153,14 @@ function option(argv: string[], name: string): string {
   return argv[index + 1];
 }
 
+export function resolveReleaseExecutionBinding(input: { version: string; workspace: string; repo: string }, runtimeValue: any = createRuntime()): ReleaseExecutionBinding {
+  const workspace = fs.realpathSync(path.resolve(input.workspace));
+  const taskId = `release-${input.version}`;
+  const task = runtimeValue.inspectTask(workspace, taskId)?.record;
+  const worktreeResult = runtimeValue.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
+  return createReleaseExecutionBinding({ version: input.version, task, worktreeResult, workspaceRoot: workspace, repo: input.repo });
+}
+
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const argv = process.argv.slice(2);

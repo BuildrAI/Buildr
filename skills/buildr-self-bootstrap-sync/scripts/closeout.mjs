@@ -122,6 +122,7 @@ function classifications(changedPaths) {
   const buildrWeb = [];
   for (const pathname of changedPaths) {
     if (matches(pathname, [`${SERVICE_ROOT}/resources/manifest.yml`], [
+      'skills/',
       `${SERVICE_ROOT}/resources/workspace/`,
       `${SERVICE_ROOT}/package/targets/runtime/skills/buildr/`,
     ])) sync.push(pathname);

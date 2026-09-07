@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
-import { releasePreparationBindingSchema, validateReleasePreparationBinding } from './release-preparation-binding.ts';
 import { releaseContextSchema, validateReleaseContext } from './release-readiness.ts';
 import { validateReleaseTaskEvidenceCorrelation } from './release-task-evidence-correlation.ts';
 
@@ -26,6 +25,54 @@ function closed(value: any, fields: any, label: any): any  {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   for (const field of Object.keys(value)) if (!fields.includes(field)) throw new Error(`${label}.${field} is not supported.`);
   return value;
+}
+
+// Read-only compatibility for published evidence. New releases have no separate
+// dependency-installation binding and never execute the old preparation command.
+export const releasePreparationBindingSchema = 'buildr.release-preparation-binding/v1';
+const legacyDigest = (value: string | Buffer): string => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
+function requiredLegacyDigest(value: any, field: string): string {
+  if (typeof value !== 'string' || !DIGEST.test(value)) throw new Error(`${field} must be a sha256 identity.`);
+  return value;
+}
+
+export function validateReleasePreparationBinding(value: any, options: { repo?: string } = {}): any {
+  const item = closed(value, ['schemaVersion', 'taskId', 'sourceCommit', 'service', 'serviceRoot', 'command', 'inputs', 'node', 'outcome', 'identity'], 'release preparation binding');
+  if (item.schemaVersion !== releasePreparationBindingSchema) throw new Error('Release preparation binding schema is invalid.');
+  if (typeof item.taskId !== 'string' || !item.taskId || typeof item.sourceCommit !== 'string' || !/^[a-f0-9]{40}$/u.test(item.sourceCommit)) throw new Error('Release preparation Task/source identity is invalid.');
+  if (item.service !== 'product/buildr' || item.serviceRoot !== 'projects/product/services/buildr') throw new Error('Release preparation must bind product/buildr Service root.');
+  const command = closed(item.command, ['executable', 'args', 'cwd'], 'release preparation command');
+  if (command.executable !== 'npm' || !Array.isArray(command.args) || command.args.length !== 1 || command.args[0] !== 'ci' || command.cwd !== item.serviceRoot) throw new Error('Release preparation command must be npm ci in the Buildr Service root.');
+  const inputs = closed(item.inputs, ['package.json', 'package-lock.json'], 'release preparation inputs');
+  const packageIdentity = requiredLegacyDigest(inputs['package.json'], 'Release preparation package.json identity');
+  const lockIdentity = requiredLegacyDigest(inputs['package-lock.json'], 'Release preparation package-lock.json identity');
+  const node = closed(item.node, ['authority', 'version', 'executionIdentity'], 'release preparation Node');
+  if (node.authority !== 'projects/product/.node-version' || typeof node.version !== 'string' || !/^\d+\.\d+\.\d+$/u.test(node.version)) throw new Error('Release preparation Node authority/version is invalid.');
+  const nodeIdentity = requiredLegacyDigest(node.executionIdentity, 'Release preparation Node execution identity');
+  const outcome = closed(item.outcome, ['status'], 'release preparation outcome');
+  if (outcome.status !== 'passed') throw new Error('Release preparation outcome must be passed.');
+  const unsigned: any = {
+    schemaVersion: releasePreparationBindingSchema,
+    taskId: item.taskId,
+    sourceCommit: item.sourceCommit,
+    service: 'product/buildr',
+    serviceRoot: 'projects/product/services/buildr',
+    command: { executable: 'npm', args: ['ci'], cwd: 'projects/product/services/buildr' },
+    inputs: { 'package.json': packageIdentity, 'package-lock.json': lockIdentity },
+    node: { authority: 'projects/product/.node-version', version: node.version, executionIdentity: nodeIdentity },
+    outcome: { status: 'passed' },
+  };
+  if (item.identity !== canonicalIdentity(unsigned)) throw new Error('Release preparation binding identity mismatch.');
+  if (options.repo) {
+    const repo = path.resolve(options.repo);
+    for (const [name, expected] of Object.entries(unsigned.inputs)) {
+      const file = path.join(repo, unsigned.serviceRoot, name);
+      if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile() || legacyDigest(fs.readFileSync(file)) !== expected) throw new Error(`Release preparation source drift for ${name}.`);
+    }
+    const nodeFile = path.join(repo, unsigned.node.authority);
+    if (!fs.statSync(nodeFile, { throwIfNoEntry: false })?.isFile() || fs.readFileSync(nodeFile, 'utf8').trim() !== unsigned.node.version) throw new Error('Release preparation source Node version drifted.');
+  }
+  return { ...unsigned, identity: String(item.identity) };
 }
 
 function task(value: any, label: any): any  {
@@ -162,7 +209,8 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
       tagCommit,
       npmVersion: version,
       npmDistTag: publicFacts?.npmDistTag ?? null,
-      registryPublished: publicFacts?.registryPublished === true,
+      registryPublished: publicFacts?.registryObservation === 'unknown' ? null : publicFacts?.registryPublished === true,
+      ...(publicFacts?.registryObservation ? { registryObservation: publicFacts.registryObservation } : {}),
       registryIntegrity: publicFacts?.registryIntegrity ?? null,
       githubRelease: publicFacts?.githubRelease ?? null,
       registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown'),
@@ -170,7 +218,8 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
     attempt: {
       runId: publish.runId,
       runAttempt: publish.runAttempt,
-      steps: attemptSteps({ tagCommit, registryPublished: publicFacts?.registryPublished, githubRelease: publicFacts?.githubRelease, registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown') }),
+      steps: publicFacts?.steps ?? attemptSteps({ tagCommit, registryPublished: publicFacts?.registryPublished, githubRelease: publicFacts?.githubRelease, registrySmoke: publicFacts?.registrySmoke ?? (outcome === 'passed' ? 'passed' : 'unknown') }),
+      ...(publicFacts?.effects ? { effects: publicFacts.effects } : {}),
       recovery: recoveryClass({ outcome, tagCommit, registryPublished: publicFacts?.registryPublished, conflict: publicFacts?.conflict === true, requested: publicFacts?.recoveryClass }),
     },
     observedAt,
@@ -183,8 +232,8 @@ export function createReleaseTransactionEvidence({ context, publish, outcome, pu
 export function validateReleaseTransactionEvidence(value: any): any  {
   closed(value, ['schemaVersion', 'status', 'context', 'publish', 'release', 'attempt', 'observedAt', 'aggregateEligible', 'identity'], 'release transaction evidence');
   if (value.schemaVersion !== releaseTransactionEvidenceSchema || !DIGEST.test(value.identity || '')) throw new Error('Release transaction evidence schema/identity is invalid.');
-  closed(value.release, ['tag', 'tagCommit', 'npmVersion', 'npmDistTag', 'registryPublished', 'registryIntegrity', 'githubRelease', 'registrySmoke'], 'release transaction evidence release');
-  closed(value.attempt, ['runId', 'runAttempt', 'steps', 'recovery'], 'release transaction evidence attempt');
+  closed(value.release, ['tag', 'tagCommit', 'npmVersion', 'npmDistTag', 'registryPublished', 'registryIntegrity', 'registryObservation', 'githubRelease', 'registrySmoke'], 'release transaction evidence release');
+  closed(value.attempt, ['runId', 'runAttempt', 'steps', 'effects', 'recovery'], 'release transaction evidence attempt');
   if (value.attempt.runId !== value.publish.runId || value.attempt.runAttempt !== value.publish.runAttempt || !Array.isArray(value.attempt.steps)) throw new Error('Release transaction attempt identity is invalid.');
   if (value.attempt.recovery !== null && !['same-attempt', 'new-attempt', 'blocked-new-version'].includes(value.attempt.recovery)) throw new Error('Release transaction recovery class is invalid.');
   if (value.release.tag !== `v${value.release.npmVersion}`) throw new Error('Release transaction evidence tag/version mismatch.');
@@ -198,10 +247,13 @@ export function validateReleaseTransactionEvidence(value: any): any  {
       tagCommit: value.release.tagCommit,
       npmDistTag: value.release.npmDistTag,
       registryPublished: value.release.registryPublished,
+      ...(value.release.registryObservation ? { registryObservation: value.release.registryObservation } : {}),
       registryIntegrity: value.release.registryIntegrity,
       githubRelease: value.release.githubRelease,
       registrySmoke: value.release.registrySmoke,
       recoveryClass: value.attempt.recovery,
+      steps: value.attempt.steps,
+      ...(value.attempt.effects ? { effects: value.attempt.effects } : {}),
     },
     observedAt: value.observedAt,
   });
@@ -231,12 +283,14 @@ export async function inspectHostedReleaseTransaction(options: any, dependencies
   try {
     executeOrThrow(execute, ghCommand, ['run', 'download', String(runId), '--repo', repository, '--pattern', 'release-evidence-*', '--dir', temporary], process.cwd());
     const files: any = findEvidenceFiles(temporary);
-    if (files.length !== 1) throw new Error(`Expected exactly one release transaction evidence file for run ${runId}, found ${files.length}.`);
-    const evidence: any = validateReleaseTransactionEvidence(JSON.parse(fs.readFileSync(files[0], 'utf8')));
+    const run: any = JSON.parse(executeOrThrow(execute, ghCommand, ['api', `repos/${repository}/actions/runs/${runId}`], process.cwd()));
+    const attempts = files.map((file: string) => validateReleaseTransactionEvidence(JSON.parse(fs.readFileSync(file, 'utf8'))));
+    const matching = attempts.filter((item: any) => item.publish.runId === runId && item.publish.runAttempt === Number(run.run_attempt));
+    if (matching.length !== 1) throw Object.assign(new Error(`Expected exactly one release transaction evidence file for run ${runId} attempt ${run.run_attempt}, found ${matching.length}.`), { previousAttempts: attempts.map((item: any) => ({ runAttempt: item.publish.runAttempt, status: item.status, release: item.release, identity: item.identity })) });
+    const evidence: any = matching[0];
     if (evidence.status === 'passed' && (!evidence.release.registryPublished || !evidence.release.registryIntegrity || evidence.release.registrySmoke !== 'passed' || !evidence.release.githubRelease)) {
       throw new Error(`Passed release transaction ${runId} is missing official Registry/GitHub/smoke evidence.`);
     }
-    const run: any = JSON.parse(executeOrThrow(execute, ghCommand, ['api', `repos/${repository}/actions/runs/${runId}`], process.cwd()));
     const actual: any = {
       repository: run?.repository?.full_name ?? null,
       event: run?.event ?? null,

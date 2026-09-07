@@ -13,7 +13,8 @@ import {
 } from '../../tools/release/release-authority.ts';
 import { runReleaseAuthorityOidcProbe } from '../../tools/release/release-authority-oidc-probe.ts';
 import { containsCredentialMaterial } from '../../tools/release/release-authority-preflight.ts';
-import { prepareReleaseDependencies } from '../../tools/release/release-preparation-binding.ts';
+import { validateReleasePreparationBinding } from '../../tools/release/release-transaction-evidence.ts';
+import { RELEASE_CHECKS, releaseConsumptionIdentity } from '../../tools/release/release-consumption.ts';
 import { createReleaseTaskEvidenceCorrelation } from '../../tools/release/release-task-evidence-correlation.ts';
 import { runHostedReleaseTransaction } from '../../tools/release/release-transaction-runner.ts';
 import { createReleaseContext } from '../../tools/release/release-readiness.ts';
@@ -47,15 +48,11 @@ jobs:
   host-node: { runs-on: ubuntu-latest }
   launcher: { runs-on: ubuntu-latest }
   release:
-    needs: [contract, candidate, host-node, launcher]
+    needs: [contract, candidate]
     environment: npm-production
     permissions: { contents: write, id-token: write }
     steps:
-      - run: node tools/release/release-authority-oidc-probe.ts fixture
-      - run: node tools/release/release-convergence.ts --stage pre-tag
-      - run: node tools/release/release-tag-ensure.ts preflight fixture
-      - run: node tools/release/release-tag-ensure.ts ensure fixture
-      - run: node tools/release/trusted-publish.ts fixture.tgz
+      - run: node tools/release/release-publication.ts context.json artifact.json output
 `;
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
@@ -188,8 +185,9 @@ test('hosted OIDC probe CLI creates the nested evidence directory even when bloc
 });
 
 test('release transaction runner dispatches and follows exactly one frozen workflow run', async () => {
-  const currentRun: any = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'completed', conclusion: 'success', path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
+  const currentRun: any = { id: runId, run_attempt: runAttempt, repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', head_sha: fixtureCommit, status: 'in_progress', conclusion: null, path: '.github/workflows/publish.yml', html_url: `https://github.com/BuildrAI/Buildr/actions/runs/${runId}` };
   const calls: any[] = [];
+  let dispatched = false;
   const execute: any = (command: any, args: any) => {
     const key: any = [command, ...args].join(' ');
     calls.push(key);
@@ -198,8 +196,8 @@ test('release transaction runner dispatches and follows exactly one frozen workf
     if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package.json`) return { status: 0, stdout: JSON.stringify({ version }) };
     if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: `${process.versions.node}\n` };
     if (key === `git show ${fixtureCommit}:.github/workflows/publish.yml`) return { status: 0, stdout: workflow };
-    if (key.startsWith('gh workflow run publish.yml ')) return { status: 0, stdout: '' };
-    if (key.startsWith('gh run list ')) return { status: 0, stdout: JSON.stringify([{ databaseId: runId, displayTitle: `Release ${version} (fixture-release-id)`, headSha: fixtureCommit, status: 'queued', conclusion: null, url: currentRun.html_url }]) };
+    if (key.startsWith('gh workflow run publish.yml ')) { dispatched = true; return { status: 0, stdout: '' }; }
+    if (key.startsWith('gh run list ')) return { status: 0, stdout: JSON.stringify(dispatched ? [{ databaseId: runId, displayTitle: `Release ${version} (fixture-release-id)`, headSha: fixtureCommit, status: 'queued', conclusion: null, url: currentRun.html_url }] : []) };
     if (key.startsWith(`gh run watch ${runId} `)) return { status: 0, stdout: '' };
     if (key === `gh api repos/BuildrAI/Buildr/actions/runs/${runId}`) return { status: 0, stdout: JSON.stringify(currentRun) };
     return { status: 1, stderr: `unexpected command: ${key}` };
@@ -214,7 +212,8 @@ test('release transaction runner dispatches and follows exactly one frozen workf
   assert.deepEqual(unauthorized.effects, []);
   assert.equal(calls.some((item: any) => item.startsWith('gh workflow run publish.yml ')), false);
   const result: any = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo: '/fixture', sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase, candidateTree, releaseContext: context, ghCommand: 'gh', timeoutMs: 1_000 }, { execute, wait: async () => {}, releaseId: 'fixture-release-id', onStatus: () => {} });
-  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.status, 'running', JSON.stringify(result));
+  assert.equal(calls.some((item: any) => item.includes('run watch')), false);
   assert.equal(result.github.runId, runId);
   assert.equal(calls.filter((item: any) => item.startsWith('gh workflow run publish.yml ')).length, 1);
   for (const input of [`release_id=fixture-release-id`, `version=${version}`, `source_commit=${fixtureCommit}`, `candidate_base=${candidateBase}`, `candidate_tree=${candidateTree}`, `workflow_sha256=${sha256(workflow)}`, `context_digest=${context.identity}`, 'candidate_run_id=654', `release_context=${JSON.stringify(context)}`]) {
@@ -289,8 +288,7 @@ test('release transaction runner binds preparation inputs to the final frozen so
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
 
-  const preparationBinding: any = prepareReleaseDependencies({ task: releaseTask, taskStatus: 'active', repo, sourceCommit: fixtureCommit, readSourceFile: (_commit: any, file: any) => sourceFiles.get(file), nodeAudit: createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true }).audit, execute });
-  const result: any = await runHostedReleaseTransaction({ action: 'dispatch', publicationAuthorized: true, repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase: candidateSourceCommit, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000, preparationBinding }, {
+  const result: any = await runHostedReleaseTransaction({ action: 'readiness', repo, sourceCommit: 'origin/main', remoteMain: 'origin/main', version, candidateBase: candidateSourceCommit, candidateTree, releaseTask: releaseTask.taskId, supportTasks: [supportTask.taskId], candidateRunId: 654, devCommit: 'origin/dev', ghCommand: 'gh', timeoutMs: 1_000 }, {
     execute,
     wait: async () => {},
     releaseId: 'fixture-release-id',
@@ -298,62 +296,28 @@ test('release transaction runner binds preparation inputs to the final frozen so
     runtime,
     inspectSelection: () => ({ selectionIdentity: digest('6'), version, branch: `release-${version}`, releaseHead: candidateSourceCommit, releaseTree: candidateTree, generation: 1, status: 'frozen' }),
     candidateEvidence: {
-      aggregate: { sourceCommit: candidateSourceCommit, registryIdentity: digest('7'), workflow: { runId: '654', aggregateAttempt: 1, evidenceAttempts: [] }, status: 'passed' },
+      aggregate: { sourceCommit: candidateSourceCommit, sourceTree: candidateTree, consumptionIdentity: releaseConsumptionIdentity(), evidenceIds: [...new Set(RELEASE_CHECKS.flatMap((check: any) => check.evidence || []))], artifact: { sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') }, registryIdentity: digest('7'), workflow: { runId: '654', aggregateAttempt: 1, evidenceAttempts: [] }, status: 'passed' },
       manifest: { sourceCommit: candidateSourceCommit, filename: 'buildr-ai-buildr.tgz', size: 123, sha256: '9'.repeat(64), integrity: 'sha512-Zml4dHVyZQ==', applicationPayloadDigest: digest('a') },
     },
   });
 
-  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.equal(result.context.taskCorrelation.status, 'passed');
   assert.equal(result.context.taskCorrelation.sourceCommit, fixtureCommit);
-  assert.equal(result.context.preparation.taskId, releaseTask.taskId);
-  assert.equal(result.context.preparation.status, 'passed');
-  assert.equal(calls.filter((item: any) => item === 'npm ci').length, 1);
+  assert.equal(result.context.preparation, null);
+  assert.equal(calls.filter((item: any) => item === 'npm ci').length, 0);
   assert.equal(calls.includes(`git show ${candidateBase}:projects/product/services/buildr/package.json`), false);
   assert.equal(calls.includes(`git show ${candidateBase}:projects/product/.node-version`), false);
-  assert.equal(calls.filter((item: any) => item.startsWith('gh workflow run publish.yml ')).length, 1);
+  assert.equal(calls.filter((item: any) => item.startsWith('gh workflow run publish.yml ')).length, 0);
 });
 
-test('release preparation binding runs npm ci in the frozen Buildr Service root', (t: any) => {
-  const repo: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-preparation-'));
-  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
-  const service: any = path.join(repo, 'projects', 'product', 'services', 'buildr');
-  fs.mkdirSync(service, { recursive: true });
-  const sourceFiles: any = new Map([
-    ['projects/product/services/buildr/package.json', '{"name":"@buildr-ai/buildr"}\n'],
-    ['projects/product/services/buildr/package-lock.json', '{"lockfileVersion":3}\n'],
-    ['projects/product/.node-version', `${process.versions.node}\n`],
-  ]);
-  for (const [file, contents] of sourceFiles) fs.writeFileSync(path.join(repo, file), contents);
-  let preparedCwd: any = null;
-  const binding: any = prepareReleaseDependencies({
-    task: { taskId: 'release-fixture', status: 'completed' },
-    taskStatus: 'completed',
-    repo,
-    sourceCommit: candidateBase,
-    nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` },
-    readSourceFile: (_commit: any, file: any) => sourceFiles.get(file),
-    execute: (_command: any, _args: any, options: any) => { preparedCwd = options.cwd; return { status: 0, stdout: 'installed' }; },
-  });
-
-  const activeBinding: any = prepareReleaseDependencies({
-    task: { taskId: 'release-fixture', status: 'active' },
-    taskStatus: 'active',
-    repo,
-    sourceCommit: candidateBase,
-    nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` },
-    readSourceFile: (_commit: any, file: any) => sourceFiles.get(file),
-    execute: () => ({ status: 0, stdout: 'installed' }),
-  });
-  assert.equal(activeBinding.taskId, 'release-fixture');
-  assert.throws(() => prepareReleaseDependencies({ task: { taskId: 'release-fixture', status: 'active' }, taskStatus: 'completed', repo, sourceCommit: candidateBase, nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` }, readSourceFile: (_commit: any, file: any) => sourceFiles.get(file), execute: () => ({ status: 0 }) }), /must be completed/u);
-  assert.equal(binding.outcome.status, 'passed');
-  assert.equal(binding.serviceRoot, 'projects/product/services/buildr');
-  assert.equal(preparedCwd, service);
-  assert.match(binding.identity, /^sha256-[a-f0-9]{64}$/u);
-  assert.throws(() => prepareReleaseDependencies({ task: { taskId: 'release-fixture', status: 'completed' }, taskStatus: 'completed', repo, sourceCommit: candidateBase, nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` }, readSourceFile: (_commit: any, file: any) => sourceFiles.get(file), execute: () => ({ status: 1, stderr: 'failure' }) }), /npm ci failed/u);
-  fs.rmSync(path.join(service, 'package-lock.json'));
-  assert.throws(() => prepareReleaseDependencies({ task: { taskId: 'release-fixture', status: 'completed' }, taskStatus: 'completed', repo, sourceCommit: candidateBase, nodeAudit: { version: process.versions.node, identity: `sha256-${'4'.repeat(64)}` }, readSourceFile: (_commit: any, file: any) => sourceFiles.get(file), execute: () => ({ status: 0 }) }), /requires the Buildr Service package-lock/u);
+test('historical preparation bindings remain readable without rerunning installation', () => {
+  const input: any = { schemaVersion: 'buildr.release-preparation-binding/v1', taskId: 'release-fixture', sourceCommit: fixtureCommit,
+    service: 'product/buildr', serviceRoot: 'projects/product/services/buildr', command: { executable: 'npm', args: ['ci'], cwd: 'projects/product/services/buildr' },
+    inputs: { 'package.json': digest('4'), 'package-lock.json': digest('5') }, node: { authority: 'projects/product/.node-version', version: process.versions.node, executionIdentity: digest('6') }, outcome: { status: 'passed' } };
+  input.identity = `sha256-${sha256(JSON.stringify(input))}`;
+  assert.equal(validateReleasePreparationBinding(input).identity, input.identity);
+  assert.throws(() => validateReleasePreparationBinding({ ...input, sourceCommit: candidateBase }), /identity mismatch/u);
 });
 
 test('release transaction evidence is a closed correlated read model', () => {
@@ -458,7 +422,7 @@ test('release transaction inspect reads exactly one hosted artifact and rejects 
   assert.equal(result.correlationIdentity, evidence.context.identity);
   assert.equal(result.evidenceIdentity, evidence.identity);
   readbackRunId = runId + 1;
-  await assert.rejects(inspectHostedReleaseTransaction({ runId, repository: 'BuildrAI/Buildr', ghCommand: 'gh' }, { execute, makeTempDirectory: () => temporary, removeDirectory: () => {} }), /evidence\/run readback mismatch/u);
+  await assert.rejects(inspectHostedReleaseTransaction({ runId, repository: 'BuildrAI/Buildr', ghCommand: 'gh' }, { execute, makeTempDirectory: () => temporary, removeDirectory: () => {} }), /evidence\/run readback mismatch|exactly one release transaction evidence/u);
 });
 
 function git(cwd: any, ...args: any[]): any  {
@@ -486,7 +450,8 @@ test('release tag ensure creates once, reuses the same source, and rejects drift
   assert.equal(inspectReleaseTag({ repo, tag: 'v0.1.0', sourceCommit: first }).action, 'create');
   const created: any = ensureReleaseTag({ repo, tag: 'v0.1.0', sourceCommit: first });
   assert.equal(created.status, 'passed');
-  assert.equal(created.effects[0].type, 'tag-created');
+  assert.equal(created.effects[0].type, 'local-tag-created');
+  assert.equal(created.effects.at(-1).state, 'confirmed');
   assert.equal(ensureReleaseTag({ repo, tag: 'v0.1.0', sourceCommit: first }).effects[0].type, 'tag-reused');
   fs.writeFileSync(path.join(repo, 'fixture.txt'), 'two\n');
   git(repo, 'add', '.');
@@ -504,6 +469,7 @@ test('release tag ensure accepts a concurrent writer only when remote resolves t
     const key: any = [command, ...args].join(' ');
     if (key === `git rev-parse ${sourceCommit}^{commit}`) return { status: 0, stdout: `${sourceCommit}\n` };
     if (key.startsWith('git ls-remote --tags origin ')) return { status: 0, stdout: pushed ? `${sourceCommit}\trefs/tags/v0.1.0\n` : '' };
+    if (key === 'git for-each-ref --format=%(objectname) refs/tags/v0.1.0') return { status: 0, stdout: '' };
     if (key.includes(' tag -a v0.1.0 ')) return { status: 0, stdout: '' };
     if (key === 'git push origin refs/tags/v0.1.0') {
       pushed = true;
@@ -513,7 +479,7 @@ test('release tag ensure accepts a concurrent writer only when remote resolves t
   };
   const result: any = ensureReleaseTag({ repo: '/fixture', tag: 'v0.1.0', sourceCommit }, { execute });
   assert.equal(result.status, 'passed');
-  assert.equal(result.effects[0].type, 'tag-concurrently-reused');
+  assert.equal(result.effects.at(-1).state, 'confirmed');
 });
 
 test('release authority preflight CLI writes static ready evidence without control-plane mutation', (t: any) => {

@@ -299,6 +299,6 @@ test('公共Node Test Context Runtime与Buildr provider保持独立authority', (
   const taskTests: any = fs.readFileSync(path.join(productRoot, 'test/integration/parent-coordination-application.test.ts'), 'utf8');
   assert.match(taskTests, /createBuildrApplicationTest/);
   assert.doesNotMatch(taskTests, /createRuntime\(/, 'registered Task Application cases must consume their Context');
-  const framework: any = fs.readFileSync(path.join(productRoot, 'docs/verification-framework.md'), 'utf8');
+  const framework: any = fs.readFileSync(path.join(productRoot, '../../knowledge/architecture/verification-framework.md'), 'utf8');
   for (const term of ['@buildr-ai/buildr/test-context', 'Worker Host', 'Cache Identity', 'Dirty', 'node-context-test']) assert.match(framework, new RegExp(term));
 });

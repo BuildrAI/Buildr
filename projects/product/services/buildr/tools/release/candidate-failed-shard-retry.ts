@@ -23,10 +23,17 @@ function parse(value: any, label: any): any  {
 
 function jobDisposition(name: any): any  {
   if (name === 'Candidate gate') return 'aggregate';
+  if (name === 'Candidate plan') return 'plan';
   if (name === 'Candidate bootstrap') return 'bootstrap';
-  if (/^Candidate (?:core|Windows|Host Node) \(.+\)$/u.test(name)) return 'shard';
+  if (/^Candidate (?:source|artifact|core|Windows|Host Node) \(.+\)$/u.test(name)) return 'shard';
   if (/^Development feedback /u.test(name)) return 'not-applicable';
   return 'unknown';
+}
+
+export function classifyCandidateFailure(log: string): 'transient' | 'deterministic' | 'diagnosis-required' {
+  if (/ERR_ASSERTION|AssertionError|SyntaxError|ERR_MODULE_NOT_FOUND|Cannot find (?:module|package)|error TS\d+|not ok \d+/iu.test(log)) return 'deterministic';
+  if (/ECONNRESET|EAI_AGAIN|HTTP (?:429|502|503|504)|TLS handshake timeout|runner.*lost.*communication|runner.*shutdown/iu.test(log)) return 'transient';
+  return 'diagnosis-required';
 }
 
 export function inspectCandidateFailedShardRetry(options: any, dependencies: any = {}): any  {
@@ -58,18 +65,25 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
   if (JSON.stringify(actual) !== JSON.stringify(expected)) findings.push({ code: 'candidate-run-not-retryable', expected, actual });
   const runAttempt: any = Number(current.run_attempt);
   if (!Number.isSafeInteger(runAttempt) || runAttempt < 1) findings.push({ code: 'candidate-run-attempt-invalid', actual: current.run_attempt ?? null });
+  if (runAttempt >= 2) findings.push({ code: 'candidate-auto-retry-exhausted', actual: runAttempt, message: '同一运行已自动恢复一次；继续诊断，不再自动重跑。' });
   const view: any = parse(invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--json', 'jobs'], repo), 'Candidate jobs readback');
   const jobs: any = Array.isArray(view.jobs) ? view.jobs : [];
   const bootstrap: any = jobs.find((job: any) => job.name === 'Candidate bootstrap');
-  if (bootstrap?.conclusion !== 'success') findings.push({ code: 'candidate-bootstrap-not-passed', actual: bootstrap?.conclusion ?? null });
+  if (!['success', 'failure'].includes(bootstrap?.conclusion)) findings.push({ code: 'candidate-bootstrap-not-terminal', actual: bootstrap?.conclusion ?? null });
   const unknown: any = jobs.filter((job: any) => jobDisposition(job.name) === 'unknown');
   if (unknown.length > 0) findings.push({ code: 'candidate-job-unknown', jobs: unknown.map((job: any) => job.name).sort() });
-  const failedShards: any = jobs.filter((job: any) => jobDisposition(job.name) === 'shard' && job.conclusion === 'failure').map((job: any) => job.name).sort();
+  const failedShards: any = jobs.filter((job: any) => ['shard', 'bootstrap', 'plan'].includes(jobDisposition(job.name)) && job.conclusion === 'failure').map((job: any) => job.name).sort();
   if (failedShards.length === 0) findings.push({ code: 'candidate-failed-shard-missing' });
-  const nonPassedShards: any = jobs.filter((job: any) => jobDisposition(job.name) === 'shard' && !['success', 'failure'].includes(job.conclusion));
+  const nonPassedShards: any = jobs.filter((job: any) => jobDisposition(job.name) === 'shard' && !['success', 'failure', ...(bootstrap?.conclusion === 'failure' ? ['skipped'] : [])].includes(job.conclusion));
   if (nonPassedShards.length > 0) findings.push({ code: 'candidate-shard-not-terminal', jobs: nonPassedShards.map((job: any) => ({ name: job.name, conclusion: job.conclusion })) });
   const aggregate: any = jobs.find((job: any) => job.name === 'Candidate gate');
   if (aggregate?.conclusion !== 'failure') findings.push({ code: 'candidate-aggregate-not-failed', actual: aggregate?.conclusion ?? null });
+  let failureClass = 'diagnosis-required';
+  if (findings.length === 0) {
+    const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo);
+    failureClass = classifyCandidateFailure(log);
+    if (failureClass !== 'transient') findings.push({ code: 'candidate-failure-needs-diagnosis', classification: failureClass });
+  }
   return {
     schemaVersion: 'buildr.candidate-failed-shard-retry-result/v1',
     operation: 'inspect',
@@ -79,10 +93,11 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
     runAttempt,
     sourceCommit: options.sourceCommit,
     failedShards,
+    failureClass,
     aggregate: aggregate ? { name: aggregate.name, conclusion: aggregate.conclusion } : null,
     findings,
     effects: [],
-    nextActions: findings.length === 0 ? [`使用同一run执行失败作业重跑：${runId}`] : ['修复Candidate run identity或job终态后重新inspect。'],
+    nextActions: findings.length === 0 ? [`使用同一run执行一次失败作业重跑：${runId}`] : ['读取对应失败分片与进程/资源诊断，修复确定性原因；不重跑完整候选。'],
   };
 }
 
@@ -92,12 +107,18 @@ export function retryCandidateFailedShards(options: any, dependencies: any = {})
   const run: any = dependencies.execute ?? execute;
   const gh: any = options.ghCommand || 'gh';
   const repo: any = options.repo || process.cwd();
-  invoke(run, gh, ['run', 'rerun', String(inspected.runId), '--failed', '--repo', releasePublishAuthority.repository], repo);
+  const effect = { type: 'github-candidate-failed-jobs-rerun', runId: inspected.runId, previousAttempt: inspected.runAttempt, failedShards: inspected.failedShards, state: 'unknown' };
+  try {
+    invoke(run, gh, ['run', 'rerun', String(inspected.runId), '--failed', '--repo', releasePublishAuthority.repository], repo);
+    effect.state = 'confirmed';
+  } catch (error) {
+    return { ...inspected, operation: 'retry', status: 'unknown', effects: [effect], diagnostic: { message: error instanceof Error ? error.message : String(error) }, nextActions: [`回读run ${inspected.runId}的attempt，确认是否已经重跑；不要再次派发。`] };
+  }
   return {
     ...inspected,
     operation: 'retry',
     status: 'dispatched',
-    effects: [{ type: 'github-candidate-failed-jobs-rerun', runId: inspected.runId, previousAttempt: inspected.runAttempt, failedShards: inspected.failedShards }],
+    effects: [effect],
     nextActions: [`等待run ${inspected.runId}的新attempt终态，再核验Candidate gate与aggregate workflow identity。`],
   };
 }

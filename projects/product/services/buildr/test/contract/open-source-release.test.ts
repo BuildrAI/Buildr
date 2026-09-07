@@ -421,122 +421,23 @@ test('release notes fail closed for missing, duplicate, or empty target sections
   );
 });
 
-test('publish workflow uses one dispatch and one protected release transaction', () => {
-  const workflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
-  const parsed: any = YAML.parseDocument(workflow, { uniqueKeys: true });
-  assert.deepEqual(parsed.errors, [], parsed.errors.map((error: any) => error.message).join('\n'));
-  const document: any = parsed.toJS();
-  for (const required of [
-    'workflow_dispatch:', 'release_id:', 'release_context:', 'context_digest:', 'candidate_run_id:', 'source_commit:', 'candidate_base:', 'candidate_tree:', 'workflow_sha256:',
-    'id-token: write', 'contents: write', 'environment: npm-production',
-    'release-authority-oidc-probe.ts', 'release-convergence.ts', '--stage pre-tag',
-    'release-tag-ensure.ts preflight', 'release-tag-ensure.ts ensure',
-    'release-contract.ts', 'release-notes.ts',
-    'release-readiness.ts validate-context', 'release-readiness.ts evaluate', 'release-transaction-evidence.ts finalize', 'release-transaction-evidence.json',
-    'registry-version-state.ts', "steps.registry_before.outputs.published != 'true'",
-    'trusted-publish.ts', 'github-release-ensure.ts',
-    'github-release-ensure.ts preflight',
-    'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC',
-    '--manifest', '--require-published', '--wait', 'macos-15', 'windows-2025',
-    'contract:', 'candidate:', 'host-node:', 'launcher:', 'release:',
-    'name: candidate-aggregate', 'name: candidate-package', 'run-id: ${{ inputs.candidate_run_id }}',
-    'releaseContextIdentity(aggregate)',
-  ]) assert.equal(workflow.includes(required), true, required);
+test('publish workflow delegates one protected transaction and consumes the Candidate bytes', () => {
+  const workflow = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
+  const document = YAML.parse(workflow);
   assert.deepEqual(Object.keys(document.on), ['workflow_dispatch']);
-  assert.deepEqual(Object.keys(document.on.workflow_dispatch.inputs).sort(), ['candidate_base', 'candidate_run_id', 'candidate_tree', 'context_digest', 'release_context', 'release_id', 'source_commit', 'version', 'workflow_sha256']);
-  assert.equal(document.on.push, undefined);
-  assert.equal(document.jobs['authority-probe'], undefined);
-  const protectedJobs: any = Object.entries(document.jobs).filter(([, job]: any) => job.environment !== undefined);
-  assert.deepEqual(protectedJobs.map(([id, job]: any) => [id, job.environment]), [['release', 'npm-production']]);
+  assert.deepEqual(Object.keys(document.jobs), ['contract', 'candidate', 'release']);
+  assert.deepEqual(document.jobs.release.needs, ['contract', 'candidate']);
+  assert.deepEqual(Object.entries(document.jobs).filter(([, job]: any) => job.environment).map(([id, job]: any) => [id, job.environment]), [['release', 'npm-production']]);
   assert.equal(document.jobs.release.permissions['id-token'], 'write');
   assert.equal(document.jobs.release.permissions.contents, 'write');
-  assert.deepEqual([...document.jobs.release.needs].sort(), ['candidate', 'contract', 'host-node', 'launcher']);
-  for (const job of ['contract', 'candidate', 'host-node', 'launcher']) {
-    assert.equal(document.jobs[job].environment, undefined, job);
-    assert.notEqual(document.jobs[job].permissions?.['id-token'], 'write', job);
-    assert.notEqual(document.jobs[job].permissions?.contents, 'write', job);
-    const checkout: any = document.jobs[job].steps.find((step: any) => step.uses === 'actions/checkout@v7');
-    assert.equal(checkout.with.ref, '${{ inputs.source_commit }}', job);
+  for (const job of Object.values(document.jobs) as any[]) {
+    assert.equal(job.steps.find((step: any) => step.uses === 'actions/checkout@v7').with.ref, '${{ inputs.source_commit }}');
+    for (const step of job.steps.filter((step: any) => step.with?.name === 'candidate-package')) assert.equal(step.with['run-id'], '${{ inputs.candidate_run_id }}');
   }
-  const hostNodeSteps: any = document.jobs['host-node'].steps;
-  const checkoutIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/checkout@v7');
-  const setupNodeIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/setup-node@v6');
-  const installIndex: any = hostNodeSteps.findIndex((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile host');
-  const downloadIndex: any = hostNodeSteps.findIndex((step: any) => step.uses === 'actions/download-artifact@v7');
-  const verifierIndex: any = hostNodeSteps.findIndex((step: any) => typeof step.run === 'string' && step.run.includes('test/verification/host-node.ts'));
-  const verifierStep: any = hostNodeSteps[verifierIndex];
-  assert.equal(checkoutIndex < setupNodeIndex, true);
-  assert.equal(setupNodeIndex < installIndex, true);
-  assert.equal(installIndex < downloadIndex, true);
-  assert.equal(downloadIndex < verifierIndex, true);
-  for (const binding of [
-    'BUILDR_CANDIDATE_TARBALL=',
-    'BUILDR_CANDIDATE_PACK_METADATA="${RUNNER_TEMP}/candidate/npm-pack.json"',
-    'BUILDR_CANDIDATE_RELEASE_MANIFEST="${RUNNER_TEMP}/candidate/release-artifact.json"',
-  ]) assert.equal(verifierStep.run.includes(binding), true, binding);
-  assert.equal(document.jobs['host-node'].needs.includes('candidate'), true);
-  assert.equal(hostNodeSteps.some((step: any) => typeof step.run === 'string' && step.run.includes('npm pack')), false);
-  const launcherSteps: any = document.jobs.launcher.steps;
-  const launcherPreparationIndex: any = launcherSteps.findIndex((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base');
-  const launcherDownloadIndex: any = launcherSteps.findIndex((step: any) => step.uses === 'actions/download-artifact@v7');
-  const launcherVerificationIndex: any = launcherSteps.findIndex((step: any) => step.run === 'node test/verification/release/release-smoke.ts');
-  assert.equal(launcherPreparationIndex < launcherDownloadIndex, true);
-  assert.equal(launcherDownloadIndex < launcherVerificationIndex, true);
-  for (const job of [document.jobs['host-node'], document.jobs.launcher]) {
-    assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
-    assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
-  }
-  const releaseSteps: any = document.jobs.release.steps;
-  assert.equal(releaseSteps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base').length, 1);
-  assert.equal(releaseSteps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
-  assert.equal(workflow.includes('NODE_AUTH_TOKEN'), false);
-  assert.equal(workflow.includes('NPM_TOKEN'), false);
-  assert.equal(workflow.includes('--generate-notes'), false);
-  assert.equal(workflow.includes('./test/verification/verify-buildr-product'), false);
-  assert.equal(workflow.includes('gh release create'), false);
-  for (const retired of [
-    'environment: platform-production', 'node-distribution.mjs', 'sea-build.ts',
-    'build-pkg.mjs', 'build-msi.mjs', 'release-manifest.mjs',
-    'github-release-asset-ensure.mjs', 'public-release-readback.mjs',
-    '.pkg', '.msi', 'postject', 'codesign', 'notar', 'signtool',
-  ]) assert.equal(workflow.includes(retired), false, retired);
-  assert.equal((workflow.match(/npm publish/g) || []).length, 0);
-  assert.equal((workflow.match(/trusted-publish\.ts/g) || []).length, 1);
-  assert.equal((workflow.match(/node tools\/release\/release-artifact\.mjs/g) || []).length, 0);
-  assert.equal((workflow.match(/release-smoke\.ts/g) || []).length, 2);
-  assert.equal((workflow.match(/application-payload\.mjs build/g) || []).length, 0);
-  assert.equal((workflow.match(/npm pack/g) || []).length, 0);
-  assert.equal(workflow.includes('npm-candidate-${{ github.ref_name }}-${{ github.run_attempt }}'), false);
-  assert.equal(workflow.includes('Validate matching Candidate aggregate and immutable bytes'), true);
-  const contract: any = workflow.indexOf('\n  contract:');
-  const candidate: any = workflow.indexOf('\n  candidate:');
-  const hostNode: any = workflow.indexOf('\n  host-node:');
-  const launcher: any = workflow.indexOf('\n  launcher:');
-  const release: any = workflow.indexOf('\n  release:');
-  const authority: any = workflow.indexOf('Prove current hosted publishing authority without retaining credentials');
-  const convergence: any = workflow.indexOf('Recheck final source and authority convergence before tag mutation');
-  const tagPreflight: any = workflow.indexOf('Preflight immutable release tag');
-  const registryCheck: any = workflow.indexOf('Snapshot official Registry artifact and both dist-tags');
-  const tagEnsure: any = workflow.indexOf('Create or reuse the immutable release tag');
-  const metadataPreflight: any = workflow.indexOf('Preflight GitHub Release metadata without assets or mutation');
-  const npmPublish: any = workflow.indexOf('Publish the frozen npm tarball');
-  const registryConfirm: any = workflow.indexOf('Confirm official Registry integrity and both dist-tags');
-  const releaseEnsure: any = workflow.indexOf('Ensure GitHub Release notes without binary Assets');
-  assert.equal(contract < candidate, true);
-  assert.equal(candidate < hostNode, true);
-  assert.equal(hostNode < launcher, true);
-  assert.equal(launcher < release, true);
-  assert.equal(release < authority, true);
-  assert.equal(authority < convergence, true);
-  assert.equal(convergence < tagPreflight, true);
-  assert.equal(tagPreflight < registryCheck, true);
-  assert.equal(registryCheck < tagEnsure, true);
-  assert.equal(tagEnsure < metadataPreflight, true);
-  assert.equal(registryCheck < npmPublish, true);
-  assert.equal(npmPublish < registryConfirm, true);
-  assert.equal(registryConfirm < releaseEnsure, true);
-  assert.equal(workflow.includes('--snapshot-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"'), true);
-  assert.equal(workflow.includes('--before-tags "${RUNNER_TEMP}/contract/registry-tags-before.json"'), true);
+  assert.equal(document.jobs.candidate.steps.filter((step: any) => step.run?.includes('release-consumption.ts verify')).length, 1);
+  assert.equal(document.jobs.release.steps.filter((step: any) => step.run?.includes('release-publication.ts')).length, 1);
+  assert.equal(document.jobs.release.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile publisher').length, 1);
+  assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|npm publish|npm pack|artifacts:prepare|application-payload.*build/);
 });
 
 test('CI and publish workflows use the supported Node runtime', () => {
@@ -551,21 +452,15 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
-  assert.equal(verifyDocument.jobs['candidate-bootstrap'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
+  assert.equal(verifyDocument.jobs['candidate-plan'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
-  const candidateJobs: any[] = ['candidate-bootstrap', 'candidate-core-macos', 'candidate-runtime-windows', 'candidate-windows', 'candidate-host-node'].map((id: any) => verifyDocument.jobs[id]);
-  assert.deepEqual(candidateJobs.map((job: any) => job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length), [1, 1, 1, 1, 1]);
+  const candidateJobs: any[] = ['candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node'].map(id => verifyDocument.jobs[id]);
   for (const job of candidateJobs) {
+    assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
-  assert.deepEqual(verifyDocument.jobs['candidate-core-macos'].strategy.matrix.include.map((item: any) => [item.shard, item.preparation]), [
-    ['core-task-lifecycle-macos', 'base'],
-    ['core-project-task-macos', 'source-runtime'],
-    ['core-package-runtime-release-macos', 'source-runtime'],
-    ['core-cli-contract-macos', 'base'],
-  ]);
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.doesNotMatch(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /npm run test:changed -- --base/);
@@ -576,17 +471,16 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
-  assert.equal((verifyWorkflow.match(/npm run test:candidate:ci/g) || []).length, 5);
-  assert.equal((verifyWorkflow.match(/npm run test:candidate:host/g) || []).length, 1);
+  assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts run/g) || []).length, 3);
+  assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts host/g) || []).length, 1);
   assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts aggregate/g) || []).length, 1);
   assert.match(hostNodeSmoke, /cliIdentity\.runtime\?\.role, 'host'/);
   assert.doesNotMatch(hostNodeSmoke, /WorkspaceOwnedRuntime|workspaceNode|BUILDR_NODE_RUNTIME/);
   assert.match(verifyWorkflow, /^  candidate-bootstrap:/m);
-  assert.match(verifyWorkflow, /^  candidate-runtime-windows:/m);
-  assert.match(verifyWorkflow, /^  candidate-windows:/m);
+  assert.match(verifyWorkflow, /^  candidate-artifact-consumers:/m);
+  assert.match(verifyWorkflow, /^  candidate-source:/m);
   assert.match(verifyWorkflow, /^  candidate-gate:/m);
   assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
-  assert.match(verifyWorkflow, /node: 24\.x/);
   assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);

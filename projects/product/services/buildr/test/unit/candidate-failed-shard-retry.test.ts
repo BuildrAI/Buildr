@@ -33,6 +33,7 @@ function fixture(overrides: any = {}): any  {
     const key: any = [command, ...args].join(' ');
     calls.push(key);
     if (key.startsWith(`gh api repos/BuildrAI/Buildr/actions/runs/${runId}`)) return { status: 0, stdout: JSON.stringify(current) };
+    if (args.includes('--log-failed')) return { status: 0, stdout: overrides.log ?? 'ECONNRESET during artifact download' };
     if (key.startsWith(`gh run view ${runId} `)) return { status: 0, stdout: JSON.stringify({ jobs: overrides.jobs || jobs }) };
     if (key.startsWith(`gh run rerun ${runId} --failed `)) return { status: 0, stdout: '' };
     return { status: 1, stderr: `unexpected command: ${key}` };
@@ -68,4 +69,14 @@ test('Candidate retry blocks changed source and nonterminal shard sets', () => {
 
   const invalidAttempt: any = fixture({ current: { run_attempt: null } });
   assert.ok(inspectCandidateFailedShardRetry({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture' }, invalidAttempt).findings.some((item: any) => item.code === 'candidate-run-attempt-invalid'));
+});
+
+
+test('timeouts and repeated errors require diagnosis rather than another retry', () => {
+  const timedOut = fixture({ log: 'Process timed out after 300000ms; no assertion failure' });
+  assert.equal(inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, timedOut).status, 'blocked');
+  const repeated = fixture({ current: { run_attempt: 2 } });
+  assert.ok(inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, repeated).findings.some((item: any) => item.code === 'candidate-auto-retry-exhausted'));
+  const assertion = fixture({ log: 'AssertionError: expected true; previous ECONNRESET was unrelated' });
+  assert.equal(inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, assertion).status, 'blocked');
 });

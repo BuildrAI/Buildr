@@ -40,20 +40,14 @@ const workflow: any = `on:
 jobs:
   contract: { runs-on: ubuntu-latest }
   candidate: { runs-on: ubuntu-latest }
-  host-node: { runs-on: ubuntu-latest }
-  launcher: { runs-on: ubuntu-latest }
   release:
-    needs: [contract, candidate, host-node, launcher]
+    needs: [contract, candidate]
     environment: npm-production
     permissions:
       contents: write
       id-token: write
     steps:
-      - run: node tools/release/release-authority-oidc-probe.ts --source-commit fixture
-      - run: node tools/release/release-convergence.ts --stage pre-tag
-      - run: node tools/release/release-tag-ensure.ts preflight v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      - run: node tools/release/release-tag-ensure.ts ensure v0.1.0 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      - run: node tools/release/trusted-publish.ts candidate.tgz --access public
+      - run: node tools/release/release-publication.ts context.json artifact.json evidence
 `;
 
 function probeEvidence(overrides: any = {}): any  {
@@ -114,12 +108,13 @@ test('workflow authority has one dispatch entry and one protected transaction ow
     environment: 'npm-production',
     idTokenPermission: 'write',
     contentsPermission: 'write',
-    needs: ['candidate', 'contract', 'host-node', 'launcher'],
-    oidcProbeInvocations: 1,
-    preTagInvocations: 1,
-    tagPreflightInvocations: 1,
-    tagEnsureInvocations: 1,
-    trustedPublishInvocations: 1,
+    needs: ['candidate', 'contract'],
+    oidcProbeInvocations: 0,
+    preTagInvocations: 0,
+    tagPreflightInvocations: 0,
+    tagEnsureInvocations: 0,
+    trustedPublishInvocations: 0,
+    publicationInvocations: 1,
     rawPublishInvocations: 0,
   });
 });

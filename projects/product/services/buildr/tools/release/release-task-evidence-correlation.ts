@@ -77,6 +77,12 @@ export function inspectReleaseTaskEvidenceCorrelation(value: unknown): { schemaV
   return { schemaVersion: `${RELEASE_TASK_EVIDENCE_CORRELATION_SCHEMA}-inspect`, status: validated.status, identity: validated.identity, releaseTaskId: validated.releaseTask.taskId, supportTaskIds: validated.supportTasks.map((item) => item.taskId) };
 }
 
+export function releaseTaskAssociationProjection(value: unknown): { identity: string; status: string; sourceCommit: string | null; sourceTree: string | null; remoteRef: string | null } {
+  const observed = validateReleaseTaskEvidenceCorrelation(value);
+  const association = { releaseTask: observed.releaseTask.taskId, supportTasks: observed.supportTasks.map(task => task.taskId), source: observed.source };
+  return { identity: digest(association), status: observed.status, sourceCommit: observed.source?.sourceCommit ?? null, sourceTree: observed.source?.sourceTree ?? null, remoteRef: observed.source?.remoteRef ?? null };
+}
+
 function runtimeTask(runtime: Runtime, root: string, taskId: string): TaskProjection {
   const observed = runtime.inspectTask(root, taskId);
   const value = observed.record || {};

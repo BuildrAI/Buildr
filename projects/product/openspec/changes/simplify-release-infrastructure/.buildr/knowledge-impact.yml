@@ -1,0 +1,41 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: simplify-release-infrastructure
+operation: assess
+treeIdentity: planning
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 记录已授权完整目标与验收
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: flow
+    target: knowledge/flows/open-source-release.md
+    reason: 统一准备、候选、发布与失败恢复
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: 收敛发布工具职责和调用关系
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: technical-architecture
+    target: knowledge/architecture/verification-framework.md
+    reason: 迁移验证框架并统一覆盖和复用
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 删除重复流程并保留服务职责
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: overview
+    target: knowledge/overview.md
+    reason: 更新权威入口
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 对齐候选、演练、发布与恢复术语
+    status: pending
+    sourceIdentities: ["git:3f54487a", "user:confirmed-plan"]
+unresolvedItems: []

@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain } from './release-selection.ts';
+import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, inspectReleaseSourceProvenance } from './release-selection.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 
 export const releaseGitConvergenceSchema: any = 'buildr.release-git-convergence/v1';
@@ -18,7 +18,7 @@ const VERSION: any = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DIGEST: any = /^sha256-[a-f0-9]{64}$/u;
 
 function execute(command: any, args: any, options: any = {}): any  {
-  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', windowsHide: true });
+  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', windowsHide: true, timeout: 30_000 });
 }
 
 function run(command: any, args: any, cwd: any, dependencies: any, { allowFailure = false }: any = {}): any  {
@@ -84,6 +84,30 @@ function remoteHeads(repo: any, remote: any, branches: any, dependencies: any): 
     return [ref, commit];
   }));
   return Object.fromEntries(branches.map((branch: any) => [branch, found.get(`refs/heads/${branch}`) ?? null]));
+}
+
+export function releaseBranchName(value: string, remote = 'origin'): string {
+  const branch = value.replace(/^refs\/heads\//u, '').replace(new RegExp(`^(?:refs/remotes/)?${remote.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}/`, 'u'), '');
+  if (!branch || branch.startsWith('-') || /^[a-f0-9]{40}$/u.test(branch) || /[\s:~^?*\[\\]/u.test(branch)) throw new Error(`Expected a branch ref, received ${value}. Use an explicit commit input for SHA observations.`);
+  return branch;
+}
+
+export function pushReleaseBranch({ repo, remote = 'origin', branch, commit, before = null, remove = false }: any, dependencies: any = {}, effects: any[] = []): any {
+  const ref = `refs/heads/${branch}`;
+  const effect = { type: remove ? 'remote-release-ref-deleted' : 'remote-release-ref-pushed', ref, commit, state: 'unknown' };
+  effects.push(effect);
+  let error: unknown = null;
+  try {
+    const args = remove ? ['push', remote, `--force-with-lease=${ref}:${before ?? commit}`, `:${ref}`] : ['push', remote, `${commit}:${ref}`];
+    git(repo, args, dependencies);
+  } catch (caught) { error = caught; }
+  const current = remoteHeads(repo, remote, [branch], dependencies)[branch];
+  if (current !== (remove ? null : commit)) {
+    effect.state = current === before ? 'not-applied' : 'conflict';
+    throw error ?? new Error(`Remote ${ref} did not reach the requested state.`);
+  }
+  effect.state = 'confirmed';
+  return effect;
 }
 
 function remoteTag(repo: any, remote: any, tag: any, dependencies: any): any  {
@@ -188,8 +212,8 @@ export function inspectReleaseToMain(options: any = {}, dependencies: any = {}):
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const version: any = requiredVersion(options.version);
     const remote: any = options.remote ?? 'origin';
-    const main: any = options.main ?? 'main';
-    const dev: any = options.dev ?? 'dev';
+    const main: any = releaseBranchName(options.main ?? 'main', remote);
+    const dev: any = releaseBranchName(options.dev ?? 'dev', remote);
     const branch: any = branchFor(version);
     const generation: any = requiredGeneration(options.generation);
     const carrierBranch: any = releaseCarrierBranchFor(version, generation);
@@ -202,7 +226,7 @@ export function inspectReleaseToMain(options: any = {}, dependencies: any = {}):
     if (selection.releaseHead !== candidateCommit) findings.push({ code: 'release-candidate-commit-mismatch', expected: selection.releaseHead ?? null, actual: candidateCommit });
     if (selection.releaseTree !== candidateTree) findings.push({ code: 'release-candidate-tree-mismatch', expected: selection.releaseTree ?? null, actual: candidateTree });
     const refs: any = remoteHeads(repo, remote, [branch, carrierBranch, main, dev], dependencies);
-    if (refs[branch] !== null && refs[branch] !== candidateCommit) findings.push({ code: 'remote-release-ref-drift', expected: candidateCommit, actual: refs[branch] });
+    if (refs[branch] !== null && refs[branch] !== candidateCommit && git(repo, ['merge-base', '--is-ancestor', refs[branch], candidateCommit], dependencies, { allowFailure: true }).status !== 0) findings.push({ code: 'remote-release-ref-drift', expected: candidateCommit, actual: refs[branch] });
     if (refs[carrierBranch] !== null && refs[carrierBranch] !== candidateCommit) findings.push({ code: 'release-carrier-ref-drift', expected: candidateCommit, actual: refs[carrierBranch] });
     const mainTree: any = refs[main] ? tree(repo, refs[main], dependencies) : null;
     const mainDisposition: any = mainTree === candidateTree ? 'tree-equivalent' : 'pending';
@@ -231,28 +255,26 @@ function parsePullRequests(stdout: any): any  {
 
 export function ensureReleaseToMainPullRequest(options: any = {}, dependencies: any = {}): any  {
   const operation: any = 'ensure-main-pr';
+  const effects: any[] = [];
   const inspected: any = inspectReleaseToMain(options, dependencies);
   if (inspected.status !== 'ready') return { ...inspected, operation };
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const remote: any = options.remote ?? 'origin';
-    const main: any = options.main ?? 'main';
+    const main: any = releaseBranchName(options.main ?? 'main', remote);
     const formalBranch: any = inspected.branch;
     const branch: any = inspected.carrierBranch;
     const repository: any = options.repository ?? 'BuildrAI/Buildr';
-    const effects: any[] = [];
-    if (inspected.refs[formalBranch] === null) {
+    if (inspected.refs[formalBranch] !== inspected.candidate.commit) {
       if (options.authorizeReleasePush !== true) {
         return blocked(operation, 'release-branch-push-authorization-required', `Remote ${formalBranch} is absent and requires explicit push authorization.`, {
           ...inspected,
           nextActions: [`确认将${inspected.candidate.commit}推送到${remote}/${formalBranch}并建立matching generation carrier后重试。`],
         });
       }
-      git(repo, ['push', remote, `${inspected.candidate.commit}:refs/heads/${formalBranch}`], dependencies);
-      const afterFormalPush: any = remoteHeads(repo, remote, [formalBranch], dependencies)[formalBranch];
-      if (afterFormalPush !== inspected.candidate.commit) throw new Error(`Remote ${formalBranch} did not reach the authorized release commit.`);
-      inspected.refs[formalBranch] = afterFormalPush;
-      effects.push({ type: 'formal-release-branch-pushed', ref: `refs/heads/${formalBranch}`, commit: afterFormalPush });
+      pushReleaseBranch({ repo, remote, branch: formalBranch, commit: inspected.candidate.commit, before: inspected.refs[formalBranch] }, dependencies, effects);
+      inspected.refs[formalBranch] = inspected.candidate.commit;
+      effects.at(-1).type = 'formal-release-branch-pushed';
     }
     if (inspected.refs[branch] === null) {
       if (options.authorizeReleasePush !== true) {
@@ -261,11 +283,10 @@ export function ensureReleaseToMainPullRequest(options: any = {}, dependencies: 
           nextActions: [`确认将${inspected.candidate.commit}推送到owned carrier ${remote}/${branch}后重试。`],
         });
       }
-      git(repo, ['push', remote, `${inspected.candidate.commit}:refs/heads/${branch}`], dependencies);
-      const afterPush: any = remoteHeads(repo, remote, [branch], dependencies)[branch];
-      if (afterPush !== inspected.candidate.commit) throw new Error(`Remote ${branch} did not reach the authorized release commit.`);
-      inspected.refs[branch] = afterPush;
-      effects.push({ type: 'release-carrier-pushed', ref: `refs/heads/${branch}`, commit: afterPush, generation: inspected.generation });
+      pushReleaseBranch({ repo, remote, branch, commit: inspected.candidate.commit, before: inspected.refs[branch] }, dependencies, effects);
+      inspected.refs[branch] = inspected.candidate.commit;
+      effects.at(-1).type = 'release-carrier-pushed';
+      effects.at(-1).generation = inspected.generation;
     }
     const prReadback: any = run(options.ghCommand ?? 'gh', [
       'pr', 'list', '--repo', repository, '--state', 'all', '--base', main, '--head', branch,
@@ -309,15 +330,18 @@ export function ensureReleaseToMainPullRequest(options: any = {}, dependencies: 
         nextActions: [`确认创建唯一${branch}→${main}受保护PR后重试。`],
       });
     }
+    const creation = { type: 'pull-request-created', branch, state: 'unknown', url: null as string | null };
+    effects.push(creation);
     const created: any = run(options.ghCommand ?? 'gh', [
       'pr', 'create', '--repo', repository, '--base', main, '--head', branch,
       '--title', options.title ?? `Release ${options.version}`,
       '--body', options.body ?? `Release ${options.version} from frozen ${inspected.candidate.commit}.`,
     ], repo, dependencies).stdout.trim();
-    effects.push({ type: 'pull-request-created', url: created });
+    creation.url = created;
+    creation.state = 'confirmed';
     return result(operation, 'ready', { ...inspected, pullRequest: { url: created, state: 'OPEN', headRefOid: inspected.candidate.commit, headRefName: branch, baseRefName: main }, effects, nextActions: [] });
   } catch (error: any) {
-    return blocked(operation, 'release-main-pr-blocked', error.message, { effects: [] });
+    return blocked(operation, 'release-main-pr-blocked', error.message, { effects });
   }
 }
 
@@ -343,8 +367,8 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const remote: any = options.remote ?? 'origin';
-    const main: any = options.main ?? 'main';
-    const dev: any = options.dev ?? 'dev';
+    const main: any = releaseBranchName(options.main ?? 'main', remote);
+    const dev: any = releaseBranchName(options.dev ?? 'dev', remote);
     const evidence: any = passedPublication(options.publicationEvidence);
     const source: any = releaseSource(evidence.context);
     const version: any = requiredVersion(source.version ?? evidence.release.npmVersion);
@@ -353,33 +377,31 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
     const expectedRelease: any = requiredSha(source.releaseCommit, 'publication release commit');
     const expectedTree: any = requiredSha(source.releaseTree, 'publication release tree');
     const refs: any = remoteHeads(repo, remote, [branch, main, dev], dependencies);
-    const selection: any = refs[dev]
-      ? inspectReleaseSelection({ version, repo, devRef: `${remote}/${dev}` }, dependencies)
-      : null;
     const contextSelection: any = source.selection;
-    const publishedDevCommit: any = evidence.context?.convergence?.devCommit ?? null;
-    const publishedSelection: any = contextSelection
-      && selection?.selectionIdentity !== contextSelection.identity
-      && SHA.test(publishedDevCommit || '')
-      && git(repo, ['merge-base', '--is-ancestor', publishedDevCommit, refs[dev]], dependencies, { allowFailure: true }).status === 0
-      ? inspectReleaseSelection({ version, repo, devRef: publishedDevCommit }, dependencies)
-      : selection;
+    let selection: any = null;
+    if (refs[dev] && contextSelection) {
+      try {
+        selection = inspectReleaseSourceProvenance({ repo, sourceCommit: expectedRelease, generation: contextSelection.generation, devRef: refs[dev] }, dependencies);
+      } catch (error: any) {
+        selection = { status: 'blocked', diagnostic: { message: error.message }, effects: [] };
+      }
+    }
     const recoveryIdentity: any = identity({
       operation,
       version,
       publicationEvidence: evidence.identity,
-      selectionIdentity: selection?.selectionIdentity ?? null,
+      selectionIdentity: contextSelection?.identity ?? null,
       expectedRelease,
       expectedMain,
       refs,
     });
     const publicFacts: any = { status: 'passed', evidenceIdentity: evidence.identity };
-    if (refs[main] !== expectedMain) {
+    if (!refs[main] || git(repo, ['merge-base', '--is-ancestor', expectedMain, refs[main]], dependencies, { allowFailure: true }).status !== 0) {
       return blocked(operation, 'published-main-ref-drift', 'Publication succeeded, but current main no longer matches the published transaction.', {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
       });
     }
-    const actualMainTree: any = tree(repo, refs[main], dependencies);
+    const actualMainTree: any = tree(repo, expectedMain, dependencies);
     if (actualMainTree !== expectedTree) {
       return blocked(operation, 'published-main-tree-mismatch', 'Publication succeeded, but current main tree does not match the frozen release tree.', {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, expectedTree, actualMainTree,
@@ -395,34 +417,12 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
       });
     }
-    if (!selection || selection.status !== 'frozen' || selection.integrity?.status !== 'valid') {
-      return blocked(operation, 'published-release-selection-invalid', 'Publication succeeded, but the current frozen release selection cannot prove complete dev provenance.', {
+    if (!selection || selection.status !== 'passed' || contextSelection?.status !== 'frozen'
+        || contextSelection.version !== version || contextSelection.generation !== selection.generation
+        || contextSelection.releaseHead !== expectedRelease || contextSelection.releaseTree !== expectedTree
+        || selection.releaseHead !== expectedRelease || selection.releaseTree !== expectedTree) {
+      return blocked(operation, 'published-release-selection-invalid', 'Published Git history does not match the frozen source and current dev provenance.', {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, selection,
-        nextActions: ['恢复并核验current frozen selection；没有sourceDevCommit的内容必须先由support Task交付dev，不能从聊天或release-only标签补造。'],
-      });
-    }
-    const selectionMatches: any = contextSelection
-      && publishedSelection
-      && contextSelection.status === 'frozen'
-      && contextSelection.version === version
-      && contextSelection.identity === publishedSelection.selectionIdentity
-      && contextSelection.generation === publishedSelection.generation
-      && contextSelection.releaseHead === publishedSelection.releaseHead
-      && contextSelection.releaseTree === publishedSelection.releaseTree;
-    if (!selectionMatches || selection.releaseHead !== expectedRelease || selection.releaseTree !== expectedTree || selection.devHead !== refs[dev]) {
-      return blocked(operation, 'published-release-selection-drift', 'Publication succeeded, but the current frozen selection does not match the published context or current dev.', {
-        status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
-        expectedSelection: contextSelection,
-        actualSelection: {
-          status: selection.status,
-          identity: selection.selectionIdentity,
-          publishedIdentity: publishedSelection?.selectionIdentity ?? null,
-          generation: selection.generation,
-          releaseHead: selection.releaseHead,
-          releaseTree: selection.releaseTree,
-          devHead: selection.devHead,
-        },
-        nextActions: ['重新读取matching Publication context和current frozen selection；不得合并main或整条release branch来掩盖identity漂移。'],
       });
     }
     const sourceCommits: any = selection.selectionChain.map((entry: any) => entry.sourceDevCommit);
@@ -430,8 +430,8 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
       operation,
       version,
       publicationEvidence: evidence.identity,
-      selectionIdentity: selection.selectionIdentity,
-      mainCommit: refs[main],
+      selectionIdentity: contextSelection.identity,
+      mainCommit: expectedMain,
       mainTree: actualMainTree,
       releaseCommit: refs[branch],
       devHead: refs[dev],
@@ -447,11 +447,11 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
       refs,
       reconciliation: {
         status: 'passed',
-        selectionIdentity: selection.selectionIdentity,
+        selectionIdentity: contextSelection.identity,
         generation: selection.generation,
         releaseCommit: selection.releaseHead,
         releaseTree: selection.releaseTree,
-        mainCommit: refs[main],
+        mainCommit: expectedMain,
         mainTree: actualMainTree,
         devHead: refs[dev],
         devBaseline: selection.devBaseline,
@@ -484,6 +484,7 @@ function releaseOwnedWorktrees(repo: any, branches: any, dependencies: any): any
 
 export function closeoutReleaseGitResources(options: any = {}, dependencies: any = {}): any  {
   const operation: any = 'closeout';
+  const effects: any[] = [];
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const remote: any = options.remote ?? 'origin';
@@ -517,6 +518,7 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
     if (remoteRefs[carrierBranch] !== null && remoteRefs[carrierBranch] !== expectedCommit) findings.push({ code: 'release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: remoteRefs[carrierBranch] });
     if (localCarrier !== null && localCarrier !== expectedCommit) findings.push({ code: 'local-release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: localCarrier });
     for (const worktree of ownedWorktrees) {
+      if (git(worktree.worktree, ['status', '--porcelain=v1', '--untracked-files=all'], dependencies).stdout.trim()) findings.push({ code: 'release-worktree-dirty', path: worktree.worktree });
       if (worktree.HEAD !== expectedCommit) findings.push({ code: 'release-worktree-head-drift', path: worktree.worktree, ref: worktree.branch, expected: expectedCommit, actual: worktree.HEAD ?? null });
     }
     if (findings.length) return blocked(operation, 'release-closeout-identity-unknown', 'Release closeout found resources whose ownership or identity cannot be proved.', { version, generation, expectedCommit, findings });
@@ -526,14 +528,15 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
       return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanupInspection.diagnostic?.message ?? 'Local selection cleanup is not ready.', { version, generation, expectedCommit, selectionCleanupInspection });
     }
 
-    const effects: any[] = [];
     if (ownedWorktrees.length && options.authorizeLocalSelectionCleanup !== true) {
       return blocked(operation, 'release-worktree-cleanup-authorization-required', 'Removing owned release worktrees requires explicit local closeout authorization.', { version, generation, expectedCommit, ownedWorktrees });
     }
     for (const worktree of ownedWorktrees) {
       if (sameFilesystemPath(worktree.worktree, repo)) return blocked(operation, 'release-worktree-is-execution-root', `Release-owned branch ${worktree.branch} is checked out in the execution root.`, { version, generation, expectedCommit, ownedWorktrees });
-      git(repo, ['worktree', 'remove', '--force', worktree.worktree], dependencies);
-      effects.push({ type: 'release-worktree-removed', path: worktree.worktree, ref: worktree.branch, commit: expectedCommit });
+      const removal = { type: 'release-worktree-removed', path: worktree.worktree, ref: worktree.branch, commit: expectedCommit, state: 'unknown' };
+      effects.push(removal);
+      git(repo, ['worktree', 'remove', worktree.worktree], dependencies);
+      removal.state = 'confirmed';
     }
     if (remoteRefs[carrierBranch] !== null) {
       if (options.authorizeCarrierCleanup !== true) {
@@ -541,9 +544,8 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
           version, generation, expectedCommit, formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
         });
       }
-      git(repo, ['push', remote, `:refs/heads/${carrierBranch}`], dependencies);
-      if (remoteHeads(repo, remote, [carrierBranch], dependencies)[carrierBranch] !== null) throw new Error(`Remote carrier ${carrierBranch} still exists after deletion.`);
-      effects.push({ type: 'remote-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
+      pushReleaseBranch({ repo, remote, branch: carrierBranch, commit: expectedCommit, before: remoteRefs[carrierBranch], remove: true }, dependencies, effects);
+      effects.at(-1).type = 'remote-release-carrier-deleted';
     }
     if (localCarrier !== null) {
       if (options.authorizeCarrierCleanup !== true) {
@@ -558,8 +560,8 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
       return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
     }
     const selectionCleanup: any = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence }, dependencies);
-    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
     effects.push(...selectionCleanup.effects);
+    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
     if (localReleaseTag) {
       const deleted: any = git(repo, ['update-ref', '-d', localReleaseTag.ref, localReleaseTag.object], dependencies, { allowFailure: true });
       if (deleted.status !== 0) return blocked(operation, 'release-local-tag-cleanup-blocked', 'Local Tag changed before cleanup.', { version, generation, expectedCommit, tag, expected: localReleaseTag, effects });
@@ -581,12 +583,13 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
       effects,
     });
   } catch (error: any) {
-    return blocked(operation, 'release-closeout-blocked', error.message);
+    return blocked(operation, 'release-closeout-blocked', error.message, { effects });
   }
 }
 
 export function cleanupRemoteReleaseBranch(options: any = {}, dependencies: any = {}): any  {
   const operation: any = 'cleanup-remote';
+  const effects: any[] = [];
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const remote: any = options.remote ?? 'origin';
@@ -605,7 +608,7 @@ export function cleanupRemoteReleaseBranch(options: any = {}, dependencies: any 
         nextActions: [`确认删除${remote}/${branch}（${actual}）后重试。`],
       });
     }
-    git(repo, ['push', remote, `:refs/heads/${branch}`], dependencies);
+    pushReleaseBranch({ repo, remote, branch, commit: expected, before: actual, remove: true }, dependencies, effects);
     const after: any = remoteHeads(repo, remote, [branch], dependencies)[branch];
     if (after !== null) throw new Error(`Remote ${branch} still exists after deletion.`);
     return result(operation, 'passed', {
@@ -613,7 +616,7 @@ export function cleanupRemoteReleaseBranch(options: any = {}, dependencies: any 
       effects: [{ type: 'remote-release-branch-deleted', ref: `refs/heads/${branch}`, commit: expected }],
     });
   } catch (error: any) {
-    return blocked(operation, 'remote-release-cleanup-blocked', error.message);
+    return blocked(operation, 'remote-release-cleanup-blocked', error.message, { effects });
   }
 }
 

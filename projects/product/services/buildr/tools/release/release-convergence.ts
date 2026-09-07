@@ -103,13 +103,16 @@ export function checkReleaseConvergence({
   dev = 'dev',
   fetch = true,
   authorityEvidence = null,
+  publicationSourceCommit = null,
   nowMs = Date.now(),
 }: any): any  {
   if (!repo || !version || !candidateBase || !candidateTree) throw new Error('repo, version, candidateBase and candidateTree are required');
   if (!['pre-main', 'post-main', 'pre-tag'].includes(stage)) throw new Error(`Unsupported release convergence stage: ${stage}`);
   if (stage !== 'pre-tag' && authorityEvidence) throw new Error('authority evidence is only accepted by the pre-tag stage');
   const release: any = `release-${version}`;
-  if (fetch) runGit(repo, ['fetch', remote, main, dev, release]);
+  main = String(main).replace(/^refs\/heads\//u, '').replace(new RegExp(`^(?:refs/remotes/)?${remote}/`, 'u'), '');
+  dev = String(dev).replace(/^refs\/heads\//u, '').replace(new RegExp(`^(?:refs/remotes/)?${remote}/`, 'u'), '');
+  if (fetch) runGit(repo, ['fetch', '--no-tags', remote, `refs/heads/${main}:refs/remotes/${remote}/${main}`, `refs/heads/${dev}:refs/remotes/${remote}/${dev}`, `refs/heads/${release}:refs/remotes/${remote}/${release}`]);
   const devRef: any = `${remote}/${dev}`;
   const mainRef: any = `${remote}/${main}`;
   const releaseRef: any = `${remote}/${release}`;
@@ -131,19 +134,28 @@ export function checkReleaseConvergence({
     main: checksMain ? packageVersionAt(repo, mainRef) : null,
   };
   if (trees.release !== candidateTree) findings.push({ code: 'release_tree_mismatch', expected: candidateTree, actual: trees.release });
+  if (refs.release !== candidateBase) findings.push({ code: 'release_source_mismatch', expected: candidateBase, actual: refs.release });
   if (versions.release !== version) findings.push({ code: 'release_version_mismatch', expected: version, actual: versions.release });
   for (const item of releaseTaskRefs(repo, version)) {
     if (!isAncestor(repo, item.commit, devRef)) findings.push({ code: 'release_task_not_integrated', ref: item.ref, commit: item.commit });
   }
+  let publishedSource: any = null;
+  if (checksMain && publicationSourceCommit && publicationSourceCommit !== refs.main) {
+    const tagRefs = runGit(repo, ['ls-remote', '--tags', remote, `refs/tags/v${version}`, `refs/tags/v${version}^{}`]).stdout.trim().split(/\r?\n/u).filter(Boolean).map((line: string) => line.split(/\s/u));
+    const tagTarget = tagRefs.find((entry: any) => entry[1]?.endsWith('^{}'))?.[0] ?? tagRefs[0]?.[0];
+    if (tagTarget === publicationSourceCommit && isAncestor(repo, publicationSourceCommit, refs.main)) {
+      publishedSource = { commit: publicationSourceCommit, tree: rev(repo, `${publicationSourceCommit}^{tree}`), version: packageVersionAt(repo, publicationSourceCommit) };
+    } else findings.push({ code: 'main_source_mismatch', expected: publicationSourceCommit, actual: refs.main });
+  }
   if (checksMain) {
-    if (trees.main !== candidateTree) findings.push({ code: 'main_tree_mismatch', expected: candidateTree, actual: trees.main });
-    if (versions.main !== version) findings.push({ code: 'main_version_mismatch', expected: version, actual: versions.main });
+    if ((publishedSource?.tree ?? trees.main) !== candidateTree) findings.push({ code: 'main_tree_mismatch', expected: candidateTree, actual: publishedSource?.tree ?? trees.main });
+    if ((publishedSource?.version ?? versions.main) !== version) findings.push({ code: 'main_version_mismatch', expected: version, actual: publishedSource?.version ?? versions.main });
   }
   if (stage === 'pre-tag') {
     findings.push(...checkReleaseAuthorityEvidence({
       evidence: authorityEvidence,
-      sourceCommit: refs.main,
-      workflowSource: fileAt(repo, mainRef, releaseWorkflowPath),
+      sourceCommit: publishedSource?.commit ?? refs.main,
+      workflowSource: fileAt(repo, publishedSource?.commit ?? mainRef, releaseWorkflowPath),
       nowMs,
     }));
   }
@@ -157,6 +169,7 @@ export function checkReleaseConvergence({
     refs,
     trees,
     versions,
+    publishedSource,
     findings,
     nextActions: findings.length ? ['修复 current release/main、Candidate或hosted authority identity后重新运行checker；dev可在release创建后独立前进，Publication后再由独立owner收敛。'] : [],
   };

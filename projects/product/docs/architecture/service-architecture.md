@@ -697,23 +697,9 @@ tools/
 
 `tools/development/` 负责使用声明的 Node/npm 运行源码 checkout、启动 Development CLI、生成 ignored HTTP DTO 与 `web-dist`、安装或更新 Development Launcher，以及其他只服务 Buildr 开发环境的工具。Development Launcher manager 必须在 Launcher 变更前完成这一准备，使干净 checkout 可直接启动 Web。
 
-`tools/release/` 是 checkout-only 发布编排边界，负责 release selection/provenance、readiness/convergence adapter、构建 npm 发布物，以及版本、Tag、Registry、GitHub Release和Release Artifact的检查或受保护入口。它不取得System Installation、Verification、Task/Finish/self-bootstrap或Bootstrap的writer authority；tag、npm、dist-tag和GitHub Release公共mutation仍只由protected publish workflow执行。
+发布基础设施的职责、共享消费、公开副作用与恢复边界见 [技术架构](../../knowledge/architecture/technical.md#验证与发布边界) 和 [发布流程](../../knowledge/flows/open-source-release.md)。当前架构说明不另行维护发布步骤与状态模型。
 
-current `release-<version>`模型使用以下协作边界；selection、Candidate、correlation、readiness、受保护发布事务和Git收敛均已由对应owner实现并通过窄read model协作，任何owner事实缺失或漂移都不得回退为旧`dev → main`自动发布路径：
-
-| owner | 职责 | 允许的consumer方式 |
-|---|---|---|
-| `tools/release` | 人工selection、Git provenance、readiness/convergence adapter | 输出baseline、selection chain、release HEAD/tree与closed findings |
-| `src/system/installation` | SemVer、package/version、release track、installation identity | 通过Domain/Application公开能力复用版本语义 |
-| `src/verification` | Product Candidate、execution evidence与唯一tarball | 消费精确release source，输出matching Candidate/artifact identity |
-| `src/task` | Task Record、Review、Verification、父任务协调与Worktree provider | 只提供各自Application/read model或窄Git位置能力，不保存release正文 |
-| self-bootstrap runner | matching retained Activation与Diagnostics | 提供closed result/readback，不写Delivery或Publication |
-| Bootstrap | 唯一composition root | 只装配窄requires/provides与接口，不实现发布业务规则 |
-| protected `publish.yml` | tag、npm、dist-tag、GitHub Release、Registry readback | 消费matching context和唯一tarball，输出transaction evidence |
-
-这些owner之间不得直接写对方Persistence、复制专业Result或建立release旁路SQLite store。
-
-`src/` 不依赖 `tools/`。验证主体和验证入口统一位于 `test/verification/`，不增加 `tools/verification/`。
+`src/` 不依赖 `tools/`。测试执行主体位于 `test/verification/`；`tools/verification/candidate-environment.ts` 只负责共享环境准备。
 
 ## 当前根工程职责
 

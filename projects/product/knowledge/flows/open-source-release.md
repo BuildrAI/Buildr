@@ -1,38 +1,92 @@
 # Buildr npm 发布流程
 
-本文描述canonical发布契约、已经实现的验证/发布基线和当前迁移状态；正式release transaction及其中的tag、`npm publish`和GitHub Release mutation仍需独立发布授权。
+本页是当前发布选择、准备、验证、公开发布和恢复的流程正文。维护者决定版本、内容与授权；智能体核对现场、解释风险并持续推进；发布工具执行确定性动作。历史运行和已归档变更保留原始事实，不作为当前成功的替代证明。
 
-`release-<version>`人工选择集合、release HEAD Candidate、Task correlation、共享readiness、release→main和发布后dev provenance reconciliation均已由current Product实现。发布Skill仍须逐项回读owner identity；任何能力缺失或漂移都返回`release-model-implementation-incomplete`，不得回退到“最新dev自动成为发布集合”、旧history bridge或main→dev merge。
+## 正常主线
 
-## 唯一事实链
+日常相关验证 → 交付 `dev` → 明确选择提交 → 收敛 `main` 关系并冻结最终组合 → 一次完整候选验证（Candidate Verification）与打包 → 发布同一份产物（Artifact）。
 
-1. 维护者从可由current `dev`证明的精确baseline创建唯一`release-<version>`；后续只纳入维护者明确选择且带`-x` provenance的`dev` commit。没有`sourceDevCommit`的release-only metadata必须有独立可验证的dev回流证据，current owner不支持时拒绝。普通`dev`前进不改变release，冲突不自动解决。每次freeze另以不可变`freezes/<generation>` ref保存历史source；frozen不能直接update。
-2. 唯一身份链为`dev baseline → ordered selection chain → release HEAD/tree → pre-reconciliation freeze → current main coverage → tree-preserving history commit/final generation → Product Candidate → frozen tarball manifest/integrity → generation carrier → main tree → post-publication dev provenance reconciliation → closeout → transaction evidence`。每个节点由专业owner提供current identity/read model；任一上游变化使下游evidence stale。即使tree相同，pre-reconciliation Candidate也不能用于final generation。
-3. `release-<version>`是覆盖selection、Release Rehearsal、Candidate、唯一tarball、release→main、readiness、Publication、dev provenance reconciliation与必需closeout的唯一协调Task，在lifecycle `closed`前保持active。需要进入frozen release的version、CHANGELOG、README、测试或owner修复先由基于current dev的窄support Task完成实现、验证与Git交付；rehearsal owner从current frozen release按有序source commits构造带`-x`provenance的prospective commit/tree，不移动正式selection。演练失败继续回到同一support Task；完整aggregate全绿并取得一次明确promotion授权后，exact rehearsal source才fast-forward为新的正式frozen generation。support terminal或Rehearsal passed不使release Task completed。Release Preparation在matching release Worktree内使用Buildr Service的`buildr.npm-ci`入口和精确Node，不建立Task Environment。
-4. Release Rehearsal与final Candidate复用同一分布式`Candidate gate`：preflight、唯一tarball、macOS core、Windows runtime/Launcher、Workspace/Task、fresh build和四个Host Node tuple的primary owner、`fail-fast: false`、bounded scheduling、heartbeat/checkpoint与timing。候选环境准备（Candidate Environment Preparation）以`base|artifact|source-runtime|host`档位集中安装依赖、生成DTO/Test Context并按需物化源码`web-dist`；job不自行拼装准备步骤。演练证明prospective source，promotion与main coverage后的final Candidate只做一次正式确认；普通changed/affected反馈不是完整Candidate。
-5. Candidate先从release source、Schema、两个Service锁文件和固定工具链在隔离staging生成DTO、Test Context ESM/声明与Web dist，形成无绝对路径和时间戳的生成物manifest；Application Payload和npm staging只消费该matching集合并生成一个绑定release source的tarball。Host Node、Launcher、publish和Registry readback消费同一filename、SHA-256、SHA-512 integrity与manifest；正式publish不重建生成物、不重新pack或生成第二份可发布bytes。
-6. release owner在Candidate前从active Task、matching Worktree与Release Preparation生成closed execution binding，只在matching `codex/release-<version>` Task worktree执行main coverage/reconciliation。retained primary worktree或陈旧branch/HEAD零写入失败。main不是release祖先时，若其Product路径均由current dev/release provenance覆盖，owner以原release tree创建包含release与main父提交的history commit；tree必须保持不变。main独有内容先交付dev，禁止工作树merge、人工解冲突、`ours`、reset或rebase。该post-state是唯一final generation，只有它可运行Candidate、生成唯一tarball和创建carrier/PR；Candidate后main漂移使这些证据全部stale。
-7. 维护者对current frozen context明确授权后，runner才显式dispatch一次唯一protected workflow。Workflow从matching Candidate run下载并验证aggregate与`candidate-package`，所有Host Node、Launcher和protected consumer复用同一tarball bytes，不重建payload或重新pack；可逆门禁通过后请求一次`npm-production`审批，同一approved execution完成OIDC proof、final pre-tag convergence、tag ensure、同一tarball publish、dist-tag、GitHub Release与Registry安装readback。Terminal evidence按run/attempt保留逐步事实。发布成功后运行`reconcile-dev`，只读核验matching Publication、current frozen selection、正式release/main refs，以及baseline和全部`sourceDevCommit`仍由current remote dev包含；来源或identity漂移返回`published-but-dev-reconciliation-blocked`且不撤销Publication。随后幂等closeout清理可证明owned的发布Git资源和Worktree；全部通过后lifecycle才`closed`，再以真实摘要完成唯一协调Task。
+- 基线是明确的完整提交，不自动追随后续 `dev`。额外内容通过明确、有序的 `cherry-pick -x` 纳入。
+- 版本号和 `CHANGELOG.md` 必须已由正常开发交付到 `dev`，并进入选择组合。支持任务在所需修复、相关验证和交付完成前保留现场。
+- 完整候选前处理 `main` 历史关系。已有 `main` 是祖先时直接使用当前源码；必要的历史收敛保持已选产品内容，记录真实父提交。未知独有内容或语义冲突由维护者决定。
+- 完整候选绑定精确源码提交、生成物、唯一 npm 压缩包、检查配方和平台证据。绿色工作流状态不能代替聚合与实际产物核验。
+- 完整结果通过后，以受保护的合并请求（Pull Request）将同一发布组合纳入 `main`，保留所需合并父关系，再检查发布就绪。
+- “准备发布”停在公开发布之前。只有获得对应版本和内容的发布授权，才派发受保护工作流；实际平台权限与必要审批继续有效。
 
-## 本机 Launcher 边界
+## 日常验证与统一准备
 
-- 普通npm安装默认不修改Applications或Start Menu。只有显式`buildr web launcher install`才创建图形入口。
-- macOS Launcher是本机`.app` thin wrapper；Windows Launcher是Start Menu shortcut。两者都精确绑定Host Node executable、npm package entry、prefix、package/payload/protocol identity与target，不复制Node、Buildr package或payload。
-- npm更新只原子刷新同installation slot下已经存在且ownership匹配的Launcher。Node、entry、prefix、package或payload漂移时`status`返回invalid/stale，启动和更新fail closed并提示`repair`或重新安装。
-- `status`、`repair`与`uninstall`只操作closed binding可证明拥有的目标；foreign target不会被覆盖或删除。Development Launcher保持checkout-backed独立投射。
+普通功能运行相关测试和必要低成本回归，不默认执行完整候选或演练。修改发布、构建、安装或平台基础设施时，运行对应真实生命周期和无公开副作用验收。测试分层、选择和资源规则见[验证框架](../architecture/verification-framework.md)。
 
-## 公开位置与恢复
+[统一准备入口](../../services/buildr/tools/verification/candidate-environment.ts)覆盖锁文件安装、产品 Node、生成代码、测试上下文和源码前端构建。档位由入口直接列出，调用方选择最低充分档位：
 
-- `@buildr-ai/buildr` tarball只由npm Registry承载；GitHub Release只保存版本说明，不上传Buildr binary Assets。
-- Actions artifact只保存冻结candidate与验证evidence，不能作为README、官网、安装脚本或其他公共下载authority。
-- `release-evidence-*` artifact中的closed transaction context/evidence正式关联release selection、release/support Tasks、Candidate/publish runs、release/main/dev provenance reconciliation、Release Preparation、tag、npm/GitHub Release和Registry smoke。发布证据不读取复盘文档。`inspect-run`按publish run下载该artifact，校验digest与GitHub source/run/attempt后返回portable read model并清理临时文件；它不写Task Record、SQLite或旁路store。
-- 同一Candidate run重跑失败job时，每个逻辑shard用同名overwrite替换旧attempt evidence；成功shard与唯一tarball继续复用。代码修复产生新source SHA后必须重跑完整分布式门禁，但Windows高成本场景保持三个并行恢复边界。
-- 历史`release-<version>` Task若在本生命周期模型生效前被提前completed，保留该terminal记录与Finish事实，不直接改SQLite、伪造reopen或迁移为current。后续version必须以唯一active协调Task和稳定recovery identity恢复，不创建finalize/resume协调Task。
-- GitHub Release ensure只核对tag、target commit、notes、draft、prerelease/Latest并拒绝任何binary Asset；Buildr bytes的missing/same/drift恢复只由npm Registry version与integrity决定。
-- 已发布version不覆盖。RC问题发布新的prerelease；正式版本问题发布patch，必要时deprecate或移动dist-tag。
+| 对象 | 准备内容 |
+|---|---|
+| 源码检查 | 后端锁定依赖、生成代码和测试上下文；需要 Web 时准备前端和 `web-dist` |
+| 产物构建 | 两个服务的锁定依赖；构建器在隔离目录生成完整材料并打包一次 |
+| 产物消费 | 仅验证所需运行依赖，不生成源码材料、不加载构建工具 |
+| 正式发布消费 | 同一消费准备，加隔离安装的固定 npm；候选已检查其无写入发布路径 |
 
-## 运行时与更新责任
+产品开发和构建遵循 `.node-version` 的精确 Node；宿主 Node 验证覆盖声明支持的平台与版本，记录实际执行版本。缓存只加速下载；干净检出不依赖未声明缓存或本机残留。
 
-Buildr npm主进程使用满足`engines.node`的Host Node；Buildr Product checkout使用`.node-version`锁定的精确development Node，Project Verification与Release Preparation执行各自显式声明的命令。Release Awareness把`latest`解释为GA正式版、`next`解释为RC候选版，并能区分尚无GA与`latest`类型错误。`buildr update`只根据登记的npm/development identity路由，npm模式使用保存的Host Node、npm CLI和prefix，不从PATH猜测；用户通过`--track stable|candidate`显式选择版本轨道，更新不自动切轨或降级。Buildr升级或Launcher卸载不改变Workspace Registry、SQLite或Workspace data。
+## 候选、演练和复用
 
-规范行为以canonical release、payload、npm package、Launcher与update specs为准；实际发布步骤与授权核对见`services/buildr/docs/release-checklist.md`。SEA、PKG/MSI和正式桌面签名设计只作为已归档历史知识，未来恢复必须由新的产品决策与Change重新建立当前契约。
+[共享消费配方](../../services/buildr/tools/release/release-consumption.ts)是检查与覆盖关系的唯一声明。候选包括唯一包的完整性、版本与发布说明、分发文档链接、安装和运行、真实 macOS/Windows 启动器（Launcher）、宿主 Node，以及发布基础设施故障恢复。原来仅在发布阶段执行的 Linux 宿主 Node 和固定 npm 准备也在候选中验证。
+
+发布演练（Release Rehearsal）用于基础设施验收或必要诊断，使用相同候选实现。正常发布不强制“完整演练之后再完整候选”。精确源码、产物及相关输入相同的完整演练可直接作为最终验证，正式发布继续消费原包。
+
+| 变化 | 处理 |
+|---|---|
+| 同一源码、字节、配方、锁文件、Node/平台等相关输入 | 复用匹配完整结果，保留原运行编号与执行时间 |
+| 同一运行的明确暂态分片失败 | 最多自动恢复一次失败作业，复用其他成功分片；重复同错进入诊断 |
+| 源码提交或内嵌源码身份变化 | 重新构建并验证新包，即使文件树相同 |
+| 工具链、配方或相关平台条件变化 | 说明失效证明范围，重新验证相关结果 |
+| 任务标题、登记版本或运输载体等无关信息变化 | 不废弃候选结果，不重算产品内容 |
+| 候选后 `main` 前进 | 先检查实际合并关系；需要改变最终源码时重新收敛和验证，已匹配的合并结果直接复用 |
+
+源码分片和产物生产尽量并行；消费者只等待真正必需的产物。矩阵采用收集全部失败策略，聚合分别说明准备失败、测试失败和依赖不满足未运行。上传只包含唯一包与必要清单，构建中间目录不作为发布消费者输入。
+
+## 操作入口
+
+使用产品精确 Node 执行[发布入口](../../services/buildr/tools/release/release-orchestration-runner.ts)。入口以明确版本和主工作空间定位任务数据，自动解析实际工作树、引用、关联输入与运行编号。
+
+```text
+release-orchestration-runner.ts prepare --version <version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
+release-orchestration-runner.ts inspect --version <version> --workspace <workspace>
+release-orchestration-runner.ts publish --version <version> --workspace <workspace> --authorized
+release-orchestration-runner.ts resume --version <version> --workspace <workspace>
+```
+
+`prepare` 创建或复用 matching 发布任务与隔离工作树，固定选择、运行候选、核验聚合与原包、完成受保护 `main` 纳入并返回就绪内容。已有选择保持原基线；新选择前智能体先明确用户希望的版本和范围。主工作空间的 Git 基线准备遵循现有内部流程。
+
+`inspect` 只读。运行尚未完成时返回运行编号；智能体跟踪终态后继续同一入口。`publish` 只用于已授权公开发布，不能由“准备”自动升级。`resume` 从真实运行与公开事实继续未完成事项，不重新构造已验证提交或重新打包。
+
+Git 目录内的单一版本操作文档只保存选择意图、冻结上下文及远端运行指针，以便中断后继续；它不代替 Git、任务记录、GitHub 或 npm 的事实。无需智能体复制大段 JSON、手工补字段或计算摘要。旧窄工具只用于对应所有者的诊断；不再独立执行依赖安装以制造准备绑定。
+
+## 受保护发布与恢复
+
+[发布执行器](../../services/buildr/tools/release/release-publication.ts)按共享配方执行：复核原包 → 当前平台权限 → 引用和来源 → 官方 npm/标签/发布说明状态 → 发布原包 → 回读与官方安装验证。
+
+正式发布不构建应用负载，不重新 `npm pack`。RC 使用 `next`，稳定版使用 `latest`；不覆盖已有版本，不移动已有标签，不降低仓库保护，不回退本机令牌发布。GitHub Release 只维护版本说明，不上传第二份产品二进制。
+
+| 现场 | 恢复 |
+|---|---|
+| 本地引用成功、远端推送失败 | 保留本地提交/引用，回读远端后补齐推送 |
+| 远端成功但响应丢失 | 标记未确认并查询同一目标；匹配后复用，不重复创建 |
+| 本地标签已创建、远端未创建 | 校验并复用本地标签，再推送 |
+| 标签已存在、npm 未发布 | 校验同一源码和原包，只补 npm 及后续步骤 |
+| npm 已存在且完整性一致 | 跳过发布，只恢复说明、回读或安装验证 |
+| 产物或标签冲突 | 保留事实并停止；不得覆盖或删除后重发 |
+| 查询返回权限错误、网络超时或无效响应 | 记录未知；不能当作版本不存在 |
+| 历史失败运行且确认无公开事实 | 允许同版本修复；活动运行先回读，不能重复派发 |
+| 发布成功后 `main` 正常前进 | 使用发布时提交及其真实历史继续核验，不要求当前树等于旧发布树 |
+| 发布后登记、清理或自举失败 | 只恢复对应事项，保留发布成功事实 |
+
+跨 Git、npm 与 GitHub 不承诺单一原子事务。每一步报告已确认、未发生或未知效果；异常不能用空 `effects` 抹去前序写入。阶段记录与每个运行尝试的证据保留，恢复读取匹配尝试，不把旧成功分片说成新执行。
+
+## 超时、诊断与完成
+
+保留当前 300 秒集成步骤上限和 60 秒 Launcher 交接等待；根据准备、执行、内部等待和进程回收证据判断长尾，不通过无限扩大超时掩盖死锁或泄漏。网络请求有单次截止时间和有限重试；没有断言失败并不能证明超时是暂态。
+
+完成报告分别说明产品发布、任务登记、资源清理和本机自举。正式远端 `release-<version>` 默认保留；仅清理可证明属于当前任务的临时载体、引用和工作树，正式远端发布引用删除需要独立授权。本机自举只由既有唯一执行器负责，不能因投射失败重发产品。
+
+无公开副作用验收需覆盖干净候选及同包消费，并列出实际执行、复用和未验证边界。真实平台审批、OIDC 与生产 npm 写入只有在真实发布授权下才能验证；本地服务模拟不能充当生产凭证或公开发布证据。

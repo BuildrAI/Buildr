@@ -28,6 +28,19 @@ const RESOURCE_SOURCES: any = Object.freeze([
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
 ]);
 
+export function renderPackageReadme(source: string, sourceCommit: string, root = serviceRoot): string {
+  if (!/^[a-f0-9]{40}$/u.test(sourceCommit)) throw new Error('Package documentation requires an exact source commit.');
+  const repository = path.resolve(root, '../../../..');
+  return source.replace(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/gu, (match, link: string) => {
+    if (/^(?:https?:|mailto:|#)/u.test(link)) return match;
+    const [file, fragment] = link.split('#');
+    const target = path.resolve(root, file!);
+    const relative = path.relative(repository, target).split(path.sep).join('/');
+    if (relative.startsWith('../') || !fs.statSync(target, { throwIfNoEntry: false })?.isFile()) throw new Error(`Package README link does not resolve in source: ${link}`);
+    return `](https://github.com/BuildrAI/Buildr/blob/${sourceCommit}/${relative}${fragment ? `#${fragment}` : ''})`;
+  });
+}
+
 function sha256(bytes: any): any  {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
@@ -165,7 +178,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
     fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     copyFile(path.join(serviceRoot, 'LICENSE'), path.join(resourceRoot, 'product/LICENSE'), 0o644);
-    copyFile(path.join(serviceRoot, 'README.md'), path.join(resourceRoot, 'product/README.md'), 0o644);
+    fs.writeFileSync(path.join(resourceRoot, 'product/README.md'), renderPackageReadme(fs.readFileSync(path.join(serviceRoot, 'README.md'), 'utf8'), sourceCommit), { mode: 0o644 });
     const metadata: any = packageMetadata();
     fs.writeFileSync(path.join(resourceRoot, 'product/package.json'), `${JSON.stringify(runtimePackageMetadata(metadata), null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     const productionDependencies: any = dependencyInventory(resourceRoot, metadata);

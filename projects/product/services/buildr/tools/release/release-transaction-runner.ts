@@ -17,12 +17,12 @@ import {
   releaseWorkflowPath,
   sha256,
 } from './release-authority.ts';
-import { validateReleasePreparationBinding } from './release-preparation-binding.ts';
+import { assertReleaseConsumptionCoverage } from './release-consumption.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { inspectReleaseSelection } from './release-selection.ts';
-import { createReleaseTaskEvidenceCorrelationFromRuntime } from './release-task-evidence-correlation.ts';
-import { createReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
+import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -65,6 +65,7 @@ function parseOptions(argv: any): any  {
   return {
     action,
     repo: path.resolve(options.repo || workspaceRoot),
+    canonicalWorkspace: options.workspace ? path.resolve(options.workspace) : null,
     sourceCommit: options['source-commit'] || 'origin/main',
     remoteMain: options['remote-main'] || 'origin/main',
     version: requiredVersion(options.version),
@@ -80,13 +81,12 @@ function parseOptions(argv: any): any  {
     timeoutMs: Number(options['timeout-ms'] || 20 * 60 * 1000),
     publicationAuthorized: options['publication-authorized'] === 'true',
     releaseContext: options['release-context'] ? JSON.parse(fs.readFileSync(path.resolve(options['release-context']), 'utf8')) : null,
-    preparationBinding: options.preparation ? JSON.parse(fs.readFileSync(path.resolve(options.preparation), 'utf8')) : null,
   };
 }
 
 export function compactReleaseTransaction(result: any): any  {
   const runId: any = result.github?.runId || result.evidence?.publish?.runId || null;
-  const taskId: any = result.context?.preparation?.taskId || result.context?.releaseTask?.taskId || null;
+  const taskId: any = result.context?.preparation?.taskId || result.context?.releaseTask?.taskId || (result.context?.release?.version ? `release-${result.context.release.version}` : null);
   const failedFinding: any = result.findings?.find((finding: any) => finding.severity === 'blocked') || null;
   const failed: any = result.error ? { code: 'release.transaction_failed', message: result.error } : failedFinding ? { code: failedFinding.code, message: failedFinding.nextAction || failedFinding.expected } : null;
   const normalizedStatus: any = result.status === 'passed' || result.status === 'ready'
@@ -94,8 +94,8 @@ export function compactReleaseTransaction(result: any): any  {
     : result.status === 'cancelled' ? 'cancelled' : result.status === 'failed' ? 'failed' : 'blocked';
   return longRunningOperationSummary({
     operation: `release.transaction.${result.action || 'unknown'}`,
-    terminal: true,
-    status: normalizedStatus,
+    terminal: !['running', 'unknown'].includes(result.status),
+    status: ['running', 'unknown'].includes(result.status) ? 'running' : normalizedStatus,
     taskId,
     runId: runId === null ? null : String(runId),
     resultIdentity: result.evidence?.identity || result.contextIdentity || result.context?.identity || null,
@@ -150,7 +150,7 @@ function findSingleFile(root: any, name: any): any  {
   return matches[0];
 }
 
-function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies }: any): any  {
+export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies = {} }: any): any  {
   if (dependencies.candidateEvidence) return dependencies.candidateEvidence;
   const root: any = (dependencies.makeTempDirectory ?? ((prefix: any) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
   try {
@@ -166,13 +166,7 @@ function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, depen
 }
 
 function taskCorrelationProjection(value: any): any  {
-  return value ? {
-    identity: value.identity,
-    status: value.status,
-    sourceCommit: value.source?.sourceCommit || null,
-    sourceTree: value.source?.sourceTree || null,
-    remoteRef: value.source?.remoteRef || null,
-  } : null;
+  return value ? releaseTaskAssociationProjection(value) : null;
 }
 
 export async function runHostedReleaseTransaction(options: any = {}, dependencies: any = {}): Promise<any>  {
@@ -182,7 +176,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   const wait: any = dependencies.wait ?? defaultWait;
   const onStatus: any = dependencies.onStatus ?? ((message: any) => process.stderr.write(`${message}\n`));
   const nowMs: any = dependencies.nowMs ?? (() => Date.now());
-  const releaseId: any = dependencies.releaseId ?? crypto.randomUUID();
+  let releaseId: any = dependencies.releaseId ?? options.releaseId ?? null;
   const action: any = options.action || 'readiness';
   const repo: any = path.resolve(options.repo || workspaceRoot);
   const ghCommand: any = options.ghCommand || 'gh';
@@ -199,7 +193,6 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   if (actualTree !== candidateTree) throw new Error(`Release candidate tree ${candidateTree} does not match source tree ${actualTree}.`);
   const workflowSource: any = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256: any = sha256(workflowSource);
-  const title: any = `Release ${version} (${releaseId})`;
   const productNodeVersion: any = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
   if (exactNode.audit.version !== productNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Product exact Node ${productNodeVersion}.`);
   let context: any;
@@ -209,11 +202,11 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const candidateRunId: any = Number(options.candidateRunId);
     if (!Number.isSafeInteger(candidateRunId) || candidateRunId < 1) throw new Error('--candidate-run-id must be a positive GitHub run id.');
     const runtime: any = dependencies.runtime ?? createRuntime();
-    const releaseTaskResult: any = runtime.inspectTask(repo, options.releaseTask);
+    const canonicalWorkspace = path.resolve(options.canonicalWorkspace || repo);
+    const releaseTaskResult: any = runtime.inspectTask(canonicalWorkspace, options.releaseTask);
     const releaseTask: any = releaseTaskResult?.record;
-    const supportTasks: any = (options.supportTasks ?? []).map((taskId: any) => taskContextProjection(runtime.inspectTask(repo, taskId)?.record));
-    const preparation: any = validateReleasePreparationBinding(options.preparationBinding ?? dependencies.preparationBinding, { repo });
-    if (preparation.taskId !== releaseTask.taskId || preparation.sourceCommit !== sourceCommit) throw new Error('Release preparation binding does not match the active release Task/publication source.');
+    const supportTasks: any = (options.supportTasks ?? []).map((taskId: any) => taskContextProjection(runtime.inspectTask(canonicalWorkspace, taskId)?.record));
+    if (releaseTask?.status !== 'active') throw new Error('Release Task must be active before publication.');
     const candidateRun: any = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Candidate run readback');
     const candidateActual: any = {
       repository: candidateRun?.repository?.full_name ?? null,
@@ -236,7 +229,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const devTree: any = fullCommit(execute, repo, `${devCommit}^{tree}`);
     const taskCorrelation: any = options.taskCorrelation || createReleaseTaskEvidenceCorrelationFromRuntime({
       runtime,
-      root: repo,
+      root: canonicalWorkspace,
       releaseTask: options.releaseTask,
       releaseTaskStatus: 'active',
       supportTasks: options.supportTasks ?? [],
@@ -252,6 +245,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const candidateEvidence: any = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
     const aggregate: any = candidateEvidence.aggregate;
     const manifest: any = candidateEvidence.manifest;
+    assertReleaseConsumptionCoverage(aggregate, { sourceCommit: candidateSourceCommit, sourceTree: candidateSourceTree }, manifest);
     const aggregateWorkflow: any = aggregate?.workflow;
     const aggregateWorkflowActual: any = {
       runId: aggregateWorkflow?.runId == null ? null : String(aggregateWorkflow.runId),
@@ -303,8 +297,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
         devTree,
         ...(reconciliation ? { mergeCommit: sourceCommit, mergeParents: mainParents, mergeMethod: mainParents.length === 2 ? 'merge' : null, reconciliationIdentity: reconciliation.reconciliationIdentity } : {}),
       },
-      preparation: { identity: preparation.identity, status: preparation.outcome.status, taskId: preparation.taskId, sourceCommit: preparation.sourceCommit, nodeVersion: preparation.node.version, nodeIdentity: preparation.node.executionIdentity },
-      node: { authority: preparation.node.authority, version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
+      node: { authority: 'projects/product/.node-version', version: exactNode.audit.version, executionIdentity: exactNode.audit.identity },
       workflow: { path: releaseWorkflowPath, digest: `sha256-${workflowSha256}`, repository: releasePublishAuthority.repository, environment: releasePublishAuthority.environment },
       taskCorrelation: taskCorrelationProjection(taskCorrelation),
     });
@@ -331,86 +324,63 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   if (!options.publicationAuthorized) return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'blocked', context, contextIdentity: context.identity, findings: [{ code: 'publication-authorization-required', severity: 'blocked', owner: 'maintainer', expected: true, actual: false, nextAction: '请维护者对当前frozen context明确授权publication。' }], deferredChecks: readiness.deferredChecks, effects: [], nextActions: ['请维护者对当前frozen context明确授权publication。'] };
   if (readiness.status !== 'ready') return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', ...readiness };
 
-  invoke(execute, ghCommand, [
-    'workflow', 'run', releasePublishAuthority.workflow,
-    '--repo', releasePublishAuthority.repository,
-    '--ref', 'main',
-    '-f', `release_id=${releaseId}`,
-    '-f', `version=${version}`,
-    '-f', `source_commit=${sourceCommit}`,
-    '-f', `candidate_base=${candidateBase}`,
-    '-f', `candidate_tree=${candidateTree}`,
-    '-f', `workflow_sha256=${workflowSha256}`,
-    '-f', `context_digest=${context.identity}`,
-    '-f', `candidate_run_id=${context.candidate.runId}`,
-    '-f', `release_context=${JSON.stringify(context)}`,
-  ], repo);
-
-  const startedAt: any = nowMs();
-  let run: any = null;
-  while (!run && nowMs() - startedAt <= timeoutMs) {
-    const runs: any = parseJson(invoke(execute, ghCommand, [
-      'run', 'list',
-      '--repo', releasePublishAuthority.repository,
-      '--workflow', releasePublishAuthority.workflow,
-      '--event', 'workflow_dispatch',
-      '--branch', 'main',
-      '--limit', '100',
-      '--json', 'databaseId,displayTitle,headSha,status,conclusion,url',
-    ], repo), 'gh run list');
-    run = Array.isArray(runs) ? runs.find((item: any) => item?.displayTitle === title && item?.headSha === sourceCommit) : null;
-    if (!run) await wait(3_000);
+  releaseId ??= context.identity.slice('sha256-'.length, 'sha256-'.length + 24);
+  const title = `Release ${version} (${releaseId})`;
+  const effects: any[] = [];
+  const listRun = () => {
+    const runs = parseJson(invoke(execute, ghCommand, ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', releasePublishAuthority.workflow,
+      '--event', 'workflow_dispatch', '--branch', 'main', '--limit', '100', '--json', 'databaseId,displayTitle,headSha,status,conclusion,url'], repo), 'GitHub release run lookup');
+    if (!Array.isArray(runs)) throw new Error('GitHub release run lookup is not an array.');
+    return runs.find((item: any) => item.displayTitle === title && item.headSha === sourceCommit) ?? null;
+  };
+  let run = listRun();
+  if (!run && options.dispatchPreviouslyRequested !== true) {
+    const intent = { type: 'workflow-dispatched', releaseId, contextIdentity: context.identity, state: 'unknown' };
+    effects.push(intent);
+    dependencies.onDispatchIntent?.({ releaseId, contextIdentity: context.identity });
+    try {
+      invoke(execute, ghCommand, [
+        'workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
+        '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${sourceCommit}`,
+        '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
+        '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`,
+      ], repo);
+      intent.state = 'confirmed';
+    } catch { /* Read the same request identity; do not issue another dispatch. */ }
   }
-  if (!run) throw new Error(`Timed out locating GitHub release transaction ${releaseId}.`);
+  const startedAt = nowMs();
+  const lookupBudget = Math.min(timeoutMs, 30_000);
+  try {
+    while (!run && nowMs() - startedAt < lookupBudget) {
+      run = listRun();
+      if (!run) await wait(Math.min(3000, lookupBudget));
+    }
+  } catch (error) {
+    return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'unknown', releaseId, context, effects,
+      error: error instanceof Error ? error.message : String(error), nextActions: ['回读同一releaseId的GitHub运行，不重复dispatch。'] };
+  }
+  if (!run) return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'unknown', releaseId, context, effects,
+    nextActions: ['GitHub尚未返回matching运行；保留已请求事实，稍后回读同一releaseId。'] };
+  const runId = Number(run.databaseId);
+  if (!Number.isSafeInteger(runId) || runId < 1) throw Object.assign(new Error('GitHub release run id is invalid.'), { effects });
+  let currentRun: any;
+  try { currentRun = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${runId}`], repo), 'GitHub run readback'); }
+  catch (error) {
+    return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'unknown', releaseId, context, effects,
+      github: { repository: releasePublishAuthority.repository, runId, runUrl: run.url }, error: error instanceof Error ? error.message : String(error), nextActions: ['运行已定位，继续回读同一runId，不重新派发。'] };
+  }
+  if (currentRun.head_sha !== sourceCommit || currentRun.repository?.full_name !== releasePublishAuthority.repository || currentRun.event !== 'workflow_dispatch' || currentRun.path?.split('@')[0] !== releaseWorkflowPath) throw Object.assign(new Error('GitHub release run identity mismatches the dispatch.'), { effects });
+  const github = { repository: releasePublishAuthority.repository, runId, runAttempt: Number(currentRun.run_attempt), runUrl: currentRun.html_url || run.url };
+  dependencies.onDispatchObserved?.(github);
+  onStatus(`GitHub release transaction: ${github.runUrl}`);
+  if (currentRun.status !== 'completed') return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'running', releaseId, version, github, context, effects,
+    nextActions: ['等待同一受保护运行及必要平台审批，再inspect/resume；不重新派发或重建产物。'] };
+  let inspected: any;
+  try { inspected = await (dependencies.inspectHostedReleaseTransaction ?? inspectHostedReleaseTransaction)({ runId, repository: releasePublishAuthority.repository, ghCommand }, dependencies.evidenceDependencies); }
+  catch (error) { return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: 'unknown', releaseId, version, github, context, effects, error: error instanceof Error ? error.message : String(error), nextActions: ['同一运行已终止，继续回读其发布证据；不据此重新发布。'] }; }
+  return { schemaVersion: 'buildr.release-transaction-runner/v3', action: 'dispatch', status: inspected.status, releaseId, version, github, context,
+    evidence: inspected.evidence, effects, nextActions: inspected.status === 'passed' ? [] : ['保留公开事实，按同一运行的失败步骤恢复。'] };
 
-  const runId: any = Number(run.databaseId);
-  if (!Number.isSafeInteger(runId) || runId < 1) throw new Error('GitHub release transaction returned an invalid run id.');
-  const runUrl: any = run.url || `https://github.com/${releasePublishAuthority.repository}/actions/runs/${runId}`;
-  onStatus(`GitHub release transaction: ${runUrl}`);
-  onStatus(`The reversible jobs run first. Approve the single ${releasePublishAuthority.environment} deployment when GitHub requests it; no npm password or OTP is needed.`);
-  invoke(execute, ghCommand, ['run', 'watch', String(runId), '--repo', releasePublishAuthority.repository, '--exit-status', '--interval', '5'], repo, { stream: true });
-  const currentRun: any = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${runId}`], repo), 'GitHub run readback');
-  const actual: any = {
-    repository: currentRun?.repository?.full_name ?? null,
-    event: currentRun?.event ?? null,
-    headSha: currentRun?.head_sha ?? null,
-    status: currentRun?.status ?? null,
-    conclusion: currentRun?.conclusion ?? null,
-    workflowPath: typeof currentRun?.path === 'string' ? currentRun.path.split('@')[0] : null,
-  };
-  const expected: any = {
-    repository: releasePublishAuthority.repository,
-    event: 'workflow_dispatch',
-    headSha: sourceCommit,
-    status: 'completed',
-    conclusion: 'success',
-    workflowPath: releaseWorkflowPath,
-  };
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Release transaction readback mismatch: ${JSON.stringify({ expected, actual })}`);
-  const evidence: any = createReleaseTransactionEvidence({
-    context,
-    publish: { repository: releasePublishAuthority.repository, workflow: releaseWorkflowPath, runId, runAttempt: Number(currentRun.run_attempt), runUrl, headSha: sourceCommit },
-    outcome: 'passed',
-    publicFacts: { version, tagCommit: sourceCommit, npmDistTag: version.includes('-') ? 'next' : 'latest', registryPublished: true, githubRelease: `https://github.com/${releasePublishAuthority.repository}/releases/tag/v${version}`, registrySmoke: 'passed' },
-  });
-  return {
-    schemaVersion: 'buildr.release-transaction-runner/v3',
-    action: 'dispatch',
-    status: 'passed',
-    releaseId,
-    version,
-    tag: `v${version}`,
-    sourceCommit,
-    candidateBase,
-    candidateTree,
-    workflow: { path: releaseWorkflowPath, sha256: workflowSha256 },
-    github: { repository: releasePublishAuthority.repository, runId, runAttempt: Number(currentRun.run_attempt), runUrl },
-    node: exactNode.audit,
-    context,
-    evidence,
-    effects: [{ type: 'workflow-dispatched', runId, runUrl }],
-    nextActions: [],
-  };
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -421,7 +391,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(options.detail === 'full' ? result : compactReleaseTransaction(result), null, 2)}\n`);
   } catch (error: any) {
-    const result: any = { schemaVersion: 'buildr.release-transaction-runner/v3', status: 'blocked', error: error.message, effects: [], nextActions: ['修复current release readiness输入后重试；只有明确publication授权才能dispatch，且不得本机创建tag或publish。'] };
+    const result: any = { schemaVersion: 'buildr.release-transaction-runner/v3', status: 'blocked', error: error.message, effects: error.effects ?? [], nextActions: ['修复current release readiness输入后重试；只有明确publication授权才能dispatch，且不得本机创建tag或publish。'] };
     if (options?.output) fs.writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });
     process.stderr.write(`${JSON.stringify(options?.detail === 'full' ? result : compactReleaseTransaction(result), null, 2)}\n`);
     process.exitCode = 1;
